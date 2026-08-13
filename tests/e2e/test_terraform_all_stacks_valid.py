@@ -293,7 +293,10 @@ class TestAllStacksInitValidate:
                 f"{infra_binary} init skipped for {stack} "
                 f"(rc={result.returncode}): {result.stderr[:400]}"
             )
-        assert (stack_dir / ".terraform").exists()
+        try:
+            assert (stack_dir / ".terraform").exists()
+        finally:
+            self._clean_tfvars(stack_dir)
 
     @pytest.mark.parametrize("stack", ALL_STACK_NAMES)
     def test_validate_succeeds(self, infra_binary: str, stack: str) -> None:
@@ -320,12 +323,15 @@ class TestAllStacksInitValidate:
         if result.returncode != 0:
             self._clean_dot_terraform(stack_dir)
             self._clean_tfvars(stack_dir)
-        assert result.returncode == 0, (
-            f"{infra_binary} validate failed for {stack} "
-            f"(rc={result.returncode}):\n"
-            f"stdout: {result.stdout[:500]}\n"
-            f"stderr: {result.stderr[:500]}"
-        )
+        try:
+            assert result.returncode == 0, (
+                f"{infra_binary} validate failed for {stack} "
+                f"(rc={result.returncode}):\n"
+                f"stdout: {result.stdout[:500]}\n"
+                f"stderr: {result.stderr[:500]}"
+            )
+        finally:
+            self._clean_tfvars(stack_dir)
 
     def test_no_apply_run_any_stack(self) -> None:
         tfstate_counts = sum(

@@ -5,7 +5,8 @@ Queries a SearX instance's JSON API and returns structured results.
 
 SECURITY NOTES:
   - ``base_url`` is SSRF-guarded via :func:`general_ludd.security.ssrf.host_is_blocked`
-    at construction time. Private/loopback/metadata hosts are rejected.
+    at construction time. Private and metadata hosts are rejected; explicit
+    localhost and 127.0.0.1 endpoints remain available for self-hosted SearX.
   - HTTP requests are time-bound and never follow redirects.
   - No credentials, tokens, or secrets are hardcoded or logged.
 """

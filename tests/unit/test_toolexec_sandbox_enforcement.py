@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -391,6 +392,11 @@ class TestLangGraphAgentSandboxIntegration:
         class FakeTool:
             name = "read_file"
             description = "Read a file"
+            input_schema: ClassVar[dict[str, object]] = {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            }
 
         mcp_client.list_tools.return_value = [FakeTool()]
         mcp_client.call_tool = AsyncMock()
@@ -426,6 +432,11 @@ class TestLangGraphAgentSandboxIntegration:
         class FakeTool:
             name = "read_file"
             description = "Read a file"
+            input_schema: ClassVar[dict[str, object]] = {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            }
 
         mcp_client.list_tools.return_value = [FakeTool()]
         mcp_client.call_tool = AsyncMock()
@@ -448,10 +459,6 @@ class TestLangGraphAgentSandboxIntegration:
         result = await tools[0].ainvoke({"path": str(jail / "allowed.txt")})
         assert "hello world" in result
 
-    @pytest.mark.xfail(
-        reason="langchain StructuredTool does not pass input without args_schema — framework limitation, not gludd bug",
-        strict=True,
-    )
     @pytest.mark.asyncio
     async def test_tool_execution_path_escape_blocked_by_sandbox(
         self, tmp_path: Path,
@@ -469,6 +476,11 @@ class TestLangGraphAgentSandboxIntegration:
         class FakeTool:
             name = "read_file"
             description = "Read a file"
+            input_schema: ClassVar[dict[str, object]] = {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            }
 
         mcp_client.list_tools.return_value = [FakeTool()]
         mcp_client.call_tool = AsyncMock()

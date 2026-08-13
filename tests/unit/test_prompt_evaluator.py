@@ -51,6 +51,16 @@ class TestParseConversationLog:
         assert len(entries) == 1
         assert entries[0]["role"] == "user"
 
+    def test_parses_single_line_xml_string_directly(self) -> None:
+        raw = "<user>Hello</user><assistant>Hi</assistant>"
+        entries = parse_conversation_log(raw)
+        assert [entry["role"] for entry in entries] == ["user", "assistant"]
+
+    def test_parses_single_line_fallback_string_directly(self) -> None:
+        entries = parse_conversation_log("User: Hello")
+        assert len(entries) == 1
+        assert entries[0]["role"] == "user"
+
     def test_extracts_tool_calls(self) -> None:
         raw = "<assistant><tool_call>{\"name\":\"read\"}</tool_call>\n</assistant>\n"
         entries = parse_conversation_log(raw)

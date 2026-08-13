@@ -251,18 +251,18 @@ class TestConsumeForceDispatchStructural:
             "consumeForceDispatchSignal function must exist"
         )
 
-    def test_calls_unlink_sync(self):
+    def test_delete_helper_calls_unlink_sync(self):
         src = _src()
-        idx = src.index("function consumeForceDispatchSignal")
-        fn_body = src[idx:idx + 500]
+        idx = src.index("function deleteForceDispatchSignal")
+        fn_body = src[idx:idx + 250]
         assert "fs.unlinkSync(FORCE_DISPATCH_FILE)" in fn_body, (
-            "consumeForceDispatchSignal must call fs.unlinkSync to delete the file"
+            "deleteForceDispatchSignal must call fs.unlinkSync to delete the file"
         )
 
     def test_unlink_is_try_caught(self):
         src = _src()
-        idx = src.index("function consumeForceDispatchSignal")
-        fn_body = src[idx:idx + 500]
+        idx = src.index("function deleteForceDispatchSignal")
+        fn_body = src[idx:idx + 250]
         unlink_idx = fn_body.index("unlinkSync")
         before_unlink = fn_body[:unlink_idx]
         assert "try" in before_unlink or "catch" in fn_body[unlink_idx:], (
@@ -293,12 +293,21 @@ class TestConsumeForceDispatchStructural:
         idx = src.index("function consumeForceDispatchSignal")
         fn_body = src[idx:idx + 500]
         read_idx = fn_body.find("readFileSync")
-        unlink_idx = fn_body.find("unlinkSync")
-        assert read_idx > 0 and unlink_idx > 0, (
-            "Must both read and unlink the file"
+        delete_idx = fn_body.find("deleteForceDispatchSignal")
+        assert read_idx > 0 and delete_idx > 0, (
+            "Must both read and delete the file"
         )
-        assert read_idx < unlink_idx, (
+        assert read_idx < delete_idx, (
             "Must read the file BEFORE deleting it"
+        )
+
+    def test_malformed_signal_is_deleted(self):
+        src = _src()
+        idx = src.index("function consumeForceDispatchSignal")
+        fn_body = src[idx:idx + 500]
+        catch_idx = fn_body.index("catch")
+        assert "deleteForceDispatchSignal()" in fn_body[catch_idx:], (
+            "Malformed force-dispatch signals must be deleted in the catch path"
         )
 
     def test_returns_null_when_file_absent(self):

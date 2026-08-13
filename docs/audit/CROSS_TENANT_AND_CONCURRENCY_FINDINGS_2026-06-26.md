@@ -43,7 +43,7 @@ items are recorded for remediation.
 | AB-3 | `routers/environment.py:713/644` | HIGH | FIXED | `_system_facet()` call offloaded via `asyncio.to_thread` (fixed e748412, 13 router tests green) |
 | TG-1 | `routers/todos.py` (read/update endpoints) | MED | FIXED | shared `_validate_project_id` helper → uniform 422 across get/list-scheduled/pause/resume (fixed e748412, 6 tests) |
 | AB-4 | `daemon.py:1837-1838` | MED | FIXED | psutil RSS sampling offloaded via to_thread (fixed 1def38a) |
-| AB-5 | `execution/tool_loop.py:176,183` | HIGH | confirmed (verified) | sync `gateway.call_model` in async tool loop; no async variant → to_thread. **Companion REQUIRED**: budget.py `RunBudgetGuard.record_spend` unlocked `+=` race that offload exposes (add threading.Lock). Draft in flight |
+| AB-5 | `execution/tool_loop.py` | HIGH | FIXED | sync `gateway.call_model` uses a bounded, namespaced executor isolated from asyncio's shared default pool; contextvars are preserved |
 | AB-6 | `event_loop/loop.py:2168` | MED | FIXED | `run_gap_analysis` offloaded via to_thread; thread-safe per 2 audits (fixed 96d704a) |
 | AB-7 | `event_loop/loop.py:2187-2188` | LOW | FIXED | self-improve failure log now passes `exc_info=True` (fixed 0dd0fa4) |
 | AB-8 | `execution/engine.py:302` | MED | confirmed (verified) | sync `call_model` in async `execute_async` → to_thread; same budget-lock companion as AB-5. Draft in flight |
@@ -311,13 +311,30 @@ handlers, stalling all concurrent requests for the duration of the I/O.
 - **Apply-ready fix:** `proc = await asyncio.to_thread(psutil.Process, os.getpid())` then
   `mem = await asyncio.to_thread(lambda p: p.memory_info().rss, proc)`.
 
-### AB-5 — `execution/tool_loop.py:176,183` — sync `gateway.call_model` in async methods — CONFIRMED
+### AB-5 — `execution/tool_loop.py` — sync `gateway.call_model` in async methods — FIXED
 
 - **File:line:** `tool_loop.py:176` (`_call_model`) and `:183` (`_call_with_tools`); both
   `async def`, both call the SYNC `self._gateway.call_model(...)` (`gateway.py:430 def
   call_model`) directly, blocking the loop while the model request is in flight.
-- **Apply-ready fix:** wrap each in `await asyncio.to_thread(self._gateway.call_model, ...)`.
-  Note: this is the hot path for tool work — blocking here stalls the whole daemon per call.
+- **Initial fix:** both calls were moved to `asyncio.to_thread`. That kept the event loop
+  responsive, but `to_thread` delegates to the loop's shared default
+  `ThreadPoolExecutor`. A contended GitHub runner then reproduced a second failure mode:
+  an instantaneous mocked gateway call waited behind unrelated executor work until the
+  five-second tool-loop test deadline expired.
+- **Final fix (2026-07-30):** `_run_model_call` uses one process-wide, bounded
+  10-worker `ThreadPoolExecutor` named `gludd-model-gateway`, while explicitly copying
+  contextvars. Model calls remain non-blocking, cannot be starved by unrelated default
+  executor work, and do not create one pool per `ToolCallLoop`.
+- **Regression proof:** `test_ab5_tool_loop_isolated_from_default_executor_starvation`
+  occupies every worker in a one-thread default executor and proves `_call_with_tools`
+  still completes through the isolated model pool.
+- **Long-lived user reports consulted:** Stack Overflow's
+  [`asyncio.to_thread` vs `ThreadPoolExecutor`](https://stackoverflow.com/questions/65316863/is-asyncio-to-thread-method-different-to-threadpoolexecutor)
+  documents that `to_thread` uses the default executor, and FastAPI discussion
+  [#11886](https://github.com/fastapi/fastapi/discussions/11886) records independent
+  starvation when unrelated workloads share one thread capacity pool. CPython issue
+  [#76490](https://github.com/python/cpython/issues/76490) captures the long-running
+  discussion of explicit/high-level executor selection.
 
 ### AB-6 — `event_loop/loop.py:2168` — sync `run_gap_analysis` in async `_phase_self_improve` — CONFIRMED
 

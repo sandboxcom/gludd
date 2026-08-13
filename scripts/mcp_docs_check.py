@@ -5,8 +5,8 @@ This is the presence guard that keeps the generated MCP surface complete. For
 each ``plugins/modules/gludd_*.py`` module it asserts:
 
   * the module has a parseable DOCUMENTATION block (YAML in the module
-    docstring, top-level ``DOCUMENTATION:`` key — or, for legacy modules, the
-    docstring itself being the DOCUMENTATION mapping);
+    docstring, the standard Ansible ``DOCUMENTATION`` string constant, or a
+    legacy docstring that is itself the DOCUMENTATION mapping);
   * that block has a non-empty ``short_description``;
   * that block has a non-empty ``options`` map (the argument_spec mirror).
 
@@ -102,13 +102,40 @@ def _doc_mapping(source: str) -> dict[str, Any]:
     """Return the DOCUMENTATION mapping for a module, or {} if absent.
 
     Supports the in-tree convention (top-level ``DOCUMENTATION:`` key in the
-    docstring YAML, parsed in isolation) and a bare docstring that IS the
+    docstring YAML, parsed in isolation), the standard Ansible
+    ``DOCUMENTATION`` string constant, and a bare docstring that IS the
     documentation mapping.
     """
     try:
         tree = ast.parse(source)
     except SyntaxError:
         return {}
+    for statement in tree.body:
+        value: ast.AST | None = None
+        if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
+            target = statement.targets[0]
+            if isinstance(target, ast.Name) and target.id == "DOCUMENTATION":
+                value = statement.value
+        elif (
+            isinstance(statement, ast.AnnAssign)
+            and isinstance(statement.target, ast.Name)
+            and statement.target.id == "DOCUMENTATION"
+        ):
+            value = statement.value
+        if value is None:
+            continue
+        try:
+            assigned = ast.literal_eval(value)
+        except (ValueError, SyntaxError, TypeError):
+            assigned = None
+        if isinstance(assigned, str):
+            try:
+                data = yaml.safe_load(assigned)
+            except yaml.YAMLError:
+                data = None
+            if isinstance(data, dict):
+                return dict(data)
+
     docstring = ast.get_docstring(tree, clean=False)
     if not docstring:
         return {}

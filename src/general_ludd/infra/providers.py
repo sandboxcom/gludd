@@ -139,7 +139,7 @@ _BUILTIN_PROVIDERS: list[dict[str, Any]] = [
     {
         "provider": ComputeProvider.VMWARE,
         "display_name": "VMware vSphere",
-        "terraform_provider": "hashicorp/vsphere",
+        "terraform_provider": "vmware/vsphere",
         "supports_spot": False,
         "sub_hour_billing": False,
         "min_gpu": GPUType.A100_80,

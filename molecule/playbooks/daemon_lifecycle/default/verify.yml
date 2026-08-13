@@ -55,7 +55,7 @@
           Health endpoint must return 200.
           Observed status={{ state.health.status | default('unknown') }},
           has_status_field={{ state.health.has_status_field | default(false) }}.
-        success_msg: "GET /health returned 200 with a JSON status field."
+        success_msg: "GET /healthz returned 200 with a JSON status field."
 
     - name: /api/facts must return a JSON list (or object)
       ansible.builtin.assert:
@@ -103,7 +103,7 @@
           Inspect {{ default_logfile }} for shutdown-traceback / hang.
         success_msg: "Daemon process exited after SIGTERM."
 
-    - name: Port 8000 must be free after shutdown
+    - name: Port {{ daemon_port }} must be free after shutdown
       ansible.builtin.assert:
         that:
           - state.shutdown.port_after_shutdown is defined

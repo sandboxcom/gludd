@@ -39,6 +39,15 @@ class TestInMemoryStore:
         results = store.search("deploy")
         assert len(results) >= 1
 
+    def test_hyphenated_session_identifier_does_not_cross_match(self) -> None:
+        store = _InMemoryStore()
+        store.retain("session sess-5 record", {"session": "sess-5"})
+        store.retain("session sess-0 record", {"session": "sess-0"})
+
+        results = store.search("sess-5", top_k=10)
+
+        assert [result["content"] for result in results] == ["session sess-5 record"]
+
     def test_retain_with_metadata(self) -> None:
         store = _InMemoryStore()
         store.retain("content", {"source": "test", "priority": 1})

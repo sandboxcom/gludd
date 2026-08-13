@@ -163,7 +163,10 @@ class TestTodoLifecycleWorkflow:
             lease = result.scalar_one_or_none()
             assert lease is not None
             assert "tick-" in lease.holder_id
-            assert lease.expires_at > datetime.now(UTC)
+            expires_at = lease.expires_at
+            if expires_at.tzinfo is None:  # SQLite drops timezone metadata on round-trip
+                expires_at = expires_at.replace(tzinfo=UTC)
+            assert expires_at > datetime.now(UTC)
 
     @pytest.mark.asyncio
     async def test_todo_starts_active_after_claim(self, session_factory, loop_for_pipeline):
@@ -323,9 +326,16 @@ class TestStuckTodoDetection:
         await loop.tick()
         async with session_factory() as session:
             repo = TodoRepository(session)
-            requeued = await repo.get_by_id("TODO-STUCK-1")
-            assert requeued is not None
-            assert requeued.status == TodoStatus.QUEUED.value
+            recovered = await repo.get_by_id("TODO-STUCK-1")
+            assert recovered is not None
+            # Refill requeues the stale ACTIVE row, then the later claim phase
+            # immediately claims it again in the same tick for another attempt.
+            assert recovered.status == TodoStatus.ACTIVE.value
+            assert recovered.version >= 3
+            assert any(
+                todo.todo_id == "TODO-STUCK-1"
+                for todo in loop._tick_state["claimed_todos"]
+            )
 
     @pytest.mark.asyncio
     async def test_active_todo_with_live_lease_not_reaped(
@@ -566,7 +576,7 @@ class TestGracefulShutdown:
             await asyncio.sleep(0.05)
 
         bg = asyncio.create_task(_linger())
-        loop._background_tasks.add(bg)
+        loop._track_background_task(bg)
         loop._running = True
         await loop.shutdown()
         assert not loop._running

@@ -18,6 +18,7 @@ import pytest
 from general_ludd.service_discovery.pipeline import (
     DiscoveryReport,
     ServiceDiscoveryPipeline,
+    _extract_service_name,
 )
 
 
@@ -66,6 +67,15 @@ class TestDiscoveryReport:
         assert report.changed_services == ["gamma"]
         assert report.errors == ["timeout on term X"]
         assert report.total_discovered == 5
+
+
+class TestExtractServiceName:
+    @pytest.mark.parametrize("title", ["GE", "HP", "AI"])
+    def test_preserves_valid_two_character_names(self, title: str) -> None:
+        assert _extract_service_name(_mock_searx_result(title=title)) == title
+
+    def test_rejects_blank_title(self) -> None:
+        assert _extract_service_name(_mock_searx_result(title=" \t ")) is None
 
 
 class TestRunDiscoveryPipeline:

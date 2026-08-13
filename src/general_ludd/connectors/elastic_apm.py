@@ -58,6 +58,32 @@ def _coerce_response(value: object) -> HttpResponse:
 # timeout) -> HttpResponse. Kept identical across connectors so one mock works
 # for all three.
 Transport = Callable[..., HttpResponse]
+TransportInput = Callable[..., HttpResponse | tuple[int, object]]
+
+
+class _CallbackResponse:
+    def __init__(self, status_code: int, body: object) -> None:
+        self.status_code = int(status_code)
+        self._body = body
+
+    @property
+    def text(self) -> str:
+        return self._body if isinstance(self._body, str) else str(self._body)
+
+    def json(self) -> object:
+        return self._body
+
+
+class _CompatibleTransport:
+    def __init__(self, callback: TransportInput) -> None:
+        self._callback = callback
+
+    def __call__(self, *args: object, **kwargs: object) -> HttpResponse:
+        result = self._callback(*args, **kwargs)
+        if isinstance(result, tuple):
+            status, body = result
+            return _CallbackResponse(status, body)
+        return result
 
 
 def _validate_base_url(base_url: str) -> str:
@@ -120,7 +146,7 @@ class ElasticApmSource:
         self,
         config: dict[str, Any],
         *,
-        transport: Transport | None = None,
+        transport: TransportInput | None = None,
         environ: dict[str, str] | None = None,
     ) -> None:
         env = environ if environ is not None else os.environ
@@ -128,7 +154,9 @@ class ElasticApmSource:
         self.base_url: str = _validate_base_url(str(config.get("base_url", "")))
         self.index: str = str(config.get("index", "apm-*"))
         self.timeout: float = float(config.get("timeout", 30.0))
-        self._transport: Transport = transport or _default_transport
+        self._transport: Transport = _CompatibleTransport(
+            transport or _default_transport
+        )
 
         # Secrets are resolved from the environment via *_env indirection only.
         self._bearer: str | None = None

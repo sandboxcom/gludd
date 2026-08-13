@@ -39,12 +39,12 @@ class TestHelpE2E:
 class TestSelftestE2E:
     def test_selftest_parsing_defaults(self):
         with patch("general_ludd.cli._cmd_selftest") as mock_cmd:
-            _run(["selftest"])
+            _run(["test", "self"])
         mock_cmd.assert_called_once()
 
     def test_selftest_with_daemon_url(self):
         with patch("general_ludd.cli._cmd_selftest") as mock_cmd:
-            _run(["selftest", "--daemon-url", "http://localhost:9000"])
+            _run(["test", "self", "--daemon-url", "http://localhost:9000"])
         assert mock_cmd.call_args[0][0].daemon_url == "http://localhost:9000"
 
     def test_canonical_selftest_dispatches_same_handler(self):

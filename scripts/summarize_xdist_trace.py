@@ -26,16 +26,48 @@ def _events(path: Path) -> list[dict[str, Any]]:
 
 
 def summarize_log(path: Path) -> dict[str, Any]:
+    events = _events(path)
     unfinished: dict[tuple[str, str], dict[str, str]] = {}
     failures: list[dict[str, Any]] = []
     last_by_worker: dict[str, str] = {}
+    memory_by_worker: dict[str, dict[str, Any]] = {}
+    largest_rss_increases: list[dict[str, Any]] = []
     started = 0
     finished = 0
 
-    for event in _events(path):
+    for event in events:
         event_name = str(event.get("event", ""))
         worker = str(event.get("worker") or "controller")
         nodeid = event.get("nodeid")
+        rss_kb = event.get("rss_kb")
+        if isinstance(rss_kb, int) and rss_kb >= 0:
+            memory = memory_by_worker.setdefault(
+                worker,
+                {
+                    "first_rss_kb": rss_kb,
+                    "peak_rss_kb": rss_kb,
+                    "growth_rss_kb": 0,
+                    "peak_nodeid": nodeid,
+                    "_previous_rss_kb": rss_kb,
+                },
+            )
+            previous_rss_kb = int(memory["_previous_rss_kb"])
+            increase_rss_kb = rss_kb - previous_rss_kb
+            if increase_rss_kb > 0:
+                largest_rss_increases.append(
+                    {
+                        "worker": worker,
+                        "nodeid": nodeid,
+                        "event": event_name,
+                        "rss_kb": rss_kb,
+                        "increase_rss_kb": increase_rss_kb,
+                    }
+                )
+            memory["_previous_rss_kb"] = rss_kb
+            if rss_kb > int(memory["peak_rss_kb"]):
+                memory["peak_rss_kb"] = rss_kb
+                memory["peak_nodeid"] = nodeid
+            memory["growth_rss_kb"] = int(memory["peak_rss_kb"]) - int(memory["first_rss_kb"])
         if event_name == "START" and isinstance(nodeid, str):
             started += 1
             unfinished[(worker, nodeid)] = {"worker": worker, "nodeid": nodeid}
@@ -54,14 +86,20 @@ def summarize_log(path: Path) -> dict[str, Any]:
                 }
             )
 
+    for memory in memory_by_worker.values():
+        memory.pop("_previous_rss_kb", None)
+    largest_rss_increases.sort(key=lambda value: int(value["increase_rss_kb"]), reverse=True)
+
     return {
         "path": str(path),
-        "events": len(_events(path)),
+        "events": len(events),
         "started": started,
         "finished": finished,
         "unfinished": sorted(unfinished.values(), key=lambda value: (value["worker"], value["nodeid"])),
         "last_by_worker": dict(sorted(last_by_worker.items())),
         "failures": failures[:50],
+        "memory_by_worker": dict(sorted(memory_by_worker.items())),
+        "largest_rss_increases": largest_rss_increases[:25],
     }
 
 

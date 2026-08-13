@@ -33,7 +33,11 @@ def _node_is_disengaged(next_path: str) -> bool:
         "process.exit(m.isDisengaged() ? 0 : 1)"
         "}).catch(e => { console.error(e); process.exit(2); })"
     )
-    env = {**os.environ, "GLUDD_DISENGAGE_NEXT_PATH": next_path}
+    env = {
+        **os.environ,
+        "GLUDD_DISENGAGE_NEXT_PATH": next_path,
+        "GLUDD_DISENGAGE_PATH": next_path + ".persistent-noexist",
+    }
     result = subprocess.run(
         ["node", "--input-type=module", "-e", script],
         capture_output=True,

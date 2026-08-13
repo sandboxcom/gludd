@@ -8,16 +8,16 @@ The release was blocked for DAYS by a path-resolution bug between
 NSIS resolves ``OutFile`` relative to the SCRIPT file location, not the CWD.
 The script lives at ``dist/windows/gludd.nsi``. The CI contract is:
 
-  makensis -DVERSION="$env:VERSION" -DBUILDDIR=".." dist/windows/gludd.nsi
+  & $makensis /WX "/DVERSION=$env:VERSION" "/DBUILDDIR=.." dist/windows/gludd.nsi
   OutFile "${BUILDDIR}\gludd-${VERSION}-setup-x86_64.exe"
 
 With ``BUILDDIR=".."``, OutFile resolves to
 ``dist/windows/../gludd-<ver>-setup-x86_64.exe`` = ``dist/gludd-<ver>-setup-x86_64.exe``,
-which matches what the CI ``certutil`` and ``upload-artifact`` steps expect.
+which matches what the CI ``Get-FileHash`` and ``upload-artifact`` steps expect.
 
 The bug: a previous "fix" changed BUILDDIR to ``"dist"`` thinking OutFile
 resolves relative to CWD. That produced ``dist/windows/dist/gludd-...exe`` —
-the certutil step failed to find the file at ``dist/gludd-...exe`` and the
+the checksum step failed to find the file at ``dist/gludd-...exe`` and the
 Windows installer artifact never shipped.
 
 These tests pin the CORRECT contract so the bug cannot recur.
@@ -42,7 +42,7 @@ def _read(path: Path) -> str:
 
 
 def _extract_makensis_command(workflow: str) -> str:
-    match = re.search(r'makensis(?:\.exe)?"?\s*([^\n]+)', workflow)
+    match = re.search(r"^\s*&\s+\$makensis\s+.+$", workflow, re.MULTILINE)
     assert match, "makensis invocation not found in build.yml"
     return match.group(0)
 
@@ -62,8 +62,8 @@ def test_makensis_uses_parent_dir_for_builddir() -> None:
     workflow = _read(WORKFLOW_PATH)
     cmd = _extract_makensis_command(workflow)
 
-    assert '-DBUILDDIR=".."' in cmd, (
-        f"makensis must pass -DBUILDDIR=\"..\" (relative to script at "
+    assert '"/DBUILDDIR=.."' in cmd, (
+        f"makensis must pass \"/DBUILDDIR=..\" (relative to script at "
         f"dist/windows/). Got: {cmd!r}"
     )
 
@@ -71,13 +71,13 @@ def test_makensis_uses_parent_dir_for_builddir() -> None:
 def test_regression_builddir_dist_is_rejected() -> None:
     """Regression: BUILDDIR='dist' is the bug that blocked the release.
 
-    This test FAILS if someone re-introduces -DBUILDDIR="dist".
+    This test FAILS if someone re-introduces /DBUILDDIR=dist.
     """
     workflow = _read(WORKFLOW_PATH)
     cmd = _extract_makensis_command(workflow)
 
-    assert '-DBUILDDIR="dist"' not in cmd, (
-        "REGRESSION: -DBUILDDIR=\"dist\" puts OutFile in dist/windows/dist/ "
+    assert '"/DBUILDDIR=dist"' not in cmd, (
+        "REGRESSION: /DBUILDDIR=dist puts OutFile in dist/windows/dist/ "
         "and breaks the Windows release. Use -DBUILDDIR=\"..\" instead."
     )
 
@@ -116,11 +116,11 @@ def test_resolved_outfile_lands_in_dist_root() -> None:
     """BUILDDIR='..' + script at dist/windows/ + OutFile '${BUILDDIR}\\...'
 
     must resolve to dist/gludd-<ver>-setup-x86_64.exe — the file the CI's
-    certutil and upload-artifact steps expect.
+    checksum and upload-artifact steps expect.
     """
     workflow = _read(WORKFLOW_PATH)
     cmd = _extract_makensis_command(workflow)
-    builddir_match = re.search(r'-DBUILDDIR="([^"]+)"', cmd)
+    builddir_match = re.search(r'"/DBUILDDIR=([^"]+)"', cmd)
     assert builddir_match, f"BUILDDIR not passed to makensis. Got: {cmd!r}"
     builddir = builddir_match.group(1)
 
@@ -155,31 +155,27 @@ def test_resolved_outfile_lands_in_dist_root() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 4. certutil step references the correct resolved path
+# 4. Get-FileHash references the correct resolved path
 # ---------------------------------------------------------------------------
 
 
-def test_certutil_references_dist_root_path() -> None:
-    """certutil -hashfile step must reference dist/gludd-$VERSION-setup-x86_64.exe,
-    matching the resolved OutFile path (NOT dist/windows/dist/...)."""
+def test_get_file_hash_references_dist_root_path() -> None:
+    """PowerShell hashes the installer resolved into the dist root."""
     workflow = _read(WORKFLOW_PATH)
-    certutil_match = re.search(
-        r"certutil\s+-hashfile\s+"
-        r'"?dist/gludd-[^\s"]+-setup-x86_64\.exe"?\s+SHA256',
+    assert '$installerPath = "dist/gludd-$env:VERSION-setup-x86_64.exe"' in workflow
+    assert re.search(
+        r"Get-FileHash\s+-LiteralPath\s+\$installerPath\s+-Algorithm\s+SHA256",
         workflow,
-    )
-    assert certutil_match, (
-        "certutil step must hash 'dist/gludd-$VERSION-setup-x86_64.exe' "
-        "(matches OutFile resolved with BUILDDIR='..')"
+    ), (
+        "Get-FileHash must hash the installer at the resolved dist-root path"
     )
 
 
-def test_certutil_does_not_reference_windows_subdir() -> None:
-    """Regression: certutil must NOT reference dist/windows/dist/..."""
+def test_checksum_does_not_reference_windows_subdir() -> None:
+    """Regression: checksum input must NOT reference dist/windows/dist/..."""
     workflow = _read(WORKFLOW_PATH)
-    bad = re.search(r"certutil\s+-hashfile\s+\"?dist/windows/dist/", workflow)
-    assert not bad, (
-        "REGRESSION: certutil references dist/windows/dist/ — the bug class "
+    assert "dist/windows/dist/gludd-" not in workflow, (
+        "REGRESSION: checksum references dist/windows/dist/ — the bug class "
         "that blocked the release. Output path must be dist/gludd-...exe"
     )
 

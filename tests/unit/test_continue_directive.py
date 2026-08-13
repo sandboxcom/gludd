@@ -24,6 +24,16 @@ from tests.unit._plugin_contract import plugin_contract_source
 ROOT = Path(__file__).parent.parent.parent
 SCRIPT_PATH = ROOT / "scripts" / "agent_watchdog.py"
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
+PLUGIN_IMPL_PATH = (
+    ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
+)
+
+
+def _plugin_source() -> str:
+    """Return the deployed proxy and its implementation as one source view."""
+    assert PLUGIN_PATH.exists()
+    assert PLUGIN_IMPL_PATH.exists()
+    return PLUGIN_PATH.read_text() + "\n" + PLUGIN_IMPL_PATH.read_text()
 
 
 def _plugin_source() -> str:

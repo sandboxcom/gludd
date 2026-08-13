@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+import general_ludd.connectors.influxdb as influxdb_module
 from general_ludd.connectors.influxdb import ConnectorConfigError, InfluxDbSource
 
 
@@ -103,6 +104,27 @@ IQL_CONFIG = {
 
 def test_kind_is_metrics() -> None:
     assert InfluxDbSource.KIND == "metrics"
+
+
+def test_public_name_callback_and_query_alias_compatibility() -> None:
+    calls: list[tuple[str, str]] = []
+
+    def transport(method: str, url: str, **_: object) -> tuple[int, object]:
+        calls.append((method, url))
+        return 200, FLUX_PAYLOAD
+
+    source_type = influxdb_module.InfluxDBSource
+    src = source_type(
+        FLUX_CONFIG,
+        transport=transport,
+        environ={"INFLUX_TOKEN": "tok-9"},
+    )
+
+    records = src.query({"query": 'from(bucket:"b")'})
+
+    assert len(records) == 1
+    assert records[0]["message"] == "cpu"
+    assert calls == [("POST", "https://influx.example.com/api/v2/query")]
 
 
 def test_flux_auth_header_and_post() -> None:

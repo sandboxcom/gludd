@@ -79,6 +79,30 @@ def test_query_normalizes_workflows() -> None:
     assert set(succeeded) == {"ts", "source", "kind", "level_or_status", "message", "value", "labels", "raw"}
 
 
+def test_http_get_compatibility_accepts_decoded_json() -> None:
+    calls: list[tuple[str, dict[str, str]]] = []
+
+    def http_get(url: str, headers: dict[str, str]) -> tuple[int, object]:
+        calls.append((url, headers))
+        return 200, CANNED_RESPONSE
+
+    src = ArgoWorkflowsSource(_config(), http_get=http_get)
+
+    events = src.query()
+
+    assert len(events) == 3
+    assert calls[0][0] == "https://argo.example.com/api/v1/workflows/ci"
+
+
+def test_transport_and_http_get_are_mutually_exclusive() -> None:
+    with pytest.raises(ValueError, match=r"transport.*http_get"):
+        ArgoWorkflowsSource(
+            _config(),
+            transport=_FakeTransport(200, b"{}"),
+            http_get=lambda _url, _headers: (200, {}),
+        )
+
+
 def test_status_mapping_and_ts_fallback() -> None:
     transport = _FakeTransport(200, json.dumps(CANNED_RESPONSE).encode())
     src = ArgoWorkflowsSource(_config(), transport=transport)

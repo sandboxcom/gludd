@@ -30,9 +30,22 @@ Tests:
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 import pytest
+
+
+def test_i18n_role_args_confine_default_output(tmp_path: Path) -> None:
+    from general_ludd.ansible.runner import _convert_role_args
+
+    args = _convert_role_args("i18n_extract", {"directory": str(tmp_path)})
+    output_dir = Path(args[args.index("--output-dir") + 1])
+
+    assert output_dir.is_absolute()
+    assert output_dir.parent == Path(tempfile.gettempdir())
+    assert output_dir.name.startswith("gludd-i18n-extract-")
+    assert output_dir != Path.cwd()
 
 # ── bom_detect ──────────────────────────────────────────────────────────────
 

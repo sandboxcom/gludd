@@ -25,7 +25,7 @@ The role calls `ansible.builtin.fail` on `invariant_violated` or `deadlock` outc
 | `tla_tools_jar` | `"/opt/tla/tla2tools.jar"` | tla2tools.jar path |
 | `enable_tla` | `false` | Run real TLC |
 | `tlc_output_override` | `"...No error has been found."` | Canned output for testing |
-| `timeout` | `300` | TLC timeout in seconds |
+| `tla_check_timeout` | `300` | TLC timeout in seconds |
 | `artifact_dir` | `"/tmp/gludd-tla-check"` | Output directory |
 | `handoff_recipient` | `""` | gludd_message recipient on violation |
 

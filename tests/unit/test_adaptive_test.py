@@ -212,13 +212,30 @@ def test_is_oom_exit_signal_codes(rc) -> None:
 @pytest.mark.parametrize(
     "output",
     [
-        "... node down: Not properly terminated",
+        "[gw2] node down: Not properly terminated",
         "replacing crashed worker gw3",
-        "worker CRASHED while running test",
+        "worker gw1 CRASHED while running tests/unit/test_demo.py::test_case",
     ],
 )
 def test_is_oom_exit_output_markers(output) -> None:
     assert at.is_oom_exit(1, output) is True
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        'E assert "worker crashed" in incident_text',
+        "Failure report mentions node down: Not properly terminated in prose",
+        "docs say replacing crashed worker gw3 during restart",
+        "assertion: worker gw1 crashed while running was the expected message",
+    ],
+)
+def test_is_oom_exit_ignores_failure_prose(output) -> None:
+    assert at.is_oom_exit(1, output) is False
+
+
+def test_is_oom_exit_ignores_marker_on_success() -> None:
+    assert at.is_oom_exit(0, "[gw2] node down: Not properly terminated") is False
 
 
 def test_is_oom_exit_clean_failure_is_not_oom() -> None:
@@ -295,6 +312,22 @@ def test_run_returns_immediately_on_clean_exit(monkeypatch: pytest.MonkeyPatch) 
     assert n_calls == 1  # no retry on a non-OOM failure
 
 
+def test_run_does_not_retry_failure_prose_with_crash_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(at, "decide_nproc", lambda env=None: 4)
+    n_calls = 0
+
+    def runner(cmd):
+        nonlocal n_calls
+        n_calls += 1
+        return 1, 'E assert "worker crashed" in incident_text'
+
+    rc = at.run(["tests/unit"], env={}, runner=runner)
+    assert rc == 1
+    assert n_calls == 1
+
+
 # ---- shared-tmp-root isolation (the popen-gwN FileNotFoundError race) -----
 
 
@@ -308,9 +341,22 @@ def test_unique_basetemp_is_unique_and_namespaced() -> None:
     a = at.unique_basetemp()
     b = at.unique_basetemp()
     assert a != b  # uuid-keyed uniqueness
-    assert "gludd-adaptive-basetemp" in a
+    assert Path(a).name.startswith(f"gludd-at-{os.getpid()}-")
     # A path is returned, not created — pytest creates/wipes the basetemp itself.
     assert not os.path.exists(a)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="AF_UNIX path limit is POSIX-only")
+def test_unique_basetemp_leaves_af_unix_socket_headroom() -> None:
+    """Nested tmp_path sockets must remain within Darwin's 103-byte limit."""
+    socket_path = os.path.join(
+        at.unique_basetemp(),
+        "popen-gw99",
+        "test_unix_http_connection_connect_uses_af_unix0",
+        "fc.sock",
+    )
+
+    assert len(os.fsencode(socket_path)) <= 103
 
 
 def test_run_injects_unique_basetemp_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -327,7 +373,7 @@ def test_run_injects_unique_basetemp_when_absent(monkeypatch: pytest.MonkeyPatch
     assert rc == 0
     injected = [a for a in seen["cmd"] if a.startswith("--basetemp=")]
     assert len(injected) == 1
-    assert "gludd-adaptive-basetemp" in injected[0]
+    assert "gludd-at-" in injected[0]
 
 
 def test_run_respects_caller_basetemp(monkeypatch: pytest.MonkeyPatch) -> None:

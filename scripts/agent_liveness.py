@@ -74,12 +74,14 @@ TESTABILITY:
 """
 from __future__ import annotations
 
+import contextlib
 import glob
 import hashlib
 import json
 import os
 import sqlite3
 import sys
+import tempfile
 import time
 
 # Single fixed window constant — every call reads this identically, eliminating
@@ -127,6 +129,34 @@ def _dir_activity_mtime(path: str) -> float | None:
     return best
 
 
+def _claude_project_slug() -> str:
+    """Return Claude's filesystem-safe slug for this checkout."""
+    project_dir = os.environ.get("CLAUDE_PROJECT_DIR", "").strip()
+    if not project_dir:
+        project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.abspath(project_dir).replace("\\", "-").replace("/", "-")
+
+
+def _claude_sessions_base() -> str:
+    """Return this project's Claude transcript-session directory.
+
+    ``GLUDD_CLAUDE_SESSIONS_BASE`` is an explicit isolation/test override.
+    Otherwise use Claude's platform temp root and derive the project slug from
+    ``CLAUDE_PROJECT_DIR`` (or this checkout), avoiding the old macOS-only
+    ``/private/tmp`` and user-specific project path.
+    """
+    override = os.environ.get("GLUDD_CLAUDE_SESSIONS_BASE", "").strip()
+    if override:
+        return override
+
+    temp_root = "/private/tmp" if sys.platform == "darwin" else tempfile.gettempdir()
+    return os.path.join(
+        temp_root,
+        f"claude-{os.getuid()}",
+        _claude_project_slug(),
+    )
+
+
 def _tasks_dir() -> str | None:
     """Resolve the transcript dir holding per-agent ``*.output`` files.
 
@@ -155,7 +185,7 @@ def _tasks_dir() -> str | None:
     if override:
         return override if os.path.isdir(override) else None
 
-    base = "/private/tmp/claude-%d/-Users-shawnwilson-gludd" % os.getuid()
+    base = _claude_sessions_base()
 
     session_id = os.environ.get("GLUDD_SESSION_ID", "").strip()
     if session_id:
@@ -270,10 +300,10 @@ def _is_terminal(path: str) -> bool:
             content = (obj.get("message") or {}).get("content")
             if isinstance(content, list):
                 # Pending tool call -> the agent is mid-turn, still running.
-                for part in content:
-                    if isinstance(part, dict) and part.get("type") == "tool_use":
-                        return False
-                return True  # assistant text answer, no tool_use -> done
+                return not any(
+                    isinstance(part, dict) and part.get("type") == "tool_use"
+                    for part in content
+                )
             return True  # string content (pure text answer) -> done
         return False
     except Exception:
@@ -328,23 +358,24 @@ def _workflow_transcript_files(window: float = LIVENESS_WINDOW_SEC) -> list[str]
     try:
         override = os.environ.get("GLUDD_WORKFLOW_DIRS", "")
         if override:
-            results: list[str] = []
+            override_results: list[str] = []
             for d in override.split(":"):
                 d = d.strip()
                 if not d:
                     continue
-                results.extend(glob.glob(os.path.join(d, "*.jsonl")))
-                results.extend(glob.glob(os.path.join(d, "*.output")))
-            return results
+                override_results.extend(glob.glob(os.path.join(d, "*.jsonl")))
+                override_results.extend(glob.glob(os.path.join(d, "*.output")))
+            return override_results
 
         session_id = os.environ.get("GLUDD_SESSION_ID", "").strip()
-        uid = os.getuid()
         # Match the VERIFIED real filename (agent-*.jsonl) so journal.jsonl and
         # *.meta.json siblings are excluded. recursive=True lets ** span the
         # workflows/<runid>/ nesting level.
         session_dir_patterns = [
-            os.path.expanduser("~/.claude/projects/-Users-shawnwilson-gludd/*/"),
-            "/private/tmp/claude-%d/-Users-shawnwilson-gludd/*/" % uid,
+            os.path.expanduser(
+                f"~/.claude/projects/{_claude_project_slug()}/*/"
+            ),
+            os.path.join(_claude_sessions_base(), "*/"),
         ]
 
         now = time.time()
@@ -502,7 +533,7 @@ def _cache_file_for(tasks_dir: str | None) -> str:
         return override
     key = tasks_dir or "__unresolved__"
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:8]
-    return "/tmp/gludd-live-count-%s.json" % digest
+    return f"/tmp/gludd-live-count-{digest}.json"
 
 
 def _opencode_db_path() -> str | None:
@@ -543,7 +574,7 @@ def _count_opencode_live(window: float = LIVENESS_WINDOW_SEC) -> int:
     if not db:
         return 0
     try:
-        con = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=2.0)
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2.0)
     except sqlite3.Error:
         return 0
     try:
@@ -570,10 +601,8 @@ def _count_opencode_live(window: float = LIVENESS_WINDOW_SEC) -> int:
     except sqlite3.Error:
         return 0
     finally:
-        try:
+        with contextlib.suppress(Exception):
             con.close()
-        except Exception:
-            pass
 
 
 def _detect_harness() -> str:
@@ -599,7 +628,7 @@ def _read_cache(cache_file: str) -> tuple[float, int] | None:
     """Return (timestamp, count) from ``cache_file``, or None if missing/stale/
     unparseable. Caller decides freshness against CACHE_TTL_SEC."""
     try:
-        with open(cache_file, "r") as fh:
+        with open(cache_file) as fh:
             data = json.load(fh)
         ts = float(data["ts"])
         count = int(data["count"])
@@ -676,10 +705,15 @@ def main(argv: list[str]) -> int:
         if "--count" in argv:
             print(int(override))
         else:
-            print("[liveness] FLOOR_LIVE_OVERRIDE=%s (test seam active)" % override)
+            print(f"[liveness] FLOOR_LIVE_OVERRIDE={override} (test seam active)")
         return 0
 
     debug = "--debug" in argv
+    live: int
+    claude_n: int | None
+    oc_n: int | None
+    harness: str | None
+    cached: bool | None
 
     try:
         if debug:
@@ -702,19 +736,19 @@ def main(argv: list[str]) -> int:
     elif debug:
         lines = [
             "[liveness DEBUG]",
-            "  harness detected: %s" % harness,
-            "  claude backend live count:   %s" % claude_n,
-            "  opencode backend live count: %s" % oc_n,
-            "  cache used: %s" % cached,
-            "  reported (max): %d" % live,
+            f"  harness detected: {harness}",
+            f"  claude backend live count:   {claude_n}",
+            f"  opencode backend live count: {oc_n}",
+            f"  cache used: {cached}",
+            f"  reported (max): {live}",
         ]
         print("\n".join(lines))
     else:
         tasks = _tasks_dir()
         print(
-            "[liveness] live subagents (window=%.0fs + terminal-detection): "
-            "%d live  (dir=%s)"
-            % (LIVENESS_WINDOW_SEC, live, tasks)
+            f"[liveness] live subagents "
+            f"(window={LIVENESS_WINDOW_SEC:.0f}s + terminal-detection): "
+            f"{live} live  (dir={tasks})"
         )
     return 0
 

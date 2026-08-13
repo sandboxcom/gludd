@@ -90,7 +90,7 @@ class TestTerraformQemuLlamacppGeneration:
         )
         hcl = terraform_generator.generate(config)
         assert 'required_providers' in hcl
-        assert 'hashicorp/vsphere' in hcl
+        assert 'vmware/vsphere' in hcl
         assert 'module "vllm_server"' in hcl
         assert 'engine           = "llamacpp"' in hcl
         assert "models/llama-3.2-3b-Q4_K_M.gguf" in hcl

@@ -8,19 +8,17 @@ import json
 import os
 import re
 
-import pytest
-
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PLUGIN_DIR = os.path.join(PROJECT_ROOT, ".opencode", "plugin")
 LIB_DIR = os.path.join(PROJECT_ROOT, ".opencode", "lib")
 
 SESSION_START_TOOL_COUNT = 6  # TASKS.md, BUGS.md, SESSION.md, ratchet.yml, git-status, git-log
+HARD_ON_PLUGINS = frozenset({"enforce-no-suppressions.ts"})
 
 
 def all_plugin_files():
     """Return all .ts plugin files."""
-    if not os.path.isdir(PLUGIN_DIR):
-        pytest.skip("No .opencode/plugin/ directory")
+    assert os.path.isdir(PLUGIN_DIR), "Required .opencode/plugin directory is missing"
     return sorted(f for f in os.listdir(PLUGIN_DIR) if f.endswith(".ts"))
 
 
@@ -63,6 +61,8 @@ class TestSessionStartNoDeadlock:
         for fname in all_plugin_files():
             content = read_plugin(fname)
             if not plugin_has_default_impl(content):
+                continue
+            if fname in HARD_ON_PLUGINS:
                 continue
             has_disable = bool(re.search(
                 r'process\.env\.GLUDD_\w+_ENFORCE', content
@@ -113,8 +113,7 @@ class TestSessionStartNoDeadlock:
         """enforce-context.ts must not deny read tools. This was the confirmed
         deadlock vector: when SESSION.md was >24h stale, all tools were denied."""
         fpath = os.path.join(PLUGIN_DIR, "enforce-context.ts")
-        if not os.path.exists(fpath):
-            pytest.skip("enforce-context.ts not found")
+        assert os.path.isfile(fpath), "Required enforce-context.ts plugin is missing"
         with open(fpath) as f:
             content = f.read()
         assert "isReadTool" in content, (
@@ -160,8 +159,7 @@ class TestPluginToolAwareness:
     def test_plugin_count_matches_opencode_json(self):
         """opencode.json must reference all .ts files in plugin/ dir."""
         config_path = os.path.join(PROJECT_ROOT, "opencode.json")
-        if not os.path.exists(config_path):
-            pytest.skip("No opencode.json")
+        assert os.path.isfile(config_path), "Required opencode.json is missing"
         with open(config_path) as f:
             config = json.load(f)
         registered = set()
@@ -201,8 +199,7 @@ class TestPluginToolAwareness:
         """The isReadTool guard must be inside the defaultImpl block, not just
         the proxy wrapper."""
         fpath = os.path.join(PLUGIN_DIR, "enforce-context.ts")
-        if not os.path.exists(fpath):
-            pytest.skip("enforce-context.ts not found")
+        assert os.path.isfile(fpath), "Required enforce-context.ts plugin is missing"
         with open(fpath) as f:
             content = f.read()
         m = re.search(

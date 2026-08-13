@@ -46,6 +46,20 @@ def _plugin_source(name: str) -> str:
     return plugin_contract_source(plugin_dir / name)
 
 
+def _effective_plugin_source(name: str) -> str:
+    plugin_dir = _find_plugin_dir()
+    plugin_path = plugin_dir / name
+    source = plugin_path.read_text()
+    stem = plugin_path.stem
+    for candidate in (
+        plugin_dir / "impl" / f"{stem}_impl.ts",
+        plugin_dir / "impl" / f"{stem.replace('-', '_')}_impl.ts",
+    ):
+        if candidate.is_file():
+            return source + "\n" + candidate.read_text()
+    return source
+
+
 def _to_int(raw: str) -> int:
     return int(raw.replace("_", ""))
 
@@ -250,7 +264,7 @@ class TestDisengageSignal:
         ]
         self.test_shared_lib_defines_disengage_path()
         for name in plugins:
-            src = _plugin_source(name)
+            src = _effective_plugin_source(name)
             has_ref = (
                 "watchdog-disengage" in src
                 or "isDisengaged" in src
@@ -296,7 +310,7 @@ class TestDisengageSignal:
     def test_max_disengage_constant_same_across_plugins(self):
         constants = []
         for name in ["enforce-floor.ts", "enforce-delegate.ts", "enforce-stop.ts"]:
-            src = _plugin_source(name)
+            src = _effective_plugin_source(name)
             val = _extract_max_disengage_ms(src)
             constants.append(val)
         unique = set(constants)
@@ -306,7 +320,7 @@ class TestDisengageSignal:
         )
 
     def test_stop_plugin_block_counter_has_own_disengage_until(self):
-        src = _plugin_source("enforce-stop.ts")
+        src = _effective_plugin_source("enforce-stop.ts")
         has_field = "disengageUntil" in src
         assert has_field, (
             "enforce-stop.ts block counter should have disengageUntil"

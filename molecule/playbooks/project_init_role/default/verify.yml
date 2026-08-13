@@ -22,7 +22,7 @@
 
     - name: Assert all scaffold paths exist
       ansible.builtin.assert:
-        that: "{{ item.stat.exists }}"
+        that: item.stat.exists
         fail_msg: "missing scaffold path: {{ item.item }}"
         success_msg: "present: {{ item.item }}"
       loop: "{{ tree_stats.results }}"

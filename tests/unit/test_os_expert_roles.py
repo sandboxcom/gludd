@@ -24,6 +24,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -543,6 +544,26 @@ def test_macos_gather_has_functions(macos_gather):
         "gather",
     ):
         assert hasattr(macos_gather, fn), f"macos_gather missing {fn}"
+
+
+def test_macos_run_spools_command_output_and_caps_decoded_payload(
+    macos_gather, monkeypatch
+):
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured.update(kwargs)
+        kwargs["stdout"].write(b"x" * 64)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(macos_gather.subprocess, "run", fake_run)
+
+    result = macos_gather._run(["log", "show"], max_output_bytes=16)
+
+    assert result == "x" * 16
+    assert "capture_output" not in captured
+    assert "text" not in captured
+    assert captured["stderr"] is macos_gather.subprocess.DEVNULL
 
 
 def test_macos_parse_unified_log(macos_gather):

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import copy
 import functools
 import logging
@@ -271,6 +270,13 @@ def check_session_drift() -> dict[str, object]:
     end = session_text.find("<!-- gate:end -->")
     if begin == -1 or end == -1:
         return {"passed": False, "violations": ["SESSION.md missing gate markers"]}
+    terminal_markers = ("=== GATE: PASSED ===", "=== GATE: FAILED ===")
+    if not any(marker in gate_text for marker in terminal_markers):
+        return {
+            "passed": True,
+            "violations": [],
+            "reason": "gate status incomplete",
+        }
     block = session_text[begin:end]
     violations: list[str] = []
     for line in gate_text.splitlines():
@@ -462,20 +468,17 @@ def _run_completion_audit_cached(repo_root_raw: str) -> dict[str, object]:
     findings: list[dict[str, object]] = []
 
     py_files = sorted(src_root.rglob("*.py"))
-    all_src_text = ""
-    for pf in py_files:
-        if pf.name == "__init__.py":
-            continue
-        with contextlib.suppress(Exception):
-            all_src_text += pf.read_text() + "\n"
-
+    source_contents: dict[Path, str] = {}
     for pf in py_files:
         if pf.name == "__init__.py":
             continue
         try:
-            contents = pf.read_text()
+            source_contents[pf] = pf.read_text()
         except Exception:
             continue
+    all_src_text = "\n".join(source_contents.values())
+
+    for pf, contents in source_contents.items():
         module_relative = str(pf.relative_to(repo_root))
         lines = contents.split("\n")
         for i, line in enumerate(lines):

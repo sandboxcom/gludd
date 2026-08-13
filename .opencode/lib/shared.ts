@@ -24,7 +24,175 @@ export const ALIVE_PATH =
   process.env.GLUDD_ALIVE_PATH || "/tmp/gludd-plugin-alive.json"
 
 export const SUBAGENT_MARKER = (pid: number) =>
-  `/tmp/gludd-subagent-${pid}.json`
+  `${process.env.GLUDD_SUBAGENT_MARKER_PREFIX || "/tmp/gludd-subagent-"}${pid}.json`
+
+export interface GateRefreshProcess {
+  pid?: number
+  unref(): void
+}
+
+export type GateRefreshSpawner = (
+  command: string,
+  args: string[],
+  options: { cwd: string; detached: true; stdio: "ignore" },
+) => GateRefreshProcess
+
+interface GateRefreshLease {
+  pid: number
+  started_at: number
+  token: string
+}
+
+const GATE_REFRESH_STALE_MS = 300_000
+
+function _gateRefreshNamespace(root: string): string {
+  let hash = 2166136261
+  for (const character of root) {
+    hash ^= character.charCodeAt(0)
+    hash = Math.imul(hash, 16777619)
+  }
+  const name = path.basename(root).replace(/[^a-zA-Z0-9_-]/g, "-") || "workspace"
+  return `${name}-${(hash >>> 0).toString(16)}`
+}
+
+function _gateRefreshLeasePath(root: string): string {
+  return process.env.GLUDD_GATE_REFRESH_LEASE_PATH ||
+    `/tmp/gludd-gate-refresh-${_gateRefreshNamespace(root)}.json`
+}
+
+function _readGateRefreshLease(leasePath: string): GateRefreshLease | null {
+  try {
+    const value = JSON.parse(fs.readFileSync(leasePath, "utf8"))
+    if (
+      typeof value.pid === "number" &&
+      typeof value.started_at === "number" &&
+      typeof value.token === "string"
+    ) {
+      return value
+    }
+  } catch {}
+  return null
+}
+
+function _gateRefreshPidAlive(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function _createGateRefreshLease(
+  leasePath: string,
+  lease: GateRefreshLease,
+): boolean {
+  let descriptor: number | undefined
+  try {
+    descriptor = fs.openSync(leasePath, "wx", 0o600)
+    fs.writeFileSync(descriptor, JSON.stringify(lease), "utf8")
+    return true
+  } catch {
+    return false
+  } finally {
+    if (descriptor !== undefined) {
+      try {
+        fs.closeSync(descriptor)
+      } catch {}
+    }
+  }
+}
+
+function _removeOwnedGateRefreshLease(
+  leasePath: string,
+  token: string,
+): void {
+  try {
+    if (_readGateRefreshLease(leasePath)?.token === token) {
+      fs.unlinkSync(leasePath)
+    }
+  } catch {}
+}
+
+function _claimGateRefreshLease(
+  leasePath: string,
+  lease: GateRefreshLease,
+): boolean {
+  const reaperPath = `${leasePath}.reaper`
+  if (fs.existsSync(reaperPath)) return false
+  if (_createGateRefreshLease(leasePath, lease)) return true
+
+  const existing = _readGateRefreshLease(leasePath)
+  if (existing && _gateRefreshPidAlive(existing.pid)) return false
+
+  let reaperDescriptor: number | undefined
+  try {
+    reaperDescriptor = fs.openSync(reaperPath, "wx", 0o600)
+  } catch {
+    return false
+  }
+  try {
+    const current = _readGateRefreshLease(leasePath)
+    if (current && _gateRefreshPidAlive(current.pid)) return false
+    try {
+      fs.unlinkSync(leasePath)
+    } catch {}
+    return _createGateRefreshLease(leasePath, lease)
+  } finally {
+    try {
+      if (reaperDescriptor !== undefined) fs.closeSync(reaperDescriptor)
+    } catch {}
+    try {
+      fs.unlinkSync(reaperPath)
+    } catch {}
+  }
+}
+
+export function spawnGateRefreshIfStale(
+  root: string,
+  spawnProcess: GateRefreshSpawner,
+): boolean {
+  if (process.env.GLUDD_GATE_REFRESH_AUTOSPAWN === "0") return false
+  try {
+    const gatePath = path.join(root, ".gate-status")
+    if (!fs.existsSync(gatePath)) return false
+    if ((Date.now() - fs.statSync(gatePath).mtimeMs) <= GATE_REFRESH_STALE_MS) {
+      return false
+    }
+
+    const leasePath = _gateRefreshLeasePath(root)
+    const token = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const lease: GateRefreshLease = {
+      pid: process.pid,
+      started_at: Date.now(),
+      token,
+    }
+    if (!_claimGateRefreshLease(leasePath, lease)) return false
+
+    try {
+      const child = spawnProcess("make", ["gate-refresh"], {
+        cwd: root,
+        detached: true,
+        stdio: "ignore",
+      })
+      if (Number.isSafeInteger(child.pid) && Number(child.pid) > 0) {
+        fs.writeFileSync(
+          leasePath,
+          JSON.stringify({ ...lease, pid: Number(child.pid) }),
+          "utf8",
+        )
+      }
+      child.unref()
+      return true
+    } catch {
+      _removeOwnedGateRefreshLease(leasePath, token)
+      return false
+    }
+  } catch {
+    return false
+  }
+}
 
 // ── Subagent guard ────────────────────────────────────────────────────────
 // Every plugin must skip enforcement inside a subagent context.
@@ -47,7 +215,7 @@ export function isSubagent(): boolean {
 // expired, clamped) disengage_until timestamp is in effect.
 
 export interface DisengageOpts {
-  maxMs?: number // maximum forward duration (default 3_600_000 = 1 hour)
+  maxMs?: number // maximum forward duration (default 300_000 = 5 minutes)
 }
 
 const _sessionUuid = `${process.pid}-${Math.floor(Date.now() / 1000)}`

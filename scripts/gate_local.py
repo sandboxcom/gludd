@@ -1,46 +1,138 @@
-"""Local gate â€” full phases, full test suite, no shell quoting."""
-import subprocess, sys, os, time, pathllib
+#!/usr/bin/env python3
+"""Run the local quality gate without shell command interpolation."""
 
-DEFAULT_TIMEOUT = 600  # 10 min per phase
+from __future__ import annotations
+
+import subprocess
+import sys
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_TIMEOUT = 600
+GATE_FILE = REPO_ROOT / ".gate-status"
+
+Phase = tuple[str, tuple[str, ...]]
+PHASES: tuple[Phase, ...] = (
+    (
+        "lint",
+        (
+            sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            "src",
+            "tests",
+            "--output-format",
+            "concise",
+        ),
+    ),
+    ("typecheck", (sys.executable, "-m", "mypy", "-p", "general_ludd")),
+    (
+        "collect",
+        (
+            sys.executable,
+            "-m",
+            "pytest",
+            "--collect-only",
+            "tests",
+            "-q",
+            "--no-header",
+        ),
+    ),
+    ("hook-runtime", ("make", "--no-print-directory", "test-hook-runtime")),
+    (
+        "test",
+        (
+            sys.executable,
+            "-m",
+            "pytest",
+            "tests/unit",
+            "-q",
+            "--no-header",
+        ),
+    ),
+    ("smoke", ("make", "--no-print-directory", "smoke")),
+)
 
 
-def run(cmd, log=None, timeout=DEFAULT_TIMEOUT):
+def _write_log(
+    log_path: Path,
+    stdout: str | None,
+    stderr: str | None,
+) -> None:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text((stdout or "") + (stderr or ""), encoding="utf-8")
+
+
+def run(
+    command: Sequence[str],
+    *,
+    log: Path | str | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> tuple[bool, subprocess.CompletedProcess[str] | None]:
+    """Run one phase and return its success state and completed process.
+
+    Calls without a log inherit the terminal streams so long phases remain
+    observable. A caller that requests a log receives captured UTF-8 output.
+    """
+    log_path = Path(log) if log is not None else None
     try:
-        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
-        if log:
-            pathlib.Path(log).parent.mkdir(parents=True, exist_ok=True)
-            with open(log, "w") as f:
-                f.write(r.stdout + r.stderr)
-        return r.returncode == 0, r
-    except subprocess.TimeoutExpired:
-        if log:
-            with open(log, "w") as f:
-                f.write("TIMEOUT after {}s".format(timeout))
-        return False, One
-
-    except Exception as e:
-        if log:
-            with open(log, "w") as f:
-                f.write(str(e))
+        completed = subprocess.run(
+            tuple(command),
+            cwd=REPO_ROOT,
+            capture_output=log_path is not None,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        if log_path is not None:
+            _write_log(
+                log_path,
+                f"TIMEOUT after {timeout:g}s\n",
+                str(exc),
+            )
+        return False, None
+    except OSError as exc:
+        if log_path is not None:
+            _write_log(log_path, "", f"{exc}\n")
         return False, None
 
-
-"""
-Phases: (pase_name, cmd, is_broken_indicator)
-Full unit tests run serially (no xdist) to avoid OOM on local.
-"""
-phases = [
-    ("lint", "uv run ruff check src tests --output-format concise", False),
-    ("typecheck", "uv run mypy -p general_ludd", False),
-    ("collect", "uv run python -m pytest --collect-only tests/ -q --no-header", False),
-    ("hook-runtime", "make --no-print-directory test-hook-runtime", False),
-    ("test", "uv run python -m pytest tests/unit/ -q --no-header", True),  # serial, no xdist
-    ("smoke", "make --no-print-directory smoke", False),
-]
+    if log_path is not None:
+        _write_log(log_path, completed.stdout, completed.stderr)
+    return completed.returncode == 0, completed
 
 
-gate_file = ".gate-status"
-os.chdir(os.path.dirname(os.path.dirname(__file__)))
+def _record(status_file: Path, message: str) -> None:
+    print(message, flush=True)
+    with status_file.open("a", encoding="utf-8") as stream:
+        stream.write(f"{message}\n")
 
-with open(gate_file, "w") as gf:
-    gf.write(f"=== GATE-LOCAL {time.strftime('%Y-%m-%d%T0• è•4•h•Lœ°Ñ¥µ”¹µÑ¥µ” ¤¥ô€ôôõq¸ˆ¤(€€€™…¥±•€ô…±Í”(€€€™½È¹…µ”°µ°‰É•…­…‰±”¥¸Á¡…Í•Ìè(€€€€€€€ÁÉ¥¹Ð¡˜ˆôôôQA!Mèí¹…µ•ô€ôôôˆ¤(€€€€€€€½¬°É•ÍÕ±Ð€ôÉÕ¸¡µ°˜ˆ¹…Ñ”µ±½Ì½…Ñ”µ±½…°µí¹…µ•ô¹±½œˆ¤(€€€€€€€¥˜½¬è(€€€€€€€€€€€˜¹ÝÉ¥Ñ”¡˜‰í¹…µ•ôAML€Áq¸ˆ¤(€€€€€€€€€€€ÁÉ¥¹Ð ˆ€AMLˆ¤(€€€€€€€•±Í”è(€€€€€€€€€€€˜¹ÝÉ¥Ñ”¡˜‰í¹…µ•ô%1q¸ˆ¤(€€€€€€€€€€€™…¥±•€ôQÉÕ”(€€€€€€€€€€€ÁÉ¥¹Ð ˆ€%0ˆ¤(€€€€€€€€€€€¥˜É•ÍÕ±Ðè(€€€€€€€€€€€€€€€±¥¹•Ì€ô€¡É•ÍÕ±Ð¹ÍÑ‘½ÕÐ€¬É•ÍÕ±Ð¹ÍÑ‘•ÉÈ¤¹ÍÑÉ¥À ¤¹ÍÁ±¥Ð ‰q¸ˆ¤(€€€€€€€€€€€€€€€™½È°¥¸±¥¹•Íl´ÄÀèétè(€€€€€€€€€€€€€€€€€€€ÁÉ¥¹Ð¡˜ˆ€€€í±ôˆ¤(€€€€€€€€€€€¥˜‰É•…­…‰±”è(€€€€€€€€€€€€€€€‰É•…¬€€ŒÍÑ½À¥˜Ñ•ÍÑÌ™…¥°…¹Ý”…¸Ð½¹Ñ¥¹Õ”(€€€˜¹ÝÉ¥Ñ” ˆ´´µq¸ˆ¤(€€€˜¹ÝÉ¥Ñ”¡˜‰•Á½ í¥¹Ð¡Ñ¥µ”¹Ñ¥µ” ¤¥õq¸ˆ¤(€€€¥˜™…¥±•è(€€€€€€€˜¹ÝÉ¥Ñ” ˆôôôQè%1€ôôõq¸ˆ¤(€€€€€€€ÍåÌ¹•á¥Ð Ä¤(€€€•±Í”è(€€€€€€€˜¹ÝÉ¥Ñ” ˆôôôQèAMM€ôôõq¸ˆ¤(€€€€€€€ÁÉ¥¹Ð ˆôôôQµ1=0èAMM€ôôôˆ¤(
+
+def main(*, gate_file: Path | None = None) -> int:
+    """Run all phases in order and stop at the first failure."""
+    status_file = gate_file or GATE_FILE
+    status_file.parent.mkdir(parents=True, exist_ok=True)
+    started_at = datetime.now(UTC).isoformat(timespec="seconds")
+    status_file.write_text(
+        f"=== GATE-LOCAL {started_at} ===\n",
+        encoding="utf-8",
+    )
+
+    for name, command in PHASES:
+        _record(status_file, f"{name}: RUNNING")
+        succeeded, _completed = run(command)
+        result = "PASS" if succeeded else "FAIL"
+        _record(status_file, f"{name}: {result}")
+        if not succeeded:
+            _record(status_file, "GATE-LOCAL: FAIL")
+            return 1
+
+    _record(status_file, "GATE-LOCAL: PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

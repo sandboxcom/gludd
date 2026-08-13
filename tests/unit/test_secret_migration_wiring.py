@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -20,6 +21,18 @@ def _reset_daemon_state():
 
 
 class TestSecretMigrationInDaemonStartup:
+    def test_lifespan_closes_embedding_session_before_engine_disposal(self):
+        source = inspect.getsource(daemon_mod._lifespan)
+
+        close_session = source.index("await _embedding_session_ref.close()")
+        dispose_engine = source.index("await engine.dispose()", close_session - 500)
+
+        assert close_session < dispose_engine, (
+            "the app-scoped AsyncSession must release its SQLite connection "
+            "before engine.dispose(); disposing the engine first leaves delayed "
+            "sqlite3.Connection finalizers in xdist workers"
+        )
+
     def test_migrate_called_when_openbao_configured(self, tmp_path, monkeypatch):
         monkeypatch.setenv("TEST_MIGRATE_KEY", "sk-migrated-12345")
 

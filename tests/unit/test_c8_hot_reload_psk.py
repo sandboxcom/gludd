@@ -17,7 +17,7 @@ from general_ludd.routers.reload import register
 from general_ludd.security.auth import check_bearer_token
 
 _PSK = "test-secret-psk"
-_SAFE_WORKER = "https://worker-1.internal:8000"
+_SAFE_WORKER = "https://worker-1.internal.example.com:8000"
 
 
 def _build_client() -> TestClient:
@@ -76,7 +76,7 @@ def test_worker_registration_with_valid_psk() -> None:
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["success"] is True
+    assert data["success"] is True, data
     assert data["worker_id"] == "w1"
 
     list_resp = client.get(

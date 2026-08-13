@@ -54,6 +54,23 @@ _read_multitask_state = aw._read_multitask_state
 MULTITASK_STATE_FILE = aw.MULTITASK_STATE_FILE
 PURE_IDLE_DIRECTIVE = aw.PURE_IDLE_DIRECTIVE
 pending_work_exists = aw._pending_work_exists
+
+
+@pytest.fixture(autouse=True)
+def _isolate_watchdog_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep every watchdog unit case free of real make/network subprocesses."""
+
+    def _no_external_subprocess(cmd, *_args, **_kwargs):
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr(aw.subprocess, "run", _no_external_subprocess)
+
+
 # ── script exists ─────────────────────────────────────────────────────────────
 
 
@@ -634,6 +651,9 @@ def test_watchdog_ignores_normal_tasks(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 def _setup_full(monkeypatch, tmp_path):
+    # check_and_reset() includes periodic CI, release, plugin-liveness, and
+    # secrets checks. The autouse subprocess fixture keeps these paths
+    # deterministic; concurrent real scans can OOM-kill a sibling worker.
     monkeypatch.setattr(aw, "STREAK_FILE", str(tmp_path / "streak.json"))
     monkeypatch.setattr(aw, "WATCHDOG_ACTIVITY_FILE", str(tmp_path / "watchdog-activity.json"))
     monkeypatch.setattr(aw, "TODOWRITE_STATE", str(tmp_path / "todos.json"))

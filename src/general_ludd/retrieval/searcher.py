@@ -8,9 +8,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-import diskcache
-
 from general_ludd.retrieval.indexer import _cosine_similarity, _tokenize
+from general_ludd.security.safe_diskcache import open_safe_diskcache
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,7 @@ class SemanticSearcher:
         path = os.path.expanduser(os.path.expandvars(str(cache_dir)))
         self._cache_dir = path
         if os.path.isdir(path):
-            self._cache: Any | None = diskcache.Cache(path)
+            self._cache: Any | None = open_safe_diskcache(path)
         else:
             self._cache = None
 

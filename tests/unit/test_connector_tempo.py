@@ -100,6 +100,23 @@ class TestContract:
 
 
 class TestSummaryNormalization:
+    def test_callable_tuple_transport_compatibility(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def transport(method: str, url: str, **_: object) -> tuple[int, object]:
+            calls.append((method, url))
+            return 200, CANNED_SEARCH
+
+        records = _source(transport).query({"traceql": "{}"})
+
+        assert len(records) == 2
+        assert calls == [
+            (
+                "GET",
+                "https://tempo.example.com/api/search?q=%7B%7D",
+            )
+        ]
+
     def test_one_record_per_trace(self) -> None:
         transport = FakeTransport([("/api/search", 200, CANNED_SEARCH)])
         recs = _source(transport).query()

@@ -603,8 +603,11 @@ class TestConfigChainWithDaemon:
         try:
             if not wait_for_url(f"{base_url}/healthz", timeout=40.0):
                 proc.terminate()
-                proc.wait(timeout=10)
-                pytest.skip("daemon did not become healthy")
+                out, err = proc.communicate(timeout=10)
+                pytest.fail(
+                    "daemon did not become healthy\n"
+                    f"stdout={out!r}\nstderr={err!r}"
+                )
             resp = httpx.get(f"{base_url}/healthz", timeout=5.0)
             assert resp.status_code == 200
             assert resp.json()["status"] == "healthy"
@@ -641,8 +644,11 @@ class TestConfigChainWithDaemon:
         try:
             if not wait_for_url(f"{base_url}/healthz", timeout=40.0):
                 proc.terminate()
-                proc.wait(timeout=10)
-                pytest.skip("daemon did not become healthy")
+                out, err = proc.communicate(timeout=10)
+                pytest.fail(
+                    "daemon did not become healthy\n"
+                    f"stdout={out!r}\nstderr={err!r}"
+                )
             resp = httpx.get(f"{base_url}/admin/models", timeout=10.0)
             assert resp.status_code == 200
             data = resp.json()
@@ -676,8 +682,11 @@ class TestConfigChainWithDaemon:
         try:
             if not wait_for_url(f"{base_url}/healthz", timeout=40.0):
                 proc.terminate()
-                proc.wait(timeout=10)
-                pytest.skip("daemon did not become healthy")
+                out, err = proc.communicate(timeout=10)
+                pytest.fail(
+                    "daemon did not become healthy\n"
+                    f"stdout={out!r}\nstderr={err!r}"
+                )
 
             result = run_gludd(
                 ["models", "list", "--daemon-url", base_url], timeout=20
@@ -713,8 +722,11 @@ class TestConfigChainWithDaemon:
         try:
             if not wait_for_url(f"{base_url}/healthz", timeout=40.0):
                 proc.terminate()
-                proc.wait(timeout=10)
-                pytest.skip("daemon did not become healthy")
+                out, err = proc.communicate(timeout=10)
+                pytest.fail(
+                    "daemon did not become healthy\n"
+                    f"stdout={out!r}\nstderr={err!r}"
+                )
 
             result = run_gludd(
                 ["health", "--daemon-url", base_url], timeout=20

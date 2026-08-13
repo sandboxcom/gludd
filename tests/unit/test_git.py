@@ -169,7 +169,7 @@ class TestWorktrees:
     def test_create_worktree_rejects_non_gludd_temp_root(self, repo_with_commit):
         git, repo_path, _tmp_path = repo_with_commit
         worktree_path = str(
-            Path(tempfile.gettempdir()) / f"not-gludd-{uuid.uuid4().hex}" / "wt"
+            Path("/tmp") / f"not-gludd-{uuid.uuid4().hex}" / "wt"
         )
 
         result = git.create_worktree(

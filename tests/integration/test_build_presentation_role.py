@@ -129,6 +129,32 @@ def test_tasks_validate_mermaid_syntax() -> None:
     )
 
 
+def test_mermaid_find_is_guarded_by_directory_stat() -> None:
+    """Absent presentation directories must not be passed to ``find``.
+
+    ``ansible.builtin.find`` succeeds but emits a warning for a missing or
+    non-directory path.  The role supports build-only runs where the reveal.js
+    directory is intentionally absent, so it must stat the directory and skip
+    the search without producing that warning.
+    """
+    tasks = _load_role_tasks()
+    stat_index = next(
+        index
+        for index, task in enumerate(tasks)
+        if task.get("register") == "_bp_presentation_dir_stat"
+    )
+    find_index, find_task = next(
+        (index, task)
+        for index, task in enumerate(tasks)
+        if task.get("register") == "_bp_mmd_files"
+    )
+
+    assert stat_index < find_index
+    conditions = json.dumps(find_task.get("when", []))
+    assert "_bp_presentation_dir_stat.stat.exists" in conditions
+    assert "_bp_presentation_dir_stat.stat.isdir" in conditions
+
+
 def test_defaults_declare_mermaid_toggle() -> None:
     """defaults/main.yml must declare the mermaid validation toggle."""
     defaults = _load_yaml(ROLE_DIR / "defaults" / "main.yml")

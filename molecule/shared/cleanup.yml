@@ -1,0 +1,79 @@
+---
+- name: Clean only the mock daemon owned by this scenario checkout
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') }}.pid"
+  tasks:
+    - name: Inspect the namespaced mock-daemon pidfile
+      ansible.builtin.stat:
+        path: "{{ pidfile }}"
+      register: _gludd_mock_pidfile
+
+    - name: Read the namespaced mock-daemon pid
+      ansible.builtin.slurp:
+        src: "{{ pidfile }}"
+      register: _gludd_mock_pid_raw
+      when: _gludd_mock_pidfile.stat.exists
+
+    - name: Decode the namespaced mock-daemon pid
+      ansible.builtin.set_fact:
+        _gludd_mock_pid: "{{ _gludd_mock_pid_raw.content | b64decode | trim }}"
+      when: _gludd_mock_pidfile.stat.exists
+
+    - name: Inspect the candidate process without changing it
+      ansible.builtin.command:
+        argv:
+          - ps
+          - -p
+          - "{{ _gludd_mock_pid }}"
+          - -o
+          - command=
+      register: _gludd_mock_ps
+      changed_when: false
+      failed_when: false
+      when: _gludd_mock_pidfile.stat.exists
+
+    - name: Prove the process belongs to this checkout and port
+      ansible.builtin.set_fact:
+        _gludd_mock_owned: >-
+          {{
+            _gludd_mock_ps.rc == 0
+            and (project_dir ~ '/molecule/mock_daemon/server.py')
+              in _gludd_mock_ps.stdout
+            and ('--port ' ~ mock_port) in _gludd_mock_ps.stdout
+          }}
+      when: _gludd_mock_pidfile.stat.exists
+
+    - name: Stop the scenario-owned mock daemon
+      ansible.builtin.command:
+        argv:
+          - /bin/kill
+          - "{{ _gludd_mock_pid }}"
+      changed_when: true
+      when:
+        - _gludd_mock_pidfile.stat.exists
+        - _gludd_mock_owned | default(false) | bool
+
+    - name: Wait for the scenario-owned mock daemon port to close
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ mock_port | int }}"
+        state: stopped
+        timeout: 10
+      when:
+        - _gludd_mock_pidfile.stat.exists
+        - _gludd_mock_owned | default(false) | bool
+
+    - name: Remove only an owned or stale pidfile
+      ansible.builtin.file:
+        path: "{{ pidfile }}"
+        state: absent
+      when:
+        - _gludd_mock_pidfile.stat.exists
+        - >-
+          (_gludd_mock_owned | default(false) | bool)
+          or (_gludd_mock_ps.rc | default(1) != 0)

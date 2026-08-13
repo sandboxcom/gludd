@@ -21,7 +21,6 @@ import argparse
 import ast
 import json
 import sys
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -136,9 +135,6 @@ def _referenced_names(file_path: Path, name_set: set[str]) -> set[str]:
                 found.add(root_name)
             if node.asname in name_set:
                 found.add(node.asname)
-        elif isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            if node.name in name_set:
-                found.add(node.name)
     return found
 
 
@@ -149,7 +145,6 @@ def _build_ref_map(symbols: list[Symbol], files: list[Path], repo_root: Path) ->
     repo-wide regex with every symbol name alternated into it.
     """
     name_set = {s.name for s in symbols}
-    def_files: dict[str, str] = {s.name: s.file for s in symbols}
     refs: dict[str, set[str]] = {n: set() for n in name_set}
 
     if not name_set:
@@ -158,8 +153,7 @@ def _build_ref_map(symbols: list[Symbol], files: list[Path], repo_root: Path) ->
     for f in files:
         rel = str(f.relative_to(repo_root))
         for name in _referenced_names(f, name_set):
-            if def_files.get(name) != rel:
-                refs[name].add(rel)
+            refs[name].add(rel)
 
     return refs
 

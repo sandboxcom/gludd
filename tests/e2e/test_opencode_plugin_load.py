@@ -31,8 +31,7 @@ NODE_BIN = "node"
 
 def _run_verifier() -> dict:
     """Run the Node.js verifier script and return parsed JSON results."""
-    if not VERIFIER_SCRIPT.exists():
-        pytest.skip(f"Verifier script not found: {VERIFIER_SCRIPT}")
+    assert VERIFIER_SCRIPT.is_file(), f"Verifier script not found: {VERIFIER_SCRIPT}"
 
     result = subprocess.run(
         [NODE_BIN, "--experimental-strip-types", str(VERIFIER_SCRIPT)],
@@ -93,8 +92,7 @@ class TestPluginDirectoryHygiene:
 
     def test_no_underscore_prefixed_ts_files_in_plugin_dir(self):
         """Files like _exports.ts are auto-discovered and crash opencode."""
-        if not PLUGIN_DIR.exists():
-            pytest.skip("No .opencode/plugin directory")
+        assert PLUGIN_DIR.is_dir(), "Required .opencode/plugin directory is missing"
         unders = [f for f in PLUGIN_DIR.iterdir()
                    if f.name.startswith("_") and f.suffix == ".ts"]
         assert len(unders) == 0, (
@@ -115,8 +113,7 @@ class TestPluginDirectoryHygiene:
 
     def test_all_ts_files_export_valid_plugin_factory(self):
         """Every .ts file must export a function (or be explicitly allowlisted)."""
-        if not PLUGIN_DIR.exists():
-            pytest.skip("No .opencode/plugin directory")
+        assert PLUGIN_DIR.is_dir(), "Required .opencode/plugin directory is missing"
         ts_files = list(PLUGIN_DIR.glob("*.ts"))
         assert len(ts_files) > 0, "No .ts files in .opencode/plugin/"
 
@@ -135,8 +132,7 @@ class TestOpencodeConfig:
     def test_schema_present(self):
         """$schema must point to the published config schema."""
         cfg_path = PROJECT_ROOT / "opencode.json"
-        if not cfg_path.exists():
-            pytest.skip("No opencode.json")
+        assert cfg_path.is_file(), "Required opencode.json is missing"
         cfg = json.loads(cfg_path.read_text())
         assert cfg.get("$schema") == "https://opencode.ai/config.json", (
             f"$schema is {cfg.get('$schema')}"
@@ -153,8 +149,7 @@ class TestOpencodeConfig:
             "tool_output", "compaction",
         }
         cfg_path = PROJECT_ROOT / "opencode.json"
-        if not cfg_path.exists():
-            pytest.skip("No opencode.json")
+        assert cfg_path.is_file(), "Required opencode.json is missing"
         cfg = json.loads(cfg_path.read_text())
         unknown = set(cfg.keys()) - KNOWN_KEYS
         assert len(unknown) == 0, (
@@ -164,8 +159,7 @@ class TestOpencodeConfig:
     def test_all_registered_plugins_exist_on_disk(self):
         """Every path in the plugin array must resolve to an existing file."""
         cfg_path = PROJECT_ROOT / "opencode.json"
-        if not cfg_path.exists():
-            pytest.skip("No opencode.json")
+        assert cfg_path.is_file(), "Required opencode.json is missing"
         cfg = json.loads(cfg_path.read_text())
         plugins = cfg.get("plugin", [])
         if not plugins:
@@ -184,8 +178,7 @@ class TestOpencodeConfig:
     def test_make_allow_before_star_deny(self):
         """Permission ordering: 'make *: allow' must come BEFORE '*: deny' (last-match-wins)."""
         cfg_path = PROJECT_ROOT / "opencode.json"
-        if not cfg_path.exists():
-            pytest.skip("No opencode.json")
+        assert cfg_path.is_file(), "Required opencode.json is missing"
         cfg = json.loads(cfg_path.read_text())
         bash_perms = cfg.get("permission", {}).get("bash", {})
         if isinstance(bash_perms, list):
@@ -284,8 +277,7 @@ class TestSubagentGuard:
 
     def test_all_enforcement_plugins_have_subagent_guard(self):
         """OPENCODE_SUBAGENT (or isSubagent/GLUDD_SUBAGENT) check present."""
-        if not PLUGIN_DIR.exists():
-            pytest.skip("No .opencode/plugin directory")
+        assert PLUGIN_DIR.is_dir(), "Required .opencode/plugin directory is missing"
         missing = []
         for f in sorted(PLUGIN_DIR.glob("*.ts")):
             # Skip shared utilities that aren't enforcement plugins

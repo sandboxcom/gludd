@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import diskcache
+from general_ludd.security.safe_diskcache import open_safe_diskcache
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ class LocalAgentMemory:
         path = os.path.expanduser(os.path.expandvars(str(cache_dir)))
         os.makedirs(path, mode=0o700, exist_ok=True)
         self._cache_dir = path
-        self._cache: diskcache.Cache = diskcache.Cache(path)
+        self._cache = open_safe_diskcache(path)
         self._index_prefix = "idx"
 
     @staticmethod
@@ -103,7 +103,14 @@ class LocalAgentMemory:
         data = self._cache.get(cache_key, default=None)
         if data is None:
             return None
-        record = MemoryRecord.from_dict(data)
+        if not isinstance(data, dict) or not all(
+            isinstance(key, str) for key in data
+        ):
+            return None
+        record_data: dict[str, object] = {
+            key: value for key, value in data.items() if isinstance(key, str)
+        }
+        record = MemoryRecord.from_dict(record_data)
         if self._is_expired(record):
             await self.delete(agent_id, key, namespace, project_id)
             return None
@@ -133,11 +140,10 @@ class LocalAgentMemory:
         idx_key = self._index_key(agent_id, namespace, project_id)
         expire = (now + ttl_seconds) if ttl_seconds else None
         self._cache.set(cache_key, record.as_dict(), expire=expire)
-        keys = self._cache.get(idx_key, default=set())
-        if not isinstance(keys, set):
-            keys = set()
+        stored_keys = self._cache.get(idx_key, default=[])
+        keys = set(stored_keys) if isinstance(stored_keys, list) else set()
         keys.add(key)
-        self._cache.set(idx_key, keys)
+        self._cache.set(idx_key, sorted(keys))
         return record
 
     async def delete(
@@ -147,12 +153,11 @@ class LocalAgentMemory:
         idx_key = self._index_key(agent_id, namespace, project_id)
         existed = cache_key in self._cache
         self._cache.delete(cache_key)
-        keys = self._cache.get(idx_key, default=set())
-        if not isinstance(keys, set):
-            keys = set()
+        stored_keys = self._cache.get(idx_key, default=[])
+        keys = set(stored_keys) if isinstance(stored_keys, list) else set()
         keys.discard(key)
         if keys:
-            self._cache.set(idx_key, keys)
+            self._cache.set(idx_key, sorted(keys))
         else:
             self._cache.delete(idx_key)
         return existed
@@ -165,9 +170,10 @@ class LocalAgentMemory:
         limit: int = 100,
     ) -> list[MemoryRecord]:
         idx_key = self._index_key(agent_id, namespace, project_id)
-        keys: set[str] = self._cache.get(idx_key, default=set())
-        if not isinstance(keys, set):
-            keys = set()
+        stored_keys = self._cache.get(idx_key, default=[])
+        keys: set[str] = (
+            set(stored_keys) if isinstance(stored_keys, list) else set()
+        )
         results: list[MemoryRecord] = []
         for key in sorted(keys):
             record = await self.get(agent_id, key, namespace, project_id)
@@ -180,17 +186,26 @@ class LocalAgentMemory:
     async def purge_expired(self) -> int:
         purged = 0
         for cache_key_bytes in list(self._cache):
-            cache_key = (
-                cache_key_bytes if isinstance(cache_key_bytes, str)
-                else cache_key_bytes.decode(errors="replace")
-            )
+            if isinstance(cache_key_bytes, str):
+                cache_key = cache_key_bytes
+            elif isinstance(cache_key_bytes, bytes):
+                cache_key = cache_key_bytes.decode(errors="replace")
+            else:
+                continue
             if cache_key.startswith(self._index_prefix):
                 continue
-            data = self._cache.get(cache_key, default=None, read=True)
+            data = self._cache.get(cache_key, default=None)
             if data is None:
                 self._cache.delete(cache_key)
                 continue
-            record = MemoryRecord.from_dict(data)
+            if not isinstance(data, dict) or not all(
+                isinstance(key, str) for key in data
+            ):
+                continue
+            record_data: dict[str, object] = {
+                key: value for key, value in data.items() if isinstance(key, str)
+            }
+            record = MemoryRecord.from_dict(record_data)
             if self._is_expired(record):
                 await self.delete(record.agent_id, record.key, record.namespace, record.project_id)
                 purged += 1

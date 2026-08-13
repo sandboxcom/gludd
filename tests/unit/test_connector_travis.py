@@ -66,6 +66,33 @@ def test_query_normalizes_builds() -> None:
     assert set(first) == {"ts", "source", "kind", "level_or_status", "message", "value", "labels", "raw"}
 
 
+def test_http_get_and_repository_alias_accept_decoded_json() -> None:
+    calls: list[tuple[str, dict[str, str]]] = []
+
+    def http_get(url: str, headers: dict[str, str]) -> tuple[int, object]:
+        calls.append((url, headers))
+        return 200, CANNED_RESPONSE
+
+    src = TravisSource(
+        {"repository": "acme/api", "token_env": "TRAVIS_TEST_TOKEN"},
+        http_get=http_get,
+    )
+
+    events = src.query()
+
+    assert len(events) == 2
+    assert calls[0][0].endswith("/repo/acme%2Fapi/builds")
+
+
+def test_transport_and_http_get_are_mutually_exclusive() -> None:
+    with pytest.raises(ValueError, match=r"transport.*http_get"):
+        TravisSource(
+            _config(),
+            transport=_FakeTransport(200, b"{}"),
+            http_get=lambda _url, _headers: (200, {}),
+        )
+
+
 def test_query_handles_missing_commit() -> None:
     transport = _FakeTransport(200, json.dumps(CANNED_RESPONSE).encode())
     src = TravisSource(_config(), transport=transport)

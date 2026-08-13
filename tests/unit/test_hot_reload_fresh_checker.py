@@ -48,6 +48,16 @@ class TestStaleArtifactDetection:
         content = "function foo(name: string) { return name; }\n"
         assert mod.is_stale_content(content) != []
 
+    def test_esbuild_void_ternary_is_valid_javascript(self):
+        mod = _load_module()
+        content = (
+            "async function invoke(hooks, name, input, output) {\n"
+            "  const fn = hooks[name];\n"
+            "  return fn ? await fn(input, output) : void 0;\n"
+            "}\n"
+        )
+        assert mod.is_stale_content(content) == []
+
     def test_surviving_export_const_is_stale(self):
         mod = _load_module()
         content = "export const FLOOR = 10;\n"
@@ -62,3 +72,33 @@ class TestStaleArtifactDetection:
         mod = _load_module()
         content = 'var url = "https://opencode.ai"; export const X = 1;\n'
         assert mod.is_stale_content(content) != []
+
+
+def test_hot_module_name_matches_proxy_lookup(tmp_path):
+    mod = _load_module()
+    source = tmp_path / "enforce-example.ts"
+    source.write_text(
+        'const defaultImpl = {};\nloadHotModule("example", defaultImpl);\n',
+        encoding="utf-8",
+    )
+
+    assert mod.hot_module_name(source, "enforce-example") == "example"
+
+
+def test_implementation_source_follows_thin_proxy(tmp_path):
+    mod = _load_module()
+    plugin_dir = tmp_path / "plugin"
+    impl_dir = plugin_dir / "impl"
+    impl_dir.mkdir(parents=True)
+    wrapper = plugin_dir / "enforce-example.ts"
+    implementation = impl_dir / "enforce_example_impl.ts"
+    wrapper.write_text(
+        'import impl from "./impl/enforce_example_impl.ts";\nexport default impl;\n',
+        encoding="utf-8",
+    )
+    implementation.write_text(
+        'const defaultImpl = {};\nloadHotModule("example", defaultImpl);\n',
+        encoding="utf-8",
+    )
+
+    assert mod.implementation_source(wrapper) == implementation

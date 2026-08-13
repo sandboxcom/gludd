@@ -60,6 +60,62 @@ class Transport(Protocol):
         ...
 
 
+@runtime_checkable
+class TransportInput(Protocol):
+    """Transport input that may return the shared ``(status, body)`` tuple."""
+
+    def __call__(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, str] | None = None,
+        timeout: float = 30.0,
+    ) -> HttpResponse | tuple[int, object]: ...
+
+
+class _CallbackResponse:
+    def __init__(self, status_code: int, body: object) -> None:
+        self.status_code = int(status_code)
+        self._body = body
+
+    @property
+    def text(self) -> str:
+        return self._body if isinstance(self._body, str) else str(self._body)
+
+    def json(self) -> object:
+        return self._body
+
+
+class _CompatibleTransport:
+    """Coerce tuple-returning callbacks to the connector response protocol."""
+
+    def __init__(self, callback: TransportInput) -> None:
+        self._callback = callback
+
+    def __call__(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, str] | None = None,
+        timeout: float = 30.0,
+    ) -> HttpResponse:
+        result = self._callback(
+            method,
+            url,
+            headers=headers,
+            params=params,
+            timeout=timeout,
+        )
+        if isinstance(result, tuple):
+            status, body = result
+            return _CallbackResponse(status, body)
+        return result
+
+
 def _default_transport(
     method: str,
     url: str,
@@ -111,10 +167,12 @@ class CloudflareSource:
     def __init__(
         self,
         config: dict[str, Any],
-        transport: Transport | None = None,
+        transport: TransportInput | None = None,
     ) -> None:
         self.config = dict(config)
-        self.transport: Transport = transport or _default_transport
+        self.transport: Transport = _CompatibleTransport(
+            transport or _default_transport
+        )
 
         self.token_env = str(self.config.get("token_env", "")).strip()
         if not self.token_env:

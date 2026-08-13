@@ -44,6 +44,15 @@ _DEFAULT_TIMEOUT_S = 10.0
 # Sentinel for builds with no result yet (in-progress / aborted-null).
 _UNKNOWN_STATUS = "UNKNOWN"
 
+_COLOR_RESULTS = {
+    "blue": "SUCCESS",
+    "red": "FAILURE",
+    "yellow": "UNSTABLE",
+    "aborted": "ABORTED",
+    "disabled": "DISABLED",
+    "notbuilt": "NOT_BUILT",
+}
+
 
 class HttpGet(Protocol):
     """Injectable transport: maps a URL + headers to an (status, json) pair."""
@@ -119,10 +128,12 @@ class JenkinsSource:
         return headers
 
     def _builds_url(self) -> str:
-        tree = "builds[number,result,timestamp,url,duration]"
-        params = urlencode({"tree": tree})
         if self.job:
+            tree = "builds[number,result,timestamp,url,duration]"
+            params = urlencode({"tree": tree})
             return f"{self.base_url}/job/{quote(self.job, safe='')}/api/json?{params}"
+        tree = "jobs[name,url,color,lastBuild[number,result,timestamp,url,duration]]"
+        params = urlencode({"tree": tree})
         return f"{self.base_url}/api/json?{params}"
 
     def _normalize(self, build: dict[str, object]) -> Record:
@@ -133,7 +144,8 @@ class JenkinsSource:
         status = str(result) if result else _UNKNOWN_STATUS
 
         number = build.get("number")
-        job_label = self.job or "job"
+        root_job_name = build.get("_job_name")
+        job_label = str(root_job_name) if root_job_name else (self.job or "job")
         message = f"{job_label}#{number}" if number is not None else job_label
 
         labels: dict[str, object] = {
@@ -141,6 +153,8 @@ class JenkinsSource:
             "url": build.get("url"),
             "duration_ms": build.get("duration"),
         }
+        raw_payload = build.get("_raw")
+        raw = dict(raw_payload) if isinstance(raw_payload, dict) else dict(build)
         return Record(
             ts=ts,
             source=self.name,
@@ -149,7 +163,7 @@ class JenkinsSource:
             message=message,
             value=None,
             labels=labels,
-            raw=dict(build),
+            raw=raw,
         )
 
     @staticmethod
@@ -161,7 +175,35 @@ class JenkinsSource:
                 for item in raw_builds:
                     if isinstance(item, dict):
                         builds.append(item)
+            raw_jobs = payload.get("jobs")
+            if isinstance(raw_jobs, list):
+                for job in raw_jobs:
+                    if not isinstance(job, dict):
+                        continue
+                    last_build = job.get("lastBuild")
+                    if not isinstance(last_build, dict):
+                        continue
+                    build = dict(last_build)
+                    build["_job_name"] = job.get("name")
+                    build["_raw"] = dict(job)
+                    if not build.get("url"):
+                        job_url = job.get("url")
+                        number = build.get("number")
+                        if isinstance(job_url, str) and number is not None:
+                            build["url"] = f"{job_url.rstrip('/')}/{number}/"
+                    if not build.get("result"):
+                        color = job.get("color")
+                        if isinstance(color, str):
+                            build["result"] = JenkinsSource._result_from_color(color)
+                    builds.append(build)
         return builds
+
+    @staticmethod
+    def _result_from_color(color: str) -> str:
+        normalized = color.lower()
+        if normalized.endswith("_anime"):
+            return "RUNNING"
+        return _COLOR_RESULTS.get(normalized, _UNKNOWN_STATUS)
 
     # -- public API --------------------------------------------------------
 

@@ -150,11 +150,27 @@ def test_parse_doc_blocks():
     assert doc["DOCUMENTATION"]["short_description"]
 
 
+def test_parse_doc_blocks_supports_ansible_constant_assignments():
+    """Standard Ansible DOCUMENTATION/EXAMPLES/RETURN constants are parsed."""
+    src = MODULES_DIR.joinpath("gludd_observe.py").read_text(encoding="utf-8")
+    doc = gen.parse_doc_blocks(src)
+    assert doc["DOCUMENTATION"]["module"] == "gludd_observe"
+    assert doc["DOCUMENTATION"]["short_description"]
+    assert "EXAMPLES" in doc
+    assert "RETURN" in doc
+
+
 # ---------------------------------------------------------------------------
 # docs-check guard
 # ---------------------------------------------------------------------------
 def test_docs_check_passes_for_documented_module():
     path = MODULES_DIR / "gludd_ping.py"
+    problems = docs_check.check_module(path)
+    assert problems == []
+
+
+def test_docs_check_accepts_standard_ansible_constants():
+    path = MODULES_DIR / "gludd_observe.py"
     problems = docs_check.check_module(path)
     assert problems == []
 

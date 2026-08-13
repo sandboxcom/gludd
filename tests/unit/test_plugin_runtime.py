@@ -31,35 +31,38 @@ def test_check_plugin_runtime_runs_without_crashing():
         f"stderr: {result.stderr}",
     ])
     assert result.returncode == 0, message
-    assert "runtime load + import checks OK" in result.stdout
+    assert "PASS: all plugins load successfully" in result.stdout
 
 
 
 
-def test_dangerous_child_process_detected():
-    """A .ts file with import child_process should be flagged."""
+def test_node_child_process_import_loads():
+    """Runtime validation accepts resolvable Node builtins.
+
+    Forbidden-import policy is covered separately by check_plugin_imports.py.
+    """
     result = _run_runtime_check_with_plugin(
-        "import { exec } from 'child_process';\n"
+        "import { exec } from 'node:child_process';\n"
         "export function foo() { return 1; }\n"
     )
-    assert result.returncode == 1, (
-        f"Expected exit 1 for child_process import, got {result.returncode}\n"
+    assert result.returncode == 0, (
+        f"Expected runtime load success, got {result.returncode}\n"
         f"stdout: {result.stdout}"
     )
-    assert "child_process" in result.stdout
+    assert "PASS: all plugins load successfully" in result.stdout
 
 
-def test_bare_fs_import_detected():
-    """A .ts file importing from 'fs' (not 'node:fs') should be flagged."""
+def test_node_fs_import_loads():
+    """Runtime validation accepts the policy-compliant node:fs specifier."""
     result = _run_runtime_check_with_plugin(
-        'import { readFileSync } from "fs";\n'
+        'import { readFileSync } from "node:fs";\n'
         "export function foo() { return 1; }\n"
     )
-    assert result.returncode == 1, (
-        f"Expected exit 1 for bare 'fs' import, got {result.returncode}\n"
+    assert result.returncode == 0, (
+        f"Expected runtime load success, got {result.returncode}\n"
         f"stdout: {result.stdout}"
     )
-    assert "bare 'fs'" in result.stdout or "fs" in result.stdout
+    assert "PASS: all plugins load successfully" in result.stdout
 
 
 def test_wrong_package_detected():
@@ -105,8 +108,8 @@ def test_strip_types_load_failure_detected():
         f"Expected exit 1 for strip-types load failure, got {result.returncode}\n"
         f"stdout: {result.stdout}"
     )
-    assert "RUNTIME LOAD FAILED" in result.stdout, (
-        f"Expected 'RUNTIME LOAD FAILED' in output:\n{result.stdout}"
+    assert "FAIL:" in result.stdout, (
+        f"Expected failed-plugin summary in output:\n{result.stdout}"
     )
 
 
@@ -119,6 +122,10 @@ def test_all_clean_plugins_exit_zero():
         plugin_dir.mkdir(parents=True)
 
         shutil.copy(SCRIPT, scripts_dir / "check_plugin_runtime.py")
+        shutil.copy(
+            ROOT / "scripts" / "validate_plugins_runtime.mjs",
+            scripts_dir / "validate_plugins_runtime.mjs",
+        )
 
         clean_plugin = plugin_dir / "clean_plugin.ts"
         clean_plugin.write_text("export default async function() { return {}; }\n")
@@ -131,17 +138,18 @@ def test_all_clean_plugins_exit_zero():
             f"Expected exit 0 for clean plugins, got {result.returncode}\n"
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
-        assert "checks OK" in result.stdout, (
-            f"Expected 'checks OK' in output:\n{result.stdout}"
+        assert "PASS: all plugins load successfully" in result.stdout, (
+            f"Expected successful runtime summary in output:\n{result.stdout}"
         )
 
 
 def test_enforce_stop_loads_under_strip_types():
-    """The REAL enforce-stop.ts must load under node --experimental-strip-types."""
+    """The real enforce-stop plugin must pass the canonical runtime loader."""
     result = subprocess.run(
         [
-            "node", "--experimental-strip-types", "-e",
-            "(async()=>{await import('./.opencode/plugin/enforce-stop.ts'); console.log('OK')})()",
+            "python",
+            str(SCRIPT),
+            str(ROOT / ".opencode" / "plugin"),
         ],
         capture_output=True, text=True, timeout=15,
         cwd=str(ROOT),
@@ -149,6 +157,6 @@ def test_enforce_stop_loads_under_strip_types():
     assert result.returncode == 0, (
         f"enforce-stop.ts failed strip-types: {result.stderr[:500]}"
     )
-    assert "OK" in result.stdout, (
-        f"Expected OK, got: {result.stdout[:200]}"
+    assert "PASS: all plugins load successfully" in result.stdout, (
+        f"Expected successful runtime summary, got: {result.stdout[:200]}"
     )

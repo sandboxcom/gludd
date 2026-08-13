@@ -51,6 +51,54 @@ def test_pause_model_and_list(client):
     assert r.json()["paused"][0]["kind"] == "model"
 
 
+@pytest.mark.parametrize(
+    ("resource", "kind", "target_id"),
+    [
+        ("tasks", "task", "task-1"),
+        ("agents", "agent", "agent-1"),
+        ("infra", "infra", "deployment-1"),
+    ],
+)
+def test_entity_pause_status_resume_lifecycle(client, resource, kind, target_id):
+    pause_response = client.post(
+        f"/api/{resource}/{target_id}/pause",
+        json={"reason": f"pause {kind}"},
+    )
+
+    assert pause_response.status_code == 200
+    assert pause_response.json() == {
+        "paused": True,
+        "kind": kind,
+        "target_id": target_id,
+        "paused_at": pause_response.json()["paused_at"],
+        "reason": f"pause {kind}",
+    }
+
+    status_response = client.get("/api/pause/status")
+    assert status_response.status_code == 200
+    status = status_response.json()
+    assert status["count"] == 1
+    assert status["paused"][0]["target_id"] == target_id
+    assert status["by_type"][kind][0]["reason"] == f"pause {kind}"
+
+    resume_response = client.post(f"/api/{resource}/{target_id}/resume")
+    assert resume_response.status_code == 200
+    assert resume_response.json() == {
+        "resumed": True,
+        "kind": kind,
+        "target_id": target_id,
+        "paused_at": pause_response.json()["paused_at"],
+    }
+
+    repeated_resume = client.post(f"/api/{resource}/{target_id}/resume")
+    assert repeated_resume.status_code == 200
+    assert repeated_resume.json() == {
+        "resumed": False,
+        "target_id": target_id,
+        "message": "was not paused",
+    }
+
+
 def test_resume_project(client):
     client.post("/api/pause/project", json={"target_id": "proj-2"})
     r = client.post("/api/resume/project", json={"target_id": "proj-2"})
@@ -79,5 +127,6 @@ def test_no_controller_returns_safe_defaults(tmp_path):
     c = TestClient(app)
 
     assert c.get("/api/pause").json() == {"paused": [], "count": 0}
+    assert c.get("/api/pause/status").json() == {"paused": [], "count": 0, "by_type": {}}
     assert c.post("/api/pause/project", json={"target_id": "x"}).json()["paused"] is False
     assert c.post("/api/resume/project", json={"target_id": "x"}).json()["resumed"] is False

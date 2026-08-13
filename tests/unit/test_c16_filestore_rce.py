@@ -142,9 +142,7 @@ class TestC16DownloadFlowIntegrity:
                     side_effect=Exception("should not be called"),
                 ):
             import asyncio
-            asyncio.new_event_loop().run_until_complete(
-                boot.download("test-bin")
-            )
+            asyncio.run(boot.download("test-bin"))
 
         assert boot._verify_digest("test-bin", b"anything") is False
 
@@ -168,9 +166,7 @@ class TestC16DownloadFlowIntegrity:
                 patch.object(boot, "get_download_url", return_value="https://example.com/bin"), \
                 patch("httpx.AsyncClient.get", side_effect=fake_get):
             import asyncio
-            result = asyncio.new_event_loop().run_until_complete(
-                boot.download("test-bin")
-            )
+            result = asyncio.run(boot.download("test-bin"))
 
         assert result is False
         store.write_bytes.assert_not_called()
@@ -193,9 +189,7 @@ class TestC16DownloadFlowIntegrity:
                 patch.object(boot, "get_download_url", return_value="https://example.com/bin"), \
                 patch("httpx.AsyncClient.get", side_effect=fake_get):
             import asyncio
-            result = asyncio.new_event_loop().run_until_complete(
-                boot.download("test-bin")
-            )
+            result = asyncio.run(boot.download("test-bin"))
 
         assert result is True
         store.write_bytes.assert_called_once()
@@ -320,18 +314,24 @@ class TestC16SizeCap:
                 patch.object(boot, "get_download_url", return_value="https://example.com/bin"), \
                 patch("httpx.AsyncClient.get", side_effect=fake_get):
             import asyncio
-            result = asyncio.new_event_loop().run_until_complete(
-                boot.download("test-bin")
-            )
+            result = asyncio.run(boot.download("test-bin"))
 
         assert result is False
 
-    def test_download_rejects_oversized_body(self, real_hash: str) -> None:
+    def test_download_rejects_oversized_body(
+        self, real_hash: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import general_ludd.filestore.bootstrap as bootstrap_mod
+
         store = MagicMock()
         store.exists.return_value = False
         boot = BinaryBootstrapper(store=store, known_sha256={"test-bin": real_hash})
 
-        big_content = b"x" * (_MAX_DOWNLOAD_BYTES + 1)
+        # Exercise the exact production boundary without retaining a 512 MiB
+        # allocation in a long-lived xdist worker for the rest of the suite.
+        test_limit = 1024
+        monkeypatch.setattr(bootstrap_mod, "_MAX_DOWNLOAD_BYTES", test_limit)
+        big_content = b"x" * (test_limit + 1)
 
         class FakeResponse:
             def __init__(self) -> None:
@@ -346,9 +346,7 @@ class TestC16SizeCap:
                 patch.object(boot, "get_download_url", return_value="https://example.com/bin"), \
                 patch("httpx.AsyncClient.get", side_effect=fake_get):
             import asyncio
-            result = asyncio.new_event_loop().run_until_complete(
-                boot.download("test-bin")
-            )
+            result = asyncio.run(boot.download("test-bin"))
 
         assert result is False
 

@@ -17,7 +17,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from general_ludd.db.models import Base
-from general_ludd.db.repository import TodoRepository
+from general_ludd.db.repository import HumanTodoRepository, TodoRepository
 from general_ludd.schemas.todo import TodoStatus
 
 PSK = "test-psk-secret"
@@ -371,6 +371,41 @@ class TestHumanTodosApi:
             resp = await client.get("/api/human-todos/feed", headers=AUTH)
             assert resp.status_code == 200
             assert len(resp.json()) >= 1
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_get_tolerates_legacy_malformed_tag_json(self, monkeypatch):
+        engine, factory, client, _app = await _make_app(monkeypatch)
+        try:
+            created = await client.post(
+                "/api/human-todos",
+                json={
+                    "agent_id": "legacy-agent",
+                    "title": "legacy row",
+                    "body": "tags were stored by an older writer",
+                    "category": "blocker",
+                    "tags": ["original"],
+                },
+                headers=AUTH,
+            )
+            assert created.status_code == 201
+            human_todo_id = created.json()["id"]
+
+            async with factory() as session:
+                row = await HumanTodoRepository(session).get(human_todo_id)
+                assert row is not None
+                row.tags = "{malformed-json"
+                await session.commit()
+
+            response = await client.get(
+                f"/api/human-todos/{human_todo_id}",
+                headers=AUTH,
+            )
+
+            assert response.status_code == 200
+            assert response.json()["tags"] == []
         finally:
             await client.aclose()
             await engine.dispose()

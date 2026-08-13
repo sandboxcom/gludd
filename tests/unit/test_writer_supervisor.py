@@ -243,7 +243,9 @@ def test_supervisor_emits_event_on_each_recovery() -> None:
 
     writer.kill(exit_code=-9)
     deadline = time.monotonic() + 5.0
-    while time.monotonic() < deadline and writer.start_calls < 2:
+    while time.monotonic() < deadline and not any(
+        isinstance(event, SupervisorRecoveryEvent) for event in bus.published
+    ):
         time.sleep(0.02)
 
     recoveries = [
@@ -280,6 +282,13 @@ def test_supervisor_emits_event_on_permanent_failure() -> None:
             if sup.state is SupervisorState.PERMANENT_FAILURE:
                 break
             time.sleep(0.01)
+
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline and not any(
+        isinstance(event, SupervisorFailureEscalatedEvent)
+        for event in bus.published
+    ):
+        time.sleep(0.01)
 
     escalated = [
         e for e in bus.published if isinstance(e, SupervisorFailureEscalatedEvent)

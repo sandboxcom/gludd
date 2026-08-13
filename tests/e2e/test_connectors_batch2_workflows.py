@@ -29,8 +29,13 @@ def _make_transport(
         def __init__(self) -> None:
             self.calls: list[dict[str, object]] = []
 
-        def __call__(self, url: str, **kwargs: object) -> tuple[int, object]:
-            self.calls.append({"url": url, "kwargs": kwargs})
+        def __call__(
+            self,
+            url: str,
+            headers: dict[str, str] | None = None,
+            **kwargs: object,
+        ) -> tuple[int, object]:
+            self.calls.append({"url": url, "headers": headers, "kwargs": kwargs})
             if raise_err:
                 raise raise_err
             return status, body
@@ -79,12 +84,16 @@ def _make_get_transport(
     status: int = 200,
     body: object = None,
 ):
-    """Factory returning a .get(url, ...) -> _FakeResponse transport."""
+    """Factory returning a GET/POST-capable response-object transport."""
     class Transport:
         def __init__(self) -> None:
             self.calls: list[dict[str, object]] = []
 
         def get(self, url: str, **kwargs: object) -> _FakeResponse:
+            self.calls.append({"url": url, "kwargs": kwargs})
+            return _fake_response(status, body)
+
+        def post(self, url: str, **kwargs: object) -> _FakeResponse:
             self.calls.append({"url": url, "kwargs": kwargs})
             return _fake_response(status, body)
 
@@ -111,12 +120,11 @@ class TestSearXConnector:
         with pytest.raises(ConnectorConfigError):
             SearXConnector({"base_url": ""})
 
-    def test_rejects_loopback_host(self):
-        from general_ludd.connectors._errors import ConnectorConfigError
+    def test_allows_loopback_host_for_local_instance(self):
         from general_ludd.connectors.searx import SearXConnector
 
-        with pytest.raises(ConnectorConfigError, match="blocked"):
-            SearXConnector({"base_url": "http://127.0.0.1/searx"})
+        conn = SearXConnector({"base_url": "http://127.0.0.1/searx"})
+        assert conn.base_url == "http://127.0.0.1/searx"
 
     def test_rejects_metadata_ip(self):
         from general_ludd.connectors._errors import ConnectorConfigError
@@ -128,7 +136,7 @@ class TestSearXConnector:
     def test_health_ok(self, monkeypatch: pytest.MonkeyPatch):
         import httpx
 
-        def fake_get(url: str, **kwargs: object) -> object:
+        def fake_get(_client: object, url: str, **kwargs: object) -> object:
             class R:
                 status_code = 200
                 content = b'{"version": "1.0"}'
@@ -144,7 +152,7 @@ class TestSearXConnector:
     def test_health_not_ok_on_error(self, monkeypatch: pytest.MonkeyPatch):
         import httpx
 
-        def fake_get(url: str, **kwargs: object) -> object:
+        def fake_get(_client: object, url: str, **kwargs: object) -> object:
             class R:
                 status_code = 500
                 content = b""
@@ -168,7 +176,7 @@ class TestSearXConnector:
             ]
         }).encode()
 
-        def fake_get(url: str, **kwargs: object) -> object:
+        def fake_get(_client: object, url: str, **kwargs: object) -> object:
             class R:
                 status_code = 200
                 content = body
@@ -188,7 +196,7 @@ class TestSearXConnector:
     def test_search_empty_on_non_2xx(self, monkeypatch: pytest.MonkeyPatch):
         import httpx
 
-        def fake_get(url: str, **kwargs: object) -> object:
+        def fake_get(_client: object, url: str, **kwargs: object) -> object:
             class R:
                 status_code = 403
                 content = b""
@@ -961,7 +969,10 @@ class TestSlackConnector:
         from general_ludd.connectors.slack import SlackSource
 
         class FailingTransport:
-            def get(self, **kwargs: object) -> _FakeResponse:
+            def get(self, url: str, **kwargs: object) -> _FakeResponse:
+                raise ConnectionError("timeout")
+
+            def post(self, url: str, **kwargs: object) -> _FakeResponse:
                 raise ConnectionError("timeout")
 
         source = SlackSource(
@@ -1033,7 +1044,7 @@ class TestPagerDutySource:
         from general_ludd.connectors.pagerduty import PagerDutySource
 
         class ErrTransport:
-            def get(self, **kwargs: object) -> _FakeResponse:
+            def get(self, url: str, **kwargs: object) -> _FakeResponse:
                 raise OSError("refused")
 
         source = PagerDutySource({}, transport=ErrTransport())
@@ -1074,7 +1085,7 @@ class TestPagerDutySource:
         from general_ludd.connectors.pagerduty import PagerDutySource
 
         class ErrTransport:
-            def get(self, **kwargs: object) -> _FakeResponse:
+            def get(self, url: str, **kwargs: object) -> _FakeResponse:
                 return _fake_response(500, {})
 
         source = PagerDutySource({}, transport=ErrTransport())
@@ -1732,6 +1743,8 @@ class TestCassandraStatsConnector:
         from general_ludd.connectors.cassandra_stats import CassandraStatsSource
 
         def executor(command: str) -> list[dict[str, object]]:
+            if command != "compactionstats":
+                return []
             return [
                 {"metric": None, "value": 1},  # skipped
                 {"metric": "valid_metric", "value": 42},
@@ -1771,6 +1784,8 @@ class TestCassandraStatsConnector:
         from general_ludd.connectors.cassandra_stats import CassandraStatsSource
 
         def executor(command: str) -> list[dict[str, object]]:
+            if command != "compactionstats":
+                return []
             return [{"metric": "test_metric", "value": 99, "keyspace": "ks", "table": "tbl"}]
 
         source = CassandraStatsSource(executor=executor)

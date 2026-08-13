@@ -14,7 +14,7 @@ What this proves (per TASKS.md Phase FW)
 - FW.5  — every plugin honors a ``GLUDD_*_ENFORCE=0`` disable env var
 - FW.6  — every plugin reports liveness via ``reportAlive()``
 - FW.7/8 — bash-metachar blocking lives in enforce-make.ts (impl)
-- FW.9  — opencode.json restricts read/write/edit/glob/grep to workspace + tmp
+- FW.9  — opencode.json allows workspace tools and denies unlisted external paths
 - FW.10 — crash-recovery state file handling in enforce-session-start.ts
 - FW.11 — Makefile defines ``verify-plugin-manifest`` target
 - FW.12 — shared.ts consolidates isSubagent/reportAlive/isDisengaged/getProjectRoot
@@ -204,13 +204,10 @@ ENVAR_DISABLE_RE = re.compile(
     r'GLUDD_[A-Z0-9_]*ENFORCE\s*(?:\|\|\s*"1"\s*)?\)?\s*(?:===\s*"0"|!==\s*"0")'
 )
 
-# Plugins that intentionally lack their own GLUDD_*_ENFORCE=0 disable knob.
-# These rely on shared disengage signals (`make disengage-enforcement`) or
-# sub-plugin env vars (GLUDD_STAGNANT_ENFORCE) rather than a per-plugin knob.
-# A regression that ADDS one of these to the exceptions list MUST be justified
-# in the commit message — the long-term goal is per-plugin disable for all.
-PLUGINS_WITHOUT_OWN_ENFORCE_VAR: frozenset[str] = frozenset({
-    "enforce-no-ci-poll.ts",  # uses GLUDD_STAGNANT_ENFORCE in messages, not code
+# Plugins that are intentionally hard-coded on because disabling them would
+# bypass the quality gate they protect.
+HARD_ON_PLUGINS: frozenset[str] = frozenset({
+    "enforce-no-suppressions.ts",
 })
 
 
@@ -222,12 +219,11 @@ def test_fw5_plugin_has_env_var_disable(plugin: Path) -> None:
     opencode or editing source code. Accepts any of the three idiomatic
     forms (early-return, flag-compute, default-on-flag).
     """
-    if plugin.name in PLUGINS_WITHOUT_OWN_ENFORCE_VAR:
-        pytest.skip(
-            f"{plugin.name}: known gap — no per-plugin GLUDD_*_ENFORCE var; "
-            f"relies on shared disengage signal instead. See commit message."
-        )
     source = _effective_source(plugin)
+    if plugin.name in HARD_ON_PLUGINS:
+        assert "hard-coded ON" in source
+        assert not ENVAR_DISABLE_RE.search(source)
+        return
     assert ENVAR_DISABLE_RE.search(source), (
         f"{plugin.name}: no GLUDD_*_ENFORCE=0 env-var disable found. "
         f"Every plugin must be individually disableable."
@@ -300,25 +296,42 @@ def test_fw7_fw8_metachar_blocking_exists() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "tool", ["read", "write", "edit", "glob", "grep"], ids=lambda t: t
-)
-def test_fw9_opencode_json_restricts_workspace(tool: str) -> None:
-    """FW.9: each file tool allows ONLY workspace + opencode-config + /tmp.
+@pytest.mark.parametrize("scope", ["global", "build"], ids=lambda s: s)
+def test_fw9_opencode_json_restricts_external_paths(scope: str) -> None:
+    """FW.9: workspace tools work while unlisted external paths are denied.
 
-    AGENTS.md 'No External File Access': the three allowed path prefixes are
-    exhaustive. Every other path under ``/Users/shawnwilson/`` is forbidden.
+    OpenCode grants file tools for the workspace through the direct
+    ``read``/``edit``/``glob``/``grep`` permissions.  Path allowlisting belongs
+    under ``external_directory``; putting workspace globs on every file tool is
+    not part of the supported schema and previously broke the live TUI.
     """
     cfg = json.loads(OPENCODE_JSON.read_text())
-    perm = cfg.get("permission", {}).get(tool, {})
-    assert "/Users/shawnwilson/gludd/**" in perm, (
-        f"permission.{tool}: must allow /Users/shawnwilson/gludd/**"
-    )
-    assert "/tmp/**" in perm, (
-        f"permission.{tool}: must allow /tmp/**"
-    )
-    assert perm.get("*") == "deny", (
-        f"permission.{tool}: must end with '*: deny' (last-match-wins)"
+    perm = cfg["permission"] if scope == "global" else cfg["agent"]["build"]["permission"]
+
+    assert perm["read"] == {
+        "*": "allow",
+        "*.env": "deny",
+        "*.env.*": "deny",
+        "*.env.example": "allow",
+    }
+    assert perm["edit"] == "allow"
+    assert perm["glob"] == "allow"
+    assert perm["grep"] == "allow"
+    assert "write" not in perm, "OpenCode routes writes through the edit permission"
+
+    external = perm["external_directory"]
+    assert external.get("*") == "deny"
+    assert external.get("/tmp/**") == "allow"
+    allowed_external = {
+        "*",
+        "/tmp/**",
+        "/Users/shawnwilson/.config/opencode/**",
+        "/Users/shawnwilson/.local/share/opencode/**",
+        "/Users/shawnwilson/.cache/**",
+    }
+    assert set(external) <= allowed_external, (
+        f"permission.external_directory has an unreviewed path: "
+        f"{sorted(set(external) - allowed_external)}"
     )
 
 

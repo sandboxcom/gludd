@@ -150,7 +150,31 @@ try {{
 
 
 def test_streak_at_threshold_denies_mutating_bash(tmp_path):
-    """streak=2 -> mutating bash (make git-commit) denied."""
+    """streak=2 -> inline mutating bash (make format-python) denied."""
+    streak_file = str(tmp_path / "streak.json")
+    _write_streak_file(streak_file, 2)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+try {{
+  await plugin['tool.execute.before']({{tool: 'bash'}}, {{args: {{command: 'make format-python'}}}})
+  console.log(JSON.stringify({{allowed: true}}))
+}} catch (e) {{
+  console.log(JSON.stringify({{permissionDecision: 'deny', message: String(e.message || e)}}))
+}}
+"""
+    result = _run_plugin(code, env_override={
+        "GLUDD_MAINTHREAD_STREAK_FILE": streak_file,
+        "GLUDD_DISENGAGE_PATH": str(tmp_path / "disengage.json"),
+        "GLUDD_MAINTHREAD_THRESHOLD": "2",
+        "GLUDD_LIVE_AGENTS_COUNT": "0",
+    })
+    assert result is not None and result.get("permissionDecision") == "deny"
+
+
+def test_streak_at_threshold_allows_git_shipping(tmp_path):
+    """Terminal shipping remains available so completed work can be committed."""
     streak_file = str(tmp_path / "streak.json")
     _write_streak_file(streak_file, 2)
 
@@ -170,7 +194,7 @@ try {{
         "GLUDD_MAINTHREAD_THRESHOLD": "2",
         "GLUDD_LIVE_AGENTS_COUNT": "0",
     })
-    assert result is not None and result.get("permissionDecision") == "deny"
+    assert result is not None and result.get("allowed") is True
 
 
 # ─── Read tools exempt from mainthread streak ────────────────────────────────

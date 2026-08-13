@@ -72,6 +72,24 @@ class TestContract:
 
 
 class TestNormalization:
+    def test_callable_tuple_transport_compatibility(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def transport(method: str, url: str, **_: object) -> tuple[int, object]:
+            calls.append((method, url))
+            return 200, CANNED_TRACES
+
+        records = _source(transport).query()
+
+        assert len(records) == 2
+        assert calls == [
+            (
+                "GET",
+                "https://zipkin.example.com/api/v2/traces"
+                "?serviceName=gateway&lookback=3600000&limit=20",
+            )
+        ]
+
     def test_one_record_per_span(self) -> None:
         transport = FakeTransport([("/api/v2/traces", 200, CANNED_TRACES)])
         assert len(_source(transport).query()) == 2

@@ -5,9 +5,9 @@
   gather_facts: false
   vars:
     project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
-    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
-    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}.pid"
-    repo_path: "/tmp/gludd-ornith-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8897', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8897', true) }}.pid"
+    repo_path: "/tmp/gludd-ornith-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8897', true) }}"
   tasks:
     - name: Launch mock daemon (background, nohup)
       ansible.builtin.shell:

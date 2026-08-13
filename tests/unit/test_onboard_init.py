@@ -210,7 +210,13 @@ class TestValidateTokenAndRoleWithFakeClient:
             "bindings": [
                 {"role": r, "members": [f"serviceAccount:{sa_email}"]}
                 for r in gcp_onboard.EXPECTED_ROLES
-            ]
+            ] + [{
+                "role": (
+                    "projects/proj-123/roles/"
+                    f"{gcp_onboard.CUSTOM_ROLE_SUFFIX}"
+                ),
+                "members": [f"serviceAccount:{sa_email}"],
+            }]
         }
         policy["bindings"].append(
             {

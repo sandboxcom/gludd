@@ -29,10 +29,10 @@ def _read_build_yml() -> str:
     """Return the full text of build.yml.
 
     Kept as a function (not a module-level constant) so a missing file surfaces
-    as a clear, single-point skip rather than an ImportError at collection time.
+    as a clear, single-point assertion rather than an ImportError at collection
+    time.
     """
-    if not BUILD_YML.is_file():
-        pytest.skip(f"build.yml not found at {BUILD_YML}")
+    assert BUILD_YML.is_file(), f"build.yml not found at {BUILD_YML}"
     return BUILD_YML.read_text(encoding="utf-8")
 
 
@@ -135,8 +135,7 @@ class TestInstallShExists:
     def test_install_sh_nonempty(self) -> None:
         """An empty install.sh would be a broken installer."""
         install_sh = BUILD_YML.parent.parent.parent / "dist" / "install.sh"
-        if not install_sh.is_file():
-            pytest.skip("dist/install.sh not present")
+        assert install_sh.is_file(), "dist/install.sh not present"
         assert install_sh.stat().st_size > 0, "dist/install.sh is empty"
 
 

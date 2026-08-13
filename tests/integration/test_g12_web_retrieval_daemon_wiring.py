@@ -93,7 +93,7 @@ class TestWebRetrieverDirectMocked:
     def test_web_retriever_instantiation(self) -> None:
         retriever = WebRetriever(timeout_seconds=10)
         assert retriever._timeout == 10
-        assert retriever._cache is not None
+        assert retriever._cache_path == "web_retriever"
 
     def test_web_retriever_allowed_domains_default_empty(self) -> None:
         with patch.dict(os.environ, {"GLUDD_WEB_FETCH_ALLOWED_DOMAINS": ""}):

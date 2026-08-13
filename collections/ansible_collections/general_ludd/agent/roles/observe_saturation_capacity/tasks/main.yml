@@ -8,7 +8,7 @@
 #      with >= saturated_sample_min breaches is "at_capacity".
 #   4. Write the topology + at-capacity hosts to an artifact.
 #
-# Facade interface (DEFERRED WIRING — gludd_observe module, #73 next wave)
+# Facade interface (wired by general_ludd.agent.gludd_observe)
 #   op=query_sources -> GluddObserve.query_sources(kinds, spec, start, end)
 #   op=topology      -> GluddObserve.topology(kinds, spec)
 #       returning ansible_facts.gludd_observe.topology = {services, hosts}

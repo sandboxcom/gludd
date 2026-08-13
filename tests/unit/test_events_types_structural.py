@@ -37,6 +37,9 @@ class TestEventType:
     def test_custom_event_type(self):
         assert EventType.CUSTOM.value == "custom"
 
+    def test_branch_executed_event_type(self):
+        assert EventType.BRANCH_EXECUTED.value == "branch_executed"
+
 
 class TestBaseEvent:
     def test_minimal_event(self):

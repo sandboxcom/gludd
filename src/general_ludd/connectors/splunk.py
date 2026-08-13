@@ -88,6 +88,73 @@ class HttpTransport(Protocol):
         ...
 
 
+class CallableHttpTransport(Protocol):
+    """Compact method-and-URL callback used by generated workflows."""
+
+    def __call__(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str],
+        params: dict[str, object] | None = ...,
+        data: dict[str, object] | None = ...,
+        timeout: float = ...,
+    ) -> tuple[int, object]: ...
+
+
+class _CallbackResponse:
+    def __init__(self, status_code: int, body: object) -> None:
+        self.status_code = int(status_code)
+        self._body = body
+
+    @property
+    def text(self) -> str:
+        return self._body if isinstance(self._body, str) else str(self._body)
+
+    def json(self) -> object:
+        return self._body
+
+
+class _CallableTransportAdapter:
+    def __init__(self, callback: CallableHttpTransport) -> None:
+        self._callback = callback
+
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        params: dict[str, object] | None = None,
+        timeout: float = 30.0,
+    ) -> HttpResponse:
+        status, body = self._callback(
+            "GET",
+            url,
+            headers=headers,
+            params=params,
+            timeout=timeout,
+        )
+        return _CallbackResponse(status, body)
+
+    def post(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        data: dict[str, object] | None = None,
+        timeout: float = 30.0,
+    ) -> HttpResponse:
+        status, body = self._callback(
+            "POST",
+            url,
+            headers=headers,
+            data=data,
+            timeout=timeout,
+        )
+        return _CallbackResponse(status, body)
+
+
 def _assert_safe_base_url(base_url: str) -> str:
     """Validate ``base_url`` against SSRF and return a normalized base (no trailing /).
 
@@ -167,7 +234,7 @@ class SplunkSource:
         self,
         config: dict[str, object],
         *,
-        transport: HttpTransport,
+        transport: HttpTransport | CallableHttpTransport,
         name: str | None = None,
         timeout: float = 30.0,
         env: dict[str, str] | None = None,
@@ -182,7 +249,14 @@ class SplunkSource:
         # SSRF gate runs at construction so a bad URL never even reaches health().
         self._base_url = _assert_safe_base_url(base_url)
         self._token_env = token_env
-        self._transport = transport
+        if callable(getattr(transport, "get", None)) and callable(
+            getattr(transport, "post", None)
+        ):
+            self._transport = cast(HttpTransport, transport)
+        elif callable(transport):
+            self._transport = _CallableTransportAdapter(transport)
+        else:
+            raise TypeError("transport must provide get/post or be callable")
         self._timeout = float(timeout)
         self._env = env if env is not None else dict(os.environ)
         parsed_host = urlsplit(self._base_url).hostname or self._base_url

@@ -35,10 +35,10 @@
 - name: Build completed items list from history facts
   ansible.builtin.set_fact:
     _sr_completed:
-      - "{{ _sr_total_runs }} total work runs completed in this sprint period"
-      - "{{ (_sr_total_runs | int - _sr_failures | int) }} successful runs ({{ (_sr_success_rate * 100) | round(1) }}% success rate)"
-      - "{{ _sr_done_count }} backlog items moved to done"
-      - "{{ _sr_trace_count }} execution traces recorded"
+      - "Work runs completed: {{ _sr_total_runs }} in this sprint period"
+      - "Successful runs: {{ (_sr_total_runs | int - _sr_failures | int) }} ({{ (_sr_success_rate * 100) | round(1) }}% success rate)"
+      - "Backlog items completed: {{ _sr_done_count }}"
+      - "Execution traces recorded: {{ _sr_trace_count }}"
 
 # ── Build highlights[] from traces ────────────────────────────────────────────
 

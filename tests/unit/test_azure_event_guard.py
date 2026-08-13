@@ -13,10 +13,8 @@ writes).
 from __future__ import annotations
 
 import os
-import signal
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 import pytest
@@ -308,33 +306,14 @@ class TestWrongAccount:
 
 class TestWatchMode:
     def test_watch_mode_polls_and_exits_on_violation(self):
-        """Run --watch with clean events (first poll clean) but short interval
-        so it doesn't run forever.  Kill after 2 polls."""
-        proc = subprocess.Popen(
-            ["bash", str(SCRIPT_PATH), "--watch"],
-            env={
-                "PATH": os.environ.get("PATH", ""),
-                "AZURE_SUBSCRIPTION_ID": "sub-123",
-                "AZURE_RESOURCE_GROUP": "gludd-smoke-rg",
-                "AZURE_TENANT_ID": "tenant-456",
-                "AZURE_EVENT_GUARD_LOOKBACK": "5",
-                "AZURE_EVENT_GUARD_INTERVAL": "1",
-                "SMOKE_PID_FILE": "/tmp/gludd-az-test-smoke.pid",
-            },
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=tempfile.mkdtemp(prefix="gludd-az-watch-"),
+        """Watch mode enters its loop and terminates on a detected violation."""
+        proc = _run_guard(
+            mode="--watch",
+            az_output=EXPENSIVE_EVENTS_JSON,
+            timeout=5,
         )
-        # Let it run 2-3 polls then kill
-        time.sleep(3)
-        proc.send_signal(signal.SIGTERM)
-        try:
-            proc.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-
-        stdout = proc.stdout.read().decode()
+        assert proc.returncode == 1
+        stdout = proc.stdout.decode()
         assert "starting watch mode" in stdout, f"Watch mode not entered: {stdout}"
 
 

@@ -4,14 +4,11 @@ Provisions a least-privilege user-assigned managed identity
 (``gludd-compute-operator``) and verifies the cloud-side credential before the
 daemon tries to use it.
 
-The role set here is the minimal set that
-:func:`general_ludd.infra.terraform.TerraformGenerator._generate_azure` requires
-to materialise its Terraform plan (resource group, vnet/subnet/NSG, public IP,
-NIC, and the VM itself):
-
-* ``Virtual Machine Contributor`` — create/manage VMs (NOT the broader ``Contributor``).
-* ``Managed Identity Operator`` — so the operator can assign its own identity
-  to the VMs it creates.
+The custom ``General Ludd Accelerator Deployer`` role is limited to SKU/quota
+preflight reads and the resource-group, network, VM, disk, and GPU-driver
+extension operations used by the release Terraform stacks.  It can be assigned
+either to the managed identity created by the onboarding module or to an
+existing app/service-principal object id used outside Azure.
 
 All Azure SDKs (``azure-identity``, ``azure-mgmt-compute``,
 ``azure-mgmt-authorization``) are lazy imports; install via the ``[azure]``
@@ -30,8 +27,7 @@ from typing import Any
 # Terraform module at infra/terraform/modules/onboard-iam-azure/main.tf and
 # asserted by tests/unit/test_onboard_azure.py::TestTerraformModuleLeastPriv.
 EXPECTED_ROLES: tuple[str, ...] = (
-    "Virtual Machine Contributor",
-    "Managed Identity Operator",
+    "General Ludd Accelerator Deployer",
 )
 
 DEFAULT_IDENTITY_NAME = "gludd-compute-operator"
@@ -95,11 +91,21 @@ terraform apply \\
 The module creates:
 
 * `azurerm_user_assigned_identity` named `{identity_name}`
-* `azurerm_role_assignment` granting the identity exactly these built-in roles:
-  - `Virtual Machine Contributor` — create/manage VMs (NOT `Contributor`)
-  - `Managed Identity Operator` — assign its own identity to the VMs it creates
+* the `General Ludd Accelerator Deployer` custom role, limited to SKU/quota
+  reads plus the resource group, network, VM, disk, and NVIDIA driver extension
+  operations used by gludd
+* `azurerm_role_assignment` granting that role to the managed identity
 
 No `Owner` or `Contributor` is granted.
+
+For an existing app/service principal used outside Azure, pass its **object
+id** (not application/client id) so the same deployment role is assigned:
+
+```bash
+terraform apply \\
+  -var="subscription_id={subscription_id}" \\
+  -var="operator_principal_id=<SERVICE_PRINCIPAL_OBJECT_ID>"
+```
 
 ## 3. Capture the principal / client id
 
@@ -139,6 +145,20 @@ az ad sp create --id <AZURE_CLIENT_ID>
 az ad app credential reset --id <AZURE_CLIENT_ID> \\
   --append
 # capture the password -> AZURE_CLIENT_SECRET
+
+# capture the service principal object id (different from the client id)
+az ad sp show --id <AZURE_CLIENT_ID> --query id --output tsv
+```
+
+Reapply the onboarding module with that **object id**. This assigns the
+`General Ludd Accelerator Deployer` role to the credential Terraform and gludd
+will actually use:
+
+```bash
+cd infra/terraform/modules/onboard-iam-azure
+terraform apply \\
+  -var="subscription_id=<SUBSCRIPTION_ID>" \\
+  -var="operator_principal_id=<SERVICE_PRINCIPAL_OBJECT_ID>"
 ```
 
 ## Option B — Managed identity (recommended for in-Azure runs)
@@ -286,7 +306,7 @@ def _resolve_role_definition_name(auth_client: Any, role_def_id: str) -> str:
         scope = role_def_id.rsplit("/", 1)[0]
         name = role_def_id.rsplit("/", 1)[-1]
         rd = auth_client.role_definitions.get(scope=scope, role_definition_id=name)
-        return getattr(getattr(rd, "role_name", None), "replace", lambda *_: "")() or getattr(rd, "role_name", "") or ""
+        return str(getattr(rd, "role_name", "") or "")
     except Exception:  # pragma: no cover — best effort
         return ""
 

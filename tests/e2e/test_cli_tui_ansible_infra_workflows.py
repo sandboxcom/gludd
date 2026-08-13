@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import os
 import sys
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -938,7 +939,7 @@ class TestAnsibleRunnerPaths:
     def test_collections_path_entry_frozen(self):
         from general_ludd.ansible.paths import CollectionsPathEntry
         e = CollectionsPathEntry(source="test", path=Path("/tmp"), precedence=0)
-        with pytest.raises(ValueError):
+        with pytest.raises(FrozenInstanceError):
             e.source = "other"
 
     def test_activate_collection_version(self, tmp_path):

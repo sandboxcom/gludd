@@ -1,0 +1,10 @@
+---
+- name: Prepare prompt evaluation scenario
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Confirm local execution is available
+      ansible.builtin.assert:
+        that:
+          - ansible_connection == "local"

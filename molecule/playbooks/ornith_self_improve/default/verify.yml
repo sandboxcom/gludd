@@ -4,9 +4,8 @@
   connection: local
   gather_facts: false
   vars:
-    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
-    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}.pid"
-    repo_path: "/tmp/gludd-ornith-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8897', true) }}"
+    repo_path: "/tmp/gludd-ornith-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8897', true) }}"
     artifact_dir: "/tmp/gludd-ornith-self-improve-{{ mock_port }}"
   tasks:
     - name: Assert patch file exists
@@ -79,12 +78,6 @@
             | length >= 1
         fail_msg: "models/call endpoint was not hit: {{ req_log.json.requests }}"
         success_msg: "POST /admin/models/call was hit"
-
-    - name: Stop mock daemon
-      ansible.builtin.shell:
-        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
-      changed_when: false
-      failed_when: false
 
     - name: Remove throwaway repo
       ansible.builtin.file:

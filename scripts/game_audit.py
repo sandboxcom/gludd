@@ -20,6 +20,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 _REPO_ROOT = Path(__file__).parent.parent
 _REPORT_PATH = _REPO_ROOT / ".game-audit-report.json"
@@ -40,16 +41,20 @@ def run_tests() -> int:
     return result.returncode
 
 
-def load_report() -> dict | None:
+def load_report() -> dict[str, Any] | None:
     if not _REPORT_PATH.exists():
         print(f"Error: No report found at {_REPORT_PATH}")
         print("Run tests first with: uv run python scripts/game_audit.py")
         return None
     try:
-        return json.loads(_REPORT_PATH.read_text())
+        loaded = json.loads(_REPORT_PATH.read_text())
     except json.JSONDecodeError as exc:
         print(f"Error: Invalid report JSON: {exc}")
         return None
+    if not isinstance(loaded, dict):
+        print("Error: Report JSON must contain an object.")
+        return None
+    return {str(key): value for key, value in loaded.items()}
 
 
 def print_header(title: str) -> None:
@@ -62,7 +67,7 @@ def print_separator() -> None:
     print(f"{'-' * 70}")
 
 
-def analyze_report(report: dict) -> None:
+def analyze_report(report: dict[str, Any]) -> None:
     games = report.get("games", {})
     summary = report.get("summary", {})
 
@@ -86,7 +91,7 @@ def analyze_report(report: dict) -> None:
     print(f"  Combined:            {total_in + total_out:,}")
     print()
 
-    token_rows = []
+    token_rows: list[tuple[str, int, int, int]] = []
     for game_id, data in games.items():
         tin = data.get("tokens_in", 0)
         tout = data.get("tokens_out", 0)
@@ -103,11 +108,14 @@ def analyze_report(report: dict) -> None:
         print(f"  {game_id:<20} {tin:>8,} {tout:>8,} {combined:>8,} {share:>6.1f}%")
 
     if token_rows:
-        top = token_rows[0]
-        bottom = token_rows[-1]
-        print(f"\n  Most tokens:  {top[0]} ({top[3]:,} total)")
-        print(f"  Fewest tokens: {bottom[0]} ({bottom[3]:,} total)")
-        print(f"  Ratio (max/min): {top[3]/max(bottom[3],1):.1f}x")
+        token_top = token_rows[0]
+        token_bottom = token_rows[-1]
+        print(f"\n  Most tokens:  {token_top[0]} ({token_top[3]:,} total)")
+        print(f"  Fewest tokens: {token_bottom[0]} ({token_bottom[3]:,} total)")
+        print(
+            f"  Ratio (max/min): "
+            f"{token_top[3]/max(token_bottom[3],1):.1f}x"
+        )
 
     # -------------------------------------------------------------------
     # 2. Latency Analysis
@@ -115,7 +123,7 @@ def analyze_report(report: dict) -> None:
     print_header("LATENCY BREAKDOWN (ms)")
 
     phases = ["model_call", "extract_code", "ast_parse", "game_verify"]
-    latency_rows = []
+    latency_rows: list[tuple[str, float, float, float, float, float]] = []
     for game_id, data in games.items():
         ph = data.get("phases", {})
         total_ms = sum(ph.get(p, 0) for p in phases)
@@ -140,18 +148,26 @@ def analyze_report(report: dict) -> None:
         total_lat = summary.get("total_latency_ms", 0)
         print(f"\n  Total latency: {total_lat:,.0f} ms ({total_lat/1000:,.1f}s)")
 
-        print(f"\n  Phase averages:")
+        print("\n  Phase averages:")
         for phase in phases:
-            vals = [r[phases.index(phase) + 1] for r in latency_rows]
+            vals = [
+                float(r[phases.index(phase) + 1]) for r in latency_rows
+            ]
             if vals:
                 avg = sum(vals) / len(vals)
                 pct = (sum(vals) / max(total_lat, 1)) * 100
                 print(f"    {phase:<25} avg={avg:>8.0f} ms  ({pct:>5.1f}% of total)")
 
-        top = latency_rows[0]
-        print(f"\n  Slowest game:  {top[0]} ({top[5]:,.0f} ms)")
-        bottom = latency_rows[-1]
-        print(f"  Fastest game:  {bottom[0]} ({bottom[5]:,.0f} ms)")
+        latency_top = latency_rows[0]
+        print(
+            f"\n  Slowest game:  {latency_top[0]} "
+            f"({latency_top[5]:,.0f} ms)"
+        )
+        latency_bottom = latency_rows[-1]
+        print(
+            f"  Fastest game:  {latency_bottom[0]} "
+            f"({latency_bottom[5]:,.0f} ms)"
+        )
 
     # -------------------------------------------------------------------
     # 3. Verification Results
@@ -193,7 +209,7 @@ def analyze_report(report: dict) -> None:
                 check_failures.setdefault(check_id, []).append(game_id)
 
     if check_failures:
-        print(f"\n  Failing checks by type:")
+        print("\n  Failing checks by type:")
         for check_id, failing_games in sorted(check_failures.items(), key=lambda kv: -len(kv[1])):
             print(f"    {check_id}: {len(failing_games)} games ({', '.join(failing_games)})")
 
@@ -214,7 +230,7 @@ def analyze_report(report: dict) -> None:
     # 5. Gaps (both main and persistence)
     # -------------------------------------------------------------------
     print_header("GAPS")
-    all_gaps: list[dict] = []
+    all_gaps: list[dict[str, Any]] = []
     for data in games.values():
         for gap in data.get("gaps", []):
             all_gaps.append(gap)
@@ -222,7 +238,7 @@ def analyze_report(report: dict) -> None:
     if not all_gaps:
         print("  No gaps recorded.")
     else:
-        by_cat: dict[str, list] = {}
+        by_cat: dict[str, list[dict[str, Any]]] = {}
         for g in all_gaps:
             by_cat.setdefault(g.get("category", "unknown"), []).append(g)
         print(f"  Total gaps: {len(all_gaps)}")
@@ -258,20 +274,27 @@ def analyze_report(report: dict) -> None:
 
     # Latency bottlenecks
     if latency_rows:
-        phase_avgs = {}
+        phase_avgs: dict[str, float] = {}
         for phase in phases:
-            vals = [r[phases.index(phase) + 1] for r in latency_rows]
+            vals = [
+                float(r[phases.index(phase) + 1]) for r in latency_rows
+            ]
             if vals:
                 phase_avgs[phase] = sum(vals) / len(vals)
 
-        bottleneck = max(phase_avgs, key=phase_avgs.get) if phase_avgs else ""
+        bottleneck = (
+            max(phase_avgs, key=phase_avgs.__getitem__) if phase_avgs else ""
+        )
         if bottleneck and phase_avgs.get(bottleneck, 0) > 0:
+            recommendation = (
+                "Consider caching or model selection changes."
+                if bottleneck == "model_call"
+                else "Consider optimizing the extraction/verification code."
+            )
             hints.append(
                 f"Primary latency bottleneck: '{bottleneck}' phase "
                 f"({phase_avgs[bottleneck]:.0f} ms avg). "
-                f"{'Consider caching or model selection changes.'
-                  if bottleneck == 'model_call' else
-                  'Consider optimizing the extraction/verification code.'}"
+                f"{recommendation}"
             )
 
     # Import failures are the critical blocker

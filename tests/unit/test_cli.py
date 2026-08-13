@@ -148,6 +148,16 @@ class TestCLIParsing:
             main()
             mock_cmd.assert_called_once()
 
+    def test_smoke_parser_is_available_to_programmatic_consumers(self):
+        from general_ludd.cli import _cmd_smoke, build_parser
+
+        parser, subcommand_map = build_parser()
+        parsed = parser.parse_args(["smoke", "azure", "vm-a100"])
+
+        assert subcommand_map["smoke"].prog == "gludd smoke"
+        assert parsed.func is _cmd_smoke
+        assert (parsed.provider, parsed.test) == ("azure", "vm-a100")
+
     def test_models_search_command(self):
         with (
             patch("sys.argv", ["gludd", "models", "search", "llama"]),
@@ -181,6 +191,29 @@ class TestCLIParsing:
             args = mock_cmd.call_args[0][0]
             assert args.model == "llama-7b"
             assert args.engine == "vllm"
+
+    def test_compute_azure_preflight_parses_accelerator_shape(self):
+        with patch(
+            "sys.argv",
+            [
+                "gludd",
+                "compute",
+                "azure-preflight",
+                "--gpu",
+                "a100_80",
+                "--gpu-count",
+                "2",
+                "--region",
+                "westus3",
+            ],
+        ), patch("general_ludd.cli._cmd_compute_azure_preflight") as mock_cmd:
+            main()
+
+        args = mock_cmd.call_args[0][0]
+        assert args.gpu == "a100_80"
+        assert args.gpu_count == 2
+        assert args.region == "westus3"
+        assert args.daemon_url == "http://localhost:8000"
 
 
 class TestClientCommands:

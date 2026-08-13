@@ -140,6 +140,7 @@ class TestTaskEmbeddingModelCRUD:
         emb2 = TaskEmbeddingModel(task_type="duplicate", canonical_text="Second")
         async_session.add(emb1)
         await async_session.flush()
+        async_session.expunge(emb1)
         async_session.add(emb2)
         with pytest.raises((IntegrityError, OperationalError)):
             await async_session.flush()

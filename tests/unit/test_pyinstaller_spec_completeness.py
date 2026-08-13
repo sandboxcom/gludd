@@ -29,6 +29,7 @@ Background:
 
 from __future__ import annotations
 
+import ast
 import re
 from importlib import resources
 from pathlib import Path
@@ -44,7 +45,15 @@ DATA_FILE_EXTENSIONS = (".yml", ".yaml", ".json", ".txt", ".cfg", ".ini", ".toml
 
 # Path subsegments that mark a data file as test/documentation/example rather
 # than runtime-critical. Files under these paths do NOT need to be bundled.
-_NON_RUNTIME_MARKERS = ("test", "tests", "example", "examples", "doc", "docs")
+_NON_RUNTIME_MARKERS = (
+    "test",
+    "tests",
+    "example",
+    "examples",
+    "doc",
+    "docs",
+    "guideline",
+)
 
 
 @pytest.fixture(scope="module")
@@ -54,43 +63,72 @@ def spec_text() -> str:
     return SPEC_PATH.read_text(encoding="utf-8")
 
 
-def _excludes_from_spec(spec_text: str) -> set[str]:
-    """Parse the ``excludes=`` list from ``gludd.spec`` and return its entries.
+def _analysis_keyword_node(spec_text: str, keyword: str) -> ast.expr | None:
+    """Return an ``Analysis(...)`` keyword value from a PyInstaller spec."""
+    tree = ast.parse(spec_text, filename=str(SPEC_PATH))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Name) or node.func.id != "Analysis":
+            continue
+        for item in node.keywords:
+            if item.arg == keyword:
+                return item.value
+    return None
 
-    Returns an empty set if the spec has no excludes list (which would itself
-    be a regression — the spec excludes ``ansible.cli`` for Windows cp1252).
-    """
-    excludes_match = re.search(r"excludes\s*=\s*\[([^\]]*)\]", spec_text, re.DOTALL)
-    if not excludes_match:
+
+def _string_literals(node: ast.AST | None) -> set[str]:
+    """Collect string literals contained in an AST expression."""
+    if node is None:
         return set()
-    return set(re.findall(r"['\"]([^'\"]+)['\"]", excludes_match.group(1)))
+    return {
+        child.value
+        for child in ast.walk(node)
+        if isinstance(child, ast.Constant) and isinstance(child.value, str)
+    }
+
+
+def _excludes_from_spec(spec_text: str) -> set[str]:
+    """Parse literal entries passed to ``Analysis(excludes=...)``.
+
+    AST inspection remains correct when the literal list is concatenated with
+    a platform-specific variable, unlike the former bracket-matching regex.
+    """
+    return _string_literals(_analysis_keyword_node(spec_text, "excludes"))
 
 
 def _analysis_datas_body(spec_text: str) -> str | None:
-    """Extract the body of the ``datas=`` argument inside ``Analysis(...)``.
+    """Return the source expression passed to ``Analysis(datas=...)``."""
+    node = _analysis_keyword_node(spec_text, "datas")
+    return ast.unparse(node) if node is not None else None
 
-    PyInstaller only bundles what is passed to ``Analysis(datas=[...])`` — a
-    module-level ``datas = [...]`` variable is ignored. This helper lets the
-    tests assert on what actually reaches the bundle.
 
-    Returns the inner text of the ``datas=[...]`` list inside Analysis, or
-    None if no Analysis block with a datas argument is found.
-    """
-    # Match "datas=[" up to the matching "]" — the spec's datas lists are
-    # single-level (no nested lists), so a non-greedy capture to the next "]"
-    # at the same paren depth is sufficient.
-    analysis_match = re.search(
-        r"Analysis\s*\((?P<body>.*?)\)\s*$",
-        spec_text,
-        re.DOTALL | re.MULTILINE,
-    )
-    if not analysis_match:
-        return None
-    body = analysis_match.group("body")
-    datas_match = re.search(r"datas\s*=\s*\[(?P<inner>.*?)\]", body, re.DOTALL)
-    if not datas_match:
-        return None
-    return datas_match.group("inner")
+def _collect_submodule_packages(spec_text: str) -> set[str]:
+    """Return package names passed to ``collect_submodules(...)``."""
+    tree = ast.parse(spec_text, filename=str(SPEC_PATH))
+    packages: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Name) or node.func.id != "collect_submodules":
+            continue
+        if node.args and isinstance(node.args[0], ast.Constant):
+            package = node.args[0].value
+            if isinstance(package, str):
+                packages.add(package)
+    return packages
+
+
+def _collect_submodule_calls(spec_text: str) -> list[ast.Call]:
+    """Return every ``collect_submodules(...)`` call in the spec."""
+    tree = ast.parse(spec_text, filename=str(SPEC_PATH))
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "collect_submodules"
+    ]
 
 
 def _find_runtime_data_files(package_name: str) -> list[Path]:
@@ -190,10 +228,8 @@ class TestAnsibleDataCollection:
         explicitly. Without this, the bundle's executor path silently
         fails the first time ansible resolves a module/action.
         """
-        assert re.search(
-            r"collect_submodules\(\s*['\"]ansible\.module_utils['\"]\s*\)",
-            spec_text,
-        ), (
+        packages = _collect_submodule_packages(spec_text)
+        assert "ansible.module_utils" in packages, (
             "gludd.spec must call collect_submodules('ansible.module_utils') "
             "to bundle ansible's dynamically-imported subpackage. The static "
             "analyzer misses these imports otherwise."
@@ -202,10 +238,7 @@ class TestAnsibleDataCollection:
         # subpackages (plugins, template, galaxy) — these are the ones
         # core_runner.py and the executor touch at runtime.
         for sub in ("ansible.plugins", "ansible.template", "ansible.galaxy"):
-            assert re.search(
-                r"collect_submodules\(\s*['\"]" + re.escape(sub) + r"['\"]\s*\)",
-                spec_text,
-            ), (
+            assert sub in packages, (
                 f"gludd.spec must call collect_submodules('{sub}') — used at "
                 f"runtime by ansible's executor path."
             )
@@ -232,6 +265,62 @@ class TestAnsibleDataCollection:
             "ansible.cli.initialize_locale() hard-fails on Windows cp1252 "
             "locale ('Ansible requires UTF-8; Detected 1252')."
         )
+
+    def test_spec_filters_nonexistent_ansible_distro_children(
+        self, spec_text: str
+    ) -> None:
+        """Ansible's distro compatibility package advertises two absent children."""
+        assert "filter=_is_collectable_ansible_submodule" in spec_text
+        assert "ansible.module_utils.distro.__main__" in spec_text
+        assert "ansible.module_utils.distro.distro" in spec_text
+
+
+class TestBuildWarningPrevention:
+    """Intentional optional/platform imports must not pollute release builds."""
+
+    def test_windows_ansible_collection_ignores_posix_import_failures(
+        self, spec_text: str
+    ) -> None:
+        """Windows discovery skips warnings from unsupported Ansible internals."""
+        calls = _collect_submodule_calls(spec_text)
+        assert calls
+        for call in calls:
+            on_error = next(
+                (item.value for item in call.keywords if item.arg == "on_error"),
+                None,
+            )
+            assert isinstance(on_error, ast.Name)
+            assert on_error.id == "_ansible_collect_error_mode"
+
+        assert 'sys.platform == "win32"' in spec_text
+        assert '_ansible_collect_error_mode = "ignore"' in spec_text
+
+    def test_windows_excludes_posix_only_stdlib_modules(
+        self, spec_text: str
+    ) -> None:
+        """Static analysis must not warn for stdlib modules absent on Windows."""
+        assert 'sys.platform == "win32"' in spec_text
+        for module in ("fcntl", "grp", "pty", "pwd", "resource", "termios", "tty"):
+            assert f"'{module}'" in spec_text
+
+    def test_unused_sqlalchemy_drivers_are_explicitly_excluded(
+        self, spec_text: str
+    ) -> None:
+        excluded = _excludes_from_spec(spec_text)
+        assert {"pysqlite2", "MySQLdb"} <= excluded
+
+    def test_non_windows_modules_have_platform_excludes(
+        self, spec_text: str
+    ) -> None:
+        assert "sys.platform != \"win32\"" in spec_text
+        for module in (
+            "appdirs",
+            "click._winconsole",
+            "dateutil.tz.win",
+            "platformdirs.windows",
+            "prompt_toolkit.output.win32",
+        ):
+            assert module in spec_text
 
 
 class TestOtherLibraryDataFiles:

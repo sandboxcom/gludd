@@ -4,14 +4,13 @@
 2. TerraformConfig is wired into TerraformGenerator
 3. CLI ``gludd config terraform get/set`` subcommands exist
 4. DeploymentManager plan() and validate() methods exist
-5. QEMU provider is registered in versions.tf
+5. QEMU virtualization uses the maintained libvirt provider in versions.tf
 6. QemuConfig/detect returns correct platform/arch on current machine
 """
 
 from __future__ import annotations
 
 import platform
-import re
 from pathlib import Path
 from typing import Any
 
@@ -269,11 +268,11 @@ class TestDeploymentManagerPlanValidate:
 
 
 # ------------------------------------------------------------------
-# 5. QEMU provider in versions.tf
+# 5. QEMU virtualization provider in versions.tf
 # ------------------------------------------------------------------
 
-class TestQemuProviderInVersionsTf:
-    """The canonical versions.tf declares a qemu provider block."""
+class TestQemuVirtualizationProviderInVersionsTf:
+    """The canonical versions.tf uses libvirt for QEMU virtualization."""
 
     @property
     def versions_path(self) -> Path:
@@ -288,18 +287,14 @@ class TestQemuProviderInVersionsTf:
         content = self.versions_path.read_text()
         assert "required_providers" in content
 
-    def test_qemu_is_registered(self) -> None:
+    def test_libvirt_is_registered(self) -> None:
         content = self.versions_path.read_text()
-        assert "qemu" in content.lower(), (
-            "qemu provider NOT registered in versions.tf"
-        )
+        assert "libvirt" in content.lower()
 
-    def test_qemu_source_is_valid(self) -> None:
+    def test_libvirt_source_is_maintained(self) -> None:
         content = self.versions_path.read_text()
-        match = re.search(r'qemu\s*=\s*\{(.*?)\}', content, re.DOTALL | re.IGNORECASE)
-        assert match is not None, "qemu provider block not found"
-        block = match.group(1)
-        assert "source" in block, "qemu provider missing source declaration"
+        assert 'source  = "dmacvicar/libvirt"' in content
+        assert "qemu =" not in content.lower()
 
 
 # ------------------------------------------------------------------

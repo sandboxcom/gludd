@@ -126,13 +126,13 @@ def test_unknown_smoke_test_exits_with_clear_error() -> None:
         run_smoke("aws", "does-not-exist", env={})
 
 
-def test_cli_filters_fs_pkg_resources_runtime_warning() -> None:
+def test_cli_has_no_fs_pkg_resources_runtime_warning_filter() -> None:
     import warnings
 
     import general_ludd
 
     assert general_ludd.__version__
-    assert any(
+    assert not any(
         getattr(item[1], "pattern", "").startswith("pkg_resources is deprecated")
         and getattr(item[3], "pattern", "") == "fs"
         for item in warnings.filters

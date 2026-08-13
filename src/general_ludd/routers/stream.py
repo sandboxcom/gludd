@@ -140,6 +140,23 @@ def _run_subprocess(args: list[str], cwd: str, timeout: float) -> subprocess.Pop
     )
 
 
+def _kill_and_reap(
+    proc: subprocess.Popen[bytes],
+    timeout: float = 5.0,
+) -> None:
+    """Kill a subprocess, drain its pipes, and reap it without leaking FDs."""
+    proc.kill()
+    try:
+        proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.wait(timeout=timeout)
+    finally:
+        if proc.stdout is not None:
+            proc.stdout.close()
+        if proc.stderr is not None:
+            proc.stderr.close()
+
+
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.post(
         "/admin/stream/dispatch",
@@ -272,7 +289,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             try:
                 stdout, stderr = await asyncio.to_thread(proc.communicate, timeout=timeout)
             except Exception as exc:
-                proc.kill()
+                await asyncio.to_thread(_kill_and_reap, proc)
                 raise HTTPException(
                     status_code=504,
                     detail=f"stream clone execution timed out after {timeout}s: {exc}",

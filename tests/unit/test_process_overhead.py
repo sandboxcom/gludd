@@ -88,17 +88,26 @@ class TestAntiStopFalsePositiveRate:
             f"common vocabulary."
         )
 
-    def test_stop_state_file_has_recent_activity(self):
-        """If the stop-state file exists, its timestamp must be recent."""
-        data = _read_json("/tmp/gludd-stop-state.json")
-        if data is None:
-            return
+    def test_stop_state_file_has_recent_activity(self, hook_plugin_env: HookEnv):
+        """A real stop-hook event must refresh its isolated state immediately."""
+        before_ms = time.time() * 1000
+        result = hook_plugin_env.invoke(
+            "enforce-stop.ts",
+            "event",
+            input={"event": {"type": "session.idle"}},
+        )
+        assert result.returncode == 0, result.stderr
+        data = hook_plugin_env.read_json("GLUDD_STOP_STATE_FILE")
+        assert isinstance(data, dict), data
         ts = data.get("ts", 0)
-        age = time.time() - (ts / 1000)
-        assert age < 120, (
-            f"Stop-state file /tmp/gludd-stop-state.json timestamp is {age:.0f}s old "
-            f"(must be < 120s). A stale file means the handler fires but never "
-            f"refreshes, or the session ended without cleanup."
+        age_ms = (time.time() * 1000) - ts
+        assert before_ms <= ts <= time.time() * 1000, (
+            f"Stop-state timestamp {ts!r} was not written by this hook invocation "
+            f"(started at {before_ms:.0f}ms)."
+        )
+        assert age_ms < 10_000, (
+            f"Stop-state timestamp is {age_ms:.0f}ms old after direct hook invocation; "
+            f"the event handler did not refresh observable state."
         )
 
 

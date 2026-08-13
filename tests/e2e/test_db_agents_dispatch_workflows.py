@@ -14,11 +14,12 @@ import contextlib
 import json
 import os
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.exc import TimeoutError as SATimeoutError
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -56,6 +57,8 @@ from general_ludd.db.repository import (
 )
 from general_ludd.db.session import (
     close_engine,
+    create_async_session_factory,
+    ensure_tables,
     get_async_session,
     init_engine_from_config,
     json_dumps,
@@ -123,13 +126,13 @@ def _make_todo_data(**overrides):
     return data
 
 
-def _make_agent_task(task_id="test-1", agent_name="build", **overrides):
+def _make_agent_task(task_id="test-1", agent_name="general", **overrides):
     data = {
         "task_id": task_id,
         "agent_name": agent_name,
         "description": "test task",
         "prompt": "do something useful",
-        "invoker_name": "primary",
+        "invoker_name": "build",
     }
     data.update(overrides)
     return AgentTask(**data)
@@ -161,11 +164,12 @@ class TestEngineLifecycle:
         assert "sqlite" in str(engine.url)
         await engine.dispose()
 
-    async def test_init_engine_from_config_creates_db_file(self):
+    async def test_database_bootstrap_creates_db_file(self):
         with tempfile.TemporaryDirectory() as td:
             db_path = os.path.join(td, "test.db")
             url = f"sqlite+aiosqlite:///{db_path}"
             engine = init_engine_from_config({"url": url})
+            await ensure_tables(engine)
             assert os.path.exists(db_path)
             await engine.dispose()
 
@@ -199,30 +203,33 @@ class TestEngineLifecycle:
 
 class TestConnectionPool:
     async def test_pool_exhaustion_triggers_queue_pool(self):
-        engine = create_async_engine(
-            "sqlite+aiosqlite:///:memory:",
-            pool_size=2,
-            max_overflow=0,
-            poolclass=StaticPool,
-            connect_args={"check_same_thread": False},
-        )
-        try:
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        with tempfile.TemporaryDirectory() as td:
+            db_path = os.path.join(td, "pool.db")
+            engine = create_async_engine(
+                f"sqlite+aiosqlite:///{db_path}",
+                pool_size=2,
+                max_overflow=0,
+                pool_timeout=0.1,
+            )
+            try:
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-            async def _hold_task(n):
-                async with factory() as session:
-                    await session.execute(text("SELECT 1"))
-                    if n == 0:
-                        await asyncio.sleep(0.5)
-                    return True
+                async def _hold_task(_n):
+                    async with factory() as session:
+                        await session.execute(text("SELECT 1"))
+                        await asyncio.sleep(0.3)
+                        return True
 
-            results = await asyncio.gather(*(_hold_task(i) for i in range(10)), return_exceptions=True)
-            success_count = sum(1 for r in results if r is True)
-            assert success_count >= 1
-        finally:
-            await engine.dispose()
+                results = await asyncio.gather(
+                    *(_hold_task(i) for i in range(10)),
+                    return_exceptions=True,
+                )
+                assert sum(result is True for result in results) == 2
+                assert sum(isinstance(result, SATimeoutError) for result in results) == 8
+            finally:
+                await engine.dispose()
 
     async def test_pool_recovery_after_dispose_and_recreate(self):
         engine = create_async_engine(
@@ -252,8 +259,7 @@ class TestConnectionPool:
             finally:
                 await engine2.dispose()
         finally:
-            if not engine._closed:
-                await engine.dispose()
+            await engine.dispose()
 
 
 class TestTransactionIsolation:
@@ -319,15 +325,17 @@ class TestTransactionIsolation:
 
 class TestSessionManagement:
     async def test_get_async_session_yields_and_commits(self, db_session: AsyncSession):
-        engine = db_session.get_bind()
-        factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        engine = db_session.bind
+        assert isinstance(engine, AsyncEngine)
+        factory = create_async_session_factory(engine)
         async for session in get_async_session(factory):
             await session.execute(text("SELECT 1"))
             assert not session.info.get("rolled_back", False)
 
     async def test_get_async_session_rollback_on_exception(self, db_session: AsyncSession):
-        engine = db_session.get_bind()
-        factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        engine = db_session.bind
+        assert isinstance(engine, AsyncEngine)
+        factory = create_async_session_factory(engine)
         with pytest.raises(ValueError):
             async for _session in get_async_session(factory):
                 raise ValueError("forced rollback")
@@ -395,10 +403,11 @@ class TestAgentRegistry:
 class TestBehaviorRendering:
     def test_default_primary_behavior_has_required_fields(self):
         behavior = default_primary_behavior()
-        assert behavior.role is not None
-        assert behavior.goal is not None
+        assert behavior.completion_policy == "complete_all"
+        assert behavior.self_directed_work is True
         assert behavior.tdd_enforced is True
         assert behavior.evidence_required is True
+        assert behavior.guardrail.layer_count() == 3
 
     def test_default_subagent_behavior_has_required_fields(self):
         behavior = default_subagent_behavior()
@@ -491,7 +500,7 @@ class TestAgentConfig:
 
 
 class TestAgentDispatcherBasic:
-    async def test_dispatch_one_success(self, agent_registry: AgentRegistry):
+    async def test_dispatch_one_completed(self, agent_registry: AgentRegistry):
         executed_tasks = []
 
         async def mock_executor(task):
@@ -502,7 +511,7 @@ class TestAgentDispatcherBasic:
         task = _make_agent_task(task_id="disp-1")
         result = await dispatcher.dispatch_one(task)
 
-        assert result.status == "success"
+        assert result.status == "completed"
         assert result.task_id == "disp-1"
         assert "Result:" in result.output
         assert "disp-1" in executed_tasks
@@ -515,21 +524,22 @@ class TestAgentDispatcherBasic:
         assert result.status == "failed"
         assert "not found" in result.output.lower()
 
-    async def test_dispatch_one_agent_disabled(self, agent_registry: AgentRegistry):
-        agent_registry.register(AgentConfig(
+    async def test_dispatch_one_agent_disabled(self):
+        registry = AgentRegistry()
+        registry.register(AgentConfig(
             name="offline-agent",
             description="disabled",
             type=AgentType.SUBAGENT,
             enabled=False,
         ))
-        agent_registry.register(AgentConfig(
+        registry.register(AgentConfig(
             name="primary",
             description="primary",
             type=AgentType.PRIMARY,
             permissions=AgentPermission(can_dispatch_subagents=True, allowed_subagents=["offline-agent"]),
         ))
-        dispatcher = AgentDispatcher(agent_registry)
-        task = _make_agent_task(agent_name="offline-agent")
+        dispatcher = AgentDispatcher(registry)
+        task = _make_agent_task(agent_name="offline-agent", invoker_name="primary")
         result = await dispatcher.dispatch_one(task)
         assert result.status == "failed"
         assert "disabled" in result.output.lower()
@@ -566,7 +576,7 @@ class TestAgentDispatcherBasic:
         tasks = [_make_agent_task(task_id=f"many-{i}") for i in range(5)]
         results = await dispatcher.dispatch_many(tasks)
         assert len(results) == 5
-        assert all(r.status == "success" for r in results)
+        assert all(r.status == "completed" for r in results)
         assert max_seen > 1
 
 
@@ -588,7 +598,7 @@ class TestDispatchRateLimiting:
         tasks = [_make_agent_task(task_id=f"rate-{i}") for i in range(5)]
         results = [await dispatcher.dispatch_one(t) for t in tasks]
 
-        success = [r for r in results if r.status == "success"]
+        success = [r for r in results if r.status == "completed"]
         failed = [r for r in results if r.status == "failed"]
         assert len(success) == 3
         assert len(failed) == 2
@@ -611,8 +621,8 @@ class TestDispatchSpiralDetection:
         r3 = await dispatcher.dispatch_one(task)
         r4 = await dispatcher.dispatch_one(task)
 
-        assert r1.status == "success"
-        assert r2.status == "success"
+        assert r1.status == "completed"
+        assert r2.status == "completed"
         assert r3.status == "failed"
         assert "spiral" in r3.output.lower()
         assert r4.status == "failed"
@@ -634,7 +644,7 @@ class TestDispatchNestingDepth:
         r_shallow = await dispatcher.dispatch_one(shallow)
         r_deep = await dispatcher.dispatch_one(deep)
 
-        assert r_shallow.status == "success"
+        assert r_shallow.status == "completed"
         assert r_deep.status == "failed"
         assert "nesting depth" in r_deep.output.lower()
 
@@ -650,7 +660,12 @@ class TestDispatchCapabilityEscalation:
             name="parent",
             description="parent",
             type=AgentType.PRIMARY,
-            permissions=AgentPermission(can_read=True, can_edit=False),
+            permissions=AgentPermission(
+                can_read=True,
+                can_edit=False,
+                can_dispatch_subagents=True,
+                allowed_subagents=["child"],
+            ),
         ))
         registry.register(AgentConfig(
             name="child",
@@ -684,7 +699,7 @@ class TestDispatchConcurrency:
         tasks = [_make_agent_task(task_id=f"conc-{i}") for i in range(8)]
         results = await dispatcher.dispatch_many(tasks)
         assert len(results) == 8
-        assert all(r.status == "success" for r in results)
+        assert all(r.status == "completed" for r in results)
         assert len(call_tracker) == 16
 
     async def test_active_count_reflects_in_flight_tasks(self, agent_registry: AgentRegistry):
@@ -726,7 +741,7 @@ class TestDispatchRecordEvent:
         dispatcher = AgentDispatcher(agent_registry, executor=mock_executor, run_recorder=recorder)
         task = _make_agent_task(task_id="rec-1")
         result = await dispatcher.dispatch_one(task)
-        assert result.status == "success"
+        assert result.status == "completed"
 
     async def test_recorder_receives_failure_event(self, agent_registry: AgentRegistry):
         from general_ludd.replay.recorder import RunRecorder
@@ -771,7 +786,7 @@ class TestTodoToDispatchWorkflow:
             prompt=f"Work on: {created.title}",
         )
         result = await dispatcher.dispatch_one(task)
-        assert result.status == "success"
+        assert result.status == "completed"
 
         await repo.transition(created.todo_id, TodoStatus.COMPLETE, expected_version=2)
         await db_session.commit()
@@ -869,10 +884,12 @@ class TestAgentMessages:
     async def test_send_and_retrieve_message(self, db_session: AsyncSession):
         repo = AgentMessageRepository(db_session)
         msg = await repo.send(
-            sender="build",
-            recipient="general",
-            topic="code-review",
-            body="Please review PR #42",
+            {
+                "sender": "build",
+                "recipient": "general",
+                "topic": "code-review",
+                "body": "Please review PR #42",
+            }
         )
         await db_session.commit()
         assert msg.sender == "build"
@@ -880,9 +897,15 @@ class TestAgentMessages:
 
     async def test_inbox_returns_unread_messages(self, db_session: AsyncSession):
         repo = AgentMessageRepository(db_session)
-        await repo.send(sender="build", recipient="general", topic="task-1", body="msg 1")
-        await repo.send(sender="build", recipient="general", topic="task-2", body="msg 2")
-        await repo.send(sender="build", recipient="explore", topic="task-3", body="msg 3")
+        await repo.send(
+            {"sender": "build", "recipient": "general", "topic": "task-1", "body": "msg 1"}
+        )
+        await repo.send(
+            {"sender": "build", "recipient": "general", "topic": "task-2", "body": "msg 2"}
+        )
+        await repo.send(
+            {"sender": "build", "recipient": "explore", "topic": "task-3", "body": "msg 3"}
+        )
         await db_session.commit()
 
         inbox = await repo.inbox("general")
@@ -892,11 +915,14 @@ class TestAgentMessages:
 
     async def test_ack_marks_message_as_read(self, db_session: AsyncSession):
         repo = AgentMessageRepository(db_session)
-        msg = await repo.send(sender="build", recipient="coder", topic="ack-test", body="ack me")
+        msg = await repo.send(
+            {"sender": "build", "recipient": "coder", "topic": "ack-test", "body": "ack me"}
+        )
         await db_session.commit()
 
         acked = await repo.ack(msg.id)
-        assert acked is True
+        assert acked is not None
+        assert acked.read_at is not None
         await db_session.commit()
 
         inbox_after = await repo.inbox("coder")
@@ -904,20 +930,32 @@ class TestAgentMessages:
 
     async def test_purge_removes_expired_messages(self, db_session: AsyncSession):
         repo = AgentMessageRepository(db_session)
-        datetime.now(UTC) - __import__("datetime").timedelta(days=10)
-        await repo.send(sender="build", recipient="coder", topic="old", body="stale")
+        msg = await repo.send(
+            {
+                "sender": "build",
+                "recipient": "coder",
+                "topic": "old",
+                "body": "stale",
+                "ttl_seconds": 60,
+            }
+        )
+        msg.created_at = datetime.now(UTC) - timedelta(days=10)
+        await db_session.flush()
 
-        count = await repo.purge()
-        assert count >= 0
+        assert await repo.inbox("coder") == []
+        count = await repo.purge_expired()
+        assert count == 1
         await db_session.commit()
 
     async def test_broadcast_message_reaches_everyone(self, db_session: AsyncSession):
         repo = AgentMessageRepository(db_session)
         await repo.send(
-            sender="orchestrator",
-            recipient=BROADCAST_RECIPIENT,
-            topic="announce",
-            body="New release",
+            {
+                "sender": "orchestrator",
+                "recipient": BROADCAST_RECIPIENT,
+                "topic": "announce",
+                "body": "New release",
+            }
         )
         await db_session.commit()
 
@@ -954,8 +992,7 @@ class TestErrorDBConnectionLoss:
                 async for _ in get_async_session(factory):
                     pass
         finally:
-            if not engine._closed:
-                await engine.dispose()
+            await engine.dispose()
 
 
 class TestErrorInvalidTransition:
@@ -1013,10 +1050,10 @@ class TestErrorDispatchRetry:
                     status="failed",
                     output="transient failure",
                 ))
-            if results[-1].status == "success":
+            if results[-1].status == "completed":
                 break
 
-        assert any(r.status == "success" for r in results)
+        assert any(r.status == "completed" for r in results)
         assert call_count["count"] >= 1
 
 

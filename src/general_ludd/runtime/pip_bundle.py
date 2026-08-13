@@ -84,6 +84,9 @@ class BundleResult:
 
 
 class PipBundleBuilder:
+    def __init__(self, signer: ManifestSigner | None = None) -> None:
+        self._signer = signer or ManifestSigner()
+
     def build(self, output_dir: str, version: str) -> BundleResult:
         # Fail closed on injection-y dirs BEFORE any makedirs/subprocess spawn.
         output_dir = _validate_output_dir(output_dir)
@@ -158,7 +161,7 @@ class PipBundleBuilder:
         Path(manifest_path).write_text(manifest.model_dump_json(indent=2))
 
         try:
-            sig_result = ManifestSigner().sign(manifest_path)
+            sig_result = self._signer.sign(manifest_path)
             sig_path = sig_result.sig_path if sig_result.success else ""
             signature_valid = sig_result.success
         except Exception:

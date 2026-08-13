@@ -190,6 +190,27 @@ def test_query_passes_query_and_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "/v2/alerts" in transport.calls[0]["url"]
 
 
+def test_callable_transport_compatibility(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OG_TOKEN", "tok")
+    calls: list[dict[str, Any]] = []
+
+    def transport(
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> tuple[int, object]:
+        calls.append({"method": method, "url": url, **kwargs})
+        return 200, CANNED_ALERTS
+
+    src = OpsgenieSource(_config(), transport=transport)
+
+    records = src.query({"limit": 25})
+
+    assert len(records) == 2
+    assert calls[0]["method"] == "GET"
+    assert calls[0]["params"] == {"limit": 25}
+
+
 def test_timeout_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OG_TOKEN", "tok")
     transport = FakeTransport(FakeResponse(200, {"data": []}))

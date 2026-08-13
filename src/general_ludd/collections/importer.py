@@ -15,9 +15,10 @@ Layout expected under the collection root:
 
 Provider trust is anchored by the operator's trust list at
 ``infra/terraform/policies/data.json`` (``data.gludd.provider_trust_list``).
-A collection may declare ``terraform_provider_trust`` in ``galaxy.yml`` and
-``providers`` in ``providers.yaml``; both are intersected with the operator
-trust list — anything outside it is an import error.
+A collection declares ``providers`` in ``providers.yaml``; every provider
+source is intersected with the operator trust list — anything outside it is an
+import error. Provider metadata stays outside ``galaxy.yml`` so that standard
+Ansible Galaxy tooling accepts the collection schema without warnings.
 """
 
 from __future__ import annotations
@@ -29,7 +30,6 @@ import subprocess
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -111,19 +111,6 @@ class TerraformCollectionImporter:
         trust_list = self._load_operator_trust_list()
         issues: list[ImportIssue] = []
 
-        galaxy_trust = self._read_galaxy_provider_trust()
-        for provider in galaxy_trust:
-            if not _provider_in_trust_list(provider, trust_list):
-                issues.append(
-                    ImportIssue(
-                        severity="error",
-                        message=(
-                            f"galaxy.yml terraform_provider_trust references untrusted "
-                            f"provider {provider!r} (not in operator trust list)"
-                        ),
-                    )
-                )
-
         providers_yaml = self._read_providers_yaml()
         for provider in providers_yaml:
             if not _provider_in_trust_list(provider, trust_list):
@@ -149,23 +136,6 @@ class TerraformCollectionImporter:
         entries = gludd.get("provider_trust_list", [])
         return [str(entry) for entry in entries]
 
-    def _read_galaxy_metadata(self) -> dict[str, Any]:
-        galaxy_yml = self.collection_path / "galaxy.yml"
-        if not galaxy_yml.is_file():
-            return {}
-        try:
-            data = yaml.safe_load(galaxy_yml.read_text(encoding="utf-8"))
-        except yaml.YAMLError:
-            return {}
-        return data if isinstance(data, dict) else {}
-
-    def _read_galaxy_provider_trust(self) -> list[str]:
-        meta = self._read_galaxy_metadata()
-        raw = meta.get("terraform_provider_trust", [])
-        if not isinstance(raw, list):
-            return []
-        return [str(p) for p in raw]
-
     def _read_providers_yaml(self) -> list[str]:
         path = self.collection_path / "plugins" / "terraform" / "providers.yaml"
         if not path.is_file():
@@ -179,7 +149,20 @@ class TerraformCollectionImporter:
         providers = data.get("providers", [])
         if not isinstance(providers, list):
             return []
-        return [str(p) for p in providers]
+        sources: list[str] = []
+        for provider in providers:
+            if isinstance(provider, str):
+                sources.append(provider)
+                continue
+            if isinstance(provider, dict):
+                source = provider.get("source")
+                if isinstance(source, str) and source:
+                    sources.append(source)
+                    continue
+            # Preserve fail-closed trust behavior for malformed entries: their
+            # rendered value cannot match a valid operator provider address.
+            sources.append(str(provider))
+        return sources
 
     def _run_terraform_validate(self, module_dir: Path) -> list[ImportIssue]:
         return _run_optional_binary(

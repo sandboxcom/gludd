@@ -29,10 +29,10 @@ _IMPL = ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
 
 
 def _src() -> str:
-    s = PLUGIN.read_text()
+    wrapper = PLUGIN.read_text()
     if _IMPL.exists():
-        s += "\n" + _IMPL.read_text()
-    return s
+        return _IMPL.read_text() + "\n" + wrapper
+    return wrapper
 
 
 class TestQaResponsePatternsDefined:

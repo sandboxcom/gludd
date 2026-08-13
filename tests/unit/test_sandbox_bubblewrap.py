@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from general_ludd.security.sandboxes import Capability, PermissionSpec, SandboxTarget
+from unittest.mock import patch
+
+from general_ludd.security.sandboxes import (
+    Capability,
+    PermissionSpec,
+    SandboxHandle,
+    SandboxTarget,
+)
 from general_ludd.security.sandboxes.linux_bubblewrap import BubblewrapBackend, render_argv
 
 
@@ -79,8 +86,55 @@ def test_bubblewrap_apply_missing_bwrap():
     assert isinstance(handle.applied, bool)
 
 
+def test_bubblewrap_apply_renders_dispatch_prefix_and_network_warning():
+    spec = _make_spec(capabilities=[
+        Capability(
+            resource="net:egress",
+            actions={"connect"},
+            constraints={"allowed_hosts": ["api.example.com"]},
+        ),
+    ])
+    with patch("shutil.which", return_value="/usr/bin/bwrap"):
+        handle = BubblewrapBackend.apply(spec, _make_target("/workspace"))
+
+    assert handle.applied is True
+    assert handle.extra["argv"][0] == "bwrap"
+    assert "--share-net" in handle.extra["argv"]
+    assert handle.extra["unhandled_net_hosts"] == ["api.example.com"]
+    findings = BubblewrapBackend.verify(spec, handle)
+    assert any(f.severity == "ok" for f in findings)
+    assert any("NOT enforced" in f.message for f in findings)
+
+
+def test_bubblewrap_verify_reports_unapplied_and_incomplete_argv():
+    spec = _make_spec(capabilities=[
+        Capability(
+            resource="file:workspace",
+            actions={"read"},
+            constraints={"path_prefix": "/workspace"},
+        ),
+    ])
+    unapplied = SandboxHandle(
+        backend="bubblewrap",
+        token="missing",
+        applied=False,
+        extra={"reason": "not installed"},
+    )
+    assert BubblewrapBackend.verify(spec, unapplied)[0].severity == "warn"
+
+    incomplete = SandboxHandle(
+        backend="bubblewrap",
+        token="incomplete",
+        applied=True,
+        extra={"argv": [], "unhandled_net_hosts": []},
+    )
+    findings = BubblewrapBackend.verify(spec, incomplete)
+    assert any("--unshare-all" in f.message for f in findings)
+    assert any("--die-with-parent" in f.message for f in findings)
+    assert any("missing --bind" in f.message for f in findings)
+
+
 def test_bubblewrap_release_is_noop():
-    from general_ludd.security.sandboxes import SandboxHandle
     handle = SandboxHandle(
         backend="bubblewrap",
         token="test-token",

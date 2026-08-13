@@ -39,13 +39,15 @@ class TestSelftest:
         import sys
         from unittest.mock import patch
 
-        with patch.object(sys, "argv", ["gludd", "selftest"]):
-            try:
-                import general_ludd.cli as cli_mod
+        import general_ludd.cli as cli_mod
 
-                cli_mod.main()
-            except SystemExit:
-                pass
+        with patch.object(
+            sys, "argv", ["gludd", "test", "self"]
+        ), patch.object(cli_mod, "_cmd_selftest") as mock_cmd:
+            cli_mod.main()
+
+        mock_cmd.assert_called_once()
+        assert mock_cmd.call_args.args[0].daemon_url == "http://localhost:8000"
 
     def test_selftest_runs_molecule(self):
         import sys
@@ -58,7 +60,9 @@ class TestSelftest:
             "results": [],
             "podman_available": True,
         })
-        with patch("httpx.post", return_value=mock_resp), patch.object(sys, "argv", ["gludd", "selftest"]):
+        with patch("httpx.post", return_value=mock_resp), patch.object(
+            sys, "argv", ["gludd", "test", "self"]
+        ):
             import general_ludd.cli as cli_mod
 
             try:
@@ -74,7 +78,7 @@ class TestSelftest:
 
         with patch(
             "httpx.post", side_effect=httpx.ConnectError("refused")
-        ), patch.object(sys, "argv", ["gludd", "selftest"]):
+        ), patch.object(sys, "argv", ["gludd", "test", "self"]):
                 import general_ludd.cli as cli_mod
 
                 try:

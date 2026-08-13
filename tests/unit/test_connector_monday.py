@@ -70,26 +70,29 @@ CANNED_BOARD_RESPONSE = {
     "data": {
         "boards": [
             {
-                "items": [
-                    {
-                        "id": "123",
-                        "name": "Fix login bug",
-                        "created_at": "2026-07-01T10:00:00Z",
-                        "updated_at": "2026-07-12T14:00:00Z",
-                        "state": "active",
-                        "group": {"id": "topics", "title": "Sprint 1"},
-                        "column_values": [],
-                    },
-                    {
-                        "id": "456",
-                        "name": "Add dark mode",
-                        "created_at": "2026-07-02T08:00:00Z",
-                        "updated_at": "2026-07-11T09:00:00Z",
-                        "state": "done",
-                        "group": {"id": "features", "title": "Sprint 2"},
-                        "column_values": [],
-                    },
-                ]
+                "items_page": {
+                    "cursor": None,
+                    "items": [
+                        {
+                            "id": "123",
+                            "name": "Fix login bug",
+                            "created_at": "2026-07-01T10:00:00Z",
+                            "updated_at": "2026-07-12T14:00:00Z",
+                            "state": "active",
+                            "group": {"id": "topics", "title": "Sprint 1"},
+                            "column_values": [],
+                        },
+                        {
+                            "id": "456",
+                            "name": "Add dark mode",
+                            "created_at": "2026-07-02T08:00:00Z",
+                            "updated_at": "2026-07-11T09:00:00Z",
+                            "state": "done",
+                            "group": {"id": "features", "title": "Sprint 2"},
+                            "column_values": [],
+                        },
+                    ],
+                }
             }
         ]
     }
@@ -196,7 +199,75 @@ def test_uses_graphql_post(token: str) -> None:
     assert call["method"] == "POST"
     assert call["url"] == API_URL
     assert "query" in call["json"]
-    assert "boards" in call["json"]["query"]
+    assert "items_page" in call["json"]["query"]
+
+
+def test_query_follows_items_page_cursor(token: str) -> None:
+    first_item = CANNED_BOARD_RESPONSE["data"]["boards"][0]["items_page"]["items"][0]
+    second_item = CANNED_BOARD_RESPONSE["data"]["boards"][0]["items_page"]["items"][1]
+    first_page = {
+        "data": {
+            "boards": [
+                {
+                    "items_page": {
+                        "cursor": "next-cursor",
+                        "items": [first_item],
+                    }
+                }
+            ]
+        }
+    }
+    second_page = {
+        "data": {
+            "next_items_page": {
+                "cursor": None,
+                "items": [second_item],
+            }
+        }
+    }
+    transport = RecordingTransport(
+        [FakeResponse(200, first_page), FakeResponse(200, second_page)]
+    )
+
+    rows = _src(transport).query({"limit": 1})
+
+    assert [row["raw"]["id"] for row in rows] == ["123", "456"]
+    assert len(transport.calls) == 2
+    assert transport.calls[0]["json"]["variables"]["limit"] == 1
+    assert transport.calls[1]["json"]["variables"]["cursor"] == "next-cursor"
+    assert "next_items_page" in transport.calls[1]["json"]["query"]
+
+
+def test_query_bounds_items_page_pagination(token: str) -> None:
+    item = CANNED_BOARD_RESPONSE["data"]["boards"][0]["items_page"]["items"][0]
+    first_page = {
+        "data": {
+            "boards": [
+                {
+                    "items_page": {
+                        "cursor": "cursor-1",
+                        "items": [item],
+                    }
+                }
+            ]
+        }
+    }
+    next_page = {
+        "data": {
+            "next_items_page": {
+                "cursor": "cursor-2",
+                "items": [dict(item, id="789")],
+            }
+        }
+    }
+    transport = RecordingTransport(
+        [FakeResponse(200, first_page), FakeResponse(200, next_page)]
+    )
+
+    rows = _src(transport, max_pages=2).query({"limit": 1})
+
+    assert len(transport.calls) == 2
+    assert [row["raw"]["id"] for row in rows] == ["123", "789"]
 
 
 # -- auth from env --------------------------------------------------------

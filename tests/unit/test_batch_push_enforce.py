@@ -118,8 +118,8 @@ class TestEnvVarDisable:
 
     def test_env_var_checked_before_ci_call(self):
         src = _plugin_source()
-        enforce_pos = src.index('GLUDD_BATCH_PUSH_ENFORCE')
-        ci_call_pos = src.index("isCiPending")
+        enforce_pos = src.index("process.env.GLUDD_BATCH_PUSH_ENFORCE")
+        ci_call_pos = src.index("if (isCiPending")
         assert enforce_pos < ci_call_pos, (
             "Env-var check must happen before CI check (early return)"
         )

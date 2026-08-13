@@ -19,11 +19,15 @@ from general_ludd.xml_utils import (
     apply_xslt,
     build_soap_envelope,
     dict_to_xml,
+    docbook_to_html,
     extract_namespaces,
     infer_xsd,
+    parse_gradle_dependencies,
     parse_saml_assertion,
+    parse_soap_response,
     parse_xml,
     read_plist,
+    register_namespaces,
     write_plist,
     xml_to_dict,
     xpath_query,
@@ -353,6 +357,17 @@ class TestInferXsd:
         assert schema is not None
         assert len(schema) >= len(infer_xsd(sample_xml_string) or "")
 
+    def test_list_input_emits_target_namespace(self) -> None:
+        schema = infer_xsd(
+            ["<catalog><book/></catalog>", "<catalog><magazine/></catalog>"],
+            target_namespace="urn:example:catalog",
+        )
+
+        assert 'xmlns:tns="urn:example:catalog"' in schema
+        assert 'targetNamespace="urn:example:catalog"' in schema
+        assert 'name="book"' in schema
+        assert 'name="magazine"' in schema
+
 
 # ---------------------------------------------------------------------------
 # 4. apply_xslt
@@ -416,6 +431,17 @@ class TestXmlToDict:
         result = xml_to_dict(xml)
         assert "root" in result
 
+    def test_mixed_text_and_child_content_preserves_text(self) -> None:
+        result = xml_to_dict("<root status='ok'>summary<child>detail</child></root>")
+
+        assert result == {
+            "root": {
+                "@status": "ok",
+                "child": "detail",
+                "#text": "summary",
+            }
+        }
+
 
 # ---------------------------------------------------------------------------
 # 6. dict_to_xml
@@ -450,6 +476,30 @@ class TestDictToXml:
         assert "&gt;" in xml
         assert "&amp;" in xml
 
+    def test_lists_and_explicit_text_build_repeated_children(self) -> None:
+        xml = dict_to_xml(
+            {
+                "@version": "1",
+                "#text": "summary",
+                "item": [{"@id": "a", "#text": "first"}, "second"],
+            },
+            root_name="catalog",
+        )
+        root = ET.fromstring(xml)
+
+        assert root.attrib == {"version": "1"}
+        assert root.text.strip() == "summary"
+        assert [(item.get("id"), item.text) for item in root.findall("item")] == [
+            ("a", "first"),
+            (None, "second"),
+        ]
+
+    def test_list_root_builds_one_nested_element_per_item(self) -> None:
+        xml = dict_to_xml(["first", "second"], root_name="item")
+        root = ET.fromstring(xml)
+
+        assert [child.text for child in root.findall("item")] == ["first", "second"]
+
 
 # ---------------------------------------------------------------------------
 # 7. extract_namespaces
@@ -475,6 +525,16 @@ class TestExtractNamespaces:
         ns = extract_namespaces(sample_xml_string)
         assert isinstance(ns, dict)
         assert ns == {}
+
+    def test_default_namespace_is_extracted_and_registered(self) -> None:
+        namespace = "urn:example:default"
+        namespaces = extract_namespaces(f'<root xmlns="{namespace}"><child/></root>')
+        tree = parse_xml(f'<root xmlns="{namespace}"><child/></root>')
+
+        register_namespaces(tree, {"": namespace, "catalog": "urn:example:catalog"})
+
+        assert namespaces == {"default": namespace}
+        assert tree.getroot().tag == f"{{{namespace}}}root"
 
 
 # ---------------------------------------------------------------------------
@@ -519,6 +579,44 @@ class TestBuildSoapEnvelope:
         )
         assert body_tag is not None
 
+    def test_valid_header_payload_is_attached_as_xml(self) -> None:
+        envelope = build_soap_envelope(
+            '<web:Query xmlns:web="urn:example:web"/>',
+            header='<web:Auth xmlns:web="urn:example:web">token</web:Auth>',
+        )
+        root = ET.fromstring(envelope)
+        soap_ns = "http://www.w3.org/2003/05/soap-envelope"
+        header = root.find(f"{{{soap_ns}}}Header")
+
+        assert header is not None
+        assert header.find("{urn:example:web}Auth").text == "token"
+
+
+class TestParseSoapResponse:
+    def test_extracts_header_and_body_payloads(self) -> None:
+        response = (
+            '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" '
+            'xmlns:web="urn:example:web">'
+            "<soap:Header><web:RequestId>req-42</web:RequestId></soap:Header>"
+            "<soap:Body><web:Result><web:Status>ok</web:Status></web:Result></soap:Body>"
+            "</soap:Envelope>"
+        )
+
+        parsed = parse_soap_response(response)
+
+        assert parsed["header"]["Header"]["RequestId"] == "req-42"
+        assert parsed["body"] == [{"Result": {"Status": "ok"}}]
+        assert "Envelope" in parsed["envelope"]
+
+    def test_preserves_plain_text_body(self) -> None:
+        response = (
+            '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">'
+            "<soap:Body>accepted</soap:Body>"
+            "</soap:Envelope>"
+        )
+
+        assert parse_soap_response(response)["body"] == "accepted"
+
 
 # ---------------------------------------------------------------------------
 # 9. parse_saml_assertion
@@ -555,6 +653,81 @@ class TestParseSamlAssertion:
         issuer = result.get("issuer") or result.get("Issuer")
         assert issuer is not None
         assert "idp.example.com" in str(issuer)
+
+    def test_extracts_attributes_and_authentication_context(self) -> None:
+        assertion = (
+            '<saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" '
+            'xmlns:ds="http://www.w3.org/2000/09/xmldsig#">'
+            "<ds:Signature/>"
+            '<saml:Conditions NotBefore="invalid" NotOnOrAfter="not-a-date"/>'
+            "<saml:AttributeStatement>"
+            '<saml:Attribute Name="groups">'
+            "<saml:AttributeValue>admins</saml:AttributeValue>"
+            "<saml:AttributeValue>operators</saml:AttributeValue>"
+            "</saml:Attribute>"
+            "</saml:AttributeStatement>"
+            '<saml:AuthnStatement AuthnInstant="2026-01-01T00:00:00Z">'
+            "<saml:AuthnContext>"
+            "<saml:AuthnContextClassRef>password</saml:AuthnContextClassRef>"
+            "</saml:AuthnContext>"
+            "</saml:AuthnStatement>"
+            "</saml:Assertion>"
+        )
+
+        parsed = parse_saml_assertion(assertion)
+
+        assert parsed["valid"] is True
+        assert parsed["attributes"] == {"groups": ["admins", "operators"]}
+        assert parsed["authn"] == {
+            "instant": "2026-01-01T00:00:00Z",
+            "context": "password",
+        }
+        assert parsed["conditions"] == {
+            "not_before": "invalid",
+            "not_on_or_after": "not-a-date",
+        }
+
+    def test_non_assertion_document_returns_no_identity_claims(self) -> None:
+        response = (
+            '<saml:Response xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"/>'
+        )
+
+        assert parse_saml_assertion(response) == {}
+
+
+class TestDocbookToHtml:
+    def test_builtin_transform_preserves_nested_semantics_and_tail_text(self) -> None:
+        docbook = (
+            "<chapter><title>Operations</title>"
+            "<section><para>Deploy <emphasis>safely</emphasis> now.</para>"
+            "<itemizedlist><listitem><para>Validate</para></listitem></itemizedlist>"
+            "</section></chapter>"
+        )
+
+        html = docbook_to_html(docbook)
+
+        assert html.startswith("<html><body>")
+        assert "<h1>Operations</h1>" in html
+        assert "<p>Deploy <em>safely</em> now.</p>" in html
+        assert "<ul><li><p>Validate</p></li></ul>" in html
+        assert html.endswith("</body></html>")
+
+
+class TestParseGradleDependencies:
+    def test_parses_shorthand_and_map_notation(self) -> None:
+        gradle = """
+        dependencies {
+            implementation 'org.example:core:1.2.3'
+            runtimeOnly group: 'org.example', name: 'driver', version: '4.5.6'
+            testImplementation group: "org.example", name: "fixtures"
+        }
+        """
+
+        assert parse_gradle_dependencies(gradle) == [
+            {"group": "org.example", "name": "core", "version": "1.2.3"},
+            {"group": "org.example", "name": "driver", "version": "4.5.6"},
+            {"group": "org.example", "name": "fixtures", "version": ""},
+        ]
 
 
 # ---------------------------------------------------------------------------

@@ -100,6 +100,26 @@ untrusted-input treatment gludd already refuses to give network input,
 except here it's not refused at all — it's the default playbook execution
 path.
 
+### Upstream compatibility note — ansible-core 2.19+
+
+Ansible-core 2.19 inverted its template trust model: programmatically created
+strings are untrusted by default and `Templar.template()` returns them
+unchanged unless a trusted plugin explicitly applies
+`ansible.template.trust_as_template`. The
+[2.19 porting guide](https://docs.ansible.com/projects/ansible-core/2.19/porting_guides/porting_guide_core_2.19.html#template-trust-model-inversion)
+documents the security motivation and public API. The long-running Ansible
+community discussions
+[Core-2.19 templating changes](https://forum.ansible.com/t/core-2-19-templating-changes-preview-and-testing/40759)
+and
+[Data tagging playground](https://forum.ansible.com/t/core-2-19-and-data-tagging-playground/39909)
+also record the migration impact and the final `trust_as_template` interface.
+
+Gludd therefore tags only the documented trusted
+`CoreAnsibleRunner.render_template()` input on ansible-core 2.19 and newer,
+while retaining the legacy direct-string behavior for older supported
+versions. The network-facing `render_sandboxed()` path never applies this
+trust tag, preserving the fail-closed boundary described above.
+
 ### Proof (already in the tree, currently proves the WRONG thing)
 
 `tests/unit/test_collection_paths.py:187-197

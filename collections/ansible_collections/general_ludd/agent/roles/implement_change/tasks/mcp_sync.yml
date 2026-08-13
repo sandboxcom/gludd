@@ -20,9 +20,25 @@
 #      `make mcp-gen`) so the newly authored resource's tool+topic exist.
 #
 # Both run in the WORKTREE (where the change was applied) so the generated
-# artifacts are committed alongside the authored code. Non-fatal/warn on a
-# generation error; the docs-check stub injection is best-effort idempotent
+# artifacts are committed alongside the authored code. Target repositories are
+# not required to be Gludd checkouts, so each helper is capability-detected
+# before execution. A present helper that fails is still non-fatal/warn; an
+# absent helper is an expected unsupported capability rather than a false
+# generation failure. The docs-check stub injection is best-effort idempotent
 # (only injects when a docstring is genuinely absent).
+
+- name: Inspect target worktree for MCP documentation checker
+  ansible.builtin.stat:
+    path: >-
+      {{ mcp_repo_root | default(_ic_path | default(repo_path, true), true) }}/scripts/mcp_docs_check.py
+    get_attributes: false
+    get_checksum: false
+    get_mime: false
+  register: _mcp_docs_script
+  changed_when: false
+  when:
+    - mcp_sync_enabled | default(true) | bool
+    - not ansible_check_mode
 
 - name: Ensure newly-authored modules carry a DOCUMENTATION block (stub if missing)
   ansible.builtin.command:
@@ -36,6 +52,8 @@
   when:
     - mcp_sync_enabled | default(true) | bool
     - not ansible_check_mode
+    - _mcp_docs_script.stat.exists | default(false) | bool
+    - _mcp_docs_script.stat.isreg | default(false) | bool
 
 - name: Warn if an authored resource is undocumented and stubbing is disabled
   ansible.builtin.debug:
@@ -46,7 +64,22 @@
   when:
     - mcp_sync_enabled | default(true) | bool
     - not ansible_check_mode
+    - _mcp_docs_script.stat.exists | default(false) | bool
+    - _mcp_docs_script.stat.isreg | default(false) | bool
     - (_mcp_docs.rc | default(0)) != 0
+
+- name: Inspect target worktree for MCP tool generator
+  ansible.builtin.stat:
+    path: >-
+      {{ mcp_repo_root | default(_ic_path | default(repo_path, true), true) }}/scripts/gen_mcp_tools.py
+    get_attributes: false
+    get_checksum: false
+    get_mime: false
+  register: _mcp_gen_script
+  changed_when: false
+  when:
+    - mcp_sync_enabled | default(true) | bool
+    - not ansible_check_mode
 
 - name: Regenerate MCP tool defs + topics for the newly-authored resource
   ansible.builtin.command:
@@ -58,6 +91,8 @@
   when:
     - mcp_sync_enabled | default(true) | bool
     - not ansible_check_mode
+    - _mcp_gen_script.stat.exists | default(false) | bool
+    - _mcp_gen_script.stat.isreg | default(false) | bool
 
 - name: Warn if MCP regeneration failed (non-fatal)
   ansible.builtin.debug:
@@ -68,4 +103,6 @@
   when:
     - mcp_sync_enabled | default(true) | bool
     - not ansible_check_mode
+    - _mcp_gen_script.stat.exists | default(false) | bool
+    - _mcp_gen_script.stat.isreg | default(false) | bool
     - (_mcp_gen.rc | default(0)) != 0

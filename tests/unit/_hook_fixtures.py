@@ -227,6 +227,7 @@ class HookEnv:
         input: dict | None = None,
         output: dict | None = None,
         env_overrides: dict[str, str] | None = None,
+        repeat: int = 1,
         timeout: int = 10,
     ) -> subprocess.CompletedProcess[str]:
         """Run scripts/hook_plugin_harness.mjs against `plugin` (an absolute
@@ -234,6 +235,8 @@ class HookEnv:
         ".opencode/plugin/enforce-stop.ts", OR a bare filename such as
         "enforce-stop.ts" — resolved by searching PLUGIN_DIR then
         PLUGINS_DIR), invoking `hook` with the given input/output dicts.
+        ``repeat`` invokes the hook multiple times in one loaded Node process,
+        so PID-scoped state behaves like one OpenCode session.
         Returns the completed subprocess — never raises on a non-zero exit,
         since several plugins implement "deny" by throwing; the caller
         asserts on `.returncode`/`.stderr` for those."""
@@ -246,6 +249,7 @@ class HookEnv:
             hook,
             json.dumps(input or {}),
             json.dumps(output or {}),
+            str(repeat),
         ]
         run_env = dict(self.env)
         if env_overrides:

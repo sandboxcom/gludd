@@ -84,6 +84,21 @@ class _CallableTransport:
         return cast(_TupleResponse, result)
 
 
+# Public compatibility names used by connector transports and their contract
+# tests. The current tuple adapter remains the single implementation.
+_CallbackResponse = _TupleResponse
+
+
+def _coerce_transport(value: object) -> _Transport | None:
+    if value is None:
+        return None
+    if isinstance(value, _Transport):
+        return value
+    if callable(value):
+        return _CallableTransport(value)
+    raise TypeError("transport must expose get() or be callable")
+
+
 def _host_is_internal(host: str) -> bool:
     """Return True if *host* (a literal, already-extracted hostname) is internal.
 
@@ -155,9 +170,7 @@ class GcpAssetInventorySource:
         self._timeout = float(config.get("timeout", 10.0))
         self._page_size = int(config.get("page_size", 500))
         injected = transport if transport is not None else config.get("transport")
-        if callable(injected) and not hasattr(injected, "get"):
-            injected = _CallableTransport(injected)
-        self._transport = cast(_Transport | None, injected)
+        self._transport = _coerce_transport(injected)
 
     # -- internals -----------------------------------------------------------
 

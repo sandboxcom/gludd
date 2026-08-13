@@ -21,11 +21,13 @@ import yaml
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _SCENARIO_DIR = _ROOT / "molecule" / "playbooks" / "binary_smoke_macos"
+_CONVERGE = "default/converge.yml"
+_VERIFY = "default/verify.yml"
 
 _REQUIRED_FILES = (
     "molecule.yml",
-    "converge.yml",
-    "verify.yml",
+    _CONVERGE,
+    _VERIFY,
 )
 
 
@@ -95,12 +97,21 @@ class TestMoleculeYmlShape:
     def test_molecule_yml_provisioner_references_converge_and_verify(self):
         data = _load_yaml("molecule.yml")
         playbooks = data.get("provisioner", {}).get("playbooks", {})
+        assert playbooks.get("prepare"), (
+            "provisioner.playbooks must reference a prepare playbook"
+        )
         assert playbooks.get("converge"), (
             "provisioner.playbooks must reference a converge playbook"
         )
         assert playbooks.get("verify"), (
             "provisioner.playbooks must reference a verify playbook"
         )
+
+    def test_molecule_yml_runs_prepare_before_converge(self):
+        data = _load_yaml("molecule.yml")
+        sequence = data.get("scenario", {}).get("test_sequence", [])
+        assert "prepare" in sequence
+        assert sequence.index("prepare") < sequence.index("converge")
 
     def test_molecule_yml_has_ansible_verifier(self):
         data = _load_yaml("molecule.yml")
@@ -116,11 +127,11 @@ class TestConvergeYmlShape:
     pass silently with a stub playbook."""
 
     def test_converge_yml_is_valid_yaml(self):
-        data = _load_yaml("converge.yml")
+        data = _load_yaml(_CONVERGE)
         assert isinstance(data, list), "converge.yml must parse to a list of plays"
 
     def test_converge_yml_targets_localhost(self):
-        data = _load_yaml("converge.yml")
+        data = _load_yaml(_CONVERGE)
         assert isinstance(data, list)
         hosts = {play.get("hosts") for play in data if isinstance(play, dict)}
         assert "localhost" in hosts, (
@@ -128,27 +139,27 @@ class TestConvergeYmlShape:
         )
 
     def test_converge_yml_runs_version_subcommand(self):
-        text = (_SCENARIO_DIR / "converge.yml").read_text()
+        text = (_SCENARIO_DIR / _CONVERGE).read_text()
         assert re.search(r"\bversion\b", text), (
             "converge.yml must run `gludd version` (or --version) to verify "
             "the frozen binary reports a version string"
         )
 
     def test_converge_yml_runs_help(self):
-        text = (_SCENARIO_DIR / "converge.yml").read_text()
+        text = (_SCENARIO_DIR / _CONVERGE).read_text()
         assert "--help" in text, (
             "converge.yml must run `gludd --help` to verify argparse boots"
         )
 
     def test_converge_yml_runs_project_paths(self):
-        text = (_SCENARIO_DIR / "converge.yml").read_text()
+        text = (_SCENARIO_DIR / _CONVERGE).read_text()
         assert "project" in text and "paths" in text, (
             "converge.yml must run `gludd project paths` to verify the 3-tier "
             "collections precedence resolves from the frozen binary"
         )
 
     def test_converge_yml_starts_daemon(self):
-        text = (_SCENARIO_DIR / "converge.yml").read_text()
+        text = (_SCENARIO_DIR / _CONVERGE).read_text()
         assert "daemon" in text, (
             "converge.yml must start the gludd daemon to verify it boots "
             "without a traceback"
@@ -158,20 +169,20 @@ class TestConvergeYmlShape:
         )
 
     def test_converge_yml_polls_health_endpoint(self):
-        text = (_SCENARIO_DIR / "converge.yml").read_text()
+        text = (_SCENARIO_DIR / _CONVERGE).read_text()
         assert "healthz" in text or "health" in text, (
             "converge.yml must poll the daemon health endpoint to verify the "
             "server is reachable post-startup"
         )
 
     def test_converge_yml_makes_binary_executable(self):
-        text = (_SCENARIO_DIR / "converge.yml").read_text()
+        text = (_SCENARIO_DIR / _CONVERGE).read_text()
         assert "0755" in text or "mode" in text, (
             "converge.yml must chmod the binary executable before invoking it"
         )
 
     def test_converge_yml_supports_local_or_downloaded_binary(self):
-        text = (_SCENARIO_DIR / "converge.yml").read_text()
+        text = (_SCENARIO_DIR / _CONVERGE).read_text()
         assert "GLUDD_BINARY_PATH" in text or "dist/gludd" in text, (
             "converge.yml must accept a local binary path (env override or "
             "dist/gludd) so the scenario runs against a locally-built binary"
@@ -185,11 +196,11 @@ class TestVerifyYmlShape:
     would let the regression slip through."""
 
     def test_verify_yml_is_valid_yaml(self):
-        data = _load_yaml("verify.yml")
+        data = _load_yaml(_VERIFY)
         assert isinstance(data, list), "verify.yml must parse to a list of plays"
 
     def test_verify_yml_targets_localhost(self):
-        data = _load_yaml("verify.yml")
+        data = _load_yaml(_VERIFY)
         assert isinstance(data, list)
         hosts = {play.get("hosts") for play in data if isinstance(play, dict)}
         assert "localhost" in hosts, (
@@ -197,45 +208,48 @@ class TestVerifyYmlShape:
         )
 
     def test_verify_yml_asserts_version_string(self):
-        text = (_SCENARIO_DIR / "verify.yml").read_text()
+        text = (_SCENARIO_DIR / _VERIFY).read_text()
         assert "version" in text.lower(), (
             "verify.yml must assert that `gludd version` produced a version string"
         )
+        assert "is not none" in text, (
+            "regex_search results must be converted to booleans for strict Ansible"
+        )
 
     def test_verify_yml_asserts_help_contents(self):
-        text = (_SCENARIO_DIR / "verify.yml").read_text()
+        text = (_SCENARIO_DIR / _VERIFY).read_text()
         assert "usage" in text.lower(), (
             "verify.yml must assert that `gludd --help` contains usage info"
         )
 
     def test_verify_yml_asserts_project_paths_output(self):
-        text = (_SCENARIO_DIR / "verify.yml").read_text()
+        text = (_SCENARIO_DIR / _VERIFY).read_text()
         assert "paths" in text, (
             "verify.yml must assert that `gludd project paths` produced entries"
         )
 
     def test_verify_yml_asserts_no_traceback(self):
-        text = (_SCENARIO_DIR / "verify.yml").read_text()
+        text = (_SCENARIO_DIR / _VERIFY).read_text()
         assert "Traceback" in text, (
             "verify.yml must assert that the daemon emitted no Python traceback"
         )
 
     def test_verify_yml_asserts_no_missing_base_yaml_definition_file(self):
-        text = (_SCENARIO_DIR / "verify.yml").read_text()
+        text = (_SCENARIO_DIR / _VERIFY).read_text()
         assert "Missing base YAML definition file" in text, (
             "verify.yml must assert that the daemon did not emit the "
             "'Missing base YAML definition file' frozen-binary regression"
         )
 
     def test_verify_yml_asserts_health_endpoint(self):
-        text = (_SCENARIO_DIR / "verify.yml").read_text()
+        text = (_SCENARIO_DIR / _VERIFY).read_text()
         assert "health" in text.lower(), (
             "verify.yml must assert the daemon health endpoint returned 200 "
             "or a JSON status field"
         )
 
     def test_verify_yml_kills_daemon(self):
-        text = (_SCENARIO_DIR / "verify.yml").read_text()
+        text = (_SCENARIO_DIR / _VERIFY).read_text()
         assert "kill" in text.lower(), (
             "verify.yml must kill the smoke daemon after assertions so the "
             "scenario leaves no orphaned process"
@@ -249,7 +263,7 @@ class TestNoGatherFactsTrue:
     local box's ansible_python_interpreter; verify.yml must stay explicit-off."""
 
     def test_verify_yml_does_not_gather_facts_true(self):
-        text = (_SCENARIO_DIR / "verify.yml").read_text()
+        text = (_SCENARIO_DIR / _VERIFY).read_text()
         assert re.search(r"gather_facts:\s*true", text) is None, (
             "verify.yml must not set gather_facts: true on localhost"
         )

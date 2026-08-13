@@ -10,8 +10,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-import diskcache
 import httpx
+
+from general_ludd.security.safe_diskcache import open_safe_diskcache
 
 logger = logging.getLogger(__name__)
 
@@ -116,8 +117,7 @@ class SearxNGClient:
         cache_path = os.path.expanduser(os.path.expandvars(
             str(cache_dir or ".gludd/searx_cache")
         ))
-        os.makedirs(cache_path, mode=0o700, exist_ok=True)
-        self._cache = diskcache.Cache(cache_path)
+        self._cache = open_safe_diskcache(cache_path)
         self._last_request_time: float = 0.0
         self._client: httpx.AsyncClient | None = None
 
@@ -183,7 +183,9 @@ class SearxNGClient:
         if not bypass_cache:
             with self._cache as cache:
                 cached = cache.get(key)
-                if cached is not None:
+                if isinstance(cached, dict) and all(
+                    isinstance(cache_key, str) for cache_key in cached
+                ):
                     logger.debug("cache hit for query %r", query)
                     return SearxResponse(**cached)
 

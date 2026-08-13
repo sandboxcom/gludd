@@ -23,6 +23,7 @@ end-to-end with real process trees, exit codes, and stdout capture.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import os
 import socket
 import subprocess
@@ -883,6 +884,18 @@ class TestRealAgentExecutorDispatch:
 # ---------------------------------------------------------------------------
 
 
+_MAX_UNIX_SOCKET_PATH_BYTES = 103
+
+
+def _unix_socket_path(base_dir: Path, sock_name: str) -> str:
+    """Return a namespaced AF_UNIX path that fits macOS ``sun_path``."""
+    candidate = base_dir / f"{sock_name}.sock"
+    if len(os.fsencode(candidate)) <= _MAX_UNIX_SOCKET_PATH_BYTES:
+        return str(candidate)
+    digest = hashlib.sha256(os.fsencode(candidate)).hexdigest()[:16]
+    return f"/tmp/gludd-fc-test-{digest}.sock"
+
+
 def _serve_unix_http(
     base_dir: Path, sock_name: str, response_bytes: bytes,
 ) -> tuple[socket.socket, threading.Thread, str]:
@@ -891,7 +904,7 @@ def _serve_unix_http(
     Returns ``(server_socket, thread, sock_path)``. Caller MUST close the
     socket and join the thread, then ``os.unlink(sock_path)``.
     """
-    sock_path = str(base_dir / f"{sock_name}.sock")
+    sock_path = _unix_socket_path(base_dir, sock_name)
     with contextlib.suppress(OSError):
         os.unlink(sock_path)
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -935,6 +948,14 @@ def _serve_unix_http(
 
 class TestFirecrackerRestRoundTrip:
     """Real UNIX socket HTTP round-trips through the Firecracker REST helper."""
+
+    def test_socket_path_falls_back_for_long_base_dir(self, tmp_path: Path):
+        long_base = tmp_path / ("nested-" + ("x" * 100))
+
+        sock_path = _unix_socket_path(long_base, "fc-long")
+
+        assert len(os.fsencode(sock_path)) <= _MAX_UNIX_SOCKET_PATH_BYTES
+        assert sock_path.startswith("/tmp/gludd-fc-test-")
 
     def test_put_returns_empty_dict_on_204(self, tmp_path: Path):
         response = b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
@@ -985,7 +1006,9 @@ class TestFirecrackerRestRoundTrip:
     def test_wait_for_socket_returns_true_when_connectable(
         self, tmp_path: Path,
     ):
-        sock_path = str(tmp_path / "fc-wait.sock")
+        sock_path = _unix_socket_path(tmp_path, "fc-wait")
+        with contextlib.suppress(OSError):
+            os.unlink(sock_path)
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server.bind(sock_path)
         server.listen(1)
@@ -993,11 +1016,13 @@ class TestFirecrackerRestRoundTrip:
             assert _wait_for_socket(sock_path, timeout=2.0) is True
         finally:
             server.close()
+            with contextlib.suppress(OSError):
+                os.unlink(sock_path)
 
     def test_wait_for_socket_returns_false_on_timeout(
         self, tmp_path: Path,
     ):
-        sock_path = str(tmp_path / "fc-missing.sock")
+        sock_path = _unix_socket_path(tmp_path, "fc-missing")
         assert _wait_for_socket(sock_path, timeout=0.2) is False
 
 

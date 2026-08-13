@@ -14,10 +14,6 @@ from general_ludd.scoring.router import AdaptiveRouter
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-WEIGHTS_MOCK = MagicMock()
-WEIGHTS_MOCK.quality = 0.8
-WEIGHTS_MOCK.cost = 0.2
-
 PATCH_WEIGHTS = "general_ludd.scoring.router.weights_for"
 
 

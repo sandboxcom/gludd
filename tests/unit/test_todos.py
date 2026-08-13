@@ -10,8 +10,56 @@ import json
 from unittest.mock import patch
 
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from general_ludd.routers.todos import register
+
+
+def _unavailable_session_factory() -> object:
+    raise ConnectionError("external database unavailable")
+
+
+class TestTodoEndpoint:
+    def test_create_fails_soft_when_database_unavailable(self) -> None:
+        app = FastAPI()
+        app.state._session_factory = _unavailable_session_factory
+        state: dict[str, object] = {
+            "todos": [],
+            "tick_metrics": {},
+            "quality_gate": {},
+        }
+        register(app, state)
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/todos",
+            json={
+                "title": "degraded-startup-job",
+                "work_type": "noop",
+                "queue": "core",
+                "priority": "medium",
+            },
+        )
+
+        assert response.status_code == 201
+        assert response.json()["title"] == "degraded-startup-job"
+        assert client.get("/api/todos").json() == [response.json()]
+
+    def test_todos_fail_soft_when_database_unavailable(self) -> None:
+        app = FastAPI()
+        app.state._session_factory = _unavailable_session_factory
+        state: dict[str, object] = {
+            "todos": [],
+            "tick_metrics": {},
+            "quality_gate": {},
+        }
+        register(app, state)
+
+        response = TestClient(app).get("/api/todos")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/json")
+        assert response.json() == []
 
 
 class TestStatusEndpointFileStoreFailure:

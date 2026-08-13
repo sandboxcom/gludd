@@ -11,6 +11,28 @@ from general_ludd.cli import main
 
 
 class TestPauseResumeParsing:
+    def test_top_level_smoke_command(self):
+        with patch(
+            "sys.argv",
+            ["gludd", "smoke", "aws", "metadata", "--live"],
+        ), patch("general_ludd.cli._cmd_smoke") as mock_cmd:
+            main()
+        args = mock_cmd.call_args[0][0]
+        assert args.provider == "aws"
+        assert args.test == "metadata"
+        assert args.live is True
+
+    def test_nested_test_smoke_command_remains_available(self):
+        with patch(
+            "sys.argv",
+            ["gludd", "test", "smoke", "aws", "metadata", "--live"],
+        ), patch("general_ludd.cli._cmd_smoke") as mock_cmd:
+            main()
+        args = mock_cmd.call_args[0][0]
+        assert args.provider == "aws"
+        assert args.test == "metadata"
+        assert args.live is True
+
     def test_pause_list_command(self):
         with patch("sys.argv", ["gludd", "pause", "list"]), patch(
             "general_ludd.cli._cmd_pause_list"

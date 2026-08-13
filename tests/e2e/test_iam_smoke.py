@@ -26,6 +26,16 @@ AZURE_MODULE = MODULES / "onboard-iam-azure"
 GCP_MODULE = MODULES / "onboard-iam-gcp"
 OPA_POLICY = REPO_ROOT / "config" / "opa" / "iam_policy.rego"
 
+AWS_ACTIONS_REQUIRING_WILDCARD_RESOURCE = frozenset({
+    "ec2:DescribeInstances",
+    "ec2:DescribeInstanceStatus",
+    "ec2:DescribeImages",
+    "ec2:DescribeSecurityGroups",
+    "ec2:DescribeSubnets",
+    "ec2:DescribeVpcs",
+    "ec2:DescribeVolumes",
+})
+
 
 def _infra_binary() -> str | None:
     for name in ("tofu", "terraform"):
@@ -56,17 +66,26 @@ class TestAwsPolicyDocument:
                     f"Wildcard action '{a}' in statement {stmt.get('Sid')}"
                 )
 
-    def test_policy_has_no_wildcard_resources(self, policy: dict) -> None:
-        """Allowed resources must not be bare '*'."""
+    def test_wildcard_resources_only_for_unscopable_actions(self, policy: dict) -> None:
+        """Bare '*' is limited to actions for which AWS requires it."""
         for stmt in policy["Statement"]:
             if stmt.get("Effect") != "Allow":
                 continue
+            acts = stmt.get("Action", [])
+            if isinstance(acts, str):
+                acts = [acts]
             res = stmt.get("Resource", [])
             if isinstance(res, str):
                 res = [res]
             for r in res:
-                assert r != "*", (
-                    f"Wildcard resource '*' in statement {stmt.get('Sid')}"
+                if r != "*":
+                    continue
+                scopable = sorted(
+                    set(acts) - AWS_ACTIONS_REQUIRING_WILDCARD_RESOURCE
+                )
+                assert not scopable, (
+                    f"Wildcard resource '*' in statement {stmt.get('Sid')} "
+                    f"for resource-scopable actions {scopable}"
                 )
 
     def test_passrole_is_self_only(self, policy: dict) -> None:
@@ -113,18 +132,24 @@ class TestAwsPolicyDocument:
                 )
 
     def test_ec2_instance_type_condition_present(self, policy: dict) -> None:
-        """PassRole or core statements should have InstanceType conditions."""
-        found_condition = False
-        for stmt in policy["Statement"]:
-            if stmt.get("Condition"):
-                found_condition = True
-                cond = stmt["Condition"]
-                # Check for ec2:InstanceType condition.
-                for key in cond:
-                    assert "InstanceType" in str(cond[key]), (
-                        f"Expected ec2:InstanceType condition in {stmt.get('Sid')}"
-                    )
-        assert found_condition, "No Condition blocks found in policy — add InstanceType allowlist"
+        """Compute mutation is region-scoped and GPU-instance-type-scoped."""
+        stmt = next(
+            item for item in policy["Statement"]
+            if item.get("Sid") == "Ec2MutateCompute"
+        )
+        string_equals = stmt["Condition"]["StringEquals"]
+        assert string_equals["aws:RequestedRegion"] == "${operator_region}"
+        allowed_types = set(string_equals["ec2:InstanceType"])
+        assert {"p4d.24xlarge", "p4de.24xlarge", "p5.48xlarge"} <= allowed_types
+
+    def test_passrole_is_restricted_to_ec2_service(self, policy: dict) -> None:
+        stmt = next(
+            item for item in policy["Statement"]
+            if item.get("Sid") == "IamPassRoleSelfOnly"
+        )
+        assert stmt["Condition"]["StringEquals"]["iam:PassedToService"] == (
+            "ec2.amazonaws.com"
+        )
 
 
 # ============================================================================
@@ -181,15 +206,32 @@ class TestGcpCustomRole:
         return (GCP_MODULE / "main.tf").read_text()
 
     def test_no_owner_or_editor(self, main_tf: str) -> None:
-        for bad in ("roles/owner", "roles/editor", "roles/viewer",
-                     "roles/compute.admin", "roles/compute.instanceAdmin.v1"):
-            assert bad not in main_tf, (
-                f"Forbidden/broad role '{bad}' in GCP module"
-            )
+        bound_roles = set(re.findall(
+            r'^\s*role\s*=\s*"([^"]+)"',
+            main_tf,
+            flags=re.MULTILINE,
+        ))
+        forbidden = {
+            "roles/owner",
+            "roles/editor",
+            "roles/viewer",
+            "roles/compute.admin",
+            "roles/compute.instanceAdmin.v1",
+        }
+        assert not (bound_roles & forbidden), (
+            f"Forbidden/broad GCP role bindings: {sorted(bound_roles & forbidden)}"
+        )
 
     def test_no_setmetadata_permission(self, main_tf: str) -> None:
         """compute.instances.setMetadata must NOT be granted (SSH key injection risk)."""
-        assert "compute.instances.setMetadata" not in main_tf, (
+        permissions_block = re.search(
+            r"permissions\s*=\s*\[(.*?)\]",
+            main_tf,
+            flags=re.DOTALL,
+        )
+        assert permissions_block is not None
+        permissions = set(re.findall(r'"([^"]+)"', permissions_block.group(1)))
+        assert "compute.instances.setMetadata" not in permissions, (
             "compute.instances.setMetadata grants SSH key injection — must not be allowed"
         )
 

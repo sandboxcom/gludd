@@ -534,6 +534,11 @@ def evaluate_algorithm(name: str, key_size: int | None = None) -> AlgorithmEval:
             f"Key size {key_size} is not a standard key size for {algo.name}"
         )
 
+    # Legacy status is a deployment-level disqualifier. Raw security-bit
+    # credit must not make a retired algorithm appear moderately acceptable.
+    if algo.status == AlgorithmStatus.LEGACY:
+        score = min(score, 20)
+
     score = max(score, 0)
     score = min(score, 100)
 

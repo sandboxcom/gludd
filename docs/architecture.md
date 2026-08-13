@@ -52,6 +52,18 @@ Two endpoints form the backbone for Ansible coordination:
 The `gludd_facts` module injects this snapshot as `ansible_facts.gludd` so roles can branch
 on live data in `when:` and `vars:` without coupling to the HTTP layer.
 
+Database-backed facts are best-effort during degraded dependency startup. If a configured
+session factory cannot connect, `/api/facts` still returns HTTP 200 JSON: `work`, `todos`,
+`history`, and `messages` are empty mappings while independent in-process facets remain
+available. `GET` and `POST /api/todos` use the daemon's bounded in-memory queue for the
+same connectivity failures. Those degraded-mode entries are process-local and ephemeral;
+they are not reconciled into the database automatically, so callers requiring durability
+must retry after database health is restored.
+This avoids the opaque 500 behavior reported by FastAPI users in
+[issue #775](https://github.com/fastapi/fastapi/issues/775) and addresses the long-lived
+operator concern around database health and lifespan state discussed in
+[Starlette discussion #2067](https://github.com/encode/starlette/discussions/2067).
+
 **`/api/messages`** is the inter-agent coordination queue:
 - `POST /api/messages` — send a message to a recipient or to `broadcast`
 - `GET /api/messages?recipient=X` — inbox (includes broadcast)

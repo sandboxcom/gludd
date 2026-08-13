@@ -8,7 +8,7 @@
 #      threshold fraction exceeds regression_fraction, verdict = "regressed".
 #   4. Write the verdict + offending samples to an artifact.
 #
-# Facade interface (DEFERRED WIRING — gludd_observe module, #73 next wave)
+# Facade interface (wired by general_ludd.agent.gludd_observe)
 #   op=timeline -> GluddObserve.timeline(window=kinds, start, end, spec)
 #   returning ansible_facts.gludd_observe.records (time-ordered normalized records).
 

@@ -213,7 +213,7 @@ infra/
 vSphere is implemented as part of the provider matrix:
 
 - `ComputeProvider.VMWARE` exists in `src/general_ludd/infra/compute.py`.
-- `ProviderInfo` for VMware exists in `src/general_ludd/infra/providers.py` with `hashicorp/vsphere` metadata.
+- `ProviderInfo` for VMware exists in `src/general_ludd/infra/providers.py` with `vmware/vsphere` metadata.
 - `TerraformGenerator._generate_vsphere` exists and emits module-backed HCL.
 - `infra/terraform/stacks/vsphere-vllm/` and `infra/terraform/stacks/vsphere-llamacpp/` exist.
 - `tests/unit/test_vsphere_provider.py` covers enum, provider info, generator shape, and lazy dependency behavior.

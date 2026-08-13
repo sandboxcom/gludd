@@ -23,7 +23,7 @@ import logging
 import os
 import socket
 from collections.abc import Mapping
-from typing import TypedDict, cast
+from typing import Protocol, TypedDict, cast
 from urllib.parse import urlsplit
 
 import httpx
@@ -82,6 +82,19 @@ class GrafanaOnCallConfig(TypedDict, total=False):
     allow_private: bool
 
 
+class CallableTransport(Protocol):
+    """Compact method-and-URL callback used by generated workflows."""
+
+    def __call__(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> tuple[int, object]: ...
+
+
 class GrafanaOnCallSource:
     """Incident source backed by the Grafana OnCall API.
 
@@ -94,7 +107,7 @@ class GrafanaOnCallSource:
     def __init__(
         self,
         config: Mapping[str, object] | None = None,
-        transport: httpx.BaseTransport | None = None,
+        transport: httpx.BaseTransport | CallableTransport | None = None,
     ) -> None:
         config = dict(config or {})
         self.name: str = str(config.get("name", "grafana_oncall"))
@@ -110,7 +123,29 @@ class GrafanaOnCallSource:
         # base_url is always a caller-supplied override here -> always guarded.
         _guard_ssrf(base_url, allow_private=self._allow_private)
         self._base_url: str = base_url.rstrip("/")
-        self._transport = transport
+        if transport is not None and callable(transport) and not callable(
+            getattr(transport, "handle_request", None)
+        ):
+            callback = transport
+
+            def handler(request: httpx.Request) -> httpx.Response:
+                status, body = callback(
+                    request.method,
+                    str(request.url),
+                    headers=dict(request.headers),
+                    timeout=self._timeout,
+                )
+                if isinstance(body, bytes):
+                    return httpx.Response(status, content=body)
+                if isinstance(body, str):
+                    return httpx.Response(status, text=body)
+                return httpx.Response(status, json=body)
+
+            self._transport: httpx.BaseTransport | None = httpx.MockTransport(
+                handler
+            )
+        else:
+            self._transport = cast("httpx.BaseTransport | None", transport)
 
     # -- secrets -----------------------------------------------------------
 

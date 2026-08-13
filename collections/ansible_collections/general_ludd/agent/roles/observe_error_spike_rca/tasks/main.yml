@@ -7,7 +7,7 @@
 #   3. The largest group at/above spike_min_group_size is the candidate root cause.
 #   4. Write ranked candidates to an artifact.
 #
-# Facade interface (DEFERRED WIRING — gludd_observe module, #73 next wave)
+# Facade interface (wired by general_ludd.agent.gludd_observe)
 #   op=query_sources -> GluddObserve.query_sources(kinds, spec, start, end)
 #       returning ansible_facts.gludd_observe.records
 #   op=correlate     -> normalize.correlate(records, by)

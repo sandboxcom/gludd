@@ -175,11 +175,13 @@ fi
 # basetemp dir behind at all (the rejection paths above exit before this line).
 BASETEMP=$(mktemp -d "${BASETEMP_PREFIX}-XXXXXX")
 
-# Per-invocation RC_FILE and LOG_FILE derived from the unique BASETEMP so
-# concurrent gate invocations (e.g. xdist-running the gate-concurrency tests)
-# cannot clobber each other's rc/log between write and read.
+# Per-invocation RC_FILE remains in the unique basetemp. The streamed log must
+# live OUTSIDE pytest's --basetemp because pytest clears that directory at
+# startup; putting the log there made a running gate unobservable after detach.
 RC_FILE="${BASETEMP}/rc"
-LOG_FILE="${BASETEMP}/gate.log"
+mkdir -p .gate-logs
+LOG_FILE="${GATE_LOG_FILE:-.gate-logs/gate-pytest-$$.log}"
+echo "[run_gate.sh] live log: ${LOG_FILE}"
 
 # ---------------------------------------------------------------------------
 # Run pytest (or the PYTEST_CMD stub for unit testing).
@@ -200,17 +202,13 @@ else
     # concurrency host-wide) — no deadlock, since the gate never re-acquires its
     # own lock.
     #
-    # MEMORY-ADAPTIVE WORKERS: run pytest via scripts/adaptive_test.py, which
-    # sizes xdist workers by AVAILABLE RAM (n = min(cpu, avail_gb // ~1.5)) and
-    # HALVES + RETRIES on OOM-shaped exits — instead of a fixed cpu//4 that can
-    # still OOM on low-RAM/high-core boxes. adaptive_test.py appends `-n <n>`
-    # and `--dist loadgroup` itself and forwards unknown args (e.g. --basetemp)
-    # straight through to pytest.
+    # FRESH-PROCESS CI SHARDS: run the exact seven named GitHub Actions shards
+    # serially. Each shard invokes adaptive_test.py in a new process, so imports
+    # and native allocations cannot accumulate across all 50k tests. Per-shard
+    # coverage databases are combined before the aggregate 85% and per-file 75%
+    # release floors are enforced.
     ( set +e; python3 scripts/heavy_sem.py "${HEAVY_MAX_PAR:-3}" gludd-heavy -- \
-        uv run python scripts/adaptive_test.py tests/ -q \
-        --cov=general_ludd --cov-report=term-missing --cov-report=xml \
-        --cov-fail-under=85 \
-        --basetemp="${BASETEMP}"; \
+        uv run python scripts/run_ci_shards_serial.py --pytest-args=-q; \
       echo $? > "${RC_FILE}" ) 2>&1 | tee "${LOG_FILE}"
 fi
 

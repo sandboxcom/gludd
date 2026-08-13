@@ -164,13 +164,23 @@ only reachable over the HTTP shim, not from the loop. Grounding:
 `dynamic_dispatcher.py:8`; absence of any `DynamicDispatcher(` call in `event_loop/`
 (grep: only `routers/dispatch.py` + `daemon_wiring.py` construct it).
 
-### G4 — `gludd_observe` module missing; connectors are Python-only (HIGH)
-7 `observe_*` roles call `general_ludd.agent.gludd_observe` which does not exist
-(grep: no module file; only role refs + "DEFERRED WIRING #73" comments). All 40+
-`connectors/*` sources, `observe/facade.py`, and `connectors/registry.py` are reached
-only via the Python `routers/observe.py`. Grounding:
-`roles/observe_*/tasks/main.yml`; `routers/observe.py:54`; no `gludd_observe.py` under
-`plugins/modules/`.
+### G4 — `gludd_observe` module gap closed (beta.3)
+
+The six `observe_*` roles now resolve
+`general_ludd.agent.gludd_observe`. The read-only module discovers only
+daemon-registered connector names, adapts them to `GluddObserve`, and exposes
+`query_sources`, `timeline`, `topology`, and `correlate_incident`. A
+default-deny capability check restricts every built-in observe role to the
+local daemon before any HTTP call.
+
+User-forum evidence reinforced treating the resolver message as a real missing
+runtime surface rather than a lint exception: an Ansible collection user
+reported the same `resolved_fqcn=None` warning together with a runtime
+`Cannot resolve ... to an action or module` failure. Maintainers advised making
+the collection/module discoverable rather than hiding the warning. See
+[Role in collection cannot find module in the same collection](https://forum.ansible.com/t/role-in-collection-cannot-find-module-in-the-same-collection/45676).
+Accordingly, beta.3 adds the real module and no `mock_modules`, skip, or warning
+suppression.
 
 ### G5 — HTTP/fetch has no module (`skills/fetcher`) (MEDIUM)
 `skills/fetcher` (the agent's web/HTTP fetch action) is invoked only via
@@ -231,15 +241,16 @@ dispatcher's `collection` kind to an ansible-runner invocation of that module.
 - Capability gating already exists at two layers (`role_may_dispatch` in the dispatcher,
   `capability_policy` in the module) — keep both (defense in depth).
 
-### M3 — Create `gludd_observe` module (addresses G4) — HIGH, unblocks 7 roles
-- New `plugins/modules/gludd_observe.py`, daemon-HTTP pattern, talking to the existing
-  `routers/observe.py` endpoints. Ops the roles already expect: `query_sources`,
-  `topology`, `timeline`, `correlate`/`correlate_incident`, returning
-  `ansible_facts.gludd_observe.{records,groups,topology,errors}` (the exact shape the
-  roles consume, e.g. `observe_incident_triage/tasks/main.yml:34,56`).
-- `module_utils` shim over `connectors/registry.ConnectorRegistry` + `observe/facade`
-  so logic is not duplicated.
-- Removes every "DEFERRED WIRING #73" comment.
+### M3 — Create `gludd_observe` module (addresses G4) — completed in beta.3
+
+- `plugins/modules/gludd_observe.py` uses the daemon-HTTP source-discovery/query
+  boundary and the existing `GluddObserve` facade; connector and correlation
+  logic is not duplicated.
+- It returns
+  `ansible_facts.gludd_observe.{records,groups,topology,errors}` in the exact
+  shape consumed by the six roles.
+- Per-role local-daemon grants, fail-closed discovery validation, source-error
+  isolation, and JSON-safe topology output are covered by focused tests.
 
 ### M4 — Create `gludd_fetch` module (addresses G5)
 - New module wrapping `skills/fetcher`, gated by
@@ -366,11 +377,12 @@ not redesign.
 - `src/general_ludd/event_loop/loop.py` — live execute path → `run_playbook` (`:933`); return_review (`:482`).
 - `src/general_ludd/worker/app.py` — `/jobs/execute` → playbook (`:227`); model-then-playbook (`:204`).
 - `src/general_ludd/ansible/runner.py`, `ansible/core_runner.py` — native ansible-core runner.
-- `src/general_ludd/routers/observe.py`, `connectors/registry.py`, `observe/facade.py` — Python-only observability path.
+- `src/general_ludd/routers/observe.py`, `connectors/registry.py`, `observe/facade.py` — canonical observability path.
 - `src/general_ludd/git_automation/{repo.py,locking.py}` — git + per-repo lock (#63).
 - `src/general_ludd/db/repository.py` — single-writer DB (internal).
 - `collections/ansible_collections/general_ludd/agent/plugins/modules/gludd_*.py` — module inventory.
 - `collections/.../plugins/modules/gludd_git.py` (`:109`), `gludd_db.py` (`:8,13`), `gludd_agent_run.py`, `gludd_mcp_tool.py` (`:8`).
 - `collections/.../plugins/module_utils/{gludd.py,capability_policy.py,fs_write_policy.py,fs_write_audit.py}`.
 - `collections/.../roles/agent_task/tasks/main.yml` — canonical principle-aligned agent loop.
-- `collections/.../roles/observe_*/tasks/main.yml` — call missing `gludd_observe` ("DEFERRED WIRING #73").
+- `collections/.../plugins/modules/gludd_observe.py` — capability-gated daemon adapter over `GluddObserve`.
+- `collections/.../roles/observe_*/tasks/main.yml` — consume the module's facts.

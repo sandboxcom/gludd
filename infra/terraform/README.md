@@ -25,12 +25,31 @@ infra/terraform/
 | Azure | `hashicorp/azurerm` | `~> 4.55` |
 | Azure ARM escape hatch | `Azure/azapi` | `~> 2.0` |
 | Kubernetes | `hashicorp/kubernetes` | `~> 2.31` |
-| vSphere | `hashicorp/vsphere` | `~> 2.8` |
+| vSphere | `vmware/vsphere` | `~> 2.8` |
 | RunPod | `runpod/runpod` | `~> 1.0` |
 | Libvirt | `dmacvicar/libvirt` | `~> 0.7` |
-| QEMU | `jvzq/qemu` | `~> 0.1` |
 
 The shared plugin cache (`TF_PLUGIN_CACHE_DIR`) downloads each provider binary once into `.plugin-cache/`. All stacks reuse the same cache — no per-stack re-download.
+
+QEMU stacks are implemented through `dmacvicar/libvirt` with a
+`qemu:///system` URI; there is no second QEMU provider to download.
+
+### Provider-registry maintenance findings
+
+- VMware announced in May 2025 that the vSphere provider moved from
+  `hashicorp/vsphere` to `vmware/vsphere`, with prior releases re-signed under
+  the new namespace. The old address now emits a migration warning:
+  [HashiCorp Discuss announcement](https://discuss.hashicorp.com/t/terraform-provider-for-vmware-vsphere-has-now-moved-to-vmware-vsphere/74955).
+- A long-lived user report shows how undeclared third-party provider addresses
+  fall back to a nonexistent `hashicorp/*` provider and break
+  `terraform init`; the maintainer confirms every consuming module must declare
+  the correct source:
+  [HashiCorp Terraform issue #32247](https://github.com/hashicorp/terraform/issues/32247).
+- QEMU/KVM is provided by the maintained `dmacvicar/libvirt` provider, whose
+  documented local URI is `qemu:///system`:
+  [upstream provider documentation](https://github.com/dmacvicar/terraform-provider-libvirt).
+  The stale `jvzq/qemu` cache-only declaration was never used by a stack and
+  caused the release cache warm-up to fail, so it is intentionally removed.
 
 ## Modules vs stacks
 

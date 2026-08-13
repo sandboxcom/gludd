@@ -125,10 +125,7 @@ def _is_allowlisted(path: Path) -> bool:
             return True
     if _yaml_patterns is None:
         _yaml_patterns = _load_allowlist_config()
-    for pattern in _yaml_patterns:
-        if pattern.search(path_str):
-            return True
-    return False
+    return any(pattern.search(path_str) for pattern in _yaml_patterns)
 
 
 def _is_init_in_empty_dir(path: Path) -> bool:
@@ -166,6 +163,8 @@ def _candidate_test_paths(src_file: Path) -> list[Path]:
     stem = "_".join(parts)
     candidates: list[Path] = []
     candidates.append(TESTS_DIR / "unit" / f"test_{stem}.py")
+    if len(parts) > 1 and parts[-2] == "connectors":
+        candidates.append(TESTS_DIR / "unit" / f"test_connector_{parts[-1]}.py")
     if len(parts) > 1:
         parent = parts[-2]
         leaf = parts[-1]
@@ -198,10 +197,10 @@ def _test_has_functions(test_file: Path) -> bool:
     except Exception:
         return False
     tree = ast.parse(source)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
-            return True
-    return False
+    return any(
+        isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
+        for node in ast.walk(tree)
+    )
 
 
 def _find_unused_import_names(test_file: Path, module_path: str) -> list[str]:
@@ -242,9 +241,12 @@ def _find_unused_import_names(test_file: Path, module_path: str) -> list[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.lineno not in import_lines:
             used.add(node.id)
-        if isinstance(node, ast.Attribute) and node.lineno not in import_lines:
-            if isinstance(node.value, ast.Name):
-                used.add(node.value.id)
+        if (
+            isinstance(node, ast.Attribute)
+            and node.lineno not in import_lines
+            and isinstance(node.value, ast.Name)
+        ):
+            used.add(node.value.id)
 
     return [name for name in scoped_names if name not in used]
 

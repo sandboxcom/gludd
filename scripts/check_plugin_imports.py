@@ -78,10 +78,13 @@ def _check_use_before_decl(source: str, path: Path) -> list[str]:
     return errors
 
 
-def main() -> int:
-    all_ts = []
-    for d in ALL_TS_DIRS:
-        all_ts.extend(sorted(d.glob("*.ts")))
+def main(paths: list[str] | None = None) -> int:
+    if paths:
+        all_ts = [Path(path) for path in paths]
+    else:
+        all_ts = []
+        for directory in ALL_TS_DIRS:
+            all_ts.extend(sorted(directory.glob("*.ts")))
 
     errors: list[str] = []
 
@@ -90,10 +93,8 @@ def main() -> int:
         errors.extend(_check_bad_import(source, ts_file))
         errors.extend(_check_bare_fs(source, ts_file))
         errors.extend(_check_child_process(source, ts_file))
-
-    stop_file = PLUGIN_DIR / "enforce-stop.ts"
-    if stop_file.exists():
-        errors.extend(_check_use_before_decl(stop_file.read_text(), stop_file))
+        if ts_file.name == "enforce-stop.ts":
+            errors.extend(_check_use_before_decl(source, ts_file))
 
     if errors:
         for e in errors:
@@ -106,4 +107,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

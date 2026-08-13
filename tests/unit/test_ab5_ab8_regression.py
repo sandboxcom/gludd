@@ -1,9 +1,9 @@
-"""AB-5 / AB-8 regression tests: ``call_model`` MUST run via ``asyncio.to_thread``.
+"""AB-5 / AB-8 regression tests: ``call_model`` MUST run off the event loop.
 
-AB-5 (``src/general_ludd/execution/tool_loop.py:385,399``) and AB-8
-(``src/general_ludd/execution/engine.py:492``) both wrap the SYNCHRONOUS
-gateway ``call_model`` in ``await asyncio.to_thread(...)`` so the async event
-loop is not blocked while the (blocking) model HTTP call is in flight.
+AB-5 (``src/general_ludd/execution/tool_loop.py``) routes the synchronous gateway
+through a dedicated, bounded model executor so unrelated default-executor work
+cannot starve it. AB-8 (``src/general_ludd/execution/engine.py``) uses
+``asyncio.to_thread``. Both keep blocking model HTTP calls off the event loop.
 
 A silent revert — dropping the ``asyncio.to_thread`` wrap and instead calling
 ``self._gateway.call_model(...)`` directly inside the coroutine — would still
@@ -12,21 +12,22 @@ but it would freeze the event loop for the full duration of every model call.
 In production that is a throughput / liveness bug, not a correctness bug, so it
 is easy to miss.
 
-These tests pin BOTH the mechanism (``asyncio.to_thread`` is actually invoked)
-and the symptom (a concurrent probe coroutine runs to completion during the
-model call instead of being starved by a blocked loop).
+These tests pin both mechanisms and the symptom: a concurrent probe coroutine
+runs during the model call instead of being starved by a blocked loop.
 """
 
 from __future__ import annotations
 
 import asyncio
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from general_ludd.execution.engine import ExecutionEngine
-from general_ludd.execution.tool_loop import ToolCallLoop
+from general_ludd.execution.tool_loop import ToolCallLoop, _run_model_call
 from general_ludd.schemas.job import JobSpec
 
 
@@ -84,58 +85,51 @@ def _make_engine(gateway: object) -> ExecutionEngine:
 # --------------------------------------------------------------------------- #
 # AB-5 — ToolCallLoop._call_model / _call_with_tools wrap in asyncio.to_thread
 # --------------------------------------------------------------------------- #
-class TestAB5ToolLoopToThread:
+class TestAB5ToolLoopOffload:
     @pytest.mark.asyncio
-    async def test_ab5_tool_loop_call_model_uses_to_thread(self) -> None:
-        """``_call_model`` must dispatch the synchronous ``call_model`` through
-        ``asyncio.to_thread``. A direct ``self._gateway.call_model(...)`` call
-        inside the coroutine is the regression we are guarding against."""
+    async def test_ab5_tool_loop_call_model_uses_isolated_executor(self) -> None:
+        """``_call_model`` must dispatch through the isolated model executor."""
         gateway = _BlockingGateway()
         loop = _make_tool_loop(gateway)
 
-        to_thread_calls: list[tuple[object, tuple, dict]] = []
-        real_to_thread = asyncio.to_thread
+        offload_calls: list[tuple[object, tuple, dict]] = []
 
-        async def _spy_to_thread(fn, *args, **kwargs):
-            to_thread_calls.append((fn, args, kwargs))
-            return await real_to_thread(fn, *args, **kwargs)
+        async def _spy_offload(fn, *args, **kwargs):
+            offload_calls.append((fn, args, kwargs))
+            return await _run_model_call(fn, *args, **kwargs)
 
         with patch(
-            "general_ludd.execution.tool_loop.asyncio.to_thread",
-            _spy_to_thread,
+            "general_ludd.execution.tool_loop._run_model_call",
+            _spy_offload,
         ):
             await loop._call_model(_make_job(), "system", "user")
 
         assert gateway.call_count == 1, "gateway.call_model must have run exactly once"
-        assert to_thread_calls, (
-            "AB-5 REGRESSION: _call_model did NOT route the blocking call_model "
-            "through asyncio.to_thread — the event loop would be blocked."
+        assert offload_calls, (
+            "AB-5 REGRESSION: _call_model bypassed the isolated model executor."
         )
-        # First positional arg of the to_thread payload must be the gateway's
-        # bound call_model — that is the whole point of the fix.
-        fn, _args, kwargs = to_thread_calls[0]
+        fn, _args, kwargs = offload_calls[0]
         assert fn == gateway.call_model, (
-            "asyncio.to_thread was called, but not with gateway.call_model as "
+            "The isolated executor was called, but not with gateway.call_model as "
             f"its first argument (got {fn!r})."
         )
         assert kwargs.get("work_type") == "code"
 
     @pytest.mark.asyncio
-    async def test_ab5_tool_loop_call_with_tools_uses_to_thread(self) -> None:
-        """Same pin for the tools-bearing variant at tool_loop.py:399."""
+    async def test_ab5_tool_loop_call_with_tools_uses_isolated_executor(self) -> None:
+        """Same isolated-executor pin for the tools-bearing variant."""
         gateway = _BlockingGateway()
         loop = _make_tool_loop(gateway)
 
-        to_thread_calls: list[tuple[object, tuple, dict]] = []
-        real_to_thread = asyncio.to_thread
+        offload_calls: list[tuple[object, tuple, dict]] = []
 
-        async def _spy_to_thread(fn, *args, **kwargs):
-            to_thread_calls.append((fn, args, kwargs))
-            return await real_to_thread(fn, *args, **kwargs)
+        async def _spy_offload(fn, *args, **kwargs):
+            offload_calls.append((fn, args, kwargs))
+            return await _run_model_call(fn, *args, **kwargs)
 
         with patch(
-            "general_ludd.execution.tool_loop.asyncio.to_thread",
-            _spy_to_thread,
+            "general_ludd.execution.tool_loop._run_model_call",
+            _spy_offload,
         ):
             await loop._call_with_tools(
                 _make_job(),
@@ -144,12 +138,46 @@ class TestAB5ToolLoopToThread:
             )
 
         assert gateway.call_count == 1
-        assert to_thread_calls, (
-            "AB-5 REGRESSION: _call_with_tools did NOT route the blocking "
-            "call_model through asyncio.to_thread."
+        assert offload_calls, (
+            "AB-5 REGRESSION: _call_with_tools bypassed the isolated model executor."
         )
-        fn, _args, _kwargs = to_thread_calls[0]
+        fn, _args, _kwargs = offload_calls[0]
         assert fn == gateway.call_model
+
+    @pytest.mark.asyncio
+    async def test_ab5_tool_loop_isolated_from_default_executor_starvation(self) -> None:
+        """Model calls must not queue behind unrelated default-executor work."""
+        gateway = _BlockingGateway(delay=0)
+        loop = _make_tool_loop(gateway)
+        event_loop = asyncio.get_running_loop()
+        release = threading.Event()
+        started = threading.Event()
+        default_executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="test-saturated-default",
+        )
+        event_loop.set_default_executor(default_executor)
+
+        def _occupy_default_executor() -> None:
+            started.set()
+            release.wait(timeout=5)
+
+        blocker = event_loop.run_in_executor(None, _occupy_default_executor)
+        assert started.wait(timeout=1)
+        try:
+            response = await asyncio.wait_for(
+                loop._call_with_tools(
+                    _make_job(),
+                    [{"role": "user", "content": "hi"}],
+                    [{"name": "tool_a"}],
+                ),
+                timeout=0.5,
+            )
+            assert response.content == "model-output"
+        finally:
+            release.set()
+            await blocker
+            default_executor.shutdown(wait=True)
 
     @pytest.mark.asyncio
     async def test_ab5_tool_loop_does_not_block_event_loop(self) -> None:

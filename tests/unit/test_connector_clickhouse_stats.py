@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
+import pytest
+
 from general_ludd.connectors.clickhouse_stats import (
     _QUERIES,
     ClickhouseConfig,
@@ -88,6 +90,31 @@ class TestClickHouseStatsSourceInit:
 
         source = ClickHouseStatsSource(executor=my_exec)
         assert source._executor is my_exec
+
+    def test_iterable_cursor_is_adapted(self):
+        class Cursor:
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            def execute(self, sql: str) -> None:
+                self.calls.append(sql)
+
+            def __iter__(self):
+                return iter([{"metric": "Query", "value": "42"}])
+
+        cursor = Cursor()
+        source = ClickHouseStatsSource(cursor=cursor)
+
+        records = source.query()
+
+        assert len(cursor.calls) == 4
+        assert len(records) == 3
+        assert records[0]["message"] == "Query"
+        assert records[0]["value"] == 42
+
+    def test_executor_and_cursor_are_mutually_exclusive(self):
+        with pytest.raises(ValueError, match="executor or cursor"):
+            ClickHouseStatsSource(executor=lambda _: [], cursor=object())
 
 
 # ---------------------------------------------------------------------------

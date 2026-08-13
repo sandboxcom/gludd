@@ -68,8 +68,24 @@ class TestScenarioFiles:
     def test_molecule_yml_has_test_sequence(self) -> None:
         doc = _load_yaml(_MOLECULE)
         seq = doc["scenario"]["test_sequence"]
-        # side_effect must be present so failure-mode evidence persists to verify.
+        # Converge persists failure-mode evidence for the verifier.
         assert "converge" in seq and "verify" in seq
+
+    def test_molecule_yml_only_runs_implemented_phases(self) -> None:
+        doc = _load_yaml(_MOLECULE)
+        assert doc["scenario"]["test_sequence"] == [
+            "syntax",
+            "prepare",
+            "converge",
+            "verify",
+        ], "missing phase playbooks produce Molecule warnings"
+
+    def test_molecule_yml_declares_localhost_inventory(self) -> None:
+        doc = _load_yaml(_MOLECULE)
+        localhost = doc["provisioner"]["inventory"]["hosts"]["all"]["hosts"][
+            "localhost"
+        ]
+        assert localhost["ansible_connection"] == "local"
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +94,25 @@ class TestScenarioFiles:
 
 
 class TestConvergeExercisesConfigLoading:
+    def test_scenario_materializes_and_uses_all_three_collection_tiers(
+        self,
+    ) -> None:
+        prepare = _load(_PREPARE)
+        converge = _load(_CONVERGE)
+
+        assert ".gludd/collections" in prepare, (
+            "prepare must materialize the project collection tier"
+        )
+        assert "xdg/gludd/collections" in prepare, (
+            "prepare must materialize the user collection tier"
+        )
+        assert 'project paths "{{ path_project_dir }}" --json' in converge, (
+            "converge must pass the materialized project root explicitly"
+        )
+        assert "XDG_CONFIG_HOME: \"{{ path_xdg_dir }}\"" in converge, (
+            "converge must point path resolution at the materialized user tier"
+        )
+
     def test_converge_runs_project_paths(self) -> None:
         text = _load(_CONVERGE)
         assert "project paths --json" in text, (
@@ -113,6 +148,18 @@ class TestConvergeExercisesConfigLoading:
         text = _load(_CONVERGE)
         for needle in ("invalid YAML", "missing optional config", "corrupt"):
             assert needle in text, f"converge missing failure-mode test: {needle}"
+
+    def test_yaml_failure_checks_accept_specific_yaml_error_subclasses(
+        self,
+    ) -> None:
+        converge = _load(_CONVERGE)
+        verify = _load(_VERIFY)
+
+        assert converge.count('"is_yaml_error"') >= 2, (
+            "failure probes must record isinstance(exc, yaml.YAMLError)"
+        )
+        assert "inv_json.is_yaml_error" in verify
+        assert "corrupt_json.is_yaml_error" in verify
 
     def test_converge_persists_evidence_for_verify(self) -> None:
         text = _load(_CONVERGE)

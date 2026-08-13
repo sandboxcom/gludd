@@ -118,7 +118,7 @@ class TestSSLAlgorithms:
         from general_ludd.ssl.algorithms import compliance_check
 
         with pytest.raises(ValueError, match="not evaluated"):
-            compliance_check("X448", "HIPAA")  # X448 not in HIPAA
+            compliance_check("ZZZ-999", "HIPAA")  # Unknown algorithm is not evaluated.
 
     def test_all_standards_available(self):
         from general_ludd.ssl.algorithms import COMPLIANCE_STANDARDS
@@ -616,7 +616,7 @@ class TestSSLHSM:
 
         config = HSMConfig(module_path="/fake.so", slot_id=0)
         session = _MockHSMSession(config)
-        with pytest.raises(ValueError, match="Unknown key"):
+        with pytest.raises(KeyError, match="not found"):
             session.sign("nonexistent", b"data")
 
     def test_mock_hsm_close(self):
@@ -715,16 +715,12 @@ class TestSSLCertManager:
     def test_asn1_roundtrip_verify(self):
         from general_ludd.ssl_agent.cert_manager import (
             asn1_roundtrip_verify,
-            generate_csr,
-            generate_key_pair,
-            self_sign_cert,
+            generate_ca_chain,
         )
 
-        kp = generate_key_pair("rsa-2048")
-        csr = generate_csr("roundtrip.example.com", kp)
-        fields = self_sign_cert(csr, kp, 1)
-        result = asn1_roundtrip_verify(fields)
-        assert "match" in result
+        chain = generate_ca_chain("Roundtrip Root", "roundtrip.example.com")
+        result = asn1_roundtrip_verify(chain["leaf_cert_pem"])
+        assert result["match"] is True
 
     def test_oid_lookup_by_oid(self):
         from general_ludd.ssl_agent.cert_manager import oid_lookup
@@ -775,16 +771,13 @@ class TestSSLCertManager:
         from general_ludd.ssl_agent.cert_manager import (
             ComplianceProfile,
             compliance_check,
-            generate_csr,
-            generate_key_pair,
-            self_sign_cert,
+            generate_ca_chain,
         )
 
-        kp = generate_key_pair("rsa-2048")
-        csr = generate_csr("compliant.example.com", kp)
-        fields = self_sign_cert(csr, kp, 365)
-        result = compliance_check(fields, ComplianceProfile.FIPS)
+        chain = generate_ca_chain("Compliance Root", "compliant.example.com")
+        result = compliance_check(chain["leaf_cert_pem"], ComplianceProfile.FIPS)
         assert result.profile == "fips"
+        assert result.passed is True
 
     def test_ca_jurisdiction_lookup_letsencrypt(self):
         from general_ludd.ssl_agent.cert_manager import ca_jurisdiction_lookup

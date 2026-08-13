@@ -19,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 RUN_GATE_SH = ROOT / "scripts" / "run_gate.sh"
+SERIAL_SHARD_RUNNER = ROOT / "scripts" / "run_ci_shards_serial.py"
 
 
 def _recipe(target: str) -> str:
@@ -44,11 +45,12 @@ class TestNoUnseenEvents:
 
         The gate target now delegates its test phase to scripts/run_gate.sh
         (collision-proof: flock + unique basetemp + EXIT trap). The invariant is
-        preserved: the full suite still runs via pytest tests/ and its output is
-        still streamed through tee — just from run_gate.sh instead of inline.
+        preserved: the full suite runs through the exact named CI shards and its
+        output is still streamed through tee.
         We verify:
           1. The Makefile gate recipe calls run_gate.sh (delegation wired).
-          2. run_gate.sh itself contains 'pytest tests/' (suite is not truncated).
+          2. run_gate.sh delegates to the serial named-shard runner.
+          3. Every shard uses the adaptive pytest runner.
           3. run_gate.sh pipes through tee (output is never a silent black box).
         """
         gate_body = _recipe("gate")
@@ -56,15 +58,11 @@ class TestNoUnseenEvents:
             "gate target must delegate its test phase to scripts/run_gate.sh"
         )
         run_gate_text = RUN_GATE_SH.read_text()
-        # The test phase now runs via the RAM-bounded adaptive runner
-        # (scripts/adaptive_test.py tests/), which itself execs
-        # `python -m pytest tests/` (workers sized by available RAM + OOM
-        # retry). The full suite still runs — accept either the direct
-        # `pytest tests/` or the `adaptive_test.py tests/` wrapper.
-        assert "pytest tests/" in run_gate_text or "adaptive_test.py tests/" in run_gate_text, (
-            "scripts/run_gate.sh must run the full suite (pytest tests/ or the "
-            "adaptive_test.py tests/ wrapper) — the suite must not be truncated "
-            "or omitted"
+        assert "run_ci_shards_serial.py" in run_gate_text, (
+            "scripts/run_gate.sh must delegate to the complete named-shard runner"
+        )
+        assert "adaptive_test.py" in SERIAL_SHARD_RUNNER.read_text(), (
+            "every named shard must retain adaptive worker sizing and OOM retry"
         )
         assert "tee" in run_gate_text, (
             "scripts/run_gate.sh MUST pipe its output through tee so a "

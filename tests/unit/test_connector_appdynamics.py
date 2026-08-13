@@ -9,6 +9,7 @@ import pytest
 from general_ludd.connectors.appdynamics import (
     AppDynamicsSource,
     ConnectorConfigError,
+    _ms_to_epoch,
 )
 
 
@@ -155,6 +156,95 @@ def test_normalization_of_metric_values(monkeypatch: pytest.MonkeyPatch) -> None
     assert "output=JSON" in call_url
     # Application name is URL-encoded (space -> %20).
     assert "ECommerce%20App" in call_url
+
+
+def test_callable_transport_compatibility(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APPD_TEST_TOKEN", "tok")
+    calls: list[dict[str, Any]] = []
+
+    def transport(
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> tuple[int, object]:
+        calls.append({"method": method, "url": url, **kwargs})
+        return 200, METRIC_PAYLOAD
+
+    src = AppDynamicsSource(_config(), transport=transport)
+
+    records = src.query({"metric_path": "Overall Application Performance"})
+
+    assert len(records) == 2
+    assert calls[0]["method"] == "GET"
+
+
+def test_callable_transport_wraps_list_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APPD_TEST_TOKEN", "tok")
+
+    def transport(
+        _method: str,
+        _url: str,
+        **_kwargs: Any,
+    ) -> tuple[int, object]:
+        return 200, METRIC_PAYLOAD["data"]
+
+    src = AppDynamicsSource(_config(), transport=transport)
+
+    records = src.query({"metric_path": "Overall Application Performance"})
+
+    assert len(records) == 2
+
+
+def test_callable_transport_scalar_payload_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APPD_TEST_TOKEN", "tok")
+
+    def transport(
+        _method: str,
+        _url: str,
+        **_kwargs: Any,
+    ) -> tuple[int, object]:
+        return 200, "unexpected"
+
+    src = AppDynamicsSource(_config(), transport=transport)
+
+    assert src.query({"metric_path": "Overall Application Performance"}) == []
+
+
+def test_default_and_invalid_transport_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APPD_TEST_TOKEN", "tok")
+    assert AppDynamicsSource(_config()).name == "appd-prod"
+    with pytest.raises(TypeError, match="transport"):
+        AppDynamicsSource(_config(), transport=object())  # type: ignore[arg-type]
+
+
+def test_query_supports_camel_case_and_rollup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APPD_TEST_TOKEN", "tok")
+    transport = FakeTransport(body=METRIC_PAYLOAD)
+    src = AppDynamicsSource(_config(), transport=transport)
+
+    src.query(
+        {
+            "metricPath": "Application|CPU",
+            "timeRangeType": "BEFORE_NOW",
+            "rollup": False,
+        }
+    )
+
+    assert "time-range-type=BEFORE_NOW" in transport.calls[0]["url"]
+    assert "rollup=false" in transport.calls[0]["url"]
+
+
+def test_ms_to_epoch_tolerates_missing_and_invalid_values() -> None:
+    assert _ms_to_epoch(None) is None
+    assert _ms_to_epoch("not-a-number") is None
 
 
 def test_health_ok(monkeypatch: pytest.MonkeyPatch) -> None:

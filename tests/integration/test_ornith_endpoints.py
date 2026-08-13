@@ -148,3 +148,57 @@ class TestOrnithEndpoints:
         assert data["counts_by_status"]["succeeded"] == 1
         assert data["counts_by_status"]["rejected_by_gate"] == 1
         assert data["total"] >= 2
+
+    def test_pairs_filters_rejected_training_artifacts(self, client):
+        rec = client.post("/admin/ornith/record", json=_RECORD_BODY)
+        pair_id = rec.json()["id"]
+        client.patch(
+            f"/admin/ornith/{pair_id}/outcome",
+            json={"status": "rejected_by_gate", "details": {"reason": "tests"}},
+        )
+
+        resp = client.get(
+            "/admin/ornith/pairs",
+            params={
+                "status": "rejected_by_gate,reverted",
+                "limit": 10,
+                "lookback_days": 30,
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["pairs"][0]["id"] == pair_id
+        assert data["pairs"][0]["outcome_details"] == {"reason": "tests"}
+
+    def test_status_history_and_config_endpoints_reflect_runtime_state(self, client):
+        client.app.state._ornith_mcp_proc = object()
+        client.app.state._ornith_status = {
+            "version": "2.1",
+            "model_sha": "sha-old",
+            "total_calls": 4,
+            "success_rate": 0.75,
+            "sandbox_backend": "firecracker",
+            "binary_path": "/opt/ornith",
+        }
+        client.app.state._ornith_history = [
+            {"triggered_at": "2026-07-29T00:00:00Z", "result": {"ok": True}},
+        ]
+
+        status = client.get("/admin/ornith/status").json()
+        assert status["installed"] is True
+        assert status["version"] == "2.1"
+        assert status["sandbox_backend"] == "firecracker"
+
+        config = client.put(
+            "/admin/ornith/config",
+            json={"model_sha": "sha-new"},
+        ).json()
+        assert config["ornith_enabled"] is True
+        assert config["model_sha"] == "sha-new"
+        assert config["binary_path"] == "/opt/ornith"
+
+        history = client.get("/admin/ornith/history", params={"limit": 1}).json()
+        assert history["count"] == 1
+        assert history["cycles"][0]["result"] == {"ok": True}

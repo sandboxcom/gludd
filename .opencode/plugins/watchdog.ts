@@ -4,6 +4,8 @@ import * as path from "node:path"
 import { reportAlive } from "../lib/shared.ts"
 
 const PID_FILE = process.env.GLUDD_WATCHDOG_PID_FILE || ".gate-logs/watchdog.pid"
+const TASK_PID_FILE =
+  process.env.GLUDD_TASK_WATCHDOG_PID || ".gate-logs/task-watchdog.pid"
 
 function writePidFile(): void {
   try {
@@ -13,9 +15,11 @@ function writePidFile(): void {
 }
 
 function removePidFile(): void {
-  try {
-    fs.unlinkSync(PID_FILE)
-  } catch {}
+  for (const pidFile of [PID_FILE, TASK_PID_FILE]) {
+    try {
+      fs.unlinkSync(pidFile)
+    } catch {}
+  }
 }
 
 export default ((_api: any) => {

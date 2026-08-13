@@ -47,6 +47,7 @@ async def test_acquire_leases_batch_single_query():
     from general_ludd.event_loop.lease import acquire_leases_batch
 
     mock_session = AsyncMock()
+    mock_session.add = MagicMock()
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = []
     mock_session.execute.return_value = mock_result

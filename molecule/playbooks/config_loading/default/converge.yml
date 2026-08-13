@@ -22,6 +22,8 @@
     daemon_url: "http://{{ daemon_host }}:{{ daemon_port }}"
     override_url: "http://{{ daemon_host }}:{{ override_port }}"
     work_dir: "/tmp/gludd-config-loading"
+    path_project_dir: "{{ work_dir }}/project"
+    path_xdg_dir: "{{ work_dir }}/xdg"
     py_bin: "{{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3"
   tasks:
 
@@ -40,10 +42,12 @@
     # =====================================================================
     - name: "Run: gludd project paths --json"
       ansible.builtin.command:
-        cmd: "{{ gludd_bin }} project paths --json"
+        cmd: >-
+          {{ gludd_bin }} project paths "{{ path_project_dir }}" --json
         chdir: "{{ project_dir }}"
       environment:
-        GLUDD_PROJECT_DIR: "{{ project_dir }}"
+        GLUDD_PROJECT_DIR: "{{ path_project_dir }}"
+        XDG_CONFIG_HOME: "{{ path_xdg_dir }}"
       register: paths_result
       failed_when: paths_result.rc != 0
 
@@ -252,9 +256,12 @@
           bad = "network:\n  port: 8000\n  host: [unterminated\n  ::garbage"
           try:
               yaml.safe_load(bad)
-              print(json.dumps({"handled": False, "error": "no error raised on invalid YAML"}))
+              print(json.dumps({"handled": False, "is_yaml_error": False,
+                                "error": "no error raised on invalid YAML"}))
           except yaml.YAMLError as exc:
-              print(json.dumps({"handled": True, "error_class": type(exc).__name__,
+              print(json.dumps({"handled": True,
+                                "is_yaml_error": isinstance(exc, yaml.YAMLError),
+                                "error_class": type(exc).__name__,
                                 "message": str(exc)[:200]}))
           PY
       args:
@@ -270,13 +277,14 @@
 
     - name: "FAILURE MODE - missing optional config falls back to defaults"
       ansible.builtin.command:
-        cmd: "{{ gludd_bin }} project paths --json"
+        cmd: >-
+          {{ gludd_bin }} project paths "{{ path_project_dir }}" --json
         chdir: "{{ project_dir }}"
       environment:
-        # Point at a nonexistent user-config dir; project paths must still
-        # resolve from the bundled tier and not crash.
-        XDG_CONFIG_HOME: "{{ work_dir }}/nonexistent-user-config"
-        GLUDD_PROJECT_DIR: "{{ project_dir }}"
+        # The controlled XDG root has a collections tier but no optional
+        # configuration files; resolution must still fall back without error.
+        XDG_CONFIG_HOME: "{{ path_xdg_dir }}"
+        GLUDD_PROJECT_DIR: "{{ path_project_dir }}"
       register: missing_cfg_result
       failed_when: missing_cfg_result.rc != 0
 
@@ -294,9 +302,12 @@
           corrupt = "\t\tnetwork: bad indent\n  - broken: [unclosed"
           try:
               yaml.safe_load(corrupt)
-              print(json.dumps({"handled": False, "error": "no error on corrupt YAML"}))
+              print(json.dumps({"handled": False, "is_yaml_error": False,
+                                "error": "no error on corrupt YAML"}))
           except yaml.YAMLError as exc:
-              print(json.dumps({"handled": True, "error_class": type(exc).__name__,
+              print(json.dumps({"handled": True,
+                                "is_yaml_error": isinstance(exc, yaml.YAMLError),
+                                "error_class": type(exc).__name__,
                                 "message": str(exc)[:200]}))
           PY
       args:

@@ -137,6 +137,8 @@ class ThanosSource:
         transport: HttpGet | None = None,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
+        if http_get is not None and transport is not None:
+            raise ValueError("provide http_get or transport, not both")
         base_url = config.get("base_url", "")
         self._base_url = _validate_base_url(str(base_url))
         # Bearer token is optional (Thanos may sit behind an auth proxy).

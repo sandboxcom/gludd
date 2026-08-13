@@ -1,4 +1,4 @@
-"""S.18 — Verify unused langchain/langchain-openai deps removed, langgraph kept."""
+"""S.18 — Verify unused dependencies stay removed and runtime adapters stay declared."""
 import re
 import tomllib
 from pathlib import Path
@@ -36,10 +36,13 @@ def test_langchain_removed():
     assert not _has_imports("langchain"), "no langchain imports should exist in src/"
 
 
-def test_langchain_openai_removed():
+def test_langchain_openai_kept_for_openai_compatible_providers():
     deps = _load_deps()
-    assert "langchain-openai" not in deps, "langchain-openai should be removed"
-    assert not _has_imports("langchain_openai"), "no langchain_openai imports should exist in src/"
+    assert "langchain-openai" in deps, "OpenAI-compatible providers require langchain-openai"
+    registry_source = (
+        SRC_DIR / "general_ludd" / "models" / "provider_registry.py"
+    ).read_text()
+    assert '"langchain_openai"' in registry_source
 
 
 def test_langgraph_kept():

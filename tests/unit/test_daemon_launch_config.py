@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 import signal
-import subprocess
 from unittest.mock import MagicMock, patch
 
+import pytest
 import yaml
 
 from general_ludd.cli import _build_daemon_env, _build_daemon_start_cmd
@@ -66,7 +66,48 @@ class TestCmdDaemonSignalForwarding:
 
     def test_sigterm_handler_kills_child_when_terminate_wait_times_out(self):
         import argparse
-        from contextlib import suppress
+        import threading
+
+        from general_ludd.cli import _cmd_daemon
+
+        handlers = {}
+        killed = threading.Event()
+
+        def capture_signal(signum, handler):
+            handlers[signum] = handler
+
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.returncode = 0
+
+        def wait_for_watchdog():
+            handlers[signal.SIGTERM](signal.SIGTERM, None)
+            assert killed.wait(timeout=1.0)
+            mock_proc.returncode = -signal.SIGKILL
+            return mock_proc.returncode
+
+        mock_proc.wait.side_effect = wait_for_watchdog
+        mock_proc.kill.side_effect = killed.set
+        with patch("subprocess.Popen", return_value=mock_proc), \
+             patch("signal.signal", side_effect=capture_signal), \
+             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_PSK": ""}), \
+             patch("general_ludd.cli._DAEMON_SHUTDOWN_TIMEOUT_SECONDS", 0.01), \
+             patch.dict(os.environ, {}, clear=False):
+            args = argparse.Namespace(
+                host="127.0.0.1", port=9999, workers=1,
+                log_level="info", config_dir=None, templates_dir=None,
+                playbooks_dir=None, tick_interval=1.0,
+            )
+            with pytest.raises(SystemExit) as exit_info:
+                _cmd_daemon(args)
+
+        assert exit_info.value.code == 128 + signal.SIGTERM
+        assert mock_proc.terminate.call_count == 1
+        assert mock_proc.kill.call_count == 1
+        assert mock_proc.wait.call_count == 1
+
+    def test_first_shutdown_signal_wins_without_reentrant_wait(self):
+        import argparse
 
         from general_ludd.cli import _cmd_daemon
 
@@ -76,9 +117,15 @@ class TestCmdDaemonSignalForwarding:
             handlers[signum] = handler
 
         mock_proc = MagicMock()
-        mock_proc.pid = 12345
-        mock_proc.wait.return_value = 0
         mock_proc.returncode = 0
+
+        def wait_once():
+            handlers[signal.SIGTERM](signal.SIGTERM, None)
+            handlers[signal.SIGINT](signal.SIGINT, None)
+            mock_proc.returncode = -signal.SIGTERM
+            return mock_proc.returncode
+
+        mock_proc.wait.side_effect = wait_once
         with patch("subprocess.Popen", return_value=mock_proc), \
              patch("signal.signal", side_effect=capture_signal), \
              patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_PSK": ""}), \
@@ -88,18 +135,60 @@ class TestCmdDaemonSignalForwarding:
                 log_level="info", config_dir=None, templates_dir=None,
                 playbooks_dir=None, tick_interval=1.0,
             )
-            with suppress(SystemExit):
+            with pytest.raises(SystemExit) as exit_info:
                 _cmd_daemon(args)
 
-        mock_proc.wait.side_effect = [
-            subprocess.TimeoutExpired(cmd="gunicorn", timeout=5),
-            0,
-        ]
-        with suppress(SystemExit):
-            handlers[signal.SIGTERM](signal.SIGTERM, None)
+        assert exit_info.value.code == 128 + signal.SIGTERM
+        assert mock_proc.terminate.call_count == 1
+        assert mock_proc.wait.call_count == 1
 
-        assert mock_proc.terminate.call_count >= 1
-        assert mock_proc.kill.call_count == 1
+    def test_sigterm_handler_only_forwards_and_never_reenters_wait(self):
+        import argparse
+
+        from general_ludd.cli import _cmd_daemon
+
+        handlers = {}
+        handler_errors: list[BaseException] = []
+        inside_wait = False
+
+        def capture_signal(signum, handler):
+            handlers[signum] = handler
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+
+        def wait_once(*, timeout=None):
+            nonlocal inside_wait
+            if inside_wait:
+                return 0
+            inside_wait = True
+            try:
+                try:
+                    handlers[signal.SIGTERM](signal.SIGTERM, None)
+                except BaseException as exc:
+                    handler_errors.append(exc)
+                mock_proc.returncode = -signal.SIGTERM
+                return mock_proc.returncode
+            finally:
+                inside_wait = False
+
+        mock_proc.wait.side_effect = wait_once
+        with patch("subprocess.Popen", return_value=mock_proc), \
+             patch("signal.signal", side_effect=capture_signal), \
+             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_PSK": ""}), \
+             patch.dict(os.environ, {}, clear=False):
+            args = argparse.Namespace(
+                host="127.0.0.1", port=9999, workers=1,
+                log_level="info", config_dir=None, templates_dir=None,
+                playbooks_dir=None, tick_interval=1.0,
+            )
+            with pytest.raises(SystemExit) as exit_info:
+                _cmd_daemon(args)
+
+        assert handler_errors == []
+        assert mock_proc.terminate.call_count == 1
+        assert mock_proc.wait.call_count == 1
+        assert exit_info.value.code == 128 + signal.SIGTERM
 
     def test_cmd_daemon_kills_child_on_signal(self):
         import argparse

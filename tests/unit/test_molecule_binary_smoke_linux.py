@@ -29,11 +29,14 @@ from __future__ import annotations
 
 import os
 import re
+import tomllib
 
 import yaml
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _SCENARIO_DIR = os.path.join(_ROOT, "molecule", "playbooks", "binary_smoke_linux")
+_MAKEFILE = os.path.join(_ROOT, "Makefile")
+_PYPROJECT = os.path.join(_ROOT, "pyproject.toml")
 
 
 def _load(rel: str) -> str:
@@ -68,6 +71,21 @@ class TestScenarioShape:
     def test_prepare_yml_present(self):
         assert os.path.isfile(os.path.join(_SCENARIO_DIR, "default", "prepare.yml"))
 
+    def test_cleanup_yml_present(self):
+        assert os.path.isfile(os.path.join(_SCENARIO_DIR, "default", "cleanup.yml"))
+
+    def test_dependency_manifests_are_complete(self):
+        requirements = _load_yaml("requirements.yml")
+        collections = _load_yaml("collections.yml")
+
+        assert requirements == {"roles": []}
+        assert isinstance(collections, dict)
+        names = {
+            dependency["name"]
+            for dependency in collections.get("collections", [])
+        }
+        assert names == {"ansible.posix", "community.docker"}
+
     def test_molecule_uses_container_driver(self):
         data = _load_yaml("molecule.yml")
         assert isinstance(data, dict)
@@ -76,6 +94,70 @@ class TestScenarioShape:
             "scenario must use a container driver (docker/podman) so the "
             f"binary is exercised on Linux; got driver={driver.get('name')!r}"
         )
+
+    def test_docker_driver_dependency_is_declared(self):
+        with open(_PYPROJECT, "rb") as fh:
+            project = tomllib.load(fh)
+
+        dependency_sets = (
+            project["project"]["optional-dependencies"]["dev"],
+            project["dependency-groups"]["dev"],
+        )
+        for dependencies in dependency_sets:
+            assert any(
+                dependency.startswith("molecule-plugins[docker]")
+                for dependency in dependencies
+            ), "molecule Docker scenarios require molecule-plugins[docker]"
+
+    def test_make_target_routes_docker_sdk_to_podman_socket(self):
+        with open(_MAKEFILE) as fh:
+            makefile = fh.read()
+
+        assert "LIMA_INSTANCE ?= gludd-docker" in makefile
+        assert 'limactl list "$(LIMA_INSTANCE)"' in makefile
+        assert "PODMAN_MACHINE ?= gludd" in makefile
+        assert 'podman machine inspect "$(PODMAN_MACHINE)"' in makefile
+        assert "DOCKER_HOST=" in makefile
+        assert "collections.yml requirements.yml" in makefile
+        assert 'PROJECT_COLLECTIONS="$$(pwd)/collections"' in makefile
+        assert (
+            'export ANSIBLE_COLLECTIONS_PATH="$$ANSIBLE_STATE_DIR/collections:'
+            '$$PROJECT_COLLECTIONS:'
+        ) in makefile
+        assert 'DOCKER_CONFIG_VALUE="$$ANSIBLE_STATE_DIR/docker"' in makefile
+        assert 'export DOCKER_CONFIG="$$DOCKER_CONFIG_VALUE"' in makefile
+        assert "$(UV) run molecule reset" not in makefile
+        assert "lima-docker-status:" in makefile
+        assert "docker ps --all" in makefile
+        assert "docker images" in makefile
+        assert "lima-docker-pull:" in makefile
+        assert "LIMA_DOCKER_CONFIG ?= /tmp/gludd-lima-docker-config" in makefile
+        assert 'DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)"' in makefile
+        assert 'docker pull "$(LIMA_IMAGE)"' in makefile
+
+    def test_molecule_clean_removes_only_generated_dependency_namespaces(self):
+        with open(_MAKEFILE) as fh:
+            makefile = fh.read()
+
+        section = makefile.split("molecule-clean:", 1)[1].split(
+            "molecule-test:", 1
+        )[0]
+        assert 'git ls-files -- "$$d"' in section
+        assert "Preserving tracked scenario" in section
+        assert "collections/ansible_collections/ansible" in section
+        assert "collections/ansible_collections/community" in section
+        assert "general_ludd" not in section
+
+    def test_molecule_test_never_removes_a_tracked_scenario(self):
+        with open(_MAKEFILE) as fh:
+            makefile = fh.read()
+
+        section = makefile.split("molecule-test:", 1)[1].split(
+            "git-status:", 1
+        )[0]
+        assert "TRACKED_SCENARIO=0" in section
+        assert 'git ls-files -- "$$RUNTIME_SCENARIO"' in section
+        assert '[ "$$TRACKED_SCENARIO" -eq 0 ]' in section
 
     def test_molecule_declares_ubuntu_platform(self):
         data = _load_yaml("molecule.yml")
@@ -87,6 +169,19 @@ class TestScenarioShape:
             f"got images={names}"
         )
 
+    def test_molecule_uses_prebuilt_image_and_bootstraps_python(self):
+        data = _load_yaml("molecule.yml")
+        platforms = data.get("platforms", [])
+        assert platforms[0].get("pre_build_image") is True
+
+        converge = _load_yaml("default/converge.yml")
+        bootstrap = converge[0]
+        assert bootstrap.get("gather_facts") is False
+        serialized = yaml.safe_dump(bootstrap)
+        assert "ansible.builtin.raw" in serialized
+        assert "apt-get install -y python3" in serialized
+        assert converge[1].get("become") is False
+
     def test_molecule_uses_ansible_provisioner_and_verifier(self):
         data = _load_yaml("molecule.yml")
         assert data.get("provisioner", {}).get("name") == "ansible"
@@ -95,10 +190,13 @@ class TestScenarioShape:
     def test_molecule_wires_default_playbooks(self):
         data = _load_yaml("molecule.yml")
         playbooks = data.get("provisioner", {}).get("playbooks", {})
-        for key in ("prepare", "converge", "verify"):
+        for key in ("cleanup", "prepare", "converge", "verify"):
             assert key in playbooks, (
                 f"provisioner.playbooks missing '{key}' reference"
             )
+
+        sequence = data.get("scenario", {}).get("test_sequence", [])
+        assert sequence[:3] == ["dependency", "cleanup", "destroy"]
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +255,20 @@ class TestConvergeCoverage:
             "submission API; there is no /api/playbook/run endpoint)"
         )
 
+    def test_converge_authenticates_job_submission(self):
+        converge = _load_yaml("default/converge.yml")
+        daemon_play = converge[1]
+        daemon_psk = daemon_play["vars"].get("daemon_psk")
+        assert daemon_psk, "the smoke daemon must exercise fail-closed PSK auth"
+
+        tasks = daemon_play["tasks"]
+        start = next(task for task in tasks if task["name"].startswith("Start the"))
+        submit = next(task for task in tasks if task["name"].startswith("Submit a"))
+        assert start["environment"]["GLUDD_PSK"] == "{{ daemon_psk }}"
+        assert submit["ansible.builtin.uri"]["headers"]["Authorization"] == (
+            "Bearer {{ daemon_psk }}"
+        )
+
     def test_converge_covers_invalid_flag_error_path(self):
         out = _load("default/converge.yml")
         assert "--invalid-flag" in out, (
@@ -170,6 +282,16 @@ class TestConvergeCoverage:
             "converge must start a second daemon on the occupied port"
         )
 
+    def test_converge_persists_remote_port_clash_output(self):
+        converge = _load_yaml("default/converge.yml")
+        tasks = converge[1]["tasks"]
+        persist = next(
+            task for task in tasks if task["name"] == "Persist port-clash result"
+        )
+        content = persist["ansible.builtin.copy"]["content"]
+        assert "lookup(" not in content
+        assert "{{ port_clash.stdout }}" in content
+
 
 # ---------------------------------------------------------------------------
 # verify.yml asserts every required invariant
@@ -177,6 +299,10 @@ class TestConvergeCoverage:
 
 
 class TestVerifyAssertions:
+    def test_verify_does_not_require_sudo_in_root_container(self):
+        verify = _load_yaml("default/verify.yml")
+        assert verify[0].get("become") is False
+
     def test_verify_asserts_semver(self):
         out = _load("default/verify.yml")
         assert "regex" in out.lower() or re.search(r"\\d\+", out), (
@@ -217,6 +343,8 @@ class TestVerifyAssertions:
         assert "Collection search path" in out or "project paths" in out, (
             "verify must assert the binary locates bundled config/playbooks paths"
         )
+        assert "'(missing)' not in cli_outputs" in out
+        assert "'=== project paths (rc=0) ===' in cli_outputs" in out
 
     def test_verify_assertes_no_import_errors(self):
         out = _load("default/verify.yml")
@@ -236,6 +364,14 @@ class TestVerifyAssertions:
             "verify must assert the invalid-flag invocation exited non-zero"
         )
 
+    def test_verify_uses_ansible_compatible_nonzero_regexes(self):
+        out = _load("default/verify.yml")
+
+        assert "regex_search('rc=[1-9][0-9]*')" in out
+        assert "regex_search('EXIT_RC=[1-9][0-9]*')" in out
+        assert "regex_search('rc=([0-9]+)'," not in out
+        assert "regex_search('EXIT_RC=([0-9]+)'," not in out
+
     def test_verify_asserts_port_clash_handled_gracefully(self):
         out = _load("default/verify.yml")
         assert "port" in out.lower() or "clash" in out.lower(), (
@@ -249,8 +385,82 @@ class TestVerifyAssertions:
 
 
 class TestPrepare:
-    def test_prepare_builds_or_locates_binary(self):
+    def test_make_target_builds_a_real_linux_binary_before_molecule(self):
         out = _load("default/prepare.yml")
-        assert "dist/gludd" in out or "build-executable" in out, (
-            "prepare must ensure dist/gludd exists (build via make build-executable)"
+        assert "dist/linux/gludd" in out
+        assert "ansible.builtin.command" not in out
+
+        with open(_MAKEFILE) as fh:
+            makefile = fh.read()
+        assert 'if [ "$(SCENARIO)" = "binary_smoke_linux" ]' in makefile
+        assert "$(MAKE) --no-print-directory build-linux-executable" in makefile
+        assert "build-linux-executable:" in makefile
+        assert "UV_PROJECT_ENVIRONMENT=/tmp/gludd-linux-venv" in makefile
+        assert "git archive HEAD" in makefile
+        assert (
+            "LINUX_BINARY_IMAGE ?= "
+            "ghcr.io/astral-sh/uv:python3.12-bookworm-slim@"
+            "sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261"
+            "ba1b7147afa78e58"
+        ) in makefile
+        assert "--pull=always" in makefile
+        assert "LINUX_BINARY_SCRATCH_ROOT ?= $(HOME)/tmp/gludd-linux-build" in makefile
+        assert "DEBIAN_SNAPSHOT ?= 20260729T000000Z" in makefile
+        assert "LINUX_BINUTILS_VERSION ?=" in makefile
+        assert "LINUX_APT_UTILS_VERSION ?=" in makefile
+        assert "snapshot.debian.org/archive/debian/" in makefile
+        assert "snapshot.debian.org/archive/debian-security/" in makefile
+        assert "Acquire::Check-Valid-Until" in makefile
+        assert "APT::Update::Error-Mode=any update" in makefile
+        assert (
+            'sed -i "\\|/usr/share/man/|d" '
+            "/etc/dpkg/dpkg.cfg.d/docker"
+        ) in makefile
+        assert 'mkdir -p /usr/share/man/man7' in makefile
+        assert ': > /usr/share/man/man7/bash-builtins.7.gz' in makefile
+        assert "update-alternatives --remove builtins.7.gz" in makefile
+        assert 'rm -f /usr/share/man/man7/bash-builtins.7.gz' in makefile
+        assert (
+            'apt-get install -y --download-only --no-install-recommends '
+            '"apt-utils=$(LINUX_APT_UTILS_VERSION)"'
+        ) in makefile
+        assert "dpkg -i /var/cache/apt/archives/apt-utils_" in makefile
+        assert "apt-get -y --no-remove dist-upgrade" in makefile
+        assert (
+            'apt-get install -y --no-install-recommends '
+            '"binutils=$(LINUX_BINUTILS_VERSION)"'
+        ) in makefile
+        assert "command -v objdump" in makefile
+        assert "command -v objcopy" in makefile
+        assert "dpkg-query -W binutils" in makefile
+        assert "apt-get -s dist-upgrade" in makefile
+        assert (
+            "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded."
+            in makefile
         )
+        assert "audit_pyinstaller_warnings.py" in makefile
+        assert "/tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt" in makefile
+        assert "--spec gludd.spec" in makefile
+        assert ":/workspace:ro" in makefile
+        assert '@set -e; if [ "$$(uname -s)" = "Linux" ]' in makefile
+        assert "output_dir=$$(mktemp" not in makefile
+        assert 'rm -rf "$$source_dir"' in makefile
+        assert '-v "$$output_dir:/out"' not in makefile
+        assert "cp /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt" in makefile
+        assert "pyinstaller_status=0" in makefile
+        assert "|| pyinstaller_status=$$?" in makefile
+        assert 'test "$$pyinstaller_status" -eq 0' in makefile
+        assert "build_status=0" in makefile
+        assert "|| build_status=$$?" in makefile
+        assert (
+            'docker cp "$$container_name:/out/warn-gludd.txt" '
+            '"$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"'
+        ) in makefile
+        status_check = makefile.index('if [ "$$build_status" -ne 0 ]')
+        binary_copy = makefile.index(
+            'docker cp "$$container_name:/out/gludd" "$(LINUX_BINARY_OUTPUT)"'
+        )
+        assert status_check < binary_copy
+        assert 'exit "$$build_status"' in makefile
+        assert "file \"$(LINUX_BINARY_OUTPUT)\"" in makefile
+        assert "ELF" in makefile

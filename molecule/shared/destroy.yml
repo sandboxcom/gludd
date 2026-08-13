@@ -1,0 +1,9 @@
+---
+- name: Destroy the local Molecule target
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Confirm the reusable localhost target remains reachable
+      ansible.builtin.ping:
+      changed_when: false

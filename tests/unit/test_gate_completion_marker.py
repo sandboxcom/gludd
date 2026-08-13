@@ -11,8 +11,13 @@ or === GATE: FAILED ===) and the _gate-fresh-check must require its presence.
 """
 
 import os
+import subprocess
+import sys
 import tempfile
+import time
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class TestGateCompletionMarker:
@@ -102,3 +107,57 @@ class TestGateCompletionMarker:
         assert not is_gate_complete(Path("/tmp/nonexistent-gate-status-xyz")), (
             "Missing gate file is not complete"
         )
+
+    def test_failed_marker_after_passed_marker_is_not_green(self, tmp_path: Path):
+        from scripts.gate_fresh_check import is_gate_passed
+
+        gate_path = tmp_path / ".gate-status"
+        gate_path.write_text(
+            "lint PASS 0\n=== GATE: PASSED ===\n"
+            "test FAIL 1\n=== GATE: FAILED ===\n",
+            encoding="utf-8",
+        )
+
+        assert not is_gate_passed(gate_path)
+
+    def test_stale_passed_gate_is_rejected(self, tmp_path: Path):
+        from scripts.gate_fresh_check import is_gate_fresh_and_passed
+
+        gate_path = tmp_path / ".gate-status"
+        gate_path.write_text(
+            "lint PASS 0\n=== GATE: PASSED ===\n",
+            encoding="utf-8",
+        )
+        stale = time.time() - 3600
+        os.utime(gate_path, (stale, stale))
+
+        assert not is_gate_fresh_and_passed(gate_path, max_age_seconds=1800)
+
+    def test_check_command_fails_closed_for_red_gate(self, tmp_path: Path):
+        gate_path = tmp_path / ".gate-status"
+        gate_path.write_text(
+            "verify-hot-reload FAIL\n=== GATE: FAILED ===\n",
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts" / "gate_fresh_check.py"),
+                "check",
+                str(gate_path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode != 0
+        assert "not fresh and green" in result.stderr
+
+    def test_make_target_executes_checker_instead_of_echoing_it(self):
+        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+        recipe = makefile.split("\ncheck-gate-fresh:", 1)[1].split("\n\n", 1)[0]
+
+        assert "gate_fresh_check.py check" in recipe
+        assert "@echo run python" not in recipe

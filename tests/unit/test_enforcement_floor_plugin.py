@@ -129,13 +129,11 @@ class TestSubagentGuard:
         )
 
     def test_guard_also_in_text_complete(self):
-        """enforce-floor.ts is self-contained in tool.execute.before only
-        (opencode ≥1.17.9 removed text.complete). The subagent guard is
-        at the top of tool.execute.before via isSubagent()."""
+        """The supported experimental hook must preserve subagent isolation."""
         src = _src()
-        assert '"tool.execute.before"' in src, (
-            "tool.execute.before must exist and contain subagent guard"
-        )
+        handler = src.split('"experimental.text.complete"')[1]
+        assert "isSubagent()" in handler
+        assert "return output" in handler
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +406,13 @@ class TestOpenWorkExists:
         after = src[idx:]
         assert "gludd-watchdog-ci.json" in after[:3500]
 
+    def test_runtime_state_paths_are_overridable(self):
+        src = _src()
+        idx = src.find("function openWorkExists")
+        after = src[idx:]
+        assert "process.env.GLUDD_WATCHDOG_CI_FILE" in after[:4000]
+        assert "process.env.GLUDD_STOP_STATE_FILE" in after[:4000]
+
     def test_function_returns_false_on_catch(self):
         src = _src()
         open_work_idx = src.find("function openWorkExists")
@@ -491,16 +496,17 @@ class TestRefillState:
 
 
 class TestTextCompleteBehavior:
-    """text.complete was removed in opencode ≥1.17.9. enforce-floor.ts is
-    self-contained in tool.execute.before only. These tests verify that
-    the plugin correctly omits the removed hooks."""
+    """The removed bare hook stays absent; the experimental boundary remains."""
 
-    def test_no_text_complete_hook(self):
+    def test_experimental_text_complete_passes_output_through(self):
         src = _src()
-        assert '"experimental.text.complete"' not in src, (
-            "text.complete hook was removed in opencode ≥1.17.9 — enforce-floor.ts "
-            "must be self-contained in tool.execute.before"
-        )
+        handler = src.split('"experimental.text.complete"')[1]
+        assert "incrementTextCompleteCount()" in handler
+        assert "return output" in handler
+
+    def test_no_removed_bare_text_complete_hook(self):
+        src = _src()
+        assert re.search(r'(?<!experimental\.)"text\.complete"\s*:', src) is None
 
     def test_floor_breach_block_in_tool_execute_before(self):
         src = _src()
@@ -681,8 +687,7 @@ class TestFailOpenGuarantee:
         assert m, "tool.execute.before must have outer try/catch for fail-open"
 
     def test_text_complete_returns_output_on_error(self):
-        """No text.complete hook exists (removed in opencode ≥1.17.9).
-        Fail-open is guaranteed by tool.execute.before's outer catch."""
+        """tool.execute.before retains its independent fail-open boundary."""
         src = _src()
         before_idx = src.find('"tool.execute.before"')
         after = src[before_idx:]
@@ -695,7 +700,7 @@ class TestFailOpenGuarantee:
 
 
 # ---------------------------------------------------------------------------
-# Plugin returns all three hooks
+# Plugin returns both supported hooks
 # ---------------------------------------------------------------------------
 
 
@@ -710,11 +715,9 @@ class TestPluginHookRegistration:
             "session.idle was removed — plugin is self-contained in tool.execute.before"
         )
 
-    def test_no_experimental_text_complete(self):
+    def test_returns_experimental_text_complete(self):
         src = _src()
-        assert '"experimental.text.complete"' not in src, (
-            "text.complete was removed in opencode ≥1.17.9"
-        )
+        assert '"experimental.text.complete"' in src
 
 
 # ---------------------------------------------------------------------------

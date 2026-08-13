@@ -21,9 +21,22 @@ PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-deadline.ts"
 
 _ts_counter = 0
 
-DEADLINE_STATE = "/tmp/gludd-task-deadlines-e2e.json"
-STALE_FILE = "/tmp/gludd-task-stale-e2e.json"
-WARNINGS_LOG = "/tmp/gludd-task-deadlines-e2e.warnings.log"
+_STATE_NAMESPACE = f"{os.getpid()}-{os.environ.get('PYTEST_XDIST_WORKER', 'main')}"
+_STATE_ROOT = Path(tempfile.gettempdir())
+DEADLINE_STATE = str(
+    _STATE_ROOT / f"gludd-task-deadlines-e2e-{_STATE_NAMESPACE}.json"
+)
+STALE_FILE = str(_STATE_ROOT / f"gludd-task-stale-e2e-{_STATE_NAMESPACE}.json")
+WARNINGS_LOG = str(
+    _STATE_ROOT / f"gludd-task-deadlines-e2e-{_STATE_NAMESPACE}.warnings.log"
+)
+
+
+def test_deadline_state_paths_are_process_isolated() -> None:
+    """Parallel pytest workers must never share mutable deadline state."""
+    process_token = str(os.getpid())
+    for state_path in (DEADLINE_STATE, STALE_FILE, WARNINGS_LOG):
+        assert process_token in state_path
 
 # The plugin intentionally persists deadline state across hook invocations.
 # Keep this module on one xdist worker so its fixed, shared E2E paths cannot be

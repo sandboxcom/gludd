@@ -26,6 +26,11 @@ or per-test ``os.environ`` patches:
    is (``127.0.0.1``) instead of the un-parseable pseudo-host ``"testclient"``,
    so the daemon's CIDR allowlist (a real security control) can stay armed
    during tests instead of 403-ing the in-process transport.
+
+5. Disables OpenCode's background gate-refresh autospawn inside tests. Tests
+   invoke plugin constructors in fresh Node processes; those constructors must
+   not start an unrelated full release gate. The singleflight contract test
+   explicitly opts back in with a fake spawner.
 """
 
 from __future__ import annotations
@@ -101,6 +106,36 @@ importlib.import_module("general_ludd.routing_roles")
 # _CANONICAL_HTTPX_GET is captured above at import time.
 _ab_compare = importlib.import_module("general_ludd.abtest.compare")
 _CANONICAL_RUN_CANDIDATE = _ab_compare.run_candidate_in_subprocess
+
+
+def _deny_unowned_unit_gunicorn(
+    event: str,
+    args: tuple[object, ...],
+) -> None:
+    """Deny a real Gunicorn exec from a unit test at the CPython audit boundary.
+
+    Tests that exercise daemon launch semantics must mock ``Popen`` and own the
+    returned process.  A real Gunicorn launch is detached by production code,
+    so pytest cannot reap it when the worker exits.  An audit hook cannot be
+    bypassed by a test restoring or replacing ``subprocess.Popen``.
+    """
+    if event != "subprocess.Popen" or not args:
+        return
+    current_test = os.environ.get("PYTEST_CURRENT_TEST", "")
+    if not current_test.startswith("tests/unit/"):
+        return
+    try:
+        executable = os.fsdecode(os.fspath(args[0]))
+    except TypeError:
+        return
+    if Path(executable).name == "gunicorn":
+        raise RuntimeError(
+            "unit test attempted an unowned Gunicorn launch; mock "
+            "subprocess.Popen and explicitly own the fake process"
+        )
+
+
+sys.addaudithook(_deny_unowned_unit_gunicorn)
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -315,6 +350,12 @@ def _allow_no_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     if not os.environ.get("GLUDD_PSK", "").strip():
         monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+
+
+@pytest.fixture(autouse=True)
+def _disable_gate_refresh_autospawn(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep plugin-construction tests from launching background release gates."""
+    monkeypatch.setenv("GLUDD_GATE_REFRESH_AUTOSPAWN", "0")
 
 
 @pytest.fixture(autouse=True, scope="session")

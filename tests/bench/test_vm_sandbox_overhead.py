@@ -8,6 +8,7 @@ real-boot paths have a measured baseline to compare against.
 
 from __future__ import annotations
 
+import subprocess
 import time
 from pathlib import Path
 from unittest import mock
@@ -16,6 +17,48 @@ import pytest
 
 from general_ludd.security.permissions import PermissionSpec
 from general_ludd.security.sandboxes import SandboxHandle, SandboxTarget
+
+
+class _LivePopen(subprocess.Popen[bytes]):
+    """Concrete in-memory ``Popen`` stand-in without ``MagicMock`` recursion."""
+
+    def __init__(
+        self,
+        *_args: object,
+        pid: int = 4242,
+        **_kwargs: object,
+    ) -> None:
+        self.pid = pid
+        self._bench_returncode: int | None = None
+
+    def poll(self) -> int | None:
+        return self._bench_returncode
+
+    def terminate(self) -> None:
+        self._bench_returncode = 0
+
+    def kill(self) -> None:
+        self._bench_returncode = -9
+
+    def wait(self, timeout: float | None = None) -> int:
+        del timeout
+        self._bench_returncode = 0
+        return self._bench_returncode
+
+    def __del__(self) -> None:
+        """Avoid the real ``Popen`` finalizer, whose state was never created."""
+
+
+def _applied_firecracker_handle(
+    _spec: PermissionSpec,
+    _target: SandboxTarget,
+) -> SandboxHandle:
+    return SandboxHandle(
+        backend="firecracker",
+        token="gludd-bench-agent",
+        applied=True,
+        extra={},
+    )
 
 
 @pytest.fixture()
@@ -36,7 +79,11 @@ def test_dispatch_loop_overhead_100_agents(bench_spec, bench_target):
         FirecrackerBackend,
     )
 
-    with mock.patch.object(FirecrackerBackend, "available", return_value=True):
+    with mock.patch.object(
+        FirecrackerBackend,
+        "available",
+        new=staticmethod(lambda: True),
+    ):
         start = time.perf_counter()
         for _ in range(100):
             handle = FirecrackerBackend.apply(bench_spec, bench_target)
@@ -70,16 +117,17 @@ def test_boot_time_estimation(bench_spec, bench_target):
     results: dict[str, float] = {}
 
     # Firecracker
-    with mock.patch.object(FirecrackerBackend, "available", return_value=True), \
-         mock.patch(
-             "general_ludd.security.sandboxes.vm.firecracker_backend._spawn_firecracker",
-             return_value=SandboxHandle(
-                 backend="firecracker",
-                 token="gludd-bench-agent",
-                 applied=True,
-                 extra={},
-             ),
-         ):
+    with (
+        mock.patch.object(
+            FirecrackerBackend,
+            "available",
+            new=staticmethod(lambda: True),
+        ),
+        mock.patch(
+            "general_ludd.security.sandboxes.vm.firecracker_backend._spawn_firecracker",
+            new=_applied_firecracker_handle,
+        ),
+    ):
         start = time.perf_counter()
         handle = FirecrackerBackend.apply(bench_spec, bench_target)
         elapsed_fc = time.perf_counter() - start
@@ -88,8 +136,15 @@ def test_boot_time_estimation(bench_spec, bench_target):
 
     # gVisor
     with (
-        mock.patch.object(GvisorBackend, "available", return_value=True),
-        mock.patch("general_ludd.security.sandboxes.vm.gvisor_backend.subprocess.Popen"),
+        mock.patch.object(
+            GvisorBackend,
+            "available",
+            new=staticmethod(lambda: True),
+        ),
+        mock.patch(
+            "general_ludd.security.sandboxes.vm.gvisor_backend.subprocess.Popen",
+            new=_LivePopen,
+        ),
     ):
         start = time.perf_counter()
         handle = GvisorBackend.apply(bench_spec, bench_target)
@@ -173,7 +228,11 @@ def test_image_builder_build_time_mocked_io(tmp_path: Path) -> None:
     rootfs_path = tmp_path / "bench_rootfs.ext4"
     iteration_count = 10
 
-    with mock.patch.object(Path, "mkdir", return_value=None):
+    with mock.patch.object(
+        Path,
+        "mkdir",
+        new=lambda _self, *args, **kwargs: None,
+    ):
         start = time.perf_counter()
         for _ in range(iteration_count):
             result = build_rootfs(rootfs_path)
@@ -242,9 +301,9 @@ def test_backend_selection_overhead():
 
     # ── Profile: Linux + firecracker ──
     with mock.patch.object(detect.sys, "platform", "linux"), \
-         mock.patch("os.path.exists", return_value=True), \
-         mock.patch("os.access", return_value=True), \
-         mock.patch("shutil.which", return_value="/usr/bin/firecracker"):
+         mock.patch("os.path.exists", new=lambda _path: True), \
+         mock.patch("os.access", new=lambda *_args, **_kwargs: True), \
+         mock.patch("shutil.which", new=lambda _name: "/usr/bin/firecracker"):
         fc_time = _time_auto()
     assert fc_time < 5.0, (
         f"auto() with firecracker available took {fc_time*1000:.2f}ms — "
@@ -253,8 +312,8 @@ def test_backend_selection_overhead():
 
     # ── Profile: Linux + gVisor (no firecracker) ──
     with mock.patch.object(detect.sys, "platform", "linux"), \
-         mock.patch("os.path.exists", return_value=False), \
-         mock.patch("shutil.which", side_effect=lambda x: "/usr/bin/runsc" if x == "runsc" else None):
+         mock.patch("os.path.exists", new=lambda _path: False), \
+         mock.patch("shutil.which", new=lambda x: "/usr/bin/runsc" if x == "runsc" else None):
         gv_time = _time_auto()
     assert gv_time < 5.0, (
         f"auto() with gVisor available took {gv_time*1000:.2f}ms — "
@@ -263,12 +322,12 @@ def test_backend_selection_overhead():
 
     # ── Profile: Linux + nothing available ──
     with mock.patch.object(detect.sys, "platform", "linux"), \
-         mock.patch.object(detect, "_landlock_available", return_value=False), \
-         mock.patch.object(detect, "_bubblewrap_present", return_value=False), \
-         mock.patch.object(detect, "_apparmor_enabled", return_value=False), \
-         mock.patch.object(detect, "_selinux_enabled", return_value=False), \
-         mock.patch("os.path.exists", return_value=False), \
-         mock.patch("shutil.which", return_value=None):
+         mock.patch.object(detect, "_landlock_available", new=lambda: False), \
+         mock.patch.object(detect, "_bubblewrap_present", new=lambda: False), \
+         mock.patch.object(detect, "_apparmor_enabled", new=lambda: False), \
+         mock.patch.object(detect, "_selinux_enabled", new=lambda: False), \
+         mock.patch("os.path.exists", new=lambda _path: False), \
+         mock.patch("shutil.which", new=lambda _name: None):
         none_time = _time_auto()
     assert none_time < 5.0, (
         f"auto() with no backend available took {none_time*1000:.2f}ms — "
@@ -277,7 +336,7 @@ def test_backend_selection_overhead():
 
     # ── Profile: macOS (darwin) ──
     with mock.patch.object(detect.sys, "platform", "darwin"), \
-         mock.patch("shutil.which", return_value="/usr/bin/sandbox-exec"):
+         mock.patch("shutil.which", new=lambda _name: "/usr/bin/sandbox-exec"):
         mac_time = _time_auto()
     assert mac_time < 5.0, (
         f"auto() on macOS took {mac_time*1000:.2f}ms — "
@@ -302,13 +361,21 @@ def test_firecracker_and_gvisor_stub_latency_parity(bench_spec, bench_target):
     )
     from general_ludd.security.sandboxes.vm.gvisor_backend import GvisorBackend
 
-    with mock.patch.object(FirecrackerBackend, "available", return_value=True):
+    with mock.patch.object(
+        FirecrackerBackend,
+        "available",
+        new=staticmethod(lambda: True),
+    ):
         t0 = time.perf_counter()
         for _ in range(100):
             FirecrackerBackend.apply(bench_spec, bench_target)
         fc_total = time.perf_counter() - t0
 
-    with mock.patch.object(GvisorBackend, "available", return_value=True):
+    with mock.patch.object(
+        GvisorBackend,
+        "available",
+        new=staticmethod(lambda: True),
+    ):
         t0 = time.perf_counter()
         for _ in range(100):
             GvisorBackend.apply(bench_spec, bench_target)
@@ -330,19 +397,10 @@ def test_firecracker_and_gvisor_stub_latency_parity(bench_spec, bench_target):
 # one loop; these next two tests isolate ``verify`` and ``release`` so a
 # regression in either stage is observable on its own.
 
-def _live_popen_mock(pid: int = 4242) -> mock.MagicMock:
-    """Return a mock popen that looks alive (``poll() -> None``).
+def _live_popen(pid: int = 4242) -> _LivePopen:
+    """Return a concrete popen stand-in that reports a live process."""
 
-    Uses ``spec=subprocess.Popen`` so ``isinstance(popen, subprocess.Popen)``
-    passes — both backends' ``verify``/``release`` gate on that check before
-    touching the popen.
-    """
-    import subprocess
-
-    popen = mock.MagicMock(spec=subprocess.Popen)
-    popen.pid = pid
-    popen.poll.return_value = None
-    return popen
+    return _LivePopen(pid=pid)
 
 
 def test_verify_overhead(bench_spec, bench_target):
@@ -367,7 +425,7 @@ def test_verify_overhead(bench_spec, bench_target):
         token="gludd-bench-verify-fc",
         applied=True,
         extra={
-            "popen": _live_popen_mock(pid=9001),
+            "popen": _live_popen(pid=9001),
             "pid": 9001,
             "sandbox_id": "gludd-fc-verify-bench",
             "api_sock": "/tmp/gludd-fc-verify-bench.api.sock",
@@ -377,7 +435,7 @@ def test_verify_overhead(bench_spec, bench_target):
     )
     with mock.patch(
         "general_ludd.security.sandboxes.vm.firecracker_backend.os.path.exists",
-        return_value=True,
+        new=lambda _path: True,
     ):
         start = time.perf_counter()
         for _ in range(n_calls):
@@ -393,7 +451,7 @@ def test_verify_overhead(bench_spec, bench_target):
         token="gludd-bench-verify-gv",
         applied=True,
         extra={
-            "popen": _live_popen_mock(pid=9002),
+            "popen": _live_popen(pid=9002),
             "pid": 9002,
             "sandbox_id": "gludd-sb-verify-bench",
             "bundle_path": "/tmp/gludd-sb-verify-bench",
@@ -445,13 +503,13 @@ def test_release_cleanup_overhead(bench_spec, bench_target):
     start = time.perf_counter()
     with mock.patch(
         "general_ludd.security.sandboxes.vm.firecracker_backend._firecracker_put",
-        return_value={},
+        new=lambda *_args, **_kwargs: {},
     ), mock.patch(
         "general_ludd.security.sandboxes.vm.firecracker_backend.os.path.exists",
-        return_value=True,
+        new=lambda _path: True,
     ), mock.patch(
         "general_ludd.security.sandboxes.vm.firecracker_backend.os.unlink",
-        return_value=None,
+        new=lambda _path: None,
     ):
         for _ in range(n_calls):
             handle = SandboxHandle(
@@ -459,7 +517,7 @@ def test_release_cleanup_overhead(bench_spec, bench_target):
                 token="gludd-bench-release-fc",
                 applied=True,
                 extra={
-                    "popen": _live_popen_mock(pid=9101),
+                    "popen": _live_popen(pid=9101),
                     "pid": 9101,
                     "sandbox_id": "gludd-fc-release-bench",
                     "api_sock": "/tmp/gludd-fc-release-bench.api.sock",
@@ -478,7 +536,7 @@ def test_release_cleanup_overhead(bench_spec, bench_target):
             token="gludd-bench-release-gv",
             applied=True,
             extra={
-                "popen": _live_popen_mock(pid=9102),
+                "popen": _live_popen(pid=9102),
                 "pid": 9102,
                 "sandbox_id": "gludd-sb-release-bench",
                 "bundle_path": "/tmp/gludd-sb-release-bench",

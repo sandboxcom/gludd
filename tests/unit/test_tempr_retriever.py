@@ -308,6 +308,23 @@ class TestTemporal:
         assert "malformed" not in ids
         assert "invalid-type" not in ids
 
+    def test_date_range_filters_every_fused_strategy_and_unknown_dates(self):
+        retriever = TEMPRRetriever()
+        docs = [
+            {"id": "old", "content": "async legacy", "created_at": "2024-03-15T00:00:00+00:00"},
+            {"id": "current", "content": "async current", "created_at": "2024-06-15T00:00:00+00:00"},
+            {"id": "unknown", "content": "async unknown"},
+        ]
+        retriever.index(docs)
+
+        results = retriever.retrieve(
+            "async",
+            top_k=10,
+            date_range=(datetime(2024, 5, 1, tzinfo=UTC), datetime(2024, 8, 1, tzinfo=UTC)),
+        )
+
+        assert [result.doc_id for result in results] == ["current"]
+
     def test_no_created_at_uses_default(self):
         retriever = TEMPRRetriever(strategy_weights={"temporal": 1.0})
         docs = [{"id": "d1", "content": "no timestamp"}]

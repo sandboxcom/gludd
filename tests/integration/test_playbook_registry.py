@@ -66,8 +66,7 @@ class TestWorkTypePlaybookRegistry:
     def test_playbook_is_valid_yaml(self, work_type: str, playbook_name: str):
         """Each playbook must parse as valid YAML."""
         playbook_path = PLAYBOOKS_DIR / playbook_name
-        if not playbook_path.is_file():
-            pytest.skip(f"Playbook {playbook_name} does not exist (covered by test_playbook_file_exists)")
+        assert playbook_path.is_file(), f"Required playbook {playbook_name} does not exist"
         content = playbook_path.read_text()
         parsed = yaml.safe_load(content)
         assert isinstance(parsed, list), (
@@ -79,8 +78,7 @@ class TestWorkTypePlaybookRegistry:
     def test_playbook_has_hosts_and_gather_facts(self, work_type: str, playbook_name: str):
         """Each playbook must have 'hosts' in every play and 'gather_facts: false'."""
         playbook_path = PLAYBOOKS_DIR / playbook_name
-        if not playbook_path.is_file():
-            pytest.skip(f"Playbook {playbook_name} does not exist")
+        assert playbook_path.is_file(), f"Required playbook {playbook_name} does not exist"
         plays = yaml.safe_load(playbook_path.read_text()) or []
         for i, play in enumerate(plays):
             if not isinstance(play, dict):
@@ -93,8 +91,7 @@ class TestWorkTypePlaybookRegistry:
     def test_manifest_extraction_succeeds(self, work_type: str, playbook_name: str):
         """generate_manifest() must succeed without raising for each playbook."""
         playbook_path = PLAYBOOKS_DIR / playbook_name
-        if not playbook_path.is_file():
-            pytest.skip(f"Playbook {playbook_name} does not exist")
+        assert playbook_path.is_file(), f"Required playbook {playbook_name} does not exist"
         manifest = generate_manifest(str(playbook_path))
         assert manifest.playbook == playbook_name, (
             f"manifest.playbook mismatch: got {manifest.playbook!r}"
@@ -104,8 +101,7 @@ class TestWorkTypePlaybookRegistry:
     def test_action_policy_allows_playbook(self, work_type: str, playbook_name: str):
         """A permissive ActionPolicy must allow each playbook."""
         playbook_path = PLAYBOOKS_DIR / playbook_name
-        if not playbook_path.is_file():
-            pytest.skip(f"Playbook {playbook_name} does not exist")
+        assert playbook_path.is_file(), f"Required playbook {playbook_name} does not exist"
         policy = ActionPolicyConfig(enabled=True, default_mode="allow")
         manifest = generate_manifest(str(playbook_path))
         result = validate_action(policy, manifest)
@@ -126,8 +122,7 @@ class TestCollectionStructure:
 
     def test_galaxy_yml_valid(self):
         galaxy_path = self.COLLECTION_DIR / "galaxy.yml"
-        if not galaxy_path.is_file():
-            pytest.skip("galaxy.yml missing")
+        assert galaxy_path.is_file(), "Required collection galaxy.yml is missing"
         data = yaml.safe_load(galaxy_path.read_text())
         assert data.get("namespace") == "general_ludd"
         assert data.get("name") == "agent"
@@ -176,8 +171,7 @@ class TestModuleSecurityProperties:
 
     def _read_module(self, name: str) -> str:
         path = self.MODULES_DIR / f"{name}.py"
-        if not path.is_file():
-            pytest.skip(f"{name}.py missing")
+        assert path.is_file(), f"Required collection module {name}.py is missing"
         return path.read_text()
 
     @pytest.mark.parametrize("module_name", ["gludd_db", "gludd_model_call", "gludd_agent_run",

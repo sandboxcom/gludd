@@ -40,6 +40,23 @@ def get_alembic_config(url: str = "") -> AlembicConfig:
 
 
 def stamp_head(cfg: AlembicConfig) -> None:
+    """Stamp the configured database without leaking an async driver to Alembic.
+
+    The bundled Alembic environment uses SQLAlchemy's synchronous
+    ``engine_from_config``.  Application engines use ``aiosqlite``, so reuse the
+    same SQLite path through its synchronous driver for the duration of the
+    migration command and restore the caller's configuration afterwards.
+    """
+
+    configured_url = cfg.get_main_option("sqlalchemy.url")
+    if configured_url and configured_url.startswith("sqlite+aiosqlite:"):
+        sync_url = configured_url.replace("sqlite+aiosqlite:", "sqlite:", 1)
+        cfg.set_main_option("sqlalchemy.url", sync_url)
+        try:
+            command.stamp(cfg, "head")
+        finally:
+            cfg.set_main_option("sqlalchemy.url", configured_url)
+        return
     command.stamp(cfg, "head")
 
 

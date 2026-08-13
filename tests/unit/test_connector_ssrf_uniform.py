@@ -215,7 +215,6 @@ def test_snmp_rejects_hostile_url_construction(bad_url):
         SnmpSource({"base_url": bad_url})
 
 
-@pytest.mark.xfail(reason="SSRF check (NomadSSRFError) deferred to _get() — not raised at construction")
 @pytest.mark.parametrize("bad_url", ["http://127.0.0.1", "http://169.254.169.254"])
 def test_nomad_rejects_hostile_url_construction(bad_url):
     from general_ludd.connectors.nomad import NomadSource

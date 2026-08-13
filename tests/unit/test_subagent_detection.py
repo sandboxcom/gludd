@@ -400,10 +400,11 @@ console.log(JSON.stringify({{callResult, isDefault: callResult === 'default call
         f"Broken hot module should fall back to defaults, got: {result}"
 
 
-def test_broken_hot_module_does_not_crash():
+def test_broken_hot_module_does_not_crash(tmp_path):
     """A hot module that throws on parse does not crash loadHotModule."""
     hot_name = f"test-broken-{os.getpid()}"
-    hot_path = f"/tmp/gludd-hot-{hot_name}.js"
+    hot_prefix = str(tmp_path / "hot-")
+    hot_path = f"{hot_prefix}{hot_name}.js"
 
     code = f"""\
 const fs = await import('node:fs')
@@ -417,7 +418,10 @@ const result = fn ? await fn() : 'no-function'
 try {{ fs.unlinkSync('{hot_path}') }} catch {{}}
 console.log(JSON.stringify({{result, didNotCrash: true, isFallback: result === 'default-fallback'}}))
 """
-    result = _run_ts(code)
+    result = _run_ts(
+        code,
+        env_override={"GLUDD_HOT_MODULE_PREFIX": hot_prefix},
+    )
     assert result["didNotCrash"], "Broken hot module must not crash"
     assert result["isFallback"], \
         f"Should fall back to defaults, got: {result}"
@@ -438,7 +442,7 @@ console.log(JSON.stringify({{result, isDefault: result === 'default-only'}}))
         f"Missing hot module should return defaults, got: {result}"
 
 
-def test_nullish_hot_module_hook_does_not_crash():
+def test_nullish_hot_module_hook_does_not_crash(tmp_path):
     """Null hook entry in hot module returns null without crashing.
 
     loadHotModule returns the hot module's exports as-is. If a hook entry is
@@ -448,7 +452,8 @@ def test_nullish_hot_module_hook_does_not_crash():
     This is the non-crash assert: the system handles null hooks without error.
     """
     hot_name = f"test-nullish-{os.getpid()}"
-    hot_path = f"/tmp/gludd-hot-{hot_name}.js"
+    hot_prefix = str(tmp_path / "hot-")
+    hot_path = f"{hot_prefix}{hot_name}.js"
 
     code = f"""\
 const fs = await import('node:fs')
@@ -466,7 +471,10 @@ try {{
 try {{ fs.unlinkSync('{hot_path}') }} catch {{}}
 console.log(JSON.stringify({{didNotCrash: !err, fnIsNull: fn === null}}))
 """
-    result = _run_ts(code)
+    result = _run_ts(
+        code,
+        env_override={"GLUDD_HOT_MODULE_PREFIX": hot_prefix},
+    )
     assert result["didNotCrash"], f"Null hook entry should not crash, got err: {result.get('err', '')}"
     assert result["fnIsNull"], "Hot module with null hook should return null fn"
 

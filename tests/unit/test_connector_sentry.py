@@ -199,6 +199,29 @@ class TestQuery:
         headers = t.calls[0]["headers"]
         assert headers["Authorization"] == "Bearer my-token-abc"
 
+    def test_callable_transport_keyword_compatibility(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SENTRY_TOKEN", "tok")
+        calls: list[dict[str, Any]] = []
+
+        def transport(
+            method: str,
+            url: str,
+            **kwargs: Any,
+        ) -> tuple[int, object]:
+            calls.append({"method": method, "url": url, **kwargs})
+            return 200, CANNED_ISSUES
+
+        src = SentrySource(_cfg(), transport=transport)
+
+        records = src.query({})
+
+        assert len(records) == 1
+        assert records[0]["kind"] == "logs"
+        assert calls[0]["method"] == "GET"
+        assert "/api/0/projects/myorg/myproject/issues/" in calls[0]["url"]
+
 
 class TestFetchEvent:
     def test_fetch_event(self, monkeypatch: pytest.MonkeyPatch) -> None:

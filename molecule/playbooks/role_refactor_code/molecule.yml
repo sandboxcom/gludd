@@ -1,15 +1,28 @@
 ---
 driver:
   name: default
-platforms: []
+platforms:
+  - name: localhost
+    connection: local
 provisioner:
   name: ansible
   env:
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
     GLUDD_MOCK_PORT: "8789"
+  inventory:
+    hosts:
+      all:
+        hosts:
+          localhost:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
   playbooks:
+    cleanup: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/cleanup.yml"
+    destroy: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/destroy.yml"
+    create: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/create.yml"
     prepare: default/prepare.yml
     converge: default/converge.yml
+    side_effect: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/side_effect.yml"
     verify: default/verify.yml
 verifier:
   name: ansible

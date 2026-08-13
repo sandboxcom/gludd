@@ -166,6 +166,16 @@ class SecretAlias:
         self.path = path
         self.mount = mount
 
+    @property
+    def name(self) -> str:
+        """Backward-compatible public name for the registered alias."""
+        return self.alias
+
+    @property
+    def vault_path(self) -> str:
+        """Backward-compatible public name for the OpenBao secret path."""
+        return self.path
+
 
 class SecretsManager:
     def __init__(

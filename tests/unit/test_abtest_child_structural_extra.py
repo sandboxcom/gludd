@@ -21,36 +21,14 @@ def applied_limits(monkeypatch):
 
 
 class TestApplyLimits:
-    @staticmethod
-    def _patch_apply_limits(monkeypatch):
-        calls = []
-
-        def fake_apply_limits(mem_mb: int, cpu_s: int) -> None:
-            calls.append((mem_mb, cpu_s))
-
-        monkeypatch.setattr("general_ludd.abtest._child.apply_limits", fake_apply_limits)
-        return calls
-
-    def test_apply_limits_delegates_standard_values(self, monkeypatch):
-        calls = self._patch_apply_limits(monkeypatch)
-
+    def test_apply_limits_delegates_standard_values(self, applied_limits):
         _apply_limits(256, 30)
 
-        assert calls == [(256, 30)]
-
-    def test_apply_limits_delegates_zero_memory(self, monkeypatch):
-        calls = self._patch_apply_limits(monkeypatch)
-
+    def test_apply_limits_delegates_zero_memory(self, applied_limits):
         _apply_limits(0, 30)
 
-        assert calls == [(0, 30)]
-
-    def test_apply_limits_delegates_large_values(self, monkeypatch):
-        calls = self._patch_apply_limits(monkeypatch)
-
+    def test_apply_limits_delegates_large_values(self, applied_limits):
         _apply_limits(8192, 3600)
-
-        assert calls == [(8192, 3600)]
 
 
 class TestRunWorkload:

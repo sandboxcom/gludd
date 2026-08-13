@@ -166,6 +166,32 @@ def test_query_hits_query_range_endpoint_with_auth(
     assert call["timeout"] is not None
 
 
+def test_callable_transport_compatibility(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SIGNOZ_TOKEN", "secret-token")
+    calls: list[dict[str, Any]] = []
+
+    def transport(
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> tuple[int, object]:
+        calls.append({"method": method, "url": url, **kwargs})
+        return 200, _span_payload()
+
+    src = SigNozSource(
+        config={
+            "base_url": "https://signoz.example.com",
+            "token_env": "SIGNOZ_TOKEN",
+        },
+        transport=transport,
+    )
+
+    records = src.query({"start": 1_700_000_000, "end": 1_700_000_010})
+
+    assert len(records) == 2
+    assert calls[0]["method"] == "POST"
+
+
 def test_health_ok(
     monkeypatch: pytest.MonkeyPatch, source: tuple[SigNozSource, _StubTransport]
 ) -> None:

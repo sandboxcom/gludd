@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import patch
+
 from general_ludd.networking.scapy_adapter import (
     AsnInfo,
     BgpCommunity,
@@ -10,14 +13,20 @@ from general_ludd.networking.scapy_adapter import (
     TrafficReport,
     _first_int,
     _parse_tshark_json,
+    _read_pcap_tshark,
+    analyze_pcap,
     craft_packet,
     dissect_packet,
     parse_asn_rdap,
     parse_asn_whois,
     parse_bgp_community,
     parse_cidr,
+    read_pcap,
     scapy_available,
+    send_packet,
+    sniff_packets,
     tshark_available,
+    write_pcap,
 )
 
 
@@ -460,3 +469,182 @@ def test_dissect_packet_short_bytes() -> None:
     result = dissect_packet(b"\x00\x01\x02\x03")
     assert result["raw_hex"] == "00010203"
     assert result["length"] == 4
+
+
+def test_read_and_write_pcap_use_available_fallbacks(tmp_path) -> None:
+    pcap_path = tmp_path / "capture.pcap"
+    packets = [
+        PacketSummary(
+            timestamp=10.25,
+            length=4,
+            src_ip="192.0.2.1",
+            dst_ip="198.51.100.2",
+            protocol="tcp",
+        ),
+    ]
+    with patch(
+        "general_ludd.networking.scapy_adapter.scapy_available",
+        return_value=False,
+    ):
+        write_pcap(packets, pcap_path)
+    assert pcap_path.exists()
+    assert pcap_path.stat().st_size > 24
+
+    with (
+        patch(
+            "general_ludd.networking.scapy_adapter.tshark_available",
+            return_value=True,
+        ),
+        patch(
+            "general_ludd.networking.scapy_adapter._read_pcap_tshark",
+            return_value=packets,
+        ) as tshark_reader,
+    ):
+        assert read_pcap(pcap_path) == packets
+    tshark_reader.assert_called_once_with(pcap_path)
+
+
+def test_read_pcap_tshark_and_no_tool_paths(tmp_path) -> None:
+    packet_json = (
+        b'[{"_source":{"layers":{"frame.time_epoch":["2.0"],'
+        b'"frame.len":["60"],"frame.protocols":["eth:ip:udp"]}}}]'
+    )
+    with patch(
+        "subprocess.run",
+        return_value=SimpleNamespace(returncode=0, stdout=packet_json),
+    ):
+        packets = _read_pcap_tshark(tmp_path / "capture.pcap")
+    assert len(packets) == 1
+    assert packets[0].protocol == "udp"
+
+    missing = tmp_path / "missing.pcap"
+    assert read_pcap(missing) == []
+
+    existing = tmp_path / "empty.pcap"
+    existing.write_bytes(b"")
+    with (
+        patch(
+            "general_ludd.networking.scapy_adapter.tshark_available",
+            return_value=False,
+        ),
+        patch(
+            "general_ludd.networking.scapy_adapter.scapy_available",
+            return_value=False,
+        ),
+    ):
+        assert read_pcap(existing) == []
+
+
+def test_send_packet_uses_nping_without_scapy() -> None:
+    with (
+        patch(
+            "general_ludd.networking.scapy_adapter.scapy_available",
+            return_value=False,
+        ),
+        patch("subprocess.run") as run,
+    ):
+        result = send_packet(
+            {"fields": {"dst": "192.0.2.1", "dport": "443"}},
+            "en0",
+            count=2,
+        )
+
+    assert result == {"tool": "nping", "count": 2}
+    run.assert_called_once_with(
+        ["nping", "--tcp", "-c", "2", "-p", "443", "192.0.2.1"],
+        capture_output=True,
+        timeout=30,
+    )
+
+
+def test_send_packet_scapy_and_missing_nping_fallbacks() -> None:
+    with patch(
+        "general_ludd.networking.scapy_adapter.scapy_available",
+        return_value=True,
+    ):
+        result = send_packet({}, "en0", count=3)
+    assert result == {"interface": "en0", "count": 3, "packets": []}
+
+    with (
+        patch(
+            "general_ludd.networking.scapy_adapter.scapy_available",
+            return_value=False,
+        ),
+        patch("subprocess.run", side_effect=FileNotFoundError),
+    ):
+        assert send_packet({}, "en0") == {"sent": 0}
+
+
+def test_sniff_and_analyze_tshark_success_paths() -> None:
+    packet_json = (
+        b'[{"_source":{"layers":{"frame.time_epoch":["1.5"],'
+        b'"frame.len":["64"],"frame.protocols":["eth:ip:tcp"]}}}]'
+    )
+    sniff_result = SimpleNamespace(returncode=0, stdout=packet_json)
+    with (
+        patch(
+            "general_ludd.networking.scapy_adapter.tshark_available",
+            return_value=True,
+        ),
+        patch("subprocess.run", return_value=sniff_result),
+    ):
+        packets = sniff_packets("tcp port 443", count=1, timeout=2)
+    assert len(packets) == 1
+    assert packets[0].protocol == "tcp"
+
+    stats_result = SimpleNamespace(returncode=0, stdout=b"frames 12\n")
+    with (
+        patch(
+            "general_ludd.networking.scapy_adapter.tshark_available",
+            return_value=True,
+        ),
+        patch("subprocess.run", return_value=stats_result),
+    ):
+        report = analyze_pcap("/tmp/capture.pcap")
+    assert report.total_packets == 12
+
+
+def test_analyze_pcap_builds_report_from_scapy_fallback() -> None:
+    packets = [
+        PacketSummary(protocol="tcp"),
+        PacketSummary(protocol="tcp"),
+        PacketSummary(protocol="udp"),
+    ]
+    with (
+        patch(
+            "general_ludd.networking.scapy_adapter.tshark_available",
+            return_value=False,
+        ),
+        patch(
+            "general_ludd.networking.scapy_adapter.scapy_available",
+            return_value=True,
+        ),
+        patch(
+            "general_ludd.networking.scapy_adapter.read_pcap",
+            return_value=packets,
+        ),
+    ):
+        report = analyze_pcap("/tmp/capture.pcap")
+    assert report.total_packets == 3
+    assert report.protocols == {"tcp": 2, "udp": 1}
+
+
+def test_dissect_packet_decodes_raw_ethernet_ipv4_tcp() -> None:
+    ethernet = bytes.fromhex("00112233445566778899aabb0800")
+    ipv4 = bytes.fromhex(
+        "4500002800000000400600000102030405060708",
+    )
+    tcp = bytes.fromhex(
+        "04d2005000000000000000005002000000000000",
+    )
+    with patch(
+        "general_ludd.networking.scapy_adapter.scapy_available",
+        return_value=False,
+    ):
+        result = dissect_packet(ethernet + ipv4 + tcp)
+
+    assert result["layers"]["Ethernet"]["type"] == "0x0800"
+    assert result["layers"]["IP"]["src"] == "1.2.3.4"
+    assert result["layers"]["IP"]["dst"] == "5.6.7.8"
+    assert result["layers"]["TCP"]["src_port"] == 1234
+    assert result["layers"]["TCP"]["dst_port"] == 80

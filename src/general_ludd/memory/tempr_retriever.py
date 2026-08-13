@@ -290,6 +290,20 @@ class TEMPRRetriever:
                 if _is_within_date_range(_parse_iso_datetime(doc.get("created_at")), date_range)
             )
 
+        eligible_doc_ids: set[str] | None = None
+        if date_range is not None:
+            range_start, range_end = date_range
+            eligible_doc_ids = set()
+            for document in self._documents:
+                created = _parse_iso_datetime(document.get("created_at"))
+                doc_id = document.get("id")
+                if (
+                    isinstance(doc_id, str)
+                    and created is not None
+                    and range_start <= created <= range_end
+                ):
+                    eligible_doc_ids.add(doc_id)
+
         # Run strategies in parallel
         with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
             futures: dict[str, Any] = {}
@@ -321,6 +335,16 @@ class TEMPRRetriever:
                         except Exception:
                             logger.warning("Strategy %s failed", name, exc_info=True)
                             strategy_results[name] = []
+
+        if eligible_doc_ids is not None:
+            strategy_results = {
+                name: [
+                    (doc_id, score)
+                    for doc_id, score in scored
+                    if doc_id in eligible_doc_ids
+                ]
+                for name, scored in strategy_results.items()
+            }
 
         # Fuse via RRF
         all_lists = list(strategy_results.values())

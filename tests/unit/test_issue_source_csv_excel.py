@@ -182,6 +182,49 @@ def test_xlsx_path_uses_openpyxl_when_available(
     assert records[0]["title"] == "Excel item"
 
 
+def test_write_back_xlsx_updates_matching_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The .xlsx write path updates the selected cell and saves the workbook."""
+    import sys
+    import types
+
+    class _FakeCell:
+        def __init__(self, value: Any) -> None:
+            self.value = value
+
+    rows = [
+        [_FakeCell("id"), _FakeCell("title"), _FakeCell("status")],
+        [_FakeCell("X-1"), _FakeCell("Excel item"), _FakeCell("open")],
+    ]
+
+    class _FakeWS:
+        def iter_rows(self) -> list[list[_FakeCell]]:
+            return rows
+
+    class _FakeWB:
+        active = _FakeWS()
+
+        def __init__(self) -> None:
+            self.saved_path: str | None = None
+
+        def save(self, path: str) -> None:
+            self.saved_path = path
+
+    workbook = _FakeWB()
+    fake_openpyxl = types.ModuleType("openpyxl")
+    fake_openpyxl.load_workbook = lambda *_a, **_k: workbook
+    monkeypatch.setitem(sys.modules, "openpyxl", fake_openpyxl)
+
+    path = tmp_path / "issues.xlsx"
+    path.write_bytes(b"x")
+    source = _make(path)
+
+    assert source.write_back("X-1", Transition.DONE) is True
+    assert rows[1][2].value == "done"
+    assert workbook.saved_path == str(path)
+
+
 # -- path-jail confinement (adversarial) --------------------------------- #
 #
 # CsvExcelSource confines config['path'] to the workspace jail (cwd + system

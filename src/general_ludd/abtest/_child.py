@@ -94,7 +94,18 @@ def _write_result_nonce(result_path: str, nonce: str, detail: dict[str, object])
     os.replace(tmp_path, result_path)
 
 
-def main(argv: list[str]) -> int:
+def main(
+    argv: list[str], *, apply_resource_limits: bool = False
+) -> int:
+    """Execute one child workload.
+
+    Direct Python callers default to *not* applying process-wide resource
+    limits. POSIX hard limits are irreversible for an unprivileged process, so
+    applying them during an in-process API call would poison the caller after
+    this function returned. The module entrypoint below explicitly opts in;
+    that path always runs in the fresh interpreter created by
+    :func:`run_candidate_in_subprocess`.
+    """
     # argv: <prog> <candidate_root> <workload_json> <mem_mb> <cpu_s>
     #       <result_path> <nonce>
     if len(argv) < 7:
@@ -115,7 +126,8 @@ def main(argv: list[str]) -> int:
     result_path = argv[5]
     nonce = argv[6]
 
-    _apply_limits(mem_limit_mb, cpu_seconds)
+    if apply_resource_limits:
+        _apply_limits(mem_limit_mb, cpu_seconds)
     # Candidate src shadows the installed package.
     candidate_src = candidate_root.rstrip("/") + "/src"
     sys.path.insert(0, candidate_src)
@@ -144,4 +156,4 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main(sys.argv, apply_resource_limits=True))

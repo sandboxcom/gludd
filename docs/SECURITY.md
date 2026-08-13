@@ -294,14 +294,30 @@ for the upstream threat model and operational mitigations.
 Audited via `make pip-audit`. `make pip-audit-gate` fails closed on any new
 advisory and ignores ONLY the adjudicated exceptions below by ID.
 
-- **CVE-2025-69872 — diskcache (pickle deserialization → RCE):** no upstream fix
-  exists; exploitation requires write access to the cache directory.
-  `models/response_cache.py` creates the cache dir (default under the user's
-  home) with mode `0o700` (owner-only) and `chmod`s it on open, removing the
-  precondition on multi-user hosts.
+- **CVE-2025-69872 — diskcache (pickle deserialization → RCE):** no upstream
+  package release fixes the unsafe default serializer. Gludd does not use that
+  serializer: every production DiskCache constructor is routed through
+  `security.safe_diskcache`, which stores only strict MessagePack data in an
+  owner-only `msgpack-v1` namespace, rejects file-like/extension values, and
+  refuses every legacy pickle mode without deserializing it. Existing cache
+  files are preserved but never opened by the safe namespace. The advisory
+  therefore remains explicitly ignored by package ID while a structural test
+  fails if any direct application `diskcache.Cache` construction returns.
+  DiskCache's own documentation confirms that its default uses pickle and
+  recommends a custom `Disk` serializer; the still-open
+  [upstream vulnerability report](https://github.com/grantjenks/python-diskcache/issues/357)
+  describes the advisory as a blocker for continuously scanned users. A
+  separate, still-open
+  [maintenance-status thread](https://github.com/grantjenks/python-diskcache/issues/355)
+  records that no upstream release had shipped since 2023. See the
+  [DiskCache serializer documentation](https://grantjenks.com/docs/diskcache/tutorial.html#disk).
 - **PYSEC-2026-196 — pip (entry-point path handling, fixed in 26.1.2):** pip is a
   build-time installer only, not a runtime dependency, and is absent from the
   shipped binary; confined to the local build machine.
+
+The 2026-07-29 beta.3 audit also remediated, rather than ignored,
+`PYSEC-2026-3458` by requiring ansible-core 2.19.11 on Python 3.11 and 2.21.1
+on Python 3.12+, and `PYSEC-2026-3447` by requiring setuptools 83.0.0.
 
 ---
 

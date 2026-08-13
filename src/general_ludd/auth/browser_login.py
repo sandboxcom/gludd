@@ -511,29 +511,32 @@ class BrowserLoginFlow:
         _CallbackHandler.captured_error = None
         _CallbackHandler.done.clear()
 
-        _start_callback_server(port, timeout=timeout)
-        _open_browser(auth_url)
+        server = _start_callback_server(port, timeout=timeout)
+        try:
+            _open_browser(auth_url)
 
-        print(f"\n  Opening {config.display_name} authorization in your browser...")
-        print(f"  Listening for callback on {callback_url}")
-        print(f"  Waiting up to {int(timeout)}s for authorization...\n")
+            print(f"\n  Opening {config.display_name} authorization in your browser...")
+            print(f"  Listening for callback on {callback_url}")
+            print(f"  Waiting up to {int(timeout)}s for authorization...\n")
 
-        waited = _CallbackHandler.done.wait(timeout=timeout)
+            waited = _CallbackHandler.done.wait(timeout=timeout)
 
-        if not waited or _CallbackHandler.captured_code is None:
-            if _CallbackHandler.captured_error:
-                print(f"  Authorization denied: {_CallbackHandler.captured_error}", file=sys.stderr)
-            else:
-                print("  Login timed out — no authorization code received.", file=sys.stderr)
-            return None
+            if not waited or _CallbackHandler.captured_code is None:
+                if _CallbackHandler.captured_error:
+                    print(f"  Authorization denied: {_CallbackHandler.captured_error}", file=sys.stderr)
+                else:
+                    print("  Login timed out — no authorization code received.", file=sys.stderr)
+                return None
 
-        if _CallbackHandler.captured_state and _CallbackHandler.captured_state != state:
-            print("  State mismatch — possible CSRF attack. Aborting.", file=sys.stderr)
-            return None
+            if _CallbackHandler.captured_state and _CallbackHandler.captured_state != state:
+                print("  State mismatch — possible CSRF attack. Aborting.", file=sys.stderr)
+                return None
 
-        code = _CallbackHandler.captured_code
-        token = self._exchange_code(code, verifier, callback_url, client_id, client_secret)
-        return token
+            code = _CallbackHandler.captured_code
+            return self._exchange_code(code, verifier, callback_url, client_id, client_secret)
+        finally:
+            server.shutdown()
+            server.server_close()
 
     def _exchange_code(
         self,

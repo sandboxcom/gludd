@@ -277,17 +277,12 @@ def extract_host(url_or_host: str) -> str:
     from urllib.parse import urlsplit
 
     value = (url_or_host or "").strip()
-    if "://" in value:
-        netloc = urlsplit(value).netloc
-    else:
-        netloc = value
+    netloc = urlsplit(value).netloc if "://" in value else value
     # Strip any userinfo and port.
     if "@" in netloc:
         netloc = netloc.rsplit("@", 1)[1]
-    if netloc.startswith("["):  # IPv6 literal [::1]:8000
-        host = netloc[1:].split("]", 1)[0]
-    else:
-        host = netloc.split(":", 1)[0]
+    # The bracket-aware branch preserves IPv6 literals such as ``[::1]:8000``.
+    host = netloc[1:].split("]", 1)[0] if netloc.startswith("[") else netloc.split(":", 1)[0]
     return host
 
 
@@ -369,6 +364,37 @@ def _builtin_table() -> dict[str, CapabilityPolicy]:
                 "resource_preference",
             ],
             facts_prefixes=["ludd"],
+            network_hosts=["localhost", "127.0.0.1"],
+        ),
+        # --- observability workflows: read-only access to the local daemon.
+        #     The daemon owns connector construction and endpoint validation;
+        #     these roles may not steer the module to a remote host. ---
+        "observe_incident_triage": CapabilityPolicy(
+            role="observe_incident_triage",
+            network_hosts=["localhost", "127.0.0.1"],
+        ),
+        "observe_latency_regression": CapabilityPolicy(
+            role="observe_latency_regression",
+            network_hosts=["localhost", "127.0.0.1"],
+        ),
+        "observe_error_spike_rca": CapabilityPolicy(
+            role="observe_error_spike_rca",
+            network_hosts=["localhost", "127.0.0.1"],
+        ),
+        "observe_deploy_correlator": CapabilityPolicy(
+            role="observe_deploy_correlator",
+            network_hosts=["localhost", "127.0.0.1"],
+        ),
+        "observe_saturation_capacity": CapabilityPolicy(
+            role="observe_saturation_capacity",
+            network_hosts=["localhost", "127.0.0.1"],
+        ),
+        "observe_security_signal": CapabilityPolicy(
+            role="observe_security_signal",
+            network_hosts=["localhost", "127.0.0.1"],
+        ),
+        "molecule_observe_probe": CapabilityPolicy(
+            role="molecule_observe_probe",
             network_hosts=["localhost", "127.0.0.1"],
         ),
         # --- per-collection-role db grants (principle of least privilege): each

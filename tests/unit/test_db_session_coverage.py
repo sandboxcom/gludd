@@ -89,3 +89,11 @@ class TestJsonDumps:
 
         assert json_dumps(None) == "[]"
         assert json_dumps([]) == "[]"
+
+    def test_preserves_falsy_json_values(self):
+        from general_ludd.db.session import json_dumps
+
+        assert json_dumps({}) == "{}"
+        assert json_dumps(0) == "0"
+        assert json_dumps(False) == "false"
+        assert json_dumps("") == '""'

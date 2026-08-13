@@ -42,7 +42,7 @@ terraform {
       version = "~> 2.31"
     }
     vsphere = {
-      source  = "hashicorp/vsphere"
+      source  = "vmware/vsphere"
       version = "~> 2.8"
     }
     runpod = {
@@ -52,10 +52,6 @@ terraform {
     libvirt = {
       source  = "dmacvicar/libvirt"
       version = "~> 0.7"
-    }
-    qemu = {
-      source  = "jvzq/qemu"
-      version = "~> 0.1"
     }
   }
 }

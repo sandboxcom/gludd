@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import logging
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
 from general_ludd.compaction.aggressive import compact_dicts
@@ -31,6 +34,12 @@ PER_TOOL_TIMEOUT_SECONDS = 30
 CODE_MAX_ITERATIONS = 5
 MAX_TOTAL_TOKENS_DEFAULT = 100_000
 PER_ITERATION_TIMEOUT_DEFAULT = 300.0
+MODEL_GATEWAY_WORKERS = 10
+
+_MODEL_GATEWAY_EXECUTOR = ThreadPoolExecutor(
+    max_workers=MODEL_GATEWAY_WORKERS,
+    thread_name_prefix="gludd-model-gateway",
+)
 
 #: C15 defect 2 — per-response tool-call cap. A single model response may bundle
 #: an unbounded number of tool calls; ``max_iterations`` only bounds ROUNDS, not
@@ -38,6 +47,19 @@ PER_ITERATION_TIMEOUT_DEFAULT = 300.0
 #: rejected ``tool_call_id`` s so none is orphaned. Pinned equal to the HTTP
 #: dispatch router's ``MAX_CALLS_PER_REQUEST`` (D-16) by a drift-guard test.
 MAX_TOOL_CALLS_PER_RESPONSE = MAX_CALLS_PER_REQUEST
+
+
+async def _run_model_call(
+    call: Callable[..., Any],
+    /,
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Run one blocking model request on the bounded, namespaced pool."""
+    running_loop = asyncio.get_running_loop()
+    context = contextvars.copy_context()
+    bound_call = partial(context.run, call, *args, **kwargs)
+    return await running_loop.run_in_executor(_MODEL_GATEWAY_EXECUTOR, bound_call)
 
 
 def _validate_tool_args(args: dict[str, Any], schema: dict[str, Any]) -> str | None:
@@ -513,15 +535,18 @@ class ToolCallLoop:
             messages.append({"role": "system", "content": system_prompt})
         if user_prompt:
             messages.append({"role": "user", "content": user_prompt})
-        return await asyncio.to_thread(
-            self._gateway.call_model,
-            profile_id,
-            messages=messages,
-            work_type=job.work_type,
-            # S-1 (task #25): scope secret resolution to this job's project so
-            # the tool-loop model call resolves credentials through the project's
-            # ProjectSecretsManager (isolation); None → shared base behavior.
-            project_id=job.project_id,
+        return cast(
+            "ModelResponse",
+            await _run_model_call(
+                self._gateway.call_model,
+                profile_id,
+                messages=messages,
+                work_type=job.work_type,
+                # S-1 (task #25): scope secret resolution to this job's project so
+                # the tool-loop model call resolves credentials through the project's
+                # ProjectSecretsManager (isolation); None → shared base behavior.
+                project_id=job.project_id,
+            ),
         )
 
     async def _call_with_tools(
@@ -531,13 +556,16 @@ class ToolCallLoop:
         tool_schemas: list[dict[str, Any]],
     ) -> ModelResponse:
         profile_id = job.model_profile or "default"
-        return await asyncio.to_thread(
-            self._gateway.call_model,
-            profile_id,
-            messages=messages,
-            tools=tool_schemas,
-            work_type=job.work_type,
-            # S-1 (task #25): scope secret resolution to this job's project (as
-            # above); None → shared base behavior.
-            project_id=job.project_id,
+        return cast(
+            "ModelResponse",
+            await _run_model_call(
+                self._gateway.call_model,
+                profile_id,
+                messages=messages,
+                tools=tool_schemas,
+                work_type=job.work_type,
+                # S-1 (task #25): scope secret resolution to this job's project (as
+                # above); None → shared base behavior.
+                project_id=job.project_id,
+            ),
         )

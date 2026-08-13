@@ -1,8 +1,7 @@
 """E2e test for enforce-commit-lock.ts: commit serialization via O_EXCL lock.
 
-Invokes the actual TypeScript plugin via node --experimental-strip-types.
-The plugin expects a Plugin api object; we construct one that captures
-the registered hooks so we can invoke them directly.
+Invokes the actual TypeScript plugin via node --experimental-strip-types,
+awaits its hook map, and calls the returned OpenCode hooks directly.
 """
 
 from __future__ import annotations
@@ -73,17 +72,8 @@ def test_no_lock_allows_commit(tmp_path):
     code = f"""\
 process.env.GLUDD_COMMIT_LOCK_PATH = '{lock_path}'
 const mod = await import('{PLUGIN_PATH}')
-let _beforeHook, _afterHook;
-const api = {{
-  tool: {{
-    execute: {{
-      before: (fn) => {{ _beforeHook = fn }},
-      after: (fn) => {{ _afterHook = fn }}
-    }}
-  }}
-}};
-mod.default(api);
-const result = await _beforeHook({{tool: 'bash', command: 'make ship-commit MSG="test"'}}, undefined)
+const hooks = await mod.default(undefined, undefined)
+const result = await hooks['tool.execute.before']({{tool: 'bash', command: 'make ship-commit MSG="test"'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(tmp_path))
@@ -105,17 +95,8 @@ def test_fresh_lock_denies_second_commit(tmp_path):
     code = f"""\
 process.env.GLUDD_COMMIT_LOCK_PATH = '{lock_path}'
 const mod = await import('{PLUGIN_PATH}')
-let _beforeHook;
-const api = {{
-  tool: {{
-    execute: {{
-      before: (fn) => {{ _beforeHook = fn }},
-      after: (fn) => {{}}
-    }}
-  }}
-}};
-mod.default(api);
-const result = await _beforeHook({{tool: 'bash', command: 'make ship-commit MSG="test"'}}, undefined)
+const hooks = await mod.default(undefined, undefined)
+const result = await hooks['tool.execute.before']({{tool: 'bash', command: 'make ship-commit MSG="test"'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(tmp_path))
@@ -142,17 +123,8 @@ def test_stale_lock_breaks_and_allows(tmp_path):
     code = f"""\
 process.env.GLUDD_COMMIT_LOCK_PATH = '{lock_path}'
 const mod = await import('{PLUGIN_PATH}')
-let _beforeHook;
-const api = {{
-  tool: {{
-    execute: {{
-      before: (fn) => {{ _beforeHook = fn }},
-      after: (fn) => {{}}
-    }}
-  }}
-}};
-mod.default(api);
-const result = await _beforeHook({{tool: 'bash', command: 'make git-commit MSG="fix"'}}, undefined)
+const hooks = await mod.default(undefined, undefined)
+const result = await hooks['tool.execute.before']({{tool: 'bash', command: 'make git-commit MSG="fix"'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(tmp_path))
@@ -173,17 +145,8 @@ def test_non_commit_bash_allowed(tmp_path):
     code = f"""\
 process.env.GLUDD_COMMIT_LOCK_PATH = '{lock_path}'
 const mod = await import('{PLUGIN_PATH}')
-let _beforeHook;
-const api = {{
-  tool: {{
-    execute: {{
-      before: (fn) => {{ _beforeHook = fn }},
-      after: (fn) => {{}}
-    }}
-  }}
-}};
-mod.default(api);
-const result = await _beforeHook({{tool: 'bash', command: 'make test-unit'}}, undefined)
+const hooks = await mod.default(undefined, undefined)
+const result = await hooks['tool.execute.before']({{tool: 'bash', command: 'make test-unit'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(tmp_path))
@@ -204,17 +167,8 @@ def test_non_bash_tool_not_blocked(tmp_path):
     code = f"""\
 process.env.GLUDD_COMMIT_LOCK_PATH = '{lock_path}'
 const mod = await import('{PLUGIN_PATH}')
-let _beforeHook;
-const api = {{
-  tool: {{
-    execute: {{
-      before: (fn) => {{ _beforeHook = fn }},
-      after: (fn) => {{}}
-    }}
-  }}
-}};
-mod.default(api);
-const result = await _beforeHook({{tool: 'edit'}}, undefined)
+const hooks = await mod.default(undefined, undefined)
+const result = await hooks['tool.execute.before']({{tool: 'edit'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(tmp_path))
@@ -235,17 +189,8 @@ def test_subagent_skips_commit_lock(tmp_path):
     code = f"""\
 process.env.GLUDD_COMMIT_LOCK_PATH = '{lock_path}'
 const mod = await import('{PLUGIN_PATH}')
-let _beforeHook;
-const api = {{
-  tool: {{
-    execute: {{
-      before: (fn) => {{ _beforeHook = fn }},
-      after: (fn) => {{}}
-    }}
-  }}
-}};
-mod.default(api);
-const result = await _beforeHook({{tool: 'bash', command: 'make ship-commit MSG="x"'}}, undefined)
+const hooks = await mod.default(undefined, undefined)
+const result = await hooks['tool.execute.before']({{tool: 'bash', command: 'make ship-commit MSG="x"'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_plugin(
@@ -270,17 +215,8 @@ def test_env_var_disables_commit_lock(tmp_path):
     code = f"""\
 process.env.GLUDD_COMMIT_LOCK_PATH = '{lock_path}'
 const mod = await import('{PLUGIN_PATH}')
-let _beforeHook;
-const api = {{
-  tool: {{
-    execute: {{
-      before: (fn) => {{ _beforeHook = fn }},
-      after: (fn) => {{}}
-    }}
-  }}
-}};
-mod.default(api);
-const result = await _beforeHook({{tool: 'bash', command: 'make ship-commit MSG="x"'}}, undefined)
+const hooks = await mod.default(undefined, undefined)
+const result = await hooks['tool.execute.before']({{tool: 'bash', command: 'make ship-commit MSG="x"'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_plugin(
@@ -304,21 +240,12 @@ def test_after_commit_releases_lock(tmp_path):
 import * as fs from 'node:fs'
 process.env.GLUDD_COMMIT_LOCK_PATH = '{lock_path}'
 const mod = await import('{PLUGIN_PATH}')
-let _beforeHook, _afterHook;
-const api = {{
-  tool: {{
-    execute: {{
-      before: (fn) => {{ _beforeHook = fn }},
-      after: (fn) => {{ _afterHook = fn }}
-    }}
-  }}
-}};
-mod.default(api);
+const hooks = await mod.default(undefined, undefined)
 
-await _beforeHook({{tool: 'bash', command: 'make ship-commit MSG="x"'}}, undefined)
+await hooks['tool.execute.before']({{tool: 'bash', command: 'make ship-commit MSG="x"'}}, undefined)
 const afterAcquire = fs.existsSync('{lock_path}')
 
-await _afterHook({{tool: 'bash', command: 'make ship-commit MSG="x"'}}, undefined)
+await hooks['tool.execute.after']({{tool: 'bash', command: 'make ship-commit MSG="x"'}}, undefined)
 const afterRelease = fs.existsSync('{lock_path}')
 
 console.log(JSON.stringify({{acquired: afterAcquire, released: !afterRelease}}))
@@ -340,18 +267,9 @@ def test_lock_file_contains_pid(tmp_path):
 import * as fs from 'node:fs'
 process.env.GLUDD_COMMIT_LOCK_PATH = '{lock_path}'
 const mod = await import('{PLUGIN_PATH}')
-let _beforeHook;
-const api = {{
-  tool: {{
-    execute: {{
-      before: (fn) => {{ _beforeHook = fn }},
-      after: (fn) => {{}}
-    }}
-  }}
-}};
-mod.default(api);
+const hooks = await mod.default(undefined, undefined)
 
-await _beforeHook({{tool: 'bash', command: 'make test-and-commit'}}, undefined)
+await hooks['tool.execute.before']({{tool: 'bash', command: 'make test-and-commit'}}, undefined)
 const content = fs.readFileSync('{lock_path}', 'utf8').trim()
 console.log(JSON.stringify({{pid: Number(content)}}))
 """

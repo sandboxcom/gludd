@@ -11,11 +11,11 @@ import os
 import tempfile
 from pathlib import Path
 
-import diskcache
 import pytest
 
 from general_ludd.retrieval.indexer import CodebaseIndexer
 from general_ludd.retrieval.searcher import SemanticSearcher
+from general_ludd.security.safe_diskcache import open_safe_diskcache
 
 
 def _write_file(dir_: Path, name: str, content: str) -> Path:
@@ -113,7 +113,7 @@ class TestIndexerDaemonWiring:
 
         idx2 = CodebaseIndexer(cache_dir=scratch_dir)
         try:
-            cache = diskcache.Cache(scratch_dir)
+            cache = open_safe_diskcache(scratch_dir)
             keys = list(cache.iterkeys())
             cache.close()
             assert len(keys) > 0

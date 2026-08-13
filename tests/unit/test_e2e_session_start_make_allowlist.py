@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-session-start.ts"
+SHARED_PATH = ROOT / ".opencode" / "lib" / "shared.ts"
 MAKEFILE_PATH = ROOT / "Makefile"
 
 # --- Target classification simulators ----------------------------------------
@@ -79,7 +80,7 @@ def _no_overlap() -> bool:
 # --- Plugin source helpers ---------------------------------------------------
 
 def _plugin_src() -> str:
-    return PLUGIN_PATH.read_text()
+    return PLUGIN_PATH.read_text() + "\n" + SHARED_PATH.read_text()
 
 
 def _makefile_src() -> str:

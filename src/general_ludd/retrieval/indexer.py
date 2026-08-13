@@ -9,7 +9,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, cast
 
-import diskcache
+from general_ludd.security.safe_diskcache import open_safe_diskcache
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class CodebaseIndexer:
         path = os.path.expanduser(os.path.expandvars(str(cache_dir)))
         os.makedirs(path, mode=0o700, exist_ok=True)
         self._cache_dir = path
-        self._cache: Any = diskcache.Cache(path)
+        self._cache: Any = open_safe_diskcache(path)
 
     def index_files(self, paths: list[Path], *, batch_size: int = 64) -> dict[str, Any]:
         files_indexed = 0

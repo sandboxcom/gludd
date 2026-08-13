@@ -10,7 +10,6 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import diskcache
 import pytest
 
 from general_ludd.retrieval.indexer import (
@@ -20,6 +19,7 @@ from general_ludd.retrieval.indexer import (
     _tokenize,
 )
 from general_ludd.retrieval.searcher import SemanticSearcher
+from general_ludd.security.safe_diskcache import open_safe_diskcache
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
@@ -188,7 +188,7 @@ class TestIndexFiles:
         assert result["chunks_indexed"] >= 1
 
     def test_indexed_entries_are_in_diskcache(self, indexed_project):
-        cache = diskcache.Cache(indexed_project["cache_dir"])
+        cache = open_safe_diskcache(indexed_project["cache_dir"])
         keys = list(cache.iterkeys())
         cache.close()
         assert len(keys) == indexed_project["result"]["chunks_indexed"]

@@ -9,7 +9,7 @@
 #      regression_ratio, the deploy is suspected-cause.
 #   4. Write the comparison to an artifact.
 #
-# Facade interface (DEFERRED WIRING — gludd_observe module, #73 next wave)
+# Facade interface (wired by general_ludd.agent.gludd_observe)
 #   op=query_sources -> GluddObserve.query_sources(kinds, spec, start, end)
 #       returning ansible_facts.gludd_observe.records
 

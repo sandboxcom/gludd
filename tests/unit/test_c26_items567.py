@@ -297,17 +297,31 @@ class TestDaemonStateInAppStateNotGlobal:
             "Mutation to app1's daemon_state leaked into app2's daemon_state"
         )
 
-    def test_global_rebound_to_latest_app_state(self) -> None:
-        """After create_daemon_app(), module global points to app state."""
+    def test_global_proxy_tracks_latest_app_state_without_aliasing(self) -> None:
+        """The stable compatibility proxy delegates without becoming app state."""
         import general_ludd.daemon as daemon_mod
         from general_ludd.daemon import create_daemon_app
 
+        legacy_state = daemon_mod._daemon_state
         app = create_daemon_app()
-        # The module-level global should now reference app.state.daemon_state
-        assert daemon_mod._daemon_state is app.state.daemon_state, (
-            "Module-level _daemon_state not rebound to app.state.daemon_state "
-            "after create_daemon_app()"
-        )
+        assert daemon_mod._daemon_state is legacy_state
+        assert daemon_mod._daemon_state is not app.state.daemon_state
+
+        daemon_mod._daemon_state["quality_gate"]["legacy"] = True
+        assert app.state.daemon_state["quality_gate"] == {"legacy": True}
+
+    def test_factory_recovers_if_legacy_global_was_overwritten(self, monkeypatch) -> None:
+        """Older callers that reset the shim cannot break app construction."""
+        import general_ludd.daemon as daemon_mod
+        from general_ludd.daemon import create_daemon_app
+
+        monkeypatch.setattr(daemon_mod, "_daemon_state", None)
+
+        app = create_daemon_app()
+
+        assert daemon_mod._daemon_state is not None
+        assert daemon_mod._daemon_state is not app.state.daemon_state
+        assert daemon_mod._daemon_state["todos"] is app.state.daemon_state["todos"]
 
     def test_no_direct_global_access_outside_dogfood_and_migration(self) -> None:
         """Scripts should use explicit injection; only dogfood.py uses global."""
@@ -320,7 +334,8 @@ class TestDaemonStateInAppStateNotGlobal:
         assert "todos" in state
         assert "tick_metrics" in state
         assert "quality_gate" in state
-        # The migration shim: _daemon_state is rebound per-app by the factory
+        # The migration shim is a stable proxy over the latest app's state.
         import general_ludd.daemon as daemon_mod
 
-        assert daemon_mod._daemon_state is state
+        assert daemon_mod._daemon_state is not state
+        assert daemon_mod._daemon_state["todos"] is state["todos"]

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import tempfile
 from dataclasses import FrozenInstanceError, dataclass, field
 from pathlib import Path
@@ -47,6 +48,9 @@ def _bundled_collections_root() -> Path:
     Indirected so tests can monkeypatch this module attribute and point the
     bundled tier at a tmp dir without touching the real install.
     """
+    frozen_root = getattr(sys, "_MEIPASS", None)
+    if frozen_root is not None:
+        return Path(frozen_root) / "collections"
     return _BUNDLED_COLLECTIONS_ROOT_DEFAULT
 
 

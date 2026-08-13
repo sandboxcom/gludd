@@ -32,11 +32,32 @@ MONDAY_API_URL = "https://api.monday.com/v2"
 
 _HEALTH_QUERY = "query { boards(limit: 1) { id name } }"
 
-_ITEMS_QUERY = """\
-query Boards($ids: [ID!]!, $limit: Int) {
+_ITEMS_PAGE_QUERY = """\
+query Boards($ids: [ID!]!, $limit: Int!) {
   boards(ids: $ids) {
     id
-    items(limit: $limit) {
+    items_page(limit: $limit) {
+      cursor
+      items {
+        id
+        name
+        created_at
+        updated_at
+        state
+        group {
+          id
+          title
+        }
+      }
+    }
+  }
+}"""
+
+_NEXT_ITEMS_PAGE_QUERY = """\
+query NextItemsPage($cursor: String!) {
+  next_items_page(cursor: $cursor) {
+    cursor
+    items {
       id
       name
       created_at
@@ -193,26 +214,26 @@ class MondaySource:
     def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """Fetch + normalize Monday.com items via GraphQL.
 
-        Pagination follows ``max_pages``. Accepts ``limit`` in the spec to
-        restrict items per board per page.
+        Pagination follows Monday.com's ``items_page`` cursor up to
+        ``max_pages`` per board. Accepts ``limit`` in the spec to restrict
+        items per board per page.
         """
         spec = spec or {}
-        limit = spec.get("limit")
+        limit = int(spec.get("limit", 100))
 
         if self.transport is None:
             raise RuntimeError("monday: no transport available")
 
         variables: dict[str, Any] = {
             "ids": [str(b) for b in self.board_ids],
+            "limit": limit,
         }
-        if limit is not None:
-            variables["limit"] = int(limit)
 
         resp = self.transport(
             "POST",
             self.url,
             headers=self._headers(),
-            json={"query": _ITEMS_QUERY, "variables": variables},
+            json={"query": _ITEMS_PAGE_QUERY, "variables": variables},
             timeout=self.timeout,
         )
         status = getattr(resp, "status_code", 0)
@@ -224,6 +245,7 @@ class MondaySource:
         boards = data.get("boards") or []
 
         out: list[dict[str, Any]] = []
+        pending_pages: list[tuple[int, str]] = []
         for board_idx, board in enumerate(boards):
             if not isinstance(board, dict):
                 continue
@@ -234,9 +256,50 @@ class MondaySource:
             )
             if board_id is None:
                 continue
-            items = board.get("items") or []
+            page = board.get("items_page") or {}
+            if not isinstance(page, dict):
+                continue
+            items = page.get("items") or []
             for item in items:
                 if isinstance(item, dict):
                     out.append(self._normalize(item, board_id))
+            initial_cursor = page.get("cursor")
+            if isinstance(initial_cursor, str) and initial_cursor:
+                pending_pages.append((board_id, initial_cursor))
+
+        page_limit = max(1, self.max_pages)
+        for board_id, first_cursor in pending_pages:
+            cursor: str | None = first_cursor
+            for _ in range(1, page_limit):
+                if not cursor:
+                    break
+                resp = self.transport(
+                    "POST",
+                    self.url,
+                    headers=self._headers(),
+                    json={
+                        "query": _NEXT_ITEMS_PAGE_QUERY,
+                        "variables": {"cursor": cursor},
+                    },
+                    timeout=self.timeout,
+                )
+                status = getattr(resp, "status_code", 0)
+                if not (200 <= status < 300):
+                    raise RuntimeError(f"monday: query failed HTTP {status}")
+                body = resp.json()
+                data = (body or {}).get("data") or {}
+                page = data.get("next_items_page") or {}
+                if not isinstance(page, dict):
+                    break
+                items = page.get("items") or []
+                for item in items:
+                    if isinstance(item, dict):
+                        out.append(self._normalize(item, board_id))
+                next_cursor = page.get("cursor")
+                cursor = (
+                    next_cursor
+                    if isinstance(next_cursor, str) and next_cursor
+                    else None
+                )
 
         return out

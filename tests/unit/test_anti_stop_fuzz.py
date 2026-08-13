@@ -16,11 +16,21 @@ def _project_root() -> Path:
 
 
 PLUGIN_PATH = _project_root() / ".opencode" / "plugin" / "enforce-make.ts"
+PLUGIN_IMPL_PATH = (
+    _project_root()
+    / ".opencode"
+    / "plugin"
+    / "impl"
+    / "enforce_make_impl.ts"
+)
 RATCHET_PATH = _project_root() / "config" / "ratchet.yml"
 
 
 def _plugin_content() -> str:
-    return PLUGIN_PATH.read_text(encoding="utf-8")
+    return (
+        PLUGIN_PATH.read_text(encoding="utf-8")
+        + PLUGIN_IMPL_PATH.read_text(encoding="utf-8")
+    )
 
 
 def _extract_stop_messages() -> list[str]:
@@ -76,10 +86,15 @@ def _extract_stop_messages() -> list[str]:
 
 def _completion_sounding_words() -> list[str]:
     content = _plugin_content()
-    match = re.search(r"const COMPLETION_SOUNDING = \[([\s\S]*?)\]", content)
-    if not match:
-        return []
-    return re.findall(r'"([^"]*)"', match.group(1))
+    blocks = re.findall(
+        r"const COMPLETION_SOUNDING = \[([\s\S]*?)\]",
+        content,
+    )
+    return [
+        word
+        for block in blocks
+        for word in re.findall(r'"([^"]*)"', block)
+    ]
 
 
 def _is_caught_by_state_check(text: str, completion_words: list[str]) -> bool:

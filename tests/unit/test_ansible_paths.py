@@ -57,6 +57,11 @@ class TestBundledCollectionsRoot:
         result = _bundled_collections_root()
         assert result.name == "collections"
 
+    def test_frozen_runtime_uses_pyinstaller_bundle_root(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("sys._MEIPASS", str(tmp_path), raising=False)
+
+        assert _bundled_collections_root() == tmp_path / "collections"
+
 
 class TestResolveCollectionsPaths:
     def test_always_includes_bundled(self):

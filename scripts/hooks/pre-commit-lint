@@ -7,7 +7,7 @@
 #   chmod +x scripts/hooks/pre-commit-lint
 #
 # Or use `make install-hooks` which wires all pre-commit hooks.
-set -u
+set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAKEFILE="$SCRIPT_DIR/../../Makefile"

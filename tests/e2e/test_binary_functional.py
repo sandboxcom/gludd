@@ -7,9 +7,8 @@ entrypoint — the goal is to exercise the binary exactly as an operator would.
 Adaptations to the actual CLI surface (the task spec assumed a slightly
 different shape; assertions match reality):
 
-* ``gludd version`` is the version subcommand. The top-level parser does NOT
-  define a ``--version`` flag, so ``gludd --version`` exits non-zero — both
-  behaviors are asserted below.
+* Both the ``gludd version`` subcommand and standard top-level ``--version``
+  flag report the packaged release version.
 * The health endpoint is ``/healthz`` (not ``/health``).
 * ``gludd daemon`` runs gunicorn in the FOREGROUND; there is no
   ``daemon start`` / ``daemon stop`` subcommand. Start = spawn the subprocess;
@@ -158,11 +157,12 @@ def _write_isolated_config(tmp_path: Path) -> Path:
 def isolated_daemon(tmp_path: Path):
     """Start a real `gludd daemon` on a free port; yield (base_url, proc); stop it.
 
-    Skips the test if gunicorn is unavailable OR the daemon fails to become
+    Fails the test if gunicorn is unavailable OR the daemon fails to become
     healthy within the readiness window.
     """
-    if not _GUNICORN_AVAILABLE:
-        pytest.skip("gunicorn is not importable — cannot start the daemon")
+    assert _GUNICORN_AVAILABLE, (
+        "gunicorn is a required release dependency for `gludd daemon`"
+    )
 
     config_dir = _write_isolated_config(tmp_path)
     port = find_free_port()
@@ -192,7 +192,7 @@ def isolated_daemon(tmp_path: Path):
                 out, err = proc.communicate(timeout=5)
             except Exception:
                 out, err = "<no output>", "<no stderr>"
-            pytest.skip(
+            pytest.fail(
                 f"daemon did not become healthy on {base_url} within 40s\n"
                 f"stdout={out!r}\nstderr={err!r}"
             )
@@ -224,15 +224,12 @@ class TestVersionCommand:
         assert match, f"no semver-like token in stdout: {result.stdout!r}"
         assert "general-ludd-agent" in result.stdout
 
-    def test_version_flag_not_supported(self):
-        """The top-level parser has no --version flag; it exits non-zero cleanly.
-
-        This pins the current behavior so that *adding* --version support later
-        is a conscious, tested change rather than a silent drift.
-        """
+    def test_version_flag_outputs_release_version(self):
+        """The standard top-level flag reports the packaged release version."""
         result = run_gludd(["--version"], timeout=20)
-        assert result.returncode != 0
-        # argparse emits an error message, never a Python traceback.
+        assert result.returncode == 0, f"stderr: {result.stderr!r}"
+        assert "0.1.0-beta.3" in result.stdout
+        assert "gludd" in result.stdout.lower()
         assert "Traceback (most recent call last)" not in result.stderr
 
 
@@ -268,6 +265,16 @@ class TestHelpCommand:
         assert result.returncode == 0
         assert "COMMANDS" in result.stdout
         assert "gludd" in result.stdout
+
+    def test_top_level_smoke_and_nested_alias_both_execute(self):
+        """The release CLI exposes `smoke` without breaking `test smoke`."""
+        top_level = run_gludd(["smoke", "list", "--json"], timeout=30)
+        nested = run_gludd(["test", "smoke", "list", "--json"], timeout=30)
+
+        assert top_level.returncode == 0, top_level.stderr
+        assert nested.returncode == 0, nested.stderr
+        assert top_level.stdout.strip()
+        assert top_level.stdout == nested.stdout
 
     @pytest.mark.parametrize("subcommand", EXPECTED_SUBCOMMANDS)
     def test_subcommand_help(self, subcommand: str):
@@ -443,8 +450,9 @@ class TestErrorHandling:
 
     def test_port_conflict_graceful(self, tmp_path: Path):
         """Starting a second daemon on an occupied port fails cleanly (no traceback)."""
-        if not _GUNICORN_AVAILABLE:
-            pytest.skip("gunicorn is not importable — cannot start the daemon")
+        assert _GUNICORN_AVAILABLE, (
+            "gunicorn is a required release dependency for `gludd daemon`"
+        )
 
         config_dir = _write_isolated_config(tmp_path)
         port = find_free_port()
@@ -461,7 +469,12 @@ class TestErrorHandling:
         )
         try:
             if not wait_for_url(f"http://127.0.0.1:{port}/healthz", timeout=40.0):
-                pytest.skip("first daemon did not become healthy; cannot test conflict")
+                first.terminate()
+                out, err = first.communicate(timeout=10)
+                pytest.fail(
+                    "first daemon did not become healthy; cannot test conflict\n"
+                    f"stdout={out!r}\nstderr={err!r}"
+                )
 
             # Second daemon on the SAME port — must fail cleanly and quickly.
             second = subprocess.run(

@@ -16,6 +16,13 @@ def _src() -> str:
     return PLUGIN_PATH.read_text()
 
 
+def _function_region(name: str, next_name: str) -> str:
+    src = _src()
+    start = src.index(f"function {name}")
+    end = src.index(f"function {next_name}", start)
+    return src[start:end]
+
+
 REQUIRED_LINT_TARGETS = [
     "lint",
     "lint-fix",
@@ -74,16 +81,11 @@ class TestIsLintTargetFunction:
 
 class TestMainthreadBudgetBeforeExemption:
     def test_lint_target_exempt_in_before_hook(self):
-        src = _src()
-        fn_idx = src.find("function mainthreadBudgetBefore")
-        assert fn_idx > 0
-        after = src[fn_idx : fn_idx + 800]
+        after = _function_region("mainthreadBudgetBefore", "mainthreadBudgetAfter")
         assert "isLintTarget(command)" in after
 
     def test_lint_exempt_returns_null_like_git_shipping(self):
-        src = _src()
-        fn_idx = src.find("function mainthreadBudgetBefore")
-        after = src[fn_idx : fn_idx + 800]
+        after = _function_region("mainthreadBudgetBefore", "mainthreadBudgetAfter")
         git_line = after.find("isGitShippingTarget(command)) return null")
         lint_line = after.find("isLintTarget(command)) return null")
         assert git_line > 0
@@ -93,17 +95,12 @@ class TestMainthreadBudgetBeforeExemption:
 
 class TestMainthreadBudgetAfterReset:
     def test_lint_target_resets_streak_in_after_hook(self):
-        src = _src()
-        fn_idx = src.find("function mainthreadBudgetAfter")
-        assert fn_idx > 0
-        after = src[fn_idx : fn_idx + 800]
+        after = _function_region("mainthreadBudgetAfter", "_writeHeartbeat")
         lint_reset = after.find("isLintTarget(command)")
         assert lint_reset > 0
 
     def test_lint_target_reset_writes_zero_streak(self):
-        src = _src()
-        fn_idx = src.find("function mainthreadBudgetAfter")
-        after = src[fn_idx : fn_idx + 800]
+        after = _function_region("mainthreadBudgetAfter", "_writeHeartbeat")
         lint_idx = after.find("isLintTarget(command)")
         assert lint_idx > 0
         after_lint = after[lint_idx : lint_idx + 300]

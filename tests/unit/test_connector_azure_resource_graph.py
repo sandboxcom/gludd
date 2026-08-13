@@ -101,6 +101,47 @@ def test_defaults_token_env_to_standard_azure_name() -> None:
     assert source._token_env == "AZURE_TOKEN"
 
 
+def test_subscription_id_and_http_get_compatibility(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(TOKEN_ENV, "secret-arm-token")
+    calls: list[tuple[str, str]] = []
+
+    def http_get(method: str, url: str, **_: object) -> tuple[int, object]:
+        calls.append((method, url))
+        return 200, _canned_resources_payload()
+
+    src = AzureResourceGraphSource(
+        {"subscription_id": SUB, "token_env": TOKEN_ENV},
+        http_get=http_get,
+    )
+
+    records = src.query({"query": "Resources"})
+
+    assert src._subscriptions == [SUB]
+    assert len(records) == 2
+    assert records[0]["kind"] == "infra"
+    assert calls == [
+        (
+            "POST",
+            "https://management.azure.com/providers/"
+            "Microsoft.ResourceGraph/resources?api-version=2021-03-01",
+        )
+    ]
+
+
+def test_http_get_and_config_transport_are_mutually_exclusive() -> None:
+    with pytest.raises(ValueError, match="http_get"):
+        AzureResourceGraphSource(
+            {
+                "subscriptions": [SUB],
+                "token_env": TOKEN_ENV,
+                "transport": lambda *_: FakeResponse(200, {}),
+            },
+            http_get=lambda *_: (200, {}),
+        )
+
+
 # -- query normalization ---------------------------------------------------------------
 
 

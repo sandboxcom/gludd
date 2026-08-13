@@ -1,0 +1,19 @@
+---
+# Molecule 26 resolves the canonical default scenario on every named scenario
+# run so it can determine whether shared-state lifecycle management is needed.
+# Gludd's scenarios are independent, so this config deliberately has no test
+# actions; its presence keeps named smoke runs warning-free without creating
+# infrastructure or changing their scenario identity.
+driver:
+  name: default
+platforms: []
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: prepare.yml
+    converge: converge.yml
+    verify: verify.yml
+verifier:
+  name: ansible
+scenario:
+  test_sequence: []

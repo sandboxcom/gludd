@@ -3939,6 +3939,17 @@ class EventLoop(EventLoopHandlers):
         if self._total_ticks % interval != 0:
             return
 
+        # Persisted hard-TTL cleanup runs before utilization heuristics. This
+        # resumes after daemon restarts and prevents paid accelerator resources
+        # from surviving merely because their endpoint was not re-registered.
+        if self._deployment_manager is not None:
+            expired = await self._deployment_manager.cleanup_expired()
+            for instance_id in expired:
+                logger.warning(
+                    "Destroyed expired compute deployment %s at its hard TTL",
+                    instance_id,
+                )
+
         # Floor auto-tuning: dynamically adjust concurrency floor based on
         # system health metrics (CPU, memory, dispatch success rate, queue depth).
         if self._floor_controller is not None:

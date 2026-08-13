@@ -132,10 +132,17 @@ def slurm_adapter_mock() -> MagicMock:
 
 
 @pytest.fixture
-def slurm_app(slurm_adapter_mock: MagicMock) -> FastAPI:
+def slurm_app(
+    slurm_adapter_mock: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> FastAPI:
     import general_ludd.routers.slurm as slurm_router
 
-    slurm_router.SlurmAdapter = MagicMock(return_value=slurm_adapter_mock)
+    monkeypatch.setattr(
+        slurm_router,
+        "SlurmAdapter",
+        MagicMock(return_value=slurm_adapter_mock),
+    )
 
     app = FastAPI()
     slurm_router.register(app, {})
@@ -215,13 +222,20 @@ class TestSlurmEndpoints:
             assert "estimated_cost_usd" in data["cost_breakdown"]
 
     class TestEmptyStateDegradation:
-        def test_slurm_not_installed_returns_503(self) -> None:
+        def test_slurm_not_installed_returns_503(
+            self,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
             import general_ludd.routers.slurm as slurm_router
             from general_ludd.infra.slurm import SlurmNotInstalledError
 
             mock_adapter = MagicMock()
             mock_adapter.available = MagicMock(side_effect=SlurmNotInstalledError())
-            slurm_router.SlurmAdapter = MagicMock(return_value=mock_adapter)
+            monkeypatch.setattr(
+                slurm_router,
+                "SlurmAdapter",
+                MagicMock(return_value=mock_adapter),
+            )
 
             app = FastAPI()
             slurm_router.register(app, {})
@@ -243,22 +257,40 @@ _SLURM_PSK_CASES: ClassVar[list[tuple[str, str, dict[str, object] | None]]] = [
 class TestSlurmAuthPosture:
     @pytest.mark.parametrize("method,path,body", _SLURM_PSK_CASES)
     def test_unauthenticated_is_refused(
-        self, method: str, path: str, body, slurm_adapter_mock: MagicMock,
+        self,
+        method: str,
+        path: str,
+        body,
+        slurm_adapter_mock: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         import general_ludd.routers.slurm as slurm_router
 
-        slurm_router.SlurmAdapter = MagicMock(return_value=slurm_adapter_mock)
+        monkeypatch.setattr(
+            slurm_router,
+            "SlurmAdapter",
+            MagicMock(return_value=slurm_adapter_mock),
+        )
         client = TestClient(_app_with_psk_gate(slurm_router.register))
         resp = client.request(method, path, json=body)
         assert resp.status_code == 401
 
     @pytest.mark.parametrize("method,path,body", _SLURM_PSK_CASES)
     def test_with_psk_succeeds(
-        self, method: str, path: str, body, slurm_adapter_mock: MagicMock,
+        self,
+        method: str,
+        path: str,
+        body,
+        slurm_adapter_mock: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         import general_ludd.routers.slurm as slurm_router
 
-        slurm_router.SlurmAdapter = MagicMock(return_value=slurm_adapter_mock)
+        monkeypatch.setattr(
+            slurm_router,
+            "SlurmAdapter",
+            MagicMock(return_value=slurm_adapter_mock),
+        )
         client = TestClient(_app_with_psk_gate(slurm_router.register))
         resp = client.request(
             method, path, json=body, headers={"Authorization": f"Bearer {_PSK}"},
@@ -689,12 +721,19 @@ class TestReloadAuthPosture:
 
 
 class TestAllRoutersRegister:
-    def test_slurm_register_adds_routes(self) -> None:
+    def test_slurm_register_adds_routes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         import general_ludd.routers.slurm as slurm_router
 
         mock_adapter = MagicMock()
         mock_adapter.available = MagicMock(return_value=True)
-        slurm_router.SlurmAdapter = MagicMock(return_value=mock_adapter)
+        monkeypatch.setattr(
+            slurm_router,
+            "SlurmAdapter",
+            MagicMock(return_value=mock_adapter),
+        )
 
         app = FastAPI()
         before = len(app.routes)

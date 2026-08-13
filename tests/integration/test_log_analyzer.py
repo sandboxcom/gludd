@@ -91,6 +91,41 @@ class TestRoleInvocation:
         _run_role(str(log_dir / "*.log"), str(out_dir))
         assert out_dir.is_dir()
 
+    def test_explicit_paths_override_missing_legacy_defaults(
+        self, tmp_path: Path
+    ) -> None:
+        """Explicit glob/output inputs must make a fresh Linux run self-contained."""
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        (log_dir / "test.log").write_text("INFO ok\n")
+        out_dir = tmp_path / "output"
+        missing_source = tmp_path / "missing-source"
+        unused_artifact_dir = tmp_path / "unused" / "nested"
+        adapter = AnsibleRunnerAdapter()
+        pb = (
+            Path(__file__).resolve().parent.parent.parent
+            / "playbooks"
+            / _PLAYBOOK_NAME
+        )
+        if _PLAYBOOK_NAME not in adapter.list_playbooks():
+            adapter.register_playbook(_PLAYBOOK_NAME, str(pb))
+
+        result = adapter.run_playbook(
+            _PLAYBOOK_NAME,
+            extravars={
+                "log_source_dirs": str(missing_source),
+                "artifact_dir": str(unused_artifact_dir),
+                "log_analyzer_glob": str(log_dir / "*.log"),
+                "log_analyzer_output_dir": str(out_dir),
+                "log_analyzer_error_rate_threshold": "0.3",
+                "log_analyzer_min_cluster_size": "2",
+            },
+        )
+
+        assert result.get("rc", 1) == 0, f"role failed: {result}"
+        assert (out_dir / "log_analysis_result.json").is_file()
+        assert not unused_artifact_dir.exists()
+
 
 class TestLogIngestion:
     def test_ingests_log_content(self, tmp_path: Path) -> None:

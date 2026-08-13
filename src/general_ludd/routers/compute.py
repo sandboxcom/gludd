@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import cast
 
 from fastapi import Depends, FastAPI, HTTPException
 
+from general_ludd.infra.azure_accelerator import (
+    build_default_azure_preflight,
+    resolve_accelerator,
+)
 from general_ludd.infra.compute import (
     ComputeConfig,
     ComputeProvider,
@@ -109,6 +114,56 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             ]
         }
 
+    @app.post("/admin/compute/azure/preflight")
+    async def admin_compute_azure_preflight(
+        req: dict[str, object],
+    ) -> dict[str, object]:
+        gpu_raw = cast(str, req.get("gpu_type", ""))
+        region = cast(str, req.get("region", "eastus")) or "eastus"
+        try:
+            gpu_type = GPUType(gpu_raw)
+            gpu_count = int(cast(int, req.get("gpu_count", 1)))
+            # Resolve locally before constructing an SDK client. Invalid shapes
+            # must never cause an authentication or network call.
+            resolve_accelerator(gpu_type, gpu_count)
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "invalid Azure accelerator preflight request: %s",
+                exc,
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=422,
+                detail="invalid Azure accelerator preflight request",
+            ) from None
+        try:
+            preflight = build_default_azure_preflight(
+                cast("str | None", req.get("subscription_id"))
+            )
+            result = await asyncio.to_thread(
+                preflight.check,
+                gpu_type=gpu_type,
+                gpu_count=gpu_count,
+                location=region,
+            )
+        except (RuntimeError, ValueError) as exc:
+            logger.warning(
+                "Azure accelerator preflight unavailable: %s",
+                exc,
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Azure accelerator preflight unavailable",
+            ) from exc
+        except Exception as exc:
+            logger.warning("Azure accelerator preflight failed: %s", exc)
+            raise HTTPException(
+                status_code=502,
+                detail="Azure accelerator preflight failed",
+            ) from exc
+        return result.as_dict()
+
     @app.get("/admin/compute/idle")
     async def admin_compute_idle() -> dict[str, object]:
         daemon_state = getattr(app.state, "daemon_state", None) or {}
@@ -201,7 +256,55 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             deploy_type=cast(str, req.get("deploy_type", "vm")),
             container_image=cast("str | None", req.get("container_image")),
             provider_auth_aliases=cast("dict[str, str] | None", req.get("provider_auth_aliases")),
+            allowed_cidr=cast(str, req.get("allowed_cidr", "127.0.0.1/32")),
+            ssh_public_key_path=cast(
+                str,
+                req.get("ssh_public_key_path", "~/.ssh/id_ed25519.pub"),
+            ),
+            hourly_rate_usd=cast("float | None", req.get("hourly_rate_usd")),
         )
+
+        azure_preflight: dict[str, object] | None = None
+        if provider == ComputeProvider.AZURE and config.deploy_type == "vm":
+            # Mandatory read-only spend gate: resolve the exact fixed GPU shape,
+            # then verify subscription SKU eligibility plus both quota tiers.
+            # Terraform is not invoked unless this result is ready.
+            try:
+                resolve_accelerator(gpu_type, config.gpu_count)
+                preflight_client = build_default_azure_preflight(
+                    cast("str | None", req.get("subscription_id"))
+                )
+                preflight_result = await asyncio.to_thread(
+                    preflight_client.check,
+                    gpu_type=gpu_type,
+                    gpu_count=config.gpu_count,
+                    location=config.region or "eastus",
+                )
+            except (RuntimeError, ValueError) as exc:
+                logger.warning(
+                    "Azure accelerator preflight unavailable: %s",
+                    exc,
+                    exc_info=True,
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail="Azure accelerator preflight unavailable",
+                ) from exc
+            except Exception as exc:
+                logger.warning("Azure accelerator preflight failed: %s", exc)
+                raise HTTPException(
+                    status_code=502,
+                    detail="Azure accelerator preflight failed",
+                ) from exc
+            azure_preflight = preflight_result.as_dict()
+            if not preflight_result.ready:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "Azure accelerator preflight blocked deployment",
+                        "preflight": azure_preflight,
+                    },
+                )
 
         # PRE-DEPLOY: static misconfig precheck. A critical finding refuses the
         # spend (422) unless the caller explicitly forces past it. Non-critical
@@ -261,7 +364,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 logger.warning("ephemeral account creation failed: %s", exc, exc_info=True)
                 raise HTTPException(
                     status_code=500,
-                    detail={"error": "ephemeral account creation failed", "cause": str(exc)},
+                    detail={"error": "ephemeral account creation failed"},
                 ) from exc
 
         try:
@@ -287,6 +390,34 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
         app.state._compute_deployments[instance.instance_id] = instance
 
+        # Make a newly provisioned server immediately eligible for the existing
+        # utilization-aware scheduler. If registration fails, destroy the paid
+        # deployment rather than returning a resource gludd cannot use.
+        if instance.endpoint_url:
+            try:
+                ext = _get_or_create_extended_subsystems(app)
+                cast(UtilizationTracker, ext["utilization"]).register_endpoint(
+                    endpoint_id=instance.instance_id,
+                    url=instance.endpoint_url,
+                    model=model_name,
+                    gpu_type=gpu_type.value,
+                    gpu_count=config.gpu_count,
+                    max_concurrent=cast(int, req.get("max_concurrent", 4)),
+                )
+            except Exception as exc:
+                app.state._compute_deployments.pop(instance.instance_id, None)
+                try:
+                    await mgr.destroy(instance.instance_id)
+                except Exception:
+                    logger.exception(
+                        "failed to roll back unregistered deployment %s",
+                        instance.instance_id,
+                    )
+                raise HTTPException(
+                    status_code=500,
+                    detail="compute endpoint registration failed; deployment rolled back",
+                ) from exc
+
         # EPHEMERAL STAMP: if we provisioned an ephemeral account for this
         # deploy, record the linkage so the EventLoop reconcile phase can find
         # it when the workload completes.
@@ -295,7 +426,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
         # Bill-2: wire Slurm cost cap monitor for compute deployments with max_cost_usd
         max_cost = cast(float, req.get("max_cost_usd", 10.0))
-        if max_cost and max_cost > 0:
+        if max_cost and max_cost > 0 and req.get("slurm_job_id"):
             from general_ludd.infra.slurm import SlurmAdapter, SlurmJobConfig, SlurmJobMonitor
 
             try:
@@ -335,6 +466,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "gpu_type": instance.gpu_type.value,
             "endpoint_url": instance.endpoint_url,
             "findings": [_finding_to_dict(f) for f in findings],
+            "azure_preflight": azure_preflight,
         }
 
     @app.delete(

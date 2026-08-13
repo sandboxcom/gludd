@@ -85,29 +85,28 @@ class TestMessageShapeEscalationStructure:
             "Escalation must fire when singleDispatchWaves >= 3"
         )
 
-    def test_escalation_in_both_default_and_proxy(self):
+    def test_proxy_delegates_escalation_to_hot_or_default_impl(self):
         src = _plugin_source()
-        # The MESSAGE SHAPE VIOLATION string must appear in both
-        # the defaultImpl and the proxy plugin sections
+        # Enforcement lives once in defaultImpl/handleTextComplete. The lean
+        # proxy selects the hot implementation or that compiled-in fallback.
         default_section = src.split("defaultImpl")[1].split("PROXY PLUGIN")[0]
         proxy_section = src.split("PROXY PLUGIN")[1]
 
         assert "MESSAGE SHAPE VIOLATION" in default_section, (
             "MT.2 escalation missing from defaultImpl"
         )
-        assert "MESSAGE SHAPE VIOLATION" in proxy_section, (
-            "MT.2 escalation missing from proxy plugin"
-        )
+        assert 'loadHotModule("multitask", defaultImpl)' in proxy_section
+        assert 'impl["experimental.text.complete"]' in proxy_section
 
     def test_escalation_appears_in_thin_wave_block_and_post_boundary(self):
         src = _plugin_source()
         # Count occurrences of the MESSAGE SHAPE VIOLATION phrase.
-        # Should appear in 4 places: defaultImpl thin-wave block,
-        # defaultImpl post-boundary, proxy thin-wave block, proxy post-boundary.
+        # It appears in both behavior paths: the thin-wave block and the
+        # post-boundary warning. The proxy delegates instead of duplicating it.
         count = src.count("MESSAGE SHAPE VIOLATION")
-        assert count >= 4, (
-            f"MESSAGE SHAPE VIOLATION must appear in 4 places "
-            f"(defaultImpl thin-wave + post-boundary + proxy thin-wave + post-boundary), "
+        assert count >= 2, (
+            "MESSAGE SHAPE VIOLATION must appear in both behavior paths "
+            "(thin-wave + post-boundary), "
             f"found {count}"
         )
 

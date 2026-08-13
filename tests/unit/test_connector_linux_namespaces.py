@@ -69,6 +69,24 @@ def test_health_ok_on_unshare() -> None:
     assert "unshare" in health["detail"]
 
 
+def test_health_injected_runner_does_not_probe_host_proc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A deterministic injected probe must not inherit the host's /proc state."""
+
+    def unexpected_proc_probe(_path: str) -> str:
+        raise AssertionError("host /proc must not bypass the injected runner")
+
+    monkeypatch.setattr(
+        "general_ludd.connectors.linux_namespaces.os.readlink",
+        unexpected_proc_probe,
+    )
+    health = Connector(runner=_runner()).health()
+
+    assert health["ok"] is True
+    assert "unshare" in health["detail"]
+
+
 def test_health_not_ok_on_missing_proc_and_failed_unshare() -> None:
     src = Connector(runner=_runner(rc=127, stderr="command not found"))
     health = src.health()
@@ -246,6 +264,18 @@ def test_resolve_pid_rejects_non_integer_string() -> None:
     src, _ = _ns_src()
     with pytest.raises(ValueError):
         src._resolve_pid("abc")
+
+
+def test_resolve_pid_rejects_non_scalar() -> None:
+    src, _ = _ns_src()
+    with pytest.raises(ValueError, match="pid must be int"):
+        src._resolve_pid([])
+
+
+def test_run_requires_injected_runner() -> None:
+    src = Connector()
+    with pytest.raises(RuntimeError, match="no runner injected"):
+        src._run(["lsns", "--json"])
 
 
 @pytest.mark.parametrize(

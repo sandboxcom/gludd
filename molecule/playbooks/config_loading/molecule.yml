@@ -19,10 +19,20 @@ driver:
 platforms: []
 provisioner:
   name: ansible
+  config_options:
+    defaults:
+      gathering: explicit
+      host_key_checking: false
   env:
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
     GLUDD_CONFIG_PORT: "8971"
     GLUDD_CONFIG_OVERRIDE_PORT: "9999"
+  inventory:
+    hosts:
+      all:
+        hosts:
+          localhost:
+            ansible_connection: local
   playbooks:
     prepare: default/prepare.yml
     converge: default/converge.yml
@@ -31,14 +41,7 @@ verifier:
   name: ansible
 scenario:
   test_sequence:
-    - dependency
-    - cleanup
-    - destroy
     - syntax
-    - create
     - prepare
     - converge
-    - side_effect
     - verify
-    - cleanup
-    - destroy

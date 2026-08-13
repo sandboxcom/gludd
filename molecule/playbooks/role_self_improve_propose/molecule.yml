@@ -4,6 +4,13 @@ driver:
 platforms: []
 provisioner:
   name: ansible
+  inventory:
+    hosts:
+      all:
+        hosts:
+          localhost:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
   env:
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
     GLUDD_MOCK_PORT: "8841"
@@ -18,14 +25,7 @@ scenario:
   # the worktree branch already exists after the first converge, so a second
   # converge is not idempotent. Skip the idempotence step.
   test_sequence:
-    - dependency
-    - cleanup
-    - destroy
     - syntax
-    - create
     - prepare
     - converge
-    - side_effect
     - verify
-    - cleanup
-    - destroy

@@ -221,11 +221,10 @@ class SandboxEnforcer:
         """Best-effort outbound network isolation in the child process.
 
         Platform-specific:
-        - macOS: attempts to use ``sandbox-exec`` (Seatbelt) with a
-          no-network profile if available.
-        - Linux: sets ``RLIMIT_NETWORK``-like restrictions via namespace
-          unsharing when available (fallback: log-only).
-        - Windows: no-op (no portable mechanism without admin).
+        - Container/VM backends enforce the hard boundary in their own
+          network namespace or policy.
+        - This process hook must not mutate interpreter-global socket state.
+        - Unsupported local platforms fall back to a diagnostic only.
 
         This is a defense-in-depth measure; the primary network restriction
         for containerized backends (Docker/Kubernetes) is applied at the
@@ -243,11 +242,10 @@ class SandboxEnforcer:
             return
 
         if os.environ.get("GLUDD_SANDBOX_NO_NETWORK", "").lower() in ("1", "true", "yes"):
-            try:
-                import socket
-                socket.setdefaulttimeout(0.001)
-            except Exception:
-                pass
+            logger.debug(
+                "Network isolation is delegated to the configured sandbox "
+                "backend; leaving the process-wide socket default unchanged",
+            )
 
 
 __all__ = [

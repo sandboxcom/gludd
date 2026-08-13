@@ -29,6 +29,19 @@ Report-only — never mutates the repo.
 | `success_rate < 50%` | critical |
 | No history | unknown |
 
+`gludd.history.success_rate` follows the daemon facts contract and is a
+fraction in the inclusive range `0.0`–`1.0`. The role converts that value to
+percentage points once before comparing it with the table's 50% and 80%
+thresholds or rendering human-readable output. For example, `0.92` is reported
+as `92%` and classified as healthy.
+
+Ansible users have long reported that Jinja numeric calculations and rounding
+can produce surprising rendered values when conversion is scattered through
+templates. The
+[Ansible Project user discussion on Jinja calculations and rounding](https://groups.google.com/g/ansible-project/c/A-BYgaBIQbo)
+reinforces keeping the conversion explicit; this role therefore derives one
+percentage fact and reuses it for thresholds and output.
+
 ## Example
 
 ```yaml

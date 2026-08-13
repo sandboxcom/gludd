@@ -88,6 +88,15 @@ class TestEvaluateAlgorithm:
         assert len(result.warnings) >= 1
         assert any("legacy" in w.lower() for w in result.warnings)
 
+    def test_every_legacy_algorithm_is_capped_at_twenty(self) -> None:
+        legacy_names = [
+            name
+            for name, algorithm in KNOWN_ALGORITHMS.items()
+            if algorithm.status == AlgorithmStatus.LEGACY
+        ]
+        assert legacy_names
+        assert all(evaluate_algorithm(name).score <= 20 for name in legacy_names)
+
     def test_sha256_current(self) -> None:
         result = evaluate_algorithm("SHA-256")
         assert result.score >= 50

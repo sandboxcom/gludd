@@ -50,6 +50,21 @@ class TestGetAlembicConfig:
 
 
 class TestStampHead:
+    def test_stamp_head_uses_sync_driver_for_aiosqlite(self):
+        cfg = AlembicConfig()
+        cfg.set_main_option("sqlalchemy.url", "sqlite+aiosqlite:///custom.db")
+        migration_urls: list[str | None] = []
+
+        def _capture_url(captured_cfg: AlembicConfig, revision: str) -> None:
+            assert revision == "head"
+            migration_urls.append(captured_cfg.get_main_option("sqlalchemy.url"))
+
+        with patch("general_ludd.db.migrations.command.stamp", side_effect=_capture_url):
+            stamp_head(cfg)
+
+        assert migration_urls == ["sqlite:///custom.db"]
+        assert cfg.get_main_option("sqlalchemy.url") == "sqlite+aiosqlite:///custom.db"
+
     def test_stamp_head_calls_alembic_command_stamp(self):
         cfg = AlembicConfig()
         with patch("general_ludd.db.migrations.command") as mock_cmd:
@@ -62,6 +77,16 @@ class TestStampHead:
             mock_cmd.stamp.side_effect = RuntimeError("can't connect")
             with pytest.raises(RuntimeError, match="can't connect"):
                 stamp_head(cfg)
+
+    def test_stamp_head_restores_async_url_on_failure(self):
+        cfg = AlembicConfig()
+        async_url = "sqlite+aiosqlite:///custom.db"
+        cfg.set_main_option("sqlalchemy.url", async_url)
+        with patch("general_ludd.db.migrations.command") as mock_cmd:
+            mock_cmd.stamp.side_effect = RuntimeError("can't connect")
+            with pytest.raises(RuntimeError, match="can't connect"):
+                stamp_head(cfg)
+        assert cfg.get_main_option("sqlalchemy.url") == async_url
 
 
 def _load_migration_by_filename(filename: str):

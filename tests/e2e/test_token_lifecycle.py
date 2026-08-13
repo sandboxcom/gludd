@@ -460,6 +460,7 @@ class TestAuditPipelineLifecycleEvents:
         import json as _json
 
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
         mock_session_factory = MagicMock()
         mock_session_factory.begin.return_value.__aenter__.return_value = mock_session
 
@@ -505,6 +506,7 @@ class TestAuditPipelineLifecycleEvents:
         import json as _json
 
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
         mock_session_factory = MagicMock()
         mock_session_factory.begin.return_value.__aenter__.return_value = mock_session
 

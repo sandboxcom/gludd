@@ -505,6 +505,7 @@ class TestLeaseEdgeCases:
     @pytest.mark.asyncio
     async def test_acquire_lease_zero_ttl_still_works(self) -> None:
         ses = AsyncMock()
+        ses.add = MagicMock()
         result_mock = MagicMock()
         result_mock.scalars.return_value.all.return_value = []
         ses.execute.return_value = result_mock
@@ -669,6 +670,7 @@ class TestLease:
     @pytest.mark.asyncio
     async def test_acquire_lease_creates_new(self) -> None:
         ses = AsyncMock()
+        ses.add = MagicMock()
         result_mock = MagicMock()
         result_mock.scalars.return_value.all.return_value = []
         ses.execute.return_value = result_mock
@@ -708,6 +710,7 @@ class TestLease:
     @pytest.mark.asyncio
     async def test_acquire_lease_with_project_id(self) -> None:
         ses = AsyncMock()
+        ses.add = MagicMock()
         result_mock = MagicMock()
         result_mock.scalars.return_value.all.return_value = []
         ses.execute.return_value = result_mock

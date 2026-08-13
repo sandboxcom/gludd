@@ -12,12 +12,13 @@ for each one, builds:
   * a topic — the module's full DOCUMENTATION / EXAMPLES / RETURN YAML blocks —
     written to ``docs/MCP_TOOLS_TOPICS.yml``.
 
-The gludd_* modules carry their DOCUMENTATION as a YAML block inside the module
-docstring (top-level ``DOCUMENTATION:`` / ``EXAMPLES:`` / ``RETURN:`` keys), and
-their argument_spec as a ``dict(...)`` literal passed to ``AnsibleModule``. We
-parse the docstring with ``yaml.safe_load`` and the argument_spec with ``ast``
-(no module import — the modules pull in ``ansible.module_utils`` which is not a
-runtime dependency of this repo).
+The gludd_* modules carry their documentation either as YAML blocks inside the
+module docstring (top-level ``DOCUMENTATION:`` / ``EXAMPLES:`` / ``RETURN:``
+keys) or as the standard Ansible string constants with those names. Their
+argument_spec is a ``dict(...)`` literal passed to ``AnsibleModule``. We parse
+both documentation forms and the argument spec with ``ast`` (no module import
+— the modules pull in ``ansible.module_utils`` which is not a runtime
+dependency of this repo).
 
 This is the *generator*. Wiring these tools into model binding is the separate
 CA-T9 tool-binding gap and is intentionally out of scope here.
@@ -204,6 +205,29 @@ def _split_blocks(docstring: str) -> dict[str, str]:
     return blocks
 
 
+def _assigned_doc_blocks(tree: ast.Module) -> dict[str, str]:
+    """Extract standard Ansible documentation string constants from an AST."""
+    blocks: dict[str, str] = {}
+    for statement in tree.body:
+        name: str | None = None
+        value: ast.AST | None = None
+        if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
+            target = statement.targets[0]
+            if isinstance(target, ast.Name):
+                name = target.id
+                value = statement.value
+        elif isinstance(statement, ast.AnnAssign):
+            if isinstance(statement.target, ast.Name):
+                name = statement.target.id
+                value = statement.value
+        if name not in _BLOCK_KEYS or value is None:
+            continue
+        literal = _literal(value)
+        if isinstance(literal, str):
+            blocks[name] = literal
+    return blocks
+
+
 def _safe_yaml(text: str) -> Any:
     try:
         return yaml.safe_load(text)
@@ -263,21 +287,22 @@ def lenient_doc_mapping(block: str) -> dict[str, Any]:
 
 
 def parse_doc_blocks(source: str) -> dict[str, Any]:
-    """Parse the DOCUMENTATION/EXAMPLES/RETURN YAML out of the module docstring.
+    """Parse DOCUMENTATION/EXAMPLES/RETURN YAML without importing the module.
 
     Returns a dict possibly containing ``DOCUMENTATION``, ``EXAMPLES`` and
-    ``RETURN`` keys, each parsed independently so one malformed block (commonly
-    EXAMPLES with unquoted Jinja) does not lose the others. When a block's strict
-    YAML parse fails, the DOCUMENTATION block falls back to a lenient field
-    recovery (so we never lose short_description / options); EXAMPLES / RETURN
-    fall back to the raw block text. Empty dict if there is no block at all.
+    ``RETURN`` keys from either the combined module docstring or standard
+    Ansible string constants. Each block is parsed independently so one
+    malformed block (commonly EXAMPLES with unquoted Jinja) does not lose the
+    others. When strict YAML fails, DOCUMENTATION falls back to lenient field
+    recovery; EXAMPLES / RETURN fall back to raw text.
     """
     tree = ast.parse(source)
     docstring = ast.get_docstring(tree, clean=False)
-    if not docstring:
-        return {}
-    blocks = _split_blocks(docstring)
+    blocks = _split_blocks(docstring) if docstring else {}
+    blocks.update(_assigned_doc_blocks(tree))
     if not blocks:
+        if not docstring:
+            return {}
         # No recognizable block headers; fall back to whole-docstring parse.
         data = _safe_yaml(docstring)
         return data if isinstance(data, dict) else {}

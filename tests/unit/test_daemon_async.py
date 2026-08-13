@@ -12,7 +12,6 @@ H3 — EventLoop._spend_limiter is set VIA the constructor (spend_limiter= arg),
 from __future__ import annotations
 
 import ast
-import asyncio
 import inspect
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -27,7 +26,7 @@ from general_ludd.event_loop.loop import EventLoop
 
 def test_h2_maybe_open_pr_is_coroutine_function() -> None:
     """_maybe_open_pr must be async so the event loop is never stalled."""
-    assert asyncio.iscoroutinefunction(EventLoop._maybe_open_pr), (
+    assert inspect.iscoroutinefunction(EventLoop._maybe_open_pr), (
         "_maybe_open_pr must be 'async def' (H2 fix: push_and_create_pr shells "
         "out to gh/git and must be run via asyncio.to_thread inside an async method)"
     )

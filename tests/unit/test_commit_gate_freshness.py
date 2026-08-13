@@ -42,6 +42,16 @@ class TestCommitTargetsEnforceGate:
     def test_git_commit_recipe_exists(self):
         assert _recipe("git-commit"), "git-commit target must exist"
 
+    def test_git_commit_does_not_hide_hooks_or_stage_unrelated_changes(self):
+        """A green gate cannot be followed by a suppressed pre-commit failure."""
+        recipe = _recipe("git-commit")
+
+        assert "pre-commit run --files" in recipe
+        assert "2>/dev/null || true" not in recipe
+        assert "git diff --name-only | xargs" not in recipe
+        assert "git diff --cached --name-only -z" in recipe
+        assert "$(UV) run pre-commit run --files" in recipe
+
     def test_commit_no_verify_enforces_gate(self):
         """git-commit-no-verify must check .gate-status freshness.
 

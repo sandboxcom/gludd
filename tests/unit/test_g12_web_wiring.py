@@ -110,10 +110,20 @@ class TestRegisterBuiltinsWebRetriever(unittest.TestCase):
 class TestWebRetrieverConstruction(unittest.TestCase):
     """WebRetriever can be constructed and injected at startup."""
 
+    def test_constructor_defers_cache_connection(self) -> None:
+        """Construction does not hold an idle SQLite connection open."""
+        with patch(
+            "general_ludd.retrieval.web.open_safe_diskcache"
+        ) as cache_factory:
+            wr = WebRetriever()
+
+        cache_factory.assert_not_called()
+        assert wr._cache_path == "web_retriever"
+
     def test_constructor_defaults(self) -> None:
         wr = WebRetriever()
         assert wr._timeout == 30
-        assert wr._cache is not None
+        assert wr._cache_path == "web_retriever"
 
     def test_constructor_custom_timeout(self) -> None:
         wr = WebRetriever(timeout_seconds=15)

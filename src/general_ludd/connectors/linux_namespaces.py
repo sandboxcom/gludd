@@ -269,16 +269,20 @@ class LinuxNamespacesSource:
 
     def health(self) -> dict[str, Any]:
         try:
-            try:
-                os.readlink("/proc/self/ns/pid")
-                return {"ok": True, "detail": "namespace support confirmed via /proc"}
-            except (FileNotFoundError, PermissionError, OSError):
-                pass
+            # An injected runner is an explicit, deterministic probe boundary.
+            # Consult it before the host filesystem so tests and sandboxed
+            # callers do not accidentally inherit the coordinator's /proc
+            # namespace support.
             if self._runner is not None:
                 result = self._run(["unshare", "--help"])
                 if result.returncode == 0:
                     return {"ok": True, "detail": "namespace support confirmed via unshare"}
                 return {"ok": False, "detail": f"unshare exited {result.returncode}"}
+            try:
+                os.readlink("/proc/self/ns/pid")
+                return {"ok": True, "detail": "namespace support confirmed via /proc"}
+            except (FileNotFoundError, PermissionError, OSError):
+                pass
             return {"ok": False, "detail": "cannot probe namespace support"}
         except Exception as exc:
             return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}

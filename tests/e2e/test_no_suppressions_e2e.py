@@ -222,15 +222,15 @@ def test_subagent_skips_check():
     )
 
 
-# ─── Env-disable ─────────────────────────────────────────────────────────────
+# ─── Environment cannot disable a hard guardrail ─────────────────────────────
 
 
-def test_env_disable_bypasses_check():
-    """GLUDD_NO_SUPPRESSIONS_ENFORCE=0 skips the suppression check."""
-    code = _write_code("src/fake.py", "# noqa: E501  # should be blocked normally")
+def test_env_disable_cannot_bypass_check():
+    """GLUDD_NO_SUPPRESSIONS_ENFORCE=0 cannot disable the hard guardrail."""
+    code = _write_code("src/fake.py", "# noqa: E501  # must remain blocked")
     result = _run_plugin(code, env_override={"GLUDD_NO_SUPPRESSIONS_ENFORCE": "0"})
-    assert result is None or result.get("permissionDecision") != "deny", (
-        f"Env-disable should bypass check, got: {result}"
+    assert result is not None and result.get("permissionDecision") == "deny", (
+        f"Environment override must not bypass suppression blocking: {result}"
     )
 
 

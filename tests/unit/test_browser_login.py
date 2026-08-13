@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import http.server
 import json
@@ -13,7 +12,7 @@ import urllib.request
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, cast
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -302,62 +301,76 @@ class TestCallbackHandler:
         t.start()
         return server, port
 
+    @staticmethod
+    def _request(url: str) -> int:
+        try:
+            response = urllib.request.urlopen(url)
+        except urllib.error.HTTPError as error:
+            with error:
+                error.read()
+            return error.code
+        with response:
+            response.read()
+            return response.status
+
     def test_handler_captures_auth_code(self) -> None:
         server, port = self._start_test_server()
         _CallbackHandler.done.clear()
         try:
             url = f"http://127.0.0.1:{port}/callback?code=test-auth-code-123&state=mystate"
-            urllib.request.urlopen(url)
+            assert self._request(url) == 200
             assert _CallbackHandler.captured_code == "test-auth-code-123"
             assert _CallbackHandler.captured_state == "mystate"
             assert _CallbackHandler.done.is_set()
         finally:
             server.shutdown()
+            server.server_close()
 
     def test_handler_captures_error(self) -> None:
         server, port = self._start_test_server()
         _CallbackHandler.done.clear()
         try:
             url = f"http://127.0.0.1:{port}/callback?error=access_denied&error_description=User+denied"
-            with contextlib.suppress(urllib.error.HTTPError):
-                urllib.request.urlopen(url)
+            assert self._request(url) == 400
             assert _CallbackHandler.captured_error == "access_denied"
             assert _CallbackHandler.captured_code is None
             assert _CallbackHandler.done.is_set()
         finally:
             server.shutdown()
+            server.server_close()
 
     def test_handler_rejects_missing_code(self) -> None:
         server, port = self._start_test_server()
         _CallbackHandler.done.clear()
         try:
             url = f"http://127.0.0.1:{port}/callback"
-            with contextlib.suppress(urllib.error.HTTPError):
-                urllib.request.urlopen(url)
+            assert self._request(url) == 400
             assert _CallbackHandler.captured_code is None
         finally:
             server.shutdown()
+            server.server_close()
 
     def test_handler_returns_404_for_unknown_path(self) -> None:
         server, port = self._start_test_server()
         try:
             url = f"http://127.0.0.1:{port}/unknown"
-            with contextlib.suppress(urllib.error.HTTPError):
-                urllib.request.urlopen(url)
+            assert self._request(url) == 404
             assert _CallbackHandler.captured_code is None
         finally:
             server.shutdown()
+            server.server_close()
 
     def test_handler_root_path(self) -> None:
         server, port = self._start_test_server()
         _CallbackHandler.done.clear()
         try:
             url = f"http://127.0.0.1:{port}/?code=root-code"
-            urllib.request.urlopen(url)
+            assert self._request(url) == 200
             assert _CallbackHandler.captured_code == "root-code"
             assert _CallbackHandler.done.is_set()
         finally:
             server.shutdown()
+            server.server_close()
 
 
 # ---------------------------------------------------------------------------
@@ -474,8 +487,12 @@ class TestBrowserLoginFlowOAuth2:
             }):
                 flow = BrowserLoginFlow("github", store=store)
 
-                def _inject_code(*args: object, **kwargs: object) -> None:
+                def _inject_code(
+                    *args: object,
+                    **kwargs: object,
+                ) -> http.server.HTTPServer:
                     _CallbackHandler.captured_code = "test-oauth-code"
+                    return MagicMock(spec=http.server.HTTPServer)
 
                 from general_ludd.security.url_fetch import FetchResult
 
@@ -515,6 +532,24 @@ class TestBrowserLoginFlowOAuth2:
                     flow = BrowserLoginFlow("github", store=store)
                     token = flow.run(timeout=1)
                     assert token is None
+
+    def test_oauth2_timeout_closes_callback_server(self) -> None:
+        with TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / "creds.env"
+            store = EnvCredentialStore(env_file)
+            server = MagicMock(spec=http.server.HTTPServer)
+            with patch.dict(os.environ, {"GITHUB_OAUTH_CLIENT_ID": "cid"}), \
+                 patch.object(_CallbackHandler.done, "wait", return_value=False), \
+                 patch("general_ludd.auth.browser_login._open_browser", return_value=None), \
+                 patch(
+                     "general_ludd.auth.browser_login._start_callback_server",
+                     return_value=server,
+                 ):
+                flow = BrowserLoginFlow("github", store=store)
+                assert flow.run(timeout=1) is None
+
+            server.shutdown.assert_called_once_with()
+            server.server_close.assert_called_once_with()
 
 
 # ---------------------------------------------------------------------------

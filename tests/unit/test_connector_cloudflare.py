@@ -197,6 +197,34 @@ class TestTotalPages:
 
 
 class TestHealth:
+    def test_tuple_transport_compatibility(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CLOUDFLARE_TOKEN", "fake-token")
+
+        def fake(
+            method: str, url: str, **kwargs: Any
+        ) -> tuple[int, object]:
+            return 200, {
+                "result": [
+                    {
+                        "when": "2025-01-01T00:00:00Z",
+                        "action": {"type": "login", "result": "success"},
+                    }
+                ]
+            }
+
+        src = CloudflareSource(
+            {"token_env": "CLOUDFLARE_TOKEN", "account_id": "a"},
+            transport=fake,
+        )
+
+        records = src.query()
+
+        assert len(records) == 1
+        assert records[0]["message"] == "login"
+        assert records[0]["level_or_status"] == "success"
+
     def test_health_ok(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CLOUDFLARE_TOKEN", "fake-token")
 

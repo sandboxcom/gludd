@@ -45,6 +45,11 @@ class TestGitWorkflowTargetExistence:
             "git-reset-hard target missing from Makefile"
         )
 
+    def test_git_uncommit_last_exists(self):
+        assert re.search(r"^git-uncommit-last:", _makefile_src(), re.MULTILINE), (
+            "git-uncommit-last target missing from Makefile"
+        )
+
     def test_git_cherry_pick_exists(self):
         assert re.search(r"^git-cherry-pick:", _makefile_src(), re.MULTILINE), (
             "git-cherry-pick target missing from Makefile"
@@ -69,6 +74,7 @@ class TestGitWorkflowTargetsInPhony:
             "git-rebase-continue",
             "git-rebase-skip",
             "git-reset-hard",
+            "git-uncommit-last",
             "git-cherry-pick",
         ):
             assert target in phony_text, f"{target} not in .PHONY list"
@@ -125,6 +131,15 @@ class TestGitWorkflowTargetRecipeContent:
         assert "git reset --hard" in recipe, (
             "git-reset-hard must use 'git reset --hard'"
         )
+
+    def test_uncommit_last_is_guarded_and_non_destructive(self):
+        recipe = self._recipe("git-uncommit-last")
+        assert recipe, "git-uncommit-last recipe not found"
+        assert "$(CONFIRM)" in recipe and '"1"' in recipe
+        assert "$(DRY_RUN)" in recipe
+        assert "git reset --mixed HEAD^" in recipe
+        assert "git reset --hard" not in recipe
+        assert "git branch -r --contains HEAD" in recipe
 
     def test_cherry_pick_requires_var(self):
         recipe = self._recipe("git-cherry-pick")

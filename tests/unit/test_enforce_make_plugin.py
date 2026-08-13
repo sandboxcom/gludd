@@ -17,11 +17,24 @@ import re
 ENFORCE_MAKE_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", ".opencode", "plugin", "impl", "enforce_make_impl.ts"
 )
+ENFORCE_MAKE_IMPL_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "..",
+    "..",
+    ".opencode",
+    "plugin",
+    "impl",
+    "enforce_make_impl.ts",
+)
 
 
 def _read_source():
-    with open(ENFORCE_MAKE_PATH) as f:
-        return f.read()
+    with open(ENFORCE_MAKE_PATH) as wrapper, open(
+        ENFORCE_MAKE_IMPL_PATH
+    ) as implementation:
+        # Put the delegated implementation first so structural hook extraction
+        # does not stop at the wrapper's intentionally minimal proxy hooks.
+        return implementation.read() + "\n" + wrapper.read()
 
 
 def _find_function_body(source: str, func_search: str) -> str:

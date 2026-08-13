@@ -343,3 +343,23 @@ class TestListCountries:
         for fn in (pf.list_countries_with_budgets, pf.list_swf_countries):
             result = fn()
             assert result == sorted(result)
+
+
+class TestCompatibilityLookups:
+    def test_lookup_budget_success_and_unknown(self, pf):
+        result = pf.lookup_budget("us")
+        assert result["found"] is True
+        assert result["country"] == "US"
+        assert pf.lookup_budget("XX") is None
+
+    def test_lookup_sovereign_debt_success_and_unknown(self, pf):
+        result = pf.lookup_sovereign_debt("jp")
+        assert result["found"] is True
+        assert result["country"] == "JP"
+        assert pf.lookup_sovereign_debt("XX") is None
+
+    def test_lookup_pension_system_success_and_unknown(self, pf):
+        result = pf.lookup_pension_system("gb")
+        assert result["found"] is True
+        assert result["country"] == "GB"
+        assert pf.lookup_pension_system("XX") is None

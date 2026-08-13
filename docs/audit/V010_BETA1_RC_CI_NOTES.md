@@ -18,9 +18,10 @@ Date: 2026-07-20
   while promoting `StarletteDeprecationWarning` to an error. Reference:
   https://github.com/Kludex/starlette/issues/1108
 - `pkg_resources` deprecation/removal is a long-lived setuptools transition.
-  The local warning comes from third-party `fs`, not direct project imports.
-  Local mitigation: keep `setuptools<81` already resolved in lock and filter
-  only the specific external `fs` import-time warning in pytest.
+  The local warning came from third-party `fs`, not direct project imports.
+  The beta.3 remediation replaces that local-filesystem-only dependency with
+  `pathlib`/`shutil`, removes the warning filters, and permits current
+  setuptools releases instead of pinning a vulnerable compatibility version.
   References: https://setuptools.pypa.io/en/stable/deprecated/pkg_resources.html,
   https://github.com/pypa/setuptools/issues/5174
 - Ansible's empty-inventory warning is a recurring user issue dating back

@@ -94,7 +94,7 @@ RETURN:
     description: Number of retries the graph performed.
     type: int
     returned: success
-  warnings:
+  workflow_warnings:
     description: Any warnings emitted by the workflow.
     type: list
     returned: success
@@ -142,7 +142,7 @@ def main() -> None:
                 "prompt_profile": None,
                 "quality_score": 0.0,
                 "retries": 0,
-                "warnings": [],
+                "workflow_warnings": [],
             },
             changed=False,
         ))
@@ -180,6 +180,10 @@ def main() -> None:
         module.fail_json(**error_result(f"workflow failed: {msg}", status=status))
         return
 
+    workflow_warnings = [str(warning) for warning in resp.get("warnings", [])]
+    for warning in workflow_warnings:
+        module.warn(warning)
+
     module.exit_json(**ok_result(
         {
             "content": resp.get("content", ""),
@@ -187,7 +191,7 @@ def main() -> None:
             "prompt_profile": resp.get("prompt"),
             "quality_score": resp.get("quality_score"),
             "retries": resp.get("retries"),
-            "warnings": resp.get("warnings", []),
+            "workflow_warnings": workflow_warnings,
         },
         changed=False,
     ))

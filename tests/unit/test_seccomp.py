@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import errno
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from general_ludd.security.seccomp import (
     DEFAULT_ALLOWED_SYSCALLS,
@@ -175,3 +177,49 @@ class TestSeccompFilterApply:
         flt = SeccompFilter()
         result = flt.apply()
         assert isinstance(result, bool)
+
+    def test_apply_uses_manual_fallback_when_binding_is_unavailable(self) -> None:
+        flt = SeccompFilter.default()
+        with (
+            patch.object(SeccompFilter, "is_supported", return_value=True),
+            patch.object(SeccompFilter, "_apply_libseccomp", return_value=False),
+            patch.object(SeccompFilter, "_apply_manual_bpf", return_value=True),
+        ):
+            assert flt.apply() is True
+
+    def test_supported_linux_host_with_loadable_libc(self) -> None:
+        with patch("sys.platform", "linux"), patch("ctypes.CDLL") as load_libc:
+            assert SeccompFilter.is_supported() is True
+        load_libc.assert_called_once_with(None, use_errno=True)
+
+    def test_libseccomp_import_failure_is_nonfatal(self) -> None:
+        with patch("importlib.import_module", side_effect=ImportError("missing")):
+            assert SeccompFilter.default()._apply_libseccomp() is False
+
+    def test_libseccomp_binding_installs_strict_rules(self) -> None:
+        installed_filter = MagicMock()
+        binding = SimpleNamespace(
+            ALLOW="ALLOW",
+            KILL="KILL",
+            MASKED_EQ="MASKED_EQ",
+            ERRNO=lambda value: ("ERRNO", value),
+            Arg=lambda *values: ("ARG", values),
+            SyscallFilter=MagicMock(return_value=installed_filter),
+        )
+        flt = SeccompFilter(
+            allowed_syscalls=frozenset({"read"}),
+            denied_syscalls=frozenset({"mount"}),
+            default_action="errno",
+            deny_action="errno",
+        )
+
+        with patch("importlib.import_module", return_value=binding):
+            assert flt._apply_libseccomp() is True
+
+        binding.SyscallFilter.assert_called_once_with(
+            defaction=("ERRNO", errno.EPERM),
+        )
+        installed_filter.load.assert_called_once_with()
+        calls = installed_filter.add_rule.call_args_list
+        assert any(call.args == ("ALLOW", "read") for call in calls)
+        assert any(call.args == (("ERRNO", errno.EPERM), "mount") for call in calls)

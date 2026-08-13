@@ -279,3 +279,22 @@ class TestLegalTerminologyCompleteness:
                  "remedies", "legal_profession"}
         for term in ls.LEGAL_TERMINOLOGY.values():
             assert term["category"] in valid, f"unknown category: {term['category']}"
+
+
+class TestCompatibilityLookups:
+    def test_lookup_legal_system_success_and_unknown(self, ls):
+        result = ls.lookup_legal_system("us")
+        assert result["found"] is True
+        assert ls.lookup_legal_system("XX") is None
+
+    def test_lookup_rights_charter_success_and_unknown(self, ls):
+        result = ls.lookup_rights_charter("ECHR")
+        assert result["found"] is True
+        assert result["binding"] is True
+        assert ls.lookup_rights_charter("unknown") is None
+
+    def test_search_court_system_success_and_unknown(self, ls):
+        result = ls.search_court_system("de")
+        assert result["found"] is True
+        assert result["country"] == "DE"
+        assert ls.search_court_system("XX") is None

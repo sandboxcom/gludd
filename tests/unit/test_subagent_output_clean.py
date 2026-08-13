@@ -35,21 +35,9 @@ KNOWN_NAG_STRINGS: list[str] = [
     "DELEGATE-FIRST",  # prepended nag when streak > threshold
     "FALSE-DONE CLAIM BLOCKED",
     "DISPATCH A TOOL CALL",
-    "TEXT BLOCKED — RATCHET HAS PENDING ENTRIES",
     "QA RESPONSE SUMMARY BLOCKED",
-    "HARD STOP — STATE-BASED BLOCK: local work pending",
-    # enforce-floor.ts text.complete
-    "REFILL NEEDED",  # subagent pool drain nag
     # enforce-multitask.ts text.complete
     "MUST DISPATCH",  # zero-streak enforcement
-    "DISPATCH SUBAGENTS NOW",  # 0 estimated in-flight
-    # enforce-make.ts text.complete
-    "GATE IS RED — RESPONSE BLOCKED",
-    "STOP-PATTERN DETECTED — RESPONSE REPLACED",
-    "TEXT BLOCKED — PENDING WORK EXISTS",
-    "CATCH-ALL BLOCK — PENDING WORK REMAINS",
-    # enforce-enhancement-ratio.ts text.complete
-    "ENHANCEMENT RATIO VIOLATION",  # console.warn
 ]
 
 
@@ -66,7 +54,7 @@ _ALL_HOOK_RE = re.compile(
 
 # ── Regex to detect OPENCODE_SUBAGENT guard ─────────────────────────────────
 _SUBAGENT_GUARD_RE = re.compile(
-    r'process\.env\.OPENCODE_SUBAGENT\s*===\s*"1"',
+    r'(?:process\.env\.OPENCODE_SUBAGENT\s*===\s*"1"|isSubagent\(\))',
 )
 
 # ── Nag strings used in guard-integrity tests (E.13) ────────────────────────

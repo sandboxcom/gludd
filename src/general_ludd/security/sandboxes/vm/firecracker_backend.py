@@ -499,7 +499,7 @@ class FirecrackerBackend:
 
         api_sock_raw = handle.extra.get("api_sock")
         api_sock = api_sock_raw if isinstance(api_sock_raw, str) else None
-        if api_sock and os.path.exists(api_sock):
+        if api_sock:
             try:
                 _firecracker_put(
                     api_sock, "/actions",

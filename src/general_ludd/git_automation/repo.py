@@ -66,7 +66,20 @@ _GIT_TIMEOUT_SECONDS = 60.0
 # Non-interactive git environment: GIT_TERMINAL_PROMPT=0 makes git fail instead
 # of blocking on a username/password TTY prompt; GIT_ASKPASS=echo neutralises any
 # credential-helper prompt (mirrors what clone() already sets).
-_NON_INTERACTIVE_GIT_ENV = {"GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "echo"}
+#
+# Automated repositories are frequently ephemeral. Disable automatic GC and
+# maintenance for every subprocess so a successful porcelain command cannot
+# detach a pack writer that outlives the call and races teardown of the repo.
+# Explicit maintenance commands remain available to callers when desired.
+_NON_INTERACTIVE_GIT_ENV = {
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_ASKPASS": "echo",
+    "GIT_CONFIG_COUNT": "2",
+    "GIT_CONFIG_KEY_0": "gc.auto",
+    "GIT_CONFIG_VALUE_0": "0",
+    "GIT_CONFIG_KEY_1": "maintenance.auto",
+    "GIT_CONFIG_VALUE_1": "false",
+}
 
 _FORCE_PUSH_PATTERN = re.compile(
     r"\s+(-f\s+|--force\b|--force-with-lease\b)"
@@ -1104,8 +1117,7 @@ class GitAutomation:
         """
         # A `..` component is the traversal primitive that escapes the intended
         # area; refuse it outright (a legitimate worktree path never needs one).
-        norm = os.path.normpath(worktree_path)
-        parts = norm.replace("\\", "/").split("/")
+        parts = worktree_path.replace("\\", "/").split("/")
         if ".." in parts:
             raise ValueError(
                 f"refusing worktree path containing '..' traversal: {worktree_path!r}"

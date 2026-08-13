@@ -47,7 +47,7 @@
   register: _tc_tlc_raw
   changed_when: false
   failed_when: false
-  async: "{{ timeout | int if timeout | int > 0 else 3600 }}"
+  async: "{{ tla_check_timeout | int if tla_check_timeout | int > 0 else 3600 }}"
   poll: 5
   when:
     - enable_tla | bool

@@ -28,6 +28,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from general_ludd.retrieval.web import WebRetriever, _NoRedirectHandler
+from general_ludd.security.safe_diskcache import open_safe_diskcache
 
 
 class TestWebRetrieverSSRFGuard:
@@ -97,7 +98,7 @@ class TestWebRetrieverSSRFGuard:
         # a real diskcache directory, not an in-memory fixture); evict any
         # stale entry from a prior run so this test genuinely exercises the
         # fetch path (and therefore the guard) rather than a cache hit.
-        with retriever._cache as cache:
+        with open_safe_diskcache(retriever._cache_path) as cache:
             cache.delete(url)
         with patch("urllib.request.build_opener") as mock_build_opener:
             mock_build_opener.return_value.open.return_value = mock_response
@@ -132,8 +133,13 @@ class TestWebRetrieverRedirectGuard:
                 newurl="http://169.254.169.254/latest/meta-data/",
             )
 
-        assert exc_info.value.code == 302
-        assert "redirect blocked" in str(exc_info.value.reason or exc_info.value.msg)
+        try:
+            assert exc_info.value.code == 302
+            assert "redirect blocked" in str(
+                exc_info.value.reason or exc_info.value.msg
+            )
+        finally:
+            exc_info.value.close()
 
     def test_fetch_web_page_uses_no_redirect_opener(self) -> None:
         """`fetch_web_page` must pass `_NoRedirectHandler` to
@@ -159,7 +165,7 @@ class TestWebRetrieverRedirectGuard:
 
         url = "https://example.com/redirect-wiring-check"
         retriever = WebRetriever()
-        with retriever._cache as cache:
+        with open_safe_diskcache(retriever._cache_path) as cache:
             cache.delete(url)
         with patch("urllib.request.build_opener", side_effect=capturing_build_opener):
             result = retriever.fetch_web_page(url)
@@ -188,7 +194,7 @@ class TestWebRetrieverRedirectGuard:
         )
         url = "https://example.com/redirects-to-metadata"
         retriever = WebRetriever()
-        with retriever._cache as cache:
+        with open_safe_diskcache(retriever._cache_path) as cache:
             cache.delete(url)
 
         with patch("urllib.request.build_opener") as mock_build_opener:

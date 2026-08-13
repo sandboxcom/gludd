@@ -192,6 +192,31 @@ def test_query_without_job_hits_root_api() -> None:
     assert url.startswith("https://ci.example.com/api/json")
 
 
+def test_query_without_job_normalizes_controller_jobs() -> None:
+    transport = _Transport(
+        200,
+        {
+            "jobs": [
+                {
+                    "name": "release",
+                    "url": "https://ci.example.com/job/release/",
+                    "color": "blue",
+                    "lastBuild": {"number": 7},
+                }
+            ]
+        },
+    )
+    src = _make_source(transport, job=None)
+
+    records = src.query({})
+
+    assert len(records) == 1
+    assert records[0]["message"] == "release#7"
+    assert records[0]["level_or_status"] == "SUCCESS"
+    assert records[0]["labels"]["url"] == "https://ci.example.com/job/release/7/"
+    assert "tree=jobs" in transport.calls[0][0]
+
+
 def test_basic_auth_header_built_from_env() -> None:
     import base64
 

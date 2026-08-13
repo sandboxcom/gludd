@@ -106,14 +106,16 @@ class TestWebRetrieverFetch:
 
     def test_http_error_returns_result_with_error_code(self) -> None:
         import urllib.error
+        body = io.BytesIO(b"")
         with patch("urllib.request.build_opener") as mock_build_opener:
             mock_build_opener.return_value.open.side_effect = urllib.error.HTTPError(
-                "https://example.com", 404, "Not Found", {}, io.BytesIO(b"")
+                "https://example.com", 404, "Not Found", {}, body
             )
             retriever = WebRetriever()
             result = retriever.fetch_web_page("https://example.com/missing")
         assert result.status_code == 404
         assert result.content == ""
+        assert body.closed
 
     def test_network_error_returns_negative_status(self) -> None:
         with patch("urllib.request.build_opener") as mock_build_opener:

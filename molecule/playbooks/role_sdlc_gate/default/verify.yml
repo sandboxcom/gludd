@@ -12,7 +12,7 @@
       ansible.builtin.stat:
         path: "/tmp/gludd-sdlc-gate-{{ mock_port }}-validate/sdlc_pipeline_health.json"
       register: art_vp
-      failed_when: "{{ not art_vp.stat.exists }}"
+      failed_when: not art_vp.stat.exists
 
     - name: Load validate_pipeline artifact
       ansible.builtin.slurp:
@@ -41,7 +41,7 @@
       ansible.builtin.stat:
         path: "/tmp/gludd-sdlc-gate-{{ mock_port }}-entry/sdlc_entry_intake.json"
       register: art_entry
-      failed_when: "{{ not art_entry.stat.exists }}"
+      failed_when: not art_entry.stat.exists
 
     - name: Load check_stage_entry artifact
       ansible.builtin.slurp:
@@ -69,7 +69,7 @@
       ansible.builtin.stat:
         path: "/tmp/gludd-sdlc-gate-{{ mock_port }}-exit/sdlc_exit_intake.json"
       register: art_exit
-      failed_when: "{{ not art_exit.stat.exists }}"
+      failed_when: not art_exit.stat.exists
 
     - name: Load check_stage_exit artifact
       ansible.builtin.slurp:
@@ -108,7 +108,7 @@
       ansible.builtin.stat:
         path: "/tmp/gludd-sdlc-gate-{{ mock_port }}-audit/sdlc_token_chain_audit.json"
       register: art_audit
-      failed_when: "{{ not art_audit.stat.exists }}"
+      failed_when: not art_audit.stat.exists
 
     - name: Load audit_token_chain artifact
       ansible.builtin.slurp:
@@ -134,7 +134,7 @@
       ansible.builtin.stat:
         path: "/tmp/gludd-sdlc-gate-{{ mock_port }}-list/sdlc_stage_list.json"
       register: art_list
-      failed_when: "{{ not art_list.stat.exists }}"
+      failed_when: not art_list.stat.exists
 
     - name: Load list_stages artifact
       ansible.builtin.slurp:

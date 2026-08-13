@@ -51,6 +51,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 #    project itself into the venv.
 ARG VERSION=0.1.0-alpha.5
 COPY src ./src
+COPY infra/terraform ./infra/terraform
 COPY README.md LICENSE THIRD_PARTY_LICENSES.md ./
 RUN sed -i "s/^__version__ = \".*\"/__version__ = \"${VERSION}\"/" src/general_ludd/__init__.py \
  && sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" pyproject.toml

@@ -13,6 +13,7 @@ from tests.unit._plugin_contract import plugin_contract_source
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 PLUGIN_DIR = PROJECT_ROOT / ".opencode" / "plugin"
+PLUGIN_IMPL_DIR = PLUGIN_DIR / "impl"
 PLUGINS_DIR = PROJECT_ROOT / ".opencode" / "plugins"
 OPENCODE_JSON = PROJECT_ROOT / "opencode.json"
 
@@ -22,6 +23,7 @@ EXPECTED_PLUGIN_FILES = [
     "enforce-make.ts",
     "enforce-deletion-gate.ts",
     "enforce-floor.ts",
+    "enforce-floor-v2.ts",
     "enforce-delegate.ts",
     "enforce-stop.ts",
     "enforce-session-start.ts",
@@ -43,6 +45,10 @@ EXPECTED_PLUGIN_FILES = [
     "enforce-worktree.ts",
     "enforce-audit.ts",
     "enforce-context.ts",
+    "enforce-deliverable.ts",
+    "enforce-no-ci-poll.ts",
+    "enforce-release-deadline.ts",
+    "enforce-task-tracking.ts",
 ]
 EXPECTED_PLUGINS_FILES = ["watchdog.ts"]
 
@@ -66,31 +72,41 @@ def _read_plugin(name: str) -> str:
     )
 
 
+def _read_plugin_with_impl(name: str) -> str:
+    content = _read_plugin(name)
+    impl_name = name.removesuffix(".ts").replace("-", "_") + "_impl.ts"
+    impl_path = PLUGIN_IMPL_DIR / impl_name
+    if impl_path.exists():
+        content += impl_path.read_text()
+    return content
+
+
 # ---------------------------------------------------------------------------
 # 1. enforce-stop.ts — hook registrations
 # ---------------------------------------------------------------------------
 
 class TestEnforceStopHookRegistrations:
-    def test_has_text_complete_hook(self):
-        content = _read_plugin("enforce-make.ts")
-        assert '"text.complete"' in content, (
-            "enforce-make.ts must register text.complete hook"
+    def test_has_supported_text_complete_hook(self):
+        content = _read_plugin_with_impl("enforce-make.ts")
+        assert '"experimental.text.complete"' in content, (
+            "enforce-make.ts must register experimental.text.complete hook"
         )
+        assert re.search(r'(?<!experimental\.)"text\.complete"\s*:', content) is None
 
     def test_has_tool_execute_before_hook(self):
-        content = _read_plugin("enforce-stop.ts")
+        content = _read_plugin_with_impl("enforce-stop.ts")
         assert '"tool.execute.before"' in content, (
             "enforce-stop.ts must register tool.execute.before hook"
         )
 
     def test_has_session_idle_hook(self):
-        content = _read_plugin("enforce-make.ts")
-        assert '"session.idle"' in content, (
-            "enforce-make.ts must register session.idle hook"
+        content = _read_plugin_with_impl("enforce-make.ts")
+        assert '"event"' in content and '"session.idle"' in content, (
+            "enforce-make.ts must route session.idle through the supported event hook"
         )
 
     def test_has_system_transform_hook(self):
-        content = _read_plugin("enforce-stop.ts")
+        content = _read_plugin_with_impl("enforce-stop.ts")
         assert '"experimental.chat.system.transform"' in content, (
             "enforce-stop.ts must register experimental.chat.system.transform hook"
         )
@@ -102,11 +118,13 @@ class TestEnforceStopHookRegistrations:
 
 class TestEnforceStopTextCompleteNotPassthrough:
     def test_text_complete_body_has_substantial_logic(self):
-        content = _read_plugin("enforce-make.ts")
+        content = (
+            PLUGIN_IMPL_DIR / "enforce_make_impl.ts"
+        ).read_text()
 
         # Find the text.complete handler body between async and the closing
         match = re.search(
-            r'"(?:experimental\.)?text\.complete":\s*async.*?\{',
+            r'"experimental\.text\.complete":\s*async.*?\{',
             content, re.DOTALL,
         )
         assert match is not None, "Could not find text.complete handler declaration"
@@ -181,8 +199,18 @@ class TestAllPluginsOnDisk:
             ), (
                 f"{name} must import the Plugin type"
             )
-            assert "satisfies Plugin" in content or ": Plugin" in content or "as Plugin" in content, (
-                f"{name} must have type assertion (satisfies Plugin, : Plugin, or as Plugin)"
+            has_plugin_assertion = (
+                "satisfies Plugin" in content
+                or ": Plugin" in content
+                or "as Plugin" in content
+            )
+            has_explicit_hook_signature = (
+                "export default async function" in content
+                and "Promise<{" in content
+                and '"tool.execute.' in content
+            )
+            assert has_plugin_assertion or has_explicit_hook_signature, (
+                f"{name} must have a Plugin assertion or an explicit typed hook signature"
             )
             assert "export default" in content or "export default" in content, (
                 f"{name} must have a default export"

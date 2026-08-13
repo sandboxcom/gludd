@@ -557,7 +557,7 @@ def run_healthcheck(
     if not finished:
         return HealthResult(
             status="unhealthy",
-            detail=f"healthcheck timeout after {timeout:.1f}s",
+            detail=f"healthcheck timeout: timed out after {timeout:.1f}s",
             source=getattr(source, "name", "?"),
         )
 

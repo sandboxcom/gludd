@@ -8,9 +8,7 @@ import os
 import select
 import subprocess
 import sys
-import termios
 import time
-import tty
 from types import SimpleNamespace
 from typing import Any
 
@@ -24,6 +22,7 @@ from general_ludd.tui.keybindings import (
 from general_ludd.tui.logger import TUILogger
 
 _DAEMON_HOST_DEFAULT = "127.0.0.1"
+_CASE_SENSITIVE_DISPATCH_KEYS = frozenset({"P", "R", "L", "H", "T", "D", "C"})
 
 # The runner spawns the daemon via h._build_daemon_start_cmd(host, port,
 # workers), whose host/port/workers come from CLI args / config and are thus
@@ -34,6 +33,15 @@ validate_daemon_spawn_args = validate_gunicorn_spawn_args
 
 
 def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
+    try:
+        import termios
+        import tty
+    except ImportError:
+        raise SystemExit(
+            "The interactive TUI requires POSIX termios/tty support; "
+            "non-TUI Gludd commands remain available on this platform."
+        ) from None
+
     from rich.console import Console
     from rich.layout import Layout
     from rich.live import Live
@@ -840,7 +848,7 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
             tui_state["current_view"] = current_view
             tui_handler.handle_key(ch)
             return True
-        if len(ch) == 1:
+        if len(ch) == 1 and ch not in _CASE_SENSITIVE_DISPATCH_KEYS:
             ch = ch.lower()
         if ch == "p":
             if current_view != "projects":
@@ -880,7 +888,7 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
                 push_breadcrumb(tui_state, "edit")
             else:
                 current_view = pop_breadcrumb(tui_state)
-        if len(ch) == 1:
+        if len(ch) == 1 and ch not in _CASE_SENSITIVE_DISPATCH_KEYS:
             ch = ch.lower()
         if current_view == "projects" and ch == "a":
             try:

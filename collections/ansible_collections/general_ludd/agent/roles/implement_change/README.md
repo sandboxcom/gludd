@@ -18,6 +18,22 @@ an `always` block.
 | `enable_git_push` | `false` | Push DISABLED by default |
 | `model_profile` | `""` | Model routing profile |
 | `artifact_dir` | `/tmp/gludd-implement-change` | Output dir |
+| `mcp_sync_enabled` | `true` | Sync MCP docs/tools when the target repo supports it |
+| `mcp_authoring_stub` | `true` | Generate missing module documentation stubs |
+
+## MCP authoring capability
+
+The role may author changes in repositories that do not contain Gludd's
+`scripts/mcp_docs_check.py` or `scripts/gen_mcp_tools.py`. It probes each helper
+with `ansible.builtin.stat` and skips only the unsupported operation when the
+corresponding file is absent. A helper that is present but exits nonzero still
+produces the existing non-fatal warning, so real documentation or generation
+failures remain observable.
+
+This follows the long-standing Ansible community guidance to stat an optional
+file and condition the dependent task on `stat.exists`, rather than execute
+against a known-missing path: [Ansible forum discussion on conditionally
+handling optional files](https://forum.ansible.com/t/change-request-community-general-ini-file/3953).
 
 ## Security
 

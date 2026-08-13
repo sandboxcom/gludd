@@ -83,6 +83,35 @@ from the LLM. Do not add role-based guards; they are dead code.
 | `.opencode/plugin/shared.ts` | Shared helpers: `isSubagent()`, `isDisengaged()`, `readJsonFile()`, `writeJsonFile()`, `reportAlive()` — eliminates duplicated patterns across plugins |
 | `.opencode/plugin/hot_reload.ts` | Hot-reload proxy: `loadHotModule(name, defaults)` — checks `/tmp/gludd-hot-<name>.js` on each invocation for mid-session updates |
 
+### 2.1 OpenCode blocking contract
+
+OpenCode 1.18.5 passes the executable Bash command to `tool.execute.before` in
+the second argument at `output.args.command`; older fixtures use
+`input.args.command`. Enforcement plugins must support both shapes. Returning
+`{ permissionDecision: "deny" }` does not stop execution: OpenCode awaits the
+hook and then invokes the tool without reading the hook's return value. A
+blocking plugin must throw a tagged error, while an argument-transforming
+plugin may mutate `output.args`.
+
+This behavior is pinned by the real multi-prompt TUI test in
+`tests/e2e/test_opencode_tui_permissions.py`, not only by synthetic hook
+invocation. The upstream `prompt.ts` call site likewise invokes
+`tool.execute.before` immediately before tool execution without assigning its
+return value:
+
+- [OpenCode tool execution source](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/prompt.ts)
+
+User reports show this is a long-lived interoperability concern, not a
+project-local edge case:
+
+- [Native Claude Code hooks compatibility #12472](https://github.com/anomalyco/opencode/issues/12472)
+  requests reliable `PreToolUse` blocking semantics and documents exit-code
+  based guardrails; it has remained open since February 2026.
+- [AI-visible hook messages #17412](https://github.com/anomalyco/opencode/issues/17412)
+  distinguishes the existing ability to block or modify tool calls from the
+  still-missing ability to inject continuation messages. It was opened in
+  March 2026 and closed as not planned.
+
 ---
 
 ## 3. Hot-Reload Pattern

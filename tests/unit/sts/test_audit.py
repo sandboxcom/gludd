@@ -13,6 +13,7 @@ class TestStsAuditPipeline:
     async def test_record_mint_appends_event(self):
         """record_mint() appends a 'mint' event to the StsAuditModel row."""
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
         mock_session_factory = MagicMock()
         mock_session_factory.begin.return_value.__aenter__.return_value = mock_session
 
@@ -46,6 +47,7 @@ class TestStsAuditPipeline:
     async def test_record_use_appends_event(self):
         """record_use() appends a 'use' event."""
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
         mock_session_factory = MagicMock()
         mock_session_factory.begin.return_value.__aenter__.return_value = mock_session
 
@@ -72,6 +74,7 @@ class TestStsAuditPipeline:
     async def test_record_renew_appends_event(self):
         """record_renew() appends a 'renew' event."""
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
         mock_session_factory = MagicMock()
         mock_session_factory.begin.return_value.__aenter__.return_value = mock_session
 
@@ -97,6 +100,7 @@ class TestStsAuditPipeline:
     async def test_record_revoke_appends_event(self):
         """record_revoke() appends a 'revoke' event."""
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
         mock_session_factory = MagicMock()
         mock_session_factory.begin.return_value.__aenter__.return_value = mock_session
 
@@ -122,6 +126,7 @@ class TestStsAuditPipeline:
     async def test_record_revive_appends_event(self):
         """record_revive() appends a 'revive' event."""
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
         mock_session_factory = MagicMock()
         mock_session_factory.begin.return_value.__aenter__.return_value = mock_session
 
@@ -147,6 +152,7 @@ class TestStsAuditPipeline:
     async def test_multiple_events_cumulative(self):
         """Multiple events append to the same row."""
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
         mock_session_factory = MagicMock()
         mock_session_factory.begin.return_value.__aenter__.return_value = mock_session
 
@@ -172,6 +178,7 @@ class TestStsAuditPipeline:
     async def test_no_row_is_noop(self):
         """When no StsAuditModel row exists, event recording is a no-op."""
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
         mock_session_factory = MagicMock()
         mock_session_factory.begin.return_value.__aenter__.return_value = mock_session
 

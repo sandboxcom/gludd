@@ -27,7 +27,7 @@ class TestVsphereEnumAndRegistry:
         registry = ProviderRegistry()
         info = registry.get(ComputeProvider.VMWARE)
         assert info is not None
-        assert info.terraform_provider == "hashicorp/vsphere"
+        assert info.terraform_provider == "vmware/vsphere"
 
     def test_vmware_provider_auth_env_contains_required_keys(self):
         registry = ProviderRegistry()
@@ -95,7 +95,6 @@ class TestTerraformGeneratorVsphere:
         )
         hcl = gen._generate_vsphere(config)
         assert "allow_unverified_ssl = true" in hcl
-
 
 class TestPyvmomiLazyImport:
     def test_pyvmomi_not_imported_at_module_top_level(self):

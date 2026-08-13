@@ -1360,7 +1360,10 @@ class GCPPricingSource:
         optional dep) is not installed; tests mock this method to avoid the
         network/dep.
         """
-        from google.cloud import billing
+        try:
+            from google.cloud import billing
+        except ImportError as exc:
+            raise ImportError("google-cloud-billing is not installed") from exc
 
         return billing.CloudCatalogClient()
 

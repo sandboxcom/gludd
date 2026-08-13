@@ -72,7 +72,7 @@ def _te_for(spec: PermissionSpec) -> str:
             )
     for _cap in spec.denied:
         deny.append(f"dontaudit {type_name} **:** **;")
-    body = "\n".join(allow + deny) or "  # empty spec"
+    body = "\n".join(dict.fromkeys([*allow, *deny])) or "  # empty spec"
     return (
         f"module gludd_{agent} 1.0;\n"
         "require {\n"

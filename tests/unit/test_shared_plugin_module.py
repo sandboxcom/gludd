@@ -97,7 +97,8 @@ class TestIsDisengaged:
     def test_clamped_by_max_ms(self):
         src = _src()
         idx = src.find("export function isDisengaged")
-        after = src[idx:idx + 500]
+        end = src.find("// ── JSON state file helpers", idx)
+        after = src[idx:end]
         assert "Math.min" in after
 
     def test_return_boolean(self):
@@ -116,8 +117,9 @@ class TestIsDisengaged:
 
     def test_default_max_ms_is_5_minutes(self):
         src = _src()
-        idx = src.find("isDisengaged")
-        after = src[idx:idx + 400]
+        idx = src.find("export function isDisengaged")
+        end = src.find("// ── JSON state file helpers", idx)
+        after = src[idx:end]
         assert "300_000" in after
 
     def test_disengage_opts_interface(self):
@@ -319,15 +321,11 @@ class TestEnforceFloorUsesShared:
         after = src[idx:idx + 300]
         assert "isSubagent()" in after
 
-    def test_no_text_complete_hook(self):
-        """opencode >=1.17.9 removed text.complete; enforce-floor must not declare it.
-
-        The plugin is self-contained in tool.execute.before and detects message
-        boundaries from the inter-call idle gap instead.
-        """
+    def test_supported_text_complete_hook_only(self):
+        """Keep the experimental boundary hook without reviving the removed bare hook."""
         src = FLOOR_PATH.read_text()
-        assert '"experimental.text.complete"' not in src
-        assert "experimental.text.complete" not in src
+        assert '"experimental.text.complete"' in src
+        assert re.search(r'(?<!experimental\.)"text\.complete"\s*:', src) is None
 
     def test_uses_is_disengaged_in_replace_of_old_blocks(self):
         src = FLOOR_PATH.read_text()
@@ -354,9 +352,9 @@ class TestEnforceFloorUsesShared:
         src = FLOOR_PATH.read_text()
         assert "export default" in src
 
-    def test_declares_tool_execute_before_hook_only(self):
-        """Post-1.17.9 enforce-floor exposes exactly one hook."""
+    def test_declares_supported_hooks(self):
+        """Post-1.17.9 enforce-floor exposes tool and experimental boundary hooks."""
         src = FLOOR_PATH.read_text()
         assert '"tool.execute.before"' in src
         assert '"session.idle"' not in src
-        assert '"experimental.text.complete"' not in src
+        assert '"experimental.text.complete"' in src

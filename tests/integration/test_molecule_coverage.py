@@ -267,6 +267,39 @@ class TestModuleCoverageChecklist:
         assert len(covered) >= 2, f"expected >= 2 module scenarios, have {sorted(covered)}"
 
 
+class TestGluddObserveScenario:
+    """The observe module scenario must exercise real HTTP-backed workflows."""
+
+    def test_scenario_exercises_all_operations_through_mock_daemon(self):
+        scenario = SCENARIOS_DIR / "test_gludd_observe"
+        molecule = scenario / "molecule.yml"
+        prepare = scenario / "default" / "prepare.yml"
+        converge = scenario / "default" / "converge.yml"
+        verify = scenario / "default" / "verify.yml"
+        cleanup = scenario / "default" / "cleanup.yml"
+
+        for required in (molecule, prepare, converge, verify, cleanup):
+            assert required.is_file(), f"gludd_observe scenario file missing: {required}"
+
+        prepare_text = prepare.read_text()
+        converge_text = converge.read_text()
+        verify_text = verify.read_text()
+        daemon_text = MOCK_DAEMON.read_text()
+
+        assert "mock_daemon/server.py" in prepare_text
+        assert "general_ludd.agent.gludd_observe" in converge_text
+        for operation in (
+            "query_sources",
+            "timeline",
+            "topology",
+            "correlate_incident",
+        ):
+            assert f"op: {operation}" in converge_text
+        assert "source_count" in verify_text
+        assert "/api/observe/sources" in daemon_text
+        assert "/api/observe/query" in daemon_text
+
+
 class TestRoleCoverageChecklist:
     def test_inventory_partition_is_exact(self):
         roles = _role_names()
