@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -19,7 +19,7 @@ def mock_indexer():
     indexer.stats.return_value = {"total_commits": 0}
     indexer.index.return_value = 42
 
-    with __import__("unittest.mock").patch(
+    with patch(
         "general_ludd.routers.git_history.GitHistoryIndexer",
         return_value=indexer,
     ):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import patch
 
 import pytest
 
@@ -28,7 +29,7 @@ def mock_session_factory():
     def mock_factory():
         return factory
 
-    with __import__("unittest.mock").patch(
+    with patch(
         "general_ludd.ornith.outcome_observer.OrnithTrainingRepo",
         return_value=training_repo,
     ):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from unittest import mock
 
 import pytest
 
@@ -301,10 +302,10 @@ class TestUnifiedProbe:
         survey = HardwareSurvey()
         gpu = GpuInfo(name="NVIDIA H100", vram_gb=80.0, backend="nvidia")
         with (
-            __import__("unittest").mock.patch.object(survey, "probe_gpu_nvidia", return_value=[gpu]),
-            __import__("unittest").mock.patch.object(survey, "probe_ram", return_value=256.0),
-            __import__("unittest").mock.patch.object(survey, "probe_disk", return_value=500.0),
-            __import__("unittest").mock.patch.object(survey, "probe_cpu", return_value=32),
+            mock.patch.object(survey, "probe_gpu_nvidia", return_value=[gpu]),
+            mock.patch.object(survey, "probe_ram", return_value=256.0),
+            mock.patch.object(survey, "probe_disk", return_value=500.0),
+            mock.patch.object(survey, "probe_cpu", return_value=32),
         ):
             inv = unified_probe(survey=survey)
         assert inv.gpu_count == 1
@@ -317,11 +318,11 @@ class TestUnifiedProbe:
         survey = HardwareSurvey()
         gpu = GpuInfo(name="Apple M3 Max", vram_gb=48.0, backend="metal")
         with (
-            __import__("unittest").mock.patch.object(survey, "probe_gpu_nvidia", return_value=[]),
-            __import__("unittest").mock.patch.object(survey, "probe_gpu_metal", return_value=[gpu]),
-            __import__("unittest").mock.patch.object(survey, "probe_ram", return_value=128.0),
-            __import__("unittest").mock.patch.object(survey, "probe_disk", return_value=1000.0),
-            __import__("unittest").mock.patch.object(survey, "probe_cpu", return_value=20),
+            mock.patch.object(survey, "probe_gpu_nvidia", return_value=[]),
+            mock.patch.object(survey, "probe_gpu_metal", return_value=[gpu]),
+            mock.patch.object(survey, "probe_ram", return_value=128.0),
+            mock.patch.object(survey, "probe_disk", return_value=1000.0),
+            mock.patch.object(survey, "probe_cpu", return_value=20),
         ):
             inv = unified_probe(survey=survey)
         assert inv.gpus[0].backend == "metal"
@@ -330,12 +331,12 @@ class TestUnifiedProbe:
         survey = HardwareSurvey()
         gpu = GpuInfo(name="AMD GPU 0", vram_gb=24.0, backend="rocm")
         with (
-            __import__("unittest").mock.patch.object(survey, "probe_gpu_nvidia", return_value=[]),
-            __import__("unittest").mock.patch.object(survey, "probe_gpu_metal", return_value=[]),
-            __import__("unittest").mock.patch.object(survey, "probe_gpu_rocm", return_value=[gpu]),
-            __import__("unittest").mock.patch.object(survey, "probe_ram", return_value=64.0),
-            __import__("unittest").mock.patch.object(survey, "probe_disk", return_value=500.0),
-            __import__("unittest").mock.patch.object(survey, "probe_cpu", return_value=16),
+            mock.patch.object(survey, "probe_gpu_nvidia", return_value=[]),
+            mock.patch.object(survey, "probe_gpu_metal", return_value=[]),
+            mock.patch.object(survey, "probe_gpu_rocm", return_value=[gpu]),
+            mock.patch.object(survey, "probe_ram", return_value=64.0),
+            mock.patch.object(survey, "probe_disk", return_value=500.0),
+            mock.patch.object(survey, "probe_cpu", return_value=16),
         ):
             inv = unified_probe(survey=survey)
         assert inv.gpus[0].backend == "rocm"
@@ -343,20 +344,20 @@ class TestUnifiedProbe:
     def test_empty_when_no_gpu(self):
         survey = HardwareSurvey()
         with (
-            __import__("unittest").mock.patch.object(survey, "probe_gpu_nvidia", return_value=[]),
-            __import__("unittest").mock.patch.object(survey, "probe_gpu_metal", return_value=[]),
-            __import__("unittest").mock.patch.object(survey, "probe_gpu_rocm", return_value=[]),
-            __import__("unittest").mock.patch.object(survey, "probe_ram", return_value=16.0),
-            __import__("unittest").mock.patch.object(survey, "probe_disk", return_value=100.0),
-            __import__("unittest").mock.patch.object(survey, "probe_cpu", return_value=4),
+            mock.patch.object(survey, "probe_gpu_nvidia", return_value=[]),
+            mock.patch.object(survey, "probe_gpu_metal", return_value=[]),
+            mock.patch.object(survey, "probe_gpu_rocm", return_value=[]),
+            mock.patch.object(survey, "probe_ram", return_value=16.0),
+            mock.patch.object(survey, "probe_disk", return_value=100.0),
+            mock.patch.object(survey, "probe_cpu", return_value=4),
         ):
             inv = unified_probe(survey=survey)
         assert inv.gpu_count == 0
         assert inv.total_ram_gb == 16.0
 
     def test_default_survey_creates_instance(self):
-        with __import__("unittest").mock.patch("general_ludd.hardware.model_fit.HardwareSurvey") as mock_cls:
-            mock_survey = __import__("unittest").mock.MagicMock()
+        with mock.patch("general_ludd.hardware.model_fit.HardwareSurvey") as mock_cls:
+            mock_survey = mock.MagicMock()
             mock_survey.probe_gpu_nvidia.return_value = []
             mock_survey.probe_gpu_metal.return_value = []
             mock_survey.probe_gpu_rocm.return_value = []
