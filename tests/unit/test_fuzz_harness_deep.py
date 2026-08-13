@@ -37,29 +37,27 @@ from general_ludd.receiver.parsers import (
 from general_ludd.skills.loader import FRONTMATTER_RE, parse_skill_md
 
 
+def _run_regex_search(pattern: str, text: str) -> None:
+    """Run one regex search in an importable spawn-process target."""
+    with contextlib.suppress(Exception):
+        re.compile(pattern).search(text)
+
+
 def _re_completes(pattern: str, text: str, timeout_s: float = 2.0) -> bool:
     """Return True if re.search completes within timeout (no hang / ReDoS)."""
 
-    def _runner(q: multiprocessing.Queue) -> None:
-        try:
-            re.compile(pattern).search(text)
-            q.put(True)
-        except Exception:
-            q.put(True)
-
     ctx = multiprocessing.get_context("spawn")
-    q: multiprocessing.Queue = ctx.Queue()
-    p = ctx.Process(target=_runner, args=(q,), daemon=True)
+    p = ctx.Process(target=_run_regex_search, args=(pattern, text), daemon=True)
     p.start()
     p.join(timeout_s)
     if p.is_alive():
         p.terminate()
         p.join(1)
+        p.close()
         return False
-    try:
-        return q.get_nowait()
-    except Exception:
-        return True
+    completed = p.exitcode == 0
+    p.close()
+    return completed
 
 
 def _rand_bytes(n: int) -> bytes:
@@ -88,7 +86,7 @@ class TestJSONRandomFuzz:
             assert isinstance(result, (dict, list, str, int, float, bool, type(None)))
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass
-        assert json.loads('{"a":\u00e9}') == {"a": "\u00e9"}
+        assert json.loads(r'{"a":"\u00e9"}') == {"a": "\u00e9"}
 
     def test_json_surrogate_pairs(self) -> None:
         with contextlib.suppress(json.JSONDecodeError, UnicodeDecodeError, UnicodeEncodeError):
@@ -328,7 +326,8 @@ class TestReceiverParserFuzz:
                 assert isinstance(rec, dict)
 
     def test_parse_syslog_empty_and_null(self) -> None:
-        for payload in [b"", b" ", b"\n", "\n", "   \n   "]:
+        payloads: tuple[bytes | str, ...] = (b"", b" ", b"\n", "\n", "   \n   ")
+        for payload in payloads:
             result = parse_syslog(payload)
             assert result == []
 
