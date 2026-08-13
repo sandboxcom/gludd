@@ -30,9 +30,12 @@ MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
 DOCSTRING_FILES ?=
 GATE_REFRESH_VALIDATE_ONLY ?= 0
 DISK_MIN_FREE_GIB ?= 8
-# Make children emit deterministic, non-interactive logs even when the host's
-# terminal emulator has no terminfo entry inside a worker or CI environment.
-export TERM := dumb
+# Preserve a capable caller terminal; supply a stable terminfo fallback only
+# when workers or CI provide an empty, unknown, or dumb TERM value.
+ifeq (,$(filter-out dumb unknown,$(strip $(TERM))))
+override TERM := xterm-256color
+endif
+export TERM
 # SSH deploy keys are credentials and must live outside the repository.
 # Override with `make ... SSH_KEY=/path/to/key` for another external key.
 SSH_KEY ?= $(HOME)/.ssh/sandboxcom_gludd_rsa
