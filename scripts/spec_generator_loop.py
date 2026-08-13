@@ -21,12 +21,11 @@ Template detection:
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
+from typing import TypedDict
 
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_PATH = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
@@ -40,12 +39,46 @@ TEMPLATE_BODY_RE = re.compile(
 MAX_REAL_ENFORCEMENT_LEN = 400
 
 
-def parse_specs_raw(filepath: Path) -> list[dict]:
+class SpecRecord(TypedDict):
+    """One parsed behavioral specification and its source positions."""
+
+    spec_id: str
+    title: str
+    body: str
+    body_lines: list[str]
+    enforcement: str
+    enforcement_line_idx: int
+    test: str
+    test_line_idx: int
+    header_line: int
+    end_line: int
+    group: str
+
+
+class GroupStats(TypedDict):
+    """Enforcement-quality counts for one spec group."""
+
+    total: int
+    real: int
+    template: int
+
+
+class EnforcementStats(TypedDict):
+    """Aggregate enforcement-quality counts."""
+
+    total_specs: int
+    real_enforcement: int
+    template_enforcement: int
+    real_pct: float
+    by_group: dict[str, GroupStats]
+
+
+def parse_specs_raw(filepath: Path) -> list[SpecRecord]:
     """Parse BEHAVIORAL_SPECS.md into raw spec dicts with line positions."""
     text = filepath.read_text()
     lines = text.split("\n")
 
-    specs: list[dict] = []
+    specs: list[SpecRecord] = []
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -95,14 +128,14 @@ def parse_specs_raw(filepath: Path) -> list[dict]:
             "test_line_idx": test_line_idx,
             "header_line": header_line,
             "end_line": end_line,
-            "group": re.match(r"^[A-Z]+", spec_id).group(),
+            "group": spec_id[0],
         })
         i = j
 
     return specs
 
 
-def is_template_enforcement(spec: dict) -> bool:
+def is_template_enforcement(spec: SpecRecord) -> bool:
     """Return True if the spec's enforcement is template/bloated rather than real.
 
     Template enforcement = bloated enforcement text (>400 chars) listing every
@@ -114,18 +147,13 @@ def is_template_enforcement(spec: dict) -> bool:
     if not enf:
         return True
 
-    if len(enf) > MAX_REAL_ENFORCEMENT_LEN:
-        return True
-
-    return False
+    return len(enf) > MAX_REAL_ENFORCEMENT_LEN
 
 
-def generate_real_enforcement(spec: dict) -> str:
+def generate_real_enforcement(spec: SpecRecord) -> str:
     """Generate a specific, real enforcement mechanism for a template spec."""
     spec_id = spec["spec_id"]
     group = spec["group"]
-    title = spec["title"]
-    body = spec.get("body", "")
 
     group_enforcement_map = {
         "P": "enforce-batch-push.ts",
@@ -157,15 +185,14 @@ def generate_real_enforcement(spec: dict) -> str:
     }
 
     plugin = group_enforcement_map.get(group, "enforce-make.ts")
-    group_name = GROUP_NAME_MAP.get(group, group)
 
     num = re.search(r"(\d+)", spec_id)
     num_str = num.group(1) if num else "0"
 
     mechanisms = [
-        f"AGENTS.md `enforce-floor.ts` permissionDecision deny",
+        "AGENTS.md `enforce-floor.ts` permissionDecision deny",
         f"AGENTS.md `{plugin}` tool.execute.before",
-        f"AGENTS.md `{plugin}` × `enforce-stop.ts` cross-plugin",
+        f"AGENTS.md `{plugin}` \N{MULTIPLICATION SIGN} `enforce-stop.ts` cross-plugin",
         f"AGENTS.md `{plugin}` env-var-gated BLOCKING",
         f"Makefile `make check-{group.lower()}-invariant` commit-time gate",
         f"AGENTS.md `scripts/check_{group.lower()}_compliance.py` pre-commit scan",
@@ -175,7 +202,7 @@ def generate_real_enforcement(spec: dict) -> str:
     return mechanisms[idx]
 
 
-GROUP_NAME_MAP = {
+GROUP_NAME_MAP: dict[str, str] = {
     "P": "push_discipline",
     "B": "branch_discipline",
     "O": "objective_tracking",
@@ -205,16 +232,18 @@ GROUP_NAME_MAP = {
 }
 
 
-def group_name_map():
+def group_name_map() -> dict[str, str]:
     return GROUP_NAME_MAP
 
 
-def compute_stats(specs: list[dict]) -> dict:
+def compute_stats(specs: list[SpecRecord]) -> EnforcementStats:
     """Compute enforcement quality statistics."""
     total = len(specs)
     real = sum(1 for s in specs if not is_template_enforcement(s))
     template = total - real
-    by_group = defaultdict(lambda: {"total": 0, "real": 0, "template": 0})
+    by_group: defaultdict[str, GroupStats] = defaultdict(
+        lambda: {"total": 0, "real": 0, "template": 0}
+    )
     for s in specs:
         g = s["group"]
         by_group[g]["total"] += 1
@@ -232,7 +261,9 @@ def compute_stats(specs: list[dict]) -> dict:
     }
 
 
-def fix_template_specs(specs: list[dict], filepath: Path, dry_run: bool = False) -> int:
+def fix_template_specs(
+    specs: list[SpecRecord], filepath: Path, dry_run: bool = False
+) -> int:
     """Replace template enforcement with real enforcement for template specs.
 
     Returns number of specs fixed.
@@ -307,7 +338,7 @@ def main() -> None:
         print(f"Real enforcement: {stats['real_enforcement']}")
         print(f"Template enforcement: {stats['template_enforcement']}")
         print(f"Real %: {stats['real_pct']}%")
-        print(f"\nBy group:")
+        print("\nBy group:")
         for g, gstats in sorted(stats["by_group"].items()):
             print(f"  {g}: {gstats['total']} total, {gstats['real']} real, {gstats['template']} template")
         return
@@ -331,7 +362,7 @@ def main() -> None:
         return
 
     # Default: run the loop
-    print(f"=== SPEC GENERATOR LOOP ===")
+    print("=== SPEC GENERATOR LOOP ===")
     print(f"Total specs: {stats['total_specs']}")
     print(f"Real enforcement: {stats['real_enforcement']}")
     print(f"Template enforcement: {stats['template_enforcement']}")
