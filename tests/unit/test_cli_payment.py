@@ -192,9 +192,9 @@ def _payment_subactions() -> argparse._SubParsersAction[argparse.ArgumentParser]
 
 
 class TestRegister:
-    def test_command_is_not_exposed_by_public_cli(self) -> None:
+    def test_command_is_exposed_by_public_cli(self) -> None:
         _parser, subcommand_map = build_parser()
-        assert "payment" not in subcommand_map
+        assert "payment" in subcommand_map
 
     def test_all_five_subcommands_registered(self) -> None:
         sub_action = _payment_subactions()
