@@ -170,6 +170,7 @@ class BlockerDetector:
         session: Any | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
+        """Initialize a read-only detector with optional repository seams."""
         self._todo_repo = todo_repo
         self._human_todo_repo = human_todo_repo
         self._event_log_repo = event_log_repo
@@ -182,6 +183,7 @@ class BlockerDetector:
 
     @property
     def config(self) -> RemediationConfig:
+        """Return the immutable remediation threshold configuration."""
         return self._config
 
     # ------------------------------------------------------------------
@@ -192,9 +194,13 @@ class BlockerDetector:
         """Return every blocked task older than its category threshold."""
         now = self._clock()
         findings: list[BlockedTask] = []
-        findings.extend(await self._scan_blocked_on_human(now, project_id))
+        blocked_on_human = await self._scan_blocked_on_human(now, project_id)
+        findings.extend(blocked_on_human)
         findings.extend(await self._scan_chronic_requeues(now, project_id))
-        findings.extend(await self._scan_stale_human_todos(now, project_id))
+
+        blocked_todo_ids = {finding.todo_id for finding in blocked_on_human}
+        stale_human_todos = await self._scan_stale_human_todos(now, project_id)
+        findings.extend(finding for finding in stale_human_todos if finding.todo_id not in blocked_todo_ids)
         return findings
 
     async def _scan_blocked_on_human(self, now: datetime, project_id: str | None) -> list[BlockedTask]:

@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
@@ -851,15 +852,11 @@ class TestScanStaleHumanTodosDeep:
 
     @pytest.mark.asyncio
     async def test_human_todo_with_no_created_at_is_skipped(self, async_session: AsyncSession):
-        await _ht(
-            async_session,
-            parent_agent_todo_id=None,
-            category="input_request",
-        )
-        await async_session.commit()
+        human_todo_repo = MagicMock()
+        human_todo_repo.list_open = AsyncMock(return_value=[SimpleNamespace(created_at=None)])
 
         detector = BlockerDetector(
-            human_todo_repo=HumanTodoRepository(async_session),
+            human_todo_repo=human_todo_repo,
             session=async_session,
             config=RemediationConfig(human_input_block_hours=0),
         )
