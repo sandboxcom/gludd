@@ -9,8 +9,17 @@ worktree marker decoration and sorts them deterministically.
 
 An empty inventory prints a stable success message. The target is read-only: it
 does not check out, merge, delete, or rewrite a ref. Every candidate still goes
-through semantic review, focused verification, and the transactional
-`development-merge-forward` target.
+through semantic review, focused verification, and a transactional merge-forward
+target.
+
+A set of semantically superseded candidates uses
+`development-merge-forward-batch`. Its dry run resolves every ref, rejects
+`master`, removes duplicate commit IDs, and reports the exact parent count. Apply
+mode is allowed only on a clean `development` checkout. It creates one
+ancestry-only octopus merge with Git's `ours` strategy, runs collection once, and
+aborts the entire merge if collection or commit fails. This preserves current
+production content while making every reviewed historical tip reachable from the
+release graph without dozens of redundant collection runs.
 
 ## Zero-downtime and observability
 
@@ -29,7 +38,12 @@ documents the long-lived practitioner use case: integration work across many
 branches needs a direct list of merge candidates and a visible progress view.
 That matches this project's release-forward workflow and is why the base is
 spelled out as `development` instead of depending on whichever branch happens
-to be checked out.
+to be checked out. A long-lived practitioner discussion on
+[Stack Overflow #2692583](https://stackoverflow.com/questions/2692583/how-to-do-octopus-merge-with-git)
+documents the same many-parent integration need and the important limitation that
+an octopus merge is appropriate only when the parents do not require substantive
+conflict resolution. The batch target therefore supports ancestry-only reviewed
+supersession, never content reconciliation.
 
 ## Makefile integrity
 

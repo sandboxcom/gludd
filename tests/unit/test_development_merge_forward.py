@@ -20,6 +20,17 @@ def _run_target(*variables: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _run_batch(*variables: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["make", "development-merge-forward-batch", *variables],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+
 def _recipe() -> str:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     match = re.search(
@@ -72,6 +83,40 @@ def test_ancestry_only_forbids_master_source() -> None:
 
     assert result.returncode != 0
     assert "ancestry-only mode is forbidden for master" in result.stdout
+
+
+def test_batch_ancestry_dry_run_is_auditable_and_non_mutating() -> None:
+    result = _run_batch("SOURCES=HEAD master", "APPLY=0")
+
+    assert result.returncode != 0
+    assert "ancestry-only mode is forbidden for master" in result.stdout
+
+    result = _run_batch("SOURCES=HEAD HEAD", "APPLY=0")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "MERGE_FORWARD_BATCH_DRY_RUN" in result.stdout
+    assert "sources=1" in result.stdout
+    assert "strategy=ours" in result.stdout
+    assert "no repository changes were made" in result.stdout
+
+
+def test_batch_ancestry_target_has_atomic_apply_guards() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    match = re.search(
+        r"^development-merge-forward-batch:\n(?P<recipe>(?:\t.*(?:\n|$))+)",
+        makefile,
+        re.MULTILINE,
+    )
+    assert match, "development-merge-forward-batch target is missing"
+    recipe = match.group("recipe")
+    for fragment in (
+        "rev-parse --verify",
+        "requires current branch development",
+        "requires a clean development worktree",
+        "merge --no-ff -s ours --no-commit",
+        "merge --abort",
+        "collect-check",
+    ):
+        assert fragment in recipe
 
 
 def test_contract_doc_cites_long_lived_cherry_pick_reports() -> None:

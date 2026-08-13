@@ -104,7 +104,7 @@ PYTEST_VERBOSITY ?= -v
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
         test-self-improve test-self-improve-all \
-         development-push development-merge-forward development-merge-to-master development-start development-status require-sandboxcom-ssh-key \
+         development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
         release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready ship-commit-files remove-workspace-file-b64 \
@@ -357,6 +357,7 @@ help:
 	@echo "  agent-merge-dev BRANCH=<name>     Merge a subagent worktree branch into development"
 	@echo "  development-push             Push the development branch to remote"
 	@echo "  development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1  Transactional reconciliation into development (dry-run default)"
+	@echo "  development-merge-forward-batch SOURCES='<refs>' APPLY=0|1  Atomic ancestry-only reconciliation for multiple superseded refs"
 	@echo "  development-merge-to-master  Merge development into master (release prep; CI-green required)"
 	@echo "  development-start            Create development branch from master if it doesn't exist"
 	@echo "  development-status           Show commits on development not yet on master"
@@ -5116,6 +5117,43 @@ development-merge-forward:
 	MERGE_STARTED=0; trap - EXIT HUP INT TERM; \
 	echo "MERGE_FORWARD_APPLIED source=$$SOURCE_VALUE mode=$$MODE_VALUE sha=$$SOURCE_SHA"
 
+# Reconcile several already-reviewed, semantically superseded refs in one
+# ancestry-only transaction. The octopus ours merge records every parent while
+# preserving development content and paying the collection cost once.
+# Usage: make development-merge-forward-batch SOURCES='ref1 ref2' APPLY=0|1
+development-merge-forward-batch:
+	@SOURCES_VALUE='$(SOURCES)'; APPLY_VALUE='$(APPLY)'; \
+	if [ -z "$$APPLY_VALUE" ]; then APPLY_VALUE=0; fi; \
+	if [ -z "$$SOURCES_VALUE" ]; then echo "Usage: make development-merge-forward-batch SOURCES='ref1 ref2' APPLY=0|1"; exit 2; fi; \
+	case "$$APPLY_VALUE" in 0|1) ;; *) echo "APPLY must be 0 or 1"; exit 2 ;; esac; \
+	SOURCE_SHAS=''; SOURCE_COUNT=0; \
+	for ref in $$SOURCES_VALUE; do \
+		case "$$ref" in master|refs/heads/master|*/master) echo "ancestry-only mode is forbidden for master"; exit 2 ;; esac; \
+		if ! sha=$$(git rev-parse --verify "$${ref}^{commit}" 2>/dev/null); then echo "Invalid SOURCE ref: $$ref"; exit 2; fi; \
+		case " $$SOURCE_SHAS " in *" $$sha "*) ;; *) SOURCE_SHAS="$$SOURCE_SHAS $$sha"; SOURCE_COUNT=$$((SOURCE_COUNT + 1)) ;; esac; \
+	done; \
+	echo "WARNING: mode=ancestry-only strategy=ours sources=$$SOURCE_COUNT shas=$$SOURCE_SHAS"; \
+	if [ "$$APPLY_VALUE" = 0 ]; then \
+		echo "MERGE_FORWARD_BATCH_DRY_RUN sources=$$SOURCE_COUNT mode=ancestry-only strategy=ours apply=0"; \
+		echo "no repository changes were made"; \
+		exit 0; \
+	fi; \
+	CURRENT_BRANCH="$$(git branch --show-current)"; \
+	if [ "$$CURRENT_BRANCH" != "development" ]; then echo "APPLY=1 requires current branch development (found: $$CURRENT_BRANCH)"; exit 2; fi; \
+	if [ -n "$$(git status --porcelain)" ]; then echo "APPLY=1 requires a clean development worktree"; exit 2; fi; \
+	MERGE_STARTED=1; \
+	abort_merge() { if [ "$$MERGE_STARTED" -eq 1 ]; then git merge --abort >/dev/null 2>&1 || true; fi; }; \
+	trap abort_merge EXIT HUP INT TERM; \
+	if ! git merge --no-ff -s ours --no-commit $$SOURCE_SHAS; then echo "Batch ancestry-only merge failed; aborting transaction"; exit 1; fi; \
+	if ! git rev-parse --verify -q MERGE_HEAD >/dev/null; then \
+		MERGE_STARTED=0; trap - EXIT HUP INT TERM; \
+		echo "MERGE_FORWARD_BATCH_NOOP every source is already an ancestor of development"; \
+		exit 0; \
+	fi; \
+	if ! $(MAKE) --no-print-directory collect-check; then echo "Collection check failed; aborting transaction"; exit 1; fi; \
+	if ! git commit -m "merge-forward: batch ancestry-only $$SOURCE_COUNT superseded refs into development" -m "source-shas:$$SOURCE_SHAS"; then echo "Merge commit failed; aborting transaction"; exit 1; fi; \
+	MERGE_STARTED=0; trap - EXIT HUP INT TERM; \
+	echo "MERGE_FORWARD_BATCH_APPLIED sources=$$SOURCE_COUNT mode=ancestry-only shas=$$SOURCE_SHAS"
 
 # Merge development into master for release prep.
 # Requires CI-green on the development tip before allowing the merge.
