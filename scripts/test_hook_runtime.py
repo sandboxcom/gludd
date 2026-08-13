@@ -316,10 +316,8 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
         assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
         assert "DIRTY TREE" in result.get("message", "")
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(test_file)
-        except OSError:
-            pass
 
 
 def test_clean_tree_hook_clean_tree_allows_dispatch():
@@ -348,12 +346,10 @@ const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
         result = _run_ts(code, env_override={"GLUDD_CLEAN_TREE_ENFORCE": "0"})
-        assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+        assert result is None or result.get("allowed") is True or result.get("permissionDecision") != "deny"
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(test_file)
-        except OSError:
-            pass
 
 
 def test_clean_tree_subagent_skip():
@@ -369,12 +365,10 @@ const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
         result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
-        assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+        assert result is None or result.get("allowed") is True or result.get("permissionDecision") != "deny"
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(test_file)
-        except OSError:
-            pass
 
 
 # ---------------------------------------------------------------------------
@@ -395,7 +389,11 @@ const stateFile = process.env.GLUDD_ENHANCEMENT_RATIO_STATE || '/tmp/gludd-enhan
 try {{ fs.unlinkSync(stateFile) }} catch {{}}
 await plugin['tool.execute.before']({{tool: 'task', args: {{prompt: 'ENHANCEMENT: Create new tests'}}}}, undefined)
 const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'))
-console.log(JSON.stringify({{waveLen: state.wave.length, type: state.wave[0]?.type, sessionEnh: state.session_enhancements}}))
+console.log(JSON.stringify({{
+  waveLen: state.wave.length,
+  type: state.wave[0]?.type,
+  sessionEnh: state.session_enhancements,
+}}))
 """
     result = _run_ts(code)
     assert result["waveLen"] == 1
@@ -413,7 +411,11 @@ const mod = await import('{PLUGIN_DIR}/enforce-enhancement-ratio.ts')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before']({{tool: 'task', args: {{prompt: 'bug fix for login'}}}}, undefined)
 const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'))
-console.log(JSON.stringify({{waveLen: state.wave.length, type: state.wave[0]?.type, sessionFixes: state.session_fixes}}))
+console.log(JSON.stringify({{
+  waveLen: state.wave.length,
+  type: state.wave[0]?.type,
+  sessionFixes: state.session_fixes,
+}}))
 """
     result = _run_ts(code)
     assert result["waveLen"] == 1
@@ -465,8 +467,8 @@ const hasViolation = isString && output.includes('ENHANCEMENT RATIO VIOLATION')
 console.log(JSON.stringify({{isString, hasViolation}}))
 """
     result = _run_ts(code, env_override={"GLUDD_ENHANCEMENT_RATIO_STATE": state_file})
-    assert result["isString"] == True, f"Expected string output, got type: {type(result)}"
-    assert result["hasViolation"] == True, f"Expected ENHANCEMENT RATIO VIOLATION in output"
+    assert result["isString"] is True, f"Expected string output, got type: {type(result)}"
+    assert result["hasViolation"] is True, "Expected ENHANCEMENT RATIO VIOLATION in output"
     _clean_state_files(state_file)
 
 
@@ -485,7 +487,7 @@ await plugin['tool.execute.before']({{tool: 'task', args: {{prompt: 'enhancement
     console.log(JSON.stringify({{isModified: output.text !== 'hello'}}))
 """
     result = _run_ts(code)
-    assert result["isModified"] == False
+    assert result["isModified"] is False
 
 
 def test_enhancement_env_disable():
@@ -548,9 +550,9 @@ console.log(JSON.stringify({{
 }}))
 """
     result = _run_ts(code, env_override={"GLUDD_ENHANCEMENT_RATIO_STATE": state_file})
-    assert result["r1_ok"] == True
-    assert result["r2_ok"] == True
-    assert result["r3_ok"] == True, f"33% fixes should be allowed, but r3 denied: check wave state"
+    assert result["r1_ok"] is True
+    assert result["r2_ok"] is True
+    assert result["r3_ok"] is True, "33% fixes should be allowed, but r3 denied: check wave state"
     _clean_state_files(state_file)
 
 
@@ -572,11 +574,11 @@ console.log(JSON.stringify({{
 }}))
 """
     result = _run_ts(code, env_override={"GLUDD_ENHANCEMENT_RATIO_STATE": state_file})
-    assert result["r1_ok"] == True, "First dispatch should be allowed (wave < 2)"
-    assert result["r2_deny"] == True, f"Second dispatch (100% fixes, wave=2) should deny: {result}"
+    assert result["r1_ok"] is True, "First dispatch should be allowed (wave < 2)"
+    assert result["r2_deny"] is True, f"Second dispatch (100% fixes, wave=2) should deny: {result}"
     assert "ENHANCEMENT RATIO VIOLATION" in result["r2_msg"], f"Deny message missing VIOLATION: {result['r2_msg']}"
     # r3 is allowed because wave was reset after r2's denial
-    assert result["r3_deny"] == False, (
+    assert result["r3_deny"] is False, (
         f"Third dispatch (67% fixes, wave=3) should be allowed after wave reset: {result}"
     )
     _clean_state_files(state_file)
@@ -610,9 +612,9 @@ const plugin = await mod.default({{}})
     }}))
 """
     result = _run_ts(code, env_override={"GLUDD_ENHANCEMENT_RATIO_STATE": state_file})
-    assert result["isBlocked"] == True, f"Expected string block, got: {result}"
-    assert result["hasViolation"] == True, f"Expected VIOLATION message: {result}"
-    assert result["helloGone"] == True, "Original text should be replaced by violation"
+    assert result["isBlocked"] is True, f"Expected string block, got: {result}"
+    assert result["hasViolation"] is True, f"Expected VIOLATION message: {result}"
+    assert result["helloGone"] is True, "Original text should be replaced by violation"
     _clean_state_files(state_file)
 
 
@@ -648,8 +650,8 @@ const plugin = await mod.default({{}})
             "GLUDD_ENHANCEMENT_RATIO_BLOCK": "0",
         },
     )
-    assert result["notBlocked"] == True, f"With BLOCK=0, output should not be string, got: {result}"
-    assert result["textPreserved"] == True, "Original text should be preserved when BLOCK=0"
+    assert result["notBlocked"] is True, f"With BLOCK=0, output should not be string, got: {result}"
+    assert result["textPreserved"] is True, "Original text should be preserved when BLOCK=0"
     _clean_state_files(state_file)
 
 
@@ -667,7 +669,7 @@ await plugin['tool.execute.before']({{tool: 'task', args: {{prompt: 'fix bug A'}
     console.log(JSON.stringify({{textPreserved: output?.text === 'hello'}}))
 """
     result = _run_ts(code, env_override={"GLUDD_ENHANCEMENT_RATIO_STATE": state_file})
-    assert result["textPreserved"] == True, "1-dispatch wave should not trigger ratio check"
+    assert result["textPreserved"] is True, "1-dispatch wave should not trigger ratio check"
     _clean_state_files(state_file)
 
 
@@ -694,7 +696,7 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
             "CLAUDE_AGENT_TARGET": "6",
         },
     )
-    assert result is None or result.get("allowed") == True
+    assert result is None or result.get("allowed") is True
     _clean_state_files(sf)
 
 
@@ -755,7 +757,7 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
             "GLUDD_MAINTHREAD_STREAK_FILE": sf,
         },
     )
-    assert result is None or result.get("allowed") == True
+    assert result is None or result.get("allowed") is True
     _clean_state_files(sf)
 
 
@@ -772,7 +774,7 @@ const result = await plugin['tool.execute.before']({{tool: 'edit'}}, {{}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_MAINTHREAD_STREAK_ENFORCE": "0", "GLUDD_MAINTHREAD_STREAK_FILE": sf})
-    assert result is None or result.get("allowed") == True
+    assert result is None or result.get("allowed") is True
     _clean_state_files(sf)
 
 
@@ -842,7 +844,7 @@ console.log(JSON.stringify({{ignored: true}}))
             "GLUDD_TASK_DEADLINE_ENABLED": "0",
         },
     )
-    assert result["ignored"] == True
+    assert result["ignored"] is True
     _clean_state_files(stale_state)
 
 
@@ -866,7 +868,7 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
             "GLUDD_TASK_DEADLINE_BLOCK": "0",
         },
     )
-    assert result is None or result.get("allowed") == True, f"Expected allowed with BLOCK=0, got: {result}"
+    assert result is None or result.get("allowed") is True, f"Expected allowed with BLOCK=0, got: {result}"
     _clean_state_files(stale_state, stale_file)
 
 
@@ -890,7 +892,7 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
             "OPENCODE_SUBAGENT": "1",
         },
     )
-    assert result is None or result.get("allowed") == True, f"Expected allowed for subagent, got: {result}"
+    assert result is None or result.get("allowed") is True, f"Expected allowed for subagent, got: {result}"
     _clean_state_files(stale_state, stale_file)
 
 
@@ -911,7 +913,7 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
             "GLUDD_TASK_DEADLINE_STATE": stale_state,
         },
     )
-    assert result is None or result.get("allowed") == True, f"Expected fail-open, got: {result}"
+    assert result is None or result.get("allowed") is True, f"Expected fail-open, got: {result}"
     _clean_state_files(stale_state)
 
 
@@ -929,7 +931,7 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
             "GLUDD_TASK_DEADLINE_STATE": "/tmp/nonexistent-deadline-state.json",
         },
     )
-    assert result is None or result.get("allowed") == True
+    assert result is None or result.get("allowed") is True
 
 
 # ---------------------------------------------------------------------------
@@ -946,7 +948,7 @@ const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code)
-    assert result is None or result.get("allowed") == True
+    assert result is None or result.get("allowed") is True
 
 
 def test_floor_streak_zero_non_dispatch_allowed():
@@ -961,7 +963,7 @@ const result = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": session_state})
-    assert result is None or result.get("allowed") == True
+    assert result is None or result.get("allowed") is True
     _clean_state_files(session_state)
 
 
@@ -972,7 +974,6 @@ def test_floor_streak_max_plus_one_denied():
     Must neutralise the session-start window (watchdog writes
     /tmp/gludd-session-start.json) which would tighten max to 1.
     """
-    import time
 
     tasks_path = f"/tmp/gludd-test-tasks-floor-{os.getpid()}.md"
     todowrite_path = f"/tmp/gludd-todowrite-state-{os.getpid()}.json"
@@ -1013,8 +1014,8 @@ console.log(JSON.stringify({{
     )
     assert result["r1"] is None, f"Call 1 should be allowed, got: {result['r1']}"
     assert result["r2"] is None, f"Call 2 should be allowed, got: {result['r2']}"
-    assert result["r3_deny"] == True, f"Call 3 should be denied, got: {result}"
-    assert result["r3_hasMsg"] == True
+    assert result["r3_deny"] is True, f"Call 3 should be denied, got: {result}"
+    assert result["r3_hasMsg"] is True
     _clean_state_files(tasks_path, todowrite_path, session_state)
 
 
@@ -1027,7 +1028,7 @@ const result = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
-    assert result is None or result.get("allowed") == True
+    assert result is None or result.get("allowed") is True
 
 
 def test_floor_corrupt_state_fail_open():
@@ -1046,7 +1047,7 @@ const result = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_STREAK_FILE": sf, "GLUDD_SESSION_STATE": session_state})
-    assert result is None or result.get("allowed") == True
+    assert result is None or result.get("allowed") is True
     _clean_state_files(sf, session_state)
 
 
@@ -1064,7 +1065,7 @@ const r3 = await plugin['tool.execute.before']({{tool: 'grep'}}, undefined)
 console.log(JSON.stringify({{allAllowed: r1 === undefined && r2 === undefined && r3 === undefined}}))
 """
     result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": session_state})
-    assert result["allAllowed"] == True
+    assert result["allAllowed"] is True
     _clean_state_files(session_state)
 
 
@@ -1114,8 +1115,8 @@ console.log(JSON.stringify({{blocked, originalGone}}))
             "GLUDD_STREAK_FILE": streak_file,
         },
     )
-    assert result["blocked"] == True, f"Expected FLOOR BREACH in text.complete output, got: {result}"
-    assert result["originalGone"] == True, f"Original text must be replaced: {result}"
+    assert result["blocked"] is True, f"Expected FLOOR BREACH in text.complete output, got: {result}"
+    assert result["originalGone"] is True, f"Original text must be replaced: {result}"
     _clean_state_files(tasks_path, todowrite_path, session_state, streak_file)
 
 
@@ -1161,8 +1162,8 @@ console.log(JSON.stringify({{deny, hasMsgShape}}))
             "GLUDD_STREAK_FILE": streak_file,
         },
     )
-    assert result["deny"] == True, f"Expected deny for 1-dispatch message shape, got: {result}"
-    assert result["hasMsgShape"] == True, f"Expected MESSAGE-SHAPE in deny message: {result}"
+    assert result["deny"] is True, f"Expected deny for 1-dispatch message shape, got: {result}"
+    assert result["hasMsgShape"] is True, f"Expected MESSAGE-SHAPE in deny message: {result}"
     _clean_state_files(tasks_path, todowrite_path, session_state, streak_file)
 
 
@@ -1186,8 +1187,8 @@ const hasGrace = typeof result?.message === 'string' && result.message.includes(
 console.log(JSON.stringify({{deny, hasGrace}}))
 """
     result = _run_ts(code)
-    assert result["deny"] == True, f"Expected DISPATCH GAP deny, got: {result}"
-    assert result["hasGrace"] == True, f"Expected DISPATCH GAP in deny message: {result}"
+    assert result["deny"] is True, f"Expected DISPATCH GAP deny, got: {result}"
+    assert result["hasGrace"] is True, f"Expected DISPATCH GAP in deny message: {result}"
 
 
 @pytest.mark.skip(reason="text.complete removed in opencode 1.17.9")
@@ -1205,7 +1206,7 @@ const textPreserved = !!(output && output.text === 'subagent output text')
 console.log(JSON.stringify({{textPreserved}}))
 """
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
-    assert result["textPreserved"] == True, f"Subagent text must pass through unmodified: {result}"
+    assert result["textPreserved"] is True, f"Subagent text must pass through unmodified: {result}"
 
 
 def test_floor_disengage_allows_after_streak_breach():
@@ -1256,9 +1257,9 @@ console.log(JSON.stringify({{
             "GLUDD_DISENGAGE_PATH": disengage_path,
         },
     )
-    assert result["r1_ok"] == True, f"Call 1 (streak 0→1) must be allowed: {result}"
-    assert result["r2_ok"] == True, f"Call 2 (streak 1→2) must be allowed: {result}"
-    assert result["r3_ok"] == True, f"Disengage must allow call 3 despite streak=2: {result}"
+    assert result["r1_ok"] is True, f"Call 1 (streak 0→1) must be allowed: {result}"
+    assert result["r2_ok"] is True, f"Call 2 (streak 1→2) must be allowed: {result}"
+    assert result["r3_ok"] is True, f"Disengage must allow call 3 despite streak=2: {result}"
     _clean_state_files(tasks_path, todowrite_path, session_state, streak_file, disengage_path)
 
 
@@ -1293,8 +1294,16 @@ console.log(JSON.stringify({{
   threw: error !== null,
   errorSnippet: error ? error.slice(0, 200) : null,
   outputType: output === undefined ? 'undefined' : typeof output,
-  textWasBlocked: output !== null && output !== undefined && typeof output === 'object' && output.text && output.text.includes('BLOCKED'),
-  resultText: output && typeof output === 'object' ? (output.text || '')?.slice(0, 200) : String(output || '').slice(0, 120),
+  textWasBlocked:
+    output !== null &&
+    output !== undefined &&
+    typeof output === 'object' &&
+    output.text &&
+    output.text.includes('BLOCKED'),
+  resultText:
+    output && typeof output === 'object'
+      ? (output.text || '')?.slice(0, 200)
+      : String(output || '').slice(0, 120),
 }}))
 """
     try:
@@ -1311,7 +1320,7 @@ console.log(JSON.stringify({{
         assert result.get("threw") is False, (
             f"experimental.text.complete must run without throwing. Result: {result}"
         )
-        assert result["textWasBlocked"] == True, (
+        assert result["textWasBlocked"] is True, (
             f"Expected THIN WAVE BLOCKED but text passed through unmodified. "
             f"Hook ran without error but did not detect the thin wave. Result: {result}"
         )
@@ -1327,12 +1336,16 @@ const plugin = await mod.default({{}})
 const r1 = await plugin['tool.execute.before']({{tool: 'task'}})
 const r2 = await plugin['tool.execute.before']({{tool: 'agent'}})
 const r3 = await plugin['tool.execute.before']({{tool: 'workflow'}})
-console.log(JSON.stringify({{r1_ok: r1 === undefined || r1 === null, r2_ok: r2 === undefined || r2 === null, r3_ok: r3 === undefined || r3 === null}}))
+console.log(JSON.stringify({{
+  r1_ok: r1 === undefined || r1 === null,
+  r2_ok: r2 === undefined || r2 === null,
+  r3_ok: r3 === undefined || r3 === null,
+}}))
 """
     result = _run_ts(code)
-    assert result["r1_ok"] == True
-    assert result["r2_ok"] == True
-    assert result["r3_ok"] == True
+    assert result["r1_ok"] is True
+    assert result["r2_ok"] is True
+    assert result["r3_ok"] is True
 
 
 @pytest.mark.skip(reason="text.complete removed in opencode 1.17.9")
@@ -1347,7 +1360,7 @@ const result = await plugin['tool.execute.before']({{tool: 'edit'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code)
-    assert result is None or result.get("allowed") == True, f"Expected allowed for 1-dispatch wave, got: {result}"
+    assert result is None or result.get("allowed") is True, f"Expected allowed for 1-dispatch wave, got: {result}"
 
 
 @pytest.mark.skip(reason="text.complete removed in opencode 1.17.9")
@@ -1363,7 +1376,7 @@ const finalText = r2?.text ?? output.text
 console.log(JSON.stringify({{blocked: r2 !== null && r2 !== undefined && finalText !== 'msg2', finalText}}))
 """
     result = _run_ts(code)
-    assert result["blocked"] == True, f"Expected text.complete to block, got: {result}"
+    assert result["blocked"] is True, f"Expected text.complete to block, got: {result}"
     assert "dispatch" in result.get("finalText", "").lower()
 
 
@@ -1376,7 +1389,7 @@ const result = await plugin['tool.execute.before']({{tool: 'edit'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
-    assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+    assert result is None or result.get("allowed") is True or result.get("permissionDecision") != "deny"
 
 
 def test_multitask_env_disabled():
@@ -1388,7 +1401,7 @@ const result = await plugin['tool.execute.before']({{tool: 'edit'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_MULTITASK_FLOOR_ENFORCE": "0"})
-    assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+    assert result is None or result.get("allowed") is True or result.get("permissionDecision") != "deny"
 
 
 def test_multitask_configured_minimum_hard_block():
@@ -1454,9 +1467,9 @@ console.log(JSON.stringify({{
             "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
         },
     )
-    assert result["r3_ok"] == True, f"3rd dispatch should be allowed (at ceiling), got: {result}"
-    assert result["r4_denied"] == True, f"4th dispatch should be denied (above ceiling), got: {result}"
-    assert result["r4_hasCeiling"] == True, f"Deny message missing DISPATCH CEILING BREACH: {result}"
+    assert result["r3_ok"] is True, f"3rd dispatch should be allowed (at ceiling), got: {result}"
+    assert result["r4_denied"] is True, f"4th dispatch should be denied (above ceiling), got: {result}"
+    assert result["r4_hasCeiling"] is True, f"Deny message missing DISPATCH CEILING BREACH: {result}"
     _clean_state_files(state_file)
 
 
@@ -1498,10 +1511,10 @@ console.log(JSON.stringify({{
             "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
         },
     )
-    assert result["r1_ok"] == True, f"1st non-dispatch should be allowed, got: {result}"
-    assert result["r2_ok"] == True, f"2nd non-dispatch should be allowed, got: {result}"
-    assert result["r3_denied"] == True, f"3rd non-dispatch should be denied (at threshold), got: {result}"
-    assert result["r3_hasConsecutive"] == True, f"Deny message missing 'consecutive non-dispatch': {result}"
+    assert result["r1_ok"] is True, f"1st non-dispatch should be allowed, got: {result}"
+    assert result["r2_ok"] is True, f"2nd non-dispatch should be allowed, got: {result}"
+    assert result["r3_denied"] is True, f"3rd non-dispatch should be denied (at threshold), got: {result}"
+    assert result["r3_hasConsecutive"] is True, f"Deny message missing 'consecutive non-dispatch': {result}"
     _clean_state_files(state_file)
 
 
@@ -1592,15 +1605,15 @@ console.log(JSON.stringify({{
         },
     )
     # Calls 1-2 (read/grep): ALLOWED — read tools excluded from counter.
-    assert result["r1_denied"] == False, f"Call 1 (read) must be allowed — reads excluded from counter. Got: {result}"
-    assert result["r2_denied"] == False, f"Call 2 (grep) must be allowed — reads excluded from counter. Got: {result}"
+    assert result["r1_denied"] is False, f"Call 1 (read) must be allowed — reads excluded from counter. Got: {result}"
+    assert result["r2_denied"] is False, f"Call 2 (grep) must be allowed — reads excluded from counter. Got: {result}"
     # Call 3 (edit): consecutive=1 < threshold=3 → ALLOWED
-    assert result["r3_denied"] == False, f"Call 3 (edit) must be allowed (counter=1 < 3). Got: {result}"
+    assert result["r3_denied"] is False, f"Call 3 (edit) must be allowed (counter=1 < 3). Got: {result}"
     # Call 4 (write): consecutive=2 < threshold=3 → ALLOWED
-    assert result["r4_denied"] == False, f"Call 4 (write) must be allowed (counter=2 < 3). Got: {result}"
+    assert result["r4_denied"] is False, f"Call 4 (write) must be allowed (counter=2 < 3). Got: {result}"
     # Call 5 (bash): consecutive=3 >= threshold → CONSECUTIVE NON-DISPATCH STREAK
-    assert result["r5_denied"] == True, f"Call 5 (bash) must be denied (counter=3 >= 3). Got: {result}"
-    assert result["r5_hasStreak"] == True, (
+    assert result["r5_denied"] is True, f"Call 5 (bash) must be denied (counter=3 >= 3). Got: {result}"
+    assert result["r5_hasStreak"] is True, (
         f"Call 5 (counter=3 >= threshold=3) must fire CONSECUTIVE NON-DISPATCH STREAK. Got: {result}"
     )
     _clean_state_files(state_file)
@@ -1658,20 +1671,20 @@ console.log(JSON.stringify({{
         },
     )
     # Calls 1-2 are allowed: floor satisfied (15 >= 10), counter below threshold
-    assert result["r1_allowed"] == True, f"Call 1 (edit) must be ALLOWED: floor satisfied, counter=1 < 3. Got: {result}"
-    assert result["r2_allowed"] == True, (
+    assert result["r1_allowed"] is True, f"Call 1 (edit) must be ALLOWED: floor satisfied, counter=1 < 3. Got: {result}"
+    assert result["r2_allowed"] is True, (
         f"Call 2 (write) must be ALLOWED: floor satisfied, counter=2 < 3. Got: {result}"
     )
     # Call 3: consecutive counter at threshold → CONSECUTIVE NON-DISPATCH STREAK fires
-    assert result["r3_denied"] == True, (
+    assert result["r3_denied"] is True, (
         f"Call 3 (bash) must be denied by CONSECUTIVE NON-DISPATCH STREAK. Got: {result}"
     )
-    assert result["r3_hasGrinding"] == True, (
+    assert result["r3_hasGrinding"] is True, (
         f"Call 3 message must contain CONSECUTIVE NON-DISPATCH STREAK. Got: {result}"
     )
     # Call 4: still grinding
-    assert result["r4_denied"] == True, f"Call 4 (edit) must be denied. Got: {result}"
-    assert result["r4_hasGrinding"] == True, (
+    assert result["r4_denied"] is True, f"Call 4 (edit) must be denied. Got: {result}"
+    assert result["r4_hasGrinding"] is True, (
         f"Call 4 message must contain CONSECUTIVE NON-DISPATCH STREAK. Got: {result}"
     )
     _clean_state_files(state_file)
@@ -1715,9 +1728,9 @@ console.log(JSON.stringify({{
             "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
         },
     )
-    assert result is not None, f"Expected blocked text, got None"
-    assert result["wave1Blocked"] == True, f"Wave 1 (1 dispatch) must be blocked as thin wave. Got: {result}"
-    assert result["wave2ZeroBlocked"] == True, f"Wave 2 (0 dispatches) must be blocked. Got: {result}"
+    assert result is not None, "Expected blocked text, got None"
+    assert result["wave1Blocked"] is True, f"Wave 1 (1 dispatch) must be blocked as thin wave. Got: {result}"
+    assert result["wave2ZeroBlocked"] is True, f"Wave 2 (0 dispatches) must be blocked. Got: {result}"
     _clean_state_files(state_file)
 
 
@@ -1761,7 +1774,7 @@ console.log(JSON.stringify({{blocked, finalText: finalText.slice(0, 200)}}))
             "GLUDD_STOP_STATE_FILE": state_file,
         },
     )
-    assert result["blocked"] == True, f"Expected text to be blanked, got: {result}"
+    assert result["blocked"] is True, f"Expected text to be blanked, got: {result}"
     _clean_state_files(state_file)
 
 
@@ -1798,7 +1811,7 @@ const finalText = result?.text ?? output.text
 console.log(JSON.stringify({{passedThrough: finalText === 'All good, no pending work.'}}))
 """
     result = _run_ts(code, env_override={"GLUDD_STOP_STATE_FILE": state_file})
-    assert result["passedThrough"] == True, f"Expected text to pass through, got: {result}"
+    assert result["passedThrough"] is True, f"Expected text to pass through, got: {result}"
     _clean_state_files(state_file)
 
 
@@ -1835,7 +1848,7 @@ console.log(JSON.stringify({{passedThrough: finalText === 'Done.'}}))
             "GLUDD_STOP_ENFORCE": "0",
         },
     )
-    assert result["passedThrough"] == True, f"Expected text to pass through when disabled, got: {result}"
+    assert result["passedThrough"] is True, f"Expected text to pass through when disabled, got: {result}"
     _clean_state_files(state_file)
 
 
@@ -1853,8 +1866,8 @@ const finalText = result?.text ?? output.text
 console.log(JSON.stringify({{returned: true, isString: typeof finalText === 'string'}}))
 """
     result = _run_ts(code, env_override={"GLUDD_STOP_STATE_FILE": state_file})
-    assert result["returned"] == True, "Hook must return without crashing (fail-open)"
-    assert result["isString"] == True, "Output must be a string (no throw, no crash)"
+    assert result["returned"] is True, "Hook must return without crashing (fail-open)"
+    assert result["isString"] is True, "Output must be a string (no throw, no crash)"
     _clean_state_files(state_file)
 
 
@@ -1906,10 +1919,10 @@ console.log(JSON.stringify({{textBlanked, editDenied, dispatchAllowed, editAllow
             "GLUDD_PERSIST_STOP_BLOCK_FILE": block_file,
         },
     )
-    assert result["textBlanked"] == True, f"Expected text to be blanked, got: {result}"
-    assert result["editDenied"] == True, f"Expected edit to be denied by persist block, got: {result}"
-    assert result["dispatchAllowed"] == True, f"Expected dispatch to be allowed, got: {result}"
-    assert result["editAllowedAfter"] == True, f"Expected edit after dispatch to be allowed, got: {result}"
+    assert result["textBlanked"] is True, f"Expected text to be blanked, got: {result}"
+    assert result["editDenied"] is True, f"Expected edit to be denied by persist block, got: {result}"
+    assert result["dispatchAllowed"] is True, f"Expected dispatch to be allowed, got: {result}"
+    assert result["editAllowedAfter"] is True, f"Expected edit after dispatch to be allowed, got: {result}"
     _clean_state_files(state_file, block_file)
 
 
@@ -1929,7 +1942,7 @@ const dispatchAllowed = r1 === undefined || r1 === null
 console.log(JSON.stringify({{dispatchAllowed, blockFile: '{block_file}'}}))
 """
     result = _run_ts(code, env_override={"GLUDD_PERSIST_STOP_BLOCK_FILE": block_file})
-    assert result["dispatchAllowed"] == True, f"Expected dispatch to be allowed, got: {result}"
+    assert result["dispatchAllowed"] is True, f"Expected dispatch to be allowed, got: {result}"
     # Verify the block file was cleared
     assert not os.path.exists(block_file), "Persist block file should be cleared after dispatch"
     _clean_state_files(block_file)
@@ -1980,8 +1993,8 @@ console.log(JSON.stringify({{passedThrough, editAllowed}}))
             "GLUDD_PERSIST_STOP_BLOCK_FILE": block_file,
         },
     )
-    assert result["passedThrough"] == True, f"Expected text to pass through, got: {result}"
-    assert result["editAllowed"] == True, f"Expected edit to be allowed, got: {result}"
+    assert result["passedThrough"] is True, f"Expected text to pass through, got: {result}"
+    assert result["editAllowed"] is True, f"Expected edit to be allowed, got: {result}"
     _clean_state_files(state_file, block_file)
 
 
@@ -2007,7 +2020,7 @@ console.log(JSON.stringify({{editAllowed}}))
             "OPENCODE_SUBAGENT": "1",
         },
     )
-    assert result["editAllowed"] == True, f"Subagent should bypass persist block, got: {result}"
+    assert result["editAllowed"] is True, f"Subagent should bypass persist block, got: {result}"
     _clean_state_files(block_file)
 
 
@@ -2050,7 +2063,7 @@ console.log(JSON.stringify({{passedThrough}}))
             "GLUDD_STOP_STATE_FILE": state_file,
         },
     )
-    assert result["passedThrough"] == True, (
+    assert result["passedThrough"] is True, (
         f"Subagent task_result text MUST pass through even with gate red. Got: {result}"
     )
     _clean_state_files(state_file)
@@ -2072,8 +2085,8 @@ console.log(JSON.stringify({{
 """
     result = _run_ts(code)
     assert result is not None, "Expected JSON output"
-    assert result["blocked"] == True, f"Expected text to be blocked, got: {result}"
-    assert result["hasPermissionBlock"] == True, f"Expected PERMISSION-SEEKING BLOCKED, got: {result}"
+    assert result["blocked"] is True, f"Expected text to be blocked, got: {result}"
+    assert result["hasPermissionBlock"] is True, f"Expected PERMISSION-SEEKING BLOCKED, got: {result}"
 
 
 def test_stop_permission_seeking_should_i_blocked():
@@ -2092,8 +2105,8 @@ console.log(JSON.stringify({{
 """
     result = _run_ts(code)
     assert result is not None, "Expected JSON output"
-    assert result["blocked"] == True, f"Expected text to be blocked, got: {result}"
-    assert result["hasPermissionBlock"] == True, f"Expected PERMISSION-SEEKING BLOCKED, got: {result}"
+    assert result["blocked"] is True, f"Expected text to be blocked, got: {result}"
+    assert result["hasPermissionBlock"] is True, f"Expected PERMISSION-SEEKING BLOCKED, got: {result}"
 
 
 def test_stop_permission_seeking_export_matches():
@@ -2114,14 +2127,14 @@ console.log(JSON.stringify({{
 """
     result = _run_ts(code)
     assert result is not None
-    assert result["hasExport"] == True
-    assert result["match1"] == True, f"Should match 'Want me to proceed?'"
-    assert result["match2"] == True, f"Should match 'want me to dispatch'"
-    assert result["match3"] == True, f"Should match 'Should I continue'"
-    assert result["match4"] == True, f"Should match 'shall I proceed'"
-    assert result["match5"] == True, f"Should match 'Proceed?'"
-    assert result["noMatch1"] == False, f"Should NOT match 'The fix is ready'"
-    assert result["noMatch2"] == False, f"Should NOT match 'I will proceed'"
+    assert result["hasExport"] is True
+    assert result["match1"] is True, "Should match 'Want me to proceed?'"
+    assert result["match2"] is True, "Should match 'want me to dispatch'"
+    assert result["match3"] is True, "Should match 'Should I continue'"
+    assert result["match4"] is True, "Should match 'shall I proceed'"
+    assert result["match5"] is True, "Should match 'Proceed?'"
+    assert result["noMatch1"] is False, "Should NOT match 'The fix is ready'"
+    assert result["noMatch2"] is False, "Should NOT match 'I will proceed'"
 
 
 def test_stop_status_summary_blocked_despite_evidence():
@@ -2153,8 +2166,8 @@ console.log(JSON.stringify({{
 """
     result = _run_ts(code)
     assert result is not None, "Expected JSON output"
-    assert result["blocked"] == True, f"Status summary with evidence must be blocked, got: {result}"
-    assert result["hasStatusSummaryBlock"] == True, f"Expected STATUS-SUMMARY RESPONSE BLOCKED, got: {result}"
+    assert result["blocked"] is True, f"Status summary with evidence must be blocked, got: {result}"
+    assert result["hasStatusSummaryBlock"] is True, f"Expected STATUS-SUMMARY RESPONSE BLOCKED, got: {result}"
 
 
 def test_stop_status_summary_export_matches():
@@ -2176,14 +2189,14 @@ console.log(JSON.stringify({{
 """
     result = _run_ts(code)
     assert result is not None
-    assert result["hasRe"] == True
-    assert result["hasFn"] == True
-    assert result["match1"] == True, "Should match 'Here's the session 37 final status'"
-    assert result["match2"] == True, "Should match 'Session 12 wrap-up'"
-    assert result["match3"] == True, "Should match 'Final status report:'"
-    assert result["structural"] == True, "Should structurally match bolded headers + table/bullets"
-    assert result["noMatch1"] == False, "Should NOT match plain working text"
-    assert result["noMatch2"] == False, "Should NOT match plain sentence"
+    assert result["hasRe"] is True
+    assert result["hasFn"] is True
+    assert result["match1"] is True, "Should match 'Here's the session 37 final status'"
+    assert result["match2"] is True, "Should match 'Session 12 wrap-up'"
+    assert result["match3"] is True, "Should match 'Final status report:'"
+    assert result["structural"] is True, "Should structurally match bolded headers + table/bullets"
+    assert result["noMatch1"] is False, "Should NOT match plain working text"
+    assert result["noMatch2"] is False, "Should NOT match plain sentence"
 
 
 # ---------------------------------------------------------------------------
@@ -2231,10 +2244,8 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
         assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
         assert "DIRTY TREE" in result.get("message", "")
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(test_file)
-        except OSError:
-            pass
 
 
 def test_clean_tree_env_disabled():
@@ -2250,12 +2261,10 @@ const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
         result = _run_ts(code, env_override={"GLUDD_CLEAN_TREE_ENFORCE": "0"})
-        assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+        assert result is None or result.get("allowed") is True or result.get("permissionDecision") != "deny"
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(test_file)
-        except OSError:
-            pass
 
 
 def test_clean_tree_subagent_guard():
@@ -2271,12 +2280,10 @@ const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
         result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
-        assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+        assert result is None or result.get("allowed") is True or result.get("permissionDecision") != "deny"
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(test_file)
-        except OSError:
-            pass
 
 
 # ── enforce-clean-tree.ts  —  isTreeDirty / countDirtyFiles edge cases ──
@@ -2319,6 +2326,8 @@ def test_clean_tree_countDirtyFiles_single_line():
 const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{single: mod.countDirtyFiles('?? foo.py')}}))
 """
+    result = _run_ts(code)
+    assert result == {"single": 1}
 
 
 def test_clean_tree_non_dispatch_tool_not_blocked():
@@ -2339,12 +2348,10 @@ console.log(JSON.stringify(results))
 """
         result = _run_ts(code)
         for tool in ["edit", "write", "read", "grep", "glob", "bash"]:
-            assert result[tool] == True, f"Non-dispatch tool '{tool}' should not be blocked on dirty tree"
+            assert result[tool] is True, f"Non-dispatch tool '{tool}' should not be blocked on dirty tree"
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(test_file)
-        except OSError:
-            pass
 
 
 def test_clean_tree_buildDenyMessage_edge_cases():
@@ -2370,11 +2377,15 @@ def test_clean_tree_getGitStatus_real_repo_returns_string():
 const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 const status = mod.getGitStatus()
 const dirty = mod.isTreeDirty()
-console.log(JSON.stringify({{isStr: typeof status === 'string', isBool: typeof dirty === 'boolean', length: status.length}}))
+console.log(JSON.stringify({{
+  isStr: typeof status === 'string',
+  isBool: typeof dirty === 'boolean',
+  length: status.length,
+}}))
 """
     result = _run_ts(code)
-    assert result["isStr"] == True
-    assert result["isBool"] == True
+    assert result["isStr"] is True
+    assert result["isBool"] is True
     assert isinstance(result["length"], int)
 
 
@@ -2404,7 +2415,7 @@ const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock('commit abc12345')}}))
 """
     result = _run_ts(code)
-    assert result["shouldBlock"] == False, f"Commit hash should be evidence, got: {result}"
+    assert result["shouldBlock"] is False, f"Commit hash should be evidence, got: {result}"
 
 
 def test_verified_claim_no_evidence_blocked():
@@ -2414,7 +2425,7 @@ const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock('everything committed')}}))
 """
     result = _run_ts(code)
-    assert result["shouldBlock"] == True, f"Unverified claim should be blocked, got: {result}"
+    assert result["shouldBlock"] is True, f"Unverified claim should be blocked, got: {result}"
 
 
 def test_verified_claims_commit_unverified_msg_blocked():
@@ -2426,7 +2437,10 @@ const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
 const plugin = mod.default()
 let result
 try {{
-  result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'make git-commit MSG="just working now"'}}}})
+  result = await plugin['tool.execute.before']({{
+    tool: 'bash',
+    args: {{command: 'make git-commit MSG="just working now"'}},
+  }})
   console.log(JSON.stringify(result ?? {{allowed: true}}))
 }} catch (e) {{
   console.log(JSON.stringify({{permissionDecision: 'deny', message: String(e)}}))
@@ -2442,11 +2456,17 @@ def test_verified_claims_commit_verified_msg_allowed():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
 const plugin = mod.default()
-const result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'make ship-commit MSG="fix: done abc12345"', MSG: 'fix: done abc12345'}}}})
+const result = await plugin['tool.execute.before']({{
+  tool: 'bash',
+  args: {{
+    command: 'make ship-commit MSG="fix: done abc12345"',
+    MSG: 'fix: done abc12345',
+  }},
+}})
 console.log(JSON.stringify({{allowed: result === undefined || result === null}}))
 """
     result = _run_ts(code)
-    assert result.get("allowed") == True, f"Verified commit MSG should be allowed, got: {result}"
+    assert result.get("allowed") is True, f"Verified commit MSG should be allowed, got: {result}"
 
 
 def test_verified_claims_subagent_skip():
@@ -2458,7 +2478,7 @@ const result = await plugin['tool.execute.before']({{tool: 'bash', args: {{comma
 console.log(JSON.stringify({{allowed: result === undefined || result === null}}))
 """
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
-    assert result.get("allowed") == True, f"Subagent should skip, got: {result}"
+    assert result.get("allowed") is True, f"Subagent should skip, got: {result}"
 
 
 # ---------------------------------------------------------------------------
@@ -2476,8 +2496,8 @@ console.log(JSON.stringify({{
 }}))
 """
     result = _run_ts(code)
-    assert result["isSuppression"] == False
-    assert result["allowEdit"]["allow"] == True
+    assert result["isSuppression"] is False
+    assert result["allowEdit"]["allow"] is True
 
 
 def test_no_suppression_noqa_blocked():
@@ -2490,8 +2510,8 @@ console.log(JSON.stringify({{
 }}))
 """
     result = _run_ts(code)
-    assert result["isSuppression"] == True
-    assert result["verdict"]["allow"] == False
+    assert result["isSuppression"] is True
+    assert result["verdict"]["allow"] is False
     assert "forbidden" in result["verdict"].get("reason", "")
 
 
@@ -2505,8 +2525,8 @@ console.log(JSON.stringify({{
 }}))
 """
     result = _run_ts(code)
-    assert result["isSuppression"] == True
-    assert result["verdict"]["allow"] == False
+    assert result["isSuppression"] is True
+    assert result["verdict"]["allow"] is False
 
 
 def test_no_suppression_allowlisted_file():
@@ -2519,8 +2539,8 @@ console.log(JSON.stringify({{
 }}))
 """
     result = _run_ts(code)
-    assert result["isAllowed"] == True
-    assert result["verdict"]["allow"] == True
+    assert result["isAllowed"] is True
+    assert result["verdict"]["allow"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -2533,7 +2553,10 @@ def test_no_wait_sleep_blocked():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-no-wait.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'sleep 60&& make gate-status-check'}}}}, undefined)
+const result = await plugin['tool.execute.before'](
+  {{tool: 'bash', args: {{command: 'sleep 60&& make gate-status-check'}}}},
+  undefined,
+)
 console.log(JSON.stringify(result ?? null))
 """
     result = _run_ts(code)
@@ -2560,11 +2583,14 @@ def test_no_wait_subagent_bypass():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-no-wait.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'sleep 60&& make gate-status-check'}}}}, undefined)
+const result = await plugin['tool.execute.before'](
+  {{tool: 'bash', args: {{command: 'sleep 60&& make gate-status-check'}}}},
+  undefined,
+)
 console.log(JSON.stringify(result ?? null))
 """
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
-    assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+    assert result is None or result.get("allowed") is True or result.get("permissionDecision") != "deny"
 
 
 def test_no_wait_env_disabled():
@@ -2576,7 +2602,7 @@ const result = await plugin['tool.execute.before']({{tool: 'bash', args: {{comma
 console.log(JSON.stringify(result ?? null))
 """
     result = _run_ts(code, env_override={"GLUDD_NO_WAIT_ENFORCE": "0"})
-    assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+    assert result is None or result.get("allowed") is True or result.get("permissionDecision") != "deny"
 
 
 def test_no_wait_corrupt_input_fail_open():
@@ -2602,9 +2628,9 @@ console.log(JSON.stringify({{
 }}))
 """
     result = _run_ts(code)
-    assert result["r1_ok"] == True, f"Undefined tool should fail-open (allowed), got: {result}"
-    assert result["r2_ok"] == True, f"Null args should fail-open (allowed), got: {result}"
-    assert result["r3_ok"] == True, f"Null input should fail-open (allowed), got: {result}"
+    assert result["r1_ok"] is True, f"Undefined tool should fail-open (allowed), got: {result}"
+    assert result["r2_ok"] is True, f"Null args should fail-open (allowed), got: {result}"
+    assert result["r3_ok"] is True, f"Null input should fail-open (allowed), got: {result}"
 
 
 # ---------------------------------------------------------------------------
@@ -2617,11 +2643,18 @@ def test_deletion_under_threshold_allowed():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{filePath: '/tmp/nonexistent.txt', oldString: 'one line', newString: ''}}}}, undefined)
+const result = await plugin['tool.execute.before']({{
+  tool: 'edit',
+  args: {{
+    filePath: '/tmp/nonexistent.txt',
+    oldString: 'one line',
+    newString: '',
+  }},
+}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code)
-    assert result is None or result.get("allowed") == True, f"Expected allowed for 1-line deletion, got: {result}"
+    assert result is None or result.get("allowed") is True, f"Expected allowed for 1-line deletion, got: {result}"
 
 
 def test_deletion_over_threshold_blocked():
@@ -2629,7 +2662,14 @@ def test_deletion_over_threshold_blocked():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{filePath: '/tmp/nonexistent2.txt', oldString: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', newString: ''}}}}, undefined)
+const result = await plugin['tool.execute.before']({{
+  tool: 'edit',
+  args: {{
+    filePath: '/tmp/nonexistent2.txt',
+    oldString: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10',
+    newString: '',
+  }},
+}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code)
@@ -2643,11 +2683,18 @@ def test_deletion_subagent_guard():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{filePath: '/tmp/nonexistent3.txt', oldString: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', newString: ''}}}}, undefined)
+const result = await plugin['tool.execute.before']({{
+  tool: 'edit',
+  args: {{
+    filePath: '/tmp/nonexistent3.txt',
+    oldString: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10',
+    newString: '',
+  }},
+}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
-    assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny", (
+    assert result is None or result.get("allowed") is True or result.get("permissionDecision") != "deny", (
         f"Subagent should bypass deletion gate, got: {result}"
     )
 
@@ -2657,11 +2704,18 @@ def test_deletion_env_disabled():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{filePath: '/tmp/nonexistent4.txt', oldString: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', newString: ''}}}}, undefined)
+const result = await plugin['tool.execute.before']({{
+  tool: 'edit',
+  args: {{
+    filePath: '/tmp/nonexistent4.txt',
+    oldString: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10',
+    newString: '',
+  }},
+}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_DELETION_GATE_THRESHOLD": "0"})
-    assert result is None or result.get("allowed") == True, f"Expected allowed when threshold=0, got: {result}"
+    assert result is None or result.get("allowed") is True, f"Expected allowed when threshold=0, got: {result}"
 
 
 # ---------------------------------------------------------------------------
@@ -2724,7 +2778,7 @@ try {{
 """
     result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": state_file})
     assert result is not None, "Expected output"
-    assert result.get("allowed") == True, f"Read tool should be allowed, got: {result}"
+    assert result.get("allowed") is True, f"Read tool should be allowed, got: {result}"
     _clean_state_files(state_file)
 
 
@@ -2752,7 +2806,7 @@ try {{
         },
     )
     assert result is not None, "Expected output"
-    assert result.get("allowed") == True, f"Subagent should bypass enforcement, got: {result}"
+    assert result.get("allowed") is True, f"Subagent should bypass enforcement, got: {result}"
     _clean_state_files(state_file)
 
 
@@ -2780,7 +2834,7 @@ try {{
         },
     )
     assert result is not None, "Expected output"
-    assert result.get("allowed") == True, f"With ENFORCE=0, tool should be allowed, got: {result}"
+    assert result.get("allowed") is True, f"With ENFORCE=0, tool should be allowed, got: {result}"
     _clean_state_files(state_file)
 
 
@@ -2803,7 +2857,7 @@ try {{
 """
     result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": state_file})
     assert result is not None, "Expected output (fail-open should not throw)"
-    assert result.get("allowed") == True, f"Corrupt state should fail-open, got: {result}"
+    assert result.get("allowed") is True, f"Corrupt state should fail-open, got: {result}"
     _clean_state_files(state_file)
 
 
@@ -2833,7 +2887,7 @@ console.log(JSON.stringify({{readsDone: state.readsDone}}))
 """
     result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": state_file})
     assert result is not None, "Expected JSON output from test"
-    assert result["readsDone"] == True, (
+    assert result["readsDone"] is True, (
         f"readsDone must be true after reading TASKS.md via output.args.filePath. Got: {result}"
     )
     _clean_state_files(state_file, hot_module)
@@ -2858,7 +2912,7 @@ console.log(JSON.stringify({{readsDone: state.readsDone}}))
 """
     result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": state_file})
     assert result is not None
-    assert result["readsDone"] == True, f"readsDone must be true after reading BUGS.md. Got: {result}"
+    assert result["readsDone"] is True, f"readsDone must be true after reading BUGS.md. Got: {result}"
     _clean_state_files(state_file, hot_module)
 
 
@@ -2881,7 +2935,7 @@ console.log(JSON.stringify({{readsDone: state.readsDone}}))
 """
     result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": state_file})
     assert result is not None
-    assert result["readsDone"] == False, f"readsDone must remain false for non-task files. Got: {result}"
+    assert result["readsDone"] is False, f"readsDone must remain false for non-task files. Got: {result}"
     _clean_state_files(state_file, hot_module)
 
 
@@ -2958,7 +3012,7 @@ def test_make_allows_make_target():
     """bash 'make lint' → allowed (no deny)."""
     result = _enforce_make_bash_test("make lint")
     assert result is not None
-    assert result.get("allowed") == True, f"make lint should be allowed, got: {result}"
+    assert result.get("allowed") is True, f"make lint should be allowed, got: {result}"
 
 
 def test_make_denies_cd_command():
@@ -3021,13 +3075,13 @@ def test_make_denies_redirect():
 def test_make_subagent_guard():
     """OPENCODE_SUBAGENT=1 → allowed (skip)."""
     result = _enforce_make_bash_test("cd /tmp", env_override={"OPENCODE_SUBAGENT": "1"})
-    assert result.get("allowed") == True, f"Subagent should bypass enforcement, got: {result}"
+    assert result.get("allowed") is True, f"Subagent should bypass enforcement, got: {result}"
 
 
 def test_make_disengage_escape():
     """GLUDD_MAKE_ENFORCE=0 → allowed (disengage)."""
     result = _enforce_make_bash_test("cd /tmp", env_override={"GLUDD_MAKE_ENFORCE": "0"})
-    assert result.get("allowed") == True, f"MAKE_ENFORCE=0 should disengage, got: {result}"
+    assert result.get("allowed") is True, f"MAKE_ENFORCE=0 should disengage, got: {result}"
 
 
 # ---------------------------------------------------------------------------
@@ -3039,7 +3093,7 @@ def test_make_allows_make_lint():
     """bash 'make lint' → ALLOWED (starts with 'make')."""
     result = _enforce_make_bash_test("make lint")
     assert result is not None
-    assert result.get("allowed") == True, f"make lint should be allowed, got: {result}"
+    assert result.get("allowed") is True, f"make lint should be allowed, got: {result}"
 
 
 def test_make_denies_python3():
@@ -3103,7 +3157,7 @@ const keys = Object.keys(plugin)
 console.log(JSON.stringify({{ ok: true, keys }}))
 """
     result = _run_ts(code, env_override={"GLUDD_ALIVE_PATH": alive_path})
-    assert result["ok"] == True, f"Watchdog plugin load should not throw, got: {result}"
+    assert result["ok"] is True, f"Watchdog plugin load should not throw, got: {result}"
     assert result["keys"] == ["event"], f"Plugin should expose event hook, got keys: {result['keys']}"
     # Verify reportAlive was called on module load
     assert os.path.exists(alive_path), f"Alive file {alive_path} should exist after plugin load"
@@ -3122,8 +3176,8 @@ const plugin = await mod.default({{}})
 console.log(JSON.stringify({{ ok: true, isObject: typeof plugin === 'object' }}))
 """
     result = _run_ts(code)
-    assert result["ok"] == True, f"Watchdog should load without error, got: {result}"
-    assert result["isObject"] == True
+    assert result["ok"] is True, f"Watchdog should load without error, got: {result}"
+    assert result["isObject"] is True
 
 
 def test_watchdog_plugin_subagent_context():
@@ -3136,7 +3190,7 @@ const plugin = await mod.default({{}})
 console.log(JSON.stringify({{ ok: true, isObject: typeof plugin === 'object' }}))
 """
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1", "GLUDD_ALIVE_PATH": alive_path})
-    assert result["ok"] == True, f"Watchdog should load even in subagent context, got: {result}"
+    assert result["ok"] is True, f"Watchdog should load even in subagent context, got: {result}"
     # Verify alive file was still written (reportAlive runs on module load)
     assert os.path.exists(alive_path), "Watchdog must report alive even as subagent"
     _clean_state_files(alive_path)
@@ -3152,7 +3206,7 @@ const plugin = await mod.default({{}})
 console.log(JSON.stringify({{ ok: true }}))
 """
     result = _run_ts(code, env_override={"GLUDD_WATCHDOG_ENABLED": "0", "GLUDD_ALIVE_PATH": alive_path})
-    assert result["ok"] == True, f"Disabled watchdog should load without error, got: {result}"
+    assert result["ok"] is True, f"Disabled watchdog should load without error, got: {result}"
     # The plugin itself doesn't check GLUDD_WATCHDOG_ENABLED (the daemon does)
     # reportAlive is called on module load regardless
     _clean_state_files(alive_path)
@@ -3171,7 +3225,7 @@ const plugin = await mod.default({{}})
 console.log(JSON.stringify({{ ok: true }}))
 """
         result = _run_ts(code)
-        assert result["ok"] == True, f"Corrupt PID file must not crash plugin load, got: {result}"
+        assert result["ok"] is True, f"Corrupt PID file must not crash plugin load, got: {result}"
     finally:
         _clean_state_files(pid_file)
 
@@ -3192,7 +3246,7 @@ const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'mak
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
-    assert result is None or result.get("allowed") == True, f"Expected allowed, got: {result}"
+    assert result is None or result.get("allowed") is True, f"Expected allowed, got: {result}"
     _clean_state_files(lock_path)
 
 
@@ -3230,7 +3284,7 @@ const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'mak
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
-    assert result is None or result.get("allowed") == True, f"Stale lock should allow, got: {result}"
+    assert result is None or result.get("allowed") is True, f"Stale lock should allow, got: {result}"
     _clean_state_files(lock_path)
 
 
@@ -3245,7 +3299,7 @@ const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'mak
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
-    assert result is None or result.get("allowed") == True, f"Non-commit should pass through, got: {result}"
+    assert result is None or result.get("allowed") is True, f"Non-commit should pass through, got: {result}"
     _clean_state_files(lock_path)
 
 
@@ -3268,7 +3322,7 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
             "OPENCODE_SUBAGENT": "1",
         },
     )
-    assert result is None or result.get("allowed") == True, f"Subagent should skip, got: {result}"
+    assert result is None or result.get("allowed") is True, f"Subagent should skip, got: {result}"
     _clean_state_files(lock_path)
 
 
@@ -3291,7 +3345,7 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
             "GLUDD_COMMIT_LOCK_ENFORCE": "0",
         },
     )
-    assert result is None or result.get("allowed") == True, f"Disabled should allow, got: {result}"
+    assert result is None or result.get("allowed") is True, f"Disabled should allow, got: {result}"
     _clean_state_files(lock_path)
 
 
@@ -3310,9 +3364,9 @@ const lockAfter = fs.existsSync('{lock_path}')
 console.log(JSON.stringify({{beforeOk: beforeResult === undefined, lockBefore, lockAfter: !lockAfter}}))
 """
     result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
-    assert result["beforeOk"] == True, "Before hook should allow"
-    assert result["lockBefore"] == True, "Lock must exist after before hook"
-    assert result["lockAfter"] == True, "Lock must be removed after after hook"
+    assert result["beforeOk"] is True, "Before hook should allow"
+    assert result["lockBefore"] is True, "Lock must exist after before hook"
+    assert result["lockAfter"] is True, "Lock must be removed after after hook"
     _clean_state_files(lock_path)
 
 
@@ -3334,16 +3388,16 @@ console.log(JSON.stringify({{
 }}))
 """
     result = _run_ts(code)
-    assert result["ship"] == True
-    assert result["nonCommit"] == False
-    assert result["gitCommit"] == True
-    assert result["commitNoVerify"] == True
-    assert result["gitAmend"] == True
-    assert result["notMake"] == False
-    assert result["testAndCommit"] == True
-    assert result["repoCommit"] == True
-    assert result["empty"] == False
-    assert result["noTarget"] == False
+    assert result["ship"] is True
+    assert result["nonCommit"] is False
+    assert result["gitCommit"] is True
+    assert result["commitNoVerify"] is True
+    assert result["gitAmend"] is True
+    assert result["notMake"] is False
+    assert result["testAndCommit"] is True
+    assert result["repoCommit"] is True
+    assert result["empty"] is False
+    assert result["noTarget"] is False
 
 
 # ---------------------------------------------------------------------------
