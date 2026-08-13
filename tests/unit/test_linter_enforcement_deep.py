@@ -38,7 +38,7 @@ def _extract_js_regex_array(src: str, var_name: str) -> list[str]:
     )
     if not m:
         return []
-    return re.findall(r"/([^/]+)/[a-z]*", m.group(1))
+    return re.findall(r"/((?:\\.|[^/])*)/[a-z]*", m.group(1))
 
 
 def _extract_js_string_array(src: str, var_name: str) -> list[str]:
@@ -59,6 +59,50 @@ def _eval_js_regex(js_pattern: str, text: str) -> bool:
         return False
 
 
+def _comment_fragments(text: str) -> list[str]:
+    """Return hash comments while excluding quoted and triple-quoted data."""
+    comments: list[str] = []
+    quote: str | None = None
+    escaped = False
+    index = 0
+    while index < len(text):
+        if quote is not None:
+            if len(quote) == 3:
+                if text.startswith(quote, index):
+                    quote = None
+                    index += 3
+                    continue
+            else:
+                character = text[index]
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == quote:
+                    quote = None
+            index += 1
+            continue
+
+        if text.startswith(('"""', "'''"), index):
+            quote = text[index : index + 3]
+            index += 3
+            continue
+        character = text[index]
+        if character in {"'", '"'}:
+            quote = character
+            escaped = False
+            index += 1
+            continue
+        if character == "#":
+            newline = text.find("\n", index)
+            end = len(text) if newline == -1 else newline
+            comments.append(text[index:end])
+            index = end
+            continue
+        index += 1
+    return comments
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # 1. enforce-no-suppressions — rule matching, boundaries, false positives
 # ════════════════════════════════════════════════════════════════════════════
@@ -75,7 +119,11 @@ class TestNoSuppressionsRuleMatching:
         cls.allowlist = _extract_js_string_array(src, "ALLOWLIST_PATHS")
 
     def _is_suppression(self, text: str) -> bool:
-        return any(re.search(p, text) for p in self.patterns)
+        return any(
+            re.search(pattern, comment)
+            for comment in _comment_fragments(text)
+            for pattern in self.patterns
+        )
 
     def _is_allowlisted(self, path: str) -> bool:
         return any(allow in path for allow in self.allowlist)
@@ -192,23 +240,21 @@ class TestNoSuppressionsRuleMatching:
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# 2. enforce-no-suppressions — env var disable path
+# 2. enforce-no-suppressions — hard-on policy and subagent isolation
 # ════════════════════════════════════════════════════════════════════════════
 
 
-class TestNoSuppressionsEnvVarDisable:
-    """Verify the GLUDD_NO_SUPPRESSIONS_ENFORCE=0 disable path exists."""
+class TestNoSuppressionsHardOn:
+    """Verify environment variables cannot disable this hard guardrail."""
 
-    def test_disable_env_var_referenced(self):
+    def test_disable_env_var_absent(self):
         src = NO_SUPPRESSIONS_TS.read_text()
-        assert "GLUDD_NO_SUPPRESSIONS_ENFORCE" in src, "plugin must check GLUDD_NO_SUPPRESSIONS_ENFORCE env var"
+        assert "GLUDD_NO_SUPPRESSIONS_ENFORCE" not in src
 
-    def test_disable_returns_early_before_matching(self):
+    def test_matcher_remains_in_default_hook(self):
         src = NO_SUPPRESSIONS_TS.read_text()
-        disable_idx = src.find("GLUDD_NO_SUPPRESSIONS_ENFORCE")
-        assert disable_idx != -1, "disable check must exist"
-        window = src[disable_idx : disable_idx + 200]
-        assert "return" in window, "env var check must return early (skip enforcement) when set to '0'"
+        assert "shouldAllowEdit(filePath, text)" in src
+        assert 'permissionDecision: "deny"' in src
 
     def test_subagent_guard_present(self):
         src = NO_SUPPRESSIONS_TS.read_text()
@@ -458,9 +504,14 @@ class TestMakeCommandValidation:
             self.src,
             re.DOTALL,
         )
-        if m:
-            return re.findall(r"/\\(?:b)?(\w+)\\/i?", m.group(1))
-        return []
+        if not m:
+            return []
+        literals = re.findall(r"/((?:\\.|[^/])*)/[a-z]*", m.group(1))
+        return [
+            match.group(1)
+            for literal in literals
+            if (match := re.fullmatch(r"\\b(\w+)\\b", literal))
+        ]
 
     def test_forbidden_patterns_exist(self):
         patterns = self._extract_forbidden_builtins()
@@ -501,7 +552,9 @@ class TestMakeCommandValidation:
 
     def test_bash_must_start_with_make(self):
         src = self.src
-        assert "startsWith('make '" in src, "must require command to start with 'make '"
+        assert re.search(r"""\.startsWith\((["'])make \1\)""", src), (
+            "must require command to start with 'make '"
+        )
 
     def test_dispatch_tool_reset(self):
         src = self.src

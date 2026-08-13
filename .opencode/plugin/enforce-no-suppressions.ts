@@ -15,15 +15,65 @@ const ALLOWLIST_PATHS = [
   "tests/unit/test_type_safety_guardrails.py",
 ];
 
+function isSuppressionComment(content: string): boolean {
+  if (typeof content !== "string" || content.length === 0) return false;
+  let quote: "'" | '"' | "'''" | '"""' | null = null;
+  let escaped = false;
+  for (let index = 0; index < content.length; index += 1) {
+    if (quote !== null) {
+      if (quote.length === 3) {
+        if (content.startsWith(quote, index)) {
+          quote = null;
+          index += 2;
+        }
+        continue;
+      }
+      const character = content[index];
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (content.startsWith('"""', index) || content.startsWith("'''", index)) {
+      quote = content.slice(index, index + 3) as "'''" | '"""';
+      index += 2;
+      continue;
+    }
+    const character = content[index];
+    if (character === "'" || character === '"') {
+      quote = character;
+      escaped = false;
+      continue;
+    }
+    if (character === "#") {
+      const newline = content.indexOf("\n", index);
+      const end = newline === -1 ? content.length : newline;
+      if (SUPPRESSION_PATTERNS.some((pattern) => pattern.test(content.slice(index, end)))) {
+        return true;
+      }
+      index = end;
+    }
+  }
+  return false;
+}
+
 function shouldAllowEdit(
   filePath: string,
   content: string,
 ): { allow: boolean; reason?: string } {
   try {
+    if (typeof filePath !== "string" || filePath.length === 0) {
+      return { allow: true };
+    }
     if (ALLOWLIST_PATHS.some((allowed) => filePath.includes(allowed))) {
       return { allow: true };
     }
-    if (typeof content === "string" && SUPPRESSION_PATTERNS.some((re) => re.test(content))) {
+    if (isSuppressionComment(content)) {
       return { allow: false, reason: DENY_MESSAGE };
     }
     return { allow: true };
@@ -40,7 +90,7 @@ const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
     if (isSubagent()) return;
     reportAlive("enforce-no-suppressions");
-    if (process.env.GLUDD_NO_SUPPRESSIONS_ENFORCE === "0") return;
+    // This hard guardrail has no environment-variable bypass.
     if (input?.tool !== "edit" && input?.tool !== "write") return;
     try {
       const filePath: string = output?.args?.filePath ?? output?.args?.path ?? "";

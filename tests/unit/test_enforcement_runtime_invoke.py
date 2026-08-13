@@ -224,7 +224,6 @@ DISABLE_ENV_MAP: dict[str, str] = {
     "enforce-floor.ts": "GLUDD_FLOOR_ENFORCE=0",
     "enforce-make.ts": "GLUDD_MAKE_ENFORCE=0",
     "enforce-multitask.ts": "GLUDD_MULTITASK_FLOOR_ENFORCE=0",
-    "enforce-no-suppressions.ts": "GLUDD_NO_SUPPRESSION_ENFORCE=0",
     "enforce-no-wait.ts": "GLUDD_NO_WAIT_ENFORCE=0",
     "enforce-session-start.ts": "GLUDD_SESSION_START_ENFORCE=0",
     "enforce-stop.ts": "GLUDD_STOP_ENFORCE=0",
@@ -232,7 +231,7 @@ DISABLE_ENV_MAP: dict[str, str] = {
 }
 
 
-@pytest.mark.parametrize("plugin_name", FACTORY_PLUGINS)
+@pytest.mark.parametrize("plugin_name", DISABLE_ENV_MAP)
 def test_env_disable_allows_all_operations(plugin_name: str):
     """Env-disable must cause the plugin to become a no-op (allow all)."""
     code = _factory_load_code(plugin_name) + """\

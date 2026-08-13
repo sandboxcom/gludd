@@ -32,6 +32,9 @@ def _run_plugin(
     try:
         env = os.environ.copy()
         env["OPENCODE_SUBAGENT"] = ""
+        env["GLUDD_HOT_MODULE_PREFIX"] = (
+            f"/tmp/gludd-test-no-supp-e2e-{os.getpid()}-{_ts_counter}-"
+        )
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -168,6 +171,24 @@ def test_no_comment_text_allowed():
     result = _run_plugin(code)
     assert result is None or result.get("permissionDecision") != "deny", (
         f"Non-comment text should be allowed, got: {result}"
+    )
+
+
+def test_suppression_text_inside_string_literal_allowed():
+    """Suppression-shaped data inside a quoted string is not a comment."""
+    code = _write_code("src/app.py", 'HASH_PREFIX = "#noqa"')
+    result = _run_plugin(code)
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Quoted suppression data should be allowed, got: {result}"
+    )
+
+
+def test_suppression_text_inside_docstring_allowed():
+    """Suppression-shaped prose inside a docstring is not a comment."""
+    code = _write_code("src/app.py", '"""Documentation mentions # noqa safely."""')
+    result = _run_plugin(code)
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Docstring suppression prose should be allowed, got: {result}"
     )
 
 

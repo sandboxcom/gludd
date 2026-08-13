@@ -83,7 +83,49 @@ const ALLOWLIST_PATHS: string[] = [
 
 export function isSuppressionComment(text: string): boolean {
   if (typeof text !== "string" || text.length === 0) return false
-  return SUPPRESSION_PATTERNS.some(re => re.test(text))
+  let quote: "'" | '"' | "'''" | '"""' | null = null
+  let escaped = false
+  for (let index = 0; index < text.length; index += 1) {
+    if (quote !== null) {
+      if (quote.length === 3) {
+        if (text.startsWith(quote, index)) {
+          quote = null
+          index += 2
+        }
+        continue
+      }
+      const character = text[index]
+      if (escaped) {
+        escaped = false
+      } else if (character === "\\") {
+        escaped = true
+      } else if (character === quote) {
+        quote = null
+      }
+      continue
+    }
+
+    if (text.startsWith('"""', index) || text.startsWith("'''", index)) {
+      quote = text.slice(index, index + 3) as "'''" | '"""'
+      index += 2
+      continue
+    }
+    const character = text[index]
+    if (character === "'" || character === '"') {
+      quote = character
+      escaped = false
+      continue
+    }
+    if (character === "#") {
+      const newline = text.indexOf("\n", index)
+      const end = newline === -1 ? text.length : newline
+      if (SUPPRESSION_PATTERNS.some(re => re.test(text.slice(index, end)))) {
+        return true
+      }
+      index = end
+    }
+  }
+  return false
 }
 export function isAllowlistedPath(filePath: string): boolean {
   if (typeof filePath !== "string" || filePath.length === 0) return false
