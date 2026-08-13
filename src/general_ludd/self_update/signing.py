@@ -69,6 +69,12 @@ def verify_signature(content: str, signature: str, public_key: str) -> bool:
         return False
 
 
+def _read_public_key_file(path: str) -> str:
+    """Read one UTF-8 key file and release its descriptor before returning."""
+    with open(path, encoding="utf-8") as key_file:
+        return key_file.read().strip()
+
+
 def load_public_key(key_path: str | None = None) -> str:
     """Load the Ed25519 public key from a file or environment variable.
 
@@ -81,7 +87,7 @@ def load_public_key(key_path: str | None = None) -> str:
     Returns the raw key string (hex or base64), or ``""`` when no key is found.
     """
     if key_path and os.path.isfile(key_path):
-        return open(key_path).read().strip()
+        return _read_public_key_file(key_path)
 
     inline = os.environ.get("GLUDD_SELF_UPDATE_PUBLIC_KEY", "")
     if inline:
@@ -89,6 +95,6 @@ def load_public_key(key_path: str | None = None) -> str:
 
     file_path = os.environ.get("GLUDD_SELF_UPDATE_PUBLIC_KEY_FILE", "")
     if file_path and os.path.isfile(file_path):
-        return open(file_path).read().strip()
+        return _read_public_key_file(file_path)
 
     return ""

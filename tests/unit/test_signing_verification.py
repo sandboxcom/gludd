@@ -9,9 +9,11 @@ Covers:
 
 from __future__ import annotations
 
+from unittest.mock import mock_open, patch
+
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from general_ludd.self_update.signing import verify_signature
+from general_ludd.self_update.signing import load_public_key, verify_signature
 
 
 def _generate_keypair() -> tuple[bytes, bytes]:
@@ -118,3 +120,17 @@ def test_base64_encoding_accepted():
     sig_b64 = base64.b64encode(sig).decode()
     pub_b64 = base64.b64encode(pub).decode()
     assert verify_signature(content, sig_b64, pub_b64) is True
+
+
+def test_load_public_key_closes_explicit_file() -> None:
+    """The key loader must deterministically release its file descriptor."""
+    reader = mock_open(read_data=" public-key ")
+    with (
+        patch("general_ludd.self_update.signing.os.path.isfile", return_value=True),
+        patch("general_ludd.self_update.signing.open", reader),
+    ):
+        assert load_public_key("key-file") == "public-key"
+
+    reader.assert_called_once_with("key-file", encoding="utf-8")
+    reader().__enter__.assert_called_once_with()
+    reader().__exit__.assert_called_once_with(None, None, None)
