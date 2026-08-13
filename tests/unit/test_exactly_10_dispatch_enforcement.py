@@ -122,16 +122,13 @@ def test_multitask_min_dispatches_hardcoded_10():
     assert val == 10, f"multitask_config.ts MIN_DISPATCHES default fallback is {val}, expected 10."
 
 
-def test_multitask_required_dispatches_uses_hard_default():
-    """The default minimum is mandatory; an explicit zero disables it."""
+def test_multitask_required_dispatches_is_explicit_opt_in():
+    """The recommendation becomes mandatory only through explicit config."""
     src = _read(MULTITASK_TS)
-    assert re.search(
-        r"REQUIRED_DISPATCHES\s*=\s*Math\.max\(0,\s*Math\.min\(MAX_DISPATCHES,"
-        r"[\s\S]*?MIN_DISPATCHES",
-        src,
-    )
+    assert "HAS_CONFIGURED_MIN_DISPATCHES" in src
+    assert "REQUIRED_DISPATCHES = HAS_CONFIGURED_MIN_DISPATCHES" in src
+    assert re.search(r"REQUIRED_DISPATCHES[\s\S]*?:\s*0", src)
     assert "REQUIRED_DISPATCHES > 0" in src
-    assert "Set GLUDD_MIN_DISPATCHES=0 to disable" in src
 
 
 def test_multitask_required_minimum_is_clamped_to_ceiling():

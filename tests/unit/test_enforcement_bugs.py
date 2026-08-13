@@ -54,7 +54,7 @@ class TestMultitaskDeadFloorBreach:
             "(state var is `s` post-refactoring, not `_state`)"
         )
 
-    def test_floor_breach_uses_direct_thisMessageDispatches_check(self):
+    def test_floor_breach_uses_session_aware_effective_floor(self):
         """FIX VERIFICATION: The floor breach for thin waves now uses a direct
         _state.thisMessageDispatches check in text.complete — NOT the old
         contradictory prevMessageDispatches + zeroStreak condition."""
@@ -72,16 +72,12 @@ class TestMultitaskDeadFloorBreach:
             "zeroStreak > 0 condition has been REMOVED from the refactored code."
         )
 
-        # The replacement: direct thisMessageDispatches check in text.complete
+        # The replacement: a pressure-adjusted, session-aware boundary check.
+        assert "_tef = REQUIRED_DISPATCHES > 0" in src
         assert "getPressureReleaseFloor(REQUIRED_DISPATCHES)" in src
-        fix_pattern = re.compile(
-            r"_state\.thisMessageDispatches\s*>\s*0\s*&&\s*"
-            r"_state\.thisMessageDispatches\s*<\s*_tef",
-        )
-        assert fix_pattern.search(src), (
-            "FIX VERIFICATION: text.complete should directly check "
-            "thisMessageDispatches against MIN_DISPATCHES for thin-wave blocking"
-        )
+        condition = "_state.thisMessageDispatches < _tef && _state.sessionDispatchTotal > 0"
+        assert condition in src
+        assert "_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < _tef" not in src
 
 
 # ===============================================================================

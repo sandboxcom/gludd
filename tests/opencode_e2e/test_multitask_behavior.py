@@ -466,8 +466,8 @@ def temp_project():
 class TestMultitaskFloorEnforcement:
     """enforce-multitask.ts enforces exact wave width."""
 
-    def test_multitask_config_defaults_to_10(self, temp_project):
-        """MIN_DISPATCHES defaults to 10 — mutation blocks when below floor."""
+    def test_multitask_configured_minimum_10(self, temp_project):
+        """An explicit minimum of ten — mutation blocks when below floor."""
         result = _invoke_multitask_hook(temp_project, "write", min_dispatches=10, enforce=True)
         assert result is not None, "Should block write when no dispatches made, floor=10, and pending work exists"
 

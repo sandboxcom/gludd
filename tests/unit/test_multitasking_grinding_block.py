@@ -459,6 +459,10 @@ process.env.GLUDD_MULTITASK_MIN_DISPATCHES = "2";
 process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD = "3";
 process.env.GLUDD_PROJECT_ROOT = "{tmp_project}";
 process.env.GLUDD_MULTITASK_STATE_FILE = "{state_file}";
+process.env.GLUDD_CI_CACHE_PATH = "{tmp_project}/ci.json";
+process.env.GLUDD_STOP_STATE_PATH = "{tmp_project}/stop.json";
+process.env.GLUDD_RELEASE_COMPLETENESS_FILE = "{tmp_project}/release.json";
+process.env.GLUDD_TODOWRITE_STATE_PATH = "{tmp_project}/todo.json";
 process.env.OPENCODE_SUBAGENT = "";
 
 import * as fs from "node:fs";

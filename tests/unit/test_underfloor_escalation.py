@@ -1,8 +1,8 @@
-"""Behavior pin for MT.1: under-floor dispatch escalation in enforce-multitask.ts.
+"""Behavior pin for opt-in under-floor escalation in enforce-multitask.ts.
 
-Tracks how many times the agent dispatched fewer than MAX_DISPATCHES (10)
-agents. After 3+ consecutive sub-floor waves, injects an escalation warning
-into text.complete output.
+Tracks consecutive waves below the operator-configured minimum. After three
+such waves, the text boundary injects an escalation warning. Without an
+explicit minimum, ordinary inline work remains allowed.
 """
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ class TestUnderFloorCounterIncrement:
         src = _src()
         m = re.search(
             r"function\s+handleMessageBoundary\(.*?\).*?\{(.*?)"
-            r"\n\}\nfunction\s+spawnGateRefresh",
+            r"\n\}\nlet\s+_state",
             src,
             re.DOTALL,
         )
@@ -65,13 +65,14 @@ class TestUnderFloorCounterIncrement:
             "underFloorCount must be referenced in handleMessageBoundary"
         )
 
-    def test_increment_condition_uses_max_dispatches(self):
+    def test_increment_condition_uses_configured_minimum(self):
         src = _src()
         assert re.search(
-            r"prevMessageDispatches\s*<\s*MAX_DISPATCHES",
+            r"REQUIRED_DISPATCHES\s*>\s*0\s*&&\s*"
+            r"s\.prevMessageDispatches\s*<\s*REQUIRED_DISPATCHES",
             src,
         ), (
-            "underFloorCount must increment when prevMessageDispatches < MAX_DISPATCHES"
+            "underFloorCount must increment only below an explicit minimum"
         )
 
     def test_reset_on_full_wave(self):
@@ -108,16 +109,12 @@ class TestUnderFloorEscalationWarning:
         )
 
     def test_escalation_in_thin_wave_blocked_path(self):
-        """The THIN WAVE BLOCKED path must include escalation when underFloorCount >= 3."""
+        """The session-aware thin-wave response includes repeated-breach escalation."""
         src = _src()
-        m = re.search(
-            r"if\s*\(_state\.thisMessageDispatches\s*>\s*0.*?"
-            r"THIN WAVE BLOCKED.*?\n\s*}\n\s*handleMessageBoundary",
-            src,
-            re.DOTALL,
-        )
-        assert m, "THIN WAVE BLOCKED branch not found"
-        block_region = m.group(0)
+        start = src.index("const _tef = REQUIRED_DISPATCHES > 0")
+        end = src.index("const hasWork", start)
+        block_region = src[start:end]
+        assert "THIN WAVE BLOCKED" in block_region
         assert "underFloorCount" in block_region, (
             "Escalation must be checked in THIN WAVE BLOCKED path"
         )

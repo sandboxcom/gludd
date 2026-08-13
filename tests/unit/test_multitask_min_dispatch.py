@@ -695,8 +695,10 @@ class TestDisengageEscape:
             )
 
     def test_disengage_max_default_in_shared(self):
+        """The disengage escape hatch expires promptly to preserve fail-closed enforcement."""
         shared = _shared_source()
-        assert "3_600_000" in shared, "Disengage max default (1h) must exist in shared.ts"
+        assert "300_000" in shared, "Disengage max default (5m) must exist in shared.ts"
+        assert "3_600_000" not in shared, "The legacy 1h disengage window is unsafe"
 
 
 class TestEstimatedInFlight:
