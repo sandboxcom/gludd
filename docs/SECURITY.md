@@ -315,13 +315,28 @@ advisory and ignores ONLY the adjudicated exceptions below by ID.
   [maintenance-status thread](https://github.com/grantjenks/python-diskcache/issues/355)
   records that no upstream release had shipped since 2023. See the
   [DiskCache serializer documentation](https://grantjenks.com/docs/diskcache/tutorial.html#disk).
-- **PYSEC-2026-196 — pip (entry-point path handling, fixed in 26.1.2):** pip is a
-  build-time installer only, not a runtime dependency, and is absent from the
-  shipped binary; confined to the local build machine.
+- **PYSEC-2026-3552 — cryptography PKCS#7 decrypt oracle:** the advisory is
+  limited to `pkcs7_decrypt_der`, `pkcs7_decrypt_pem`, and
+  `pkcs7_decrypt_smime`. Gludd calls none of those APIs; an executable source
+  scan fails if any production file adopts them. The advisory lists 50.0.0 as
+  the fix, but that version is not yet a stable published release, so the lock
+  remains on the current 49.x wheel and permits a future 50.x relock. Once a
+  stable fixed wheel is available, upgrade it and remove both the VEX entry and
+  ignore. The [PyCA changelog](https://github.com/pyca/cryptography/blob/main/CHANGELOG.rst)
+  defines the affected API surface. The maintained
+  [pip-audit guidance](https://github.com/pypa/pip-audit#pip-audit-shows-irrelevant-vulnerability-reports)
+  explicitly supports ID-scoped ignores for application-inapplicable findings,
+  while practitioner request
+  [pip-audit #1018](https://github.com/pypa/pip-audit/issues/1018) asks for
+  import-aware filtering of this same class of report; Gludd makes that filter
+  fail-closed in its own regression test.
 
-The 2026-07-29 beta.3 audit also remediated, rather than ignored,
-`PYSEC-2026-3458` by requiring ansible-core 2.19.11 on Python 3.11 and 2.21.1
-on Python 3.12+, and `PYSEC-2026-3447` by requiring setuptools 83.0.0.
+The 2026-08-13 beta.4 audit remediated, rather than ignored,
+`PYSEC-2026-3458` by requiring stable ansible-core 2.19.11 on Python 3.11 and 2.21.2 or newer on Python 3.12+. Earlier remediation
+also fixed `PYSEC-2026-196` with pip 26.1.2 and `PYSEC-2026-3447` with
+setuptools 83.0.0. The Ansible patch upgrade is wire- and state-neutral: deploy
+the updated automation runtime before invoking new jobs, while already-running
+jobs continue under their original process image.
 
 ---
 

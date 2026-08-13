@@ -52,6 +52,11 @@
       "behavior": "make node-deps-audit NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_AUDIT_LEVEL=moderate"
     },
     {
+      "name": "pip-audit-gate",
+      "make_variables": [],
+      "behavior": "make pip-audit-gate"
+    },
+    {
       "name": "provider-harness",
       "make_variables": ["PROVIDER", "LIVE"],
       "behavior": "make provider-harness PROVIDER=runpod LIVE=0"

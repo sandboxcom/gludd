@@ -232,6 +232,7 @@ help:
 	@echo "  sast                  Run bandit SAST"
 	@echo "  sbom                  Generate CycloneDX SBOM"
 	@echo "  pip-audit             Audit dependencies for vulnerabilities"
+	@echo "  pip-audit-gate        Fail on every non-adjudicated Python advisory"
 	@echo "  security              Full security: sast + sbom + Python/Node dependency audits"
 	@echo "  test-unit             Unit tests only"
 	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
@@ -6607,25 +6608,19 @@ sbom:
 pip-audit:
 	@$(UV) run pip-audit --desc || true
 
-# Gating audit (W5.3): fail-closed on any NEW advisory. Known,
-# adjudicated advisories are ignored with a documented rationale in
-# SECURITY.md "Known dependency advisories":
-#   - CVE-2025-69872 (diskcache): no upstream fix; mitigated by owner-only
-#     (0o700) cache dir in models/response_cache.py — attacker needs cache-dir
-#     write access, which the permission removes.
-#   - PYSEC-2026-196 (pip): build-time installer only; pip is NOT a runtime
-#     dependency (not in pyproject) and is absent from the shipped PyInstaller
-#     binary; fixed pip 26.1.2 is used in CI/dev.
-#   - PYSEC-2026-3458 (ansible-core): ansible-galaxy role install code injection
-#     via malicious role meta/requirements.yml; the project does not run
-#     ansible-galaxy role install from untrusted sources (roles are vendored);
-#     fixed in ansible-core 2.21.1rc1 — will upgrade once stable ships.
+# Gating audit (W5.3): fail-closed on any NEW advisory. The two
+# non-exploitable advisories below are pinned by executable regression guards
+# and documented in docs/SECURITY.md "Known dependency advisories":
+#   - CVE-2025-69872 (diskcache): every constructor is forced through the
+#     MessagePack-only safe adapter; legacy pickle modes never deserialize.
+#   - PYSEC-2026-3552 (cryptography): the vulnerable PKCS#7 decrypt APIs are not
+#     used anywhere in production source and a structural test fails on adoption.
+# Fixed pip and ansible-core advisories are deliberately not ignored.
 pip-audit-gate:
 	@echo "=== pip-audit (gating, W5.3) — fails on NEW advisories ==="
 	@$(UV) run pip-audit --desc \
 		--ignore-vuln CVE-2025-69872 \
-		--ignore-vuln PYSEC-2026-196 \
-		--ignore-vuln PYSEC-2026-3458
+		--ignore-vuln PYSEC-2026-3552
 	@echo "=== pip-audit-gate: no un-adjudicated advisories ==="
 
 pip-upgrade:

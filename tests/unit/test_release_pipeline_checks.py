@@ -12,6 +12,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
 
+import check_dependency_pinning as dependency_pinning
 from check_asset_retention import (
     BINARY_PATTERNS,
     SBOM_PATTERNS,
@@ -896,7 +897,30 @@ class TestCheckDependencyPinning:
             '[[package]]\nname = "requests"\nversion = "2.31.0"\n\n[[package]]\nname = "click"\nversion = "8.1.7"\n'
         )
         deps = parse_lockfile_deps(content)
-        assert deps == {"requests": "2.31.0", "click": "8.1.7"}
+        assert deps == {"requests": ("2.31.0",), "click": ("8.1.7",)}
+
+    def test_parse_lockfile_preserves_marker_split_versions(self):
+        content = (
+            '[[package]]\nname = "ansible-core"\nversion = "2.19.11"\n\n'
+            '[[package]]\nname = "ansible-core"\nversion = "2.21.3"\n'
+        )
+        assert parse_lockfile_deps(content) == {
+            "ansible-core": ("2.19.11", "2.21.3"),
+        }
+
+    def test_marker_split_requirements_accept_matching_locked_versions(self):
+        content = (
+            "[project]\n"
+            "dependencies = [\n"
+            '  "ansible-core>=2.19.11,<2.20; python_version < \'3.12\'",\n'
+            '  "ansible-core>=2.21.2,<2.22; python_version >= \'3.12\'",\n'
+            "]\n"
+        )
+        violations = find_unpinned_deps(
+            content,
+            {"ansible-core": ("2.19.11", "2.21.3")},
+        )
+        assert violations == []
 
     def test_parse_lockfile_deps_empty(self):
         assert parse_lockfile_deps("") == {}
@@ -943,6 +967,155 @@ class TestCheckDependencyPinning:
         time.sleep(0.01)
         pyproject.write_text("")
         assert check_lockfile_staleness(lockfile, pyproject) is True
+
+    def test_legacy_range_scanner_reports_production_ranges(self):
+        content = '[project]\ndependencies = [\n  "requests>=2.31.0",\n]\n'
+        passed, violations = check_dependency_pinning(content)
+        assert passed is False
+        assert violations == ['"requests>=2.31.0",']
+
+    def test_parse_lockfile_rejects_invalid_toml_and_malformed_packages(self):
+        assert parse_lockfile_deps("[[package]") == {}
+        content = (
+            'package = ["not-a-table", '
+            '{ name = 1, version = "1.0" }, '
+            '{ name = "missing-version" }, '
+            '{ name = "ok", version = "1.0" }, '
+            '{ name = "ok", version = "1.0" }]'
+        )
+        assert parse_lockfile_deps(content) == {"ok": ("1.0",)}
+
+    def test_optional_runtime_requirements_are_checked(self):
+        content = (
+            "[project]\n"
+            'dependencies = ["base>=1", 42]\n'
+            "[project.optional-dependencies]\n"
+            'feature = ["extra>=2"]\n'
+            'metadata = "ignored"\n'
+        )
+        violations = find_unpinned_deps(
+            content,
+            {"base": "1.0", "extra": "2.0"},
+        )
+        assert violations == []
+
+    def test_malformed_project_toml_fails_without_false_violations(self):
+        assert find_unpinned_deps("[project", {}) == []
+        assert find_unpinned_deps('project = "not-a-table"', {}) == []
+
+    def test_invalid_requirement_and_locked_version_are_rejected(self):
+        invalid_requirement = (
+            '[project]\ndependencies = ["not valid !!!"]\n'
+        )
+        assert find_unpinned_deps(invalid_requirement, {}) == [
+            "not valid !!!: invalid requirement"
+        ]
+
+        invalid_version = '[project]\ndependencies = ["requests>=2"]\n'
+        assert find_unpinned_deps(
+            invalid_version,
+            {"requests": ("not-a-version",)},
+        ) == ["requests: invalid locked version not-a-version"]
+
+    def test_all_incompatible_marker_versions_are_reported(self):
+        content = '[project]\ndependencies = ["ansible-core>=2.22"]\n'
+        assert find_unpinned_deps(
+            content,
+            {"ansible-core": ("2.19.11", "2.21.3")},
+        ) == [
+            "ansible-core>=2.22: locked versions 2.19.11, 2.21.3 "
+            "do not satisfy >=2.22"
+        ]
+
+    def test_staleness_check_fails_closed_for_missing_files(self, tmp_path):
+        assert check_lockfile_staleness(
+            tmp_path / "missing.lock",
+            tmp_path / "missing.toml",
+        ) is True
+
+    def test_main_fails_closed_when_lockfile_is_missing(
+        self,
+        tmp_path,
+        monkeypatch,
+        capsys,
+    ):
+        script_path = tmp_path / "scripts" / "check_dependency_pinning.py"
+        monkeypatch.setattr(dependency_pinning, "__file__", str(script_path))
+
+        with pytest.raises(SystemExit) as raised:
+            dependency_pinning.main()
+
+        assert raised.value.code == 1
+        assert "uv.lock not found" in capsys.readouterr().out
+
+    def test_main_fails_closed_when_pyproject_is_missing(
+        self,
+        tmp_path,
+        monkeypatch,
+        capsys,
+    ):
+        script_path = tmp_path / "scripts" / "check_dependency_pinning.py"
+        monkeypatch.setattr(dependency_pinning, "__file__", str(script_path))
+        (tmp_path / "uv.lock").write_text("", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as raised:
+            dependency_pinning.main()
+
+        assert raised.value.code == 1
+        assert "pyproject.toml not found" in capsys.readouterr().out
+
+    def test_main_reports_requirement_violations(
+        self,
+        tmp_path,
+        monkeypatch,
+        capsys,
+    ):
+        script_path = tmp_path / "scripts" / "check_dependency_pinning.py"
+        monkeypatch.setattr(dependency_pinning, "__file__", str(script_path))
+        (tmp_path / "uv.lock").write_text(
+            '[[package]]\nname = "click"\nversion = "8.1.7"\n',
+            encoding="utf-8",
+        )
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\ndependencies = ["requests>=2"]\n',
+            encoding="utf-8",
+        )
+
+        with pytest.raises(SystemExit) as raised:
+            dependency_pinning.main()
+
+        output = capsys.readouterr().out
+        assert raised.value.code == 1
+        assert "requests: not in lockfile" in output
+        assert "not reproducibly resolved" in output
+
+    def test_main_reports_exact_locked_version_count(
+        self,
+        tmp_path,
+        monkeypatch,
+        capsys,
+    ):
+        script_path = tmp_path / "scripts" / "check_dependency_pinning.py"
+        monkeypatch.setattr(dependency_pinning, "__file__", str(script_path))
+        (tmp_path / "uv.lock").write_text(
+            '[[package]]\nname = "ansible-core"\nversion = "2.19.11"\n\n'
+            '[[package]]\nname = "ansible-core"\nversion = "2.21.3"\n',
+            encoding="utf-8",
+        )
+        (tmp_path / "pyproject.toml").write_text(
+            "[project]\n"
+            "dependencies = [\n"
+            '  "ansible-core>=2.19,<2.20; python_version < \'3.12\'",\n'
+            '  "ansible-core>=2.21,<2.22; python_version >= \'3.12\'",\n'
+            "]\n",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(SystemExit) as raised:
+            dependency_pinning.main()
+
+        assert raised.value.code == 0
+        assert "2 exact locked package versions" in capsys.readouterr().out
 
 
 class TestCheckRunbookCurrency:
