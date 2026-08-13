@@ -323,26 +323,35 @@ def _setup_models_state(app: FastAPI) -> None:
     app.state._health_tracker.get_health.return_value = {"profile": "model-1", "healthy": True}
 
 
-def _mock_models_subsystems(models_module) -> None:
+def _mock_models_subsystems(
+    models_module,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bus = _make_bus()
     hooks = _make_hooks()
     bc = _make_broadcaster()
-    models_module._get_or_create_subsystems = MagicMock(
-        return_value={"bus": bus, "hooks": hooks, "broadcaster": bc},
+    monkeypatch.setattr(
+        models_module,
+        "_get_or_create_subsystems",
+        MagicMock(return_value={"bus": bus, "hooks": hooks, "broadcaster": bc}),
     )
-    models_module._get_or_create_extended_subsystems = MagicMock(
-        return_value={
-            "model_registry": _make_model_search_registry(),
-            "metrics": _make_metrics_collector(),
-        },
+    monkeypatch.setattr(
+        models_module,
+        "_get_or_create_extended_subsystems",
+        MagicMock(
+            return_value={
+                "model_registry": _make_model_search_registry(),
+                "metrics": _make_metrics_collector(),
+            },
+        ),
     )
 
 
 @pytest.fixture
-def models_app() -> FastAPI:
+def models_app(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     import general_ludd.routers.models as models_router
 
-    _mock_models_subsystems(models_router)
+    _mock_models_subsystems(models_router, monkeypatch)
 
     app = FastAPI()
     _setup_models_state(app)
@@ -371,10 +380,13 @@ class TestModelsEndpoints:
             data = resp.json()
             assert len(data["profiles"]) == 1
 
-        def test_list_models_empty_without_gateway(self) -> None:
+        def test_list_models_empty_without_gateway(
+            self,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
             import general_ludd.routers.models as models_router
 
-            _mock_models_subsystems(models_router)
+            _mock_models_subsystems(models_router, monkeypatch)
             app = FastAPI()
             models_router.register(app, {})
             client = TestClient(app)
@@ -389,10 +401,13 @@ class TestModelsEndpoints:
             data = resp.json()
             assert "health" in data
 
-        def test_health_empty_without_tracker(self) -> None:
+        def test_health_empty_without_tracker(
+            self,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
             import general_ludd.routers.models as models_router
 
-            _mock_models_subsystems(models_router)
+            _mock_models_subsystems(models_router, monkeypatch)
             app = FastAPI()
             models_router.register(app, {})
             client = TestClient(app)
@@ -431,10 +446,13 @@ class TestModelsEndpoints:
             )
             assert resp.status_code == 413
 
-        def test_call_no_profiles_returns_503(self) -> None:
+        def test_call_no_profiles_returns_503(
+            self,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
             import general_ludd.routers.models as models_router
 
-            _mock_models_subsystems(models_router)
+            _mock_models_subsystems(models_router, monkeypatch)
             app = FastAPI()
             app.state._model_gateway = None
             models_router.register(app, {})
@@ -442,10 +460,13 @@ class TestModelsEndpoints:
                 resp = client.post("/admin/models/call", json={"prompt": "Hello"})
             assert resp.status_code == 503
 
-        def test_fallback_gateway_closes_on_app_shutdown(self) -> None:
+        def test_fallback_gateway_closes_on_app_shutdown(
+            self,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
             import general_ludd.routers.models as models_router
 
-            _mock_models_subsystems(models_router)
+            _mock_models_subsystems(models_router, monkeypatch)
             cache = MagicMock()
             app = FastAPI()
             app.state._model_gateway = None
@@ -461,10 +482,13 @@ class TestModelsEndpoints:
 
             cache.close.assert_called_once()
 
-        def test_injected_gateway_is_not_closed_by_router_shutdown(self) -> None:
+        def test_injected_gateway_is_not_closed_by_router_shutdown(
+            self,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
             import general_ludd.routers.models as models_router
 
-            _mock_models_subsystems(models_router)
+            _mock_models_subsystems(models_router, monkeypatch)
             gateway = MagicMock()
             gateway.list_profiles.return_value = []
             app = FastAPI()
@@ -507,10 +531,16 @@ _MODELS_PSK_CASES: ClassVar[list[tuple[str, str, dict[str, object] | None]]] = [
 
 class TestModelsAuthPosture:
     @pytest.mark.parametrize("method,path,body", _MODELS_PSK_CASES)
-    def test_unauthenticated_is_refused(self, method: str, path: str, body) -> None:
+    def test_unauthenticated_is_refused(
+        self,
+        method: str,
+        path: str,
+        body,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         import general_ludd.routers.models as models_router
 
-        _mock_models_subsystems(models_router)
+        _mock_models_subsystems(models_router, monkeypatch)
 
         client = TestClient(
             _app_with_psk_gate(models_router.register, setup_state=_setup_models_state),
@@ -519,10 +549,16 @@ class TestModelsAuthPosture:
         assert resp.status_code == 401
 
     @pytest.mark.parametrize("method,path,body", _MODELS_PSK_CASES)
-    def test_with_psk_succeeds(self, method: str, path: str, body) -> None:
+    def test_with_psk_succeeds(
+        self,
+        method: str,
+        path: str,
+        body,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         import general_ludd.routers.models as models_router
 
-        _mock_models_subsystems(models_router)
+        _mock_models_subsystems(models_router, monkeypatch)
 
         client = TestClient(
             _app_with_psk_gate(models_router.register, setup_state=_setup_models_state),
@@ -776,10 +812,13 @@ class TestAllRoutersRegister:
         slurm_router.register(app, {})
         assert len(app.routes) > before
 
-    def test_models_register_adds_routes(self) -> None:
+    def test_models_register_adds_routes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         import general_ludd.routers.models as models_router
 
-        _mock_models_subsystems(models_router)
+        _mock_models_subsystems(models_router, monkeypatch)
         app = FastAPI()
         _setup_models_state(app)
         before = len(app.routes)
