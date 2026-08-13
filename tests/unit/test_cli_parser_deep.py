@@ -349,7 +349,7 @@ class TestComputeParser:
         parser, _ = _build()
         compute = _top_choices(parser)["compute"]
         subs = _sub_choices(compute, "compute_command")
-        assert set(subs.keys()) == {"endpoints", "register", "unregister", "launch", "destroy"}
+        assert set(subs.keys()) == {"endpoints", "register", "unregister", "azure-preflight", "launch", "destroy"}
 
     def test_compute_register_required_args(self) -> None:
         parser, _ = _build()

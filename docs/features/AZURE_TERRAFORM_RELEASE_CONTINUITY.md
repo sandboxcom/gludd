@@ -70,6 +70,11 @@ generation, apply rollback, registry expiry, credential translation,
 telemetry, and provider configuration. The broader gate retains the repository
 85% aggregate and 75% per-file coverage floors.
 
+The exact compute-subcommand inventory is part of that release contract. A
+beta.4 gate exposed a stale five-command assertion that omitted the independently
+tested `azure-preflight` path. The inventory, parser, payload, daemon, and
+adjacent CLI family is now 167/167 green under strict warnings.
+
 The checked-in `tf-init-local` target validates the Azure stack choice and can
 run a state-free `terraform init -backend=false`. Its validate-only mode is
 the safe behavioral example used by the Make target contract.
