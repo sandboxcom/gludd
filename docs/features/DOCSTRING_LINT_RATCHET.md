@@ -67,6 +67,24 @@ recommended workflow of selecting `D` rules with an explicit convention:
 
 - [Ruff pydocstyle settings](https://docs.astral.sh/ruff/settings/#lint_pydocstyle)
 
+### Recursive Make path normalization
+
+Git emits staged paths one per line. Passing that raw multiline value through a
+quoted recursive Make command can split the shell program itself. The commit
+guard therefore converts only newline separators to spaces before invoking the
+already path-validating `lint-docstrings` target. It does not evaluate,
+unquote, or broaden any path.
+
+This matches the long-lived
+[GNU Make bug 51974](https://savannah.gnu.org/bugs/index.php?51974=),
+whose reproducer ends in the same unmatched-quote and unexpected-EOF shell
+failure after a multiline Make expansion. A
+[Stack Overflow practitioner report](https://stackoverflow.com/questions/7281395/output-multiline-variable-to-a-file-with-gnu-make/7287289)
+likewise traces unterminated quotes to expanding a multiline Make value inside
+a shell command. Flattening the known newline-delimited file list at the
+producer boundary avoids that parser ambiguity while retaining the target's
+tracked-path and package-root checks.
+
 ## Verification
 
 - `tests/unit/test_docstring_coverage_deep.py` behavior-tests success, missing

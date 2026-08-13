@@ -5640,7 +5640,7 @@ _commit-lint-guard:
 
 # AB031 - progressively require maintained docstring rules on touched source.
 _commit-docstring-guard:
-	@STAGED_SRC_PY=$$(git diff --cached --name-only --diff-filter=ACM | grep '^src/general_ludd/.*\.py$$' || true); 	if [ -z "$$STAGED_SRC_PY" ]; then 		echo "_commit-docstring-guard: SKIP - no staged production Python files."; 		exit 0; 	fi; 	if $(MAKE) --no-print-directory lint-docstrings DOCSTRING_FILES="$$STAGED_SRC_PY"; then 		echo "_commit-docstring-guard: PASS"; 	else 		echo "_commit-docstring-guard: FAIL - add or repair Google-style docstrings in staged source files."; 		exit 1; 	fi
+	@STAGED_SRC_PY=$$(git diff --cached --name-only --diff-filter=ACM | grep '^src/general_ludd/.*\.py$$' | tr '\n' ' ' || true); 	if [ -z "$$STAGED_SRC_PY" ]; then 		echo "_commit-docstring-guard: SKIP - no staged production Python files."; 		exit 0; 	fi; 	if $(MAKE) --no-print-directory lint-docstrings DOCSTRING_FILES="$$STAGED_SRC_PY"; then 		echo "_commit-docstring-guard: PASS"; 	else 		echo "_commit-docstring-guard: FAIL - add or repair Google-style docstrings in staged source files."; 		exit 1; 	fi
 
 # AA029 — _pull-before-push-guard: git fetch before push, block if remote ahead.
 # Agent pushed to master without pulling first, causing "failed to push refs".

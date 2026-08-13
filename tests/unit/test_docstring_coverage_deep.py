@@ -80,6 +80,14 @@ def test_docstring_policy_is_registered_and_commit_guarded() -> None:
     assert config["tool"]["ruff"]["lint"]["pydocstyle"]["convention"] == "google"
 
 
+def test_commit_guard_flattens_multiline_staged_source_paths() -> None:
+    """Multiple staged source paths must remain one safe recursive Make argument."""
+    lines = (ROOT / "Makefile").read_text().splitlines()
+    target_index = lines.index("_commit-docstring-guard:")
+    recipe = lines[target_index + 1]
+    assert "| tr '\\n' ' '" in recipe
+
+
 def test_custom_ast_docstring_linter_is_not_reintroduced() -> None:
     """The regression suite must not grow another bespoke AST linter."""
     source = Path(__file__).read_text()
