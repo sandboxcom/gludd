@@ -1,0 +1,28 @@
+{
+  "description": "Agent collection",
+  "model_capabilities": [
+    {
+      "description": "Generate code",
+      "name": "code_gen",
+      "quality_class": "high"
+    }
+  ],
+  "name": "general_ludd_agent",
+  "namespace": "general_ludd",
+  "role_capabilities": {
+    "project_init": [
+      "scaffold"
+    ]
+  },
+  "roles": [
+    {
+      "description": "Init project scaffold",
+      "name": "project_init"
+    }
+  ],
+  "tags": [
+    "agent",
+    "automation"
+  ],
+  "version": "1.0.0"
+}

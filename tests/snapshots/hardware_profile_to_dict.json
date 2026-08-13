@@ -1,0 +1,9 @@
+{
+  "cpu_count": 8,
+  "gunicorn_workers": 2,
+  "local_model_allowed": true,
+  "network_concurrency": 16,
+  "recommended_workers": 2,
+  "thread_pool_size": 8,
+  "total_memory_gb": 16.0
+}

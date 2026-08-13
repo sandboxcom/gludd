@@ -1,0 +1,10 @@
+{
+  "detail": {
+    "path": "/etc/shadow"
+  },
+  "event_type": "path_blocked",
+  "module": "copy",
+  "playbook": "backup.yml",
+  "sandbox_id": null,
+  "timestamp": 1700000000.0
+}

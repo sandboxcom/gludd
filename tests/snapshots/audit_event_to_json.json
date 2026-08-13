@@ -1,0 +1,10 @@
+{
+  "detail": {
+    "secret_name": "staging/db/password"
+  },
+  "event_type": "credential_access",
+  "module": "openbao_lookup",
+  "playbook": "deploy.yml",
+  "sandbox_id": null,
+  "timestamp": 1711234567.0
+}

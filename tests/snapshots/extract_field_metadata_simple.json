@@ -1,0 +1,24 @@
+[
+  {
+    "children": null,
+    "description": "User name",
+    "enum": null,
+    "format": null,
+    "items": null,
+    "name": "name",
+    "required": true,
+    "title": "name",
+    "type": "string"
+  },
+  {
+    "children": null,
+    "description": "",
+    "enum": null,
+    "format": null,
+    "items": null,
+    "name": "age",
+    "required": false,
+    "title": "age",
+    "type": "integer"
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "detail": {
+    "method": "GET",
+    "policy": "deny-external",
+    "url": "https://api.example.com/v1/data"
+  },
+  "event_type": "network_deny",
+  "module": "ansible.builtin.uri",
+  "playbook": "site.yml",
+  "sandbox_id": "sb-abc123",
+  "timestamp": 1711234567.891
+}

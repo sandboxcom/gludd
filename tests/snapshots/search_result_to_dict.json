@@ -1,0 +1,11 @@
+{
+  "author": "dev@example.com",
+  "date": "2025-01-15T10:30:00Z",
+  "deletions": 3,
+  "hash": "abc123def456",
+  "insertions": 42,
+  "matched_paths": [
+    "tests/unit/test_snapshot_deep.py"
+  ],
+  "message": "feat: add snapshot tests"
+}
