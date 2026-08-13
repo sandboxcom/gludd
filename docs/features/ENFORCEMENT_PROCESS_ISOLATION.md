@@ -148,6 +148,26 @@ confirms that an `xdist_group` exists to force resource-sharing tests onto one
 worker. Gludd uses both controls: namespace independent artifacts, and serialize
 only genuinely shared compatibility paths.
 
+### Multitask runtime sidecar isolation
+
+The runtime harness gives each invocation one PID-and-time namespaced
+`GLUDD_MULTITASK_STATE_FILE`. Its dispatch-count sidecar is derived from that
+same basename, and `GLUDD_DISENGAGE_PATH` is namespaced with the invocation as
+well. Setup and teardown remove only those exact paths. A test process must
+never delete the live session's machine-global multitask, disengage, watchdog,
+or force state.
+
+This is another instance of the long-lived pytest #5524 and xdist #981
+practitioner reports above: the primary state path can be isolated while an
+unnoticed companion file still crosses worker boundaries. The regression runs
+the real runtime hook and proves a three-dispatch thin wave remains below the
+configured floor regardless of stale state elsewhere.
+
+This repair is test-harness-only. It creates no daemon, changes no production
+plugin generation, and needs no state migration or OpenCode restart. Rollout is
+zero-downtime because each test invocation owns and removes its exact temporary
+files; rollback is the normal commit revert, with no live state to convert.
+
 ## Project-ledger root isolation
 
 Enforcement is also a filesystem trust boundary. A previous fallback in

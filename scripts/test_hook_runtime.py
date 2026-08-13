@@ -1224,8 +1224,11 @@ console.log(JSON.stringify({{
 
 def test_multitask_text_complete_blocks_thin_wave():
     """experimental.text.complete MUST blank text for thin dispatch waves."""
-    state_file = "/tmp/gludd-multitask-state.json"
-    _clean_state_files(state_file, "/tmp/gludd-watchdog-disengage.json", "/tmp/gludd-force-dispatch.json")
+    namespace = f"/tmp/gludd-multitask-runtime-{os.getpid()}-{time.time_ns()}"
+    state_file = f"{namespace}.json"
+    dispatch_count_file = f"{state_file}.dispatch-count"
+    disengage_path = f"{namespace}-disengage.json"
+    _clean_state_files(state_file, dispatch_count_file, disengage_path)
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
 const plugin = await mod.default({{}})
@@ -1249,20 +1252,26 @@ console.log(JSON.stringify({{
   resultText: output && typeof output === 'object' ? (output.text || '')?.slice(0, 200) : String(output || '').slice(0, 120),
 }}))
 """
-    result = _run_ts(
-        code,
-        env_override={
-            "GLUDD_MIN_DISPATCHES": "10",
-            "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
-        },
-    )
+    try:
+        result = _run_ts(
+            code,
+            env_override={
+                "GLUDD_MIN_DISPATCHES": "10",
+                "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+                "GLUDD_MULTITASK_STATE_FILE": state_file,
+                "GLUDD_DISENGAGE_PATH": disengage_path,
+            },
+        )
 
-    assert result.get("threw") is False, f"experimental.text.complete must run without throwing. Result: {result}"
-    assert result["textWasBlocked"] == True, (
-        f"Expected THIN WAVE BLOCKED but text passed through unmodified. "
-        f"Hook ran without error but did not detect the thin wave. Result: {result}"
-    )
-    _clean_state_files(state_file)
+        assert result.get("threw") is False, (
+            f"experimental.text.complete must run without throwing. Result: {result}"
+        )
+        assert result["textWasBlocked"] == True, (
+            f"Expected THIN WAVE BLOCKED but text passed through unmodified. "
+            f"Hook ran without error but did not detect the thin wave. Result: {result}"
+        )
+    finally:
+        _clean_state_files(state_file, dispatch_count_file, disengage_path)
 
 
 def test_multitask_enough_dispatches():
