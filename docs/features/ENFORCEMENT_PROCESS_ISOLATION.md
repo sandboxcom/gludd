@@ -148,6 +148,29 @@ confirms that an `xdist_group` exists to force resource-sharing tests onto one
 worker. Gludd uses both controls: namespace independent artifacts, and serialize
 only genuinely shared compatibility paths.
 
+### Nested verifier isolation
+
+`verify-enforcement` launches a second pytest process, so it must not inherit the
+outer gate's test instrumentation or machine-global enforcement state. The child
+now runs from the verified project root with plugin auto-loading disabled; removes
+inherited `PYTEST_ADDOPTS`, xdist, `COVERAGE_*`, and `COV_CORE_*` controls; and
+binds every enforcement-state variable to a process-owned temporary directory.
+The runtime harness also redirects cleanup of legacy fixed `/tmp/gludd-*` names
+into that directory. Each TypeScript invocation receives a distinct
+`GLUDD_HOT_MODULE_PREFIX`, preventing one test's generated module from changing
+a later test. The temporary directory is removed when verification returns,
+including on a failed or timed-out child.
+
+Long-lived practitioner reports show why the environment boundary is part of the
+test contract. [pytest discussion #7932](https://github.com/pytest-dev/pytest/discussions/7932)
+shows that `PYTEST_ADDOPTS` deliberately injects flags into later pytest
+invocations. [pytest-cov issue #458](https://github.com/pytest-dev/pytest-cov/issues/458)
+records an auto-loaded coverage plugin changing and failing otherwise option-free
+pytest runs. [coverage.py issue #1752](https://github.com/nedbat/coveragepy/issues/1752)
+describes parallel coverage data needing protection from file overwrites. These
+reports are analogous environmental-coupling failures; Gludd's local contract is
+stronger because nested policy verification must be independent of the caller.
+
 ## Project-ledger root isolation
 
 Enforcement is also a filesystem trust boundary. A previous fallback in

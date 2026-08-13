@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 try:
@@ -18,6 +19,79 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
+
+_COVERAGE_ENV_PREFIXES = ("COVERAGE_", "COV_CORE_")
+_NESTED_PYTEST_ENV_PREFIXES = ("PYTEST_XDIST_",)
+_NESTED_PYTEST_ENV_KEYS = {"PYTEST_ADDOPTS", "PYTEST_CURRENT_TEST"}
+_RUNTIME_STATE_FILES: dict[str, str] = {
+    "GLUDD_ALIVE_PATH": "plugin-alive.json",
+    "GLUDD_BLOCK_COUNTER_FILE": "block-counter.json",
+    "GLUDD_BLOCK_REASON_FILE": "block-reason.json",
+    "GLUDD_CI_CACHE_PATH": "watchdog-ci.json",
+    "GLUDD_COMMIT_LOCK_PATH": "commit.lock",
+    "GLUDD_DISENGAGE_PATH": "watchdog-disengage.json",
+    "GLUDD_ENHANCEMENT_RATIO_STATE": "enhancement-ratio.json",
+    "GLUDD_FALSE_DONE_BLOCKS_FILE": "false-done-blocks.json",
+    "GLUDD_FLOOR_TEXT_COMPLETE_COUNT": "floor-text-complete-count.json",
+    "GLUDD_FORCE_DELEGATE_STATE": "force-delegate.json",
+    "GLUDD_FORCE_DISPATCH_PATH": "force-dispatch.json",
+    "GLUDD_HOT_MODULE_PREFIX": "gludd-hot-",
+    "GLUDD_LAST_TEST_RESULT_FILE": "last-test-result.json",
+    "GLUDD_MAINTHREAD_STREAK_FILE": "mainthread-streak.json",
+    "GLUDD_MAIN_MODEL_FILE": "main-model",
+    "GLUDD_MODEL_UTIL_STATE": "model-util.json",
+    "GLUDD_MULTITASK_STATE_FILE": "multitask-state.json",
+    "GLUDD_PERSIST_STOP_BLOCK_FILE": "persist-stop-block.json",
+    "GLUDD_POST_RESULTS_STATE_FILE": "post-results-state.json",
+    "GLUDD_READ_GRIND_FILE": "read-grind.json",
+    "GLUDD_RELEASE_COMPLETENESS_FILE": "release-completeness.json",
+    "GLUDD_SESSION_STATE": "session-start.json",
+    "GLUDD_STOP_STATE_FILE": "stop-state.json",
+    "GLUDD_STOP_STATE_PATH": "stop-state-signal.json",
+    "GLUDD_STOP_TEXT_COMPLETE_COUNT": "stop-text-complete-count.json",
+    "GLUDD_STOP_TOOL_COUNTS_FILE": "stop-tool-counts.json",
+    "GLUDD_STREAK_FILE": "tool-streak.json",
+    "GLUDD_TASK_DEADLINE_STATE": "task-deadlines.json",
+    "GLUDD_TASK_DEADLINE_WARNINGS": "task-deadline-warnings.log",
+    "GLUDD_TASK_STALE_FILE": "task-stale.json",
+    "GLUDD_TEXT_ONLY_STATE_FILE": "text-only-state.json",
+    "GLUDD_TODOWRITE_STATE": "todowrite-state.json",
+    "GLUDD_TODOWRITE_STATE_PATH": "todowrite-state-signal.json",
+    "GLUDD_WATCHDOG_CI_FILE": "watchdog-ci-state.json",
+    "GLUDD_WATCHDOG_PID_FILE": "watchdog.pid",
+}
+
+
+def _runtime_environment(state_root: Path) -> dict[str, str]:
+    """Build a hermetic environment for the nested hook-runtime pytest."""
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith(
+            _COVERAGE_ENV_PREFIXES + _NESTED_PYTEST_ENV_PREFIXES
+        )
+        and name not in _NESTED_PYTEST_ENV_KEYS
+    }
+    env.update(
+        {
+            "GLUDD_PROJECT_ROOT": str(ROOT),
+            "GLUDD_RUNTIME_TEST_STATE_DIR": str(state_root),
+            "OPENCODE_SUBAGENT": "0",
+            "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+            "TEMP": str(state_root),
+            "TMP": str(state_root),
+            "TMPDIR": str(state_root),
+            "UV_NO_SYNC": "1",
+        }
+    )
+    env.update(
+        {
+            name: str(state_root / filename)
+            for name, filename in _RUNTIME_STATE_FILES.items()
+        }
+    )
+    return env
+
 
 ENFORCEMENT_PLUGINS: dict[str, str] = {
     "enforce-floor.ts": "GLUDD_FLOOR_ENFORCE",
@@ -136,13 +210,18 @@ def _attribute_failed_line(line: str) -> str | None:
 def _check_runtime() -> tuple[int, int, int, set[str]]:
     """Run test-hook-runtime. Returns (passed, failed, total, failing_plugins)."""
     try:
-        result = subprocess.run(
-            ["uv", "run", "python", "scripts/test_hook_runtime.py"],
-            capture_output=True, text=True,
-            timeout=120,
-            cwd=str(ROOT),
-            env={**os.environ, "OPENCODE_SUBAGENT": "", "UV_NO_SYNC": "1"},
-        )
+        with tempfile.TemporaryDirectory(
+            prefix=f"gludd-verify-enforcement-{os.getpid()}-"
+        ) as state_dir:
+            state_root = Path(state_dir)
+            result = subprocess.run(
+                ["uv", "run", "python", "scripts/test_hook_runtime.py"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=str(ROOT),
+                env=_runtime_environment(state_root),
+            )
     except subprocess.TimeoutExpired:
         return 0, 0, 0, {"runtime-timed-out"}
 

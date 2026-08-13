@@ -13,9 +13,9 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -45,6 +45,42 @@ pytestmark = pytest.mark.skipif(
 
 _tmp_counter = 0
 
+_GLOBAL_RUNTIME_STATE_NAMES = frozenset(
+    {
+        "gludd-block-counter.json",
+        "gludd-force-dispatch.json",
+        "gludd-hot-delegate.js",
+        "gludd-hot-enforce-session-start.js",
+        "gludd-hot-enforce-verified-claims.js",
+        "gludd-multitask-state.json",
+        "gludd-persist-stop-block.json",
+        "gludd-post-results-state.json",
+        "gludd-text-only-state.json",
+        "gludd-tool-streak.json",
+        "gludd-watchdog-disengage.json",
+    }
+)
+
+
+def _runtime_state_root() -> Path:
+    configured = os.environ.get("GLUDD_RUNTIME_TEST_STATE_DIR")
+    if configured:
+        return Path(configured).resolve()
+    return Path(tempfile.gettempdir()).resolve()
+
+
+def _runtime_state_path(path: str) -> str:
+    """Redirect known machine-global state into the verifier-owned directory."""
+    configured = os.environ.get("GLUDD_RUNTIME_TEST_STATE_DIR")
+    candidate = Path(path)
+    if (
+        configured
+        and candidate.parent == Path("/tmp")
+        and candidate.name in _GLOBAL_RUNTIME_STATE_NAMES
+    ):
+        return str(Path(configured).resolve() / candidate.name)
+    return path
+
 
 def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
     """Write TS code to temp file, run with node --experimental-strip-types, return parsed JSON.
@@ -53,9 +89,17 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
     """
     global _tmp_counter
     _tmp_counter += 1
-    false_done_path = f"/tmp/gludd-false-done-blocks-test-{os.getpid()}-{_tmp_counter}.json"
+    state_root = _runtime_state_root()
+    false_done_path = str(
+        state_root
+        / f"gludd-false-done-blocks-test-{os.getpid()}-{_tmp_counter}.json"
+    )
     with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".ts", dir="/tmp", prefix=f"hook_test_{_tmp_counter}_", delete=False
+        mode="w",
+        suffix=".ts",
+        dir=str(state_root),
+        prefix=f"hook_test_{_tmp_counter}_",
+        delete=False,
     ) as f:
         f.write(ts_code)
         tmp = f.name
@@ -67,8 +111,13 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
         # isDisengaged() to true and turning expected denies into allows.
         # Point plugins at a per-process nonexistent path unless a test
         # explicitly overrides it.
-        env["GLUDD_DISENGAGE_PATH"] = f"/tmp/gludd-disengage-hermetic-{os.getpid()}.json"
+        env["GLUDD_DISENGAGE_PATH"] = str(
+            state_root / f"gludd-disengage-hermetic-{os.getpid()}.json"
+        )
         env["GLUDD_FALSE_DONE_BLOCKS_FILE"] = false_done_path
+        env["GLUDD_HOT_MODULE_PREFIX"] = str(
+            state_root / f"gludd-hot-{os.getpid()}-{_tmp_counter}-"
+        )
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -99,10 +148,8 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
         return None
     finally:
         for path in (tmp, false_done_path):
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(path)
-            except OSError:
-                pass
 
 
 def test_shared_explicit_non_subagent_ignores_stale_pid_marker():
@@ -154,12 +201,10 @@ console.log(JSON.stringify(result ?? null))
 
 
 def _clean_state_files(*paths: str):
-    """Remove state files before/after tests."""
-    for p in paths:
-        try:
-            os.unlink(p)
-        except OSError:
-            pass
+    """Remove state files before/after tests without touching live global state."""
+    for path in paths:
+        with contextlib.suppress(OSError):
+            os.unlink(_runtime_state_path(path))
 
 
 def _with_open_work(env: dict, tmp_tasks: str) -> tuple[dict, str]:
@@ -988,7 +1033,7 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
 def test_floor_corrupt_state_fail_open():
     """Corrupt shared streak file does not crash the hook."""
     # Write corrupt JSON to the shared streak file
-    sf = "/tmp/gludd-tool-streak.json"
+    sf = _runtime_state_path("/tmp/gludd-tool-streak.json")
     with open(sf, "w") as f:
         f.write("not valid json {{{")
     session_state = f"/tmp/gludd-session-start-null-{os.getpid()}.json"
