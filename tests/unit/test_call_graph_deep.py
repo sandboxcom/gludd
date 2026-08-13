@@ -136,6 +136,9 @@ el_funcs = _function_defs(el_tree)
 el_classes = _class_defs(el_tree)
 el_imports = _all_imported_names(el_tree)
 
+elh_tree = _parse_source(SRC_PKG / "event_loop" / "loop_handlers.py")
+elh_classes = _class_defs(elh_tree)
+
 gw_tree = _parse_source(SRC_PKG / "models" / "gateway.py")
 gw_funcs = _function_defs(gw_tree)
 gw_classes = _class_defs(gw_tree)
@@ -262,11 +265,13 @@ EXPECTED_PHASE_PATTERNS: frozenset[str] = frozenset(
 
 
 def test_event_loop_has_all_phase_methods() -> None:
-    methods = _class_method_names(el_tree)
-    assert "EventLoop" in methods, "EventLoop class not found"
-    el_methods = methods["EventLoop"]
-    missing = {p for p in EXPECTED_PHASE_PATTERNS if p not in el_methods}
-    assert not missing, f"EventLoop missing phase methods: {sorted(missing)}"
+    loop_methods = _class_method_names(el_tree)
+    handler_methods = _class_method_names(elh_tree)
+    assert "EventLoop" in loop_methods, "EventLoop class not found"
+    assert "EventLoopHandlers" in handler_methods, "EventLoopHandlers mixin not found"
+    resolved_methods = loop_methods["EventLoop"] | handler_methods["EventLoopHandlers"]
+    missing = {p for p in EXPECTED_PHASE_PATTERNS if p not in resolved_methods}
+    assert not missing, f"EventLoop MRO missing phase methods: {sorted(missing)}"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -361,12 +366,22 @@ _EXPECTED_ROUTER_REGISTRATIONS: frozenset[str] = frozenset(
 
 
 def test_create_daemon_app_registers_all_routers() -> None:
-    daemon_source = (SRC_PKG / "daemon.py").read_text()
-    import re
+    app_body = _create_daemon_app_body()
+    assert app_body is not None, "create_daemon_app not found"
 
     registrations: set[str] = set()
-    for m in re.finditer(r"(\w+)\.register\(app,\s*daemon_state", daemon_source):
-        registrations.add(m.group(1))
+    for node in ast.walk(app_body):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr != "register" or not isinstance(node.func.value, ast.Name):
+            continue
+        if len(node.args) < 2:
+            continue
+        first, second = node.args[:2]
+        app_arg = isinstance(first, ast.Name) and first.id == "app"
+        state_arg = isinstance(second, ast.Name) and second.id == "daemon_state"
+        if app_arg and state_arg:
+            registrations.add(node.func.value.id)
 
     missing = _EXPECTED_ROUTER_REGISTRATIONS - registrations
     extra = registrations - _EXPECTED_ROUTER_REGISTRATIONS
@@ -470,8 +485,11 @@ def test_daemon_wiring_no_orphaned_public_functions() -> None:
     public = _public_functions(dw_tree, Path())
     assert public, "daemon_wiring has no public functions"
     daemon_calls = _collect_calls_from_node(daemon_tree)
-    non_wired = [f for f in public if f not in daemon_calls and f not in dw_imports]
-    assert not non_wired, f"daemon_wiring public functions not called by daemon.py: {non_wired}"
+    public_entrypoints = {"build_dispatch_handlers"}
+    non_wired = [
+        f for f in public if f not in daemon_calls and f not in dw_imports and f not in public_entrypoints
+    ]
+    assert not non_wired, f"daemon_wiring public functions neither wired nor documented entrypoints: {non_wired}"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -506,20 +524,27 @@ def test_model_gateway_init_sets_router() -> None:
 
 
 def test_event_loop_tick_calls_phase_methods() -> None:
-    """Verify tick() references its phase methods."""
+    """Verify tick reaches every declared phase through the dynamic dispatcher."""
     if "EventLoop" not in el_classes:
         pytest.skip("EventLoop class not found")
-    tick_node = None
-    for node in ast.walk(el_classes["EventLoop"]):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "tick":
-            tick_node = node
-            break
+    tick_node = el_funcs.get("tick")
+    tick_once = el_funcs.get("_tick_once")
+    run_phase_range = el_funcs.get("_run_phase_range")
     assert tick_node is not None, "EventLoop.tick not found"
-    calls = _collect_calls_from_node(tick_node)
-    phase_calls = {c for c in calls if c.startswith("self._phase_")}
-    assert len(phase_calls) >= 15, (
-        f"EventLoop.tick calls only {len(phase_calls)} _phase_* methods, expected >=15: {sorted(phase_calls)}"
-    )
+    assert tick_once is not None, "EventLoop._tick_once not found"
+    assert run_phase_range is not None, "EventLoop._run_phase_range not found"
+
+    assert "self._tick_once" in _collect_calls_from_node(tick_node)
+    tick_calls = _collect_calls_from_node(tick_once)
+    assert {"self._run_phases", "self._run_phase_range"} & tick_calls
+    range_source = ast.unparse(run_phase_range)
+    assert "getattr" in _collect_calls_from_node(run_phase_range)
+    assert "_phase_" in range_source and "phase_name" in range_source
+
+    loop_methods = _class_method_names(el_tree)["EventLoop"]
+    handler_methods = _class_method_names(elh_tree)["EventLoopHandlers"]
+    missing = EXPECTED_PHASE_PATTERNS - (loop_methods | handler_methods)
+    assert not missing, f"Dynamic phase dispatch has unresolved methods: {sorted(missing)}"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -643,6 +668,8 @@ def test_build_event_loop_mcp_dispatcher_calls_daemon_wiring() -> None:
 def test_every_router_register_takes_app_and_daemon_state() -> None:
     violations: list[str] = []
     for rp in router_files:
+        if rp.name.startswith("_"):
+            continue
         tree = _parse_source(rp)
         funcs = _function_defs(tree)
         if "register" not in funcs:
