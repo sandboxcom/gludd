@@ -31,8 +31,7 @@ class Blake3:
         elif mode == "key_derivation":
             if context is None:
                 raise ValueError("Key derivation requires context")
-            ck = key if key else b"\x00" * KEY_LEN
-            self._hasher = _blake3.blake3(derive_key_context=context.decode() if context else "", key=ck)
+            self._hasher = _blake3.blake3(derive_key_context=context.decode("utf-8"))
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
