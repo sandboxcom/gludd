@@ -57,6 +57,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 - [ ] S83.41 - **Restore the strict administrative MakeRunner request boundary** across `src/general_ludd/routers/make.py`, its focused router contracts, and `docs/features/ADMIN_MAKE_REQUEST_CONTRACT.md`: validate known JSON fields without coercion, preserve explicit timeout values and both dependency-injection seams, and isolate test patches. | evidence: authoritative replay reproduced 35 failures; focused router family 44 passed/1 structural skip; source branch coverage 100%; Pydantic #4664 and FastAPI #5951 practitioner evidence plus ZDD behavior documented; Ruff and scoped mypy GREEN; collection 105160/105161 with 1 intentional deselection and zero errors; full gate pending | priority: high | effort: XS | status: in_progress
 
+- [ ] S83.42 - **Bridge dictionary and typed project-type registry contracts** across `src/general_ludd/cloud/project_types.py`, `tests/unit/test_project_types.py`, and `docs/features/PROJECT_TYPE_REGISTRY_COMPATIBILITY.md`: keep one frozen canonical registry while exposing a live read-only dictionary view, sorted list alias, and validated legacy registration conversion without weakening fail-closed typed lookup. | evidence: authoritative replay reproduced 22 legacy failures while the canonical suite was 97/97 GREEN; combined suites now 127/127 GREEN; source branch coverage 95.02%; importlib_metadata #409 and Pydantic #5792 practitioner evidence plus atomic ZDD rollout documented; Ruff and scoped mypy GREEN; collection 105168/105169 with 1 intentional deselection and zero errors; full gate pending | priority: high | effort: S | status: in_progress
+
 ---
 
 ## Session 79 — Crypto Library Refactor + Behavioral Guardrails (2026-08-05, 86,428 tests)

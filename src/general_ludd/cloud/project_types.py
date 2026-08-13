@@ -14,9 +14,9 @@ import importlib.util
 import os
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, overload
 
 from general_ludd.schemas.benchmark import TaskRole
 
@@ -727,9 +727,45 @@ PROJECT_TYPE_REGISTRY: dict[str, ProjectType] = {
 }
 
 
+def _legacy_definition(project_type: ProjectType) -> dict[str, object]:
+    """Serialize a typed definition through the former dictionary contract."""
+    return {
+        "type_id": project_type.type_id,
+        "display_name": project_type.display_name,
+        "prompt_templates": {
+            "system": project_type.prompt_template_planner.replace("{context}", "{description}"),
+            "user": project_type.prompt_template_coder.replace("{context}", "{description}"),
+        },
+        "validation_rules": list(project_type.validation_rules),
+        "acceptance_criteria": list(project_type.acceptance_criteria),
+        "suggested_model_roles": list(project_type.suggested_model_roles),
+    }
+
+
+class _LegacyProjectTypesView(Mapping[str, dict[str, object]]):
+    """Read-only live view over the canonical typed registry."""
+
+    def __getitem__(self, type_id: str) -> dict[str, object]:
+        return _legacy_definition(PROJECT_TYPE_REGISTRY[type_id])
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(PROJECT_TYPE_REGISTRY)
+
+    def __len__(self) -> int:
+        return len(PROJECT_TYPE_REGISTRY)
+
+
+PROJECT_TYPES: Mapping[str, dict[str, object]] = _LegacyProjectTypesView()
+
+
 def available_type_ids() -> list[str]:
     """Return all registered project type IDs in sorted order."""
     return sorted(PROJECT_TYPE_REGISTRY)
+
+
+def list_project_types() -> list[str]:
+    """Compatibility alias returning registered project IDs in sorted order."""
+    return available_type_ids()
 
 
 def get_project_type(type_id: str) -> ProjectType:
@@ -812,14 +848,76 @@ def _check_importable(code: str) -> bool:
                 os.unlink(tmp_path)
 
 
-def register_project_type(project_type: ProjectType) -> None:
-    """Register or overwrite a project type in the global registry.
+def _legacy_project_type(type_id: str, definition: Mapping[str, Any]) -> ProjectType:
+    """Validate and convert the former dictionary registration form."""
+    declared_type_id = definition.get("type_id")
+    if declared_type_id != type_id:
+        raise ValueError("legacy project type id must match its registry key")
 
-    Args:
-        project_type: The :class:`ProjectType` to register.  If a type with
-            the same ``type_id`` already exists it is replaced.
-    """
-    PROJECT_TYPE_REGISTRY[project_type.type_id] = project_type
+    display_name = definition.get("display_name")
+    templates = definition.get("prompt_templates")
+    validation_rules = definition.get("validation_rules")
+    acceptance_criteria = definition.get("acceptance_criteria")
+    roles = definition.get("suggested_model_roles")
+    if not isinstance(display_name, str) or not display_name:
+        raise TypeError("display_name must be a non-empty string")
+    if not isinstance(templates, Mapping) or not templates:
+        raise TypeError("prompt_templates must be a non-empty mapping")
+    if not isinstance(validation_rules, list) or not all(isinstance(rule, str) for rule in validation_rules):
+        raise TypeError("validation_rules must be a list of strings")
+    if not isinstance(acceptance_criteria, list) or not all(
+        isinstance(criterion, str) for criterion in acceptance_criteria
+    ):
+        raise TypeError("acceptance_criteria must be a list of strings")
+    if not isinstance(roles, list) or not roles or not all(isinstance(role, str) for role in roles):
+        raise TypeError("suggested_model_roles must be a non-empty list of strings")
+
+    planner = templates.get("planner", templates.get("system", templates.get("user", templates.get("coder"))))
+    coder = templates.get("coder", templates.get("user", templates.get("system", templates.get("planner"))))
+    if not isinstance(planner, str) or not isinstance(coder, str):
+        raise TypeError("prompt_templates must define planner/coder or system/user strings")
+
+    default_entry_point = definition.get("default_entry_point", f"{type_id}.py")
+    if not isinstance(default_entry_point, str) or not default_entry_point:
+        raise TypeError("default_entry_point must be a non-empty string")
+
+    return ProjectType(
+        type_id=type_id,
+        display_name=display_name,
+        default_entry_point=default_entry_point,
+        prompt_template_planner=planner.replace("{description}", "{context}"),
+        prompt_template_coder=coder.replace("{description}", "{context}"),
+        validation_rules=list(validation_rules),
+        acceptance_criteria=list(acceptance_criteria),
+        suggested_model_roles={
+            role: "coding" if role in {"coder", "editor"} else "reasoning"
+            for role in roles
+        },
+    )
+
+
+@overload
+def register_project_type(project_type: ProjectType) -> None: ...
+
+
+@overload
+def register_project_type(project_type: str, definition: Mapping[str, Any]) -> None: ...
+
+
+def register_project_type(
+    project_type: ProjectType | str,
+    definition: Mapping[str, Any] | None = None,
+) -> None:
+    """Register typed definitions or the validated legacy dictionary form."""
+    if isinstance(project_type, ProjectType):
+        if definition is not None:
+            raise TypeError("definition is only valid with a string type id")
+        resolved = project_type
+    else:
+        if definition is None:
+            raise TypeError("legacy registration requires a definition mapping")
+        resolved = _legacy_project_type(project_type, definition)
+    PROJECT_TYPE_REGISTRY[resolved.type_id] = resolved
 
 
 # ---------------------------------------------------------------------------
@@ -882,12 +980,14 @@ def validate_project_type(project_type: str | None) -> None:
 
 
 __all__ = [
+    "PROJECT_TYPES",
     "PROJECT_TYPE_REGISTRY",
     "VALIDATION_RULES",
     "VALID_PROJECT_TYPES",
     "ProjectType",
     "available_type_ids",
     "get_project_type",
+    "list_project_types",
     "register_project_type",
     "resolve_model_profile",
     "validate_project_against_rules",

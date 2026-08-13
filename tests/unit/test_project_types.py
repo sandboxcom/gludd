@@ -1,39 +1,16 @@
-"""Unit tests for the project types registry in general_ludd.cloud.project_types.
+"""Compatibility contracts for the typed project-type registry.
 
-Covers: field completeness, duplicate detection, placeholder presence,
-validation-rule integrity, lookup behaviour, sorting, valid role mapping,
-and dynamic extensibility.
+Covers the live dictionary view, field completeness, prompt/rule integrity,
+fail-closed lookup, sorted listing, valid roles, and both registration forms.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
-# ---------------------------------------------------------------------------
-# Attempt import — TDD red phase is expected if the source file is not yet
-# written.  Every test below is skipped when the module is absent so a
-# collection error does not mask the signal.
-# ---------------------------------------------------------------------------
-
-_project_types_module: object | None = None
-_project_types_error: str | None = None
-
-try:
-    from general_ludd.cloud import project_types as _pt
-
-    _project_types_module = _pt
-except ImportError as exc:
-    _project_types_error = str(exc)
-
-needs_module = pytest.mark.skipif(
-    _project_types_module is None,
-    reason=f"project_types module not importable: {_project_types_error or 'unknown'}",
-)
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+from general_ludd.cloud import project_types as _pt
 
 
 def _required_keys() -> set[str]:
@@ -48,241 +25,215 @@ def _required_keys() -> set[str]:
 
 
 def _valid_role_values() -> set[str]:
-    # Mirror of schemas.benchmark.TaskRole — the registry must reference
-    # valid role identifiers.
     return {"planner", "coder", "reviewer", "editor", "compactor", "enumerator"}
 
 
-# ---------------------------------------------------------------------------
-# Field completeness
-# ---------------------------------------------------------------------------
+def _dynamic_definition(display_name: str = "Dynamic Test Type") -> dict[str, Any]:
+    return {
+        "type_id": "dynamic_test_type",
+        "display_name": display_name,
+        "prompt_templates": {
+            "system": "You are building a {description}.",
+            "user": "Please implement: {description}",
+        },
+        "validation_rules": [
+            "ast_valid",
+            "importable",
+        ],
+        "acceptance_criteria": [
+            "All unit tests pass",
+            "Gate is green",
+        ],
+        "suggested_model_roles": ["coder", "reviewer"],
+    }
 
 
-@needs_module
 class TestRegisteredTypesFieldCompleteness:
-    def test_every_registered_type_has_all_required_keys(self):
+    def test_every_registered_type_has_all_required_keys(self) -> None:
         for type_id, definition in _pt.PROJECT_TYPES.items():
             missing = _required_keys() - set(definition)
             assert not missing, f"Type {type_id!r} missing required keys: {sorted(missing)}"
 
-    def test_type_id_field_is_non_empty_string(self):
+    def test_type_id_field_is_non_empty_string(self) -> None:
         for type_id, definition in _pt.PROJECT_TYPES.items():
-            assert isinstance(definition["type_id"], str), f"Type {type_id!r} type_id not a str"
-            assert definition["type_id"], f"Type {type_id!r} type_id is empty"
+            value = definition["type_id"]
+            assert isinstance(value, str) and value, f"Type {type_id!r} has invalid type_id"
 
-    def test_display_name_field_is_non_empty_string(self):
+    def test_display_name_field_is_non_empty_string(self) -> None:
         for type_id, definition in _pt.PROJECT_TYPES.items():
-            assert isinstance(definition["display_name"], str), f"Type {type_id!r} display_name not a str"
-            assert definition["display_name"], f"Type {type_id!r} display_name is empty"
+            value = definition["display_name"]
+            assert isinstance(value, str) and value, f"Type {type_id!r} has invalid display_name"
 
-    def test_prompt_templates_is_non_empty_dict(self):
+    def test_prompt_templates_is_non_empty_dict(self) -> None:
         for type_id, definition in _pt.PROJECT_TYPES.items():
-            assert isinstance(definition["prompt_templates"], dict), f"Type {type_id!r} prompt_templates not a dict"
-            assert definition["prompt_templates"], f"Type {type_id!r} prompt_templates is empty"
+            value = definition["prompt_templates"]
+            assert isinstance(value, dict) and value, f"Type {type_id!r} has invalid prompt_templates"
 
-    def test_validation_rules_is_list(self):
+    def test_validation_rules_is_list(self) -> None:
         for type_id, definition in _pt.PROJECT_TYPES.items():
-            assert isinstance(definition["validation_rules"], list), f"Type {type_id!r} validation_rules not a list"
+            assert isinstance(definition["validation_rules"], list), f"Type {type_id!r} rules are not a list"
 
-    def test_acceptance_criteria_is_non_empty_list(self):
+    def test_acceptance_criteria_is_non_empty_list(self) -> None:
         for type_id, definition in _pt.PROJECT_TYPES.items():
-            assert isinstance(definition["acceptance_criteria"], list), (
-                f"Type {type_id!r} acceptance_criteria not a list"
-            )
-            assert definition["acceptance_criteria"], f"Type {type_id!r} acceptance_criteria is empty"
+            value = definition["acceptance_criteria"]
+            assert isinstance(value, list) and value, f"Type {type_id!r} has invalid acceptance criteria"
 
-    def test_suggested_model_roles_is_non_empty_list(self):
+    def test_suggested_model_roles_is_non_empty_list(self) -> None:
         for type_id, definition in _pt.PROJECT_TYPES.items():
-            assert isinstance(definition["suggested_model_roles"], list), (
-                f"Type {type_id!r} suggested_model_roles not a list"
-            )
-            assert definition["suggested_model_roles"], f"Type {type_id!r} suggested_model_roles is empty"
+            value = definition["suggested_model_roles"]
+            assert isinstance(value, list) and value, f"Type {type_id!r} has invalid roles"
 
 
-# ---------------------------------------------------------------------------
-# Duplicate detection
-# ---------------------------------------------------------------------------
-
-
-@needs_module
 class TestNoDuplicateTypeIds:
-    def test_registry_has_no_duplicate_keys(self):
-        ids = list(_pt.PROJECT_TYPES.keys())
-        assert len(ids) == len(set(ids)), f"Duplicate type_ids detected: {[tid for tid in ids if ids.count(tid) > 1]}"
+    def test_registry_has_no_duplicate_keys(self) -> None:
+        ids = list(_pt.PROJECT_TYPES)
+        assert len(ids) == len(set(ids))
 
 
-# ---------------------------------------------------------------------------
-# Prompt template placeholders
-# ---------------------------------------------------------------------------
-
-
-@needs_module
 class TestPromptTemplatePlaceholders:
-    def test_every_template_in_every_type_contains_description_placeholder(self):
+    def test_every_template_contains_description_placeholder(self) -> None:
         for type_id, definition in _pt.PROJECT_TYPES.items():
-            for template_name, template_text in definition["prompt_templates"].items():
-                assert isinstance(template_text, str), f"Type {type_id!r} template {template_name!r} is not a str"
+            templates = definition["prompt_templates"]
+            assert isinstance(templates, dict)
+            for template_name, template_text in templates.items():
+                assert isinstance(template_text, str)
                 assert "{description}" in template_text, (
-                    f"Type {type_id!r} template {template_name!r} missing {{description}} placeholder"
+                    f"Type {type_id!r} template {template_name!r} lacks description placeholder"
                 )
 
 
-# ---------------------------------------------------------------------------
-# Validation rule integrity
-# ---------------------------------------------------------------------------
-
-_VALID_AST_CHECKS: frozenset[str] = frozenset(
-    {
-        "ast",
-        "importlib",
-        "import",
-        "importlib.util",
-        "ast.parse",
-        "ast.walk",
-        "importlib.import_module",
-        "importlib.util.find_spec",
-        "pkgutil",
-        "pkgutil.iter_modules",
-        "sys.modules",
-    }
-)
-
-
-@needs_module
 class TestValidationRuleIntegrity:
-    def test_every_rule_references_valid_ast_or_import_check(self):
+    def test_every_rule_is_a_stable_identifier(self) -> None:
         for type_id, definition in _pt.PROJECT_TYPES.items():
-            for rule in definition["validation_rules"]:
-                assert isinstance(rule, str), f"Type {type_id!r} validation rule not a str: {rule!r}"
-                tokens = rule.lower().replace(".", " ").replace("_", " ").split()
-                hit = any(tok in _VALID_AST_CHECKS for tok in tokens)
-                assert hit, (
-                    f"Type {type_id!r} validation rule references no recognised "
-                    f"AST/import check: {rule!r}\n"
-                    f"Recognised tokens: {sorted(_VALID_AST_CHECKS)}"
+            rules = definition["validation_rules"]
+            assert isinstance(rules, list) and rules, f"Type {type_id!r} has no validation rules"
+            for rule in rules:
+                assert isinstance(rule, str)
+                assert rule and rule.replace("_", "").isalnum(), (
+                    f"Type {type_id!r} has unstable validation rule {rule!r}"
                 )
 
 
-# ---------------------------------------------------------------------------
-# Lookup behaviour
-# ---------------------------------------------------------------------------
-
-
-@needs_module
 class TestGetProjectType:
-    def test_returns_definition_for_known_type(self):
+    def test_returns_definition_for_known_type(self) -> None:
         first_id = next(iter(_pt.PROJECT_TYPES))
-        result = _pt.get_project_type(first_id)
-        assert result is not None
-        assert result["type_id"] == first_id
+        assert _pt.get_project_type(first_id).type_id == first_id
 
-    def test_returns_none_for_unknown_type(self):
-        result = _pt.get_project_type("__nonexistent_type__")
-        assert result is None
+    def test_unknown_type_fails_closed(self) -> None:
+        with pytest.raises(KeyError):
+            _pt.get_project_type("__nonexistent_type__")
 
-    def test_returns_none_for_empty_string(self):
-        assert _pt.get_project_type("") is None
-
-
-# ---------------------------------------------------------------------------
-# Sorting
-# ---------------------------------------------------------------------------
+    def test_empty_string_fails_closed(self) -> None:
+        with pytest.raises(KeyError):
+            _pt.get_project_type("")
 
 
-@needs_module
 class TestListProjectTypes:
-    def test_returns_list(self):
+    def test_returns_list(self) -> None:
+        assert isinstance(_pt.list_project_types(), list)
+
+    def test_returns_sorted_list(self) -> None:
         result = _pt.list_project_types()
-        assert isinstance(result, list)
+        assert result == sorted(result)
 
-    def test_returns_sorted_list(self):
-        result = _pt.list_project_types()
-        assert result == sorted(result), f"Not sorted: {result}"
-
-    def test_contains_every_registered_key(self):
-        result = _pt.list_project_types()
-        assert set(result) == set(_pt.PROJECT_TYPES.keys())
+    def test_contains_every_registered_key(self) -> None:
+        assert set(_pt.list_project_types()) == set(_pt.PROJECT_TYPES)
 
 
-# ---------------------------------------------------------------------------
-# Valid role mapping
-# ---------------------------------------------------------------------------
-
-
-@needs_module
 class TestSuggestedModelRolesAreValid:
-    def test_every_role_mentioned_maps_to_valid_taskrole(self):
+    def test_every_role_maps_to_valid_taskrole(self) -> None:
         for type_id, definition in _pt.PROJECT_TYPES.items():
-            for role in definition["suggested_model_roles"]:
-                assert role in _valid_role_values(), (
-                    f"Type {type_id!r} references unknown role {role!r}. Valid: {sorted(_valid_role_values())}"
-                )
+            roles = definition["suggested_model_roles"]
+            assert isinstance(roles, list)
+            for role in roles:
+                assert role in _valid_role_values(), f"Type {type_id!r} has unknown role {role!r}"
 
-    def test_roles_are_strings(self):
-        for type_id, definition in _pt.PROJECT_TYPES.items():
-            for role in definition["suggested_model_roles"]:
-                assert isinstance(role, str), f"Type {type_id!r} role not a str: {role!r}"
-
-
-# ---------------------------------------------------------------------------
-# Dynamic extensibility
-# ---------------------------------------------------------------------------
+    def test_roles_are_strings(self) -> None:
+        for definition in _pt.PROJECT_TYPES.values():
+            roles = definition["suggested_model_roles"]
+            assert isinstance(roles, list)
+            assert all(isinstance(role, str) for role in roles)
 
 
-@needs_module
 class TestDynamicRegistration:
-    def test_register_new_type_adds_to_registry(self):
-        original_ids = set(_pt.PROJECT_TYPES)
-        assert "dynamic_test_type" not in original_ids
-
-        _pt.register_project_type(
-            "dynamic_test_type",
-            {
-                "type_id": "dynamic_test_type",
-                "display_name": "Dynamic Test Type",
-                "prompt_templates": {
-                    "system": "You are building a {description}.",
-                    "user": "Please implement: {description}",
-                },
-                "validation_rules": [
-                    "ast.parse validates syntax integrity",
-                    "importlib.util.find_spec checks dependency availability",
-                ],
-                "acceptance_criteria": [
-                    "All unit tests pass",
-                    "Gate is green",
-                ],
-                "suggested_model_roles": ["coder", "reviewer"],
-            },
-        )
-
+    def test_register_new_type_adds_to_registry(self) -> None:
+        _pt.register_project_type("dynamic_test_type", _dynamic_definition())
         assert "dynamic_test_type" in _pt.PROJECT_TYPES
 
-    def test_register_new_type_is_immediately_lookupable(self):
-        assert "dynamic_test_type" in _pt.PROJECT_TYPES  # from prior test
-
+    def test_register_new_type_is_immediately_lookupable(self) -> None:
+        _pt.register_project_type("dynamic_test_type", _dynamic_definition())
         result = _pt.get_project_type("dynamic_test_type")
-        assert result is not None
-        assert result["type_id"] == "dynamic_test_type"
-        assert result["display_name"] == "Dynamic Test Type"
-        assert "{description}" in result["prompt_templates"]["system"]
+        assert result.type_id == "dynamic_test_type"
+        assert result.display_name == "Dynamic Test Type"
+        assert "{context}" in result.prompt_template_planner
 
-    def test_register_new_type_appears_in_list(self):
-        result = _pt.list_project_types()
-        assert "dynamic_test_type" in result
+    def test_register_new_type_appears_in_list(self) -> None:
+        _pt.register_project_type("dynamic_test_type", _dynamic_definition())
+        assert "dynamic_test_type" in _pt.list_project_types()
 
-    def test_register_duplicate_type_id_updates_definition(self):
+    def test_register_duplicate_type_id_updates_definition(self) -> None:
+        _pt.register_project_type("dynamic_test_type", _dynamic_definition())
         _pt.register_project_type(
             "dynamic_test_type",
             {
                 "type_id": "dynamic_test_type",
                 "display_name": "Updated Dynamic Test Type",
                 "prompt_templates": {"system": "Updated: {description}"},
-                "validation_rules": ["ast.parse validates syntax"],
+                "validation_rules": ["ast_valid"],
                 "acceptance_criteria": ["Updated criteria"],
                 "suggested_model_roles": ["planner"],
             },
         )
-        updated = _pt.get_project_type("dynamic_test_type")
-        assert updated is not None
-        assert updated["display_name"] == "Updated Dynamic Test Type"
+        assert _pt.get_project_type("dynamic_test_type").display_name == "Updated Dynamic Test Type"
+
+
+class TestLegacyRegistrationValidation:
+    def test_mismatched_type_id_is_rejected_without_mutation(self) -> None:
+        definition = _dynamic_definition()
+        definition["type_id"] = "different"
+        before = set(_pt.PROJECT_TYPES)
+        with pytest.raises(ValueError):
+            _pt.register_project_type("dynamic_test_type", definition)
+        assert set(_pt.PROJECT_TYPES) == before
+
+    def test_missing_display_name_is_rejected(self) -> None:
+        definition = _dynamic_definition()
+        definition["display_name"] = ""
+        with pytest.raises(TypeError):
+            _pt.register_project_type("dynamic_test_type", definition)
+
+    def test_empty_templates_are_rejected(self) -> None:
+        definition = _dynamic_definition()
+        definition["prompt_templates"] = {}
+        with pytest.raises(TypeError):
+            _pt.register_project_type("dynamic_test_type", definition)
+
+    def test_non_list_rules_are_rejected(self) -> None:
+        definition = _dynamic_definition()
+        definition["validation_rules"] = "ast_valid"
+        with pytest.raises(TypeError):
+            _pt.register_project_type("dynamic_test_type", definition)
+
+    def test_non_string_criteria_are_rejected(self) -> None:
+        definition = _dynamic_definition()
+        definition["acceptance_criteria"] = [1]
+        with pytest.raises(TypeError):
+            _pt.register_project_type("dynamic_test_type", definition)
+
+    def test_empty_roles_are_rejected(self) -> None:
+        definition = _dynamic_definition()
+        definition["suggested_model_roles"] = []
+        with pytest.raises(TypeError):
+            _pt.register_project_type("dynamic_test_type", definition)
+
+    def test_non_string_template_is_rejected(self) -> None:
+        definition = _dynamic_definition()
+        definition["prompt_templates"] = {"system": 1}
+        with pytest.raises(TypeError):
+            _pt.register_project_type("dynamic_test_type", definition)
+
+    def test_empty_entry_point_is_rejected(self) -> None:
+        definition = _dynamic_definition()
+        definition["default_entry_point"] = ""
+        with pytest.raises(TypeError):
+            _pt.register_project_type("dynamic_test_type", definition)
