@@ -296,18 +296,22 @@ advisory and ignores ONLY the adjudicated exceptions below by ID.
 
 - **CVE-2025-69872 — diskcache (pickle deserialization → RCE):** no upstream
   package release fixes the unsafe default serializer. Gludd does not use that
-  serializer: every production DiskCache constructor is routed through
-  `security.safe_diskcache`, which stores only strict MessagePack data in an
-  owner-only `msgpack-v1` namespace, rejects file-like/extension values, and
-  refuses every legacy pickle mode without deserializing it. Existing cache
-  files are preserved but never opened by the safe namespace. The advisory
-  therefore remains explicitly ignored by package ID while a structural test
-  fails if any direct application `diskcache.Cache` construction returns.
+  serializer: every production DiskCache constructor, including model-response
+  caching, is routed through `security.safe_diskcache`, which stores only strict
+  MessagePack data in an owner-only `msgpack-v1` namespace, rejects
+  file-like/extension values, and refuses every legacy pickle mode without
+  deserializing it. Existing cache files are preserved but never opened by the
+  safe namespace. On rolling deployment this is a cache-cold transition:
+  requests continue normally and repopulate the safe namespace; operators should
+  expect only a temporary hit-rate dip, not a data migration or outage. The
+  advisory therefore remains explicitly ignored by package ID while a structural
+  test fails if any direct application `diskcache.Cache` construction returns.
   DiskCache's own documentation confirms that its default uses pickle and
   recommends a custom `Disk` serializer; the still-open
-  [upstream vulnerability report](https://github.com/grantjenks/python-diskcache/issues/357)
-  describes the advisory as a blocker for continuously scanned users. A
-  separate, still-open
+  [upstream no-fix report #362](https://github.com/grantjenks/python-diskcache/issues/362)
+  records the continuing scanner impact. An earlier
+  [vulnerability report #357](https://github.com/grantjenks/python-diskcache/issues/357)
+  and a separate, still-open
   [maintenance-status thread](https://github.com/grantjenks/python-diskcache/issues/355)
   records that no upstream release had shipped since 2023. See the
   [DiskCache serializer documentation](https://grantjenks.com/docs/diskcache/tutorial.html#disk).

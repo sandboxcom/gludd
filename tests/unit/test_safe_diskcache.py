@@ -85,6 +85,73 @@ def test_safe_disk_rejects_pickle_mode_without_deserializing(tmp_path: Path) -> 
     assert not marker.exists()
 
 
+def test_safe_disk_rejects_legacy_key_without_deserializing(tmp_path: Path) -> None:
+    from general_ludd.security.safe_diskcache import (
+        SafeMsgpackDisk,
+        UnsafeLegacyCacheError,
+    )
+
+    disk = SafeMsgpackDisk(str(tmp_path))
+    with pytest.raises(UnsafeLegacyCacheError, match="legacy pickled cache key"):
+        disk.get(pickle.dumps(_PicklePayload(tmp_path / "marker")), False)
+    assert not (tmp_path / "marker").exists()
+
+
+def test_safe_disk_round_trips_msgpack_keys(tmp_path: Path) -> None:
+    from general_ludd.security.safe_diskcache import SafeMsgpackDisk
+
+    disk = SafeMsgpackDisk(str(tmp_path))
+    stored, raw = disk.put({"key": ["value", 3]})
+    assert disk.get(stored, raw) == {"key": ["value", 3]}
+
+
+def test_safe_disk_rejects_non_bytes_key_namespace(tmp_path: Path) -> None:
+    from general_ludd.security.safe_diskcache import (
+        SafeMsgpackDisk,
+        UnsafeLegacyCacheError,
+    )
+
+    disk = SafeMsgpackDisk(str(tmp_path))
+    with pytest.raises(UnsafeLegacyCacheError, match="outside the safe"):
+        disk.get("not-packed", True)
+
+
+def test_safe_disk_rejects_file_like_store_and_fetch(tmp_path: Path) -> None:
+    from diskcache.core import MODE_RAW
+
+    from general_ludd.security.safe_diskcache import SafeMsgpackDisk
+
+    disk = SafeMsgpackDisk(str(tmp_path))
+    with pytest.raises(TypeError, match="does not accept file-like"):
+        disk.store(b"value", True)
+    with pytest.raises(TypeError, match="does not return file-like"):
+        disk.fetch(MODE_RAW, None, b"value", True)
+
+
+def test_safe_disk_rejects_non_bytes_value_namespace(tmp_path: Path) -> None:
+    from diskcache.core import MODE_RAW
+
+    from general_ludd.security.safe_diskcache import (
+        SafeMsgpackDisk,
+        UnsafeLegacyCacheError,
+    )
+
+    disk = SafeMsgpackDisk(str(tmp_path))
+    with pytest.raises(UnsafeLegacyCacheError, match="outside the safe"):
+        disk.fetch(MODE_RAW, None, "not-packed", False)
+
+
+def test_safe_disk_rejects_msgpack_extensions(tmp_path: Path) -> None:
+    from diskcache.core import MODE_RAW
+
+    from general_ludd.security.safe_diskcache import SafeMsgpackDisk
+
+    packed = b"\xd4\x01x"  # MessagePack fixext1, extension code 1.
+    disk = SafeMsgpackDisk(str(tmp_path))
+    with pytest.raises(ValueError, match="extension type 1"):
+        disk.fetch(MODE_RAW, None, packed, False)
+
+
 def test_safe_cache_directories_are_owner_only(tmp_path: Path) -> None:
     from general_ludd.security.safe_diskcache import open_safe_diskcache
 

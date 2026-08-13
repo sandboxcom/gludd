@@ -6,9 +6,10 @@ import contextlib
 import hashlib
 import json
 import logging
-import os
 from types import TracebackType
-from typing import Any, cast
+from typing import cast
+
+from general_ludd.security.safe_diskcache import SafeCache, open_safe_diskcache
 
 logger = logging.getLogger(__name__)
 
@@ -41,19 +42,9 @@ def _make_cache_key(
 
 class ModelResponseCache:
     def __init__(self, cache_dir: str | None = None) -> None:
-        from diskcache import Cache
-
-        path = os.path.expanduser(cache_dir or DEFAULT_CACHE_DIR)
-        # Mitigation for diskcache CVE-2025-69872 (pickle deserialization →
-        # arbitrary code execution for anyone with WRITE access to the cache
-        # dir). diskcache has no fixed release; we cannot remove the pickle
-        # codepath, so we remove the precondition: create the cache directory
-        # owner-only (0o700) so no other local user can plant a malicious
-        # pickle. See SECURITY.md "Known dependency advisories".
-        os.makedirs(path, mode=0o700, exist_ok=True)
-        with contextlib.suppress(OSError):
-            os.chmod(path, 0o700)
-        self._cache: Any = Cache(path)
+        self._cache: SafeCache = open_safe_diskcache(
+            cache_dir or DEFAULT_CACHE_DIR,
+        )
         self._closed = False
 
     def __enter__(self) -> ModelResponseCache:

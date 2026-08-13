@@ -57,10 +57,10 @@ class TestModelResponseCache:
             assert result is None
 
     def test_cache_dir_is_owner_only(self):
-        # Compensating control for diskcache CVE-2025-69872 (pickle deserialization
-        # → RCE for anyone with WRITE access to the cache dir): the cache directory
-        # must be created owner-only (0o700) so no other local user can plant a
-        # malicious pickle. See SECURITY.md "Known dependency advisories".
+        # Defense in depth for diskcache CVE-2025-69872: strict MessagePack
+        # serialization removes executable payloads, while owner-only permissions
+        # also prevent another local user from planting cache rows. See
+        # docs/SECURITY.md "Known dependency advisories".
         from general_ludd.models.response_cache import ModelResponseCache
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -218,7 +218,7 @@ class TestModelResponseCacheDeep:
         backend = MagicMock()
         with (
             tempfile.TemporaryDirectory() as tmpdir,
-            patch("diskcache.Cache", return_value=backend),
+            patch("general_ludd.models.response_cache.open_safe_diskcache", return_value=backend),
             ModelResponseCache(cache_dir=tmpdir) as cache,
         ):
             assert cache._cache is backend

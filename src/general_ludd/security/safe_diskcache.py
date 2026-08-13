@@ -6,12 +6,10 @@ import importlib
 import os
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from types import TracebackType
 from typing import (
     TYPE_CHECKING,
     Never,
     Protocol,
-    Self,
     cast,
 )
 
@@ -26,53 +24,18 @@ class SafeCache(Protocol):
 
     directory: str
     disk: object
-
-    def set(
-        self,
-        key: object,
-        value: object,
-        expire: float | None = None,
-        *,
-        read: bool = False,
-        tag: str | None = None,
-        retry: bool = False,
-    ) -> bool: ...
-
-    def get(
-        self,
-        key: object,
-        default: object = None,
-        *,
-        read: bool = False,
-        expire_time: bool = False,
-        tag: bool = False,
-        retry: bool = False,
-    ) -> object: ...
-
-    def delete(self, key: object, retry: bool = False) -> bool: ...
-
-    def clear(self, retry: bool = False) -> int: ...
-
-    def close(self) -> None: ...
-
-    def iterkeys(self, reverse: bool = False) -> Iterator[object]: ...
-
-    def __iter__(self) -> Iterator[object]: ...
-
-    def __contains__(self, key: object) -> bool: ...
-
-    def __getitem__(self, key: object) -> object: ...
-
-    def __setitem__(self, key: object, value: object) -> None: ...
-
-    def __enter__(self) -> Self: ...
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None: ...
+    set: Callable[..., bool]
+    get: Callable[..., object]
+    delete: Callable[..., bool]
+    clear: Callable[..., int]
+    close: Callable[[], None]
+    iterkeys: Callable[..., Iterator[object]]
+    __iter__: Callable[[], Iterator[object]]
+    __contains__: Callable[[object], bool]
+    __getitem__: Callable[[object], object]
+    __setitem__: Callable[[object, object], None]
+    __enter__: Callable[[], SafeCache]
+    __exit__: Callable[..., None]
 
 
 class _MsgpackModule(Protocol):
