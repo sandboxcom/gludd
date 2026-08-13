@@ -93,7 +93,7 @@ class TestLocalHookEntryPoints:
     LOCAL_ENTRIES: ClassVar[dict[str, str]] = {
         "scan-conflicts": "python scripts/scan_conflicts.py",
         "ruff-lint": "uv run ruff check src tests",
-        "mypy": "uv run mypy --no-incremental -p general_ludd",
+        "mypy": "make _precommit-mypy",
         "check-tdd-compliance": "uv run python scripts/check_tdd_compliance.py",
         "check-disk": "uv run python scripts/check_disk_usage.py",
         "collect-check": "uv run python -m pytest tests/ --co -q",
@@ -116,6 +116,12 @@ class TestLocalHookEntryPoints:
             expected = self.LOCAL_ENTRIES.get(hid)
             assert expected is not None, f"unknown local hook id {hid!r}"
             assert entry == expected, f"hook {hid!r}: entry={entry!r} != expected={expected!r}"
+
+    def test_mypy_entry_uses_cross_platform_null_cache_target(self) -> None:
+        makefile = (_PROJECT / "Makefile").read_text(encoding="utf-8")
+        assert "MYPY_NULL_CACHE := $(if $(filter Windows_NT,$(OS)),nul,/dev/null)" in makefile
+        assert "_precommit-mypy:" in makefile
+        assert 'mypy --cache-dir="$(MYPY_NULL_CACHE)" -p general_ludd' in makefile
 
     def test_python_scripts_exist(self) -> None:
         for hid, rel in self._PYTHON_SCRIPT_ID_TO_PATH.items():

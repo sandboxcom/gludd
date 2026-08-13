@@ -4,6 +4,7 @@ TESTFILE ?=
 REF ?=
 TARGET ?= master
 MYPY_MAX := 0
+MYPY_NULL_CACHE := $(if $(filter Windows_NT,$(OS)),nul,/dev/null)
 OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 OPENCODE_DATA_DIR ?=
 OPENCODE_RETENTION_DAYS ?= 30
@@ -92,7 +93,7 @@ PYTEST_VERBOSITY ?= -v
         init sync relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
-        typecheck setup-dirs setup-venv clean healthcheck \
+        typecheck _precommit-mypy setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
@@ -755,6 +756,11 @@ ruff-audit:
 typecheck:
 	@$(UV) run mypy -p general_ludd
 	@$(UV) run mypy --config-file config/mypy-tests.toml tests/unit/test_config_gaps.py
+
+# Pre-commit needs the full package analysis without writing a disposable cache.
+# os.devnull is /dev/null on Unix and nul on Windows; make selects equivalently.
+_precommit-mypy:
+	@$(UV) run mypy --cache-dir="$(MYPY_NULL_CACHE)" -p general_ludd
 
 test:
 	@if [ -n "$(TESTFILE)" ]; then \
