@@ -34,6 +34,19 @@ def test_gate_lite_target_exists():
     assert "gate-lite:" in content, "Makefile missing 'gate-lite:' target"
 
 
+def test_gate_lite_does_not_require_ignored_recovery_backup():
+    """gate-lite must be reproducible from a clean checkout."""
+    content = _content()
+    dep_line = next(
+        line
+        for line in content.splitlines()
+        if line.startswith("gate-lite:")
+    )
+    assert "verify-opencode-backup" not in dep_line, (
+        "gate-lite must not require gitignored .opencode.orig recovery state"
+    )
+
+
 def test_gate_lite_kill_target_exists():
     content = _content()
     assert "gate-lite-kill:" in content, "Makefile missing 'gate-lite-kill:' target"
