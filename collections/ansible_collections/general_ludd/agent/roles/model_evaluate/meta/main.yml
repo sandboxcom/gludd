@@ -6,6 +6,7 @@ galaxy_info:
     Runs EleutherAI LM Evaluation Harness against a model to measure
     benchmark performance on standard NLP tasks.
   license: MIT
+  min_ansible_version: "2.14"
   platforms:
     - name: EL
       versions:
@@ -26,5 +27,5 @@ galaxy_info:
     - evaluation
     - benchmark
     - eleuther
-    - lm-eval
+    - lmeval
 dependencies: []

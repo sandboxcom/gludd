@@ -6,6 +6,7 @@ galaxy_info:
     Starts a local model inference server using llama.cpp server or vllm.
     Supports health-check polling until the server is ready.
   license: MIT
+  min_ansible_version: "2.14"
   platforms:
     - name: EL
       versions:
@@ -25,6 +26,6 @@ galaxy_info:
     - ml
     - inference
     - server
-    - llama.cpp
+    - llamacpp
     - vllm
 dependencies: []

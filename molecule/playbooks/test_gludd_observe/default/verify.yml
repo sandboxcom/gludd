@@ -53,6 +53,7 @@
           - observe_summary.timeline_sources == ['prod-metrics', 'prod-logs', 'prod-traces', 'broken-events']
           - observe_summary.timeline_error_count | int == 1
           - observe_summary.timeline_error_source == 'broken-events'
+          - observe_summary.source_count | int == 4
           - observe_summary.correlation_group_size | int == 4
           - observe_summary.topology.services.checkout == ['web-01']
           - observe_summary.topology.hosts['web-01'] == ['checkout']

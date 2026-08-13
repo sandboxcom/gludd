@@ -1,168 +1,168 @@
 ---
 # Verify: assert every binary-smoke invariant against the outputs persisted by
-# converge.yml. Runs on localhost; the backgrounded daemon from converge is
-# still up during verify.
-- name: Verify — gludd binary smoke results (localhost)
-  hosts: localhost
-  connection: local
+# converge.yml. Runs inside the same container (the backgrounded daemon from
+# converge is still up).
+- name: Verify - gludd binary smoke invariants
+  hosts: all
   gather_facts: false
+  become: false
   vars:
-    _smoke_out_dir: /tmp/gludd-binary-smoke-linux
-    _daemon_port: "{{ lookup('env', 'GLUDD_SMOKE_PORT') | default('18001', true) }}"
-    _daemon_url: "http://127.0.0.1:{{ _daemon_port }}"
+    daemon_url: "http://127.0.0.1:8000"
   tasks:
-    - name: Slurp captured outputs
+    # ===================================================================
+    # CLI outputs: version / help / project paths
+    # ===================================================================
+    - name: Load persisted CLI outputs
       ansible.builtin.slurp:
-        src: "{{ _smoke_out_dir }}/{{ item }}"
-      register: _slurp_raw
-      loop:
-        - binary_path.txt
-        - version.stdout.txt
-        - version.stderr.txt
-        - version.rc.txt
-        - help.stdout.txt
-        - help.stderr.txt
-        - help.rc.txt
-        - paths.stdout.txt
-        - paths.stderr.txt
-        - paths.rc.txt
-        - bad_flag.stdout.txt
-        - bad_flag.stderr.txt
-        - bad_flag.rc.txt
-        - daemon.stderr.log
-        - health.json
-        - job_submit.json
-        - port_clash.txt
+        src: /tmp/gludd-cli-outputs.txt
+      register: _cli_raw
 
-    - name: Decode captured outputs
+    - name: Parse CLI outputs
       ansible.builtin.set_fact:
-        _version_out: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'version.stdout.txt') | list | first).content | b64decode }}"
-        _version_err: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'version.stderr.txt') | list | first).content | b64decode }}"
-        _version_rc: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'version.rc.txt') | list | first).content | b64decode | trim }}"
-        _help_out: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'help.stdout.txt') | list | first).content | b64decode }}"
-        _help_err: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'help.stderr.txt') | list | first).content | b64decode }}"
-        _help_rc: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'help.rc.txt') | list | first).content | b64decode | trim }}"
-        _paths_out: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'paths.stdout.txt') | list | first).content | b64decode }}"
-        _paths_err: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'paths.stderr.txt') | list | first).content | b64decode }}"
-        _paths_rc: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'paths.rc.txt') | list | first).content | b64decode | trim }}"
-        _daemon_err: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'daemon.stderr.log') | list | first).content | b64decode }}"
-        _health_json: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'health.json') | list | first).content | b64decode }}"
-        _job_json: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'job_submit.json') | list | first).content | b64decode }}"
+        cli_outputs: "{{ _cli_raw.content | b64decode }}"
 
-    - name: Parse health response JSON
+    - name: Assert version is a SemVer string
+      ansible.builtin.assert:
+        that:
+          - "'general-ludd-agent' in cli_outputs"
+          - "cli_outputs | regex_search('\\\\d+\\\\.\\\\d+\\\\.\\\\d+') | length > 0"
+        fail_msg: "version did not print a SemVer: {{ cli_outputs }}"
+        success_msg: "version printed a SemVer"
+
+    - name: Assert --help lists all top-level subcommands
+      ansible.builtin.assert:
+        that:
+          - "'daemon' in cli_outputs"
+          - "'project' in cli_outputs"
+          - "'version' in cli_outputs"
+          - "'models' in cli_outputs"
+        fail_msg: "--help missing expected subcommands: {{ cli_outputs }}"
+        success_msg: "--help lists daemon/project/version/models (+more)"
+
+    - name: Assert binary locates bundled config/templates/playbooks paths
+      ansible.builtin.assert:
+        that:
+          - "'Collection search path' in cli_outputs"
+          - "'=== project paths (rc=0) ===' in cli_outputs"
+          - "'(missing)' not in cli_outputs"
+        fail_msg: >
+          'gludd project paths' did not resolve bundled paths cleanly:
+          {{ cli_outputs }}
+        success_msg: "project paths resolved bundled collections"
+
+    - name: Assert no Python traceback / import / missing-file errors in CLI output
+      ansible.builtin.assert:
+        that:
+          - "'Traceback' not in cli_outputs"
+          - "'ModuleNotFoundError' not in cli_outputs"
+          - "'ImportError' not in cli_outputs"
+          - "'Missing base YAML definition file' not in cli_outputs"
+          - "'No module named' not in cli_outputs"
+        fail_msg: "CLI output contained a boot/import error: {{ cli_outputs }}"
+        success_msg: "no traceback / ImportError / ModuleNotFoundError / missing-base-YAML"
+
+    # ===================================================================
+    # Invalid flag error path
+    # ===================================================================
+    - name: Load persisted invalid-flag result
+      ansible.builtin.slurp:
+        src: /tmp/gludd-bad-flag.txt
+      register: _bad_raw
+
+    - name: Parse invalid-flag result
       ansible.builtin.set_fact:
-        _health: "{{ _health_json | from_json }}"
-      when: _health_json | length > 0
+        bad_flag_text: "{{ _bad_raw.content | b64decode }}"
 
-    # --- version ---
-    - name: Assert version command succeeded
+    - name: Assert invalid flag exits non-zero with a clean (non-traceback) error
       ansible.builtin.assert:
         that:
-          - _version_rc == "0"
-          - _version_out | regex_search("[0-9]+\\.[0-9]+\\.[0-9]+") is truthy
-          - "'general-ludd-agent' in _version_out"
-        fail_msg: >-
-          `gludd version` did not return a version string.
-          rc={{ _version_rc }} stdout={{ _version_out }} stderr={{ _version_err }}
+          # rc= line is non-zero (argparse rejects unknown flags with exit 2).
+          - "(bad_flag_text | regex_search('rc=[1-9][0-9]*')) is not none"
+          - "'Traceback' not in bad_flag_text"
+          - "'ModuleNotFoundError' not in bad_flag_text"
+        fail_msg: "invalid-flag did not fail cleanly: {{ bad_flag_text }}"
+        success_msg: "invalid flag rejected cleanly (non-zero, no traceback)"
 
-    # --- help ---
-    - name: Assert help shows subcommands
+    # ===================================================================
+    # Daemon health: /healthz still 200
+    # ===================================================================
+    - name: GET /healthz (daemon must still be answering)
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/healthz"
+        method: GET
+        status_code: [200]
+        return_content: true
+      register: health_check
+
+    - name: Assert health endpoint returns 200
       ansible.builtin.assert:
         that:
-          - _help_rc == "0"
-          - "'daemon' in _help_out"
-          - "'project' in _help_out"
-          - "'version' in _help_out"
-        fail_msg: >-
-          `gludd --help` missing expected subcommands.
-          rc={{ _help_rc }} stdout_head={{ _help_out[:400] }}
+          - health_check.status == 200
+        fail_msg: "healthz did not return 200: status={{ health_check.status }}"
+        success_msg: "healthz returned 200"
 
-    # --- project paths ---
-    - name: Assert project paths resolved
-      ansible.builtin.assert:
-        that:
-          - _paths_rc == "0"
-          - _paths_out | length > 0
-          - "('Collection search path' in _paths_out) or ('BUNDLED' in _paths_out) or ('collections' in _paths_out | lower)"
-        fail_msg: >-
-          `gludd project paths` produced no path entries.
-          rc={{ _paths_rc }} stdout={{ _paths_out }}
+    # ===================================================================
+    # Job submission: daemon accepted the trivial job
+    # ===================================================================
+    - name: Load persisted job submission result
+      ansible.builtin.slurp:
+        src: /tmp/gludd-job-submit.json
+      register: _job_raw
 
-    # --- invalid flag ---
-    - name: Assert invalid flag exits non-zero cleanly
-      ansible.builtin.assert:
-        that:
-          - "(_slurp_raw.results | selectattr('item', 'equalto', 'bad_flag.rc.txt') | list | first).content | b64decode | trim | int != 0"
-          - "'Traceback' not in (_slurp_raw.results | selectattr('item', 'equalto', 'bad_flag.stdout.txt') | list | first).content | b64decode"
-          - "'Traceback' not in (_slurp_raw.results | selectattr('item', 'equalto', 'bad_flag.stderr.txt') | list | first).content | b64decode"
-        fail_msg: "invalid flag did not fail cleanly"
-
-    # --- daemon: no traceback ---
-    - name: Assert daemon stderr has no Python traceback
-      ansible.builtin.assert:
-        that:
-          - "'Traceback (most recent call last)' not in _daemon_err"
-          - "'ImportError' not in _daemon_err"
-          - "'ModuleNotFoundError' not in _daemon_err"
-        fail_msg: >-
-          Daemon emitted a Python traceback on stderr.
-          --- daemon.stderr.log ---
-          {{ _daemon_err }}
-
-    # --- health ---
-    - name: Assert health endpoint returned 200
-      ansible.builtin.assert:
-        that:
-          - _health.status is defined
-          - _health.status == 200
-        fail_msg: >-
-          Daemon /healthz did not return 200.
-          health={{ _health }}
-
-    # --- job submission ---
-    - name: Assert daemon accepted the job (todo_id present)
-      ansible.builtin.assert:
-        that:
-          - "(_job_json | from_json).todo_id is defined"
-        fail_msg: >-
-          Daemon did not accept the job via POST /api/todos.
-          result={{ _job_json }}
-
-    # --- port clash ---
-    - name: Load and parse port-clash result
+    - name: Parse job submission result
       ansible.builtin.set_fact:
-        _clash_text: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'port_clash.txt') | list | first).content | b64decode }}"
+        job_result: "{{ _job_raw.content | b64decode | from_json }}"
 
-    - name: Assert port clash handled gracefully
+    - name: Assert the daemon processed the job request (todo_id present)
       ansible.builtin.assert:
         that:
+          - "job_result.todo_id is defined or job_result['todo_id'] is defined"
+          - "'Traceback' not in (job_result | string)"
+        fail_msg: "daemon did not accept the job: {{ job_result }}"
+        success_msg: "daemon accepted the trivial job via POST /api/todos"
+
+    # ===================================================================
+    # Occupied-port error path
+    # ===================================================================
+    - name: Load persisted port-clash result
+      ansible.builtin.slurp:
+        src: /tmp/gludd-port-clash.txt
+      register: _clash_raw
+
+    - name: Parse port-clash result
+      ansible.builtin.set_fact:
+        clash_text: "{{ _clash_raw.content | b64decode }}"
+
+    - name: Assert the port-clash was handled gracefully
+      ansible.builtin.assert:
+        that:
+          # Either it exited non-zero, or it logged an address-in-use signal —
+          # and either way it MUST NOT have produced an uncaught traceback.
           - >
-            (_clash_text | regex_search('EXIT_RC=([0-9]+)', '\\1') | first | int != 0)
-            or ('in use' in (_clash_text | lower)) or ('address already' in (_clash_text | lower))
-          - "'Traceback' not in _clash_text"
-        fail_msg: "port clash was not handled gracefully: {{ _clash_text }}"
+            (clash_text | regex_search('EXIT_RC=[1-9][0-9]*')) is not none
+            or ('in use' in (clash_text | lower)) or ('address already' in (clash_text | lower))
+          - "'Traceback' not in clash_text"
+        fail_msg: "port clash was not handled gracefully: {{ clash_text }}"
+        success_msg: "port clash handled gracefully (non-zero or address-in-use, no traceback)"
 
-    # --- cleanup ---
-    - name: Read daemon PID
+    # ===================================================================
+    # Daemon log: no tracebacks surfaced during the whole run
+    # ===================================================================
+    - name: Load the daemon log
       ansible.builtin.slurp:
-        src: "{{ _smoke_out_dir }}/daemon.pid"
-      register: _pid_raw
+        src: /tmp/gludd-daemon.log
+      register: _daemon_log_raw
       failed_when: false
 
-    - name: Kill smoke daemon
-      ansible.builtin.shell: |
-        set -e
-        pids=$(lsof -ti tcp:{{ _daemon_port }} || true)
-        if [ -n "$pids" ]; then kill $pids 2>/dev/null || true; fi
-        pid="{{ (_pid_raw.content | default('')) | b64decode | trim }}"
-        if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
-      args:
-        executable: /bin/sh
-      changed_when: false
-      failed_when: false
+    - name: Parse the daemon log
+      ansible.builtin.set_fact:
+        daemon_log_text: "{{ _daemon_log_raw.content | b64decode }}"
+      when: _daemon_log_raw.content is defined
 
-    - name: Remove smoke output dir
-      ansible.builtin.file:
-        path: "{{ _smoke_out_dir }}"
-        state: absent
-      ignore_errors: true
+    - name: Assert the daemon log shows no uncaught tracebacks
+      ansible.builtin.assert:
+        that:
+          - "'Traceback (most recent call last)' not in (daemon_log_text | default(''))"
+        fail_msg: "daemon log contained a traceback: {{ daemon_log_text | default('<no log>') }}"
+        success_msg: "daemon log is traceback-free"
+      when: _daemon_log_raw.content is defined

@@ -118,11 +118,11 @@ class TestScenarioShape:
         assert "PODMAN_MACHINE ?= gludd" in makefile
         assert 'podman machine inspect "$(PODMAN_MACHINE)"' in makefile
         assert "DOCKER_HOST=" in makefile
-        assert "collections.yml requirements.yml" in makefile
+        assert 'MOLECULE_GLOB="molecule/playbooks/*/molecule.yml"' in makefile
         assert 'PROJECT_COLLECTIONS="$$(pwd)/collections"' in makefile
         assert (
-            'export ANSIBLE_COLLECTIONS_PATH="$$ANSIBLE_STATE_DIR/collections:'
-            '$$PROJECT_COLLECTIONS:'
+            'export ANSIBLE_COLLECTIONS_PATH="$$PROJECT_COLLECTIONS:'
+            '$$ANSIBLE_STATE_DIR/collections:'
         ) in makefile
         assert 'DOCKER_CONFIG_VALUE="$$ANSIBLE_STATE_DIR/docker"' in makefile
         assert 'export DOCKER_CONFIG="$$DOCKER_CONFIG_VALUE"' in makefile
@@ -134,6 +134,21 @@ class TestScenarioShape:
         assert "LIMA_DOCKER_CONFIG ?= /tmp/gludd-lima-docker-config" in makefile
         assert 'DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)"' in makefile
         assert 'docker pull "$(LIMA_IMAGE)"' in makefile
+
+    def test_legacy_default_machine_cleanup_is_bounded_and_opt_in(self):
+        with open(_MAKEFILE) as fh:
+            makefile = fh.read()
+
+        assert "podman-legacy-default-delete:" in makefile
+        assert "PODMAN_LEGACY_MACHINE ?= podman-machine-default" in makefile
+        assert "PODMAN_LEGACY_DELETE_VALIDATE_ONLY ?= 1" in makefile
+        assert "PODMAN_LEGACY_DELETE_TIMEOUT_SECS ?= 120" in makefile
+        assert (
+            'if [ "$(PODMAN_LEGACY_MACHINE)" != "podman-machine-default" ]; then'
+            in makefile
+        )
+        assert 'podman machine rm -f "$(PODMAN_LEGACY_MACHINE)"' in makefile
+        assert "PODMAN_LEGACY_DELETE_HEARTBEAT" in makefile
 
     def test_molecule_clean_removes_only_generated_dependency_namespaces(self):
         with open(_MAKEFILE) as fh:
@@ -148,16 +163,16 @@ class TestScenarioShape:
         assert "collections/ansible_collections/community" in section
         assert "general_ludd" not in section
 
-    def test_molecule_test_never_removes_a_tracked_scenario(self):
+    def test_molecule_test_uses_canonical_source_without_copying(self):
         with open(_MAKEFILE) as fh:
             makefile = fh.read()
 
         section = makefile.split("molecule-test:", 1)[1].split(
             "git-status:", 1
         )[0]
-        assert "TRACKED_SCENARIO=0" in section
-        assert 'git ls-files -- "$$RUNTIME_SCENARIO"' in section
-        assert '[ "$$TRACKED_SCENARIO" -eq 0 ]' in section
+        assert 'MOLECULE_GLOB="molecule/playbooks/*/molecule.yml"' in section
+        assert 'rm -rf "$$RUNTIME_SCENARIO"' not in section
+        assert 'cp "molecule/playbooks/$(SCENARIO)/molecule.yml"' not in section
 
     def test_molecule_declares_ubuntu_platform(self):
         data = _load_yaml("molecule.yml")

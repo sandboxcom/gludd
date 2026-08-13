@@ -320,6 +320,12 @@ class LocalInferenceManager:
             server.pid = process.pid
 
             try:
+                # If the child exited before readiness polling begins, finish
+                # its bounded stderr drain first so the raised diagnostic does
+                # not race an empty on-disk capture.
+                if process.returncode is not None:
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(drain_task, timeout=1.0)
                 await self._wait_for_ready(server)
             finally:
                 drain_task.cancel()
@@ -470,12 +476,14 @@ class LocalInferenceManager:
             return
 
         adapter = self._ansible_adapter
+        process_wait_attempted = False
 
         if server.process and server.process.returncode is None:
             pid = server.process.pid
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(os.getpgid(pid), signal.SIGTERM)
             try:
+                process_wait_attempted = True
                 await asyncio.wait_for(server.process.wait(), timeout=10.0)
             except TimeoutError:
                 with contextlib.suppress(ProcessLookupError):
@@ -506,6 +514,13 @@ class LocalInferenceManager:
         elif server.pid is not None and server.status != "stopped":
             with contextlib.suppress(ProcessLookupError):
                 os.kill(server.pid, signal.SIGTERM)
+
+        # Reap an owned subprocess after every signal path, including the
+        # adapter fallback's SIGKILL, without double-waiting a process that
+        # already completed during the graceful shutdown attempt.
+        if server.process is not None and not process_wait_attempted:
+            with contextlib.suppress(TimeoutError, ProcessLookupError):
+                await asyncio.wait_for(server.process.wait(), timeout=5.0)
 
         server.status = "stopped"
         server.process = None

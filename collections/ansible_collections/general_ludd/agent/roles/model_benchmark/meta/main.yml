@@ -7,6 +7,7 @@ galaxy_info:
     collect_scores) against a model, producing CapabilityEvidence consumable
     by the evidence_store.
   license: MIT
+  min_ansible_version: "2.14"
   platforms:
     - name: EL
       versions:
@@ -26,6 +27,6 @@ galaxy_info:
     - ml
     - evaluation
     - benchmark
-    - mt-bench
-    - capability_evidence
+    - mtbench
+    - capabilityevidence
 dependencies: []

@@ -123,6 +123,10 @@ class TestMoleculeMakeTarget:
         assert match, "could not extract molecule-test recipe"
         recipe = match.group(1)
         assert 'MOLECULE_GLOB="molecule/playbooks/*/molecule.yml"' in recipe
+        assert (
+            'export ANSIBLE_COLLECTIONS_PATH="$$PROJECT_COLLECTIONS:'
+            '$$ANSIBLE_STATE_DIR/collections:/usr/share/ansible/collections"'
+        ) in recipe
         assert 'molecule test -s "$(SCENARIO)"' in recipe
         assert 'rm -rf "molecule/$(SCENARIO)"' not in recipe
         assert 'cp "molecule/playbooks/$(SCENARIO)/molecule.yml"' not in recipe
@@ -143,7 +147,8 @@ class TestMoleculeMakeTarget:
         assert match, "could not extract molecule-reset recipe"
         recipe = match.group(1)
         assert 'MOLECULE_GLOB="molecule/playbooks/*/molecule.yml"' in recipe
-        assert 'molecule reset -s "$(SCENARIO)"' in recipe
+        assert 'molecule destroy -s "$(SCENARIO)"' in recipe
+        assert 'molecule reset -s "$(SCENARIO)"' not in recipe
         assert 'rm -rf "molecule/$(SCENARIO)"' not in recipe
 
 

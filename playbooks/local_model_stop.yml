@@ -23,21 +23,25 @@
 
     - name: Kill server process with SIGTERM
       ansible.builtin.command: "kill -TERM {{ resolved_pid }}"
-      ignore_errors: true
       register: _term_result
+      failed_when: false
+      changed_when: _term_result.rc == 0
       when: resolved_pid is defined and resolved_pid | int > 0
 
     - name: Wait for process to exit
       ansible.builtin.shell: "ps -p {{ resolved_pid }} > /dev/null 2>&1 && echo running || echo stopped"
       register: _ps_result
       until: "'stopped' in _ps_result.stdout"
+      changed_when: false
       retries: 10
       delay: 1
       when: resolved_pid is defined and resolved_pid | int > 0
 
     - name: Force kill if still running
       ansible.builtin.command: "kill -KILL {{ resolved_pid }}"
-      ignore_errors: true
+      register: _kill_result
+      failed_when: false
+      changed_when: _kill_result.rc == 0
       when:
         - resolved_pid is defined
         - resolved_pid | int > 0

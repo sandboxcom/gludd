@@ -22,17 +22,17 @@
 
 - name: "Check if server already running"
   ansible.builtin.uri:
-    url: "http://{{ host }}:{{ port }}/health"
+    url: "http://{{ host }}:{{ model_serve_port }}/health"
     method: GET
     timeout: 2
   register: _health_check_before
-  ignore_errors: true
+  failed_when: false
   changed_when: false
 
 - name: "Report existing server"
   when: _health_check_before.status == 200
   ansible.builtin.debug:
-    msg: "Inference server already running on {{ host }}:{{ port }}"
+    msg: "Inference server already running on {{ host }}:{{ model_serve_port }}"
 
 - name: "Setup llama.cpp server"
   when:
@@ -50,7 +50,7 @@
         nohup python3 -m llama_cpp.server \
           --model "{{ model_path }}" \
           --host {{ host }} \
-          --port {{ port }} \
+          --port {{ model_serve_port }} \
           --n_ctx {{ context_size }} \
           --n_gpu_layers {{ gpu_layers }} \
           --n_threads {{ threads }} \
@@ -76,7 +76,7 @@
         nohup python3 -m vllm.entrypoints.openai.api_server \
           --model "{{ model_path }}" \
           --host {{ host }} \
-          --port {{ port }} \
+          --port {{ model_serve_port }} \
           {% if extra_args | length > 0 %}{{ extra_args }}{% endif %} \
           > "{{ _server_log }}" 2>&1 &
       changed_when: true
@@ -88,7 +88,7 @@
   block:
     - name: "Poll health endpoint until ready"
       ansible.builtin.uri:
-        url: "http://{{ host }}:{{ port }}/health"
+        url: "http://{{ host }}:{{ model_serve_port }}/health"
         method: GET
         timeout: 5
       register: _health_poll
@@ -100,13 +100,15 @@
     - name: "Print startup log tail on failure"
       when: _health_poll is not defined or _health_poll.status != 200
       ansible.builtin.debug:
-        msg: "Server failed to start. Last log lines:\n{{ lookup('ansible.builtin.file', _server_log) }}"
-      ignore_errors: true
+        msg: >-
+          Server failed to start. Last log lines:
+          {{ lookup('ansible.builtin.file', _server_log, errors='ignore')
+             | default('unavailable', true) }}
 
 - name: "Report server status"
   ansible.builtin.debug:
     msg: >-
-      Inference server running: http://{{ host }}:{{ port }}
+      Inference server running: http://{{ host }}:{{ model_serve_port }}
       Backend: {{ backend }}
       Model: {{ model_path }}
       Log: {{ _server_log }}

@@ -50,6 +50,12 @@ from general_ludd.azure.rbac_validator import (
     validate_against_azure_schema,
 )
 
+
+def __dir__() -> list[str]:
+    """Expose only the documented public Azure package surface."""
+    return sorted(__all__)
+
+
 __all__ = [
     "AZURE_BUILTIN_ROLES",
     "AZURE_EXPERT_ROLES",

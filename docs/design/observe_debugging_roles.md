@@ -874,8 +874,8 @@ records that Molecule commands were being aligned on that variable. Gludd's
 into a transient second source tree. A checked-in, no-op `default` scenario
 declares `shared_state: false`; this satisfies Molecule's discovery probe without
 creating infrastructure or emitting a false critical error. `molecule-reset`
-uses Molecule's own scoped state reset rather than recursively deleting a source
-directory.
+runs Molecule's scenario-scoped `destroy` lifecycle, avoiding both recursive
+source deletion and the reset command's temporary-folder mutation.
 
 ---
 

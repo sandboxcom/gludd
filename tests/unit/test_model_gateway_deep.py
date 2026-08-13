@@ -1988,3 +1988,14 @@ class TestModelResponseDefaults:
         assert len(resp.tool_calls) == 1
         assert resp.tool_calls[0]["id"] == "t1"
         assert resp.correlation_id == "cid-1"
+
+
+class TestGatewayResourceOwnership:
+    def test_close_releases_injected_response_cache(self) -> None:
+        cache = MagicMock()
+        gateway = ModelGateway(response_cache=cache)
+
+        gateway.close()
+        gateway.close()
+
+        cache.close.assert_called_once()

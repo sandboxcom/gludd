@@ -101,7 +101,8 @@ def test_main_happy_path(monkeypatch, tmp_path: Path):
             "30",
             str(result_path),
             "test-nonce",
-        ]
+        ],
+        apply_resource_limits=True,
     )
     assert rc == 0
     assert calls == [(256, 30)]

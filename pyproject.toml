@@ -77,6 +77,7 @@ dev = [
     "pre-commit>=0.1.0-beta.2",
     "pytest-ansible>=0.1.0-beta.2",
     "molecule>=0.1.0-beta.2",
+    "molecule-plugins[docker]>=25.8.12",
     "ansible-lint>=0.1.0-beta.2",
     "ansible-dev-tools>=0.1.0-beta.2",
     "types-requests>=0.1.0-beta.2",
@@ -214,7 +215,7 @@ follow_imports = "skip"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["pygments", "pygments.*", "ansible.*", "ansible_collections.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "xmlsec", "lxml", "lxml.etree", "pyVim.*", "pyVmomi", "openai", "lm_eval", "lm_eval.*", "argon2", "blake3", "shamir", "srptools", "srptools.*", "pyspx", "pyspx.*", "scipy.*", "pywt"]
+module = ["pygments", "pygments.*", "ansible.*", "ansible_collections.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "xmlsec", "lxml", "lxml.etree", "pyVim.*", "pyVmomi", "openai", "lm_eval", "argon2", "blake3", "shamir", "srptools", "srptools.*", "pyspx", "pyspx.*", "scipy.*", "pywt"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -222,7 +223,7 @@ module = "scapy.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["cv2", "cv2.*", "pygame", "pygame.*", "skimage", "skimage.*", "yt_dlp"]
+module = ["cv2", "pygame", "skimage.*", "yt_dlp"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
@@ -299,6 +300,7 @@ dev = [
     "pip-audit>=0.1.0-beta.2",
     "deptry>=0.1.0-beta.2",
     "molecule>=0.1.0-beta.2",
+    "molecule-plugins[docker]>=25.8.12",
     "ansible-lint>=0.1.0-beta.2",
     "pytest-ansible>=0.1.0-beta.2",
     "ansible-dev-tools>=0.1.0-beta.2",

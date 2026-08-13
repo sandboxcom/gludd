@@ -57,7 +57,7 @@ import pkgutil
 import re
 from typing import Any, Protocol, runtime_checkable
 
-from general_ludd.connectors import __path__ as _connectors_pkg_path
+import general_ludd.connectors as _connectors_pkg
 from general_ludd.connectors.normalize import auth_family
 
 logger = logging.getLogger(__name__)
@@ -343,7 +343,7 @@ _MODULE_ALLOWLIST_PREFIX = _CONNECTORS_PKG  # "general_ludd.connectors"
 # arbitrary stdlib/third-party module.
 _ALLOWED_CONNECTOR_MODULES: frozenset[str] = frozenset(
     f"{_CONNECTORS_PKG}.{name}"
-    for _finder, name, _ispkg in pkgutil.iter_modules(_connectors_pkg_path)
+    for _finder, name, _ispkg in pkgutil.iter_modules(_connectors_pkg.__path__)
 )
 
 

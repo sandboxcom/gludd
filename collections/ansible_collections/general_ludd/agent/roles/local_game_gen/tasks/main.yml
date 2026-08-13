@@ -164,12 +164,12 @@
       ansible.builtin.slurp:
         src: "{{ artifact_dir }}/server.pid"
       register: _server_pid
-      ignore_errors: true
+      failed_when: false
 
     - name: "Kill server process"
       when: _server_pid.content is defined
       ansible.builtin.command: "kill -TERM {{ _server_pid.content | b64decode | trim }}"
-      ignore_errors: true
+      failed_when: false
       changed_when: false
 
     - name: "Remove PID file"

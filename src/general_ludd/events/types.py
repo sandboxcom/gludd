@@ -242,6 +242,11 @@ class CustomEvent(Event):
     def __init__(self, name: str, payload: dict[str, Any] | None = None, **kwargs: Any) -> None:
         super().__init__(type=EventType.CUSTOM, payload={"name": name, **(payload or {})}, **kwargs)
 
+    @property
+    def name(self) -> str:
+        """Return the custom event name from its serialized payload."""
+        return str(self.payload.get("name", ""))
+
 
 @dataclass
 class SelfUpdateAppliedEvent(Event):

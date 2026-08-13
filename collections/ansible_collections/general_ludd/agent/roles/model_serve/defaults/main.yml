@@ -2,7 +2,7 @@
 backend: "llama_cpp"
 model_path: ""
 host: "127.0.0.1"
-port: 8080
+model_serve_port: "{{ port | default(8080) }}"
 context_size: 2048
 gpu_layers: 0
 threads: "{{ ansible_processor_vcpus // 2 }}"

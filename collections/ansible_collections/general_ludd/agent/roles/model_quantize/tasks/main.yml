@@ -46,8 +46,9 @@
 
     - name: "Clone llama.cpp repository"
       ansible.builtin.git:
-        repo: https://github.com/ggerganov/llama.cpp.git
+        repo: https://github.com/ggml-org/llama.cpp.git
         dest: "{{ llama_cpp_dir }}"
+        version: "{{ llama_cpp_version }}"
         depth: 1
         force: "{{ force_rebuild | default(false) }}"
 
@@ -64,7 +65,7 @@
   when: not (model_path | regex_search('\\.gguf$'))
   block:
     - name: "Run HF-to-GGUF conversion"
-      ansible.builtin.shell: >-
+      ansible.builtin.command: >-
         python3 {{ llama_cpp_dir }}/convert_hf_to_gguf.py
         {{ model_path }}
         --outfile {{ output_dir }}/{{ _source_base }}-fp16.gguf

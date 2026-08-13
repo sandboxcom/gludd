@@ -102,6 +102,7 @@ class TestConcurrencyCapBeforeClaim:
 
         todo_repo = AsyncMock()
         todo_repo.count_active.return_value = 8
+        todo_repo.claim_runnable.return_value = []
         floor_ctrl = FloorController(floor=10)
 
         session = AsyncMock()

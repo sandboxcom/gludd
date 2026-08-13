@@ -201,6 +201,7 @@ class TestReturnReviewerLLMCall:
             model_profile_id="zai_coder",
             model_name="glm-5.1",
             enabled=True,
+            api_metered=False,
         )
         registry = PromptRegistry()
         registry.register("return_review.md.j2", "Review: {{ task_return.return_id }}")
@@ -234,6 +235,7 @@ class TestReturnReviewerLLMCall:
             model_profile_id="zai_coder",
             model_name="glm-5.1",
             enabled=True,
+            api_metered=False,
         )
         registry = PromptRegistry()
         registry.register("return_review.md.j2", "Review: {{ task_return.return_id }}")

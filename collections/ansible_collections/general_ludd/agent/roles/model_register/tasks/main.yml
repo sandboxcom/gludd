@@ -73,17 +73,8 @@
       tasks: "{{ _task_summary | from_json | default([]) }}"
       metadata: "{{ metadata }}"
       required_tasks_passed: >-
-        {%- if tasks_required | length > 0 -%}
-        {%- set ns = namespace(all_passed=true) -%}
-        {%- for req in tasks_required -%}
-        {%- if req not in _scores -%}
-        {%- set ns.all_passed = false -%}
-        {%- endif -%}
-        {%- endfor -%}
-        {{ ns.all_passed }}
-        {%- else -%}
-        N/A
-        {%- endif -%}
+        {{ (tasks_required | difference(_scores | list) | length == 0)
+           if tasks_required | length > 0 else 'N/A' }}
 
 - name: "Write capability manifest"
   ansible.builtin.copy:

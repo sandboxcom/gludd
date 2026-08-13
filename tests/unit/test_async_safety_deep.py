@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import textwrap
 import time
 
 import pytest
@@ -48,11 +49,9 @@ class TestEventLoopLifecycle:
             asyncio.get_running_loop()
 
     def test_get_event_loop_deprecated_semantics(self):
-        """get_event_loop() may create or return a different loop — verify fallback."""
-        loop = asyncio.get_event_loop()
-        assert loop is not None
-        # It might not be the same as the one from asyncio.run()
-        assert isinstance(loop, asyncio.AbstractEventLoop)
+        """Python 3.14 no longer creates an implicit loop for this call."""
+        with pytest.raises(RuntimeError, match="There is no current event loop"):
+            asyncio.get_event_loop()
 
 
 # ---------------------------------------------------------------------------
@@ -654,34 +653,26 @@ class TestTaskTracking:
             await asyncio.wait_for(task, timeout=1)
         assert task not in pending
 
-    @pytest.mark.asyncio
-    async def test_create_task_outside_running_loop_raises(self):
-        """create_task outside a running loop raises RuntimeError."""
-
-        async def _work():
-            pass
-
-        loop = asyncio.new_event_loop()
+    def test_create_task_outside_running_loop_raises(self):
+        """create_task outside a running loop raises and does not leak a coroutine."""
+        coroutine = asyncio.sleep(0)
+        task: asyncio.Task[None] | None = None
         try:
-            task = loop.create_task(_work())
-            # Now close without running
-            task.cancel()
+            with pytest.raises(RuntimeError, match="no running event loop"):
+                task = asyncio.create_task(coroutine)
+        finally:
+            coroutine.close()
+        assert task is None
+
+    def test_loop_create_task_accepts_non_running_loop(self):
+        """An explicit loop owns tasks even before run_until_complete starts it."""
+        loop = asyncio.new_event_loop()
+        task = loop.create_task(asyncio.sleep(0))
+        try:
+            loop.run_until_complete(task)
+            assert task.done()
         finally:
             loop.close()
-
-    @pytest.mark.asyncio
-    async def test_create_task_in_non_running_loop_context(self):
-        """create_task must be called from a running loop — fresh loop fails."""
-        loop = asyncio.new_event_loop()
-        try:
-            try:
-                _task = asyncio.create_task(asyncio.sleep(0))
-                pytest.fail(f"Expected RuntimeError, got task: {_task!r}")
-            except RuntimeError:
-                pass
-        finally:
-            loop.close()
-            # asyncio.create_task uses the running loop, not a given one
 
 
 # ---------------------------------------------------------------------------
@@ -704,7 +695,7 @@ class TestBlockingIODetection:
 
         # engine.py has async execute_async — check its AST
         source = inspect.getsource(_engine_mod.ExecutionEngine.execute_async)
-        tree = ast.parse(source)
+        tree = ast.parse(textwrap.dedent(source))
         for node in ast.walk(tree):
             if isinstance(node, ast.With) and not isinstance(node, ast.AsyncWith):
                 # blocking 'with open(...)' inside async def is a smell

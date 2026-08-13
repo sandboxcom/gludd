@@ -1118,9 +1118,9 @@ class EventLoop(EventLoopHandlers):
         self._tick_metrics["returns_reviewed"] = len(claimed)
 
     async def _release_review_claim(self, tr: Any, reason: str = "") -> None:
-        # S2: release a review claim back to 'created' so the task return
-        # does not strand at 'claimed_for_review' forever. Optionally
-        # block the associated todo when the release is due to a failure.
+        # Release the return claim so a retry remains possible, while moving the
+        # associated todo to BLOCKED. A review infrastructure failure must be
+        # visible to operators instead of silently re-queueing executable work.
         if self._active_session is not None:
             with contextlib.suppress(Exception):
                 tr.status = "created"
@@ -1129,10 +1129,34 @@ class EventLoop(EventLoopHandlers):
                     tr.updated_at = datetime.now(UTC)
             with contextlib.suppress(Exception):
                 await self._active_session.flush()
-            logger.warning(
-                "Released review claim for return %s: %s",
-                getattr(tr, "return_id", "?"),
-                reason or "unknown",
+        logger.warning(
+            "Released review claim for return %s: %s",
+            getattr(tr, "return_id", "?"),
+            reason or "unknown",
+        )
+
+        todo_id = getattr(tr, "todo_id", None)
+        if not reason or self._todo_repo is None or not isinstance(todo_id, str):
+            return
+        project_id = getattr(tr, "project_id", None)
+        if not isinstance(project_id, str):
+            project_id = None
+        try:
+            todo = await self._todo_repo.get_by_id(todo_id, project_id=project_id)
+            if todo is None:
+                logger.error("Cannot block missing todo %s after review failure", todo_id)
+                return
+            await self._todo_repo.transition(
+                todo_id,
+                TodoStatus.BLOCKED,
+                todo.version,
+                project_id=project_id,
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to block todo %s after review failure: %s",
+                todo_id,
+                type(exc).__name__,
             )
 
     async def _dispatch_review_job(self, tr: Any) -> None:

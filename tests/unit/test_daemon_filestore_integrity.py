@@ -152,7 +152,7 @@ class TestRealDaemonEndpoints:
         import uuid
 
         mock_scan.return_value = {"scanned": 5, "changes": []}
-        scan_dir = Path("/Users/shawnwilson/gludd") / ".integrity-tests" / f"scan-{uuid.uuid4().hex[:8]}"
+        scan_dir = Path.cwd() / ".integrity-tests" / f"scan-{uuid.uuid4().hex[:8]}"
         scan_dir.mkdir(parents=True, exist_ok=True)
         try:
             resp = client.post("/admin/integrity/scan", json={"paths": [str(scan_dir)]})

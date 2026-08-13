@@ -45,6 +45,18 @@ def _async_mock_session_factory():
     return sf
 
 
+def _repository_session() -> AsyncMock:
+    """Model AsyncSession's sync add/result surface without awaitable leaks."""
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.flush = AsyncMock()
+    session.execute = AsyncMock()
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    session.execute.return_value = result
+    return session
+
+
 # ── 1. Event recording with all metadata fields ────────────────────────────
 
 
@@ -161,7 +173,7 @@ class TestEventRecordingAllFields:
 @pytest.mark.asyncio
 class TestQueryFilter:
     async def test_audit_event_repo_list_by_entity_filters(self):
-        session = AsyncMock()
+        session = _repository_session()
         repo = AuditEventRepository(session)
         await repo.list_by_entity("todo", "todo-abc", limit=20)
         session.execute.assert_awaited_once()
@@ -171,7 +183,7 @@ class TestQueryFilter:
         assert "entity_id" in where_clause
 
     async def test_audit_event_repo_list_by_project_filters(self):
-        session = AsyncMock()
+        session = _repository_session()
         repo = AuditEventRepository(session)
         await repo.list_by_project("proj-42", limit=10)
         session.execute.assert_awaited_once()
@@ -180,7 +192,7 @@ class TestQueryFilter:
         assert "project_id" in where_clause
 
     async def test_audit_event_repo_create_persists_all_fields(self):
-        session = AsyncMock()
+        session = _repository_session()
         repo = AuditEventRepository(session)
         row = await repo.create(
             event_type="task_decision_made",
@@ -210,7 +222,7 @@ class TestQueryFilter:
     async def test_audit_event_repo_record_typed_serializes_details(self):
         from general_ludd.db.models import AuditEventType
 
-        session = AsyncMock()
+        session = _repository_session()
         repo = AuditEventRepository(session)
         await repo.record_typed(
             event_type=AuditEventType.TODO_CREATED,

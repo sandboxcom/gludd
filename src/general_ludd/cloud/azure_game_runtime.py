@@ -12,7 +12,7 @@ import ipaddress
 import os
 import time
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Protocol, TypeVar
+from typing import Protocol, TypeVar, runtime_checkable
 
 import httpx
 
@@ -38,6 +38,7 @@ _ARM_ENV_VARS = (
 _T = TypeVar("_T")
 
 
+@runtime_checkable
 class DeploymentController(Protocol):
     def deploy(self, config: ComputeConfig) -> Awaitable[ComputeInstance]: ...
 

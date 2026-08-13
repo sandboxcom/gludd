@@ -93,5 +93,8 @@ def argon2id_verify(password: str, encoded_hash: str) -> bool:
         return ph.verify(encoded_hash, password)
     except argon2_exc.VerifyMismatchError:
         return False
-    except argon2_exc.VerificationError as e:
+    except (
+        argon2_exc.InvalidHashError,
+        argon2_exc.VerificationError,
+    ) as e:
         _raise(str(e))

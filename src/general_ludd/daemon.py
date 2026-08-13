@@ -10,7 +10,7 @@ import os
 import sys
 import threading
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator, MutableMapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -290,14 +290,37 @@ class LangGraphModelCallError(Exception):
         self.__cause__ = original_error
 
 
+class _DaemonStateProxy(MutableMapping[str, Any]):
+    """Stable compatibility view over the most recently created app state."""
+
+    def __init__(self) -> None:
+        self._target: dict[str, Any] = {}
+
+    def bind(self, target: dict[str, Any]) -> None:
+        self._target = target
+
+    def __getitem__(self, key: str) -> Any:
+        return self._target[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self._target[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        del self._target[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._target)
+
+    def __len__(self) -> int:
+        return len(self._target)
+
+
 # Per-app daemon state: each app owns a fresh dict so todos / tick_metrics /
 # quality_gate cannot bleed across FastAPI instances in one process. The
 # authoritative store is ``app.state.daemon_state`` (set by the factory).
-# This module-level name exists ONLY as a migration shim for legacy callers
-# (scripts/dogfood.py, test fixtures); it starts unset and is rebound to the
-# most recently created app's dict by ``create_daemon_app()``.
-# New code MUST NOT access this global — use explicit injection instead.
-_daemon_state: Any = {}
+# This stable mapping object exists only as a migration shim for legacy callers;
+# the factory binds it to the latest app without making the proxy authoritative.
+_daemon_state: Any = _DaemonStateProxy()
 
 
 def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
@@ -1019,15 +1042,16 @@ def _build_self_update_audit_sink(
 
     def _sink(record: Any) -> None:
         try:
-            task = asyncio.create_task(_persist(record))
+            running_loop = asyncio.get_running_loop()
         except RuntimeError:
-            # No running loop (e.g. a unit test invoking apply_plan directly):
-            # audit is best-effort, so drop the row rather than raise.
+            # Check for a loop before constructing the coroutine; otherwise a
+            # synchronous caller leaks an unawaited persistence coroutine.
             logger.warning(
                 "self_update audit-sink skipped: no running event loop (outcome=%s)",
                 getattr(record, "outcome", "?"),
             )
             return
+        task = running_loop.create_task(_persist(record))
         _SELF_UPDATE_AUDIT_TASKS.add(task)
         task.add_done_callback(_SELF_UPDATE_AUDIT_TASKS.discard)
 
@@ -2724,12 +2748,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await pipeline_controller.stop()
         except Exception:
             logger.warning("pipeline_controller.stop() failed during shutdown")
+            raise
     mcp_client_ref = getattr(app.state, "_mcp_client", None)
     if mcp_client_ref is not None:
         try:
             await mcp_client_ref.stop_all()
         except Exception:
             logger.warning("mcp_client.stop_all() failed during shutdown")
+            raise
     _el = event_loop if event_loop is not None else getattr(app.state, "event_loop", None)
     _terraform_bridge = getattr(app.state, "_terraform_event_bridge", None)
     if _terraform_bridge is not None:
@@ -2765,6 +2791,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await _searx_client_ref.close()
         except Exception:
             logger.warning("SearxNGClient.close() failed during shutdown")
+    _model_gateway_ref = getattr(app.state, "_model_gateway", None)
+    if _model_gateway_ref is not None:
+        try:
+            _model_gateway_ref.close()
+        except Exception:
+            logger.warning("ModelGateway.close() failed during shutdown")
     for _cache_attr in (
         "_codebase_indexer",
         "_research_index",
@@ -3076,6 +3108,10 @@ def create_daemon_app(
         "quality_gate": {},
     }
     app.state.daemon_state = daemon_state
+    global _daemon_state
+    if not isinstance(_daemon_state, _DaemonStateProxy):
+        _daemon_state = _DaemonStateProxy()
+    _daemon_state.bind(daemon_state)
     app.state.tick_interval = tick_interval
     app.state.event_loop = None
     app.state.log_level = log_level

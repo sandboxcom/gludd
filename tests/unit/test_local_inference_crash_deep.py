@@ -130,7 +130,9 @@ class TestOOMRecovery:
         proc = _make_mock_process()
         proc.returncode = -9  # OOM kill exit code
         proc.stderr = AsyncMock()
-        proc.stderr.read = AsyncMock(return_value=b"Out of memory: Killed process 12345")
+        proc.stderr.read = AsyncMock(
+            side_effect=[b"Out of memory: Killed process 12345", b""]
+        )
         with patch(
             "general_ludd.infra.local_inference.asyncio.create_subprocess_exec",
             return_value=proc,

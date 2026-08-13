@@ -179,6 +179,7 @@ class TestLoopReviewToThreadOffload:
         runner.prepare_job_dirs.return_value = {"root": "/tmp/REVIEW", "env": "/tmp/REVIEW/env"}
         runner.write_vars.return_value = "/tmp/REVIEW/env/extravars"
         runner.run_playbook.return_value = {"rc": 0, "output": "", "events": []}
+        mock_to_thread.return_value = runner.run_playbook.return_value
 
         # No reviewer / no session -> the runner branch of _dispatch_review_job
         # is the path under test (in-process review is not taken).

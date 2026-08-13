@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -767,38 +768,64 @@ class TestDispatchModeEndpoint:
 
 
 class TestSigningEndpointsNoResolver:
+    ADMIN_HEADERS: ClassVar[dict[str, str]] = {"X-Admin-Token": "test-admin-token"}
+
+    @pytest.fixture(autouse=True)
+    def _configure_admin_token(self, monkeypatch):
+        monkeypatch.setenv("GLUDD_ADMIN_TOKEN", "test-admin-token")
+
     @pytest.mark.asyncio
     async def test_cosign_generate_no_resolver(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/admin/signing/cosign/generate", json={})
-            assert resp.status_code == 403
+            resp = await client.post(
+                "/admin/signing/cosign/generate",
+                json={},
+                headers=self.ADMIN_HEADERS,
+            )
+            assert resp.status_code == 503
 
     @pytest.mark.asyncio
     async def test_cosign_list_no_resolver(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/admin/signing/cosign/list/default")
-            assert resp.status_code == 403
+            resp = await client.get(
+                "/admin/signing/cosign/list/default",
+                headers=self.ADMIN_HEADERS,
+            )
+            assert resp.status_code == 503
 
     @pytest.mark.asyncio
     async def test_cosign_read_no_resolver(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/admin/signing/cosign/default/test-key")
-            assert resp.status_code == 403
+            resp = await client.get(
+                "/admin/signing/cosign/default/test-key",
+                headers=self.ADMIN_HEADERS,
+            )
+            assert resp.status_code == 503
 
     @pytest.mark.asyncio
     async def test_cosign_delete_no_resolver(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.delete("/admin/signing/cosign/default/test-key")
-            assert resp.status_code == 403
+            resp = await client.delete(
+                "/admin/signing/cosign/default/test-key",
+                headers=self.ADMIN_HEADERS,
+            )
+            assert resp.status_code == 503
 
     @pytest.mark.asyncio
     async def test_gitsign_write_no_resolver(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/admin/signing/gitsign/config", json={})
-            assert resp.status_code == 403
+            resp = await client.post(
+                "/admin/signing/gitsign/config",
+                json={},
+                headers=self.ADMIN_HEADERS,
+            )
+            assert resp.status_code == 503
 
     @pytest.mark.asyncio
     async def test_gitsign_read_no_resolver(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/admin/signing/gitsign/default")
-            assert resp.status_code == 403
+            resp = await client.get(
+                "/admin/signing/gitsign/default",
+                headers=self.ADMIN_HEADERS,
+            )
+            assert resp.status_code == 503

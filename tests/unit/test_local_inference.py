@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from general_ludd.events.bus import EventBus
+from general_ludd.events.types import EventType
 from general_ludd.infra.local_inference import (
     LocalInferenceManager,
     LocalServer,
@@ -259,7 +260,7 @@ class TestStartServer:
         cfg = LocalServerConfig(engine="vllm", model_name="llama3")
         mgr.create_server(cfg)
         events = []
-        bus.subscribe("custom", lambda e: events.append(e))
+        bus.subscribe(EventType.MODEL_READY, lambda e: events.append(e))
         mock_proc = AsyncMock()
         mock_proc.pid = 12345
         mock_proc.returncode = None
@@ -267,7 +268,7 @@ class TestStartServer:
              patch.object(mgr, "_wait_for_ready", new=AsyncMock()):
             await mgr.start_server("local-0")
         assert len(events) == 1
-        assert events[0].payload["name"] == "local_server_started"
+        assert events[0].type is EventType.MODEL_READY
         assert events[0].payload["server_id"] == "local-0"
 
     @pytest.mark.asyncio

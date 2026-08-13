@@ -10,6 +10,7 @@ import os
 import re
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -29,6 +30,8 @@ from general_ludd.tui.tables import _make_table
 
 if TYPE_CHECKING:
     from rich.table import Table
+
+_DAEMON_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 
 MAN_PAGE = """\
 NAME
@@ -690,6 +693,32 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     compute_unregister.add_argument("--daemon-url", default="http://localhost:8000")
     compute_unregister.set_defaults(func=_cmd_compute_unregister)
 
+    compute_azure_preflight = compute_sub.add_parser(
+        "azure-preflight",
+        help="Read-only Azure accelerator SKU and quota preflight",
+    )
+    compute_azure_preflight.add_argument(
+        "--gpu",
+        required=True,
+        help="Azure accelerator type (a100_40, a100_80, h100, or t4)",
+    )
+    compute_azure_preflight.add_argument(
+        "--gpu-count",
+        type=int,
+        default=1,
+        help="Exact accelerator count requested",
+    )
+    compute_azure_preflight.add_argument(
+        "--region",
+        default="eastus",
+        help="Azure region used for SKU and quota checks",
+    )
+    compute_azure_preflight.add_argument(
+        "--daemon-url",
+        default="http://localhost:8000",
+    )
+    compute_azure_preflight.set_defaults(func=_cmd_compute_azure_preflight)
+
     compute_launch = compute_sub.add_parser("launch", help="Launch a GPU compute instance")
     compute_launch.add_argument("--provider", required=True, help="Cloud provider (aws, azure, gcp, runpod, etc.)")
     compute_launch.add_argument("--gpu", required=True, help="GPU type (t4, a100_80, h100, etc.)")
@@ -698,7 +727,46 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     compute_launch.add_argument("--deploy-type", default="vm", help="Deploy type (vm or containerapp)")
     compute_launch.add_argument("--gpu-count", type=int, default=1, help="Number of GPUs")
     compute_launch.add_argument("--max-cost", type=float, default=10.0, help="Max cost in USD")
+    compute_launch.add_argument(
+        "--timeout-minutes",
+        type=float,
+        default=60.0,
+        help="Hard deployment lifetime before automatic teardown",
+    )
+    compute_launch.add_argument(
+        "--disk-size-gb",
+        type=int,
+        default=100,
+        help="OS disk size for the inference worker",
+    )
+    compute_launch.add_argument(
+        "--container-image",
+        default=None,
+        help="Optional serving image override",
+    )
+    compute_launch.add_argument(
+        "--hourly-rate",
+        type=float,
+        default=None,
+        help="Known USD/hour rate used to shorten the hard TTL to the spend ceiling",
+    )
     compute_launch.add_argument("--no-spot", action="store_true", help="Disable spot instances")
+    compute_launch.add_argument(
+        "--allowed-cidr",
+        default="127.0.0.1/32",
+        help="CIDR allowed to reach SSH and inference (secure default: loopback only)",
+    )
+    compute_launch.add_argument(
+        "--ssh-public-key-path",
+        default="~/.ssh/id_ed25519.pub",
+        help="Public SSH key used by Azure VM provisioning",
+    )
+    compute_launch.add_argument(
+        "--max-concurrent",
+        type=int,
+        default=4,
+        help="Scheduler concurrency registered for the new endpoint",
+    )
     compute_launch.add_argument("--engine", default="vllm", help="Inference engine (vllm or llamacpp)")
     compute_launch.add_argument(
         "--workload-type",
@@ -1894,20 +1962,35 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
         env=env,
     )
 
-    def _terminate_child(timeout: float = 5.0) -> None:
+    shutdown_signum: int | None = None
+    shutdown_complete = threading.Event()
+    watchdog_started = False
+
+    def _kill_after_timeout() -> None:
+        if shutdown_complete.wait(_DAEMON_SHUTDOWN_TIMEOUT_SECONDS):
+            return
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            return
+
+    def _forward_signal(signum: int, frame: Any) -> None:
+        nonlocal shutdown_signum, watchdog_started
+        if shutdown_signum is not None:
+            return
+        shutdown_signum = signum
         try:
             proc.terminate()
         except ProcessLookupError:
             return
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=timeout)
-
-    def _forward_signal(signum: int, frame: Any) -> None:
-        _terminate_child()
-        sys.exit(128 + signum)
+        if not watchdog_started:
+            watchdog_started = True
+            namespace = os.environ.get("GLUDD_PROJECT_NAMESPACE", "gludd")
+            threading.Thread(
+                target=_kill_after_timeout,
+                name=f"{namespace}-daemon-shutdown-watchdog",
+                daemon=True,
+            ).start()
 
     signal.signal(signal.SIGTERM, _forward_signal)
     signal.signal(signal.SIGINT, _forward_signal)
@@ -1915,8 +1998,13 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
     try:
         proc.wait()
     except KeyboardInterrupt:
-        _terminate_child()
-        sys.exit(130)
+        _forward_signal(signal.SIGINT, None)
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+    finally:
+        shutdown_complete.set()
+    if shutdown_signum is not None:
+        sys.exit(128 + shutdown_signum)
     sys.exit(proc.returncode)
 
 
@@ -2680,6 +2768,22 @@ def _cmd_compute_unregister(args: argparse.Namespace) -> None:
         _handle_connection_error(exc, args.daemon_url)
 
 
+def _cmd_compute_azure_preflight(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/admin/compute/azure/preflight",
+        json={
+            "gpu_type": args.gpu,
+            "gpu_count": args.gpu_count,
+            "region": args.region,
+        },
+        timeout=60.0,
+        ok_codes=(200,),
+    )
+    if data is not None:
+        print(json.dumps(data, indent=2))
+
+
 def _cmd_compute_launch(args: argparse.Namespace) -> None:
     payload: dict[str, Any] = {
         "provider": args.provider,
@@ -2688,7 +2792,14 @@ def _cmd_compute_launch(args: argparse.Namespace) -> None:
         "deploy_type": args.deploy_type,
         "gpu_count": args.gpu_count,
         "max_cost_usd": args.max_cost,
+        "timeout_minutes": args.timeout_minutes,
+        "disk_size_gb": args.disk_size_gb,
+        "container_image": args.container_image,
+        "hourly_rate_usd": args.hourly_rate,
         "spot": not args.no_spot,
+        "allowed_cidr": args.allowed_cidr,
+        "ssh_public_key_path": args.ssh_public_key_path,
+        "max_concurrent": args.max_concurrent,
         "engine": args.engine,
         "workload_type": args.workload_type,
     }

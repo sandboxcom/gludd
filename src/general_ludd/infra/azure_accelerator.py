@@ -17,7 +17,7 @@ import os
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
-from typing import Protocol, cast
+from typing import Protocol, cast, runtime_checkable
 
 from general_ludd.infra.compute import GPUType
 
@@ -26,6 +26,7 @@ class AzureAcceleratorUnavailable(ValueError):
     """Raised when gludd cannot represent the requested Azure GPU shape."""
 
 
+@runtime_checkable
 class AzureResourceSku(Protocol):
     name: str | None
     resource_type: str | None
@@ -33,25 +34,30 @@ class AzureResourceSku(Protocol):
     restrictions: Sequence[object] | None
 
 
+@runtime_checkable
 class AzureUsageName(Protocol):
     value: str | None
     localized_value: str | None
 
 
+@runtime_checkable
 class AzureUsage(Protocol):
     name: AzureUsageName
     current_value: int | None
     limit: int | None
 
 
+@runtime_checkable
 class AzureResourceSkuOperations(Protocol):
     def list(self) -> Iterable[AzureResourceSku]: ...
 
 
+@runtime_checkable
 class AzureUsageOperations(Protocol):
     def list(self, location: str) -> Iterable[AzureUsage]: ...
 
 
+@runtime_checkable
 class AzureComputeClient(Protocol):
     resource_skus: AzureResourceSkuOperations
     usage: AzureUsageOperations

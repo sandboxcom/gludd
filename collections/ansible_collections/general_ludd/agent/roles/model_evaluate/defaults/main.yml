@@ -1,10 +1,7 @@
 ---
 model_id: ""
 model_args: ""
-tasks:
-  - mmlu
-  - hellaswag
-  - gsm8k
+model_evaluate_tasks: "{{ tasks | default(['mmlu', 'hellaswag', 'gsm8k']) }}"
 output_dir: "/opt/models/eval"
 batch_size: "auto"
 limit: null

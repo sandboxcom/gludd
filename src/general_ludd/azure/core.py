@@ -30,6 +30,7 @@ def validate_rbac_role_definition(
     not_actions: list[str],
     assignable_scopes: list[str],
 ) -> dict[str, Any]:
+    """Validate Azure action syntax and require an assignable scope."""
     issues: list[str] = []
     for action in action_strings:
         ok, msg = validate_action_string(action)
@@ -48,6 +49,7 @@ def audit_iam_assignments(
     resource_group: str,
     persona: str,
 ) -> dict[str, Any]:
+    """Return the least-privilege role set for a supported persona."""
     persona_roles: dict[str, list[str]] = {
         "terraform_deploy": ["Contributor", "User Access Administrator"],
         "runtime_execution": ["AcrPull", "Container Apps Operator"],
@@ -72,6 +74,7 @@ def design_azure_network(
     app_name: str,
     cidr_range: str = "10.0.0.0/16",
 ) -> dict[str, Any]:
+    """Design a bounded Azure VNet, subnet, and NSG layout."""
     subnets = [
         {"name": f"{app_name}-container-subnet", "cidr": "10.0.1.0/24", "purpose": "container_apps"},
         {"name": f"{app_name}-db-subnet", "cidr": "10.0.2.0/24", "purpose": "database"},
@@ -100,6 +103,7 @@ def acr_registry_config(
     sku: str,
     region: str,
 ) -> dict[str, Any]:
+    """Build an admin-disabled Azure Container Registry configuration."""
     valid_skus = {"Basic", "Standard", "Premium"}
     if sku not in valid_skus:
         return {
@@ -122,6 +126,7 @@ def container_app_config(
     model_name: str,
     region: str,
 ) -> dict[str, Any]:
+    """Build a bounded Azure Container App inference configuration."""
     valid_gpus = {"T4", "A10", "A100", "H100"}
     warnings: list[str] = []
     if gpu_type not in valid_gpus:
@@ -145,6 +150,7 @@ def query_log_analytics(
     workspace_id: str,
     kql_query: str,
 ) -> dict[str, Any]:
+    """Describe a one-day Azure Log Analytics query request."""
     return {
         "status": "ok",
         "result": {
@@ -160,6 +166,7 @@ def query_log_analytics(
 def inventory_resources(
     subscription_ids: list[str],
 ) -> dict[str, Any]:
+    """Build a Resource Graph inventory query for explicit subscriptions."""
     scope = ",".join(f"'{s}'" for s in subscription_ids)
     kql = (
         "resourcecontainers\n"
@@ -182,6 +189,7 @@ def optimize_cost(
     region: str,
     gpu_type: str,
 ) -> dict[str, Any]:
+    """Estimate bounded monthly GPU cost from the built-in rate table."""
     pricing: dict[str, dict[str, float]] = {
         "container_apps": {"T4": 0.62, "A10": 1.24, "A100": 3.67, "H100": 5.50},
     }

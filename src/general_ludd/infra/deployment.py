@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -21,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from general_ludd.config.binary_paths import BinaryPathResolver
 from general_ludd.db.deployment_repository import DeploymentRegistryRepository
 from general_ludd.events import CustomEvent
+from general_ludd.infra.azure_accelerator import effective_timeout_minutes
 from general_ludd.infra.compute import ComputeConfig, ComputeInstance, ComputeProvider
 from general_ludd.infra.deploy_strategy import ResourceTier
 from general_ludd.infra.terraform import TerraformGenerator
@@ -318,8 +320,7 @@ class DeploymentManager:
             await session.commit()
 
     def cleanup_orphaned_instances(self) -> int:
-        if _LIFECYCLE_IMPORTED:
-            return get_lifecycle().cleanup_all()
+        """Leave process-global lifecycle cleanup to the registered shutdown hook."""
         return 0
 
     def _build_auth_env(self, config: ComputeConfig) -> dict[str, str]:
@@ -329,10 +330,40 @@ class DeploymentManager:
         own isolated mapping, preventing credential cross-contamination when
         multiple deployments run concurrently.
         """
+        env = self._build_auth_env_from_aliases(config.provider_auth_aliases)
+        if config.provider == ComputeProvider.AZURE:
+            self._translate_azure_env(env)
+        return env
+
+    @staticmethod
+    def _translate_azure_env(env: dict[str, str]) -> None:
+        """Translate Azure SDK variables to azurerm names in one env copy."""
+        azure_to_arm = {
+            "AZURE_SUBSCRIPTION_ID": "ARM_SUBSCRIPTION_ID",
+            "AZURE_TENANT_ID": "ARM_TENANT_ID",
+            "AZURE_CLIENT_ID": "ARM_CLIENT_ID",
+            "AZURE_CLIENT_SECRET": "ARM_CLIENT_SECRET",
+        }
+        for azure_name, arm_name in azure_to_arm.items():
+            value = env.get(azure_name)
+            if value and not env.get(arm_name):
+                env[arm_name] = value
+        if (
+            env.get("ARM_CLIENT_ID")
+            and not env.get("ARM_CLIENT_SECRET")
+            and not env.get("ARM_USE_MSI")
+        ):
+            env["ARM_USE_MSI"] = "true"
+
+    def _build_auth_env_from_aliases(
+        self,
+        aliases: dict[str, str] | None,
+    ) -> dict[str, str]:
+        """Resolve stored alias names without persisting credential values."""
         env = os.environ.copy()
-        if not config.provider_auth_aliases:
+        if not aliases:
             return env
-        for env_var, alias in config.provider_auth_aliases.items():
+        for env_var, alias in aliases.items():
             if self._secrets_resolver:
                 value = self._secrets_resolver.resolve(alias)
                 if value is not None:
@@ -347,16 +378,55 @@ class DeploymentManager:
                 )
         return env
 
+    def _prepare_terraform_dir(
+        self,
+        config: ComputeConfig,
+        root_dir: str,
+        *,
+        deployment_name: str,
+    ) -> str:
+        """Materialize Azure release assets or generate a provider root."""
+        if config.provider == ComputeProvider.AZURE:
+            return str(
+                self._generator.materialize(
+                    config,
+                    root_dir,
+                    deployment_name=deployment_name,
+                )
+            )
+        main_tf_path = os.path.join(root_dir, "main.tf")
+        with open(main_tf_path, "w") as stream:
+            stream.write(self._generator.generate(config))
+        return root_dir
+
+    async def _rollback_terraform(
+        self,
+        terraform_dir: str,
+        auth_env: dict[str, str],
+    ) -> None:
+        """Request best-effort teardown of a partially applied state."""
+        try:
+            await self._run_terraform(
+                ["destroy", "-auto-approve", "-input=false"],
+                cwd=terraform_dir,
+                env=auth_env,
+            )
+        except Exception:
+            logger.exception(
+                "automatic rollback failed for terraform dir %s",
+                terraform_dir,
+            )
+
     async def deploy(self, config: ComputeConfig) -> ComputeInstance:
         started_at = time.monotonic()
         self._last_config = config
         auth_env = self._build_auth_env(config)
-        deployment_id = f"d-{uuid.uuid4().hex[:12]}"
+        deployment_token = uuid.uuid4().hex[:12]
+        deployment_id = f"d-{deployment_token}"
         deploy_dir = os.path.join(self._working_dir, deployment_id)
         os.makedirs(deploy_dir, exist_ok=True)
-        # Register before terraform apply. A SIGTERM/timeout can otherwise land
-        # after Azure has created resources but before outputs reveal the final
-        # instance id, leaving process cleanup with no state directory to destroy.
+        terraform_dir = deploy_dir
+        initialized = False
         _DEPLOYED_INSTANCES[deployment_id] = deploy_dir
         self._publish_event(
             "terraform_deploy_started",
@@ -367,68 +437,136 @@ class DeploymentManager:
             region=config.region,
         )
 
-        regions = [config.region] if config.region else _discover_azure_regions()
-        last_error = None
+        if config.region:
+            regions: list[str | None] = [config.region]
+        elif config.provider == ComputeProvider.AZURE:
+            regions = list(_discover_azure_regions())
+        else:
+            regions = [None]
+        last_error: RuntimeError | None = None
 
         try:
             for region in regions:
-                print(f"[deploy] Trying region {region}...", flush=True)
+                label = region or "default"
+                print(f"[deploy] Trying region {label}...", flush=True)
                 config.region = region
-                self._generator.materialize(config, deploy_dir, deployment_name=deployment_id)
+                terraform_dir = self._prepare_terraform_dir(
+                    config,
+                    deploy_dir,
+                    deployment_name=f"gludd-{deployment_token}",
+                )
+                _DEPLOYED_INSTANCES[deployment_id] = terraform_dir
+                initialized = False
 
                 try:
-                    print(f"[deploy] Terraform init in {region}...", flush=True)
-                    await self._run_terraform(["init", "-input=false"], cwd=deploy_dir, env=auth_env)
-                    print("[deploy] Terraform init done", flush=True)
-                    print(f"[deploy] Terraform apply in {region} (this takes 3-5min)...", flush=True)
+                    print(f"[deploy] Terraform init in {label}...", flush=True)
                     await self._run_terraform(
-                        ["apply", "-auto-approve", "-input=false"],
-                        cwd=deploy_dir,
+                        ["init", "-input=false"],
+                        cwd=terraform_dir,
                         env=auth_env,
                     )
-                    # Terraform does not return from apply until the Container App
-                    # resource and its FQDN output exist.  Endpoint readiness is a
-                    # separate concern handled by the observable live-E2E poller;
-                    # blocking this event loop here delays every concurrent job.
-                    print(f"[deploy] Terraform apply done in {region}", flush=True)
+                    initialized = True
+                    print("[deploy] Terraform init done", flush=True)
+                    print(
+                        f"[deploy] Terraform apply in {label} "
+                        "(this takes 3-5min)...",
+                        flush=True,
+                    )
+                    await self._run_terraform(
+                        ["apply", "-auto-approve", "-input=false"],
+                        cwd=terraform_dir,
+                        env=auth_env,
+                    )
+                    print(
+                        f"[deploy] Terraform apply done in {label}",
+                        flush=True,
+                    )
                     last_error = None
-                    break  # Success — exit the region loop
+                    break
                 except RuntimeError as error:
                     last_error = error
+                    if initialized:
+                        await self._rollback_terraform(terraform_dir, auth_env)
+                        initialized = False
                     error_str = str(error)
-                    if "AKSCapacityHeavyUsage" in error_str or "capacity" in error_str.lower():
-                        print(f"[deploy] Region {region} at capacity, trying next...", flush=True)
-                        continue  # Try next region
-                    raise  # Not a capacity error — re-raise
+                    if (
+                        "AKSCapacityHeavyUsage" in error_str
+                        or "capacity" in error_str.lower()
+                    ):
+                        print(
+                            f"[deploy] Region {region} at capacity, trying next...",
+                            flush=True,
+                        )
+                        continue
+                    raise
 
             if last_error:
                 raise last_error
 
             output_result = await self._run_terraform(
                 ["output", "-json"],
-                cwd=deploy_dir,
+                cwd=terraform_dir,
                 env=auth_env,
             )
             parsed = self._parse_outputs(output_result.get("stdout", ""))
+            if not parsed:
+                parsed = {
+                    key: str(value)
+                    for key, value in output_result.items()
+                    if key
+                    in {
+                        "deployment_id",
+                        "instance_id",
+                        "instance_ip",
+                        "pod_id",
+                        "endpoint_url",
+                        "base_url",
+                    }
+                    and value
+                }
 
-            instance_id = parsed.get("instance_ip", parsed.get("pod_id", "unknown"))
+            instance_id = (
+                parsed.get("deployment_id")
+                or parsed.get("instance_id")
+                or parsed.get("pod_id")
+                or parsed.get("instance_ip")
+            )
+            if not instance_id:
+                raise RuntimeError(
+                    "terraform apply returned no deployment identifier; "
+                    "rollback was requested"
+                )
+            endpoint_url = parsed.get("endpoint_url") or parsed.get("base_url")
             elapsed_seconds = time.monotonic() - started_at
             cost_incurred = self._estimate_elapsed_cost(config, elapsed_seconds)
+            created_at = datetime.now(UTC)
+            timeout_minutes = effective_timeout_minutes(
+                requested_timeout_minutes=config.timeout_minutes,
+                max_cost_usd=config.max_cost_usd,
+                hourly_rate_usd=config.hourly_rate_usd,
+            )
             record = DeploymentRecord(
                 instance_id=instance_id,
-                working_dir=deploy_dir,
+                working_dir=terraform_dir,
                 provider=config.provider.value,
                 model_name=config.model_name,
                 state="running",
                 ip_address=parsed.get("instance_ip"),
-                endpoint_url=parsed.get("endpoint_url"),
+                endpoint_url=endpoint_url,
+                created_at=created_at,
+                expires_at=created_at + timedelta(minutes=timeout_minutes),
+                provider_auth_aliases=config.provider_auth_aliases,
             )
             await self._persist_record(record)
             _DEPLOYED_INSTANCES.pop(deployment_id, None)
-            _DEPLOYED_INSTANCES[instance_id] = deploy_dir
+            _DEPLOYED_INSTANCES[instance_id] = terraform_dir
 
             if _LIFECYCLE_IMPORTED:
-                get_lifecycle().register(config.provider.value, instance_id, deploy_dir)
+                get_lifecycle().register(
+                    config.provider.value,
+                    instance_id,
+                    terraform_dir,
+                )
 
             instance = ComputeInstance(
                 instance_id=instance_id,
@@ -437,7 +575,7 @@ class DeploymentManager:
                 ip_address=parsed.get("instance_ip"),
                 port=8000,
                 gpu_type=config.gpu_type,
-                endpoint_url=parsed.get("endpoint_url"),
+                endpoint_url=endpoint_url,
                 cost_incurred=cost_incurred,
             )
             self._publish_event(
@@ -451,6 +589,8 @@ class DeploymentManager:
             )
             return instance
         except BaseException as error:
+            if initialized:
+                await self._rollback_terraform(terraform_dir, auth_env)
             self._publish_event(
                 "terraform_deploy_failed",
                 deployment_id=deployment_id,
@@ -462,11 +602,19 @@ class DeploymentManager:
 
     async def plan(self, config: ComputeConfig) -> dict[str, Any]:
         auth_env = self._build_auth_env(config)
-        plan_id = f"p-{uuid.uuid4().hex[:12]}"
-        plan_dir = os.path.join(self._working_dir, plan_id)
+        plan_token = uuid.uuid4().hex[:12]
+        plan_dir = os.path.join(self._working_dir, f"p-{plan_token}")
         os.makedirs(plan_dir, exist_ok=True)
-        self._generator.materialize(config, plan_dir, deployment_name=plan_id)
-        await self._run_terraform(["init", "-input=false"], cwd=plan_dir, env=auth_env)
+        terraform_dir = self._prepare_terraform_dir(
+            config,
+            plan_dir,
+            deployment_name=f"gludd-plan-{plan_token}",
+        )
+        await self._run_terraform(
+            ["init", "-input=false"],
+            cwd=terraform_dir,
+            env=auth_env,
+        )
         binary = self._binary_resolver.get_infra_binary()
         proc = await asyncio.create_subprocess_exec(
             binary,
@@ -475,13 +623,15 @@ class DeploymentManager:
             "-input=false",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=plan_dir,
+            cwd=terraform_dir,
             env=auth_env,
         )
         stdout, stderr = await proc.communicate()
         changes = proc.returncode == 2
         if proc.returncode not in (0, 2):
-            raise RuntimeError(f"terraform plan failed (rc={proc.returncode}): {stderr.decode()}")
+            raise RuntimeError(
+                f"terraform plan failed (rc={proc.returncode}): {stderr.decode()}"
+            )
         return {
             "changes_present": changes,
             "stdout": stdout.decode(),
@@ -491,12 +641,24 @@ class DeploymentManager:
 
     async def validate(self, config: ComputeConfig) -> dict[str, Any]:
         auth_env = self._build_auth_env(config)
-        validation_id = f"v-{uuid.uuid4().hex[:12]}"
-        val_dir = os.path.join(self._working_dir, validation_id)
+        validation_token = uuid.uuid4().hex[:12]
+        val_dir = os.path.join(self._working_dir, f"v-{validation_token}")
         os.makedirs(val_dir, exist_ok=True)
-        self._generator.materialize(config, val_dir, deployment_name=validation_id)
-        await self._run_terraform(["init", "-input=false"], cwd=val_dir, env=auth_env)
-        return await self._run_terraform(["validate", "-json"], cwd=val_dir, env=auth_env)
+        terraform_dir = self._prepare_terraform_dir(
+            config,
+            val_dir,
+            deployment_name=f"gludd-validate-{validation_token}",
+        )
+        await self._run_terraform(
+            ["init", "-input=false"],
+            cwd=terraform_dir,
+            env=auth_env,
+        )
+        return await self._run_terraform(
+            ["validate", "-json"],
+            cwd=terraform_dir,
+            env=auth_env,
+        )
 
     async def destroy(self, instance_id: str) -> None:
         # W2.3 (C5): refuse to destroy an instance we have no record of. Running
@@ -508,10 +670,12 @@ class DeploymentManager:
                 f"Refusing to destroy unknown instance_id {instance_id!r}: "
                 "no deployment record (deploy-before-destroy)."
             )
-        # Build a per-call env snapshot; global os.environ is never mutated.
-        auth_env: dict[str, str] | None = None
-        if self._last_config is not None:
-            auth_env = self._build_auth_env(self._last_config)
+        # Resolve stored alias names into one per-call environment snapshot.
+        auth_env = self._build_auth_env_from_aliases(
+            record.provider_auth_aliases
+        )
+        if record.provider == ComputeProvider.AZURE.value:
+            self._translate_azure_env(auth_env)
         database_claimed = False
         if self._session_factory is not None:
             async with self._session_factory() as session:
@@ -595,6 +759,34 @@ class DeploymentManager:
                     error=sanitize_error_message(str(error)),
                 )
             raise
+
+    async def _destroy_at_expiry(self, instance_id: str) -> bool:
+        """Destroy one expired deployment, returning whether cleanup ran."""
+        record = await self.get_deployment_shared(instance_id)
+        if record is None or record.expires_at is None:
+            return False
+        if record.expires_at > datetime.now(UTC):
+            return False
+        await self.destroy(instance_id)
+        return True
+
+    async def cleanup_expired(self) -> list[str]:
+        """Destroy all persisted deployments whose hard TTL has elapsed."""
+        records = await self.list_deployments_shared()
+        destroyed: list[str] = []
+        for record in records:
+            try:
+                if await self._destroy_at_expiry(record.instance_id):
+                    destroyed.append(record.instance_id)
+            except Exception:
+                record.state = "cleanup_retry"
+                await self._persist_record(record)
+                logger.exception(
+                    "expired deployment cleanup failed for %s; "
+                    "retrying next tick",
+                    record.instance_id,
+                )
+        return destroyed
 
     async def _run_terraform(
         self,

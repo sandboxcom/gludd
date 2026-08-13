@@ -443,11 +443,11 @@ class TestAzureGameRuntimeResolveAllowedCidr:
     def test_ipify_fallback_success(self) -> None:
         mock_response = mock.MagicMock()
         mock_response.raise_for_status.return_value = None
-        mock_response.json.return_value = {"ip": "203.0.113.42"}
+        mock_response.json.return_value = {"ip": "8.8.8.8"}
         with mock.patch("general_ludd.cloud.azure_game_runtime.httpx.get", return_value=mock_response):
             runtime = AzureGameRuntime(environment={})
             result = runtime._resolve_allowed_cidr()
-            assert result == "203.0.113.42/32"
+            assert result == "8.8.8.8/32"
             runtime.close()
 
     def test_ipify_http_error_raises(self) -> None:
@@ -462,10 +462,11 @@ class TestAzureGameRuntimeResolveAllowedCidr:
                 runtime._resolve_allowed_cidr()
             runtime.close()
 
-    def test_ipify_non_global_ip_raises(self) -> None:
+    @pytest.mark.parametrize("address", ["10.0.0.1", "203.0.113.42"])
+    def test_ipify_non_global_ip_raises(self, address: str) -> None:
         mock_response = mock.MagicMock()
         mock_response.raise_for_status.return_value = None
-        mock_response.json.return_value = {"ip": "10.0.0.1"}
+        mock_response.json.return_value = {"ip": address}
         with mock.patch("general_ludd.cloud.azure_game_runtime.httpx.get", return_value=mock_response):
             runtime = AzureGameRuntime(environment={})
             with pytest.raises(RuntimeError, match="non-global IPv4"):
@@ -490,6 +491,8 @@ class TestAzureGameRuntimeWaitUntilReady:
     def test_ready_on_first_attempt(self) -> None:
         runtime = AzureGameRuntime(
             environment={},
+            readiness_probe=lambda _: True,
+            sleep=lambda _: None,
         )
         runtime._wait_until_ready("http://example.com")
         runtime.close()

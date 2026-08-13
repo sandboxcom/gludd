@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -59,11 +60,16 @@ DEFAULT_PER_WORKER_GB = 1.5
 LOAD_HEADROOM_MULTIPLIER = 2.5
 # Exit codes that indicate the OS killed the process (or a worker) — OOM-shaped.
 _OOM_EXIT_CODES = frozenset({-9, 137})
-_OOM_OUTPUT_MARKERS = (
-    "worker crashed",
-    "node down",
-    "crashed while running",
-    "replacing crashed worker",
+_OOM_DIAGNOSTIC_LINES = (
+    re.compile(
+        r"^\s*\[gw\d+\]\s+node down:\s+Not properly terminated\s*$",
+        re.IGNORECASE,
+    ),
+    re.compile(r"^\s*replacing crashed worker\s+gw\d+\s*$", re.IGNORECASE),
+    re.compile(
+        r"^\s*worker\s+gw\d+\s+crashed while running(?:\s+\S.*)?\s*$",
+        re.IGNORECASE,
+    ),
 )
 DEFAULT_HEARTBEAT_SECS = 30.0
 
@@ -192,11 +198,16 @@ def decide_nproc(env: Mapping[str, str] | None = None) -> int:
 
 
 def is_oom_exit(returncode: int, output: str = "") -> bool:
-    """True when the exit looks like an OOM kill (signal/137 or crashed worker)."""
+    """True only for an OOM signal/code or a complete xdist crash diagnostic."""
     if returncode in _OOM_EXIT_CODES:
         return True
-    low = output.lower()
-    return any(marker in low for marker in _OOM_OUTPUT_MARKERS)
+    if returncode == 0:
+        return False
+    return any(
+        pattern.fullmatch(line)
+        for line in output.splitlines()
+        for pattern in _OOM_DIAGNOSTIC_LINES
+    )
 
 
 def heartbeat_interval_seconds(env: Mapping[str, str] | None = None) -> float:
@@ -315,11 +326,12 @@ def has_basetemp(args: Sequence[str]) -> bool:
 
 
 def unique_basetemp() -> str:
-    """A process-unique pytest ``--basetemp`` path under the system temp root.
+    """A short, process-unique pytest ``--basetemp`` path.
 
     Returns a path (NOT created here — pytest creates and, if it exists, wipes
-    the basetemp at startup) that no other pytest process can share, keyed on
-    PID + a random uuid.
+    the basetemp at startup) that no other pytest process can share. POSIX runs
+    use canonical ``/tmp`` instead of an inherited, potentially deep ``TMPDIR``,
+    preserving headroom for xdist and AF_UNIX socket suffixes.
 
     WHY THIS EXISTS — the CI shared-tmp-root race that produced ~86
     ``FileNotFoundError: /tmp/pytest-of-<user>/pytest-0/popen-gwN`` errors:
@@ -344,8 +356,13 @@ def unique_basetemp() -> str:
     test spawns a nested pytest. This is the same isolation ``scripts/run_gate.sh``
     already applies to the local gate (unique ``mktemp -d`` basetemp).
     """
-    root = tempfile.gettempdir()
-    return os.path.join(root, f"gludd-adaptive-basetemp-{os.getpid()}-{uuid.uuid4().hex}")
+    root = (
+        "/tmp"
+        if os.name == "posix" and os.path.isdir("/tmp")
+        else tempfile.gettempdir()
+    )
+    token = uuid.uuid4().hex[:8]
+    return os.path.join(root, f"gludd-at-{os.getpid()}-{token}")
 
 
 def build_pytest_cmd(pytest_args: Sequence[str], nproc: int) -> list[str]:

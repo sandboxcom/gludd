@@ -8,8 +8,11 @@ _run_test_local_memory.py
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+# ansible-lint runtime coordination state
+.ansible/.lock
 .coverage
 .coverage.audit.*
+.coverage-shards-local/
 coverage.xml
 htmlcov/
 # dist/ is HALF-TRACKED: hand-authored build INPUTS are committed (install.sh,

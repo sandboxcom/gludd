@@ -157,28 +157,25 @@ class TestLocalInferenceStart:
         mock_manager = MagicMock()
         mock_manager.create_server.return_value = mock_server
         mock_manager.start_server = AsyncMock()
+        app.state._local_inference_manager = mock_manager
 
-        with patch(
-            "general_ludd.routers.models.LocalInferenceManager",
-            return_value=mock_manager,
-        ):
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post(
-                    "/admin/local-inference/start",
-                    json={
-                        "engine": "vllm",
-                        "model_path": "test-model",
-                        "model_name": "test-model",
-                        "host": "localhost",
-                        "port": 8001,
-                        "gpu_layers": -1,
-                        "context_size": 4096,
-                    },
-                )
-                assert resp.status_code == 200
-                data = resp.json()
-                assert data["server_id"] == "test-server"
-                assert data["engine"] == "vllm"
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/admin/models/local/serve",
+                json={
+                    "engine": "vllm",
+                    "model_id": "test-model",
+                    "model_path": "test-model",
+                    "host": "localhost",
+                    "port": 8001,
+                    "gpu_layers": -1,
+                    "context_size": 4096,
+                },
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["server_id"] == "test-server"
+            assert data["engine"] == "vllm"
 
 
 class TestWorktreeEndpoints:

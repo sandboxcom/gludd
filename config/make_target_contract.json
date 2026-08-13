@@ -17,6 +17,16 @@
       "behavior": "make integration-health"
     },
     {
+      "name": "audit-linux-pyinstaller-warnings",
+      "make_variables": [
+        "PYINSTALLER_WARNING_FILE_LINUX",
+        "PYINSTALLER_WARNING_ALLOWLIST_LINUX",
+        "PYINSTALLER_VERSION_LINUX",
+        "PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY"
+      ],
+      "behavior": "make audit-linux-pyinstaller-warnings PYINSTALLER_WARNING_FILE_LINUX=dist/linux/warn-gludd.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
+    },
+    {
       "name": "molecule-test",
       "make_variables": ["SCENARIO"],
       "behavior": "make molecule-test SCENARIO=test_gludd_observe"
@@ -297,6 +307,11 @@
       "behavior": "make test-opa-policies OPA_ARGS=--strict OPA_IMAGE=openpolicyagent/opa:1.6.0"
     },
     {
+      "name": "tf-init-local",
+      "make_variables": ["STACK", "TF_INIT_LOCAL_VALIDATE_ONLY"],
+      "behavior": "make tf-init-local STACK=stacks/azure-vllm TF_INIT_LOCAL_VALIDATE_ONLY=1"
+    },
+    {
       "name": "audit-coverage",
       "make_variables": ["THRESHOLD", "SOURCE"],
       "behavior": "make audit-coverage THRESHOLD=85 SOURCE=src/general_ludd"
@@ -390,6 +405,34 @@
       "name": "git-patch-equivalence",
       "make_variables": ["PATCH_UPSTREAM", "PATCH_HEAD", "PATCH_LIMIT"],
       "behavior": "make git-patch-equivalence PATCH_UPSTREAM=development PATCH_HEAD=master PATCH_LIMIT=3"
+    },
+    {
+      "name": "lima-docker-status",
+      "make_variables": [
+        "LIMA_INSTANCE",
+        "LIMA_DOCKER_CONFIG",
+        "LIMA_DOCKER_VALIDATE_ONLY"
+      ],
+      "behavior": "make lima-docker-status LIMA_INSTANCE=gludd-docker LIMA_DOCKER_CONFIG=/tmp/gludd-lima-docker-config LIMA_DOCKER_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "lima-docker-pull",
+      "make_variables": [
+        "LIMA_INSTANCE",
+        "LIMA_IMAGE",
+        "LIMA_DOCKER_CONFIG",
+        "LIMA_DOCKER_VALIDATE_ONLY"
+      ],
+      "behavior": "make lima-docker-pull LIMA_INSTANCE=gludd-docker LIMA_IMAGE=ubuntu:24.04 LIMA_DOCKER_CONFIG=/tmp/gludd-lima-docker-config LIMA_DOCKER_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "podman-legacy-default-delete",
+      "make_variables": [
+        "PODMAN_LEGACY_MACHINE",
+        "PODMAN_LEGACY_DELETE_TIMEOUT_SECS",
+        "PODMAN_LEGACY_DELETE_VALIDATE_ONLY"
+      ],
+      "behavior": "make podman-legacy-default-delete PODMAN_LEGACY_MACHINE=podman-machine-default PODMAN_LEGACY_DELETE_TIMEOUT_SECS=1 PODMAN_LEGACY_DELETE_VALIDATE_ONLY=1"
     }
   ]
 }

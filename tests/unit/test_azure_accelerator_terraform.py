@@ -145,7 +145,7 @@ def test_generator_materializes_packaged_azure_stack_and_exact_sku(
     assert "super-secret" not in tfvars
 
 
-def test_generator_refuses_materialization_for_non_azure_provider(
+def test_generator_materializes_generic_root_for_non_azure_provider(
     tmp_path: Path,
 ) -> None:
     config = ComputeConfig(
@@ -153,12 +153,16 @@ def test_generator_refuses_materialization_for_non_azure_provider(
         gpu_type=GPUType.A100_80,
         model_name="org/model",
     )
-    with pytest.raises(ValueError, match="Azure"):
-        TerraformGenerator().materialize(
-            config,
-            tmp_path,
-            deployment_name="gludd-a1b2c3",
-        )
+    stack_dir = TerraformGenerator().materialize(
+        config,
+        tmp_path,
+        deployment_name="gludd-a1b2c3",
+    )
+
+    assert stack_dir == tmp_path
+    main_tf = tmp_path / "main.tf"
+    assert main_tf.is_file()
+    assert 'provider "aws"' in main_tf.read_text()
 
 
 def test_azure_sdk_credentials_are_translated_for_azurerm_without_global_mutation(

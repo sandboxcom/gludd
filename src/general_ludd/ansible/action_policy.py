@@ -77,7 +77,8 @@ def validate_action(
     if policy.process_isolation and policy.process_isolation.enabled:
         for module in manifest.modules:
             if policy.process_isolation.is_module_blocked(module):
-                denied.append(module)
+                if module not in denied:
+                    denied.append(module)
                 reasons.append(
                     f"Module '{module}' blocked by process isolation"
                 )

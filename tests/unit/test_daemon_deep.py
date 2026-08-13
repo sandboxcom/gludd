@@ -60,11 +60,11 @@ class TestLoadStartupConfigDeep:
         proj_gludd = tmp_path / "proj" / ".gludd"
         proj_gludd.mkdir(parents=True)
         # Use a non-forbidden field — budget is rejected by validate_project_overlay
-        (proj_gludd / "general-ludd.yml").write_text("compaction:\n  tick_interval_seconds: 99\n")
+        (proj_gludd / "general-ludd.yml").write_text("compaction:\n  enabled: true\n")
 
         with patch("general_ludd.daemon.find_project_gludd_dir", return_value=proj_gludd):
             cfg = load_startup_config()
-        assert cfg["compaction"]["tick_interval_seconds"] == 99
+        assert cfg["user_config"].compaction.enabled is True
 
     def test_project_overlay_yaml_parse_error_logs_warning(self, tmp_path, caplog):
         from general_ludd.daemon import load_startup_config
@@ -142,6 +142,7 @@ class TestLoadStartupConfigDeep:
         config_dir = tmp_path / "config"
         mcp_dir = config_dir / "mcp_servers"
         mcp_dir.mkdir(parents=True)
+        (mcp_dir / "servers.yml").write_text("")
 
         with patch("general_ludd.daemon.load_mcp_config", return_value=[{"name": "server-a"}, {"name": "server-b"}]):
             cfg = load_startup_config(config_dir=str(config_dir))

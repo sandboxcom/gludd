@@ -61,7 +61,7 @@
     loop_var: _apd_jid
     label: "jid {{ _apd_jid }}"
   register: _apd_poll
-  until: _apd_poll.finished | default(false) | bool
+  until: (_apd_jid in _apd_wait_jids) and (_apd_poll.finished | default(false) | bool)
   retries: "{{ barrier_retries | int }}"
   delay: "{{ barrier_delay | int }}"
   # Don't hard-fail the play if optional jobs never finished — the join-policy
@@ -103,5 +103,6 @@
   when:
     - _apd_ri.0 is defined
     - _apd_ri.0.text is defined
+    - _apd_ri.0.finished | default(false) | bool
     - not (_apd_ri.0.failed | default(false) | bool)
   no_log: "{{ psk | length > 0 }}"

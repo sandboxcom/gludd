@@ -44,14 +44,22 @@ def _cleanup_enf_state() -> None:
             os.remove(f)
 
 
+def _isolated_make_env(**overrides: str) -> dict[str, str]:
+    """Build a subprocess environment without recursive Make overrides."""
+    env = os.environ.copy()
+    env.pop("MAKEFLAGS", None)
+    env.pop("MAKEOVERRIDES", None)
+    env.update(overrides)
+    return env
+
+
 class TestReloadEnforcement:
     def test_reload_resets_streak_files(self, tmp_path: Path):
         streak_path = tmp_path / "tool-streak.json"
         streak_path.write_text(
             json.dumps({"count": 99, "ts": int(time.time() * 1000)})
         )
-        env = os.environ.copy()
-        env["GLUDD_STREAK_FILE"] = str(streak_path)
+        env = _isolated_make_env(GLUDD_STREAK_FILE=str(streak_path))
 
         result = subprocess.run(
             ["make", "reload-enforcement"],
@@ -65,6 +73,45 @@ class TestReloadEnforcement:
         assert result.returncode == 0, result.stderr
         streak = json.loads(streak_path.read_text())
         assert streak["count"] == 0
+
+    def test_reload_resets_namespaced_mainthread_streak(self, tmp_path: Path):
+        streak_path = tmp_path / "mainthread-streak.json"
+        streak_path.write_text(json.dumps({"streak": 99}))
+        env = _isolated_make_env(
+            GLUDD_MAINTHREAD_STREAK_FILE=str(streak_path)
+        )
+
+        result = subprocess.run(
+            ["make", "reload-enforcement"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            cwd=str(ROOT),
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr
+        streak = json.loads(streak_path.read_text())
+        assert streak["streak"] == 0
+
+    def test_reload_removes_namespaced_multitask_state(self, tmp_path: Path):
+        state_path = tmp_path / "multitask-state.json"
+        state_path.write_text(json.dumps({"pid": 99999, "zeroStreak": 5}))
+        env = _isolated_make_env(
+            GLUDD_MULTITASK_STATE_FILE=str(state_path)
+        )
+
+        result = subprocess.run(
+            ["make", "reload-enforcement"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            cwd=str(ROOT),
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert not state_path.exists()
 
     def test_reload_removes_disengage_signal(self):
         try:
@@ -116,10 +163,13 @@ class TestReloadEnforcement:
             _cleanup_enf_state()
             with open("/tmp/gludd-multitask-state.json", "w") as f:
                 json.dump({"pid": 99999, "zeroStreak": 5}, f)
+            env = _isolated_make_env()
+            env.pop("GLUDD_MULTITASK_STATE_FILE", None)
             result = subprocess.run(
                 ["make", "reload-enforcement"],
                 capture_output=True, text=True, timeout=15,
                 cwd=str(ROOT),
+                env=env,
             )
             assert result.returncode == 0, result.stderr
             assert not os.path.exists("/tmp/gludd-multitask-state.json")

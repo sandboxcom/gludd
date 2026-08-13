@@ -204,7 +204,9 @@ class TestDaemonAdminEndpoints:
 
     @pytest.fixture
     def client(self, daemon_app):
-        return TestClient(daemon_app)
+        client = TestClient(daemon_app)
+        yield client
+        client.close()
 
     def test_admin_preflight(self, client):
         resp = client.post("/admin/preflight")
@@ -219,6 +221,11 @@ class TestDaemonAdminEndpoints:
         assert "recent_events" in data
 
     def test_admin_add_model(self, client):
+        from general_ludd.models.gateway import ModelGateway
+
+        # This endpoint test does not exercise caching. Inject a cache-free
+        # gateway so the TestClient portal does not own a diskcache connection.
+        client.app.state._model_gateway = ModelGateway()
         resp = client.post("/admin/models", json={
             "model_id": "test-model",
             "provider": "openai",

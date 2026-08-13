@@ -154,6 +154,13 @@ export default (async ({ }) => {
   `enforce_stop_impl.ts` without importing it) crashed opencode at boot.
   Cross-plugin function references must be inlined. Verified by
   `make check-plugin-hook-invoke`.
+- **Registered entrypoints must exist and load.** A practitioner report shows
+  a missing OpenCode plugin dependency surfacing as `ERR_MODULE_NOT_FOUND` and
+  leaving every later prompt silently unresponsive
+  ([issue #28286](https://github.com/anomalyco/opencode/issues/28286)). The
+  manifest/file integrity check and runtime import tests therefore fail closed
+  when a registered proxy entrypoint is absent, even if its implementation
+  module still exists elsewhere in the tree.
 - **Live binary tests must provide their own local model.** OpenCode users have
   reported `opencode run` hanging immediately with both hosted credentials and
   local models ([issue #1418](https://github.com/anomalyco/opencode/issues/1418)),
@@ -487,6 +494,13 @@ re-invocations.
 - `make crash-recovery` — manually reset state after a stale PID / age-gate.
 - `make clean-tmp` — clean `/tmp/gludd-*` files (logs, stale state).
 - `make check-disk` — pre-commit check: fails if `/tmp/gludd-*` > 100MB.
+
+The reload target honors `GLUDD_STREAK_FILE`,
+`GLUDD_MAINTHREAD_STREAK_FILE`, and `GLUDD_MULTITASK_STATE_FILE`.
+This keeps test workers and parallel projects from resetting one another's
+live state. A long-running [pytest concurrency report](https://github.com/pytest-dev/pytest/issues/4181)
+documents build jobs colliding on a shared temporary path; environment-directed
+state paths are the corresponding isolation boundary here.
 
 ### 8.3 Atomic Write Pattern
 

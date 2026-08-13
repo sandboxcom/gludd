@@ -15,6 +15,23 @@ import sys
 import uuid
 from typing import Any
 
+_MAX_LOCAL_ITERATIONS = 100
+
+
+def _parse_max_iterations(value: object) -> int:
+    """Return a bounded loop count for an untrusted JSON request."""
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise ValueError("max_iterations must be an integer between 1 and 100")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(
+            "max_iterations must be an integer between 1 and 100"
+        ) from exc
+    if not 1 <= parsed <= _MAX_LOCAL_ITERATIONS:
+        raise ValueError("max_iterations must be an integer between 1 and 100")
+    return parsed
+
 
 def run_local(
     prompt: str,
@@ -78,7 +95,9 @@ def main() -> int:
                 if request.get("model_profile")
                 else None
             ),
-            max_iterations=int(request["max_iterations"]),
+            max_iterations=_parse_max_iterations(
+                request["max_iterations"]
+            ),
         )
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         result = {

@@ -70,6 +70,13 @@ link** — each surface validates even though the next layer would also catch it
 | A/B candidate execution | `src/general_ludd/abtest/runner.py` | crash-isolated fresh-interpreter child; success requires exit 0 **and** an unforgeable parent-generated `secrets.token_hex` nonce written to a parent-controlled result file; fails closed otherwise; bounded output | `tests/unit/test_abtest_runner.py` |
 | `make test` (engine test gate) | `src/general_ludd/execution/engine.py` | `_run_tests()` runs in its own process group (`start_new_session=True`) and `os.killpg`s the whole group on a 120s timeout so no recipe grandchild leaks | `tests/unit/test_execution_engine.py` |
 
+#### Practitioner evidence for A/B resource limits
+
+- A long-lived [Python resource-limit discussion](https://stackoverflow.com/questions/60405540/soft-hard-limit-in-pythons-resource)
+  explains that an unprivileged process can lower a hard limit but cannot raise it
+  again. Gludd therefore applies hard limits only in its fresh A/B child process;
+  direct in-process callers remain opt-in so one test cannot poison later work.
+
 #### Practitioner evidence for Slurm/API error boundaries
 
 - A long-lived [slurm-users report about slurmrestd authentication](https://lists.schedmd.com/pipermail/slurm-users/2023-June/010148.html)

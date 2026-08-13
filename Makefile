@@ -26,6 +26,7 @@ NODE_DEPS_NPM_CACHE ?= /tmp/gludd-npm-cache-public-v1
 NODE_DEPS_NPM_REGISTRY ?= https://registry.npmjs.org
 NODE_DEPS_AUDIT_LEVEL ?= moderate
 GATE_REFRESH_VALIDATE_ONLY ?= 0
+DISK_MIN_FREE_GIB ?= 8
 # Make children emit deterministic, non-interactive logs even when the host's
 # terminal emulator has no terminfo entry inside a worker or CI environment.
 export TERM := dumb
@@ -135,7 +136,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         sandbox-state-dir sandbox-state-list sandbox-state-clean \
         vm-image-build vm-image-list vm-image-clean \
         verify-feature-claims audit-coverage gate-audit coverage-json \
-        tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
+        tf-cache-setup tf-init tf-init-local tf-validate tf-cache-warm tf-versions-check tf-clean \
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime e2e-setup-test-project test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
@@ -293,6 +294,7 @@ help:
 	@echo "  --- Terraform ---"
 	@echo "  tf-cache-warm         Download all providers ONCE into the shared plugin cache"
 	@echo "  tf-init STACK=s/n     Init a stack using the shared cache (no re-download)"
+	@echo "  tf-init-local         State-free Azure stack init (STACK, TF_INIT_LOCAL_VALIDATE_ONLY)"
 	@echo "  tf-validate STACK=s/n Validate a stack against the shared cache"
 	@echo "  tf-versions-check     Enforce stacks match infra/terraform/versions.tf"
 	@echo "  tf-clean              Remove the shared plugin cache"
@@ -377,6 +379,10 @@ help:
 	@echo "  --- Build + Deploy ---"
 	@echo "  dist                  Build distribution tarball"
 	@echo "  build-executable      Build standalone executable (pyinstaller)"
+	@echo "  audit-linux-pyinstaller-warnings  Validate/replay the Linux PyInstaller warning policy"
+	@echo "  lima-docker-status    Inspect the namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_VALIDATE_ONLY)"
+	@echo "  lima-docker-pull      Pull one image into namespaced Lima Docker (LIMA_INSTANCE, LIMA_IMAGE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_VALIDATE_ONLY)"
+	@echo "  podman-legacy-default-delete  Remove only a stopped legacy default VM (PODMAN_LEGACY_MACHINE, PODMAN_LEGACY_DELETE_TIMEOUT_SECS, PODMAN_LEGACY_DELETE_VALIDATE_ONLY)"
 	@echo "  container-build       Build container image"
 	@echo "  container-run         Run container locally"
 	@echo "  container-push        Push container image"
@@ -978,17 +984,21 @@ _stash-depth-guard:
 	fi
 	@echo "_stash-depth-guard: PASS"
 
-# AB026 — _disk-usage-guard: blocks commits when disk usage exceeds 85%.
-# Prevents ENOSPC crashes that corrupt state files.
+# AB026 disk headroom guard: blocks commits when checkout-volume headroom
+# drops below DISK_MIN_FREE_GIB. Absolute headroom is stable across APFS volume
+# sizes and does not pressure agents to delete another project's namespaced data.
 _disk-usage-guard:
-	@USAGE=$$(df / | tail -1 | awk '{print $$5}' | tr -d '%' || echo 0); \
-	if [ "$$USAGE" -gt 85 ] && [ "$$FORCE" != "1" ]; then \
-		echo "DISK-USAGE-GUARD: $${USAGE}% disk usage — BLOCKED. Run 'make clean-tmp'. FORCE=1 bypasses."; \
+	@AVAILABLE_KIB=$$(df -Pk "$(CURDIR)" | awk 'END {print $$4}'); \
+	USAGE=$$(df -Pk "$(CURDIR)" | awk 'END {gsub(/%/,"",$$5); print $$5}'); \
+	MIN_FREE_KIB=$$(($(DISK_MIN_FREE_GIB) * 1024 * 1024)); \
+	AVAILABLE_GIB=$$((AVAILABLE_KIB / 1024 / 1024)); \
+	if [ "$$AVAILABLE_KIB" -lt "$$MIN_FREE_KIB" ]; then \
+		echo "DISK-HEADROOM-GUARD: available=$$AVAILABLE_GIB GiB required=$(DISK_MIN_FREE_GIB) GiB BLOCKED."; \
 		exit 1; \
-	elif [ "$$USAGE" -gt 75 ]; then \
-		echo "DISK-USAGE-GUARD: $${USAGE}% disk usage — consider 'make clean-tmp'."; \
-	fi
-	@echo "_disk-usage-guard: PASS ($$(df / | tail -1 | awk '{print $$5}'))"
+	elif [ "$$USAGE" -gt 90 ]; then \
+		echo "DISK-HEADROOM-GUARD: available_gib=$$AVAILABLE_GIB required_gib=$(DISK_MIN_FREE_GIB) usage=$${USAGE}% — high utilization, headroom sufficient."; \
+	fi; \
+	echo "_disk-usage-guard: PASS available_gib=$$AVAILABLE_GIB required_gib=$(DISK_MIN_FREE_GIB) usage=$${USAGE}%"
 
 # AB027 — check-worktree-staleness: flags git worktrees older than 24h.
 # Stale worktrees consume disk (~320MB each) and must be merged or cleaned up.
@@ -2399,6 +2409,14 @@ disk-user-caches: ## Show all user-cache directories accessible to this agent + 
 		fi; \
 	done
 	@echo ""
+	@echo "=== major user-data roots (read-only) ==="
+	@for d in "$$HOME/.local/share/opencode" "$$HOME/.local/share/containers" "$$HOME/.lima" "$$HOME/.npm" "$$HOME/.cargo" "$$HOME/.rustup" "$$HOME/.docker" "$$HOME/Library/Caches" "$$HOME/Library/Application Support" "$$HOME/Library/Developer" "$$HOME/Library/Logs" "$$HOME/tmp" "$$HOME/gludd" "$${TMPDIR:-/tmp}"; do \
+		if [ -d "$$d" ]; then \
+			echo "  measuring $$d"; \
+			printf "%-50s %s\n" "$$d:" "$$(du -sh "$$d" 2>/dev/null | cut -f1)"; \
+		fi; \
+	done
+	@echo ""
 	@echo "=== gh run-log zips ==="
 	@gh_logs=$$(find ~/.cache/gh -name 'run-log-*.zip' 2>/dev/null | wc -l | tr -d ' '); \
 	echo "  count: $$gh_logs files"; \
@@ -2432,6 +2450,12 @@ audit-home-tmp: ## Show ~/tmp directory summary (read-only)
 		[ "$$cnt" != "0" ] && echo "  $$pat count=$$cnt"; \
 	done
 	@echo "pytest_subdirs=$$(find /Users/shawnwilson/tmp/pytest-of-shawnwilson -maxdepth 1 -name 'pytest-*' 2>/dev/null | wc -l | tr -d ' ')"
+	@echo "--- pytest root sizes ---"
+	@du -sh /Users/shawnwilson/tmp/pytest-of-shawnwilson/pytest-* 2>/dev/null | sort -h | tail -20 || true
+	@echo "--- largest top-level entries ---"
+	@du -sh /Users/shawnwilson/tmp/* 2>/dev/null | sort -h | tail -20 || true
+	@echo "--- legacy Podman path contents ---"
+	@du -ah /Users/shawnwilson/tmp/podman 2>/dev/null | sort -h | tail -20 || true
 	@echo "=== done ==="
 
 cleanup-stale-tmp: ## Remove stale gludd-owned temp dirs/files from ~/tmp (APPLY=1 to execute, default dry-run)
@@ -2555,20 +2579,63 @@ clean-worktree-caches: clean-worktree-venvs
 	@rm -rf /tmp/gludd-worktrees/*/.pytest_cache /tmp/gludd-worktrees/*/.mypy_cache /tmp/gludd-worktrees/*/.ruff_cache 2>/dev/null || true
 	@echo "clean-worktree-caches done"
 molecule-clean:
-	@echo "Removing stray molecule/<scenario> runtime dirs (any dir directly under molecule/ that is NOT playbooks, roles, internal_tools, mock_daemon, library)..."
+	@echo "Removing stray molecule/<scenario> runtime dirs (preserving the canonical default scenario and source directories)..."
 	@for d in molecule/*/; do \
 		s=$$(basename "$$d"); \
 		case "$$s" in \
-			playbooks|roles|internal_tools|mock_daemon|library) ;; \
-			*) echo "  Removing stray: $$d"; rm -rf "$$d" ;; \
+			playbooks|roles|internal_tools|mock_daemon|library|default) ;; \
+			*) if [ -n "$$(git ls-files -- "$$d")" ]; then \
+				echo "  Preserving tracked scenario: $$d"; \
+			else \
+				echo "  Removing stray: $$d"; rm -rf "$$d"; \
+			fi ;; \
 		esac; \
 	done
+	@echo "Removing Ansible dependency namespaces accidentally installed into the source collection root..."
+	@rm -rf -- collections/ansible_collections/ansible collections/ansible_collections/community
+	@find collections/ansible_collections -maxdepth 1 -type d \( -name 'ansible.*.info' -o -name 'community.*.info' \) -exec rm -rf -- {} +
 	@echo "molecule-clean done"
 
 molecule-test:
-	@if [ -z "$(SCENARIO)" ]; then echo "Usage: make molecule-test SCENARIO=noop|prompt_eval|runtime_validate"; exit 1; fi
+	@if [ -z "$(SCENARIO)" ]; then echo "Usage: make molecule-test SCENARIO=noop|prompt_eval|runtime_validate|binary_smoke_linux"; exit 1; fi
 	@echo "Running molecule scenario: $(SCENARIO)"
-	@MOLECULE_GLOB="molecule/playbooks/*/molecule.yml" $(UV) run molecule test -s "$(SCENARIO)"
+	@if [ "$(SCENARIO)" = "binary_smoke_linux" ]; then \
+		$(MAKE) --no-print-directory build-linux-executable \
+			LIMA_INSTANCE="$(LIMA_INSTANCE)" \
+			LIMA_DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" \
+			LINUX_BINARY_IMAGE="$(LINUX_BINARY_IMAGE)" \
+			LINUX_BINARY_OUTPUT="$(LINUX_BINARY_OUTPUT)"; \
+	fi
+	@ANSIBLE_STATE_DIR=$$(mktemp -d "/tmp/gludd-molecule-$(SCENARIO).XXXXXX"); \
+	DOCKER_CONFIG_VALUE="$$ANSIBLE_STATE_DIR/docker"; \
+	mkdir -p "$$DOCKER_CONFIG_VALUE"; \
+	chmod 700 "$$DOCKER_CONFIG_VALUE"; \
+	export DOCKER_CONFIG="$$DOCKER_CONFIG_VALUE"; \
+	PROJECT_COLLECTIONS="$$(pwd)/collections"; \
+	export ANSIBLE_COLLECTIONS_PATH="$$PROJECT_COLLECTIONS:$$ANSIBLE_STATE_DIR/collections:/usr/share/ansible/collections"; \
+	echo "Using Ansible collections: $$ANSIBLE_COLLECTIONS_PATH"; \
+	DOCKER_HOST_VALUE="$${DOCKER_HOST:-}"; \
+	if [ -z "$$DOCKER_HOST_VALUE" ] && command -v limactl >/dev/null 2>&1; then \
+		LIMA_SOCKET=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+		if [ -n "$$LIMA_SOCKET" ] && [ -S "$$LIMA_SOCKET" ]; then \
+			DOCKER_HOST_VALUE="unix://$$LIMA_SOCKET"; \
+			export DOCKER_HOST="$$DOCKER_HOST_VALUE"; \
+			echo "Using Lima Docker API socket: $$DOCKER_HOST_VALUE"; \
+		fi; \
+	fi; \
+	if [ -z "$$DOCKER_HOST_VALUE" ] && command -v podman >/dev/null 2>&1; then \
+		PODMAN_SOCKET=$$(podman machine inspect "$(PODMAN_MACHINE)" --format '{{.ConnectionInfo.PodmanSocket.Path}}' 2>/dev/null || true); \
+		if [ -n "$$PODMAN_SOCKET" ] && [ -S "$$PODMAN_SOCKET" ]; then \
+			DOCKER_HOST_VALUE="unix://$$PODMAN_SOCKET"; \
+			export DOCKER_HOST="$$DOCKER_HOST_VALUE"; \
+			echo "Using Podman Docker API socket: $$DOCKER_HOST_VALUE"; \
+		fi; \
+	fi; \
+	cleanup() { rm -rf "$$ANSIBLE_STATE_DIR"; }; \
+	trap cleanup EXIT INT TERM; \
+	MOLECULE_GLOB="molecule/playbooks/*/molecule.yml" ANSIBLE_HOME="$$ANSIBLE_STATE_DIR" $(UV) run molecule test -s "$(SCENARIO)"; \
+	EXIT_CODE=$$?; \
+	exit $$EXIT_CODE
 
 check-molecule-integrity:
 	@python3 /tmp/gludd-molecule-audit.py
@@ -3994,7 +4061,7 @@ typecheck-scope:
 	@MYPYPATH=src $(UV) run mypy --explicit-package-bases --no-incremental $(FILES)
 # Ansible/YAML lint (#36), fail-on-error (no `|| true`).
 yaml-lint:
-	@$(UV) run ansible-lint playbooks collections/ansible_collections/general_ludd/agent/roles
+	@ANSIBLE_COLLECTIONS_PATH="$(CURDIR)/collections" $(UV) run ansible-lint playbooks collections/ansible_collections/general_ludd/agent/roles
 
 ci-log:
 	@if [ -n "$(RUN)" ]; then \
@@ -5080,6 +5147,145 @@ build-executable:
 	@$(UV) run pyinstaller gludd.spec --clean --noconfirm
 	@echo "Built dist/gludd"
 
+LINUX_BINARY_IMAGE ?= ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58
+LINUX_BINARY_OUTPUT ?= dist/linux/gludd
+LINUX_BINARY_SCRATCH_ROOT ?= $(HOME)/tmp/gludd-linux-build
+DEBIAN_SNAPSHOT ?= 20260729T000000Z
+LINUX_BINUTILS_VERSION ?= 2.40-2
+LINUX_APT_UTILS_VERSION ?= 2.6.1
+PYINSTALLER_WARNING_ALLOWLIST_LINUX ?= config/pyinstaller-warning-allowlist-linux.json
+PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt
+PYINSTALLER_VERSION_LINUX ?= 6.20.0
+PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY ?= 0
+
+.PHONY: audit-linux-pyinstaller-warnings
+audit-linux-pyinstaller-warnings: ## Re-audit a retained Linux PyInstaller warning report
+	@case "$(PYINSTALLER_WARNING_FILE_LINUX)" in /*|*..*) echo "Refusing unsafe PYINSTALLER_WARNING_FILE_LINUX: $(PYINSTALLER_WARNING_FILE_LINUX)"; exit 1;; esac
+	@if [ "$(PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)" = "1" ]; then \
+		echo "audit-linux-pyinstaller-warnings: validated $(PYINSTALLER_WARNING_FILE_LINUX)"; \
+	else \
+		architecture="$$(uname -m)"; \
+		$(UV) run python scripts/audit_pyinstaller_warnings.py \
+			--warnings "$(PYINSTALLER_WARNING_FILE_LINUX)" \
+			--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
+			--platform linux \
+			--architecture "$$architecture" \
+			--pyinstaller-version "$(PYINSTALLER_VERSION_LINUX)" \
+			--spec gludd.spec; \
+	fi
+
+build-linux-executable: ## Build and verify a real Linux PyInstaller executable
+	@case "$(LINUX_BINARY_OUTPUT)" in /*|*..*) echo "Refusing unsafe LINUX_BINARY_OUTPUT: $(LINUX_BINARY_OUTPUT)"; exit 1;; esac
+	@case "$(LINUX_BINARY_SCRATCH_ROOT)" in "$(HOME)"/*) ;; *) echo "Refusing scratch root outside HOME: $(LINUX_BINARY_SCRATCH_ROOT)"; exit 1;; esac
+	@mkdir -p "$$(dirname "$(LINUX_BINARY_OUTPUT)")"
+	@rm -f "$(LINUX_BINARY_OUTPUT)" "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"
+	@set -e; if [ "$$(uname -s)" = "Linux" ]; then \
+		echo "Building Linux executable natively"; \
+		$(MAKE) --no-print-directory build-executable; \
+		pyinstaller_version=$$($(UV) run pyinstaller --version); \
+		architecture=$$(uname -m); \
+		cp build/gludd/warn-gludd.txt "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"; \
+		$(UV) run python scripts/audit_pyinstaller_warnings.py \
+			--warnings build/gludd/warn-gludd.txt \
+			--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
+			--platform linux \
+			--architecture "$$architecture" \
+			--pyinstaller-version "$$pyinstaller_version" \
+			--spec gludd.spec; \
+		cp dist/gludd "$(LINUX_BINARY_OUTPUT)"; \
+	else \
+		socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+		if [ -z "$$socket" ] || [ ! -S "$$socket" ]; then \
+			echo "Lima Docker socket unavailable for $(LIMA_INSTANCE): $$socket"; \
+			exit 1; \
+		fi; \
+		mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
+		chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
+		mkdir -p "$(LINUX_BINARY_SCRATCH_ROOT)"; \
+		source_dir=$$(mktemp -d "$(LINUX_BINARY_SCRATCH_ROOT)/source.XXXXXX"); \
+		container_name="gludd-linux-build-$$$$"; \
+		cleanup_build() { \
+			rm -rf "$$source_dir"; \
+			DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker rm -f "$$container_name" >/dev/null 2>&1 || true; \
+		}; \
+		trap cleanup_build EXIT INT TERM; \
+		git archive HEAD | tar -x -C "$$source_dir"; \
+		echo "Building Linux executable in namespaced Lima Docker VM $(LIMA_INSTANCE)"; \
+		build_status=0; \
+		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker run \
+			--pull=always \
+			--name "$$container_name" \
+			-e HOME=/tmp/gludd-home \
+			-e UV_CACHE_DIR=/tmp/gludd-uv-cache \
+			-e UV_LINK_MODE=copy \
+			-e UV_PROJECT_ENVIRONMENT=/tmp/gludd-linux-venv \
+			-v "$$source_dir:/workspace:ro" \
+			-w /workspace \
+			"$(LINUX_BINARY_IMAGE)" \
+			sh -ec 'export DEBIAN_FRONTEND=noninteractive; \
+				sed -i \
+					-e "s|http://deb.debian.org/debian-security|https://snapshot.debian.org/archive/debian-security/$(DEBIAN_SNAPSHOT)|g" \
+					-e "s|http://deb.debian.org/debian|https://snapshot.debian.org/archive/debian/$(DEBIAN_SNAPSHOT)|g" \
+					/etc/apt/sources.list.d/debian.sources; \
+				if test -f /etc/dpkg/dpkg.cfg.d/docker; then \
+					sed -i "\|/usr/share/man/|d" /etc/dpkg/dpkg.cfg.d/docker; \
+				fi; \
+				printf "%s\n" "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99gludd-snapshot; \
+				apt-get -o APT::Update::Error-Mode=any update; \
+				if test -L /etc/alternatives/builtins.7.gz && ! test -e /usr/share/man/man7/bash-builtins.7.gz; then \
+					mkdir -p /usr/share/man/man7; \
+					: > /usr/share/man/man7/bash-builtins.7.gz; \
+					update-alternatives --remove builtins.7.gz /usr/share/man/man7/bash-builtins.7.gz; \
+					rm -f /usr/share/man/man7/bash-builtins.7.gz; \
+				fi; \
+				apt-get install -y --download-only --no-install-recommends "apt-utils=$(LINUX_APT_UTILS_VERSION)"; \
+				dpkg -i /var/cache/apt/archives/apt-utils_$(LINUX_APT_UTILS_VERSION)_*.deb; \
+				dpkg-query -W apt-utils; \
+				echo "=== pending package updates before dist-upgrade ==="; \
+				apt-get -s dist-upgrade; \
+				apt-get -y --no-remove dist-upgrade; \
+				apt-get install -y --no-install-recommends "binutils=$(LINUX_BINUTILS_VERSION)"; \
+				command -v objdump; \
+				command -v objcopy; \
+				dpkg-query -W binutils; \
+				echo "=== pending package updates after dist-upgrade ==="; \
+				apt-get -s dist-upgrade > /tmp/gludd-apt-after.txt; \
+				cat /tmp/gludd-apt-after.txt; \
+				grep -Fq "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded." /tmp/gludd-apt-after.txt; \
+				rm -rf /var/lib/apt/lists/*; \
+				uv sync --frozen; \
+				pyinstaller_version=$$(uv run pyinstaller --version); \
+				test "$$pyinstaller_version" = "6.20.0"; \
+				architecture=$$(uname -m); \
+				pyinstaller_status=0; \
+				uv run pyinstaller gludd.spec --clean --noconfirm --workpath /tmp/gludd-pyinstaller-build --distpath /out || pyinstaller_status=$$?; \
+				if test -f /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt; then \
+					cp /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt /out/warn-gludd.txt; \
+				fi; \
+				test "$$pyinstaller_status" -eq 0; \
+				uv run python scripts/audit_pyinstaller_warnings.py \
+					--warnings /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt \
+					--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
+					--platform linux \
+					--architecture "$$architecture" \
+					--pyinstaller-version "$$pyinstaller_version" \
+					--spec gludd.spec' || build_status=$$?; \
+		warning_copy_status=0; \
+		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker cp "$$container_name:/out/warn-gludd.txt" "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt" || warning_copy_status=$$?; \
+		if [ "$$build_status" -ne 0 ]; then \
+			echo "Linux executable container build failed"; \
+			exit "$$build_status"; \
+		fi; \
+		if [ "$$warning_copy_status" -ne 0 ]; then \
+			echo "PyInstaller warning report was not retained"; \
+			exit "$$warning_copy_status"; \
+		fi; \
+		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker cp "$$container_name:/out/gludd" "$(LINUX_BINARY_OUTPUT)"; \
+	fi
+	@test -x "$(LINUX_BINARY_OUTPUT)" || { echo "Linux executable missing: $(LINUX_BINARY_OUTPUT)"; exit 1; }
+	@kind=$$(file "$(LINUX_BINARY_OUTPUT)"); echo "$$kind"; echo "$$kind" | grep -q 'ELF' || { echo "Expected an ELF executable"; exit 1; }
+
+
 gen-status-table:
 	@$(UV) run python scripts/gen_status_table.py --write --fast
 
@@ -6051,15 +6257,114 @@ sandbox-state-clean:
 # on Linux, etc.) surface here directly instead of only in CI. PYV=3.11|3.12.
 # Uses a container-local venv (UV_PROJECT_ENVIRONMENT) so the host macOS .venv is
 # never touched. Streams via tee (observability invariant).
+LIMA_INSTANCE ?= gludd-docker
+LIMA_IMAGE ?= ubuntu:24.04
+LIMA_DOCKER_CONFIG ?= /tmp/gludd-lima-docker-config
+LIMA_DOCKER_VALIDATE_ONLY ?= 0
+PODMAN_MACHINE ?= gludd
+VDISK ?= 20
+PODMAN_LEGACY_MACHINE ?= podman-machine-default
+PODMAN_LEGACY_DELETE_VALIDATE_ONLY ?= 1
+PODMAN_LEGACY_DELETE_TIMEOUT_SECS ?= 120
+
+lima-docker-status: ## Show bounded Docker engine, container, and image state for the namespaced Lima VM
+	@case "$(LIMA_DOCKER_VALIDATE_ONLY)" in 0|1) ;; *) echo "LIMA_DOCKER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@if [ "$(LIMA_DOCKER_VALIDATE_ONLY)" = "1" ]; then \
+		echo "LIMA_DOCKER_STATUS_VALID instance=$(LIMA_INSTANCE) config=$(LIMA_DOCKER_CONFIG)"; \
+		exit 0; \
+	fi; \
+	socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+	if [ -z "$$socket" ] || [ ! -S "$$socket" ]; then \
+		echo "Lima Docker socket unavailable for $(LIMA_INSTANCE): $$socket"; \
+		exit 1; \
+	fi; \
+	mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
+	chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
+	echo "=== Lima Docker engine ($(LIMA_INSTANCE)) ==="; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker info --format 'server={{.ServerVersion}} containers={{.Containers}} images={{.Images}}'; \
+	echo "=== Containers ==="; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker ps --all --no-trunc; \
+	echo "=== Images ==="; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker images --digests
+
+lima-docker-pull: ## Pull one image through the namespaced Lima Docker socket with live progress
+	@case "$(LIMA_DOCKER_VALIDATE_ONLY)" in 0|1) ;; *) echo "LIMA_DOCKER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@if [ "$(LIMA_DOCKER_VALIDATE_ONLY)" = "1" ]; then \
+		echo "LIMA_DOCKER_PULL_VALID instance=$(LIMA_INSTANCE) image=$(LIMA_IMAGE) config=$(LIMA_DOCKER_CONFIG)"; \
+		exit 0; \
+	fi; \
+	socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+	if [ -z "$$socket" ] || [ ! -S "$$socket" ]; then \
+		echo "Lima Docker socket unavailable for $(LIMA_INSTANCE): $$socket"; \
+		exit 1; \
+	fi; \
+	mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
+	chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
+	echo "Pulling $(LIMA_IMAGE) into Lima VM $(LIMA_INSTANCE)"; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker pull "$(LIMA_IMAGE)"
+
+.PHONY: podman-legacy-default-delete
+podman-legacy-default-delete: ## Remove only the stopped legacy global Podman VM after namespaced migration
+	@case "$(PODMAN_LEGACY_DELETE_VALIDATE_ONLY)" in 0|1) ;; *) echo "PODMAN_LEGACY_DELETE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@[ "$(PODMAN_LEGACY_DELETE_TIMEOUT_SECS)" -ge 1 ] 2>/dev/null || { echo "PODMAN_LEGACY_DELETE_TIMEOUT_SECS must be a positive integer"; exit 2; }
+	@if [ "$(PODMAN_LEGACY_MACHINE)" != "podman-machine-default" ]; then \
+		echo "Refusing non-legacy machine: $(PODMAN_LEGACY_MACHINE)"; \
+		exit 2; \
+	fi; \
+	if [ "$(PODMAN_LEGACY_DELETE_VALIDATE_ONLY)" = "1" ]; then \
+		echo "PODMAN_LEGACY_DELETE_VALID machine=$(PODMAN_LEGACY_MACHINE) timeout_secs=$(PODMAN_LEGACY_DELETE_TIMEOUT_SECS)"; \
+		exit 0; \
+	fi; \
+	command -v podman >/dev/null 2>&1 || { echo "podman not installed"; exit 1; }; \
+	state=$$(podman machine inspect "$(PODMAN_LEGACY_MACHINE)" --format '{{.State}}' 2>/dev/null || true); \
+	if [ -z "$$state" ]; then \
+		echo "PODMAN_LEGACY_DELETE_ALREADY_ABSENT machine=$(PODMAN_LEGACY_MACHINE)"; \
+		exit 0; \
+	fi; \
+	case "$$state" in running|Running) echo "Refusing to remove running legacy machine: $(PODMAN_LEGACY_MACHINE)"; exit 1;; esac; \
+	log="/tmp/gludd-podman-legacy-default-delete.log"; \
+	rm -f "$$log"; \
+	echo "PODMAN_LEGACY_DELETE_START machine=$(PODMAN_LEGACY_MACHINE) state=$$state"; \
+	podman machine rm -f "$(PODMAN_LEGACY_MACHINE)" >"$$log" 2>&1 & \
+	delete_pid=$$!; \
+	trap 'kill -TERM '"$$delete_pid"' 2>/dev/null || true' INT TERM EXIT; \
+	elapsed=0; \
+	while kill -0 "$$delete_pid" 2>/dev/null; do \
+		echo "PODMAN_LEGACY_DELETE_HEARTBEAT machine=$(PODMAN_LEGACY_MACHINE) elapsed_secs=$$elapsed"; \
+		if [ "$$elapsed" -ge "$(PODMAN_LEGACY_DELETE_TIMEOUT_SECS)" ]; then \
+			kill -TERM "$$delete_pid" 2>/dev/null || true; \
+			wait "$$delete_pid" 2>/dev/null || true; \
+			[ ! -f "$$log" ] || cat "$$log"; \
+			trap - INT TERM EXIT; \
+			echo "PODMAN_LEGACY_DELETE_TIMEOUT machine=$(PODMAN_LEGACY_MACHINE) elapsed_secs=$$elapsed"; \
+			exit 1; \
+		fi; \
+		sleep 1; \
+		elapsed=$$((elapsed + 1)); \
+	done; \
+	wait "$$delete_pid"; delete_rc=$$?; \
+	[ ! -f "$$log" ] || cat "$$log"; \
+	rm -f "$$log"; \
+	trap - INT TERM EXIT; \
+	if [ "$$delete_rc" -ne 0 ]; then \
+		echo "PODMAN_LEGACY_DELETE_FAILED machine=$(PODMAN_LEGACY_MACHINE) exit=$$delete_rc"; \
+		exit "$$delete_rc"; \
+	fi; \
+	echo "PODMAN_LEGACY_DELETE_DONE machine=$(PODMAN_LEGACY_MACHINE) elapsed_secs=$$elapsed"
+
 # Ensure the podman Linux VM is initialised and running (macOS needs a VM to run
 # Linux containers). Idempotent: init/start fail harmlessly if already done.
 podman-up:
 	@command -v podman >/dev/null 2>&1 || { echo "podman not installed"; exit 1; }
-	@podman machine init 2>/dev/null || true
-	@podman machine start 2>/dev/null || true
-	@# A stale default connection (e.g. an old Lima VM) hijacks `podman run`;
-	@# force the running podman machine to be the default so containers actually run.
-	@podman system connection default podman-machine-default 2>/dev/null || true
+	@if ! podman machine inspect "$(PODMAN_MACHINE)" >/dev/null 2>&1; then \
+		echo "Initializing namespaced Podman machine $(PODMAN_MACHINE)"; \
+		podman machine init --memory "$(VMEM)" --cpus "$(VCPU)" --disk-size "$(VDISK)" "$(PODMAN_MACHINE)"; \
+	fi
+	@state=$$(podman machine inspect "$(PODMAN_MACHINE)" --format '{{.State}}'); \
+	if [ "$$state" != "running" ]; then podman machine start "$(PODMAN_MACHINE)"; fi
+	@state=$$(podman machine inspect "$(PODMAN_MACHINE)" --format '{{.State}}'); \
+	if [ "$$state" != "running" ]; then echo "Podman machine $(PODMAN_MACHINE) failed to start"; exit 1; fi
+	@podman system connection default "$(PODMAN_MACHINE)"
 	@podman machine list
 
 # Start one explicit project-owned Podman machine and fail closed until its API
@@ -7031,9 +7336,9 @@ reload-enforcement:
 	@FLOOR="$${CLAUDE_AGENT_FLOOR:-10}"; \
 	echo "$${FLOOR}" > /tmp/gludd-floor-override; \
 	echo "  /tmp/gludd-floor-override          → $${FLOOR}"
-	@$(UV) run python3 -c 'import json,time; json.dump({"count":0,"ts":int(time.time()*1000)},open("/tmp/gludd-tool-streak.json","w"))'
+	@$(UV) run python3 -c 'import json,os,time; path=os.environ.get("GLUDD_STREAK_FILE","/tmp/gludd-tool-streak.json"); json.dump({"count":0,"ts":int(time.time()*1000)},open(path,"w"))'
 	@echo "  /tmp/gludd-tool-streak.json        → count=0"
-	@$(UV) run python3 -c 'import json,time; json.dump({"streak":0,"last_dispatch_ts":int(time.time()*1000),"ts":int(time.time()*1000)},open("/tmp/gludd-mainthread-streak.json","w"))'
+	@$(UV) run python3 -c 'import json,os,time; path=os.environ.get("GLUDD_MAINTHREAD_STREAK_FILE","/tmp/gludd-mainthread-streak.json"); json.dump({"streak":0,"last_dispatch_ts":int(time.time()*1000),"ts":int(time.time()*1000)},open(path,"w"))'
 	@echo "  /tmp/gludd-mainthread-streak.json  → strength=0"
 	@rm -f /tmp/gludd-watchdog-disengage.json
 	@echo "  /tmp/gludd-watchdog-disengage.json → removed"
@@ -7045,7 +7350,7 @@ reload-enforcement:
 	@echo "  /tmp/gludd-session-start.json      → removed (window reset)"
 	@rm -f /tmp/gludd-task-deadlines.json /tmp/gludd-task-stale.json
 	@echo "  /tmp/gludd-task-deadlines.json     → removed"
-	@rm -f /tmp/gludd-multitask-state.json
+	@$(UV) run python3 -c 'import os,pathlib; pathlib.Path(os.environ.get("GLUDD_MULTITASK_STATE_FILE","/tmp/gludd-multitask-state.json")).unlink(missing_ok=True)'
 	@echo "  /tmp/gludd-multitask-state.json    → removed (PID staleness guard)"
 	@echo "=== RELOAD COMPLETE — plugins will re-read state on next hook call ==="
 
@@ -7106,6 +7411,15 @@ tf-init: tf-cache-setup
 	@test -n "$(STACK)" || { echo "Usage: make tf-init STACK=stacks/<name>"; exit 2; }
 	@test -d $(TF_ROOT)/$(STACK) || { echo "No such stack: $(TF_ROOT)/$(STACK)"; exit 2; }
 	@cd $(TF_ROOT)/$(STACK) && $(TF) init
+
+# State-free initialization for release Azure stacks. The scoped cleaner only
+# removes test-generated tfvars carrying its marker; operator files and state
+# are preserved. Validate-only proves routing without downloading providers.
+tf-init-local: tf-cache-setup
+	@case "$(STACK)" in stacks/azure-vllm|stacks/azure-llamacpp) ;; *) echo "Usage: make tf-init-local STACK=stacks/azure-vllm|stacks/azure-llamacpp TF_INIT_LOCAL_VALIDATE_ONLY=0|1"; exit 2;; esac
+	@$(UV) run python scripts/clean_terraform_test_artifacts.py "$(TF_ROOT)/$(STACK)"
+	@if [ "$(TF_INIT_LOCAL_VALIDATE_ONLY)" = "1" ]; then echo "tf-init-local validate-only stack=$(STACK)"; exit 0; fi; \
+		cd "$(TF_ROOT)/$(STACK)" && TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" terraform init -backend=false
 
 # Validates a single stack against the shared cache.
 #   make tf-validate STACK=stacks/aws-vllm
@@ -7610,7 +7924,8 @@ remove-workspace-file:
 molecule-reset:
 	@[ -n "$(SCENARIO)" ] || { echo "Usage: make molecule-reset SCENARIO=name"; exit 1; }
 	@$(MAKE) --no-print-directory cleanup-molecule-processes
-	@MOLECULE_GLOB="molecule/playbooks/*/molecule.yml" $(UV) run molecule reset -s "$(SCENARIO)"
+	@# Destroy runtime resources without Molecule's reset path deleting tracked scenario content.
+	@MOLECULE_GLOB="molecule/playbooks/*/molecule.yml" $(UV) run molecule destroy -s "$(SCENARIO)"
 
 show-multitask-state:
 	@if [ -f /tmp/gludd-multitask-state.json ]; then ls -la /tmp/gludd-multitask-state.json; echo "---"; cat /tmp/gludd-multitask-state.json; else echo "File does not exist: /tmp/gludd-multitask-state.json"; fi

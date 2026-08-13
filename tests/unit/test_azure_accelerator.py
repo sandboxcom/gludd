@@ -9,6 +9,12 @@ import pytest
 from general_ludd.infra.azure_accelerator import (
     AzureAcceleratorPreflight,
     AzureAcceleratorUnavailable,
+    AzureComputeClient,
+    AzureResourceSku,
+    AzureResourceSkuOperations,
+    AzureUsage,
+    AzureUsageName,
+    AzureUsageOperations,
     effective_timeout_minutes,
     resolve_accelerator,
 )
@@ -50,6 +56,19 @@ class _ComputeClient:
     ) -> None:
         self.resource_skus = SimpleNamespace(list=lambda: skus)
         self.usage = SimpleNamespace(list=lambda location: usages)
+
+
+def test_azure_sdk_protocols_support_runtime_validation() -> None:
+    sku = _sku("Standard_NC24ads_A100_v4")
+    usage = _usage("cores", 0, 100)
+    client = _ComputeClient(skus=[sku], usages=[usage])
+
+    assert isinstance(sku, AzureResourceSku)
+    assert isinstance(usage.name, AzureUsageName)
+    assert isinstance(usage, AzureUsage)
+    assert isinstance(client.resource_skus, AzureResourceSkuOperations)
+    assert isinstance(client.usage, AzureUsageOperations)
+    assert isinstance(client, AzureComputeClient)
 
 
 @pytest.mark.parametrize(

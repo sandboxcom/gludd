@@ -51,6 +51,13 @@ _SHELL_MODULES = {
 }
 
 _WRITE_MODULES = {
+    "assemble",
+    "blockinfile",
+    "copy",
+    "file",
+    "lineinfile",
+    "replace",
+    "template",
     "ansible.builtin.copy",
     "ansible.builtin.template",
     "ansible.builtin.file",

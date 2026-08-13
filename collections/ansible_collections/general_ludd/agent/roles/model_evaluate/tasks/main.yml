@@ -3,12 +3,12 @@
   ansible.builtin.assert:
     that:
       - model_id | length > 0 or model_args | length > 0
-      - tasks | length > 0
+      - model_evaluate_tasks | length > 0
     fail_msg: >-
       model_evaluate requires model_id (or model_args) and at least one task.
       Got model_id={{ model_id | default('<undefined>') }},
       model_args={{ model_args | default('<undefined>') }},
-      tasks={{ tasks | default([]) }}.
+      tasks={{ model_evaluate_tasks | default([]) }}.
 
 - name: "Ensure output directory exists"
   ansible.builtin.file:
@@ -25,16 +25,12 @@
 
 - name: "Build task list string"
   ansible.builtin.set_fact:
-    _tasks_arg: "{{ tasks | join(',') }}"
+    _tasks_arg: "{{ model_evaluate_tasks | join(',') }}"
 
 - name: "Build lm_eval command args"
   ansible.builtin.set_fact:
     _model_spec: >-
-      {%- if model_args | length > 0 -%}
-      {{ model_args }}
-      {%- elif model_id | length > 0 -%}
-      pretrained={{ model_id }}
-      {%- endif -%}
+      {{ model_args if model_args | length > 0 else 'pretrained=' ~ model_id }}
 
 - name: "Run lm-evaluation-harness"
   ansible.builtin.command: >-

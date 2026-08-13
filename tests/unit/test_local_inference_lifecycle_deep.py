@@ -88,7 +88,7 @@ class TestStartTimeout:
         cfg = _make_config(startup_timeout=0.5)
         server = mgr.create_server(cfg)
         proc = _make_mock_process(returncode=None)
-        proc.stderr.read = AsyncMock(return_value=b"cuda out of memory")
+        proc.stderr.read = AsyncMock(side_effect=[b"cuda out of memory", b""])
 
         with (
             patch(
@@ -268,15 +268,7 @@ class TestForceKill:
         cfg = _make_config()
         server = mgr.create_server(cfg)
         proc = _make_mock_process(returncode=None)
-        wait_call_count = [0]
-
-        async def slow_wait():
-            wait_call_count[0] += 1
-            if wait_call_count[0] == 1:
-                await asyncio.sleep(20)
-            return 0
-
-        proc.wait = AsyncMock(side_effect=slow_wait)
+        proc.wait = AsyncMock(side_effect=[TimeoutError(), TimeoutError()])
         server.process = proc
         server.status = "running"
         server.pid = proc.pid
@@ -284,10 +276,7 @@ class TestForceKill:
         with (
             patch("general_ludd.infra.local_inference.os.killpg") as mock_killpg,
             patch("general_ludd.infra.local_inference.os.getpgid", return_value=proc.pid),
-            patch("general_ludd.infra.local_inference.asyncio.wait_for") as mock_wait_for,
         ):
-            mock_wait_for.side_effect = TimeoutError()
-
             asyncio.run(mgr.stop_server(server.server_id))
 
             assert mock_killpg.call_count == 2
@@ -298,6 +287,7 @@ class TestForceKill:
         cfg = _make_config()
         server = mgr.create_server(cfg)
         proc = _make_mock_process(returncode=None)
+        proc.wait = AsyncMock(return_value=0)
         server.process = proc
         server.status = "running"
         server.pid = proc.pid
@@ -305,7 +295,6 @@ class TestForceKill:
         with (
             patch("general_ludd.infra.local_inference.os.killpg") as mock_killpg,
             patch("general_ludd.infra.local_inference.os.getpgid", return_value=proc.pid),
-            patch("general_ludd.infra.local_inference.asyncio.wait_for", return_value=0),
         ):
             asyncio.run(mgr.stop_server(server.server_id))
 
@@ -322,7 +311,7 @@ class TestPortConflictEarlyExit:
         cfg = _make_config(startup_timeout=5.0)
         server = mgr.create_server(cfg)
         proc = _make_mock_process(returncode=1)
-        proc.stderr.read = AsyncMock(return_value=b"Address already in use")
+        proc.stderr.read = AsyncMock(side_effect=[b"Address already in use", b""])
 
         with patch(
             "general_ludd.infra.local_inference.asyncio.create_subprocess_exec",
@@ -338,7 +327,7 @@ class TestPortConflictEarlyExit:
         cfg = _make_config(startup_timeout=5.0)
         server = mgr.create_server(cfg)
         proc = _make_mock_process(returncode=1)
-        proc.stderr.read = AsyncMock(return_value=b"Port 8000 already in use. Try another.")
+        proc.stderr.read = AsyncMock(side_effect=[b"Port 8000 already in use. Try another.", b""])
 
         with (
             patch(
@@ -383,6 +372,7 @@ class TestMultipleServers:
 
         for s in servers:
             proc = _make_mock_process(pid=10000 + int(s.server_id.split("-")[1]))
+            proc.wait = AsyncMock(return_value=0)
             s.process = proc
             s.status = "running"
             s.pid = proc.pid
@@ -390,7 +380,6 @@ class TestMultipleServers:
         with (
             patch("general_ludd.infra.local_inference.os.killpg"),
             patch("general_ludd.infra.local_inference.os.getpgid", return_value=9999),
-            patch("general_ludd.infra.local_inference.asyncio.wait_for", return_value=0),
         ):
             asyncio.run(mgr.stop_all())
 

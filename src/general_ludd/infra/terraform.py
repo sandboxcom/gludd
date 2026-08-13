@@ -14,6 +14,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from general_ludd.config.deployment_optimization import DeploymentOptimizationConfig
 
+from general_ludd.infra.azure_accelerator import (
+    effective_timeout_minutes,
+    resolve_accelerator,
+)
 from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType, InferenceEngine
 from general_ludd.infra.terraform_state import StateBackendSelector, render_backend_block
 
@@ -470,32 +474,107 @@ class TerraformGenerator:
         lines.append(f"vllm_quantization = {escape_tfvar_value(quantization)}")
         return "\n".join(lines) + "\n"
 
-    def materialize(self, config: ComputeConfig, destination: str | os.PathLike[str], *, deployment_name: str) -> None:
-        """Write a runnable Terraform root, values, and local modules."""
+    def materialize(
+        self,
+        config: ComputeConfig,
+        destination: str | os.PathLike[str],
+        *,
+        deployment_name: str,
+    ) -> Path:
+        """Write an isolated, runnable Terraform root and return it."""
         destination_path = Path(destination)
         destination_path.mkdir(parents=True, exist_ok=True)
-        (destination_path / "main.tf").write_text(self.generate(config), encoding="utf-8")
+        if config.provider != ComputeProvider.AZURE:
+            (destination_path / "main.tf").write_text(
+                self.generate(config),
+                encoding="utf-8",
+            )
+            return destination_path
 
-        if config.provider != ComputeProvider.AZURE or config.deploy_type != "containerapp":
-            return
+        if not deployment_name or not all(
+            char.islower() or char.isdigit() or char == "-"
+            for char in deployment_name
+        ):
+            raise ValueError(
+                "deployment_name must contain lowercase letters, digits, or '-'"
+            )
 
         assets = _terraform_assets_root()
-        stack = assets / "stacks" / "azure-container-app-vllm"
-        module_source = assets / "modules" / "azure-container-app-vllm"
-        if not stack.is_dir() or not module_source.is_dir():
-            raise RuntimeError("Azure Container Apps Terraform stack assets are incomplete")
 
-        (destination_path / "terraform.tfvars").write_text(
-            self.build_azure_containerapp_tfvars(config, deployment_name=deployment_name),
-            encoding="utf-8",
+        if config.deploy_type == "containerapp":
+            stack = assets / "stacks" / "azure-container-app-vllm"
+            module_source = assets / "modules" / "azure-container-app-vllm"
+            if not stack.is_dir() or not module_source.is_dir():
+                raise RuntimeError(
+                    "Azure Container Apps Terraform stack assets are incomplete"
+                )
+            (destination_path / "main.tf").write_text(
+                self.generate(config),
+                encoding="utf-8",
+            )
+            (destination_path / "terraform.tfvars").write_text(
+                self.build_azure_containerapp_tfvars(
+                    config,
+                    deployment_name=deployment_name,
+                ),
+                encoding="utf-8",
+            )
+            for filename in ("variables.tf", "outputs.tf"):
+                shutil.copy2(stack / filename, destination_path / filename)
+            shutil.copytree(
+                module_source,
+                destination_path / "modules" / "azure-container-app-vllm",
+                dirs_exist_ok=True,
+            )
+            return destination_path
+
+        if config.deploy_type != "vm":
+            raise ValueError(
+                "Azure Terraform materialization supports vm or containerapp"
+            )
+
+        stack_name = (
+            "azure-llamacpp"
+            if config.engine == InferenceEngine.LLAMACPP
+            else "azure-vllm"
         )
-        for filename in ("variables.tf", "outputs.tf"):
-            shutil.copy2(stack / filename, destination_path / filename)
+        modules_dir = destination_path / "modules"
+        stack_dir = destination_path / "stacks" / stack_name
+        shutil.copytree(assets / "modules", modules_dir, dirs_exist_ok=True)
         shutil.copytree(
-            module_source,
-            destination_path / "modules" / "azure-container-app-vllm",
+            assets / "stacks" / stack_name,
+            stack_dir,
             dirs_exist_ok=True,
         )
+
+        accelerator = resolve_accelerator(config.gpu_type, config.gpu_count)
+        timeout_minutes = effective_timeout_minutes(
+            requested_timeout_minutes=config.timeout_minutes,
+            max_cost_usd=config.max_cost_usd,
+            hourly_rate_usd=config.hourly_rate_usd,
+        )
+        tfvars = "\n".join(
+            (
+                f"image               = {escape_tfvar_value(_container_image(config))}",
+                f"gpus               = {config.gpu_count}",
+                f"model               = {escape_tfvar_value(config.model_name)}",
+                f"region              = {escape_tfvar_value(config.region or 'eastus')}",
+                f"instance_type       = {escape_tfvar_value(accelerator.vm_size)}",
+                f"extra_args          = {escape_tfvar_value('')}",
+                f"max_cost_usd        = {config.max_cost_usd}",
+                f"timeout_minutes     = {timeout_minutes}",
+                f"allowed_cidr        = {escape_tfvar_value(config.allowed_cidr)}",
+                f"ssh_public_key_path = {escape_tfvar_value(config.ssh_public_key_path)}",
+                f"disk_size_gb        = {config.disk_size_gb}",
+                f"use_spot            = {str(config.spot).lower()}",
+                f"deployment_name     = {escape_tfvar_value(deployment_name)}",
+            )
+        )
+        (stack_dir / "terraform.tfvars").write_text(
+            tfvars + "\n",
+            encoding="utf-8",
+        )
+        return stack_dir
 
     @staticmethod
     def _validate_azure_containerapp(config: ComputeConfig) -> None:
@@ -861,7 +940,7 @@ class TerraformGenerator:
             terraform {{
               required_providers {{
                 vsphere = {{
-                      source  = "hashicorp/vsphere"
+                      source  = "vmware/vsphere"
                       version = "~> 2.8"
                 }}
               }}

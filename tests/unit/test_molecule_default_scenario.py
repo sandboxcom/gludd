@@ -52,7 +52,7 @@ def test_molecule_runner_keeps_named_scenarios_separate_from_default() -> None:
     )
     assert runner is not None
     body = runner.group("body")
-    assert 'molecule/$(SCENARIO)' in body
+    assert 'MOLECULE_GLOB="molecule/playbooks/*/molecule.yml"' in body
     assert 'molecule test -s "$(SCENARIO)"' in body
 
 

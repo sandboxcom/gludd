@@ -870,6 +870,7 @@ class ModelGateway:
         self._metrics_agent_id = metrics_agent_id
         self._response_cache = response_cache
         self._response_cache_ttl_seconds = response_cache_ttl_seconds
+        self._closed = False
         self._health_tracker = health_tracker
         self._pause_controller = pause_controller
         self._langsmith_tracer = langsmith_tracer
@@ -907,6 +908,16 @@ class ModelGateway:
         self._cache_key_locks: dict[str, threading.Lock] = {}
         self._cache_key_lock_refs: dict[str, int] = {}
         self._cache_key_locks_guard = threading.Lock()
+
+    def close(self) -> None:
+        """Release resources owned by the gateway exactly once."""
+        if self._closed:
+            return
+        cache = self._response_cache
+        close = getattr(cache, "close", None)
+        if callable(close):
+            close()
+        self._closed = True
 
     def _apply_billing_rate(self, base_cost: float) -> tuple[float, str, float]:
         """Apply one peak-pricing snapshot to a completed model call.

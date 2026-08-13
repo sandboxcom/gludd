@@ -43,6 +43,10 @@ class AuditEvent:
     timestamp: float = field(default_factory=time.time)
     sandbox_id: str | None = None
 
+    def __post_init__(self) -> None:
+        """Detach the stored payload from caller-owned mutable state."""
+        self.detail = dict(self.detail)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "event_type": self.event_type,

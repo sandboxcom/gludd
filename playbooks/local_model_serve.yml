@@ -8,7 +8,7 @@
     engine: "llamacpp"
     model_path: ""
     host: "localhost"
-    port: 9999
+    local_model_port: "{{ port | default(9999) }}"
     gpu_layers: -1
     context_size: 4096
     extra_args: []
@@ -30,14 +30,14 @@
           python3 -m llama_cpp.server
           --model {{ model_path }}
           --host {{ host }}
-          --port {{ port }}
+          --port {{ local_model_port }}
           --n_gpu_layers {{ gpu_layers }}
           --n_ctx {{ context_size }}
       when: engine == "llamacpp"
 
     - name: Build vllm server command
       ansible.builtin.set_fact:
-        _server_cmd: "vllm serve {{ model_path }} --host {{ host }} --port {{ port }}"
+        _server_cmd: "vllm serve {{ model_path }} --host {{ host }} --port {{ local_model_port }}"
       when: engine == "vllm"
 
     - name: Start inference server in background
@@ -58,7 +58,7 @@
 
     - name: Wait for /v1/models endpoint
       ansible.builtin.uri:
-        url: "http://{{ host }}:{{ port }}/v1/models"
+        url: "http://{{ host }}:{{ local_model_port }}/v1/models"
         timeout: 5
         status_code: 200
       register: _health_result
@@ -72,7 +72,7 @@
         gludd_local_server:
           server_id: "{{ server_id }}"
           engine: "{{ engine }}"
-          endpoint_url: "http://{{ host }}:{{ port }}/v1"
+          endpoint_url: "http://{{ host }}:{{ local_model_port }}/v1"
           pid: "{{ server_pid }}"
           status: running
           pid_file: "{{ pid_file }}"
