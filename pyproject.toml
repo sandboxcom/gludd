@@ -27,6 +27,7 @@ dependencies = [
     "pydantic-settings>=0.1.0-beta.2",
     "sqlalchemy>=0.1.0-beta.2",
     "cryptography>=0.1.0-beta.2",
+    "pqcrypto>=0.4.0,<1",
     "msgpack>=0.1.0-beta.2",
     "alembic>=0.1.0-beta.2",
     "psycopg[binary]>=0.1.0-beta.2",

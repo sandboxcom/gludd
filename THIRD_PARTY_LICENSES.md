@@ -44,6 +44,9 @@ Key runtime dependencies:
   ([upstream license](https://github.com/gradio-app/safehttpx/blob/main/LICENSE));
   Apache-2.0 is a permissive license compatible with this project's MIT
   distribution, subject to retaining the upstream license and notices.
+- pqcrypto (Apache-2.0) — PQClean-backed post-quantum cryptography bindings
+  ([upstream license and notice](https://github.com/backbone-hq/pqcrypto));
+  the locked wheel provides the FIPS 203 ML-KEM-512/768/1024 boundary.
 
 ## Collected Prompts
 

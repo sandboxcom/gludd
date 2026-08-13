@@ -1,295 +1,287 @@
-"""Deep Kyber ML-KEM tests: NTT, polynomial arithmetic, keygen,
-encapsulate, decapsulate, FO transform, wrong-ciphertext rejection,
-compression roundtrip, and all three parameter sets.
-
-Pure-Python, stdlib only.
-"""
+"""ML-KEM provider-contract tests for all FIPS 203 parameter sets."""
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+from typing import Protocol, cast
+
 import pytest
 
+import general_ludd.algorithms.kyber as kyber_module
 from general_ludd.algorithms.kyber import (
+    BACKEND,
     PARAMS_512,
     PARAMS_768,
     PARAMS_1024,
     KyberError,
-    compress,
+    KyberParams,
     decapsulate,
     decapsulate_512,
     decapsulate_768,
     decapsulate_1024,
-    decompress,
     encapsulate,
     encapsulate_512,
     encapsulate_768,
     encapsulate_1024,
-    inv_ntt,
     keygen,
     keygen_512,
     keygen_768,
     keygen_1024,
-    ntt,
-    poly_add,
-    poly_from_msg,
-    poly_mul,
-    poly_sub,
-    poly_to_msg,
 )
 
-_ZERO = tuple([0] * 256)
-_ONES = tuple([1] * 256)
+_CASES = (
+    (PARAMS_512, 800, 1632, 768),
+    (PARAMS_768, 1184, 2400, 1088),
+    (PARAMS_1024, 1568, 3168, 1568),
+)
 
 
-class TestNTT:
-    def test_ntt_roundtrip(self) -> None:
-        a = tuple(i % 3329 for i in range(256))
-        assert inv_ntt(ntt(a)) == a
+class _MutableBackend(Protocol):
+    def generate_keypair(self) -> tuple[bytes, bytes]: ...
 
-    def test_ntt_zero_roundtrip(self) -> None:
-        assert inv_ntt(ntt(_ZERO)) == _ZERO
+    def encrypt(self, public_key: bytes) -> tuple[bytes, bytes]: ...
 
-    def test_ntt_linearity(self) -> None:
-        a = tuple(i % 3329 for i in range(256))
-        b = tuple((i * 7) % 3329 for i in range(256))
-        lhs = ntt(poly_add(a, b))
-        rhs = poly_add(ntt(a), ntt(b))
-        assert lhs == rhs
-
-    def test_ntt_of_one_preserved(self) -> None:
-        a = tuple([1] + [0] * 255)
-        ntt_a = ntt(a)
-        inv_a = inv_ntt(ntt_a)
-        assert inv_a == a
+    def decrypt(self, secret_key: bytes, ciphertext: bytes) -> bytes: ...
 
 
-class TestPolyArithmetic:
-    def test_poly_add_identity(self) -> None:
-        a = tuple((i * 3) % 3329 for i in range(256))
-        assert poly_add(a, _ZERO) == a
-
-    def test_poly_add_commutative(self) -> None:
-        a = tuple((i * 3) % 3329 for i in range(256))
-        b = tuple((i * 7) % 3329 for i in range(256))
-        assert poly_add(a, b) == poly_add(b, a)
-
-    def test_poly_sub_self_zero(self) -> None:
-        a = tuple((i * 3) % 3329 for i in range(256))
-        assert poly_sub(a, a) == _ZERO
-
-    def test_poly_mul_identity(self) -> None:
-        a = tuple((i * 3) % 3329 for i in range(256))
-        assert poly_mul(a, _ONES) == a
-
-    def test_poly_mul_zero(self) -> None:
-        a = tuple((i * 3) % 3329 for i in range(256))
-        assert poly_mul(a, _ZERO) == _ZERO
-
-    def test_poly_mul_commutative(self) -> None:
-        a = tuple((i * 3) % 3329 for i in range(256))
-        b = tuple((i * 5 + 1) % 3329 for i in range(256))
-        assert poly_mul(a, b) == poly_mul(b, a)
+def _provider_512() -> _MutableBackend:
+    backends = cast(
+        dict[KyberParams, _MutableBackend],
+        kyber_module.__dict__["_BACKENDS"],
+    )
+    return backends[PARAMS_512]
 
 
-class TestSerialization:
-    def test_poly_to_from_msg_roundtrip(self) -> None:
-        msg = b"Hello, Post-Quantum World! 32bytes"
-        assert poly_to_msg(poly_from_msg(msg)) == msg
+class TestProviderBoundary:
+    def test_uses_maintained_pqcrypto_backend(self) -> None:
+        assert BACKEND == "pqcrypto"
 
-    def test_poly_from_msg_all_zero(self) -> None:
-        result = poly_from_msg(b"\x00" * 32)
-        assert result == _ZERO
+    @pytest.mark.parametrize(("params", "pk_size", "sk_size", "ct_size"), _CASES)
+    def test_fips_203_dimensions(
+        self,
+        params: KyberParams,
+        pk_size: int,
+        sk_size: int,
+        ct_size: int,
+    ) -> None:
+        assert params.pk_bytes == pk_size
+        assert params.sk_bytes == sk_size
+        assert params.ct_bytes == ct_size
+        assert params.ss_bytes == 32
+        assert params.algorithm == f"ml_kem_{params.k * 256}"
 
-    def test_poly_from_msg_all_one(self) -> None:
-        result = poly_from_msg(b"\xff" * 32)
-        for c in result:
-            assert c == (-((3329 + 1) // 2)) % 3329
+    def test_parameter_descriptors_are_frozen(self) -> None:
+        with pytest.raises(FrozenInstanceError):
+            PARAMS_512.k = 4  # type: ignore[misc]
 
+    def test_equivalent_parameter_value_selects_canonical_backend(self) -> None:
+        equivalent = KyberParams(k=2, eta1=3, eta2=2, du=10, dv=4)
+        public_key, secret_key = keygen(equivalent)
+        ciphertext, shared_secret = encapsulate(public_key, equivalent)
+        assert decapsulate(ciphertext, secret_key, equivalent) == shared_secret
 
-class TestCompression:
-    def test_compress_decompress_roundtrip_d10(self) -> None:
-        a = tuple(i % 3329 for i in range(256))
-        for d in (4, 5, 10, 11):
-            compressed = compress(a, d)
-            decompressed = decompress(compressed, d)
-            for x, y in zip(a, decompressed, strict=False):
-                assert abs(x - y) <= 3329 // (1 << (d + 1)) + 2
+    def test_unknown_parameters_fail_closed(self) -> None:
+        unsupported = KyberParams(k=1, eta1=2, eta2=2, du=9, dv=3)
+        with pytest.raises(KyberError, match="unsupported ML-KEM"):
+            keygen(unsupported)
+        with pytest.raises(KyberError, match="unsupported ML-KEM"):
+            encapsulate(b"", unsupported)
+        with pytest.raises(KyberError, match="unsupported ML-KEM"):
+            decapsulate(b"", b"", unsupported)
 
-    def test_compress_du_values(self) -> None:
-        a = tuple(i % 3329 for i in range(256))
-        c10 = compress(a, 10)
-        c11 = compress(a, 11)
-        assert all(0 <= x < (1 << 10) for x in c10)
-        assert all(0 <= x < (1 << 11) for x in c11)
-
-
-class TestKeygen:
-    def test_keygen_512_produces_valid_pk_sk(self) -> None:
-        pk, sk = keygen_512()
-        assert len(pk) == PARAMS_512.pk_bytes
-        assert len(sk) == PARAMS_512.sk_bytes + PARAMS_512.pk_bytes + 64
-
-    def test_keygen_768_produces_valid_pk_sk(self) -> None:
-        pk, sk = keygen_768()
-        assert len(pk) == PARAMS_768.pk_bytes
-        assert len(sk) == PARAMS_768.sk_bytes + PARAMS_768.pk_bytes + 64
-
-    def test_keygen_1024_produces_valid_pk_sk(self) -> None:
-        pk, sk = keygen_1024()
-        assert len(pk) == PARAMS_1024.pk_bytes
-        assert len(sk) == PARAMS_1024.sk_bytes + PARAMS_1024.pk_bytes + 64
-
-    def test_keygen_produces_different_keys(self) -> None:
-        pk1, sk1 = keygen_512()
-        pk2, sk2 = keygen_512()
-        assert pk1 != pk2
-        assert sk1 != sk2
-
-    def test_keygen_pk_not_in_sk_raw(self) -> None:
-        pk, sk = keygen_512()
-        assert pk != sk[: len(pk)]
+    def test_non_parameter_value_fails_closed(self) -> None:
+        with pytest.raises(KyberError, match="KyberParams"):
+            keygen(cast(KyberParams, object()))
 
 
-class TestEncapsulateDecapsulate:
-    def test_encaps_decaps_roundtrip_512(self) -> None:
-        pk, sk = keygen_512()
-        ct, ss = encapsulate_512(pk)
-        ss2 = decapsulate_512(ct, sk)
-        assert ss == ss2
-        assert len(ss) == 32
+class TestKeyGeneration:
+    @pytest.mark.parametrize(("params", "pk_size", "sk_size", "_ct_size"), _CASES)
+    def test_key_lengths(
+        self,
+        params: KyberParams,
+        pk_size: int,
+        sk_size: int,
+        _ct_size: int,
+    ) -> None:
+        public_key, secret_key = keygen(params)
+        assert len(public_key) == pk_size
+        assert len(secret_key) == sk_size
 
-    def test_encaps_decaps_roundtrip_768(self) -> None:
-        pk, sk = keygen_768()
-        ct, ss = encapsulate_768(pk)
-        ss2 = decapsulate_768(ct, sk)
-        assert ss == ss2
-        assert len(ss) == 32
-
-    def test_encaps_decaps_roundtrip_1024(self) -> None:
-        pk, sk = keygen_1024()
-        ct, ss = encapsulate_1024(pk)
-        ss2 = decapsulate_1024(ct, sk)
-        assert ss == ss2
-        assert len(ss) == 32
-
-    def test_ciphertext_length_512(self) -> None:
-        pk, _sk = keygen_512()
-        ct, _ss = encapsulate_512(pk)
-        expected = 32 * PARAMS_512.du * PARAMS_512.k + 32 * PARAMS_512.dv
-        assert len(ct) == expected
-
-    def test_ciphertext_length_768(self) -> None:
-        pk, _sk = keygen_768()
-        ct, _ss = encapsulate_768(pk)
-        expected = 32 * PARAMS_768.du * PARAMS_768.k + 32 * PARAMS_768.dv
-        assert len(ct) == expected
-
-    def test_encaps_randomness(self) -> None:
-        pk, _sk = keygen_512()
-        ct1, ss1 = encapsulate_512(pk)
-        ct2, ss2 = encapsulate_512(pk)
-        assert ct1 != ct2
-        assert ss1 != ss2
-
-    def test_different_keys_different_secrets(self) -> None:
-        pk1, _sk1 = keygen_512()
-        pk2, _sk2 = keygen_512()
-        _ct, ss1 = encapsulate_512(pk1)
-        ss2 = encapsulate_512(pk2)[1]
-        assert ss1 != ss2
-
-    def test_wrong_ciphertext_different_ss(self) -> None:
-        pk, sk = keygen_512()
-        ct1, _ = encapsulate_512(pk)
-        ct2, _ = encapsulate_512(pk)
-        ss1 = decapsulate_512(ct1, sk)
-        ss2 = decapsulate_512(ct2, sk)
-        assert ss1 != ss2
-
-    def test_decaps_with_wrong_sk(self) -> None:
-        pk1, _sk1 = keygen_512()
-        _pk2, sk2 = keygen_512()
-        ct, ss = encapsulate_512(pk1)
-        ss2 = decapsulate_512(ct, sk2)
-        assert ss != ss2
-
-    def test_truncated_ciphertext(self) -> None:
-        pk, sk = keygen_512()
-        ct, _ = encapsulate_512(pk)
-        truncated = ct[:-10]
-        with pytest.raises((KyberError, IndexError, Exception)):
-            decapsulate_512(truncated, sk)
-
-    def test_multiple_encaps_same_pk(self) -> None:
-        pk, sk = keygen_512()
-        secrets = set()
-        for _ in range(10):
-            ct, ss = encapsulate_512(pk)
-            ss2 = decapsulate_512(ct, sk)
-            assert ss == ss2
-            secrets.add(ss)
-        assert len(secrets) == 10
-
-    def test_generic_keygen_encaps_decaps(self) -> None:
-        for p, enc_fn, dec_fn in [
-            (PARAMS_512, encapsulate, decapsulate),
-            (PARAMS_768, encapsulate, decapsulate),
-            (PARAMS_1024, encapsulate, decapsulate),
-        ]:
-            pk, sk = keygen(p)
-            ct, ss = enc_fn(pk, p)
-            ss2 = dec_fn(ct, sk, p)
-            assert ss == ss2
+    def test_key_generation_is_randomized(self) -> None:
+        first = keygen_512()
+        second = keygen_512()
+        assert first[0] != second[0]
+        assert first[1] != second[1]
 
 
-class TestSharedSecretProperties:
-    def test_ss_is_32_bytes(self) -> None:
-        pk, _sk = keygen_512()
-        _ct, ss = encapsulate_512(pk)
-        assert len(ss) == 32
-        assert isinstance(ss, bytes)
+class TestEncapsulation:
+    @pytest.mark.parametrize(("params", "_pk_size", "_sk_size", "ct_size"), _CASES)
+    def test_generic_roundtrip(
+        self,
+        params: KyberParams,
+        _pk_size: int,
+        _sk_size: int,
+        ct_size: int,
+    ) -> None:
+        public_key, secret_key = keygen(params)
+        ciphertext, shared_secret = encapsulate(public_key, params)
+        assert len(ciphertext) == ct_size
+        assert len(shared_secret) == params.ss_bytes
+        assert decapsulate(ciphertext, secret_key, params) == shared_secret
 
-    def test_ss_has_entropy(self) -> None:
-        pk, _sk = keygen_512()
-        seen = set()
-        for _ in range(50):
-            _ct, ss = encapsulate_512(pk)
-            assert ss not in seen
-            seen.add(ss)
+    def test_default_parameter_set_roundtrip(self) -> None:
+        public_key, secret_key = keygen()
+        ciphertext, shared_secret = encapsulate(public_key)
+        assert decapsulate(ciphertext, secret_key) == shared_secret
 
-    def test_ss_not_zero(self) -> None:
-        pk, _sk = keygen_512()
-        _ct, ss = encapsulate_512(pk)
-        assert ss != b"\x00" * 32
+    def test_convenience_roundtrips(self) -> None:
+        operations = (
+            (keygen_512, encapsulate_512, decapsulate_512),
+            (keygen_768, encapsulate_768, decapsulate_768),
+            (keygen_1024, encapsulate_1024, decapsulate_1024),
+        )
+        for make_keys, seal, open_secret in operations:
+            public_key, secret_key = make_keys()
+            ciphertext, shared_secret = seal(public_key)
+            assert open_secret(ciphertext, secret_key) == shared_secret
 
-    def test_ss_not_repeated_under_many_keys(self) -> None:
-        secrets: list[bytes] = []
-        for _ in range(20):
-            pk, _sk = keygen_512()
-            _ct, ss = encapsulate_512(pk)
-            secrets.append(ss)
-        assert len(set(secrets)) == len(secrets)
+    def test_repeated_encapsulation_is_randomized(self) -> None:
+        public_key, _secret_key = keygen_512()
+        first = encapsulate_512(public_key)
+        second = encapsulate_512(public_key)
+        assert first[0] != second[0]
+        assert first[1] != second[1]
+
+    def test_wrong_secret_key_uses_implicit_rejection(self) -> None:
+        public_key, _secret_key = keygen_512()
+        _other_public_key, other_secret_key = keygen_512()
+        ciphertext, shared_secret = encapsulate_512(public_key)
+        rejected_secret = decapsulate_512(ciphertext, other_secret_key)
+        assert len(rejected_secret) == 32
+        assert rejected_secret != shared_secret
+
+    def test_tampered_ciphertext_uses_implicit_rejection(self) -> None:
+        public_key, secret_key = keygen_512()
+        ciphertext, shared_secret = encapsulate_512(public_key)
+        tampered = bytes([ciphertext[0] ^ 1]) + ciphertext[1:]
+        rejected_secret = decapsulate_512(tampered, secret_key)
+        assert len(rejected_secret) == 32
+        assert rejected_secret != shared_secret
 
 
-class TestMatrixVector:
-    def test_gen_matrix_deterministic(self) -> None:
-        from general_ludd.algorithms.kyber import _gen_matrix
+class TestFailClosedInputs:
+    def test_public_key_length_is_exact(self) -> None:
+        public_key, _secret_key = keygen_512()
+        with pytest.raises(KyberError, match="public key must be exactly"):
+            encapsulate_512(public_key[:-1])
+        with pytest.raises(KyberError, match="public key must be exactly"):
+            encapsulate_512(public_key + b"\x00")
 
-        seed = b"test-seed-" + b"\x00" * 23
-        mat1 = _gen_matrix(seed, 2)
-        mat2 = _gen_matrix(seed, 2)
-        for i in range(2):
-            for j in range(2):
-                assert mat1[i][j] == mat2[i][j]
+    def test_public_key_type_is_bytes(self) -> None:
+        public_key, _secret_key = keygen_512()
+        with pytest.raises(KyberError, match="public key must be bytes"):
+            encapsulate_512(cast(bytes, bytearray(public_key)))
 
-    def test_gen_matrix_different_seeds(self) -> None:
-        from general_ludd.algorithms.kyber import _gen_matrix
+    def test_ciphertext_length_is_exact(self) -> None:
+        public_key, secret_key = keygen_512()
+        ciphertext, _shared_secret = encapsulate_512(public_key)
+        with pytest.raises(KyberError, match="ciphertext must be exactly"):
+            decapsulate_512(ciphertext[:-1], secret_key)
+        with pytest.raises(KyberError, match="ciphertext must be exactly"):
+            decapsulate_512(ciphertext + b"\x00", secret_key)
 
-        mat1 = _gen_matrix(b"seed-AAAA" + b"\x00" * 23, 2)
-        mat2 = _gen_matrix(b"seed-BBBB" + b"\x00" * 23, 2)
-        differs = False
-        for i in range(2):
-            for j in range(2):
-                if mat1[i][j] != mat2[i][j]:
-                    differs = True
-        assert differs
+    def test_ciphertext_type_is_bytes(self) -> None:
+        public_key, secret_key = keygen_512()
+        ciphertext, _shared_secret = encapsulate_512(public_key)
+        with pytest.raises(KyberError, match="ciphertext must be bytes"):
+            decapsulate_512(cast(bytes, bytearray(ciphertext)), secret_key)
+
+    def test_secret_key_length_is_exact(self) -> None:
+        public_key, secret_key = keygen_512()
+        ciphertext, _shared_secret = encapsulate_512(public_key)
+        with pytest.raises(KyberError, match="secret key must be exactly"):
+            decapsulate_512(ciphertext, secret_key[:-1])
+        with pytest.raises(KyberError, match="secret key must be exactly"):
+            decapsulate_512(ciphertext, secret_key + b"\x00")
+
+    def test_secret_key_type_is_bytes(self) -> None:
+        public_key, secret_key = keygen_512()
+        ciphertext, _shared_secret = encapsulate_512(public_key)
+        with pytest.raises(KyberError, match="secret key must be bytes"):
+            decapsulate_512(ciphertext, cast(bytes, bytearray(secret_key)))
+
+
+class TestBackendFailureBoundary:
+    def test_keygen_exception_is_bounded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def fail() -> tuple[bytes, bytes]:
+            raise RuntimeError("provider failure")
+
+        monkeypatch.setattr(_provider_512(), "generate_keypair", fail)
+        with pytest.raises(KyberError, match="key generation failed"):
+            keygen_512()
+
+    def test_keygen_rejects_invalid_provider_output(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            _provider_512(),
+            "generate_keypair",
+            lambda: (b"", b""),
+        )
+        with pytest.raises(KyberError, match="public key backend output"):
+            keygen_512()
+
+    def test_encapsulation_exception_is_bounded(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        public_key, _secret_key = keygen_512()
+
+        def fail(_public_key: bytes) -> tuple[bytes, bytes]:
+            raise RuntimeError("provider failure")
+
+        monkeypatch.setattr(_provider_512(), "encrypt", fail)
+        with pytest.raises(KyberError, match="encapsulation failed"):
+            encapsulate_512(public_key)
+
+    def test_encapsulation_rejects_invalid_provider_output(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        public_key, _secret_key = keygen_512()
+        monkeypatch.setattr(
+            _provider_512(),
+            "encrypt",
+            lambda _public_key: (b"", b""),
+        )
+        with pytest.raises(KyberError, match="ciphertext backend output"):
+            encapsulate_512(public_key)
+
+    def test_decapsulation_exception_is_bounded(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        public_key, secret_key = keygen_512()
+        ciphertext, _shared_secret = encapsulate_512(public_key)
+
+        def fail(_secret_key: bytes, _ciphertext: bytes) -> bytes:
+            raise RuntimeError("provider failure")
+
+        monkeypatch.setattr(_provider_512(), "decrypt", fail)
+        with pytest.raises(KyberError, match="decapsulation failed"):
+            decapsulate_512(ciphertext, secret_key)
+
+    def test_decapsulation_rejects_invalid_provider_output(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        public_key, secret_key = keygen_512()
+        ciphertext, _shared_secret = encapsulate_512(public_key)
+        monkeypatch.setattr(
+            _provider_512(),
+            "decrypt",
+            lambda _secret_key, _ciphertext: b"",
+        )
+        with pytest.raises(KyberError, match="shared secret backend output"):
+            decapsulate_512(ciphertext, secret_key)
