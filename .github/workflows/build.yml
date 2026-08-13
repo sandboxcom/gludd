@@ -376,9 +376,9 @@ jobs:
       fail-fast: false
       matrix:
         # The blocking `gate` matrix above already exercises both 3.11 and
-        # 3.12.  Run the test-shard matrix on both Python versions so test
-        # results are verified across the full supported range.
-        python-version: ["3.11", "3.12"]
+        # 3.12. Keep each named coverage shard on canonical Python 3.11 so
+        # every test has one shard execution lane instead of a duplicate run.
+        python-version: ["3.11"]
         shard: [unit-1a1, unit-1a2, unit-1b, unit-1d, unit-2, unit-3, other]
         include:
           # Map each shard label to the pytest path(s) it owns.
@@ -413,7 +413,8 @@ jobs:
           # code that silently double-runs the "ejected" files.
           - shard: unit-1a1
             testpaths: "tests/unit/test_a[a-m]*.py"
-            exclude: "*/test_*_e2e.py"
+            exclude: "*/test_*_e2e.py */test_all_plugins_runtime.py"
+            isolated_testpaths: "tests/unit/test_all_plugins_runtime.py"
           - shard: unit-1a2
             # test_a[0-9]*.py: digit-prefixed files (a03, a3, a6...) belong to
             # neither [a-m] nor [n-z]; routed here (smaller half) for balance.
@@ -443,7 +444,7 @@ jobs:
             # untouched (excludes only match tests/unit/*.py file tokens).
             exclude: "*/test_*_e2e.py"
           - shard: other
-            testpaths: "tests/integration/ tests/e2e/ tests/live/ tests/security/ tests/test_*.py tests/unit/test_connector*.py tests/unit/test_*_e2e.py"
+            testpaths: "tests/integration/ tests/e2e/ tests/live/ tests/security/ tests/test_*.py tests/unit/test_connector*.py tests/unit/test_*_e2e.py tests/unit/auth/ tests/unit/sts/ tests/unit/test_e2e_test_generation/"
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
@@ -465,6 +466,12 @@ jobs:
         run: |
           echo "=== CI PHASE: install ==="
           uv sync --python ${{ matrix.python-version }}
+      - name: Run isolated Node plugin syntax in fresh process
+        if: matrix.shard == 'unit-1a1'
+        timeout-minutes: 5
+        run: |
+          echo "=== CI PHASE: isolated-node-plugin-syntax ==="
+          uv run python -m pytest ${{ matrix.isolated_testpaths }} -q -W error
       - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         id: test-run
         timeout-minutes: 25

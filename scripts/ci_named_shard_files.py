@@ -37,6 +37,7 @@ SHARDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
             "tests/test_*.py",
             "tests/unit/test_connector*.py",
             "tests/unit/test_*_e2e.py",
+            "tests/unit/auth/",
             "tests/unit/sts/",
             "tests/unit/test_e2e_test_generation/",
         ),
