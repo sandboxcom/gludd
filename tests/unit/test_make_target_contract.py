@@ -48,6 +48,7 @@ def test_typecheck_scope_keeps_errors_but_drops_global_unused_override_noise() -
 
     assert "--no-warn-unused-configs" in command
     assert "--no-incremental" in command
+    assert "MYPYPATH=src:scripts" in command
     assert "|| true" not in command
 
     contract = load_contract(ROOT / "config/make_target_contract.json")

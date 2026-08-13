@@ -27,6 +27,20 @@ Release-candidate pushes use `make ci-push-committed-head`, whose
 in [CI_EXACT_SHA_SIGNAL.md](CI_EXACT_SHA_SIGNAL.md). It must return a confirmed
 `GHA_RUN_URL`; a successful push by itself is not evidence that CI started.
 
+## Scoped Python type checking
+
+`make typecheck-scope FILES=...` resolves both `src/` modules and sibling
+modules under `scripts/`. This keeps an explicit script check from failing at
+import discovery before it can report the script's real typing defects. The
+target remains strict: it does not ignore missing imports or discard errors.
+
+This path handling follows a long-lived [mypy practitioner report about module
+detection](https://github.com/python/mypy/issues/10428), where users described
+standalone and configuration scripts becoming difficult to type-check and a
+mypy collaborator suggested colon-separated `MYPYPATH` entries with explicit
+package bases. Gludd applies that narrow path configuration through the tracked
+Make target instead of per-file suppressions.
+
 ## Integration temporary paths
 
 `make integration-health` gives pytest a short, process-unique `/tmp/gi-*`

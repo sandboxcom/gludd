@@ -4110,7 +4110,7 @@ typecheck-all:
 # Usage: make typecheck-scope FILES='src/a.py src/b.py'
 typecheck-scope: ## Run strict mypy on explicit FILES without unrelated override noise.
 	@if [ -z "$(FILES)" ]; then echo "Usage: make typecheck-scope FILES='src/a.py src/b.py'"; exit 2; fi
-	@MYPYPATH=src $(UV) run mypy --explicit-package-bases --no-incremental --no-warn-unused-configs $(FILES)
+	@MYPYPATH=src:scripts $(UV) run mypy --explicit-package-bases --no-incremental --no-warn-unused-configs $(FILES)
 # Ansible/YAML lint (#36), fail-on-error (no `|| true`).
 yaml-lint:
 	@ANSIBLE_COLLECTIONS_PATH="$(CURDIR)/collections" $(UV) run ansible-lint playbooks collections/ansible_collections/general_ludd/agent/roles
