@@ -5,6 +5,7 @@ Stdlib only — no project imports.
 """
 from __future__ import annotations
 
+import argparse
 import datetime
 import sys
 from pathlib import Path
@@ -59,5 +60,22 @@ def rewrite_session() -> None:
     print(f"Updated SESSION.md gate block ({len(read_gate_status())} lines)")
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
+    """Validate or rewrite the tracked session gate-status block."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="build the gate block without modifying SESSION.md",
+    )
+    args = parser.parse_args(argv)
+    if args.validate_only:
+        build_block()
+        print("status-snapshot validation: PASS")
+        return 0
     rewrite_session()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

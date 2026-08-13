@@ -1,10 +1,21 @@
 """Tests for status-snapshot in-place writing and SESSION.md drift detector."""
 
+import importlib.util
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from general_ludd.quality.preflight import check_session_drift
+
+
+def _load_status_snapshot() -> ModuleType:
+    script = Path(__file__).parent.parent.parent / "scripts" / "status_snapshot.py"
+    spec = importlib.util.spec_from_file_location("status_snapshot_under_test", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class TestStatusSnapshot:
@@ -23,6 +34,17 @@ class TestStatusSnapshot:
         content = makefile.read_text()
         assert "status_snapshot.py" in content, "Makefile status-snapshot must use status_snapshot.py"
 
+    def test_makefile_status_snapshot_uses_project_interpreter_and_validation_mode(self):
+        makefile = Path(__file__).parent.parent.parent / "Makefile"
+        content = makefile.read_text()
+        start = content.index("status-snapshot:")
+        end = content.index("\n\n", start)
+        section = content[start:end]
+
+        assert "$(UV) run python scripts/status_snapshot.py" in section
+        assert "STATUS_SNAPSHOT_VALIDATE_ONLY" in section
+        assert "@python3 scripts/status_snapshot.py" not in section
+
     def test_makefile_status_snapshot_writes_in_place(self):
         makefile = Path(__file__).parent.parent.parent / "Makefile"
         content = makefile.read_text()
@@ -30,6 +52,27 @@ class TestStatusSnapshot:
         end = content.index("\n\n", start) if "\n\n" in content[start:] else len(content)
         section = content[start:end]
         assert "/tmp/" not in section, "status-snapshot must write in-place, not to /tmp"
+
+    def test_validation_mode_does_not_rewrite_session(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        module = _load_status_snapshot()
+        session = tmp_path / "SESSION.md"
+        session.write_text(
+            "# Session\n\n## Current Gate Status\n<!-- gate:begin -->\n"
+            "- previous\n<!-- gate:end -->\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(module, "SESSION_MD", session)
+        before = session.read_text(encoding="utf-8")
+
+        assert module.main(["--validate-only"]) == 0
+
+        assert session.read_text(encoding="utf-8") == before
+        assert "status-snapshot validation: PASS" in capsys.readouterr().out
 
 
 class TestSessionDriftDetector:

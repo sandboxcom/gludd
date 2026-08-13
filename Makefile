@@ -289,6 +289,7 @@ help:
 	@echo "  test-opa-policies     Execute Rego policy tests when opa is installed"
 	@echo "  check-make-target-contract  Validate target variables, help, and behavioral examples"
 	@echo "  active-work-status    Emit auditable PIDs, gate state, hashes, and open tasks"
+	@echo "  status-snapshot       Rewrite SESSION.md gate evidence (STATUS_SNAPSHOT_VALIDATE_ONLY=1 for read-only validation)"
 	@echo "  codex-stop-guard      Fail closed when tracked work remains; emit a Codex stop challenge token"
 	@echo "  codex-stop-confirm    Confirm a previously issued token before recording a valid stop"
 	@echo "  iam-headless-smoke    Validate least-privilege provider manifests without credentials"
@@ -2755,8 +2756,9 @@ git-init:
 	@git config user.email "agent@general-ludd.local" || true
 	@git config user.name "General Ludd Agent" || true
 
-status-snapshot:
-	@python3 scripts/status_snapshot.py
+STATUS_SNAPSHOT_VALIDATE_ONLY ?= 0
+status-snapshot: ## Rewrite SESSION.md gate evidence, or validate without writes.
+	@$(UV) run python scripts/status_snapshot.py $(if $(filter 1,$(STATUS_SNAPSHOT_VALIDATE_ONLY)),--validate-only,)
 
 audit-evidence:
 	@echo "=== Evidence Audit ==="

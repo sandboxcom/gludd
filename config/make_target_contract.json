@@ -381,6 +381,11 @@
       "behavior": "make active-work-status"
     },
     {
+      "name": "status-snapshot",
+      "make_variables": ["STATUS_SNAPSHOT_VALIDATE_ONLY"],
+      "behavior": "make status-snapshot STATUS_SNAPSHOT_VALIDATE_ONLY=1"
+    },
+    {
       "name": "branches-unmerged-development",
       "make_variables": [],
       "behavior": "make branches-unmerged-development"
