@@ -290,15 +290,15 @@ jobs:
           echo "--- Disk usage ---"
           df -h
           echo "--- Memory ---"
-          free -h || true
+          if command -v free >/dev/null 2>&1; then free -h; else echo "(free unavailable)"; fi
           echo "--- Runner OOM kills ---"
           dmesg 2>/dev/null | grep -i -E 'oom|out of memory|killed process' | tail -50 || echo "(dmesg unavailable)"
           echo "--- Top processes by memory ---"
           ps aux --sort=-%mem 2>/dev/null | head -30 || ps aux | head -30
           echo "--- Git status ---"
-          git status 2>/dev/null || true
+          git status
           echo "--- Python version ---"
-          python --version 2>/dev/null || true
+          python --version
           echo "--- uv lock status ---"
           uv lock --check 2>/dev/null || echo "uv lock check failed (deps may be stale)"
           echo "::endgroup::"
@@ -366,7 +366,8 @@ jobs:
   test-shard:
     needs: [version, gate]
     runs-on: ubuntu-latest
-    continue-on-error: true  # Pre-existing test failures tracked in config/ratchet.yml. Test results visible in run log.
+    # Every named shard is a release prerequisite. Failures and missing coverage
+    # stay red instead of being reclassified as an informational result.
     # unit-3 (test_[n-z]* + secrets/) is the fattest shard and runs ~18m — right
     # at the old 20m limit, so a slightly slower runner CANCELS it (a timeout, not
     # a test failure). 120m gives generous headroom for slow runners.
@@ -510,8 +511,8 @@ jobs:
                 return 0
               fi
               if [ $rc -eq 5 ]; then
-                echo "No tests collected (exit 5) — no-op shard, passing"
-                return 0
+                echo "::error::No tests collected (exit 5) for required shard"
+                return $rc
               fi
               if [ $attempt -lt $max_attempts ]; then
                 echo "::warning::Test attempt ${attempt} failed (exit ${rc}), retrying in ${delay}s..."
@@ -540,16 +541,25 @@ jobs:
               fi
             done
             if [ -z "${FILES// /}" ]; then
-              echo "Shard '${{ matrix.shard }}' selected no files after exclusions — no-op."
-              return 5
+              echo "::error::Shard '${{ matrix.shard }}' selected no files after exclusions"
+              exit 1
             fi
+            set +e
             uv run python scripts/adaptive_test.py $FILES \
-              --cov=general_ludd --cov-report= \
+              --cov=general_ludd \
+              --cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils \
+              --cov-report= \
               --cov-fail-under=0 \
-              -v \
-              || { RC=$?; [ $RC -eq 5 ] && return 5 || return $RC; }
-            uv run coverage combine 2>/dev/null || true
-            cp .coverage ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}" || true
+              -v
+            rc=$?
+            set -e
+            if [ $rc -ne 0 ]; then
+              return $rc
+            fi
+            uv run coverage combine
+            COVERAGE_FILE=".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
+            cp .coverage "$COVERAGE_FILE"
+            test -s "$COVERAGE_FILE"
             return 0
           }
           retry_test
@@ -577,7 +587,7 @@ jobs:
           echo "--- Disk usage ---"
           df -h
           echo "--- Memory ---"
-          free -h || true
+          if command -v free >/dev/null 2>&1; then free -h; else echo "(free unavailable)"; fi
           echo "--- Runner OOM kills (last 50 lines) ---"
           dmesg 2>/dev/null | grep -i -E 'oom|out of memory|killed process' | tail -50 || echo "(dmesg unavailable)"
           echo "--- Top processes by memory ---"
@@ -585,21 +595,21 @@ jobs:
           echo "--- Core dumps ---"
           ls -la /var/lib/systemd/coredump/ 2>/dev/null || echo "(no coredump dir)"
           echo "--- /tmp usage ---"
-          du -sh /tmp 2>/dev/null || true
+          du -sh /tmp
           echo "--- Workspace test artifacts ---"
-          find . -name '*.coverage*' -ls 2>/dev/null || true
+          find . -name '*.coverage*' -ls
           echo "--- Last 100 lines of pytest output ---"
           find /tmp -name '.pytest_cache' -type d 2>/dev/null | head -1 | xargs -I{} find {} -name '*.log' 2>/dev/null | head -1 | xargs tail -100 2>/dev/null || echo "(no pytest cache log)"
           echo "::endgroup::"
       - name: Upload failure diagnostics (shard ${{ matrix.shard }})
-        if: failure() && steps.test-run.outcome == 'failure'
+        if: always() && failure() && steps.test-run.outcome == 'failure'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: failure-diag-${{ matrix.shard }}-${{ matrix.python-version }}-${{ github.run_id }}
           path: |
             /tmp/gludd-*.log
             .coverage*
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 3
       - name: Upload coverage data (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         if: always()
@@ -609,7 +619,7 @@ jobs:
         with:
           name: coverage-${{ matrix.shard }}-${{ matrix.python-version }}
           path: .coverage.${{ matrix.shard }}-${{ matrix.python-version }}
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 7
 
   # Coverage aggregation — downloads the per-shard .coverage.* data files
@@ -647,43 +657,37 @@ jobs:
         # debugging the merged data file is possible from the artifact.
         run: |
           echo "=== CI PHASE: coverage-combine ==="
+          EXPECTED_SHARD_COVERAGE_FILES=7
           mkdir -p .coverage-shards
-          # download-artifact only creates coverage-data/ when at least one
-          # coverage-* artifact matched; if every shard produced no data file
-          # the dir is absent and an unguarded `find` exits 1 under `bash -e`,
-          # sinking the otherwise-green run BEFORE the skip-guard below. Guard it.
-          if [ -d coverage-data ]; then
-            find coverage-data -name '.coverage.*' -exec cp {} .coverage-shards/ \;
+          if [ ! -d coverage-data ]; then
+            echo "::error::Coverage artifact directory is missing"
+            exit 1
           fi
-          ls -la .coverage-shards/ || true
-          # Guard the combine: coverage-reporting is GATING (fail_under=85
-          # inherited from pyproject.toml). This job first ran only after the
-          # test-shards started passing, exposing a latent bug where an empty
-          # shard-data glob made `coverage combine` exit 1 and sink the whole
-          # (otherwise-green) run. If no shard data is present, skip gracefully
-          # rather than fail — the tests themselves already passed.
-          if ls .coverage-shards/.coverage.* >/dev/null 2>&1; then
-            uv run coverage combine --keep .coverage-shards/.coverage.*
-            uv run coverage xml
-            # fail_under=85 is inherited from pyproject.toml's [tool.coverage.report].
-            # A coverage dip below 85% will turn this step red, blocking the release.
-            uv run coverage report --skip-covered
-          else
-            echo "No shard coverage data found — skipping combine (reporting-only, non-gating; shards passed)."
+          find coverage-data -name '.coverage.*' -type f -exec cp {} .coverage-shards/ \;
+          ACTUAL_SHARD_COVERAGE_FILES=$(find .coverage-shards -name '.coverage.*' -type f | wc -l | tr -d '[:space:]')
+          if [ "$ACTUAL_SHARD_COVERAGE_FILES" -ne "$EXPECTED_SHARD_COVERAGE_FILES" ]; then
+            echo "::error::Expected $EXPECTED_SHARD_COVERAGE_FILES shard coverage files, found $ACTUAL_SHARD_COVERAGE_FILES"
+            exit 1
           fi
+          uv run coverage combine --keep .coverage-shards/.coverage.*
+          uv run coverage xml
+          uv run coverage json -o coverage.json
+          uv run coverage report --skip-covered --fail-under=85
+          uv run python scripts/audit_coverage.py --json-file=coverage.json --threshold=75 --per-file-threshold=75 --source=src/general_ludd
       - name: Upload merged coverage report
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: coverage-merged
           path: coverage.xml
+          if-no-files-found: error
           retention-days: 30
 
   molecule:
-    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
+    needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    continue-on-error: true  # Non-blocking: 113 sequential scenarios (make molecule-scenarios) can be slow under runner load. Release does NOT need molecule (not in release.needs). Keep non-blocking so CI verdict reflects gate+test+builds, not molecule flakiness.
+    # Molecule validates release-bound Ansible content and is therefore blocking.
     strategy:
       # Don't cancel the remaining shards when one fails — we want all 4
       # shard results reported every run. Each shard runs ~28 of the 113
@@ -744,10 +748,9 @@ jobs:
         # /tmp/gludd-molecule-<scenario>.log and NEVER surfaces it in CI output
         # — historically the only way to see why a scenario failed was to
         # reproduce locally. `if: always()` makes this run whether the previous
-        # step passed or failed (the job also sets continue-on-error: true, but
-        # that only affects the job's conclusion — without if: always() here,
-        # a failed "Run molecule shard" step would skip every step after it,
-        # including this one and the artifact upload below). Tail (not cat) so
+        # step passed or failed. Without it, a failed "Run molecule shard" step
+        # would skip every step after it, including this one and the artifact
+        # upload below. Tail (not cat) so
         # a runaway scenario log can't flood the Actions log UI.
         if: always()
         run: |
@@ -772,18 +775,15 @@ jobs:
         with:
           name: molecule-logs-shard-${{ matrix.shard }}
           path: /tmp/gludd-molecule-*.log
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 7
 
   linux:
-    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
+    needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Non-blocking: a Linux pyinstaller/build hiccup must not sink a Release
-    # that already carries the macos artifacts. The per-build-env variability
-    # is the same class of risk as the windows/termux jobs. Pre-publish gate
-    # in the release job catches missing artifacts before publish.
-    continue-on-error: true
+    # Linux binaries and packages are required release artifacts. Build,
+    # smoke, packaging, and upload failures remain blocking.
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -826,7 +826,17 @@ jobs:
           set -e
           ./dist/gludd daemon start &
           DAEMON_PID=$!
-          trap 'kill "$DAEMON_PID" 2>/dev/null || true' EXIT
+          cleanup_daemon() {
+            if kill -0 "$DAEMON_PID" 2>/dev/null; then
+              kill "$DAEMON_PID"
+              if wait "$DAEMON_PID" 2>/dev/null; then
+                echo "Daemon exited cleanly."
+              else
+                echo "Daemon terminated after smoke test."
+              fi
+            fi
+          }
+          trap cleanup_daemon EXIT
           ready=0
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
             if curl -sf http://127.0.0.1:8000/health >/dev/null; then
@@ -881,10 +891,11 @@ jobs:
           echo "  Package .rpm      : check step 'Build RPM package' above"
           echo "  Artifacts         : tarball, .deb, .rpm + .sha256 checksums"
           echo "============================================="
-      - if: always()
+      - if: success()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-linux-x86_64
+          if-no-files-found: error
           path: |
             dist/gludd-${{ env.VERSION }}-linux-x86_64.tar.gz
             dist/gludd-${{ env.VERSION }}-linux-x86_64.tar.gz.sha256
@@ -893,14 +904,11 @@ jobs:
             dist/gludd-${{ env.VERSION }}-1.x86_64.rpm
             dist/gludd-${{ env.VERSION }}-1.x86_64.rpm.sha256
   macos:
-    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
+    needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
     runs-on: macos-latest
     timeout-minutes: 30
-    # Non-blocking: a macOS pyinstaller/build hiccup must not sink a Release
-    # that already carries the linux artifacts. The per-build-env variability
-    # is the same class of risk as the windows/termux jobs. Pre-publish gate
-    # in the release job catches missing artifacts before publish.
-    continue-on-error: true
+    # macOS binaries and packages are required release artifacts. Build,
+    # smoke, packaging, and upload failures remain blocking.
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -984,10 +992,11 @@ jobs:
           echo "  Package .dmg      : check step 'Package .dmg' above"
           echo "  Artifacts         : tarball, .dmg + .sha256 checksums"
           echo "============================================="
-      - if: always()
+      - if: success()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-macos-arm64
+          if-no-files-found: error
           path: |
             dist/gludd-${{ env.VERSION }}-macos-arm64.tar.gz
             dist/gludd-${{ env.VERSION }}-macos-arm64.tar.gz.sha256
@@ -1127,12 +1136,11 @@ jobs:
             dist/gludd-${{env.VERSION}}-setup-x86_64.exe.sha256
 
   termux:
-    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
+    needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
-    # Non-blocking like the windows job: an aarch64 pyinstaller hiccup must not
-    # sink a Release that already carries the linux/macos artifacts.
-    continue-on-error: true
+    # The Linux aarch64/Termux tarball is a required release artifact.
+    # Build, smoke, packaging, and upload failures remain blocking.
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -1200,10 +1208,11 @@ jobs:
           echo "  Package tarball   : check step 'Package tarball' above"
           echo "  Artifacts         : tarball + .sha256 checksum"
           echo "============================================="
-      - if: always()
+      - if: success()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-linux-aarch64
+          if-no-files-found: error
           path: |
             dist/gludd-${{ env.VERSION }}-linux-aarch64.tar.gz
             dist/gludd-${{ env.VERSION }}-linux-aarch64.tar.gz.sha256
@@ -1212,13 +1221,11 @@ jobs:
   # on every triggering event (validating the Dockerfile) but only PUSHES on tag
   # pushes and master. Gated on the same green gate+tests as the build jobs.
   container:
-    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
+    needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Non-blocking for the Release: a transient GHCR/Docker hiccup must not sink an
-    # otherwise-good release (re-run just this job to publish the package). Runs on
-    # PRs too to validate the Dockerfile builds (push stays false on PRs, below).
-    continue-on-error: true
+    # The container is a required release artifact. Build and registry failures
+    # remain blocking; PR builds still validate without pushing.
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     permissions:
       contents: read
@@ -1317,7 +1324,7 @@ jobs:
   #   Go to: https://github.com/sandboxcom/gludd/settings/secrets/actions
   #   Add:  DEEPSEEK_API_KEY = sk-...
   game-building:
-    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
+    needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Skip on PRs — these tests need DEEPSEEK_API_KEY (repository secret,
@@ -1350,7 +1357,7 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   release:
-    needs: [version, gate, test-shard, linux, macos, windows, termux]
+    needs: [version, gate, test-shard, coverage, molecule, linux, macos, windows, termux, container, game-building]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: startsWith(github.ref, 'refs/tags/v')
@@ -1408,7 +1415,18 @@ jobs:
         run: |
           echo "=== CI PHASE: release-pre-publish-gate ==="
           set -e
+          zero_size=$(find release-assets -type f -size 0 -print)
+          if [ -n "$zero_size" ]; then
+            echo "::error::Zero-size release assets detected:"
+            echo "$zero_size"
+            exit 1
+          fi
           cd release-assets
+          for checksum in *.sha256; do
+            awk '{name=$2; sub(/^.*\//, "", name); print $1 "  " name}' "$checksum" > "$checksum.normalized"
+            mv "$checksum.normalized" "$checksum"
+          done
+          sha256sum -c *.sha256
           missing=0
           check_required() {
             if compgen -G "$1" > /dev/null; then
@@ -1443,17 +1461,18 @@ jobs:
           cd release-assets
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
-      - name: Clean stale release
-        # If a previous run created a release for this tag but failed mid-upload
-        # (the alpha.2 "release already_exists" error from action-gh-release),
-        # delete it so the create step below succeeds. `|| true` makes this a
-        # no-op when no release exists yet. GH_TOKEN required (same unauthenticated
-        # gh bug as the verify step) — without it the delete silently no-ops.
+      - name: Inspect existing release
+        # action-gh-release updates the release for an existing tag. Inspect it
+        # for audit visibility without deleting published state before upload.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          echo "=== CI PHASE: release-clean-stale ==="
-          gh release delete ${{ github.ref_name }} --yes || true
+          echo "=== CI PHASE: release-inspect-existing ==="
+          if gh release view ${{ github.ref_name }} >/dev/null 2>&1; then
+            echo "Existing release found; assets will be updated in place."
+          else
+            echo "No existing release found; a new release will be created."
+          fi
       - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0 (node24)
         with:
           # Use the REAL git tag (with "v" prefix), not the PEP 440 version.
@@ -1467,6 +1486,7 @@ jobs:
           # final tags (v1.0.0) have none -> a real (non-pre) GitHub Release.
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: release-assets/*
+          fail_on_unmatched_files: true
           generate_release_notes: true
       - name: Verify release completeness (blocking)
         # Single source of truth for "the release actually shipped": the same
@@ -1509,11 +1529,10 @@ jobs:
           else
             mv "$BIN" /tmp/gludd-smoke/gludd
           fi
-          chmod +x /tmp/gludd-smoke/gludd || true
+          chmod +x /tmp/gludd-smoke/gludd
           find /tmp/gludd-smoke -name gludd -exec chmod +x {} \;
           echo "--- Running gludd version ---"
           /tmp/gludd-smoke/gludd version || {
-            find /tmp/gludd-smoke -type f | xargs -I{} sh -c 'echo "--- {} ---"; {} version 2>&1 || true'
             echo "FAIL: could not run gludd version"
             exit 1
           }

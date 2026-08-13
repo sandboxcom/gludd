@@ -1,12 +1,12 @@
-"""Structural tests that prevent the release pipeline failures from recurring.
+"""Structural tests that prevent release pipeline failures from recurring.
 
 These tests verify:
 1. No circular dependencies in the CI workflow job graph
-2. Build/release jobs do NOT depend on test-shard (which takes 60+ min)
+2. Build jobs run in parallel while release waits for every prerequisite
 3. The release job includes artifact verification steps
-4. The workflow YAML is parseable (no !cancelled() tag issues)
-5. All platform build jobs are continue-on-error (non-blocking)
-6. The release job downloads ALL build artifacts via pattern: gludd-*
+4. The workflow YAML is parseable
+5. Test, Molecule, and platform artifact jobs fail closed
+6. The release job downloads all build artifacts via pattern: gludd-*
 7. The molecule and coverage jobs exist and are correctly wired
 8. The test-shard matrix covers the full tests/unit/ letter range (a-z)
 """
@@ -68,37 +68,29 @@ class TestNoCircularDependencies:
         )
 
 
-class TestBuildJobsDoNotDependOnTestShard:
-    """Build/release jobs must NOT wait for test-shard.
+class TestReleaseFanInAndParallelBuilds:
+    """Build jobs run in parallel while release waits for required tests."""
 
-    unit-1a takes 60+ minutes on CI. When it's in the needs chain,
-    artifact creation is blocked for an hour or cancelled by timeout.
-    Tests are continue-on-error (informational) and must not gate releases.
-    """
-
-    BUILD_RELEASE_JOBS: typing.ClassVar[list[str]] = [
-        "linux", "macos", "windows", "termux",
-        "container", "release",
+    PARALLEL_BUILD_JOBS: typing.ClassVar[list[str]] = [
+        "linux",
+        "macos",
+        "windows",
+        "termux",
+        "container",
     ]
 
-    def test_build_jobs_dont_need_test_shard(self):
-        src = _workflow_source()
-        jobs = _extract_jobs(src)
-        violations = []
-        for job_name in self.BUILD_RELEASE_JOBS:
-            if job_name not in jobs:
-                continue
-            needs = jobs[job_name]["needs"]
-            if "test-shard" in needs:
-                violations.append(
-                    f"  {job_name}: needs test-shard — "
-                    f"this blocks artifact creation for 60+ min. "
-                    f"Remove test-shard from needs (tests are continue-on-error)."
-                )
-        assert not violations, (
-            "Build/release jobs must NOT depend on test-shard:\n"
-            + "\n".join(violations)
-        )
+    def test_build_jobs_do_not_serialize_on_test_shard(self):
+        jobs = _extract_jobs(_workflow_source())
+        violations = [
+            name
+            for name in self.PARALLEL_BUILD_JOBS
+            if "test-shard" in jobs.get(name, {}).get("needs", [])
+        ]
+        assert not violations, f"Build jobs unexpectedly serialize on test-shard: {violations}"
+
+    def test_release_waits_for_test_shard(self):
+        jobs = _extract_jobs(_workflow_source())
+        assert "test-shard" in jobs["release"]["needs"]
 
 
 class TestReleaseJobHasVerificationSteps:
@@ -215,63 +207,31 @@ class TestNoJobExceedsMaxTimeout:
         )
 
 
-class TestTestShardIsNonBlocking:
-    """test-shard MUST have continue-on-error: true."""
+class TestReleasePrerequisitesAreBlocking:
+    """Required test and artifact producers never soften failures."""
 
-    def test_continue_on_error_present(self):
-        src = _workflow_source()
-        # Find the test-shard job section
-        idx = src.find("test-shard:")
-        assert idx >= 0, "test-shard job must exist"
-        section = src[idx:idx + 500]
-        assert "continue-on-error: true" in section or 'continue-on-error: True' in section, (
-            "test-shard must have continue-on-error: true so test failures "
-            "don't block the release pipeline"
-        )
+    REQUIRED_JOBS: typing.ClassVar[list[str]] = [
+        "test-shard",
+        "molecule",
+        "linux",
+        "macos",
+        "windows",
+        "termux",
+        "container",
+    ]
 
-
-class TestAllBuildsContinueOnError:
-    """Optional builds stay non-blocking; required artifacts fail closed.
-
-    Linux, macOS and Termux remain best-effort while their build environments
-    vary. Windows is a required beta artifact, so its job must stay blocking;
-    otherwise a missing zip/installer can be reported as a green pipeline.
-    """
-
-    OPTIONAL_BUILD_JOBS: typing.ClassVar[list[str]] = ["linux", "macos", "termux"]
-    REQUIRED_BUILD_JOBS: typing.ClassVar[list[str]] = ["windows"]
-
-    def test_each_build_job_has_continue_on_error(self):
+    def test_required_jobs_do_not_continue_on_error(self):
         import yaml
 
-        src = _workflow_source()
-        data = yaml.safe_load(src)
-        jobs = data.get("jobs", {})
-        missing: list[str] = []
-        for job_name in self.OPTIONAL_BUILD_JOBS:
-            job_spec = jobs.get(job_name)
-            if not isinstance(job_spec, dict):
-                missing.append(f"{job_name}: job not found in build.yml")
-                continue
-            if job_spec.get("continue-on-error") is not True:
-                missing.append(
-                    f"{job_name}: continue-on-error is not true "
-                    f"(got {job_spec.get('continue-on-error')!r})"
-                )
-        for job_name in self.REQUIRED_BUILD_JOBS:
-            job_spec = jobs.get(job_name)
-            if not isinstance(job_spec, dict):
-                missing.append(f"{job_name}: job not found in build.yml")
-                continue
-            if job_spec.get("continue-on-error", False) is not False:
-                missing.append(
-                    f"{job_name}: required artifact job must be blocking "
-                    f"(got continue-on-error={job_spec.get('continue-on-error')!r})"
-                )
-        assert not missing, (
-            "Platform build policy drifted from optional/required artifact "
-            "semantics:\n  "
-            + "\n  ".join(missing)
+        jobs = yaml.safe_load(_workflow_source()).get("jobs", {})
+        violations = [
+            name
+            for name in self.REQUIRED_JOBS
+            if not isinstance(jobs.get(name), dict)
+            or jobs[name].get("continue-on-error", False) is not False
+        ]
+        assert not violations, (
+            "Required jobs must fail closed; invalid jobs: " + ", ".join(violations)
         )
 
 
@@ -320,18 +280,13 @@ class TestMoleculeJobExists:
             "molecule job must exist in build.yml for ansible role/module testing"
         )
 
-    def test_molecule_is_non_blocking(self):
+    def test_molecule_is_blocking(self):
         import yaml
 
-        src = _workflow_source()
-        data = yaml.safe_load(src)
-        jobs = data.get("jobs", {})
+        jobs = yaml.safe_load(_workflow_source()).get("jobs", {})
         mol = jobs.get("molecule")
         assert isinstance(mol, dict), "molecule job must exist in build.yml"
-        assert mol.get("continue-on-error") is True, (
-            "molecule must be continue-on-error: true so scenario flakiness "
-            "or runner load does not block the release pipeline"
-        )
+        assert mol.get("continue-on-error", False) is False
 
 
 class TestCoverageJobExists:

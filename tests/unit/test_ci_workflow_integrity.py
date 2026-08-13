@@ -194,13 +194,26 @@ class TestPlatformBuildJobStructure:
 
 class TestReleaseJobStructure:
     PLATFORM_JOBS: tuple[str, ...] = ("linux", "macos", "windows", "termux")
+    RELEASE_PREREQUISITES: frozenset[str] = frozenset(
+        {
+            "version",
+            "gate",
+            "test-shard",
+            "coverage",
+            "molecule",
+            "container",
+            "game-building",
+            *PLATFORM_JOBS,
+        }
+    )
 
-    def test_release_needs_gate_and_all_platforms(self):
+    def test_release_needs_gate_tests_and_all_artifact_producers(self):
         wf = _load_workflow()
         release = wf["jobs"]["release"]
         needs = _collect_job_refs(release.get("needs", []))
-        expected = {"version", "gate"} | set(self.PLATFORM_JOBS)
-        assert needs == expected, f"release needs {needs!r}, expected {expected!r}"
+        assert needs == self.RELEASE_PREREQUISITES, (
+            f"release needs {needs!r}, expected {self.RELEASE_PREREQUISITES!r}"
+        )
 
     def test_release_only_runs_on_tags(self):
         wf = _load_workflow()
@@ -212,25 +225,6 @@ class TestReleaseJobStructure:
         wf = _load_workflow()
         release = wf["jobs"]["release"]
         assert "timeout-minutes" in release
-
-    def test_release_does_not_need_molecule_or_container(self):
-        wf = _load_workflow()
-        release = wf["jobs"]["release"]
-        needs = _collect_job_refs(release.get("needs", []))
-        assert "molecule" not in needs
-        assert "container" not in needs
-
-    def test_release_does_not_need_coverage(self):
-        wf = _load_workflow()
-        release = wf["jobs"]["release"]
-        needs = _collect_job_refs(release.get("needs", []))
-        assert "coverage" not in needs
-
-    def test_release_does_not_need_test_shard(self):
-        wf = _load_workflow()
-        release = wf["jobs"]["release"]
-        needs = _collect_job_refs(release.get("needs", []))
-        assert "test-shard" not in needs, "release should not block on test-shard (continue-on-error)"
 
 
 class TestNoDuplicateJobNames:

@@ -40,6 +40,22 @@ execution reduces elapsed time without weakening the release fan-in.
 - Reruns update the release associated with the existing tag. They do not
   silently delete a release through a swallowed CLI failure.
 
+## Beta.4 restoration evidence
+
+A clean development gate replay exposed workflow drift before beta.4: the shard,
+Molecule, Linux, macOS, Termux, and container jobs could report a successful
+workflow after failure; missing coverage and diagnostic artifacts were warnings;
+and the release fan-in omitted coverage and several artifact producers. The
+restored workflow keeps producers parallel, but the tagged release waits for all
+of them. It also requires all seven coverage databases, validates aggregate and
+per-file thresholds, rejects zero-size assets, checks producer SHA-256 sidecars,
+and updates an existing tagged release without deleting published state.
+
+The focused workflow regression set covers the current fan-in, job failure
+semantics, artifact conditions, coverage dependencies, and stale structural
+contracts. Beta.4 gate evidence is recorded in `TASKS.md`; remote publication
+still requires the exact tagged commit to pass GitHub Actions.
+
 ## Long-lived user reports considered
 
 These are not isolated theoretical cases:
@@ -65,7 +81,12 @@ These are not isolated theoretical cases:
   optional platform.
 - The [upload-artifact project documentation](https://github.com/actions/upload-artifact)
   states that its default for no matching files is warning-success. Every
-  beta.3 upload overrides that default with `if-no-files-found: error`.
+  release-bound upload overrides that default with `if-no-files-found: error`.
+- [upload-artifact issue #447](https://github.com/actions/upload-artifact/issues/447)
+  documents a long-lived case where hidden coverage databases appeared to
+  upload but downloaded as empty artifacts. Beta.4 counts all seven expected
+  shard databases after download and rejects any absent or empty producer
+  output before combining coverage.
 - The [softprops/action-gh-release documentation](https://github.com/softprops/action-gh-release)
   documents that an existing tag release is updated and that unmatched globs
   can be made fatal. Beta.3 uses those idempotent update semantics and enables
