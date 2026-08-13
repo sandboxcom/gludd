@@ -334,12 +334,33 @@ class TestSerialization:
         hll.add("a")
         hll.add("b")
         raw = hll.to_bytes()
-        header_size = struct.calcsize("!IIB")
-        precision, _m, is_sparse_flag = struct.unpack("!IIB", raw[:header_size])
+        header_size = struct.calcsize("!4sBIIB")
+        magic, version, precision, _m, is_sparse_flag = struct.unpack(
+            "!4sBIIB", raw[:header_size]
+        )
+        assert magic == b"HLL2"
+        assert version == hll.hash_domain_version == 2
         assert precision == hll.precision
         assert is_sparse_flag == 1
         count = struct.unpack("!I", raw[header_size : header_size + 4])[0]
         assert count == 2
+
+    def test_legacy_payload_stays_in_legacy_hash_domain(self) -> None:
+        precision = 8
+        register_count = 1 << precision
+        raw = struct.pack("!IIBI", precision, register_count, 1, 0)
+        legacy = HyperLogLogV2.from_bytes(raw)
+        current = HyperLogLogV2(precision=precision)
+        assert legacy.hash_domain_version == 1
+        assert HyperLogLogV2.from_bytes(legacy.to_bytes()).hash_domain_version == 1
+        with pytest.raises(ValueError, match="hash domains"):
+            current.merge(legacy)
+
+    def test_unknown_hash_domain_is_rejected(self) -> None:
+        raw = bytearray(HyperLogLogV2(precision=8).to_bytes())
+        raw[4] = 99
+        with pytest.raises(ValueError, match="hash domain"):
+            HyperLogLogV2.from_bytes(bytes(raw))
 
     def test_single_item_roundtrip_count(self) -> None:
         hll = HyperLogLogV2(precision=8)

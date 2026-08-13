@@ -7,6 +7,7 @@ for improved accuracy at small cardinalities.
 
 from __future__ import annotations
 
+import hashlib
 import math
 import struct
 from typing import Any, ClassVar
@@ -14,6 +15,10 @@ from typing import Any, ClassVar
 
 class HyperLogLogV2:
     _DEFAULT_SALT: bytes = b"gld_hll2"
+    _SERIAL_MAGIC: bytes = b"HLL2"
+    _LEGACY_HASH_DOMAIN: int = 1
+    _CURRENT_HASH_DOMAIN: int = 2
+    _HASH_PERSON: bytes = b"gludd-hll2-v2"
 
     _SPARSE_THRESHOLD_FACTOR: float = 0.15
 
@@ -78,6 +83,7 @@ class HyperLogLogV2:
         self._alpha = self._compute_alpha(self._m)
         self._sparse_list: list[tuple[int, int]] = []
         self._registers: bytearray | None = None
+        self._hash_domain_version = self._CURRENT_HASH_DOMAIN
 
     @property
     def precision(self) -> int:
@@ -91,9 +97,13 @@ class HyperLogLogV2:
     def is_sparse(self) -> bool:
         return self._registers is None
 
+    @property
+    def hash_domain_version(self) -> int:
+        return self._hash_domain_version
+
     def add(self, item: Any) -> None:
         key = self._item_to_bytes(item)
-        h = self._hash64(key)
+        h = self._hash64_for_domain(key, self._hash_domain_version)
         idx = h & (self._m - 1)
         w = h >> self._precision
         rho = self._rho(w)
@@ -120,6 +130,8 @@ class HyperLogLogV2:
     def merge(self, other: HyperLogLogV2) -> None:
         if self._precision != other._precision:
             raise ValueError("cannot merge HyperLogLogV2 instances with different precision")
+        if self._hash_domain_version != other._hash_domain_version:
+            raise ValueError("cannot merge HyperLogLogV2 instances from different hash domains")
 
         if self.is_sparse and other.is_sparse:
             combined = self._sparse_list + other._sparse_list
@@ -155,44 +167,93 @@ class HyperLogLogV2:
         return 1.04 / math.sqrt(self._m)
 
     def to_bytes(self) -> bytes:
-        header = struct.pack("!IIB", self._precision, self._m, 1 if self.is_sparse else 0)
+        header = struct.pack(
+            "!4sBIIB",
+            self._SERIAL_MAGIC,
+            self._hash_domain_version,
+            self._precision,
+            self._m,
+            1 if self.is_sparse else 0,
+        )
         if self.is_sparse:
-            sparse_data = b""
-            for idx, rho in self._sparse_list:
-                sparse_data += struct.pack("!IB", idx, rho)
+            sparse_data = b"".join(
+                struct.pack("!IB", idx, rho) for idx, rho in self._sparse_list
+            )
             return header + struct.pack("!I", len(self._sparse_list)) + sparse_data
-        else:
-            regs_c = self._registers
-            assert regs_c is not None
-            return header + bytes(regs_c)
+
+        regs_c = self._registers
+        assert regs_c is not None
+        return header + bytes(regs_c)
 
     @classmethod
     def from_bytes(cls, raw: bytes) -> HyperLogLogV2:
-        header_size = struct.calcsize("!IIB")
-        if len(raw) < header_size:
-            raise ValueError("truncated HyperLogLogV2 data")
-        precision, m, is_sparse_flag = struct.unpack("!IIB", raw[:header_size])
+        if raw.startswith(cls._SERIAL_MAGIC):
+            header_size = struct.calcsize("!4sBIIB")
+            if len(raw) < header_size:
+                raise ValueError("truncated HyperLogLogV2 data")
+            _magic, hash_domain, precision, m, is_sparse_flag = struct.unpack(
+                "!4sBIIB", raw[:header_size]
+            )
+            if hash_domain not in {
+                cls._LEGACY_HASH_DOMAIN,
+                cls._CURRENT_HASH_DOMAIN,
+            }:
+                raise ValueError(
+                    f"unsupported HyperLogLogV2 hash domain: {hash_domain}"
+                )
+        else:
+            header_size = struct.calcsize("!IIB")
+            if len(raw) < header_size:
+                raise ValueError("truncated HyperLogLogV2 data")
+            precision, m, is_sparse_flag = struct.unpack("!IIB", raw[:header_size])
+            hash_domain = cls._LEGACY_HASH_DOMAIN
+
+        if precision < 4 or precision > 18 or m != 1 << precision:
+            raise ValueError(
+                f"invalid HyperLogLogV2 geometry: precision={precision}, registers={m}"
+            )
+        if is_sparse_flag not in {0, 1}:
+            raise ValueError(
+                f"invalid HyperLogLogV2 representation flag: {is_sparse_flag}"
+            )
+
         hll = cls.__new__(cls)
         hll._precision = precision
         hll._m = m
         hll._alpha = cls._compute_alpha(m)
+        hll._hash_domain_version = hash_domain
 
         if is_sparse_flag:
             sparse_count_size = struct.calcsize("!I")
             sparse_start = header_size + sparse_count_size
+            if len(raw) < sparse_start:
+                raise ValueError("truncated HyperLogLogV2 sparse data")
             sparse_count = struct.unpack("!I", raw[header_size:sparse_start])[0]
+            entry_size = struct.calcsize("!IB")
+            expected_size = sparse_start + sparse_count * entry_size
+            if len(raw) != expected_size:
+                raise ValueError(
+                    "sparse payload length mismatch: "
+                    f"expected {expected_size}, got {len(raw)}"
+                )
             hll._sparse_list = []
             hll._registers = None
-            entry_size = struct.calcsize("!IB")
             for i in range(sparse_count):
                 offset = sparse_start + i * entry_size
                 idx, rho = struct.unpack("!IB", raw[offset : offset + entry_size])
+                if idx >= m or rho == 0 or rho > 65 - precision:
+                    raise ValueError(
+                        f"invalid sparse register: index={idx}, rho={rho}"
+                    )
                 hll._sparse_list.append((idx, rho))
         else:
             hll._registers = bytearray(raw[header_size:])
             hll._sparse_list = []
             if len(hll._registers) != m:
-                raise ValueError(f"register array length mismatch: expected {m}, got {len(hll._registers)}")
+                raise ValueError(
+                    f"register array length mismatch: expected {m}, "
+                    f"got {len(hll._registers)}"
+                )
 
         return hll
 
@@ -270,10 +331,27 @@ class HyperLogLogV2:
 
     @staticmethod
     def _hash64(key: bytes) -> int:
+        digest = hashlib.blake2b(
+            key,
+            digest_size=8,
+            person=HyperLogLogV2._HASH_PERSON,
+        ).digest()
+        return int.from_bytes(digest, "big")
+
+    @staticmethod
+    def _legacy_hash64(key: bytes) -> int:
         data = key + HyperLogLogV2._DEFAULT_SALT
         h1 = HyperLogLogV2._fnv1a_64(data)
         h2 = HyperLogLogV2._fnv1a_64(data + b"\x01")
         return ((h1 << 32) | (h2 & 0xFFFFFFFF)) & 0xFFFFFFFFFFFFFFFF
+
+    @classmethod
+    def _hash64_for_domain(cls, key: bytes, hash_domain: int) -> int:
+        if hash_domain == cls._CURRENT_HASH_DOMAIN:
+            return cls._hash64(key)
+        if hash_domain == cls._LEGACY_HASH_DOMAIN:
+            return cls._legacy_hash64(key)
+        raise ValueError(f"unsupported HyperLogLogV2 hash domain: {hash_domain}")
 
     @staticmethod
     def _fnv1a_64(data: bytes) -> int:

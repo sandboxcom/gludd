@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import struct
+
 import pytest
 
 from general_ludd.probabilistic.hyperloglog import HyperLogLog
@@ -69,17 +71,17 @@ class TestRho:
     def test_rho_one(self) -> None:
         hll = HyperLogLog(precision=10)
         result = hll._rho(1)
-        assert result == 1
+        assert result == 54
 
     def test_rho_power_of_two(self) -> None:
         hll = HyperLogLog(precision=10)
         result = hll._rho(4)
-        assert result == 53
+        assert result == 52
 
-    def test_rho_large_value(self) -> None:
+    def test_rho_largest_remainder(self) -> None:
         hll = HyperLogLog(precision=14)
-        result = hll._rho(0xFFFFFFFFFFFFF)
-        assert result >= 1
+        result = hll._rho((1 << (64 - hll.precision)) - 1)
+        assert result == 1
 
 
 class TestComputeAlpha:
@@ -110,7 +112,7 @@ class TestFnv1a64:
 
     def test_known_hello(self) -> None:
         h = HyperLogLog._fnv1a_64(b"hello")
-        assert h == 0x408F268DDC313400
+        assert h == 0xA430D84680AABD0B
 
     def test_deterministic(self) -> None:
         a = HyperLogLog._fnv1a_64(b"test")
@@ -310,6 +312,35 @@ class TestSerialization:
     def test_from_bytes_partial_header(self) -> None:
         with pytest.raises(ValueError, match="truncated"):
             HyperLogLog.from_bytes(b"\x00\x00\x00\x04\x00\x00\x00")
+
+    def test_serialized_payload_records_hash_domain(self) -> None:
+        hll = HyperLogLog(precision=8)
+        raw = hll.to_bytes()
+        header_size = struct.calcsize("!4sBII")
+        magic, version, precision, register_count = struct.unpack(
+            "!4sBII", raw[:header_size]
+        )
+        assert magic == b"HLL1"
+        assert version == hll.hash_domain_version == 2
+        assert precision == 8
+        assert register_count == 256
+
+    def test_legacy_payload_stays_in_legacy_hash_domain(self) -> None:
+        precision = 4
+        register_count = 1 << precision
+        raw = struct.pack("!II", precision, register_count) + bytes(register_count)
+        legacy = HyperLogLog.from_bytes(raw)
+        current = HyperLogLog(precision=precision)
+        assert legacy.hash_domain_version == 1
+        assert HyperLogLog.from_bytes(legacy.to_bytes()).hash_domain_version == 1
+        with pytest.raises(ValueError, match="hash domains"):
+            current.merge(legacy)
+
+    def test_unknown_hash_domain_is_rejected(self) -> None:
+        raw = bytearray(HyperLogLog(precision=4).to_bytes())
+        raw[4] = 99
+        with pytest.raises(ValueError, match="hash domain"):
+            HyperLogLog.from_bytes(bytes(raw))
 
 
 class TestSmallRangeCorrection:
