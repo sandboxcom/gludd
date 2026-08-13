@@ -8,6 +8,7 @@ section, or script). Exit 0 on >=90% coverage, exit 1 otherwise.
 import re
 import sys
 from pathlib import Path
+from typing import TypedDict
 
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
@@ -27,11 +28,20 @@ ENFORCEMENT_PATTERNS = [
 ]
 
 
-def _parse_specs() -> list[dict]:
+class SpecRecord(TypedDict):
+    """Structured behavioral-spec fields used by the coverage audit."""
+
+    id: str
+    title: str
+    enforcement: str
+    behavior: str
+
+
+def _parse_specs() -> list[SpecRecord]:
     """Parse BEHAVIORAL_SPECS.md into a list of spec dicts."""
     text = SPECS_FILE.read_text()
-    specs: list[dict] = []
-    current: dict | None = None
+    specs: list[SpecRecord] = []
+    current: SpecRecord | None = None
     in_enforcement = False
     in_behavior = False
 

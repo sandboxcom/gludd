@@ -940,7 +940,7 @@ def _test_evidence_exists(root: Path, text: str) -> bool:
 
 def _canonical_behavioral_audits(
     root: Path,
-) -> tuple[set[str], dict[str, Any], set[str]]:
+) -> tuple[set[str], generator_audit.EnforcementStats, set[str]]:
     """Run the existing behavioral audit logic without subprocesses."""
 
     specs_path = root / "docs/specs/BEHAVIORAL_SPECS.md"

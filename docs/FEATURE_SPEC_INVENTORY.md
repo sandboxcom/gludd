@@ -93,3 +93,27 @@ The scanner's design responds to recurring problems described by developers:
   unsearchable and stale. The file-level coverage ledger and canonical alias
   keys are intended to make that failure visible rather than hiding it behind a
   curated total.
+- A long-running [mypy practitioner report about optional `TypedDict`
+  fields](https://github.com/python/mypy/issues/7993) records the common
+  confusion between a key whose value may be `None` and a key that may be
+  absent. The inventory's supporting audits therefore declare required record
+  keys explicitly instead of erasing those distinctions behind a bare `dict`.
+- In [mypy issue #10471](https://github.com/python/mypy/issues/10471),
+  maintainers explain that an explicit mapping type supplies the inference
+  context that changes how a dictionary literal is checked. Named record and
+  statistics schemas now provide that context at each parser/audit boundary.
+
+## Typed audit records and zero-downtime delivery
+
+The effectiveness, enforcement-coverage, and generator helpers exchange named
+`TypedDict` records. Every parser-produced key remains required, while grouped
+statistics retain exact integer counters and a floating-point percentage. The
+inventory caller consumes the generator's named result directly, so strict
+checking follows the complete in-process audit path without `Any`-shaped gaps.
+
+This is a static contract refactor: command output, file formats, exit codes,
+and generated enforcement text are unchanged. Characterization tests pin all
+supported artifact resolution, threshold, dry-run, write, and generator-loop
+paths before and after the annotations. Deployment needs no migration, process
+restart, or compatibility window; rollback is a source revert, and concurrent
+read-only inventory calls continue to share no mutable persisted state.
