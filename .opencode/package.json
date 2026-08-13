@@ -7,6 +7,7 @@
     "@opencode-ai/plugin": "1.18.5"
   },
   "devDependencies": {
-    "esbuild": "0.28.1"
+    "esbuild": "0.28.1",
+    "markdownlint-cli2": "0.23.2"
   }
 }

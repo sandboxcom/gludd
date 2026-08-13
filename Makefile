@@ -25,6 +25,8 @@ NODE_DEPS_NPM_USERCONFIG ?= /dev/null
 NODE_DEPS_NPM_CACHE ?= /tmp/gludd-npm-cache-public-v1
 NODE_DEPS_NPM_REGISTRY ?= https://registry.npmjs.org
 NODE_DEPS_AUDIT_LEVEL ?= moderate
+MARKDOWN_FILES ?=
+MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
 GATE_REFRESH_VALIDATE_ONLY ?= 0
 DISK_MIN_FREE_GIB ?= 8
 # Make children emit deterministic, non-interactive logs even when the host's
@@ -37,7 +39,7 @@ SSH_KEY ?= $(HOME)/.ssh/sandboxcom_gludd_rsa
 _MULTIWORD_VALUE_GOALS := \
     copy-file feature-done feature-start git-add git-branch git-checkout git-cherry-pick-list \
     git-commit git-commit-file git-commit-files git-merge git-reset git-restore git-tag-move \
-    git-tag-push lint-files lint-fix-files release-cut release-deploy release-upload-assets \
+    git-tag-push lint-files lint-fix-files lint-markdown release-cut release-deploy release-upload-assets \
     replace-all-text replace-lines replace-text search ship-commit test-and-commit test-ci-shards-parallel \
     test-ci-shards-parallel-bg test-files ci-shards-log-context
 _FIRST_MAKE_GOAL := $(firstword $(MAKECMDGOALS))
@@ -83,7 +85,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
+        init sync relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck setup-dirs setup-venv clean healthcheck \
@@ -181,6 +183,7 @@ help:
 	@echo "  gate-check              Run gate check"
 	@echo "  lint                  Run ruff linter"
 	@echo "  lint-files            Run ruff linter on FILES only"
+	@echo "  lint-markdown         Run locked markdownlint-cli2 (MARKDOWN_FILES, MARKDOWNLINT_CONFIG)"
 	@echo "  lint-fix              Run ruff with auto-fix"
 	@echo "  lint-fix-files        Run ruff auto-fix on FILES only"
 	@echo "  typecheck             Run mypy"
@@ -673,6 +676,18 @@ lint:
 lint-files:
 	@[ -n "$$FILES" ] || { echo "Usage: make lint-files FILES=path"; exit 1; }
 	@$(UV) run ruff check $$FILES
+
+lint-markdown:
+	@if [ -z "$(MARKDOWN_FILES)" ] || [ -z "$(MARKDOWNLINT_CONFIG)" ]; then \
+		echo "Usage: make lint-markdown MARKDOWN_FILES='README.md docs/file.md' MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc"; \
+		exit 2; \
+	fi
+	@if [ ! -f "$(MARKDOWNLINT_CONFIG)" ]; then echo "ERROR: Markdown config not found: $(MARKDOWNLINT_CONFIG)"; exit 2; fi
+	@if [ ! -x ".opencode/node_modules/.bin/markdownlint-cli2" ]; then \
+		echo "ERROR: locked markdownlint-cli2 is unavailable; run make node-deps-sync with explicit registry/cache variables"; \
+		exit 2; \
+	fi
+	@.opencode/node_modules/.bin/markdownlint-cli2 --config "$(MARKDOWNLINT_CONFIG)" $(MARKDOWN_FILES)
 
 lint-fix:
 	@$(UV) run ruff check --fix --unsafe-fixes src tests

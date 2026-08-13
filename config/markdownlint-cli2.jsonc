@@ -1,0 +1,19 @@
+{
+  "config": {
+    "default": false,
+    "MD001": true,
+    "MD003": {
+      "style": "atx"
+    },
+    "MD009": true,
+    "MD010": true,
+    "MD018": true,
+    "MD019": true,
+    "MD047": true
+  },
+  "gitignore": true,
+  "noBanner": true,
+  "noInlineConfig": true,
+  "noProgress": false,
+  "showFound": true
+}
