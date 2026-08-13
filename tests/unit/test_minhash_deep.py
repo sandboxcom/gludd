@@ -132,7 +132,9 @@ class TestMinHash:
         mh2 = MinHash(num_perm=64, seed=2)
         mh1.update("test")
         mh2.update("test")
-        assert mh1.jaccard(mh2) < 0.15
+        assert mh1.signature != mh2.signature
+        with pytest.raises(ValueError, match="seeds differ"):
+            mh1.jaccard(mh2)
 
     def test_add_many_equals_individual_updates(self) -> None:
         mh1 = MinHash(num_perm=128)
