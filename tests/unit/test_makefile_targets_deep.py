@@ -843,6 +843,7 @@ class TestKeyTargetsExist:
             "git-push-sandboxcom",
             "git-pull-sandboxcom",
             "git-fetch-sandboxcom",
+            "branches-unmerged-development",
             "git-remote-sandboxcom",
         ]
         missing = [t for t in essential if t not in targets]

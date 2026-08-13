@@ -78,7 +78,7 @@ _XDIST_WORKERS := $(shell if [ -n "$(GLUDD_XDIST)" ]; then echo "$(GLUDD_XDIST)"
 ifeq ($(_XDIST_WORKERS),0)
 _XD :=
 else
-_XD = -n $(_XDIST_WORKERS) --dist loadgroup
+_XD := -n $(_XDIST_WORKERS) --dist loadgroup
 endif
 PYTEST_VERBOSITY ?= -v
 
@@ -120,7 +120,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
          secrets-scrub secrets-scan secrets-baseline security-audit clean-artifacts health-check \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
-         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count git-patch-equivalence check-git-hygiene \
+         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count git-patch-equivalence branches-unmerged-development check-git-hygiene \
         molecule-clean plan ps-gludd kill-stale reap-stale-collection-locks reap-orphan-pytest kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         repo-visibility \
@@ -307,6 +307,7 @@ help:
 	@echo "  git-staged            Show staged changes"
 	@echo "  git-log               Show recent commits"
 	@echo "  git-patch-equivalence PATCH_UPSTREAM=<ref> PATCH_HEAD=<ref> PATCH_LIMIT=<n>  Compare patch identity"
+	@echo "  branches-unmerged-development  List every local branch tip not reachable from development"
 	@echo "  git-add FILES='...'   Stage specific files"
 	@echo "  git-add-all           Stage all changes"
 	@echo "  git-commit MSG='...'  Commit staged changes"
@@ -3959,6 +3960,9 @@ wt-prune-force-merged:
 
 branches-unmerged:
 	@git branch --no-merged master | sed 's/^[+* ]*//' | grep -E '^(feature/|worktree-agent-)' | grep -v worktree-agent || echo "(all feature branches merged)"
+
+branches-unmerged-development:
+	@git branch --no-merged development --format='%(refname:short)' --sort=refname | grep . || echo "(all local branches merged into development)"
 
 # Anti-overstatement tool: the MEASURED pass-rate of recent CI runs, so
 # "reliable"/"green" must be quoted as this ratio, never asserted as an adjective.
