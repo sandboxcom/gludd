@@ -59,6 +59,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 - [ ] S83.42 - **Bridge dictionary and typed project-type registry contracts** across `src/general_ludd/cloud/project_types.py`, `tests/unit/test_project_types.py`, and `docs/features/PROJECT_TYPE_REGISTRY_COMPATIBILITY.md`: keep one frozen canonical registry while exposing a live read-only dictionary view, sorted list alias, and validated legacy registration conversion without weakening fail-closed typed lookup. | evidence: authoritative replay reproduced 22 legacy failures while the canonical suite was 97/97 GREEN; combined suites now 127/127 GREEN; source branch coverage 95.02%; importlib_metadata #409 and Pydantic #5792 practitioner evidence plus atomic ZDD rollout documented; Ruff and scoped mypy GREEN; collection 105168/105169 with 1 intentional deselection and zero errors; full gate pending | priority: high | effort: S | status: in_progress
 
+- [ ] S83.43 - **Expose a migration-aware task-ledger integrity API** across `scripts/check_task_integrity.py`, `tests/unit/test_check_task_integrity.py`, and `docs/features/TASK_LEDGER_INTEGRITY_API.md`: keep archived schema snapshots immutable, validate only active rows against current metadata vocabularies, and preserve the existing read-only CLI boundary. | evidence: authoritative replay reproduced 12/12 failures on the missing pure API; focused suite 15/15 GREEN under strict warnings; checker branch coverage 94.16%; real TASKS audit, Ruff, and scoped mypy GREEN; GitHub Community #4261 practitioner evidence and ZDD rollout documented; collection and full gate pending | priority: high | effort: XS | status: in_progress
+
 ---
 
 ## Session 79 — Crypto Library Refactor + Behavioral Guardrails (2026-08-05, 86,428 tests)

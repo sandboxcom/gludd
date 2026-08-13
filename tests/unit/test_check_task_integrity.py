@@ -85,3 +85,59 @@ def test_duplicate_active_ids_are_rejected(checker: ModuleType) -> None:
     violations, _item_count = checker.audit_content(content)
 
     assert violations == ["line 3: duplicate item ID 'CUR.1' (first seen at line 2)"]
+
+
+def test_invalid_active_values_and_empty_evidence(checker: ModuleType) -> None:
+    content = """\
+## Active — Current
+- [x] CUR.1 — done | priority: urgent | effort: XXL | status: done | evidence:
+"""
+
+    violations, item_count = checker.audit_content(content)
+
+    assert item_count == 1
+    assert any("empty | evidence: value" in violation for violation in violations)
+    assert any("invalid priority 'urgent'" in violation for violation in violations)
+    assert any("invalid effort 'XXL'" in violation for violation in violations)
+    assert any("invalid status 'done'" in violation for violation in violations)
+
+
+def test_nested_archived_sections_remain_outside_audit(checker: ModuleType) -> None:
+    content = """\
+## Archived — Session snapshots
+### Older wave
+- [x] OLD.1 — deliberately lacks current metadata
+## Active — Current
+- [ ] CUR.1 — open | priority: high | effort: small | status: pending
+"""
+
+    violations, item_count = checker.audit_content(content)
+
+    assert violations == []
+    assert item_count == 1
+
+
+def test_main_reports_missing_valid_and_invalid_ledgers(
+    checker: ModuleType,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    task_path = tmp_path / "TASKS.md"
+    checker.__dict__["TASKS_PATH"] = task_path
+
+    assert checker.main() == 1
+    assert "not found" in capsys.readouterr().out
+
+    task_path.write_text(
+        "## Active\n"
+        "- [ ] CUR.1 — open | priority: high | effort: S | status: pending\n"
+    )
+    assert checker.main() == 0
+    assert "PASSED (1 items, 0 violations)" in capsys.readouterr().out
+
+    task_path.write_text(
+        "## Active\n"
+        "- [x] CUR.1 — done | priority: high | effort: S | status: completed\n"
+    )
+    assert checker.main() == 1
+    assert "checked item lacks | evidence: field" in capsys.readouterr().out
