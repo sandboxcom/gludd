@@ -8,3 +8,5 @@ provisioner:
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
 verifier:
   name: ansible
+scenario:
+  test_sequence: []

@@ -34,6 +34,7 @@ SCENARIOS_WITHOUT_PREPARE = frozenset(
         "chat",
         "daemon_lifecycle",
         "default",
+        "local_game_gen",
         "travel",
     }
 )
@@ -46,6 +47,7 @@ SCENARIOS_WITHOUT_SCENARIO_KEY = frozenset(
         "runtime_validate",
     }
 )
+SCENARIOS_WITH_EMPTY_SEQUENCE = frozenset({"default", "travel"})
 
 
 def _collect_playbook_paths(scenario: str) -> dict[str, Path | None]:
@@ -281,15 +283,24 @@ class TestMoleculeTaskOrdering:
                 pass
 
     def test_scenario_has_syntax_if_sequence_defined(self):
+        missing_syntax: list[str] = []
         for scenario in MOLECULE_SCENARIOS:
+            if scenario in SCENARIOS_WITHOUT_SCENARIO_KEY:
+                continue
             paths = _collect_playbook_paths(scenario)
             path = paths["molecule.yml"]
             if path is None:
                 continue
             data = _load_yaml(path)
-            seq = data.get("scenario", {}).get("test_sequence", [])
-            if seq:
-                assert "syntax" in seq, f"[{scenario}] test_sequence missing 'syntax'"
+            seq = data["scenario"].get("test_sequence")
+            assert isinstance(seq, list), f"[{scenario}] test_sequence must be a list"
+            if scenario in SCENARIOS_WITH_EMPTY_SEQUENCE:
+                assert seq == [], f"[{scenario}] inactive scenario must have an empty test_sequence"
+                continue
+            assert seq, f"[{scenario}] active scenario must have a non-empty test_sequence"
+            if "syntax" not in seq:
+                missing_syntax.append(scenario)
+        assert not missing_syntax, f"test_sequence missing 'syntax': {', '.join(missing_syntax)}"
 
 
 # ---------------------------------------------------------------------------
@@ -405,13 +416,13 @@ class TestMoleculeRoleDependencies:
                 if not isinstance(task, dict):
                     continue
                 for key in task:
-                    if "include_role" in key or ("." in key and not key.startswith("ansible.builtin.")):
+                    if "include_role" in key or "." in key:
                         has_include = True
         assert has_include, f"[{scenario}] converge.yml has no include_role or FQCN module call"
 
     def test_molecule_yml_playbooks_registered(self):
         for scenario in MOLECULE_SCENARIOS:
-            if scenario == "default":
+            if scenario in SCENARIOS_WITHOUT_CONVERGE:
                 continue
             paths = _collect_playbook_paths(scenario)
             path = paths["molecule.yml"]
@@ -591,7 +602,14 @@ class TestMoleculeStructuralCoherence:
         playbooks = provisioner.get("playbooks", {})
         if isinstance(playbooks, dict):
             for key, rel_path in playbooks.items():
-                expected = f"default/{key}.yml"
-                assert rel_path == expected, (
-                    f"[{scenario}] molecule.yml playbooks.{key} = {rel_path}, expected {expected}"
+                local_path = f"default/{key}.yml"
+                shared_path = f"${{MOLECULE_PROJECT_DIRECTORY}}/molecule/shared/{key}.yml"
+                assert rel_path in {local_path, shared_path}, (
+                    f"[{scenario}] molecule.yml playbooks.{key} = {rel_path}, "
+                    f"expected {local_path} or {shared_path}"
                 )
+                if rel_path == shared_path:
+                    canonical_shared = PROJECT_ROOT / "molecule" / "shared" / f"{key}.yml"
+                    assert canonical_shared.is_file(), (
+                        f"[{scenario}] shared playbook does not exist: {canonical_shared}"
+                    )

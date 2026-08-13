@@ -25,6 +25,7 @@ scenario:
   # (new `generated_at` timestamp per run), so they are non-idempotent by
   # design. We skip the idempotence step; converge + verify cover the contract.
   test_sequence:
+    - syntax
     - prepare
     - converge
     - verify
