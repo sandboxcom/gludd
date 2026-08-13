@@ -60,6 +60,11 @@ Conflicting alias statuses fail closed to `unknown`; the report never chooses
 the most optimistic prose. Absence of evidence is also `unknown`, not proof
 that a feature is unimplemented.
 
+Core behavioral verification is restricted to multi-letter IDs. A resolvable
+single-letter generated mechanism must never inflate the core verified count or
+drive the core missing count below zero. This preserves the source separation
+described above while still reporting generated enforcement quality separately.
+
 ## Source coverage
 
 Human output reports how many documentation files were included, explicitly
