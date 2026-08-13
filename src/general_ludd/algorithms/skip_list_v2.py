@@ -70,10 +70,12 @@ class SkipList(Generic[K, V]):
     """
 
     def __init__(self) -> None:
+        """Initialize an empty concurrent skip-list map."""
         self._head = _SkipNode[K, V]("__head__", None, _MAX_LEVEL - 1)  # type: ignore[arg-type]
         self._level = 0
 
     def __len__(self) -> int:
+        """Return the number of live entries."""
         count = 0
         node: _SkipNode[K, V] | None = self._head.forward[0]
         while node is not None:
@@ -83,23 +85,28 @@ class SkipList(Generic[K, V]):
         return count
 
     def __contains__(self, key: K) -> bool:
+        """Return whether a live entry exists for key."""
         return self._find(key) is not None
 
     def __getitem__(self, key: K) -> V:
+        """Return the value for key or raise KeyError."""
         node = self._find(key)
         if node is None:
             raise KeyError(key)
         return node.val
 
     def __setitem__(self, key: K, val: V) -> None:
+        """Insert key or replace its existing value."""
         if not self.insert(key, val):
             self._find_and_update(key, val)
 
     def __delitem__(self, key: K) -> None:
+        """Delete key or raise KeyError when absent."""
         if not self.delete(key):
             raise KeyError(key)
 
     def __iter__(self) -> Iterator[K]:
+        """Yield live keys in ascending order."""
         node = self._head.forward[0]
         while node is not None:
             if not node.marked:
@@ -134,6 +141,7 @@ class SkipList(Generic[K, V]):
                 return
 
     def get(self, key: K, default: V | None = None) -> V | None:
+        """Return the value for key, or default when absent."""
         node = self._find(key)
         if node is None:
             return default
@@ -308,12 +316,15 @@ class SkipList(Generic[K, V]):
         return result
 
     def keys(self) -> list[K]:
+        """Return live keys in ascending order."""
         return [k for k, _ in self.items()]
 
     def values(self) -> list[V]:
+        """Return live values ordered by their keys."""
         return [v for _, v in self.items()]
 
     def min(self) -> tuple[K, V] | None:
+        """Return the smallest live pair, or None when empty."""
         node = self._head.forward[0]
         while node is not None:
             if not node.marked:
@@ -322,6 +333,7 @@ class SkipList(Generic[K, V]):
         return None
 
     def max(self) -> tuple[K, V] | None:
+        """Return the largest live pair, or None when empty."""
         pred = self._head
         for lvl in range(self._level, -1, -1):
             cur = pred.forward[lvl]
@@ -355,27 +367,33 @@ class IndexedSkipList(Generic[K, V]):
     """
 
     def __init__(self) -> None:
+        """Initialize an empty rank-indexed skip list."""
         self._head = _IdxSkipNode[K, V]("__head__", None, _MAX_LEVEL - 1)  # type: ignore[arg-type]
         self._level = 0
         self._size = 0
 
     def __len__(self) -> int:
+        """Return the number of indexed entries."""
         return self._size
 
     def __contains__(self, key: K) -> bool:
+        """Return whether key exists in the index."""
         return self._find(key) is not None
 
     def __getitem__(self, key: K) -> V:
+        """Return the value for key or raise KeyError."""
         node = self._find(key)
         if node is None:
             raise KeyError(key)
         return node.val
 
     def __delitem__(self, key: K) -> None:
+        """Delete key or raise KeyError when absent."""
         if not self.delete(key):
             raise KeyError(key)
 
     def __iter__(self) -> Iterator[K]:
+        """Yield keys in ascending order."""
         node = self._head.forward[0]
         while node is not None:
             yield node.key
@@ -393,12 +411,14 @@ class IndexedSkipList(Generic[K, V]):
         return None
 
     def get(self, key: K, default: V | None = None) -> V | None:
+        """Return the value for key, or default when absent."""
         node = self._find(key)
         if node is None:
             return default
         return node.val
 
     def insert(self, key: K, val: V) -> bool:
+        """Insert a key/value pair and maintain every rank span."""
         update: list[_IdxSkipNode[K, V] | None] = [None] * _MAX_LEVEL
         rank: list[int] = [0] * _MAX_LEVEL
         pred = self._head
@@ -431,13 +451,15 @@ class IndexedSkipList(Generic[K, V]):
             if u is None:
                 continue
             if lvl <= top:
-                new_node.forward[lvl] = u.forward[lvl]
+                previous_forward = u.forward[lvl]
+                previous_span = u.span[lvl]
+                new_node.forward[lvl] = previous_forward
                 u.forward[lvl] = new_node
                 if lvl < len(u.span):
                     gap = r - rank[lvl] - 1
                     u.span[lvl] = gap
-                    if new_node.forward[lvl] is not None:
-                        new_node.span[lvl] = 0
+                    if previous_forward is not None:
+                        new_node.span[lvl] = previous_span - gap
             else:
                 if lvl < len(u.span) and u.forward[lvl] is not None:
                     u.span[lvl] += 1
@@ -446,6 +468,7 @@ class IndexedSkipList(Generic[K, V]):
         return True
 
     def delete(self, key: K) -> bool:
+        """Delete key and repair rank spans; return whether it existed."""
         update: list[_IdxSkipNode[K, V] | None] = [None] * _MAX_LEVEL
         pred = self._head
 
@@ -478,6 +501,7 @@ class IndexedSkipList(Generic[K, V]):
         return True
 
     def select(self, rank: int) -> tuple[K, V]:
+        """Return the key/value pair at zero-based rank."""
         if rank < 0 or rank >= self._size:
             raise IndexError(f"rank {rank} out of range [0, {self._size})")
         node = self._head
@@ -497,6 +521,7 @@ class IndexedSkipList(Generic[K, V]):
         return (node.key, node.val)
 
     def rank(self, key: K) -> int:
+        """Return the zero-based insertion rank for key."""
         pred = self._head
         pos = -1
         for lvl in range(self._level, -1, -1):
@@ -508,6 +533,7 @@ class IndexedSkipList(Generic[K, V]):
         return pos + 1
 
     def range(self, lo: K, hi: K) -> list[tuple[K, V]]:
+        """Return indexed pairs with keys in the inclusive range."""
         result: list[tuple[K, V]] = []
         node = self._head.forward[0]
         while node is not None:
@@ -519,6 +545,7 @@ class IndexedSkipList(Generic[K, V]):
         return result
 
     def items(self) -> list[tuple[K, V]]:
+        """Return all indexed pairs in ascending key order."""
         result: list[tuple[K, V]] = []
         node = self._head.forward[0]
         while node is not None:
@@ -527,18 +554,22 @@ class IndexedSkipList(Generic[K, V]):
         return result
 
     def keys(self) -> list[K]:
+        """Return indexed keys in ascending order."""
         return [k for k, _ in self.items()]
 
     def values(self) -> list[V]:
+        """Return indexed values ordered by their keys."""
         return [v for _, v in self.items()]
 
     def min(self) -> tuple[K, V] | None:
+        """Return the smallest indexed pair, or None when empty."""
         node = self._head.forward[0]
         if node is None:
             return None
         return (node.key, node.val)
 
     def max(self) -> tuple[K, V] | None:
+        """Return the largest indexed pair, or None when empty."""
         if self._size == 0:
             return None
         pred = self._head
@@ -565,11 +596,13 @@ class LockFreeSkipList(Generic[K, V]):
     """
 
     def __init__(self) -> None:
+        """Initialize an empty optimistic lock-free skip list."""
         self._head = _SkipNode[K, V]("__head__", None, _MAX_LEVEL - 1)  # type: ignore[arg-type]
         self._level = 0
         self._lock = threading.Lock()  # coarse gate for level bumps only
 
     def __len__(self) -> int:
+        """Return the number of live entries."""
         count = 0
         node: _SkipNode[K, V] | None = self._head.forward[0]
         while node is not None:
@@ -579,25 +612,30 @@ class LockFreeSkipList(Generic[K, V]):
         return count
 
     def __contains__(self, key: K) -> bool:
+        """Return whether a live entry exists for key."""
         return self._find(key) is not None
 
     def __getitem__(self, key: K) -> V:
+        """Return the value for key or raise KeyError."""
         node = self._find(key)
         if node is None:
             raise KeyError(key)
         return node.val
 
     def __setitem__(self, key: K, val: V) -> None:
+        """Insert key or replace its live value."""
         if not self.insert(key, val):
             node = self._find(key)
             if node is not None:
                 node.val = val
 
     def __delitem__(self, key: K) -> None:
+        """Delete key or raise KeyError when absent."""
         if not self.delete(key):
             raise KeyError(key)
 
     def __iter__(self) -> Iterator[K]:
+        """Yield live keys in ascending order."""
         node = self._head.forward[0]
         while node is not None:
             if not node.marked:
@@ -617,6 +655,7 @@ class LockFreeSkipList(Generic[K, V]):
         return None
 
     def get(self, key: K, default: V | None = None) -> V | None:
+        """Return the live value for key, or default when absent."""
         node = self._find(key)
         if node is None:
             return default
@@ -705,6 +744,7 @@ class LockFreeSkipList(Generic[K, V]):
                 return True
 
     def range(self, lo: K, hi: K) -> list[tuple[K, V]]:
+        """Return live pairs with keys in the inclusive range."""
         result: list[tuple[K, V]] = []
         node = self._head.forward[0]
         while node is not None:
@@ -716,6 +756,7 @@ class LockFreeSkipList(Generic[K, V]):
         return result
 
     def items(self) -> list[tuple[K, V]]:
+        """Return all live pairs in ascending key order."""
         result: list[tuple[K, V]] = []
         node = self._head.forward[0]
         while node is not None:
@@ -725,12 +766,15 @@ class LockFreeSkipList(Generic[K, V]):
         return result
 
     def keys(self) -> list[K]:
+        """Return live keys in ascending order."""
         return [k for k, _ in self.items()]
 
     def values(self) -> list[V]:
+        """Return live values ordered by their keys."""
         return [v for _, v in self.items()]
 
     def min(self) -> tuple[K, V] | None:
+        """Return the smallest live pair, or None when empty."""
         node = self._head.forward[0]
         while node is not None:
             if not node.marked:
@@ -739,6 +783,7 @@ class LockFreeSkipList(Generic[K, V]):
         return None
 
     def max(self) -> tuple[K, V] | None:
+        """Return the largest live pair, or None when empty."""
         pred = self._head
         for lvl in range(self._level, -1, -1):
             cur = pred.forward[lvl]

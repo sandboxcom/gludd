@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 import threading
+from unittest.mock import patch
 
 from general_ludd.algorithms.skip_list_v2 import (
     IndexedSkipList,
@@ -395,6 +396,19 @@ class TestIndexedSkipListBasics:
         for k in [9, 1, 6, 3]:
             sl.insert(k, str(k))
         assert sl.items() == [(1, "1"), (3, "3"), (6, "6"), (9, "9")]
+
+    def test_higher_level_insert_preserves_residual_span(self) -> None:
+        sl: IndexedSkipList[int, int] = IndexedSkipList()
+        with patch(
+            "general_ludd.algorithms.skip_list_v2._random_level",
+            side_effect=[2, 2, 0, 2],
+        ):
+            for key in [0, 10, 5, 2]:
+                assert sl.insert(key, key)
+
+        assert sl.items() == [(0, 0), (2, 2), (5, 5), (10, 10)]
+        assert [sl.select(rank)[0] for rank in range(4)] == [0, 2, 5, 10]
+        assert [sl.rank(key) for key in [0, 2, 5, 10]] == [0, 1, 2, 3]
 
     def test_large_random(self) -> None:
         rng = random.Random(99)
