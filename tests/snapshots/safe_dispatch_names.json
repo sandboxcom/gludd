@@ -1,0 +1,7 @@
+{
+  "foo.bar": "foo_DOT_bar",
+  "last": "last_TOOLNAME",
+  "my-tool": "my_DASH_tool",
+  "simple": "simple",
+  "tool.with-dots-and-dashes": "tool_DOT_with_DASH_dots_DASH_and_DASH_dashes"
+}

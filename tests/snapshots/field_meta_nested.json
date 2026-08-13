@@ -1,0 +1,23 @@
+{
+  "children": [
+    {
+      "children": null,
+      "description": "",
+      "enum": null,
+      "format": null,
+      "items": null,
+      "name": "city",
+      "required": false,
+      "title": "City",
+      "type": "string"
+    }
+  ],
+  "description": "Mailing address",
+  "enum": null,
+  "format": null,
+  "items": null,
+  "name": "address",
+  "required": true,
+  "title": "Address",
+  "type": "object"
+}

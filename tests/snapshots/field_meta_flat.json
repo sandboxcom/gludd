@@ -1,0 +1,11 @@
+{
+  "children": null,
+  "description": "User email",
+  "enum": null,
+  "format": "email",
+  "items": null,
+  "name": "email",
+  "required": true,
+  "title": "Email Address",
+  "type": "string"
+}

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -20,21 +21,91 @@ import pytest
 
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "snapshots"
 _UPDATE = os.environ.get("GLUDD_UPDATE_SNAPSHOTS") == "1"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_ARTIFACT_SCAN_EXCLUDES = frozenset({".ansible", ".git", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"})
+_EXPECTED_SNAPSHOTS = frozenset(
+    {
+        "ab_verdict_to_dict",
+        "association_classify_types",
+        "association_to_dict",
+        "association_to_json",
+        "audit_event_path_blocked",
+        "audit_event_to_dict",
+        "audit_event_to_json",
+        "behavior_render_cached",
+        "behavior_render_minimal",
+        "behavior_render_primary",
+        "collection_meta_to_dict",
+        "detect_code_blocks_empty_block",
+        "detect_code_blocks_multiple",
+        "detect_code_blocks_no_fences",
+        "detect_code_blocks_simple",
+        "entity_node_full",
+        "entity_node_minimal",
+        "entity_node_to_json",
+        "extract_field_metadata_empty",
+        "extract_field_metadata_simple",
+        "field_meta_flat",
+        "field_meta_nested",
+        "format_validation_error",
+        "guardrail_config",
+        "hardware_profile_to_dict",
+        "highlight_preserves_plain_text",
+        "plan_artifact_markdown_full",
+        "plan_artifact_to_dict",
+        "safe_dispatch_name_last",
+        "safe_dispatch_names",
+        "search_result_to_dict",
+        "session_record_to_dict",
+    }
+)
 
 
 def _snapshot_path(test_name: str) -> Path:
     return SNAPSHOT_DIR / f"{test_name}.json"
 
 
+def _checkout_db_lock_artifacts() -> frozenset[Path]:
+    """Return checkout-local database/lock artifacts, excluding tool-owned state."""
+    artifacts: set[Path] = set()
+    suffixes = (".db", ".db-shm", ".db-wal", ".sqlite", ".sqlite3", ".lock")
+    for directory_text, dirnames, filenames in os.walk(_REPO_ROOT):
+        directory = Path(directory_text)
+        if directory == _REPO_ROOT:
+            dirnames[:] = [name for name in dirnames if name not in _ARTIFACT_SCAN_EXCLUDES]
+        for filename in filenames:
+            if filename.endswith(suffixes):
+                artifacts.add((directory / filename).relative_to(_REPO_ROOT))
+    return frozenset(artifacts)
+
+
+@pytest.fixture(autouse=True)
+def _reject_checkout_db_lock_leaks() -> Iterator[None]:
+    """Fail the owning snapshot test when an import creates a DB or lock file."""
+    before = _checkout_db_lock_artifacts()
+    yield
+    after = _checkout_db_lock_artifacts()
+    assert after == before, f"Snapshot test leaked checkout DB/lock artifacts: {sorted(after - before)}"
+
+
 def _assert_snapshot(test_name: str, actual: object) -> None:
-    SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     path = _snapshot_path(test_name)
+    normalized_actual = json.loads(json.dumps(actual, sort_keys=True, default=str))
     if _UPDATE:
-        path.write_text(json.dumps(actual, indent=2, sort_keys=True, default=str), "utf-8")
+        SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".json.tmp")
+        try:
+            temporary.write_text(json.dumps(normalized_actual, indent=2, sort_keys=True) + "\n", "utf-8")
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
     if not path.exists():
-        path.write_text(json.dumps(actual, indent=2, sort_keys=True, default=str), "utf-8")
+        raise AssertionError(
+            f"Missing snapshot fixture: {path}. "
+            "Regenerate explicitly with GLUDD_UPDATE_SNAPSHOTS=1, review the diff, and commit the fixture."
+        )
     expected = json.loads(path.read_text("utf-8"))
-    assert actual == expected, f"Snapshot mismatch for {test_name}. Diff expected vs actual."
+    assert normalized_actual == expected, f"Snapshot mismatch for {test_name}. Diff expected vs actual."
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +290,7 @@ class TestBehaviorRendererSnapshot:
             commit_after_green=False,
             atomic_commits=False,
             session_persistence=False,
-            guardrail=GuardrailConfig(config_layer=False, hook_layer=False, prompt_layer=False),
+            guardrail=GuardrailConfig(config_layer=True, hook_layer=False, prompt_layer=False),
         )
         renderer = BehaviorRenderer()
         rendered = renderer.render(behavior)
@@ -499,7 +570,9 @@ class TestGuardrailConfigSnapshot:
         from general_ludd.agents.behavior import GuardrailConfig
 
         assert GuardrailConfig().layer_count() == 3
-        assert GuardrailConfig(config_layer=False, hook_layer=False, prompt_layer=False).layer_count() == 0
+        assert GuardrailConfig(config_layer=True, hook_layer=False, prompt_layer=False).layer_count() == 1
+        with pytest.raises(ValueError, match="At least one guardrail layer must be enabled"):
+            GuardrailConfig(config_layer=False, hook_layer=False, prompt_layer=False)
 
 
 # ---------------------------------------------------------------------------
@@ -509,21 +582,21 @@ class TestGuardrailConfigSnapshot:
 
 class TestSnapshotIntegrity:
     def test_all_snapshots_are_valid_json(self) -> None:
-        if not SNAPSHOT_DIR.is_dir():
-            pytest.skip("No snapshots directory yet")
+        assert SNAPSHOT_DIR.is_dir(), "Tracked snapshot fixture directory is missing"
         for p in sorted(SNAPSHOT_DIR.glob("*.json")):
             content = p.read_text("utf-8")
             json.loads(content)
 
-    def test_snapshot_count_meets_minimum(self) -> None:
-        if not SNAPSHOT_DIR.is_dir():
-            pytest.skip("No snapshots directory yet")
-        count = len(list(SNAPSHOT_DIR.glob("*.json")))
-        assert count >= 15, f"Expected at least 15 snapshot files, found {count}"
+    def test_snapshot_manifest_is_exact(self) -> None:
+        assert SNAPSHOT_DIR.is_dir(), "Tracked snapshot fixture directory is missing"
+        actual = frozenset(path.stem for path in SNAPSHOT_DIR.glob("*.json"))
+        assert actual == _EXPECTED_SNAPSHOTS, (
+            f"Snapshot manifest drift: missing={sorted(_EXPECTED_SNAPSHOTS - actual)}, "
+            f"unexpected={sorted(actual - _EXPECTED_SNAPSHOTS)}"
+        )
 
     def test_snapshot_dir_is_clean_no_temp_files(self) -> None:
-        if not SNAPSHOT_DIR.is_dir():
-            pytest.skip("No snapshots directory yet")
+        assert SNAPSHOT_DIR.is_dir(), "Tracked snapshot fixture directory is missing"
         temps = list(SNAPSHOT_DIR.glob("*.tmp")) + list(SNAPSHOT_DIR.glob("*~"))
         assert len(temps) == 0, f"Temporary files found: {temps}"
 
@@ -534,6 +607,47 @@ class TestSnapshotIntegrity:
 
 
 class TestSnapshotUpdateGuard:
+    def test_missing_snapshot_fails_without_creating_checkout_artifacts(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        snapshot_dir = tmp_path / "snapshots"
+        monkeypatch.setitem(globals(), "SNAPSHOT_DIR", snapshot_dir)
+        monkeypatch.setitem(globals(), "_UPDATE", False)
+
+        with pytest.raises(AssertionError, match="Missing snapshot fixture"):
+            _assert_snapshot("missing_fixture", {"value": 1})
+
+        assert not snapshot_dir.exists()
+
+    def test_explicit_update_publishes_canonical_json_atomically(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        snapshot_dir = tmp_path / "snapshots"
+        monkeypatch.setitem(globals(), "SNAPSHOT_DIR", snapshot_dir)
+        monkeypatch.setitem(globals(), "_UPDATE", True)
+
+        _assert_snapshot("generated_fixture", {"z": (2, 1), "a": "first"})
+
+        assert (snapshot_dir / "generated_fixture.json").read_text("utf-8") == (
+            '{\n  "a": "first",\n  "z": [\n    2,\n    1\n  ]\n}\n'
+        )
+        assert not (snapshot_dir / "generated_fixture.json.tmp").exists()
+
+    def test_checkout_artifact_scanner_attributes_db_and_lock_files(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with monkeypatch.context() as isolated:
+            isolated.setitem(globals(), "_REPO_ROOT", tmp_path)
+            (tmp_path / "leaked.db").write_text("db", "utf-8")
+            (tmp_path / "nested").mkdir()
+            (tmp_path / "nested" / "worker.lock").write_text("lock", "utf-8")
+            (tmp_path / ".ansible").mkdir()
+            (tmp_path / ".ansible" / ".lock").write_text("owned", "utf-8")
+
+            assert _checkout_db_lock_artifacts() == frozenset(
+                {Path("leaked.db"), Path("nested/worker.lock")}
+            )
+
     def test_update_flag_is_not_set_in_ci(self) -> None:
         if os.environ.get("CI") == "true":
             assert os.environ.get("GLUDD_UPDATE_SNAPSHOTS") != "1", "GLUDD_UPDATE_SNAPSHOTS=1 must not be set in CI"

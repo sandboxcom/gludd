@@ -1,0 +1,10 @@
+{
+  "assoc_type": "financial",
+  "description": "Investment of $5M",
+  "metadata": {
+    "round": "Series A"
+  },
+  "source_id": "n-1",
+  "target_id": "n-2",
+  "weight": 0.75
+}
