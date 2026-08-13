@@ -396,6 +396,7 @@ def _configure_selftest_parser(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
+    """Build the CLI parser and the parser map used for help dispatch."""
     parser = argparse.ArgumentParser(
         prog="gludd",
         description="General Ludd Agent — the black swan agentic coding system",
@@ -1326,6 +1327,10 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     # tbg_results.add_argument("testfile", help="Test file path")
     # tbg_results.set_defaults(func=_cmd_testbg_results)
 
+    smoke_parser = sub.add_parser("smoke", help="Run provider/service smoke checks")
+    _add_smoke_arguments(smoke_parser)
+    smoke_parser.set_defaults(func=_cmd_smoke)
+
     test_parser = sub.add_parser("test", help="Test runner commands")
     test_parser.set_defaults(func=None)
     test_sub = test_parser.add_subparsers(dest="test_command")
@@ -1418,6 +1423,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "cloud": cloud_parser,
         "test-bg": test_bg_parser,
         "test": test_parser,
+        "smoke": smoke_parser,
         "chat": chat_parser,
         "audit-plugins": audit_plugins_parser,
         "pause": pause_parser,
@@ -1896,6 +1902,7 @@ def _cmd_smoke(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    """Parse process arguments and dispatch the selected CLI handler."""
     parser, subcommand_map = build_parser()
     args = parser.parse_args()
     if args.func is None:

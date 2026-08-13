@@ -52,6 +52,7 @@ EXPECTED_TOP = {
     "version",
     "health",
     "selftest",
+    "smoke",
     "models",
     "local-serve",
     "worktree",
