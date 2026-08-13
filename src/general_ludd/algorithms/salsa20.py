@@ -11,6 +11,7 @@ Reference: "Salsa20 specification" — Daniel J. Bernstein, 2005-03-14
 from __future__ import annotations
 
 import struct
+from typing import Protocol
 
 from Crypto.Cipher import Salsa20 as _PyCryptodomeSalsa20
 
@@ -68,6 +69,22 @@ def _salsa20_core(x: list[int], rounds: int = 20) -> list[int]:
 # Salsa20 stream cipher — PyCryptodome
 # ---------------------------------------------------------------------------
 
+_ADVANCE_CHUNK = b"\x00" * (64 * 1024)
+
+
+class _Salsa20Cipher(Protocol):
+    def encrypt(self, plaintext: bytes) -> bytes: ...
+
+
+def _advance_cipher(cipher: _Salsa20Cipher, block_counter: int) -> None:
+    if block_counter < 0:
+        raise Salsa20Error("Block counter must be non-negative")
+    remaining = block_counter * 64
+    while remaining:
+        chunk_size = min(remaining, len(_ADVANCE_CHUNK))
+        cipher.encrypt(_ADVANCE_CHUNK[:chunk_size])
+        remaining -= chunk_size
+
 
 def salsa20_block(key: bytes, nonce: bytes, block_counter: int) -> bytes:
     """Generate one 64-byte Salsa20 keystream block."""
@@ -77,7 +94,7 @@ def salsa20_block(key: bytes, nonce: bytes, block_counter: int) -> bytes:
         raise Salsa20Error(f"Nonce must be 8 bytes, got {len(nonce)}")
 
     cipher = _PyCryptodomeSalsa20.new(key=key, nonce=nonce)
-    cipher.seek(block_counter * 64)  # type: ignore[attr-defined]
+    _advance_cipher(cipher, block_counter)
     return cipher.encrypt(b"\x00" * 64)
 
 
@@ -89,8 +106,7 @@ def stream_encrypt(
 ) -> bytes:
     """Encrypt or decrypt *data* with Salsa20 (symmetric XOR with keystream)."""
     cipher = _PyCryptodomeSalsa20.new(key=key, nonce=nonce)
-    if counter:
-        cipher.seek(counter * 64)  # type: ignore[attr-defined]
+    _advance_cipher(cipher, counter)
     return cipher.encrypt(data)
 
 

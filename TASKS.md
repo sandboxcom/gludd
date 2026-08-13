@@ -49,6 +49,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 - [ ] S83.37 - **Restore BLAKE3 key-derivation mode separation** across `src/general_ludd/algorithms/blake3.py` and `docs/features/BLAKE3_KEY_DERIVATION.md`: use the upstream derivation-context mode without a mutually exclusive keyed-hash key, preserve XOF output and deterministic domain separation, and specify a zero-downtime compatibility boundary. | evidence: authoritative gate and focused replay reproduced 4/4 derivation failures; focused suite 54/54 GREEN; source branch coverage 93.75%; BLAKE3 specification and maintainer compatibility report documented; Ruff, scoped mypy, and spec lint GREEN; collection and full gate pending | priority: high | effort: XS | status: in_progress
 
+- [ ] S83.38 - **Restore Salsa20 provider counter compatibility** across `src/general_ludd/algorithms/salsa20.py` and `docs/features/SALSA20_PROVIDER_COMPATIBILITY.md`: preserve maintained PyCryptodome encryption while advancing nonzero block counters through bounded provider output rather than a nonexistent `seek` method, and specify interoperability and ZDD boundaries. | evidence: authoritative gate and focused replay reproduced 7 provider-counter failures; focused suite 32/32 GREEN; source branch coverage 96.88%; PyCryptodome #399 and provider API evidence documented; Ruff, scoped mypy, task-ledger validation, and spec lint GREEN; collection and full gate pending | priority: high | effort: XS | status: in_progress
+
 ---
 
 ## Session 79 — Crypto Library Refactor + Behavioral Guardrails (2026-08-05, 86,428 tests)
