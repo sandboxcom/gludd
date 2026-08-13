@@ -1116,8 +1116,8 @@ jobs:
           path: |
             dist/gludd-${{ env.VERSION }}-windows-x86_64.zip
             dist/gludd-${{ env.VERSION }}-windows-x86_64.zip.sha256
-            dist/gludd-${{ env.VERSION }}-setup-x86_64.exe
-            dist/gludd-${{ env.VERSION }}-setup-x86_64.exe.sha256
+            dist/gludd-${{env.VERSION}}-setup-x86_64.exe
+            dist/gludd-${{env.VERSION}}-setup-x86_64.exe.sha256
 
   termux:
     needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)

@@ -10,6 +10,7 @@ on ansible data collection and library data file coverage.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -77,12 +78,45 @@ def _exe_body(spec_text: str) -> str | None:
     return m.group("body")
 
 
+def _analysis_keyword_node(spec_text: str, key: str) -> ast.expr | None:
+    """Return the value assigned to an Analysis keyword."""
+    tree = ast.parse(spec_text, filename=str(SPEC_PATH))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Name) or node.func.id != "Analysis":
+            continue
+        for keyword in node.keywords:
+            if keyword.arg == key:
+                return keyword.value
+    return None
+
+
 def _parse_string_list(spec_text: str, key: str) -> list[str]:
-    pattern = rf"{re.escape(key)}\s*=\s*\[(?P<inner>.*?)\]"
-    m = re.search(pattern, spec_text, re.DOTALL)
-    if not m:
+    """Return string literals from an Analysis keyword expression."""
+    node = _analysis_keyword_node(spec_text, key)
+    if node is None:
         return []
-    return re.findall(r"""['"]([^'"]+)['"]""", m.group("inner"))
+    return [
+        child.value
+        for child in ast.walk(node)
+        if isinstance(child, ast.Constant) and isinstance(child.value, str)
+    ]
+
+
+def _collect_submodule_packages(spec_text: str) -> set[str]:
+    """Return literal package names passed to collect_submodules."""
+    tree = ast.parse(spec_text, filename=str(SPEC_PATH))
+    return {
+        call.args[0].value
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Name)
+        and call.func.id == "collect_submodules"
+        and call.args
+        and isinstance(call.args[0], ast.Constant)
+        and isinstance(call.args[0].value, str)
+    }
 
 
 def _parse_tuple_list(spec_text: str, key: str) -> list[tuple[str, str]]:
@@ -114,11 +148,9 @@ class TestHiddenImports:
         assert not missing, f"Missing required hidden imports in gludd.spec: {sorted(missing)}"
 
     def test_ansible_submodules_in_hidden_imports(self, spec_text: str) -> None:
+        collected = _collect_submodule_packages(spec_text)
         for sub in ("ansible.module_utils", "ansible.plugins", "ansible.template", "ansible.galaxy"):
-            assert re.search(
-                r"collect_submodules\(\s*['\"]" + re.escape(sub) + r"['\"]\s*\)",
-                spec_text,
-            ), f"gludd.spec must call collect_submodules('{sub}') for hidden imports"
+            assert sub in collected, f"gludd.spec must call collect_submodules('{sub}') for hidden imports"
 
     def test_no_duplicate_hidden_imports(self, spec_text: str) -> None:
         literal_imports = _parse_string_list(spec_text, "hiddenimports")

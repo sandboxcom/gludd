@@ -11,6 +11,7 @@ windows-x86_64).
 
 from __future__ import annotations
 
+import ast
 import re
 import subprocess
 from pathlib import Path
@@ -150,20 +151,32 @@ class TestSpecPlatformCompatibility:
         build time. But ansible core (executor API) MUST NOT be excluded —
         gludd drives ansible.runner/core_runner/templating at runtime.
         """
-        excludes_match = re.search(r"excludes\s*=\s*\[([^\]]*)\]", spec_text, re.DOTALL)
-        assert excludes_match, "Spec must have an excludes= list"
-        excludes_body = excludes_match.group(1)
+        tree = ast.parse(spec_text, filename=str(SPEC_PATH))
+        excludes: set[str] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Name) or node.func.id != "Analysis":
+                continue
+            for keyword in node.keywords:
+                if keyword.arg == "excludes":
+                    excludes = {
+                        child.value
+                        for child in ast.walk(keyword.value)
+                        if isinstance(child, ast.Constant) and isinstance(child.value, str)
+                    }
+
+        assert excludes, "Spec must have an excludes= list"
 
         # ansible.cli must be in excludes.
-        assert re.search(r"['\"]ansible\.cli['\"]", excludes_body), (
+        assert "ansible.cli" in excludes, (
             "ansible.cli MUST be in excludes= — it hard-fails on Windows cp1252 locale"
         )
 
         # ansible core MUST NOT be excluded.
-        for forbidden_exclude in ("'ansible'", '"ansible"', "'ansible.$'"):
-            assert forbidden_exclude not in excludes_body, (
-                f"ansible core must NOT be excluded (gludd uses the executor API): found {forbidden_exclude!r}"
-            )
+        assert "ansible" not in excludes, (
+            "ansible core must NOT be excluded (gludd uses the executor API)"
+        )
 
         # And the spec must positively list the ansible executor modules as
         # hidden imports — proving they are NOT being excluded.
