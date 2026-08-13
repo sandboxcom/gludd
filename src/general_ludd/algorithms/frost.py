@@ -364,7 +364,7 @@ def frost_verify(
     x_R = int.from_bytes(x_bytes, "big")
     y_sq = (pow(x_R, 3, p) + a * x_R + _b) % p
     y_R = pow(y_sq, (p + 1) // 4, p)
-    if (y_R & 1) != (prefix == b"\x02"):
+    if (y_R & 1) != (prefix == b"\x03"):
         y_R = (p - y_R) % p
     R = (x_R, y_R)
     R_plus_cPk = _point_add(R, cPk, p, a)
@@ -521,8 +521,7 @@ def tedcsa_verify(
 ) -> bool:
     """Verify a tECDSA threshold signature using standard ECDSA verification."""
     try:
-        h = hashlib.sha256(msg).digest()
-        group_pk.verify(signature, h, ec.ECDSA(hashes.SHA256()))
+        group_pk.verify(signature, msg, ec.ECDSA(hashes.SHA256()))
         return True
     except Exception:
         return False
