@@ -93,7 +93,7 @@ class TestLocalHookEntryPoints:
     LOCAL_ENTRIES: ClassVar[dict[str, str]] = {
         "scan-conflicts": "python scripts/scan_conflicts.py",
         "ruff-lint": "uv run ruff check src tests",
-        "mypy": "uv run mypy -p general_ludd",
+        "mypy": "uv run mypy --no-incremental -p general_ludd",
         "check-tdd-compliance": "uv run python scripts/check_tdd_compliance.py",
         "check-disk": "uv run python scripts/check_disk_usage.py",
         "collect-check": "uv run python -m pytest tests/ --co -q",

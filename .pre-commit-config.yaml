@@ -51,7 +51,7 @@ repos:
 
       - id: mypy
         name: mypy type check
-        entry: uv run mypy -p general_ludd
+        entry: uv run mypy --no-incremental -p general_ludd
         language: system
         types: [python]
         pass_filenames: false
