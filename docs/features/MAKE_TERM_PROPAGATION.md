@@ -61,6 +61,8 @@ stdin:
 
 - `tests/unit/test_makefile_syntax.py` asserts fallback promotion and exact
   preservation of a capable caller value.
+- `tests/unit/test_config_gaps.py` rejects the obsolete unconditional
+  `TERM=dumb` contract and pins the same promotion/preservation boundary.
 - The same suite validates parsing, target separation, phony declarations,
   variable format, whitespace, and duplicate targets.
 - `make validate-makefile` and `make check-make-help` remain the tracked

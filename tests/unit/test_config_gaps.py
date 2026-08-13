@@ -81,9 +81,12 @@ class TestMypyConfigGaps:
         assert "disable_error_code" not in config
         assert "ignore_errors" not in config
 
-    def test_make_normalizes_child_terminal_for_reproducible_logs(self) -> None:
+    def test_make_preserves_capable_terminals_with_deterministic_fallback(self) -> None:
         makefile = (PROJECT_ROOT / "Makefile").read_text(encoding="utf-8")
-        assert "export TERM := dumb" in makefile
+        assert "filter-out dumb unknown" in makefile
+        assert "override TERM := xterm-256color" in makefile
+        assert "export TERM" in makefile
+        assert "export TERM := dumb" not in makefile
 
     def test_tests_do_not_import_source_tree_as_a_namespace_package(self) -> None:
         invalid_import = "from src." + "general_ludd"
