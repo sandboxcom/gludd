@@ -11,7 +11,6 @@ Implements the core Raft protocol (Ongaro 2014):
 from __future__ import annotations
 
 import enum
-import time as time_mod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -58,6 +57,7 @@ class RequestVoteRequest:
 class RequestVoteResponse:
     term: Term
     vote_granted: bool
+    voter_id: NodeId | None = None
 
 
 @dataclass
@@ -74,6 +74,8 @@ class AppendEntriesRequest:
 class AppendEntriesResponse:
     term: Term
     success: bool
+    follower_id: NodeId | None = None
+    match_index: int = -1
 
 
 @dataclass
@@ -119,6 +121,7 @@ class RaftState:
 class RaftNode:
     __slots__ = (
         "_election_deadline",
+        "_last_tick_time",
         "_leader_heartbeat_deadline",
         "_votes_received",
         "commit_index",
@@ -161,6 +164,7 @@ class RaftNode:
         self.joint_consensus: bool = False
         self._election_deadline: float = 0.0
         self._leader_heartbeat_deadline: float = 0.0
+        self._last_tick_time: float = 0.0
         self._votes_received: set[NodeId] = set()
 
     # ── helpers ──────────────────────────────────────────────────────────
@@ -176,12 +180,25 @@ class RaftNode:
     def _reset_election_timeout(self, now: float, rng: Callable[[], float]) -> None:
         lo = self.config.election_timeout_min
         hi = self.config.election_timeout_max
-        self._election_deadline = now + lo + (hi - lo) * rng()
+        sample = min(1.0, max(0.0, rng()))
+        members = sorted({self.node_id, *self.peers})
+        rank = members.index(self.node_id)
+        rank_fraction = rank / max(1, len(members) - 1)
+        fraction = (sample + rank_fraction) / 2.0
+        self._election_deadline = now + lo + (hi - lo) * fraction
+
+    def _defer_election_timeout(self) -> None:
+        timeout = max(
+            self.config.election_timeout_max,
+            self.config.heartbeat_interval * 2.0,
+        )
+        self._election_deadline = self._last_tick_time + timeout
 
     def _become_follower(self, term: Term) -> None:
+        if term > self.current_term:
+            self.current_term = term
+            self.voted_for = None
         self.role = NodeRole.FOLLOWER
-        self.current_term = term
-        self.voted_for = None
         self._votes_received = set()
 
     def _become_candidate(self, now: float, rng: Callable[[], float]) -> list[tuple[NodeId, object]]:
@@ -214,6 +231,7 @@ class RaftNode:
         log_len = len(self.log)
         self.next_index = {p: log_len for p in self.peers}
         self.match_index = {p: -1 for p in self.peers}
+        self._leader_heartbeat_deadline = 0.0
         self._votes_received = set()
         msgs: list[tuple[NodeId, object]] = []
         for peer in self.peers:
@@ -307,7 +325,12 @@ class RaftNode:
             ):
                 grant = True
                 self.voted_for = req.candidate_id
-        return RequestVoteResponse(term=self.current_term, vote_granted=grant)
+                self._defer_election_timeout()
+        return RequestVoteResponse(
+            term=self.current_term,
+            vote_granted=grant,
+            voter_id=self.node_id,
+        )
 
     def handle_request_vote_response(self, resp: RequestVoteResponse) -> None:
         if self.role != NodeRole.CANDIDATE:
@@ -315,43 +338,67 @@ class RaftNode:
         if resp.term > self.current_term:
             self._become_follower(resp.term)
             return
-        if resp.vote_granted:
-            self._votes_received.add(self.node_id)
-        else:
-            pass
+        if resp.term != self.current_term:
+            return
+        if resp.vote_granted and resp.voter_id in self.peers:
+            self._votes_received.add(resp.voter_id)
+            if self._quorum_reached():
+                self._become_leader()
 
     # ── AppendEntries ───────────────────────────────────────────────────
 
     def handle_append_entries(self, req: AppendEntriesRequest) -> AppendEntriesResponse:
         if req.term < self.current_term:
-            return AppendEntriesResponse(term=self.current_term, success=False)
+            return AppendEntriesResponse(
+                term=self.current_term,
+                success=False,
+                follower_id=self.node_id,
+                match_index=self._last_log_index,
+            )
         if req.term > self.current_term:
             self._become_follower(req.term)
         else:
             self.role = NodeRole.FOLLOWER
-            self.voted_for = None
-        self._election_deadline = time_mod.monotonic() + 1000.0
+        self._defer_election_timeout()
 
         if req.prev_log_index >= 0:
-            if req.prev_log_index >= len(self.log):
-                return AppendEntriesResponse(term=self.current_term, success=False)
-            if self.log[req.prev_log_index].term != req.prev_log_term:
-                self.log = self.log[: req.prev_log_index]
-                return AppendEntriesResponse(term=self.current_term, success=False)
+            previous = next(
+                (entry for entry in self.log if entry.index == req.prev_log_index),
+                None,
+            )
+            if previous is None or previous.term != req.prev_log_term:
+                return AppendEntriesResponse(
+                    term=self.current_term,
+                    success=False,
+                    follower_id=self.node_id,
+                    match_index=self._last_log_index,
+                )
 
-        for i, entry in enumerate(req.entries):
-            idx = req.prev_log_index + 1 + i
-            if idx < len(self.log):
-                if self.log[idx].term != entry.term:
-                    self.log = self.log[:idx]
-                    self.log.append(entry)
-            else:
+        for entry in req.entries:
+            existing_position = next(
+                (
+                    position
+                    for position, existing in enumerate(self.log)
+                    if existing.index == entry.index
+                ),
+                None,
+            )
+            if existing_position is None:
+                self.log.append(entry)
+                continue
+            if self.log[existing_position] != entry:
+                self.log = self.log[:existing_position]
                 self.log.append(entry)
 
         if req.leader_commit > self.commit_index:
             self.commit_index = min(req.leader_commit, self._last_log_index)
             self._apply_committed()
-        return AppendEntriesResponse(term=self.current_term, success=True)
+        return AppendEntriesResponse(
+            term=self.current_term,
+            success=True,
+            follower_id=self.node_id,
+            match_index=req.prev_log_index + len(req.entries),
+        )
 
     def handle_append_entries_response(self, resp: AppendEntriesResponse) -> None:
         if self.role != NodeRole.LEADER:
@@ -359,8 +406,16 @@ class RaftNode:
         if resp.term > self.current_term:
             self._become_follower(resp.term)
             return
+        if resp.term != self.current_term or resp.follower_id not in self.peers:
+            return
         if resp.success:
-            pass
+            previous_match = self.match_index.get(resp.follower_id, -1)
+            match_index = max(previous_match, resp.match_index)
+            self.match_index[resp.follower_id] = match_index
+            self.next_index[resp.follower_id] = match_index + 1
+        else:
+            next_index = self.next_index.get(resp.follower_id, self._last_log_index + 1)
+            self.next_index[resp.follower_id] = max(0, next_index - 1)
         self._advance_commit()
 
     # ── InstallSnapshot ─────────────────────────────────────────────────
@@ -368,7 +423,7 @@ class RaftNode:
     def handle_install_snapshot(self, req: InstallSnapshotRequest) -> InstallSnapshotResponse:
         if req.term < self.current_term:
             return InstallSnapshotResponse(term=self.current_term)
-        self._election_deadline = time_mod.monotonic() + 1000.0
+        self._defer_election_timeout()
         if req.term > self.current_term:
             self._become_follower(req.term)
             self.voted_for = None
@@ -390,6 +445,7 @@ class RaftNode:
 
     def tick(self, now: float, rng: Callable[[], float]) -> list[tuple[NodeId, object]]:
         msgs: list[tuple[NodeId, object]] = []
+        self._last_tick_time = now
 
         if self.role == NodeRole.FOLLOWER or self.role == NodeRole.CANDIDATE:
             if now >= self._election_deadline:

@@ -35,12 +35,21 @@ def _cluster(n: int, timeout: float = 0.05) -> list[RaftNode]:
     ]
 
 
-def _send(msgs: list, sender: str, dest: str, req: object) -> None:
+def _send(
+    msgs: list[tuple[str, str, object]],
+    sender: str,
+    dest: str,
+    req: object,
+) -> None:
     msgs.append((sender, dest, req))
 
 
-def _deliver(msgs: list, nodes: dict[str, RaftNode], rng: Callable[[], float] | None = None) -> None:
-    delivered: list = list(msgs)
+def _deliver(
+    msgs: list[tuple[str, str, object]],
+    nodes: dict[str, RaftNode],
+    rng: Callable[[], float] | None = None,
+) -> None:
+    delivered: list[tuple[str, str, object]] = list(msgs)
     msgs.clear()
     for sender, dest, req in delivered:
         if rng is not None:
@@ -53,27 +62,32 @@ def _deliver_one(
     sender: str,
     dest: str,
     req: object,
-    outbox: list,
+    outbox: list[tuple[str, str, object]],
 ) -> None:
     node = nodes[dest]
     if isinstance(req, RequestVoteRequest):
-        resp = node.handle_request_vote(req)
-        outbox.append((dest, sender, resp))
+        vote_response = node.handle_request_vote(req)
+        outbox.append((dest, sender, vote_response))
     elif isinstance(req, RequestVoteResponse):
         node.handle_request_vote_response(req)
     elif isinstance(req, AppendEntriesRequest):
-        resp = node.handle_append_entries(req)
-        outbox.append((dest, sender, resp))
+        append_response = node.handle_append_entries(req)
+        outbox.append((dest, sender, append_response))
     elif isinstance(req, AppendEntriesResponse):
         node.handle_append_entries_response(req)
     elif isinstance(req, InstallSnapshotRequest):
-        resp = node.handle_install_snapshot(req)
-        outbox.append((dest, sender, resp))
+        snapshot_response = node.handle_install_snapshot(req)
+        outbox.append((dest, sender, snapshot_response))
     elif isinstance(req, InstallSnapshotResponse):
         node.handle_install_snapshot_response(req)
 
 
-def _tick_all(nodes: list[RaftNode], msgs: list, now: float, rng: Callable[[], float]) -> None:
+def _tick_all(
+    nodes: list[RaftNode],
+    msgs: list[tuple[str, str, object]],
+    now: float,
+    rng: Callable[[], float],
+) -> None:
     node_map = {n.node_id: n for n in nodes}
     for n in nodes:
         out = n.tick(now, rng)
@@ -87,7 +101,7 @@ def _step_until_stable(
     tick_step: float = 0.01,
     max_ticks: int = 2000,
 ) -> None:
-    msgs: list = []
+    msgs: list[tuple[str, str, object]] = []
     now = 0.0
     rng_count = 0
 
@@ -113,7 +127,7 @@ def _leader(nodes: list[RaftNode]) -> RaftNode:
 
 
 def _propose(nodes: list[RaftNode], command: str) -> None:
-    msgs: list = []
+    msgs: list[tuple[str, str, object]] = []
     {n.node_id: n for n in nodes}
     leader = _leader(nodes)
     leader.handle_client_command(command)
@@ -208,7 +222,7 @@ class TestLeaderElection:
 
     def test_follower_becomes_candidate_on_timeout(self) -> None:
         n = RaftNode("n0", ["n1", "n2"], config=RaftConfig(election_timeout_min=0.1, election_timeout_max=0.2))
-        assert n.role == NodeRole.FOLLOWER
+        assert n.role.value == NodeRole.FOLLOWER.value
         count = 0
 
         def rng() -> float:
@@ -236,6 +250,7 @@ class TestLeaderElection:
         req = RequestVoteRequest(term=2, candidate_id="n0", last_log_index=5, last_log_term=2)
         resp = follower.handle_request_vote(req)
         assert resp.vote_granted is True
+        assert resp.voter_id == "n1"
         assert follower.voted_for == "n0"
 
     def test_follower_rejects_vote_if_already_voted(self) -> None:
@@ -259,6 +274,46 @@ class TestLeaderElection:
         req = RequestVoteRequest(term=4, candidate_id="n0", last_log_index=0, last_log_term=2)
         resp = follower.handle_request_vote(req)
         assert resp.vote_granted is False
+
+    def test_only_configured_voter_identity_counts_toward_quorum(self) -> None:
+        candidate = RaftNode(
+            "n0",
+            ["n1", "n2"],
+            config=RaftConfig(election_timeout_min=0.1, election_timeout_max=0.2),
+        )
+        candidate.tick(0.11, lambda: 0.5)
+
+        candidate.handle_request_vote_response(
+            RequestVoteResponse(term=1, vote_granted=True, voter_id="unknown")
+        )
+        assert candidate.role.value == NodeRole.CANDIDATE.value
+
+        candidate.handle_request_vote_response(
+            RequestVoteResponse(term=1, vote_granted=True, voter_id="n1")
+        )
+        assert candidate.role.value == NodeRole.LEADER.value
+
+    def test_stale_heartbeat_does_not_demote_candidate(self) -> None:
+        candidate = RaftNode(
+            "n0",
+            ["n1"],
+            config=RaftConfig(election_timeout_min=0.1, election_timeout_max=0.2),
+        )
+        candidate.tick(0.11, lambda: 0.5)
+
+        response = candidate.handle_append_entries(
+            AppendEntriesRequest(
+                term=0,
+                leader_id="n1",
+                prev_log_index=-1,
+                prev_log_term=0,
+                entries=[],
+                leader_commit=-1,
+            )
+        )
+
+        assert response.success is False
+        assert candidate.role == NodeRole.CANDIDATE
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -299,6 +354,8 @@ class TestLogReplication:
         )
         resp = follower.handle_append_entries(req)
         assert resp.success is True
+        assert resp.follower_id == "n1"
+        assert resp.match_index == 0
         assert len(follower.log) == 1
         assert follower.log[0].command == "x"
 
@@ -332,6 +389,28 @@ class TestLogReplication:
         for nid in leader.peers:
             assert leader.next_index.get(nid, -1) == len(leader.log)
             assert leader.match_index.get(nid, -1) == -1
+
+    def test_failed_append_retries_only_the_identified_follower(self) -> None:
+        leader = RaftNode("n0", ["n1", "n2"])
+        leader.current_term = 2
+        leader.role = NodeRole.CANDIDATE
+        leader._become_leader()
+        leader.log = [
+            LogEntry(term=2, index=0, command="a"),
+            LogEntry(term=2, index=1, command="b"),
+        ]
+        leader.next_index = {"n1": 2, "n2": 2}
+
+        leader.handle_append_entries_response(
+            AppendEntriesResponse(
+                term=2,
+                success=False,
+                follower_id="n1",
+                match_index=-1,
+            )
+        )
+
+        assert leader.next_index == {"n1": 1, "n2": 2}
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -546,9 +625,15 @@ class TestEdgeCases:
         n.tick(0.05, rng)
         n.handle_append_entries(
             AppendEntriesRequest(
-                term=0, leader_id="n1", prev_log_index=-1, prev_log_term=0, entries=[], leader_commit=-1
+                term=n.current_term,
+                leader_id="n1",
+                prev_log_index=-1,
+                prev_log_term=0,
+                entries=[],
+                leader_commit=-1,
             )
         )
+        n.tick(0.15, rng)
         assert n.role == NodeRole.FOLLOWER
 
     def test_five_node_cluster_handles_failure(self) -> None:
@@ -593,7 +678,7 @@ class TestEdgeCases:
 
     def test_election_split_vote_with_deterministic_rng(self) -> None:
         nodes = _cluster(3, timeout=0.02)
-        msgs: list = []
+        msgs: list[tuple[str, str, object]] = []
         now = 0.0
         call = 0
 
