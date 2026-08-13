@@ -235,9 +235,13 @@ class TestDogfoodHelpers:
         assert callable(getattr(m, "repo_root", None))
 
     def test_repo_root_logic_replicates_path(self):
+        import tests.e2e.dogfood.conftest as m
+
         expected = Path(__file__).resolve().parent.parent.parent
-        assert expected.name == "gludd"
-        assert expected.is_dir()
+        fixture_fn = getattr(m.repo_root, "__wrapped__", m.repo_root)
+        assert fixture_fn().resolve() == expected
+        assert (expected / "pyproject.toml").is_file()
+        assert (expected / "tests" / "e2e" / "dogfood").is_dir()
 
     def test_zai_creds_fixture_exists(self):
         import tests.e2e.dogfood.conftest as m
