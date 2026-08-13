@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from fastapi import Request
 
 from general_ludd.quality.feature_verifier import (
     _NODE_META_CHARS,
@@ -48,7 +49,13 @@ from general_ludd.security.capability_lattice import (
     is_protected_path,
     role_may_dispatch,
 )
-from general_ludd.security.permissions import check_capability
+from general_ludd.security.permissions import PermissionSpec, check_capability
+
+
+def _attempt_frozen_mutation(instance: object, attribute: str, value: object) -> None:
+    """Attempt mutation through the public Python attribute protocol."""
+    setattr(instance, attribute, value)
+
 
 # ============================================================================
 # 1. Feature Claim Verification — evidence dispatch + status transitions
@@ -105,7 +112,7 @@ class TestFeatureClaimVerification:
 
     def test_node_id_rejection_non_string(self) -> None:
         with pytest.raises(ValueError, match="non-empty string"):
-            _validate_node_id(42)  # type: ignore[arg-type]
+            _validate_node_id(cast("str", 42))
 
     def test_check_ref_test_fails_with_unsafe_node_id(self, tmp_path: Path) -> None:
         from general_ludd.quality.feature_verifier import _default_runner
@@ -214,8 +221,11 @@ class TestCapabilityGatingDeep:
         for kind in ("role", "collection", "mcp", "skill"):
             assert role_may_dispatch("self_research_agent", kind) is True
 
-    def test_operator_may_dispatch_collection(self) -> None:
-        assert role_may_dispatch("operator", "collection") is True
+    def test_operator_without_self_modify_may_not_dispatch_collection(self) -> None:
+        caps = capabilities_for("operator")
+        assert "collection" in caps.dispatch_kinds
+        assert caps.collections_self_modify is False
+        assert role_may_dispatch("operator", "collection") is False
 
     def test_check_dispatch_raises_capability_error(self) -> None:
         with pytest.raises(CapabilityError, match="lacks the capability"):
@@ -302,7 +312,7 @@ class TestCapabilityGuardRuntimeEnforcement:
         guard = RequireCapability(resource="admin:account", action="delete")
         fake = _FakeRequest()
         with pytest.raises(HTTPException) as exc_info:
-            await guard(fake)  # type: ignore[arg-type]
+            await guard(cast("Request", fake))
         assert exc_info.value.status_code == 403
         detail = cast("dict[str, object]", exc_info.value.detail)
         assert detail["error"] == "forbidden: no_auth_spec"
@@ -311,12 +321,10 @@ class TestCapabilityGuardRuntimeEnforcement:
     async def test_insufficient_capability_raises_403(self) -> None:
         from fastapi import HTTPException
 
-        class _FakeSpec:
-            agent_type = "viewer"
-
         class _FakeRequest:
             def __init__(self) -> None:
-                self.state = type("State", (), {"auth_spec": _FakeSpec()})()
+                spec = PermissionSpec(agent_type="viewer")
+                self.state = type("State", (), {"auth_spec": spec})()
 
             @property
             def method(self) -> str:
@@ -329,7 +337,7 @@ class TestCapabilityGuardRuntimeEnforcement:
         guard = RequireCapability(resource="admin:account", action="delete")
         fake = _FakeRequest()
         with pytest.raises(HTTPException) as exc_info:
-            await guard(fake)  # type: ignore[arg-type]
+            await guard(cast("Request", fake))
         assert exc_info.value.status_code == 403
         detail2 = cast("dict[str, object]", exc_info.value.detail)
         assert detail2["error"] == "forbidden: insufficient_capability"
@@ -351,7 +359,8 @@ class TestSandboxCapabilityRouting:
     def test_explicit_container_backend(self) -> None:
         config = SandboxConfig(backend="container", isolation=IsolationLevel.CONTAINER)
         router = SandboxCapabilityRouter(config)
-        assert router.backend_name == "container"
+        assert type(router.backend).__name__ == "ContainerBackend"
+        assert router.backend_name in {"podman", "docker"}
 
     def test_unknown_backend_falls_back_to_process(self) -> None:
         config = SandboxConfig(backend="nonexistent_backend_xyz", isolation=IsolationLevel.PROCESS)
@@ -430,7 +439,7 @@ class TestBuiltinAuditAssurance:
 
         caps = capabilities_for("coder")
         with pytest.raises(FrozenInstanceError):
-            caps.collections_self_modify = True  # type: ignore[misc]
+            _attempt_frozen_mutation(caps, "collections_self_modify", True)
 
     def test_check_capability_integration_deny(self) -> None:
         from general_ludd.security.permissions import PermissionSpec
@@ -477,7 +486,7 @@ class TestVerifyAllAudit:
 
     def test_verify_all_verified_count_correct(self, tmp_path: Path) -> None:
         v = _make_minimal_verifier(tmp_path)
-        (tmp_path / "plugins" / "modules").mkdir(parents=True)
+        (tmp_path / "plugins" / "modules").mkdir(parents=True, exist_ok=True)
         (tmp_path / "plugins" / "modules" / "gludd_facts.py").write_text("# module")
         features = [
             {"id": "FEAT-b1", "name": "has_evidence", "status": "requested", "evidence": ["module:gludd_facts"]},
@@ -520,7 +529,7 @@ class TestBuildResultShape:
 
     def test_verified_feature_has_iso_verified_at(self, tmp_path: Path) -> None:
         v = _make_minimal_verifier(tmp_path)
-        (tmp_path / "plugins" / "modules").mkdir(parents=True)
+        (tmp_path / "plugins" / "modules").mkdir(parents=True, exist_ok=True)
         (tmp_path / "plugins" / "modules" / "mod_x.py").write_text("# mod")
         feature = {"id": "FEAT-iso", "name": "test", "status": "requested", "evidence": ["module:mod_x"]}
         result = v.verify_feature(feature)

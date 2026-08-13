@@ -279,11 +279,21 @@ Two enforcement points, both already fail-closed:
 
 **Critically: the router runs under a non-self-improvement role by default.** Only
 `self_improve_agent` / `self_research_agent` hold `collections_self_modify`
-(capability_lattice.py:98-107); `coder`/`operator` do not. So a router operating as,
-e.g., `operator` (which has the `collection` dispatch kind but **not**
-`collections_self_modify`, capability_lattice.py:115-119) is denied any
-collections write at `check_self_modification` regardless of intent. Escalating to a
-`collections_self_modify` role is itself an approval-gated step.
+(capability_lattice.py:98-107); `coder`/`operator` do not. The `operator` grant table
+contains the `collection` dispatch label, but effective authorization is conjunctive:
+`role_may_dispatch("operator", "collection")` is false until the independent
+`collections_self_modify` grant is present. A collections write is checked again at
+`check_self_modification`, so neither dispatch nor mutation can be reached by label
+alone. Escalating to a `collections_self_modify` role is itself approval-gated.
+
+### 3.1.1 Practitioner evidence for conjunctive grants
+
+A long-running Kubernetes RBAC support discussion documented operators trying to
+permit `pods/portforward` without also allowing manual pod creation; the working
+resolution was a narrowly scoped subresource grant instead of broad `pods:create`
+([kubernetes/kubernetes#110999](https://github.com/kubernetes/kubernetes/issues/110999)).
+That practitioner report supports keeping Gludd's collection routing label separate
+from the mutation capability and requiring both at the security boundary.
 
 ### 3.2 Audit trail
 
