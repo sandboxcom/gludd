@@ -92,6 +92,7 @@ const FORCE_DISPATCH_FILE = process.env.GLUDD_FORCE_DISPATCH_PATH || "/tmp/gludd
 const RELEASE_COMPLETENESS_FILE = process.env.GLUDD_RELEASE_COMPLETENESS_FILE || "/tmp/gludd-release-completeness.json"
 const LAST_TEST_RESULT_FILE = process.env.GLUDD_LAST_TEST_RESULT_FILE || "/tmp/gludd-last-test-result.json"
 const MULTITASK_STATE_FILE = process.env.GLUDD_MULTITASK_STATE_FILE || "/tmp/gludd-multitask-state.json"
+const PUSH_STATE_FILE = process.env.GLUDD_PUSH_STATE_FILE || "/tmp/gludd-push-state.json"
 const POST_RESULTS_STATE_FILE = process.env.GLUDD_POST_RESULTS_STATE_FILE || "/tmp/gludd-post-results-state.json"
 const TEXT_ONLY_STATE_FILE = process.env.GLUDD_TEXT_ONLY_STATE_FILE || "/tmp/gludd-text-only-state.json"
 const WAVE_RESULT_THRESHOLD = 3
@@ -647,6 +648,7 @@ function hasRealPendingWork(): WorkState {
     }
   } catch {}
 
+  let gateLiteTestFailed = false
   try {
     const gateLitePath = path.join(root, ".gate-lite-status")
     if (fs.existsSync(gateLitePath)) {
@@ -656,8 +658,10 @@ function hasRealPendingWork(): WorkState {
       }
       for (const line of content.split("\n")) {
         if (line.startsWith("===")) continue
-        if (/^(lint |typecheck |collect |test |smoke |env-writes |dead-code |hook-runtime |coverage-gaps |tdd-compliance |plugin-hook-invoke |skills-frontmatter |lint-specs |spec-enforcement-coverage )/.test(line)) {
-          if (/FAIL/.test(line)) { gateStatusRed = true; break }
+        if (/^(lint |typecheck |collect |test |smoke |env-writes |dead-code |hook-runtime |coverage-gaps |tdd-compliance |plugin-hook-invoke |skills-frontmatter |lint-specs |spec-enforcement-coverage )/.test(line) && /FAIL/.test(line)) {
+          gateStatusRed = true
+          gateLiteTestFailed = /^test /.test(line)
+          break
         }
       }
     }
@@ -744,9 +748,8 @@ function hasRealPendingWork(): WorkState {
   // ── pushBlocked: fixable blocked pushes ──────────────────────────────────
   let pushBlocked = false
   try {
-    const pushStatePath = "/tmp/gludd-push-state.json"
-    if (fs.existsSync(pushStatePath)) {
-      const ps = JSON.parse(fs.readFileSync(pushStatePath, "utf8"))
+    if (fs.existsSync(PUSH_STATE_FILE)) {
+      const ps = JSON.parse(fs.readFileSync(PUSH_STATE_FILE, "utf8"))
       if (ps.last_push_blocked) {
         const reason = typeof ps.block_reason === "string" ? ps.block_reason : ""
         if (FIXABLE_PUSH_BLOCK_REASONS.has(reason)) {
@@ -756,17 +759,8 @@ function hasRealPendingWork(): WorkState {
     }
   } catch {}
 
-  // ── gateLiteTestFailed: /tmp/gludd-gate-lite-test.log FAILED markers ──────
-  let gateLiteTestFailed = false
-  try {
-    const gateLiteTestLogPath = "/tmp/gludd-gate-lite-test.log"
-    if (fs.existsSync(gateLiteTestLogPath)) {
-      const logContent = fs.readFileSync(gateLiteTestLogPath, "utf8")
-      if (/FAILED/i.test(logContent)) {
-        gateLiteTestFailed = true
-      }
-    }
-  } catch {}
+  // gateLiteTestFailed is derived from this project's structured
+  // .gate-lite-status above. Never scrape a cross-project /tmp log.
 
   // ── ciNeverRunOnHead: .ci-status missing for current HEAD ─────────────────
   let ciNeverRunOnHead = false

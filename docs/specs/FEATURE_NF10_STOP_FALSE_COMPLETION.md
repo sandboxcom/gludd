@@ -121,3 +121,62 @@ make test TESTFILE=tests/unit/test_stop_pattern_qa.py → structural pin (PASS)
 `enforce_stop_impl.ts:198` (COMPLETION_SMELL_RE),
 `enforce_stop_impl.ts:149-173` (STATUS_SUMMARY_RE),
 `enforce_stop_impl.ts:1081-1086` (disengage narrowed).
+
+## 9. Cross-project state isolation (2026-08-13)
+
+A full-gate replay exposed a second failure mode: a failed
+`/tmp/gludd-gate-lite-test.log` from one checkout made a clean checkout's
+`hasRealPendingWork()` latch true. The same risk existed for the global push
+state. This was both a correctness defect and a resource-namespace violation.
+
+The repaired contract is:
+
+- Gate-lite truth comes only from the current project root's structured
+  `.gate-lite-status`; diagnostic log text is never an authority signal.
+- `gateLiteTestFailed` is derived from that structured status's `test FAIL`
+  phase, preserving fail-closed behavior for the current checkout.
+- Push state is read through `GLUDD_PUSH_STATE_FILE`, with the historical
+  `/tmp/gludd-push-state.json` retained only as the default.
+- Hook runtime fixtures redirect push state into each test's `tmp_path`.
+- Foreign project failures cannot clear or weaken a local failure: current-root
+  gate status and the selected push-state file still block immediately.
+
+This is a zero-downtime change. It changes only state selection at hook
+invocation, starts no process, opens no listener, and requires no data
+migration. Rollback is the prior plugin commit; promotion requires the
+cross-project runtime regressions plus the complete hook-runtime suite.
+
+### Practitioner evidence
+
+The failure class has long-lived precedent in pytest's own user reports:
+
+- [pytest #5524](https://github.com/pytest-dev/pytest/issues/5524) reported
+  concurrent runs racing while creating a shared base temporary directory in
+  2019. The durable lesson is to give each run a distinct state root.
+- [pytest-xdist #280](https://github.com/pytest-dev/pytest-xdist/issues/280)
+  reported workers colliding when a shared resource assignment lacked worker
+  identity in 2018; xdist's worker identifier was the practical isolation
+  boundary.
+- [pytest #11789](https://github.com/pytest-dev/pytest/issues/11789) documented
+  that retained temporary directories surprised practitioners and linked the
+  concurrent-same-test limitation in #11790. Diagnostic files must therefore
+  not be treated as fresh authoritative state merely because they still exist.
+
+### Regression evidence
+
+Failing first:
+
+```text
+test_foreign_gate_lite_log_does_not_latch_clean_project FAILED
+test_push_state_override_isolates_foreign_project_block FAILED
+```
+
+After the repair:
+
+```text
+2 focused cross-project regressions passed
+76 affected enforcement runtime tests passed
+```
+
+Because `.opencode/plugin/impl/enforce_stop_impl.ts` changed, OpenCode must be
+restarted before a live session uses the repaired hook implementation.

@@ -38,6 +38,8 @@ ROOT = Path(__file__).parent.parent.parent
 PERSIST_BLOCK_ENV = "GLUDD_PERSIST_STOP_BLOCK_FILE"
 
 CI_CACHE_PATH = Path("/tmp/gludd-watchdog-ci.json")
+GATE_LITE_TEST_LOG_PATH = Path("/tmp/gludd-gate-lite-test.log")
+PUSH_STATE_PATH = Path("/tmp/gludd-push-state.json")
 
 pytestmark = pytest.mark.xdist_group("enforcement-shared-state")
 
@@ -208,6 +210,88 @@ def test_binary_latch_all_clear_allows(hook_plugin_env: HookEnv):
     assert pb is None or pb.get("blocked") is not True, (
         f"All-clear: text with no pending work MUST NOT be blocked. persist_block={pb}"
     )
+
+
+def test_foreign_gate_lite_log_does_not_latch_clean_project(
+    hook_plugin_env: HookEnv,
+) -> None:
+    """A failed gate-lite log from another checkout cannot block this project."""
+    old_log = read_optional_bytes(GATE_LITE_TEST_LOG_PATH)
+    old_push = read_optional_bytes(PUSH_STATE_PATH)
+    try:
+        GATE_LITE_TEST_LOG_PATH.write_text("FAILED foreign checkout\n")
+        PUSH_STATE_PATH.unlink(missing_ok=True)
+        _clean_leaked_state_files()
+        _seed_ci_cache("SUCCESS")
+        (hook_plugin_env.cwd / ".gate-lite-status").write_text("test PASS 0\n")
+
+        _parsed, _raw, stderr, rc = _invoke_text_complete(
+            hook_plugin_env,
+            "commit abc1234f — 42 tests passed. CI GREEN. Collection OK.",
+            env_overrides={
+                "GLUDD_PUSH_STATE_FILE": str(
+                    hook_plugin_env.cwd / "push-state.json"
+                )
+            },
+        )
+        assert rc == 0, stderr
+        pb = _read_persist_block(hook_plugin_env)
+        assert pb is None or pb.get("blocked") is not True, (
+            f"Foreign gate-lite logs must be ignored. persist_block={pb}"
+        )
+    finally:
+        if old_log is None:
+            GATE_LITE_TEST_LOG_PATH.unlink(missing_ok=True)
+        else:
+            GATE_LITE_TEST_LOG_PATH.write_bytes(old_log)
+        if old_push is None:
+            PUSH_STATE_PATH.unlink(missing_ok=True)
+        else:
+            PUSH_STATE_PATH.write_bytes(old_push)
+
+
+def test_push_state_override_isolates_foreign_project_block(
+    hook_plugin_env: HookEnv,
+) -> None:
+    """GLUDD_PUSH_STATE_FILE isolates another checkout's blocked push."""
+    old_log = read_optional_bytes(GATE_LITE_TEST_LOG_PATH)
+    old_push = read_optional_bytes(PUSH_STATE_PATH)
+    try:
+        GATE_LITE_TEST_LOG_PATH.unlink(missing_ok=True)
+        PUSH_STATE_PATH.write_text(
+            json.dumps(
+                {
+                    "last_push_blocked": True,
+                    "block_reason": "dirty-tree",
+                }
+            )
+        )
+        _clean_leaked_state_files()
+        _seed_ci_cache("SUCCESS")
+
+        _parsed, _raw, stderr, rc = _invoke_text_complete(
+            hook_plugin_env,
+            "commit abc1234f — 42 tests passed. CI GREEN. Collection OK.",
+            env_overrides={
+                "GLUDD_PUSH_STATE_FILE": str(
+                    hook_plugin_env.cwd / "push-state.json"
+                )
+            },
+        )
+        assert rc == 0, stderr
+        pb = _read_persist_block(hook_plugin_env)
+        assert pb is None or pb.get("blocked") is not True, (
+            f"Foreign push state must be isolated. persist_block={pb}"
+        )
+    finally:
+        if old_log is None:
+            GATE_LITE_TEST_LOG_PATH.unlink(missing_ok=True)
+        else:
+            GATE_LITE_TEST_LOG_PATH.write_bytes(old_log)
+        if old_push is None:
+            PUSH_STATE_PATH.unlink(missing_ok=True)
+        else:
+            PUSH_STATE_PATH.write_bytes(old_push)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
