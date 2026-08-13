@@ -15,9 +15,13 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 from xml.etree import ElementTree
 
-from ci_named_shard_files import expand_shard
+if TYPE_CHECKING:
+    from scripts.ci_named_shard_files import expand_shard
+else:
+    from ci_named_shard_files import expand_shard
 
 SHARD_STATE_ENV_VARS = (
     "GLUDD_STOP_STATE_FILE",
@@ -58,7 +62,7 @@ SHARD_STATE_ENV_VARS = (
 @dataclass
 class RunningShard:
     name: str
-    process: subprocess.Popen[object]
+    process: subprocess.Popen[bytes]
     basetemp: Path
     command: list[str]
     junit_report: Path
@@ -82,6 +86,11 @@ def _has_xdist_worker_arg(args: list[str]) -> bool:
     return False
 
 
+def _pytest_basetemp(workspace: Path) -> Path:
+    """Return pytest-owned scratch nested beneath the stable shard workspace."""
+    return workspace / "pytest"
+
+
 def _command_for_shard(shard: str, pytest_args: list[str], workers_per_shard: int) -> tuple[list[str], Path]:
     files = expand_shard(shard)
     if not files:
@@ -91,6 +100,7 @@ def _command_for_shard(shard: str, pytest_args: list[str], workers_per_shard: in
     worker_args: list[str] = []
     if workers_per_shard > 0 and not _has_xdist_worker_arg(pytest_args):
         worker_args = ["-n", str(workers_per_shard), "--dist", "loadgroup"]
+    pytest_basetemp = _pytest_basetemp(basetemp)
     command = [
         sys.executable,
         "-m",
@@ -99,7 +109,7 @@ def _command_for_shard(shard: str, pytest_args: list[str], workers_per_shard: in
         *worker_args,
         "-v",
         *pytest_args,
-        f"--basetemp={basetemp}",
+        f"--basetemp={pytest_basetemp}",
         f"--junitxml={basetemp / 'junit.xml'}",
     ]
     return command, basetemp
