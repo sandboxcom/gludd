@@ -2,15 +2,18 @@
 # Pre-commit hook: runs `make lint` to catch lint errors at commit time
 # rather than at push/CI time.
 #
-# Install:
-#   ln -sf ../../scripts/hooks/pre-commit-lint .git/hooks/pre-commit
-#   chmod +x scripts/hooks/pre-commit-lint
-#
-# Or use `make install-hooks` which wires all pre-commit hooks.
+# Install with `make install-hooks`.  The installer keeps pre-commit's generated
+# hook beside this wrapper as `pre-commit.framework`; this script delegates to
+# it after the project lint gate passes.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MAKEFILE="$SCRIPT_DIR/../../Makefile"
+if REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -f "$REPO_ROOT/Makefile" ]; then
+    MAKEFILE="$REPO_ROOT/Makefile"
+else
+    REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+    MAKEFILE="$REPO_ROOT/Makefile"
+fi
 
 if [ ! -f "$MAKEFILE" ]; then
     echo "pre-commit-lint: ERROR — Makefile not found at $MAKEFILE" >&2
@@ -19,7 +22,7 @@ if [ ! -f "$MAKEFILE" ]; then
 fi
 
 echo "pre-commit-lint: running 'make lint'..."
-if ! make lint; then
+if ! make -C "$REPO_ROOT" lint; then
     echo "" >&2
     echo "pre-commit-lint: FAILED — lint errors detected." >&2
     echo "pre-commit-lint: fix the errors above, then re-run your commit." >&2
@@ -28,4 +31,10 @@ if ! make lint; then
 fi
 
 echo "pre-commit-lint: OK — lint passed."
+FRAMEWORK_HOOK="${BASH_SOURCE[0]}.framework"
+if [ -x "$FRAMEWORK_HOOK" ]; then
+    echo "pre-commit-lint: delegating to the pre-commit framework..."
+    exec "$FRAMEWORK_HOOK" "$@"
+fi
+
 exit 0

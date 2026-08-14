@@ -30,6 +30,13 @@ MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
 DOCSTRING_FILES ?=
 GATE_REFRESH_VALIDATE_ONLY ?= 0
+GATE_RUN_LOCK ?= .gate-logs/gate-run.lock
+INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY ?= 0
+COVERAGE_TESTFILES ?=
+COVERAGE_CONFIG ?= config/coverage_gate_runtime.ini
+COVERAGE_REPORT ?= .gate-logs/coverage-files.json
+COVERAGE_AGGREGATE_MIN ?= 85
+COVERAGE_PER_FILE_MIN ?= 75
 DISK_MIN_FREE_GIB ?= 8
 # Preserve a capable caller terminal; supply a stable terminfo fallback only
 # when workers or CI provide an empty, unknown, or dumb TERM value.
@@ -120,7 +127,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         container-build container-run container-push \
          file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist-clean bundle-binaries bundle-ripgrep \
         sast sast-summary sbom pip-audit security security-backlog-gate \
-        audit-messages qa validate collect-check gate gate-refresh gate-lite smoke install-hooks feature-spec-inventory \
+        audit-messages qa validate collect-check coverage-files gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory \
         status-snapshot audit-evidence deps-audit dogfood-features ruff-audit check-make-help \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
@@ -181,6 +188,7 @@ help:
 	@echo "  node-deps-audit       Audit locked Node deps (plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)"
 	@echo "  bootstrap             init + lint + test + healthcheck"
 	@echo "  install-hooks         Install pre-commit hooks (secrets, lint, collect)"
+	@echo "  install-workflow-hook Validate/install the tracked GitHub workflow YAML hook (INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY)"
 	@echo "  install-bats          Install bats-core via Homebrew"
 	@echo ""
 	@echo "  --- Quality ---"
@@ -209,6 +217,7 @@ help:
 	@echo "  gate-refresh          Refresh fast phases; stream fallback test node IDs (GATE_REFRESH_VALIDATE_ONLY=0|1)"
 	@echo "  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM"
 	@echo "  gate-audit            Gate + coverage audit (85% per-file threshold)"
+	@echo "  coverage-files        Targeted branch coverage (COVERAGE_TESTFILES, COVERAGE_CONFIG, COVERAGE_REPORT, COVERAGE_AGGREGATE_MIN, COVERAGE_PER_FILE_MIN)"
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)"
@@ -799,6 +808,36 @@ test-files:
 	@if [ -z "$(TESTFILES)" ]; then echo "Usage: make test-files TESTFILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi
 	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
+coverage-files:
+	@if [ -z "$(COVERAGE_TESTFILES)" ]; then echo "Usage: make coverage-files COVERAGE_TESTFILES='tests/unit/test_a.py' COVERAGE_CONFIG=config/coverage.ini COVERAGE_REPORT=.gate-logs/coverage-files.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75"; exit 2; fi
+	@test -f "$(COVERAGE_CONFIG)" || { echo "coverage-files: missing config $(COVERAGE_CONFIG)"; exit 2; }
+	@mkdir -p "$$(dirname "$(COVERAGE_REPORT)")"
+	@BT="/tmp/gludd-coverage-files-$${ID:-$$$$}"; \
+		COVERAGE_RC="$$(cd "$$(dirname "$(COVERAGE_CONFIG)")" && pwd)/$$(basename "$(COVERAGE_CONFIG)")"; \
+		DATA_FILE="$(CURDIR)/.gate-logs/coverage-files-data"; \
+		rm -rf "$$BT"; \
+		echo "=== COVERAGE FILES: execute aggregate>=$(COVERAGE_AGGREGATE_MIN)% per-file>=$(COVERAGE_PER_FILE_MIN)% ==="; \
+		COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage erase --rcfile="$$COVERAGE_RC"; \
+		COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage run --rcfile="$$COVERAGE_RC" \
+			-m pytest $(COVERAGE_TESTFILES) -v --basetemp="$$BT"; \
+		RC=$$?; \
+		if [ "$$RC" -eq 0 ]; then \
+			COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage combine --rcfile="$$COVERAGE_RC"; \
+			COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage report --rcfile="$$COVERAGE_RC" --fail-under="$(COVERAGE_AGGREGATE_MIN)"; \
+			RC=$$?; \
+		fi; \
+		if [ "$$RC" -eq 0 ]; then \
+			COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage json --rcfile="$$COVERAGE_RC" -o "$(COVERAGE_REPORT)"; \
+			RC=$$?; \
+		fi; \
+		if [ "$$RC" -eq 0 ]; then \
+			echo "=== COVERAGE FILES: verify every measured file >=$(COVERAGE_PER_FILE_MIN)% ==="; \
+			$(UV) run python scripts/audit_coverage.py --json-file="$(COVERAGE_REPORT)" --threshold="$(COVERAGE_PER_FILE_MIN)" --source=.; \
+			RC=$$?; \
+		fi; \
+		rm -rf "$$BT"; \
+		exit "$$RC"
+
 _ci-replica-clean-tree:
 	@if python3 scripts/worktree_state_guard.py --assert-clean --claim-token >/tmp/gludd-ci-replica-clean-tree.txt 2>&1; then \
 		cat /tmp/gludd-ci-replica-clean-tree.txt; \
@@ -1379,7 +1418,12 @@ gate-fast: lint typecheck collect-check
 _check-windows-tracked-paths:
 	@BT="/tmp/gludd-windows-paths-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest tests/unit/test_cross_platform_binary.py::test_tracked_paths_are_windows_checkout_compatible -q -n 0 --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
-gate: _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
+_gate-run-lock-acquire:
+	@$(UV) run python scripts/gate_run_lock.py acquire "$(GATE_RUN_LOCK)" "$$PPID"
+
+.NOTPARALLEL: gate gate-refresh
+
+gate: _gate-run-lock-acquire _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -1402,6 +1446,8 @@ gate: _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-in
 	@printf "hook-runtime " >> .gate-status
 	@mkdir -p .gate-logs
 	@$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log)
+	@echo "=== GATE PHASE: opencode-e2e ==="
+	@printf "opencode-e2e " >> .gate-status
 	@$(MAKE) --no-print-directory test-opencode-e2e > .gate-logs/opencode-e2e.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/opencode-e2e.log)
 	@echo "=== GATE PHASE: verify-enforcement ==="
 	@printf "verify-enforcement " >> .gate-status
@@ -1428,15 +1474,18 @@ gate: _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-in
 	@#       on any exit, preventing orphan-holds-lock / tmp-leak after a kill.
 	@# run_gate.sh writes "PASS 0" or "FAIL non-zero-exit" to .gate-status itself
 	@# and touches .gate-failed on failure, so we only need to propagate its exit.
-	@bash scripts/run_gate.sh; EXIT=$$?; \
-	if [ "$$EXIT" -ne 0 ] && [ ! -f .gate-failed ]; then touch .gate-failed; fi; \
-	exit $$EXIT
+	@bash scripts/run_gate.sh || { EXIT=$$?; \
+		grep -q '^test .*FAIL' .gate-status 2>/dev/null || echo "FAIL non-zero-exit $$EXIT" >> .gate-status; \
+		touch .gate-failed; \
+		echo "[gate] test phase exited $$EXIT; completing failure attestation"; \
+	}
 	@echo "=== GATE PHASE: smoke ==="
 	@printf "smoke " >> .gate-status
 	@$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-smoke.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && echo "[gate] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-smoke.log)
 	@echo "---" >> .gate-status
 	@echo "epoch $$(date +%s)" >> .gate-status
 	@cat .gate-status
+	@$(UV) run python scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID" || touch .gate-failed
 	@if [ -f .gate-failed ]; then \
 		rm -f .gate-failed; \
 		echo "=== GATE: FAILED ==="; \
@@ -3116,10 +3165,26 @@ test-opa-policies:
 smoke:
 	@$(UV) run python scripts/smoke_daemon.py
 
-install-hooks:
+install-workflow-hook:
+	@scripts/hooks/pre-commit-workflow-yaml
+	@if [ "$(INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY)" = "1" ]; then \
+		echo "install-workflow-hook: validate-only PASS"; \
+	else \
+		HOOK_DIR="$$(git rev-parse --git-common-dir)/hooks"; \
+		mkdir -p "$$HOOK_DIR"; \
+		install -m 0755 scripts/hooks/pre-commit-workflow-yaml "$$HOOK_DIR/pre-commit-workflow-yaml"; \
+		echo "installed $$HOOK_DIR/pre-commit-workflow-yaml"; \
+	fi
+
+install-hooks: install-workflow-hook
 	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit install --install-hooks
 	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit install --hook-type pre-push
-	@echo "pre-commit hooks installed: secrets-scan, ruff, collect-check (pre-commit), gate (pre-push)"
+	@HOOK_PATH=".git/hooks/pre-commit"; \
+		if [ ! -d .git ]; then HOOK_PATH="$$(git rev-parse --git-path hooks/pre-commit)"; fi; \
+		install -m 0755 "$$HOOK_PATH" "$${HOOK_PATH}.framework"; \
+		install -m 0755 scripts/hooks/pre-commit-lint "$$HOOK_PATH"; \
+		echo "installed scripts/hooks/pre-commit-lint at $$HOOK_PATH (framework hook: $${HOOK_PATH}.framework)"
+	@echo "pre-commit hooks installed: lint wrapper, secrets-scan, ruff, collect-check (pre-commit), gate (pre-push)"
 
 scan-conflicts:
 	@$(PYTHON) scripts/scan_conflicts.py
@@ -4570,13 +4635,16 @@ dist-path-check:
 # the preserved test result is unavailable, verbose pytest node IDs stream live
 # and are also retained in .gate-logs/gate-refresh-test.log.
 .PHONY: gate-refresh _gate-refresh-body
-gate-refresh:
-	@if [ "$(GATE_REFRESH_VALIDATE_ONLY)" = "1" ]; then \
-		$(UV) run python scripts/stream_command.py --help > /dev/null; \
+gate-refresh: _gate-run-lock-acquire
+	@RC=0; \
+	if [ "$(GATE_REFRESH_VALIDATE_ONLY)" = "1" ]; then \
+		$(UV) run python scripts/stream_command.py --help > /dev/null || RC=$$?; \
 		echo "gate-refresh: validate-only PASS (live verbose node IDs + durable log configured)"; \
 	else \
-		$(UV) run python scripts/collection_lock.py --resource gate-refresh --run $(MAKE) --no-print-directory _gate-refresh-body; \
-	fi
+		$(UV) run python scripts/collection_lock.py --resource gate-refresh --run $(MAKE) --no-print-directory _gate-refresh-body || RC=$$?; \
+	fi; \
+	$(UV) run python scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID" || RC=1; \
+	exit $$RC
 
 _gate-refresh-body:
 	@if [ ! -f .gate-status ]; then \
@@ -8263,6 +8331,7 @@ pipeline-health: pipeline-status
 	@true
 
 check-gate-fresh:
+	@$(UV) run python scripts/gate_fresh_check.py check .gate-status
 	@$(UV) run python scripts/gate_status_attestation.py verify .gate-status
 
 check-version-consistency:

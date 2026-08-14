@@ -42,6 +42,14 @@ repos:
         language: system
         pass_filenames: true
 
+      - id: workflow-yaml
+        name: validate GitHub Actions workflow YAML and release graph
+        entry: scripts/hooks/pre-commit-workflow-yaml
+        language: system
+        files: ^\.github/workflows/build\.yml$
+        pass_filenames: false
+        require_serial: true
+
       - id: ruff-lint
         name: ruff lint
         entry: uv run ruff check src tests

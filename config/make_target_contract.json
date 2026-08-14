@@ -493,6 +493,22 @@
         "PODMAN_LEGACY_DELETE_VALIDATE_ONLY"
       ],
       "behavior": "make podman-legacy-default-delete PODMAN_LEGACY_MACHINE=podman-machine-default PODMAN_LEGACY_DELETE_TIMEOUT_SECS=1 PODMAN_LEGACY_DELETE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "install-workflow-hook",
+      "make_variables": ["INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY"],
+      "behavior": "make install-workflow-hook INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "coverage-files",
+      "make_variables": [
+        "COVERAGE_TESTFILES",
+        "COVERAGE_CONFIG",
+        "COVERAGE_REPORT",
+        "COVERAGE_AGGREGATE_MIN",
+        "COVERAGE_PER_FILE_MIN"
+      ],
+      "behavior": "make coverage-files COVERAGE_TESTFILES='scripts/test_hook_runtime.py tests/unit/test_floor_controller.py tests/unit/test_opencode_integrity.py tests/unit/test_w22_opencode_integrity.py' COVERAGE_CONFIG=config/coverage_gate_runtime.ini COVERAGE_REPORT=.gate-logs/coverage-files.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75"
     }
   ]
 }
