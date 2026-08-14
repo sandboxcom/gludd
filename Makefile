@@ -27,6 +27,7 @@ NODE_DEPS_NPM_CACHE ?= /tmp/gludd-npm-cache-public-v1
 NODE_DEPS_NPM_REGISTRY ?= https://registry.npmjs.org
 NODE_DEPS_NPM_UPDATE_NOTIFIER ?= false
 NODE_DEPS_AUDIT_LEVEL ?= moderate
+RECONCILE_QUIET_PROGRESS ?= 0
 MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
 DOCSTRING_FILES ?=
@@ -341,7 +342,7 @@ help:
 	@echo "  git-patch-equivalence PATCH_UPSTREAM=<ref> PATCH_HEAD=<ref> PATCH_LIMIT=<n>  Compare patch identity"
 	@echo "  branches-unmerged-development  List every local branch tip not reachable from development"
 	@echo "  branch-reconciliation-inventory RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_AFTER=<ref|empty>  Page bounded local branch reconciliation state as JSON"
-	@echo "  branch-reconciliation-summary RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_DETAILS=0|1 RECONCILE_CURRENT_ONLY=0|1  Exhaustively classify and deduplicate all bounded pages"
+	@echo "  branch-reconciliation-summary RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_DETAILS=0|1 RECONCILE_CURRENT_ONLY=0|1 RECONCILE_QUIET_PROGRESS=0|1  Exhaustively classify and deduplicate all bounded pages"
 	@echo "  git-add FILES='...'   Stage specific files"
 	@echo "  git-add-all           Stage all changes"
 	@echo "  git-commit MSG='...'  Commit staged changes"
@@ -4142,11 +4143,12 @@ branch-reconciliation-inventory:
 	@$(UV) run python scripts/branch_reconciliation_inventory.py --target "$(RECONCILE_TARGET)" --limit "$(RECONCILE_LIMIT)" --after "$(RECONCILE_AFTER)"
 
 branch-reconciliation-summary:
-	@[ -n "$(RECONCILE_TARGET)" ] && [ -n "$(RECONCILE_LIMIT)" ] && [ "$(origin RECONCILE_DETAILS)" != "undefined" ] && [ "$(origin RECONCILE_CURRENT_ONLY)" != "undefined" ] || { echo "Usage: make branch-reconciliation-summary RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_DETAILS=0 RECONCILE_CURRENT_ONLY=0"; exit 2; }
+	@[ -n "$(RECONCILE_TARGET)" ] && [ -n "$(RECONCILE_LIMIT)" ] && [ "$(origin RECONCILE_DETAILS)" != "undefined" ] && [ "$(origin RECONCILE_CURRENT_ONLY)" != "undefined" ] || { echo "Usage: make branch-reconciliation-summary RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_DETAILS=0 RECONCILE_CURRENT_ONLY=0 RECONCILE_QUIET_PROGRESS=0"; exit 2; }
 	@[ "$(RECONCILE_DETAILS)" = "0" ] || [ "$(RECONCILE_DETAILS)" = "1" ] || { echo "RECONCILE_DETAILS must be 0 or 1"; exit 2; }
 	@[ "$(RECONCILE_CURRENT_ONLY)" = "0" ] || [ "$(RECONCILE_CURRENT_ONLY)" = "1" ] || { echo "RECONCILE_CURRENT_ONLY must be 0 or 1"; exit 2; }
+	@[ "$(RECONCILE_QUIET_PROGRESS)" = "0" ] || [ "$(RECONCILE_QUIET_PROGRESS)" = "1" ] || { echo "RECONCILE_QUIET_PROGRESS must be 0 or 1"; exit 2; }
 	@[ "$(RECONCILE_CURRENT_ONLY)" = "0" ] || [ "$(RECONCILE_DETAILS)" = "1" ] || { echo "RECONCILE_CURRENT_ONLY=1 requires RECONCILE_DETAILS=1"; exit 2; }
-	@$(UV) run python scripts/branch_reconciliation_inventory.py --target "$(RECONCILE_TARGET)" --limit "$(RECONCILE_LIMIT)" --after "" --all-pages $(if $(filter 1,$(RECONCILE_DETAILS)),,--counts-only) $(if $(filter 1,$(RECONCILE_CURRENT_ONLY)),--current-only,)
+	@$(UV) run python scripts/branch_reconciliation_inventory.py --target "$(RECONCILE_TARGET)" --limit "$(RECONCILE_LIMIT)" --after "" --all-pages $(if $(filter 1,$(RECONCILE_DETAILS)),,--counts-only) $(if $(filter 1,$(RECONCILE_CURRENT_ONLY)),--current-only,) $(if $(filter 1,$(RECONCILE_QUIET_PROGRESS)),--quiet-progress,)
 
 # Anti-overstatement tool: the MEASURED pass-rate of recent CI runs, so
 # "reliable"/"green" must be quoted as this ratio, never asserted as an adjective.

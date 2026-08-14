@@ -697,12 +697,20 @@ def main(
         action="store_true",
         help="emit only unique current groups from an all-pages summary",
     )
+    parser.add_argument(
+        "--quiet-progress",
+        action="store_true",
+        help="suppress progress narration on stderr while retaining errors",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
     try:
         limit = int(args.limit)
-        _progress(
-            f"target={args.target} limit={limit} after={args.after or '<start>'}"
-        )
+        progress: ProgressFn | None = None if args.quiet_progress else _progress
+        if progress is not None:
+            progress(
+                f"target={args.target} limit={limit} "
+                f"after={args.after or '<start>'}"
+            )
         payload: (
             InventoryPayload
             | SummaryPayload
@@ -718,7 +726,7 @@ def main(
                 args.target,
                 limit,
                 run=run,
-                progress=_progress,
+                progress=progress,
             )
             if args.current_only:
                 current_groups = [
@@ -768,7 +776,7 @@ def main(
                 limit,
                 after=args.after,
                 run=run,
-                progress=_progress,
+                progress=progress,
             )
     except (InventoryError, ValueError) as exc:
         json.dump(

@@ -462,8 +462,8 @@
     },
     {
       "name": "branch-reconciliation-summary",
-      "make_variables": ["RECONCILE_TARGET", "RECONCILE_LIMIT", "RECONCILE_DETAILS", "RECONCILE_CURRENT_ONLY"],
-      "behavior": "make branch-reconciliation-summary RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_DETAILS=0 RECONCILE_CURRENT_ONLY=0"
+      "make_variables": ["RECONCILE_TARGET", "RECONCILE_LIMIT", "RECONCILE_DETAILS", "RECONCILE_CURRENT_ONLY", "RECONCILE_QUIET_PROGRESS"],
+      "behavior": "make branch-reconciliation-summary RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_DETAILS=0 RECONCILE_CURRENT_ONLY=0 RECONCILE_QUIET_PROGRESS=0"
     },
     {
       "name": "development-merge-forward",

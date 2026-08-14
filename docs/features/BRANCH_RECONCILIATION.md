@@ -63,18 +63,36 @@ the host's mature Git feature set while keeping traversal bounded.
 ## Exhaustive deduplicated summary
 
 `make branch-reconciliation-summary RECONCILE_TARGET=development
-RECONCILE_LIMIT=100 RECONCILE_DETAILS=0` starts at the empty cursor and consumes
-each bounded page until the terminal page. It preserves every observed branch name
-and canonical ref internally while grouping shared tips by classification and
-commit ID. The default bounded payload omits expanded groups and reports page count,
+RECONCILE_LIMIT=100 RECONCILE_DETAILS=0 RECONCILE_CURRENT_ONLY=0
+RECONCILE_QUIET_PROGRESS=0` starts at the empty cursor and consumes each bounded
+page until the terminal page. It preserves every observed branch name and
+canonical ref internally while grouping shared tips by classification and commit
+ID. The default bounded payload omits expanded groups and reports page count,
 total branches, deduplicated heads, `terminal: true`, and `truncated: false`.
-Setting `RECONCILE_DETAILS=1` exposes the grouped refs when a focused reconciliation
-needs them. Adding `RECONCILE_CURRENT_ONLY=1` then limits those groups to unique
-current heads and reports explicit selected-head and selected-branch totals while
-retaining the complete scan counts. The Make contract rejects current-only count
-mode, so a release review cannot silently request detail and discard it. All modes
-remain tracked Make workflows, so release work never depends on an external helper
-script.
+Setting `RECONCILE_DETAILS=1` exposes the grouped refs when a focused
+reconciliation needs them. Adding `RECONCILE_CURRENT_ONLY=1` then limits those
+groups to unique current heads and reports explicit selected-head and
+selected-branch totals while retaining the complete scan counts. The Make
+contract rejects current-only count mode, so a release review cannot silently
+request detail and discard it. All modes remain tracked Make workflows, so
+release work never depends on an external helper script.
+
+Progress remains observable by default. The CLI writes a bounded start, page,
+and per-ref marker to standard error while keeping the terminal JSON document on
+standard output. A machine consumer that captures both streams can explicitly
+set `RECONCILE_QUIET_PROGRESS=1`; the Make target passes the tracked
+`--quiet-progress` CLI flag and suppresses only those progress markers. For
+example, the following invocation emits one current-only JSON document with an
+empty successful stderr stream:
+
+```console
+make branch-reconciliation-summary RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_DETAILS=1 RECONCILE_CURRENT_ONLY=1 RECONCILE_QUIET_PROGRESS=1
+```
+
+Quiet mode does not redirect stderr, catch exceptions, or rewrite exit codes.
+Argument, bound, cursor, Git, and classification failures retain their structured
+nonzero result. Operators should therefore keep the default for interactive
+reconciliation and opt into quiet mode only at a JSON consumption boundary.
 
 The exhaustive path retains the 10,000-ref ceiling, rejects duplicate refs or a
 non-advancing cursor, and revalidates the target identity on every page. A target
@@ -123,6 +141,17 @@ scriptable branch reporting. Those long-lived reports motivate separating
 topological ancestry from patch equivalence instead of treating every
 non-ancestor branch as unique work.
 
+The still-open GitHub CLI practitioner request
+[#8536](https://github.com/cli/cli/issues/8536), opened in January 2024, records
+that a long-running exhaustive operation without meaningful progress is hard to
+distinguish from a stall. That durable report supports retaining progress as the
+human-facing default. For the explicit machine-facing exception, the mature
+[git-sizer CLI](https://github.com/github/git-sizer) provides the directly
+analogous design: JSON results on stdout, progress on stderr, and a
+`--no-progress` override. Gludd keeps the same separation while naming its flag
+`--quiet-progress` so the suppressed class is unambiguous and real errors remain
+outside the suppression boundary.
+
 ## Security, resources, ZDD, and rollback
 
 The classifier invokes Git with fixed list-form arguments, accepts only a
@@ -133,11 +162,15 @@ commit work. Cursor pages use Git's default refname ordering because
 pattern; parsing stops safely at the next ref namespace. It is strictly
 read-only: there is no checkout, merge, delete, ref update, or push path.
 
-Because it changes neither repository nor runtime state, deployment continuity is
-preserved. Progress messages and structured counts expose bounded work and
-truncation. Rollback is a normal revert of the script, target, contract, tests,
-task entry, and this document; the older textual inventory and one-branch patch
-comparison targets remain independently available throughout.
+Because it changes neither repository nor runtime state, deployment continuity
+is preserved. Default progress messages and structured counts expose bounded
+work and truncation. Quiet mode removes only deterministic narration and does not
+change the Git command set, scan bounds, result schema, or resource namespace.
+It introduces no files, locks, daemons, services, ports, or background workers.
+Rollback is a normal revert of the CLI flag, Make variable, contract, tests, task
+entry, and this document; the default observable behavior and the older textual
+inventory and one-branch patch comparison targets remain independently available
+throughout. No service restart, data migration, cleanup, or downtime is needed.
 
 ## Makefile integrity
 
