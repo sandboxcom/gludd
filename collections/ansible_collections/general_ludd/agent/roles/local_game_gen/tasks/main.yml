@@ -160,23 +160,28 @@
 
 - name: "Stop inference server"
   block:
+    - name: "Enter server cleanup phase"
+      ansible.builtin.debug:
+        msg: "local_game_gen server cleanup phase started"
+  always:
     - name: "Read server PID"
       ansible.builtin.slurp:
         src: "{{ artifact_dir }}/server.pid"
       register: _server_pid
-      failed_when: false
+      ignore_errors: true
+      changed_when: false
 
     - name: "Kill server process"
       when: _server_pid.content is defined
       ansible.builtin.command: "kill -TERM {{ _server_pid.content | b64decode | trim }}"
       failed_when: false
-      changed_when: false
+      changed_when: true
 
     - name: "Remove PID file"
       ansible.builtin.file:
         path: "{{ artifact_dir }}/server.pid"
         state: absent
-  always:
+
     - name: "Report server cleanup"
       ansible.builtin.debug:
         msg: "local_game_gen server cleanup phase completed"
