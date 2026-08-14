@@ -183,7 +183,10 @@ def test_connector_rejects_hostile_base_url(
 
 # ── xfail: lazy or absent SSRF validation ──
 
-@pytest.mark.xfail(reason="SSRF deferred to _build_default_executor (no raise at construction)")
+@pytest.mark.xfail(
+    strict=False,
+    reason="SSRF deferred to _build_default_executor (no raise at construction)",
+)
 @pytest.mark.parametrize("bad_url", ["http://localhost:7070/metrics", "http://10.0.0.1:7070/metrics"])
 def test_cassandra_rejects_hostile_url_construction(bad_url):
     from general_ludd.connectors.cassandra_stats import CassandraStatsSource
@@ -191,7 +194,10 @@ def test_cassandra_rejects_hostile_url_construction(bad_url):
         CassandraStatsSource({"jmx_url": bad_url})
 
 
-@pytest.mark.xfail(reason="SSRF deferred to _build_default_executor (no raise at construction)")
+@pytest.mark.xfail(
+    strict=False,
+    reason="SSRF deferred to _build_default_executor (no raise at construction)",
+)
 @pytest.mark.parametrize("bad_url", ["http://localhost:8123", "http://10.0.0.1:8123"])
 def test_clickhouse_rejects_hostile_url_construction(bad_url):
     from general_ludd.connectors.clickhouse_stats import ClickHouseStatsSource
@@ -199,7 +205,10 @@ def test_clickhouse_rejects_hostile_url_construction(bad_url):
         ClickHouseStatsSource({"url": bad_url})
 
 
-@pytest.mark.xfail(reason="SSRF deferred to _get() / health() — not validated at construction")
+@pytest.mark.xfail(
+    strict=False,
+    reason="SSRF deferred to _get() / health() — not validated at construction",
+)
 @pytest.mark.parametrize("bad_url", ["http://127.0.0.1", "http://169.254.169.254"])
 def test_redfish_rejects_hostile_url_construction(bad_url):
     from general_ludd.connectors.redfish import RedfishSource
@@ -207,7 +216,10 @@ def test_redfish_rejects_hostile_url_construction(bad_url):
         RedfishSource({"base_url": bad_url})
 
 
-@pytest.mark.xfail(reason="SSRF deferred to health() / _query_exporter() — not validated at construction")
+@pytest.mark.xfail(
+    strict=False,
+    reason="SSRF deferred to health() / _query_exporter() — not validated at construction",
+)
 @pytest.mark.parametrize("bad_url", ["http://127.0.0.1", "http://169.254.169.254"])
 def test_snmp_rejects_hostile_url_construction(bad_url):
     from general_ludd.connectors.snmp import SnmpSource
@@ -222,7 +234,10 @@ def test_nomad_rejects_hostile_url_construction(bad_url):
         NomadSource({"base_url": bad_url})
 
 
-@pytest.mark.xfail(reason="No URL validation at all — uri_env read lazily, no SSRF guard")
+@pytest.mark.xfail(
+    strict=False,
+    reason="No URL validation at all — uri_env read lazily, no SSRF guard",
+)
 @pytest.mark.parametrize("bad_url", ["mongodb://127.0.0.1:27017", "mongodb://169.254.169.254:27017"])
 def test_mongodb_rejects_hostile_url_construction(bad_url, monkeypatch):
     monkeypatch.setenv("MONGODB_URI", bad_url)
@@ -231,7 +246,10 @@ def test_mongodb_rejects_hostile_url_construction(bad_url, monkeypatch):
         MongoDbStatsSource({"uri_env": "MONGODB_URI"})
 
 
-@pytest.mark.xfail(reason="No URL validation at all — dsn_env read lazily, no SSRF guard")
+@pytest.mark.xfail(
+    strict=False,
+    reason="No URL validation at all — dsn_env read lazily, no SSRF guard",
+)
 @pytest.mark.parametrize("bad_dsn", ["postgresql://127.0.0.1:5432/db", "postgresql://169.254.169.254:5432/db"])
 def test_postgres_rejects_hostile_url_construction(bad_dsn, monkeypatch):
     monkeypatch.setenv("PG_DSN", bad_dsn)
@@ -240,7 +258,10 @@ def test_postgres_rejects_hostile_url_construction(bad_dsn, monkeypatch):
         PostgresStatsSource({"dsn_env": "PG_DSN"})
 
 
-@pytest.mark.xfail(reason="No URL validation at all — url_env read lazily, no SSRF guard")
+@pytest.mark.xfail(
+    strict=False,
+    reason="No URL validation at all — url_env read lazily, no SSRF guard",
+)
 @pytest.mark.parametrize("bad_url", ["redis://127.0.0.1:6379", "redis://169.254.169.254:6379"])
 def test_redis_rejects_hostile_url_construction(bad_url, monkeypatch):
     monkeypatch.setenv("REDIS_URL", bad_url)
@@ -249,7 +270,13 @@ def test_redis_rejects_hostile_url_construction(bad_url, monkeypatch):
         RedisStatsSource({"url_env": "REDIS_URL"})
 
 
-@pytest.mark.xfail(reason="mqtt uses broker_host (not a URL) and raises RuntimeError, not ValueError")
+@pytest.mark.xfail(
+    strict=False,
+    reason=(
+        "docs/audit/connector_security_audit.md: mqtt uses broker_host "
+        "(not a URL) and raises RuntimeError, not ValueError"
+    ),
+)
 @pytest.mark.parametrize("bad_host", ["127.0.0.1", "169.254.169.254"])
 def test_mqtt_rejects_hostile_host_construction(bad_host):
     from general_ludd.connectors.mqtt import MqttSource
