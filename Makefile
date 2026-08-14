@@ -38,6 +38,7 @@ COVERAGE_REPORT ?= .gate-logs/coverage-files.json
 COVERAGE_AGGREGATE_MIN ?= 85
 COVERAGE_PER_FILE_MIN ?= 75
 CLEAN_VALIDATE_ONLY ?= 0
+CLEAN_WORKTREE_VENVS_VALIDATE_ONLY ?= 0
 DISK_MIN_FREE_GIB ?= 8
 # Preserve a capable caller terminal; supply a stable terminfo fallback only
 # when workers or CI provide an empty, unknown, or dumb TERM value.
@@ -499,6 +500,7 @@ help:
 	@echo "  tmp-gludd-clean-ci-shards  Remove stale generated CI shard scratch dirs"
 	@echo "  tmp-gludd-clean-ci-shards-now  Remove inactive CI/gate shard roots (TMP_GLUDD_CLEAN_VALIDATE_ONLY=0; set 1 for contract test)"
 	@echo "  tmp-gludd-clean-orphan-worktrees-now  Validate or remove proven orphan roots (TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY=1; use 0 only after merge)"
+	@echo "  clean-worktree-venvs  Preserve invoking/active worktrees; reclaim inactive registered venvs (CLEAN_WORKTREE_VENVS_VALIDATE_ONLY=0|1)"
 	@echo "  clean-worktree-caches  Remove generated venv/test/tool caches from worktrees"
 	@echo ""
 	@echo "  --- OpenCode Database Maintenance ---"
@@ -2716,12 +2718,17 @@ tmp-gludd-clean-orphan-worktrees-now:
 		exit 2; \
 	fi
 
-# Remove regenerable .venv dirs from agent worktrees (source is preserved;
-# `uv sync` recreates on demand). The main disk hog when many worktree agents run.
+# Remove only inactive registered peers' regenerable .venv directories. The
+# invoking worktree and any worktree with a visible active process are preserved.
 clean-worktree-venvs:
-	@/usr/bin/find /Users/shawnwilson/gludd/.claude/worktrees -type d -name .venv -prune -exec rm -rf {} + 2>/dev/null || true
-	@/usr/bin/find /tmp/gludd-worktrees -type d -name .venv -prune -exec rm -rf {} + 2>/dev/null || true
-	@echo "clean-worktree-venvs done"
+	@if [ "$(CLEAN_WORKTREE_VENVS_VALIDATE_ONLY)" = "1" ]; then \
+		$(MAKE) --no-print-directory test-files TESTFILES=tests/unit/test_clean_worktree_venvs.py PYTEST_ARGS='-q -n 0'; \
+	elif [ "$(CLEAN_WORKTREE_VENVS_VALIDATE_ONLY)" = "0" ]; then \
+		$(SYSTEM_PYTHON) -m scripts.clean_worktree_venvs; \
+	else \
+		echo "Usage: make clean-worktree-venvs CLEAN_WORKTREE_VENVS_VALIDATE_ONLY=0|1"; \
+		exit 2; \
+	fi
 
 clean-worktree-caches: clean-worktree-venvs
 	@/usr/bin/find /Users/shawnwilson/gludd/.claude/worktrees -type d \( -name .pytest_cache -o -name .mypy_cache -o -name .ruff_cache \) -prune -exec rm -rf {} + 2>/dev/null || true
