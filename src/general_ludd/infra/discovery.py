@@ -7,7 +7,7 @@ import logging
 import os
 import ssl
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 logger = logging.getLogger(__name__)
@@ -22,24 +22,45 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class DiscoveredResource:
+    """Normalized capacity returned by a local or injected provider probe.
+
+    The original probe fields remain backward compatible.  The optional
+    identity, availability, endpoint, region, and labels fields let the
+    budget-aware orchestration layer reason about live resources without
+    forcing provider SDK dependencies into this module.
+    """
+
     provider: str
     kind: str
+    id: str = ""
     cpu: float = 0.0
     mem_gb: float = 0.0
     gpu: str = ""
     gpu_count: int = 0
-    cost_per_hour: float = 0.0
+    cost_per_hour: float | None = 0.0
+    available: bool = True
+    endpoint_url: str | None = None
+    region: str | None = None
+    labels: dict[str, str] = field(default_factory=dict)
 
     def label(self) -> str:
+        """Return a stable human-readable provider/capacity label."""
         return f"{self.provider}:{self.kind}:{self.gpu or 'cpu-only'}"
 
 
 class ResourceProbe(Protocol):
-    def probe(self) -> list[DiscoveredResource]: ...
+    """Synchronous provider probe contract used by discovery orchestration."""
+
+    def probe(self) -> list[DiscoveredResource]:
+        """Return the currently discoverable resources for one provider."""
+        ...
 
 
 class LocalProbe:
+    """Describe the current process host without external dependencies."""
+
     def probe(self) -> list[DiscoveredResource]:
+        """Return one CPU-only resource representing the local host."""
         cpu = float(os.cpu_count() or 1)
         return [
             DiscoveredResource(
@@ -55,10 +76,14 @@ class LocalProbe:
 
 
 class KubernetesProbe:
+    """Translate an injected Kubernetes node transport into candidates."""
+
     def __init__(self, transport: Callable[..., object] | None = None) -> None:
+        """Store an optional transport without importing a Kubernetes SDK."""
         self._transport = transport
 
     def probe(self) -> list[DiscoveredResource]:
+        """Return node capacity, degrading to an empty list on transport error."""
         transport = self._transport
         if transport is None:
             return []
@@ -134,6 +159,7 @@ def discover_all(
     probes: list[ResourceProbe],
     timeout_s: float = 5.0,
 ) -> list[DiscoveredResource]:
+    """Aggregate synchronous probes while isolating individual failures."""
     all_resources: list[DiscoveredResource] = []
     for probe in probes:
         try:
@@ -145,7 +171,6 @@ def discover_all(
 
 def _build_vsphere_ssl_context(verify_ssl: bool) -> ssl.SSLContext | None:
     """Build an explicit vSphere TLS context using maintained public APIs."""
-
     if verify_ssl:
         return None
     logger.warning(
@@ -174,6 +199,7 @@ class VSphereProbe:
         port: int = 443,
         verify_ssl: bool = True,
     ) -> None:
+        """Store connection inputs without opening a network connection."""
         self.host = host
         self.username = username
         self.password = password
