@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import inspect
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -33,8 +34,36 @@ def _normalize_package(package: object) -> str:
     return package.strip().replace("-", "_")
 
 
+PROVIDER_IMPORT_TARGETS: frozenset[tuple[str, str]] = frozenset(
+    {
+        (
+            _normalize_package(preset.get("provider_package")),
+            str(preset.get("provider_class") or _DEFAULT_CLASS_HINT),
+        )
+        for preset in PROVIDER_PRESETS.values()
+    }
+    | {
+        # Documented air-gapped vLLM profile in CONFIGURATION_GUIDE.md.
+        ("langchain_community", "ChatVLLM"),
+    }
+)
+
+
+def validate_provider_import_target(package: str, class_hint: str) -> str:
+    """Return the canonical package for one source-reviewed provider target."""
+    canonical_package = package.strip().replace("-", "_").lower()
+    target = (canonical_package, class_hint)
+    if target not in PROVIDER_IMPORT_TARGETS:
+        raise ValueError(
+            f"{package!r}:{class_hint!r} is not an approved provider import target"
+        )
+    return canonical_package
+
+
 @dataclass
 class ProviderInfo:
+    """Describe one reviewed provider import target and its discovery state."""
+
     name: str
     package_name: str
     class_hint: str
@@ -42,13 +71,18 @@ class ProviderInfo:
 
 
 class ProviderRegistry:
+    """Register and resolve only source-reviewed LangChain provider classes."""
+
     def __init__(self) -> None:
+        """Create an empty provider registry."""
         self._providers: dict[str, ProviderInfo] = {}
 
     def register_provider(self, name: str, package: str, class_hint: str) -> None:
+        """Register an approved package/class pair under an application name."""
+        canonical_package = validate_provider_import_target(package, class_hint)
         self._providers[name] = ProviderInfo(
             name=name,
-            package_name=package,
+            package_name=canonical_package,
             class_hint=class_hint,
         )
 
@@ -101,16 +135,22 @@ class ProviderRegistry:
         return registry
 
     def get_provider_info(self, name: str) -> ProviderInfo | None:
+        """Return metadata for a registered provider name, if present."""
         return self._providers.get(name)
 
     def is_installed(self, provider_name: str) -> bool:
+        """Report whether an approved provider target is import-discoverable."""
         info = self._providers.get(provider_name)
         if info is None:
             return False
-        spec = importlib.util.find_spec(info.package_name)
+        canonical_package = validate_provider_import_target(
+            info.package_name, info.class_hint
+        )
+        spec = importlib.util.find_spec(canonical_package)
         return spec is not None
 
     def install_provider(self, provider_name: str) -> Todo | None:
+        """Create a dependency todo for an approved provider missing at runtime."""
         if self.is_installed(provider_name):
             return None
         info = self._providers.get(provider_name)
@@ -131,14 +171,24 @@ class ProviderRegistry:
         return todo
 
     def get_provider_class(self, provider_name: str) -> type:
+        """Import and return a registered provider class after policy checks."""
         info = self._providers.get(provider_name)
         if info is None:
             raise ValueError(f"Provider '{provider_name}' is not registered")
+        canonical_package = validate_provider_import_target(
+            info.package_name, info.class_hint
+        )
         if not self.is_installed(provider_name):
             raise ImportError(f"Provider package '{info.package_name}' is not installed")
-        module = importlib.import_module(info.package_name)
-        cls: type = getattr(module, info.class_hint)
-        return cls
+        module = importlib.import_module(canonical_package)
+        candidate = getattr(module, info.class_hint)
+        if not inspect.isclass(candidate):
+            raise TypeError(
+                f"Provider target {canonical_package}:{info.class_hint} "
+                "must resolve to a class"
+            )
+        return candidate
 
     def list_providers(self) -> list[str]:
+        """Return registered application provider names in insertion order."""
         return list(self._providers.keys())
