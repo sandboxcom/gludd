@@ -28,7 +28,7 @@ class _Transport:
         return 404, None
 
 
-def _issues_payload() -> list:
+def _issues_payload() -> list[dict[str, object]]:
     return [
         {
             "number": 12,
@@ -127,6 +127,35 @@ def test_write_back_claim_with_label_posts_label() -> None:
     assert method == "POST"
     assert url.endswith("/issues/12/labels")
     assert body == {"labels": ["in-progress"]}
+
+
+@pytest.mark.parametrize(
+    "external_id",
+    [
+        "",
+        "0",
+        "01",
+        "-1",
+        "+12",
+        " 12",
+        "12/labels",
+        "../../admin",
+        "\uff11\uff12",
+        "1" * 21,
+    ],
+)
+@pytest.mark.parametrize("transition", [Transition.DONE, Transition.CLAIM])
+def test_write_back_rejects_noncanonical_issue_numbers_before_transport(
+    external_id: str,
+    transition: Transition,
+) -> None:
+    t = _Transport()
+    src = _make(t, claim_label="in-progress")
+
+    with pytest.raises(ValueError, match="positive ASCII decimal"):
+        src.write_back(external_id, transition)
+
+    assert t.calls == []
 
 
 def test_bad_repo_rejected() -> None:
