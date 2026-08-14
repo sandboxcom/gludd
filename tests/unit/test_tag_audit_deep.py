@@ -12,6 +12,7 @@ Verifies:
 
 from __future__ import annotations
 
+import ast
 import re
 import tomllib
 from pathlib import Path
@@ -147,6 +148,17 @@ def _collect() -> list[tuple[Path, int, str, str]]:
     return results
 
 
+def _decorated_node_docstring(file_path: Path, marker_line: int) -> str:
+    """Return the docstring owned by the node decorated at ``marker_line``."""
+    tree = ast.parse(file_path.read_text(), filename=str(file_path))
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if any(decorator.lineno == marker_line for decorator in node.decorator_list):
+            return ast.get_docstring(node, clean=True) or ""
+    return ""
+
+
 # ── 1. Marker registration ─────────────────────────────────────────────────
 
 
@@ -233,6 +245,9 @@ def test_07_xfail_reason_has_spec_reference():
         r"ratchet",
         r"AIML-AT-\d+",
         r"CHEM-AT-\d+",
+        r"\bS\d+(?:\.\d+)+\b",
+        r"(?:docs/)?[A-Za-z0-9_./-]+\.md(?:\s*[§:#][^,;)]*)?",
+        r"(?:issue\s*)?#\d+",
     ]
     combined = re.compile("|".join(patterns), re.IGNORECASE)
     violations: list[str] = []
@@ -251,19 +266,17 @@ def test_07_xfail_reason_has_spec_reference():
 
 
 def test_08_xfail_strict_is_recommended():
-    """Most xfails should explicitly state strict=True or strict=False."""
+    """Every xfail must explicitly state its strict pass/fail semantics."""
     violations: list[str] = []
     for path, line_no, name, full_text in _collect():
         if name != "xfail":
             continue
-        if "strict" not in full_text:
-            violations.append(f"{path}:{line_no}: xfail should explicitly set strict=True|False")
-    count = len(violations)
-    total = sum(1 for _, _, name, _ in _collect() if name == "xfail")
-    if total == 0:
-        return
-    rate = count / total
-    assert rate < 0.6, f"{count}/{total} xfails lack explicit strict= — too many ({rate:.0%})"
+        strict = _extract_kwargs(full_text).get("strict")
+        if strict not in {"True", "False"}:
+            violations.append(
+                f"{path}:{line_no}: xfail must explicitly set strict=True|False"
+            )
+    assert not violations, "\n".join(violations)
 
 
 # ── 3. skip / skipif audits ─────────────────────────────────────────────────
@@ -335,8 +348,11 @@ def test_13_slow_tests_have_explanation():
             if stripped.startswith("#"):
                 has_comment = True
                 break
-        if not has_comment:
-            violations.append(f"{path}:{line_no}: slow test lacks adjacent comment")
+        has_docstring = bool(_decorated_node_docstring(path, line_no).strip())
+        if not has_comment and not has_docstring:
+            violations.append(
+                f"{path}:{line_no}: slow test lacks an adjacent comment or docstring"
+            )
     assert not violations, "\n".join(violations)
 
 

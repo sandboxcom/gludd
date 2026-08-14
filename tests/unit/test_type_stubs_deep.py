@@ -285,6 +285,24 @@ def test_overloads_are_absent_from_source():
     )
 
 
+def test_project_type_registration_has_one_executable_source_declaration() -> None:
+    """The registry API must expose one real function, not runtime overload stubs."""
+    path = SRC / "cloud" / "project_types.py"
+    tree = _ast_parse_safe(path)
+    declarations = [
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "register_project_type"
+    ]
+
+    assert len(declarations) == 1, (
+        "register_project_type must have one executable source declaration; "
+        f"found {len(declarations)}"
+    )
+    assert not declarations[0].decorator_list
+
+
 def test_no_overload_stubs_needed():
     pyi_files = _collect_pyi_files()
     overloads_in_stubs: list[str] = []
