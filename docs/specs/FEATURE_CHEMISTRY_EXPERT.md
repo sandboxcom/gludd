@@ -1,6 +1,12 @@
 # Feature: Chemistry Expert Collection and Validated Laboratory/Compute Workflows
 
-**Status: PROPOSED** | **Created: 2026-07-29** | **Target: development**
+Status: READY-TO-IMPLEMENT (2026-08-14)
+
+**Feature ID:** CHEM-EXPERT-v1  
+**Target compatibility:** Gludd `0.1.x`; chemistry entity/request/result schema
+`1.x` with additive-only minor revisions  
+**Created:** 2026-07-29  
+**Owners:** chemistry collection, safety, evidence, evaluation, observability
 
 ## 1. Purpose and Safety Boundary
 
@@ -455,7 +461,7 @@ tests/integration/chemistry/
 tests/e2e/test_chemistry_expert.py
 ```
 
-## 15. Acceptance Tests
+## 15. Acceptance Criteria and Tests
 
 | ID | Measurable acceptance criterion |
 |----|---------------------------------|
@@ -487,7 +493,7 @@ tests/e2e/test_chemistry_expert.py
 
 ## 16. Research Integration Gate
 
-Before implementation status changes from `PROPOSED`, a serialized research pass
+Before implementation begins, a serialized research pass
 must add a source appendix containing primary standards, databases, papers,
 official engine/library documentation, validation datasets, and representative
 long-lived user forum/issue reports for Sections 5-10. Each source record must
@@ -496,3 +502,14 @@ license/use terms where applicable, supported claim/feature IDs, corrections or
 retractions checked, and reproduction status. Named tool categories remain
 capability requirements until that cited pass selects maintained implementations.
 
+## 17. Practitioner Evidence
+
+RDKit [issue #2081](https://github.com/rdkit/rdkit/issues/2081), opened in 2018,
+shows a user encountering kekulization failure while fragmenting an aromatic
+radical and a subsequent segmentation fault in an adjacent hydrogen-removal
+path. The maintainer supplied a specific pre-kekulization workaround and linked
+the crash to a follow-up defect. The durable lesson is that chemical transforms
+must retain the submitted representation, expose sanitization/kekulization
+state, and run process-isolated crash and round-trip fixtures before a derived
+structure becomes authoritative. Forum/issue content remains untrusted evidence;
+it seeds regression cases but cannot waive validation, hazard, or approval gates.
