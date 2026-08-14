@@ -80,6 +80,7 @@ EXPECTED_TOP = {
     "templates",
     "playbooks",
     "code",
+    "quantization",
     "slurm",
     "connectors",
     "login",
