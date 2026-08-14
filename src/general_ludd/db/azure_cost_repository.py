@@ -131,6 +131,7 @@ class AzureCostReconciliationRepository:
     """
 
     def __init__(self, session: AsyncSession) -> None:
+        """Bind reconciliation persistence to the caller-owned transaction."""
         self._session = session
 
     async def persist_prediction(
@@ -428,12 +429,18 @@ class AzureCostReconciliationRepository:
         *,
         now: datetime,
     ) -> AzureCostPredictionModel:
+        _require_aware("claim.expires_at", claim.expires_at)
+        if claim.expires_at <= now:
+            raise StaleAzureCostLeaseError(
+                "Azure cost lease is stale, expired, or superseded by a newer fencing token"
+            )
         stmt = select(AzureCostPredictionModel).where(
             AzureCostPredictionModel.prediction_id == claim.prediction_id,
             AzureCostPredictionModel.prediction_version
             == claim.prediction_version,
             AzureCostPredictionModel.lease_owner == claim.owner,
             AzureCostPredictionModel.fencing_token == claim.fencing_token,
+            AzureCostPredictionModel.lease_expires_at == claim.expires_at,
             AzureCostPredictionModel.lease_expires_at > now,
         )
         if self._session.get_bind().dialect.name == "postgresql":

@@ -7,13 +7,15 @@ and the full AzureCostReconciliationRepository surface via sqlite+aiosqlite.
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import cast
 
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from general_ludd.db.azure_cost_repository import (
     AzureCostLeaseClaim,
@@ -46,9 +48,13 @@ def _now() -> datetime:
     return datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
 
 
-def _prediction(**kwargs: object) -> AzureCostPrediction:
-    defaults: dict[str, object] = dict(
-        prediction_id="pred-001",
+def _prediction(
+    *,
+    prediction_id: str = "pred-001",
+    tags: Mapping[str, str] | None = None,
+) -> AzureCostPrediction:
+    return AzureCostPrediction(
+        prediction_id=prediction_id,
         todo_id="todo-001",
         subscription_id="sub-001",
         resource_group="rg-east",
@@ -64,21 +70,18 @@ def _prediction(**kwargs: object) -> AzureCostPrediction:
         usage_started_at=datetime(2026, 8, 1, tzinfo=UTC),
         usage_ended_at=datetime(2026, 8, 7, tzinfo=UTC),
         prediction_version=1,
+        tags=tags or {},
     )
-    merged = {**defaults, **kwargs}
-    return AzureCostPrediction(**merged)
 
 
-def _observation(**kwargs: object) -> AzureActualCostObservation:
-    defaults: dict[str, object] = dict(
+def _observation() -> AzureActualCostObservation:
+    return AzureActualCostObservation(
         source="cost-management",
         snapshot_id="snap-001",
         row_identity="row-001",
         cost_usd=10.0,
         currency="USD",
     )
-    merged = {**defaults, **kwargs}
-    return AzureActualCostObservation(**merged)
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +123,8 @@ class TestJsonCompatible:
         assert result == [1, 2]
 
     def test_dict_sort_keys(self) -> None:
-        result: object = _json_compatible({"z": 3, "a": 1, "m": 2})
+        result = _json_compatible({"z": 3, "a": 1, "m": 2})
+        assert isinstance(result, dict)
         assert list(result) == ["a", "m", "z"]
 
     def test_nested_dict_sort_keys(self) -> None:
@@ -232,9 +236,11 @@ class TestDialectInsert:
         class _FakeBind:
             dialect = type("_Dialect", (), {"name": "mysql"})
 
-        session = object.__new__(AsyncSession)
-        session._session = object()  # type: ignore[attr-defined]
-        session.get_bind = lambda: _FakeBind()  # type: ignore[assignment]
+        class _FakeSession:
+            def get_bind(self) -> _FakeBind:
+                return _FakeBind()
+
+        session = cast("AsyncSession", _FakeSession())
         with pytest.raises(ValueError, match="Azure cost persistence does not support"):
             _dialect_insert(session, AzureCostPredictionModel)
 
@@ -312,7 +318,7 @@ class TestAzureCostLeaseClaim:
 
 
 @pytest_asyncio.fixture
-async def _engine():
+async def _engine() -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine("sqlite+aiosqlite://", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -321,7 +327,7 @@ async def _engine():
 
 
 @pytest_asyncio.fixture
-async def session(_engine):
+async def session(_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
     async with AsyncSession(_engine, expire_on_commit=False) as s:
         yield s
 
@@ -391,8 +397,13 @@ class TestPersistPrediction:
 
 
 class TestClaimDue:
-    async def _seed_prediction(self, repo: AzureCostReconciliationRepository, **kwargs: object) -> None:
-        pred = _prediction(**kwargs)
+    async def _seed_prediction(
+        self,
+        repo: AzureCostReconciliationRepository,
+        *,
+        prediction_id: str = "pred-001",
+    ) -> None:
+        pred = _prediction(prediction_id=prediction_id)
         not_before = pred.usage_ended_at + timedelta(days=30)
         await repo.persist_prediction(pred, not_before=not_before, now=_now())
 
@@ -532,22 +543,156 @@ class TestAdvanceState:
         row = await repo.advance_state(claim, AzureCostLedgerState.USAGE_PENDING, now=now60)
         assert row.state == "USAGE_PENDING"
 
-    async def test_advance_to_stable_via_intermediates(self, repo: AzureCostReconciliationRepository) -> None:
-
+    async def test_advance_to_stable_via_intermediates(
+        self,
+        repo: AzureCostReconciliationRepository,
+    ) -> None:
         claim = await self._seed_and_claim(repo)
-        now60 = _now() + timedelta(days=60)
-        for state_name in ("USAGE_PENDING", "QUERY_DUE", "PARTIAL", "PROVISIONAL", "STABLE"):
+        claimed_at = _now() + timedelta(days=60)
+        states = ("USAGE_PENDING", "QUERY_DUE", "PARTIAL", "PROVISIONAL", "STABLE")
+
+        for offset, state_name in enumerate(states):
             state = AzureCostLedgerState(state_name)
-            row = await repo.advance_state(claim, state, now=now60)
+            row = await repo.advance_state(
+                claim,
+                state,
+                now=claimed_at + timedelta(minutes=offset),
+            )
             assert row.state == state_name
-            claim = AzureCostLeaseClaim(
+
+    async def test_forged_later_expiry_is_rejected_while_database_lease_is_active(
+        self,
+        repo: AzureCostReconciliationRepository,
+    ) -> None:
+        claim = await self._seed_and_claim(repo)
+        forged = AzureCostLeaseClaim(
+            prediction_id=claim.prediction_id,
+            prediction_version=claim.prediction_version,
+            owner=claim.owner,
+            fencing_token=claim.fencing_token,
+            expires_at=claim.expires_at + timedelta(minutes=1),
+        )
+
+        with pytest.raises(StaleAzureCostLeaseError, match="stale"):
+            await repo.advance_state(
+                forged,
+                AzureCostLedgerState.USAGE_PENDING,
+                now=_now() + timedelta(days=60),
+            )
+
+    async def test_forged_earlier_expiry_is_rejected_before_database_expiry(
+        self,
+        repo: AzureCostReconciliationRepository,
+    ) -> None:
+        claim = await self._seed_and_claim(repo)
+        forged = AzureCostLeaseClaim(
+            prediction_id=claim.prediction_id,
+            prediction_version=claim.prediction_version,
+            owner=claim.owner,
+            fencing_token=claim.fencing_token,
+            expires_at=claim.expires_at - timedelta(minutes=10),
+        )
+
+        with pytest.raises(StaleAzureCostLeaseError, match="stale"):
+            await repo.advance_state(
+                forged,
+                AzureCostLedgerState.USAGE_PENDING,
+                now=claim.expires_at - timedelta(minutes=5),
+            )
+
+    async def test_naive_claim_expiry_is_rejected(
+        self,
+        repo: AzureCostReconciliationRepository,
+    ) -> None:
+        claim = await self._seed_and_claim(repo)
+        forged = AzureCostLeaseClaim(
+            prediction_id=claim.prediction_id,
+            prediction_version=claim.prediction_version,
+            owner=claim.owner,
+            fencing_token=claim.fencing_token,
+            expires_at=claim.expires_at.replace(tzinfo=None),
+        )
+
+        with pytest.raises(ValueError, match=r"claim\.expires_at must be timezone-aware"):
+            await repo.advance_state(
+                forged,
+                AzureCostLedgerState.USAGE_PENDING,
+                now=_now() + timedelta(days=60),
+            )
+
+    async def test_exact_lease_expiry_boundary_is_rejected(
+        self,
+        repo: AzureCostReconciliationRepository,
+    ) -> None:
+        claim = await self._seed_and_claim(repo)
+
+        with pytest.raises(StaleAzureCostLeaseError, match="stale"):
+            await repo.advance_state(
+                claim,
+                AzureCostLedgerState.USAGE_PENDING,
+                now=claim.expires_at,
+            )
+
+    async def test_wrong_owner_and_fencing_token_are_rejected(
+        self,
+        repo: AzureCostReconciliationRepository,
+    ) -> None:
+        claim = await self._seed_and_claim(repo)
+        claimed_at = _now() + timedelta(days=60)
+        forged_claims = (
+            AzureCostLeaseClaim(
+                prediction_id=claim.prediction_id,
+                prediction_version=claim.prediction_version,
+                owner="different-worker",
+                fencing_token=claim.fencing_token,
+                expires_at=claim.expires_at,
+            ),
+            AzureCostLeaseClaim(
                 prediction_id=claim.prediction_id,
                 prediction_version=claim.prediction_version,
                 owner=claim.owner,
-                fencing_token=claim.fencing_token,
-                expires_at=claim.expires_at + timedelta(hours=24),
+                fencing_token=claim.fencing_token + 1,
+                expires_at=claim.expires_at,
+            ),
+        )
+
+        for forged in forged_claims:
+            with pytest.raises(StaleAzureCostLeaseError, match="stale"):
+                await repo.advance_state(
+                    forged,
+                    AzureCostLedgerState.USAGE_PENDING,
+                    now=claimed_at,
+                )
+
+    async def test_expired_owner_is_fenced_after_takeover(
+        self,
+        repo: AzureCostReconciliationRepository,
+    ) -> None:
+        first = await self._seed_and_claim(repo)
+        takeover_at = first.expires_at
+        successors = await repo.claim_due(
+            owner="replacement-worker",
+            now=takeover_at,
+            lease_duration=timedelta(minutes=15),
+            limit=1,
+        )
+        assert len(successors) == 1
+        successor = successors[0]
+        assert successor.fencing_token == first.fencing_token + 1
+
+        with pytest.raises(StaleAzureCostLeaseError, match="stale"):
+            await repo.advance_state(
+                first,
+                AzureCostLedgerState.USAGE_PENDING,
+                now=takeover_at,
             )
-            now60 += timedelta(hours=1)
+
+        row = await repo.advance_state(
+            successor,
+            AzureCostLedgerState.USAGE_PENDING,
+            now=takeover_at,
+        )
+        assert row.state == AzureCostLedgerState.USAGE_PENDING.value
 
     async def test_non_monotonic_raises(self, repo: AzureCostReconciliationRepository) -> None:
         claim = await self._seed_and_claim(repo)
@@ -566,28 +711,18 @@ class TestAdvanceState:
         claim = await self._seed_and_claim(repo)
         now60 = _now() + timedelta(days=60)
         await repo.advance_state(claim, AzureCostLedgerState.USAGE_PENDING, now=now60)
-        claim2 = AzureCostLeaseClaim(
-            prediction_id=claim.prediction_id,
-            prediction_version=claim.prediction_version,
-            owner=claim.owner,
-            fencing_token=claim.fencing_token,
-            expires_at=claim.expires_at + timedelta(hours=24),
-        )
         with pytest.raises(NonMonotonicAzureCostStateError, match="FINAL"):
-            await repo.advance_state(claim2, AzureCostLedgerState.ADJUSTED, now=now60)
+            await repo.advance_state(claim, AzureCostLedgerState.ADJUSTED, now=now60)
 
     async def test_idempotent_advance(self, repo: AzureCostReconciliationRepository) -> None:
         claim = await self._seed_and_claim(repo)
         now60 = _now() + timedelta(days=60)
         await repo.advance_state(claim, AzureCostLedgerState.USAGE_PENDING, now=now60)
-        claim2 = AzureCostLeaseClaim(
-            prediction_id=claim.prediction_id,
-            prediction_version=claim.prediction_version,
-            owner=claim.owner,
-            fencing_token=claim.fencing_token,
-            expires_at=claim.expires_at + timedelta(hours=24),
+        row = await repo.advance_state(
+            claim,
+            AzureCostLedgerState.USAGE_PENDING,
+            now=now60,
         )
-        row = await repo.advance_state(claim2, AzureCostLedgerState.USAGE_PENDING, now=now60)
         assert row.state == "USAGE_PENDING"
 
     async def test_final_advance_from_stable(self, repo: AzureCostReconciliationRepository) -> None:
@@ -596,13 +731,6 @@ class TestAdvanceState:
         for state_name in ("USAGE_PENDING", "QUERY_DUE", "PARTIAL", "PROVISIONAL", "STABLE"):
             state = AzureCostLedgerState(state_name)
             await repo.advance_state(claim, state, now=now60)
-            claim = AzureCostLeaseClaim(
-                prediction_id=claim.prediction_id,
-                prediction_version=claim.prediction_version,
-                owner=claim.owner,
-                fencing_token=claim.fencing_token,
-                expires_at=claim.expires_at + timedelta(hours=24),
-            )
         final = await repo.advance_state(claim, AzureCostLedgerState.FINAL, now=now60)
         assert final.state == "FINAL"
         assert final.finalized_at is not None
