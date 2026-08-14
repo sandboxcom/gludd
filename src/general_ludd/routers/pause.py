@@ -27,20 +27,26 @@ from typing import Any, cast
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from general_ludd.controllers.pause_controller import PauseController
+from general_ludd.controllers.pause_controller import PauseController, PauseKind
 
 logger = logging.getLogger(__name__)
 
 
 class PauseEntityRequest(BaseModel):
+    """Request body for pausing a task, agent, or infrastructure entity."""
+
     reason: str = Field("", description="Reason for pausing")
 
 
 class ResumeEntityRequest(BaseModel):
+    """Explicit empty request body for entity resume operations."""
+
     pass
 
 
 class PauseRequest(BaseModel):
+    """Request body for pausing a project or model with optional state."""
+
     target_id: str = Field(..., min_length=1, description="Project or model identifier")
     reason: str = Field("", description="Reason for pausing")
     resources: dict[str, object] | None = Field(
@@ -52,6 +58,8 @@ class PauseRequest(BaseModel):
 
 
 class ResumeRequest(BaseModel):
+    """Request body identifying a project or model to resume."""
+
     target_id: str = Field(..., min_length=1, description="Project or model identifier")
 
 
@@ -68,7 +76,56 @@ def _get_controller(app: FastAPI) -> PauseController | None:
     return getattr(app.state, "_pause_controller", None)
 
 
+async def _quiesce_entity_for_pause(
+    app: FastAPI,
+    controller: PauseController,
+    kind: PauseKind,
+    target_id: str,
+) -> tuple[list[object], str, list[str]]:
+    """Capture one entity's resumable state when both collaborators exist."""
+    dispatcher = getattr(app.state, "_agent_dispatcher", None)
+    hibernation = getattr(app.state, "_hibernation_controller", None)
+    if dispatcher is None or hibernation is None:
+        return [], "none", []
+    result = await controller.quiesce_entity(
+        kind,
+        target_id,
+        dispatcher=dispatcher,
+        hibernation=hibernation,
+    )
+    if isinstance(result, tuple):
+        handles, status, errors = result
+        return list(handles), status, list(errors)
+    return result[:], "clean", []
+
+
+async def _rehydrate_entity_after_resume(
+    app: FastAPI,
+    controller: PauseController,
+    kind: PauseKind,
+    target_id: str,
+    *,
+    has_handles: bool,
+) -> tuple[int, str, list[str]]:
+    """Restore saved entity state through the canonical dispatcher path."""
+    if not has_handles:
+        return 0, "none", []
+    dispatcher = getattr(app.state, "_agent_dispatcher", None)
+    hibernation = getattr(app.state, "_hibernation_controller", None)
+    if dispatcher is None or hibernation is None:
+        return 0, "none", []
+    snapshots, status, errors = await controller.resume_rehydrate(
+        kind,
+        target_id,
+        dispatcher=dispatcher,
+        hibernation=hibernation,
+    )
+    return len(snapshots), status, list(errors)
+
+
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register pause and resume routes on *app*."""
+
     @app.get("/api/pause")
     async def api_pause_list() -> dict[str, object]:
         """List all currently paused entities (projects and models)."""
@@ -104,13 +161,28 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         controller = _get_controller(app)
         if controller is None:
             return {"error": "pause controller not available", "paused": False}
-        record = controller.pause("task", task_id, reason=req.reason)
+        handles, quiesce_status, quiesce_errors = await _quiesce_entity_for_pause(
+            app, controller, "task", task_id
+        )
+        if quiesce_status == "none":
+            record = controller.pause("task", task_id, reason=req.reason)
+        else:
+            record = controller.pause(
+                "task",
+                task_id,
+                reason=req.reason,
+                agent_handles=handles,
+                quiesce_status=quiesce_status,
+                quiesce_errors=quiesce_errors,
+            )
         return {
             "paused": True,
             "kind": "task",
             "target_id": record.target_id,
             "paused_at": record.paused_at,
             "reason": record.reason,
+            "quiesce_status": quiesce_status,
+            "quiesce_errors": quiesce_errors,
         }
 
     @app.post("/api/tasks/{task_id}/resume")
@@ -121,11 +193,21 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         record = controller.resume("task", task_id)
         if record is None:
             return {"resumed": False, "target_id": task_id, "message": "was not paused"}
+        rehydrated_count, rehydrate_status, rehydrate_errors = await _rehydrate_entity_after_resume(
+            app,
+            controller,
+            "task",
+            task_id,
+            has_handles=bool(record.agent_handles),
+        )
         return {
             "resumed": True,
             "kind": "task",
             "target_id": record.target_id,
             "paused_at": record.paused_at,
+            "rehydrated_count": rehydrated_count,
+            "rehydrate_status": rehydrate_status,
+            "rehydrate_errors": rehydrate_errors,
         }
 
     # --- Agent pause/resume ---
@@ -135,13 +217,28 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         controller = _get_controller(app)
         if controller is None:
             return {"error": "pause controller not available", "paused": False}
-        record = controller.pause("agent", agent_id, reason=req.reason)
+        handles, quiesce_status, quiesce_errors = await _quiesce_entity_for_pause(
+            app, controller, "agent", agent_id
+        )
+        if quiesce_status == "none":
+            record = controller.pause("agent", agent_id, reason=req.reason)
+        else:
+            record = controller.pause(
+                "agent",
+                agent_id,
+                reason=req.reason,
+                agent_handles=handles,
+                quiesce_status=quiesce_status,
+                quiesce_errors=quiesce_errors,
+            )
         return {
             "paused": True,
             "kind": "agent",
             "target_id": record.target_id,
             "paused_at": record.paused_at,
             "reason": record.reason,
+            "quiesce_status": quiesce_status,
+            "quiesce_errors": quiesce_errors,
         }
 
     @app.post("/api/agents/{agent_id}/resume")
@@ -152,11 +249,21 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         record = controller.resume("agent", agent_id)
         if record is None:
             return {"resumed": False, "target_id": agent_id, "message": "was not paused"}
+        rehydrated_count, rehydrate_status, rehydrate_errors = await _rehydrate_entity_after_resume(
+            app,
+            controller,
+            "agent",
+            agent_id,
+            has_handles=bool(record.agent_handles),
+        )
         return {
             "resumed": True,
             "kind": "agent",
             "target_id": record.target_id,
             "paused_at": record.paused_at,
+            "rehydrated_count": rehydrated_count,
+            "rehydrate_status": rehydrate_status,
+            "rehydrate_errors": rehydrate_errors,
         }
 
     # --- Infra pause/resume ---

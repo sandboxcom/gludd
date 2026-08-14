@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -26,9 +26,9 @@ def _make_controller() -> MagicMock:
     ctrl.pause.return_value = record
     ctrl.resume.return_value = record
     ctrl.list_paused.return_value = []
-    ctrl.quiesce_project = MagicMock()
+    ctrl.quiesce_project = AsyncMock()
     ctrl.quiesce_project.return_value = ([], "clean", [])
-    ctrl.resume_rehydrate = MagicMock()
+    ctrl.resume_rehydrate = AsyncMock()
     ctrl.resume_rehydrate.return_value = ([], "clean", [])
     return ctrl
 

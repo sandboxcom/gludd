@@ -76,11 +76,13 @@ class QuiesceNoopResult(list[object]):
     """
 
     def __init__(self) -> None:
+        """Initialize an empty successful no-op result."""
         super().__init__()
         self.status = "clean"
         self.errors: list[str] = []
 
     def __iter__(self) -> Iterator[object]:
+        """Yield the backward-compatible handles, status, and errors tuple."""
         yield self[:]
         yield self.status
         yield self.errors
@@ -97,6 +99,7 @@ class PauseController:
     """
 
     def __init__(self, store: PauseStore | None = None) -> None:
+        """Load durable pause records and initialize lock-free indexes."""
         self._store = store if store is not None else PauseStore()
         # Guards the record map + persisted write so a concurrent pause/resume
         # cannot lose an update or persist a torn view.
@@ -339,7 +342,9 @@ class PauseController:
         errors: list[str] = []
         for raw_handle in record.agent_handles:
             try:
-                if isinstance(raw_handle, dict):
+                if isinstance(raw_handle, HibernationHandle):
+                    handle = raw_handle
+                elif isinstance(raw_handle, dict):
                     handle = HibernationHandle.model_validate(raw_handle)
                 else:
                     continue
@@ -347,8 +352,17 @@ class PauseController:
                 snapshots.append(snap)
             except Exception as exc:
                 errors.append(f"rehydrate {getattr(raw_handle, 'task_id', '?')}: {exc}")
-        if snapshots:
-            await dispatcher.resume_project(target_id, snapshots)
+        snapshots_by_project: dict[str, list[AgentEnvironmentSnapshot]] = {}
+        for snapshot in snapshots:
+            raw_project_id = snapshot.scratch.get("project_id")
+            project_id = (
+                raw_project_id
+                if isinstance(raw_project_id, str) and raw_project_id
+                else target_id
+            )
+            snapshots_by_project.setdefault(project_id, []).append(snapshot)
+        for project_id, project_snapshots in snapshots_by_project.items():
+            await dispatcher.resume_project(project_id, project_snapshots)
         status = "clean" if not errors else "degraded"
         if not errors:
             with self._lock:

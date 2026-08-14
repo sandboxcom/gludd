@@ -18,6 +18,7 @@ from general_ludd.agents.hibernation import (
     _load_hibernate_mac_key,
 )
 from general_ludd.controllers.pause_controller import PauseController
+from general_ludd.controllers.pause_store import PauseStore
 
 if TYPE_CHECKING:
     pass
@@ -117,7 +118,7 @@ class TestResumedAgentRetainsDepth:
         )
         dispatcher = MockDispatcher([task])
 
-        pc = PauseController()
+        pc = PauseController(PauseStore(tmp_path / "pause"))
         handles, status, _errors = await pc.quiesce_entity(
             "agent",
             "deep-agent-1",
@@ -151,7 +152,7 @@ class TestResumedAgentRetainsDepth:
         )
         dispatcher = MockDispatcher([task])
 
-        pc = PauseController()
+        pc = PauseController(PauseStore(tmp_path / "pause"))
 
         # 1) Pause with depth capture
         handles, status, _errors = await pc.quiesce_entity(
@@ -202,7 +203,7 @@ class TestResumedAgentRetainsDepth:
         )
         dispatcher = MockDispatcher([task])
 
-        pc = PauseController()
+        pc = PauseController(PauseStore(tmp_path / "pause"))
 
         handles, status, _errors = await pc.quiesce_entity(
             "task",
@@ -238,7 +239,7 @@ class TestResumedAgentRetainsDepth:
         task = MockTask(task_id="other-task", agent_name="other-agent", project_id="p")
         dispatcher = MockDispatcher([task])
 
-        pc = PauseController()
+        pc = PauseController(PauseStore(tmp_path / "pause"))
         handles, status, _errors = await pc.quiesce_entity(
             "agent",
             "nonexistent",
@@ -249,8 +250,8 @@ class TestResumedAgentRetainsDepth:
         assert status == "clean"
 
     @pytest.mark.asyncio
-    async def test_quiesce_entity_no_dispatcher_returns_empty(self):
-        pc = PauseController()
+    async def test_quiesce_entity_no_dispatcher_returns_empty(self, tmp_path):
+        pc = PauseController(PauseStore(tmp_path / "pause"))
         handles, status, _errors = await pc.quiesce_entity(
             "agent",
             "agent-1",
