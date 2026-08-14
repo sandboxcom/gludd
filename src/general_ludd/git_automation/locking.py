@@ -21,9 +21,10 @@ several processes sharing a repo on disk:
 (b) **Cross-process file lock** — an advisory ``flock`` on
     ``<repo>/.git/gludd-git.lock``. A second daemon / a stray external git
     wrapper that goes through this lock will block until the holder releases.
-    The file lock has a configurable acquire timeout and breaks a STALE lock
-    (a crashed holder that never released) so a dead process can never deadlock
-    the repo forever.
+    The file lock has a configurable acquire timeout. The inode is never
+    unlinked: the kernel releases ``flock`` ownership when the last owning
+    descriptor closes, including abnormal process exit, while a stable inode
+    prevents split-brain locking between old and newly created files.
 
 This module is the central serializer wired into
 ``git_automation/repo.py``'s ``_run_git`` (the single choke point every
@@ -83,6 +84,34 @@ _repo_locks: dict[str, threading.RLock] = {}
 # when we touch this, so a plain int keyed by repo is safe: depth 0 -> actually
 # flock; depth > 0 -> a nested re-entry that must NOT re-flock.
 _file_lock_depth: dict[str, int] = {}
+
+# Re-entrant ownership must include the process as well as the thread. A forked
+# child inherits Python dictionaries but is a distinct contender and must never
+# mistake its parent's depth counter for its own ownership.
+_file_lock_owner: dict[str, tuple[int, int]] = {}
+
+# Descriptors currently participating in acquisition or ownership. The child
+# side of ``fork`` closes its inherited copies before clearing Python lock
+# state, so a dead parent cannot leave the mutex held through the child.
+_file_lock_fds: dict[str, int] = {}
+
+
+def _reset_after_fork() -> None:
+    """Discard parent-owned mutex state in a newly forked child."""
+    global _registry_guard
+
+    for fd in tuple(_file_lock_fds.values()):
+        with contextlib.suppress(OSError):
+            os.close(fd)
+    _file_lock_fds.clear()
+    _file_lock_depth.clear()
+    _file_lock_owner.clear()
+    _repo_locks.clear()
+    _registry_guard = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_after_fork)
 
 
 def _normalize(repo_path: str) -> str:
@@ -158,29 +187,29 @@ def _git_dir(repo_path: str) -> str | None:
     return None
 
 
-def _break_if_stale(lock_path: str, stale_after: float) -> None:
-    """Remove the lock file if it looks abandoned by a crashed holder.
+def _break_if_stale(lock_path: str, stale_after: float) -> bool:
+    """Report stale lock metadata without unlinking the mutex inode.
 
     We use the file's mtime as a liveness signal: a live holder bumps it (via
-    ``os.utime``) on acquisition. If it has not been touched in ``stale_after``
-    seconds, the previous holder almost certainly died without releasing, so we
-    unlink the file to break the deadlock. Unlinking is best-effort and racy by
-    nature; flock on the freshly created descriptor is what actually arbitrates.
+    ``os.utime``) on acquisition. A stale timestamp is diagnostic only because
+    ``flock`` belongs to an open file description and the kernel releases it on
+    close or process exit. Unlinking here would let a new caller lock a new
+    inode while an existing holder or waiter still owns the old one.
     """
     try:
         mtime = os.path.getmtime(lock_path)
     except OSError:
-        return
+        return False
     age = time.time() - mtime
     if age > stale_after:
         logger.warning(
-            "breaking stale git lock %s (age %.0fs > %.0fs); previous holder presumed crashed",
+            "git lock metadata is stale for %s (age %.0fs > %.0fs); retaining the kernel mutex inode",
             lock_path,
             age,
             stale_after,
         )
-        with contextlib.suppress(OSError):
-            os.unlink(lock_path)
+        return True
+    return False
 
 
 @contextlib.contextmanager
@@ -194,10 +223,10 @@ def _file_lock(
     """Hold an advisory flock on ``<git_dir>/gludd-git.lock``.
 
     Blocks (polling, non-blocking flock) until the lock is free or ``timeout``
-    elapses. While waiting, if the existing lock file is older than
-    ``stale_after`` it is broken so a crashed holder cannot deadlock forever.
-    On timeout raises ``TimeoutError`` so a stuck repo surfaces as a clean
-    failure rather than an unbounded hang.
+    elapses. Stale metadata is reported but the stable mutex inode is never
+    removed: kernel descriptor cleanup handles crashed owners safely. On
+    timeout raises ``TimeoutError`` so a stuck repo surfaces as a clean failure
+    rather than an unbounded hang.
 
     Re-entrant within the process: callers always hold the per-repo RLock when
     they get here, so ``key``'s depth counter is single-threaded. A nested entry
@@ -208,7 +237,8 @@ def _file_lock(
         yield
         return
 
-    if _file_lock_depth.get(key, 0) > 0:
+    owner = (os.getpid(), threading.get_ident())
+    if _file_lock_depth.get(key, 0) > 0 and _file_lock_owner.get(key) == owner:
         # Already held by this process (re-entrant nested acquire). Do not open
         # a second fd / re-flock; just account the depth and pass through.
         _file_lock_depth[key] += 1
@@ -218,16 +248,28 @@ def _file_lock(
             _file_lock_depth[key] -= 1
         return
 
+    # Defensive fallback for runtimes that fork outside Python's registered
+    # hooks: copied depth belongs to another PID and must not grant entry.
+    if _file_lock_depth.get(key, 0) > 0:
+        inherited_fd = _file_lock_fds.pop(key, None)
+        if inherited_fd is not None:
+            with contextlib.suppress(OSError):
+                os.close(inherited_fd)
+        _file_lock_depth[key] = 0
+        _file_lock_owner.pop(key, None)
+
     lock_path = os.path.join(git_dir, _LOCK_FILENAME)
     deadline = time.monotonic() + timeout
     try:
-        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
     except FileNotFoundError:
         # The .git directory can disappear between _git_dir() and open()
         # during cleanup, and unit tests may mock isdir(). Keep the in-process
         # lock rather than failing before the caller's git command runs.
         yield
         return
+    _file_lock_fds[key] = fd
+    stale_reported = False
     try:
         while True:
             try:
@@ -241,7 +283,8 @@ def _file_lock(
                         f"timed out after {timeout}s acquiring git lock {lock_path!r} "
                         f"(another git process holds the repo)"
                     ) from exc
-                _break_if_stale(lock_path, stale_after)
+                if not stale_reported:
+                    stale_reported = _break_if_stale(lock_path, stale_after)
                 time.sleep(_POLL_INTERVAL)
         # We hold the lock. Stamp the file so other waiters' staleness check
         # sees a fresh holder, and mark this process as the holder (depth 1) so
@@ -249,13 +292,17 @@ def _file_lock(
         with contextlib.suppress(OSError):
             os.utime(lock_path, None)
         _file_lock_depth[key] = 1
+        _file_lock_owner[key] = owner
         try:
             yield
         finally:
             _file_lock_depth[key] = 0
+            _file_lock_owner.pop(key, None)
             with contextlib.suppress(OSError):
                 fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
+        if _file_lock_fds.get(key) == fd:
+            _file_lock_fds.pop(key, None)
         with contextlib.suppress(OSError):
             os.close(fd)
 
@@ -277,8 +324,8 @@ def git_repo_lock(
          coroutines in THIS process; re-entrant so nested git calls on the same
          repo in one thread never self-deadlock), then
       2. the cross-process flock on ``<repo>/.git/gludd-git.lock`` (serializes
-         across processes; bounded by ``timeout`` and stale-broken so a crashed
-         holder cannot deadlock the repo forever).
+         across processes; bounded by ``timeout``; crashed ownership is
+         released by kernel descriptor cleanup).
 
     The in-process lock is taken FIRST so that, within one process, only one
     thread at a time ever contends for the (more expensive, timeout-bearing)
