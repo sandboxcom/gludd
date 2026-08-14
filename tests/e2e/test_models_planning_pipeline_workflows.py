@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -93,13 +93,13 @@ def _make_gateway(
     reg = ProviderRegistry()
     reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
     reg.register_provider("anthropic", "langchain-anthropic", "ChatAnthropic")
-    reg.register_provider("google", "langchain-google-genai", "ChatGoogleGenerativeAI")
+    reg.register_provider("google", "langchain-openai", "ChatOpenAI")
     kwargs = {
         "profiles": profiles or [],
         "provider_registry": reg,
     }
     kwargs.update(overrides)
-    return ModelGateway(**kwargs)
+    return cast(Any, ModelGateway)(**kwargs)
 
 
 class _FakeChatModel:
@@ -528,57 +528,66 @@ class TestLangChainModelRouter:
 
 
 class TestProviderRegistry:
-    def test_register_and_get_info(self):
+    def test_register_and_get_info(self) -> None:
         reg = ProviderRegistry()
-        reg.register_provider("testprov", "test_pkg", "TestClass")
-        info = reg.get_provider_info("testprov")
+        reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
+        info = reg.get_provider_info("openai")
         assert info is not None
-        assert info.name == "testprov"
-        assert info.package_name == "test_pkg"
-        assert info.class_hint == "TestClass"
+        assert info.name == "openai"
+        assert info.package_name == "langchain_openai"
+        assert info.class_hint == "ChatOpenAI"
 
-    def test_get_provider_info_missing(self):
+    def test_get_provider_info_missing(self) -> None:
         reg = ProviderRegistry()
         assert reg.get_provider_info("no_such") is None
 
-    def test_get_provider_class_raises_for_missing(self):
+    def test_get_provider_class_raises_for_missing(self) -> None:
         reg = ProviderRegistry()
         with pytest.raises(ValueError, match="not registered"):
             reg.get_provider_class("no_such")
 
-    def test_get_provider_class_raises_for_not_installed(self):
+    def test_get_provider_class_raises_for_not_installed(self) -> None:
         reg = ProviderRegistry()
-        reg.register_provider("fake", "nonexistent_pkg_xyz", "FakeClass")
-        with pytest.raises(ImportError, match="not installed"):
-            reg.get_provider_class("fake")
+        reg.register_provider(
+            "huggingface", "langchain-huggingface", "HuggingFaceEndpoint"
+        )
+        with (
+            patch("importlib.util.find_spec", return_value=None),
+            pytest.raises(ImportError, match="not installed"),
+        ):
+            reg.get_provider_class("huggingface")
 
-    def test_list_providers(self):
+    def test_list_providers(self) -> None:
         reg = ProviderRegistry()
-        reg.register_provider("a", "pa", "CA")
-        reg.register_provider("b", "pb", "CB")
+        reg.register_provider("a", "langchain-openai", "ChatOpenAI")
+        reg.register_provider("b", "langchain-anthropic", "ChatAnthropic")
         assert sorted(reg.list_providers()) == ["a", "b"]
 
-    def test_from_presets_populates_registry(self):
+    def test_from_presets_populates_registry(self) -> None:
         reg = ProviderRegistry.from_presets()
         providers = reg.list_providers()
         assert len(providers) > 0
         assert "openai" in providers
 
-    def test_is_installed_false_when_not_installed(self):
+    def test_is_installed_false_when_not_installed(self) -> None:
         reg = ProviderRegistry()
         assert reg.is_installed("no_such") is False
 
-    def test_install_provider_creates_todo_for_missing(self):
+    def test_install_provider_creates_todo_for_missing(self) -> None:
         reg = ProviderRegistry()
-        reg.register_provider("foo", "bar_pkg", "BarClass")
-        todo = reg.install_provider("foo")
+        reg.register_provider(
+            "huggingface", "langchain-huggingface", "HuggingFaceEndpoint"
+        )
+        with patch("importlib.util.find_spec", return_value=None):
+            todo = reg.install_provider("huggingface")
         assert todo is not None
-        assert "bar_pkg" in todo.title
+        assert "langchain_huggingface" in todo.title
 
-    def test_install_provider_returns_none_for_installed(self):
+    def test_install_provider_returns_none_for_installed(self) -> None:
         reg = ProviderRegistry()
-        reg.register_provider("openai_compat", "unittest", "TestCase")
-        todo = reg.install_provider("openai_compat")
+        reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
+        with patch("importlib.util.find_spec", return_value=MagicMock()):
+            todo = reg.install_provider("openai")
         assert todo is None
 
 
