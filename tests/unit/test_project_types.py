@@ -156,6 +156,27 @@ class TestSuggestedModelRolesAreValid:
 
 
 class TestDynamicRegistration:
+    def test_typed_and_legacy_forms_share_one_runtime_callable(self) -> None:
+        typed_id = "runtime_typed_contract"
+        legacy_id = "runtime_legacy_contract"
+        typed = _pt.ProjectType(
+            type_id=typed_id,
+            display_name="Runtime Typed Contract",
+            default_entry_point="typed.py",
+        )
+        legacy = _dynamic_definition("Runtime Legacy Contract")
+        legacy["type_id"] = legacy_id
+
+        try:
+            _pt.register_project_type(typed)
+            _pt.register_project_type(legacy_id, legacy)
+
+            assert _pt.get_project_type(typed_id) is typed
+            assert _pt.get_project_type(legacy_id).display_name == "Runtime Legacy Contract"
+        finally:
+            _pt.PROJECT_TYPE_REGISTRY.pop(typed_id, None)
+            _pt.PROJECT_TYPE_REGISTRY.pop(legacy_id, None)
+
     def test_register_new_type_adds_to_registry(self) -> None:
         _pt.register_project_type("dynamic_test_type", _dynamic_definition())
         assert "dynamic_test_type" in _pt.PROJECT_TYPES

@@ -16,7 +16,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import Any, overload
+from typing import Any
 
 from general_ludd.schemas.benchmark import TaskRole
 
@@ -894,14 +894,6 @@ def _legacy_project_type(type_id: str, definition: Mapping[str, Any]) -> Project
             for role in roles
         },
     )
-
-
-@overload
-def register_project_type(project_type: ProjectType) -> None: ...
-
-
-@overload
-def register_project_type(project_type: str, definition: Mapping[str, Any]) -> None: ...
 
 
 def register_project_type(
