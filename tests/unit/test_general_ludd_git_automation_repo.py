@@ -488,10 +488,10 @@ def test_state_load_reconciled_preserve_heads_explicit_strips_whitespace() -> No
 
 def test_state_load_reconciled_preserve_heads_file_not_found() -> None:
     ga = GitAutomation("/nonexistent/repo")
-    ga._git_stdout_or_empty = mock.Mock(return_value="")
-    heads = ga._state_load_reconciled_preserve_heads(
-        head_file="config/nonexistent_file.txt",
-    )
+    with mock.patch.object(ga, "_git_stdout_or_empty", return_value=""):
+        heads = ga._state_load_reconciled_preserve_heads(
+            head_file="config/nonexistent_file.txt",
+        )
     assert heads == set()
 
 
@@ -500,12 +500,13 @@ def test_state_load_reconciled_preserve_heads_reads_file(tmp_path: Path) -> None
     head_file.write_text("abc123\n456def\n")
 
     ga = GitAutomation(str(tmp_path))
-    ga._run_git = mock.Mock(return_value=mock.Mock(stdout=""))
-    ga._git_stdout_or_empty = mock.Mock(return_value="")
-
-    heads = ga._state_load_reconciled_preserve_heads(
-        head_file=str(head_file),
-    )
+    with (
+        mock.patch.object(ga, "_run_git", return_value=mock.Mock(stdout="")),
+        mock.patch.object(ga, "_git_stdout_or_empty", return_value=""),
+    ):
+        heads = ga._state_load_reconciled_preserve_heads(
+            head_file=str(head_file),
+        )
     assert heads == {"abc123", "456def"}
 
 
@@ -515,12 +516,13 @@ def test_state_load_reconciled_preserve_heads_relative_path_resolved(tmp_path: P
     head_file.write_text("commit1\ncommit2\n")
 
     ga = GitAutomation(str(tmp_path))
-    ga._run_git = mock.Mock(return_value=mock.Mock(stdout=""))
-    ga._git_stdout_or_empty = mock.Mock(return_value="")
-
-    heads = ga._state_load_reconciled_preserve_heads(
-        head_file="config/preserved_heads.txt",
-    )
+    with (
+        mock.patch.object(ga, "_run_git", return_value=mock.Mock(stdout="")),
+        mock.patch.object(ga, "_git_stdout_or_empty", return_value=""),
+    ):
+        heads = ga._state_load_reconciled_preserve_heads(
+            head_file="config/preserved_heads.txt",
+        )
     assert heads == {"commit1", "commit2"}
 
 
@@ -582,6 +584,58 @@ class TestGitAutomationInit:
     def test_init_explicit_path(self) -> None:
         ga = GitAutomation("/some/custom/path")
         assert ga.repo_path == "/some/custom/path"
+
+
+# ── ansible role delegation ──────────────────────────────────────────
+
+
+def test_invoke_role_uses_isolated_local_ansible_runner(tmp_path: Path) -> None:
+    """The delegation boundary uses an isolated local-only runner payload."""
+    role_dir = tmp_path / "role"
+    role_dir.mkdir()
+    runner = mock.Mock()
+    runner.run.return_value = mock.Mock(rc=0, status="successful")
+
+    with (
+        mock.patch.object(git_repo, "_HAS_ANSIBLE_RUNNER", True),
+        mock.patch.object(git_repo, "_ROLE_DIR", role_dir),
+        mock.patch.object(git_repo, "ansible_runner", runner),
+    ):
+        result = GitAutomation("/repo")._invoke_role(
+            "status",
+            requested_branch="feature/example",
+        )
+
+    assert result == {"status": "successful", "rc": 0, "events": []}
+    runner.run.assert_called_once()
+    kwargs = runner.run.call_args.kwargs
+    assert kwargs["quiet"] is True
+    assert kwargs["envvars"] == {
+        "ANSIBLE_COLLECTIONS_PATH": str(git_repo._COLLECTIONS_ROOT),
+    }
+    assert Path(kwargs["playbook"]).name == "playbook.yml"
+    assert Path(kwargs["inventory"]).name == "inventory"
+
+
+def test_invoke_role_fails_closed_on_runner_exception(tmp_path: Path) -> None:
+    """An Ansible runner exception is returned as a bounded failed result."""
+    role_dir = tmp_path / "role"
+    role_dir.mkdir()
+    runner = mock.Mock()
+    runner.run.side_effect = RuntimeError("runner unavailable")
+
+    with (
+        mock.patch.object(git_repo, "_HAS_ANSIBLE_RUNNER", True),
+        mock.patch.object(git_repo, "_ROLE_DIR", role_dir),
+        mock.patch.object(git_repo, "ansible_runner", runner),
+    ):
+        result = GitAutomation("/repo")._invoke_role("status")
+
+    assert result == {
+        "status": "failed",
+        "rc": 1,
+        "error": "ansible-runner error: runner unavailable",
+    }
 
 
 class TestRejectUnsafeRepoUrlEdgeCases:
