@@ -547,6 +547,90 @@ def test_main_current_only_emits_unique_deduplicated_groups(
     assert [group["names"] for group in payload["groups"]] == [["feature/current"]]
 
 
+def test_main_default_progress_stays_observable(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Interactive exhaustive scans must retain bounded per-ref progress."""
+    fake = FakeGit(
+        refs=[("refs/heads/feature/current", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+    )
+
+    rc = inventory.main(
+        ["--target", "development", "--limit", "2", "--after", "", "--all-pages"],
+        run=fake,
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["mode"] == "exhaustive-summary"
+    assert "BRANCH-RECONCILIATION target=development" in captured.err
+    assert "classify=1/1 ref=refs/heads/feature/current" in captured.err
+
+
+def test_main_quiet_progress_keeps_current_json_machine_consumable(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Opt-in quiet mode must emit one JSON stream without progress narration."""
+    fake = FakeGit(
+        refs=[("refs/heads/feature/current", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+    )
+
+    rc = inventory.main(
+        [
+            "--target",
+            "development",
+            "--limit",
+            "2",
+            "--after",
+            "",
+            "--all-pages",
+            "--current-only",
+            "--quiet-progress",
+        ],
+        run=fake,
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    payload = json.loads(captured.out)
+    assert payload["mode"] == "exhaustive-current"
+    assert payload["selected_heads"] == 1
+    assert captured.err == ""
+
+
+def test_main_quiet_progress_preserves_structured_nonzero_failure(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Quiet narration must retain the failure envelope and nonzero status."""
+    fake = FakeGit(target_valid=False)
+
+    rc = inventory.main(
+        [
+            "--target",
+            "development",
+            "--limit",
+            "2",
+            "--after",
+            "",
+            "--all-pages",
+            "--current-only",
+            "--quiet-progress",
+        ],
+        run=fake,
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert json.loads(captured.out) == {
+        "error": "invalid target ref: development",
+        "ok": False,
+        "schema_version": inventory.SCHEMA_VERSION,
+    }
+    assert captured.err == ""
+
+
 def test_exhaustive_make_target_and_contract_are_tracked() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     contract = json.loads(
@@ -557,6 +641,7 @@ def test_exhaustive_make_target_and_contract_are_tracked() -> None:
     assert "--all-pages" in makefile
     assert "--counts-only" in makefile
     assert "--current-only" in makefile
+    assert "--quiet-progress" in makefile
     entry = next(
         target
         for target in contract["targets"]
@@ -564,13 +649,16 @@ def test_exhaustive_make_target_and_contract_are_tracked() -> None:
     )
     assert "RECONCILE_DETAILS" in makefile
     assert "RECONCILE_CURRENT_ONLY" in makefile
+    assert "RECONCILE_QUIET_PROGRESS" in makefile
     assert entry["make_variables"] == [
         "RECONCILE_TARGET",
         "RECONCILE_LIMIT",
         "RECONCILE_DETAILS",
         "RECONCILE_CURRENT_ONLY",
+        "RECONCILE_QUIET_PROGRESS",
     ]
     assert entry["behavior"].endswith(
         "RECONCILE_TARGET=development RECONCILE_LIMIT=100 "
-        "RECONCILE_DETAILS=0 RECONCILE_CURRENT_ONLY=0"
+        "RECONCILE_DETAILS=0 RECONCILE_CURRENT_ONLY=0 "
+        "RECONCILE_QUIET_PROGRESS=0"
     )
