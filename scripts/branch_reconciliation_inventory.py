@@ -133,6 +133,24 @@ class SummaryCountsPayload(TypedDict):
     truncated: bool
 
 
+class CurrentSummaryPayload(TypedDict):
+    """Terminal exhaustive inventory restricted to current unique heads."""
+
+    bounds: InventoryBounds
+    counts: SummaryCounts
+    groups: list[SummaryGroup]
+    mode: Literal["exhaustive-current"]
+    ok: bool
+    page_size: int
+    pages: int
+    schema_version: int
+    selected_branches: int
+    selected_heads: int
+    target: TargetRecord
+    terminal: bool
+    truncated: bool
+
+
 def _run(
     argv: Sequence[str], cwd: str | None = None
 ) -> subprocess.CompletedProcess[str]:
@@ -674,23 +692,58 @@ def main(
         action="store_true",
         help="omit expanded groups from an all-pages summary",
     )
+    parser.add_argument(
+        "--current-only",
+        action="store_true",
+        help="emit only unique current groups from an all-pages summary",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
     try:
         limit = int(args.limit)
         _progress(
             f"target={args.target} limit={limit} after={args.after or '<start>'}"
         )
-        payload: InventoryPayload | SummaryPayload | SummaryCountsPayload
+        payload: (
+            InventoryPayload
+            | SummaryPayload
+            | SummaryCountsPayload
+            | CurrentSummaryPayload
+        )
         if args.all_pages:
             if args.after:
                 raise InventoryError("all-pages summary requires an empty cursor")
+            if args.counts_only and args.current_only:
+                raise InventoryError("current-only cannot be combined with counts-only")
             summary = collect_summary(
                 args.target,
                 limit,
                 run=run,
                 progress=_progress,
             )
-            if args.counts_only:
+            if args.current_only:
+                current_groups = [
+                    group
+                    for group in summary["groups"]
+                    if group["classification"] == "unique"
+                ]
+                payload = {
+                    "bounds": summary["bounds"],
+                    "counts": summary["counts"],
+                    "groups": current_groups,
+                    "mode": "exhaustive-current",
+                    "ok": summary["ok"],
+                    "page_size": summary["page_size"],
+                    "pages": summary["pages"],
+                    "schema_version": summary["schema_version"],
+                    "selected_branches": sum(
+                        group["branch_count"] for group in current_groups
+                    ),
+                    "selected_heads": len(current_groups),
+                    "target": summary["target"],
+                    "terminal": summary["terminal"],
+                    "truncated": summary["truncated"],
+                }
+            elif args.counts_only:
                 payload = {
                     "bounds": summary["bounds"],
                     "counts": summary["counts"],
@@ -706,8 +759,10 @@ def main(
             else:
                 payload = summary
         else:
-            if args.counts_only:
-                raise InventoryError("counts-only requires an all-pages summary")
+            if args.counts_only or args.current_only:
+                raise InventoryError(
+                    "counts-only and current-only require an all-pages summary"
+                )
             payload = collect_inventory(
                 args.target,
                 limit,

@@ -513,6 +513,40 @@ def test_main_counts_only_omits_large_groups(
     assert "groups" not in payload
 
 
+def test_main_current_only_emits_unique_deduplicated_groups(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake = FakeGit(
+        refs=[
+            ("refs/heads/feature/merged", ANCESTOR_HEAD),
+            ("refs/heads/feature/current", UNIQUE_HEAD),
+        ],
+        ancestors=frozenset({ANCESTOR_HEAD}),
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+    )
+
+    rc = inventory.main(
+        [
+            "--target",
+            "development",
+            "--limit",
+            "2",
+            "--after",
+            "",
+            "--all-pages",
+            "--current-only",
+        ],
+        run=fake,
+    )
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["mode"] == "exhaustive-current"
+    assert payload["selected_branches"] == 1
+    assert payload["selected_heads"] == 1
+    assert [group["names"] for group in payload["groups"]] == [["feature/current"]]
+
+
 def test_exhaustive_make_target_and_contract_are_tracked() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     contract = json.loads(
@@ -522,17 +556,21 @@ def test_exhaustive_make_target_and_contract_are_tracked() -> None:
     assert "branch-reconciliation-summary:" in makefile
     assert "--all-pages" in makefile
     assert "--counts-only" in makefile
+    assert "--current-only" in makefile
     entry = next(
         target
         for target in contract["targets"]
         if target["name"] == "branch-reconciliation-summary"
     )
     assert "RECONCILE_DETAILS" in makefile
+    assert "RECONCILE_CURRENT_ONLY" in makefile
     assert entry["make_variables"] == [
         "RECONCILE_TARGET",
         "RECONCILE_LIMIT",
         "RECONCILE_DETAILS",
+        "RECONCILE_CURRENT_ONLY",
     ]
     assert entry["behavior"].endswith(
-        "RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_DETAILS=0"
+        "RECONCILE_TARGET=development RECONCILE_LIMIT=100 "
+        "RECONCILE_DETAILS=0 RECONCILE_CURRENT_ONLY=0"
     )
