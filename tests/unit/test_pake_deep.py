@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
+
 import pytest
 
+from general_ludd.algorithms import pake as pake_module
 from general_ludd.algorithms.pake import (
     OPAQUEClient,
     OPAQUEConfig,
@@ -38,6 +41,14 @@ class TestSPAKE2PlusGroup:
         assert g.name == "P-521"
         assert g.point_bytes == 133
         assert g.scalar_bytes == 66
+
+    def test_p521_field_parameters_match_nist(self):
+        group = SPAKE2PlusGroup.P521()
+        params = pake_module._group_params(group)
+
+        assert params["p"] == (1 << 521) - 1
+        assert params["a"] == params["p"] - 3
+        assert (params["p"].bit_length() + 7) // 8 == group.scalar_bytes
 
     def test_group_immutable(self):
         g = SPAKE2PlusGroup.P256()
@@ -80,6 +91,7 @@ class TestSPAKE2PlusClientServer:
 
         assert server_key == client.get_shared_secret()
 
+    @pytest.mark.timeout(10)
     def test_full_exchange_p521(self):
         group = SPAKE2PlusGroup.P521()
         password = b"p521-password-test"
@@ -94,6 +106,9 @@ class TestSPAKE2PlusClientServer:
         msg_client = client.finish(msg_server)
         server_key = server.finish(msg_client)
 
+        assert len(msg_server) == group.point_bytes
+        assert len(msg_client) == group.point_bytes
+        assert len(server_key) == group.scalar_bytes
         assert server_key == client.get_shared_secret()
 
     def test_wrong_password_fails(self):
@@ -222,6 +237,21 @@ class TestSPAKE2PlusEdgeCases:
         server = SPAKE2PlusServer(group, b"pw", b"s", b"c", b"ctx")
         with pytest.raises(PAKEError, match="start"):
             server.finish(b"\x00" * 65)
+
+
+class TestHashToPointBounds:
+    @pytest.mark.timeout(2)
+    def test_search_fails_closed_after_bounded_attempts(self, monkeypatch: pytest.MonkeyPatch):
+        digest = Mock()
+        digest.digest.return_value = b"\x00" * 32
+        sha256 = Mock(return_value=digest)
+        monkeypatch.setattr(pake_module.hashlib, "sha256", sha256)
+        non_residue_params = {"p": 3, "a": 0, "b": 2, "gx": 1, "gy": 1, "n": 2}
+
+        with pytest.raises(PAKEError, match="256 attempts"):
+            pake_module._hash_to_point(b"never-maps", non_residue_params, 1)
+
+        assert sha256.call_count == 256
 
 
 # ── OPAQUE tests ─────────────────────────────────────────────────────────
