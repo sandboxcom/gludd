@@ -146,6 +146,19 @@ def test_rpm_package_build_tree_is_namespaced_to_checkout() -> None:
     )
 
 
+def test_clean_preserves_tracked_distribution_templates() -> None:
+    """Clean generated outputs through Git's ignore contract, not all of dist/."""
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+    start = makefile.index("\nclean:\n") + 1
+    block = makefile[start : makefile.index("\n\n", start)]
+
+    assert "CLEAN_VALIDATE_ONLY" in block
+    assert "git clean -fdX -- dist" in block
+    assert "rm -rf .venv dist " not in block
+    for template in TestPackagingTemplatesCommitted.REQUIRED_FILES:
+        assert (ROOT / template).is_file()
+
+
 def test_windows_installer_accepts_native_and_cross_packaging_binary_names() -> None:
     """The Make target must package Windows output and fail on absent input."""
     block = _make_target_block("windows-installer")

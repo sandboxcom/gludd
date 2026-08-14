@@ -21,17 +21,19 @@ This guardrail is codified at three layers (see AGENTS.md
     Layer 2 — opencode.json permission block (hard gate at the harness level)
     Layer 3 — this structural test (regression prevention)
 
-This test pins Layer 2: it verifies that the opencode.json permission block
-for each of read/write/edit/glob/grep allows EXACTLY the permitted prefixes
-above, includes a `*: deny` catch-all, and rejects representative
-home-directory paths outside the allowed set. If a future edit widens
-access (e.g. re-adds `/Users/shawnwilson/**: allow`) or drops the catch-all,
-this test fails.
+This test pins Layer 2 using OpenCode's current permission model. File tools
+remain enabled for the active worktree, while one ``external_directory`` block
+allows EXACTLY the reviewed external prefixes, starts with a ``*: deny``
+catch-all, and rejects representative home-directory paths outside the allowed
+set. The active worktree is internal and therefore must not be duplicated in
+the external allowlist. If a future edit widens access (for example by adding
+``/Users/shawnwilson/**: allow``) or drops the catch-all, this test fails.
 """
 
 import json
 import re
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -39,10 +41,9 @@ ROOT = Path(__file__).parent.parent.parent
 OPENCODE_JSON = ROOT / "opencode.json"
 AGENTS_MD = ROOT / "AGENTS.md"
 
-# The exhaustive set of allowed path prefixes (the single source of truth).
-# Per the user mandate and macOS symlink/non-canonical path reality.
-ALLOWED_PREFIXES = (
-    "/Users/shawnwilson/gludd/**",
+# The exhaustive set of allowed *external* path prefixes. The active worktree
+# is internal under current OpenCode semantics and needs no external grant.
+ALLOWED_EXTERNAL_PREFIXES = (
     "/Users/shawnwilson/.config/opencode/**",
     "/Users/shawnwilson/.local/share/opencode/**",
     "/Users/shawnwilson/.cache/**",
@@ -51,8 +52,14 @@ ALLOWED_PREFIXES = (
     "/private/var/folders/**",
 )
 
-# Each of these tools must have a permission block in opencode.json.
-FILE_TOOLS = ("read", "write", "edit", "glob", "grep")
+WORKSPACE_PREFIX = "/Users/shawnwilson/gludd/**"
+
+READ_PERMISSION = {
+    "*": "allow",
+    "*.env": "deny",
+    "*.env.*": "deny",
+    "*.env.example": "allow",
+}
 
 # Representative forbidden home-directory paths. None of these should ever
 # appear as an `allow` rule in a file-tool permission block. The mandate is
@@ -86,7 +93,7 @@ FORBIDDEN_HOME_PATHS = (
 )
 
 
-def _load_permission() -> dict:
+def _load_permission() -> dict[str, object]:
     """Load opencode.json and return its `permission` block as a dict."""
     assert OPENCODE_JSON.exists(), "opencode.json must exist at repo root"
     data = json.loads(OPENCODE_JSON.read_text())
@@ -96,128 +103,154 @@ def _load_permission() -> dict:
     return perm
 
 
-def _allowed_keys(block: dict) -> list[str]:
+def _allowed_keys(block: dict[str, str]) -> list[str]:
     """Return the keys in a permission block that resolve to `allow`."""
     return [k for k, v in block.items() if v == "allow"]
 
 
-@pytest.mark.parametrize("tool", FILE_TOOLS)
-def test_file_tool_has_permission_block(tool: str) -> None:
-    """Every file-touching tool must have its own permission block."""
+def _external_directory_block() -> dict[str, str]:
+    """Return the centralized external-directory permission map."""
     perm = _load_permission()
-    assert tool in perm, f"tool `{tool}` must have a permission block in opencode.json"
-    assert isinstance(perm[tool], dict), f"permission block for `{tool}` must be an object"
+    assert "external_directory" in perm, (
+        "opencode.json must define the external_directory permission"
+    )
+    block = perm["external_directory"]
+    assert isinstance(block, dict), "external_directory permission must be an object"
+    assert all(isinstance(key, str) and isinstance(value, str) for key, value in block.items()), (
+        "external_directory keys and actions must be strings"
+    )
+    return cast("dict[str, str]", block)
 
 
-@pytest.mark.parametrize("tool", FILE_TOOLS)
-def test_file_tool_has_star_deny_catchall(tool: str) -> None:
-    """Each file-tool block MUST end with `*: deny` (last-match-wins).
+def test_file_tools_use_current_opencode_permission_semantics() -> None:
+    """Keep workspace tool access separate from external path authorization.
 
-    Without the catch-all, an allow rule earlier in the block has no effect
-    because opencode would fall through to its default (which may be allow).
-    The catch-all is what makes the three-prefix allowlist actually binding.
+    OpenCode routes write/edit/apply-patch through ``edit`` and applies the
+    external-directory decision separately when a target is outside the active
+    worktree. Per-tool absolute path maps are legacy and break this model.
     """
     perm = _load_permission()
-    block = perm[tool]
-    assert "*" in block, f"`{tool}` permission block must include a `*` catch-all key"
-    assert block["*"] == "deny", f"`{tool}` permission block's `*` catch-all must be `deny`, got {block['*']!r}"
+    assert perm["read"] == READ_PERMISSION
+    assert perm["edit"] == "allow"
+    assert perm["glob"] == "allow"
+    assert perm["grep"] == "allow"
+    assert "write" not in perm, (
+        "OpenCode routes write/edit/apply-patch through the edit permission"
+    )
 
 
-@pytest.mark.parametrize("tool", FILE_TOOLS)
-def test_file_tool_allows_exactly_expected_prefixes(tool: str) -> None:
-    """Each file-tool block must allow EXACTLY the mandated prefixes.
+def test_external_directory_has_star_deny_catchall() -> None:
+    """External paths must fail closed before reviewed overrides are applied."""
+    block = _external_directory_block()
+    assert "*" in block, "external_directory must include a `*` catch-all key"
+    assert block["*"] == "deny", (
+        "external_directory's `*` catch-all must be `deny`, "
+        f"got {block['*']!r}"
+    )
+
+
+def test_external_directory_allows_exactly_expected_prefixes() -> None:
+    """The centralized block must allow exactly the reviewed external paths.
 
     No more, no less. A future regression that adds a new allow rule
     (e.g. `/Users/shawnwilson/**`) or drops one of the mandated ones
     would violate the user mandate and fail this test.
     """
-    perm = _load_permission()
-    block = perm[tool]
+    block = _external_directory_block()
     allowed = _allowed_keys(block)
-    assert sorted(allowed) == sorted(ALLOWED_PREFIXES), (
-        f"`{tool}` allow rules must match the expected prefixes.\n"
-        f"  expected: {sorted(ALLOWED_PREFIXES)}\n"
+    assert sorted(allowed) == sorted(ALLOWED_EXTERNAL_PREFIXES), (
+        "external_directory allow rules must match the reviewed prefixes.\n"
+        f"  expected: {sorted(ALLOWED_EXTERNAL_PREFIXES)}\n"
         f"  got:      {sorted(allowed)}"
     )
 
 
-@pytest.mark.parametrize("tool", FILE_TOOLS)
-def test_file_tool_deny_is_last(tool: str) -> None:
-    """`*: deny` must be present and the FIRST key in each file-tool block.
+def test_external_directory_deny_is_first() -> None:
+    """``*: deny`` must be the first external-directory rule.
 
     opencode permission rules use last-match-wins semantics. The `*: deny`
     catch-all must appear FIRST so that later, more-specific allow rules
     can override it. If any allow rule appears BEFORE `*: deny`, the deny
     has no guard effect.
     """
-    perm = _load_permission()
-    block = perm[tool]
+    block = _external_directory_block()
     keys = list(block.keys())
-    assert keys[0] == "*", f"`{tool}` block: `*` catch-all must be the first key (last-match-wins); got order {keys}"
+    assert keys[0] == "*", (
+        "external_directory: `*` catch-all must be the first key "
+        f"(last-match-wins); got order {keys}"
+    )
     assert block[keys[0]] == "deny"
 
 
 @pytest.mark.parametrize("forbidden", FORBIDDEN_HOME_PATHS)
-@pytest.mark.parametrize("tool", FILE_TOOLS)
-def test_no_forbidden_home_path_is_allowed(forbidden: str, tool: str) -> None:
+def test_no_forbidden_home_path_is_allowed(forbidden: str) -> None:
     """No representative forbidden home-directory path may be an allow rule.
 
     This is the heart of the user mandate: no ~/.ssh, ~/.aws, ~/.gnupg,
     ~/Documents, ~/Desktop, ~/Library, or any broad `/Users/shawnwilson/**`
-    rule. Any of these appearing as `allow` in a file-tool block is a direct
-    violation of the mandate.
+    rule. Any of these appearing as ``allow`` in the centralized external block
+    is a direct violation of the mandate.
     """
-    perm = _load_permission()
-    block = perm[tool]
+    block = _external_directory_block()
     allowed = _allowed_keys(block)
     assert forbidden not in allowed, (
-        f"`{tool}` permission block allows forbidden home path "
+        "external_directory allows forbidden home path "
         f"{forbidden!r} — this violates the no-home-directory-access mandate"
+    )
+
+
+def test_workspace_prefix_is_not_misclassified_as_external() -> None:
+    """The active worktree must stay implicit rather than become a host grant."""
+    block = _external_directory_block()
+    assert WORKSPACE_PREFIX not in block, (
+        "the active worktree is internal; adding it to external_directory "
+        "couples policy to one checkout and is not a supported workspace grant"
     )
 
 
 def test_no_broader_home_prefix_than_allowed() -> None:
     """No allow rule may be a broader prefix of /Users/shawnwilson/ than
-    the four permitted ones (gludd/, .config/opencode/, .local/share/opencode/,
-    and .cache/).
+    the three permitted external ones (.config/opencode/,
+    .local/share/opencode/, and .cache/).
 
     Catches sneaky regressions like `/Users/shawnwilson/**: allow` or
     `/Users/shawnwilson/.config/**: allow` (the latter would re-expose
     ~/.config/gh, ~/.config/git, etc. — only the opencode subdir is allowed).
     """
     permitted_home_prefixes = {
-        "/Users/shawnwilson/gludd/**",
         "/Users/shawnwilson/.config/opencode/**",
         "/Users/shawnwilson/.local/share/opencode/**",
         "/Users/shawnwilson/.cache/**",
     }
-    perm = _load_permission()
-    for tool in FILE_TOOLS:
-        block = perm[tool]
-        for key, value in block.items():
-            if value != "allow":
-                continue
-            if not key.startswith("/Users/shawnwilson/"):
-                continue  # /tmp/** and friends are fine
-            assert key in permitted_home_prefixes, (
-                f"`{tool}` allows home path {key!r} which is broader than "
-                f"the four permitted prefixes — violates the mandate"
-            )
+    block = _external_directory_block()
+    for key, value in block.items():
+        if value != "allow":
+            continue
+        if not key.startswith("/Users/shawnwilson/"):
+            continue  # /tmp/** and friends are fine
+        assert key in permitted_home_prefixes, (
+            f"external_directory allows home path {key!r} which is broader "
+            "than the three reviewed external home prefixes — violates the mandate"
+        )
 
 
 def test_no_tmp_subpath_restriction() -> None:
     """The mandate widened /tmp/gludd-* to /tmp/**. Guard against regression
     that re-narrows the tmp allow rule.
     """
-    perm = _load_permission()
-    for tool in FILE_TOOLS:
-        block = perm[tool]
-        allowed = _allowed_keys(block)
-        assert "/tmp/**" in allowed, f"`{tool}` must allow `/tmp/**` (the widened form). Got: {allowed}"
-        # No narrower /tmp/... rule should be present as an allow.
-        for key in allowed:
-            if key.startswith("/tmp/") and key != "/tmp/**":
-                pytest.fail(f"`{tool}` allows narrowed tmp path {key!r} — mandate requires the widened `/tmp/**` form")
+    block = _external_directory_block()
+    allowed = _allowed_keys(block)
+    assert "/tmp/**" in allowed, (
+        "external_directory must allow `/tmp/**` (the widened form). "
+        f"Got: {allowed}"
+    )
+    # No narrower /tmp/... rule should be present as an allow.
+    for key in allowed:
+        if key.startswith("/tmp/") and key != "/tmp/**":
+            pytest.fail(
+                f"external_directory allows narrowed tmp path {key!r} — "
+                "mandate requires the widened `/tmp/**` form"
+            )
 
 
 def test_opencode_config_prefix_present() -> None:
@@ -226,15 +259,15 @@ def test_opencode_config_prefix_present() -> None:
     This is the third leg of the mandate — added 2026-07 to let the agent
     read/write its own config without prompting. Dropping it is a regression.
     """
-    perm = _load_permission()
+    block = _external_directory_block()
     expected = "/Users/shawnwilson/.config/opencode/**"
-    for tool in FILE_TOOLS:
-        block = perm[tool]
-        allowed = _allowed_keys(block)
-        assert expected in allowed, f"`{tool}` must allow {expected!r} per the mandate; got {allowed}"
+    allowed = _allowed_keys(block)
+    assert expected in allowed, (
+        f"external_directory must allow {expected!r} per the mandate; got {allowed}"
+    )
 
 
-def test_agents_md_documents_three_prefixes() -> None:
+def test_agents_md_documents_allowed_boundary() -> None:
     """Layer 1 (prompt) pin: AGENTS.md "No External File Access" section
     must name all three allowed prefixes and must NOT reference the old
     `/tmp/gludd-*` only form as the sole tmp rule.

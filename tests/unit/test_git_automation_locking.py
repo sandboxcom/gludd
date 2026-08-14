@@ -14,6 +14,7 @@ import tempfile
 import threading
 import time
 from collections.abc import MutableSequence
+from multiprocessing.connection import Connection
 from pathlib import Path
 from unittest.mock import patch
 
@@ -30,8 +31,53 @@ def _hold_repo_lock_then_record(
 ) -> None:
     """Spawn-safe worker used to prove cross-process worktree locking."""
     with locking.git_repo_lock(repo_path, timeout=10.0, stale_after=60.0):
-        execution_order.append(name)
+        execution_order.append(f"{name}:enter")
         time.sleep(hold_secs)
+        execution_order.append(f"{name}:exit")
+
+
+def _attempt_repo_lock(repo_path: str, result: Connection, timeout: float) -> None:
+    """Attempt a repo lock from an importable child-process target."""
+    try:
+        with locking.git_repo_lock(repo_path, timeout=timeout, stale_after=60.0):
+            result.send("acquired")
+    except TimeoutError:
+        result.send("timed_out")
+    finally:
+        result.close()
+
+
+def _crash_holding_repo_lock(repo_path: str) -> None:
+    """Exit without context cleanup while holding the kernel mutex."""
+    with locking.git_repo_lock(repo_path, timeout=5.0, stale_after=60.0):
+        os._exit(73)
+
+
+def _fork_while_holding_repo_lock(repo_path: str, result: Connection) -> None:
+    """Fork from a clean spawned process while the parent owns the mutex."""
+    context = multiprocessing.get_context("fork")
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_attempt_repo_lock,
+        args=(repo_path, sender, 0.2),
+    )
+    try:
+        with locking.git_repo_lock(repo_path, timeout=1.0, stale_after=60.0):
+            process.start()
+            sender.close()
+            if receiver.poll(5.0):
+                result.send(receiver.recv())
+            else:
+                result.send("no_result")
+            process.join(timeout=5.0)
+    finally:
+        if process.is_alive():
+            process.kill()
+            process.join(timeout=5.0)
+        receiver.close()
+        sender.close()
+        process.close()
+        result.close()
 
 
 class TestNormalize:
@@ -153,7 +199,7 @@ class TestBreakIfStale:
             locking._break_if_stale(lock_path, stale_after=300.0)
             assert os.path.exists(lock_path)
 
-    def test_breaks_stale_lock(self) -> None:
+    def test_stale_metadata_never_unlinks_mutex_inode(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             lock_path = os.path.join(tmpdir, "test.lock")
             with open(lock_path, "w") as f:
@@ -161,7 +207,7 @@ class TestBreakIfStale:
             stale_time = 0.0  # epoch — always stale
             os.utime(lock_path, (stale_time, stale_time))
             locking._break_if_stale(lock_path, stale_after=1.0)
-            assert not os.path.exists(lock_path)
+            assert os.path.exists(lock_path)
 
 
 class TestFileLock:
@@ -182,6 +228,16 @@ class TestFileLock:
                 with locking._file_lock(tmpdir, key, timeout=5.0, stale_after=60.0):
                     assert locking._file_lock_depth.get(key) == 2
             assert locking._file_lock_depth.get(key, 0) == 0
+
+    def test_reentrant_owner_is_current_process_and_thread(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            key = "test-owner"
+            with locking._file_lock(tmpdir, key, timeout=5.0, stale_after=60.0):
+                assert locking._file_lock_owner[key] == (
+                    os.getpid(),
+                    threading.get_ident(),
+                )
+            assert key not in locking._file_lock_owner
 
     def test_missing_git_dir_during_open_uses_inprocess_only(self) -> None:
         key = "missing-during-open"
@@ -347,13 +403,102 @@ class TestGitRepoLockWorktree:
 
                     assert p1.exitcode == 0
                     assert p2.exitcode == 0
-                    assert list(execution_order) == ["first", "second"]
+                    events = list(execution_order)
+                    assert sorted(events) == [
+                        "first:enter",
+                        "first:exit",
+                        "second:enter",
+                        "second:exit",
+                    ]
+                    for enter, leave in zip(events[::2], events[1::2], strict=True):
+                        assert enter.endswith(":enter")
+                        assert leave == enter.replace(":enter", ":exit")
             finally:
                 subprocess.run(
                     ["git", "worktree", "remove", "--force", wt_path],
                     cwd=main_repo,
                     capture_output=True,
                 )
+
+    @pytest.mark.skipif(
+        "fork" not in multiprocessing.get_all_start_methods(),
+        reason="fork start method is unavailable",
+    )
+    def test_forked_child_does_not_inherit_reentrant_ownership(self) -> None:
+        if not locking._HAVE_FCNTL:
+            pytest.skip("fcntl not available on this platform")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            subprocess.run(["git", "init"], cwd=tmpdir, check=True, capture_output=True)
+            context = multiprocessing.get_context("spawn")
+            receiver, sender = context.Pipe(duplex=False)
+            process = context.Process(
+                target=_fork_while_holding_repo_lock,
+                args=(tmpdir, sender),
+            )
+            try:
+                process.start()
+                sender.close()
+                assert receiver.poll(10.0), "child did not report its lock outcome"
+                assert receiver.recv() == "timed_out"
+                process.join(timeout=10.0)
+                assert process.exitcode == 0
+            finally:
+                if process.is_alive():
+                    process.kill()
+                    process.join(timeout=5.0)
+                receiver.close()
+                sender.close()
+                process.close()
+
+    def test_spawned_child_observes_timeout_while_parent_owns_lock(self) -> None:
+        if not locking._HAVE_FCNTL:
+            pytest.skip("fcntl not available on this platform")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            subprocess.run(["git", "init"], cwd=tmpdir, check=True, capture_output=True)
+            context = multiprocessing.get_context("spawn")
+            receiver, sender = context.Pipe(duplex=False)
+            process = context.Process(
+                target=_attempt_repo_lock,
+                args=(tmpdir, sender, 0.2),
+            )
+            try:
+                with locking.git_repo_lock(tmpdir, timeout=1.0, stale_after=60.0):
+                    process.start()
+                    sender.close()
+                    assert receiver.poll(10.0), "child did not report its lock outcome"
+                    assert receiver.recv() == "timed_out"
+                    process.join(timeout=10.0)
+                    assert process.exitcode == 0
+            finally:
+                if process.is_alive():
+                    process.kill()
+                    process.join(timeout=5.0)
+                receiver.close()
+                sender.close()
+                process.close()
+
+    def test_crashed_spawned_owner_releases_kernel_mutex(self) -> None:
+        if not locking._HAVE_FCNTL:
+            pytest.skip("fcntl not available on this platform")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            subprocess.run(["git", "init"], cwd=tmpdir, check=True, capture_output=True)
+            context = multiprocessing.get_context("spawn")
+            process = context.Process(target=_crash_holding_repo_lock, args=(tmpdir,))
+            try:
+                process.start()
+                process.join(timeout=10.0)
+                assert process.exitcode == 73
+            finally:
+                if process.is_alive():
+                    process.kill()
+                    process.join(timeout=5.0)
+                process.close()
+
+            with locking.git_repo_lock(tmpdir, timeout=1.0, stale_after=60.0):
+                pass
 
 
 class TestAsyncGitRepoLock:
