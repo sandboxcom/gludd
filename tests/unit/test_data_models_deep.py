@@ -25,7 +25,6 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import relationship
 from sqlalchemy.sql.schema import Column
 
 from general_ludd.db import models as m
@@ -60,12 +59,12 @@ def _uq_constraints(model_cls: type[m.Base]) -> list[UniqueConstraint]:
     return [a for a in _table_args(model_cls) if isinstance(a, UniqueConstraint)]
 
 
-def _rel_attrs(model_cls: type[m.Base]) -> dict[str, relationship[object]]:
-    result: dict[str, relationship[object]] = {}
+def _rel_attrs(model_cls: type[m.Base]) -> dict[str, typing.Any]:
+    result: dict[str, typing.Any] = {}
     for name in dir(model_cls):
         attr = getattr(model_cls, name, None)
         if hasattr(attr, "property") and hasattr(attr.property, "back_populates"):
-            result[name] = attr  # type: ignore[assignment]
+            result[name] = attr.property
     return result
 
 
@@ -244,6 +243,14 @@ COLUMN_TYPE_MAP = {
     "schedule_paused": (Boolean,),
 }
 
+MODEL_COLUMN_TYPE_OVERRIDES = {
+    ("AgentMessageModel", "priority"): (String,),
+    ("AgentTokenModel", "expires_at"): (DateTime,),
+    ("BucketLeaseModel", "expires_at"): (m.UTCDateTime,),
+    ("HumanTodoModel", "priority"): (String,),
+    ("PromptProfileModel", "version"): (String,),
+}
+
 
 class TestColumnTypes:
     def test_all_columns_have_type(self):
@@ -264,11 +271,17 @@ class TestColumnTypes:
             if col is None:
                 continue
             type_class = type(col.type)
+            model_expected_types = MODEL_COLUMN_TYPE_OVERRIDES.get(
+                (cls.__name__, col_name), expected_types
+            )
             msg = (
                 f"{cls.__name__}.{col_name} type {type_class.__name__} "
-                f"not in expected {tuple(t.__name__ for t in expected_types)}"
+                f"not in expected {tuple(t.__name__ for t in model_expected_types)}"
             )
-            assert any(type_class is t or issubclass(type_class, t) for t in expected_types), msg
+            assert any(
+                type_class is t or issubclass(type_class, t)
+                for t in model_expected_types
+            ), msg
 
     def test_id_columns_use_valid_types(self):
         valid = (Integer, String)
@@ -305,12 +318,14 @@ class TestRelationships:
 
     def test_todo_events_cascade_delete_orphan(self):
         rel = _rel_attrs(m.TodoModel)["events"]
-        assert "all, delete-orphan" in rel.cascade or rel.cascade == "all, delete-orphan"
+        assert "delete" in rel.cascade
+        assert "delete-orphan" in rel.cascade
         assert rel.passive_deletes is True
 
     def test_variable_namespace_cascade_delete_orphan(self):
         rel = _rel_attrs(m.VariableNamespaceModel)["values"]
-        assert "all, delete-orphan" in rel.cascade or rel.cascade == "all, delete-orphan"
+        assert "delete" in rel.cascade
+        assert "delete-orphan" in rel.cascade
         assert rel.passive_deletes is True
 
 

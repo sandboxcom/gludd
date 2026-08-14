@@ -60,7 +60,40 @@ first complete tick; it never shares or replaces the active session.
   Gludd's lifecycle regression forces collection and treats that signal as a
   functional leak, rather than filtering the warning.
 
+## Migration planning and retention integrity
+
+`plan_migration()` is a read-only preflight. It reports the current revision,
+head revision, and pending count without applying DDL. For dialects whose
+migration history supports Alembic offline mode, it also renders SQL. Gludd's
+SQLite history contains move-and-copy batch operations that require live table
+reflection, so an SQLite plan instead returns an explicit diagnostic SQL
+comment. Operators must validate that history against a disposable copy; the
+planner never runs it against the live database merely to manufacture a
+preview. Unknown Alembic errors still propagate.
+
+[Alembic's batch-mode documentation](https://alembic.sqlalchemy.org/en/latest/batch.html#working-in-offline-mode)
+states that SQLite batch migrations cannot use `--sql` without supplying full
+`copy_from` tables. A long-lived
+[Alembic practitioner discussion #1069](https://github.com/sqlalchemy/alembic/discussions/1069)
+also records why projects commonly use current-schema SQLite fixtures plus
+targeted migration-walk tests instead of treating one rollback-based fixture as
+migration proof. Gludd therefore keeps model introspection, revision-chain, and
+migration execution checks separate.
+
+Task-decision retention tests keep SQLite foreign keys enabled and seed the
+corresponding task-return parents. They do not disable or defer integrity to
+make cleanup pass. This follows the failure mode discussed in
+[SQLAlchemy discussion #6123](https://github.com/sqlalchemy/sqlalchemy/discussions/6123):
+connection-scoped SQLite pragmas and deferred checks do not make invalid parent
+references valid. Retention deletes remain caller-committed, matching the
+repository transaction boundary.
+
 ## Zero-downtime behavior
+
+Migration 042 adds only the `todos.parent_todo_id` lookup index. Existing and
+replacement workers use the same columns and constraints before, during, and
+after that migration; rollback removes only the performance index. The
+candidate preflight checks the revision chain before traffic switches.
 
 Lifecycle cleanup happens only after the worker has stopped accepting work and
 its event bridges have drained. During a rolling or blue/green deployment, the

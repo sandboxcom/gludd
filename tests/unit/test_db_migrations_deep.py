@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 from alembic.config import Config as AlembicConfig
+from alembic.util.exc import CommandError
 
 from general_ludd.db.migrations import (
     MigrationPlan,
@@ -124,7 +125,7 @@ class TestStampHeadEdgeCases:
     def test_stamp_head_with_empty_config(self):
         cfg = AlembicConfig()
         cfg.set_main_option("script_location", "/nonexistent/for/sure/12345")
-        with pytest.raises((OSError, RuntimeError)):
+        with pytest.raises(CommandError, match="Path doesn't exist"):
             stamp_head(cfg)
         assert cfg.get_main_option("script_location") == "/nonexistent/for/sure/12345"
 
@@ -203,6 +204,7 @@ class TestPlanMigrationEdgeCases:
         cfg = get_alembic_config()
         plan = plan_migration(cfg)
         assert isinstance(plan.sql, str)
+        assert "SQLite offline SQL unavailable" in plan.sql
 
     def test_plan_pending_count_is_non_negative(self):
         cfg = get_alembic_config()
@@ -242,7 +244,7 @@ class TestCheckPendingEdgeCases:
         cfg = AlembicConfig()
         cfg.set_main_option("script_location", "/nonexistent/dead/path")
         cfg.set_main_option("sqlalchemy.url", "sqlite:///./test.db")
-        with pytest.raises((OSError, RuntimeError)):
+        with pytest.raises(CommandError, match="Path doesn't exist"):
             check_pending(cfg)
         assert cfg.get_main_option("sqlalchemy.url") == "sqlite:///./test.db"
 
@@ -284,7 +286,7 @@ class TestVersionChainDeepValidation:
         assert len(heads) == 1, f"Expected single head, got {heads}"
         head = heads[0]
         walked: set[str] = set()
-        for rev in script.iterate_revisions("base", head):
+        for rev in script.iterate_revisions(head, "base"):
             walked.add(rev.revision)
         on_disk = _rev_ids()
         missing = on_disk - walked

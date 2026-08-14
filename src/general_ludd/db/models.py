@@ -29,6 +29,8 @@ from general_ludd.schemas.todo import TodoStatus
 
 
 class Base(DeclarativeBase):
+    """Provide the shared SQLAlchemy registry and metadata for persisted models."""
+
     pass
 
 
@@ -70,9 +72,11 @@ class UTCDateTime(TypeDecorator[datetime]):
     cache_ok = True
 
     def load_dialect_impl(self, dialect: Any) -> Any:
+        """Select a timezone-capable datetime type for the active SQL dialect."""
         return dialect.type_descriptor(DateTime(timezone=True))
 
     def process_bind_param(self, value: datetime | None, dialect: Any) -> datetime | None:
+        """Normalize application timestamps to aware UTC values before storage."""
         if value is None:
             return None
         if value.tzinfo is None:
@@ -80,6 +84,7 @@ class UTCDateTime(TypeDecorator[datetime]):
         return value.astimezone(UTC)
 
     def process_result_value(self, value: datetime | None, dialect: Any) -> datetime | None:
+        """Restore database timestamps as aware UTC values for application use."""
         if value is None:
             return None
         if value.tzinfo is None:
@@ -92,6 +97,8 @@ def _gen_todo_id() -> str:
 
 
 class ProjectModel(Base):
+    """Persist one configured workspace and its mutable activation metadata."""
+
     __tablename__ = "projects"
 
     project_id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: f"proj-{uuid4().hex[:8]}")
@@ -107,6 +114,8 @@ class ProjectModel(Base):
 
 
 class RelationType(enum.StrEnum):
+    """Classify a user-declared topology edge from the local project."""
+
     PARENT = "parent"  # the environment THIS project runs inside
     CHILD = "child"  # a project that runs inside THIS one
     SIBLING = "sibling"  # peer under a shared parent (gludd may control it)
@@ -114,6 +123,8 @@ class RelationType(enum.StrEnum):
 
 
 class LocationKind(enum.StrEnum):
+    """Identify how a declared neighboring project location is resolved."""
+
     GLUDD_PROJECT_NAME = "gludd_project_name"  # resolves to a ProjectModel.name
     DIRECTORY = "directory"  # absolute/relative path on disk
     URL = "url"  # git/https/service URL
@@ -192,6 +203,8 @@ class ProjectRelationshipModel(Base):
 
 
 class AuditEventType(enum.StrEnum):
+    """Define stable names recorded for todo, return, queue, and lease events."""
+
     TODO_CREATED = "todo_created"
     TODO_STATUS_CHANGED = "todo_status_changed"
     TODO_UPDATED = "todo_updated"
@@ -205,6 +218,8 @@ class AuditEventType(enum.StrEnum):
 
 
 class TodoModel(Base):
+    """Persist schedulable work with hierarchy and optimistic-lock metadata."""
+
     __tablename__ = "todos"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -230,6 +245,7 @@ class TodoModel(Base):
         String(32),
         ForeignKey("todos.todo_id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
     )
     child_todo_ids: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     acceptance_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -313,6 +329,8 @@ class TodoModel(Base):
 
 
 class TodoEventModel(Base):
+    """Record an auditable todo transition that is deleted with its parent todo."""
+
     __tablename__ = "todo_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -339,6 +357,8 @@ class TodoEventModel(Base):
 
 
 class TaskReturnModel(Base):
+    """Persist worker output awaiting a single review decision."""
+
     __tablename__ = "task_returns"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -385,6 +405,8 @@ class TaskReturnModel(Base):
 
 
 class TaskDecisionModel(Base):
+    """Persist the retention-managed review decision for one task return."""
+
     __tablename__ = "task_decisions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -433,6 +455,8 @@ class TaskDecisionModel(Base):
 
 
 class QueueModel(Base):
+    """Persist queue admission, capacity, retry, and allowed-profile policy."""
+
     __tablename__ = "queues"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -458,6 +482,8 @@ class QueueModel(Base):
 
 
 class AuditEventModel(Base):
+    """Persist a cross-entity audit event with optional project provenance."""
+
     __tablename__ = "audit_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -516,6 +542,8 @@ class DeploymentRecordModel(Base):
 
 
 class VariableNamespaceModel(Base):
+    """Group project-scoped variables and own their cascade-deleted values."""
+
     __tablename__ = "variable_namespaces"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -540,6 +568,8 @@ class VariableNamespaceModel(Base):
 
 
 class VariableValueModel(Base):
+    """Persist a typed variable value unique within its namespace."""
+
     __tablename__ = "variable_values"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -563,6 +593,8 @@ class VariableValueModel(Base):
 
 
 class BucketLeaseModel(Base):
+    """Persist expiring resource-bucket ownership unique per key and holder."""
+
     __tablename__ = "bucket_leases"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -726,6 +758,8 @@ class AzureCostOutboxEventModel(Base):
 
 
 class FeatureStatus(enum.StrEnum):
+    """Define canonical feature lifecycle values and the legacy planned alias."""
+
     REQUESTED = "requested"
     # Compatibility alias: old clients called the initial requested state
     # ``planned``. Persist the canonical value for mixed-version workers.
@@ -778,6 +812,8 @@ class FeatureModel(Base):
 
 
 class PromptProfileModel(Base):
+    """Persist versioned prompt text plus task and tag selection metadata."""
+
     __tablename__ = "prompt_profiles"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: f"pp-{uuid4().hex[:8]}")
@@ -868,6 +904,8 @@ class RoleRunModel(Base):
 
 
 class BenchmarkResultModel(Base):
+    """Persist model and prompt scores used by project-aware adaptive routing."""
+
     __tablename__ = "benchmark_results"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -987,6 +1025,8 @@ class TaskEmbeddingModel(Base):
 
 
 class StsAuditModel(Base):
+    """Persist issued STS token metadata, usage counters, and audit events."""
+
     __tablename__ = "sts_audit"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -1177,7 +1217,7 @@ class RemediationActionModel(Base):
 
 
 def _gen_model_call_id() -> str:
-    return f"MC-{uuid4().hex[:12].upper()}"
+    return f"MC-{uuid4().hex[:13].upper()}"
 
 
 class ModelCallLogModel(Base):
