@@ -33,6 +33,8 @@ from typing import Any
 SCHEMA_VERSION = "1.0"
 CANONICALIZER = "chemistry-core@0.1.0"
 MAX_BALANCE_COEFF = 12
+_HOMOELEMENTAL_TOKEN_RE = re.compile(r"^(?P<element>[A-Z][a-z]?)(?P=element)*$")
+_STRUCTURAL_SMILES_MARKER_RE = re.compile(r"[\[\]@()/\\=#.]")
 
 ATOMIC_WEIGHTS: dict[str, float] = {
     "H": 1.008,
@@ -317,15 +319,21 @@ def _looks_like_smiles(query: str) -> bool:
 
 
 def _stereo_status(smiles: str) -> str:
+    """Return a conservative stereo-evidence status for a SMILES token."""
     if "@" in smiles or "/" in smiles or "\\" in smiles:
         return "specified"
+    if "=" in smiles:
+        return "partial"
     return "unknown"
 
 
 def _isotope_status(smiles: str) -> str:
+    """Return isotope evidence without assuming ambiguous bare tokens are natural."""
     if re.search(r"\[\d+[A-Z]", smiles):
         return "specified"
-    return "natural"
+    if _HOMOELEMENTAL_TOKEN_RE.fullmatch(smiles) or _STRUCTURAL_SMILES_MARKER_RE.search(smiles):
+        return "natural"
+    return "unknown"
 
 
 def resolve_identity(query: dict[str, Any] | str) -> dict[str, Any]:
