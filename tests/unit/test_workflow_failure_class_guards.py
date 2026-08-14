@@ -370,6 +370,17 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
         assert "$(SYSTEM_PYTHON) scripts/" in block
 
 
+def test_lightweight_status_target_never_bootstraps_project_venv() -> None:
+    """A read-only resource snapshot must use the dependency-free interpreter."""
+    makefile = _makefile()
+    no_uv_goals = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].split("ifneq", 1)[0]
+    block = _target_block("active-work-status")
+
+    assert "active-work-status" in no_uv_goals
+    assert "$(UV) run" not in block
+    assert "$(SYSTEM_PYTHON) scripts/active_work_status.py" in block
+
+
 def test_tmp_gludd_cleanup_targets_are_scoped_to_generated_dirs() -> None:
     makefile = _makefile()
     phony_block = makefile.split(".PHONY:", 1)[1].split("help:", 1)[0]
@@ -386,7 +397,7 @@ def test_tmp_gludd_cleanup_targets_are_scoped_to_generated_dirs() -> None:
     assert "rm -rf" not in tmp_cleanup
     assert "/tmp/gludd-worktrees/*/.pytest_cache" in worktree_usage
 
-    assert "scripts/clean_ci_shard_scratch.py" in shard_cleanup
+    assert "$(SYSTEM_PYTHON) -m scripts.clean_ci_shard_scratch" in shard_cleanup
     assert "rm -rf /tmp/gludd-ci-shard-*" not in shard_cleanup
     assert "rm -rf /tmp/gludd-unit-shard-*" not in shard_cleanup
     assert "/tmp/gludd-worktrees" not in shard_cleanup

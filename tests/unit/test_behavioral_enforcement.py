@@ -95,12 +95,13 @@ class TestAA004SubagentCleanup:
         assert plugin_exists("enforce-delegate.ts"), "AA004: enforce-delegate.ts missing"
 
     def test_subagent_cleanup_guard_registered(self):
-        if not guard_exists_in_makefile("_subagent-cleanup-guard"):
-            pytest.skip(
-                "AA004 known-gap: subagent cleanup enforced via enforce-delegate.ts"
-                " and agent-worktree lifecycle, not a standalone Makefile guard."
-            )
-        assert True, "unreachable when guard does not exist"
+        content = makefile_text()
+        assert plugin_exists("enforce-delegate.ts"), (
+            "AA004: subagent isolation requires enforce-delegate.ts"
+        )
+        assert "subagent-cleanup:" in content, (
+            "AA004: tracked subagent cleanup target missing from Makefile"
+        )
 
 
 class TestAA005WrongBranch:
@@ -239,17 +240,21 @@ class TestAA012ReleaseCiGreenGuard:
         )
 
     def test_git_tag_move_has_ci_green_requirement(self):
+        """The release path checks CI before invoking its tag-push step.
+
+        ``git-tag-move`` is a low-level recovery utility.  The supported release
+        workflow is ``release-cut``, whose CI precondition must remain ahead of
+        the tag operation rather than being hidden by a known-gap skip.
+        """
         content = makefile_text()
-        if "git-tag-move:" in content:
-            idx = content.find("git-tag-move:")
-            block = content[idx : idx + 400]
-            has_ci = "ci" in block.lower() or "green" in block.lower()
-            if not has_ci:
-                pytest.skip(
-                    "AA012 known-gap: git-tag-move is a utility target;"
-                    " CI-green enforcement is on release-cut (calls require-ci-green)."
-                )
-        assert True, "unreachable when target lacks CI check"
+        release_index = content.find("release-cut:")
+        assert release_index >= 0, "AA012: supported release-cut target missing"
+        release_block = content[release_index : release_index + 800]
+        ci_index = release_block.find("require-ci-green")
+        tag_index = release_block.find("git-tag-push")
+        assert 0 <= ci_index < tag_index, (
+            "AA012: release-cut must require green CI before pushing its tag"
+        )
 
 
 class TestAA013NoSuppressions:

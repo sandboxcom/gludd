@@ -37,6 +37,7 @@ COVERAGE_CONFIG ?= config/coverage_gate_runtime.ini
 COVERAGE_REPORT ?= .gate-logs/coverage-files.json
 COVERAGE_AGGREGATE_MIN ?= 85
 COVERAGE_PER_FILE_MIN ?= 75
+CLEAN_VALIDATE_ONLY ?= 0
 DISK_MIN_FREE_GIB ?= 8
 # Preserve a capable caller terminal; supply a stable terminfo fallback only
 # when workers or CI provide an empty, unknown, or dumb TERM value.
@@ -73,7 +74,7 @@ _NO_UV_SYNC_GOALS := \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger ci-shards-log-context \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
     search show-lines cat-file copy-file mkdir-p write-text append-text replace-lines replace-text replace-all-text write-text-b64 replace-text-b64 \
-    tmp-gludd-usage tmp-gludd-worktree-usage tmp-gludd-clean-ci-shards clean-worktree-venvs clean-worktree-caches
+    tmp-gludd-usage tmp-gludd-worktree-usage tmp-gludd-clean-ci-shards clean-worktree-venvs clean-worktree-caches active-work-status
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
 else
@@ -156,7 +157,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         verify-enforcement \
 ci-view ci-rerun ci-trigger ci-active ci-job-log ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
-log-agent-result disk-guard disk-check check-disk check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards \
+log-agent-result disk-guard disk-check check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
         searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
         networking-role-lint networking-role-syntax test-scapy-adapter networking-validate \
@@ -476,7 +477,8 @@ help:
 	@echo "  fix-hooks-tmp           temp fix target"
 	@echo "  disk-guard            Check disk usage + clean caches if above threshold (default 95%)"
 	@echo "  disk-check            Check disk usage only, exit 1 if above threshold"
-	@echo "  check-disk            Pre-commit check: fails if /tmp/gludd-* >100MB or disk >90%"
+	@echo "  check-disk            Pre-commit disk guard (CHECK_DISK_VALIDATE_ONLY=0; set 1 for deterministic contract test)"
+	@echo "  check-disk-classification  Bounded JSON-lines proof of counted vs exempt /tmp/gludd-* roots"
 	@echo "  check-system-load     Read-only system load diagnostic (1m avg, CPU count, verdict)"
 	@echo "  disk                  Print disk usage + gludd footprint"
 	@echo "  disk-reclaim          Run bounded, heartbeat-emitting cache cleanup"
@@ -487,7 +489,8 @@ help:
 	@echo "  tmp-gludd-usage       Print largest /tmp/gludd-* entries sorted by size"
 	@echo "  tmp-gludd-worktree-usage  Print largest generated entries under /tmp/gludd-worktrees"
 	@echo "  tmp-gludd-clean-ci-shards  Remove stale generated CI shard scratch dirs"
-	@echo "  tmp-gludd-clean-ci-shards-now  Remove all inactive CI shard scratch dirs"
+	@echo "  tmp-gludd-clean-ci-shards-now  Remove inactive CI/gate shard roots (TMP_GLUDD_CLEAN_VALIDATE_ONLY=0; set 1 for contract test)"
+	@echo "  tmp-gludd-clean-orphan-worktrees-now  Validate or remove proven orphan roots (TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY=1; use 0 only after merge)"
 	@echo "  clean-worktree-caches  Remove generated venv/test/tool caches from worktrees"
 	@echo ""
 	@echo "  --- OpenCode Database Maintenance ---"
@@ -512,7 +515,7 @@ help:
 	@echo ""
 	@echo "  --- Other ---"
 	@echo "  smoke                 Quick daemon boot health check"
-	@echo "  clean                 Remove build artifacts"
+	@echo "  clean                 Remove ignored build artifacts while preserving tracked templates (CLEAN_VALIDATE_ONLY=0|1)"
 	@echo "  dist-clean            Remove distribution artifacts"
 	@echo "  gated-merge           flock-guarded multi-branch merge with manifest (BASE/BRANCHES/MERGE_STRATEGY/MANIFEST)"
 	@echo ""
@@ -701,8 +704,8 @@ lint-files:
 	@$(UV) run ruff check $$FILES
 
 lint-docstrings:
-	@if [ -z "$(DOCSTRING_FILES)" ]; then 		echo "Usage: make lint-docstrings DOCSTRING_FILES='src/general_ludd/module.py'"; 		exit 2; 	fi
-	@for file in $(DOCSTRING_FILES); do 		case "$$file" in 			src/general_ludd/*.py) ;; 			*) echo "ERROR: lint-docstrings only accepts tracked Python files under src/general_ludd: $$file"; exit 2 ;; 		esac; 		if [ ! -f "$$file" ]; then echo "ERROR: docstring source file not found: $$file"; exit 2; fi; 		if ! git ls-files --error-unmatch "$$file" >/dev/null 2>&1; then 			echo "ERROR: docstring source file is not tracked: $$file"; 			exit 2; 		fi; 	done
+	@if [ -z "$(DOCSTRING_FILES)" ]; then 		echo "Usage: make lint-docstrings DOCSTRING_FILES='src/general_ludd/module.py scripts/checker.py'"; 		exit 2; 	fi
+	@for file in $(DOCSTRING_FILES); do 		case "$$file" in 			src/general_ludd/*.py|scripts/*.py) ;; 			*) echo "ERROR: lint-docstrings only accepts tracked production Python files under src/general_ludd or scripts: $$file"; exit 2 ;; 		esac; 		if [ ! -f "$$file" ]; then echo "ERROR: docstring source file not found: $$file"; exit 2; fi; 		if ! git ls-files --error-unmatch "$$file" >/dev/null 2>&1; then 			echo "ERROR: docstring source file is not tracked: $$file"; 			exit 2; 		fi; 	done
 	@$(UV) run ruff check --select D --config pyproject.toml $(DOCSTRING_FILES)
 
 lint-markdown:
@@ -2425,7 +2428,14 @@ uv-cache-prune-status:
 
 # Pre-commit disk check: fail if /tmp/gludd-* >100MB or disk >90%.
 check-disk:
-	@uv run python scripts/check_disk_usage.py
+	@if [ "$(CHECK_DISK_VALIDATE_ONLY)" = "1" ]; then \
+		$(MAKE) --no-print-directory test-files TESTFILES=tests/unit/test_check_disk_usage.py PYTEST_ARGS='-q -n 0'; \
+	else \
+		uv run python scripts/check_disk_usage.py; \
+	fi
+
+check-disk-classification:
+	@uv run python scripts/check_disk_usage.py --classify
 
 # Read-only system load diagnostic (AGENTS.md System-Load Gate Before Dispatch Waves).
 # Prints 1m load avg, CPU count, and verdict (OK / WARN / CRITICAL). Exit 0 always.
@@ -2659,10 +2669,24 @@ tmp-gludd-worktree-usage:
 	@du -sh /tmp/gludd-worktrees /tmp/gludd-worktrees/* /tmp/gludd-worktrees/*/.venv /tmp/gludd-worktrees/*/.pytest_cache /tmp/gludd-worktrees/*/.mypy_cache /tmp/gludd-worktrees/*/.ruff_cache 2>/dev/null | sort -h | tail -40 || true
 
 tmp-gludd-clean-ci-shards:
-	@$(SYSTEM_PYTHON) scripts/clean_ci_shard_scratch.py
+	@$(SYSTEM_PYTHON) -m scripts.clean_ci_shard_scratch
 
 tmp-gludd-clean-ci-shards-now:
-	@$(SYSTEM_PYTHON) scripts/clean_ci_shard_scratch.py --min-age-seconds 0
+	@if [ "$(TMP_GLUDD_CLEAN_VALIDATE_ONLY)" = "1" ]; then \
+		$(MAKE) --no-print-directory test-files TESTFILES=tests/unit/test_clean_ci_shard_scratch.py PYTEST_ARGS='-q -n 0'; \
+	else \
+		$(SYSTEM_PYTHON) -m scripts.clean_ci_shard_scratch --min-age-seconds 0; \
+	fi
+
+tmp-gludd-clean-orphan-worktrees-now:
+	@if [ "$(TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY)" = "1" ]; then \
+		$(MAKE) --no-print-directory test-files TESTFILES=tests/unit/test_clean_ci_shard_scratch.py PYTEST_ARGS='-q -n 0'; \
+	elif [ "$(TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY)" = "0" ]; then \
+		$(SYSTEM_PYTHON) -m scripts.clean_ci_shard_scratch --worktree-orphans --delete-worktree-orphans; \
+	else \
+		echo "Usage: make tmp-gludd-clean-orphan-worktrees-now TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY=1 (use 0 only after merge)"; \
+		exit 2; \
+	fi
 
 # Remove regenerable .venv dirs from agent worktrees (source is preserved;
 # `uv sync` recreates on demand). The main disk hog when many worktree agents run.
@@ -5267,12 +5291,20 @@ test-and-commit: _commit-lock-acquire
 	@$(MAKE) dist
 
 clean:
-	@rm -rf .venv dist build *.egg-info src/*.egg-info .pytest_cache .mypy_cache .coverage coverage.xml htmlcov .ruff_cache
-	@rm -f Makefile.tmp
-	@find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
-	@git rm -r --cached '*__pycache__*' 2>/dev/null || true
-	@git rm --cached .coverage coverage.xml 2>/dev/null || true
-	@echo "Cleaned."
+	@if [ "$(CLEAN_VALIDATE_ONLY)" = "1" ]; then \
+		$(MAKE) --no-print-directory test-specific TESTFILE=tests/unit/test_packaging_templates_committed.py::test_clean_preserves_tracked_distribution_templates PYTEST_ARGS='-q -n 0'; \
+	elif [ "$(CLEAN_VALIDATE_ONLY)" = "0" ]; then \
+		rm -rf .venv build *.egg-info src/*.egg-info .pytest_cache .mypy_cache .coverage coverage.xml htmlcov .ruff_cache; \
+		git clean -fdX -- dist; \
+		rm -f Makefile.tmp; \
+		find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true; \
+		git rm -r --cached '*__pycache__*' 2>/dev/null || true; \
+		git rm --cached .coverage coverage.xml 2>/dev/null || true; \
+		echo "Cleaned."; \
+	else \
+		echo "Usage: make clean CLEAN_VALIDATE_ONLY=0|1"; \
+		exit 2; \
+	fi
 
 # disk-reclaim: compatibility alias for the bounded disk guard.  Keep the
 # cleanup implementation single-sourced so uv pruning always has a heartbeat,
@@ -5547,7 +5579,7 @@ check-make-target-contract:
 	@$(UV) run python scripts/check_make_target_contract.py
 
 active-work-status:
-	@$(UV) run python scripts/active_work_status.py
+	@UV=echo $(SYSTEM_PYTHON) scripts/active_work_status.py
 
 # --- Help target coverage: prevent hidden public Make targets ---
 check-make-help:
