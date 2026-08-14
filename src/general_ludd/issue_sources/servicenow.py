@@ -69,8 +69,12 @@ _BLOCKED_SUFFIXES = (
 )
 
 
-class SSRFError(ValueError):
-    """Raised when an instance URL targets a blocked / internal host."""
+class ServiceNowSSRFError(ValueError):
+    """Raised when a ServiceNow instance URL targets a blocked internal host."""
+
+
+# Compatibility alias retained for existing issue-source integrations.
+SSRFError = ServiceNowSSRFError
 
 
 def _host_is_blocked(host: str) -> bool:
@@ -152,6 +156,18 @@ class ServiceNowIssueSource:
         *,
         env: dict[str, str] | None = None,
     ) -> None:
+        """Configure a ServiceNow Table API issue source.
+
+        Args:
+            config: Instance URL, table, timeout, state mapping, and names of
+                environment variables carrying credentials.
+            transport: Optional injected HTTP transport.
+            env: Optional environment snapshot used to resolve credentials.
+
+        Raises:
+            ValueError: If the instance URL is missing or malformed.
+            ServiceNowSSRFError: If the instance points at a blocked host.
+        """
         self.name = config.get("name", self.SYSTEM)
         self._env = dict(env) if env is not None else dict(os.environ)
 

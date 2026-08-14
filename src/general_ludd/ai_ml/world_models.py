@@ -16,7 +16,8 @@ This module provides the typed contract:
 
   - :class:`ConstraintSpec` — an environment constraint (name/value/unit).
   - :class:`WorldModelEnvironment` — the immutable environment record.
-  - :class:`HorizonError` — per-horizon prediction error.
+  - :class:`HorizonMetrics` — per-horizon prediction metrics; the historical
+    ``HorizonError`` spelling remains an import-compatible alias.
   - :class:`ConstraintViolation` — a constraint violation finding.
   - :class:`RolloutUncertainty` — epistemic + aleatoric rollout uncertainty.
   - :class:`RolloutEvaluation` — the typed ``evaluate_rollout`` result.
@@ -92,6 +93,7 @@ class ConstraintSpec:
     unit: str
 
     def __post_init__(self) -> None:
+        """Reject incomplete constraints and non-numeric bound values."""
         _require_nonempty_str(self.name, "name")
         if not isinstance(self.value, int | float) or isinstance(self.value, bool):
             raise ValueError(f"value must be a real number, got {self.value!r}")
@@ -138,6 +140,7 @@ class WorldModelEnvironment:
     terminal_behavior: str = "terminal_on_goal_or_timeout"
 
     def __post_init__(self) -> None:
+        """Validate the complete environment contract and normalize its kind."""
         _require_nonempty_str(self.env_id, "env_id")
         _require_nonempty_str(self.observation_schema, "observation_schema")
         _require_nonempty_str(self.action_schema, "action_schema")
@@ -165,7 +168,7 @@ class WorldModelEnvironment:
 
 
 @dataclass(frozen=True)
-class HorizonError:
+class HorizonMetrics:
     """Prediction error at a single rollout horizon (spec §8.1).
 
     Multi-horizon evaluation reports error at several horizon depths so
@@ -179,12 +182,17 @@ class HorizonError:
     p95_error: float
 
     def __post_init__(self) -> None:
+        """Reject non-positive horizons and negative prediction errors."""
         if not isinstance(self.horizon_steps, int) or self.horizon_steps < 1:
             raise ValueError(f"horizon_steps must be a positive int, got {self.horizon_steps!r}")
         for fname in ("mean_error", "p95_error"):
             v = getattr(self, fname)
             if not isinstance(v, int | float) or isinstance(v, bool) or v < 0:
                 raise ValueError(f"{fname} must be a non-negative number, got {v!r}")
+
+
+# Compatibility alias: HorizonError was a metric value, never an exception.
+HorizonError = HorizonMetrics
 
 
 @dataclass(frozen=True)
@@ -196,6 +204,7 @@ class ConstraintViolation:
     description: str
 
     def __post_init__(self) -> None:
+        """Validate the violation identity, normalized severity, and description."""
         _require_nonempty_str(self.constraint_name, "constraint_name")
         if not isinstance(self.severity, int | float) or isinstance(self.severity, bool):
             raise ValueError(f"severity must be a real number, got {self.severity!r}")
@@ -219,6 +228,7 @@ class RolloutUncertainty:
     method: str
 
     def __post_init__(self) -> None:
+        """Require bounded uncertainty components and a named estimation method."""
         for fname in ("epistemic", "aleatoric"):
             v = getattr(self, fname)
             if not isinstance(v, int | float) or isinstance(v, bool) or not (0.0 <= float(v) <= 1.0):
@@ -237,7 +247,7 @@ class RolloutEvaluation:
     real-world actuation").
     """
 
-    horizon_errors: tuple[HorizonError, ...]
+    horizon_errors: tuple[HorizonMetrics, ...]
     calibration_ece: float
     constraint_violations: tuple[ConstraintViolation, ...]
     compounding_error_rate: float
@@ -247,10 +257,11 @@ class RolloutEvaluation:
     actuation_block_reasons: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        """Enforce consistency between rollout metrics and actuation safety."""
         if not self.horizon_errors:
-            raise ValueError("horizon_errors must contain at least one HorizonError")
-        if any(not isinstance(h, HorizonError) for h in self.horizon_errors):
-            raise ValueError("horizon_errors entries must be HorizonError")
+            raise ValueError("horizon_errors must contain at least one HorizonMetrics")
+        if any(not isinstance(h, HorizonMetrics) for h in self.horizon_errors):
+            raise ValueError("horizon_errors entries must be HorizonMetrics")
         if not isinstance(self.calibration_ece, int | float) or isinstance(self.calibration_ece, bool):
             raise ValueError(f"calibration_ece must be a number, got {self.calibration_ece!r}")
         if self.calibration_ece < 0:
@@ -274,7 +285,7 @@ class RolloutEvaluation:
 def evaluate_rollout(
     env: WorldModelEnvironment,
     *,
-    horizon_errors: tuple[HorizonError, ...],
+    horizon_errors: tuple[HorizonMetrics, ...],
     calibration_ece: float,
     constraint_violations: tuple[ConstraintViolation, ...],
     compounding_error_rate: float,
@@ -336,6 +347,7 @@ __all__ = [
     "ConstraintSpec",
     "ConstraintViolation",
     "HorizonError",
+    "HorizonMetrics",
     "RolloutEvaluation",
     "RolloutUncertainty",
     "WorldModelEnvironment",

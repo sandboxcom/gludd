@@ -50,8 +50,12 @@ class PauseStoreError(RuntimeError):
     """Raised when pause state cannot be safely written or read."""
 
 
-class IntegrityError(PauseStoreError):
+class PauseStoreIntegrityError(PauseStoreError):
     """Raised when the on-disk pause state fails its MAC (tampered/corrupted)."""
+
+
+# Compatibility alias retained for callers of the pre-beta public contract.
+IntegrityError = PauseStoreIntegrityError
 
 
 def default_pause_dir() -> Path:
@@ -95,6 +99,16 @@ class PauseStore:
     _MAX_STATE_BYTES = 1_048_576
 
     def __init__(self, base_dir: str | Path = "") -> None:
+        """Open a pause-state store and establish its integrity key.
+
+        Args:
+            base_dir: Private state directory. An empty value selects the
+                platform-specific default.
+
+        Raises:
+            PauseStoreIntegrityError: If prior signed state exists but its key
+                cannot be loaded securely.
+        """
         # An empty base_dir means "use the default"; ``Path("")`` would resolve
         # to the CWD, which is never what we want.
         self._base = (
@@ -115,6 +129,7 @@ class PauseStore:
 
     @property
     def base_dir(self) -> Path:
+        """Return the resolved directory containing pause state and MAC data."""
         return self._base
 
     @property

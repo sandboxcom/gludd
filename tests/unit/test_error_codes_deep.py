@@ -11,8 +11,12 @@ import importlib
 import inspect
 import pathlib
 import re
+from typing import cast
 
 import pytest
+
+from general_ludd.agents import hibernation as agent_hibernation
+from general_ludd.ssl import tls13_handshake as tls13
 
 SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "general_ludd"
 
@@ -93,7 +97,7 @@ class TestErrorNameUniqueness:
     that can mislead callers and defeat targeted except clauses.
     """
 
-    def test_no_duplicate_error_names_in_src(self):
+    def test_no_duplicate_error_names_in_src(self) -> None:
         by_name = _candidate_error_classes(SRC)
         duplicates = {n: locs for n, locs in by_name.items() if len(locs) > 1}
         msg_lines = []
@@ -102,7 +106,7 @@ class TestErrorNameUniqueness:
             msg_lines.append(f"  {name}: {files}")
         assert not duplicates, f"Duplicate exception names across modules ({len(duplicates)}):\n" + "\n".join(msg_lines)
 
-    def test_no_name_conflict_between_modules(self):
+    def test_no_name_conflict_between_modules(self) -> None:
         by_name = _candidate_error_classes(SRC)
         collisions = 0
         for _name, locs in by_name.items():
@@ -120,7 +124,7 @@ class TestExceptionDocstrings:
     callers nothing about when or why it is raised.
     """
 
-    def test_all_exceptions_have_docstrings(self):
+    def test_all_exceptions_have_docstrings(self) -> None:
         missing: list[str] = []
         by_name = _candidate_error_classes(SRC)
         seen_files: set[str] = set()
@@ -139,7 +143,7 @@ class TestExceptionDocstrings:
         if missing:
             pytest.fail(f"Exception classes missing docstrings ({len(missing)}):\n" + "\n".join(missing))
 
-    def test_docstrings_are_descriptive_not_trivial(self):
+    def test_docstrings_are_descriptive_not_trivial(self) -> None:
         trivial = ["error.", "exception.", "raised.", "custom error."]
         insufficient: list[str] = []
         seen_files: set[str] = set()
@@ -162,7 +166,7 @@ class TestExceptionDocstrings:
 class TestExceptionInheritance:
     """Inheritance chain checks: all exceptions must derive from a sensible base."""
 
-    def test_all_error_classes_derive_from_baseexception(self):
+    def test_all_error_classes_derive_from_baseexception(self) -> None:
         invalid: list[str] = []
         seen: set[str] = set()
         by_name = _candidate_error_classes(SRC)
@@ -179,7 +183,7 @@ class TestExceptionInheritance:
                     invalid.append(f"  {cname} in {fp.relative_to(SRC)} -> {cls.__bases__}")
         assert not invalid, f"Non-exception bases ({len(invalid)}):\n" + "\n".join(invalid)
 
-    def test_no_bare_exception_inheritance_where_better_exists(self):
+    def test_no_bare_exception_inheritance_where_better_exists(self) -> None:
         """Classes directly inheriting Exception should prefer a narrower built-in.
 
         ValueError for bad input, RuntimeError for runtime failures, etc.
@@ -211,20 +215,22 @@ class TestExceptionInheritance:
             f"Too many bare-Exception subclasses ({len(overbroad)}). Prefer ValueError/RuntimeError where applicable."
         )
 
-    def test_horizon_error_has_base(self):
-        """HorizonError in ai_ml/world_models.py has no explicit base class."""
-        cls = _try_import_error(SRC / "ai_ml" / "world_models.py", "HorizonError")
-        assert cls is not None, "HorizonError not importable"
-        assert issubclass(cls, BaseException), "HorizonError must derive from BaseException"
-        # Explicit check: it should NOT have `object` as its only explicit base
-        bases = [b for b in cls.__bases__ if b is not object]
-        assert len(bases) >= 1, "HorizonError should have an explicit base class"
+    def test_horizon_metric_uses_non_exception_primary_name(self) -> None:
+        """Prediction-error data must not masquerade as an exception contract."""
+        module = importlib.import_module("general_ludd.ai_ml.world_models")
+        metrics = getattr(module, "HorizonMetrics", None)
+        legacy = getattr(module, "HorizonError", None)
+        assert metrics is not None, "HorizonMetrics must be the public primary name"
+        assert isinstance(metrics, type)
+        assert legacy is metrics, "HorizonError must remain a compatibility alias"
+        metrics_type = cast(type[object], metrics)
+        assert not issubclass(metrics_type, BaseException)
 
 
 class TestExceptionNaming:
     """Error class naming conventions."""
 
-    def test_error_classes_end_with_error_or_exception(self):
+    def test_error_classes_end_with_error_or_exception(self) -> None:
         """ConfigError, ConnectorError, BazException are fine.
 
         Classes without Error/Exception suffix may be mistaken for non-exceptions.
@@ -240,7 +246,7 @@ class TestExceptionNaming:
             f"({len(misnamed)}):\n" + "\n".join(misnamed)
         )
 
-    def test_private_error_prefix_discouraged(self):
+    def test_private_error_prefix_discouraged(self) -> None:
         by_name = _candidate_error_classes(SRC)
         private: list[str] = []
         for _name, locs in by_name.items():
@@ -259,7 +265,7 @@ class TestExceptionNaming:
 class TestErrorInit:
     """Exception constructors must call super().__init__ to form proper messages."""
 
-    def test_constructor_signatures_call_super_init(self):
+    def test_constructor_signatures_call_super_init(self) -> None:
         """Verify __init__ methods call super().__init__ where overridden."""
         issues: list[str] = []
         seen: set[str] = set()
@@ -289,7 +295,7 @@ class TestErrorInit:
 class TestDeadErrorImports:
     """Exceptions must be importable and resolvable — check for broken module refs."""
 
-    def test_all_errors_can_be_imported(self):
+    def test_all_errors_can_be_imported(self) -> None:
         failed: list[str] = []
         by_name = _candidate_error_classes(SRC)
         seen: set[str] = set()
@@ -308,7 +314,32 @@ class TestDeadErrorImports:
 class TestErrorBaseConsistency:
     """Checks for consistent error base patterns."""
 
-    def test_concurrency_error_subclasses(self):
+    @pytest.mark.parametrize(
+        ("relative_path", "primary_name", "legacy_name"),
+        [
+            ("ssl/tls13_handshake.py", "TLSHandshakeError", "HandshakeError"),
+            ("agents/hibernation.py", "HibernationIntegrityError", "IntegrityError"),
+            ("connectors/kubernetes.py", "KubernetesConfigError", "_ConfigError"),
+            ("controllers/pause_store.py", "PauseStoreIntegrityError", "IntegrityError"),
+            ("issue_sources/servicenow.py", "ServiceNowSSRFError", "SSRFError"),
+            ("security/ssrf.py", "SecuritySSRFError", "SSRFError"),
+        ],
+    )
+    def test_domain_specific_errors_keep_legacy_aliases(
+        self,
+        relative_path: str,
+        primary_name: str,
+        legacy_name: str,
+    ) -> None:
+        """Unique primary names must retain the identity of legacy catch targets."""
+        filepath = SRC / relative_path
+        primary = _try_import_error(filepath, primary_name)
+        assert primary is not None, f"{primary_name} not importable"
+        module_name = _module_qualname(filepath, primary_name).rsplit(".", 1)[0]
+        module = importlib.import_module(module_name)
+        assert getattr(module, legacy_name, None) is primary
+
+    def test_concurrency_error_subclasses(self) -> None:
         for name in ("ConcurrencyError", "InvalidTransitionError"):
             cls = _try_import_error(SRC / "db" / "repository.py", name)
             assert cls is not None, f"{name} not found"
@@ -317,7 +348,7 @@ class TestErrorBaseConsistency:
             else:
                 assert issubclass(cls, Exception)
 
-    def test_secrets_error_hierarchy(self):
+    def test_secrets_error_hierarchy(self) -> None:
         su = _try_import_error(SRC / "secrets" / "manager.py", "SecretsUnavailableError")
         spd = _try_import_error(SRC / "secrets" / "manager.py", "SecretPermissionDeniedError")
         assert su is not None
@@ -325,7 +356,7 @@ class TestErrorBaseConsistency:
         assert issubclass(spd, su)
         assert issubclass(su, RuntimeError)
 
-    def test_azure_cost_export_hierarchy(self):
+    def test_azure_cost_export_hierarchy(self) -> None:
         base = _try_import_error(SRC / "infra" / "azure_cost_export_ingestion.py", "AzureCostExportError")
         parse = _try_import_error(SRC / "infra" / "azure_cost_export_ingestion.py", "AzureCostExportParseError")
         complete = _try_import_error(
@@ -337,7 +368,7 @@ class TestErrorBaseConsistency:
         assert issubclass(parse, base)
         assert issubclass(complete, base)
 
-    def test_payload_limit_hierarchy(self):
+    def test_payload_limit_hierarchy(self) -> None:
         ple = _try_import_error(SRC / "models" / "gateway.py", "PayloadLimitError")
         cple = _try_import_error(SRC / "models" / "gateway.py", "CumulativePayloadLimitError")
         sle = _try_import_error(SRC / "models" / "gateway.py", "StreamLimitError")
@@ -347,14 +378,14 @@ class TestErrorBaseConsistency:
         assert issubclass(cple, ple)
         assert issubclass(sle, ple)
 
-    def test_pause_store_hierarchy(self):
+    def test_pause_store_hierarchy(self) -> None:
         pse = _try_import_error(SRC / "controllers" / "pause_store.py", "PauseStoreError")
         ie = _try_import_error(SRC / "controllers" / "pause_store.py", "IntegrityError")
         assert pse is not None
         assert ie is not None
         assert issubclass(ie, pse)
 
-    def test_hibernation_hierarchy(self):
+    def test_hibernation_hierarchy(self) -> None:
         he = _try_import_error(SRC / "agents" / "hibernation.py", "HibernationError")
         ie = _try_import_error(SRC / "agents" / "hibernation.py", "IntegrityError")
         assert he is not None
@@ -362,10 +393,106 @@ class TestErrorBaseConsistency:
         assert issubclass(ie, he)
 
 
+class TestTLSExceptionBranches:
+    """Exercise the renamed TLS hierarchy across supported and rejected paths."""
+
+    @pytest.mark.parametrize(
+        "group",
+        [
+            tls13.NamedGroup.SECP256R1,
+            tls13.NamedGroup.SECP384R1,
+            tls13.NamedGroup.SECP521R1,
+        ],
+    )
+    def test_ec_key_share_groups_use_the_public_error_contract(
+        self, group: tls13.NamedGroup
+    ) -> None:
+        exchange = tls13.KeyExchange(group)
+
+        assert exchange.public_bytes.startswith(b"\x04")
+
+    def test_unsupported_key_share_uses_specific_error(self) -> None:
+        invalid_group = cast(tls13.NamedGroup, object())
+
+        with pytest.raises(tls13.TLSHandshakeError, match="Unsupported group"):
+            tls13.KeyExchange(invalid_group)
+
+    def test_state_preconditions_use_specific_error(self) -> None:
+        handshake = tls13.Tls13Handshake()
+
+        with pytest.raises(tls13.HandshakeStateError):
+            handshake.process_encrypted_extensions(b"")
+        with pytest.raises(tls13.HandshakeStateError):
+            handshake.process_certificate(b"")
+        with pytest.raises(tls13.HandshakeStateError):
+            handshake.process_certificate_verify(b"")
+        with pytest.raises(tls13.HandshakeStateError):
+            handshake.derive_handshake_keys(b"")
+        with pytest.raises(tls13.HandshakeStateError):
+            handshake.build_server_finished_verify_data()
+        with pytest.raises(tls13.HandshakeStateError):
+            handshake.build_client_finished_verify_data()
+        with pytest.raises(tls13.HandshakeStateError):
+            handshake.process_finished(b"")
+        with pytest.raises(tls13.HandshakeStateError):
+            handshake.build_client_finished()
+        with pytest.raises(tls13.HandshakeStateError):
+            handshake.encrypt_handshake(b"")
+        with pytest.raises(tls13.HandshakeStateError):
+            handshake.decrypt_handshake(b"")
+        with pytest.raises(tls13.HandshakeStateError):
+            handshake.encrypt_application_data(b"")
+        with pytest.raises(tls13.HandshakeStateError):
+            handshake.decrypt_application_data(b"")
+
+
+class TestHibernationExceptionBranches:
+    """Pin fail-closed hibernation paths to the public exception hierarchy."""
+
+    def test_non_mapping_envelope_is_rejected(self, tmp_path: pathlib.Path) -> None:
+        store = agent_hibernation.HibernationStore(tmp_path)
+        snapshot = agent_hibernation.AgentEnvironmentSnapshot(
+            task_id="TASK-1", agent_name="coder"
+        )
+        handle = store.dehydrate(snapshot)
+        pathlib.Path(handle.path).write_text("[]", encoding="utf-8")
+
+        with pytest.raises(
+            agent_hibernation.HibernationIntegrityError,
+            match="malformed snapshot envelope",
+        ):
+            store.hydrate(handle)
+
+    def test_handle_outside_store_is_rejected(self, tmp_path: pathlib.Path) -> None:
+        store = agent_hibernation.HibernationStore(tmp_path / "store")
+        snapshot = agent_hibernation.AgentEnvironmentSnapshot(
+            task_id="TASK-1", agent_name="coder"
+        )
+        handle = store.dehydrate(snapshot)
+        outside_handle = handle.model_copy(
+            update={"path": str(tmp_path / "outside.snapshot.json")}
+        )
+
+        with pytest.raises(
+            agent_hibernation.HibernationError, match="outside base dir"
+        ):
+            store.hydrate(outside_handle)
+
+    def test_non_project_pause_scope_is_not_blocked(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        controller = agent_hibernation.HibernationController(
+            agent_hibernation.HibernationStore(tmp_path)
+        )
+        controller.pause_project("project-1")
+
+        assert controller.is_paused("agent", "project-1") is False
+
+
 class TestErrorCountCoverage:
     """Verify we found and tested a meaningful number of exceptions."""
 
-    def test_at_least_80_exceptions_found(self):
+    def test_at_least_80_exceptions_found(self) -> None:
         by_name = _candidate_error_classes(SRC)
         seen: set[str] = set()
         for _name, locs in by_name.items():
@@ -376,7 +503,7 @@ class TestErrorCountCoverage:
             f"expecting at least 80. Potential discovery regression."
         )
 
-    def test_all_exceptions_importable(self):
+    def test_all_exceptions_importable(self) -> None:
         by_name = _candidate_error_classes(SRC)
         seen: set[str] = set()
         imported = 0

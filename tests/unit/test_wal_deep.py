@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import struct
 import tempfile
@@ -55,8 +56,11 @@ class TestWalEntry:
             WalEntry.deserialize(b"\x00" * 3)
 
     def test_deserialize_truncated_body(self) -> None:
-        with pytest.raises(WalIterError):
-            WalEntry.deserialize(b"\x00" * (_HEADER_LEN + 5))
+        payload = struct.pack(_HEADER_FMT, 0, 5) + b"x"
+        raw = payload + hashlib.sha256(payload).digest()
+
+        with pytest.raises(WalIterError, match="truncated data body"):
+            WalEntry.deserialize(raw)
 
     def test_deserialize_corrupt_checksum(self) -> None:
         e = WalEntry(seq=7, data=b"tamper")

@@ -1,3 +1,5 @@
+"""Manage weighted project dispatch, persistence, and workspace materialization."""
+
 from __future__ import annotations
 
 import json
@@ -192,6 +194,8 @@ def parse_relationships(pcfg: dict[str, Any]) -> list[dict[str, Any]]:
 
 @dataclass
 class ProjectWeight:
+    """Describe one project's dispatch allocation and runtime metadata."""
+
     project_id: str
     name: str
     weight: float
@@ -204,12 +208,15 @@ class ProjectWeight:
     active: bool = True
 
 
-class ProjectAllocationError(Exception):
-    pass
+class ProjectAllocationError(ValueError):
+    """Raised when a requested project allocation violates weight invariants."""
 
 
 class ProjectManager:
+    """Maintain active projects under a finite 100-percent allocation budget."""
+
     def __init__(self) -> None:
+        """Initialize an empty project allocation registry."""
         self._projects: dict[str, ProjectWeight] = {}
 
     def add_project(
@@ -222,6 +229,12 @@ class ProjectManager:
         dispatch_mode: str = "active",
         **config: Any,
     ) -> ProjectWeight:
+        """Register a project when its weight fits the remaining budget.
+
+        Raises:
+            ProjectAllocationError: If the requested weight would make active
+                allocations exceed 100 percent.
+        """
         total = sum(p.weight for p in self._projects.values() if p.active)
         if total + weight > 100.0:
             available = 100.0 - total
@@ -247,6 +260,7 @@ class ProjectManager:
         return project
 
     def remove_project(self, project_id: str) -> None:
+        """Mark a registered project inactive, ignoring unknown identifiers."""
         project = self._projects.get(project_id)
         if project is None:
             return
@@ -254,6 +268,12 @@ class ProjectManager:
         logger.info("Removed project %s (%s)", project.name, project_id)
 
     def set_weight(self, project_id: str, new_weight: float) -> None:
+        """Set one active project's finite weight within the shared budget.
+
+        Raises:
+            ProjectAllocationError: If the project is missing or inactive, the
+                weight is non-finite or out of range, or the total exceeds 100.
+        """
         project = self._projects.get(project_id)
         if project is None:
             raise ProjectAllocationError(f"Project '{project_id}' not found")
@@ -279,6 +299,12 @@ class ProjectManager:
         logger.info("Changed project %s weight from %.1f%% to %.1f%%", project.name, old_weight, new_weight)
 
     def rebalance(self, weights: dict[str, float]) -> None:
+        """Atomically replace active weights with a finite 100-percent mapping.
+
+        Raises:
+            ProjectAllocationError: If a weight is non-finite, the total is not
+                100 percent, or a referenced project is missing or inactive.
+        """
         # Reject NaN/inf before summing: a non-finite weight makes `total` NaN,
         # `abs(NaN - 100) > 0.01` is False, so it would pass the sum check and
         # then poison select_project's weighted-random math (see set_weight).
@@ -301,24 +327,30 @@ class ProjectManager:
         logger.info("Rebalanced %d projects", len(weights))
 
     def get_project(self, project_id: str) -> ProjectWeight | None:
+        """Return a project by identifier, including inactive projects."""
         return self._projects.get(project_id)
 
     def list_projects(self, active_only: bool = True) -> list[ProjectWeight]:
+        """List registered projects, optionally filtering inactive entries."""
         projects = list(self._projects.values())
         if active_only:
             projects = [p for p in projects if p.active]
         return projects
 
     def list_active(self) -> list[ProjectWeight]:
+        """List projects currently eligible for allocation."""
         return self.list_projects(active_only=True)
 
     def total_weight(self) -> float:
+        """Return the sum of all active project weights."""
         return sum(p.weight for p in self._projects.values() if p.active)
 
     def get_allocation(self) -> dict[str, float]:
+        """Map each active project identifier to its current weight."""
         return {p.project_id: p.weight for p in self._projects.values() if p.active}
 
     def select_project(self) -> ProjectWeight | None:
+        """Select an active-dispatch project using weighted randomness."""
         import random
 
         active = [p for p in self.list_projects(active_only=True)
@@ -338,6 +370,7 @@ class ProjectManager:
         return active[-1]
 
     def get_summary(self) -> dict[str, Any]:
+        """Summarize capacity and metadata for active and inactive projects."""
         projects = self.list_projects(active_only=False)
         active = [p for p in projects if p.active]
         return {
@@ -507,6 +540,11 @@ async def rebuild_manager_from_db(repo: ProjectRepository) -> ProjectManager:
 
 
 def seed_from_config(config: dict[str, Any]) -> ProjectManager:
+    """Build a manager from valid project entries in application configuration.
+
+    Invalid entry shapes and allocations that exceed the shared budget are
+    skipped, while declared relationship metadata is retained for persistence.
+    """
     mgr = ProjectManager()
     projects_list = config.get("projects", [])
     if not isinstance(projects_list, list):

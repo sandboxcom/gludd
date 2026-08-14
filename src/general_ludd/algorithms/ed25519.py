@@ -22,15 +22,17 @@ By = 463168356949264781694283940034751631413079938662562256157830336031652518559
 SQRT_M1 = pow(2, (P - 1) // 4, P)
 
 
-class Ed25519Error(Exception):
-    pass
+class Ed25519Error(ValueError):
+    """Raised when Ed25519 key material or point encoding is invalid."""
 
 
 def modinv(a: int) -> int:
+    """Return the multiplicative inverse of ``a`` in the Ed25519 field."""
     return pow(a, P - 2, P)
 
 
 def xrecover(y: int) -> int:
+    """Recover the canonical even x-coordinate for a curve y-coordinate."""
     xx = (y * y - 1) * modinv(D * y * y + 1)
     x = pow(xx, (P + 3) // 8, P)
     if (x * x - xx) % P != 0:
@@ -42,6 +44,8 @@ def xrecover(y: int) -> int:
 
 @dataclass(slots=True)
 class EDPoint:
+    """Represent an Ed25519 point in extended projective coordinates."""
+
     x: int
     y: int
     z: int
@@ -49,12 +53,15 @@ class EDPoint:
 
     @staticmethod
     def identity() -> EDPoint:
+        """Return the additive identity point."""
         return EDPoint(0, 1, 1, 0)
 
     def is_identity(self) -> bool:
+        """Return whether this point is the additive identity."""
         return self.x == 0 and self.y == self.z
 
     def __eq__(self, other: object) -> bool:
+        """Compare points without converting them to affine coordinates."""
         if not isinstance(other, EDPoint):
             return NotImplemented
         xn = (self.x * other.z) % P
@@ -70,9 +77,11 @@ class EDPoint:
         return ((self.x * zinv) % P, (self.y * zinv) % P)
 
     def __neg__(self) -> EDPoint:
+        """Return the additive inverse of this point."""
         return EDPoint((-self.x) % P, self.y, self.z, (-self.t) % P)
 
     def __add__(self, other: object) -> EDPoint:
+        """Add another extended-coordinate Ed25519 point."""
         if not isinstance(other, EDPoint):
             return NotImplemented
         if self.is_identity():
@@ -111,6 +120,7 @@ class EDPoint:
         return EDPoint((E * F) % P, (G * H) % P, (F * G) % P, (E * H) % P)
 
     def __mul__(self, scalar: int) -> EDPoint:
+        """Multiply this point by an integer scalar."""
         if scalar == 0:
             return EDPoint.identity()
         if scalar < 0:
@@ -125,10 +135,12 @@ class EDPoint:
         return result
 
     def __rmul__(self, scalar: int) -> EDPoint:
+        """Multiply this point by a scalar supplied on the left."""
         return self * scalar
 
 
 def from_affine(x: int, y: int) -> EDPoint:
+    """Convert affine coordinates to an extended-coordinate point."""
     x = x % P
     y = y % P
     return EDPoint(x, y, 1, (x * y) % P)
@@ -138,6 +150,7 @@ B = from_affine(Bx, By)
 
 
 def encode_point(pt: EDPoint) -> bytes:
+    """Encode a point in the 32-byte RFC 8032 compressed form."""
     zinv = modinv(pt.z)
     x = (pt.x * zinv) % P
     y = (pt.y * zinv) % P
@@ -147,6 +160,11 @@ def encode_point(pt: EDPoint) -> bytes:
 
 
 def decode_point(s: bytes) -> EDPoint:
+    """Decode a 32-byte RFC 8032 point.
+
+    Raises:
+        Ed25519Error: If the encoding has the wrong size or an invalid y-coordinate.
+    """
     if len(s) != 32:
         raise Ed25519Error(f"Point encoding must be 32 bytes, got {len(s)}")
     buf = bytearray(s)
@@ -175,6 +193,8 @@ def _ensure_bytes(data: bytes | str) -> bytes:
 
 @dataclass(slots=True)
 class Ed25519KeyPair:
+    """Bundle a signing key with its public and mathematical representations."""
+
     private_bytes: bytes
     public_bytes: bytes
     secret_scalar: int
@@ -183,6 +203,7 @@ class Ed25519KeyPair:
 
     @classmethod
     def generate(cls) -> Ed25519KeyPair:
+        """Generate a cryptographically secure Ed25519 key pair."""
         crypto_key = _CryptoPrivateKey.generate()
         seed = crypto_key.private_bytes_raw()
         pub_bytes = crypto_key.public_key().public_bytes_raw()
@@ -199,6 +220,11 @@ class Ed25519KeyPair:
 
     @classmethod
     def from_seed(cls, seed: bytes) -> Ed25519KeyPair:
+        """Construct a key pair from a 32-byte private seed.
+
+        Raises:
+            Ed25519Error: If ``seed`` is not exactly 32 bytes.
+        """
         if len(seed) != 32:
             raise Ed25519Error(f"Seed must be 32 bytes, got {len(seed)}")
         crypto_key = _CryptoPrivateKey.from_private_bytes(seed)
@@ -215,11 +241,13 @@ class Ed25519KeyPair:
         )
 
     def sign(self, message: bytes | str) -> bytes:
+        """Return the Ed25519 signature for a byte string or UTF-8 text."""
         msg_bytes = _ensure_bytes(message)
         return self._crypto_key.sign(msg_bytes)
 
 
 def verify(public_key: bytes, message: bytes | str, signature: bytes) -> bool:
+    """Return whether a signature is valid for the public key and message."""
     if len(public_key) != 32:
         return False
     if len(signature) != 64:
@@ -234,16 +262,27 @@ def verify(public_key: bytes, message: bytes | str, signature: bytes) -> bool:
 
 
 def derive_public_from_private(private_key: bytes) -> bytes:
+    """Derive public key bytes from a 32-byte private seed.
+
+    Raises:
+        Ed25519Error: If ``private_key`` is not exactly 32 bytes.
+    """
     if len(private_key) != 32:
         raise Ed25519Error(f"Private key must be 32 bytes, got {len(private_key)}")
     return _CryptoPrivateKey.from_private_bytes(private_key).public_key().public_bytes_raw()
 
 
 def generate_keypair() -> Ed25519KeyPair:
+    """Generate an Ed25519 key pair."""
     return Ed25519KeyPair.generate()
 
 
 def sign(private_key: bytes, message: bytes | str) -> bytes:
+    """Sign a byte string or UTF-8 text with a 32-byte private seed.
+
+    Raises:
+        Ed25519Error: If ``private_key`` is not exactly 32 bytes.
+    """
     if len(private_key) != 32:
         raise Ed25519Error(f"Private key must be 32 bytes, got {len(private_key)}")
     return Ed25519KeyPair.from_seed(private_key).sign(message)
@@ -253,14 +292,17 @@ D_pos = 121665 * modinv(121666) % P
 
 
 def is_on_curve(x: int, y: int) -> bool:
+    """Return whether affine coordinates satisfy the Ed25519 curve equation."""
     lhs = (-x * x + y * y) % P
     rhs = (1 - D_pos * x * x * y * y) % P
     return lhs == rhs
 
 
 def point_add(p1: EDPoint, p2: EDPoint) -> EDPoint:
+    """Return the sum of two Ed25519 points."""
     return p1 + p2
 
 
 def scalar_mult(k: int, p: EDPoint) -> EDPoint:
+    """Return point ``p`` multiplied by scalar ``k``."""
     return p * k
