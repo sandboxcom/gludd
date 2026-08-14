@@ -60,12 +60,13 @@ class TestPlanMigration:
 
             with (
                 patch("general_ludd.db.migrations.MigrationContext") as mock_mc,
-                patch("general_ludd.db.migrations.create_engine"),
+                patch("general_ludd.db.migrations.create_engine") as mock_engine,
                 patch("general_ludd.db.migrations.EnvironmentContext"),
             ):
                 mock_mc.configure.return_value = mc_ctx
                 result = plan_migration(cfg)
                 assert result.pending_count == 0
+                mock_engine.return_value.dispose.assert_called_once_with()
 
     def test_pending_count_nonzero_when_behind(self):
         cfg = get_alembic_config()
@@ -101,9 +102,10 @@ class TestCheckPending:
 
             with patch("general_ludd.db.migrations.MigrationContext") as mock_mc:
                 mock_mc.configure.return_value = mc_ctx
-                with patch("general_ludd.db.migrations.create_engine"):
+                with patch("general_ludd.db.migrations.create_engine") as mock_engine:
                     result = check_pending(cfg)
                     assert result == 0
+                    mock_engine.return_value.dispose.assert_called_once_with()
 
     def test_returns_pending_count(self):
         cfg = get_alembic_config()

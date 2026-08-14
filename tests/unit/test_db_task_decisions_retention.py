@@ -7,21 +7,21 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import event, text
+from sqlalchemy import event, insert, text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
 
-from general_ludd.db.models import Base, TaskDecisionModel
+from general_ludd.db.models import Base, TaskDecisionModel, TaskReturnModel
 from general_ludd.db.task_decisions_retention import (
     DEFAULT_RETENTION_DAYS,
     cleanup_old_task_decisions,
 )
 
 
-def _make_task_decision(**overrides):
+def _make_task_decision(**overrides) -> TaskDecisionModel:
     data = {
         "id": None,
         "return_id": "R-default",
@@ -47,6 +47,35 @@ async def engine():
 
     async with _engine.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c))
+        return_ids = [
+            "R-old",
+            "R-recent",
+            "R-dry1",
+            "R-dry2",
+            "R-fixed-old",
+            "R-fixed-new",
+            "R-ret5",
+            "R-midnight",
+            *(f"R-batch-{index}" for index in range(7)),
+            "R-mix-old",
+            "R-mix-new",
+            "R-mix-new2",
+            "R-boundary",
+            "R-dry-old",
+            "R-dry-new",
+        ]
+        await conn.execute(
+            insert(TaskReturnModel),
+            [
+                {
+                    "return_id": return_id,
+                    "job_id": f"job-{return_id}",
+                    "playbook": "retention-test.yml",
+                    "queue": "test",
+                }
+                for return_id in return_ids
+            ],
+        )
     yield _engine
     async with _engine.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.drop_all(c))
@@ -202,6 +231,7 @@ class TestCleanupOldTaskDecisions:
 
         async with session_factory() as s:
             count = await cleanup_old_task_decisions(s)
+            await s.commit()
 
         assert count == 1
 
