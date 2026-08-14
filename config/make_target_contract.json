@@ -148,6 +148,16 @@
       "behavior": "make check-disk-classification"
     },
     {
+      "name": "cache-resource-inventory",
+      "make_variables": ["CACHE_RESOURCE_ROOT", "CACHE_RESOURCE_LIMIT", "CACHE_RESOURCE_VALIDATE_ONLY"],
+      "behavior": "make cache-resource-inventory CACHE_RESOURCE_ROOT=/Users/shawnwilson/Library/Caches CACHE_RESOURCE_LIMIT=20 CACHE_RESOURCE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "cache-resource-remove",
+      "make_variables": ["CACHE_RESOURCE_ROOT", "CACHE_RESOURCE_CANDIDATE", "CACHE_RESOURCE_VALIDATE_ONLY"],
+      "behavior": "make cache-resource-remove CACHE_RESOURCE_ROOT=/Users/shawnwilson/Library/Caches CACHE_RESOURCE_CANDIDATE=/Users/shawnwilson/Library/Caches/pip CACHE_RESOURCE_VALIDATE_ONLY=1"
+    },
+    {
       "name": "tmp-gludd-clean-ci-shards-now",
       "make_variables": ["TMP_GLUDD_CLEAN_VALIDATE_ONLY"],
       "behavior": "make tmp-gludd-clean-ci-shards-now TMP_GLUDD_CLEAN_VALIDATE_ONLY=1"
