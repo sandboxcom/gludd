@@ -441,6 +441,11 @@
       "behavior": "make branches-unmerged-development"
     },
     {
+      "name": "branch-reconciliation-inventory",
+      "make_variables": ["RECONCILE_TARGET", "RECONCILE_LIMIT"],
+      "behavior": "make branch-reconciliation-inventory RECONCILE_TARGET=development RECONCILE_LIMIT=20"
+    },
+    {
       "name": "development-merge-forward",
       "make_variables": ["SOURCE", "MODE", "APPLY"],
       "behavior": "make development-merge-forward SOURCE=HEAD MODE=content APPLY=0"

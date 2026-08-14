@@ -1,0 +1,453 @@
+#!/usr/bin/env python3
+"""Emit a bounded, read-only branch-reconciliation inventory."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from collections.abc import Callable, Sequence
+from typing import Literal, TypedDict
+
+SCHEMA_VERSION = 1
+MAX_LIMIT = 100
+COMMIT_SCAN_LIMIT = 500
+GIT_TIMEOUT_SECONDS = 10
+_OBJECT_ID_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
+
+RunFn = Callable[
+    [Sequence[str], str | None],
+    subprocess.CompletedProcess[str],
+]
+ProgressFn = Callable[[str], None]
+
+
+class InventoryError(RuntimeError):
+    """Raised when Git cannot prove a safe reconciliation classification."""
+
+
+class BranchRecord(TypedDict):
+    """Machine-readable classification for one local branch."""
+
+    classification: Literal["ancestor", "patch-equivalent", "unique"]
+    head: str
+    lifecycle: Literal["current", "historical"]
+    name: str
+    patch_equivalent_commits: int
+    ref: str
+    unique_commits: int
+
+
+class InventoryCounts(TypedDict):
+    """Counts for the bounded returned branch set."""
+
+    ancestor: int
+    current: int
+    historical: int
+    patch_equivalent: int
+    returned: int
+    unique: int
+
+
+class TargetRecord(TypedDict):
+    """Resolved target identity."""
+
+    head: str
+    input: str
+    ref: str
+
+
+class InventoryBounds(TypedDict):
+    """Hard bounds applied to Git traversal and JSON output."""
+
+    branch_limit: int
+    commit_scan_limit: int
+
+
+class InventoryPayload(TypedDict):
+    """Top-level JSON contract."""
+
+    bounds: InventoryBounds
+    branches: list[BranchRecord]
+    counts: InventoryCounts
+    limit: int
+    ok: bool
+    schema_version: int
+    target: TargetRecord
+    truncated: bool
+
+
+def _run(
+    argv: Sequence[str], cwd: str | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Run one bounded list-form Git command."""
+    try:
+        return subprocess.run(
+            list(argv),
+            cwd=cwd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return subprocess.CompletedProcess(list(argv), 124, "", str(exc))
+
+
+def _checked_stdout(
+    argv: Sequence[str],
+    *,
+    run: RunFn,
+    cwd: str | None,
+    label: str,
+) -> str:
+    """Return stdout or convert a Git failure into bounded audit evidence."""
+    result = run(argv, cwd)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "git command failed").strip()
+        raise InventoryError(f"{label}: {detail[:400]}")
+    return result.stdout
+
+
+def _valid_object_id(value: str) -> bool:
+    """Return whether value is a full SHA-1 or SHA-256 object ID."""
+    return bool(_OBJECT_ID_RE.fullmatch(value))
+
+
+def _resolve_target(
+    target: str,
+    *,
+    run: RunFn,
+    cwd: str | None,
+) -> TargetRecord:
+    """Resolve one symbolic Git ref and reject revisions or option shapes."""
+    if (
+        not target
+        or target != target.strip()
+        or target.startswith("-")
+        or any(character.isspace() for character in target)
+    ):
+        raise InventoryError(f"invalid target ref: {target}")
+
+    symbolic = run(
+        [
+            "git",
+            "rev-parse",
+            "--symbolic-full-name",
+            "--verify",
+            "--quiet",
+            "--end-of-options",
+            target,
+        ],
+        cwd,
+    )
+    ref_lines = symbolic.stdout.strip().splitlines()
+    if (
+        symbolic.returncode != 0
+        or len(ref_lines) != 1
+        or not ref_lines[0].startswith("refs/")
+    ):
+        raise InventoryError(f"invalid target ref: {target}")
+    target_ref = ref_lines[0]
+
+    head = run(
+        [
+            "git",
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "--end-of-options",
+            f"{target_ref}^{{commit}}",
+        ],
+        cwd,
+    )
+    target_head = head.stdout.strip()
+    if head.returncode != 0 or not _valid_object_id(target_head):
+        raise InventoryError(f"invalid target ref: {target}")
+    return {"head": target_head, "input": target, "ref": target_ref}
+
+
+def _parse_branch_entries(output: str) -> list[tuple[str, str]]:
+    """Parse strict tab-delimited for-each-ref output."""
+    entries: list[tuple[str, str]] = []
+    for line in output.splitlines():
+        fields = line.split("\t")
+        if (
+            len(fields) != 2
+            or not fields[0].startswith("refs/heads/")
+            or not fields[0].removeprefix("refs/heads/")
+            or not _valid_object_id(fields[1])
+        ):
+            raise InventoryError("malformed local branch inventory")
+        entries.append((fields[0], fields[1]))
+    return sorted(entries)
+
+
+def _bounded_branches(
+    target_ref: str,
+    limit: int,
+    *,
+    run: RunFn,
+    cwd: str | None,
+) -> tuple[list[tuple[str, str]], bool]:
+    """Return at most limit local branches plus a truncation signal."""
+    output = _checked_stdout(
+        [
+            "git",
+            "for-each-ref",
+            f"--count={limit + 2}",
+            "--sort=refname",
+            "--format=%(refname)%09%(objectname)",
+            "refs/heads",
+        ],
+        run=run,
+        cwd=cwd,
+        label="local branch enumeration failed",
+    )
+    candidates = [
+        entry for entry in _parse_branch_entries(output) if entry[0] != target_ref
+    ]
+    return candidates[:limit], len(candidates) > limit
+
+
+def _ancestor(
+    head: str,
+    target_head: str,
+    *,
+    run: RunFn,
+    cwd: str | None,
+) -> bool:
+    """Use merge-base to prove ancestry, distinguishing false from failure."""
+    result = run(
+        ["git", "merge-base", "--is-ancestor", head, target_head],
+        cwd,
+    )
+    if result.returncode == 0:
+        return True
+    if result.returncode == 1:
+        return False
+    detail = (result.stderr or result.stdout or "git command failed").strip()
+    raise InventoryError(f"ancestor classification failed: {detail[:400]}")
+
+
+def _commit_count(
+    target_head: str,
+    head: str,
+    *,
+    run: RunFn,
+    cwd: str | None,
+) -> int:
+    """Count head-side commits up to one beyond the patch scan bound."""
+    output = _checked_stdout(
+        [
+            "git",
+            "rev-list",
+            "--count",
+            f"--max-count={COMMIT_SCAN_LIMIT + 1}",
+            f"{target_head}..{head}",
+        ],
+        run=run,
+        cwd=cwd,
+        label="commit bound check failed",
+    ).strip()
+    try:
+        count = int(output)
+    except ValueError as exc:
+        raise InventoryError("malformed commit count") from exc
+    if count < 0:
+        raise InventoryError("malformed commit count")
+    return count
+
+
+def _cherry_counts(
+    target_head: str,
+    head: str,
+    *,
+    run: RunFn,
+    cwd: str | None,
+) -> tuple[int, int]:
+    """Count equivalent and unique rows from bounded git cherry output."""
+    output = _checked_stdout(
+        ["git", "cherry", target_head, head],
+        run=run,
+        cwd=cwd,
+        label="patch classification failed",
+    )
+    equivalent = 0
+    unique = 0
+    rows = [line for line in output.splitlines() if line]
+    if len(rows) > COMMIT_SCAN_LIMIT:
+        raise InventoryError("patch classification exceeded commit bound")
+    for row in rows:
+        fields = row.split()
+        if (
+            len(fields) != 2
+            or fields[0] not in {"+", "-"}
+            or not _valid_object_id(fields[1])
+        ):
+            raise InventoryError("malformed patch classification")
+        if fields[0] == "-":
+            equivalent += 1
+        else:
+            unique += 1
+    return equivalent, unique
+
+
+def _classify_branch(
+    ref: str,
+    head: str,
+    target_head: str,
+    *,
+    run: RunFn,
+    cwd: str | None,
+) -> BranchRecord:
+    """Classify one branch without changing repository state."""
+    name = ref.removeprefix("refs/heads/")
+    if _ancestor(head, target_head, run=run, cwd=cwd):
+        return {
+            "classification": "ancestor",
+            "head": head,
+            "lifecycle": "historical",
+            "name": name,
+            "patch_equivalent_commits": 0,
+            "ref": ref,
+            "unique_commits": 0,
+        }
+
+    commit_count = _commit_count(target_head, head, run=run, cwd=cwd)
+    if commit_count == 0 or commit_count > COMMIT_SCAN_LIMIT:
+        return {
+            "classification": "unique",
+            "head": head,
+            "lifecycle": "current",
+            "name": name,
+            "patch_equivalent_commits": 0,
+            "ref": ref,
+            "unique_commits": 0,
+        }
+
+    equivalent, unique = _cherry_counts(
+        target_head,
+        head,
+        run=run,
+        cwd=cwd,
+    )
+    patch_equivalent = equivalent > 0 and unique == 0
+    return {
+        "classification": "patch-equivalent" if patch_equivalent else "unique",
+        "head": head,
+        "lifecycle": "historical" if patch_equivalent else "current",
+        "name": name,
+        "patch_equivalent_commits": equivalent,
+        "ref": ref,
+        "unique_commits": unique,
+    }
+
+
+def _counts(branches: Sequence[BranchRecord]) -> InventoryCounts:
+    """Summarize only the bounded branch set returned to the caller."""
+    return {
+        "ancestor": sum(branch["classification"] == "ancestor" for branch in branches),
+        "current": sum(branch["lifecycle"] == "current" for branch in branches),
+        "historical": sum(
+            branch["lifecycle"] == "historical" for branch in branches
+        ),
+        "patch_equivalent": sum(
+            branch["classification"] == "patch-equivalent" for branch in branches
+        ),
+        "returned": len(branches),
+        "unique": sum(branch["classification"] == "unique" for branch in branches),
+    }
+
+
+def collect_inventory(
+    target: str,
+    limit: int,
+    *,
+    run: RunFn = _run,
+    cwd: str | None = None,
+    progress: ProgressFn | None = None,
+) -> InventoryPayload:
+    """Collect the bounded reconciliation inventory."""
+    if limit < 1 or limit > MAX_LIMIT:
+        raise InventoryError(f"limit must be between 1 and {MAX_LIMIT}")
+    target_record = _resolve_target(target, run=run, cwd=cwd)
+    entries, truncated = _bounded_branches(
+        target_record["ref"],
+        limit,
+        run=run,
+        cwd=cwd,
+    )
+    branches: list[BranchRecord] = []
+    for index, (ref, head) in enumerate(entries, start=1):
+        if progress is not None:
+            progress(f"classify={index}/{len(entries)} ref={ref}")
+        branches.append(
+            _classify_branch(
+                ref,
+                head,
+                target_record["head"],
+                run=run,
+                cwd=cwd,
+            )
+        )
+    return {
+        "bounds": {
+            "branch_limit": limit,
+            "commit_scan_limit": COMMIT_SCAN_LIMIT,
+        },
+        "branches": branches,
+        "counts": _counts(branches),
+        "limit": limit,
+        "ok": True,
+        "schema_version": SCHEMA_VERSION,
+        "target": target_record,
+        "truncated": truncated,
+    }
+
+
+def _progress(message: str) -> None:
+    """Emit bounded progress without contaminating JSON stdout."""
+    print(f"BRANCH-RECONCILIATION {message}", file=sys.stderr, flush=True)
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    run: RunFn = _run,
+) -> int:
+    """Run the inventory CLI."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--target", required=True, help="symbolic target ref")
+    parser.add_argument("--limit", required=True, help="maximum branch records")
+    args = parser.parse_args(list(argv) if argv is not None else None)
+    try:
+        limit = int(args.limit)
+        _progress(f"target={args.target} limit={limit}")
+        payload = collect_inventory(
+            args.target,
+            limit,
+            run=run,
+            progress=_progress,
+        )
+    except (InventoryError, ValueError) as exc:
+        json.dump(
+            {
+                "error": str(exc),
+                "ok": False,
+                "schema_version": SCHEMA_VERSION,
+            },
+            sys.stdout,
+            sort_keys=True,
+        )
+        print()
+        return 2
+    json.dump(payload, sys.stdout, sort_keys=True)
+    print()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
