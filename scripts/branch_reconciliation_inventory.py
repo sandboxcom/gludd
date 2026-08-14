@@ -16,6 +16,11 @@ MAX_LIMIT = 100
 COMMIT_SCAN_LIMIT = 500
 LOCAL_REF_SCAN_LIMIT = 10_000
 GIT_TIMEOUT_SECONDS = 10
+SEMANTIC_HEAD_LIMIT = 256
+SEMANTIC_PATH_LIMIT = 100
+SEMANTIC_SUBJECT_CHAR_LIMIT = 200
+SEMANTIC_PATH_CHAR_LIMIT = 240
+SEMANTIC_GIT_OUTPUT_CHAR_LIMIT = 262_144
 _OBJECT_ID_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 
 RunFn = Callable[
@@ -102,6 +107,18 @@ class SummaryGroup(TypedDict):
     unique_commits: int
 
 
+class HeadSemanticSummary(TypedDict):
+    """Bounded review evidence for one deduplicated branch head."""
+
+    changed_path_count: int
+    changed_paths: list[str]
+    changed_paths_truncated: bool
+    head: str
+    path_redactions: int
+    subject: str
+    subject_truncated: bool
+
+
 class SummaryPayload(TypedDict):
     """Terminal, deduplicated view across every bounded page."""
 
@@ -149,6 +166,18 @@ class CurrentSummaryPayload(TypedDict):
     target: TargetRecord
     terminal: bool
     truncated: bool
+
+
+class SemanticSummaryPayload(SummaryPayload):
+    """Expanded terminal summary with opt-in semantic head evidence."""
+
+    head_summaries: list[HeadSemanticSummary]
+
+
+class SemanticCurrentSummaryPayload(CurrentSummaryPayload):
+    """Current-only terminal summary with opt-in semantic head evidence."""
+
+    head_summaries: list[HeadSemanticSummary]
 
 
 def _run(
@@ -663,6 +692,150 @@ def collect_summary(
     }
 
 
+def _bounded_semantic_stdout(
+    argv: Sequence[str],
+    *,
+    run: RunFn,
+    cwd: str | None,
+    label: str,
+) -> str:
+    """Return bounded Git output for opt-in semantic evidence."""
+    output = _checked_stdout(argv, run=run, cwd=cwd, label=label)
+    if len(output) > SEMANTIC_GIT_OUTPUT_CHAR_LIMIT:
+        raise InventoryError("semantic Git output exceeded character bound")
+    return output
+
+
+def _redact_bounded(value: str, limit: int) -> tuple[str, bool, bool]:
+    """Redact control characters and cap one human-facing evidence string."""
+    redacted = "".join(
+        character if character.isprintable() else "�" for character in value
+    )
+    truncated = len(redacted) > limit
+    if truncated:
+        redacted = f"{redacted[: limit - 1]}…"
+    return redacted, truncated, redacted != value
+
+
+def _semantic_paths(
+    head: str,
+    *,
+    run: RunFn,
+    cwd: str | None,
+) -> tuple[list[str], int, bool, int]:
+    """Return bounded, redacted, repository-relative paths for one head."""
+    output = _bounded_semantic_stdout(
+        [
+            "git",
+            "diff-tree",
+            "--root",
+            "--first-parent",
+            "--no-commit-id",
+            "--name-only",
+            "--no-renames",
+            "-z",
+            "-r",
+            head,
+        ],
+        run=run,
+        cwd=cwd,
+        label="semantic path inspection failed",
+    )
+    if output and not output.endswith("\0"):
+        raise InventoryError("malformed semantic path evidence")
+    raw_paths = output[:-1].split("\0") if output else []
+    if any(
+        not path
+        or path.startswith("/")
+        or any(part in {"", ".", ".."} for part in path.split("/"))
+        for path in raw_paths
+    ):
+        raise InventoryError("malformed semantic path evidence")
+
+    changed_paths: list[str] = []
+    path_redactions = 0
+    for path in raw_paths[:SEMANTIC_PATH_LIMIT]:
+        safe_path, _truncated, was_redacted = _redact_bounded(
+            path,
+            SEMANTIC_PATH_CHAR_LIMIT,
+        )
+        changed_paths.append(safe_path)
+        path_redactions += was_redacted
+    return (
+        changed_paths,
+        len(raw_paths),
+        len(raw_paths) > SEMANTIC_PATH_LIMIT,
+        path_redactions,
+    )
+
+
+def _semantic_head_summary(
+    head: str,
+    *,
+    run: RunFn,
+    cwd: str | None,
+) -> HeadSemanticSummary:
+    """Collect one bounded subject and first-parent changed-path summary."""
+    subject_output = _bounded_semantic_stdout(
+        [
+            "git",
+            "show",
+            "--no-show-signature",
+            "--no-patch",
+            "--format=%s",
+            head,
+        ],
+        run=run,
+        cwd=cwd,
+        label="semantic subject inspection failed",
+    )
+    subject = subject_output.removesuffix("\n")
+    if "\0" in subject:
+        raise InventoryError("malformed semantic subject evidence")
+    safe_subject, subject_truncated, _subject_redacted = _redact_bounded(
+        subject,
+        SEMANTIC_SUBJECT_CHAR_LIMIT,
+    )
+    changed_paths, path_count, paths_truncated, path_redactions = _semantic_paths(
+        head,
+        run=run,
+        cwd=cwd,
+    )
+    return {
+        "changed_path_count": path_count,
+        "changed_paths": changed_paths,
+        "changed_paths_truncated": paths_truncated,
+        "head": head,
+        "path_redactions": path_redactions,
+        "subject": safe_subject,
+        "subject_truncated": subject_truncated,
+    }
+
+
+def collect_head_summaries(
+    groups: Sequence[SummaryGroup],
+    *,
+    run: RunFn = _run,
+    cwd: str | None = None,
+    progress: ProgressFn | None = None,
+) -> list[HeadSemanticSummary]:
+    """Collect semantic evidence for each distinct emitted head."""
+    heads = list(dict.fromkeys(group["head"] for group in groups))
+    if len(heads) > SEMANTIC_HEAD_LIMIT:
+        raise InventoryError(
+            f"semantic head bound exceeded: {len(heads)} > {SEMANTIC_HEAD_LIMIT}"
+        )
+    if any(not _valid_object_id(head) for head in heads):
+        raise InventoryError("malformed semantic head evidence")
+
+    summaries: list[HeadSemanticSummary] = []
+    for index, head in enumerate(heads, start=1):
+        if progress is not None:
+            progress(f"semantic={index}/{len(heads)} head={head}")
+        summaries.append(_semantic_head_summary(head, run=run, cwd=cwd))
+    return summaries
+
+
 def _progress(message: str) -> None:
     """Emit bounded progress without contaminating JSON stdout."""
     print(f"BRANCH-RECONCILIATION {message}", file=sys.stderr, flush=True)
@@ -702,6 +875,11 @@ def main(
         action="store_true",
         help="suppress progress narration on stderr while retaining errors",
     )
+    parser.add_argument(
+        "--head-semantics",
+        action="store_true",
+        help="add bounded commit subjects and changed paths per summary head",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
     try:
         limit = int(args.limit)
@@ -716,12 +894,16 @@ def main(
             | SummaryPayload
             | SummaryCountsPayload
             | CurrentSummaryPayload
+            | SemanticSummaryPayload
+            | SemanticCurrentSummaryPayload
         )
         if args.all_pages:
             if args.after:
                 raise InventoryError("all-pages summary requires an empty cursor")
             if args.counts_only and args.current_only:
                 raise InventoryError("current-only cannot be combined with counts-only")
+            if args.counts_only and args.head_semantics:
+                raise InventoryError("head semantics require expanded groups")
             summary = collect_summary(
                 args.target,
                 limit,
@@ -734,7 +916,7 @@ def main(
                     for group in summary["groups"]
                     if group["classification"] == "unique"
                 ]
-                payload = {
+                current_payload: CurrentSummaryPayload = {
                     "bounds": summary["bounds"],
                     "counts": summary["counts"],
                     "groups": current_groups,
@@ -751,6 +933,18 @@ def main(
                     "terminal": summary["terminal"],
                     "truncated": summary["truncated"],
                 }
+                if args.head_semantics:
+                    semantic_current_payload: SemanticCurrentSummaryPayload = {
+                        **current_payload,
+                        "head_summaries": collect_head_summaries(
+                            current_groups,
+                            run=run,
+                            progress=progress,
+                        ),
+                    }
+                    payload = semantic_current_payload
+                else:
+                    payload = current_payload
             elif args.counts_only:
                 payload = {
                     "bounds": summary["bounds"],
@@ -764,9 +958,21 @@ def main(
                     "terminal": summary["terminal"],
                     "truncated": summary["truncated"],
                 }
+            elif args.head_semantics:
+                semantic_payload: SemanticSummaryPayload = {
+                    **summary,
+                    "head_summaries": collect_head_summaries(
+                        summary["groups"],
+                        run=run,
+                        progress=progress,
+                    ),
+                }
+                payload = semantic_payload
             else:
                 payload = summary
         else:
+            if args.head_semantics:
+                raise InventoryError("head semantics require an all-pages summary")
             if args.counts_only or args.current_only:
                 raise InventoryError(
                     "counts-only and current-only require an all-pages summary"

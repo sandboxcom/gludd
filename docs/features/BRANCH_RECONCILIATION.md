@@ -94,6 +94,37 @@ Argument, bound, cursor, Git, and classification failures retain their structure
 nonzero result. Operators should therefore keep the default for interactive
 reconciliation and opt into quiet mode only at a JSON consumption boundary.
 
+## Opt-in semantic head summaries
+
+Semantic review is explicit and terminal. Set `RECONCILE_DETAILS=1` and
+`RECONCILE_HEAD_SEMANTICS=1` on `branch-reconciliation-summary` to add a
+`head_summaries` array keyed by the already deduplicated full commit ID. The CLI
+equivalent is `--all-pages --head-semantics`; page and counts-only modes reject
+the flag. Each entry reports the head commit subject, the first-parent changed
+paths for that commit, the complete bounded path count, and explicit subject/list
+truncation and path-redaction signals. Current-only mode enriches only its emitted
+unique heads, making it the narrowest release-review form.
+
+The default remains schema v2 with exactly the prior keys and Git command set:
+when the flag is absent there is no `head_summaries` member and no semantic Git
+inspection. Opt-in evidence uses mature `git show --no-patch --format=%s` and
+NUL-delimited `git diff-tree --name-only -z --first-parent` formats. The latter
+avoids newline/path quoting ambiguity and makes merge-head comparison explicit.
+Only validated full object IDs are passed as revisions.
+
+Semantic inspection is bounded to 256 deduplicated heads, 100 returned paths per
+head, 200 subject characters, 240 characters per displayed path, 262,144 output
+characters per Git invocation, and the existing ten-second command timeout. More
+than 256 selected heads or an oversized/malformed Git record fails closed before
+claiming complete evidence. A longer path list remains useful but explicit:
+`changed_path_count` retains the observed total while `changed_paths_truncated`
+marks the first-100 display. Paths stay repository-relative; absolute paths,
+empty/traversal components, and malformed NUL framing are rejected. Control
+characters and overlong displayed paths are replaced or suffix-truncated, with
+`path_redactions` recording how many returned names changed. No checkout path,
+home directory, worktree root, commit body, patch content, or untracked helper is
+exposed.
+
 The exhaustive path retains the 10,000-ref ceiling, rejects duplicate refs or a
 non-advancing cursor, and revalidates the target identity on every page. A target
 change or conflicting evidence for one shared head fails closed. As with Git's
@@ -152,6 +183,17 @@ analogous design: JSON results on stdout, progress on stderr, and a
 `--quiet-progress` so the suppressed class is unambiguous and real errors remain
 outside the suppression boundary.
 
+The long-lived GitHub CLI issue
+[#6642](https://github.com/cli/cli/issues/6642), opened in 2022, records that
+remote file-list queries can be expensive and points practitioners to local
+`git log` when commit messages and touched paths are the evidence they need. The
+2023 GitHub CLI issue
+[#7815](https://github.com/cli/cli/issues/7815) records generated release notes
+failing after unbounded commit text exceeded a 125,000-character service limit.
+Together with the older Git mailing-list reports above, these practitioner cases
+support local mature Git formats, an opt-in surface, explicit truncation, and hard
+output bounds instead of an always-on or remotely expanded payload.
+
 ## Security, resources, ZDD, and rollback
 
 The classifier invokes Git with fixed list-form arguments, accepts only a
@@ -166,11 +208,15 @@ Because it changes neither repository nor runtime state, deployment continuity
 is preserved. Default progress messages and structured counts expose bounded
 work and truncation. Quiet mode removes only deterministic narration and does not
 change the Git command set, scan bounds, result schema, or resource namespace.
-It introduces no files, locks, daemons, services, ports, or background workers.
+Semantic mode is also read-only and foreground-only: at most two fixed list-form
+Git inspections run per bounded head, with progress on stderr and no files, locks,
+daemons, services, ports, background workers, ref changes, or deploy interruption.
+This preserves ZDD while keeping CPU, memory, subprocess, and JSON growth bounded.
 Rollback is a normal revert of the CLI flag, Make variable, contract, tests, task
-entry, and this document; the default observable behavior and the older textual
-inventory and one-branch patch comparison targets remain independently available
-throughout. No service restart, data migration, cleanup, or downtime is needed.
+entry, and this document; because the default schema never changed, callers need
+no coordinated migration. The older textual inventory and one-branch patch
+comparison targets remain independently available throughout. No service restart,
+data migration, cleanup, or downtime is needed.
 
 ## Makefile integrity
 

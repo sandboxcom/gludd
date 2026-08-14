@@ -32,6 +32,9 @@ class FakeGit:
         target_valid: bool = True,
         cursor_valid: bool = True,
         start_after_supported: bool = True,
+        subjects: dict[str, str] | None = None,
+        changed_paths: dict[str, Sequence[str]] | None = None,
+        malformed_path_heads: frozenset[str] = frozenset(),
     ) -> None:
         self.refs = list(refs)
         self.ancestors = ancestors
@@ -40,6 +43,9 @@ class FakeGit:
         self.target_valid = target_valid
         self.cursor_valid = cursor_valid
         self.start_after_supported = start_after_supported
+        self.subjects = subjects or {}
+        self.changed_paths = changed_paths or {}
+        self.malformed_path_heads = malformed_path_heads
         self.calls: list[list[str]] = []
 
     def __call__(
@@ -89,6 +95,15 @@ class FakeGit:
             return self._result(args, 0, f"{self.commit_counts.get(head, default_count)}\n")
         if args[1] == "cherry":
             return self._result(args, 0, self.cherries.get(args[3], ""))
+        if args[1] == "show":
+            head = args[-1]
+            return self._result(args, 0, f"{self.subjects.get(head, 'subject')}\n")
+        if args[1] == "diff-tree":
+            head = args[-1]
+            output = "\0".join(self.changed_paths.get(head, ()))
+            if output and head not in self.malformed_path_heads:
+                output += "\0"
+            return self._result(args, 0, output)
         raise AssertionError(f"unexpected Git command: {args}")
 
     @staticmethod
@@ -656,9 +671,221 @@ def test_exhaustive_make_target_and_contract_are_tracked() -> None:
         "RECONCILE_DETAILS",
         "RECONCILE_CURRENT_ONLY",
         "RECONCILE_QUIET_PROGRESS",
+        "RECONCILE_HEAD_SEMANTICS",
     ]
     assert entry["behavior"].endswith(
         "RECONCILE_TARGET=development RECONCILE_LIMIT=100 "
         "RECONCILE_DETAILS=0 RECONCILE_CURRENT_ONLY=0 "
-        "RECONCILE_QUIET_PROGRESS=0"
+        "RECONCILE_QUIET_PROGRESS=0 RECONCILE_HEAD_SEMANTICS=0"
     )
+    assert "RECONCILE_HEAD_SEMANTICS" in makefile
+    assert "--head-semantics" in makefile
+
+
+def test_head_semantics_are_opt_in_and_default_payload_is_compatible(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake = FakeGit(
+        refs=[("refs/heads/feature/current", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+        subjects={UNIQUE_HEAD: "add bounded reconciliation"},
+        changed_paths={UNIQUE_HEAD: ("scripts/inventory.py",)},
+    )
+
+    rc = inventory.main(
+        ["--target", "development", "--limit", "2", "--after", "", "--all-pages"],
+        run=fake,
+    )
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert "head_summaries" not in payload
+    assert not any(call[1] in {"show", "diff-tree"} for call in fake.calls)
+
+
+def test_head_semantics_expose_one_bounded_summary_per_deduplicated_head(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake = FakeGit(
+        refs=[
+            ("refs/heads/feature/a", UNIQUE_HEAD),
+            ("refs/heads/feature/alias", UNIQUE_HEAD),
+        ],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+        subjects={UNIQUE_HEAD: "add bounded reconciliation"},
+        changed_paths={
+            UNIQUE_HEAD: ("scripts/inventory.py", "tests/unit/test_inventory.py")
+        },
+    )
+
+    rc = inventory.main(
+        [
+            "--target",
+            "development",
+            "--limit",
+            "2",
+            "--after",
+            "",
+            "--all-pages",
+            "--current-only",
+            "--head-semantics",
+        ],
+        run=fake,
+    )
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["head_summaries"] == [
+        {
+            "changed_path_count": 2,
+            "changed_paths": [
+                "scripts/inventory.py",
+                "tests/unit/test_inventory.py",
+            ],
+            "changed_paths_truncated": False,
+            "head": UNIQUE_HEAD,
+            "path_redactions": 0,
+            "subject": "add bounded reconciliation",
+            "subject_truncated": False,
+        }
+    ]
+    semantic_calls = [
+        call for call in fake.calls if call[1] in {"show", "diff-tree"}
+    ]
+    assert [call[1] for call in semantic_calls] == ["show", "diff-tree"]
+    assert "--format=%s" in semantic_calls[0]
+    assert {"--name-only", "-z", "--first-parent"} <= set(semantic_calls[1])
+
+
+def test_head_semantics_redact_controls_and_bound_subjects_and_paths(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(inventory, "SEMANTIC_SUBJECT_CHAR_LIMIT", 10)
+    monkeypatch.setattr(inventory, "SEMANTIC_PATH_CHAR_LIMIT", 12)
+    monkeypatch.setattr(inventory, "SEMANTIC_PATH_LIMIT", 2)
+    fake = FakeGit(
+        refs=[("refs/heads/feature/current", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+        subjects={UNIQUE_HEAD: "safe\tbut very long"},
+        changed_paths={
+            UNIQUE_HEAD: (
+                "safe.py",
+                "line\nbreak.py",
+                "very/long/component/name.py",
+            )
+        },
+    )
+
+    rc = inventory.main(
+        [
+            "--target",
+            "development",
+            "--limit",
+            "2",
+            "--after",
+            "",
+            "--all-pages",
+            "--head-semantics",
+        ],
+        run=fake,
+    )
+
+    assert rc == 0
+    summary = json.loads(capsys.readouterr().out)["head_summaries"][0]
+    assert summary["subject"] == "safe�but …"
+    assert summary["subject_truncated"] is True
+    assert summary["changed_path_count"] == 3
+    assert summary["changed_paths"] == ["safe.py", "line�break.…"]
+    assert summary["changed_paths_truncated"] is True
+    assert summary["path_redactions"] == 1
+
+
+def test_head_semantics_fail_closed_above_head_bound_before_semantic_git(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(inventory, "SEMANTIC_HEAD_LIMIT", 1)
+    fake = FakeGit(
+        refs=[
+            ("refs/heads/feature/a", UNIQUE_HEAD),
+            ("refs/heads/feature/b", PATCH_HEAD),
+        ],
+        cherries={
+            UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n",
+            PATCH_HEAD: f"+ {PATCH_HEAD}\n",
+        },
+    )
+
+    rc = inventory.main(
+        [
+            "--target",
+            "development",
+            "--limit",
+            "2",
+            "--after",
+            "",
+            "--all-pages",
+            "--head-semantics",
+        ],
+        run=fake,
+    )
+
+    assert rc == 2
+    assert "semantic head bound" in json.loads(capsys.readouterr().out)["error"]
+    assert not any(call[1] in {"show", "diff-tree"} for call in fake.calls)
+
+
+def test_head_semantics_reject_nonterminal_and_counts_only_modes(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    for extra in ([], ["--all-pages", "--counts-only"]):
+        rc = inventory.main(
+            [
+                "--target",
+                "development",
+                "--limit",
+                "2",
+                "--after",
+                "",
+                "--head-semantics",
+                *extra,
+            ],
+            run=FakeGit(),
+        )
+        assert rc == 2
+        assert "head semantics" in json.loads(capsys.readouterr().out)["error"]
+
+
+def test_head_semantics_reject_malformed_or_oversized_git_evidence(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeGit(
+        refs=[("refs/heads/feature/current", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+        changed_paths={UNIQUE_HEAD: ("unterminated.py",)},
+        malformed_path_heads=frozenset({UNIQUE_HEAD}),
+    )
+    args = [
+        "--target",
+        "development",
+        "--limit",
+        "2",
+        "--after",
+        "",
+        "--all-pages",
+        "--head-semantics",
+    ]
+
+    assert inventory.main(args, run=fake) == 2
+    assert "malformed semantic path" in json.loads(capsys.readouterr().out)["error"]
+
+    monkeypatch.setattr(inventory, "SEMANTIC_GIT_OUTPUT_CHAR_LIMIT", 3)
+    oversized = FakeGit(
+        refs=[("refs/heads/feature/current", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+        subjects={UNIQUE_HEAD: "long subject"},
+    )
+    assert inventory.main(args, run=oversized) == 2
+    assert "semantic Git output exceeded" in json.loads(capsys.readouterr().out)["error"]
