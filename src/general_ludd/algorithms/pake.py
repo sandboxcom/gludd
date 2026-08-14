@@ -47,15 +47,8 @@ _P384 = {
     "n": 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFC7634D81F4372DDF581A0DB248B0A77AECEC196ACCC52973,
 }
 
+_P521_FIELD_MODULUS: Final[int] = (1 << 521) - 1
 _P521_HEX = {
-    "p": (
-        "0x01FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
-        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
-    ),
-    "a": (
-        "0x01FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
-        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFC"
-    ),
     "b": (
         "0x0051953EB9618E1C9A1F929A21A0B68540EEA2DA725B99B315F3B8B489918EF10"
         "9E156193951EC7E937B1652C0BD3BB1BF073573DF883D2C34F1EF451FD46B503F00"
@@ -73,7 +66,11 @@ _P521_HEX = {
         "FA51868783BF2F966B7FCC0148F709A5D03BB5C9B8899C47AEBB6FB71E91386409"
     ),
 }
-_P521 = {k: int(v, 16) for k, v in _P521_HEX.items()}
+_P521: dict[str, int] = {
+    "p": _P521_FIELD_MODULUS,
+    "a": _P521_FIELD_MODULUS - 3,
+    **{k: int(v, 16) for k, v in _P521_HEX.items()},
+}
 
 _GROUP_PARAMS: Final[dict[str, dict[str, int]]] = {
     "P-256": _P256,
@@ -214,24 +211,23 @@ def _point_to_bytes(x: int, y: int, byte_len: int) -> bytes:
     return b"\x04" + x.to_bytes(byte_len, "big") + y.to_bytes(byte_len, "big")
 
 
+_HASH_TO_POINT_MAX_ATTEMPTS: Final[int] = 256
+
+
 def _hash_to_point(data: bytes, params: dict[str, int], byte_len: int) -> tuple[int, int]:
-    """Try-and-increment hash-to-curve."""
+    """Map a digest to a curve point with a bounded try-and-increment search."""
     p = params["p"]
     a = params["a"]
     b = params["b"]
-    params["gx"]
-    params["gy"]
-    params["n"]
 
-    ctr = 0
-    while True:
+    for ctr in range(_HASH_TO_POINT_MAX_ATTEMPTS):
         h = hashlib.sha256(data + ctr.to_bytes(4, "big")).digest()
         x = int.from_bytes(h[:byte_len], "big") % p
         rhs = (pow(x, 3, p) + a * x + b) % p
         y = pow(rhs, (p + 1) // 4, p)
         if (y * y) % p == rhs:
             return (x, y % p)
-        ctr += 1
+    raise PAKEError(f"hash-to-point mapping failed after {_HASH_TO_POINT_MAX_ATTEMPTS} attempts")
 
 
 # ── SPAKE2+ protocol classes ─────────────────────────────────────────────

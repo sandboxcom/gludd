@@ -149,6 +149,47 @@ Quant-method guidance (current kernels):
   KV-cache. Quantize the KV cache (`kv_cache_dtype: fp8`) to relieve rule-b
   pressure independently of weight quant.
 
+#### Quantization CLI contract and safe operations
+
+`gludd quantization list`, `detect --model-id MODEL`, and `drift-check` are the
+operator surface for the daemon's quantization tracker. The canonical API
+contract is intentionally explicit: list returns a `models` mapping keyed by
+model ID, detect returns the selected profile under `best`, and drift-check
+returns a `changes` list. During rolling upgrades the CLI also accepts the
+older list-shaped model/profile response, top-level detect fields, and
+`drifted_models`; this permits either the CLI or daemon to deploy first without
+downtime. Keep those aliases for the supported mixed-version window, then
+remove them only with migration telemetry and a release note.
+
+Operational guardrails:
+
+- **ZDD:** all three commands remain available throughout a rollout. `list` is
+  read-only; detection updates tracker observations but never edits the active
+  serving configuration, and a drift result is advisory until an operator
+  promotes a reviewed profile.
+- **Resources:** detect and drift fan out to provider metadata probes with a
+  bounded 30-second client deadline. Run fleet-wide drift checks off the
+  request hot path, cap the tracked model inventory, and avoid concurrent
+  checks for the same model so provider rate limits and daemon sockets remain
+  bounded.
+- **Security:** the admin URL defaults to loopback. For non-loopback access,
+  require authenticated TLS and least-privilege access to the quantization
+  endpoints; never print provider credentials or raw detector payloads in CLI
+  output.
+- **Rollback:** snapshot `quantization list` and the current serving profile
+  before promotion. If accuracy, latency, or memory regresses, restore the
+  last-known-good precision/configuration and restart or roll the serving
+  replica while the tracker retains the new observation for investigation.
+
+Long-lived practitioner evidence supports treating a quantization label as an
+observation, not a permanent promise. In the llama.cpp community's 2024
+[Llama 3 quantization discussion](https://github.com/ggml-org/llama.cpp/discussions/6901),
+operators reported materially different full-context quality loss for the same
+low-bit families across model architectures, and follow-up measurements tied
+results to calibration and quantizer changes. Gludd therefore re-detects per
+model/revision/backend and makes drift visible before any serving-profile
+change.
+
 ### 1.6 Prefix caching, CUDA graphs, speculative decoding
 
 - **Prefix caching** (`--enable-prefix-caching`): reuses KV blocks for shared

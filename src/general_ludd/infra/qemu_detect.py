@@ -10,6 +10,8 @@ from typing import Literal
 
 @dataclass(frozen=True)
 class QemuConfig:
+    """Describe the host capabilities used to select a QEMU invocation."""
+
     platform: Literal["darwin", "linux", "unknown"]
     arch: Literal["arm64", "amd64", "unknown"]
     binary_path: str | None
@@ -51,6 +53,7 @@ def _detect_acceleration(plat: Literal["darwin", "linux", "unknown"]) -> Literal
 
 
 def detect() -> QemuConfig:
+    """Detect QEMU availability and acceleration with fail-closed defaults."""
     plat = _detect_platform()
     arch = _detect_arch()
     binary_path = _find_qemu_binary(arch)
