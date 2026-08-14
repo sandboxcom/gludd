@@ -27,6 +27,7 @@ def parse_coverage_json(
     source_path: str,
     per_file_threshold: float = 75.0,
 ) -> tuple[dict[str, object], list[str], bool]:
+    """Parse a coverage.py JSON report and evaluate line and branch floors."""
     with open(json_path) as f:
         raw = f.read()
     data = json.loads(raw)
@@ -539,6 +540,7 @@ def run_pytest_coverage(
 
 
 def main() -> None:
+    """Run the command-line coverage audit and write its durable report."""
     threshold = 85.0
     source = "src/general_ludd"
     json_file: str | None = None
