@@ -237,7 +237,7 @@ class TestDurationVerdict:
         import pytest
 
         with pytest.raises(dataclasses.FrozenInstanceError):
-            object.__setattr__(v, "anomalous", True)
+            type(v).__setattr__(v, "anomalous", True)
         assert v.anomalous is False
 
 
@@ -260,7 +260,7 @@ class TestSweeperLifecycle:
         w.stop_sweeper()
 
     def test_default_tracker_thread_safety(self) -> None:
-        results: list = []
+        results: list[float | None] = []
 
         def _record() -> None:
             t = default_tracker()
