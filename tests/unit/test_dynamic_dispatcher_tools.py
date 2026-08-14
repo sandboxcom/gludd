@@ -12,11 +12,14 @@ Verifies that:
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, cast
 
-from general_ludd.agents.dispatcher import AgentDispatcher, AgentTask
+import pytest
+
+from general_ludd.agents.dispatcher import AgentDispatcher
 from general_ludd.agents.registry import AgentRegistry
-from general_ludd.agents.types import AgentConfig, AgentPermission, AgentType
+from general_ludd.agents.types import AgentConfig, AgentPermission, AgentTask, AgentType
 from general_ludd.mcp.registry import MCPTool, MCPToolRegistry
 
 
@@ -73,6 +76,19 @@ def _make_tool_registry() -> MCPToolRegistry:
     return reg
 
 
+async def _successful_executor(task: AgentTask) -> str:
+    """Return a deterministic result while preserving the dispatched task."""
+    return f"executed:{task.task_id}"
+
+
+class _FailingToolRegistry:
+    """Tool registry double that exposes a credential-bearing failure."""
+
+    def list_tools(self) -> list[MCPTool]:
+        """Raise the discovery failure exercised by the dispatcher boundary."""
+        raise RuntimeError("token=dispatcher-secret")
+
+
 class TestDispatcherToolBinding:
     def test_tools_populated_when_registry_injected(self) -> None:
         """dispatch_one populates task.tools when MCP registry is available."""
@@ -80,6 +96,7 @@ class TestDispatcherToolBinding:
         tool_registry = _make_tool_registry()
         dispatcher = AgentDispatcher(
             registry=agent_registry,
+            executor=_successful_executor,
             mcp_tool_registry=tool_registry,
         )
 
@@ -110,6 +127,7 @@ class TestDispatcherToolBinding:
         tool_registry = _make_tool_registry()
         dispatcher = AgentDispatcher(
             registry=agent_registry,
+            executor=_successful_executor,
             mcp_tool_registry=tool_registry,
         )
 
@@ -129,7 +147,10 @@ class TestDispatcherToolBinding:
     def test_tools_not_populated_when_no_registry(self) -> None:
         """When no MCP registry is injected, task.tools stays None."""
         agent_registry = _make_registry()
-        dispatcher = AgentDispatcher(registry=agent_registry)
+        dispatcher = AgentDispatcher(
+            registry=agent_registry,
+            executor=_successful_executor,
+        )
 
         task = AgentTask(
             task_id="t3",
@@ -150,10 +171,13 @@ class TestDispatcherToolBinding:
         tool_registry = _make_tool_registry()
         dispatcher = AgentDispatcher(
             registry=agent_registry,
+            executor=_successful_executor,
             mcp_tool_registry=tool_registry,
         )
 
-        pre_populated_tools = [{"name": "custom_tool", "description": "pre-set", "parameters": {}}]
+        pre_populated_tools: list[dict[str, object]] = [
+            {"name": "custom_tool", "description": "pre-set", "parameters": {}}
+        ]
         task = AgentTask(
             task_id="t4",
             agent_name="worker",
@@ -208,6 +232,7 @@ class TestDispatcherToolBinding:
         empty_registry = MCPToolRegistry()
         dispatcher = AgentDispatcher(
             registry=agent_registry,
+            executor=_successful_executor,
             mcp_tool_registry=empty_registry,
         )
 
@@ -223,3 +248,58 @@ class TestDispatcherToolBinding:
 
         assert result.status == "completed"
         assert task.tools is None
+
+    def test_bound_schema_is_detached_from_registry(self) -> None:
+        """Executor-side schema mutation cannot alter the shared registry."""
+        agent_registry = _make_registry()
+        tool_registry = _make_tool_registry()
+        dispatcher = AgentDispatcher(
+            registry=agent_registry,
+            executor=_successful_executor,
+            mcp_tool_registry=tool_registry,
+        )
+        task = AgentTask(
+            task_id="t7",
+            agent_name="worker",
+            description="test",
+            prompt="hello",
+            invoker_name="build",
+        )
+
+        result = asyncio.run(dispatcher.dispatch_one(task))
+
+        assert result.status == "completed"
+        assert task.tools is not None
+        parameters = cast(dict[str, Any], task.tools[0]["parameters"])
+        path_schema = cast(dict[str, Any], parameters["properties"])["path"]
+        cast(dict[str, Any], path_schema)["type"] = "integer"
+        registered = tool_registry.get_tool("read_file")
+        assert registered is not None
+        assert registered.input_schema["properties"]["path"]["type"] == "string"
+
+    def test_registry_failure_is_observable_and_sanitized(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Discovery failures are visible without leaking registry credentials."""
+        dispatcher = AgentDispatcher(
+            registry=_make_registry(),
+            executor=_successful_executor,
+            mcp_tool_registry=_FailingToolRegistry(),
+        )
+        task = AgentTask(
+            task_id="t8",
+            agent_name="worker",
+            description="test",
+            prompt="hello",
+            invoker_name="build",
+        )
+
+        with caplog.at_level(logging.WARNING, logger="general_ludd.agents.dispatcher"):
+            result = asyncio.run(dispatcher.dispatch_one(task))
+
+        assert result.status == "completed"
+        assert task.tools is None
+        assert "tool discovery failed" in caplog.text.lower()
+        assert "dispatcher-secret" not in caplog.text
+        assert "[REDACTED_CREDENTIAL]" in caplog.text
