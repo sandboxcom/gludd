@@ -47,6 +47,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -58,11 +59,25 @@ from typing import Any
 _SCRIPTS = Path(__file__).resolve().parent
 
 
-def _load(name: str):  # type: ignore[return]
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS / f"{name}.py")
-    assert spec and spec.loader, f"cannot find scripts/{name}.py"
+def _load(name: str) -> ModuleType:
+    module_name = f"_gludd_script_{name}"
+    loaded = sys.modules.get(module_name)
+    if loaded is not None:
+        return loaded
+    spec = importlib.util.spec_from_file_location(
+        module_name, _SCRIPTS / f"{name}.py"
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot find scripts/{name}.py")
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    # Python 3.14's dataclass annotation resolver (and Ansible's wrapper) looks
+    # the class module up in sys.modules while exec_module is still running.
+    sys.modules[module_name] = mod
+    try:
+        spec.loader.exec_module(mod)
+    except BaseException:
+        sys.modules.pop(module_name, None)
+        raise
     return mod
 
 

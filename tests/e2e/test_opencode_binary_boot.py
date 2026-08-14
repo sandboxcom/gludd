@@ -15,7 +15,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 OPENCODE_BIN = "opencode"
-pytestmark = pytest.mark.xdist_group("opencode_binary_boot")
+pytestmark = pytest.mark.xdist_group("opencode-live")
 
 PLUGIN_LOAD_FAILED_RE = re.compile(r'failed to load plugin.*error="([^"]+)"')
 PLUGIN_HOOK_FAILED_RE = re.compile(r'plugin \w+ hook failed.*error="([^"]+)"')

@@ -9,8 +9,8 @@ Verifies:
 5. opencode.json at root is valid JSON with correct permission ordering
 6. Every .ts file in plugin/ and plugins/ is Node v26 --experimental-strip-types
    compatible (no catch{try, no typed catch, no enum/namespace)
-7. opencode.json `plugin:` entries cross-reference the .ts files on disk
-   (bidirectional: missing-on-disk and orphan-on-disk both flagged)
+7. opencode.json `plugin:` entries cross-reference configured .opencode/plugin/
+   files; .opencode/plugins/ is OpenCode's automatic project plugin directory
 
 Usage:
     python3 scripts/check_opencode_integrity.py [--root /path/to/repo]
@@ -268,7 +268,11 @@ def _load_plugin_entries(root: Path) -> list[str]:
 
 def check_plugin_manifest_xref(root: Path) -> list[str]:
     """Bidirectional cross-reference between opencode.json `plugin:` entries
-    and the .ts files on disk under .opencode/plugin/ and .opencode/plugins/.
+    and configured .ts files on disk under .opencode/plugin/.
+
+    OpenCode automatically loads direct children of .opencode/plugins/, so
+    those files do not need a manifest entry. They remain covered by the syntax,
+    default-export, and Node compatibility checks above.
 
     Reports:
       - MISSING: an entry in opencode.json whose target file does not exist.
@@ -287,13 +291,14 @@ def check_plugin_manifest_xref(root: Path) -> list[str]:
         if not candidate.is_file():
             errors.append(f"MISSING MANIFEST ENTRY: {entry} (file not found on disk)")
 
-    # Reverse check: every .ts file on disk must be referenced by an entry,
-    # unless it is allowlisted (helper module) or lives under impl/.
-    referenced_basenames: set[str] = set()
+    # Reverse check: configured singular-directory plugins must be referenced.
+    # The plural .opencode/plugins/ directory is the documented auto-load path.
+    referenced_paths: set[str] = set()
     for entry in entries:
-        referenced_basenames.add(Path(entry).name)
+        rel = entry[2:] if entry.startswith("./") else entry
+        referenced_paths.add(Path(rel).as_posix())
 
-    for sub in ("plugin", "plugins"):
+    for sub in ("plugin",):
         d = root / ".opencode" / sub
         if not d.is_dir():
             continue
@@ -304,7 +309,7 @@ def check_plugin_manifest_xref(root: Path) -> list[str]:
                 continue
             if f.parent.name == "impl":
                 continue
-            if f.name not in referenced_basenames:
+            if f.relative_to(root).as_posix() not in referenced_paths:
                 errors.append(
                     f"ORPHAN PLUGIN FILE: {f.relative_to(root)} is not registered in opencode.json 'plugin' list"
                 )

@@ -75,9 +75,7 @@ fi
 if [ "$YML_PATH" = "$ROOT_DIR/.github/workflows/build.yml" ]; then
     cd "$ROOT_DIR"
     uv run python -m pytest \
-        tests/unit/test_release_pipeline_structure.py::TestWorkflowYamlIsValid \
-        tests/unit/test_release_pipeline_structure.py::TestNoCircularDependencies \
-        tests/unit/test_release_pipeline_structure.py::TestBuildJobsDoNotDependOnTestShard \
+        tests/unit/test_release_pipeline_structure.py \
         -q --no-header --tb=short -p no:cacheprovider \
         >/dev/null 2>&1 || exit_code=$?
     if [ "$exit_code" -ne 0 ]; then
