@@ -81,8 +81,9 @@ def _git_fail(stderr: str = "fatal: something went wrong", rc: int = 1) -> Magic
 def _mp_git_lock_worker(order_list, rp, name, hold):
     """Module-level worker for multiprocessing cross-process lock test."""
     with git_repo_lock(rp, timeout=10.0, stale_after=60.0):
-        order_list.append(name)
+        order_list.append(f"{name}:enter")
         time.sleep(hold)
+        order_list.append(f"{name}:exit")
 
 
 _WT_MAIN_ONLY = """worktree /Users/shawnwilson/gludd
@@ -558,16 +559,25 @@ class TestLockFileManagementDeep:
             p2.start()
             p1.join(timeout=5)
             p2.join(timeout=5)
-            assert list(order) == ["first", "second"]
+            events = list(order)
+            assert sorted(events) == [
+                "first:enter",
+                "first:exit",
+                "second:enter",
+                "second:exit",
+            ]
+            for enter, leave in zip(events[::2], events[1::2], strict=True):
+                assert enter.endswith(":enter")
+                assert leave == enter.replace(":enter", ":exit")
 
-    def test_stale_lock_broken(self):
+    def test_stale_lock_metadata_preserves_mutex_inode(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             lock_path = os.path.join(tmpdir, "test.lock")
             Path(lock_path).write_text("")
             old_mtime = time.time() - 600
             os.utime(lock_path, (old_mtime, old_mtime))
             _break_if_stale(lock_path, stale_after=300)
-            assert not os.path.exists(lock_path)
+            assert os.path.exists(lock_path)
 
     def test_fresh_lock_not_broken(self):
         with tempfile.TemporaryDirectory() as tmpdir:
