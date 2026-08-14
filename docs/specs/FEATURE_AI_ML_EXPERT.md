@@ -1,6 +1,19 @@
 # Feature: AI/ML Expert Collection and Self-Improving Research System
 
-**Status: PROPOSED** | **Created: 2026-07-29** | **Target: development**
+Status: READY-TO-IMPLEMENT (2026-08-14)
+
+**Feature ID:** AIML-EXPERT-v1  
+**Target compatibility:** Gludd `0.1.x`; request/result schema `1.x` with
+additive-only minor revisions  
+**Created:** 2026-07-29  
+**Owners:** AI/ML collection, evidence, evaluation, security, observability
+
+This document is authoritative for the broad AI/ML product surface, public
+request/result contracts, and domain capabilities. The narrower
+[`SPEC_ML_AI_EXPERT_AND_SAFE_SELF_IMPROVEMENT.md`](../design/specs/SPEC_ML_AI_EXPERT_AND_SAFE_SELF_IMPROVEMENT.md)
+is authoritative for collection/role/skill implementation and governed
+continual research. Where they overlap, the stricter safety or compatibility
+requirement applies; neither document silently overrides the other.
 
 ## 1. Purpose and Non-Goals
 
@@ -564,7 +577,7 @@ tests/integration/ai_ml/
 tests/e2e/test_ai_ml_expert.py
 ```
 
-## 16. Acceptance Tests
+## 16. Acceptance Criteria and Tests
 
 | ID | Measurable acceptance criterion |
 |----|---------------------------------|
@@ -593,10 +606,24 @@ tests/e2e/test_ai_ml_expert.py
 
 ## 17. Research Integration Gate
 
-Before implementation status changes from `PROPOSED`, a serialized research pass
+Before implementation begins, a serialized research pass
 must add a source appendix with primary papers/docs and representative long-lived
 forum/issue reports for every domain in Sections 5-10. Each source record must
 include URL, title, author/organization, publication/update date, access date,
 license where applicable, supported claim IDs, and whether reproduction was
 attempted. Candidate libraries and simulators remain examples until that cited
 pass confirms maintenance, licensing, API, and platform suitability.
+
+## 18. Practitioner Evidence
+
+Long-lived user reports make the compatibility gates concrete. Hugging Face PEFT
+[issue #1802](https://github.com/huggingface/peft/issues/1802), opened in 2024,
+reports that switching between named LoRA adapters produced no observable model
+change; therefore adapter activation, route identity, and golden output deltas
+are acceptance evidence, not inferred from configuration. Hugging Face Datasets
+[issue #4883](https://github.com/huggingface/datasets/issues/4883), opened in
+2022, records sustained memory growth in a data-loader workload; therefore every
+dataset/accelerator path has explicit RSS, descriptor, cache, cleanup, and
+checkpoint limits. These reports are untrusted signals until reproduced, but
+they remain durable regression inputs rather than being replaced by newer
+marketing claims.
