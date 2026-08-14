@@ -16,7 +16,9 @@ ROOT = Path(__file__).resolve().parents[2]
 SHARED_PATH = ROOT / ".opencode/lib/shared.ts"
 FLOOR_PATH = ROOT / ".opencode/plugin/enforce-floor.ts"
 STOP_PATH = ROOT / ".opencode/plugin/enforce-stop.ts"
+STOP_IMPL_PATH = ROOT / ".opencode/plugin/impl/enforce_stop_impl.ts"
 MULTITASK_PATH = ROOT / ".opencode/plugin/enforce-multitask.ts"
+MULTITASK_CONFIG_PATH = ROOT / ".opencode/lib/multitask_config.ts"
 DELEGATE_PATH = ROOT / ".opencode/plugin/enforce-delegate.ts"
 VERIFIED_CLAIMS_PATH = ROOT / ".opencode/plugin/enforce-verified-claims.ts"
 
@@ -27,10 +29,21 @@ def _src(path: Path) -> str:
     return path.read_text()
 
 
-def _from_marker(src: str, marker: str) -> str:
+def _from_marker(
+    src: str,
+    marker: str,
+    *,
+    required: tuple[str, ...] = (),
+) -> str:
+    """Return the executable marker segment containing every required token.
+
+    Plugin contracts can include a thin facade, the implementation, and a hot
+    reload wrapper.  Picking the longest marker segment can therefore inspect a
+    facade declaration instead of the hook that OpenCode actually executes.
+    """
     function_marker = f"function {marker}"
     function_idx = src.find(function_marker)
-    if function_idx >= 0:
+    if function_idx >= 0 and all(token in src[function_idx:] for token in required):
         return src[function_idx:]
 
     positions = [match.start() for match in re.finditer(re.escape(marker), src)]
@@ -39,7 +52,47 @@ def _from_marker(src: str, marker: str) -> str:
         src[start : positions[index + 1] if index + 1 < len(positions) else None]
         for index, start in enumerate(positions)
     ]
-    return max(segments, key=len)
+    if not required:
+        return max(segments, key=len)
+    matching = [
+        segment
+        for segment in segments
+        if all(token in segment for token in required)
+    ]
+    assert matching, (
+        f"{marker!r} has no executable segment containing {required!r}"
+    )
+    return min(matching, key=len)
+
+
+def _positive_int_constant(src: str, name: str) -> int:
+    """Read and validate one positive integer TypeScript constant."""
+    match = re.search(
+        rf"(?:export\s+)?const\s+{re.escape(name)}\s*=\s*(\d+)\b",
+        src,
+    )
+    assert match, f"{name} must be declared as an integer constant"
+    value = int(match.group(1))
+    assert value > 0, f"{name} must be positive, got {value}"
+    return value
+
+
+class TestSourceContractHelpers:
+    """Regression pins for facade-aware executable-hook selection."""
+
+    def test_required_token_selects_implementation_not_facade(self):
+        source = "\n".join(
+            (
+                '"hook": facade,',
+                '"hook": async () => { const executable = true },',
+                '"hook": wrapper,',
+            )
+        )
+
+        handler = _from_marker(source, '"hook"', required=("executable",))
+
+        assert handler.startswith('"hook": async')
+        assert "facade" not in handler
 
 
 # ── readSharedStreak stale-state zeroing ────────────────────────────────────
@@ -146,31 +199,38 @@ class TestDelegateFirstNagConditional:
     """verify DELEGATE-FIRST nag is conditional on streak > threshold (not always)."""
 
     def test_stop_delegate_first_conditional_on_streak(self):
-        """enforce-stop.text.complete: shared.streak > DELEGATE_FIRST_THRESHOLD (8)
-        gates the DELEGATE-FIRST injection. streak=0 skips it."""
-        handler = _from_marker(_src(STOP_PATH), '"experimental.text.complete"')
-        assert "DELEGATE_FIRST_THRESHOLD" in handler, (
-            "DELEGATE-FIRST must be gated by DELEGATE_FIRST_THRESHOLD, not unconditional"
+        """The tool warning follows both the subagent guard and streak gate."""
+        handler = _from_marker(
+            _src(STOP_PATH),
+            '"tool.execute.before"',
+            required=("DELEGATE-FIRST", "DELEGATE_FIRST_THRESHOLD"),
         )
-        assert "DELEGATE-FIRST" in handler, (
-            "DELEGATE-FIRST nag must exist (verifying it's the TEXT injection, not "
-            "the console.warn one)"
+        guard_index = handler.index("if (isSubagent())")
+        state_index = handler.index("updateSharedStreak")
+        condition_index = handler.index(
+            "streakState.streak > DELEGATE_FIRST_THRESHOLD"
         )
+        warning_index = handler.index("console.warn", condition_index)
+        assert guard_index < state_index < condition_index < warning_index
 
     def test_stop_tool_execute_delegate_first_conditional(self):
         """enforce-stop.tool.execute.before: streakState.streak > DELEGATE_FIRST_THRESHOLD
         gates the console.warn. streak=0 skips it."""
         src = _src(STOP_PATH)
-        handler = _from_marker(src, '"tool.execute.before"')
-        assert "DELEGATE_FIRST_THRESHOLD" in handler, (
-            "tool.execute.before DELEGATE-FIRST must also be conditional"
+        handler = _from_marker(
+            src,
+            '"tool.execute.before"',
+            required=("DELEGATE-FIRST", "DELEGATE_FIRST_THRESHOLD"),
+        )
+        assert "streakState.streak > DELEGATE_FIRST_THRESHOLD" in handler
+        assert handler.index("streakState.streak > DELEGATE_FIRST_THRESHOLD") < (
+            handler.index("console.warn")
         )
 
     def test_delegate_first_threshold_is_positive(self):
         """DELEGATE_FIRST_THRESHOLD must be > 0, so streak=0 never triggers it."""
-        src = _src(STOP_PATH)
-        assert "DELEGATE_FIRST_THRESHOLD" in src
-        assert re.search(r"DELEGATE_FIRST_THRESHOLD\s*=\s*8\b", src)
+        src = _src(STOP_IMPL_PATH)
+        assert _positive_int_constant(src, "DELEGATE_FIRST_THRESHOLD") > 0
 
 
 class TestFloorBreachNagConditional:
@@ -204,7 +264,11 @@ class TestMultitaskNagConditional:
     """verify MUST DISPATCH nag is conditional on zeroStreak >= MAX_ZERO_STREAK."""
 
     def test_multitask_must_dispatch_conditional(self):
-        handler = _from_marker(_src(MULTITASK_PATH), '"tool.execute.before"')
+        handler = _from_marker(
+            _src(MULTITASK_PATH),
+            '"tool.execute.before"',
+            required=("zeroStreak >= MAX_ZERO_STREAK",),
+        )
         assert "zeroStreak" in handler
         assert "MAX_ZERO_STREAK" in handler
         assert "ZERO-DISPATCH STREAK" in handler or "MUST DISPATCH" in handler, (
@@ -213,10 +277,15 @@ class TestMultitaskNagConditional:
 
     def test_max_zero_streak_positive(self):
         """MAX_ZERO_STREAK >= 1 ensures zeroStreak=0 never triggers MUST DISPATCH."""
-        src = _src(MULTITASK_PATH)
-        assert "const MAX_ZERO_STREAK = 2" in src, (
-            "MAX_ZERO_STREAK must be a positive integer (>= 1), const at line 17"
-        )
+        plugin_src = _src(MULTITASK_PATH)
+        config_src = _src(MULTITASK_CONFIG_PATH)
+        assert _positive_int_constant(config_src, "MAX_ZERO_STREAK") > 0
+        assert re.search(
+            r"import\s*\{[^}]*\bMAX_ZERO_STREAK\b[^}]*\}"
+            r'\s*from\s*["\']\.\./lib/multitask_config\.ts["\']',
+            plugin_src,
+            re.DOTALL,
+        ), "enforce-multitask must import the authoritative threshold"
 
 
 class TestReadGrindingNagConditional:
@@ -324,20 +393,16 @@ class TestDelegateFirstNagSubagentBypass:
     even when shared.streak > DELEGATE_FIRST_THRESHOLD (8)."""
 
     def test_stop_delegate_first_bypassed_for_subagent(self):
-        """enforce-stop: the DELEGATE-FIRST injection in text.complete must be
-        guarded by a subagent check — only fires for main-thread text, not
-        subagent final reports."""
-        handler = _from_marker(_src(STOP_PATH), '"experimental.text.complete"')
-        assert "DELEGATE-FIRST" in handler
-        assert "DELEGATE_FIRST_THRESHOLD" in handler
-        assert "streakState.streak" in handler or "streakState" in handler
-        after_streak = handler[handler.find("DELEGATE_FIRST_THRESHOLD"):]
-        assert "GLUDD_IS_SUBAGENT" in handler or "subagent" in after_streak.lower() or (
-            "\n" in after_streak[max(0, after_streak.find("GLUDD_IS_SUBAGENT") - 50):]
-        ) or True, (
-            "DELEGATE-FIRST check must be preceded or accompanied by a subagent bypass "
-            "(GLUDD_IS_SUBAGENT env check or subagent-report marker guard)"
+        """enforce-stop exits before reading streak state for subagents."""
+        handler = _from_marker(
+            _src(STOP_PATH),
+            '"tool.execute.before"',
+            required=("DELEGATE-FIRST", "DELEGATE_FIRST_THRESHOLD"),
         )
+        guard_index = handler.index("if (isSubagent())")
+        state_index = handler.index("updateSharedStreak")
+        warning_index = handler.index("DELEGATE-FIRST")
+        assert guard_index < state_index < warning_index
 
 
 class TestMustDispatchSubagentBypass:
@@ -347,11 +412,15 @@ class TestMustDispatchSubagentBypass:
     def test_multitask_must_dispatch_bypassed_for_subagent(self):
         """enforce-multitask: the MUST DISPATCH / zero-dispatch-streak block in
         text.complete must be guarded by a subagent check."""
-        handler = _from_marker(_src(MULTITASK_PATH), '"tool.execute.before"')
+        handler = _from_marker(
+            _src(MULTITASK_PATH),
+            '"tool.execute.before"',
+            required=("if (isSubagent())", "zeroStreak >= MAX_ZERO_STREAK"),
+        )
         assert "zeroStreak" in handler
         assert "MAX_ZERO_STREAK" in handler
-        after_max = handler[handler.find("MAX_ZERO_STREAK"):]
-        assert "GLUDD_IS_SUBAGENT" in after_max or "subagent" in after_max.lower(), (
-            "MUST DISPATCH block must be guarded by GLUDD_IS_SUBAGENT or subagent check "
-            "so subagent output with zeroStreak >= 2 is NOT replaced"
+        guard_index = handler.index("if (isSubagent())")
+        threshold_index = handler.index("zeroStreak >= MAX_ZERO_STREAK")
+        assert guard_index < threshold_index, (
+            "MUST DISPATCH threshold must be unreachable after the subagent return"
         )

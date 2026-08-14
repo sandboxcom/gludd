@@ -71,18 +71,56 @@ def test_module_importable(path: Path) -> None:
 @pytest.mark.parametrize("path", _FILE_PATHS, ids=_path_to_module)
 def test_no_circular_import_isolated(path: Path) -> None:
     mod_name = _path_to_module(path)
-    saved = {k: sys.modules.get(k) for k in list(sys.modules) if _subpackage_of(k, PKG_NAME)}
-    for k in saved:
-        if saved[k] is not None:
-            del sys.modules[k]
+    saved_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if _subpackage_of(name, PKG_NAME)
+    }
     try:
+        for name in saved_modules:
+            del sys.modules[name]
         importlib.invalidate_caches()
         mod = importlib.import_module(mod_name)
         assert isinstance(mod, ModuleType)
     finally:
-        for k, v in saved.items():
-            if v is not None:
-                sys.modules[k] = v
+        for name in tuple(sys.modules):
+            if _subpackage_of(name, PKG_NAME):
+                del sys.modules[name]
+        sys.modules.update(saved_modules)
+
+
+def test_isolated_import_restores_new_qemu_descendants(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An isolated QEMU import must not escape into the caller's module graph."""
+    package = importlib.import_module(PKG_NAME)
+    infra_name = "general_ludd.infra"
+    qemu_name = f"{infra_name}.qemu_detect"
+    monkeypatch.delitem(sys.modules, qemu_name, raising=False)
+    monkeypatch.delitem(sys.modules, infra_name, raising=False)
+    monkeypatch.delattr(package, "infra", raising=False)
+
+    test_no_circular_import_isolated(SRC_PKG / "infra" / "qemu_detect.py")
+
+    assert infra_name not in sys.modules
+    assert qemu_name not in sys.modules
+    assert not hasattr(package, "infra")
+
+
+def test_isolated_import_preserves_new_external_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dependencies loaded by an isolated import must remain normally cached."""
+    dependency_name = "_qemu_import_isolation_dependency"
+    dependency = ModuleType(dependency_name)
+
+    def import_with_dependency(module_name: str) -> ModuleType:
+        monkeypatch.setitem(sys.modules, dependency_name, dependency)
+        return ModuleType(module_name)
+
+    monkeypatch.setattr(importlib, "import_module", import_with_dependency)
+
+    test_no_circular_import_isolated(SRC_PKG / "infra" / "qemu_detect.py")
+
+    assert sys.modules[dependency_name] is dependency
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -266,7 +304,7 @@ def test_no_static_circular_import_cycle() -> None:
                         return cycle
                 elif color.get(v) == 1:
                     cycle_path = [v]
-                    cur = u
+                    cur: str | None = u
                     while cur is not None and cur != v:
                         cycle_path.append(cur)
                         cur = parent.get(cur)
@@ -276,7 +314,7 @@ def test_no_static_circular_import_cycle() -> None:
             color[u] = 2
             return None
 
-        cycle = None
+        cycle: list[str] | None = None
         for node in sorted(graph):
             if color.get(node) == 0:
                 cycle = _dfs_cycle(node)
@@ -284,6 +322,7 @@ def test_no_static_circular_import_cycle() -> None:
                     break
         import sys
 
+        assert cycle is not None, "Cycle scan reported a cycle without its path"
         print(f"\nCYCLE: {' → '.join(cycle)}", file=sys.stderr)
         for i, a in enumerate(cycle):
             b = cycle[(i + 1) % len(cycle)]

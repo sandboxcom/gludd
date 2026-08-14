@@ -243,6 +243,11 @@ def test_is_oom_exit_clean_failure_is_not_oom() -> None:
     assert at.is_oom_exit(0, "") is False
 
 
+@pytest.mark.parametrize("returncode", [-15, 124, 130, 143])
+def test_is_oom_exit_distinguishes_signal_and_timeout(returncode: int) -> None:
+    assert at.is_oom_exit(returncode, "orchestrator stopped the shard") is False
+
+
 # ---- pytest command builder (now bounds via --maxprocesses) --------------
 
 
@@ -326,6 +331,32 @@ def test_run_does_not_retry_failure_prose_with_crash_words(
     rc = at.run(["tests/unit"], env={}, runner=runner)
     assert rc == 1
     assert n_calls == 1
+
+
+def test_run_never_retries_after_orchestrator_termination(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(at, "decide_nproc", lambda env=None: 8)
+    calls = 0
+
+    def terminated_runner(cmd):
+        nonlocal calls
+        calls += 1
+        return 137, "", "orchestrator-signal:SIGTERM"
+
+    rc = at.run(["tests/unit"], env={}, runner=terminated_runner)
+
+    assert rc == 137
+    assert calls == 1
+
+
+def test_no_progress_timeout_has_a_positive_bounded_default() -> None:
+    assert at.no_progress_timeout_seconds({}) == at.DEFAULT_NO_PROGRESS_SECS
+    assert at.no_progress_timeout_seconds({"GLUDD_ADAPTIVE_NO_PROGRESS_SECS": "12.5"}) == 12.5
+    assert (
+        at.no_progress_timeout_seconds({"GLUDD_ADAPTIVE_NO_PROGRESS_SECS": "invalid"})
+        == at.DEFAULT_NO_PROGRESS_SECS
+    )
 
 
 # ---- shared-tmp-root isolation (the popen-gwN FileNotFoundError race) -----
@@ -432,12 +463,102 @@ def test_stream_run_emits_heartbeat_and_persists_counters(
 
     monkeypatch.setattr(at.subprocess, "Popen", lambda *args, **kwargs: _Process())
 
-    rc, output = at._stream_run(["pytest", "tests/"])
+    result = at._stream_run(["pytest", "tests/"])
 
-    assert rc == 0
-    assert output == "pytest finished\n"
+    assert result.returncode == 0
+    assert result.output == "pytest finished\n"
+    assert result.termination_reason is None
     payload = json.loads(progress_file.read_text())
     assert payload["status"] == "finished"
     assert payload["lines"] == 1
     assert payload["heartbeat_count"] >= 1
     assert "heartbeat" in capsys.readouterr().out
+
+
+def test_stream_run_terminates_at_visible_no_progress_bound(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    progress_file = tmp_path / "adaptive-timeout.json"
+    monkeypatch.setenv("GLUDD_ADAPTIVE_HEARTBEAT_SECS", "1")
+    monkeypatch.setenv("GLUDD_ADAPTIVE_NO_PROGRESS_SECS", "0.02")
+    monkeypatch.setenv("GLUDD_ADAPTIVE_PROGRESS_FILE", str(progress_file))
+
+    class _Process:
+        returncode: int | None = None
+
+        def __init__(self) -> None:
+            self.terminated = False
+            self.stdout = self._quiet_stream()
+
+        def _quiet_stream(self):
+            while not self.terminated:
+                time.sleep(0.002)
+            if False:
+                yield ""
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.terminated = True
+            self.returncode = -15
+
+        def wait(self):
+            return self.returncode
+
+    process = _Process()
+    monkeypatch.setattr(at.subprocess, "Popen", lambda *args, **kwargs: process)
+
+    started = time.monotonic()
+    result = at._stream_run(["pytest", "tests/"])
+
+    assert result.returncode == 124
+    assert result.termination_reason == "no-progress-timeout"
+    assert time.monotonic() - started < 0.25
+    payload = json.loads(progress_file.read_text())
+    assert payload["status"] == "terminated"
+    assert payload["termination_reason"] == "no-progress-timeout"
+    output = capsys.readouterr().out
+    assert "no-progress=" in output
+    assert "terminating reason=no-progress-timeout" in output
+
+
+def test_stream_run_records_orchestrator_signal_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installed_handlers: dict[int, object] = {}
+    monkeypatch.setattr(at.signal, "getsignal", lambda _signum: at.signal.SIG_DFL)
+    monkeypatch.setattr(
+        at.signal,
+        "signal",
+        lambda signum, handler: installed_handlers.__setitem__(signum, handler),
+    )
+
+    class _Process:
+        returncode: int | None = None
+
+        def __init__(self) -> None:
+            self.stdout = self._signal_stream()
+
+        def _signal_stream(self):
+            handler = installed_handlers[at.signal.SIGTERM]
+            assert callable(handler)
+            handler(at.signal.SIGTERM, None)
+            if False:
+                yield ""
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.returncode = -15
+
+        def wait(self):
+            return self.returncode
+
+    monkeypatch.setattr(at.subprocess, "Popen", lambda *args, **kwargs: _Process())
+
+    result = at._stream_run(["pytest", "tests/"])
+
+    assert result.returncode == 143
+    assert result.termination_reason == "orchestrator-signal:SIGTERM"
