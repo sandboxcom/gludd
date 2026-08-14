@@ -169,6 +169,31 @@ class TestSwissHashMap:
         for i in range(20):
             assert m[i] == i
 
+    def test_control_sentinel_hashes_remain_occupied(self) -> None:
+        m = SwissHashMap[int, str](capacity=4)
+
+        # int hashes 0 and 126 yield the metadata bytes reserved for empty and
+        # tombstone slots when the high-bit fingerprint encoding is applied.
+        m[0] = "empty-byte hash"
+        m[126] = "tombstone-byte hash"
+
+        assert len(m) == 2
+        assert m[0] == "empty-byte hash"
+        assert m[126] == "tombstone-byte hash"
+
+        m[1] = "one"
+        m[2] = "two"
+
+        assert len(m) == 4
+        assert m[0] == "empty-byte hash"
+        assert m[126] == "tombstone-byte hash"
+        assert sorted(m.items()) == [
+            (0, "empty-byte hash"),
+            (1, "one"),
+            (2, "two"),
+            (126, "tombstone-byte hash"),
+        ]
+
     def test_repr(self) -> None:
         m = SwissHashMap[str, int]()
         m["a"] = 1

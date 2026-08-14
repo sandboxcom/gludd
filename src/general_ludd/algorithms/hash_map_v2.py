@@ -16,6 +16,7 @@ V = TypeVar("V")
 _SENTINEL = object()
 _TOMBSTONE = object()
 _EMPTY: int = 0x80
+_TOMBSTONE_CTRL: int = 0xFE
 
 
 def _fmix64(k: int) -> int:
@@ -59,26 +60,32 @@ class RobinHoodHashMap(Generic[K, V]):
     """
 
     def __init__(self, capacity: int = 16) -> None:
+        """Initialize an empty map with at least four slots."""
         self._cap = max(capacity, 4)
         self._size = 0
         self._entries: list[_RobinEntry[K, V]] = [_RobinEntry() for _ in range(self._cap)]
 
     def __len__(self) -> int:
+        """Return the number of occupied entries."""
         return self._size
 
     def __contains__(self, key: K) -> bool:
+        """Return whether key is present."""
         return self._find(key) != -1
 
     def __getitem__(self, key: K) -> V:
+        """Return the value for key or raise KeyError."""
         i = self._find(key)
         if i == -1:
             raise KeyError(key)
         return self._entries[i].value  # type: ignore[return-value]
 
     def __setitem__(self, key: K, value: V) -> None:
+        """Insert or update a key/value pair."""
         self._insert(key, value)
 
     def __delitem__(self, key: K) -> None:
+        """Delete key or raise KeyError when absent."""
         i = self._find(key)
         if i == -1:
             raise KeyError(key)
@@ -88,16 +95,20 @@ class RobinHoodHashMap(Generic[K, V]):
         self._size -= 1
 
     def get(self, key: K, default: object = None) -> object:
+        """Return the value for key, or default when absent."""
         i = self._find(key)
         return self._entries[i].value if i != -1 else default
 
     def items(self) -> list[tuple[K, V]]:
+        """Return occupied key/value pairs."""
         return [(cast(K, e.key), cast(V, e.value)) for e in self._entries if e.is_occupied]
 
     def keys(self) -> list[K]:
+        """Return occupied keys."""
         return [cast(K, e.key) for e in self._entries if e.is_occupied]
 
     def values(self) -> list[V]:
+        """Return values from occupied entries."""
         return [cast(V, e.value) for e in self._entries if e.is_occupied]
 
     def _hash(self, key: object) -> int:
@@ -151,9 +162,11 @@ class RobinHoodHashMap(Generic[K, V]):
         self._insert(key, value)
 
     def __iter__(self) -> Iterator[K]:
+        """Return an iterator over occupied keys."""
         return iter(self.keys())
 
     def __repr__(self) -> str:
+        """Return a debug representation of the map."""
         return f"RobinHoodHashMap({dict(self.items())})"
 
 
@@ -169,6 +182,7 @@ class SwissHashMap(Generic[K, V]):
     """
 
     def __init__(self, capacity: int = 16) -> None:
+        """Initialize an empty map with at least four slots."""
         self._cap = max(capacity, 4)
         self._size = 0
         self._tombstones = 0
@@ -177,52 +191,69 @@ class SwissHashMap(Generic[K, V]):
         self._ctrl: bytearray = bytearray([_EMPTY] * self._cap)
 
     def __len__(self) -> int:
+        """Return the number of occupied entries."""
         return self._size
 
     def __contains__(self, key: K) -> bool:
+        """Return whether key is present."""
         return self._find(key) != -1
 
     def __getitem__(self, key: K) -> V:
+        """Return the value for key or raise KeyError."""
         i = self._find(key)
         if i == -1:
             raise KeyError(key)
         return self._values[i]  # type: ignore[return-value]
 
     def __setitem__(self, key: K, value: V) -> None:
+        """Insert or update a key/value pair."""
         self._insert(key, value)
 
     def __delitem__(self, key: K) -> None:
+        """Delete key or raise KeyError when absent."""
         i = self._find(key)
         if i == -1:
             raise KeyError(key)
-        self._ctrl[i] = 0xFE
+        self._ctrl[i] = _TOMBSTONE_CTRL
         self._keys[i] = _TOMBSTONE
         self._values[i] = _SENTINEL
         self._size -= 1
         self._tombstones += 1
 
     def get(self, key: K, default: object = None) -> object:
+        """Return the value for key, or default when absent."""
         i = self._find(key)
         return self._values[i] if i != -1 else default
 
     def items(self) -> list[tuple[K, V]]:
+        """Return occupied key/value pairs."""
         result: list[tuple[K, V]] = []
         for i in range(self._cap):
-            if self._ctrl[i] != _EMPTY and self._ctrl[i] != 0xFE:
+            if self._ctrl[i] != _EMPTY and self._ctrl[i] != _TOMBSTONE_CTRL:
                 result.append((cast(K, self._keys[i]), cast(V, self._values[i])))
         return result
 
     def keys(self) -> list[K]:
-        return [cast(K, self._keys[i]) for i in range(self._cap) if self._ctrl[i] != _EMPTY and self._ctrl[i] != 0xFE]
+        """Return occupied keys."""
+        return [
+            cast(K, self._keys[i])
+            for i in range(self._cap)
+            if self._ctrl[i] != _EMPTY and self._ctrl[i] != _TOMBSTONE_CTRL
+        ]
 
     def values(self) -> list[V]:
-        return [cast(V, self._values[i]) for i in range(self._cap) if self._ctrl[i] != _EMPTY and self._ctrl[i] != 0xFE]
+        """Return values from occupied entries."""
+        return [
+            cast(V, self._values[i])
+            for i in range(self._cap)
+            if self._ctrl[i] != _EMPTY and self._ctrl[i] != _TOMBSTONE_CTRL
+        ]
 
     def _h1(self, key: object) -> int:
         return _fmix64(hash(key) & 0xFFFFFFFFFFFFFFFF) % self._cap
 
     def _h2(self, key: object) -> int:
-        return (hash(key) & 0x7F) | 0x80  # high bit set = occupied
+        return hash(key) & 0x7F
 
     def _find(self, key: K) -> int:
         h2 = self._h2(key)
@@ -247,7 +278,7 @@ class SwissHashMap(Generic[K, V]):
         self._size = 0
         self._tombstones = 0
         for i, c in enumerate(old_ctrl):
-            if c != _EMPTY and c != 0xFE:
+            if c != _EMPTY and c != _TOMBSTONE_CTRL:
                 self._insert(cast(K, old_keys[i]), cast(V, old_vals[i]))
 
     def _insert(self, key: K, value: V) -> None:
@@ -258,11 +289,11 @@ class SwissHashMap(Generic[K, V]):
         for dist in range(self._cap):
             i = (h1 + dist) % self._cap
             c = self._ctrl[i]
-            if c == _EMPTY or c == 0xFE:
+            if c in (_EMPTY, _TOMBSTONE_CTRL):
                 self._ctrl[i] = h2
                 self._keys[i] = key
                 self._values[i] = value
-                if c == 0xFE:
+                if c == _TOMBSTONE_CTRL:
                     self._tombstones -= 1
                 self._size += 1
                 return
@@ -271,9 +302,11 @@ class SwissHashMap(Generic[K, V]):
                 return
 
     def __iter__(self) -> Iterator[K]:
+        """Return an iterator over occupied keys."""
         return iter(self.keys())
 
     def __repr__(self) -> str:
+        """Return a debug representation of the map."""
         return f"SwissHashMap({dict(self.items())})"
 
 
@@ -284,27 +317,33 @@ class LinearProbingHashMap(Generic[K, V]):
     """Open-addressing hash map with linear probing (stride = 1)."""
 
     def __init__(self, capacity: int = 16) -> None:
+        """Initialize an empty map with at least four slots."""
         self._cap = max(capacity, 4)
         self._size = 0
         self._keys: list[object] = [_SENTINEL] * self._cap
         self._values: list[object] = [_SENTINEL] * self._cap
 
     def __len__(self) -> int:
+        """Return the number of occupied entries."""
         return self._size
 
     def __contains__(self, key: K) -> bool:
+        """Return whether key is present."""
         return self._find(key) != -1
 
     def __getitem__(self, key: K) -> V:
+        """Return the value for key or raise KeyError."""
         i = self._find(key)
         if i == -1:
             raise KeyError(key)
         return self._values[i]  # type: ignore[return-value]
 
     def __setitem__(self, key: K, value: V) -> None:
+        """Insert or update a key/value pair."""
         self._insert(key, value)
 
     def __delitem__(self, key: K) -> None:
+        """Delete key or raise KeyError when absent."""
         i = self._find(key)
         if i == -1:
             raise KeyError(key)
@@ -313,10 +352,12 @@ class LinearProbingHashMap(Generic[K, V]):
         self._size -= 1
 
     def get(self, key: K, default: object = None) -> object:
+        """Return the value for key, or default when absent."""
         i = self._find(key)
         return self._values[i] if i != -1 else default
 
     def items(self) -> list[tuple[K, V]]:
+        """Return occupied key/value pairs."""
         result: list[tuple[K, V]] = []
         for i in range(self._cap):
             if self._is_occupied(i):
@@ -324,9 +365,11 @@ class LinearProbingHashMap(Generic[K, V]):
         return result
 
     def keys(self) -> list[K]:
+        """Return occupied keys."""
         return [cast(K, self._keys[i]) for i in range(self._cap) if self._is_occupied(i)]
 
     def values(self) -> list[V]:
+        """Return values from occupied entries."""
         return [cast(V, self._values[i]) for i in range(self._cap) if self._is_occupied(i)]
 
     def _is_occupied(self, i: int) -> bool:
@@ -374,9 +417,11 @@ class LinearProbingHashMap(Generic[K, V]):
                 return
 
     def __iter__(self) -> Iterator[K]:
+        """Return an iterator over occupied keys."""
         return iter(self.keys())
 
     def __repr__(self) -> str:
+        """Return a debug representation of the map."""
         return f"LinearProbingHashMap({dict(self.items())})"
 
 
@@ -391,27 +436,33 @@ class QuadraticProbingHashMap(Generic[K, V]):
     """
 
     def __init__(self, capacity: int = 16) -> None:
+        """Initialize an empty map with at least four slots."""
         self._cap = max(capacity, 4)
         self._size = 0
         self._keys: list[object] = [_SENTINEL] * self._cap
         self._values: list[object] = [_SENTINEL] * self._cap
 
     def __len__(self) -> int:
+        """Return the number of occupied entries."""
         return self._size
 
     def __contains__(self, key: K) -> bool:
+        """Return whether key is present."""
         return self._find(key) != -1
 
     def __getitem__(self, key: K) -> V:
+        """Return the value for key or raise KeyError."""
         i = self._find(key)
         if i == -1:
             raise KeyError(key)
         return self._values[i]  # type: ignore[return-value]
 
     def __setitem__(self, key: K, value: V) -> None:
+        """Insert or update a key/value pair."""
         self._insert(key, value)
 
     def __delitem__(self, key: K) -> None:
+        """Delete key or raise KeyError when absent."""
         i = self._find(key)
         if i == -1:
             raise KeyError(key)
@@ -420,10 +471,12 @@ class QuadraticProbingHashMap(Generic[K, V]):
         self._size -= 1
 
     def get(self, key: K, default: object = None) -> object:
+        """Return the value for key, or default when absent."""
         i = self._find(key)
         return self._values[i] if i != -1 else default
 
     def items(self) -> list[tuple[K, V]]:
+        """Return occupied key/value pairs."""
         result: list[tuple[K, V]] = []
         for i in range(self._cap):
             if self._is_occupied(i):
@@ -431,9 +484,11 @@ class QuadraticProbingHashMap(Generic[K, V]):
         return result
 
     def keys(self) -> list[K]:
+        """Return occupied keys."""
         return [cast(K, self._keys[i]) for i in range(self._cap) if self._is_occupied(i)]
 
     def values(self) -> list[V]:
+        """Return values from occupied entries."""
         return [cast(V, self._values[i]) for i in range(self._cap) if self._is_occupied(i)]
 
     def _is_occupied(self, i: int) -> bool:
@@ -481,7 +536,9 @@ class QuadraticProbingHashMap(Generic[K, V]):
                 return
 
     def __iter__(self) -> Iterator[K]:
+        """Return an iterator over occupied keys."""
         return iter(self.keys())
 
     def __repr__(self) -> str:
+        """Return a debug representation of the map."""
         return f"QuadraticProbingHashMap({dict(self.items())})"
