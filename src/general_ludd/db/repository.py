@@ -54,6 +54,14 @@ _DEFAULT_LIST_LIMIT = 1000
 # every ORM query inside the block auto-filter to the given project_id.
 @contextlib.contextmanager
 def scoped_to(project_id: str) -> Generator[None, None, None]:
+    """Apply tenant filtering to repository operations within the context.
+
+    Args:
+        project_id: Tenant identifier applied to ORM queries in the context.
+
+    Yields:
+        Control while the requested tenant is active.
+    """
     from general_ludd.db.tenant import reset_tenant, set_tenant
 
     token = set_tenant(project_id)
@@ -163,12 +171,12 @@ ALLOWED_TODO_CREATE_FIELDS: frozenset[str] = frozenset(
 _TODO_STR_FIELD_MAX_BYTES = 65536
 
 
-class ConcurrencyError(Exception):
-    pass
+class ConcurrencyError(RuntimeError):
+    """Raised when optimistic concurrency detects a stale repository write."""
 
 
 class InvalidTransitionError(ConcurrencyError):
-    pass
+    """Raised when a persisted task cannot enter the requested state."""
 
 
 def _is_locked_error(exc: OperationalError) -> bool:
@@ -185,6 +193,8 @@ def _is_locked_error(exc: OperationalError) -> bool:
 
 
 class TodoRepository:
+    """Persist tenant-scoped todos with validated, concurrency-safe updates."""
+
     # D-28: Fields that callers must not supply in create() — they are set by the
     # DB/ORM (the autoincrement primary key `id`, `created_at`, `updated_at`) or must
     # start at a fixed value (version=1).  Accepting them would let callers forge the
@@ -220,6 +230,7 @@ class TodoRepository:
     _MAX_TEXT_BYTES: int = 65_536  # 64 KiB
 
     def __init__(self, session: AsyncSession, project_id: str | None = None) -> None:
+        """Initialize the repository with an optional default tenant scope."""
         self._session = session
         self._project_id = project_id
 
@@ -240,17 +251,19 @@ class TodoRepository:
     # ------------------------------------------------------------------
 
     def _resolve_pid(self, project_id: str | None) -> str | None:
-        """Return *project_id* if explicitly supplied, else fall back to the
-        instance scope.  ``None`` is only propagated when the instance was not
-        scoped (admin / cross-tenant path)."""
+        """Resolve an explicit project or fall back to the instance scope.
+
+        ``None`` is propagated only for an unscoped administrative repository.
+        """
         return project_id if project_id is not None else self._project_id
 
     @classmethod
     def _validate_create_data(cls, todo_data: dict[str, Any]) -> None:
-        """Raise ValueError if *todo_data* contains immutable fields or oversized
-        text values (D-28).  Called before mass-assigning data to TodoModel so
-        callers cannot forge primary keys, manipulate version counters, or store
-        arbitrarily large blobs."""
+        """Reject immutable fields and oversized values before model creation.
+
+        Validation prevents primary-key forgery, version manipulation, and
+        unbounded text storage before mass assignment to ``TodoModel``.
+        """
         bad_fields = cls._IMMUTABLE_FIELDS & todo_data.keys()
         if bad_fields:
             raise ValueError(
@@ -278,6 +291,7 @@ class TodoRepository:
                 )
 
     async def create(self, todo_data: dict[str, Any]) -> TodoModel:
+        """Validate, persist, and return a new version-one todo."""
         # D-28: validate before mass-assignment so callers cannot forge primary
         # keys, skip version accounting, or store oversized blobs.
         self._validate_create_data(todo_data)
@@ -290,6 +304,7 @@ class TodoRepository:
         return todo
 
     async def get_by_id(self, todo_id: str, project_id: str | None = None) -> TodoModel | None:
+        """Return a todo by business identifier within the resolved scope."""
         _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel).where(TodoModel.todo_id == todo_id)
         if _pid is not None:
@@ -298,6 +313,7 @@ class TodoRepository:
         return result.scalar_one_or_none()
 
     async def get_by_ids(self, todo_ids: list[str], project_id: str | None = None) -> dict[str, TodoModel]:
+        """Return resolved-scope todos keyed by their requested identifiers."""
         _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel).where(TodoModel.todo_id.in_(todo_ids))
         if _pid is not None:
@@ -307,8 +323,9 @@ class TodoRepository:
 
     @classmethod
     def _validate_update_fields(cls, updates: dict[str, Any]) -> None:
-        """Raise ValueError if *updates* contains any field that must never
-        change after creation (finding #10). Guards update() against
+        """Reject fields that must remain immutable after creation.
+
+        Guards update() against
         mass-assignment of the tenant scope (``project_id`` → cross-tenant
         escape), the business key (``todo_id`` → identity swap), and the
         DB-managed / audit columns. Fires before any DB read or write so a
@@ -328,6 +345,13 @@ class TodoRepository:
         expected_version: int,
         project_id: str | None = None,
     ) -> TodoModel:
+        """Apply a guarded update and increment the todo version.
+
+        Raises:
+            InvalidTransitionError: If the scoped todo does not exist.
+            ConcurrencyError: If ``expected_version`` is stale or the write loses a race.
+            ValueError: If an update attempts to change an immutable field.
+        """
         # Finding #10: reject mass-assignment of identity/tenant/audit fields
         # before any DB read or write. See _validate_update_fields.
         self._validate_update_fields(updates)
@@ -370,6 +394,7 @@ class TodoRepository:
         project_id: str | None = None,
         limit: int | None = None,
     ) -> list[TodoModel]:
+        """List bounded todos with a status in the resolved tenant scope."""
         _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel).where(TodoModel.status == status.value)
         if _pid is not None:
@@ -388,6 +413,7 @@ class TodoRepository:
         offset: int = 0,
         schedule_paused: bool | None = None,
     ) -> list[TodoModel]:
+        """List a bounded page of todos matching optional filters."""
         _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel)
         if queue is not None:
@@ -413,6 +439,7 @@ class TodoRepository:
         project_id: str | None = None,
         limit: int | None = None,
     ) -> list[TodoModel]:
+        """List bounded todos for a work type in the resolved scope."""
         _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel).where(TodoModel.work_type == work_type)
         if _pid is not None:
@@ -545,6 +572,7 @@ class TodoRepository:
         return claimed
 
     async def count_active(self, project_id: str | None = None) -> int:
+        """Count active todos in the resolved tenant scope."""
         from sqlalchemy import func
 
         _pid = self._resolve_pid(project_id)
@@ -555,8 +583,10 @@ class TodoRepository:
         return result.scalar() or 0
 
     async def status_summary(self, project_id: str | None = None) -> dict[str, Any]:
-        """Aggregate todo facts: counts by status / queue / work_type, oldest age,
-        backlog size. Reused by the /api/facts aggregation endpoint."""
+        """Aggregate todo counts, oldest age, and backlog size.
+
+        The facts endpoint reuses this database-level aggregation.
+        """
         _pid = self._resolve_pid(project_id)
         from sqlalchemy import func
 
@@ -601,6 +631,12 @@ class TodoRepository:
         expected_version: int,
         project_id: str | None = None,
     ) -> TodoModel:
+        """Perform a validated, optimistic state transition.
+
+        Raises:
+            InvalidTransitionError: If the todo is absent or the transition is disallowed.
+            ConcurrencyError: If the expected version is stale or the guarded write loses.
+        """
         from sqlalchemy import update as _update
 
         _pid = self._resolve_pid(project_id)
@@ -646,6 +682,7 @@ class TodoRepository:
         limit: int = 10,
         project_id: str | None = None,
     ) -> int:
+        """Requeue an eligible bounded batch and return the changed-row count."""
         from sqlalchemy import update as _update
 
         _pid = self._resolve_pid(project_id)
@@ -693,16 +730,21 @@ class TodoRepository:
 
 
 class TaskReturnRepository:
+    """Persist task-return records and aggregate execution outcomes."""
+
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the repository with an asynchronous database session."""
         self._session = session
 
     async def create(self, data: dict[str, Any]) -> TaskReturnModel:
+        """Persist and return a task-return record."""
         row = TaskReturnModel(**data)
         self._session.add(row)
         await self._session.flush()
         return row
 
     async def get_by_id(self, return_id: str) -> TaskReturnModel | None:
+        """Return the task-return record with the requested identifier."""
         stmt = select(TaskReturnModel).where(TaskReturnModel.return_id == return_id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
@@ -716,7 +758,8 @@ class TaskReturnRepository:
         Aggregated in SQL via ``GROUP BY`` per facet (P6) rather than loading
         every row and counting in Python — mirrors ``TodoRepository.status_summary``.
         ``status``/``queue``/``work_type`` are all NOT NULL on TaskReturnModel, so
-        no None bucket can occur (no NULL-key handling needed)."""
+        no None bucket can occur (no NULL-key handling needed).
+        """
         from sqlalchemy import func
 
         async def _group_counts(column: Any) -> dict[str, int]:
@@ -743,7 +786,8 @@ class TaskReturnRepository:
         ``func.count``/``func.sum(case(...))``) and (b) a separate ordered+LIMITed
         query for the recent slice (P7), rather than loading every row just to
         count and head-slice. ``exit_code`` is NOT NULL, so a return is a success
-        iff ``exit_code == 0`` exactly as the old Python loop computed."""
+        iff ``exit_code == 0`` exactly as the old Python loop computed.
+        """
         from sqlalchemy import case, func
 
         agg_stmt = select(
@@ -839,7 +883,10 @@ class TaskReturnRepository:
 
 
 class AuditEventRepository:
+    """Persist append-only audit events and expose bounded history queries."""
+
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the repository with an asynchronous database session."""
         self._session = session
 
     async def create(
@@ -850,6 +897,11 @@ class AuditEventRepository:
         project_id: str | None = None,
         details: str = "{}",
     ) -> AuditEventModel:
+        """Persist an audit event attributed to a project.
+
+        Raises:
+            ValueError: If ``project_id`` is omitted.
+        """
         if project_id is None:
             raise ValueError(
                 "project_id is required for audit events — NULL project_id silently orphans the event from its project"
@@ -890,6 +942,7 @@ class AuditEventRepository:
         )
 
     async def list_by_entity(self, entity_type: str, entity_id: str, limit: int = 50) -> list[AuditEventModel]:
+        """List recent audit events for one entity."""
         stmt = (
             select(AuditEventModel)
             .where(AuditEventModel.entity_type == entity_type, AuditEventModel.entity_id == entity_id)
@@ -900,6 +953,7 @@ class AuditEventRepository:
         return list(result.scalars().all())
 
     async def list_by_project(self, project_id: str, limit: int = 50) -> list[AuditEventModel]:
+        """List recent audit events attributed to a project."""
         stmt = (
             select(AuditEventModel)
             .where(AuditEventModel.project_id == project_id)
@@ -911,10 +965,14 @@ class AuditEventRepository:
 
 
 class VariableNamespaceRepository:
+    """Persist project and global namespaced configuration variables."""
+
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the repository with an asynchronous database session."""
         self._session = session
 
     async def load_vars_for_project(self, project_id: str | None) -> dict[str, str]:
+        """Load merged global and project variables with project values winning."""
         stmt = (
             select(VariableValueModel)
             .join(VariableNamespaceModel)
@@ -932,12 +990,14 @@ class VariableNamespaceRepository:
         return result_dict
 
     async def create_namespace(self, namespace: str, project_id: str | None = None) -> VariableNamespaceModel:
+        """Create and return a global or project-specific namespace."""
         row = VariableNamespaceModel(namespace=namespace, project_id=project_id)
         self._session.add(row)
         await self._session.flush()
         return row
 
     async def set_var(self, namespace: str, key: str, value: str, project_id: str | None = None) -> VariableValueModel:
+        """Atomically upsert and return a namespaced variable value."""
         from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
         # Resolve (or atomically create) the namespace. get-then-insert here is a
@@ -989,11 +1049,14 @@ class VariableNamespaceRepository:
 
 
 class BenchmarkRepository:
+    """Persist benchmark results and compute model-selection aggregates."""
+
     def __init__(
         self,
         session: AsyncSession | None = None,
         session_factory: async_sessionmaker[AsyncSession] | None = None,
     ) -> None:
+        """Initialize with either a session or a transactional session factory."""
         self._session = session
         self._session_factory = session_factory
 
@@ -1009,6 +1072,7 @@ class BenchmarkRepository:
         raise RuntimeError("BenchmarkRepository: no session or session_factory")
 
     async def record_result(self, data: dict[str, Any]) -> BenchmarkResultModel:
+        """Persist and return a benchmark result."""
         async def _do(session: AsyncSession) -> BenchmarkResultModel:
             row = BenchmarkResultModel(**data)
             session.add(row)
@@ -1111,12 +1175,14 @@ class BenchmarkRepository:
         return cast("list[dict[str, Any]]", await self._execute_with_session(_do))
 
     async def get_best_for_task(self, task_type: str, min_samples: int = 3) -> list[dict[str, Any]]:
+        """Rank task-specific aggregates that meet the sample threshold."""
         scores = await self.get_aggregate_scores(task_type=task_type)
         filtered = [s for s in scores if s["sample_count"] >= min_samples]
         filtered.sort(key=lambda s: s.get("composite_score", 0) or 0, reverse=True)
         return filtered
 
     async def get_model_scores(self, model_profile_id: str) -> list[BenchmarkResultModel]:
+        """List bounded benchmark results for a model, newest first."""
         async def _do(session: AsyncSession) -> list[BenchmarkResultModel]:
             stmt = (
                 select(BenchmarkResultModel)
@@ -1131,6 +1197,7 @@ class BenchmarkRepository:
         return cast("list[BenchmarkResultModel]", await self._execute_with_session(_do))
 
     async def list_recent(self, limit: int = 50) -> list[BenchmarkResultModel]:
+        """List a bounded set of recent benchmark results."""
         async def _do(session: AsyncSession) -> list[BenchmarkResultModel]:
             stmt = (
                 select(BenchmarkResultModel)
@@ -1144,10 +1211,14 @@ class BenchmarkRepository:
 
 
 class PromptProfileRepository:
+    """Persist reusable prompt profiles and query their task applicability."""
+
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the repository with an asynchronous database session."""
         self._session = session
 
     async def upsert(self, data: dict[str, Any]) -> PromptProfileModel:
+        """Atomically insert or update a prompt profile by name."""
         from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
         # Upsert on the unique ``name`` key. The old get-then-insert was a TOCTOU
@@ -1177,16 +1248,19 @@ class PromptProfileRepository:
         return row
 
     async def get_by_name(self, name: str) -> PromptProfileModel | None:
+        """Return a prompt profile by its unique name."""
         stmt = select(PromptProfileModel).where(PromptProfileModel.name == name)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_by_id(self, profile_id: str) -> PromptProfileModel | None:
+        """Return a prompt profile by primary identifier."""
         stmt = select(PromptProfileModel).where(PromptProfileModel.id == profile_id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def list_all(self, limit: int | None = None, offset: int = 0) -> list[PromptProfileModel]:
+        """List a bounded page of prompt profiles."""
         stmt = (
             select(PromptProfileModel)
             .offset(offset)
@@ -1196,6 +1270,7 @@ class PromptProfileRepository:
         return list(result.scalars().all())
 
     async def list_by_source(self, source: str, limit: int | None = None, offset: int = 0) -> list[PromptProfileModel]:
+        """List a bounded page of prompt profiles from one source."""
         stmt = (
             select(PromptProfileModel)
             .where(PromptProfileModel.source == source)
@@ -1206,6 +1281,7 @@ class PromptProfileRepository:
         return list(result.scalars().all())
 
     async def list_for_task_type(self, task_type: str) -> list[PromptProfileModel]:
+        """List profiles that support a task type or declare no restriction."""
         import json as _json
 
         stmt = select(PromptProfileModel).limit(_DEFAULT_LIST_LIMIT)
@@ -1229,21 +1305,27 @@ class PromptProfileRepository:
 
 
 class QueueRepository:
+    """Persist queue configuration and expose bounded queue listings."""
+
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the repository with an asynchronous database session."""
         self._session = session
 
     async def create(self, data: dict[str, Any]) -> QueueModel:
+        """Persist and return a queue configuration."""
         row = QueueModel(**data)
         self._session.add(row)
         await self._session.flush()
         return row
 
     async def get_by_name(self, name: str) -> QueueModel | None:
+        """Return a queue configuration by name."""
         stmt = select(QueueModel).where(QueueModel.queue_name == name)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def list_all(self, limit: int | None = None, offset: int = 0) -> list[QueueModel]:
+        """List a bounded page of queue configurations."""
         stmt = (
             select(QueueModel)
             .offset(offset)
@@ -1253,6 +1335,7 @@ class QueueRepository:
         return list(result.scalars().all())
 
     async def list_enabled(self, limit: int | None = None, offset: int = 0) -> list[QueueModel]:
+        """List a bounded page of enabled queue configurations."""
         stmt = (
             select(QueueModel)
             .where(QueueModel.queue_enabled.is_(True))
@@ -1264,27 +1347,34 @@ class QueueRepository:
 
 
 class ProjectRepository:
+    """Persist project records and their active lifecycle state."""
+
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the repository with an asynchronous database session."""
         self._session = session
 
     async def create(self, data: dict[str, Any]) -> ProjectModel:
+        """Persist and return a project record."""
         row = ProjectModel(**data)
         self._session.add(row)
         await self._session.flush()
         return row
 
     async def get_by_id(self, project_id: str) -> ProjectModel | None:
+        """Return a project by its public identifier."""
         stmt = select(ProjectModel).where(ProjectModel.project_id == project_id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def list_active(self) -> list[ProjectModel]:
+        """List a bounded set of active projects."""
         # P12: bound the read so a large project table can't load unboundedly.
         stmt = select(ProjectModel).where(ProjectModel.active.is_(True)).limit(_DEFAULT_LIST_LIMIT)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
     async def deactivate(self, project_id: str) -> None:
+        """Atomically deactivate an active project, leaving missing rows unchanged."""
         from sqlalchemy import update as _update
 
         # Single guarded UPDATE rather than read-then-mutate: the read-modify-write
@@ -1323,6 +1413,7 @@ class ProjectRelationshipRepository:
     _LEGACY_LOCATION_KINDS: ClassVar[dict[str, str]] = {"path": LocationKind.DIRECTORY.value}
 
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the repository with an asynchronous database session."""
         self._session = session
 
     async def add_relationship(self, data: dict[str, Any]) -> ProjectRelationshipModel:
@@ -1425,6 +1516,7 @@ class ProjectRelationshipRepository:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[ProjectRelationshipModel]:
+        """List a bounded page of declared relationships for a project."""
         stmt = select(ProjectRelationshipModel).where(ProjectRelationshipModel.project_id == project_id)
         if relation_type is not None:
             stmt = stmt.where(ProjectRelationshipModel.relation_type == relation_type)
@@ -1437,12 +1529,14 @@ class ProjectRelationshipRepository:
         return list(result.scalars().all())
 
     async def get_parent(self, project_id: str) -> ProjectRelationshipModel | None:
+        """Return the project's declared parent edge, if present."""
         edges = await self.list_for_project(project_id, relation_type=RelationType.PARENT.value)
         return edges[0] if edges else None
 
     async def list_children(
         self, project_id: str, limit: int | None = None, offset: int = 0
     ) -> list[ProjectRelationshipModel]:
+        """List a bounded page of the project's declared child edges."""
         return await self.list_for_project(
             project_id,
             relation_type=RelationType.CHILD.value,
@@ -1469,6 +1563,7 @@ class AgentMessageRepository:
     """Persistence for the inter-agent message queue (AgentMessageModel)."""
 
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the repository with an asynchronous database session."""
         self._session = session
 
     async def send(
@@ -1510,6 +1605,7 @@ class AgentMessageRepository:
         return row
 
     async def get_by_id(self, message_id: str) -> AgentMessageModel | None:
+        """Return an inter-agent message by identifier."""
         stmt = select(AgentMessageModel).where(AgentMessageModel.id == message_id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
@@ -1665,6 +1761,7 @@ class FeatureRepository:
     """
 
     def __init__(self, session: AsyncSession, project_id: str | None = None) -> None:
+        """Initialize the repository with an optional default tenant scope."""
         self._session = session
         self._project_id = project_id
 
@@ -1773,6 +1870,7 @@ class FeatureRepository:
     # ------------------------------------------------------------------
 
     async def get_by_name(self, name: str, project_id: str | None = None) -> FeatureModel | None:
+        """Return a named feature within the resolved tenant scope."""
         _pid = self._resolve_pid(project_id)
         stmt = select(FeatureModel).where(FeatureModel.name == name)
         if _pid is not None:
@@ -1781,6 +1879,7 @@ class FeatureRepository:
         return result.scalar_one_or_none()
 
     async def get_by_id(self, feature_id: str, project_id: str | None = None) -> FeatureModel | None:
+        """Return a feature by identifier within the resolved tenant scope."""
         _pid = self._resolve_pid(project_id)
         stmt = select(FeatureModel).where(FeatureModel.id == feature_id)
         if _pid is not None:
@@ -1791,6 +1890,7 @@ class FeatureRepository:
     async def list_all(
         self, limit: int | None = None, offset: int = 0, project_id: str | None = None
     ) -> list[FeatureModel]:
+        """List a bounded feature page within the resolved tenant scope."""
         _pid = self._resolve_pid(project_id)
         stmt = select(FeatureModel)
         if _pid is not None:
@@ -1806,6 +1906,7 @@ class FeatureRepository:
         offset: int = 0,
         project_id: str | None = None,
     ) -> list[FeatureModel]:
+        """List a bounded page of features with the requested status."""
         _pid = self._resolve_pid(project_id)
         stmt = select(FeatureModel).where(FeatureModel.status == status.value)
         if _pid is not None:
@@ -1821,6 +1922,7 @@ class FeatureRepository:
         offset: int = 0,
         project_id: str | None = None,
     ) -> list[FeatureModel]:
+        """List a bounded page of features in the requested category."""
         _pid = self._resolve_pid(project_id)
         stmt = select(FeatureModel).where(FeatureModel.category == category)
         if _pid is not None:
@@ -1840,6 +1942,7 @@ class SpendRepository:
     """
 
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the repository with an asynchronous database session."""
         self._session = session
 
     async def add(
@@ -1927,6 +2030,7 @@ class RoleRunRepository:
     """
 
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the repository with an asynchronous database session."""
         self._session = session
 
     async def record(self, project_id: str | None, role: str) -> RoleRunModel:
@@ -1956,6 +2060,7 @@ class RoleRunRepository:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[RoleRunModel]:
+        """List a bounded page of role runs, optionally scoped to a project."""
         stmt = select(RoleRunModel)
         if project_id is not None:
             stmt = stmt.where(RoleRunModel.project_id == project_id)
@@ -2002,6 +2107,7 @@ class HumanTodoRepository:
     """
 
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the human-request state machine with a database session."""
         self._session = session
 
     @staticmethod
@@ -2033,6 +2139,11 @@ class HumanTodoRepository:
         due_at: datetime | None = None,
         tags: list[str] | None = None,
     ) -> HumanTodoModel:
+        """Validate, persist, and return an open human request.
+
+        Raises:
+            ValueError: If required text, category, or priority is invalid.
+        """
         if not title or not title.strip():
             raise ValueError("title must not be empty")
         if not body or not body.strip():
@@ -2060,6 +2171,7 @@ class HumanTodoRepository:
         return row
 
     async def get(self, human_todo_id: str) -> HumanTodoModel | None:
+        """Return a human request by identifier."""
         stmt = select(HumanTodoModel).where(HumanTodoModel.id == human_todo_id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
@@ -2070,6 +2182,7 @@ class HumanTodoRepository:
         filter_agent_id: str | None = None,
         filter_priority: str | None = None,
     ) -> list[HumanTodoModel]:
+        """List bounded open human requests matching optional filters."""
         stmt = select(HumanTodoModel).where(HumanTodoModel.status == "open")
         if filter_category is not None:
             stmt = stmt.where(HumanTodoModel.category == filter_category)
@@ -2090,6 +2203,7 @@ class HumanTodoRepository:
         priority: str | None = None,
         agent_id: str | None = None,
     ) -> list[HumanTodoModel]:
+        """List a bounded page of human requests matching optional filters."""
         stmt = select(HumanTodoModel)
         if status is not None:
             stmt = stmt.where(HumanTodoModel.status == status)
@@ -2108,6 +2222,7 @@ class HumanTodoRepository:
         return list(result.scalars().all())
 
     async def list_changed_since(self, since: datetime) -> list[HumanTodoModel]:
+        """List bounded human requests updated at or after a timestamp."""
         stmt = (
             select(HumanTodoModel)
             .where(HumanTodoModel.updated_at >= since)
@@ -2147,6 +2262,7 @@ class HumanTodoRepository:
         human_resolver: str,
         resolution_text: str,
     ) -> HumanTodoModel:
+        """Resolve a human request with a nonempty resolution."""
         if not resolution_text or not resolution_text.strip():
             raise ValueError("resolution_text must not be empty")
         return await self._transition(
@@ -2157,6 +2273,7 @@ class HumanTodoRepository:
         )
 
     async def mark_in_progress(self, human_todo_id: str) -> HumanTodoModel:
+        """Transition an open human request to in progress."""
         return await self._transition(human_todo_id, "in_progress")
 
     async def dismiss(
@@ -2165,6 +2282,7 @@ class HumanTodoRepository:
         human_resolver: str,
         reason: str,
     ) -> HumanTodoModel:
+        """Dismiss a human request with a nonempty reason."""
         if not reason or not reason.strip():
             raise ValueError("dismiss reason must not be empty")
         return await self._transition(
@@ -2180,6 +2298,7 @@ class HumanTodoRepository:
         new_id: str,
         reason: str,
     ) -> HumanTodoModel:
+        """Mark a human request as replaced by another request."""
         return await self._transition(
             human_todo_id,
             "superseded",
@@ -2210,6 +2329,7 @@ class HumanTodoRepository:
         return result.scalar_one_or_none()
 
     async def add_tag(self, human_todo_id: str, tag: str) -> HumanTodoModel:
+        """Add a tag to a human request if it is not already present."""
         import json as _json
 
         row = await self.get(human_todo_id)
@@ -2224,6 +2344,7 @@ class HumanTodoRepository:
         return row
 
     async def remove_tag(self, human_todo_id: str, tag: str) -> HumanTodoModel:
+        """Remove a tag from a human request if it is present."""
         import json as _json
 
         row = await self.get(human_todo_id)
@@ -2238,6 +2359,7 @@ class HumanTodoRepository:
         return row
 
     async def search(self, query: str) -> list[HumanTodoModel]:
+        """Search bounded human-request titles and bodies for literal text."""
         if not query or not query.strip():
             return []
         from sqlalchemy import or_
@@ -2269,6 +2391,7 @@ class RemediationActionRepository:
     """
 
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the repository with an asynchronous database session."""
         self._session = session
 
     async def record(
@@ -2284,6 +2407,7 @@ class RemediationActionRepository:
         reason: str = "",
         idempotency_key: str | None = None,
     ) -> RemediationActionModel:
+        """Persist and return a remediation action audit record."""
         row = RemediationActionModel(
             blocked_todo_id=blocked_todo_id,
             action_kind=action_kind,
@@ -2300,6 +2424,7 @@ class RemediationActionRepository:
         return row
 
     async def get(self, remediation_id: str) -> RemediationActionModel | None:
+        """Return a remediation action by identifier."""
         stmt = select(RemediationActionModel).where(RemediationActionModel.id == remediation_id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
@@ -2310,6 +2435,7 @@ class RemediationActionRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> list[RemediationActionModel]:
+        """List a bounded remediation-history page, optionally by project."""
         stmt = select(RemediationActionModel).order_by(RemediationActionModel.created_at.desc())
         if project_id is not None:
             stmt = stmt.where(RemediationActionModel.project_id == project_id)
@@ -2318,6 +2444,7 @@ class RemediationActionRepository:
         return list(result.scalars().all())
 
     async def list_since(self, since: datetime, project_id: str | None = None) -> list[RemediationActionModel]:
+        """List remediation actions recorded since a timestamp."""
         stmt = (
             select(RemediationActionModel)
             .where(RemediationActionModel.created_at >= since)
@@ -2370,6 +2497,7 @@ class RemediationActionRepository:
         return result.scalar_one_or_none() is not None
 
     async def find_by_idempotency_key(self, idempotency_key: str) -> list[RemediationActionModel]:
+        """List actions sharing an idempotency key in creation order."""
         stmt = (
             select(RemediationActionModel)
             .where(RemediationActionModel.idempotency_key == idempotency_key)
@@ -2400,6 +2528,7 @@ class ModelPerformanceRepository:
         session: AsyncSession | None = None,
         session_factory: async_sessionmaker[AsyncSession] | None = None,
     ) -> None:
+        """Initialize with either a session or a lazy session factory."""
         self._session = session
         self._session_factory = session_factory
 
@@ -2723,15 +2852,18 @@ class SlurmJobRepository:
     """
 
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the repository with an asynchronous database session."""
         self._session = session
 
     async def create(self, data: dict[str, Any]) -> SlurmJobModel:
+        """Persist and return a Slurm job record."""
         row = SlurmJobModel(**data)
         self._session.add(row)
         await self._session.flush()
         return row
 
     async def get_by_job_id(self, job_id: str) -> SlurmJobModel | None:
+        """Return a Slurm job by scheduler identifier."""
         stmt = select(SlurmJobModel).where(SlurmJobModel.job_id == job_id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
@@ -2773,6 +2905,7 @@ class SlurmJobRepository:
         return list(result.scalars().all())
 
     async def list_by_deployment(self, deployment_id: str) -> list[SlurmJobModel]:
+        """List bounded Slurm jobs associated with a deployment."""
         stmt = select(SlurmJobModel).where(SlurmJobModel.deployment_id == deployment_id).limit(_DEFAULT_LIST_LIMIT)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
@@ -2803,6 +2936,7 @@ class MemoryRepository:
         session: AsyncSession | None = None,
         session_factory: async_sessionmaker[AsyncSession] | None = None,
     ) -> None:
+        """Initialize with either a session or a transactional session factory."""
         self._session = session
         self._session_factory = session_factory
 
@@ -2848,6 +2982,7 @@ class MemoryRepository:
         namespace: str = "default",
         project_id: str | None = None,
     ) -> MemoryRecordModel | None:
+        """Return an unexpired memory value from an agent namespace."""
         async with self._resolve_session() as session:
             return await self._get_with_session(session, agent_id, key, namespace, project_id)
 
@@ -2860,6 +2995,7 @@ class MemoryRepository:
         project_id: str | None = None,
         ttl_seconds: int | None = None,
     ) -> MemoryRecordModel:
+        """Upsert and return a scoped agent-memory value with optional TTL."""
         async with self._resolve_session() as session:
             now = datetime.now(UTC)
             stmt = select(MemoryRecordModel).where(
@@ -2899,6 +3035,7 @@ class MemoryRepository:
         namespace: str = "default",
         project_id: str | None = None,
     ) -> bool:
+        """Delete a scoped agent-memory value and report whether it existed."""
         async with self._resolve_session() as session:
             row = await self._get_with_session(session, agent_id, key, namespace, project_id)
             if row is None:
@@ -2914,6 +3051,7 @@ class MemoryRepository:
         project_id: str | None = None,
         limit: int = 100,
     ) -> list[MemoryRecordModel]:
+        """List bounded, unexpired memory values for an agent namespace."""
         async with self._resolve_session() as session:
             stmt = (
                 select(MemoryRecordModel)
@@ -2932,6 +3070,7 @@ class MemoryRepository:
             return [r for r in rows if not self._is_expired(r)]
 
     async def purge_expired(self) -> int:
+        """Delete expired memory records and return the number removed."""
         from sqlalchemy import delete, func
 
         async with self._resolve_session() as session:

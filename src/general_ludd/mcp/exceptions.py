@@ -3,5 +3,5 @@
 from __future__ import annotations
 
 
-class MCPTransportError(Exception):
-    pass
+class MCPTransportError(RuntimeError):
+    """Raised when an MCP transport cannot safely complete an operation."""

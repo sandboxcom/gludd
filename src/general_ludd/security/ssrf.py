@@ -41,8 +41,12 @@ from collections.abc import Collection
 from urllib.parse import urlsplit
 
 
-class SSRFError(ValueError):
+class SecuritySSRFError(ValueError):
     """Raised by :func:`resolve_and_pin` when a host is blocked by SSRF policy."""
+
+
+# Compatibility alias retained for the established security API.
+SSRFError = SecuritySSRFError
 
 
 @dataclasses.dataclass(frozen=True)
@@ -283,8 +287,7 @@ def resolve_and_pin(
     port: int = 443,
     timeout: float = 2.0,
 ) -> PinnedTarget:
-    """Resolve a hostname, vet every resolved address via SSRF blocklists,
-    and return a :class:`PinnedTarget`.
+    """Resolve a hostname and pin its vetted address against DNS rebinding.
 
     The canonical DNS-resolving SSRF guard. Use this when the caller has
     already accepted DNS-resolution as part of its threat model (e.g. internal

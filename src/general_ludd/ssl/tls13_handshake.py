@@ -77,8 +77,12 @@ _DERIVED_LABEL: bytes = b"derived"
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class HandshakeError(Exception):
+class TLSHandshakeError(Exception):
     """Base exception for TLS 1.3 handshake errors."""
+
+
+# Compatibility alias: existing callers may continue catching HandshakeError.
+HandshakeError = TLSHandshakeError
 
 
 class HandshakeStateError(HandshakeError):
@@ -99,6 +103,8 @@ class HandshakePeerError(HandshakeError):
 
 
 class NamedGroup(Enum):
+    """Identify a TLS 1.3 key-exchange group from RFC 8446."""
+
     X25519 = 0x001D
     X448 = 0x001E
     SECP256R1 = 0x0017
@@ -120,25 +126,42 @@ def _hash_algorithm(hash_name: str) -> hashes.HashAlgorithm:
 
 
 class TranscriptHash:
+    """Track the digest used by the TLS 1.3 handshake transcript."""
+
     __slots__ = ("_algo", "_hash_name", "_running")
 
     def __init__(self, hash_name: str) -> None:
+        """Initialize the transcript digest.
+
+        Args:
+            hash_name: Supported digest algorithm name.
+
+        Raises:
+            HandshakeError: If the digest algorithm is unsupported.
+        """
         self._hash_name = hash_name
         self._algo = _hash_algorithm(hash_name)
         self._running: bytes | None = None
 
     def update(self, data: bytes) -> None:
+        """Replace the transcript digest with the digest of ``data``.
+
+        Args:
+            data: Handshake bytes to digest.
+        """
         h = hashes.Hash(_hash_algorithm(self._hash_name))
         h.update(data)
         self._running = h.finalize()
 
     def digest(self) -> bytes:
+        """Return the current transcript digest."""
         if self._running is not None:
             return self._running
         return hashes.Hash(_hash_algorithm(self._hash_name)).finalize()
 
     @property
     def hash_name(self) -> str:
+        """Return the configured digest algorithm name."""
         return self._hash_name
 
 
@@ -189,6 +212,8 @@ def _extract(salt: bytes, ikm: bytes, hash_name: str) -> bytes:
 
 @dataclass
 class HandshakeSecrets:
+    """Contain traffic secrets, encryption keys, and IVs for one handshake."""
+
     client_handshake_traffic: bytes
     server_handshake_traffic: bytes
     client_handshake_key: bytes
@@ -215,6 +240,19 @@ def compute_tls13_keys(
     cipher_suite: int,
     transcript_hash: bytes = b"",
 ) -> HandshakeSecrets:
+    """Derive TLS 1.3 handshake and application traffic material.
+
+    Args:
+        shared_secret: Secret produced by the negotiated key exchange.
+        cipher_suite: Negotiated TLS 1.3 cipher-suite identifier.
+        transcript_hash: Digest of handshake messages covered by derivation.
+
+    Returns:
+        Derived client and server traffic secrets, keys, and IVs.
+
+    Raises:
+        HandshakeError: If ``cipher_suite`` is not supported.
+    """
     if cipher_suite not in CIPHER_SUITE_MAP:
         raise HandshakeError(f"Unknown cipher suite: 0x{cipher_suite:04x}")
 
@@ -262,6 +300,16 @@ def compute_tls13_keys(
 
 
 def compute_finished_verify_data(base_key: bytes, transcript_hash: bytes, hash_name: str) -> bytes:
+    """Compute an RFC 8446 Finished-message verification value.
+
+    Args:
+        base_key: Handshake traffic secret for the sending peer.
+        transcript_hash: Digest of the authenticated handshake transcript.
+        hash_name: Negotiated digest algorithm name.
+
+    Returns:
+        HMAC verification data for the Finished message.
+    """
     key_len = _FINISHED_KEY_LEN[hash_name]
     finished_key = _hkdf_expand_label(base_key, b"finished", b"", key_len, hash_name)
     h = hmac.HMAC(finished_key, _hash_algorithm(hash_name))
@@ -275,9 +323,21 @@ def compute_finished_verify_data(base_key: bytes, transcript_hash: bytes, hash_n
 
 
 class RecordProtection:
+    """Encrypt and decrypt TLS records with a monotonically increasing nonce."""
+
     __slots__ = ("_aead", "_iv_base", "_seq")
 
     def __init__(self, aead_name: str, key: bytes, iv_base: bytes) -> None:
+        """Initialize record protection for a negotiated AEAD.
+
+        Args:
+            aead_name: Supported AEAD algorithm name.
+            key: Symmetric record-protection key.
+            iv_base: Static IV combined with each sequence number.
+
+        Raises:
+            HandshakeError: If ``aead_name`` is unsupported.
+        """
         if aead_name == _AES128_GCM:
             self._aead: AESGCM | ChaCha20Poly1305 = AESGCM(key)
         elif aead_name == _AES256_GCM:
@@ -291,6 +351,7 @@ class RecordProtection:
 
     @property
     def sequence_number(self) -> int:
+        """Return the sequence number for the next record."""
         return self._seq
 
     def _build_nonce(self) -> bytes:
@@ -301,16 +362,38 @@ class RecordProtection:
         return bytes(nonce)
 
     def encrypt(self, plaintext: bytes, associated_data: bytes = b"") -> bytes:
+        """Encrypt one record and advance the sequence number.
+
+        Args:
+            plaintext: Record content to protect.
+            associated_data: Additional authenticated record metadata.
+
+        Returns:
+            Authenticated ciphertext including the AEAD tag.
+        """
         nonce = self._build_nonce()
         self._seq += 1
         return self._aead.encrypt(nonce, plaintext, associated_data)
 
     def decrypt(self, ciphertext: bytes, associated_data: bytes = b"") -> bytes:
+        """Decrypt one record and advance the sequence number.
+
+        Args:
+            ciphertext: Authenticated ciphertext including its AEAD tag.
+            associated_data: Additional authenticated record metadata.
+
+        Returns:
+            Decrypted record content.
+
+        Raises:
+            InvalidTag: If authentication of the record fails.
+        """
         nonce = self._build_nonce()
         self._seq += 1
         return self._aead.decrypt(nonce, ciphertext, associated_data)
 
     def reset(self) -> None:
+        """Reset the record sequence number to zero."""
         self._seq = 0
 
 
@@ -321,16 +404,28 @@ class RecordProtection:
 
 @dataclass
 class KeyShare:
+    """Pair a named group with its encoded public key."""
+
     group: NamedGroup
     public_key: bytes
 
 
 class KeyExchange:
+    """Generate an ephemeral key and derive a TLS shared secret."""
+
     __slots__ = ("_group", "_private")
     _group: NamedGroup
     _private: x25519.X25519PrivateKey | x448.X448PrivateKey | ec.EllipticCurvePrivateKey
 
     def __init__(self, group: NamedGroup = NamedGroup.X25519) -> None:
+        """Generate an ephemeral private key for ``group``.
+
+        Args:
+            group: Named key-exchange group to use.
+
+        Raises:
+            HandshakeError: If ``group`` is unsupported.
+        """
         self._group = group
         if group == NamedGroup.X25519:
             self._private = x25519.X25519PrivateKey.generate()
@@ -347,10 +442,12 @@ class KeyExchange:
 
     @property
     def group(self) -> NamedGroup:
+        """Return the selected key-exchange group."""
         return self._group
 
     @property
     def public_bytes(self) -> bytes:
+        """Return the encoded ephemeral public key."""
         if self._group == NamedGroup.X25519:
             return (
                 cast(x25519.X25519PrivateKey, self._private)
@@ -379,6 +476,18 @@ class KeyExchange:
         )
 
     def exchange(self, peer_public_bytes: bytes) -> bytes:
+        """Derive a shared secret from an encoded peer public key.
+
+        Args:
+            peer_public_bytes: Peer key encoded for the selected group.
+
+        Returns:
+            Shared secret produced by the selected key exchange.
+
+        Raises:
+            HandshakeError: If exchange is not implemented for the group.
+            ValueError: If the encoded peer key is invalid.
+        """
         if self._group == NamedGroup.X25519:
             return cast(x25519.X25519PrivateKey, self._private).exchange(
                 x25519.X25519PublicKey.from_public_bytes(peer_public_bytes)
@@ -391,6 +500,17 @@ class KeyExchange:
 
 
 def generate_key_share(group: NamedGroup = NamedGroup.X25519) -> KeyShare:
+    """Generate an ephemeral public key share for ``group``.
+
+    Args:
+        group: Named key-exchange group to use.
+
+    Returns:
+        Selected group and encoded public key.
+
+    Raises:
+        HandshakeError: If ``group`` is unsupported.
+    """
     ke = KeyExchange(group)
     return KeyShare(group=group, public_key=ke.public_bytes)
 
@@ -401,6 +521,8 @@ def generate_key_share(group: NamedGroup = NamedGroup.X25519) -> KeyShare:
 
 
 class HandshakeState(Enum):
+    """Identify a state in the client-side TLS 1.3 handshake."""
+
     IDLE = auto()
     CLIENT_HELLO_SENT = auto()
     SERVER_HELLO_RCVD = auto()
@@ -419,6 +541,8 @@ class HandshakeState(Enum):
 
 @dataclass
 class HandshakeConfig:
+    """Configure cipher, key exchange, server identity, and ALPN offers."""
+
     cipher_suites: list[int] = field(default_factory=lambda: [TLS_AES_128_GCM_SHA256])
     named_group: NamedGroup = NamedGroup.X25519
     server_name: str = "localhost"
@@ -428,6 +552,8 @@ class HandshakeConfig:
 
 @dataclass
 class ServerCertificate:
+    """Contain the peer leaf certificate and supplied certificate chain."""
+
     certificate: Certificate
     chain: list[Certificate]
 
@@ -473,6 +599,8 @@ def _encode_uint16_leb(data: bytes) -> bytes:
 
 
 class Tls13Handshake:
+    """Drive a client-side TLS 1.3 handshake and protect resulting traffic."""
+
     __slots__ = (
         "_cipher_suite",
         "_client_finished_verify_data",
@@ -490,6 +618,11 @@ class Tls13Handshake:
     )
 
     def __init__(self, config: HandshakeConfig | None = None) -> None:
+        """Initialize an idle client handshake.
+
+        Args:
+            config: Handshake preferences, or defaults when omitted.
+        """
         self._config: HandshakeConfig = config or HandshakeConfig()
         self._cipher_suite: int | None = None
         self._hash_name: str = _SHA256
@@ -528,33 +661,48 @@ class Tls13Handshake:
 
     @property
     def state(self) -> HandshakeState:
+        """Return the current handshake state."""
         cur = self._fsm.current_state
         name = cur.name if cur else "IDLE"
         return HandshakeState[name]
 
     @property
     def is_connected(self) -> bool:
+        """Return whether the handshake reached the connected state."""
         return self._fsm.is_finished and self.state == HandshakeState.CONNECTED
 
     @property
     def cipher_suite(self) -> int | None:
+        """Return the selected cipher-suite identifier, if negotiated."""
         return self._cipher_suite
 
     @property
     def secrets(self) -> HandshakeSecrets | None:
+        """Return derived handshake secrets, if key derivation completed."""
         return self._secrets
 
     @property
     def peer_certificate(self) -> ServerCertificate | None:
+        """Return the parsed peer certificate chain, if supplied."""
         return self._peer_certificate
 
     @property
     def transcript_digest(self) -> bytes:
+        """Return the current handshake transcript digest."""
         return self._transcript.digest()
 
     # ── client_hello ──────────────────────────────────────────────────────
 
     def build_client_hello(self) -> bytes:
+        """Build ClientHello and advance the handshake state.
+
+        Returns:
+            Encoded ClientHello handshake message.
+
+        Raises:
+            HandshakeStateError: If the handshake is not idle.
+            HandshakeError: If configured algorithms are unsupported.
+        """
         if self.state != HandshakeState.IDLE:
             raise HandshakeStateError(f"Cannot send ClientHello from {self.state.name}")
 
@@ -615,6 +763,14 @@ class Tls13Handshake:
     # ── server_hello ──────────────────────────────────────────────────────
 
     def process_server_hello(self, raw: bytes) -> None:
+        """Record ServerHello and advance the handshake state.
+
+        Args:
+            raw: Encoded ServerHello handshake message.
+
+        Raises:
+            HandshakeStateError: If ClientHello has not been sent.
+        """
         if self.state != HandshakeState.CLIENT_HELLO_SENT:
             raise HandshakeStateError(f"Cannot process ServerHello from {self.state.name}")
         self._transcript.update(raw)
@@ -623,6 +779,14 @@ class Tls13Handshake:
     # ── encrypted_extensions ──────────────────────────────────────────────
 
     def process_encrypted_extensions(self, raw: bytes) -> None:
+        """Record EncryptedExtensions and advance the handshake state.
+
+        Args:
+            raw: Encoded EncryptedExtensions handshake message.
+
+        Raises:
+            HandshakeStateError: If ServerHello has not been processed.
+        """
         if self.state != HandshakeState.SERVER_HELLO_RCVD:
             raise HandshakeStateError(f"Cannot process EncryptedExtensions from {self.state.name}")
         self._transcript.update(raw)
@@ -631,6 +795,16 @@ class Tls13Handshake:
     # ── certificate ───────────────────────────────────────────────────────
 
     def process_certificate(self, raw: bytes, pem_chain: list[bytes] | None = None) -> None:
+        """Record Certificate and optionally parse its PEM chain.
+
+        Args:
+            raw: Encoded Certificate handshake message.
+            pem_chain: Leaf-first PEM certificate chain to retain.
+
+        Raises:
+            HandshakeStateError: If EncryptedExtensions has not been processed.
+            ValueError: If a supplied PEM certificate cannot be parsed.
+        """
         if self.state != HandshakeState.EE_RCVD:
             raise HandshakeStateError(f"Cannot process Certificate from {self.state.name}")
         self._transcript.update(raw)
@@ -644,6 +818,15 @@ class Tls13Handshake:
     # ── certificate_verify ────────────────────────────────────────────────
 
     def process_certificate_verify(self, raw: bytes) -> None:
+        """Validate CertificateVerify and advance the handshake state.
+
+        Args:
+            raw: Encoded CertificateVerify handshake message.
+
+        Raises:
+            HandshakeStateError: If Certificate has not been processed.
+            HandshakeCryptoError: If the peer signature is invalid.
+        """
         if self.state != HandshakeState.CERT_RCVD:
             raise HandshakeStateError(f"Cannot process CertificateVerify from {self.state.name}")
         self._transcript.update(raw)
@@ -668,6 +851,16 @@ class Tls13Handshake:
     # ── derive handshake keys ─────────────────────────────────────────────
 
     def derive_handshake_keys(self, peer_key_share: bytes) -> None:
+        """Derive handshake record keys from the peer key share.
+
+        Args:
+            peer_key_share: Encoded peer public key for the selected group.
+
+        Raises:
+            HandshakeStateError: If the local key exchange is unavailable.
+            HandshakeError: If exchange is unsupported for the selected group.
+            ValueError: If the peer key is invalid.
+        """
         if self._key_exchange is None:
             raise HandshakeStateError("No key exchange configured")
         assert self._cipher_suite is not None
@@ -696,6 +889,17 @@ class Tls13Handshake:
     # ── finished ──────────────────────────────────────────────────────────
 
     def build_server_finished_verify_data(self, transcript_digest: bytes | None = None) -> bytes:
+        """Compute the expected server Finished verification value.
+
+        Args:
+            transcript_digest: Transcript digest override for verification.
+
+        Returns:
+            Expected server Finished verification data.
+
+        Raises:
+            HandshakeStateError: If handshake keys have not been derived.
+        """
         if self._secrets is None:
             raise HandshakeStateError("Keys not derived")
         digest = transcript_digest or self._transcript.digest()
@@ -705,6 +909,14 @@ class Tls13Handshake:
         return self._server_finished_verify_data
 
     def build_client_finished_verify_data(self) -> bytes:
+        """Compute the client Finished verification value.
+
+        Returns:
+            Client Finished verification data for the current transcript.
+
+        Raises:
+            HandshakeStateError: If handshake keys have not been derived.
+        """
         if self._secrets is None:
             raise HandshakeStateError("Keys not derived")
         digest = self._transcript.digest()
@@ -714,12 +926,29 @@ class Tls13Handshake:
         return self._client_finished_verify_data
 
     def process_finished(self, raw: bytes) -> None:
+        """Record the server Finished message and advance the state.
+
+        Args:
+            raw: Encoded server Finished handshake message.
+
+        Raises:
+            HandshakeStateError: If CertificateVerify has not been processed.
+        """
         if self.state != HandshakeState.CV_RCVD:
             raise HandshakeStateError(f"Cannot process Finished from {self.state.name}")
         self._transcript.update(raw)
         self._fsm.send(Event("recv_finished"))
 
     def build_client_finished(self) -> bytes:
+        """Build the client Finished message and complete the handshake.
+
+        Returns:
+            Encoded and, when keys exist, encrypted Finished message.
+
+        Raises:
+            HandshakeStateError: If server Finished has not been processed or
+                handshake keys have not been derived.
+        """
         if self.state != HandshakeState.SERVER_FIN_RCVD:
             raise HandshakeStateError(f"Cannot send Finished from {self.state.name}")
 
@@ -736,16 +965,50 @@ class Tls13Handshake:
     # ── encrypt / decrypt helpers ─────────────────────────────────────────
 
     def encrypt_handshake(self, plaintext: bytes) -> bytes:
+        """Encrypt handshake content with the client handshake key.
+
+        Args:
+            plaintext: Handshake content to protect.
+
+        Returns:
+            Authenticated ciphertext.
+
+        Raises:
+            HandshakeStateError: If handshake keys are unavailable.
+        """
         if self._encrypt is None:
             raise HandshakeStateError("Handshake encryption not available")
         return self._encrypt.encrypt(plaintext)
 
     def decrypt_handshake(self, ciphertext: bytes) -> bytes:
+        """Decrypt handshake content with the server handshake key.
+
+        Args:
+            ciphertext: Authenticated handshake ciphertext.
+
+        Returns:
+            Decrypted handshake content.
+
+        Raises:
+            HandshakeStateError: If handshake keys are unavailable.
+            InvalidTag: If authentication of the ciphertext fails.
+        """
         if self._decrypt is None:
             raise HandshakeStateError("Handshake decryption not available")
         return self._decrypt.decrypt(ciphertext)
 
     def encrypt_application_data(self, plaintext: bytes) -> bytes:
+        """Encrypt application data with the derived client key.
+
+        Args:
+            plaintext: Application content to protect.
+
+        Returns:
+            Authenticated application ciphertext.
+
+        Raises:
+            HandshakeStateError: If application secrets are unavailable.
+        """
         if self._secrets is None:
             raise HandshakeStateError("Not connected")
         assert self._cipher_suite is not None
@@ -758,6 +1021,18 @@ class Tls13Handshake:
         return prot.encrypt(plaintext)
 
     def decrypt_application_data(self, ciphertext: bytes) -> bytes:
+        """Decrypt application data with the derived server key.
+
+        Args:
+            ciphertext: Authenticated application ciphertext.
+
+        Returns:
+            Decrypted application content.
+
+        Raises:
+            HandshakeStateError: If application secrets are unavailable.
+            InvalidTag: If authentication of the ciphertext fails.
+        """
         if self._secrets is None:
             raise HandshakeStateError("Not connected")
         assert self._cipher_suite is not None
@@ -787,6 +1062,19 @@ class Tls13Handshake:
         peer_key_share: bytes,
         server_cert_pems: list[bytes] | None = None,
     ) -> tuple[bytes, HandshakeSecrets]:
+        """Simulate the complete client handshake against a peer key share.
+
+        Args:
+            peer_key_share: Encoded peer public key for key agreement.
+            server_cert_pems: Optional leaf-first PEM certificate chain.
+
+        Returns:
+            Client Finished message and the derived handshake secrets.
+
+        Raises:
+            HandshakeError: If a configured algorithm or transition is invalid.
+            ValueError: If peer key or certificate input is malformed.
+        """
         self.build_client_hello()
 
         self.process_server_hello(_make_server_hello_bytes(peer_key_share, self._cipher_suite))
@@ -843,12 +1131,21 @@ def _make_server_hello_bytes(key_share: bytes, cipher_suite: int | None = None) 
 
 
 def generate_ec_key_pair() -> ec.EllipticCurvePrivateKey:
+    """Generate a P-256 private key for TLS certificate tests."""
     return ec.generate_private_key(ec.SECP256R1())
 
 
 def generate_self_signed_cert(
     subject_cn: str = "localhost",
 ) -> tuple[bytes, ec.EllipticCurvePrivateKey]:
+    """Generate a self-signed P-256 certificate for testing.
+
+    Args:
+        subject_cn: Common name and DNS subject alternative name.
+
+    Returns:
+        PEM certificate and its private signing key.
+    """
     from datetime import datetime, timedelta
 
     from cryptography import x509 as cx509
@@ -878,6 +1175,16 @@ def generate_ec_certificate(
     issuer_key: ec.EllipticCurvePrivateKey | None = None,
     issuer_cert: Certificate | None = None,
 ) -> tuple[bytes, ec.EllipticCurvePrivateKey]:
+    """Generate a P-256 leaf or self-issued certificate for testing.
+
+    Args:
+        subject_cn: Common name and DNS subject alternative name.
+        issuer_key: Signing key; defaults to the new subject key.
+        issuer_cert: Certificate whose subject becomes the issuer name.
+
+    Returns:
+        PEM certificate and its private subject key.
+    """
     from datetime import datetime, timedelta
 
     from cryptography import x509 as cx509

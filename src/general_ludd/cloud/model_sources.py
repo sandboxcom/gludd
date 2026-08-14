@@ -1,3 +1,5 @@
+"""Resolve and download local-model artifacts from ordered fallback sources."""
+
 from __future__ import annotations
 
 import logging
@@ -28,6 +30,8 @@ _GGUF_MODEL_DIR = os.environ.get(
 
 
 class ModelSource(StrEnum):
+    """Identify a supported model artifact source."""
+
     HUGGINGFACE = "huggingface"
     OLLAMA = "ollama"
     DIRECT_URL = "direct_url"
@@ -35,12 +39,14 @@ class ModelSource(StrEnum):
     S3_MIRROR = "s3_mirror"
 
 
-class DownloadError(Exception):
-    pass
+class DownloadError(RuntimeError):
+    """Raised when every requested model download path fails safely."""
 
 
 @dataclass
 class DownloadedFile:
+    """Describe the local artifact produced by a successful download."""
+
     local_path: str
     source: ModelSource
     size_bytes: int = 0
@@ -238,6 +244,7 @@ _DEFAULT_SOURCE_ORDER: list[ModelSource] = [
 def resolve_source_chain(
     order: list[ModelSource] | None = None,
 ) -> list[ModelSource]:
+    """Return a validated source order, falling back to the safe default."""
     chain = list(order) if order else list(_DEFAULT_SOURCE_ORDER)
     valid = [s for s in chain if s in ModelSource]
     if not valid:
@@ -261,6 +268,7 @@ def _check_url_reachable(url: str, timeout: float = 5.0) -> bool:
 
 
 def health_check() -> bool:
+    """Return whether either primary public model registry is reachable."""
     return _check_url_reachable("https://huggingface.co", timeout=5.0) or _check_url_reachable(
         "https://ollama.com", timeout=5.0
     )
@@ -336,6 +344,21 @@ def download_with_fallback(
     retries: int = DEFAULT_RETRIES,
     timeout: float | None = None,
 ) -> DownloadedFile:
+    """Download a configured model from the first usable source.
+
+    Args:
+        config: Model identity and default Hugging Face artifact metadata.
+        order: Optional source priority; the default favors local Ollama first.
+        cache_dir: Optional destination or registry cache directory.
+        retries: Additional attempts permitted for each source.
+        timeout: Optional per-source timeout in seconds.
+
+    Returns:
+        Metadata for the downloaded local file.
+
+    Raises:
+        DownloadError: If every configured source and retry is exhausted.
+    """
     sources = ALTERNATIVE_SOURCES.get(config.name, {}).copy()
 
     if not sources and not order:

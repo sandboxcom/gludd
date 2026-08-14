@@ -24,6 +24,10 @@ Covers docs/specs/FEATURE_AI_ML_EXPERT.md §8.1 (World-model contract) and
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import replace
+from typing import cast
+
 import pytest
 
 from general_ludd.ai_ml.simulators import (
@@ -35,7 +39,8 @@ from general_ludd.ai_ml.simulators import (
 )
 from general_ludd.ai_ml.world_models import (
     ConstraintSpec,
-    HorizonError,
+    ConstraintViolation,
+    HorizonMetrics,
     RolloutEvaluation,
     RolloutUncertainty,
     WorldModelEnvironment,
@@ -164,16 +169,49 @@ class TestWorldModelEnvironmentContract:
                 seed=-1,
             )
 
+    def test_environment_rejects_invalid_collection_members(self) -> None:
+        env = _default_env()
+        invalid_constraints = cast(
+            tuple[ConstraintSpec, ...], list(_default_constraints())
+        )
+
+        with pytest.raises(ValueError, match="legal_actions entries"):
+            replace(env, legal_actions=("noop", ""))
+        with pytest.raises(ValueError, match="tuple of ConstraintSpec"):
+            replace(env, constraints=invalid_constraints)
+        with pytest.raises(ValueError, match="at least one ConstraintSpec"):
+            replace(env, constraints=())
+
+
+class TestWorldModelMetricValidation:
+    def test_constraint_value_rejects_boolean(self) -> None:
+        with pytest.raises(ValueError, match="real number"):
+            ConstraintSpec(name="limit", value=True, unit="m")
+
+    def test_horizon_metric_rejects_invalid_values(self) -> None:
+        with pytest.raises(ValueError, match="positive int"):
+            HorizonMetrics(horizon_steps=0, mean_error=0.1, p95_error=0.2)
+        with pytest.raises(ValueError, match="mean_error"):
+            HorizonMetrics(horizon_steps=1, mean_error=True, p95_error=0.2)
+
+    def test_constraint_severity_rejects_boolean(self) -> None:
+        with pytest.raises(ValueError, match="real number"):
+            ConstraintViolation(
+                constraint_name="limit",
+                severity=True,
+                description="invalid severity",
+            )
+
 
 # ---------------------------------------------------------------------------
 # AIML-014 — evaluate_rollout (spec §8.1, AIML-AT-013)
 # ---------------------------------------------------------------------------
 
 
-def _horizons(low: float = 0.05, high: float = 0.4) -> tuple[HorizonError, ...]:
+def _horizons(low: float = 0.05, high: float = 0.4) -> tuple[HorizonMetrics, ...]:
     return (
-        HorizonError(horizon_steps=1, mean_error=low, p95_error=low * 1.5),
-        HorizonError(horizon_steps=10, mean_error=high, p95_error=high * 1.8),
+        HorizonMetrics(horizon_steps=1, mean_error=low, p95_error=low * 1.5),
+        HorizonMetrics(horizon_steps=10, mean_error=high, p95_error=high * 1.8),
     )
 
 
@@ -213,8 +251,6 @@ class TestEvaluateRollout:
 
     def test_constraint_violations_flagged(self) -> None:
         """Spec §8.1: evaluation measures constraint violations."""
-        from general_ludd.ai_ml.world_models import ConstraintViolation
-
         env = _default_env()
         violations = (
             ConstraintViolation(constraint_name="max_velocity", severity=0.9, description="exceeded 10 m/s"),
@@ -471,7 +507,9 @@ class TestRunSimulation:
         """Spec §8.2: adapters normalize units."""
         adapter = _default_adapter()
 
-        def normalizer(values, system):
+        def normalizer(
+            values: Mapping[str, float], _system: str
+        ) -> Mapping[str, float]:
             # Convert grams to kilograms when system is SI.
             return {k.replace("_g", "_kg"): v / 1000.0 if k.endswith("_g") else v for k, v in values.items()}
 
@@ -490,7 +528,7 @@ class TestRunSimulation:
         extrapolated result (AIML-AT-014)."""
         adapter = _default_adapter()
 
-        def validator(outputs):
+        def validator(outputs: Mapping[str, float]) -> bool:
             # Invariant: force must be non-negative.
             return all(v >= 0 for v in outputs.values())
 
@@ -539,7 +577,7 @@ class TestRunSimulation:
         bounded diagnostics, return no fabricated result."""
         adapter = _default_adapter()
 
-        def boom(inp):
+        def boom(_inp: Mapping[str, float]) -> Mapping[str, float]:
             raise RuntimeError("engine segfaulted")
 
         result = run_simulation(
