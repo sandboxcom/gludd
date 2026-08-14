@@ -446,6 +446,11 @@
       "behavior": "make branch-reconciliation-inventory RECONCILE_TARGET=development RECONCILE_LIMIT=20 RECONCILE_AFTER="
     },
     {
+      "name": "branch-reconciliation-summary",
+      "make_variables": ["RECONCILE_TARGET", "RECONCILE_LIMIT", "RECONCILE_DETAILS"],
+      "behavior": "make branch-reconciliation-summary RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_DETAILS=0"
+    },
+    {
       "name": "development-merge-forward",
       "make_variables": ["SOURCE", "MODE", "APPLY"],
       "behavior": "make development-merge-forward SOURCE=HEAD MODE=content APPLY=0"
