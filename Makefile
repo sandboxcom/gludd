@@ -336,7 +336,7 @@ help:
 	@echo "  git-log               Show recent commits"
 	@echo "  git-patch-equivalence PATCH_UPSTREAM=<ref> PATCH_HEAD=<ref> PATCH_LIMIT=<n>  Compare patch identity"
 	@echo "  branches-unmerged-development  List every local branch tip not reachable from development"
-	@echo "  branch-reconciliation-inventory RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n>  Classify bounded local branch reconciliation state as JSON"
+	@echo "  branch-reconciliation-inventory RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_AFTER=<ref|empty>  Page bounded local branch reconciliation state as JSON"
 	@echo "  git-add FILES='...'   Stage specific files"
 	@echo "  git-add-all           Stage all changes"
 	@echo "  git-commit MSG='...'  Commit staged changes"
@@ -4105,8 +4105,8 @@ branches-unmerged-development:
 	@git branch --no-merged development --format='%(refname:short)' --sort=refname | grep . || echo "(all local branches merged into development)"
 
 branch-reconciliation-inventory:
-	@[ -n "$(RECONCILE_TARGET)" ] && [ -n "$(RECONCILE_LIMIT)" ] || { echo "Usage: make branch-reconciliation-inventory RECONCILE_TARGET=development RECONCILE_LIMIT=20"; exit 2; }
-	@$(UV) run python scripts/branch_reconciliation_inventory.py --target "$(RECONCILE_TARGET)" --limit "$(RECONCILE_LIMIT)"
+	@[ -n "$(RECONCILE_TARGET)" ] && [ -n "$(RECONCILE_LIMIT)" ] && [ "$(origin RECONCILE_AFTER)" != "undefined" ] || { echo "Usage: make branch-reconciliation-inventory RECONCILE_TARGET=development RECONCILE_LIMIT=20 RECONCILE_AFTER=''"; exit 2; }
+	@$(UV) run python scripts/branch_reconciliation_inventory.py --target "$(RECONCILE_TARGET)" --limit "$(RECONCILE_LIMIT)" --after "$(RECONCILE_AFTER)"
 
 # Anti-overstatement tool: the MEASURED pass-rate of recent CI runs, so
 # "reliable"/"green" must be quoted as this ratio, never asserted as an adjective.

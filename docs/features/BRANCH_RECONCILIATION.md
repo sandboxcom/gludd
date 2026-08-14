@@ -24,9 +24,11 @@ release graph without dozens of redundant collection runs.
 ## Bounded classification contract
 
 `make branch-reconciliation-inventory` requires explicit
-`RECONCILE_TARGET=<ref>` and `RECONCILE_LIMIT=<n>` values. It emits one JSON
-document on standard output and progress on standard error, keeping the result
-machine-readable without hiding operator-visible work.
+`RECONCILE_TARGET=<ref>`, `RECONCILE_LIMIT=<n>`, and `RECONCILE_AFTER=<cursor>`
+values. An explicitly empty cursor requests the first page; subsequent cursors
+are canonical `refs/heads/...` identities copied from `next_cursor`. The target
+emits one schema-v2 JSON document on standard output and progress on standard
+error, keeping the result machine-readable without hiding operator-visible work.
 
 Every returned local branch has one classification and lifecycle:
 
@@ -42,10 +44,28 @@ gets a 500-commit comparison bound. Counts describe only the returned set;
 `truncated: true` prevents callers from mistaking partial output for a complete
 inventory.
 
+Pagination follows Git's documented
+[`for-each-ref --start-after`](https://git-scm.com/docs/git-for-each-ref.html)
+lexicographic boundary. The cursor itself is excluded, so every returned ref is
+strictly greater. A truncated page emits its final returned ref as `next_cursor`;
+the terminal page emits `null`. Concatenating pages over a stable ref set yields
+each local branch exactly once, with no duplicate or skipped boundary ref. Git's
+documentation notes that refs can change between invocations, so callers that
+permit concurrent ref mutation must restart their inventory rather than claim a
+cross-mutation snapshot.
+
+On older Git releases that reject `--start-after`, the same contract falls back
+to `for-each-ref --sort=refname` over local heads with a hard 10,000-ref scan
+ceiling. A repository above that ceiling fails closed instead of silently
+skipping a late cursor. The fallback therefore preserves deterministic paging on
+the host's mature Git feature set while keeping traversal bounded.
+
 Target resolution happens before enumeration and fails closed. Empty,
 whitespace-containing, option-shaped, invalid, and non-symbolic refs produce a
 structured JSON error and a nonzero exit. Malformed or failed Git evidence does
-the same.
+the same. Nonempty cursors must be canonical local refs and pass Git's mature
+`check-ref-format` validation before enumeration; deleted but well-formed cursor
+refs remain valid lexicographic boundaries.
 
 ## Zero-downtime and observability
 
@@ -83,9 +103,12 @@ non-ancestor branch as unique work.
 ## Security, resources, ZDD, and rollback
 
 The classifier invokes Git with fixed list-form arguments, accepts only a
-validated symbolic target, validates every object ID and status record, applies
-command timeouts, and bounds branch and commit work. It is strictly read-only:
-there is no checkout, merge, delete, ref update, or push path.
+validated symbolic target and canonical local-ref cursor, validates every object
+ID and status record, applies command timeouts, and bounds branch, page, and
+commit work. Cursor pages use Git's default refname ordering because
+`--start-after` deliberately cannot be combined with a custom sort or ref
+pattern; parsing stops safely at the next ref namespace. It is strictly
+read-only: there is no checkout, merge, delete, ref update, or push path.
 
 Because it changes neither repository nor runtime state, deployment continuity is
 preserved. Progress messages and structured counts expose bounded work and
