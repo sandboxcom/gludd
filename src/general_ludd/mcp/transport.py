@@ -59,6 +59,27 @@ def _is_uvx_version_pinned_spec(spec: str) -> bool:
 # attempt — refuse early rather than relying on the exec layer to be safe.
 _SHELL_META_RE = re.compile(r"[;&|$`\\<>()\s]")
 
+# Remote-fetch launchers accept flags that can re-root package/config discovery.
+# An MCP config must not redirect resolution into an attacker-controlled local
+# tree while presenting a harmless pinned package later in argv.  The union is
+# deliberate: launcher versions expose overlapping spellings, and rejecting an
+# irrelevant flag is safer than letting a newly-supported alias bypass policy.
+_REMOTE_FETCH_DIRECTORY_REDIRECT_FLAGS = frozenset(
+    {
+        "-C",
+        "-w",
+        "--config-file",
+        "--cwd",
+        "--directory",
+        "--include-workspace-root",
+        "--prefix",
+        "--project",
+        "--workspace",
+        "--workspaces",
+    }
+)
+_INLINE_FLAG_VALUE_RE = re.compile(r"^(-[^=]+)=(.*)$", re.DOTALL)
+
 # Python-family launchers (module/script runtimes, no remote fetch).
 _PYTHON_FAMILY_LAUNCHERS = frozenset({"python", "python3"})
 # Node-family launchers (script runtime, no remote fetch).
@@ -123,8 +144,9 @@ def _launcher_basename(cmd0: str) -> str:
 
 
 def _validate_launch_command(cmd: list[str]) -> None:
-    """Validate ``cmd`` before spawning an MCP subprocess.  Fail closed on any
-    policy violation.
+    """Validate ``cmd`` before spawning an MCP subprocess.
+
+    Fail closed on any policy violation.
 
     Checks (in order):
     1. Empty argv → MCPTransportError("empty …")
@@ -206,6 +228,29 @@ def _validate_package_spec(cmd: list[str], launcher: str) -> None:
     # — NOT another package spec to fetch — so it must not be re-validated.
     spec_from_flag = False
 
+    def _check_flag(arg: str) -> None:
+        """Reject option values that bypass pinned-package validation."""
+        flag_name = arg.split("=", 1)[0]
+        # Compact short form, e.g. ``-C/tmp/project``.
+        if arg.startswith("-C") and not arg.startswith("--"):
+            flag_name = "-C"
+        if flag_name in _REMOTE_FETCH_DIRECTORY_REDIRECT_FLAGS:
+            raise MCPTransportError(
+                f"MCP flag {flag_name!r} for launcher {launcher!r} is a "
+                "directory-redirect flag. Re-rooting package or config "
+                "discovery is not permitted in MCP server configs."
+            )
+
+        match = _INLINE_FLAG_VALUE_RE.match(arg)
+        if match is None:
+            return
+        value = match.group(2)
+        if "@" in value or _SHELL_META_RE.search(value):
+            raise MCPTransportError(
+                f"MCP flag value for {match.group(1)!r} on launcher {launcher!r} embeds "
+                "a package spec or shell metacharacters and is refused."
+            )
+
     def _check_spec(arg: str) -> None:
         """Apply metacharacter and version-pin checks to a single spec."""
         if _SHELL_META_RE.search(arg):
@@ -251,6 +296,8 @@ def _validate_package_spec(cmd: list[str], launcher: str) -> None:
             spec_from_flag = True
             i += 1
             continue
+        if arg.startswith("-"):
+            _check_flag(arg)
         if not arg.startswith("-"):
             if spec_from_flag:
                 # A pinned package was already supplied via --package/-p, so
@@ -414,6 +461,7 @@ class MCPStdioClient:
         stderr_max_bytes: int | None = None,
         stderr_max_lines: int | None = None,
     ) -> None:
+        """Initialize transport state and bounded stderr policies."""
         self._config = config
         self._secrets_mgr = secrets_mgr
         self._process: asyncio.subprocess.Process | None = None
@@ -454,6 +502,7 @@ class MCPStdioClient:
 
     @property
     def pid(self) -> int | None:
+        """Return the child process ID when a process has been started."""
         if self._process is None:
             return None
         return self._process.pid
@@ -817,6 +866,7 @@ class MCPStdioClient:
         await self._drain_with_timeout()
 
     async def start(self) -> None:
+        """Validate, spawn, and initialize the configured MCP server."""
         cmd = (self._config.command or []) + self._config.args
         # LAUNCH VALIDATION: fail closed BEFORE spawning — check allowlist,
         # PATH resolution, and package-spec injection in one go.
@@ -861,6 +911,7 @@ class MCPStdioClient:
         await self._send_notification("notifications/initialized", {})
 
     async def list_tools(self) -> list[MCPTool]:
+        """Fetch and validate the server's advertised tools."""
         result = await self._send_request("tools/list")
         tools: list[MCPTool] = []
         for tool_data in result.get("tools", []):
@@ -874,22 +925,26 @@ class MCPStdioClient:
         return tools
 
     async def list_resources(self) -> list[dict[str, Any]]:
+        """Fetch resources advertised by the server."""
         result = await self._send_request("resources/list")
         return cast("list[dict[str, Any]]", result.get("resources", []))
 
     async def read_resource(self, uri: str) -> dict[str, Any]:
+        """Read one server resource by URI."""
         return await self._send_request(
             "resources/read",
             {"uri": uri},
         )
 
     async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Call one tool with JSON-compatible arguments."""
         return await self._send_request(
             "tools/call",
             {"name": tool_name, "arguments": arguments},
         )
 
     async def stop(self) -> None:
+        """Stop the child process and its stderr-drain task."""
         try:
             if self._process is not None and self._process.returncode is None:
                 if self._process.stdin is not None:

@@ -1,10 +1,16 @@
+"""Validated MCP server transport configuration."""
+
 from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from general_ludd.mcp._validators import TrimmedNonEmptyStr
+
 
 class MCPServerConfig(BaseModel):
-    server_id: str
+    """Configure one MCP server and its selected transport."""
+
+    server_id: TrimmedNonEmptyStr
     command: list[str] | None = None
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
@@ -14,15 +20,6 @@ class MCPServerConfig(BaseModel):
     timeout_seconds: float = 30.0
     enabled: bool = True
     project_id: str | None = None
-
-    @field_validator("server_id", mode="before")
-    @classmethod
-    def _strip_and_require(cls, v: str) -> str:
-        if isinstance(v, str):
-            v = v.strip()
-        if not v:
-            raise ValueError("server_id must not be empty")
-        return v
 
     @field_validator("timeout_seconds")
     @classmethod
@@ -38,7 +35,9 @@ class MCPServerConfig(BaseModel):
         return self
 
     def is_stdio(self) -> bool:
+        """Return whether this server uses a subprocess stdio transport."""
         return self.command is not None
 
     def is_http(self) -> bool:
+        """Return whether this server declares an HTTP endpoint."""
         return self.url is not None
