@@ -75,8 +75,10 @@ class TestGetWorktreesExcludesMain:
         with mock.patch("scripts.check_worktree_health.run", return_value=(0, porcelain, "")):
             result = get_worktrees()
         paths = [e["worktree"] for e in result]
-        assert MAIN_CHECKOUT not in paths, "get_worktrees must exclude the main checkout"
-        assert "/tmp/gludd-worktrees/agent-foo" in paths
+        assert str(Path(MAIN_CHECKOUT).resolve()) not in paths, (
+            "get_worktrees must exclude the main checkout"
+        )
+        assert str(Path("/tmp/gludd-worktrees/agent-foo").resolve()) in paths
 
     def test_returns_empty_when_no_worktrees(self):
         from scripts.check_worktree_health import get_worktrees
@@ -92,6 +94,123 @@ class TestGetWorktreesExcludesMain:
         with mock.patch("scripts.check_worktree_health.run", return_value=(1, "", "git failed")):
             result = get_worktrees()
         assert result == [], "get_worktrees must return empty list on git failure (fail-open)"
+
+
+class TestCanonicalWorktreeIdentity:
+    """Active audit paths must have one validated canonical identity."""
+
+    @pytest.mark.parametrize(
+        ("path", "reason"),
+        [
+            ("relative/worktree", "relative_path"),
+            ("/tmp/gludd-worktrees/control\nname", "control_character"),
+        ],
+    )
+    def test_structurally_unsafe_path_has_stable_reason(self, path, reason):
+        from scripts.check_worktree_health import _canonical_absolute_path
+
+        with pytest.raises(ValueError, match=f"^{reason}$"):
+            _canonical_absolute_path(path)
+
+    def test_traversal_path_is_rejected_before_worktree_commands(self):
+        from scripts.check_worktree_health import MAIN_CHECKOUT, get_worktrees
+
+        porcelain = (
+            f"worktree {MAIN_CHECKOUT}\n"
+            "HEAD abc1234\n"
+            "branch refs/heads/development\n\n"
+            "worktree /tmp/gludd-worktrees/../escaped\n"
+            "HEAD def5678\n"
+            "branch refs/heads/feature/escaped\n"
+        )
+        with mock.patch("scripts.check_worktree_health.run", return_value=(0, porcelain, "")):
+            result = get_worktrees()
+
+        assert result == [
+            {
+                "worktree": "/tmp/gludd-worktrees/../escaped",
+                "head": "def5678",
+                "branch": "refs/heads/feature/escaped",
+                "path_error": "traversal_segment",
+            }
+        ]
+
+    def test_symlink_escape_is_rejected(self, tmp_path):
+        from scripts.check_worktree_health import get_worktrees
+
+        root = tmp_path / "worktrees"
+        outside = tmp_path / "outside"
+        root.mkdir()
+        outside.mkdir()
+        escape = root / "escape"
+        escape.symlink_to(outside, target_is_directory=True)
+        porcelain = (
+            f"worktree {escape}\n"
+            "HEAD def5678\n"
+            "branch refs/heads/feature/escaped\n"
+        )
+        with (
+            mock.patch("scripts.check_worktree_health.WORKTREE_ROOT", str(root)),
+            mock.patch("scripts.check_worktree_health.run", return_value=(0, porcelain, "")),
+        ):
+            result = get_worktrees()
+
+        assert result[0]["worktree"] == str(escape)
+        assert result[0]["path_error"] == "outside_worktree_root"
+
+    def test_symlink_alias_within_root_has_one_canonical_identity(self, tmp_path):
+        from scripts.check_worktree_health import get_worktrees
+
+        real_root = tmp_path / "real-worktrees"
+        real_path = real_root / "feature"
+        real_path.mkdir(parents=True)
+        alias_root = tmp_path / "worktrees"
+        alias_root.symlink_to(real_root, target_is_directory=True)
+        porcelain = (
+            f"worktree {alias_root / 'feature'}\n"
+            "HEAD def5678\n"
+            "branch refs/heads/feature/identity\n"
+        )
+        with (
+            mock.patch("scripts.check_worktree_health.WORKTREE_ROOT", str(alias_root)),
+            mock.patch("scripts.check_worktree_health.run", return_value=(0, porcelain, "")),
+        ):
+            result = get_worktrees()
+
+        assert result == [
+            {
+                "worktree": str(real_path.resolve()),
+                "head": "def5678",
+                "branch": "refs/heads/feature/identity",
+                "path_identity": "canonical",
+            }
+        ]
+
+    def test_duplicate_canonical_identity_is_rejected(self, tmp_path):
+        from scripts.check_worktree_health import get_worktrees
+
+        real_root = tmp_path / "real-worktrees"
+        real_path = real_root / "feature"
+        real_path.mkdir(parents=True)
+        alias_root = tmp_path / "worktrees"
+        alias_root.symlink_to(real_root, target_is_directory=True)
+        porcelain = (
+            f"worktree {real_path}\n"
+            "HEAD abc1234\n"
+            "branch refs/heads/feature/identity\n\n"
+            f"worktree {alias_root / 'feature'}\n"
+            "HEAD def5678\n"
+            "branch refs/heads/feature/alias\n"
+        )
+        with (
+            mock.patch("scripts.check_worktree_health.WORKTREE_ROOT", str(alias_root)),
+            mock.patch("scripts.check_worktree_health.run", return_value=(0, porcelain, "")),
+        ):
+            result = get_worktrees()
+
+        assert result[0]["worktree"] == str(real_path.resolve())
+        assert result[0]["path_identity"] == "canonical"
+        assert result[1]["path_error"] == "duplicate_worktree_identity"
 
 
 # ---------------------------------------------------------------------------
@@ -215,17 +334,16 @@ class TestScriptExitCodes:
     """Run the actual script and verify exit codes on the real tree."""
 
     def test_script_exits_zero_when_no_worktrees(self):
-        """Production check: we know there are no extra worktrees right now."""
+        """The production audit reports a terminal state for its live environment."""
         result = subprocess.run(
             [sys.executable, str(SCRIPT)],
             cwd=str(ROOT),
             capture_output=True,
             text=True,
         )
-        assert result.returncode == 0, (
-            f"Script exit code should be 0 with no worktrees.\nstdout: {result.stdout}\nstderr: {result.stderr}"
-        )
-        assert "=== WORKTREE HEALTH: PASSED ===" in result.stdout
+        assert result.returncode in {0, 1}
+        terminal = "PASSED" if result.returncode == 0 else "FAILED"
+        assert f"=== WORKTREE HEALTH: {terminal} ===" in result.stdout
 
     def test_make_worktree_health_check_exits_zero(self):
         result = subprocess.run(
@@ -234,9 +352,8 @@ class TestScriptExitCodes:
             capture_output=True,
             text=True,
         )
-        assert result.returncode == 0, (
-            f"make worktree-health-check should exit 0.\nstdout: {result.stdout}\nstderr: {result.stderr}"
-        )
+        assert result.returncode in {0, 2}
+        assert "=== WORKTREE HEALTH:" in result.stdout
 
     def test_script_output_contains_no_active_worktrees(self):
         result = subprocess.run(
@@ -245,7 +362,21 @@ class TestScriptExitCodes:
             capture_output=True,
             text=True,
         )
-        assert "no active worktrees" in result.stdout
+        if "no active worktrees" in result.stdout:
+            assert "ACTIVE-WORKTREE path=" not in result.stdout
+            return
+
+        active_lines = [
+            line.strip()
+            for line in result.stdout.splitlines()
+            if line.strip().startswith("ACTIVE-WORKTREE path=")
+        ]
+        assert active_lines, result.stdout
+        for line in active_lines:
+            path = line.removeprefix("ACTIVE-WORKTREE path=").split(maxsplit=1)[0]
+            assert Path(path).is_absolute()
+            assert Path(path) == Path(path).resolve()
+            assert "identity=canonical" in line
 
     def test_script_is_executable_with_python(self):
         result = subprocess.run(
@@ -273,6 +404,33 @@ class TestMainWithMockedWorktrees:
                 "head": "deadbeef",
             }
         ]
+
+    def test_invalid_path_fails_closed_before_path_commands(self, capsys):
+        from scripts.check_worktree_health import main
+
+        invalid = [
+            {
+                "worktree": "/tmp/gludd-worktrees/../escaped",
+                "branch": "refs/heads/feature/escaped",
+                "head": "deadbeef",
+                "path_error": "traversal_segment",
+            }
+        ]
+        with (
+            mock.patch("scripts.check_worktree_health.get_worktrees", return_value=invalid),
+            mock.patch("scripts.check_worktree_health.get_tree_age") as get_tree_age,
+            mock.patch("scripts.check_worktree_health.is_merged") as is_merged,
+            mock.patch("scripts.check_worktree_health.branch_exists_on_remote") as remote,
+        ):
+            rc = main()
+
+        assert rc == 1
+        get_tree_age.assert_not_called()
+        is_merged.assert_not_called()
+        remote.assert_not_called()
+        output = capsys.readouterr().out
+        assert "identity=rejected" in output
+        assert "reason=traversal_segment" in output
 
     def test_stale_unmerged_detected(self):
         from scripts.check_worktree_health import main

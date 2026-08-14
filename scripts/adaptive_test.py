@@ -20,17 +20,18 @@ is BYPASSED and workers are sized by ``min(cores, by_mem)`` only: a CI shard is
 a fresh, isolated single-purpose runner with ample per-shard RAM and no
 competing load (and is sharded so it won't OOM), where the load cap only
 over-throttles — on a 2-core runner it collapsed a shard to ``-n 1`` and ran
-30+ min. The RAM cap and the OOM-halve-retry backstop still apply on CI. It also
-DETECTS an OOM-shaped exit
-(negative signal -9, exit 137, or an xdist "worker crashed / node down" line) and
-RETRIES with the worker count HALVED, down to ``-n 1``, before giving up. This
-keeps the local ``make test`` / ``make ci-test`` runs (which Claude Code drives)
-from being OOM-killed.
+30+ min. The RAM cap and the OOM-halve-retry backstop still apply on CI. It
+detects an OOM-shaped exit (negative signal -9, exit 137, or an xdist "worker
+crashed / node down" line) and retries with the worker count halved, down to
+``-n 1``, before giving up. Explicit termination provenance is fail-closed:
+orchestrator signals and no-progress timeouts never restart the whole shard.
 
 Env knobs (all optional):
   PER_WORKER_GB / GLUDD_PER_WORKER_GB   GiB budgeted per worker (default 1.5)
   NPROC                                 explicit worker count override (wins)
   GLUDD_XDIST                           explicit worker count override (wins)
+  GLUDD_TEST_HEARTBEAT_SECONDS          visible progress interval (default 30)
+  GLUDD_TEST_NO_PROGRESS_SECONDS        quiet-output deadline (default 900)
 
 An override that is not a positive integer (e.g. the CI-faithfulness value
 ``GLUDD_XDIST=auto``) is ignored, so the adaptive computation still applies.
@@ -44,14 +45,17 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
+from types import FrameType
+from typing import NamedTuple
 
 DEFAULT_PER_WORKER_GB = 1.5
 # Load headroom: never let the run drive the 5-minute load average above this
@@ -72,6 +76,20 @@ _OOM_DIAGNOSTIC_LINES = (
     ),
 )
 DEFAULT_HEARTBEAT_SECS = 30.0
+DEFAULT_NO_PROGRESS_SECS = 15.0 * 60.0
+MAX_NO_PROGRESS_SECS = 60.0 * 60.0
+
+
+class StreamResult(NamedTuple):
+    """Captured child result plus an intentional-termination discriminator."""
+
+    returncode: int
+    output: str
+    termination_reason: str | None = None
+
+
+RunnerResult = StreamResult | tuple[int, str] | tuple[int, str, str]
+SignalHandler = Callable[[int, FrameType | None], object] | int | None
 
 
 def per_worker_gb(env: Mapping[str, str] | None = None) -> float:
@@ -197,8 +215,14 @@ def decide_nproc(env: Mapping[str, str] | None = None) -> int:
     return compute_nproc(available_gb(), cpu_count, per_worker_gb(env))
 
 
-def is_oom_exit(returncode: int, output: str = "") -> bool:
+def is_oom_exit(
+    returncode: int,
+    output: str = "",
+    termination_reason: str | None = None,
+) -> bool:
     """True only for an OOM signal/code or a complete xdist crash diagnostic."""
+    if termination_reason is not None:
+        return False
     if returncode in _OOM_EXIT_CODES:
         return True
     if returncode == 0:
@@ -222,6 +246,20 @@ def heartbeat_interval_seconds(env: Mapping[str, str] | None = None) -> float:
         if value > 0:
             return value
     return DEFAULT_HEARTBEAT_SECS
+
+
+def no_progress_timeout_seconds(env: Mapping[str, str] | None = None) -> float:
+    """Return the bounded quiet-output deadline before terminating a shard."""
+    env = os.environ if env is None else env
+    raw = env.get("GLUDD_ADAPTIVE_NO_PROGRESS_SECS")
+    if raw:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = DEFAULT_NO_PROGRESS_SECS
+        if value > 0:
+            return min(value, MAX_NO_PROGRESS_SECS)
+    return DEFAULT_NO_PROGRESS_SECS
 
 
 def progress_file_path(env: Mapping[str, str] | None = None) -> str:
@@ -254,8 +292,8 @@ def _persist_progress(path: str, payload: Mapping[str, object]) -> None:
                 os.unlink(temporary)
 
 
-def _stream_run(cmd: Sequence[str]) -> tuple[int, str]:
-    """Run ``cmd``, tee output to our stdout live, and capture it for OOM sniffing."""
+def _stream_run(cmd: Sequence[str]) -> StreamResult:
+    """Run a child with live output, bounded silence, and signal provenance."""
     proc = subprocess.Popen(
         list(cmd),
         stdout=subprocess.PIPE,
@@ -266,8 +304,10 @@ def _stream_run(cmd: Sequence[str]) -> tuple[int, str]:
     chunks: list[str] = []
     progress_path = progress_file_path()
     started = time.monotonic()
+    last_output_at = started
+    no_progress_limit = no_progress_timeout_seconds()
     progress_lock = threading.Lock()
-    progress: dict[str, object] = {
+    progress: dict[str, int | float | str] = {
         "pid": os.getpid(),
         "status": "running",
         "started_at": time.time(),
@@ -275,24 +315,65 @@ def _stream_run(cmd: Sequence[str]) -> tuple[int, str]:
         "lines": 0,
         "bytes": 0,
         "heartbeat_count": 0,
+        "no_progress_seconds": 0.0,
+        "no_progress_limit_seconds": no_progress_limit,
     }
     _persist_progress(progress_path, progress)
     stop_heartbeat = threading.Event()
+    termination_reason: str | None = None
+    requested_returncode: int | None = None
+
+    def terminate_child(reason: str, returncode: int) -> None:
+        nonlocal requested_returncode, termination_reason
+        with progress_lock:
+            if termination_reason is not None:
+                return
+            termination_reason = reason
+            requested_returncode = returncode
+            progress["status"] = "terminating"
+            progress["termination_reason"] = reason
+            progress["updated_at"] = time.time()
+            snapshot = dict(progress)
+        _persist_progress(progress_path, snapshot)
+        print(f"[adaptive-test] terminating reason={reason}", flush=True)
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+        except (AttributeError, OSError):
+            pass
+
+    def handle_signal(signum: int, _frame: FrameType | None) -> None:
+        try:
+            signal_name = signal.Signals(signum).name
+        except ValueError:
+            signal_name = str(signum)
+        terminate_child(f"orchestrator-signal:{signal_name}", 128 + signum)
+
+    previous_handlers: dict[signal.Signals, SignalHandler] = {}
+    if threading.current_thread() is threading.main_thread():
+        for watched_signal in (signal.SIGINT, signal.SIGTERM):
+            previous_handlers[watched_signal] = signal.getsignal(watched_signal)
+            signal.signal(watched_signal, handle_signal)
 
     def emit_heartbeat() -> None:
-        interval = heartbeat_interval_seconds()
+        interval = min(heartbeat_interval_seconds(), no_progress_limit)
         while not stop_heartbeat.wait(interval):
             with progress_lock:
+                quiet_seconds = time.monotonic() - last_output_at
                 progress["heartbeat_count"] = int(progress["heartbeat_count"]) + 1
                 progress["updated_at"] = time.time()
+                progress["no_progress_seconds"] = round(quiet_seconds, 3)
                 snapshot = dict(progress)
                 lines = int(progress["lines"])
                 elapsed = time.monotonic() - started
             _persist_progress(progress_path, snapshot)
             print(
-                f"[adaptive-test] heartbeat elapsed={elapsed:.0f}s lines={lines}",
+                f"[adaptive-test] heartbeat elapsed={elapsed:.0f}s lines={lines} "
+                f"no-progress={quiet_seconds:.0f}s limit={no_progress_limit:.0f}s",
                 flush=True,
             )
+            if quiet_seconds >= no_progress_limit:
+                terminate_child("no-progress-timeout", 124)
 
     heartbeat = threading.Thread(target=emit_heartbeat, name="adaptive-test-heartbeat", daemon=True)
     heartbeat.start()
@@ -303,6 +384,7 @@ def _stream_run(cmd: Sequence[str]) -> tuple[int, str]:
             sys.stdout.flush()
             chunks.append(line)
             with progress_lock:
+                last_output_at = time.monotonic()
                 progress["lines"] = int(progress["lines"]) + 1
                 progress["bytes"] = int(progress["bytes"]) + len(line.encode("utf-8"))
                 progress["updated_at"] = time.time()
@@ -310,14 +392,26 @@ def _stream_run(cmd: Sequence[str]) -> tuple[int, str]:
     finally:
         stop_heartbeat.set()
         heartbeat.join(timeout=1.0)
+        for watched_signal, previous_handler in previous_handlers.items():
+            signal.signal(watched_signal, previous_handler)
         with progress_lock:
-            progress["status"] = "finished"
-            progress["returncode"] = proc.returncode
+            child_returncode = proc.returncode if proc.returncode is not None else 1
+            final_returncode = (
+                requested_returncode
+                if requested_returncode is not None
+                else child_returncode
+            )
+            progress["status"] = (
+                "terminated" if termination_reason is not None else "finished"
+            )
+            progress["returncode"] = final_returncode
             progress["elapsed_seconds"] = round(time.monotonic() - started, 3)
             progress["updated_at"] = time.time()
+            if termination_reason is not None:
+                progress["termination_reason"] = termination_reason
             snapshot = dict(progress)
         _persist_progress(progress_path, snapshot)
-    return proc.returncode, "".join(chunks)
+    return StreamResult(final_returncode, "".join(chunks), termination_reason)
 
 
 def has_basetemp(args: Sequence[str]) -> bool:
@@ -384,10 +478,19 @@ def build_pytest_cmd(pytest_args: Sequence[str], nproc: int) -> list[str]:
     return cmd
 
 
+def _normalize_runner_result(result: RunnerResult) -> StreamResult:
+    """Normalize legacy two-tuples and provenance-aware runner results."""
+    if isinstance(result, StreamResult):
+        return result
+    if len(result) == 2:
+        return StreamResult(result[0], result[1])
+    return StreamResult(result[0], result[1], result[2])
+
+
 def run(
     pytest_args: Sequence[str],
     env: Mapping[str, str] | None = None,
-    runner=_stream_run,
+    runner: Callable[[Sequence[str]], RunnerResult] = _stream_run,
 ) -> int:
     """Run pytest at the adaptive worker count, halving + retrying on OOM exits."""
     # Isolate this run's tmp tree from every other pytest process on the box.
@@ -408,19 +511,29 @@ def run(
             f"(cmd: {' '.join(cmd[2:])})",
             flush=True,
         )
-        returncode, output = runner(cmd)
-        if not is_oom_exit(returncode, output):
-            return returncode
+        result = _normalize_runner_result(runner(cmd))
+        if not is_oom_exit(
+            result.returncode,
+            result.output,
+            result.termination_reason,
+        ):
+            if result.termination_reason is not None:
+                print(
+                    "[adaptive-test] shard terminated intentionally; "
+                    f"reason={result.termination_reason}; no retry.",
+                    flush=True,
+                )
+            return result.returncode
         if nproc <= 1:
             print(
                 "[adaptive-test] OOM-shaped exit at -n 1 (rc="
-                f"{returncode}); cannot reduce workers further — giving up.",
+                f"{result.returncode}); cannot reduce workers further — giving up.",
                 flush=True,
             )
-            return returncode
+            return result.returncode
         new_nproc = max(1, nproc // 2)
         print(
-            f"[adaptive-test] OOM-shaped exit (rc={returncode}) at -n {nproc}; "
+            f"[adaptive-test] OOM-shaped exit (rc={result.returncode}) at -n {nproc}; "
             f"retrying with -n {new_nproc}.",
             flush=True,
         )
@@ -428,6 +541,7 @@ def run(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run the adaptive test wrapper with explicit or command-line arguments."""
     args = list(sys.argv[1:] if argv is None else argv)
     return run(args)
 
