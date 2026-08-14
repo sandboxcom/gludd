@@ -68,15 +68,17 @@ override SYSTEM_PYTHON := /usr/bin/python3
 _NO_UV_SYNC_GOALS := \
     worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
     release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready \
-    git-where repo-status git-status git-remote-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom verify-remote git-patch-equivalence \
+    git-where git-show-file-to repo-status git-status git-remote-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom verify-remote git-patch-equivalence \
     git-branch git-checkout git-add git-merge git-merge-nc git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip \
     git-cherry-pick git-cherry-pick-list git-cherry-pick-continue git-cherry-pick-skip git-cherry-pick-abort \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger ci-shards-log-context \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
-    search show-lines cat-file copy-file mkdir-p write-text append-text replace-lines replace-text replace-all-text write-text-b64 replace-text-b64 \
-    check-disk check-disk-classification tmp-gludd-usage tmp-gludd-worktree-usage \
+    grep search show-lines cat-file copy-file mkdir-p write-text append-text replace-lines replace-text replace-all-text write-text-b64 replace-text-b64 rm-files \
+    check-disk check-disk-classification disk disk-check disk-guard cache-disk cache-clean disk-user-caches audit-home-tmp \
+    cache-resource-inventory cache-resource-remove tmp-gludd-usage tmp-gludd-worktree-usage \
     tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
-    clean-worktree-venvs clean-worktree-caches active-work-status
+    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status agent-worktree agent-worktree-base \
+    development-merge-forward development-merge-forward-batch
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
 else
@@ -137,7 +139,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
          secrets-scrub secrets-scan secrets-baseline security-audit clean-artifacts health-check \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
-         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count git-patch-equivalence branches-unmerged-development branch-reconciliation-inventory branch-reconciliation-summary check-git-hygiene cache-disk cache-clean disk-user-caches rm-files commit-and-ship commit-and-ship-push compute-model-hashes \
+         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count git-patch-equivalence branches-unmerged-development branch-reconciliation-inventory branch-reconciliation-summary check-git-hygiene cache-disk cache-clean disk-user-caches cache-resource-inventory cache-resource-remove rm-files commit-and-ship commit-and-ship-push compute-model-hashes \
         molecule-clean plan ps-gludd kill-stale terminate-project-process-tree reap-stale-collection-locks reap-orphan-pytest kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         repo-visibility \
@@ -489,6 +491,8 @@ help:
 	@echo "  cache-disk            Show bounded user-cache directory sizes"
 	@echo "  cache-clean           Remove the explicitly enumerated tool caches"
 	@echo "  disk-user-caches      Show accessible user-cache and data-root sizes"
+	@echo "  cache-resource-inventory  List largest children of one allowlisted cache root"
+	@echo "  cache-resource-remove     Validate or remove one exact allowlisted cache child"
 	@echo "  uv-cache-prune-status List uv cache-prune PID, parent, age, and command"
 	@echo "  tmp-gludd-usage       Print largest /tmp/gludd-* entries sorted by size"
 	@echo "  tmp-gludd-worktree-usage  Print largest generated entries under /tmp/gludd-worktrees"
@@ -2461,6 +2465,12 @@ disk:
 	@du -sh infra/terraform/.plugin-cache infra/terraform/* 2>/dev/null | sort -h | tail -20 || true
 	@echo "--- gludd scratch + worktree footprint ---"
 	@du -sh /tmp/gludd-* 2>/dev/null | tail -5 || true
+
+CACHE_RESOURCE_ROOT ?= $(HOME)/Library/Caches
+CACHE_RESOURCE_LIMIT ?= 20
+CACHE_RESOURCE_CANDIDATE ?=
+CACHE_RESOURCE_VALIDATE_ONLY ?= 1
+
 cache-disk: ## Show cache directory sizes (uv, huggingface, pip, npm)
 	@echo "--- cache directories ---"
 	@for d in ~/.cache/uv ~/.cache/huggingface ~/.cache/pip ~/.cache/claude ~/.cache/pre-commit ~/.cache/gh ~/.cache/opencode ~/Library/Caches/pip ~/.npm/_cacache; do \
@@ -2532,6 +2542,20 @@ disk-user-caches: ## Show all user-cache directories accessible to this agent + 
 	@gh_logs=$$(find ~/.cache/gh -name 'run-log-*.zip' 2>/dev/null | wc -l | tr -d ' '); \
 	echo "  count: $$gh_logs files"; \
 	echo "  total: $$(du -sh ~/.cache/gh 2>/dev/null | cut -f1)"
+
+cache-resource-inventory: ## List bounded immediate children of an allowlisted cache root
+	@case "$(CACHE_RESOURCE_VALIDATE_ONLY)" in 0|1) ;; *) echo "CACHE_RESOURCE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@[ "$(CACHE_RESOURCE_LIMIT)" -ge 1 ] 2>/dev/null && [ "$(CACHE_RESOURCE_LIMIT)" -le 100 ] 2>/dev/null || { echo "CACHE_RESOURCE_LIMIT must be between 1 and 100"; exit 2; }
+	@$(SYSTEM_PYTHON) scripts/cache_resource_manager.py inventory --root "$(CACHE_RESOURCE_ROOT)" --limit "$(CACHE_RESOURCE_LIMIT)"
+
+cache-resource-remove: ## Validate or remove one exact immediate cache child
+	@case "$(CACHE_RESOURCE_VALIDATE_ONLY)" in 0|1) ;; *) echo "CACHE_RESOURCE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@[ -n "$(CACHE_RESOURCE_CANDIDATE)" ] || { echo "CACHE_RESOURCE_CANDIDATE is required"; exit 2; }
+	@if [ "$(CACHE_RESOURCE_VALIDATE_ONLY)" = "1" ]; then \
+		$(SYSTEM_PYTHON) scripts/cache_resource_manager.py remove --root "$(CACHE_RESOURCE_ROOT)" --candidate "$(CACHE_RESOURCE_CANDIDATE)"; \
+	else \
+		$(SYSTEM_PYTHON) scripts/cache_resource_manager.py remove --root "$(CACHE_RESOURCE_ROOT)" --candidate "$(CACHE_RESOURCE_CANDIDATE)" --apply; \
+	fi
 
 clean-gh-run-logs: ## Delete all cached GitHub Actions run log zip files
 	@echo "=== cleaning GH run logs ==="
@@ -2695,13 +2719,13 @@ tmp-gludd-clean-orphan-worktrees-now:
 # Remove regenerable .venv dirs from agent worktrees (source is preserved;
 # `uv sync` recreates on demand). The main disk hog when many worktree agents run.
 clean-worktree-venvs:
-	@rm -rf /Users/shawnwilson/gludd/.claude/worktrees/agent-*/.venv 2>/dev/null || true
-	@rm -rf /tmp/gludd-worktrees/*/.venv 2>/dev/null || true
+	@/usr/bin/find /Users/shawnwilson/gludd/.claude/worktrees -type d -name .venv -prune -exec rm -rf {} + 2>/dev/null || true
+	@/usr/bin/find /tmp/gludd-worktrees -type d -name .venv -prune -exec rm -rf {} + 2>/dev/null || true
 	@echo "clean-worktree-venvs done"
 
 clean-worktree-caches: clean-worktree-venvs
-	@rm -rf /Users/shawnwilson/gludd/.claude/worktrees/agent-*/.pytest_cache /Users/shawnwilson/gludd/.claude/worktrees/agent-*/.mypy_cache /Users/shawnwilson/gludd/.claude/worktrees/agent-*/.ruff_cache 2>/dev/null || true
-	@rm -rf /tmp/gludd-worktrees/*/.pytest_cache /tmp/gludd-worktrees/*/.mypy_cache /tmp/gludd-worktrees/*/.ruff_cache 2>/dev/null || true
+	@/usr/bin/find /Users/shawnwilson/gludd/.claude/worktrees -type d \( -name .pytest_cache -o -name .mypy_cache -o -name .ruff_cache \) -prune -exec rm -rf {} + 2>/dev/null || true
+	@/usr/bin/find /tmp/gludd-worktrees -type d \( -name .pytest_cache -o -name .mypy_cache -o -name .ruff_cache \) -prune -exec rm -rf {} + 2>/dev/null || true
 	@echo "clean-worktree-caches done"
 molecule-clean:
 	@echo "Removing stray molecule/<scenario> runtime dirs (preserving the canonical default scenario and source directories)..."
