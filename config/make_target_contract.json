@@ -168,6 +168,11 @@
       "behavior": "make tmp-gludd-clean-orphan-worktrees-now TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY=1"
     },
     {
+      "name": "clean-worktree-venvs",
+      "make_variables": ["CLEAN_WORKTREE_VENVS_VALIDATE_ONLY"],
+      "behavior": "make clean-worktree-venvs CLEAN_WORKTREE_VENVS_VALIDATE_ONLY=1"
+    },
+    {
       "name": "opencode-disk",
       "make_variables": [
         "OPENCODE_DB",
