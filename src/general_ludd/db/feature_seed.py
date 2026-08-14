@@ -317,8 +317,8 @@ FEATURE_SEED: list[dict[str, Any]] = [
         "name": "ci_green",
         "category": "ci",
         "description": (
-            "Gate ALL PASSED: lint 0, typecheck 0, collect 0, test 0, smoke PASS. "
-            "Verified locally but CI (GitHub Actions) is not yet connected."
+            "The ci_green feature records the local gate artifact: lint 0, typecheck 0, "
+            "collect 0, test 0, and smoke PASS. GitHub Actions verification is not yet connected."
         ),
         "acceptance_criteria": [
             "make gate passes in CI (not just locally)",
