@@ -11,9 +11,10 @@ import sys
 from collections.abc import Callable, Sequence
 from typing import Literal, TypedDict
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_LIMIT = 100
 COMMIT_SCAN_LIMIT = 500
+LOCAL_REF_SCAN_LIMIT = 10_000
 GIT_TIMEOUT_SECONDS = 10
 _OBJECT_ID_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 
@@ -64,15 +65,18 @@ class InventoryBounds(TypedDict):
 
     branch_limit: int
     commit_scan_limit: int
+    local_ref_scan_limit: int
 
 
 class InventoryPayload(TypedDict):
     """Top-level JSON contract."""
 
+    after: str | None
     bounds: InventoryBounds
     branches: list[BranchRecord]
     counts: InventoryCounts
     limit: int
+    next_cursor: str | None
     ok: bool
     schema_version: int
     target: TargetRecord
@@ -169,45 +173,122 @@ def _resolve_target(
     return {"head": target_head, "input": target, "ref": target_ref}
 
 
-def _parse_branch_entries(output: str) -> list[tuple[str, str]]:
-    """Parse strict tab-delimited for-each-ref output."""
+def _validate_after(
+    after: str,
+    *,
+    run: RunFn,
+    cwd: str | None,
+) -> str | None:
+    """Validate a canonical local-ref cursor without requiring it to exist."""
+    if after == "":
+        return None
+    branch_name = after.removeprefix("refs/heads/")
+    if (
+        after != after.strip()
+        or any(character.isspace() for character in after)
+        or not after.startswith("refs/heads/")
+        or not branch_name
+        or branch_name.startswith("-")
+    ):
+        raise InventoryError(f"invalid pagination cursor: {after}")
+    result = run(["git", "check-ref-format", after], cwd)
+    if result.returncode != 0:
+        raise InventoryError(f"invalid pagination cursor: {after}")
+    return after
+
+
+def _parse_branch_entries(
+    output: str,
+    *,
+    allow_namespace_boundary: bool,
+) -> list[tuple[str, str]]:
+    """Parse ordered for-each-ref output and retain only local branches."""
     entries: list[tuple[str, str]] = []
+    previous_ref: str | None = None
+    outside_heads = False
     for line in output.splitlines():
         fields = line.split("\t")
         if (
             len(fields) != 2
-            or not fields[0].startswith("refs/heads/")
-            or not fields[0].removeprefix("refs/heads/")
+            or not fields[0].startswith("refs/")
             or not _valid_object_id(fields[1])
+            or (previous_ref is not None and fields[0] <= previous_ref)
         ):
             raise InventoryError("malformed local branch inventory")
+        previous_ref = fields[0]
+        if not fields[0].startswith("refs/heads/"):
+            if not allow_namespace_boundary:
+                raise InventoryError("malformed local branch inventory")
+            outside_heads = True
+            continue
+        if outside_heads or not fields[0].removeprefix("refs/heads/"):
+            raise InventoryError("malformed local branch inventory")
         entries.append((fields[0], fields[1]))
-    return sorted(entries)
+    return entries
 
 
 def _bounded_branches(
     target_ref: str,
     limit: int,
+    after: str | None,
     *,
     run: RunFn,
     cwd: str | None,
 ) -> tuple[list[tuple[str, str]], bool]:
     """Return at most limit local branches plus a truncation signal."""
-    output = _checked_stdout(
-        [
-            "git",
-            "for-each-ref",
-            f"--count={limit + 2}",
-            "--sort=refname",
-            "--format=%(refname)%09%(objectname)",
-            "refs/heads",
-        ],
-        run=run,
-        cwd=cwd,
-        label="local branch enumeration failed",
+    command = [
+        "git",
+        "for-each-ref",
+        f"--count={limit + 2}",
+        "--format=%(refname)%09%(objectname)",
+    ]
+    if after is None:
+        command.append("refs/heads")
+    else:
+        command.append(f"--start-after={after}")
+    result = run(command, cwd)
+    unsupported_start_after = (
+        after is not None
+        and result.returncode != 0
+        and "unknown option" in result.stderr
+        and "start-after" in result.stderr
     )
+    if unsupported_start_after:
+        output = _checked_stdout(
+            [
+                "git",
+                "for-each-ref",
+                f"--count={LOCAL_REF_SCAN_LIMIT + 1}",
+                "--sort=refname",
+                "--format=%(refname)%09%(objectname)",
+                "refs/heads",
+            ],
+            run=run,
+            cwd=cwd,
+            label="bounded legacy branch enumeration failed",
+        )
+        scanned_entries = _parse_branch_entries(
+            output,
+            allow_namespace_boundary=False,
+        )
+        if len(scanned_entries) > LOCAL_REF_SCAN_LIMIT:
+            raise InventoryError("local branch scan exceeded pagination bound")
+        assert after is not None
+        entries = [entry for entry in scanned_entries if entry[0] > after]
+    else:
+        if result.returncode != 0:
+            detail = (
+                result.stderr or result.stdout or "git command failed"
+            ).strip()
+            raise InventoryError(f"local branch enumeration failed: {detail[:400]}")
+        entries = _parse_branch_entries(
+            result.stdout,
+            allow_namespace_boundary=after is not None,
+        )
+    if after is not None and any(ref <= after for ref, _head in entries):
+        raise InventoryError("pagination cursor did not advance")
     candidates = [
-        entry for entry in _parse_branch_entries(output) if entry[0] != target_ref
+        entry for entry in entries if entry[0] != target_ref
     ]
     return candidates[:limit], len(candidates) > limit
 
@@ -366,6 +447,7 @@ def collect_inventory(
     target: str,
     limit: int,
     *,
+    after: str = "",
     run: RunFn = _run,
     cwd: str | None = None,
     progress: ProgressFn | None = None,
@@ -373,10 +455,12 @@ def collect_inventory(
     """Collect the bounded reconciliation inventory."""
     if limit < 1 or limit > MAX_LIMIT:
         raise InventoryError(f"limit must be between 1 and {MAX_LIMIT}")
+    after_ref = _validate_after(after, run=run, cwd=cwd)
     target_record = _resolve_target(target, run=run, cwd=cwd)
     entries, truncated = _bounded_branches(
         target_record["ref"],
         limit,
+        after_ref,
         run=run,
         cwd=cwd,
     )
@@ -394,13 +478,16 @@ def collect_inventory(
             )
         )
     return {
+        "after": after_ref,
         "bounds": {
             "branch_limit": limit,
             "commit_scan_limit": COMMIT_SCAN_LIMIT,
+            "local_ref_scan_limit": LOCAL_REF_SCAN_LIMIT,
         },
         "branches": branches,
         "counts": _counts(branches),
         "limit": limit,
+        "next_cursor": branches[-1]["ref"] if truncated else None,
         "ok": True,
         "schema_version": SCHEMA_VERSION,
         "target": target_record,
@@ -422,13 +509,21 @@ def main(
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True, help="symbolic target ref")
     parser.add_argument("--limit", required=True, help="maximum branch records")
+    parser.add_argument(
+        "--after",
+        required=True,
+        help="canonical local ref cursor, or empty for the first page",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
     try:
         limit = int(args.limit)
-        _progress(f"target={args.target} limit={limit}")
+        _progress(
+            f"target={args.target} limit={limit} after={args.after or '<start>'}"
+        )
         payload = collect_inventory(
             args.target,
             limit,
+            after=args.after,
             run=run,
             progress=_progress,
         )

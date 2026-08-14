@@ -442,8 +442,8 @@
     },
     {
       "name": "branch-reconciliation-inventory",
-      "make_variables": ["RECONCILE_TARGET", "RECONCILE_LIMIT"],
-      "behavior": "make branch-reconciliation-inventory RECONCILE_TARGET=development RECONCILE_LIMIT=20"
+      "make_variables": ["RECONCILE_TARGET", "RECONCILE_LIMIT", "RECONCILE_AFTER"],
+      "behavior": "make branch-reconciliation-inventory RECONCILE_TARGET=development RECONCILE_LIMIT=20 RECONCILE_AFTER="
     },
     {
       "name": "development-merge-forward",

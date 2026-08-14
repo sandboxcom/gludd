@@ -16,6 +16,7 @@ ANCESTOR_HEAD = "b" * 40
 PATCH_HEAD = "c" * 40
 UNIQUE_HEAD = "d" * 40
 EMPTY_HEAD = "e" * 40
+PAGE_HEADS = tuple(character * 40 for character in "1234")
 
 
 class FakeGit:
@@ -29,12 +30,16 @@ class FakeGit:
         cherries: dict[str, str] | None = None,
         commit_counts: dict[str, int] | None = None,
         target_valid: bool = True,
+        cursor_valid: bool = True,
+        start_after_supported: bool = True,
     ) -> None:
         self.refs = list(refs)
         self.ancestors = ancestors
         self.cherries = cherries or {}
         self.commit_counts = commit_counts or {}
         self.target_valid = target_valid
+        self.cursor_valid = cursor_valid
+        self.start_after_supported = start_after_supported
         self.calls: list[list[str]] = []
 
     def __call__(
@@ -44,11 +49,37 @@ class FakeGit:
         args = list(argv)
         self.calls.append(args)
         if args[1:4] == ["rev-parse", "--symbolic-full-name", "--verify"]:
-            return self._result(args, 0, "refs/heads/development\n") if self.target_valid else self._result(args, 1)
+            if self.target_valid:
+                return self._result(args, 0, "refs/heads/development\n")
+            return self._result(args, 1)
         if args[1:4] == ["rev-parse", "--verify", "--quiet"]:
-            return self._result(args, 0, f"{TARGET_HEAD}\n") if self.target_valid else self._result(args, 1)
+            if self.target_valid:
+                return self._result(args, 0, f"{TARGET_HEAD}\n")
+            return self._result(args, 1)
+        if args[1] == "check-ref-format":
+            return self._result(args, 0) if self.cursor_valid else self._result(args, 1)
         if args[1] == "for-each-ref":
-            output = "".join(f"{ref}\t{head}\n" for ref, head in self.refs)
+            if (
+                not self.start_after_supported
+                and any(option.startswith("--start-after=") for option in args)
+            ):
+                return self._result(args, 129, stderr="error: unknown option 'start-after'")
+            entries = sorted(self.refs)
+            start_after = next(
+                (
+                    option.removeprefix("--start-after=")
+                    for option in args
+                    if option.startswith("--start-after=")
+                ),
+                "",
+            )
+            if start_after:
+                entries = [entry for entry in entries if entry[0] > start_after]
+            count_option = next(
+                option for option in args if option.startswith("--count=")
+            )
+            count = int(count_option.split("=", maxsplit=1)[1])
+            output = "".join(f"{ref}\t{head}\n" for ref, head in entries[:count])
             return self._result(args, 0, output)
         if args[1:3] == ["merge-base", "--is-ancestor"]:
             return self._result(args, 0 if args[3] in self.ancestors else 1)
@@ -175,6 +206,130 @@ def test_limit_bounds_classification_and_reports_truncation() -> None:
     assert sum(call[1] == "merge-base" for call in fake.calls) == 2
 
 
+def test_cursor_pages_are_strictly_greater_without_duplicates_or_gaps() -> None:
+    refs = [("refs/heads/development", TARGET_HEAD), *[
+        (f"refs/heads/feature/{name}", head)
+        for name, head in zip("abcd", PAGE_HEADS, strict=True)
+    ]]
+    fake = FakeGit(refs=refs, ancestors=frozenset(PAGE_HEADS))
+
+    first = inventory.collect_inventory("development", 2, after="", run=fake)
+    second = inventory.collect_inventory(
+        "development",
+        2,
+        after=first["next_cursor"] or "",
+        run=fake,
+    )
+
+    combined = [
+        branch["ref"] for page in (first, second) for branch in page["branches"]
+    ]
+    assert combined == [f"refs/heads/feature/{name}" for name in "abcd"]
+    assert len(combined) == len(set(combined))
+    assert first["after"] is None
+    assert first["next_cursor"] == "refs/heads/feature/b"
+    assert first["truncated"] is True
+    assert second["after"] == first["next_cursor"]
+    assert second["next_cursor"] is None
+    assert second["truncated"] is False
+    second_enumeration = [
+        call for call in fake.calls if call[1] == "for-each-ref"
+    ][1]
+    assert "--start-after=refs/heads/feature/b" in second_enumeration
+    assert not any(option.startswith("--sort=") for option in second_enumeration)
+    assert "refs/heads" not in second_enumeration
+
+
+def test_absent_cursor_is_a_strict_lexicographic_boundary() -> None:
+    fake = FakeGit(
+        refs=[
+            ("refs/heads/feature/a", PAGE_HEADS[0]),
+            ("refs/heads/feature/c", PAGE_HEADS[2]),
+        ],
+        ancestors=frozenset(PAGE_HEADS),
+    )
+
+    result = inventory.collect_inventory(
+        "development",
+        2,
+        after="refs/heads/feature/b",
+        run=fake,
+    )
+
+    assert [branch["ref"] for branch in result["branches"]] == [
+        "refs/heads/feature/c"
+    ]
+    assert result["next_cursor"] is None
+
+
+def test_legacy_git_cursor_fallback_is_bounded_and_gap_free() -> None:
+    fake = FakeGit(
+        refs=[
+            (f"refs/heads/feature/{name}", head)
+            for name, head in zip("abcd", PAGE_HEADS, strict=True)
+        ],
+        ancestors=frozenset(PAGE_HEADS),
+        start_after_supported=False,
+    )
+
+    result = inventory.collect_inventory(
+        "development",
+        2,
+        after="refs/heads/feature/b",
+        run=fake,
+    )
+
+    assert [branch["ref"] for branch in result["branches"]] == [
+        "refs/heads/feature/c",
+        "refs/heads/feature/d",
+    ]
+    enumeration_calls = [call for call in fake.calls if call[1] == "for-each-ref"]
+    assert len(enumeration_calls) == 2
+    assert "--sort=refname" in enumeration_calls[1]
+    assert f"--count={inventory.LOCAL_REF_SCAN_LIMIT + 1}" in enumeration_calls[1]
+    assert "refs/heads" in enumeration_calls[1]
+
+
+def test_legacy_git_cursor_fallback_fails_closed_at_scan_bound() -> None:
+    fake = FakeGit(
+        refs=[
+            (f"refs/heads/feature/{index:04d}", PAGE_HEADS[0])
+            for index in range(inventory.LOCAL_REF_SCAN_LIMIT + 1)
+        ],
+        start_after_supported=False,
+    )
+
+    with pytest.raises(inventory.InventoryError, match="scan exceeded"):
+        inventory.collect_inventory(
+            "development",
+            2,
+            after="refs/heads/feature/0000",
+            run=fake,
+        )
+
+
+@pytest.mark.parametrize(
+    ("cursor", "cursor_valid"),
+    [
+        ("feature/a", True),
+        ("refs/heads/feature bad", True),
+        ("refs/heads/-option", True),
+        ("refs/heads/feature..bad", False),
+        (" refs/heads/feature/a", True),
+    ],
+)
+def test_invalid_cursor_fails_closed_before_enumeration(
+    cursor: str,
+    cursor_valid: bool,
+) -> None:
+    fake = FakeGit(cursor_valid=cursor_valid)
+
+    with pytest.raises(inventory.InventoryError, match="cursor"):
+        inventory.collect_inventory("development", 2, after=cursor, run=fake)
+
+    assert not any(call[1] == "for-each-ref" for call in fake.calls)
+
+
 @pytest.mark.parametrize("limit", [0, -1, inventory.MAX_LIMIT + 1])
 def test_limit_outside_bounded_contract_is_rejected(limit: int) -> None:
     with pytest.raises(inventory.InventoryError, match="limit"):
@@ -207,14 +362,17 @@ def test_malformed_ref_inventory_fails_closed() -> None:
 
 
 def test_main_emits_machine_readable_error(capsys: pytest.CaptureFixture[str]) -> None:
-    rc = inventory.main(["--target", "missing", "--limit", "10"], run=FakeGit(target_valid=False))
+    rc = inventory.main(
+        ["--target", "missing", "--limit", "10", "--after", ""],
+        run=FakeGit(target_valid=False),
+    )
 
     assert rc == 2
     payload = json.loads(capsys.readouterr().out)
     assert payload == {
         "error": "invalid target ref: missing",
         "ok": False,
-        "schema_version": 1,
+        "schema_version": 2,
     }
 
 
@@ -226,15 +384,22 @@ def test_make_target_and_contract_are_tracked() -> None:
 
     assert "branch-reconciliation-inventory:" in makefile
     assert "scripts/branch_reconciliation_inventory.py" in makefile
+    assert "RECONCILE_AFTER" in makefile
+    assert '--after "$(RECONCILE_AFTER)"' in makefile
     entry = next(
         target
         for target in contract["targets"]
         if target["name"] == "branch-reconciliation-inventory"
     )
-    assert entry["make_variables"] == ["RECONCILE_TARGET", "RECONCILE_LIMIT"]
+    assert entry["make_variables"] == [
+        "RECONCILE_TARGET",
+        "RECONCILE_LIMIT",
+        "RECONCILE_AFTER",
+    ]
     assert (
         entry["behavior"]
-        == "make branch-reconciliation-inventory RECONCILE_TARGET=development RECONCILE_LIMIT=20"
+        == "make branch-reconciliation-inventory RECONCILE_TARGET=development "
+        "RECONCILE_LIMIT=20 RECONCILE_AFTER="
     )
 
 
@@ -249,6 +414,7 @@ def test_git_command_set_is_read_only() -> None:
     assert {call[1] for call in fake.calls} <= {
         "rev-parse",
         "rev-list",
+        "check-ref-format",
         "for-each-ref",
         "merge-base",
         "cherry",
