@@ -51,6 +51,12 @@ The deterministic Make contract is
 `make check-disk CHECK_DISK_VALIDATE_ONLY=1`; normal enforcement is
 `make check-disk CHECK_DISK_VALIDATE_ONLY=0`.
 
+The checker and cleanup targets are lightweight host diagnostics. They are in
+Make's no-uv goal set and invoke their standard-library entry points with the
+system Python, so classification or cleanup inspection never bootstraps a
+project `.venv`. Validate-only modes explicitly delegate to `test-files`; that
+test execution is the only intentional dependency-environment boundary.
+
 `make check-disk-classification` provides the audit proof without applying the
 threshold verdict. It emits at most 40 JSON-lines records ranked by counted
 bytes, followed by a summary with total and omitted entry counts. Registered
