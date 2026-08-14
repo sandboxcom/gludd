@@ -34,6 +34,12 @@ import yaml
 
 DOC_SUFFIXES = {".md", ".yml", ".yaml", ".json"}
 STATUSES = ("implemented", "partial", "unimplemented", "unknown")
+
+
+def _behavioral_group(spec_id: object) -> str:
+    """Return the alphabetic prefix of a behavioral specification ID."""
+    match = re.match(r"[A-Z]+", str(spec_id))
+    return match.group() if match is not None else ""
 STATUS_IMPLEMENTED_RE = re.compile(
     r"\b(?:implemented|complete(?:d)?|done|landed|shipped|delivered|resolved)\b",
     re.IGNORECASE,
@@ -934,7 +940,7 @@ def _test_evidence_exists(root: Path, text: str) -> bool:
 
 def _canonical_behavioral_audits(
     root: Path,
-) -> tuple[set[str], dict[str, Any], set[str]]:
+) -> tuple[set[str], generator_audit.EnforcementStats, set[str]]:
     """Run the existing behavioral audit logic without subprocesses."""
 
     specs_path = root / "docs/specs/BEHAVIORAL_SPECS.md"
@@ -963,7 +969,10 @@ def _canonical_behavioral_audits(
         covered_core_ids = {
             str(spec["id"])
             for spec in core_specs
-            if enforcement_coverage_audit._enforcement_exists(
+            if len(_behavioral_group(spec["id"])) > 1
+            and str(spec["enforcement"]).strip().lower()
+            not in {"agents.md", "makefile"}
+            and enforcement_coverage_audit._enforcement_exists(
                 str(spec["enforcement"])
             )
         }
@@ -1001,9 +1010,9 @@ def _canonical_behavioral_audits(
 def _behavioral_inventory(root: Path) -> dict[str, Any]:
     path = root / "docs/specs/BEHAVIORAL_SPECS.md"
     specs = _parse_behavioral_specs(path)
-    core = [spec for spec in specs if len(re.match(r"[A-Z]+", spec["id"]).group()) > 1]
+    core = [spec for spec in specs if len(_behavioral_group(spec["id"])) > 1]
     generated = [
-        spec for spec in specs if len(re.match(r"[A-Z]+", spec["id"]).group()) == 1
+        spec for spec in specs if len(_behavioral_group(spec["id"])) == 1
     ]
     covered_core_ids, generated_stats, ineffective_ids = _canonical_behavioral_audits(
         root

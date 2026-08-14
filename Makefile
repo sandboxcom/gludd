@@ -30,6 +30,14 @@ MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
 DOCSTRING_FILES ?=
 GATE_REFRESH_VALIDATE_ONLY ?= 0
+GATE_RUN_LOCK ?= .gate-logs/gate-run.lock
+INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY ?= 0
+COVERAGE_TESTFILES ?=
+COVERAGE_CONFIG ?= config/coverage_gate_runtime.ini
+COVERAGE_REPORT ?= .gate-logs/coverage-files.json
+COVERAGE_AGGREGATE_MIN ?= 85
+COVERAGE_PER_FILE_MIN ?= 75
+CLEAN_VALIDATE_ONLY ?= 0
 DISK_MIN_FREE_GIB ?= 8
 # Preserve a capable caller terminal; supply a stable terminfo fallback only
 # when workers or CI provide an empty, unknown, or dumb TERM value.
@@ -66,7 +74,9 @@ _NO_UV_SYNC_GOALS := \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger ci-shards-log-context \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
     search show-lines cat-file copy-file mkdir-p write-text append-text replace-lines replace-text replace-all-text write-text-b64 replace-text-b64 \
-    tmp-gludd-usage tmp-gludd-worktree-usage tmp-gludd-clean-ci-shards clean-worktree-venvs clean-worktree-caches
+    check-disk check-disk-classification tmp-gludd-usage tmp-gludd-worktree-usage \
+    tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
+    clean-worktree-venvs clean-worktree-caches active-work-status
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
 else
@@ -120,7 +130,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         container-build container-run container-push \
          file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist-clean bundle-binaries bundle-ripgrep \
         sast sast-summary sbom pip-audit security security-backlog-gate \
-        audit-messages qa validate collect-check gate gate-refresh gate-lite smoke install-hooks feature-spec-inventory \
+        audit-messages qa validate collect-check coverage-files gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory \
         status-snapshot audit-evidence deps-audit dogfood-features ruff-audit check-make-help \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
@@ -149,7 +159,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         verify-enforcement \
 ci-view ci-rerun ci-trigger ci-active ci-job-log ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
-log-agent-result disk-guard disk-check check-disk check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards \
+log-agent-result disk-guard disk-check check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
         searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
         networking-role-lint networking-role-syntax test-scapy-adapter networking-validate \
@@ -181,6 +191,7 @@ help:
 	@echo "  node-deps-audit       Audit locked Node deps (plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)"
 	@echo "  bootstrap             init + lint + test + healthcheck"
 	@echo "  install-hooks         Install pre-commit hooks (secrets, lint, collect)"
+	@echo "  install-workflow-hook Validate/install the tracked GitHub workflow YAML hook (INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY)"
 	@echo "  install-bats          Install bats-core via Homebrew"
 	@echo ""
 	@echo "  --- Quality ---"
@@ -209,6 +220,7 @@ help:
 	@echo "  gate-refresh          Refresh fast phases; stream fallback test node IDs (GATE_REFRESH_VALIDATE_ONLY=0|1)"
 	@echo "  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM"
 	@echo "  gate-audit            Gate + coverage audit (85% per-file threshold)"
+	@echo "  coverage-files        Targeted branch coverage (COVERAGE_TESTFILES, COVERAGE_CONFIG, COVERAGE_REPORT, COVERAGE_AGGREGATE_MIN, COVERAGE_PER_FILE_MIN)"
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)"
@@ -467,7 +479,8 @@ help:
 	@echo "  fix-hooks-tmp           temp fix target"
 	@echo "  disk-guard            Check disk usage + clean caches if above threshold (default 95%)"
 	@echo "  disk-check            Check disk usage only, exit 1 if above threshold"
-	@echo "  check-disk            Pre-commit check: fails if /tmp/gludd-* >100MB or disk >90%"
+	@echo "  check-disk            Pre-commit disk guard (CHECK_DISK_VALIDATE_ONLY=0; set 1 for deterministic contract test)"
+	@echo "  check-disk-classification  Bounded JSON-lines proof of counted vs exempt /tmp/gludd-* roots"
 	@echo "  check-system-load     Read-only system load diagnostic (1m avg, CPU count, verdict)"
 	@echo "  disk                  Print disk usage + gludd footprint"
 	@echo "  disk-reclaim          Run bounded, heartbeat-emitting cache cleanup"
@@ -478,7 +491,8 @@ help:
 	@echo "  tmp-gludd-usage       Print largest /tmp/gludd-* entries sorted by size"
 	@echo "  tmp-gludd-worktree-usage  Print largest generated entries under /tmp/gludd-worktrees"
 	@echo "  tmp-gludd-clean-ci-shards  Remove stale generated CI shard scratch dirs"
-	@echo "  tmp-gludd-clean-ci-shards-now  Remove all inactive CI shard scratch dirs"
+	@echo "  tmp-gludd-clean-ci-shards-now  Remove inactive CI/gate shard roots (TMP_GLUDD_CLEAN_VALIDATE_ONLY=0; set 1 for contract test)"
+	@echo "  tmp-gludd-clean-orphan-worktrees-now  Validate or remove proven orphan roots (TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY=1; use 0 only after merge)"
 	@echo "  clean-worktree-caches  Remove generated venv/test/tool caches from worktrees"
 	@echo ""
 	@echo "  --- OpenCode Database Maintenance ---"
@@ -503,7 +517,7 @@ help:
 	@echo ""
 	@echo "  --- Other ---"
 	@echo "  smoke                 Quick daemon boot health check"
-	@echo "  clean                 Remove build artifacts"
+	@echo "  clean                 Remove ignored build artifacts while preserving tracked templates (CLEAN_VALIDATE_ONLY=0|1)"
 	@echo "  dist-clean            Remove distribution artifacts"
 	@echo "  gated-merge           flock-guarded multi-branch merge with manifest (BASE/BRANCHES/MERGE_STRATEGY/MANIFEST)"
 	@echo ""
@@ -692,8 +706,8 @@ lint-files:
 	@$(UV) run ruff check $$FILES
 
 lint-docstrings:
-	@if [ -z "$(DOCSTRING_FILES)" ]; then 		echo "Usage: make lint-docstrings DOCSTRING_FILES='src/general_ludd/module.py'"; 		exit 2; 	fi
-	@for file in $(DOCSTRING_FILES); do 		case "$$file" in 			src/general_ludd/*.py) ;; 			*) echo "ERROR: lint-docstrings only accepts tracked Python files under src/general_ludd: $$file"; exit 2 ;; 		esac; 		if [ ! -f "$$file" ]; then echo "ERROR: docstring source file not found: $$file"; exit 2; fi; 		if ! git ls-files --error-unmatch "$$file" >/dev/null 2>&1; then 			echo "ERROR: docstring source file is not tracked: $$file"; 			exit 2; 		fi; 	done
+	@if [ -z "$(DOCSTRING_FILES)" ]; then 		echo "Usage: make lint-docstrings DOCSTRING_FILES='src/general_ludd/module.py scripts/checker.py'"; 		exit 2; 	fi
+	@for file in $(DOCSTRING_FILES); do 		case "$$file" in 			src/general_ludd/*.py|scripts/*.py) ;; 			*) echo "ERROR: lint-docstrings only accepts tracked production Python files under src/general_ludd or scripts: $$file"; exit 2 ;; 		esac; 		if [ ! -f "$$file" ]; then echo "ERROR: docstring source file not found: $$file"; exit 2; fi; 		if ! git ls-files --error-unmatch "$$file" >/dev/null 2>&1; then 			echo "ERROR: docstring source file is not tracked: $$file"; 			exit 2; 		fi; 	done
 	@$(UV) run ruff check --select D --config pyproject.toml $(DOCSTRING_FILES)
 
 lint-markdown:
@@ -798,6 +812,36 @@ test-specific:
 test-files:
 	@if [ -z "$(TESTFILES)" ]; then echo "Usage: make test-files TESTFILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi
 	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
+
+coverage-files:
+	@if [ -z "$(COVERAGE_TESTFILES)" ]; then echo "Usage: make coverage-files COVERAGE_TESTFILES='tests/unit/test_a.py' COVERAGE_CONFIG=config/coverage.ini COVERAGE_REPORT=.gate-logs/coverage-files.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75"; exit 2; fi
+	@test -f "$(COVERAGE_CONFIG)" || { echo "coverage-files: missing config $(COVERAGE_CONFIG)"; exit 2; }
+	@mkdir -p "$$(dirname "$(COVERAGE_REPORT)")"
+	@BT="/tmp/gludd-coverage-files-$${ID:-$$$$}"; \
+		COVERAGE_RC="$$(cd "$$(dirname "$(COVERAGE_CONFIG)")" && pwd)/$$(basename "$(COVERAGE_CONFIG)")"; \
+		DATA_FILE="$(CURDIR)/.gate-logs/coverage-files-data"; \
+		rm -rf "$$BT"; \
+		echo "=== COVERAGE FILES: execute aggregate>=$(COVERAGE_AGGREGATE_MIN)% per-file>=$(COVERAGE_PER_FILE_MIN)% ==="; \
+		COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage erase --rcfile="$$COVERAGE_RC"; \
+		COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage run --rcfile="$$COVERAGE_RC" \
+			-m pytest $(COVERAGE_TESTFILES) -v --basetemp="$$BT"; \
+		RC=$$?; \
+		if [ "$$RC" -eq 0 ]; then \
+			COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage combine --rcfile="$$COVERAGE_RC"; \
+			COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage report --rcfile="$$COVERAGE_RC" --fail-under="$(COVERAGE_AGGREGATE_MIN)"; \
+			RC=$$?; \
+		fi; \
+		if [ "$$RC" -eq 0 ]; then \
+			COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage json --rcfile="$$COVERAGE_RC" -o "$(COVERAGE_REPORT)"; \
+			RC=$$?; \
+		fi; \
+		if [ "$$RC" -eq 0 ]; then \
+			echo "=== COVERAGE FILES: verify every measured file >=$(COVERAGE_PER_FILE_MIN)% ==="; \
+			$(UV) run python scripts/audit_coverage.py --json-file="$(COVERAGE_REPORT)" --threshold="$(COVERAGE_PER_FILE_MIN)" --source=.; \
+			RC=$$?; \
+		fi; \
+		rm -rf "$$BT"; \
+		exit "$$RC"
 
 _ci-replica-clean-tree:
 	@if python3 scripts/worktree_state_guard.py --assert-clean --claim-token >/tmp/gludd-ci-replica-clean-tree.txt 2>&1; then \
@@ -1379,7 +1423,12 @@ gate-fast: lint typecheck collect-check
 _check-windows-tracked-paths:
 	@BT="/tmp/gludd-windows-paths-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest tests/unit/test_cross_platform_binary.py::test_tracked_paths_are_windows_checkout_compatible -q -n 0 --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
-gate: _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
+_gate-run-lock-acquire:
+	@$(UV) run python scripts/gate_run_lock.py acquire "$(GATE_RUN_LOCK)" "$$PPID"
+
+.NOTPARALLEL: gate gate-refresh
+
+gate: _gate-run-lock-acquire _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -1402,6 +1451,8 @@ gate: _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-in
 	@printf "hook-runtime " >> .gate-status
 	@mkdir -p .gate-logs
 	@$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log)
+	@echo "=== GATE PHASE: opencode-e2e ==="
+	@printf "opencode-e2e " >> .gate-status
 	@$(MAKE) --no-print-directory test-opencode-e2e > .gate-logs/opencode-e2e.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/opencode-e2e.log)
 	@echo "=== GATE PHASE: verify-enforcement ==="
 	@printf "verify-enforcement " >> .gate-status
@@ -1428,15 +1479,18 @@ gate: _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-in
 	@#       on any exit, preventing orphan-holds-lock / tmp-leak after a kill.
 	@# run_gate.sh writes "PASS 0" or "FAIL non-zero-exit" to .gate-status itself
 	@# and touches .gate-failed on failure, so we only need to propagate its exit.
-	@bash scripts/run_gate.sh; EXIT=$$?; \
-	if [ "$$EXIT" -ne 0 ] && [ ! -f .gate-failed ]; then touch .gate-failed; fi; \
-	exit $$EXIT
+	@bash scripts/run_gate.sh || { EXIT=$$?; \
+		grep -q '^test .*FAIL' .gate-status 2>/dev/null || echo "FAIL non-zero-exit $$EXIT" >> .gate-status; \
+		touch .gate-failed; \
+		echo "[gate] test phase exited $$EXIT; completing failure attestation"; \
+	}
 	@echo "=== GATE PHASE: smoke ==="
 	@printf "smoke " >> .gate-status
 	@$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-smoke.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && echo "[gate] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-smoke.log)
 	@echo "---" >> .gate-status
 	@echo "epoch $$(date +%s)" >> .gate-status
 	@cat .gate-status
+	@$(UV) run python scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID" || touch .gate-failed
 	@if [ -f .gate-failed ]; then \
 		rm -f .gate-failed; \
 		echo "=== GATE: FAILED ==="; \
@@ -2376,7 +2430,14 @@ uv-cache-prune-status:
 
 # Pre-commit disk check: fail if /tmp/gludd-* >100MB or disk >90%.
 check-disk:
-	@uv run python scripts/check_disk_usage.py
+	@if [ "$(CHECK_DISK_VALIDATE_ONLY)" = "1" ]; then \
+		$(MAKE) --no-print-directory test-files TESTFILES=tests/unit/test_check_disk_usage.py PYTEST_ARGS='-q -n 0'; \
+	else \
+		$(SYSTEM_PYTHON) scripts/check_disk_usage.py; \
+	fi
+
+check-disk-classification:
+	@$(SYSTEM_PYTHON) scripts/check_disk_usage.py --classify
 
 # Read-only system load diagnostic (AGENTS.md System-Load Gate Before Dispatch Waves).
 # Prints 1m load avg, CPU count, and verdict (OK / WARN / CRITICAL). Exit 0 always.
@@ -2610,10 +2671,24 @@ tmp-gludd-worktree-usage:
 	@du -sh /tmp/gludd-worktrees /tmp/gludd-worktrees/* /tmp/gludd-worktrees/*/.venv /tmp/gludd-worktrees/*/.pytest_cache /tmp/gludd-worktrees/*/.mypy_cache /tmp/gludd-worktrees/*/.ruff_cache 2>/dev/null | sort -h | tail -40 || true
 
 tmp-gludd-clean-ci-shards:
-	@$(SYSTEM_PYTHON) scripts/clean_ci_shard_scratch.py
+	@$(SYSTEM_PYTHON) -m scripts.clean_ci_shard_scratch
 
 tmp-gludd-clean-ci-shards-now:
-	@$(SYSTEM_PYTHON) scripts/clean_ci_shard_scratch.py --min-age-seconds 0
+	@if [ "$(TMP_GLUDD_CLEAN_VALIDATE_ONLY)" = "1" ]; then \
+		$(MAKE) --no-print-directory test-files TESTFILES=tests/unit/test_clean_ci_shard_scratch.py PYTEST_ARGS='-q -n 0'; \
+	else \
+		$(SYSTEM_PYTHON) -m scripts.clean_ci_shard_scratch --min-age-seconds 0; \
+	fi
+
+tmp-gludd-clean-orphan-worktrees-now:
+	@if [ "$(TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY)" = "1" ]; then \
+		$(MAKE) --no-print-directory test-files TESTFILES=tests/unit/test_clean_ci_shard_scratch.py PYTEST_ARGS='-q -n 0'; \
+	elif [ "$(TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY)" = "0" ]; then \
+		$(SYSTEM_PYTHON) -m scripts.clean_ci_shard_scratch --worktree-orphans --delete-worktree-orphans; \
+	else \
+		echo "Usage: make tmp-gludd-clean-orphan-worktrees-now TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY=1 (use 0 only after merge)"; \
+		exit 2; \
+	fi
 
 # Remove regenerable .venv dirs from agent worktrees (source is preserved;
 # `uv sync` recreates on demand). The main disk hog when many worktree agents run.
@@ -3116,10 +3191,26 @@ test-opa-policies:
 smoke:
 	@$(UV) run python scripts/smoke_daemon.py
 
-install-hooks:
+install-workflow-hook:
+	@scripts/hooks/pre-commit-workflow-yaml
+	@if [ "$(INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY)" = "1" ]; then \
+		echo "install-workflow-hook: validate-only PASS"; \
+	else \
+		HOOK_DIR="$$(git rev-parse --git-common-dir)/hooks"; \
+		mkdir -p "$$HOOK_DIR"; \
+		install -m 0755 scripts/hooks/pre-commit-workflow-yaml "$$HOOK_DIR/pre-commit-workflow-yaml"; \
+		echo "installed $$HOOK_DIR/pre-commit-workflow-yaml"; \
+	fi
+
+install-hooks: install-workflow-hook
 	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit install --install-hooks
 	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit install --hook-type pre-push
-	@echo "pre-commit hooks installed: secrets-scan, ruff, collect-check (pre-commit), gate (pre-push)"
+	@HOOK_PATH=".git/hooks/pre-commit"; \
+		if [ ! -d .git ]; then HOOK_PATH="$$(git rev-parse --git-path hooks/pre-commit)"; fi; \
+		install -m 0755 "$$HOOK_PATH" "$${HOOK_PATH}.framework"; \
+		install -m 0755 scripts/hooks/pre-commit-lint "$$HOOK_PATH"; \
+		echo "installed scripts/hooks/pre-commit-lint at $$HOOK_PATH (framework hook: $${HOOK_PATH}.framework)"
+	@echo "pre-commit hooks installed: lint wrapper, secrets-scan, ruff, collect-check (pre-commit), gate (pre-push)"
 
 scan-conflicts:
 	@$(PYTHON) scripts/scan_conflicts.py
@@ -4110,7 +4201,7 @@ typecheck-all:
 # Usage: make typecheck-scope FILES='src/a.py src/b.py'
 typecheck-scope: ## Run strict mypy on explicit FILES without unrelated override noise.
 	@if [ -z "$(FILES)" ]; then echo "Usage: make typecheck-scope FILES='src/a.py src/b.py'"; exit 2; fi
-	@MYPYPATH=src $(UV) run mypy --explicit-package-bases --no-incremental --no-warn-unused-configs $(FILES)
+	@MYPYPATH=src:scripts $(UV) run mypy --explicit-package-bases --no-incremental --no-warn-unused-configs $(FILES)
 # Ansible/YAML lint (#36), fail-on-error (no `|| true`).
 yaml-lint:
 	@ANSIBLE_COLLECTIONS_PATH="$(CURDIR)/collections" $(UV) run ansible-lint playbooks collections/ansible_collections/general_ludd/agent/roles
@@ -4570,13 +4661,16 @@ dist-path-check:
 # the preserved test result is unavailable, verbose pytest node IDs stream live
 # and are also retained in .gate-logs/gate-refresh-test.log.
 .PHONY: gate-refresh _gate-refresh-body
-gate-refresh:
-	@if [ "$(GATE_REFRESH_VALIDATE_ONLY)" = "1" ]; then \
-		$(UV) run python scripts/stream_command.py --help > /dev/null; \
+gate-refresh: _gate-run-lock-acquire
+	@RC=0; \
+	if [ "$(GATE_REFRESH_VALIDATE_ONLY)" = "1" ]; then \
+		$(UV) run python scripts/stream_command.py --help > /dev/null || RC=$$?; \
 		echo "gate-refresh: validate-only PASS (live verbose node IDs + durable log configured)"; \
 	else \
-		$(UV) run python scripts/collection_lock.py --resource gate-refresh --run $(MAKE) --no-print-directory _gate-refresh-body; \
-	fi
+		$(UV) run python scripts/collection_lock.py --resource gate-refresh --run $(MAKE) --no-print-directory _gate-refresh-body || RC=$$?; \
+	fi; \
+	$(UV) run python scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID" || RC=1; \
+	exit $$RC
 
 _gate-refresh-body:
 	@if [ ! -f .gate-status ]; then \
@@ -5199,12 +5293,20 @@ test-and-commit: _commit-lock-acquire
 	@$(MAKE) dist
 
 clean:
-	@rm -rf .venv dist build *.egg-info src/*.egg-info .pytest_cache .mypy_cache .coverage coverage.xml htmlcov .ruff_cache
-	@rm -f Makefile.tmp
-	@find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
-	@git rm -r --cached '*__pycache__*' 2>/dev/null || true
-	@git rm --cached .coverage coverage.xml 2>/dev/null || true
-	@echo "Cleaned."
+	@if [ "$(CLEAN_VALIDATE_ONLY)" = "1" ]; then \
+		$(MAKE) --no-print-directory test-specific TESTFILE=tests/unit/test_packaging_templates_committed.py::test_clean_preserves_tracked_distribution_templates PYTEST_ARGS='-q -n 0'; \
+	elif [ "$(CLEAN_VALIDATE_ONLY)" = "0" ]; then \
+		rm -rf .venv build *.egg-info src/*.egg-info .pytest_cache .mypy_cache .coverage coverage.xml htmlcov .ruff_cache; \
+		git clean -fdX -- dist; \
+		rm -f Makefile.tmp; \
+		find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true; \
+		git rm -r --cached '*__pycache__*' 2>/dev/null || true; \
+		git rm --cached .coverage coverage.xml 2>/dev/null || true; \
+		echo "Cleaned."; \
+	else \
+		echo "Usage: make clean CLEAN_VALIDATE_ONLY=0|1"; \
+		exit 2; \
+	fi
 
 # disk-reclaim: compatibility alias for the bounded disk guard.  Keep the
 # cleanup implementation single-sourced so uv pruning always has a heartbeat,
@@ -5479,7 +5581,7 @@ check-make-target-contract:
 	@$(UV) run python scripts/check_make_target_contract.py
 
 active-work-status:
-	@$(UV) run python scripts/active_work_status.py
+	@UV=echo $(SYSTEM_PYTHON) scripts/active_work_status.py
 
 # --- Help target coverage: prevent hidden public Make targets ---
 check-make-help:
@@ -8263,6 +8365,7 @@ pipeline-health: pipeline-status
 	@true
 
 check-gate-fresh:
+	@$(UV) run python scripts/gate_fresh_check.py check .gate-status
 	@$(UV) run python scripts/gate_status_attestation.py verify .gate-status
 
 check-version-consistency:

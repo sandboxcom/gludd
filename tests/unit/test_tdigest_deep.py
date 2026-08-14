@@ -102,6 +102,11 @@ class TestTDigestMerge:
         assert q01 < 100.0
         assert q99 > 10900.0
         assert 450.0 < q50 < 10550.0
+        assert a.min_value == 0.0
+        assert a.max_value == 10999.0
+        assert a.centroids is not None
+        assert sum(c.weight for c in a.centroids) == 2000
+        assert all(left.mean <= right.mean for left, right in zip(a.centroids, a.centroids[1:], strict=False))
 
     def test_merge_different_compression_raises(self) -> None:
         a = TDigest(compression=100)
@@ -127,6 +132,29 @@ class TestTDigestMerge:
 
 
 class TestTDigestCompression:
+    def test_ordered_input_preserves_singleton_extremes_and_size_bound(self) -> None:
+        for compression in (10, 50, 200):
+            td = TDigest(compression=compression)
+            for value in range(10000):
+                td.add(float(value))
+
+            assert td.centroids is not None
+            assert td.centroids[0].weight == 1.0
+            assert td.centroids[-1].weight == 1.0
+            assert len(td.centroids) <= 2 * compression + 10
+
+    def test_higher_compression_never_reduces_ordered_resolution(self) -> None:
+        low = TDigest(compression=10)
+        high = TDigest(compression=200)
+        for value in range(10000):
+            low.add(float(value))
+            high.add(float(value))
+
+        assert low.centroids is not None
+        assert high.centroids is not None
+        assert len(high.centroids) >= len(low.centroids)
+        assert abs(high.quantile(0.99) - 9900.0) <= abs(low.quantile(0.99) - 9900.0)
+
     def test_low_compression_loose_bounds(self) -> None:
         td = TDigest(compression=10)
         for v in range(10000):

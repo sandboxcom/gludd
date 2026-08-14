@@ -27,7 +27,7 @@ BLOCKED_PHRASES = [
 ]
 
 _OPENCODE_MISSING = shutil.which(OPENCODE_BIN) is None
-pytestmark = pytest.mark.xdist_group("enforcement-shared-state")
+pytestmark = pytest.mark.xdist_group("opencode-live")
 
 
 @pytest.fixture

@@ -47,15 +47,8 @@ _P384 = {
     "n": 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFC7634D81F4372DDF581A0DB248B0A77AECEC196ACCC52973,
 }
 
+_P521_FIELD_MODULUS: Final[int] = (1 << 521) - 1
 _P521_HEX = {
-    "p": (
-        "0x01FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
-        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
-    ),
-    "a": (
-        "0x01FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
-        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFC"
-    ),
     "b": (
         "0x0051953EB9618E1C9A1F929A21A0B68540EEA2DA725B99B315F3B8B489918EF10"
         "9E156193951EC7E937B1652C0BD3BB1BF073573DF883D2C34F1EF451FD46B503F00"
@@ -73,7 +66,11 @@ _P521_HEX = {
         "FA51868783BF2F966B7FCC0148F709A5D03BB5C9B8899C47AEBB6FB71E91386409"
     ),
 }
-_P521 = {k: int(v, 16) for k, v in _P521_HEX.items()}
+_P521: dict[str, int] = {
+    "p": _P521_FIELD_MODULUS,
+    "a": _P521_FIELD_MODULUS - 3,
+    **{k: int(v, 16) for k, v in _P521_HEX.items()},
+}
 
 _GROUP_PARAMS: Final[dict[str, dict[str, int]]] = {
     "P-256": _P256,
@@ -96,14 +93,17 @@ class SPAKE2PlusGroup:
 
     @staticmethod
     def P256() -> SPAKE2PlusGroup:
+        """Return the standard P-256 group configuration."""
         return SPAKE2PlusGroup(name="P-256", hash_name="sha256", point_bytes=65, scalar_bytes=32)
 
     @staticmethod
     def P384() -> SPAKE2PlusGroup:
+        """Return the standard P-384 group configuration."""
         return SPAKE2PlusGroup(name="P-384", hash_name="sha384", point_bytes=97, scalar_bytes=48)
 
     @staticmethod
     def P521() -> SPAKE2PlusGroup:
+        """Return the standard P-521 group configuration."""
         return SPAKE2PlusGroup(name="P-521", hash_name="sha512", point_bytes=133, scalar_bytes=66)
 
 
@@ -211,24 +211,23 @@ def _point_to_bytes(x: int, y: int, byte_len: int) -> bytes:
     return b"\x04" + x.to_bytes(byte_len, "big") + y.to_bytes(byte_len, "big")
 
 
+_HASH_TO_POINT_MAX_ATTEMPTS: Final[int] = 256
+
+
 def _hash_to_point(data: bytes, params: dict[str, int], byte_len: int) -> tuple[int, int]:
-    """Try-and-increment hash-to-curve."""
+    """Map a digest to a curve point with a bounded try-and-increment search."""
     p = params["p"]
     a = params["a"]
     b = params["b"]
-    params["gx"]
-    params["gy"]
-    params["n"]
 
-    ctr = 0
-    while True:
+    for ctr in range(_HASH_TO_POINT_MAX_ATTEMPTS):
         h = hashlib.sha256(data + ctr.to_bytes(4, "big")).digest()
         x = int.from_bytes(h[:byte_len], "big") % p
         rhs = (pow(x, 3, p) + a * x + b) % p
         y = pow(rhs, (p + 1) // 4, p)
         if (y * y) % p == rhs:
             return (x, y % p)
-        ctr += 1
+    raise PAKEError(f"hash-to-point mapping failed after {_HASH_TO_POINT_MAX_ATTEMPTS} attempts")
 
 
 # ── SPAKE2+ protocol classes ─────────────────────────────────────────────
@@ -245,6 +244,7 @@ class SPAKE2PlusServer:
         client_id: bytes,
         context: bytes,
     ) -> None:
+        """Initialize the server with peer identities and shared context."""
         if not server_id:
             raise PAKEError("server_id must not be empty")
         if not client_id:
@@ -281,6 +281,7 @@ class SPAKE2PlusServer:
         self._w1 = w1
 
     def start(self) -> bytes:
+        """Create and return the server's first protocol message."""
         self._derive_w0_w1_m_n()
         assert self._M is not None
 
@@ -300,6 +301,7 @@ class SPAKE2PlusServer:
         return self._X_bytes
 
     def finish(self, client_msg: bytes) -> bytes:
+        """Validate the client message and derive the shared secret."""
         if not self._started or self._x is None or self._X_bytes is None or self._N is None:
             raise PAKEError("call start() before finish()")
         assert self._N is not None and self._w1 is not None
@@ -345,6 +347,7 @@ class SPAKE2PlusClient:
         server_id: bytes,
         context: bytes,
     ) -> None:
+        """Initialize the client with peer identities and shared context."""
         if not client_id:
             raise PAKEError("client_id must not be empty")
         if not server_id:
@@ -374,6 +377,7 @@ class SPAKE2PlusClient:
         return w0, w1, M, N
 
     def finish(self, server_msg: bytes) -> bytes:
+        """Validate the server message and return the client response."""
         w0, w1, M, N = self._derive_w0_w1_m_n()
 
         p = self._params["p"]
@@ -415,6 +419,7 @@ class SPAKE2PlusClient:
         return self._Y_bytes
 
     def get_shared_secret(self) -> bytes:
+        """Return the completed exchange's shared secret."""
         if self._shared is None:
             raise PAKEError("key exchange not complete")
         return self._shared
@@ -462,10 +467,13 @@ _HASH_FOR_CURVE: Final[dict[str, str]] = {
 
 @dataclass
 class OPAQUEConfig:
+    """Normalize an OPAQUE curve and derive its non-user-selectable hash."""
+
     curve: str = "P-256"
-    hash_name: str = field(init=False)
+    hash_name: str = field(init=False, default="sha256")
 
     def __post_init__(self) -> None:
+        """Normalize the curve and derive its approved hash algorithm."""
         upper = self.curve.upper()
         if upper in ("P-256", "P-384", "P-521"):
             self.curve = upper
@@ -507,6 +515,7 @@ class OPAQUERegistration:
         user_id: bytes,
         server_id: bytes,
     ) -> dict[str, Any]:
+        """Create an OPAQUE verifier record for one user and server."""
         oprf_seed = os.urandom(32)
 
         if config.curve == "ed25519":
@@ -551,6 +560,7 @@ class OPAQUEClient:
         user_id: bytes,
         server_id: bytes,
     ) -> None:
+        """Initialize a client login exchange."""
         self._config = config
         self._password = password
         self._user_id = user_id
@@ -559,10 +569,12 @@ class OPAQUEClient:
         self._started = False
 
     def start(self) -> bytes:
+        """Start the exchange and return the encoded user identity."""
         self._started = True
         return self._user_id
 
     def finish(self, server_msg: bytes) -> bytes:
+        """Verify the server record and return the client public key."""
         if not self._started:
             raise PAKEError("call start() before finish()")
 
@@ -614,6 +626,7 @@ class OPAQUEClient:
         return client_bytes
 
     def get_shared_secret(self) -> bytes:
+        """Return the completed login exchange's shared secret."""
         if self._shared is None:
             raise PAKEError("key exchange not complete")
         return self._shared
@@ -623,12 +636,14 @@ class OPAQUEServer:
     """OPAQUE server side — responds to client login with stored record."""
 
     def __init__(self, config: OPAQUEConfig, record: dict[str, Any]) -> None:
+        """Initialize a server login exchange from a verifier record."""
         self._config = config
         self._record = record
         self._shared: bytes | None = None
         self._started = False
 
     def start(self, client_msg: bytes) -> bytes:
+        """Start the exchange and return the encoded verifier material."""
         self._started = True
         oprf_seed: bytes = self._record["oprf_seed"]
         server_pub_bytes: bytes = self._record["server_public_key"]
@@ -637,6 +652,7 @@ class OPAQUEServer:
         return _encode_three_fields(oprf_seed, server_pub_bytes, envelope)
 
     def finish(self, client_msg: bytes) -> bytes:
+        """Process the client public key and derive the shared secret."""
         if not self._started:
             raise PAKEError("call start() before finish()")
 
@@ -659,6 +675,7 @@ class OPAQUEServer:
         return self._shared
 
     def get_shared_secret(self) -> bytes:
+        """Return the completed login exchange's shared secret."""
         if self._shared is None:
             raise PAKEError("key exchange not complete")
         return self._shared

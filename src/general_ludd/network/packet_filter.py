@@ -17,6 +17,8 @@ import re
 
 
 class Op(enum.StrEnum):
+    """Comparison and Boolean operators represented in the filter AST."""
+
     EQ = "=="
     NE = "!="
     AND = "and"
@@ -98,7 +100,7 @@ def _tokenize(expr: str) -> list[str]:
 
 
 class ParseError(ValueError):
-    pass
+    """Raised when a packet-filter expression cannot be parsed safely."""
 
 
 def _parse_expr(tokens: list[str], pos: int) -> tuple[ASTNode, int]:
@@ -207,6 +209,18 @@ def _parse_primary(tokens: list[str], pos: int) -> tuple[ASTNode, int]:
 
 
 def parse_bpf(expr: str) -> ASTNode:
+    """Parse a supported BPF expression into a typed syntax tree.
+
+    Args:
+        expr: Filter expression using the supported BPF subset.
+
+    Returns:
+        The root of the parsed filter tree.
+
+    Raises:
+        ParseError: If the expression is empty, malformed, or contains an
+            unsupported token.
+    """
     tokens = _tokenize(expr)
     if not tokens:
         raise ParseError("empty expression")
@@ -231,6 +245,7 @@ def _resolve_value(val: str, packet: dict[str, str | int]) -> str | int:
 
 
 def match_bpf_inner(node: ASTNode, packet: dict[str, str | int]) -> bool:
+    """Recursively evaluate a filter node against normalized packet metadata."""
     if isinstance(node, BoolNode):
         return node.value
     if isinstance(node, MatchNode):
@@ -261,6 +276,7 @@ def match_bpf_inner(node: ASTNode, packet: dict[str, str | int]) -> bool:
 
 
 def match_bpf(node: ASTNode, packet: dict[str, str | int]) -> bool:
+    """Return whether packet metadata satisfies a parsed BPF filter."""
     return match_bpf_inner(node, packet)
 
 
@@ -280,6 +296,7 @@ def _is_protocol_match(node: ASTNode, proto: str) -> bool:
 
 
 def optimize_bpf(node: ASTNode) -> ASTNode:
+    """Return an equivalent filter tree simplified by Boolean identities."""
     if isinstance(node, ValueNode):
         return node
     if isinstance(node, MatchNode):

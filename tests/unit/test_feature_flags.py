@@ -289,7 +289,9 @@ class TestTargetingRules:
             )
         )
         assert evaluator.is_enabled("legacy", {"tenant": "old_farm"})
-        assert evaluator.is_enabled("legacy", {"tenant": "new_cloud"})
+        excluded = evaluator.evaluate("legacy", {"tenant": "new_cloud"})
+        assert excluded.enabled is False
+        assert excluded.reason == "no targeting rules matched"
 
     def test_targeting_enables_override_default_false(self, evaluator: FlagEvaluator) -> None:
         evaluator.register(

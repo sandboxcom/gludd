@@ -112,6 +112,41 @@ All three fix vectors confirmed present and active in
 | `handleMessageBoundary()` via text.complete | `enforce-multitask.ts:194, :538, :560` | Canonical boundary signal at `text.complete` end — resets `thisMessageDispatches`. Time-gap heuristic kept as FALLBACK only, gated behind flag to prevent double-processing (`:270-287`). |
 | Under-floor hard block (2026-07-15) | `enforce-multitask.ts:421-422` | Block fires IMMEDIATELY when <10 dispatches in current message — does NOT wait for message boundary. Closes "dispatch 1 then grind" bypass. |
 
+### Practitioner evidence: explicit turn boundaries
+
+OpenCode users have reported that existing hooks do not provide a reliable signal
+for the end of an assistant turn, motivating a dedicated turn-completed event
+([anomalyco/opencode#23503](https://github.com/anomalyco/opencode/issues/23503)).
+Gludd therefore treats `experimental.text.complete` as its canonical available
+message boundary and pins the user-visible block kind for a zero-dispatch wave as
+`ZERO-DISPATCH TEXT BLOCKED`; the runtime test must assert that current contract,
+not the retired `MUST DISPATCH` wording.
+
+### Practitioner evidence: executable, exact assertions
+
+A long-lived [pytest practitioner question](https://stackoverflow.com/questions/48419754/can-pytest-be-made-to-fail-if-nothing-is-asserted)
+describes a failing test that silently passed because its final assertion was
+forgotten. The broader
+[unit-testing discussion](https://stackoverflow.com/questions/137399/unit-testing-without-assertions)
+distinguishes intentional smoke tests from accidental no-assertion tests and
+recommends making that intent explicit. The hook-runtime harness therefore
+executes every constructed TypeScript probe and asserts its observable result;
+merely assigning a snippet is not a behavioral test.
+
+The return type is part of the hook contract. The
+[exact-boolean discussion](https://stackoverflow.com/questions/62117162/what-is-the-difference-between-assertis-and-asserttrue-in-unittest-module-when)
+shows why a truthiness assertion admits values such as `1` or `42`, while
+identity with `True` verifies an actual Boolean. Hook results decoded from JSON
+therefore use `is True` and `is False` for Boolean fields, explicit equality
+for structured values, and `is None` for the allowed no-result path. Pytest's
+long-running [assertion-pass hook request](https://github.com/pytest-dev/pytest/issues/3457)
+also demonstrates the operational value of identifiable assertions in reports.
+
+This maintenance contract is test-only: formatting embedded TypeScript, replacing
+manual cleanup with bounded exception suppression, and clarifying assertions
+must retain the same collected runtime outcomes. It changes no loaded plugin, so
+zero-downtime operation needs no restart or state migration.
+
 ### Runtime verification
 
 ```

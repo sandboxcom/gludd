@@ -12,6 +12,7 @@ Exit non-zero if >10% of specs are marked INEFFECTIVE.
 import re
 import sys
 from pathlib import Path
+from typing import TypedDict
 
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
@@ -25,13 +26,22 @@ BEHAVIOR_RE = re.compile(r"\*\*Behavior:\*\*\s+(.+)$")
 MAX_INEFFECTIVE_PCT = 10
 
 
-def parse_specs() -> list[dict]:
+class SpecRecord(TypedDict):
+    """Structured behavioral-spec fields consumed by the audit."""
+
+    id: str
+    title: str
+    enforcement: str
+    behavior: str
+
+
+def parse_specs() -> list[SpecRecord]:
     if not SPECS_FILE.exists():
         return []
 
     content = SPECS_FILE.read_text()
-    specs: list[dict] = []
-    current: dict | None = None
+    specs: list[SpecRecord] = []
+    current: SpecRecord | None = None
 
     for line in content.split("\n"):
         m = SPEC_RE.match(line)
@@ -58,10 +68,9 @@ def parse_specs() -> list[dict]:
     return specs
 
 
-def check_recurrences(spec: dict) -> bool:
+def check_recurrences(spec: SpecRecord) -> bool:
     """Return True if the spec's described behavior likely recurred after spec creation."""
-    keywords = spec.get("title", "").lower().split("-")
-    behavior_text = spec.get("behavior", "").lower()
+    keywords = spec["title"].lower().split("-")
 
     # Check BUGS.md for incidents matching this spec's keywords
     if BUGS_FILE.exists():
@@ -95,14 +104,18 @@ def main() -> int:
     pct = 100.0 * len(ineffective) / max(len(specs), 1)
     if pct > MAX_INEFFECTIVE_PCT:
         print(
-            f"audit-spec-effectiveness: {len(ineffective)}/{len(specs)} ({pct:.1f}%) INEFFECTIVE — exceeds {MAX_INEFFECTIVE_PCT}% threshold"
+            "audit-spec-effectiveness: "
+            f"{len(ineffective)}/{len(specs)} ({pct:.1f}%) INEFFECTIVE — "
+            f"exceeds {MAX_INEFFECTIVE_PCT}% threshold"
         )
         for s in ineffective[:10]:
             print(s)
         return 1
 
     print(
-        f"audit-spec-effectiveness: {len(ineffective)}/{len(specs)} ({pct:.1f}%) ineffective — within {MAX_INEFFECTIVE_PCT}% threshold"
+        "audit-spec-effectiveness: "
+        f"{len(ineffective)}/{len(specs)} ({pct:.1f}%) ineffective — "
+        f"within {MAX_INEFFECTIVE_PCT}% threshold"
     )
     return 0
 

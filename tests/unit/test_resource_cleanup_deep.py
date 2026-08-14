@@ -29,6 +29,7 @@ import pytest
 
 from general_ludd.db.session import _closed_engines, _engine_closed, close_engine
 from general_ludd.pipeline.controller import PipelineController, _suppress_cancel
+from general_ludd.pipeline.state import CompletedUnit, MergeOutcome
 from general_ludd.sandbox.cleanup import CleanupManager
 
 # ============================================================================
@@ -506,11 +507,14 @@ class TestPipelineControllerLifecycle:
 
 
 class TestWeakrefLeakDetection:
-    def test_weakref_dies_when_object_out_of_scope(self) -> None:
+    @pytest.mark.parametrize("_worker_probe", ("first", "second"))
+    def test_weakref_dies_when_object_out_of_scope(
+        self, _worker_probe: str
+    ) -> None:
         class _Tracked:
             pass
 
-        def _create() -> weakref.ref:
+        def _create() -> weakref.ReferenceType[_Tracked]:
             obj = _Tracked()
             return weakref.ref(obj)
 
@@ -522,13 +526,29 @@ class TestWeakrefLeakDetection:
         class _Tracked:
             pass
 
-        held: list[object] = []
-        obj = _Tracked()
-        ref = weakref.ref(obj)
-        held.append(obj)
+        def _create_owned() -> tuple[
+            weakref.ReferenceType[_Tracked], list[_Tracked]
+        ]:
+            obj = _Tracked()
+            held = [obj]
+            return weakref.ref(obj), held
+
+        ref, held = _create_owned()
         gc.collect()
         assert ref() is not None
         held.clear()
+        gc.collect()
+        assert ref() is None
+
+    def test_gc_preserves_an_explicit_local_owner(self) -> None:
+        class _Tracked:
+            pass
+
+        obj = _Tracked()
+        ref = weakref.ref(obj)
+        gc.collect()
+        assert ref() is obj
+        del obj
         gc.collect()
         assert ref() is None
 
@@ -538,13 +558,14 @@ class TestWeakrefLeakDetection:
                 self.name = name
                 self.ref: _Node | None = None
 
-        refs: list[weakref.ref] = []
-        for i in range(10):
-            a = _Node(f"a{i}")
-            b = _Node(f"b{i}")
+        def _create_cycle(index: int) -> weakref.ReferenceType[_Node]:
+            a = _Node(f"a{index}")
+            b = _Node(f"b{index}")
             a.ref = b
             b.ref = a
-            refs.append(weakref.ref(a))
+            return weakref.ref(a)
+
+        refs = [_create_cycle(i) for i in range(10)]
         gc.collect()
         for r in refs:
             assert r() is None
@@ -695,17 +716,16 @@ async def _noop() -> None:
     pass
 
 
-async def _noop_dispatch(_backlog: Any) -> None:
+async def _noop_dispatch(_backlog: str) -> None:
     pass
 
 
-@contextlib.contextmanager
-def _noop_merge(_unit: Any) -> Generator[None, None, None]:
-    yield
+async def _noop_merge(unit: CompletedUnit) -> MergeOutcome:
+    return MergeOutcome(unit_id=unit.unit_id, merged=True)
 
 
-async def _noop_gate(_merged: Any) -> Any:
-    return {"passed": True}
+async def _noop_gate() -> bool:
+    return True
 
 
 def _fake_config(capacity: int = 4) -> Any:

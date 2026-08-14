@@ -64,6 +64,7 @@ class TokenReviver(Protocol):
     """Protocol for STS token renewal providers."""
 
     async def revive(self, task_id: str) -> TokenCreds:
+        """Return fresh credentials for the task being resumed."""
         ...
 
 
@@ -220,8 +221,12 @@ class HibernationError(RuntimeError):
     """Raised when a snapshot cannot be safely written or restored."""
 
 
-class IntegrityError(HibernationError):
+class HibernationIntegrityError(HibernationError):
     """Raised when a snapshot fails its checksum (tampered or corrupted)."""
+
+
+# Compatibility alias retained for callers of the pre-beta public contract.
+IntegrityError = HibernationIntegrityError
 
 
 class DispatchState(BaseModel):
@@ -322,6 +327,7 @@ class HibernationStore:
         base_dir: str | Path | None = None,
         mac_key: bytes | None = None,
     ) -> None:
+        """Initialize an owner-only snapshot store with a signing key."""
         self._base = Path(
             base_dir if base_dir is not None else default_hibernation_dir()
         ).resolve()
@@ -332,6 +338,7 @@ class HibernationStore:
 
     @property
     def base_dir(self) -> Path:
+        """Return the resolved directory that contains snapshot files."""
         return self._base
 
     def _path_for(self, task_id: str) -> Path:
@@ -447,14 +454,17 @@ class HibernationStore:
     async def dehydrate_async(
         self, snap: AgentEnvironmentSnapshot
     ) -> HibernationHandle:
+        """Serialize a snapshot without blocking the event loop."""
         return await asyncio.to_thread(self.dehydrate, snap)
 
     async def hydrate_async(
         self, handle: HibernationHandle
     ) -> AgentEnvironmentSnapshot:
+        """Restore a snapshot without blocking the event loop."""
         return await asyncio.to_thread(self.hydrate, handle)
 
     async def discard_async(self, handle: HibernationHandle) -> None:
+        """Discard a snapshot without blocking the event loop."""
         await asyncio.to_thread(self.discard, handle)
 
 
@@ -479,6 +489,7 @@ class ParkedEnv:
         handle: HibernationHandle | None,
         token_reviver: TokenReviver | None = None,
     ) -> None:
+        """Track either a resident snapshot or its dehydrated handle."""
         self._store = store
         # When dehydrated we deliberately drop the strong reference to the
         # original so it can be garbage-collected — that is the whole point.
@@ -491,10 +502,12 @@ class ParkedEnv:
 
     @property
     def dehydrated(self) -> bool:
+        """Return whether the environment currently resides on disk."""
         return self._handle is not None
 
     @property
     def handle(self) -> HibernationHandle | None:
+        """Return the on-disk snapshot handle, if one exists."""
         return self._handle
 
     async def _resume(self) -> None:
@@ -546,6 +559,7 @@ class HibernationController:
         clock: Callable[[], float] | None = None,
         token_reviver: TokenReviver | None = None,
     ) -> None:
+        """Configure thresholds and optional token renewal for parked agents."""
         self._store = store
         self._min_depth = min_depth
         self._min_context_messages = min_context_messages
@@ -572,6 +586,7 @@ class HibernationController:
         return False
 
     def should_dehydrate(self, snap: AgentEnvironmentSnapshot) -> bool:
+        """Return whether a snapshot meets the depth and context thresholds."""
         return (
             snap.depth >= self._min_depth
             and len(snap.messages) >= self._min_context_messages

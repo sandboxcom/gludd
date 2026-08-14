@@ -27,9 +27,6 @@ ALLOWED_PATH_PREFIXES = frozenset(
         "/Users/shawnwilson/.cache/**",
     }
 )
-PERMISSION_TOOLS = {"read", "write", "edit", "glob", "grep", "bash"}
-
-
 def _load_user_config():
     return json.loads(USER_CONFIG.read_text())
 
@@ -199,20 +196,26 @@ class TestProjectPermissionRules:
         assert bash_perm["*"] == "deny"
         assert "make *" in bash_perm
 
-    def test_read_write_have_star_deny_first(self):
+    def test_global_file_tools_use_supported_permission_schema(self):
         cfg = _load_project_config()
-        for tool in PERMISSION_TOOLS - {"bash"}:
-            perm = cfg["permission"][tool]
-            keys = list(perm.keys())
-            assert keys[0] == "*", f"{tool} must have '*: deny' first, got '{keys[0]}'"
-            assert perm["*"] == "deny", f"{tool} '*: deny' missing"
+        permission = cfg["permission"]
 
-    def test_all_permission_tools_have_gludd_allow(self):
+        assert permission["edit"] == "allow"
+        assert permission["glob"] == "allow"
+        assert permission["grep"] == "allow"
+        assert "write" not in permission, "OpenCode's global edit permission covers file writes"
+
+    def test_read_permission_preserves_fail_closed_env_rules(self):
         cfg = _load_project_config()
-        for tool in PERMISSION_TOOLS - {"bash"}:
-            perm = cfg["permission"][tool]
-            assert "/Users/shawnwilson/gludd/**" in perm, f"{tool} missing gludd/** allow"
-            assert perm["/Users/shawnwilson/gludd/**"] == "allow"
+        read_permission = cfg["permission"]["read"]
+
+        assert list(read_permission) == ["*", "*.env", "*.env.*", "*.env.example"]
+        assert read_permission == {
+            "*": "allow",
+            "*.env": "deny",
+            "*.env.*": "deny",
+            "*.env.example": "allow",
+        }
 
     def test_external_directory_has_no_gludd(self):
         cfg = _load_project_config()

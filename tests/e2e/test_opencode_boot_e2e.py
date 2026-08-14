@@ -43,6 +43,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.xdist_group("opencode-live")
+
 ROOT = Path(__file__).resolve().parents[2]
 OPENCODE_JSON = ROOT / "opencode.json"
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"

@@ -31,8 +31,9 @@ def _hold_repo_lock_then_record(
     hold_secs: float,
 ) -> None:
     with locking.git_repo_lock(repo_path, timeout=10.0, stale_after=60.0):
-        execution_order.append(name)
+        execution_order.append(f"{name}:enter")
         time.sleep(hold_secs)
+        execution_order.append(f"{name}:exit")
 
 
 def _acquire_and_signal(
@@ -173,14 +174,14 @@ class TestDeadlockDetection:
             ):
                 assert locking._file_lock_depth.get(key, 0) > 0
 
-    def test_stale_lock_is_broken(self) -> None:
+    def test_stale_lock_metadata_preserves_mutex_inode(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             lock_path = os.path.join(tmpdir, "test.lock")
             with open(lock_path, "w") as f:
                 f.write("")
             os.utime(lock_path, (0.0, 0.0))
             locking._break_if_stale(lock_path, stale_after=1.0)
-            assert not os.path.exists(lock_path)
+            assert os.path.exists(lock_path)
 
     def test_fresh_lock_not_broken(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -511,7 +512,16 @@ class TestCrossProcess:
                     p2.join(timeout=10)
                     assert p1.exitcode == 0
                     assert p2.exitcode == 0
-                    assert list(execution_order) == ["first", "second"]
+                    events = list(execution_order)
+                    assert sorted(events) == [
+                        "first:enter",
+                        "first:exit",
+                        "second:enter",
+                        "second:exit",
+                    ]
+                    for enter, leave in zip(events[::2], events[1::2], strict=True):
+                        assert enter.endswith(":enter")
+                        assert leave == enter.replace(":enter", ":exit")
             finally:
                 sp.run(
                     ["git", "worktree", "remove", "--force", wt_path],

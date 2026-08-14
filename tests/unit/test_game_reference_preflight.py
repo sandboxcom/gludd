@@ -116,7 +116,10 @@ def test_runtime_import_smoke_rejects_duplicate_native_classes(
             "and /opt/homebrew/libSDL2. One of the duplicates must be removed."
         ),
     )
-    monkeypatch.setattr(game_reference_preflight.subprocess, "run", lambda *args, **kwargs: completed)
+    monkeypatch.setattr(
+        "scripts.game_reference_preflight.subprocess.run",
+        lambda *args, **kwargs: completed,
+    )
 
     with pytest.raises(RuntimeError, match="duplicate native runtime"):
         game_reference_preflight._check_runtime_imports()
@@ -131,7 +134,10 @@ def test_runtime_import_smoke_accepts_warning_free_process(
         stdout="",
         stderr="",
     )
-    monkeypatch.setattr(game_reference_preflight.subprocess, "run", lambda *args, **kwargs: completed)
+    monkeypatch.setattr(
+        "scripts.game_reference_preflight.subprocess.run",
+        lambda *args, **kwargs: completed,
+    )
 
     game_reference_preflight._check_runtime_imports()
 

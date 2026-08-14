@@ -22,13 +22,40 @@ import pathlib
 import re
 from typing import Any
 
-import pytest
-
 TESTS_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 SKIP_COUNT_SNAPSHOT_FILE = pathlib.Path(__file__).resolve().parent / ".e9_skip_counts.json"
 
 STALENESS_THRESHOLD_DAYS = 90
+
+DOCUMENTED_REASON_FRAGMENTS = (
+    "not installed",
+    "not available",
+    "absent",
+    "not set",
+    "not found",
+    "missing",
+    "deprecated",
+    "not supported",
+    "not generated",
+    "not populated",
+    "not initialized",
+    "not enforced",
+    "credentials required",
+    "required for live",
+    "set gludd",
+    "set opencode",
+    "offline",
+    "not yet wired",
+    "not yet created",
+    "not yet built",
+    "not inspectable",
+    "known missing",
+)
+
+DOCUMENTED_REASON_REFERENCE = re.compile(
+    r"\b(?:[A-Z][A-Z0-9]*-[A-Z][A-Z0-9]*-\d+|[A-Z]{1,4}\d+(?:\.\d+)*)\b"
+)
 
 FORBIDDEN_SKIP_PATTERNS = [
     re.compile(r"pytest\.skip\s*\(\s*f['\"]Optional:", re.IGNORECASE),
@@ -50,6 +77,11 @@ def _iter_python_files(root: pathlib.Path) -> list[pathlib.Path]:
 
 def _ast_skip_info(file_path: pathlib.Path) -> dict[str, Any]:
     tree = ast.parse(file_path.read_text(), filename=str(file_path))
+    parents = {
+        child: parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
     calls: list[dict[str, Any]] = []
     xfails: list[dict[str, Any]] = []
     bare_marks: list[dict[str, Any]] = []
@@ -67,12 +99,12 @@ def _ast_skip_info(file_path: pathlib.Path) -> dict[str, Any]:
             if func_name == "skip" and obj_name in ("pytest",):
                 args = []
                 for arg in node.args:
-                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                        args.append(arg.value)
+                    args.extend(_string_fragments(arg))
                 calls.append({
                     "line": node.lineno,
                     "col": node.col_offset,
                     "args": args,
+                    "guarded": _has_control_flow_guard(node, parents),
                     "keyword": {
                         kw.arg: ast.literal_eval(kw.value) if isinstance(kw.value, ast.Constant) else None
                         for kw in node.keywords
@@ -83,7 +115,9 @@ def _ast_skip_info(file_path: pathlib.Path) -> dict[str, Any]:
                 strict_val = None
                 for kw in node.keywords:
                     if kw.arg == "reason" and isinstance(kw.value, ast.Constant):
-                        reason = kw.value.value
+                        value = kw.value.value
+                        if isinstance(value, str):
+                            reason = value
                     if kw.arg == "strict" and isinstance(kw.value, ast.Constant):
                         strict_val = kw.value.value
                 xfails.append({
@@ -101,7 +135,9 @@ def _ast_skip_info(file_path: pathlib.Path) -> dict[str, Any]:
                     reason = ""
                     for kw in dec.keywords:
                         if kw.arg == "reason" and isinstance(kw.value, ast.Constant):
-                            reason = kw.value.value
+                            value = kw.value.value
+                            if isinstance(value, str):
+                                reason = value
                     bare_marks.append({
                         "line": node.lineno,
                         "func": node.name,
@@ -111,10 +147,98 @@ def _ast_skip_info(file_path: pathlib.Path) -> dict[str, Any]:
     return {"skips": calls, "xfails": xfails, "bare_skips": bare_marks}
 
 
+def _string_fragments(node: ast.AST) -> list[str]:
+    """Extract static text fragments from literals, f-strings, and concatenation."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value]
+    if isinstance(node, ast.JoinedStr):
+        return [
+            fragment
+            for value in node.values
+            for fragment in _string_fragments(value)
+        ]
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _string_fragments(node.left) + _string_fragments(node.right)
+    return []
+
+
+def _has_control_flow_guard(
+    node: ast.AST,
+    parents: dict[ast.AST, ast.AST],
+) -> bool:
+    """Return whether a skip is nested under explicit conditional control flow."""
+    parent = parents.get(node)
+    while parent is not None:
+        if isinstance(
+            parent,
+            (
+                ast.If,
+                ast.For,
+                ast.AsyncFor,
+                ast.While,
+                ast.Match,
+                ast.Try,
+                ast.TryStar,
+                ast.ExceptHandler,
+            ),
+        ):
+            return True
+        parent = parents.get(parent)
+
+    statement: ast.AST = node
+    while not isinstance(statement, ast.stmt):
+        next_parent = parents.get(statement)
+        if next_parent is None:
+            return False
+        statement = next_parent
+    container = parents.get(statement)
+    body = getattr(container, "body", ())
+    if not isinstance(body, list) or statement not in body:
+        return False
+    return any(
+        _statement_has_terminating_path(earlier)
+        for earlier in body[: body.index(statement)]
+    )
+
+
+def _block_terminates(statements: list[ast.stmt]) -> bool:
+    """Return whether a branch ends the current execution path."""
+    return bool(statements) and isinstance(
+        statements[-1],
+        (ast.Return, ast.Raise, ast.Break, ast.Continue),
+    )
+
+
+def _statement_has_terminating_path(statement: ast.stmt) -> bool:
+    """Return whether an earlier branch conditionally exits the current scope."""
+    if isinstance(statement, ast.If):
+        return _block_terminates(statement.body) or _block_terminates(
+            statement.orelse
+        )
+    if isinstance(statement, (ast.Try, ast.TryStar)):
+        blocks = [
+            statement.body,
+            statement.orelse,
+            *(handler.body for handler in statement.handlers),
+        ]
+        return any(_block_terminates(block) for block in blocks)
+    return False
+
+
+def _has_documented_reason(args: list[str]) -> bool:
+    """Return whether literal skip arguments name a concrete precondition."""
+    normalized = " ".join(args).casefold()
+    return (
+        any(fragment in normalized for fragment in DOCUMENTED_REASON_FRAGMENTS)
+        or re.search(r"\bci\b", normalized) is not None
+        or DOCUMENTED_REASON_REFERENCE.search(" ".join(args)) is not None
+    )
+
+
 class TestSkipSmellDetection:
     """Structural checks on the entire tests/ tree."""
 
-    def test_no_forbidden_skip_patterns(self):
+    def test_no_forbidden_skip_patterns(self) -> None:
         forbidden: list[tuple[str, int]] = []
         for fp in _iter_python_files(TESTS_ROOT):
             if str(fp) in ALLOWLIST_SKIP_FILES:
@@ -131,49 +255,28 @@ class TestSkipSmellDetection:
             + "\n".join(f"  {f}:{ln}" for f, ln in forbidden)
         )
 
-    def test_no_unconditional_skip_without_guard(self):
-        stale: list[tuple[str, int, str]] = []
+    def test_no_unconditional_skip_without_guard(self) -> None:
+        stale: list[tuple[str, int, list[str]]] = []
         for fp in _iter_python_files(TESTS_ROOT):
             if str(fp) in ALLOWLIST_SKIP_FILES:
                 continue
             info = _ast_skip_info(fp)
-            source_lines = fp.read_text().splitlines()
             for skip in info["skips"]:
                 line_no = skip["line"]
-                if line_no < 3:
-                    continue
-                guard_candidates = [
-                    source_lines[line_no - 2].strip(),
-                    source_lines[line_no - 3].strip() if line_no >= 3 else "",
-                    source_lines[line_no - 4].strip() if line_no >= 4 else "",
-                ]
-                is_guarded = any(
-                    g.startswith("if ")
-                    or g.startswith("elif ")
-                    or g.startswith("try:")
-                    or g.startswith("except")
-                    or "importorskip" in g
-                    for g in guard_candidates
-                )
                 args = skip.get("args", [])
-                has_reason = any("not installed" in a or "not available" in a or "absent" in a
-                                 or "not set" in a or "not found" in a or "missing" in a
-                                 or "deprecated" in a or "not supported" in a
-                                 or "not generated" in a or "not populated" in a
-                                 or "not initialized" in a or "not enforced" in a
-                                 or "credentials required" in a or "required for live" in a
-                                 or "set GLUDD" in a or "set OPENCODE" in a
-                                 or "offline" in a or "CI" in a.lower()
-                                 for a in args)
                 allow_module_level = skip.get("keyword", {}).get("allow_module_level", False)
-                if not is_guarded and not has_reason and not allow_module_level:
+                if (
+                    not skip["guarded"]
+                    and not _has_documented_reason(args)
+                    and not allow_module_level
+                ):
                     stale.append((str(fp.relative_to(TESTS_ROOT)), line_no, args))
         assert not stale, (
             f"{len(stale)} unconditional pytest.skip calls without documented reason:\n"
             + "\n".join(f"  {f}:{ln}  skip({args!r})" for f, ln, args in stale)
         )
 
-    def test_no_strict_xfail(self):
+    def test_no_strict_xfail(self) -> None:
         strict_xfails: list[tuple[str, int, str]] = []
         for fp in _iter_python_files(TESTS_ROOT):
             info = _ast_skip_info(fp)
@@ -185,19 +288,18 @@ class TestSkipSmellDetection:
             + "\n".join(f"  {f}:{ln}  {r}" for f, ln, r in strict_xfails)
         )
 
-    def test_skip_count_snapshot_exists(self):
-        if not SKIP_COUNT_SNAPSHOT_FILE.exists():
-            _write_snapshot()
+    def test_skip_count_snapshot_exists(self) -> None:
         assert SKIP_COUNT_SNAPSHOT_FILE.exists(), (
             f"Skip-count snapshot file missing at {SKIP_COUNT_SNAPSHOT_FILE} "
-            "and could not be written."
+            "(restore the reviewed baseline; tests never generate it)."
         )
 
-    def test_skip_count_not_growing(self):
-        if not SKIP_COUNT_SNAPSHOT_FILE.exists():
-            _write_snapshot()
-        with open(SKIP_COUNT_SNAPSHOT_FILE) as f:
-            snapshot = json.load(f)
+    def test_skip_count_not_growing(self) -> None:
+        assert SKIP_COUNT_SNAPSHOT_FILE.exists(), (
+            "Skip-count baseline is required and must be reviewed, not generated "
+            "as a test side effect."
+        )
+        snapshot = json.loads(SKIP_COUNT_SNAPSHOT_FILE.read_text())
 
         current = _count_skips()
         total_skip = current["pytest_skip_total"]
@@ -223,7 +325,7 @@ class TestSkipSmellDetection:
         )
 
 
-    def test_hook_liveness_skip_smell_in_ci(self):
+    def test_hook_liveness_skip_smell_in_ci(self) -> None:
         """Hook/enforcement tests MUST NOT skip based on CI environment.
 
         A pytest.skip('... CI ...') in a hook-liveness or enforcement test
@@ -251,7 +353,7 @@ class TestSkipSmellDetection:
             for skip in info["skips"]:
                 args = skip.get("args", [])
                 for a in args:
-                    if "CI" in a or "ci" in a.lower():
+                    if re.search(r"\bci\b", a, re.IGNORECASE):
                         ci_skips.append((rel, skip["line"], a))
                         break
         assert not ci_skips, (
@@ -259,15 +361,11 @@ class TestSkipSmellDetection:
             "Remove the CI guard and fix the underlying blocker, or if the skip is "
             "legitimate (node/harness unavailable), reference a concrete precondition "
             "rather than 'CI':\n"
-            + "\n".join(f"  {f}:{ln}  skip({args!r})" for f, ln, args in ci_skips)
+            + "\n".join(
+                f"  {file_name}:{line_no}  skip({reason!r})"
+                for file_name, line_no, reason in ci_skips
+            )
         )
-
-
-def _write_snapshot() -> None:
-    counts = _count_skips()
-    with open(SKIP_COUNT_SNAPSHOT_FILE, "w") as f:
-        json.dump(counts, f, indent=2)
-    print(f"\nE9 skip counts written to {SKIP_COUNT_SNAPSHOT_FILE}: {json.dumps(counts)}")
 
 
 def _count_skips() -> dict[str, int]:
@@ -289,16 +387,124 @@ def _count_skips() -> dict[str, int]:
 class TestSkipSmellSelf:
     """Meta-tests — ensure this file's own machinery is correct."""
 
-    def test_skip_count_snapshot_is_valid_json(self):
-        if not SKIP_COUNT_SNAPSHOT_FILE.exists():
-            pytest.skip("snapshot file does not exist yet — run the full test file to generate")
-        with open(SKIP_COUNT_SNAPSHOT_FILE) as f:
-            data = json.load(f)
+    def test_ast_guard_detection_uses_ancestry(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        source = tmp_path / "test_guarded.py"
+        source.write_text(
+            "\n".join(
+                (
+                    "import pytest",
+                    "def test_guarded(enabled):",
+                    "    if enabled:",
+                    "        first = 1",
+                    "        second = first + 1",
+                    "        third = second + 1",
+                    '        pytest.skip("tool not available")',
+                )
+            )
+        )
+
+        [skip] = _ast_skip_info(source)["skips"]
+
+        assert skip["guarded"] is True
+
+    def test_ast_guard_detection_rejects_unconditional_skip(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        source = tmp_path / "test_unconditional.py"
+        source.write_text(
+            "\n".join(
+                (
+                    "import pytest",
+                    "def test_unconditional():",
+                    '    pytest.skip("unfinished placeholder")',
+                )
+            )
+        )
+
+        [skip] = _ast_skip_info(source)["skips"]
+
+        assert skip["guarded"] is False
+        assert not _has_documented_reason(skip["args"])
+
+    def test_ast_guard_detection_follows_terminating_branch(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        source = tmp_path / "test_inverse_guard.py"
+        source.write_text(
+            "\n".join(
+                (
+                    "import pytest",
+                    "def test_inverse_guard(available):",
+                    "    if available:",
+                    "        return",
+                    "    detail = 'bounded setup'",
+                    "    assert detail",
+                    '    pytest.skip("capability unavailable")',
+                )
+            )
+        )
+
+        [skip] = _ast_skip_info(source)["skips"]
+
+        assert skip["guarded"] is True
+
+    def test_ast_guard_detection_follows_terminating_except(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        source = tmp_path / "test_try_guard.py"
+        source.write_text(
+            "\n".join(
+                (
+                    "import pytest",
+                    "def test_try_guard(load):",
+                    "    try:",
+                    "        load()",
+                    "    except LookupError:",
+                    "        return",
+                    '    pytest.skip("loaded capability needs a follow-up")',
+                )
+            )
+        )
+
+        [skip] = _ast_skip_info(source)["skips"]
+
+        assert skip["guarded"] is True
+
+    def test_dynamic_reason_preserves_static_spec_evidence(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        source = tmp_path / "test_dynamic_reason.py"
+        source.write_text(
+            "\n".join(
+                (
+                    "import pytest",
+                    "def test_dynamic(tool):",
+                    '    pytest.skip(f"S83.110: {tool} not yet wired")',
+                )
+            )
+        )
+
+        [skip] = _ast_skip_info(source)["skips"]
+
+        assert skip["guarded"] is False
+        assert _has_documented_reason(skip["args"])
+
+    def test_skip_count_snapshot_is_valid_json(self) -> None:
+        assert SKIP_COUNT_SNAPSHOT_FILE.exists()
+        data = json.loads(SKIP_COUNT_SNAPSHOT_FILE.read_text())
         assert isinstance(data, dict)
+        assert data.get("schema_version") == 2
+        assert data.get("reviewed_task") == "S83.110"
         for key in ("pytest_skip_total", "bare_mark_skip_total", "xfail_total"):
             assert key in data, f"snapshot missing key: {key}"
-            assert isinstance(data[key], int), f"snapshot key {key} is not int: {type(data[key])}"
-
-
-def pytest_sessionfinish(session):
-    _write_snapshot()
+            assert type(data[key]) is int, (
+                f"snapshot key {key} is not int: {type(data[key])}"
+            )
+            assert data[key] >= 0, f"snapshot key {key} must be non-negative"

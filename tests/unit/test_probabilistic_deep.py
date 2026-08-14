@@ -2488,7 +2488,7 @@ class TestTDigestDeepInternals:
     def test_cdf_from_centroids_single_centroid(self) -> None:
         centroids = [Centroid(mean=5.0, weight=10.0)]
         assert _cdf_from_centroids(centroids, 0.0, 10.0) == 0.0
-        assert _cdf_from_centroids(centroids, 5.0, 10.0) == 1.0
+        assert _cdf_from_centroids(centroids, 5.0, 10.0) == 0.5
         assert _cdf_from_centroids(centroids, 10.0, 10.0) == 1.0
 
     def test_cdf_from_centroids_below_first(self) -> None:

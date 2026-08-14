@@ -268,6 +268,16 @@ class KubernetesSource:
     KIND: str = "logs"
 
     def __init__(self, config: dict[str, object]) -> None:
+        """Configure a Kubernetes source with a vetted API endpoint.
+
+        Args:
+            config: Connector name, endpoint, namespace, authentication, TLS,
+                timeout, and optional transport settings.
+
+        Raises:
+            ValueError: If the endpoint is malformed or violates the private-host
+                policy, or if the timeout is not numeric.
+        """
         self._config = dict(config)
         self.name: str = str(config.get("name") or "kubernetes")
 
@@ -488,5 +498,9 @@ class KubernetesSource:
         )
 
 
-class _ConfigError(Exception):
-    """Raised internally for config-shaped failures (missing token, etc.)."""
+class KubernetesConfigError(RuntimeError):
+    """Raised when Kubernetes connector credentials are unavailable or invalid."""
+
+
+# Compatibility alias retained for internal integrations using the old name.
+_ConfigError = KubernetesConfigError

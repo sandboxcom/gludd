@@ -320,7 +320,13 @@ class TestEscCounterDeep:
 
 
 class TestStsIssueTtlCoercion:
-    @pytest.mark.xfail(reason="ValueError escapes sync TestClient portal in Py 3.14")
+    @pytest.mark.xfail(
+        strict=False,
+        reason=(
+            "docs/design/PERMISSION_SYSTEM.md: non-integer TTL ValueError escapes "
+            "the synchronous TestClient portal on Python 3.14"
+        ),
+    )
     def test_non_integer_ttl_raises_valueerror(self, client: TestClient) -> None:
         """The router's `ttl = int(str(...))` does NOT catch ValueError —
         the endpoint will 500. This test documents the actual behaviour."""

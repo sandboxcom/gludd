@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
-from typing import Any
+from typing import Any, Protocol, cast
 
 import pytest
 
@@ -24,6 +24,10 @@ import pytest
 
 def _async_run(coro: Any) -> Any:
     return asyncio.run(coro)
+
+
+class _BoundedSemaphoreState(Protocol):
+    _initial_value: int
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -73,11 +77,12 @@ class TestThreadingBoundedSemaphoreLifecycle:
 
     def test_initial_value_preserved(self) -> None:
         sem = threading.BoundedSemaphore(5)
-        assert sem._initial_value == 5
+        state = cast(_BoundedSemaphoreState, sem)
+        assert state._initial_value == 5
         assert sem.acquire(blocking=False) is True
-        assert sem._initial_value == 5
+        assert state._initial_value == 5
         sem.release()
-        assert sem._initial_value == 5
+        assert state._initial_value == 5
 
     def test_nonblocking_acquire_all_then_exhausted(self) -> None:
         sem = threading.BoundedSemaphore(4)
@@ -258,10 +263,13 @@ class TestAsyncSemaphoreUnbounded:
     def test_release_more_than_acquired_is_allowed(self) -> None:
         async def _go() -> None:
             sem = asyncio.Semaphore(1)
+            # Initial permit + two releases = exactly three acquisitions.
+            sem.release()
             sem.release()
             await sem.acquire()
             await sem.acquire()
             await sem.acquire()
+            assert sem.locked()
 
         _async_run(_go())
 

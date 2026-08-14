@@ -230,14 +230,14 @@ class TestBreakIfStaleEdgeCases:
             locking._break_if_stale(lock_path, stale_after=10.0)
             assert os.path.exists(lock_path)
 
-    def test_stale_after_zero_always_breaks(self) -> None:
+    def test_stale_after_zero_preserves_stable_mutex_inode(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             lock_path = os.path.join(tmpdir, "test.lock")
             with open(lock_path, "w") as f:
                 f.write("")
             time.sleep(0.001)
             locking._break_if_stale(lock_path, stale_after=0.0)
-            assert not os.path.exists(lock_path)
+            assert os.path.exists(lock_path)
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +351,7 @@ class TestFileLockBoundary:
             finally:
                 os.close(fd)
 
-    def test_lock_path_removed_while_polling(self) -> None:
+    def test_external_unlink_does_not_bypass_held_inode(self) -> None:
         fcntl = pytest.importorskip("fcntl")
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -370,11 +370,14 @@ class TestFileLockBoundary:
                 t = threading.Thread(target=waiter_and_remover)
                 t.start()
 
-                with locking._file_lock(
-                    git_dir,
-                    "removed-while-polling",
-                    timeout=5.0,
-                    stale_after=0.01,
+                with (
+                    pytest.raises(TimeoutError, match="timed out"),
+                    locking._file_lock(
+                        git_dir,
+                        "removed-while-polling",
+                        timeout=0.2,
+                        stale_after=0.01,
+                    ),
                 ):
                     pass
 
@@ -549,12 +552,13 @@ def _hold_for_duration_and_record(
     hold_secs: float,
 ) -> None:
     with locking.git_repo_lock(repo_path, timeout=10.0, stale_after=60.0):
-        execution_order.append(name)
+        execution_order.append(f"{name}:enter")
         time.sleep(hold_secs)
+        execution_order.append(f"{name}:exit")
 
 
 class TestCrossProcessMultiWaiter:
-    def test_three_processes_serialized_in_order(self) -> None:
+    def test_three_processes_never_overlap(self) -> None:
         if not locking._HAVE_FCNTL:
             pytest.skip("fcntl not available on this platform")
 
@@ -599,7 +603,18 @@ class TestCrossProcessMultiWaiter:
                     p.join(timeout=10)
                 for p in processes:
                     assert p.exitcode == 0, f"process {p} failed with exit code {p.exitcode}"
-                assert list(execution_order) == ["A", "B", "C"]
+                events = list(execution_order)
+                assert sorted(events) == [
+                    "A:enter",
+                    "A:exit",
+                    "B:enter",
+                    "B:exit",
+                    "C:enter",
+                    "C:exit",
+                ]
+                for enter, leave in zip(events[::2], events[1::2], strict=True):
+                    assert enter.endswith(":enter")
+                    assert leave == enter.replace(":enter", ":exit")
 
 
 # ---------------------------------------------------------------------------

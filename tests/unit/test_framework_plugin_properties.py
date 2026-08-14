@@ -221,7 +221,7 @@ def test_fw5_plugin_has_env_var_disable(plugin: Path) -> None:
     """
     source = _effective_source(plugin)
     if plugin.name in HARD_ON_PLUGINS:
-        assert "hard-coded ON" in source
+        assert "no environment-variable bypass" in source
         assert not ENVAR_DISABLE_RE.search(source)
         return
     assert ENVAR_DISABLE_RE.search(source), (
@@ -306,7 +306,9 @@ def test_fw9_opencode_json_restricts_external_paths(scope: str) -> None:
     not part of the supported schema and previously broke the live TUI.
     """
     cfg = json.loads(OPENCODE_JSON.read_text())
-    perm = cfg["permission"] if scope == "global" else cfg["agent"]["build"]["permission"]
+    perm = dict(cfg["permission"])
+    if scope == "build":
+        perm.update(cfg.get("agent", {}).get("build", {}).get("permission", {}))
 
     assert perm["read"] == {
         "*": "allow",
@@ -325,6 +327,8 @@ def test_fw9_opencode_json_restricts_external_paths(scope: str) -> None:
     allowed_external = {
         "*",
         "/tmp/**",
+        "/private/tmp/**",
+        "/private/var/folders/**",
         "/Users/shawnwilson/.config/opencode/**",
         "/Users/shawnwilson/.local/share/opencode/**",
         "/Users/shawnwilson/.cache/**",

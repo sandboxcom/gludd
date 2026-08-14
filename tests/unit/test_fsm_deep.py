@@ -200,12 +200,14 @@ class TestTimer:
 class TestGuards:
     def test_guard_allows_transition(self):
         log = EventLog()
-        a = State("A", exit=_make_log_action(log, "exit:A"))
+        a = State("A", initial=True, exit=_make_log_action(log, "exit:A"))
         b = State("B", entry=_make_log_action(log, "enter:B"))
         fsm = FSM()
         for s in (a, b):
             fsm.add_state(s)
-        fsm.add_transition(Transition(a, b, "go", guard=lambda ctx: ctx is True))
+        fsm.add_transition(
+            Transition(a, b, "go", guard=lambda ctx: ctx.get("allowed") is True)
+        )
         fsm.start()
         fsm.context["allowed"] = True
         fsm.send(Event("go", payload={"allowed": True}))
@@ -213,7 +215,7 @@ class TestGuards:
 
     def test_guard_blocks_transition(self):
         log = EventLog()
-        a = State("A", exit=_make_log_action(log, "exit:A"))
+        a = State("A", initial=True, exit=_make_log_action(log, "exit:A"))
         b = State("B", entry=_make_log_action(log, "enter:B"))
         fsm = FSM()
         for s in (a, b):
@@ -226,7 +228,7 @@ class TestGuards:
         assert "exit:A" not in log.entries
 
     def test_multiple_guards_best_match_wins(self):
-        a = State("A")
+        a = State("A", initial=True)
         b = State("B")
         c = State("C")
         fsm = FSM()
@@ -241,7 +243,7 @@ class TestGuards:
 
     def test_guard_receives_context(self):
         captured: list[dict[str, Any]] = []
-        a = State("A")
+        a = State("A", initial=True)
         b = State("B")
         fsm = FSM()
         for s in (a, b):
@@ -326,7 +328,7 @@ class TestFSMCore:
 
     def test_fsm_self_transition(self):
         log = EventLog()
-        a = State("A", entry=_make_log_action(log, "enter:A"))
+        a = State("A", initial=True, entry=_make_log_action(log, "enter:A"))
         fsm = FSM()
         fsm.add_state(a)
         fsm.add_transition(Transition(a, a, "refresh"))
@@ -394,7 +396,7 @@ class TestTimerTransitions:
 
 
 class TestHistoryState:
-    def test_history_restores_last_active_state(self):
+    def test_history_restores_snapshot_source_state(self):
         a = State("A", initial=True)
         b = State("B")
         c = State("C")
@@ -414,8 +416,8 @@ class TestHistoryState:
         assert fsm.current_state is a
         fsm.send(Event("snap"))  # a -> h (records last)
         assert fsm.current_state is h
-        fsm.send(Event("restore"))  # h -> restores last active = b
-        assert fsm.current_state is b
+        fsm.send(Event("restore"))  # h -> restores snap source = a
+        assert fsm.current_state is a
 
     def test_history_defaults_to_initial_when_no_history(self):
         a = State("A", initial=True)
@@ -456,7 +458,7 @@ class TestHistoryState:
         fsm.send(Event("go"))
         fsm.send(Event("snap"))
         fsm.send(Event("restore"))
-        assert fsm.current_state is a  # history was cleared on restart
+        assert fsm.current_state is b  # old history cleared; new B snapshot retained
 
 
 # ===========================================================================

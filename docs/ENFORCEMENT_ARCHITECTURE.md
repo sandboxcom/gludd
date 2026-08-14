@@ -48,6 +48,27 @@ the rest of the project's incident history.
    knob (with one intentional exception: `enforce-no-suppressions.ts` is
    hard-coded ON because lint suppressions are never legitimate).
 
+### Workspace permission boundary
+
+The root `opencode.json` follows OpenCode's supported permission layers:
+workspace file tools use the global policy, `read` preserves the default
+fail-closed `.env` exceptions, and `edit` covers all file modifications.
+Only `make *` is allowed through Bash. Paths outside the active workspace must
+also match the deny-by-default `external_directory` map; Gludd explicitly
+allows its namespaced `/tmp` and macOS temporary worktree roots. A build agent
+without an override inherits this global policy.
+
+This matches the [OpenCode permissions
+documentation](https://opencode.ai/docs/permissions/), including last-match
+rule ordering, agent inheritance, and the fact that `edit` covers write and
+patch operations. Practitioner reports show why both layers stay explicit:
+[OpenCode #7758](https://github.com/anomalyco/opencode/issues/7758) documents
+worktree paths being misclassified as external, while the
+[OpenCode #18441 report](https://github.com/anomalyco/opencode/issues/18441)
+describes surprising
+interactions between external grants and edit restrictions. The structural
+tests therefore pin the supported schema and the effective inherited policy.
+
 ---
 
 ## 2. Architecture — The Hot-Reload Proxy Pattern

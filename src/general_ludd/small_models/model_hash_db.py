@@ -21,19 +21,26 @@ _READ_SIZE = 65536  # 64 KiB
 
 @dataclass(frozen=True)
 class FileHash:
+    """Pair a model artifact's relative filename with its trusted SHA-256."""
+
     filename: str
     sha256: str
 
     def to_dict(self) -> dict[str, str]:
+        """Serialize the hash record to its JSON-compatible mapping."""
         return {"filename": self.filename, "sha256": self.sha256}
 
     @classmethod
     def from_dict(cls, d: dict[str, str]) -> FileHash:
+        """Construct a hash record from its persisted mapping."""
         return cls(filename=d["filename"], sha256=d["sha256"])
 
 
-class ModelIntegrityError(Exception):
+class ModelIntegrityError(RuntimeError):
+    """Raised when downloaded model bytes do not match their trusted digest."""
+
     def __init__(self, model_id: str, filename: str, expected: str, actual: str) -> None:
+        """Record the model, artifact, and expected versus observed digests."""
         self.model_id = model_id
         self.filename = filename
         self.expected = expected
@@ -81,6 +88,8 @@ _PHI2_ADDED = "cc2d35c672b40d19acab80f1f01502ed0c5b047b4ad95c0f7564beefcb9228a7"
 
 
 class KnownModels:
+    """Provide the built-in allowlist of trusted model artifact hashes."""
+
     _HASHES: ClassVar[dict[str, list[FileHash]]] = {
         "HuggingFaceTB/SmolLM2-135M": [
             FileHash("model.safetensors", _SMOLLM2_MODEL),
@@ -122,14 +131,17 @@ class KnownModels:
 
     @classmethod
     def get(cls, model_id: str) -> list[FileHash] | None:
+        """Return trusted hashes for one known model, if registered."""
         return cls._HASHES.get(model_id)
 
     @classmethod
     def all(cls) -> dict[str, list[FileHash]]:
+        """Return a shallow copy of the built-in model registry."""
         return dict(cls._HASHES)
 
 
 def load_known_models_from_config(config_path: str | None = None) -> dict[str, list[FileHash]]:
+    """Load trusted model hashes from JSON configuration when it exists."""
     path = config_path or os.environ.get("GLUDD_KNOWN_MODELS_FILE", _DEFAULT_CONFIG_PATH)
     if not os.path.isfile(path):
         logger.debug("known_models config not found at %s", path)
@@ -147,6 +159,7 @@ def load_known_models_from_config(config_path: str | None = None) -> dict[str, l
 def merge_known_models(
     *sources: dict[str, list[FileHash]],
 ) -> dict[str, list[FileHash]]:
+    """Merge registries, letting each later source replace duplicate models."""
     merged: dict[str, list[FileHash]] = {}
     for source in sources:
         for model_id, files in source.items():
@@ -155,7 +168,10 @@ def merge_known_models(
 
 
 class ModelHashDB:
+    """Store trusted model hashes in memory with optional JSON persistence."""
+
     def __init__(self, db_path: str | None = None) -> None:
+        """Initialize the registry and load persisted entries when configured."""
         self._db_path = db_path
         self._entries: dict[str, list[FileHash]] = {}
         if db_path is not None:
@@ -163,31 +179,47 @@ class ModelHashDB:
 
     @classmethod
     def from_known_models(cls) -> ModelHashDB:
+        """Build an in-memory registry from the built-in trusted hashes."""
         db = cls()
         for model_id, files in KnownModels.all().items():
             db.register_model(model_id, files)
         return db
 
     def register_model(self, model_id: str, files: list[FileHash]) -> None:
+        """Replace a model's trusted file hashes and persist the registry."""
         self._entries[model_id] = list(files)
         self._persist()
         logger.info("Registered %d file hashes for %s", len(files), model_id)
 
     def get_hashes(self, model_id: str) -> list[FileHash] | None:
+        """Return registered artifact hashes for a model, if present."""
         return self._entries.get(model_id)
 
     def list_models(self) -> list[str]:
+        """List identifiers for every registered model."""
         return list(self._entries.keys())
 
     def remove_model(self, model_id: str) -> None:
+        """Remove a model if present and persist the updated registry."""
         self._entries.pop(model_id, None)
         self._persist()
 
     def clear(self) -> None:
+        """Remove all registered model hashes and persist the empty registry."""
         self._entries.clear()
         self._persist()
 
     def verify_download(self, model_id: str, local_path: str) -> None:
+        """Verify available downloaded artifacts against registered hashes.
+
+        Unknown models and registered files absent from ``local_path`` are
+        skipped. A mismatched artifact is deleted before the error is raised so
+        untrusted bytes cannot enter the inference pipeline.
+
+        Raises:
+            ModelIntegrityError: If an available artifact's SHA-256 differs
+                from its registered digest.
+        """
         expected = self._entries.get(model_id)
         if expected is None:
             logger.debug("No registered hashes for %s; skipping integrity check", model_id)
@@ -215,6 +247,12 @@ class ModelHashDB:
         logger.info("Integrity check passed for %s (%d files verified)", model_id, len(expected))
 
     def import_from_hf(self, model_id: str) -> bool:
+        """Import trusted hashes from built-ins or repository README metadata.
+
+        Returns:
+            ``True`` when at least one trusted hash was imported; otherwise
+            ``False`` when metadata could not be fetched, read, or parsed.
+        """
         known = KnownModels.get(model_id)
         if known:
             self.register_model(model_id, known)

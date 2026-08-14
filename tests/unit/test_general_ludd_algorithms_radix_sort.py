@@ -46,7 +46,12 @@ class TestCountingSortForRadix:
     def test_tens_digit(self) -> None:
         arr = [321, 102, 43, 500]
         result = counting_sort_for_radix(arr, 10, 10)
-        assert result == [500, 102, 321, 43]
+        assert result == [102, 500, 321, 43]
+
+    def test_equal_digits_retain_original_order(self) -> None:
+        arr = [500, 102, 700, 304]
+
+        assert counting_sort_for_radix(arr, 10, 10) == arr
 
     def test_base_2(self) -> None:
         arr = [5, 3, 8, 1]

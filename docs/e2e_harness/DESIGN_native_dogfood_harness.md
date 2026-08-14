@@ -27,6 +27,15 @@ present, and skipped gracefully when it is not:
 
 Both reuse the same fixtures and the same secrets loader.
 
+The harness identifies the repository by its resolved fixture path and stable
+markers such as `pyproject.toml`; it never requires the checkout directory to
+be named `gludd`. This is required for Git worktrees, CI checkouts, and renamed
+clones. A long-lived [pytest user report about root and conftest
+discovery](https://github.com/pytest-dev/pytest/issues/5822) shows that invoking
+tests from different paths can change fixture discovery unless the hierarchy is
+handled explicitly. The dogfood contract therefore validates the actual
+`repo_root` fixture and repository markers, not a parent-directory basename.
+
 ---
 
 ## 1. Grounding: how gludd actually runs (verified)

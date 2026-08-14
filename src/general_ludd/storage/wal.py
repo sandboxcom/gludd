@@ -15,16 +15,25 @@ _CHECKSUM_LEN = 32
 
 @dataclass(frozen=True, slots=True)
 class WalEntry:
+    """Represent one sequenced, checksummed write-ahead-log record."""
+
     seq: int
     data: bytes
 
     def serialize(self) -> bytes:
+        """Encode the header and data with a trailing SHA-256 checksum."""
         payload = struct.pack(_HEADER_FMT, self.seq, len(self.data)) + self.data
         checksum = hashlib.sha256(payload).digest()
         return payload + checksum
 
     @staticmethod
     def deserialize(raw: bytes) -> WalEntry:
+        """Decode and validate one complete write-ahead-log record.
+
+        Raises:
+            WalIterError: If the record is too short, truncated, or has an
+                invalid checksum.
+        """
         if len(raw) < _HEADER_LEN + _CHECKSUM_LEN:
             raise WalIterError("record too short for header + checksum")
         payload = raw[:-_CHECKSUM_LEN]
@@ -39,8 +48,8 @@ class WalEntry:
         return WalEntry(seq=seq, data=data)
 
 
-class WalIterError(Exception):
-    pass
+class WalIterError(ValueError):
+    """Raised when a write-ahead-log record is truncated or fails checksum validation."""
 
 
 def _iter_entries(raw: bytes) -> Iterator[WalEntry]:
@@ -94,7 +103,10 @@ def _entry_endpoints(raw: bytes) -> list[tuple[int, int, int]]:
 
 
 class WriteAheadLog:
+    """Append, replay, truncate, and checkpoint checksummed log records."""
+
     def __init__(self, path: str) -> None:
+        """Open or create a log and continue its next valid sequence number."""
         self._path = Path(path)
         self._file = self._path.open("a+b")
         self._file.seek(0)
@@ -109,18 +121,22 @@ class WriteAheadLog:
 
     @property
     def seq(self) -> int:
+        """Return the sequence number assigned to the next appended record."""
         return self._seq
 
     def append(self, data: bytes) -> None:
+        """Append and flush one checksummed record to durable storage."""
         entry = WalEntry(seq=self._seq, data=data)
         self._file.write(entry.serialize())
         self._file.flush()
         self._seq += 1
 
     def close(self) -> None:
+        """Close the underlying log file."""
         self._file.close()
 
     def truncate_after(self, last_kept_seq: int) -> None:
+        """Discard valid records after the requested sequence number."""
         self._file.seek(0)
         raw = self._file.read()
         cutoff = 0
@@ -136,6 +152,7 @@ class WriteAheadLog:
         self._seq = last_kept_seq + 1
 
     def checkpoint(self, ckpt_path: Path) -> int:
+        """Write valid records to a checkpoint and return their count."""
         if self._file.closed:
             raw = self._path.read_bytes()
         else:
@@ -150,6 +167,11 @@ class WriteAheadLog:
 
     @staticmethod
     def replay(path: str) -> Iterator[WalEntry]:
+        """Yield valid records until the first incomplete or corrupt tail.
+
+        Raises:
+            FileNotFoundError: If the log path does not exist.
+        """
         if not Path(path).exists():
             raise FileNotFoundError(f"WAL file not found: {path}")
         raw = Path(path).read_bytes()
@@ -157,6 +179,12 @@ class WriteAheadLog:
 
     @staticmethod
     def recover(path: str) -> list[WalEntry]:
+        """Validate and return all complete records in an existing log.
+
+        Raises:
+            FileNotFoundError: If the log path does not exist.
+            WalIterError: If a complete record has an invalid checksum.
+        """
         if not Path(path).exists():
             raise FileNotFoundError(f"WAL file not found: {path}")
         raw = Path(path).read_bytes()
@@ -165,12 +193,20 @@ class WriteAheadLog:
 
 
 class WalRecovery:
+    """Expose strict and best-effort recovery policies for stored logs."""
+
     @staticmethod
     def recover(path: str) -> list[WalEntry]:
+        """Return records using strict checksum validation."""
         return WriteAheadLog.recover(path)
 
     @staticmethod
     def force_recover(path: str) -> list[WalEntry]:
+        """Return the valid prefix, stopping at corruption or truncation.
+
+        Raises:
+            FileNotFoundError: If the log path does not exist.
+        """
         if not Path(path).exists():
             raise FileNotFoundError(f"WAL file not found: {path}")
         raw = Path(path).read_bytes()

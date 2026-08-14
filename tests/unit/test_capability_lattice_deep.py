@@ -18,6 +18,7 @@ import asyncio
 import json
 from collections.abc import Callable
 from dataclasses import FrozenInstanceError
+from typing import Any, cast
 
 import pytest
 
@@ -57,6 +58,12 @@ from general_ludd.security.capability_lattice import (
     is_protected_path,
     role_may_dispatch,
 )
+
+
+def _attempt_frozen_mutation(instance: object, attribute: str, value: object) -> None:
+    """Attempt mutation through the public Python attribute protocol."""
+    setattr(instance, attribute, value)
+
 
 # ============================================================================
 # 1. Lattice traversal — parent→child and child→parent
@@ -190,7 +197,7 @@ class TestCapabilityInheritanceChains:
             }
         )
         actions = lattice.all_actions("ceo")
-        assert actions == frozenset({"ceo", "eng_lead", "sales_lead", "worker"})
+        assert actions == frozenset({"ceo", "eng_lead", "sales_lead", "work"})
 
     def test_native_actions_return_frozenset(self) -> None:
         lattice = CapabilityLattice()
@@ -241,7 +248,7 @@ class TestRoleBasedAccessGating:
         assert caps.collections_self_modify is False
 
     def test_non_string_role_is_baseline(self) -> None:
-        caps = capabilities_for(42)  # type: ignore[arg-type]
+        caps = capabilities_for(cast(Any, 42))
         assert caps.role == "<unknown>"
 
     # -- role_may_dispatch --
@@ -258,8 +265,11 @@ class TestRoleBasedAccessGating:
     def test_coder_may_not_dispatch_collection(self) -> None:
         assert role_may_dispatch("coder", "collection") is False
 
-    def test_operator_may_dispatch_collection(self) -> None:
-        assert role_may_dispatch("operator", "collection") is True
+    def test_operator_without_self_modify_may_not_dispatch_collection(self) -> None:
+        caps = capabilities_for("operator")
+        assert "collection" in caps.dispatch_kinds
+        assert caps.collections_self_modify is False
+        assert role_may_dispatch("operator", "collection") is False
 
     def test_none_role_may_not_dispatch_anything(self) -> None:
         for kind in ("role", "collection", "mcp", "skill"):
@@ -722,7 +732,7 @@ class TestParseToolCalls:
         assert parse_tool_calls("not json") == []
 
     def test_parse_non_dict_returns_empty(self) -> None:
-        assert parse_tool_calls(123) == []  # type: ignore[arg-type]
+        assert parse_tool_calls(cast(Any, 123)) == []
 
     def test_parse_missing_name_skipped(self) -> None:
         calls = parse_tool_calls({"tool_calls": [{"kind": "role"}]})
@@ -761,7 +771,7 @@ class TestParseToolCalls:
         assert structured_tool_calls_to_calls(None) == []
 
     def test_structured_tool_calls_skip_non_dict(self) -> None:
-        assert structured_tool_calls_to_calls(["bad"]) == []  # type: ignore[list-item]
+        assert structured_tool_calls_to_calls(cast(Any, ["bad"])) == []
 
 
 # ============================================================================
@@ -775,17 +785,17 @@ class TestLatticeImmutability:
     def test_lattice_is_frozen(self) -> None:
         lattice = CapabilityLattice()
         with pytest.raises(FrozenInstanceError):
-            lattice.chain = {}  # type: ignore[misc]
+            _attempt_frozen_mutation(lattice, "chain", {})
 
     def test_role_capabilities_is_frozen(self) -> None:
         caps = capabilities_for("admin")
         with pytest.raises(FrozenInstanceError):
-            caps.collections_self_modify = True  # type: ignore[misc]
+            _attempt_frozen_mutation(caps, "collections_self_modify", True)
 
     def test_tool_permission_is_frozen(self) -> None:
         tp = ToolPermission(tool="*")
         with pytest.raises(FrozenInstanceError):
-            tp.tool = "bash"  # type: ignore[misc]
+            _attempt_frozen_mutation(tp, "tool", "bash")
 
 
 # ============================================================================

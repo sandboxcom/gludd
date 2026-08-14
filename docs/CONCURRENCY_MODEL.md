@@ -55,18 +55,23 @@ share a repo on disk, using two layers.
 - **Bounded acquire:** `_DEFAULT_ACQUIRE_TIMEOUT = 60.0s`. On timeout it raises
   `TimeoutError` so a stuck repo surfaces as a clean failure, never an unbounded
   hang.
-- **Stale-lock breaking:** `_DEFAULT_STALE_AFTER = 300.0s`. The lock file's
-  mtime is the liveness signal (the holder `os.utime`s it on acquire); if it has
-  not been touched in `stale_after`, the previous holder is presumed crashed and
-  the file is unlinked so a dead process can **never deadlock the repo forever**.
-  (300s is comfortably above the longest legitimate op — clone uses a 120s
-  timeout.)
+- **Stable-inode crash recovery:** `_DEFAULT_STALE_AFTER = 300.0s` is a
+  diagnostic threshold only. A stale mtime is reported once, but the lock file
+  is never unlinked because existing descriptors would continue to lock the old
+  inode while a new caller could lock its replacement. The kernel releases
+  `flock` when the owning descriptors close, including abnormal process exit.
 - **Re-entrancy across the fd boundary:** advisory `flock` is per
   open-file-description and is *not* re-entrant across separate `os.open` fds in
   one process. A per-repo depth counter (`_file_lock_depth`) — only ever touched
   while the per-repo RLock is held, so single-threaded — makes a nested entry
   (depth > 0) skip re-flocking instead of opening a second fd and deadlocking
   against the process's own first fd.
+- **Process-scoped ownership:** the depth counter is accepted only for the PID
+  and thread that acquired it. An `os.register_at_fork` child hook closes copied
+  descriptors, clears inherited ownership, and rebuilds the in-process registry
+  before the child can contend.
+- **Scheduling:** the mutex guarantees exclusion, not FIFO acquisition order.
+  Contending processes may enter in any scheduler-selected order.
 - **POSIX-only:** on platforms without `fcntl` (Windows) it degrades gracefully
   to the in-process lock alone (the common in-daemon race is still serialized)
   rather than failing to import.
@@ -177,6 +182,6 @@ executing.
 
 | Concern | Primitive | Mechanism | Bound / fail-mode |
 | --- | --- | --- | --- |
-| Parallel roles racing on one git tree | `git_repo_lock` (`git_automation/locking.py`) | in-process RLock keyed by realpath + cross-process `flock` on `.git/gludd-git.lock` | 60s acquire timeout → `TimeoutError`; 300s stale-break; re-entrant; POSIX-only with in-process fallback |
+| Parallel roles racing on one git tree | `git_repo_lock` (`git_automation/locking.py`) | PID/thread-scoped RLock re-entry + cross-process `flock` on one stable `.git/gludd-git.lock` inode | 60s acquire timeout → `TimeoutError`; crash release by kernel close; no FIFO guarantee; POSIX-only with in-process fallback |
 | Concurrent dispatches racing past the budget | `SpendLimiter.try_charge` (`controllers/spend_limiter.py`) | atomic check-and-record under a re-entrant lock | unknown cost under a cap → refused (fail closed) |
 | Budget surviving a restart | `SpendLimiter.snapshot` / `restore` | persist + rehydrate `(ts, cost)` records | stale records pruned lazily on next window read |
