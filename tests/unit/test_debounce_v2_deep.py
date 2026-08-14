@@ -100,6 +100,11 @@ class TestDebounceV2Trailing:
         with pytest.raises(ValueError, match="wait"):
             DebounceV2(lambda: None, wait=-0.1, trailing=True)
 
+    @pytest.mark.parametrize("wait", [float("nan"), float("inf")])
+    def test_rejects_non_finite_wait(self, wait: float) -> None:
+        with pytest.raises(ValueError, match="wait"):
+            DebounceV2(lambda: None, wait=wait, trailing=True)
+
     def test_rejects_no_edge(self) -> None:
         with pytest.raises(ValueError, match="at least one"):
             DebounceV2(lambda: None, wait=1.0, leading=False, trailing=False)
@@ -211,6 +216,11 @@ class TestDebounceV2MaxWait:
     def test_max_wait_must_be_positive(self) -> None:
         with pytest.raises(ValueError, match="max_wait"):
             DebounceV2(lambda: None, wait=3.0, max_wait=0.0, trailing=True)
+
+    @pytest.mark.parametrize("max_wait", [float("nan"), float("inf")])
+    def test_max_wait_must_be_finite(self, max_wait: float) -> None:
+        with pytest.raises(ValueError, match="max_wait"):
+            DebounceV2(lambda: None, wait=3.0, max_wait=max_wait, trailing=True)
 
     def test_max_wait_single_call_still_waits(self) -> None:
         calls: list[int] = []

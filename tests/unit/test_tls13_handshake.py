@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509 import load_pem_x509_certificate
 
 from general_ludd.ssl.tls13_handshake import (
@@ -13,6 +14,7 @@ from general_ludd.ssl.tls13_handshake import (
     HandshakeConfig,
     HandshakeCryptoError,
     HandshakeError,
+    HandshakePeerError,
     HandshakeState,
     HandshakeStateError,
     KeyExchange,
@@ -125,6 +127,21 @@ class TestRecordProtection:
         rp2 = RecordProtection("aes-128-gcm", key, iv)
         with pytest.raises(ValueError):
             rp2.decrypt(tampered)
+
+    def test_authentication_failure_poison_record_protection(self):
+        key = b"\x01" * 16
+        iv = b"\x02" * 12
+        sender = RecordProtection("aes-128-gcm", key, iv)
+        ciphertext = sender.encrypt(b"authenticated")
+        tampered = ciphertext[:-1] + bytes([ciphertext[-1] ^ 0x01])
+        receiver = RecordProtection("aes-128-gcm", key, iv)
+
+        with pytest.raises(HandshakeCryptoError):
+            receiver.decrypt(tampered)
+        with pytest.raises(HandshakeCryptoError, match="unusable"):
+            receiver.decrypt(ciphertext)
+        with pytest.raises(HandshakeCryptoError, match="unusable"):
+            receiver.encrypt(b"must not reuse failed state")
 
     def test_rejects_unknown_aead(self):
         with pytest.raises(HandshakeError, match="Unsupported AEAD"):
@@ -305,6 +322,30 @@ class TestHandshakeStateTransitions:
         hs.process_encrypted_extensions(ee)
         assert hs.state == HandshakeState.EE_RCVD
 
+    @pytest.mark.parametrize(
+        ("plaintext", "match"),
+        [
+            (b"\x08\x00", "truncated"),
+            (b"\x0b\x00\x00\x00", "unexpected handshake type"),
+            (b"\x08\x00\x00\x01", "length mismatch"),
+        ],
+    )
+    def test_encrypted_extensions_rejects_malformed_handshake_frames(
+        self,
+        plaintext: bytes,
+        match: str,
+    ) -> None:
+        hs = Tls13Handshake()
+        hs.build_client_hello()
+        peer_ks = KeyExchange(NamedGroup.X25519).public_bytes
+        hs.process_server_hello(_mock_server_hello(peer_ks))
+        hs.derive_handshake_keys(peer_ks)
+        _init_server_encrypt(hs)
+
+        with pytest.raises(HandshakePeerError, match=match):
+            hs.process_encrypted_extensions(_server_rp.encrypt(plaintext))
+        assert hs.state == HandshakeState.SERVER_HELLO_RCVD
+
     def test_process_certificate_transitions(self):
         hs = _handshake_through_ee()
         cert_pem, _ = generate_self_signed_cert("test.example")
@@ -314,16 +355,23 @@ class TestHandshakeStateTransitions:
 
     def test_process_certificate_verify_transitions(self):
         hs = _handshake_through_cert()
-        cv = _server_rp.encrypt(b"\x0f\x00\x00\x42\x08\x04" + b"\x00" * 64)
+        cv = _server_rp.encrypt(_server_certificate_verify_message(hs))
         hs.process_certificate_verify(cv)
         assert hs.state == HandshakeState.CV_RCVD
 
     def test_process_finished_transitions(self):
         hs = _handshake_through_cv()
-        hs.build_server_finished_verify_data()
-        fin = _server_rp.encrypt(b"\x14\x00\x00\x20" + b"\x00" * 32)
+        fin = _server_rp.encrypt(_server_finished_message(hs))
         hs.process_finished(fin)
         assert hs.state == HandshakeState.SERVER_FIN_RCVD
+
+    def test_invalid_finished_does_not_transition(self):
+        hs = _handshake_through_cv()
+        fin = _server_rp.encrypt(b"\x14\x00\x00\x20" + b"\x00" * 32)
+
+        with pytest.raises(HandshakeCryptoError, match="Finished"):
+            hs.process_finished(fin)
+        assert hs.state == HandshakeState.CV_RCVD
 
     def test_build_client_finished_transitions_to_connected(self):
         hs = _handshake_through_server_finished()
@@ -361,9 +409,30 @@ class TestFullHandshake:
         client = Tls13Handshake()
         client.do_full_handshake(peer_key_exchange.public_bytes)
 
-        ct = client.encrypt_application_data(b"hello world")
-        pt = client.decrypt_application_data(ct)
-        assert pt == b"hello world"
+        secrets = client.secrets
+        assert secrets is not None
+        client_peer = RecordProtection(
+            "aes-128-gcm",
+            secrets.client_application_key,
+            secrets.client_application_iv,
+        )
+        server_peer = RecordProtection(
+            "aes-128-gcm",
+            secrets.server_application_key,
+            secrets.server_application_iv,
+        )
+
+        outbound = client.encrypt_application_data(b"hello world")
+        assert client_peer.decrypt(outbound) == b"hello world"
+        inbound = server_peer.encrypt(b"hello world")
+        assert client.decrypt_application_data(inbound) == b"hello world"
+
+    def test_application_records_use_distinct_nonces(self):
+        peer_key_exchange = KeyExchange(NamedGroup.X25519)
+        client = Tls13Handshake()
+        client.do_full_handshake(peer_key_exchange.public_bytes)
+
+        assert client.encrypt_application_data(b"repeat") != client.encrypt_application_data(b"repeat")
 
     def test_full_handshake_with_aes256(self):
         config = HandshakeConfig(cipher_suites=[TLS_AES_256_GCM_SHA384])
@@ -406,6 +475,11 @@ class TestFullHandshake:
 
     def test_encrypt_application_data_before_connected_raises(self):
         client = Tls13Handshake()
+        with pytest.raises(HandshakeStateError):
+            client.encrypt_application_data(b"data")
+
+    def test_application_data_rejected_until_finished_authenticated(self):
+        client = _handshake_through_ee()
         with pytest.raises(HandshakeStateError):
             client.encrypt_application_data(b"data")
 
@@ -562,6 +636,7 @@ def _server_encrypt(hs: Tls13Handshake, plaintext: bytes) -> bytes:
 
 
 _server_rp: RecordProtection | None = None
+_server_signing_key: ec.EllipticCurvePrivateKey | None = None
 
 
 def _init_server_encrypt(hs: Tls13Handshake) -> None:
@@ -585,23 +660,38 @@ def _handshake_through_ee() -> Tls13Handshake:
 
 
 def _handshake_through_cert() -> Tls13Handshake:
+    global _server_signing_key
     hs = _handshake_through_ee()
-    cert_pem, _ = generate_self_signed_cert("test.example")
+    cert_pem, _server_signing_key = generate_self_signed_cert("test.example")
     cert_msg = _server_rp.encrypt(b"\x0b\x00\x00\x04\x00\x00\x00\x00")
     hs.process_certificate(cert_msg, pem_chain=[cert_pem])
     return hs
 
 
+def _server_certificate_verify_message(hs: Tls13Handshake) -> bytes:
+    assert _server_signing_key is not None
+    signature = _server_signing_key.sign(
+        hs.build_server_certificate_verify_content(),
+        ec.ECDSA(hashes.SHA256()),
+    )
+    payload = b"\x04\x03" + len(signature).to_bytes(2, "big") + signature
+    return b"\x0f" + len(payload).to_bytes(3, "big") + payload
+
+
 def _handshake_through_cv() -> Tls13Handshake:
     hs = _handshake_through_cert()
-    cv = _server_rp.encrypt(b"\x0f\x00\x00\x42\x08\x04" + b"\x00" * 64)
+    cv = _server_rp.encrypt(_server_certificate_verify_message(hs))
     hs.process_certificate_verify(cv)
     return hs
 
 
+def _server_finished_message(hs: Tls13Handshake) -> bytes:
+    verify_data = hs.build_server_finished_verify_data()
+    return b"\x14" + len(verify_data).to_bytes(3, "big") + verify_data
+
+
 def _handshake_through_server_finished() -> Tls13Handshake:
     hs = _handshake_through_cv()
-    hs.build_server_finished_verify_data()
-    fin = _server_rp.encrypt(b"\x14\x00\x00\x20" + b"\x00" * 32)
+    fin = _server_rp.encrypt(_server_finished_message(hs))
     hs.process_finished(fin)
     return hs
