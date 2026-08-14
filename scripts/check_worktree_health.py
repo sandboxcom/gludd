@@ -17,13 +17,63 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
-
+from pathlib import Path
 
 WORKTREE_ROOT = "/tmp/gludd-worktrees"
 MAIN_CHECKOUT = "/Users/shawnwilson/gludd"
 MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours
 REMOTE_NAME = "sandboxcom"
+
+
+def _canonical_absolute_path(path: str) -> str:
+    """Return one filesystem identity or raise a stable validation code."""
+    if not path or any(ord(character) < 32 for character in path):
+        raise ValueError("control_character")
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        raise ValueError("relative_path")
+    if ".." in candidate.parts:
+        raise ValueError("traversal_segment")
+    return str(candidate.resolve())
+
+
+def _validated_active_path(path: str) -> str:
+    """Canonicalize an active path and confine it to the worktree root."""
+    canonical = Path(_canonical_absolute_path(path))
+    root = Path(WORKTREE_ROOT).resolve()
+    if canonical == root or not canonical.is_relative_to(root):
+        raise ValueError("outside_worktree_root")
+    return str(canonical)
+
+
+def _validated_entries(entries: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Exclude main and annotate every active path with validated identity."""
+    main_identity = _canonical_absolute_path(MAIN_CHECKOUT)
+    seen_identities: set[str] = set()
+    validated: list[dict[str, str]] = []
+    for source in entries:
+        entry = dict(source)
+        raw_path = entry.get("worktree", "")
+        try:
+            canonical = _canonical_absolute_path(raw_path)
+        except ValueError as exc:
+            entry["path_error"] = str(exc)
+        else:
+            if canonical == main_identity:
+                continue
+            try:
+                canonical = _validated_active_path(raw_path)
+            except ValueError as exc:
+                entry["path_error"] = str(exc)
+            else:
+                if canonical in seen_identities:
+                    entry["path_error"] = "duplicate_worktree_identity"
+                else:
+                    seen_identities.add(canonical)
+                    entry["worktree"] = canonical
+                    entry["path_identity"] = "canonical"
+        validated.append(entry)
+    return validated
 
 
 def run(cmd: list[str], cwd: str | None = None) -> tuple[int, str, str]:
@@ -74,7 +124,7 @@ def get_worktrees() -> list[dict[str, str]]:
     if current:
         entries.append(current)
 
-    return [e for e in entries if e.get("worktree", "") != MAIN_CHECKOUT and "worktree" in e]
+    return _validated_entries([entry for entry in entries if "worktree" in entry])
 
 
 def get_branch_commit(branch: str) -> str | None:
@@ -90,7 +140,7 @@ def get_branch_commit(branch: str) -> str | None:
 
 def is_merged(branch: str, target: str = "development") -> bool:
     """Check if all commits on <branch> are reachable from <target>."""
-    exit_code, stdout, _stderr = run(
+    exit_code, _stdout, _stderr = run(
         ["git", "merge-base", "--is-ancestor", branch, target],
         cwd=MAIN_CHECKOUT,
     )
@@ -141,7 +191,6 @@ def main() -> int:
 
     print(f"Checking {len(worktrees)} active worktree(s)...\n")
     violations: list[str] = []
-    now = datetime.now(timezone.utc)
 
     for wt in worktrees:
         path = wt.get("worktree", "?")
@@ -149,6 +198,17 @@ def main() -> int:
         head = wt.get("head", "?")
         prunable = wt.get("prunable", "")
         locked = wt.get("locked", "")
+        path_error = wt.get("path_error", "")
+
+        if path_error:
+            print(
+                f"  ACTIVE-WORKTREE path={path} identity=rejected "
+                f"reason={path_error} branch={branch or 'detached'} HEAD={head[:8]}"
+            )
+            violations.append(
+                f"VIOLATION: {path} has invalid worktree identity ({path_error})"
+            )
+            continue
 
         flags: list[str] = []
         if prunable:
@@ -164,7 +224,10 @@ def main() -> int:
         merged = branch and is_merged(branch)
         remote = branch_exists_on_remote(branch) if branch else True
 
-        status_line = f"  {path}  branch={branch or 'detached'}  HEAD={head[:8]}"
+        status_line = (
+            f"  ACTIVE-WORKTREE path={path} identity=canonical "
+            f"branch={branch or 'detached'} HEAD={head[:8]}"
+        )
         if flags:
             status_line += f"  flags={','.join(flags)}"
         status_line += age_flag
