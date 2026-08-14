@@ -1,5 +1,4 @@
-"""A/B test experiment engine: variants, traffic split, metrics,
-significance testing, and decision logic.
+"""Run A/B experiments with traffic splitting and significance tests.
 
 This is a self-contained statistical engine for online controlled experiments.
 It supports:
@@ -22,11 +21,15 @@ from enum import Enum, auto
 
 
 class MetricType(Enum):
+    """Identify the supported experiment metric families."""
+
     CONTINUOUS = auto()
     CONVERSION = auto()
 
 
 class ExperimentStatus(Enum):
+    """Represent the lifecycle state of an experiment."""
+
     DRAFT = auto()
     RUNNING = auto()
     CONCLUDED = auto()
@@ -89,6 +92,7 @@ class ExperimentDef:
     min_sample_size: int = 100
 
     def __post_init__(self) -> None:
+        """Validate experiment arms, weights, alpha, and control selection."""
         if len(self.variants) < 2:
             raise ValueError("Experiment must have at least 2 variants")
         weights = sum(v.traffic_weight for v in self.variants)
@@ -101,6 +105,7 @@ class ExperimentDef:
 
     @property
     def control_variant(self) -> VariantDef:
+        """Return the configured control variant."""
         for v in self.variants:
             if v.name == self.control_name:
                 return v
@@ -108,9 +113,11 @@ class ExperimentDef:
 
     @property
     def treatment_variants(self) -> list[VariantDef]:
+        """Return every variant other than the configured control."""
         return [v for v in self.variants if v.name != self.control_name]
 
     def validate_weights(self) -> None:
+        """Reject traffic weights that do not sum to one."""
         weights = sum(v.traffic_weight for v in self.variants)
         if not math.isclose(weights, 1.0, rel_tol=1e-9):
             raise ValueError(f"Traffic weights must sum to 1.0, got {weights}")
@@ -178,8 +185,10 @@ def _inverse_normal_cdf(p: float) -> float:
 
 
 def _chi2_sf(x: float, df: int) -> float:
-    """Survival function (1 - CDF) of the chi-squared distribution via
-    the regularized lower incomplete gamma function."""
+    """Return the chi-squared survival function.
+
+    The calculation uses the regularized lower incomplete gamma function.
+    """
     if x <= 0:
         return 1.0
     return 1.0 - _regularized_gamma_p(df / 2.0, x / 2.0)
@@ -272,8 +281,10 @@ def welch_t_test(
 
 
 def _t_survival(t: float, df: float) -> float:
-    """Survival function of Student's t-distribution using the regularized
-    incomplete beta function."""
+    """Return Student's t-distribution survival function.
+
+    The calculation uses the regularized incomplete beta function.
+    """
     if t < 0:
         return 1.0 - _t_survival(-t, df)
     x = df / (df + t * t)
@@ -414,9 +425,10 @@ class TrafficSplitter:
     """
 
     variants: dict[str, float]
-    _cumulative: list[tuple[str, float]] = field(init=False)
+    _cumulative: list[tuple[str, float]] = field(init=False, default_factory=list)
 
     def __post_init__(self) -> None:
+        """Build cumulative boundaries in deterministic variant order."""
         cum = 0.0
         self._cumulative = []
         for name, weight in self.variants.items():
@@ -449,6 +461,7 @@ class ExperimentDecision:
 
     @property
     def has_winner(self) -> bool:
+        """Return whether the decision selects a winning variant."""
         return self.winner is not None
 
 
@@ -461,6 +474,7 @@ class Experiment:
     status: ExperimentStatus = ExperimentStatus.DRAFT
 
     def start(self) -> None:
+        """Move a draft experiment into its running state."""
         if self.status != ExperimentStatus.DRAFT:
             raise RuntimeError(f"Cannot start experiment in status {self.status}")
         self.status = ExperimentStatus.RUNNING
@@ -539,8 +553,10 @@ class Experiment:
             )
 
     def evaluate(self) -> ExperimentDecision:
-        """Run significance tests for all treatment variants vs control on all
-        primary metrics. Return a decision."""
+        """Evaluate treatments against the control and return a decision.
+
+        Every configured primary metric participates in the significance tests.
+        """
         if self.status != ExperimentStatus.RUNNING:
             raise RuntimeError(f"Cannot evaluate experiment in status {self.status}")
 
@@ -643,6 +659,7 @@ class Experiment:
 
     @property
     def total_samples(self) -> int:
+        """Return the total number of recorded metric observations."""
         return sum(len(snaps) for snaps in self.snapshots.values())
 
 
