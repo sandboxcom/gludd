@@ -1,5 +1,4 @@
-"""Frame-based stream multiplexing with stream IDs, flow control,
-and ordered delivery within each stream.
+"""Multiplex framed streams with flow control and ordered delivery.
 
 Core types:
   Frame       — header + payload unit of the wire protocol
@@ -28,6 +27,8 @@ _MAX_PAYLOAD = 65535
 
 
 class FrameFlags(enum.IntFlag):
+    """Define control bits in the multiplexing frame header."""
+
     NONE = 0
     SYN = 1 << 0
     FIN = 1 << 1
@@ -38,12 +39,15 @@ class FrameFlags(enum.IntFlag):
 
 @dataclass
 class Frame:
+    """Represent one header and payload unit of the wire protocol."""
+
     stream_id: int
     seq: int
     flags: FrameFlags
     payload: bytes = b""
 
     def encode(self) -> bytes:
+        """Encode the frame into its wire representation."""
         header = struct.pack(
             _HEADER_FMT,
             self.stream_id & 0xFFFF_FFFF,
@@ -55,6 +59,7 @@ class Frame:
 
     @classmethod
     def decode(cls, data: bytes) -> Frame:
+        """Decode one frame from a complete wire representation."""
         if len(data) < _HEADER_SIZE:
             raise ValueError(f"frame too short: {len(data)} bytes (need {_HEADER_SIZE})")
         sid, seq, flags_byte, plen = struct.unpack(_HEADER_FMT, data[:_HEADER_SIZE])
@@ -67,7 +72,7 @@ class Frame:
 
 @dataclass
 class _FlowWindow:
-    size: int
+    size: int = 0
     _consumed: int = 0
 
     def available(self) -> int:
@@ -82,6 +87,8 @@ class _FlowWindow:
 
 @dataclass
 class StreamState:
+    """Track send, receive, flow-control, and closure state for one stream."""
+
     stream_id: int
     send_window: int
     recv_window: int
@@ -90,8 +97,8 @@ class StreamState:
     _recv_buf: dict[int, bytes] = field(default_factory=dict)
     _send_seq: int = 0
     _recv_seq: int = 0
-    _send_flow: _FlowWindow = field(init=False)
-    _recv_flow: _FlowWindow = field(init=False)
+    _send_flow: _FlowWindow = field(init=False, default_factory=_FlowWindow)
+    _recv_flow: _FlowWindow = field(init=False, default_factory=_FlowWindow)
     _send_closed: bool = False
     _recv_closed: bool = False
     _rst: bool = False
@@ -99,23 +106,28 @@ class StreamState:
     opened_at: float = field(default_factory=_monotonic_now)
 
     def __post_init__(self) -> None:
-        self._send_flow = _FlowWindow(self.send_window)
-        self._recv_flow = _FlowWindow(self.recv_window)
+        """Size the independent flow windows from the public limits."""
+        self._send_flow.size = self.send_window
+        self._recv_flow.size = self.recv_window
 
     @property
     def sendable(self) -> bool:
+        """Return whether the stream accepts outbound payloads."""
         return not self._send_closed and not self._rst
 
     @property
     def receivable(self) -> bool:
+        """Return whether the stream accepts inbound payloads."""
         return not self._recv_closed and not self._rst
 
     @property
     def is_closed(self) -> bool:
+        """Return whether both directions are closed."""
         return self._send_closed and self._recv_closed
 
     @property
     def is_rst(self) -> bool:
+        """Return whether the stream has been reset."""
         return self._rst
 
 
@@ -181,6 +193,7 @@ class StreamMux:
     # ── stream management ─────────────────────────────────────────────────
 
     def open_stream(self, *, stream_id: int | None = None) -> int:
+        """Open a stream and return its unique identifier."""
         with self._lock:
             if self._closed:
                 raise MuxError("connection closed")
@@ -197,6 +210,7 @@ class StreamMux:
             return sid
 
     def close_stream(self, stream_id: int) -> None:
+        """Close the outbound direction and enqueue a FIN frame."""
         with self._lock:
             st = self._get_stream(stream_id)
             if st._send_closed:
@@ -206,6 +220,7 @@ class StreamMux:
             st._send_seq += 1
 
     def reset_stream(self, stream_id: int, error: str = "") -> None:
+        """Reset a stream and enqueue its optional error payload."""
         with self._lock:
             st = self._get_stream(stream_id)
             st._rst = True
@@ -213,21 +228,25 @@ class StreamMux:
             self._pending_frames.append(Frame(stream_id=stream_id, seq=0, flags=FrameFlags.RST, payload=error.encode()))
 
     def stream_count(self) -> int:
+        """Return the number of streams tracked by this connection."""
         with self._lock:
             return len(self._streams)
 
     @property
     def stream_ids(self) -> list[int]:
+        """Return tracked stream identifiers in ascending order."""
         with self._lock:
             return sorted(self._streams)
 
     def stream_state(self, stream_id: int) -> StreamState:
+        """Return the state for an existing stream."""
         with self._lock:
             return self._get_stream(stream_id)
 
     # ── send side ──────────────────────────────────────────────────────────
 
     def send(self, stream_id: int, data: bytes) -> None:
+        """Queue one payload when the stream and flow window allow it."""
         with self._lock:
             st = self._get_stream(stream_id)
             if not st.sendable:
@@ -242,6 +261,7 @@ class StreamMux:
             st._send_seq += 1
 
     def handle_window_update(self, stream_id: int, delta: int) -> None:
+        """Advance an outbound flow-control window."""
         with self._lock:
             st = self._get_stream(stream_id)
             st._send_flow.advance(delta)
@@ -249,6 +269,7 @@ class StreamMux:
     # ── flush (build wire bytes) ───────────────────────────────────────────
 
     def flush(self) -> list[bytes]:
+        """Encode and clear every pending outbound frame."""
         with self._lock:
             frames = list(self._pending_frames)
             self._pending_frames.clear()
@@ -257,8 +278,7 @@ class StreamMux:
     # ── recv side (demux) ──────────────────────────────────────────────────
 
     def ingest(self, data: bytes) -> list[tuple[int, bytes]]:
-        """Feed raw bytes from the wire; return (stream_id, payload) for each
-        complete non-control frame delivered in order."""
+        """Feed wire bytes and return complete data frames in stream order."""
         with self._lock:
             self._recv_buffer.extend(data)
             delivered: list[tuple[int, bytes]] = []
@@ -269,11 +289,13 @@ class StreamMux:
     # ── close / lifecycle ──────────────────────────────────────────────────
 
     def close(self) -> None:
+        """Close the connection to new streams."""
         with self._lock:
             self._closed = True
 
     @property
     def is_closed(self) -> bool:
+        """Return whether the connection is closed."""
         with self._lock:
             return self._closed
 
