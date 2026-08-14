@@ -1,7 +1,10 @@
+"""Create, inspect, and validate X.509 certificates and signing requests."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 from typing import Any
 
 from cryptography import x509
@@ -11,7 +14,6 @@ from cryptography.hazmat.primitives.asymmetric import (
     ec,
     ed448,
     ed25519,
-    padding,
     rsa,
 )
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
@@ -27,6 +29,7 @@ def _signature_hash(private_key: Any) -> hashes.SHA256 | None:
 
 
 def generate_key(key_type: str, key_size: int | None = None) -> bytes:
+    """Generate an unencrypted private key in PKCS8 PEM form."""
     private_key: _PrivateKeyTypes
     if key_type == "rsa":
         size = key_size or 2048
@@ -65,6 +68,7 @@ def generate_csr(
     key_usage: list[str] | None = None,
     extended_key_usage: list[str] | None = None,
 ) -> bytes:
+    """Build a signed CSR, including CA constraints for certificate-signing keys."""
     private_key = _load_private_key(key_pem)
 
     name_attrs = [_name_attribute(k, v) for k, v in subject.items()]
@@ -105,6 +109,11 @@ def generate_csr(
         if kwargs["encipher_only"] or kwargs["decipher_only"]:
             kwargs["key_agreement"] = True
         csr_builder = csr_builder.add_extension(x509.KeyUsage(**kwargs), critical=True)
+        if kwargs["key_cert_sign"]:
+            csr_builder = csr_builder.add_extension(
+                x509.BasicConstraints(ca=True, path_length=None),
+                critical=True,
+            )
 
     if extended_key_usage:
         eku_map: dict[str, x509.ObjectIdentifier] = {
@@ -167,6 +176,7 @@ def _build_cert(
 
 
 def self_sign(csr_pem: bytes, key_pem: bytes, validity_days: int = 365) -> bytes:
+    """Issue a self-signed certificate from *csr_pem*."""
     csr = x509.load_pem_x509_csr(csr_pem)
     private_key = _load_private_key(key_pem)
     return _build_cert(
@@ -185,6 +195,7 @@ def sign_csr(
     ca_key_pem: bytes,
     validity_days: int = 365,
 ) -> bytes:
+    """Issue a certificate from a CSR using the supplied CA certificate and key."""
     csr = x509.load_pem_x509_csr(csr_pem)
     ca_cert = x509.load_pem_x509_certificate(ca_cert_pem)
     ca_key = _load_private_key(ca_key_pem)
@@ -199,6 +210,7 @@ def sign_csr(
 
 
 def parse_cert(cert_pem: bytes) -> dict[str, object]:
+    """Return a serializable summary of a PEM certificate."""
     cert = x509.load_pem_x509_certificate(cert_pem)
 
     _oid_to_name: dict[str, str] = {
@@ -301,43 +313,23 @@ def parse_cert(cert_pem: bytes) -> dict[str, object]:
 
 
 def verify_chain(cert_chain: list[bytes]) -> bool:
+    """Verify each leaf-first direct-issuance link without asserting trust."""
     if len(cert_chain) < 2:
         return False
-    for i in range(len(cert_chain) - 1):
+    try:
+        parsed = [x509.load_pem_x509_certificate(pem) for pem in cert_chain]
+    except (ValueError, TypeError):
+        return False
+    for cert, issuer in pairwise(parsed):
         try:
-            cert = x509.load_pem_x509_certificate(cert_chain[i])
-            issuer = x509.load_pem_x509_certificate(cert_chain[i + 1])
-            issuer_key = issuer.public_key()
-            if isinstance(issuer_key, rsa.RSAPublicKey):
-                sig_hash = cert.signature_hash_algorithm or hashes.SHA256()
-                issuer_key.verify(
-                    cert.signature,
-                    cert.tbs_certificate_bytes,
-                    padding.PKCS1v15(),
-                    sig_hash,
-                )
-            elif isinstance(issuer_key, ec.EllipticCurvePublicKey):
-                sig_hash = cert.signature_hash_algorithm or hashes.SHA256()
-                issuer_key.verify(
-                    cert.signature,
-                    cert.tbs_certificate_bytes,
-                    ec.ECDSA(sig_hash),
-                )
-            elif isinstance(issuer_key, ed25519.Ed25519PublicKey):
-                issuer_key.verify(
-                    cert.signature,
-                    cert.tbs_certificate_bytes,
-                )
-            else:
-                return False
-            if cert.issuer != issuer.subject:
-                return False
+            cert.verify_directly_issued_by(issuer)
         except (InvalidSignature, ValueError, TypeError):
             return False
     return True
 
 
 def build_chain(leaf_cert: bytes, intermediates: list[bytes]) -> list[bytes]:
+    """Build a leaf-first chain from unordered candidate intermediates."""
     certs: list[tuple[x509.Certificate, bytes]] = []
     for pem in [leaf_cert, *intermediates]:
         cert = x509.load_pem_x509_certificate(pem)
@@ -364,6 +356,8 @@ def build_chain(leaf_cert: bytes, intermediates: list[bytes]) -> list[bytes]:
 
 @dataclass
 class ValidationResult:
+    """Describe chain policy status, diagnostics, and parsed certificate details."""
+
     valid: bool
     errors: list[str] = field(default_factory=list)
     cert_details: list[dict[str, object]] = field(default_factory=list)
@@ -410,30 +404,9 @@ def _cert_details(cert: x509.Certificate) -> dict[str, object]:
 
 
 def _verify_signature(cert: x509.Certificate, issuer: x509.Certificate) -> bool:
-    issuer_key = issuer.public_key()
+    """Return whether *issuer* directly issued and signed *cert*."""
     try:
-        if isinstance(issuer_key, rsa.RSAPublicKey):
-            sig_hash = cert.signature_hash_algorithm or hashes.SHA256()
-            issuer_key.verify(
-                cert.signature,
-                cert.tbs_certificate_bytes,
-                padding.PKCS1v15(),
-                sig_hash,
-            )
-        elif isinstance(issuer_key, ec.EllipticCurvePublicKey):
-            sig_hash = cert.signature_hash_algorithm or hashes.SHA256()
-            issuer_key.verify(
-                cert.signature,
-                cert.tbs_certificate_bytes,
-                ec.ECDSA(sig_hash),
-            )
-        elif isinstance(issuer_key, ed25519.Ed25519PublicKey):
-            issuer_key.verify(
-                cert.signature,
-                cert.tbs_certificate_bytes,
-            )
-        else:
-            return False
+        cert.verify_directly_issued_by(issuer)
         return True
     except (InvalidSignature, ValueError, TypeError):
         return False
@@ -470,7 +443,7 @@ def _check_key_usage(cert: x509.Certificate, is_leaf: bool, position: int) -> li
     try:
         ku = cert.extensions.get_extension_for_class(x509.KeyUsage)
         if not ku.value.key_cert_sign:
-            errors.append(f"cert at position {position}: issuer lacks keyCertSign in KeyUsage")
+            errors.append(f"cert at position {position}: issuer key usage does not allow key_cert_sign")
     except x509.ExtensionNotFound:
         pass
     return errors
@@ -500,6 +473,7 @@ def validate_chain(
     cert_chain: list[bytes],
     validation_time: datetime | None = None,
 ) -> ValidationResult:
+    """Validate a leaf-first chain against its caller-supplied terminal anchor."""
     if not cert_chain:
         return ValidationResult(valid=False, errors=["empty certificate chain"])
 

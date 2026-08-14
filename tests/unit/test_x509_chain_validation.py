@@ -239,6 +239,14 @@ class _Val:
 
 
 class TestValidateChainBasic:
+    def test_generated_ca_has_critical_basic_constraints(self) -> None:
+        root, _ = _root_ca()
+        cert = x509.load_pem_x509_certificate(root)
+        constraints = cert.extensions.get_extension_for_class(x509.BasicConstraints)
+        assert constraints.critical is True
+        assert constraints.value.ca is True
+        assert constraints.value.path_length is None
+
     def test_valid_two_level_chain(self) -> None:
         root, root_key = _root_ca()
         leaf, _ = _leaf_cert(root, root_key)
@@ -277,11 +285,8 @@ class TestValidateChainExpiry:
             validity_days=1,
         )
         leaf = x509.load_pem_x509_certificate(leaf_pem)
-        if leaf.not_valid_after_utc > datetime.datetime.now(datetime.UTC):
-            import time
-
-            time.sleep(2)
-        result = validate_chain([leaf_pem, root])
+        validation_time = leaf.not_valid_after_utc + datetime.timedelta(microseconds=1)
+        result = validate_chain([leaf_pem, root], validation_time=validation_time)
         has_expiry_error = any("expired" in e.lower() or "not yet valid" in e.lower() for e in result.errors)
         has_date_error = any("valid" in e.lower() for e in result.errors)
         assert result.valid is False
