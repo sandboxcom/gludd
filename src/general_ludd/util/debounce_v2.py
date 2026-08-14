@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from collections.abc import Callable, Coroutine
 from typing import Any, TypeVar
@@ -37,10 +38,11 @@ class DebounceV2:
         max_wait: float | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        if wait < 0:
-            raise ValueError("wait must be >= 0")
-        if max_wait is not None and max_wait <= 0:
-            raise ValueError("max_wait must be > 0")
+        """Initialize a synchronous debounce state machine."""
+        if not math.isfinite(wait) or wait < 0:
+            raise ValueError("wait must be finite and >= 0")
+        if max_wait is not None and (not math.isfinite(max_wait) or max_wait <= 0):
+            raise ValueError("max_wait must be finite and > 0")
         if not leading and not trailing:
             raise ValueError("at least one of leading/trailing must be True")
 
@@ -58,9 +60,11 @@ class DebounceV2:
 
     @property
     def pending(self) -> bool:
+        """Return whether a trailing invocation is queued."""
         return self._pending_args is not None
 
     def __call__(self, *args: Any, **kwargs: Any) -> None:
+        """Record a call and invoke or queue it according to edge settings."""
         now = self._clock()
 
         leading_fired = False
@@ -103,22 +107,26 @@ class DebounceV2:
         self._fn(*args, **kwargs)
 
     def drive(self, until: float) -> None:
+        """Advance an injected simulated clock and process one due callback."""
         if callable(getattr(self._clock, "advance", None)):
             self._clock.advance(until - self._clock())
             self._tick()
 
     def cancel(self) -> None:
+        """Discard a queued trailing invocation."""
         self._pending_args = None
         self._timer = None
         self._first_call_at = None
 
     def flush(self) -> None:
+        """Immediately invoke and clear a queued trailing call, if present."""
         if self._pending_args is not None:
             args, kwargs = self._pending_args
             self.cancel()
             self._fn(*args, **kwargs)
 
     def reset(self) -> None:
+        """Clear pending work and restore leading-edge admission state."""
         self.cancel()
         self._last_leading_epoch = -float("inf")
 
@@ -140,10 +148,11 @@ class AsyncDebounceV2:
         trailing: bool = True,
         max_wait: float | None = None,
     ) -> None:
-        if wait < 0:
-            raise ValueError("wait must be >= 0")
-        if max_wait is not None and max_wait <= 0:
-            raise ValueError("max_wait must be > 0")
+        """Initialize an event-loop-bound async debounce state machine."""
+        if not math.isfinite(wait) or wait < 0:
+            raise ValueError("wait must be finite and >= 0")
+        if max_wait is not None and (not math.isfinite(max_wait) or max_wait <= 0):
+            raise ValueError("max_wait must be finite and > 0")
         if not leading and not trailing:
             raise ValueError("at least one of leading/trailing must be True")
 
@@ -156,23 +165,38 @@ class AsyncDebounceV2:
         self._last_leading_epoch: float = -float("inf")
         self._pending_args: tuple[tuple[Any, ...], dict[str, Any]] | None = None
         self._task: asyncio.Task[Any] | None = None
+        self._leading_tasks: set[asyncio.Task[Any]] = set()
         self._first_call_at: float | None = None
 
     @property
     def pending(self) -> bool:
+        """Return whether a trailing timer task is active."""
         t = self._task
         return t is not None and not t.done()
 
     def __call__(self, *args: Any, **kwargs: Any) -> None:
-        now = time.monotonic()
+        """Schedule leading or trailing async work on the running loop."""
+        now = asyncio.get_running_loop().time()
 
+        leading_fired = False
         if self._leading and now - self._last_leading_epoch >= self._wait:
             self._last_leading_epoch = now
-            self._task = asyncio.create_task(self._fn(*args, **kwargs))
+            leading_task = asyncio.create_task(self._fn(*args, **kwargs))
+            self._leading_tasks.add(leading_task)
+            leading_task.add_done_callback(self._leading_tasks.discard)
+            leading_fired = True
             if not self._trailing:
                 return
 
         if not self._trailing:
+            return
+
+        if leading_fired:
+            if self._task is not None and not self._task.done():
+                self._task.cancel()
+            self._task = None
+            self._pending_args = None
+            self._first_call_at = now
             return
 
         self._pending_args = (args, kwargs)
@@ -197,11 +221,13 @@ class AsyncDebounceV2:
             await self._fn(*args, **kwargs)
 
     def cancel(self) -> None:
+        """Request cancellation of delayed trailing work."""
         if self._task is not None:
             self._task.cancel()
         self._pending_args = None
         self._first_call_at = None
 
     def reset(self) -> None:
+        """Cancel delayed work and restore leading-edge admission state."""
         self.cancel()
         self._last_leading_epoch = -float("inf")

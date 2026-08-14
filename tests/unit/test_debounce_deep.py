@@ -8,225 +8,11 @@ multi-instance isolation, and argument preservation.
 from __future__ import annotations
 
 import asyncio
-import time
-from collections.abc import Awaitable, Callable
-from typing import Any, TypeVar
+from typing import Any
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Inline implementations (extract to src/general_ludd/utils/debounce.py later)
-# ---------------------------------------------------------------------------
-
-F = TypeVar("F", bound=Callable[..., Any])
-AF = TypeVar("AF", bound=Callable[..., Awaitable[Any]])
-
-
-class Debouncer:
-    """Trailing-edge debounce with optional leading-edge and max-wait support.
-
-    ``wait`` seconds of inactivity must pass before *fn* is called.  If
-    ``leading=True`` the very first call fires immediately and subsequent
-    calls within the window are suppressed.  If *max_wait* is set and
-    non-None, the callback is guaranteed to fire at least once per
-    *max_wait* seconds during a sustained burst (trailing-only mode).
-    """
-
-    def __init__(
-        self,
-        fn: F,
-        wait: float,
-        *,
-        leading: bool = False,
-        max_wait: float | None = None,
-        clock: Callable[[], float] = time.monotonic,
-    ) -> None:
-        if wait < 0:
-            raise ValueError("wait must be >= 0")
-        if max_wait is not None and max_wait < 0:
-            raise ValueError("max_wait must be >= 0")
-        if max_wait is not None and max_wait < wait:
-            raise ValueError("max_wait must be >= wait")
-        self._fn: Callable[..., Any] = fn
-        self._wait: float = wait
-        self._leading: bool = leading
-        self._max_wait: float | None = max_wait
-        self._clock: Any = clock
-        self._timer: float | None = None
-        self._first_call_at: float | None = None
-        self._pending_args: tuple[tuple[Any, ...], dict[str, Any]] | None = None
-        self._last_leading_epoch: float = -float("inf")
-
-    @property
-    def pending(self) -> bool:
-        return self._pending_args is not None
-
-    def __call__(self, *args: Any, **kwargs: Any) -> None:
-        now = self._clock()
-
-        if self._leading:
-            if now - self._last_leading_epoch >= self._wait:
-                self._last_leading_epoch = now
-                self._fn(*args, **kwargs)
-            return
-
-        self._pending_args = (args, kwargs)
-        if self._first_call_at is None:
-            self._first_call_at = now
-
-        due_at = now + self._wait
-        if self._max_wait is not None and self._first_call_at is not None:
-            due_at = min(due_at, self._first_call_at + self._max_wait)
-
-        if self._timer is None:
-            self._timer = due_at
-
-    def _tick(self) -> None:
-        """Single clock tick — invoke if the timer has elapsed (caller drives)."""
-        if self._pending_args is None or self._timer is None:
-            return
-        now = self._clock()
-        if now < self._timer:
-            return
-        args, kwargs = self._pending_args
-        self._pending_args = None
-        self._timer = None
-        self._first_call_at = None
-        self._fn(*args, **kwargs)
-
-    def drive(self, until: float) -> None:
-        """Advance time (simulated clock only) and fire any due callbacks."""
-        if callable(getattr(self._clock, "advance", None)):
-            self._clock.advance(until - self._clock())
-            self._tick()
-
-    def cancel(self) -> None:
-        self._pending_args = None
-        self._timer = None
-        self._first_call_at = None
-
-    def flush(self) -> None:
-        if self._pending_args is not None:
-            args, kwargs = self._pending_args
-            self.cancel()
-            self._fn(*args, **kwargs)
-
-    def reset(self) -> None:
-        self.cancel()
-        self._last_leading_epoch = 0.0
-
-
-class Throttle:
-    """Rate-limit *fn* to at most once per ``wait`` seconds.
-
-    By default (leading=True, trailing=False) the very first call fires
-    immediately and subsequent calls within the window are suppressed.
-    When *trailing=True* the most recent args are held and fired after
-    the window expires (even if intermediate calls arrived).  Both flags
-    can be set together.
-    """
-
-    def __init__(
-        self,
-        fn: F,
-        wait: float,
-        *,
-        leading: bool = True,
-        trailing: bool = False,
-        clock: Callable[[], float] = time.monotonic,
-    ) -> None:
-        if wait < 0:
-            raise ValueError("wait must be >= 0")
-        self._fn: Callable[..., Any] = fn
-        self._wait: float = wait
-        self._leading: bool = leading
-        self._trailing: bool = trailing
-        self._clock: Any = clock
-        self._last_fired: float = 0.0
-        self._pending_args: tuple[tuple[Any, ...], dict[str, Any]] | None = None
-        self._timer: float | None = None
-
-    def __call__(self, *args: Any, **kwargs: Any) -> None:
-        now = self._clock()
-        elapsed = now - self._last_fired
-
-        if self._leading and elapsed >= self._wait:
-            self._last_fired = now
-            self._pending_args = None
-            self._timer = None
-            self._fn(*args, **kwargs)
-            return
-
-        if self._trailing:
-            self._pending_args = (args, kwargs)
-            if self._timer is None:
-                self._timer = self._last_fired + self._wait
-
-        if self._leading and elapsed < self._wait:
-            pass
-
-    def _tick(self) -> None:
-        if self._pending_args is None or self._timer is None:
-            return
-        now = self._clock()
-        if now < self._timer:
-            return
-        args, kwargs = self._pending_args
-        self._pending_args = None
-        self._timer = None
-        self._last_fired = now
-        self._fn(*args, **kwargs)
-
-    def drive(self, until: float) -> None:
-        if callable(getattr(self._clock, "advance", None)):
-            self._clock.advance(until - self._clock())
-            self._tick()
-
-    def cancel(self) -> None:
-        self._pending_args = None
-        self._timer = None
-
-    def reset(self) -> None:
-        self.cancel()
-        self._last_fired = 0.0
-
-
-class AsyncDebouncer:
-    """Trailing-edge async debouncer.  Must be driven via ``asyncio.sleep``
-    in a task spawned by the caller.  *fn* is an async callable invoked
-    after *wait* seconds of inactivity.
-    """
-
-    def __init__(self, fn: AF, wait: float) -> None:
-        if wait < 0:
-            raise ValueError("wait must be >= 0")
-        self._fn: Callable[..., Awaitable[Any]] = fn
-        self._wait: float = wait
-        self._pending_args: tuple[tuple[Any, ...], dict[str, Any]] | None = None
-        self._task: asyncio.Task[Any] | None = None
-
-    @property
-    def pending(self) -> bool:
-        t = self._task
-        return t is not None and not t.done()
-
-    async def _run_after(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
-        await asyncio.sleep(self._wait)
-        if self._pending_args == (args, kwargs):
-            self._pending_args = None
-            await self._fn(*args, **kwargs)
-
-    def __call__(self, *args: Any, **kwargs: Any) -> None:
-        self._pending_args = (args, kwargs)
-        if self._task is not None and not self._task.done():
-            self._task.cancel()
-        self._task = asyncio.create_task(self._run_after(args, kwargs))
-
-    def cancel(self) -> None:
-        if self._task is not None:
-            self._task.cancel()
-        self._pending_args = None
-
+from general_ludd.util.debounce import AsyncDebouncer, Debouncer, Throttle
 
 # ---------------------------------------------------------------------------
 # Simulated clock for deterministic tests
@@ -330,7 +116,7 @@ class TestDebouncerTrailing:
         clock = SimulatedClock(0.0)
         d = Debouncer(lambda: None, wait=10.0, clock=clock)
         assert not d.pending
-        d(1)
+        d()
         assert d.pending
         d.drive(10.0)
         assert not d.pending
@@ -371,9 +157,9 @@ class TestDebouncerTrailing:
         d.drive(5.0)
         assert calls == [1]
 
-    def test_max_wait_must_be_gte_wait(self) -> None:
+    def test_max_wait_must_be_positive(self) -> None:
         with pytest.raises(ValueError, match="max_wait"):
-            Debouncer(lambda: None, wait=3.0, max_wait=2.0)
+            Debouncer(lambda: None, wait=3.0, max_wait=0.0)
 
     def test_rejects_negative_max_wait(self) -> None:
         with pytest.raises(ValueError, match="max_wait"):
@@ -468,6 +254,15 @@ class TestThrottleLeading:
     def test_rejects_negative_wait(self) -> None:
         with pytest.raises(ValueError, match="wait"):
             Throttle(lambda: None, wait=-1.0)
+
+    @pytest.mark.parametrize("wait", [float("nan"), float("inf")])
+    def test_rejects_non_finite_wait(self, wait: float) -> None:
+        with pytest.raises(ValueError, match="wait"):
+            Throttle(lambda: None, wait=wait)
+
+    def test_rejects_no_enabled_edge(self) -> None:
+        with pytest.raises(ValueError, match="at least one"):
+            Throttle(lambda: None, wait=1.0, leading=False, trailing=False)
 
 
 class TestThrottleTrailing:
