@@ -387,6 +387,7 @@ class TestCloudMultiModelPipelineLive:
 
     @pytest.mark.slow
     def test_orchestrate_all_python_types(self, gateway: Any, tmp_path: Path) -> None:
+        """Exercise every Python project type through three live model calls."""
         from general_ludd.cloud.project_types import get_project_type
 
         results: list[dict[str, Any]] = []
