@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
 
+import httpx
 import tenacity
 
 if TYPE_CHECKING:
@@ -80,6 +81,11 @@ PayloadDimension = Literal[
     "decompression_ratio",
 ]
 PayloadSource = Literal["gateway", "provider", "cache"]
+
+
+def _default_provider_request_timeout() -> httpx.Timeout:
+    """Return the gateway-owned deadline for non-streaming provider clients."""
+    return httpx.Timeout(connect=10.0, read=60.0, write=60.0, pool=10.0)
 
 
 def _positive_profile_limit(profile: object, field_name: str, default: int) -> int:
@@ -1471,6 +1477,7 @@ class ModelGateway:
                         f"SSRF guard: refusing blocked api_base_alias URL (redacted) for profile '{profile_id}'"
                     )
                 init_kwargs["base_url"] = base_url
+        init_kwargs["request_timeout"] = _default_provider_request_timeout()
         chat_model = provider_cls(**init_kwargs)
         if tools:
             if hasattr(chat_model, "bind_tools"):
@@ -2760,6 +2767,10 @@ class ModelGateway:
         # arbitrary host as long as it passed the SSRF guard. That path is now closed.
         caller_base_url = kwargs.pop("base_url", None)
         caller_api_key = kwargs.pop("api_key", None)
+        caller_request_timeout_supplied = "request_timeout" in kwargs
+        caller_timeout_supplied = "timeout" in kwargs
+        kwargs.pop("request_timeout", None)
+        kwargs.pop("timeout", None)
         if caller_base_url is not None:
             logger.warning(
                 "Ignoring caller-supplied base_url in kwargs for profile=%s "
@@ -2772,15 +2783,19 @@ class ModelGateway:
                 "(credentials come from the configured secrets alias only)",
                 profile_id,
             )
+        if caller_request_timeout_supplied or caller_timeout_supplied:
+            logger.warning(
+                "Ignoring caller-supplied timeout override for profile=%s "
+                "(request deadlines are gateway-owned)",
+                profile_id,
+            )
 
         # C6 hardening: default httpx timeout so a hung provider never blocks a
         # thread indefinitely. The underlying LangChain ChatOpenAI passes
         # request_timeout directly to httpx.Timeout, giving us a connect cap
         # (fast failure on unreachable hosts) + a generous read cap (slow
         # streaming is expected from large-context models).
-        import httpx as _httpx
-
-        init_kwargs["request_timeout"] = _httpx.Timeout(connect=10.0, read=60.0, write=60.0, pool=10.0)
+        init_kwargs["request_timeout"] = _default_provider_request_timeout()
 
         init_kwargs.update(kwargs)
 

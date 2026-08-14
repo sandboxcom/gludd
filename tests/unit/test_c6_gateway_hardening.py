@@ -16,15 +16,16 @@ import pytest
 from general_ludd.models.gateway import (
     ModelGateway,
     ModelProfile,
+    ModelResponse,
     SSRFRejectionError,
 )
 from general_ludd.models.provider_registry import ProviderRegistry
 
 
-def _capture_provider(recorder: dict):
+def _capture_provider(recorder: dict[str, object]) -> object:
     """Provider class stand-in that records the ctor kwargs into ``recorder``."""
 
-    def factory(**kwargs):
+    def factory(**kwargs: object) -> MagicMock:
         recorder.clear()
         recorder.update(kwargs)
         instance = MagicMock()
@@ -53,7 +54,7 @@ class TestCallerKwargsCannotOverrideValidatedBaseUrl:
     """C6-1: caller-supplied base_url in kwargs must NEVER override an
     SSRF-validated profile base_url (or reach the provider without validation)."""
 
-    def _make_gateway(self):
+    def _make_gateway(self) -> tuple[ModelGateway, ProviderRegistry]:
         reg = ProviderRegistry()
         reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
         secrets = _DictSecretsResolver({
@@ -79,11 +80,11 @@ class TestCallerKwargsCannotOverrideValidatedBaseUrl:
         )
         return gw, reg
 
-    def test_caller_kwargs_cannot_override_validated_base_url(self):
+    def test_caller_kwargs_cannot_override_validated_base_url(self) -> None:
         """A caller-supplied base_url in kwargs must NOT override the alias-
         resolved, SSRF-validated base_url on the profile."""
         gw, reg = self._make_gateway()
-        captured: dict = {}
+        captured: dict[str, object] = {}
         with (
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=_capture_provider(captured)),
@@ -93,15 +94,15 @@ class TestCallerKwargsCannotOverrideValidatedBaseUrl:
                 [{"role": "user", "content": "hi"}],
                 base_url="https://evil-proxy.example.com",
             )
-        assert isinstance(resp, object)
+        assert isinstance(resp, ModelResponse)
         assert resp.content == "ok"
-        assert "base_url" not in captured or captured.get("base_url") != "https://evil-proxy.example.com"
+        assert captured["base_url"] == "https://safe-api.example.com"
 
-    def test_caller_kwargs_cannot_override_validated_api_key(self):
+    def test_caller_kwargs_cannot_override_validated_api_key(self) -> None:
         """A caller-supplied api_key in kwargs must NOT override the alias-
         resolved credential on the profile."""
         gw, reg = self._make_gateway()
-        captured: dict = {}
+        captured: dict[str, object] = {}
         with (
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=_capture_provider(captured)),
@@ -111,19 +112,16 @@ class TestCallerKwargsCannotOverrideValidatedBaseUrl:
                 [{"role": "user", "content": "hi"}],
                 api_key="caller-injected-evil-key",  # pragma: allowlist secret
             )
-        assert isinstance(resp, object)
+        assert isinstance(resp, ModelResponse)
         assert resp.content == "ok"
-        assert (
-            "api_key" not in captured
-            or captured.get("api_key") != "caller-injected-evil-key"
-        )  # pragma: allowlist secret
+        assert captured["api_key"] == "sk-alias-key"  # pragma: allowlist secret
 
 
 class TestGatewayHasRequestTimeout:
     """C6-2: the gateway must configure a request+connect timeout on the httpx
     client used by the provider."""
 
-    def _make_gateway(self):
+    def _make_gateway(self) -> tuple[ModelGateway, ProviderRegistry]:
         reg = ProviderRegistry()
         reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
         profile = ModelProfile(
@@ -139,11 +137,11 @@ class TestGatewayHasRequestTimeout:
         gw = ModelGateway(profiles=[profile], provider_registry=reg)
         return gw, reg
 
-    def test_gateway_has_request_timeout(self):
+    def test_gateway_has_request_timeout(self) -> None:
         """The provider constructor must receive a timeout configuration
         with a connect timeout."""
         gw, reg = self._make_gateway()
-        captured: dict = {}
+        captured: dict[str, object] = {}
         with (
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=_capture_provider(captured)),
@@ -152,7 +150,7 @@ class TestGatewayHasRequestTimeout:
                 "gpt4_to",
                 [{"role": "user", "content": "hi"}],
             )
-        assert isinstance(resp, object)
+        assert isinstance(resp, ModelResponse)
         assert resp.content == "ok"
 
         timeout = captured.get("request_timeout")
@@ -168,12 +166,49 @@ class TestGatewayHasRequestTimeout:
                 f"unexpected timeout type: {type(timeout)}"
             )
 
+    def test_caller_cannot_disable_gateway_timeout(self) -> None:
+        """Caller kwargs cannot remove the gateway-owned resource deadline."""
+        gw, reg = self._make_gateway()
+        captured: dict[str, object] = {}
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=_capture_provider(captured)),
+        ):
+            resp = gw.call_model(
+                "gpt4_to",
+                [{"role": "user", "content": "hi"}],
+                request_timeout=None,
+                timeout=None,
+            )
+
+        assert resp.content == "ok"
+        timeout = captured.get("request_timeout")
+        assert isinstance(timeout, httpx.Timeout)
+        assert timeout.connect == 10.0
+        assert timeout.read == 60.0
+        assert "timeout" not in captured
+
+    def test_raw_chat_model_has_gateway_timeout(self) -> None:
+        """The raw chat-model construction path must not create an unbounded client."""
+        gw, reg = self._make_gateway()
+        captured: dict[str, object] = {}
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=_capture_provider(captured)),
+        ):
+            gw.get_chat_model("gpt4_to")
+
+        timeout = captured.get("request_timeout")
+        assert isinstance(timeout, httpx.Timeout)
+        assert timeout.connect == 10.0
+        assert timeout.read == 60.0
+
 
 class TestSSrfErrorDoesNotLeakResolvedUrl:
     """C6-3: SSRF rejection errors must NOT leak the resolved/validated URL
     or IP address in the error text."""
 
-    def _make_gateway_with_blocked_alias(self):
+    def _make_gateway_with_blocked_alias(self) -> tuple[ModelGateway, ProviderRegistry]:
         reg = ProviderRegistry()
         reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
         secrets = _DictSecretsResolver({
@@ -197,7 +232,7 @@ class TestSSrfErrorDoesNotLeakResolvedUrl:
         )
         return gw, reg
 
-    def test_ssrf_error_does_not_leak_resolved_url(self):
+    def test_ssrf_error_does_not_leak_resolved_url(self) -> None:
         """When an api_base_alias resolves to a blocked URL, the SSRF error
         must NOT contain the raw resolved URL or IP."""
         gw, reg = self._make_gateway_with_blocked_alias()
