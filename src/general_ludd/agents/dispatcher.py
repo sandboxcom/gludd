@@ -8,6 +8,7 @@ import inspect
 import logging
 import time
 from collections.abc import Callable, Coroutine, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -37,6 +38,7 @@ class DispatchStatus(str):
     """
 
     def __eq__(self, other: object) -> bool:
+        """Compare canonical and historical successful status spellings."""
         if isinstance(other, str) and other in {"success", "completed"}:
             return True
         return super().__eq__(other)
@@ -50,6 +52,8 @@ DEFAULT_DISPATCH_TIMEOUT = 1800.0  # 30 minutes
 
 @dataclass
 class AgentTaskResult:
+    """Represent the terminal result of one dispatched agent task."""
+
     task_id: str
     agent_name: str
     status: str
@@ -71,6 +75,8 @@ async def _noop_executor(task: AgentTask) -> str:
 
 
 class AgentDispatcher:
+    """Validate, enrich, execute, and account for agent tasks."""
+
     def __init__(
         self,
         registry: AgentRegistry,
@@ -84,6 +90,7 @@ class AgentDispatcher:
         mcp_tool_registry: object | None = None,
         orchestration_guard: OrchestrationGuardConfig | None = None,
     ) -> None:
+        """Initialize dispatcher collaborators and concurrency guards."""
         self._registry = registry
         self._executor: ExecutorFn = executor or _noop_executor
         self._semaphores: dict[str, asyncio.BoundedSemaphore] = {}
@@ -107,9 +114,11 @@ class AgentDispatcher:
 
     @property
     def active_count(self) -> int:
+        """Return the number of tasks currently inside executor ownership."""
         return self._active_count
 
     async def get_active_tasks_for_project(self, project_id: str) -> list[AgentTask]:
+        """Return a lock-consistent snapshot of tasks for ``project_id``."""
         async with self._lock:
             return [t for t in self._active_tasks.values() if t.project_id == project_id]
 
@@ -260,6 +269,7 @@ class AgentDispatcher:
     # ------------------------------------------------------------------
 
     async def dispatch_one(self, task: AgentTask) -> AgentTaskResult:
+        """Validate and execute one task through its configured agent boundary."""
         config = self._registry.get(task.agent_name)
         if config is None:
             self._record_if_wired(
@@ -373,12 +383,20 @@ class AgentDispatcher:
                         {
                             "name": t.name,
                             "description": t.description,
-                            "parameters": t.input_schema,
+                            # The executor owns its per-task schema snapshot.
+                            # Sharing the registry dictionary would let one
+                            # dispatched task mutate tools seen by later tasks.
+                            "parameters": deepcopy(t.input_schema),
                         }
                         for t in mcp_tools
                     ]
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "MCP tool discovery failed for task %s; continuing without "
+                    "dynamic tools: %s",
+                    task.task_id,
+                    sanitize_error_message(str(exc)),
+                )
 
         semaphore = await self._get_semaphore(task.agent_name)
         start = time.monotonic()
@@ -527,6 +545,7 @@ class AgentDispatcher:
         tasks: list[AgentTask],
         timeout: float = DEFAULT_DISPATCH_TIMEOUT,
     ) -> list[AgentTaskResult]:
+        """Dispatch a task batch and convert timeouts or exceptions to results."""
         if not tasks:
             return []
         futures = [asyncio.ensure_future(self.dispatch_one(t)) for t in tasks]
