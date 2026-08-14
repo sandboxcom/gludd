@@ -74,7 +74,9 @@ _NO_UV_SYNC_GOALS := \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger ci-shards-log-context \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
     search show-lines cat-file copy-file mkdir-p write-text append-text replace-lines replace-text replace-all-text write-text-b64 replace-text-b64 \
-    tmp-gludd-usage tmp-gludd-worktree-usage tmp-gludd-clean-ci-shards clean-worktree-venvs clean-worktree-caches active-work-status
+    check-disk check-disk-classification tmp-gludd-usage tmp-gludd-worktree-usage \
+    tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
+    clean-worktree-venvs clean-worktree-caches active-work-status
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
 else
@@ -2431,11 +2433,11 @@ check-disk:
 	@if [ "$(CHECK_DISK_VALIDATE_ONLY)" = "1" ]; then \
 		$(MAKE) --no-print-directory test-files TESTFILES=tests/unit/test_check_disk_usage.py PYTEST_ARGS='-q -n 0'; \
 	else \
-		uv run python scripts/check_disk_usage.py; \
+		$(SYSTEM_PYTHON) scripts/check_disk_usage.py; \
 	fi
 
 check-disk-classification:
-	@uv run python scripts/check_disk_usage.py --classify
+	@$(SYSTEM_PYTHON) scripts/check_disk_usage.py --classify
 
 # Read-only system load diagnostic (AGENTS.md System-Load Gate Before Dispatch Waves).
 # Prints 1m load avg, CPU count, and verdict (OK / WARN / CRITICAL). Exit 0 always.

@@ -10,6 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "check_disk_usage.py"
 DISK_GUARD_SCRIPT = ROOT / "scripts" / "disk-guard.sh"
+MAKEFILE = ROOT / "Makefile"
 
 
 def _load_module():
@@ -403,11 +404,35 @@ def test_main_names_largest_counted_roots(
     assert "180.0 MB" in stderr
 
 
-def test_shell_disk_guard_uses_portable_single_line_df_output() -> None:
-    source = DISK_GUARD_SCRIPT.read_text()
+def test_disk_checks_use_portable_system_tools_without_project_venv() -> None:
+    guard_source = DISK_GUARD_SCRIPT.read_text()
+    make_source = MAKEFILE.read_text()
+    no_uv_goals = make_source.split("_NO_UV_SYNC_GOALS :=", 1)[1].split(
+        "ifneq", 1
+    )[0]
+    lightweight_targets = {
+        "check-disk",
+        "check-disk-classification",
+        "tmp-gludd-clean-ci-shards",
+        "tmp-gludd-clean-ci-shards-now",
+        "tmp-gludd-clean-orphan-worktrees-now",
+    }
+    check_disk_recipe = make_source.split("\ncheck-disk:\n", 1)[1].split(
+        "\ncheck-disk-classification:", 1
+    )[0]
+    classification_recipe = make_source.split(
+        "\ncheck-disk-classification:\n", 1
+    )[1].split("\n# Read-only system load", 1)[0]
 
-    assert 'df -Pk "$TARGET_DIR"' in source
-    assert "awk 'END {gsub(/%/,\"\"); print $5}'" in source
+    assert 'df -Pk "$TARGET_DIR"' in guard_source
+    assert "awk 'END {gsub(/%/,\"\"); print $5}'" in guard_source
+    assert lightweight_targets <= set(no_uv_goals.split())
+    assert "$(SYSTEM_PYTHON) scripts/check_disk_usage.py" in check_disk_recipe
+    assert "$(UV) run" not in check_disk_recipe
+    assert "$(SYSTEM_PYTHON) scripts/check_disk_usage.py --classify" in (
+        classification_recipe
+    )
+    assert "$(UV) run" not in classification_recipe
 
 
 def test_shell_disk_guard_never_deletes_global_pytest_roots() -> None:
@@ -435,3 +460,4 @@ def test_shell_disk_guard_removes_only_namespaced_node_download_caches() -> None
     assert '"/tmp/gludd-npm-cache-public-v1"' in source
     assert 'rm -rf -- "$cache_dir"' in source
     assert "rm -rf /tmp/gludd-*" not in source
+
