@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from general_ludd.service_discovery.pipeline import (
+    DEFAULT_SEARCH_TERMS,
     DiscoveryReport,
     ServiceDiscoveryPipeline,
     _extract_service_name,
@@ -38,7 +40,7 @@ def _mock_searx_result(
     return r
 
 
-def _write_catalog(path: Path, services: list[dict]) -> None:
+def _write_catalog(path: Path, services: list[dict[str, object]]) -> None:
     import yaml
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -79,6 +81,84 @@ class TestExtractServiceName:
 
 
 class TestRunDiscoveryPipeline:
+    def test_default_search_term_queries_are_sent_in_declared_order(
+        self, tmp_path: Path
+    ) -> None:
+        mock_searx = MagicMock()
+        mock_searx.search.return_value = []
+
+        with patch(
+            "general_ludd.service_discovery.pipeline.SearXConnector",
+            return_value=mock_searx,
+        ):
+            pipeline = ServiceDiscoveryPipeline(
+                searx_url="http://test:8888",
+                catalog_path=str(tmp_path / "catalog.yml"),
+            )
+            pipeline.run_discovery_pipeline()
+
+        assert [call.args[0] for call in mock_searx.search.call_args_list] == [
+            query for _, query in DEFAULT_SEARCH_TERMS
+        ]
+
+    def test_explicit_tuple_terms_are_compatible(self, tmp_path: Path) -> None:
+        mock_searx = MagicMock()
+        mock_searx.search.return_value = []
+
+        with patch(
+            "general_ludd.service_discovery.pipeline.SearXConnector",
+            return_value=mock_searx,
+        ):
+            pipeline = ServiceDiscoveryPipeline(
+                searx_url="http://test:8888",
+                catalog_path=str(tmp_path / "catalog.yml"),
+                search_terms=[("cloud-apis", "public cloud API")],
+            )
+            pipeline.run_discovery_pipeline()
+
+        mock_searx.search.assert_called_once_with("public cloud API")
+
+    def test_empty_custom_terms_keep_legacy_default_fallback(self) -> None:
+        with patch("general_ludd.service_discovery.pipeline.SearXConnector"):
+            pipeline = ServiceDiscoveryPipeline(
+                searx_url="http://test:8888",
+                search_terms=[],
+            )
+
+        assert pipeline._search_terms == [query for _, query in DEFAULT_SEARCH_TERMS]
+
+    @pytest.mark.parametrize(
+        "malformed",
+        [
+            [""],
+            [("", "query")],
+            [("label", "")],
+            [("label",)],
+            [("label", "query", "extra")],
+            [("label", 7)],
+            [7],
+        ],
+    )
+    def test_malformed_search_term_schema_fails_closed(self, malformed: object) -> None:
+        unsafe_terms = cast("list[str | tuple[str, str]]", malformed)
+
+        with (
+            patch(
+                "general_ludd.service_discovery.pipeline.SearXConnector"
+            ) as connector_type,
+            patch(
+                "general_ludd.service_discovery.pipeline.ServiceCatalog"
+            ) as catalog_type,
+            pytest.raises((TypeError, ValueError), match="search term"),
+        ):
+            ServiceDiscoveryPipeline(
+                searx_url="http://test:8888",
+                search_terms=unsafe_terms,
+            )
+
+        connector_type.assert_not_called()
+        catalog_type.assert_not_called()
+
     def test_new_services_vs_empty_catalog(self, tmp_path: Path) -> None:
         catalog_path = tmp_path / "catalog.yml"
         results = [
