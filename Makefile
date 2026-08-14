@@ -37,6 +37,7 @@ COVERAGE_CONFIG ?= config/coverage_gate_runtime.ini
 COVERAGE_REPORT ?= .gate-logs/coverage-files.json
 COVERAGE_AGGREGATE_MIN ?= 85
 COVERAGE_PER_FILE_MIN ?= 75
+CLEAN_VALIDATE_ONLY ?= 0
 DISK_MIN_FREE_GIB ?= 8
 # Preserve a capable caller terminal; supply a stable terminfo fallback only
 # when workers or CI provide an empty, unknown, or dumb TERM value.
@@ -73,7 +74,7 @@ _NO_UV_SYNC_GOALS := \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger ci-shards-log-context \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
     search show-lines cat-file copy-file mkdir-p write-text append-text replace-lines replace-text replace-all-text write-text-b64 replace-text-b64 \
-    tmp-gludd-usage tmp-gludd-worktree-usage tmp-gludd-clean-ci-shards clean-worktree-venvs clean-worktree-caches
+    tmp-gludd-usage tmp-gludd-worktree-usage tmp-gludd-clean-ci-shards clean-worktree-venvs clean-worktree-caches active-work-status
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
 else
@@ -514,7 +515,7 @@ help:
 	@echo ""
 	@echo "  --- Other ---"
 	@echo "  smoke                 Quick daemon boot health check"
-	@echo "  clean                 Remove build artifacts"
+	@echo "  clean                 Remove ignored build artifacts while preserving tracked templates (CLEAN_VALIDATE_ONLY=0|1)"
 	@echo "  dist-clean            Remove distribution artifacts"
 	@echo "  gated-merge           flock-guarded multi-branch merge with manifest (BASE/BRANCHES/MERGE_STRATEGY/MANIFEST)"
 	@echo ""
@@ -5290,12 +5291,20 @@ test-and-commit: _commit-lock-acquire
 	@$(MAKE) dist
 
 clean:
-	@rm -rf .venv dist build *.egg-info src/*.egg-info .pytest_cache .mypy_cache .coverage coverage.xml htmlcov .ruff_cache
-	@rm -f Makefile.tmp
-	@find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
-	@git rm -r --cached '*__pycache__*' 2>/dev/null || true
-	@git rm --cached .coverage coverage.xml 2>/dev/null || true
-	@echo "Cleaned."
+	@if [ "$(CLEAN_VALIDATE_ONLY)" = "1" ]; then \
+		$(MAKE) --no-print-directory test-specific TESTFILE=tests/unit/test_packaging_templates_committed.py::test_clean_preserves_tracked_distribution_templates PYTEST_ARGS='-q -n 0'; \
+	elif [ "$(CLEAN_VALIDATE_ONLY)" = "0" ]; then \
+		rm -rf .venv build *.egg-info src/*.egg-info .pytest_cache .mypy_cache .coverage coverage.xml htmlcov .ruff_cache; \
+		git clean -fdX -- dist; \
+		rm -f Makefile.tmp; \
+		find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true; \
+		git rm -r --cached '*__pycache__*' 2>/dev/null || true; \
+		git rm --cached .coverage coverage.xml 2>/dev/null || true; \
+		echo "Cleaned."; \
+	else \
+		echo "Usage: make clean CLEAN_VALIDATE_ONLY=0|1"; \
+		exit 2; \
+	fi
 
 # disk-reclaim: compatibility alias for the bounded disk guard.  Keep the
 # cleanup implementation single-sourced so uv pruning always has a heartbeat,
@@ -5570,7 +5579,7 @@ check-make-target-contract:
 	@$(UV) run python scripts/check_make_target_contract.py
 
 active-work-status:
-	@$(UV) run python scripts/active_work_status.py
+	@UV=echo $(SYSTEM_PYTHON) scripts/active_work_status.py
 
 # --- Help target coverage: prevent hidden public Make targets ---
 check-make-help:

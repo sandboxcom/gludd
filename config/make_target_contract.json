@@ -416,6 +416,11 @@
       "behavior": "make active-work-status"
     },
     {
+      "name": "clean",
+      "make_variables": ["CLEAN_VALIDATE_ONLY"],
+      "behavior": "make clean CLEAN_VALIDATE_ONLY=1"
+    },
+    {
       "name": "terminate-project-process-tree",
       "make_variables": [
         "PROCESS_ROOT_PID",
