@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -16,12 +17,12 @@ from general_ludd.infra.service_catalog import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SEARCH_TERMS = [
-    "public API for cloud computing service",
-    "free-tier developer API platform",
-    "SaaS API developer portal",
-    "open source platform API hosting",
-    "infrastructure-as-code API service",
+DEFAULT_SEARCH_TERMS: list[tuple[str, str]] = [
+    ("cloud-compute-api", "public API for cloud computing service"),
+    ("developer-free-tier", "free-tier developer API platform"),
+    ("saas-developer-api", "SaaS API developer portal"),
+    ("open-source-api-hosting", "open source platform API hosting"),
+    ("infrastructure-as-code-api", "infrastructure-as-code API service"),
 ]
 
 _RETIRE_INACTIVITY_DAYS = 30
@@ -29,6 +30,8 @@ _RETIRE_INACTIVITY_DAYS = 30
 
 @dataclass
 class DiscoveryReport:
+    """Summarize one complete service-discovery reconciliation."""
+
     new_services: list[str] = field(default_factory=list)
     retired_services: list[str] = field(default_factory=list)
     changed_services: list[str] = field(default_factory=list)
@@ -37,12 +40,28 @@ class DiscoveryReport:
 
 
 class ServiceDiscoveryPipeline:
+    """Discover services through SearXNG and reconcile the local catalog."""
+
     def __init__(
         self,
         searx_url: str,
         catalog_path: str = DEFAULT_CATALOG_PATH,
-        search_terms: list[str] | None = None,
+        search_terms: Sequence[str | tuple[str, str]] | None = None,
     ) -> None:
+        """Initialize a validated discovery pipeline.
+
+        Args:
+            searx_url: Base URL of the guarded SearXNG service.
+            catalog_path: Path to the catalog reconciled by a later run.
+            search_terms: Legacy query strings or labeled ``(identifier, query)``
+                pairs. ``None`` and empty sequences select the built-in defaults.
+
+        Raises:
+            TypeError: If a search-term entry has an unsupported shape or type.
+            ValueError: If a search-term tuple has the wrong arity or blank text.
+        """
+        selected_terms: Sequence[object] = search_terms or DEFAULT_SEARCH_TERMS
+        normalized_terms = _normalize_search_terms(selected_terms)
         self._searx = SearXConnector({
             "base_url": searx_url,
             # The bundled managed SearX service binds to loopback; this is an
@@ -50,9 +69,14 @@ class ServiceDiscoveryPipeline:
             "allow_private": searx_url.startswith("http://localhost"),
         })
         self._catalog = ServiceCatalog(path=catalog_path)
-        self._search_terms = search_terms or DEFAULT_SEARCH_TERMS
+        self._search_terms = normalized_terms
 
     def run_discovery_pipeline(self) -> DiscoveryReport:
+        """Search configured queries and reconcile all successful results.
+
+        Returns:
+            A report of catalog changes and isolated query/serialization errors.
+        """
         report = DiscoveryReport()
         errors: list[str] = []
 
@@ -163,7 +187,36 @@ def _extract_service_name(result: SearXResult) -> str | None:
     for delimiter in (" - ", " | ", " · ", " :: ", " — "):
         parts = title.split(delimiter, 1)
         candidate = parts[0].strip()
-        if len(parts) == 2 and 3 <= len(candidate) <= 80:
+        if len(parts) == 2 and 2 <= len(candidate) <= 80:
             return candidate
     candidate = title[:80].strip()
-    return candidate if len(candidate) >= 3 else None
+    return candidate if len(candidate) >= 2 else None
+
+
+def _normalize_search_terms(search_terms: Sequence[object]) -> list[str]:
+    """Validate labeled/default and legacy plain-string search terms."""
+    normalized: list[str] = []
+    for index, entry in enumerate(search_terms):
+        if isinstance(entry, str):
+            label = entry
+            query = entry
+        elif isinstance(entry, tuple):
+            if len(entry) != 2:
+                raise ValueError(
+                    f"search term at index {index} must contain exactly two strings"
+                )
+            label, query = entry
+            if not isinstance(label, str) or not isinstance(query, str):
+                raise TypeError(
+                    f"search term at index {index} must contain exactly two strings"
+                )
+        else:
+            raise TypeError(
+                f"search term at index {index} must be a string or two-string tuple"
+            )
+
+        if not label.strip() or not query.strip():
+            raise ValueError(f"search term at index {index} must not contain blank strings")
+        normalized.append(query)
+
+    return normalized
