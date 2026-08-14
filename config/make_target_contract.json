@@ -138,6 +138,26 @@
       "behavior": "make grep Q=GAME_E2E SEARCH_PATH=docs"
     },
     {
+      "name": "check-disk",
+      "make_variables": ["CHECK_DISK_VALIDATE_ONLY"],
+      "behavior": "make check-disk CHECK_DISK_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "check-disk-classification",
+      "make_variables": [],
+      "behavior": "make check-disk-classification"
+    },
+    {
+      "name": "tmp-gludd-clean-ci-shards-now",
+      "make_variables": ["TMP_GLUDD_CLEAN_VALIDATE_ONLY"],
+      "behavior": "make tmp-gludd-clean-ci-shards-now TMP_GLUDD_CLEAN_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "tmp-gludd-clean-orphan-worktrees-now",
+      "make_variables": ["TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY"],
+      "behavior": "make tmp-gludd-clean-orphan-worktrees-now TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY=1"
+    },
+    {
       "name": "opencode-disk",
       "make_variables": [
         "OPENCODE_DB",
