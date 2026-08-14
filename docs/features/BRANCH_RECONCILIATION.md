@@ -60,6 +60,25 @@ ceiling. A repository above that ceiling fails closed instead of silently
 skipping a late cursor. The fallback therefore preserves deterministic paging on
 the host's mature Git feature set while keeping traversal bounded.
 
+## Exhaustive deduplicated summary
+
+`make branch-reconciliation-summary RECONCILE_TARGET=development
+RECONCILE_LIMIT=100 RECONCILE_DETAILS=0` starts at the empty cursor and consumes
+each bounded page until the terminal page. It preserves every observed branch name
+and canonical ref internally while grouping shared tips by classification and
+commit ID. The default bounded payload omits expanded groups and reports page count,
+total branches, deduplicated heads, `terminal: true`, and `truncated: false`.
+Setting `RECONCILE_DETAILS=1` exposes the grouped refs when a focused reconciliation
+needs them. Both modes remain tracked Make workflows, so release work never depends
+on an external helper script.
+
+The exhaustive path retains the 10,000-ref ceiling, rejects duplicate refs or a
+non-advancing cursor, and revalidates the target identity on every page. A target
+change or conflicting evidence for one shared head fails closed. As with Git's
+cursor primitive, the guarantee applies to a stable local ref set; concurrent ref
+creation requires restarting the command rather than treating its output as an
+atomic repository snapshot.
+
 Target resolution happens before enumeration and fails closed. Empty,
 whitespace-containing, option-shaped, invalid, and non-symbolic refs produce a
 structured JSON error and a nonzero exit. Malformed or failed Git evidence does

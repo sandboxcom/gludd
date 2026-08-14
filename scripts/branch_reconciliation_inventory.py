@@ -83,6 +83,56 @@ class InventoryPayload(TypedDict):
     truncated: bool
 
 
+class SummaryCounts(InventoryCounts):
+    """Counts for a terminal exhaustive inventory."""
+
+    deduplicated_heads: int
+
+
+class SummaryGroup(TypedDict):
+    """Branches sharing one classified commit identity."""
+
+    branch_count: int
+    classification: Literal["ancestor", "patch-equivalent", "unique"]
+    head: str
+    lifecycle: Literal["current", "historical"]
+    names: list[str]
+    patch_equivalent_commits: int
+    refs: list[str]
+    unique_commits: int
+
+
+class SummaryPayload(TypedDict):
+    """Terminal, deduplicated view across every bounded page."""
+
+    bounds: InventoryBounds
+    counts: SummaryCounts
+    groups: list[SummaryGroup]
+    mode: Literal["exhaustive-summary"]
+    ok: bool
+    page_size: int
+    pages: int
+    schema_version: int
+    target: TargetRecord
+    terminal: bool
+    truncated: bool
+
+
+class SummaryCountsPayload(TypedDict):
+    """Terminal exhaustive inventory without expanded branch groups."""
+
+    bounds: InventoryBounds
+    counts: SummaryCounts
+    mode: Literal["exhaustive-counts"]
+    ok: bool
+    page_size: int
+    pages: int
+    schema_version: int
+    target: TargetRecord
+    terminal: bool
+    truncated: bool
+
+
 def _run(
     argv: Sequence[str], cwd: str | None = None
 ) -> subprocess.CompletedProcess[str]:
@@ -495,6 +545,106 @@ def collect_inventory(
     }
 
 
+def collect_summary(
+    target: str,
+    page_size: int,
+    *,
+    run: RunFn = _run,
+    cwd: str | None = None,
+    progress: ProgressFn | None = None,
+) -> SummaryPayload:
+    """Collect every bounded page and group branches by classified head."""
+    if page_size < 1 or page_size > MAX_LIMIT:
+        raise InventoryError(f"limit must be between 1 and {MAX_LIMIT}")
+
+    after = ""
+    branches: list[BranchRecord] = []
+    seen_refs: set[str] = set()
+    pages = 0
+    target_record: TargetRecord | None = None
+    while True:
+        if progress is not None:
+            progress(f"page={pages + 1} after={after or '<start>'}")
+        page = collect_inventory(
+            target,
+            page_size,
+            after=after,
+            run=run,
+            cwd=cwd,
+            progress=progress,
+        )
+        pages += 1
+        if target_record is None:
+            target_record = page["target"]
+        elif page["target"] != target_record:
+            raise InventoryError("target changed during exhaustive inventory")
+
+        for branch in page["branches"]:
+            if branch["ref"] in seen_refs:
+                raise InventoryError("duplicate ref across inventory pages")
+            seen_refs.add(branch["ref"])
+            branches.append(branch)
+        if len(branches) > LOCAL_REF_SCAN_LIMIT:
+            raise InventoryError("local branch scan exceeded exhaustive bound")
+        if not page["truncated"]:
+            break
+        next_cursor = page["next_cursor"]
+        if next_cursor is None or (after and next_cursor <= after):
+            raise InventoryError("pagination cursor did not advance")
+        after = next_cursor
+
+    assert target_record is not None
+    grouped: dict[tuple[str, str], SummaryGroup] = {}
+    for branch in branches:
+        key = (branch["classification"], branch["head"])
+        group = grouped.get(key)
+        if group is None:
+            group = {
+                "branch_count": 0,
+                "classification": branch["classification"],
+                "head": branch["head"],
+                "lifecycle": branch["lifecycle"],
+                "names": [],
+                "patch_equivalent_commits": branch["patch_equivalent_commits"],
+                "refs": [],
+                "unique_commits": branch["unique_commits"],
+            }
+            grouped[key] = group
+        elif (
+            group["lifecycle"] != branch["lifecycle"]
+            or group["patch_equivalent_commits"]
+            != branch["patch_equivalent_commits"]
+            or group["unique_commits"] != branch["unique_commits"]
+        ):
+            raise InventoryError("conflicting classifications for shared branch head")
+        group["branch_count"] += 1
+        group["names"].append(branch["name"])
+        group["refs"].append(branch["ref"])
+
+    base_counts = _counts(branches)
+    summary_counts: SummaryCounts = {
+        **base_counts,
+        "deduplicated_heads": len(grouped),
+    }
+    return {
+        "bounds": {
+            "branch_limit": page_size,
+            "commit_scan_limit": COMMIT_SCAN_LIMIT,
+            "local_ref_scan_limit": LOCAL_REF_SCAN_LIMIT,
+        },
+        "counts": summary_counts,
+        "groups": list(grouped.values()),
+        "mode": "exhaustive-summary",
+        "ok": True,
+        "page_size": page_size,
+        "pages": pages,
+        "schema_version": SCHEMA_VERSION,
+        "target": target_record,
+        "terminal": True,
+        "truncated": False,
+    }
+
+
 def _progress(message: str) -> None:
     """Emit bounded progress without contaminating JSON stdout."""
     print(f"BRANCH-RECONCILIATION {message}", file=sys.stderr, flush=True)
@@ -514,19 +664,57 @@ def main(
         required=True,
         help="canonical local ref cursor, or empty for the first page",
     )
+    parser.add_argument(
+        "--all-pages",
+        action="store_true",
+        help="emit one terminal summary across every bounded page",
+    )
+    parser.add_argument(
+        "--counts-only",
+        action="store_true",
+        help="omit expanded groups from an all-pages summary",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
     try:
         limit = int(args.limit)
         _progress(
             f"target={args.target} limit={limit} after={args.after or '<start>'}"
         )
-        payload = collect_inventory(
-            args.target,
-            limit,
-            after=args.after,
-            run=run,
-            progress=_progress,
-        )
+        payload: InventoryPayload | SummaryPayload | SummaryCountsPayload
+        if args.all_pages:
+            if args.after:
+                raise InventoryError("all-pages summary requires an empty cursor")
+            summary = collect_summary(
+                args.target,
+                limit,
+                run=run,
+                progress=_progress,
+            )
+            if args.counts_only:
+                payload = {
+                    "bounds": summary["bounds"],
+                    "counts": summary["counts"],
+                    "mode": "exhaustive-counts",
+                    "ok": summary["ok"],
+                    "page_size": summary["page_size"],
+                    "pages": summary["pages"],
+                    "schema_version": summary["schema_version"],
+                    "target": summary["target"],
+                    "terminal": summary["terminal"],
+                    "truncated": summary["truncated"],
+                }
+            else:
+                payload = summary
+        else:
+            if args.counts_only:
+                raise InventoryError("counts-only requires an all-pages summary")
+            payload = collect_inventory(
+                args.target,
+                limit,
+                after=args.after,
+                run=run,
+                progress=_progress,
+            )
     except (InventoryError, ValueError) as exc:
         json.dump(
             {

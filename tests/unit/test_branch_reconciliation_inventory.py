@@ -419,3 +419,120 @@ def test_git_command_set_is_read_only() -> None:
         "merge-base",
         "cherry",
     }
+
+
+def test_exhaustive_summary_pages_to_terminal_and_deduplicates_heads() -> None:
+    refs = [
+        ("refs/heads/development", TARGET_HEAD),
+        ("refs/heads/feature/a", ANCESTOR_HEAD),
+        ("refs/heads/feature/b", ANCESTOR_HEAD),
+        ("refs/heads/feature/c", UNIQUE_HEAD),
+    ]
+    fake = FakeGit(
+        refs=refs,
+        ancestors=frozenset({ANCESTOR_HEAD}),
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+    )
+
+    result = inventory.collect_summary("development", 2, run=fake)
+
+    assert result["mode"] == "exhaustive-summary"
+    assert result["pages"] == 2
+    assert result["terminal"] is True
+    assert result["truncated"] is False
+    assert result["counts"]["returned"] == 3
+    assert result["counts"]["deduplicated_heads"] == 2
+    assert result["groups"][0]["refs"] == [
+        "refs/heads/feature/a",
+        "refs/heads/feature/b",
+    ]
+    assert result["groups"][0]["branch_count"] == 2
+    assert result["groups"][1]["refs"] == ["refs/heads/feature/c"]
+
+
+def test_exhaustive_summary_fails_closed_above_scan_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(inventory, "LOCAL_REF_SCAN_LIMIT", 2)
+    fake = FakeGit(
+        refs=[
+            ("refs/heads/feature/a", PAGE_HEADS[0]),
+            ("refs/heads/feature/b", PAGE_HEADS[1]),
+            ("refs/heads/feature/c", PAGE_HEADS[2]),
+        ],
+        ancestors=frozenset(PAGE_HEADS),
+    )
+
+    with pytest.raises(inventory.InventoryError, match="scan exceeded"):
+        inventory.collect_summary("development", 2, run=fake)
+
+
+def test_main_all_pages_emits_terminal_summary(capsys: pytest.CaptureFixture[str]) -> None:
+    fake = FakeGit(
+        refs=[("refs/heads/feature/merged", ANCESTOR_HEAD)],
+        ancestors=frozenset({ANCESTOR_HEAD}),
+    )
+
+    rc = inventory.main(
+        ["--target", "development", "--limit", "2", "--after", "", "--all-pages"],
+        run=fake,
+    )
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["mode"] == "exhaustive-summary"
+    assert payload["terminal"] is True
+
+
+def test_main_counts_only_omits_large_groups(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake = FakeGit(
+        refs=[("refs/heads/feature/merged", ANCESTOR_HEAD)],
+        ancestors=frozenset({ANCESTOR_HEAD}),
+    )
+
+    rc = inventory.main(
+        [
+            "--target",
+            "development",
+            "--limit",
+            "2",
+            "--after",
+            "",
+            "--all-pages",
+            "--counts-only",
+        ],
+        run=fake,
+    )
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["mode"] == "exhaustive-counts"
+    assert payload["counts"]["returned"] == 1
+    assert "groups" not in payload
+
+
+def test_exhaustive_make_target_and_contract_are_tracked() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    contract = json.loads(
+        (ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8")
+    )
+
+    assert "branch-reconciliation-summary:" in makefile
+    assert "--all-pages" in makefile
+    assert "--counts-only" in makefile
+    entry = next(
+        target
+        for target in contract["targets"]
+        if target["name"] == "branch-reconciliation-summary"
+    )
+    assert "RECONCILE_DETAILS" in makefile
+    assert entry["make_variables"] == [
+        "RECONCILE_TARGET",
+        "RECONCILE_LIMIT",
+        "RECONCILE_DETAILS",
+    ]
+    assert entry["behavior"].endswith(
+        "RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_DETAILS=0"
+    )
