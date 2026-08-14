@@ -25,6 +25,7 @@ COUNT ?= 1
 NODE_DEPS_NPM_USERCONFIG ?= /dev/null
 NODE_DEPS_NPM_CACHE ?= /tmp/gludd-npm-cache-public-v1
 NODE_DEPS_NPM_REGISTRY ?= https://registry.npmjs.org
+NODE_DEPS_NPM_UPDATE_NOTIFIER ?= false
 NODE_DEPS_AUDIT_LEVEL ?= moderate
 MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
@@ -189,9 +190,9 @@ help:
 	@echo "  sync                  Sync uv dependencies"
 	@echo "  sync-llama-cpp        Sync locked local-inference extra (SYNC_LLAMA_CPP_VALIDATE_ONLY=0|1)"
 	@echo "  deps-audit            Fail-closed Python dependency truth audit"
-	@echo "  node-deps-sync        Install locked Node deps (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY)"
-	@echo "  node-deps-relock      Regenerate Node lock (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY)"
-	@echo "  node-deps-audit       Audit locked Node deps (plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)"
+	@echo "  node-deps-sync        Install locked Node deps (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)"
+	@echo "  node-deps-relock      Regenerate Node lock (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)"
+	@echo "  node-deps-audit       Audit locked Node deps (NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)"
 	@echo "  bootstrap             init + lint + test + healthcheck"
 	@echo "  install-hooks         Install pre-commit hooks (secrets, lint, collect)"
 	@echo "  install-workflow-hook Validate/install the tracked GitHub workflow YAML hook (INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY)"
@@ -664,7 +665,7 @@ node-deps-sync:
 		node -e 'const p=require("./.opencode/package.json"),l=require("./.opencode/package-lock.json"); if (!p.devDependencies?.esbuild || l.packages?.[""]?.devDependencies?.esbuild !== p.devDependencies.esbuild) process.exit(1)'; \
 		echo "NODE_DEPS_VALIDATED lock=.opencode/package-lock.json"; \
 	else \
-		NPM_CONFIG_USERCONFIG="$(NODE_DEPS_NPM_USERCONFIG)" NPM_CONFIG_CACHE="$(NODE_DEPS_NPM_CACHE)" NPM_CONFIG_REGISTRY="$(NODE_DEPS_NPM_REGISTRY)" npm ci --prefix .opencode --no-audit --no-fund; \
+		NPM_CONFIG_USERCONFIG="$(NODE_DEPS_NPM_USERCONFIG)" NPM_CONFIG_CACHE="$(NODE_DEPS_NPM_CACHE)" NPM_CONFIG_REGISTRY="$(NODE_DEPS_NPM_REGISTRY)" NPM_CONFIG_UPDATE_NOTIFIER="$(NODE_DEPS_NPM_UPDATE_NOTIFIER)" npm ci --prefix .opencode --no-audit --no-fund; \
 	fi
 
 node-deps-relock:
@@ -677,7 +678,7 @@ node-deps-relock:
 		LOCK_TMP="$$(cd "$$LOCK_TMP" && pwd -P)"; \
 		trap 'rm -rf "$$LOCK_TMP"' EXIT HUP INT TERM; \
 		cp .opencode/package.json "$$LOCK_TMP/package.json"; \
-		NPM_CONFIG_USERCONFIG="$(NODE_DEPS_NPM_USERCONFIG)" NPM_CONFIG_CACHE="$(NODE_DEPS_NPM_CACHE)" NPM_CONFIG_REGISTRY="$(NODE_DEPS_NPM_REGISTRY)" npm install --prefix "$$LOCK_TMP" --package-lock-only --no-audit --no-fund; \
+		NPM_CONFIG_USERCONFIG="$(NODE_DEPS_NPM_USERCONFIG)" NPM_CONFIG_CACHE="$(NODE_DEPS_NPM_CACHE)" NPM_CONFIG_REGISTRY="$(NODE_DEPS_NPM_REGISTRY)" NPM_CONFIG_UPDATE_NOTIFIER="$(NODE_DEPS_NPM_UPDATE_NOTIFIER)" npm install --prefix "$$LOCK_TMP" --package-lock-only --no-audit --no-fund; \
 		cp "$$LOCK_TMP/package-lock.json" .opencode/package-lock.json; \
 	fi
 
@@ -688,7 +689,7 @@ node-deps-audit:
 		node -e 'const p=require("./.opencode/package.json"),l=require("./.opencode/package-lock.json"); if (!p.devDependencies?.esbuild || l.packages?.[""]?.devDependencies?.esbuild !== p.devDependencies.esbuild) process.exit(1)'; \
 		echo "NODE_DEPS_AUDIT_VALIDATED level=$(NODE_DEPS_AUDIT_LEVEL)"; \
 	else \
-		NPM_CONFIG_USERCONFIG="$(NODE_DEPS_NPM_USERCONFIG)" NPM_CONFIG_CACHE="$(NODE_DEPS_NPM_CACHE)" NPM_CONFIG_REGISTRY="$(NODE_DEPS_NPM_REGISTRY)" npm audit --prefix .opencode --audit-level="$(NODE_DEPS_AUDIT_LEVEL)"; \
+		NPM_CONFIG_USERCONFIG="$(NODE_DEPS_NPM_USERCONFIG)" NPM_CONFIG_CACHE="$(NODE_DEPS_NPM_CACHE)" NPM_CONFIG_REGISTRY="$(NODE_DEPS_NPM_REGISTRY)" NPM_CONFIG_UPDATE_NOTIFIER="$(NODE_DEPS_NPM_UPDATE_NOTIFIER)" npm audit --prefix .opencode --audit-level="$(NODE_DEPS_AUDIT_LEVEL)"; \
 	fi
 
 install-pip:
