@@ -1,39 +1,57 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.4 prepared. Session 84: HEAD `5164b1f73` on `development`. Branch reconciliation completed (127 unique branches → 0 via merge-forward ancestry-only sweep). Gate campaign: 262 → 0 known unit failures across fix waves (mock-daemon, memory, downloader, env-config, docs-baselines, enforcement-shape, molecule, algorithms, cloud-materials, runner-health, residual pin drift). CI runs 31881326433/31881326410 on development. Tree CLEAN.
+## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.4 prepared; release-cut blocked on CI green. Session 85: HEAD `9bffc6290` on `development`. Branch reconciliation complete (127 unique branches → 0 remaining). CI failure classes fixed and pushed (README status markers, language parents[] search, local_game_gen venv python, daemon pidfile, PyInstaller compat hiddenimports, linux allowlist edges+digest, dirty-tree runtime fixtures). CI in_progress on 31885542469/31885542461 for `9bffc6290`. Next step: release-cut v0.1.0-beta.4 after CI green.
 
 ---
 
-## SESSION 84 — 2026-08-15 — HEAD `5164b1f73`: beta4 reconciliation + gate campaign complete, release v0.1.0-beta.4 prepared
+## SESSION 85 — 2026-08-15 — HEAD `9bffc6290`: CI-fix waves complete and pushed, CI in flight, release-cut v0.1.0-beta.4 queued behind green CI
 
-### Key Accomplishments
+### Completed Objectives
 
-- **S84.0 — Branch reconciliation (DONE)**: 127 unique branches reduced to 0 via a merge-forward ancestry-only sweep. Every divergent tip either merged into `development` or proven superseded; local branch inventory is now fully reachable from `development`.
-- **S84.1 — Gate campaign (DONE)**: known unit failures driven 262 → 0 across fix waves — mock-daemon, memory, downloader, env-config, docs-baselines, enforcement-shape, molecule, algorithms, cloud-materials, runner-health, and residual pin drift. CI shards 1a1/1a2/1b/1d PASS; integration 3372 passed / 0 failed.
-- **S84.2 — Alembic migration renumber**: migration chain renumbered to a clean linear sequence.
-- **S84.3 — Task-registration gitignore fix**: generated gate/task-registration artifacts gitignored.
-- **S84.4 — Development pushed at `5164b1f73`**: CI runs 31881326433 / 31881326410 in flight.
-- **S84.5 — Release v0.1.0-beta.4 prepared**: README + changelog + checklist merged.
+- **S85.0 — Branch reconciliation (DONE)**: 127 unique branches reduced to 0 via a merge-forward ancestry-only sweep. Every divergent tip either merged into `development` or proven superseded; local branch inventory is now fully reachable from `development`.
+- **S85.1 — CI failure classes fixed and pushed** (each on `development`):
+  - README status markers (language role scripts regenerate the README status table via repo-root marker search)
+  - language role scripts `parents[]` lookup — locate repo root via marker search
+  - `local_game_gen` molecule scenario — venv python resolution
+  - daemon PID file — unlink on graceful shutdown
+  - PyInstaller spec — declare `general_ludd.compat` hiddenimports
+  - linux allowlist — adjudicate azure/hindsight/lm_eval optional-import transitive edges + re-pin linux warning digest
+  - dirty-tree hook runtime fixtures — relocate inside the checkout so `git status` sees them
+- **S85.2 — Release v0.1.0-beta.4 prepared (not yet cut)**: README + changelog + checklist merged; release-cut queued behind CI green.
 
-### Current State
+### Test Suite Status
 
-- **HEAD: `5164b1f73`** on `development`
-- **Tree: CLEAN**
-- **CI: runs 31881326433 / 31881326410**
-- **Release: v0.1.0-beta.4 prepared (not yet cut)**
+- Last known local gate record (SESSION 84): unit-failure campaign 262 → 0 known failures; integration 3372 passed / 0 failed. No fresh local gate run this session — do not treat as green for HEAD `9bffc6290`.
+- **CI: in_progress** — runs 31885542469 (Build and Release) / 31885542461 (Molecule Tests) on `development` for `9bffc6290`. Prior runs on earlier HEADs completed with failure.
 
-### Recent Commits (HEAD `5164b1f73`, 10 since `3a442783b`)
+### Known Gaps
+
+- CI verdict for `9bffc6290` not yet terminal (in_progress as of 2026-08-15T12:48Z).
+- Release v0.1.0-beta.4 not cut — `release-cut` requires CI green, so the release is blocked until the current runs complete.
+
+### Next Steps (mandatory)
+
+1. Verify CI green on `9bffc6290` (runs 31885542469 / 31885542461) at the next natural break; re-fix any remaining CI failure classes.
+2. `make release-cut TAG='v0.1.0-beta.4' MSG='...'` once CI is green.
+3. `make verify-release-completeness TAG=v0.1.0-beta.4` after the release job publishes.
+
+### Recent Commits (HEAD `9bffc6290`)
 
 ```text
-5164b1f73 merge: agent-fix-final-b worktree work into development
-bac91650b merge: agent-fix-final-a worktree work into development
-b38c66bd2 fix: final residual gate failures batch B
-a2df387a9 fix: final residual gate failures batch A
-f45041c7f fix: integration mock supplies final review response after 3 rounds
-c113b8057 fix: confine test db artifacts to tmp_path and gitignore generated gate artifacts
-b05674234 merge: agent-fix-misc-unit2 worktree work into development
-1262c12ef fix: misc unit-2 residual gate failures
-34fa2805e merge: agent-fix-unit1d worktree work into development
-3a442783b merge: agent-fix-git-langgraph worktree work into development
+9bffc6290 fix: dirty-tree hook runtime fixtures must live inside the checkout or git status never sees them
+7d74ec793 merge: agent-beta4-session-docs worktree work into development
+8b2611cf3 fix: adjudicate azure/hindsight/lm_eval optional import edges and re-pin linux transitive warning digest
+2025967dd merge: agent-fix-ci-daemon-pidfile worktree work into development
+f217fff91 fix: daemon unlinks PID file on graceful shutdown
+f93a0a7f3 merge: agent-fix-ci-compat-hiddenimports worktree work into development
+02528f36a fix: declare general_ludd.compat hiddenimports in PyInstaller spec
+9d3c2d64e merge: agent-fix-ci-gamegen worktree work into development
+6085fa47b fix: language role scripts locate repo root via marker search; regenerate README status table
 ```
+
+<details><summary>SESSION 84 record (2026-08-15, HEAD `5164b1f73`) — condensed</summary>
+
+- Branch reconciliation (127 unique branches → 0), gate campaign (262 → 0 known unit failures), Alembic renumber, task-registration gitignore fix, release beta.4 prep. CI runs 31881326433 / 31881326410 later completed with failure and were superseded by the S85.1 fixes above.
+
+</details>
 
 ---
 
@@ -326,6 +344,6 @@ a33b2d78 feat: wave 14 — backup_restore deep + report_generation deep + molecu
 2. `make gate` full for fresh baseline
 3. Push any new commits: `make batch-push`
 
-- **Last Updated: 2026-08-10 — Session 82. HEAD `9bf42a0f` on `development`. Tree CLEAN. 5 waves completed (+~1,251 new tests: 145 W1 + 345 W2 + 224 W3 + 537 W4). Wave 5 documents chemistry (18 files), probabilistic (1 file, 32 tests), and ai_ml (13 files) expert modules. OpenCode DB cleanup safety + gate drift repairs (S82.0–S82.2). Model test coverage deep-dives (S82.3–S82.4). 15 commits from `d4c84303`..`9bf42a0f`. Gate-background RUNNING PID 42003. Lint PASS 0. Enforcement 13/13 BLOCKING, 125 runtime PASS. Release v0.1.0-beta.3 shipped.**
+- **Last Updated: 2026-08-15 — Session 85. HEAD `9bffc6290` on `development`. Branch reconciliation complete (127 unique branches → 0). CI failure classes fixed and pushed: README status markers, language parents[] search, local_game_gen venv python, daemon pidfile, PyInstaller compat hiddenimports, linux allowlist edges+digest, dirty-tree runtime fixtures. CI in_progress on 31885542469/31885542461 for `9bffc6290`. Next step: release-cut v0.1.0-beta.4 after CI green.**
 
 (End of file)
