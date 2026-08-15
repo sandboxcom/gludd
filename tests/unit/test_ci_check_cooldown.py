@@ -254,7 +254,7 @@ def test_terminal_verdict_reset_swallows_oserror(
 ) -> None:
     restart_file = tmp_path / "restart-count-oserror"
     monkeypatch.setattr(ci_check_cooldown, "RESTART_COUNT_FILE", restart_file)
-    monkeypatch.setattr(Path, "write_text", lambda *a, **k: (_ for _ in ()).throw(OSError("ro")))
+    restart_file.mkdir()
     assert ci_check_cooldown.cmd_record_verdict("success", "deadbeef") == 0
 
 
