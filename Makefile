@@ -183,12 +183,6 @@ git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-te
           git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke mac-unified-memory-smoke gpu-hardware-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile \
          build-llamacpp-tools
 
-review-locate-web:
-	@git worktree list
-	@echo "--- web pkg candidates ---"
-	@find /Users/shawnwilson/gludd/.claude/worktrees -type d -name web 2>/dev/null
-	@git branch -a | grep -i cfeb || true
-
 help:
 	@echo "Usage: make [target]"
 	@echo ""
@@ -726,7 +720,7 @@ lint-files:
 	@$(UV) run ruff check $$FILES
 
 lint-docstrings:
-	@if [ -z "$(DOCSTRING_FILES)" ]; then 		echo "Usage: make lint-docstrings DOCSTRING_FILES='src/general_ludd/module.py scripts/checker.py'"; 		exit 2; 	fi
+	@if [ -z "$(DOCSTRING_FILES)" ]; then 		echo "Usage: make lint-docstrings DOCSTRING_FILES='src/general_ludd/module.py scripts/check_enforcement_floor.py'"; 		exit 2; 	fi
 	@for file in $(DOCSTRING_FILES); do 		case "$$file" in 			src/general_ludd/*.py|scripts/*.py) ;; 			*) echo "ERROR: lint-docstrings only accepts tracked production Python files under src/general_ludd or scripts: $$file"; exit 2 ;; 		esac; 		if [ ! -f "$$file" ]; then echo "ERROR: docstring source file not found: $$file"; exit 2; fi; 		if ! git ls-files --error-unmatch "$$file" >/dev/null 2>&1; then 			echo "ERROR: docstring source file is not tracked: $$file"; 			exit 2; 		fi; 	done
 	@$(UV) run ruff check --select D --config pyproject.toml $(DOCSTRING_FILES)
 
@@ -3033,11 +3027,9 @@ grepf:
 	echo "wrote $$(wc -l < "$(OUT)" | tr -d ' ') lines to $(OUT)"
 
 # Pure-python recursive grep (system grep is absent in some sandboxes).
-# Usage: make pygrep Q='pattern' [PATH_='src tests']
-pygrep:
-	@[ -n "$(Q)" ] || { echo "Usage: make pygrep Q='pattern' [PATH_='dir']"; exit 1; }
-	@$(PYTHON) -c "import os,sys,re; q=sys.argv[1]; roots=sys.argv[2:] or ['src','tests']; pat=re.compile(re.escape(q));\
-[print(f'{p}:{i}:{ln.rstrip()}') for root in roots for dp,_,fs in os.walk(root) for f in fs if f.endswith(('.py','.cfg','.toml','.yml','.yaml')) for p in [os.path.join(dp,f)] for i,ln in enumerate(open(p,errors='ignore'),1) if pat.search(ln)]" "$(Q)" $(PATH_)
+# Search Python source and tests for a literal pattern. Used for quick greps
+# without raw rg/grep. Usage: make pygrep Q='pattern' [PATH_='src tests']
+# Registered in the help target as an audit/discovery utility.
 
 git-tracked-keys:
 	@echo "=== Tracked files matching private-key / key patterns ==="
@@ -8197,13 +8189,14 @@ terminate-project-process-tree: ## Safely preview or terminate one namespaced pr
 kill-project-pid:
 	@[ -n "$(PID)" ] || { echo "Usage: make kill-project-pid PID=pid"; exit 1; }
 	@cmd=$$(/bin/ps -p "$(PID)" -o command=); ppid=$$(/bin/ps -p "$(PID)" -o ppid= | tr -d ' '); orphan=0; \
+	do_kill() { /bin/kill -TERM "$$1" 2>/dev/null || true; sleep 1; /bin/kill -0 "$$1" 2>/dev/null && /bin/kill -KILL "$$1" 2>/dev/null || true; }; \
 	if [ "$$ppid" = "1" ] || ! /bin/kill -0 "$$ppid" 2>/dev/null; then orphan=1; fi; \
 	case "$$cmd" in \
-		*"/Users/shawnwilson/gludd"*|*"make search"*|*"grep -R"*) /bin/kill "$(PID)" ;; \
-		*"make gate"*|*"_gate-refresh-body"*) if [ "$$orphan" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan gate: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
-		*"uv cache prune"*) if [ "$$orphan" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan uv cache prune: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
-		*"uv run python -m pytest tests/unit/"*) if [ "$$orphan" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan pytest: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
-		*"python -m general_ludd.cli daemon"*"/Users/shawnwilson/tmp/pytest-of-shawnwilson/"*) if [ "$$orphan" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan test daemon: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
+		*"/Users/shawnwilson/gludd"*|*"make search"*|*"grep -R"*) do_kill "$(PID)" ;; \
+		*"make gate"*|*"_gate-refresh-body"*) if [ "$$orphan" = "1" ]; then do_kill "$(PID)"; else echo "Refusing to kill non-orphan gate: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
+		*"uv cache prune"*) if [ "$$orphan" = "1" ]; then do_kill "$(PID)"; else echo "Refusing to kill non-orphan uv cache prune: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
+		*"uv run python -m pytest tests/unit/"*) if [ "$$orphan" = "1" ]; then do_kill "$(PID)"; else echo "Refusing to kill non-orphan pytest: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
+		*"python -m general_ludd.cli daemon"*"/Users/shawnwilson/tmp/pytest-of-shawnwilson/"*) if [ "$$orphan" = "1" ]; then do_kill "$(PID)"; else echo "Refusing to kill non-orphan test daemon: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
 		*) echo "Refusing to kill unrelated process: $$cmd"; exit 1 ;; \
 	esac
 

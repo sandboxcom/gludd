@@ -197,3 +197,43 @@
         include_utf_encodings: true
         include_version_info: false
         artifact_dir: "/tmp/gludd-molecule-language/unicode-analyze"
+
+- name: Converge - language_detect
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Invoke language_detect
+      ansible.builtin.include_role:
+        name: general_ludd.language.language_detect
+      vars:
+        input_text: "Hello world"
+        artifact_dir: "/tmp/gludd-molecule-language/language-detect"
+
+- name: Converge - translate
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Invoke translate
+      ansible.builtin.include_role:
+        name: general_ludd.language.translate
+      vars:
+        input_text: "Hello"
+        source_language: "auto"
+        target_language: "fr"
+        artifact_dir: "/tmp/gludd-molecule-language/translate"
+
+- name: Converge - transliterate
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Invoke transliterate
+      ansible.builtin.include_role:
+        name: general_ludd.language.transliterate
+      vars:
+        input_text: "Hello"
+        target_script: "Latin"
+        scheme: ""
+        artifact_dir: "/tmp/gludd-molecule-language/transliterate"

@@ -83,7 +83,13 @@ def _convert_role_args(role: str, extra: dict[str, Any]) -> list[str]:
     elif role == "i18n_extract":
         if "directory" in extra:
             source_dir = str(extra["directory"])
-            output_dir = str(extra.get("output_dir", source_dir))
+            if "output_dir" in extra:
+                output_dir = str(extra["output_dir"])
+            else:
+                import tempfile
+                import uuid
+
+                output_dir = str(Path(tempfile.gettempdir()) / f"gludd-i18n-extract-{uuid.uuid4().hex[:12]}")
             return [
                 "--source-dir",
                 source_dir,
@@ -154,6 +160,8 @@ def _normalize_role_output(role: str, raw: dict[str, Any]) -> dict[str, Any]:
 
 
 class AnsibleRunnerAdapter:
+    """Adapter wiring ansible-core into the daemon with registry + isolation."""
+
     def __init__(
         self,
         private_data_dir: str | None = None,
@@ -164,6 +172,7 @@ class AnsibleRunnerAdapter:
         default_env: dict[str, str] | None = None,
         project_root: str | Path | None = None,
     ) -> None:
+        """Initialize the adapter with a private data dir and playbook registry."""
         self.private_data_dir = private_data_dir or tempfile.mkdtemp(prefix="gl-runner-")
         self.registry = _build_registry(registry)
         self.isolation_config = isolation_config
@@ -220,6 +229,7 @@ class AnsibleRunnerAdapter:
             )
 
     def activate_collection(self, namespace: str, collection: str, version: str | None = None) -> Path:
+        """Activate a specific collection version and return its root path."""
         base: Path | None = None
         proj_root = self._project_root
         if proj_root is not None:
@@ -241,17 +251,20 @@ class AnsibleRunnerAdapter:
         return root
 
     def clear_collection_versions(self) -> None:
+        """Remove every version activation root and cleanup dir created."""
         for d in self._version_cleanup_dirs:
             shutil.rmtree(d, ignore_errors=True)
         self._version_cleanup_dirs.clear()
         self._version_activation_roots.clear()
 
     def resolve_playbook(self, playbook_name: str) -> str:
+        """Return the file path registered for a playbook name."""
         if playbook_name not in self.registry:
             raise ValueError(f"Playbook '{playbook_name}' is not registered")
         return self.registry[playbook_name]
 
     def prepare_job_dirs(self, job_id: str) -> dict[str, str]:
+        """Create the per-job workspace directories under the private data dir."""
         safe_id = sanitize_job_id(job_id)
         if safe_id is None:
             raise ValueError(f"Invalid job_id: {job_id!r}")
@@ -281,6 +294,7 @@ class AnsibleRunnerAdapter:
         shared_vars: dict[str, Any] | None = None,
         filename: str = "extravars",
     ) -> str:
+        """Write validated extravars to the per-job env dir (mode 0600)."""
         # job_id is attacker-controllable (JobSpec.job_id from the HTTP body) and
         # only whitespace-validated upstream. Sanitize here too — write_vars is a
         # public method reachable independently of prepare_job_dirs — so a crafted
@@ -310,6 +324,7 @@ class AnsibleRunnerAdapter:
         timeout: float | None = None,
         **runner_kwargs: Any,
     ) -> dict[str, Any]:
+        """Run a registered playbook with a finite timeout and merged env."""
         try:
             playbook_path = self.resolve_playbook(playbook_name)
         except ValueError as exc:
@@ -363,6 +378,7 @@ class AnsibleRunnerAdapter:
             return {"status": "failed", "rc": 1, "error": str(exc), "events": []}
 
     async def run_role(self, task_args: dict[str, Any]) -> dict[str, Any]:
+        """Execute a language role script with a 30s timeout and parse its JSON."""
         role = str(task_args.get("role", ""))
         if not role:
             return {"error": "No 'role' specified in task_args"}
@@ -409,19 +425,23 @@ class AnsibleRunnerAdapter:
             return {"error": str(exc)}
 
     def refresh_playbooks(self) -> dict[str, Any]:
+        """Rescan the playbooks directory and return registered names."""
         if self._playbooks_dir:
             self._scan_playbook_dir(self._playbooks_dir)
         return {"playbooks": list(self.registry.keys())}
 
     def register_playbook(self, name: str, path: str) -> None:
+        """Register a playbook path under a name and publish the event."""
         self.registry[name] = path
         if self._event_bus:
             self._event_bus.publish(PlaybookRegisteredEvent(playbook=name))
 
     def unregister_playbook(self, name: str) -> None:
+        """Remove a playbook from the registry (missing names are no-ops)."""
         self.registry.pop(name, None)
 
     def list_playbooks(self) -> list[str]:
+        """Return the names of all registered playbooks."""
         return list(self.registry.keys())
 
     def _scan_playbook_dir(self, playbooks_dir: str) -> None:

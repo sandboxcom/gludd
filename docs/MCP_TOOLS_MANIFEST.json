@@ -481,7 +481,7 @@
   },
   {
     "name": "general_ludd.agent.gludd_git",
-    "description": "Git control-plane ops (commit/branch/worktree/merge/push) via git_automation — Exposes gludd's hardened C(general_ludd.git_automation.GitAutomation) control plane to roles/playbooks so an agent-authored job can perform git operations WITHOUT reimplementing the safety logic. This is a thin B(delegating wrapper) — it does not reimplement git. The Python core provides per-repo C(.git/index.lock) serialization (issue #63), a bounded subprocess timeout, a non-interactive git environment, leading-dash ref rejection, C(--) end-of-options separators, worktree-path traversal guards, and typed results the daemon also consumes synchronously. Keeping that core in Python (rather than a pure role) preserves those guarantees; this module simply makes the same operations available on the Ansible execution seam. Idempotent where git is: C(branch) is a no-op if the branch already exists; C(commit) reports C(changed=false) when there is nothing to commit. Check-mode safe — read-only C(worktree_list) runs; mutating ops are skipped in check mode and report the change they WOULD make.",
+    "description": "Git control-plane ops (init/commit/branch/worktree/merge/push) via git_automation — Exposes gludd's hardened C(general_ludd.git_automation.GitAutomation) control plane to roles/playbooks so an agent-authored job can perform git operations WITHOUT reimplementing the safety logic. This is a thin B(delegating wrapper) — it does not reimplement git. The Python core provides per-repo C(.git/index.lock) serialization (issue #63), a bounded subprocess timeout, a non-interactive git environment, leading-dash ref rejection, C(--) end-of-options separators, worktree-path traversal guards, and typed results the daemon also consumes synchronously. Keeping that core in Python (rather than a pure role) preserves those guarantees; this module simply makes the same operations available on the Ansible execution seam. Idempotent where git is: C(init) reports C(changed=false) for an existing repository; C(branch) is a no-op if the branch already exists; C(commit) reports C(changed=false) when there is nothing to commit. Check-mode safe — read-only C(worktree_list) runs; mutating ops are skipped in check mode and report the change they WOULD make.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -491,6 +491,7 @@
         "op": {
           "type": "string",
           "enum": [
+            "init",
             "clone",
             "commit",
             "gated_commit",
@@ -504,11 +505,18 @@
             "merge",
             "gated_merge",
             "push",
+            "verify_remote",
             "tag_release",
             "tag_checkpoint",
             "release_tag",
             "checkpoint_tag",
-            "state"
+            "state",
+            "batch_push",
+            "release_cut",
+            "release_delete",
+            "release_recut",
+            "ci_verdict",
+            "ci_cancel"
           ]
         },
         "clone_url": {
@@ -564,6 +572,58 @@
           "type": "string"
         },
         "sha": {
+          "type": "string"
+        },
+        "expected_sha": {
+          "type": "string"
+        },
+        "ssh_key_path": {
+          "type": "string"
+        },
+        "ref_type": {
+          "type": "string",
+          "enum": [
+            "heads",
+            "tags"
+          ],
+          "default": "heads"
+        },
+        "threshold": {
+          "type": "integer",
+          "default": 5
+        },
+        "force": {
+          "type": "boolean",
+          "default": false
+        },
+        "check_ci": {
+          "type": "boolean",
+          "default": true
+        },
+        "release_tag": {
+          "type": "string"
+        },
+        "release_message": {
+          "type": "string",
+          "default": ""
+        },
+        "release_remote": {
+          "type": "string",
+          "default": "sandboxcom"
+        },
+        "release_repo": {
+          "type": "string",
+          "default": "sandboxcom/gludd"
+        },
+        "skip_readme_check": {
+          "type": "boolean",
+          "default": false
+        },
+        "skip_ci_check": {
+          "type": "boolean",
+          "default": false
+        },
+        "run_id": {
           "type": "string"
         },
         "remote": {
@@ -1108,7 +1168,7 @@
   },
   {
     "name": "general_ludd.agent.gludd_observe",
-    "description": "Correlate telemetry across daemon-registered observability sources — Discovers operator-configured sources through the Gludd daemon. Adapts those named sources to C(GluddObserve) without accepting arbitrary URLs. Runs query, timeline, incident-correlation, and topology workflows. Isolates a failing source so healthy source results still return. All operations are read-only and check-mode safe.",
+    "description": "Correlate registered observability sources through the Gludd daemon — Provides the Ansible seam for the cross-source C(GluddObserve) facade. Discovers only operator-registered sources from C(GET /api/observe/sources) and queries them by registered name through C(POST /api/observe/query). Callers cannot supply connector URLs, preserving the daemon's SSRF boundary. Supports merged queries, timelines, incident correlation, and service/host topology without duplicating the canonical normalization logic. Read-only and check-mode safe. A failing connector is isolated into the returned C(errors) list instead of aborting successful sources.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -1116,26 +1176,27 @@
           "type": "string",
           "enum": [
             "query_sources",
-            "correlate_incident",
             "timeline",
+            "correlate_incident",
             "topology"
           ]
         },
         "role": {
           "type": "string",
-          "default": ""
-        },
-        "kinds": {
-          "type": "array",
-          "default": []
-        },
-        "window": {
-          "type": "array",
-          "default": []
+          "default": "observe"
         },
         "seed": {
           "type": "object",
           "default": {}
+        },
+        "kinds": {
+          "type": "array",
+          "default": [
+            "logs",
+            "traces",
+            "metrics",
+            "events"
+          ]
         },
         "by": {
           "type": "string",
@@ -1154,10 +1215,6 @@
         },
         "end": {
           "type": "number"
-        },
-        "correlate_by": {
-          "type": "string",
-          "default": ""
         },
         "daemon_url": {
           "type": "string",
@@ -1420,6 +1477,60 @@
         }
       },
       "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_rag",
+    "description": "Retrieval-Augmented Generation pipeline via module_utils.rag — With C(op=add_document) ingests text into an in-memory vector store backed by the L(rag module_utils,ansible_collections.general_ludd.agent.plugins.module_utils.rag). With C(op=query) embeds a question, retrieves the top-k closest chunks, builds a prompt with them as context, and asks the daemon model gateway for an answer. The pipeline uses the pluggable embedder from C(rag.py) (HashEmbedder by default, or a daemon-backed embedder when the daemon is reachable). Check-mode safe for C(op=query) — returns a placeholder answer.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "add_document",
+            "query"
+          ],
+          "default": "query"
+        },
+        "text": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "default": {}
+        },
+        "top_k": {
+          "type": "integer",
+          "default": 5
+        },
+        "chunk_size": {
+          "type": "integer",
+          "default": 1000
+        },
+        "chunk_overlap": {
+          "type": "integer",
+          "default": 200
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 120
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ]
     },
     "server_id": "ansible"
   },
