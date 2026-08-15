@@ -56,8 +56,8 @@
           nohup {{ venv_bin }}/python -m general_ludd.cli daemon
           --host {{ daemon_host }} --port {{ daemon_port }}
           --log-level info --workers 1
+          --pid-file {{ pidfile }}
           > {{ logfile }} 2>&1 &
-          echo $! > {{ pidfile }};
       args:
         chdir: "{{ project_dir }}"
       environment:
@@ -73,7 +73,7 @@
 
     - name: Parse the daemon PID
       ansible.builtin.set_fact:
-        daemon_pid: "{{ (pid_raw.content | b64decode).strip() | int }}"
+        daemon_pid: "{{ (pid_raw.content | b64decode | from_json)['pid'] }}"
 
     - name: Poll /healthz for up to 30 seconds
       ansible.builtin.uri:
