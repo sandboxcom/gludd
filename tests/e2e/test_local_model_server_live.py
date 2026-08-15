@@ -73,7 +73,6 @@ def _kill_process_group(proc: subprocess.Popen) -> None:
 def test_download_serve_generate_shutdown(tmp_path) -> None:
     """Download the small GGUF, serve it, generate text, shut down cleanly."""
     stderr_path = tmp_path / "llama-server.stderr"
-    stderr_file = open(stderr_path, "wb")
     proc: subprocess.Popen | None = None
     previous_hf_home = os.environ.get("HF_HOME")
 
@@ -87,80 +86,80 @@ def test_download_serve_generate_shutdown(tmp_path) -> None:
         port = _find_free_port()
         base_url = f"http://127.0.0.1:{port}"
 
-        proc = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "llama_cpp.server",
-                "--model",
-                downloaded.local_path,
-                "--host",
-                "127.0.0.1",
-                "--port",
-                str(port),
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=stderr_file,
-            start_new_session=True,
-        )
-
-        deadline = time.time() + _HEALTH_TIMEOUT_SEC
-        while time.time() < deadline:
-            if proc.poll() is not None:
-                pytest.fail(
-                    f"llama_cpp.server exited early (rc={proc.returncode}). "
-                    f"stderr tail:\n{_stderr_tail(str(stderr_path))}"
-                )
-            try:
-                resp = httpx.get(f"{base_url}/health", timeout=5.0)
-                if resp.status_code == 200:
-                    break
-            except httpx.HTTPError:
-                pass
-            time.sleep(_HEALTH_POLL_INTERVAL_SEC)
-        else:
-            pytest.fail(
-                f"Server /health did not return 200 within {_HEALTH_TIMEOUT_SEC:.0f}s. "
-                f"stderr tail:\n{_stderr_tail(str(stderr_path))}"
+        with open(stderr_path, "wb") as stderr_file:
+            proc = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "llama_cpp.server",
+                    "--model",
+                    downloaded.local_path,
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(port),
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_file,
+                start_new_session=True,
             )
 
-        models_resp = httpx.get(f"{base_url}/v1/models", timeout=30.0)
-        assert models_resp.status_code == 200, models_resp.text
-        models = models_resp.json().get("data", [])
-        assert models, f"No models served: {models_resp.text}"
-        served_model = models[0].get("id", _MODEL_FILE)
+            deadline = time.time() + _HEALTH_TIMEOUT_SEC
+            while time.time() < deadline:
+                if proc.poll() is not None:
+                    pytest.fail(
+                        f"llama_cpp.server exited early (rc={proc.returncode}). "
+                        f"stderr tail:\n{_stderr_tail(str(stderr_path))}"
+                    )
+                try:
+                    resp = httpx.get(f"{base_url}/health", timeout=5.0)
+                    if resp.status_code == 200:
+                        break
+                except httpx.HTTPError:
+                    pass
+                time.sleep(_HEALTH_POLL_INTERVAL_SEC)
+            else:
+                pytest.fail(
+                    f"Server /health did not return 200 within {_HEALTH_TIMEOUT_SEC:.0f}s. "
+                    f"stderr tail:\n{_stderr_tail(str(stderr_path))}"
+                )
 
-        completion_resp = httpx.post(
-            f"{base_url}/v1/completions",
-            json={
-                "model": served_model,
-                "prompt": "The capital of France is",
-                "max_tokens": 8,
-                "temperature": 0.0,
-            },
-            timeout=120.0,
-        )
-        assert completion_resp.status_code == 200, completion_resp.text
-        body = completion_resp.json()
-        choices = body.get("choices", [])
-        assert choices, f"No choices in completion: {body}"
-        text = choices[0].get("text", "")
-        assert isinstance(text, str) and len(text) > 0, f"Empty completion text: {body}"
+            models_resp = httpx.get(f"{base_url}/v1/models", timeout=30.0)
+            assert models_resp.status_code == 200, models_resp.text
+            models = models_resp.json().get("data", [])
+            assert models, f"No models served: {models_resp.text}"
+            served_model = models[0].get("id", _MODEL_FILE)
 
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        try:
-            proc.wait(timeout=_SHUTDOWN_TIMEOUT_SEC)
-        except subprocess.TimeoutExpired:
-            _kill_process_group(proc)
-            pytest.fail(f"Server did not exit within {_SHUTDOWN_TIMEOUT_SEC:.0f}s after SIGTERM (killed).")
-        assert proc.returncode == 0, (
-            f"Server exited uncleanly (rc={proc.returncode}). stderr tail:\n{_stderr_tail(str(stderr_path))}"
-        )
-        proc = None
+            completion_resp = httpx.post(
+                f"{base_url}/v1/completions",
+                json={
+                    "model": served_model,
+                    "prompt": "The capital of France is",
+                    "max_tokens": 8,
+                    "temperature": 0.0,
+                },
+                timeout=120.0,
+            )
+            assert completion_resp.status_code == 200, completion_resp.text
+            body = completion_resp.json()
+            choices = body.get("choices", [])
+            assert choices, f"No choices in completion: {body}"
+            text = choices[0].get("text", "")
+            assert isinstance(text, str) and len(text) > 0, f"Empty completion text: {body}"
+
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            try:
+                proc.wait(timeout=_SHUTDOWN_TIMEOUT_SEC)
+            except subprocess.TimeoutExpired:
+                _kill_process_group(proc)
+                pytest.fail(f"Server did not exit within {_SHUTDOWN_TIMEOUT_SEC:.0f}s after SIGTERM (killed).")
+            assert proc.returncode == 0, (
+                f"Server exited uncleanly (rc={proc.returncode}). stderr tail:\n{_stderr_tail(str(stderr_path))}"
+            )
+            proc = None
     finally:
         if proc is not None and proc.poll() is None:
             _kill_process_group(proc)
-        stderr_file.close()
         if previous_hf_home is None:
             os.environ.pop("HF_HOME", None)
         else:
