@@ -2825,6 +2825,160 @@ class ModelPerformanceRepository:
             for r in result.all()
         ]
 
+    # ── router-facing queries ───────────────────────────────────────────
+
+    async def get_ranking(
+        self,
+        task_type: str,
+        session: AsyncSession | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return per-(service, model) outcome stats for *task_type*.
+
+        Grouped from the immutable ``model_call_logs`` table so the router
+        always sees the latest recorded outcomes (no aggregate refresh
+        required).  Each row carries ``success_rate``, ``avg_latency_ms``,
+        ``avg_cost_usd`` and ``sample_count``.
+        """
+        from sqlalchemy import Integer as _Integer
+        from sqlalchemy import func as _func
+
+        eff_session = session or self._resolve_session()
+        stmt = (
+            select(
+                ModelCallLogModel.service,
+                ModelCallLogModel.model_name,
+                ModelCallLogModel.model_profile_id,
+                _func.count().label("sample_count"),
+                _func.sum(_func.cast(ModelCallLogModel.success, _Integer)).label("successes"),
+                _func.coalesce(_func.avg(ModelCallLogModel.duration_ms), 0.0).label("avg_latency_ms"),
+                _func.coalesce(_func.avg(ModelCallLogModel.cost_usd), 0.0).label("avg_cost_usd"),
+            )
+            .where(ModelCallLogModel.task_type == task_type)
+            .group_by(
+                ModelCallLogModel.service,
+                ModelCallLogModel.model_name,
+                ModelCallLogModel.model_profile_id,
+            )
+        )
+        rows = (await eff_session.execute(stmt)).all()
+        ranking: list[dict[str, Any]] = []
+        for row in rows:
+            sample_count = int(row.sample_count or 0)
+            successes = int(row.successes or 0)
+            ranking.append(
+                {
+                    "service": str(row.service or ""),
+                    "model_name": str(row.model_name or ""),
+                    "model_profile_id": str(row.model_profile_id or ""),
+                    "sample_count": sample_count,
+                    "success_rate": round(successes / sample_count, 4) if sample_count else 0.0,
+                    "avg_latency_ms": float(row.avg_latency_ms or 0.0),
+                    "avg_cost_usd": float(row.avg_cost_usd or 0.0),
+                }
+            )
+        return ranking
+
+    async def get_best_model(
+        self,
+        task_type: str,
+        min_calls: int = 3,
+        prefer_cost: bool = False,
+        session: AsyncSession | None = None,
+    ) -> dict[str, Any] | None:
+        """Return the best (service, model_name) for *task_type*.
+
+        Considers only rows with ``sample_count >= min_calls``.  By default
+        the highest success rate wins (cost as tiebreak); with
+        ``prefer_cost`` the lowest average cost wins (success as tiebreak).
+        Returns ``None`` when no model meets the minimum sample count.
+        """
+        ranking = await self.get_ranking(task_type, session=session)
+        eligible = [r for r in ranking if int(r.get("sample_count", 0)) >= min_calls]
+        if not eligible:
+            return None
+        if prefer_cost:
+            eligible.sort(
+                key=lambda r: (
+                    float(r.get("avg_cost_usd", 0.0)),
+                    -float(r.get("success_rate", 0.0)),
+                )
+            )
+        else:
+            eligible.sort(
+                key=lambda r: (
+                    -float(r.get("success_rate", 0.0)),
+                    float(r.get("avg_cost_usd", 0.0)),
+                )
+            )
+        best = eligible[0]
+        if prefer_cost:
+            composite = round(1.0 / (1.0 + float(best.get("avg_cost_usd", 0.0))), 4)
+        else:
+            composite = float(best.get("success_rate", 0.0))
+        return {
+            "service": str(best.get("service", "openai")),
+            "model_name": str(best.get("model_name", "")),
+            "model_profile_id": str(best.get("model_profile_id", "")),
+            "composite_score": composite,
+            "sample_count": int(best.get("sample_count", 0)),
+        }
+
+    async def get_summary(
+        self,
+        service: str | None = None,
+        task_type: str | None = None,
+        session: AsyncSession | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return aggregated per-model outcome summaries for dashboards.
+
+        Groups call logs by (service, task_type, model).  Optional filters
+        narrow to a single *service* and/or *task_type*.
+        """
+        from sqlalchemy import Integer as _Integer
+        from sqlalchemy import func as _func
+
+        eff_session = session or self._resolve_session()
+        stmt = select(
+            ModelCallLogModel.service,
+            ModelCallLogModel.task_type,
+            ModelCallLogModel.model_name,
+            ModelCallLogModel.model_profile_id,
+            _func.count().label("total_calls"),
+            _func.sum(_func.cast(ModelCallLogModel.success, _Integer)).label("successful_calls"),
+            _func.coalesce(_func.sum(ModelCallLogModel.cost_usd), 0.0).label("total_cost_usd"),
+            _func.coalesce(_func.avg(ModelCallLogModel.duration_ms), 0.0).label("avg_duration_ms"),
+        )
+        if service is not None:
+            stmt = stmt.where(ModelCallLogModel.service == service)
+        if task_type is not None:
+            stmt = stmt.where(ModelCallLogModel.task_type == task_type)
+        stmt = stmt.group_by(
+            ModelCallLogModel.service,
+            ModelCallLogModel.task_type,
+            ModelCallLogModel.model_name,
+            ModelCallLogModel.model_profile_id,
+        )
+        rows = (await eff_session.execute(stmt)).all()
+        summary: list[dict[str, Any]] = []
+        for row in rows:
+            total = int(row.total_calls or 0)
+            successful = int(row.successful_calls or 0)
+            summary.append(
+                {
+                    "service": str(row.service or ""),
+                    "task_type": str(row.task_type or ""),
+                    "model_name": str(row.model_name or ""),
+                    "model_profile_id": str(row.model_profile_id or ""),
+                    "total_calls": total,
+                    "successful_calls": successful,
+                    "failed_calls": total - successful,
+                    "success_rate": round(successful / total, 4) if total else 0.0,
+                    "total_cost_usd": float(row.total_cost_usd or 0.0),
+                    "avg_duration_ms": float(row.avg_duration_ms or 0.0),
+                }
+            )
+        return summary
+
     # ── helpers ─────────────────────────────────────────────────────────
 
     def _resolve_session(self) -> AsyncSession:
