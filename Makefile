@@ -183,12 +183,6 @@ git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-te
           git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke mac-unified-memory-smoke gpu-hardware-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile \
          build-llamacpp-tools
 
-kill-gate-force:
-	-@pkill -f 'worktrees/agent-a79ff9c8' 2>/dev/null; true
-	-@pkill -f 'gludd-gate-basetemp' 2>/dev/null; true
-	@sleep 1
-	@echo "[kill-gate-force] killed rogue gate processes (a79ff9c8 worktree + basetemp holders)"
-
 review-locate-web:
 	@git worktree list
 	@echo "--- web pkg candidates ---"
@@ -3040,10 +3034,6 @@ pygrep:
 	@[ -n "$(Q)" ] || { echo "Usage: make pygrep Q='pattern' [PATH_='dir']"; exit 1; }
 	@$(PYTHON) -c "import os,sys,re; q=sys.argv[1]; roots=sys.argv[2:] or ['src','tests']; pat=re.compile(re.escape(q));\
 [print(f'{p}:{i}:{ln.rstrip()}') for root in roots for dp,_,fs in os.walk(root) for f in fs if f.endswith(('.py','.cfg','.toml','.yml','.yaml')) for p in [os.path.join(dp,f)] for i,ln in enumerate(open(p,errors='ignore'),1) if pat.search(ln)]" "$(Q)" $(PATH_)
-
-# Show the last gate's FAILED/ERROR short-test-summary without re-running tests.
-gate-tail:
-	@grep -nE '^(FAILED|ERROR) |failed,|error' /tmp/gludd-test-gate.txt 2>/dev/null | tail -60 || echo "no gate log"
 
 git-tracked-keys:
 	@echo "=== Tracked files matching private-key / key patterns ==="
