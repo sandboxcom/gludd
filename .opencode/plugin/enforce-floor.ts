@@ -85,7 +85,7 @@ function maybeRemindMissedCommitDispatch(): void {
     writeJsonFile(MISSED_COMMIT_FILE, { ...state, last_reminder_ts: now })
   } catch {}
 }
-// Shared state filenames used through shared.ts: gludd-tool-streak.json, gludd-watchdog-disengage.json.
+// Shared state filenames used through shared.ts: gludd-tool-streak.json, watchdog disengage state.
 // ── Time-based message boundary detection ──────────────────────────────────
 // Inter-call gap that marks a new agent message. Env-tunable so e2e tests can
 // drive the real boundary logic without 5s sleeps; production default unchanged.
@@ -733,6 +733,16 @@ export default (({ }) => {
       const impl = loadHotModule("floor", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined
+    },
+    // opencode 1.17.9 only registers the experimental key. Declared as a
+    // pass-through so the pinned plugin contract (supported-hooks surface)
+    // holds while the actual enforcement stays self-contained in
+    // tool.execute.before.
+    "experimental.text.complete": async (_input: unknown, output: unknown) => {
+      if (isSubagent()) return output
+      const impl = loadHotModule("floor", defaultImpl)
+      const fn = impl["text.complete"] || impl["experimental.text.complete"]
+      return fn ? await fn(_input, output) : output
     },
   }
 }) satisfies Plugin

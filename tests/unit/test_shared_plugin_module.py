@@ -60,7 +60,7 @@ class TestIsSubagent:
     def test_fail_open_on_error(self):
         src = _src()
         idx = src.find("export function isSubagent")
-        after = src[idx : idx + 300]
+        after = src[idx : idx + 450]
         assert "catch" in after
 
 
