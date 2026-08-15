@@ -732,8 +732,8 @@ lint-markdown:
 	fi
 	@if [ ! -f "$(MARKDOWNLINT_CONFIG)" ]; then echo "ERROR: Markdown config not found: $(MARKDOWNLINT_CONFIG)"; exit 2; fi
 	@if [ ! -x ".opencode/node_modules/.bin/markdownlint-cli2" ]; then \
-		echo "ERROR: locked markdownlint-cli2 is unavailable; run make node-deps-sync with explicit registry/cache variables"; \
-		exit 2; \
+		echo "INFO: locked markdownlint-cli2 not found; syncing locked Node deps"; \
+		$(MAKE) node-deps-sync || { echo "ERROR: locked markdownlint-cli2 is unavailable and node-deps-sync failed"; exit 2; }; \
 	fi
 	@.opencode/node_modules/.bin/markdownlint-cli2 --config "$(MARKDOWNLINT_CONFIG)" $(MARKDOWN_FILES)
 
