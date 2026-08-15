@@ -11,15 +11,7 @@ import yaml
 _ROOT = Path(__file__).resolve().parents[2]
 _MOLECULE_ROOT = _ROOT / "molecule"
 _SCENARIOS = _MOLECULE_ROOT / "playbooks"
-_MODULES = (
-    _ROOT
-    / "collections"
-    / "ansible_collections"
-    / "general_ludd"
-    / "agent"
-    / "plugins"
-    / "modules"
-)
+_MODULES = _ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent" / "plugins" / "modules"
 _COLLECTIONS = _ROOT / "collections" / "ansible_collections" / "general_ludd"
 _PLAYBOOK_PHASES = {
     "cleanup",
@@ -45,22 +37,16 @@ _DEFAULT_TEST_SEQUENCE = [
     "destroy",
 ]
 _DRIVER_MANAGED_PHASES = {"create", "destroy"}
-_EXPECTED_RELEASE_SCENARIOS = 123
+_EXPECTED_RELEASE_SCENARIOS = 137
 _CONDITIONAL_KEYS = {"changed_when", "failed_when", "that", "until", "when"}
 _RESERVED_ROLE_DEFAULTS = {"timeout"}
-_LEADING_JINJA_TEXT = re.compile(
-    r"""^\s*-\s*["']?\{\{[^{}]+\}\}\s+[A-Za-z]"""
-)
+_LEADING_JINJA_TEXT = re.compile(r"""^\s*-\s*["']?\{\{[^{}]+\}\}\s+[A-Za-z]""")
 
 
 def _scenario_configs() -> list[Path]:
     source_configs = set(_SCENARIOS.glob("*/molecule.yml"))
     source_names = {config.parent.name for config in source_configs}
-    runtime_configs = {
-        config
-        for config in _MOLECULE_ROOT.glob("*/molecule.yml")
-        if config.parent.name in source_names
-    }
+    runtime_configs = {config for config in _MOLECULE_ROOT.glob("*/molecule.yml") if config.parent.name in source_names}
     return sorted(source_configs | runtime_configs)
 
 
@@ -70,9 +56,7 @@ def _conditional_values(node: object) -> list[str]:
         for key, value in node.items():
             if key in _CONDITIONAL_KEYS:
                 candidates = value if isinstance(value, list) else [value]
-                values.extend(
-                    candidate for candidate in candidates if isinstance(candidate, str)
-                )
+                values.extend(candidate for candidate in candidates if isinstance(candidate, str))
             values.extend(_conditional_values(value))
     elif isinstance(node, list):
         for value in node:
@@ -103,18 +87,12 @@ def test_full_matrix_has_explicit_inventory_and_complete_sequences() -> None:
 
         if not platforms:
             localhost = (
-                provisioner.get("inventory", {})
-                .get("hosts", {})
-                .get("all", {})
-                .get("hosts", {})
-                .get("localhost", {})
+                provisioner.get("inventory", {}).get("hosts", {}).get("all", {}).get("hosts", {}).get("localhost", {})
             )
             if localhost.get("ansible_connection") != "local":
                 violations.append(f"{scenario}: implicit localhost inventory")
 
-        sequence = config.get("scenario", {}).get(
-            "test_sequence", _DEFAULT_TEST_SEQUENCE
-        )
+        sequence = config.get("scenario", {}).get("test_sequence", _DEFAULT_TEST_SEQUENCE)
         playbooks = provisioner.get("playbooks", {})
         for phase in sorted(_PLAYBOOK_PHASES.intersection(sequence)):
             if driver != "default" and phase in _DRIVER_MANAGED_PHASES:
@@ -126,9 +104,7 @@ def test_full_matrix_has_explicit_inventory_and_complete_sequences() -> None:
         if "dependency" in sequence:
             for filename in ("requirements.yml", "collections.yml"):
                 if not (config_path.parent / filename).is_file():
-                    violations.append(
-                        f"{scenario}: missing dependency file {filename}"
-                    )
+                    violations.append(f"{scenario}: missing dependency file {filename}")
 
     assert not violations, "\n" + "\n".join(violations)
 
@@ -146,19 +122,13 @@ def test_warning_contract_covers_every_release_scenario() -> None:
 def test_molecule_conditionals_do_not_use_deprecated_jinja_delimiters() -> None:
     violations: list[str] = []
     scenario_roots = {config.parent for config in _scenario_configs()}
-    playbook_paths = {
-        playbook
-        for scenario_root in scenario_roots
-        for playbook in scenario_root.glob("default/*.yml")
-    }
+    playbook_paths = {playbook for scenario_root in scenario_roots for playbook in scenario_root.glob("default/*.yml")}
     for playbook_path in sorted(playbook_paths):
         for document in yaml.safe_load_all(playbook_path.read_text()):
             for conditional in _conditional_values(document):
                 expression = conditional.strip()
                 if expression.startswith("{{") and expression.endswith("}}"):
-                    violations.append(
-                        f"{playbook_path.relative_to(_ROOT)}: {expression}"
-                    )
+                    violations.append(f"{playbook_path.relative_to(_ROOT)}: {expression}")
 
     assert not violations, "\n" + "\n".join(violations)
 
@@ -177,13 +147,10 @@ def test_modules_do_not_return_reserved_ansible_warning_keys() -> None:
             reserved = {
                 child.value
                 for child in ast.walk(call)
-                if isinstance(child, ast.Constant)
-                and child.value in {"warnings", "deprecations"}
+                if isinstance(child, ast.Constant) and child.value in {"warnings", "deprecations"}
             }
             for key in sorted(reserved):
-                violations.append(
-                    f"{module_path.name}:{call.lineno}: reserved {key!r}"
-                )
+                violations.append(f"{module_path.name}:{call.lineno}: reserved {key!r}")
 
     assert not violations, "\n" + "\n".join(violations)
 
@@ -193,9 +160,7 @@ def test_role_strings_do_not_trigger_python_invalid_decimal_warning() -> None:
     for task_path in sorted(_COLLECTIONS.glob("*/roles/*/tasks/*.yml")):
         for lineno, line in enumerate(task_path.read_text().splitlines(), start=1):
             if _LEADING_JINJA_TEXT.match(line):
-                violations.append(
-                    f"{task_path.relative_to(_ROOT)}:{lineno}: {line.strip()}"
-                )
+                violations.append(f"{task_path.relative_to(_ROOT)}:{lineno}: {line.strip()}")
 
     assert not violations, "\n" + "\n".join(violations)
 
@@ -207,8 +172,6 @@ def test_role_defaults_do_not_shadow_reserved_ansible_variables() -> None:
             if not isinstance(document, dict):
                 continue
             for variable in sorted(_RESERVED_ROLE_DEFAULTS.intersection(document)):
-                violations.append(
-                    f"{defaults_path.relative_to(_ROOT)}: {variable}"
-                )
+                violations.append(f"{defaults_path.relative_to(_ROOT)}: {variable}")
 
     assert not violations, "\n" + "\n".join(violations)

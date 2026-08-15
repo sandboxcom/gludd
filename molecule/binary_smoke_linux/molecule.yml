@@ -22,6 +22,13 @@ driver:
 platforms: []
 provisioner:
   name: ansible
+  inventory:
+    hosts:
+      all:
+        hosts:
+          localhost:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
   config_options:
     defaults:
       gathering: explicit
@@ -36,10 +43,7 @@ verifier:
   name: ansible
 scenario:
   test_sequence:
-    - dependency
     - syntax
-    - create
     - prepare
     - converge
     - verify
-    - destroy

@@ -26,6 +26,7 @@ provisioner:
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
   playbooks:
+    prepare: default/prepare.yml
     converge: default/converge.yml
     verify: default/verify.yml
 verifier:
@@ -33,5 +34,6 @@ verifier:
 scenario:
   test_sequence:
     - syntax
+    - prepare
     - converge
     - verify

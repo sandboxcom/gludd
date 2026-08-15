@@ -87,7 +87,6 @@ def _timeout_child_entry(
     pytest parent. The child retains the original seccomp-before-execution and
     process-group ownership guarantees.
     """
-
     if runner._seccomp_filter is not None:
         try:
             applied = runner._seccomp_filter.apply()
@@ -216,6 +215,8 @@ class _EventCollectorCallback(CallbackBase):
 
 
 class AnsibleOptions:
+    """Options object mirroring the ansible CLI args a playbook run accepts."""
+
     def __init__(
         self,
         inventory: list[str] | None = None,
@@ -233,6 +234,7 @@ class AnsibleOptions:
         skip_tags: list[str] | None = None,
         start_at_task: str | None = None,
     ) -> None:
+        """Build an AnsibleOptions instance with safe defaults."""
         self.inventory = inventory or ["localhost,"]
         self.extravars = extravars
         self.verbosity = verbosity
@@ -250,6 +252,8 @@ class AnsibleOptions:
 
 
 class AnsibleResult(BaseModel):
+    """Result of one playbook execution: status, rc, stats, events, error."""
+
     status: str = "unknown"
     rc: int = 0
     stats: dict[str, Any] = Field(default_factory=dict)
@@ -266,6 +270,8 @@ class AnsibleResult(BaseModel):
 
 
 class CoreAnsibleRunner:
+    """Execute Ansible playbooks in-process via ansible-core's PlaybookExecutor."""
+
     def __init__(
         self,
         module_paths: list[str] | None = None,
@@ -275,6 +281,7 @@ class CoreAnsibleRunner:
         network_policy: Any | None = None,
         seccomp_filter: Any | None = None,
     ) -> None:
+        """Initialize the runner with optional module paths, callbacks, and sandboxing."""
         self._module_paths = module_paths or []
         self._callback_plugins = callback_plugins or []
         self._process_isolation = process_isolation
@@ -288,6 +295,7 @@ class CoreAnsibleRunner:
         self._collected_events: list[dict[str, Any]] = []
 
     def close(self) -> None:
+        """Remove the runner's private data directory if one was created."""
         if self._private_data_dir and os.path.isdir(self._private_data_dir):
             import shutil
 
@@ -308,6 +316,7 @@ class CoreAnsibleRunner:
         timeout: float | None = None,
         extra_env: dict[str, str] | None = None,
     ) -> AnsibleResult:
+        """Run one playbook with network-policy scanning, unsafe-wrapping, and a timeout bound."""
         if not _HAS_ANSIBLE_CORE:
             raise ImportError("ansible-core is required for playbook execution but is not installed")
 
@@ -763,10 +772,15 @@ class CoreAnsibleRunner:
         # When the run is bounded in a fork child, the child must (re)install the
         # AnsibleCollectionFinder on its own sys.meta_path or ansible.builtin.*
         # module resolution fails ("couldn't resolve module/action"). Idempotent.
+        # Re-initializing while a finder is already installed re-scans the
+        # collection paths and re-fires AnsibleCollectionConfig warnings, so only
+        # initialize when the finder is missing.
         try:
             from ansible.plugins.loader import init_plugin_loader
+            from ansible.utils.collection_loader import AnsibleCollectionConfig
 
-            init_plugin_loader()
+            if AnsibleCollectionConfig._collection_finder is None:
+                init_plugin_loader()
         except Exception:  # pragma: no cover - older cores auto-init on use
             pass
 
@@ -910,11 +924,20 @@ class CoreAnsibleRunner:
             else 0
         )
         if pb_rc != 0 or failed_count:
+            if pb_rc != 0:
+                return AnsibleResult(
+                    status="failed",
+                    rc=pb_rc,
+                    stats=stats,
+                    events=list(self._collected_events),
+                    error=f"ansible playbook execution failed with rc={pb_rc}",
+                )
             return AnsibleResult(
                 status="failed",
-                rc=pb_rc if pb_rc != 0 else 1,
+                rc=1,
                 stats=stats,
                 events=list(self._collected_events),
+                error="ansible playbook reported task failures with rc=0",
             )
 
         return AnsibleResult(
@@ -929,6 +952,7 @@ class CoreAnsibleRunner:
         template_str: str,
         variables: dict[str, Any] | None = None,
     ) -> str:
+        """Render a Jinja template string with optional variables via ansible Templar."""
         if not _HAS_ANSIBLE_CORE:
             raise ImportError("ansible-core is required for templating but is not installed")
         templar = _get_templar(variables=variables)
@@ -942,6 +966,7 @@ class CoreAnsibleRunner:
         inventory_path: str | None = None,
         extravars: dict[str, Any] | None = None,
     ) -> Any:
+        """Resolve a single host variable using ansible's variable manager."""
         if not _HAS_ANSIBLE_CORE:
             raise ImportError("ansible-core is required for variable resolution but is not installed")
         return self._resolve_with_variable_manager(var_name, host, inventory_path, extravars)
@@ -976,6 +1001,7 @@ class CoreAnsibleRunner:
         playbook_path: str,
         extravars: dict[str, Any] | None = None,
     ) -> list[dict[str, str]]:
+        """Return a flat list of {name, module, hosts} for every task in a playbook."""
         _NON_MODULE_KEYS = {
             "name",
             "when",
@@ -1034,6 +1060,7 @@ class CoreAnsibleRunner:
         return tasks
 
     def validate_playbook_syntax(self, playbook_path: str) -> list[str]:
+        """Validate a playbook parses as YAML and is a list of plays with hosts keys."""
         errors: list[str] = []
 
         if not os.path.isfile(playbook_path):
