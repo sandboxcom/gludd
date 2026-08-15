@@ -54,7 +54,6 @@ ab9f5b59 test: pin clean-tree runtime fixture must live inside the checkout
 1024e8c4d docs: codify 2026-08-15 CI-fix and release-prep state in SESSION.md
 9bffc6290 fix: dirty-tree hook runtime fixtures must live inside the checkout or git status never sees them
 ```
-```
 
 <details><summary>SESSION 84 record (2026-08-15, HEAD `5164b1f73`) — condensed</summary>
 

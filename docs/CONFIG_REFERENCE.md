@@ -109,6 +109,8 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_BLOCK_REASON_FILE` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:42` |
 | `GLUDD_BUDGET_FAIL_CLOSED_DEGRADED` | Auto-indexed (see source) | — | optional | `src/general_ludd/routers/models.py:692` |
 | `GLUDD_CI_CACHE_PATH` | Auto-indexed (see source) | — | optional | `scripts/verify_enforcement.py:30` |
+| `GLUDD_CI_HISTORY_FILE` | CI verdict history JSON (atomic writes; consulted by the AA032 push guard and ci-verdict-safe recording) | `/tmp/gludd-ci-verdict-history.json` | optional | `scripts/ci_check_cooldown.py:49` |
+| `GLUDD_CI_RESTART_COUNT_FILE` | AA023 CI-restart cap counter; reset to `0` once CI reports a terminal GREEN/RED verdict for the pushed SHA | `/tmp/gludd-ci-restart-count` | optional | `scripts/ci_check_cooldown.py:50` |
 | `GLUDD_CI_STATE_FILE` | Auto-indexed (see source) | `/tmp/gludd-ci-check-state.json` | optional | `src/general_ludd/git_automation/ci_ops.py:40` |
 | `GLUDD_CLAUDE_SESSIONS_BASE` | Auto-indexed (see source) | — | optional | `scripts/agent_liveness.py:139` |
 | `GLUDD_CLEAN_TREE_ENFORCE` | Auto-indexed (see source) | — | optional | `scripts/test_hook_runtime.py:420` |

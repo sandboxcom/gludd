@@ -402,19 +402,22 @@ class TestEnforceStopTextComplete:
 
 
 class TestEnforceFloorTextComplete:
-    """enforce-floor.ts moved text.complete into tool.execute.before (self-
-    contained as of opencode >= 1.17.9). The text.complete hook is intentionally
-    absent — verify that the harness correctly reports it as unavailable."""
+    """enforce-floor.ts declares experimental.text.complete as an intentional
+    pass-through (commit 19701a336): enforcement stays self-contained in
+    tool.execute.before, while the supported-hooks surface keeps the pinned
+    plugin contract. The pass-through returns output unchanged when no hot
+    module supplies a text.complete implementation."""
 
-    def test_floor_text_complete_hook_is_absent(self, hook_plugin_env: HookEnv):
+    def test_floor_text_complete_hook_is_passthrough(self, hook_plugin_env: HookEnv):
         result = hook_plugin_env.invoke(
             "enforce-floor.ts",
             "experimental.text.complete",
             input={},
             output={"text": "test response"},
         )
-        assert result.returncode != 0, f"expected non-zero for absent hook, got {result.returncode}"
-        assert "not found" in result.stderr.lower(), f"expected 'not found' in stderr, got {result.stderr!r}"
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert payload.get("text") == "test response", f"expected pass-through, got {payload!r}"
 
 
 # ── Test 9: enforce-stop.ts writes tool-counts file via tool.execute.before ─

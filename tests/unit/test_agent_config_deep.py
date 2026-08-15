@@ -7,9 +7,19 @@ model configs, plugin references, and skill bindings.
 import json
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).parent.parent.parent
 USER_CONFIG = Path.home() / ".config" / "opencode" / "opencode.json"
 PROJECT_CONFIG = ROOT / "opencode.json"
+
+pytestmark = pytest.mark.skipif(
+    not USER_CONFIG.exists(),
+    reason=(
+        "user opencode config not present (CI runners have no user-level "
+        f"opencode.json); deep user-config validation requires {USER_CONFIG}"
+    ),
+)
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = ROOT / ".opencode" / "plugins"
 SKILLS_DIR = ROOT / ".opencode" / "skills"
@@ -27,6 +37,8 @@ ALLOWED_PATH_PREFIXES = frozenset(
         "/Users/shawnwilson/.cache/**",
     }
 )
+
+
 def _load_user_config():
     return json.loads(USER_CONFIG.read_text())
 

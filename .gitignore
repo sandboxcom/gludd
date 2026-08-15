@@ -99,7 +99,8 @@ zai.api
 sandboxcom_github_rsa
 
 /tmp/
-web_retriever/
+web_retriever/*
+!web_retriever/.gitkeep
 
 Makefile.tmp
 
@@ -124,7 +125,8 @@ opencode.json.orig
 .claude/shell-snapshots/    # machine-local shell history snapshots
 .claude/projects/           # machine-local project memory
 .claude/settings.local.json # machine-local permission overrides (keep settings.json)
-web_retriever/
+web_retriever/*
+!web_retriever/.gitkeep
 
 # ─────────────────────────────────────────────────────────────────────────────
 

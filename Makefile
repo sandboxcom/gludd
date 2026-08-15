@@ -5271,11 +5271,11 @@ development-merge-forward:
 	if [ -z "$$SOURCE_VALUE" ]; then echo "Usage: make development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1"; exit 2; fi; \
 	case "$$MODE_VALUE" in content|ancestry-only) ;; *) echo "MODE must be explicitly set to content or ancestry-only"; exit 2 ;; esac; \
 	case "$$APPLY_VALUE" in 0|1) ;; *) echo "APPLY must be 0 or 1"; exit 2 ;; esac; \
-	if ! SOURCE_SHA=$$(git rev-parse --verify "$${SOURCE_VALUE}^{commit}" 2>/dev/null); then echo "Invalid SOURCE ref: $$SOURCE_VALUE"; exit 2; fi; \
 	if [ "$$MODE_VALUE" = ancestry-only ]; then \
 		case "$$SOURCE_VALUE" in master|refs/heads/master|*/master) echo "ancestry-only mode is forbidden for master"; exit 2 ;; esac; \
 		echo "WARNING: mode=ancestry-only strategy=ours records ancestry while preserving development content"; \
 	fi; \
+	if ! SOURCE_SHA=$$(git rev-parse --verify "$${SOURCE_VALUE}^{commit}" 2>/dev/null); then echo "Invalid SOURCE ref: $$SOURCE_VALUE"; exit 2; fi; \
 	if [ "$$APPLY_VALUE" = 0 ]; then \
 		echo "MERGE_FORWARD_DRY_RUN source=$$SOURCE_VALUE mode=$$MODE_VALUE apply=0 sha=$$SOURCE_SHA"; \
 		echo "no repository changes were made"; \
