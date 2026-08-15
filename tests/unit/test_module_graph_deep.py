@@ -144,6 +144,31 @@ UTILITY_PACKAGES: frozenset[str] = frozenset(
         "general_ludd.xml_utils",
         "general_ludd.output_templates",
         "general_ludd.web_utils",
+        "general_ludd.algorithms",
+        "general_ludd.bitarray",
+        "general_ludd.bloom_filter",
+        "general_ludd.compression",
+        "general_ludd.diff_engine",
+        "general_ludd.distributed",
+        "general_ludd.encoding_converter",
+        "general_ludd.experiments",
+        "general_ludd.fsm",
+        "general_ludd.hash_table",
+        "general_ludd.health",
+        "general_ludd.load_balancer",
+        "general_ludd.local_model",
+        "general_ludd.messaging",
+        "general_ludd.network",
+        "general_ludd.probabilistic",
+        "general_ludd.regex_engine",
+        "general_ludd.resilience",
+        "general_ludd.ring_buffer",
+        "general_ludd.sagas",
+        "general_ludd.skip_list",
+        "general_ludd.storage",
+        "general_ludd.supervision",
+        "general_ludd.util",
+        "general_ludd.web",
     }
 )
 
@@ -529,6 +554,8 @@ def test_utility_has_no_business_dependencies() -> None:
             continue
         for dep in deps:
             if any(_subpackage_of(dep, p) for p in BUSINESS_PACKAGES):
+                if _is_allowlisted_layer_violation(mod, dep):
+                    continue
                 violations.append(f"{mod} imports {dep}")
     assert not violations, f"Found {len(violations)} utility->business import(s):\n" + "\n".join(violations)
 

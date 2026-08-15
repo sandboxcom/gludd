@@ -27,6 +27,7 @@ class CID:
     __slots__ = ("_digest", "_hex")
 
     def __init__(self, digest: bytes) -> None:
+        """Create a CID from a 32-byte digest."""
         if len(digest) != 32:
             raise ValueError(f"CID digest must be 32 bytes, got {len(digest)}")
         self._digest: bytes = digest
@@ -34,40 +35,51 @@ class CID:
 
     @property
     def digest(self) -> bytes:
+        """Return the raw 32-byte digest."""
         return self._digest
 
     @property
     def hex(self) -> str:
+        """Return the hex-encoded digest."""
         return self._hex
 
     @classmethod
     def from_hex(cls, hex_str: str) -> CID:
+        """Build a CID from a hex string."""
         return cls(bytes.fromhex(hex_str))
 
     def __eq__(self, other: object) -> bool:
+        """Return whether two CIDs carry identical digests."""
         if not isinstance(other, CID):
             return NotImplemented
         return self._digest == other._digest
 
     def __lt__(self, other: CID) -> bool:
+        """Return whether this digest sorts before *other*."""
         return self._digest < other._digest
 
     def __le__(self, other: CID) -> bool:
+        """Return whether this digest sorts at or before *other*."""
         return self._digest <= other._digest
 
     def __gt__(self, other: CID) -> bool:
+        """Return whether this digest sorts after *other*."""
         return self._digest > other._digest
 
     def __ge__(self, other: CID) -> bool:
+        """Return whether this digest sorts at or after *other*."""
         return self._digest >= other._digest
 
     def __hash__(self) -> int:
+        """Return a hash of the digest."""
         return hash(self._digest)
 
     def __str__(self) -> str:
+        """Return the hex digest string."""
         return self._hex
 
     def __repr__(self) -> str:
+        """Return a compact developer representation."""
         return f"CID({self._hex[:12]}…)"
 
 
@@ -94,17 +106,21 @@ class MerkleLink:
 class MerkleNode(Generic[T]):
     """Content-addressable node with data and named links.
 
-    The CID is the SHA-256 of the serialized `(data, links)` tuple.
+    The CID is the SHA-256 of the serialized `(data, links)` tuple,
+    computed once at construction so a node remains addressable by its
+    original CID even if its fields are mutated afterwards.
     """
 
     data: T
     links: list[MerkleLink] = field(default_factory=list)
+    cid: CID = field(init=False)
 
-    @property
-    def cid(self) -> CID:
-        return _cid_from_parts(self.data, self.links)
+    def __post_init__(self) -> None:
+        """Cache the content-derived CID at construction time."""
+        self.cid = _cid_from_parts(self.data, self.links)
 
     def serialize(self) -> dict[str, Any]:
+        """Return a JSON-compatible dict for bulk export."""
         return {
             "data": self.data,
             "links": [{"name": link.name, "cid": link.cid.hex, "size": link.size} for link in self.links],
@@ -112,6 +128,7 @@ class MerkleNode(Generic[T]):
 
     @classmethod
     def deserialize(cls, obj: dict[str, Any]) -> MerkleNode[T]:
+        """Rebuild a node from a dict produced by ``serialize``."""
         links = [
             MerkleLink(
                 name=li["name"],
@@ -132,6 +149,7 @@ class MerkleNode(Generic[T]):
             )
 
     def __repr__(self) -> str:
+        """Return a compact developer representation."""
         return f"MerkleNode(cid={self.cid.hex[:12]}…, links={len(self.links)})"
 
 
@@ -173,17 +191,21 @@ class MerkleDAG(Generic[T]):
     """
 
     def __init__(self) -> None:
+        """Create an empty DAG registry."""
         self._nodes: dict[CID, MerkleNode[T]] = {}
 
     # -- node storage --------------------------------------------------------
 
     def put(self, node: MerkleNode[T]) -> None:
+        """Store *node* under its CID (first put wins)."""
         self._nodes.setdefault(node.cid, node)
 
     def get(self, cid: CID) -> MerkleNode[T]:
+        """Return the node registered under *cid*."""
         return self._nodes[cid]
 
     def contains(self, cid: CID) -> bool:
+        """Return whether *cid* is registered."""
         return cid in self._nodes
 
     # -- traversal -----------------------------------------------------------
@@ -214,8 +236,9 @@ class MerkleDAG(Generic[T]):
     # -- verification --------------------------------------------------------
 
     def verify(self, root_cid: CID) -> None:
-        """Verify every reachable node, checking CID integrity and that
-        all linked nodes exist in the DAG.
+        """Verify every reachable node.
+
+        Checks CID integrity and that all linked nodes exist in the DAG.
         """
         seen: set[CID] = set()
         stack = [root_cid]
@@ -226,7 +249,7 @@ class MerkleDAG(Generic[T]):
             seen.add(cid)
             node = self._nodes.get(cid)
             if node is None:
-                raise NodeValidationError(f"Dangling link: CID {cid.hex[:16]}… not in DAG")
+                raise NodeValidationError(f"dangling link: CID {cid.hex[:16]}… not in DAG")
             node.verify()
             stack.extend(link.cid for link in node.links[::-1])
 
@@ -251,11 +274,12 @@ class MerkleDAG(Generic[T]):
         for link in node.links:
             if link.name == name:
                 return self.get(link.cid)
-        raise PathResolutionError(f"Link {name!r} not found in node {node.cid.hex[:12]}…")
+        raise PathResolutionError(f"link {name!r} not found in node {node.cid.hex[:12]}…")
 
     # -- bulk operations -----------------------------------------------------
 
     def iter_nodes(self) -> list[MerkleNode[T]]:
+        """Return all registered nodes (snapshot)."""
         return list(self._nodes.values())
 
     def root_count(self) -> int:
@@ -271,9 +295,11 @@ class MerkleDAG(Generic[T]):
         return sum(1 for n in self._nodes.values() if not n.links)
 
     def export_dicts(self) -> list[dict[str, Any]]:
+        """Serialize every node into a list of dicts."""
         return [n.serialize() for n in self._nodes.values()]
 
     def import_dicts(self, dicts: list[dict[str, Any]]) -> None:
+        """Import nodes from ``export_dicts`` output (first import wins)."""
         for d in dicts:
             n: MerkleNode[Any] = MerkleNode.deserialize(d)
             self._nodes.setdefault(n.cid, n)
