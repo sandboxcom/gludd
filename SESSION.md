@@ -1,4 +1,39 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.3 shipped. Session 82: HEAD `9bf42a0f` on `development`. 5 dispatch waves completed (+~1,251 new tests: 145 W1 + 345 W2 + 224 W3 + 537 W4). Wave 5 documents chemistry (18 files), probabilistic (1 file, 32 tests), and ai_ml (13 files) expert modules. OpenCode DB cleanup safety + gate drift repairs + model test coverage deep-dives. Gate-background running PID 42003. Tree CLEAN. Enforcement 13/13 BLOCKING, 125 runtime PASS. Lint PASS 0. 15 commits from `d4c84303`..`9bf42a0f`. CI unknown.
+## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.4 prepared. Session 84: HEAD `5164b1f73` on `development`. Branch reconciliation completed (127 unique branches → 0 via merge-forward ancestry-only sweep). Gate campaign: 262 → 0 known unit failures across fix waves (mock-daemon, memory, downloader, env-config, docs-baselines, enforcement-shape, molecule, algorithms, cloud-materials, runner-health, residual pin drift). CI runs 31881326433/31881326410 on development. Tree CLEAN.
+
+---
+
+## SESSION 84 — 2026-08-15 — HEAD `5164b1f73`: beta4 reconciliation + gate campaign complete, release v0.1.0-beta.4 prepared
+
+### Key Accomplishments
+
+- **S84.0 — Branch reconciliation (DONE)**: 127 unique branches reduced to 0 via a merge-forward ancestry-only sweep. Every divergent tip either merged into `development` or proven superseded; local branch inventory is now fully reachable from `development`.
+- **S84.1 — Gate campaign (DONE)**: known unit failures driven 262 → 0 across fix waves — mock-daemon, memory, downloader, env-config, docs-baselines, enforcement-shape, molecule, algorithms, cloud-materials, runner-health, and residual pin drift. CI shards 1a1/1a2/1b/1d PASS; integration 3372 passed / 0 failed.
+- **S84.2 — Alembic migration renumber**: migration chain renumbered to a clean linear sequence.
+- **S84.3 — Task-registration gitignore fix**: generated gate/task-registration artifacts gitignored.
+- **S84.4 — Development pushed at `5164b1f73`**: CI runs 31881326433 / 31881326410 in flight.
+- **S84.5 — Release v0.1.0-beta.4 prepared**: README + changelog + checklist merged.
+
+### Current State
+
+- **HEAD: `5164b1f73`** on `development`
+- **Tree: CLEAN**
+- **CI: runs 31881326433 / 31881326410**
+- **Release: v0.1.0-beta.4 prepared (not yet cut)**
+
+### Recent Commits (HEAD `5164b1f73`, 10 since `3a442783b`)
+
+```text
+5164b1f73 merge: agent-fix-final-b worktree work into development
+bac91650b merge: agent-fix-final-a worktree work into development
+b38c66bd2 fix: final residual gate failures batch B
+a2df387a9 fix: final residual gate failures batch A
+f45041c7f fix: integration mock supplies final review response after 3 rounds
+c113b8057 fix: confine test db artifacts to tmp_path and gitignore generated gate artifacts
+b05674234 merge: agent-fix-misc-unit2 worktree work into development
+1262c12ef fix: misc unit-2 residual gate failures
+34fa2805e merge: agent-fix-unit1d worktree work into development
+3a442783b merge: agent-fix-git-langgraph worktree work into development
+```
 
 ---
 
