@@ -423,6 +423,11 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     daemon_parser.add_argument("--config-dir", default=None, help="Path to config directory")
     daemon_parser.add_argument("--templates-dir", default=None, help="Path to prompt templates directory")
     daemon_parser.add_argument("--playbooks-dir", default=None, help="Path to Ansible playbooks directory")
+    daemon_parser.add_argument(
+        "--pid-file",
+        default=None,
+        help="Write the daemon PID to this file; unlinked on graceful shutdown",
+    )
     daemon_parser.set_defaults(func=_cmd_daemon)
 
     add_parser = sub.add_parser("add", help="Add a todo to the queue")
@@ -1971,6 +1976,10 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
         env=env,
     )
 
+    pid_file = getattr(args, "pid_file", None)
+    if pid_file:
+        _write_daemon_pid_file(pid_file, proc.pid, daemon_url=f"http://{bind_host}:{args.port}")
+
     shutdown_signum: int | None = None
     shutdown_complete = threading.Event()
     watchdog_started = False
@@ -2012,6 +2021,9 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
             proc.kill()
     finally:
         shutdown_complete.set()
+        if pid_file:
+            with contextlib.suppress(OSError):
+                os.unlink(pid_file)
     if shutdown_signum is not None:
         sys.exit(128 + shutdown_signum)
     sys.exit(proc.returncode)
@@ -4339,11 +4351,7 @@ def _build_daemon_start_cmd(
     safe_host = _validate_daemon_host(host)
     safe_port = _validate_daemon_port(port)
     workers = _clamp_workers_for_sqlite(workers)
-    launcher = (
-        [sys.executable, _BUNDLED_GUNICORN_FLAG]
-        if bool(getattr(sys, "frozen", False))
-        else ["gunicorn"]
-    )
+    launcher = [sys.executable, _BUNDLED_GUNICORN_FLAG] if bool(getattr(sys, "frozen", False)) else ["gunicorn"]
     argv: list[str] = [
         *launcher,
         "general_ludd.daemon:create_daemon_app()",
