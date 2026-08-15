@@ -26,9 +26,11 @@
 - name: "Download model if not present"
   when: _model_path is not exists
   block:
-    - name: "Install huggingface_hub"
+    - name: "Install huggingface_hub and llama-cpp-python"
       ansible.builtin.pip:
-        name: huggingface_hub
+        name:
+          - huggingface_hub
+          - llama-cpp-python
         state: present
 
     - name: "Download GGUF via hf"
@@ -48,7 +50,7 @@
 
 - name: "Start llama.cpp server"
   ansible.builtin.shell: |
-    nohup python3 -m llama_cpp.server \
+    nohup {{ ansible_playbook_python }} -m llama_cpp.server \
       --model "{{ _model_path }}" \
       --host {{ server_host }} \
       --port {{ server_port }} \
@@ -98,13 +100,13 @@
 # ── Step 4: Verify generated code ─────────────────────────────────────────
 
 - name: "Verify — AST parse"
-  ansible.builtin.command: "python3 -c 'import ast; ast.parse(open(\"{{ artifact_dir }}/{{ game_name }}.py\").read()); print(\"AST: OK\")'"
+  ansible.builtin.command: "{{ ansible_playbook_python }} -c 'import ast; ast.parse(open(\"{{ artifact_dir }}/{{ game_name }}.py\").read()); print(\"AST: OK\")'"
   register: _ast_result
   changed_when: false
 
 - name: "Verify — import module"
   ansible.builtin.command: >-
-    python3 -c "
+    {{ ansible_playbook_python }} -c "
     import importlib.util, sys
     spec = importlib.util.spec_from_file_location('{{ game_name }}', '{{ artifact_dir }}/{{ game_name }}.py')
     mod = importlib.util.module_from_spec(spec)
@@ -120,7 +122,7 @@
 
 - name: "Verify — runtime checks"
   ansible.builtin.command: >-
-    python3 -c "
+    {{ ansible_playbook_python }} -c "
     import importlib.util, sys
     from pathlib import Path
     spec = importlib.util.spec_from_file_location('{{ game_name }}', '{{ artifact_dir }}/{{ game_name }}.py')
