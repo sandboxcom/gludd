@@ -49,9 +49,7 @@ class AuthPosture:
     surface: str
 
 
-def load_auth_posture(
-    surface: str, env: Mapping[str, str] | None = None
-) -> AuthPosture:
+def load_auth_posture(surface: str, env: Mapping[str, str] | None = None) -> AuthPosture:
     """Resolve the shared PSK auth posture from the environment.
 
     Reads ``GLUDD_PSK`` (the pre-shared key) and ``GLUDD_REQUIRE_AUTH`` (the
@@ -89,21 +87,21 @@ def load_auth_posture(
             "GLUDD_PSK_DISABLE=1 / GLUDD_ALLOW_NO_AUTH=1 to explicitly disable it.",
             surface,
         )
-    return AuthPosture(
-        psk=psk, require_auth=require_auth, no_auth=no_auth, surface=surface
-    )
+    return AuthPosture(psk=psk, require_auth=require_auth, no_auth=no_auth, surface=surface)
 
 
 def check_bearer_token(auth_header: str, expected: str) -> bool:
     """Constant-time check of a ``Authorization: Bearer <token>`` header.
 
-    Extracts the token after the ``Bearer `` prefix and compares it to
-    ``expected`` via :func:`verify_psk` (hmac.compare_digest). Returns ``False``
-    for a missing/malformed header or an empty expected key.
+    Extracts the token after the ``Bearer `` prefix (leading whitespace of the
+    token is ignored; the token itself is otherwise compared literally, so
+    trailing characters — including newlines — are significant) and compares it
+    to ``expected`` via :func:`verify_psk`. Returns ``False`` for a
+    missing/malformed header or an empty expected key.
     """
     if not auth_header or not auth_header.startswith("Bearer "):
         return False
-    token = auth_header[len("Bearer ") :].strip()
+    token = auth_header[len("Bearer ") :].lstrip()
     return verify_psk(token, expected)
 
 
@@ -111,25 +109,32 @@ def verify_psk(presented: str, expected: str) -> bool:
     """Constant-time check that ``presented`` matches the configured ``expected``.
 
     Returns ``False`` for an empty presented token or an empty expected key.
-    Uses :func:`hmac.compare_digest` so the comparison does not leak the secret
-    via a timing side channel.
+    Raises ``TypeError`` for non-string inputs. Uses
+    :func:`hmac.compare_digest` (on UTF-8 encodings of both values) so the
+    comparison does not leak the secret via a timing side channel and supports
+    non-ASCII keys.
     """
+    if not isinstance(presented, str) or not isinstance(expected, str):
+        raise TypeError("verify_psk requires str inputs")
     if not presented or not expected:
         return False
-    return hmac.compare_digest(presented, expected)
+    return hmac.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
 
 
 def _load_admin_token(env: Mapping[str, str] | None = None) -> str:
     source = env if env is not None else os.environ
-    return (source.get("GLUDD_ADMIN_TOKEN", "") or "").strip()
+    return source.get("GLUDD_ADMIN_TOKEN", "") or ""
 
 
 def check_admin_token(header_value: str, expected: str | None = None) -> bool:
+    """Constant-time comparison of a presented admin token against the expected value."""
     if expected is None:
         expected = _load_admin_token()
     if not header_value or not expected:
         return False
-    return hmac.compare_digest(header_value.strip(), expected)
+    if not isinstance(header_value, str) or not isinstance(expected, str):
+        return False
+    return hmac.compare_digest(header_value.strip().encode("utf-8"), expected.encode("utf-8"))
 
 
 def require_auth_env(env: Mapping[str, str] | None = None) -> bool:

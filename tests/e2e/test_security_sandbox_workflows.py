@@ -53,11 +53,16 @@ class TestAuthProviders:
         assert verify_psk("token", "") is False
         assert verify_psk("", "") is False
 
-    def test_verify_psk_is_constant_time_semantics(self):
+    def test_verify_psk_rejects_non_string_inputs(self):
+        import pytest as _pytest
+
         from general_ludd.security.auth import verify_psk
 
-        assert verify_psk(None, "secret") is False  # type: ignore[arg-type]
-        assert verify_psk("token", None) is False  # type: ignore[arg-type]
+        with _pytest.raises(TypeError):
+            verify_psk(None, "secret")  # type: ignore[arg-type]
+        with _pytest.raises(TypeError):
+            verify_psk("token", None)  # type: ignore[arg-type]
+        assert verify_psk("valid", "valid") is True
 
     # —— Bearer token parsing ————————————————————————————————————————————
 
@@ -77,7 +82,7 @@ class TestAuthProviders:
     def test_check_bearer_token_rejects_extra_whitespace(self):
         from general_ludd.security.auth import check_bearer_token
 
-        assert check_bearer_token("Bearer   abc123  ", "abc123") is True
+        assert check_bearer_token("Bearer   abc123  ", "abc123") is False
 
     def test_bearer_prefix_is_case_sensitive(self):
         from general_ludd.security.auth import check_bearer_token
@@ -194,9 +199,7 @@ class TestRBAC:
         cap = spec.capability_for("secret:openbao")
         assert cap is not None
         assert cap.actions == ["read"]
-        assert "secret/data/gludd/read-only/*" in cap.constraints.get(
-            "openbao_paths", []
-        )
+        assert "secret/data/gludd/read-only/*" in cap.constraints.get("openbao_paths", [])
 
     def test_default_human_unknown_falls_back_to_viewer(self):
         from general_ludd.security.permissions import default_human_spec
@@ -525,8 +528,9 @@ denied:
                     constraints={"openbao_paths": ["*"]},
                 ),
             ],
-            denied=[Capability(resource="secret:openbao", actions=["read"],
-                               constraints={"openbao_paths": ["secret-a"]})],
+            denied=[
+                Capability(resource="secret:openbao", actions=["read"], constraints={"openbao_paths": ["secret-a"]})
+            ],
         )
         b = PermissionSpec(
             agent_type="human-operator",
@@ -537,8 +541,9 @@ denied:
                     constraints={"openbao_paths": ["*"]},
                 ),
             ],
-            denied=[Capability(resource="secret:openbao", actions=["read"],
-                               constraints={"openbao_paths": ["secret-b"]})],
+            denied=[
+                Capability(resource="secret:openbao", actions=["read"], constraints={"openbao_paths": ["secret-b"]})
+            ],
         )
         result = PermissionSpecParser.intersection(a, b)
         assert len(result.denied) == 2
@@ -550,11 +555,13 @@ denied:
         )
 
         a = PermissionSpec(
-            agent_type="admin", max_sts_ttl_seconds=7200,
+            agent_type="admin",
+            max_sts_ttl_seconds=7200,
             capabilities=[],
         )
         b = PermissionSpec(
-            agent_type="human-operator", max_sts_ttl_seconds=600,
+            agent_type="human-operator",
+            max_sts_ttl_seconds=600,
             capabilities=[],
         )
         result = PermissionSpecParser.intersection(a, b)
@@ -581,8 +588,9 @@ class TestSandboxExecution:
     def test_process_limits_with_all_fields(self):
         from general_ludd.sandbox.process_executor import ProcessLimits
 
-        limits = ProcessLimits(memory_mb=256, cpu_seconds=60, max_file_size=10_000_000,
-                               max_open_files=64, max_processes=20)
+        limits = ProcessLimits(
+            memory_mb=256, cpu_seconds=60, max_file_size=10_000_000, max_open_files=64, max_processes=20
+        )
         assert limits.memory_mb == 256
         assert limits.cpu_seconds == 60
         assert limits.max_file_size == 10_000_000
@@ -779,7 +787,8 @@ class TestSandboxExecution:
         from general_ludd.sandbox.network_policy import NetworkPolicy
 
         policy = NetworkPolicy(
-            allow_outbound=True, allowed_hosts=["api.example.com"],
+            allow_outbound=True,
+            allowed_hosts=["api.example.com"],
         )
         assert policy.allows_host("api.example.com") is True
         assert policy.allows_host("other.example.com") is False
@@ -851,8 +860,9 @@ class TestSandboxExecution:
     def test_security_policy_privileged_overrides(self):
         from general_ludd.sandbox.security_policy import SecurityPolicy
 
-        policy = SecurityPolicy(privileged=True, read_only_root=False,
-                                no_new_privileges=False, allow_privilege_escalation=True)
+        policy = SecurityPolicy(
+            privileged=True, read_only_root=False, no_new_privileges=False, allow_privilege_escalation=True
+        )
         assert policy.is_restrictive() is False
 
     # —— Cleanup ————————————————————————————————————————————
@@ -886,8 +896,7 @@ class TestSandboxExecution:
     def test_resource_limits_to_kubernetes(self):
         from general_ludd.sandbox.resource_limits import ResourceLimits
 
-        limits = ResourceLimits(memory_bytes=512 * 1024 * 1024, cpu_shares=2048,
-                                disk_bytes=10 * 1024 * 1024)
+        limits = ResourceLimits(memory_bytes=512 * 1024 * 1024, cpu_shares=2048, disk_bytes=10 * 1024 * 1024)
         k8s = limits.to_kubernetes_resources()
         assert "limits" in k8s
         assert "requests" in k8s
@@ -1233,9 +1242,7 @@ class TestSecretManagement:
 
     def _mock_hvac_client(self) -> MagicMock:
         client = MagicMock()
-        client.secrets.kv.v2.read_secret_version.return_value = {
-            "data": {"data": {"value": "e2e-secret-value"}}
-        }
+        client.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {"value": "e2e-secret-value"}}}
         client.secrets.kv.v2.create_or_update_secret.return_value = {}
         client.secrets.kv.v2.delete_metadata_and_all_versions.return_value = {}
         client.secrets.kv.v2.list_metadata.return_value = {"data": {"keys": ["key1", "key2"]}}
@@ -1251,8 +1258,9 @@ class TestSecretManagement:
     def test_openbao_config_external_requires_https(self):
         from general_ludd.secrets.config import OpenBaoConfig
 
-        config = OpenBaoConfig(mode="external", external_url="https://bao.example.com:8200",
-                               external_token="s.test-token")
+        config = OpenBaoConfig(
+            mode="external", external_url="https://bao.example.com:8200", external_token="s.test-token"
+        )
         assert config.mode == "external"
         assert config.external_url == "https://bao.example.com:8200"
 
@@ -1416,8 +1424,9 @@ class TestAuditTrail:
         token = issuer.issue(issuer_spec, subject_spec, "admin-1", "sub-1", ttl_seconds=3600)
 
         audit.record_issue(token)
-        audit.record_use(token.token_id, Capability(resource="secret:openbao", actions=["read"]),
-                         "projects/app/api_key")
+        audit.record_use(
+            token.token_id, Capability(resource="secret:openbao", actions=["read"]), "projects/app/api_key"
+        )
         audit.record_expiry(token.token_id)
 
         events = audit.query()
@@ -1458,8 +1467,7 @@ class TestAuditTrail:
             agent_type="admin",
             capabilities=[
                 Capability(resource="secret:openbao", actions=["read", "write"]),
-                Capability(resource="file:", actions=["read", "write"],
-                           constraints={"path_prefix": "/repo/"}),
+                Capability(resource="file:", actions=["read", "write"], constraints={"path_prefix": "/repo/"}),
             ],
         )
         subject_spec = PermissionSpec(
@@ -1514,16 +1522,19 @@ class TestFixNotDisable:
 
         for pattern in DISABLE_PATTERNS:
             description = f"we should {pattern} this feature"
-            assert is_disabling_action(description) is True, (
-                f"Pattern '{pattern}' not detected in '{description}'"
-            )
+            assert is_disabling_action(description) is True, f"Pattern '{pattern}' not detected in '{description}'"
 
     def test_legitimate_actions_not_flagged(self):
         from general_ludd.security.fix_not_disable import is_disabling_action
 
-        for action in ["implement the new feature", "refactor the event loop",
-                        "correct the type annotation", "add a new test",
-                        "update the documentation", "improve error handling"]:
+        for action in [
+            "implement the new feature",
+            "refactor the event loop",
+            "correct the type annotation",
+            "add a new test",
+            "update the documentation",
+            "improve error handling",
+        ]:
             assert is_disabling_action(action) is False, f"'{action}' should not be flagged"
 
     def test_policy_fail_closed_blocks_all_disabling(self):
@@ -1554,17 +1565,16 @@ class TestSTSTokenLifecycle:
         from general_ludd.security.sts import StsIssuer
 
         issuer_spec = PermissionSpec(
-            agent_type="admin", max_sts_ttl_seconds=300,
+            agent_type="admin",
+            max_sts_ttl_seconds=300,
             capabilities=[
-                Capability(resource="secret:openbao", actions=["read"],
-                           constraints={"openbao_paths": ["*"]}),
+                Capability(resource="secret:openbao", actions=["read"], constraints={"openbao_paths": ["*"]}),
             ],
         )
         subject_spec = PermissionSpec(
             agent_type="subagent",
             capabilities=[
-                Capability(resource="secret:openbao", actions=["read"],
-                           constraints={"openbao_paths": ["*"]}),
+                Capability(resource="secret:openbao", actions=["read"], constraints={"openbao_paths": ["*"]}),
             ],
         )
         issuer = StsIssuer(clock=lambda: 0.0)
@@ -1578,19 +1588,18 @@ class TestSTSTokenLifecycle:
         issuer_spec = PermissionSpec(
             agent_type="admin",
             capabilities=[
-                Capability(resource="secret:openbao", actions=["read", "write"],
-                           constraints={"openbao_paths": ["*"]}),
+                Capability(resource="secret:openbao", actions=["read", "write"], constraints={"openbao_paths": ["*"]}),
             ],
             denied=[
-                Capability(resource="secret:openbao", actions=["write"],
-                           constraints={"openbao_paths": ["build/prod-key"]}),
+                Capability(
+                    resource="secret:openbao", actions=["write"], constraints={"openbao_paths": ["build/prod-key"]}
+                ),
             ],
         )
         subject_spec = PermissionSpec(
             agent_type="subagent",
             capabilities=[
-                Capability(resource="secret:openbao", actions=["read", "write"],
-                           constraints={"openbao_paths": ["*"]}),
+                Capability(resource="secret:openbao", actions=["read", "write"], constraints={"openbao_paths": ["*"]}),
             ],
         )
         issuer = StsIssuer(clock=lambda: 1000.0)
@@ -1604,13 +1613,15 @@ class TestSTSTokenLifecycle:
         issuer = StsIssuer(clock=lambda: 1000.0)
         issuer_spec = PermissionSpec(
             agent_type="admin",
-            capabilities=[Capability(resource="secret:openbao", actions=["read"],
-                                     constraints={"openbao_paths": ["*"]})],
+            capabilities=[
+                Capability(resource="secret:openbao", actions=["read"], constraints={"openbao_paths": ["*"]})
+            ],
         )
         subject_spec = PermissionSpec(
             agent_type="subagent",
-            capabilities=[Capability(resource="secret:openbao", actions=["read"],
-                                     constraints={"openbao_paths": ["*"]})],
+            capabilities=[
+                Capability(resource="secret:openbao", actions=["read"], constraints={"openbao_paths": ["*"]})
+            ],
         )
         token = issuer.issue(issuer_spec, subject_spec, "admin-1", "sub-1", ttl_seconds=3600)
         assert token.use_count == 0
@@ -1628,13 +1639,15 @@ class TestSTSTokenLifecycle:
         issuer = StsIssuer(clock=lambda: 1000.0)
         issuer_spec = PermissionSpec(
             agent_type="admin",
-            capabilities=[Capability(resource="secret:openbao", actions=["read"],
-                                     constraints={"openbao_paths": ["*"]})],
+            capabilities=[
+                Capability(resource="secret:openbao", actions=["read"], constraints={"openbao_paths": ["*"]})
+            ],
         )
         subject_spec = PermissionSpec(
             agent_type="subagent",
-            capabilities=[Capability(resource="secret:openbao", actions=["read"],
-                                     constraints={"openbao_paths": ["*"]})],
+            capabilities=[
+                Capability(resource="secret:openbao", actions=["read"], constraints={"openbao_paths": ["*"]})
+            ],
         )
         token = issuer.issue(issuer_spec, subject_spec, "admin-1", "sub-1", ttl_seconds=3600)
         assert issuer.revoke(token.token_id) is True
@@ -1652,13 +1665,15 @@ class TestSTSTokenLifecycle:
         issuer = StsIssuer(clock=clock)
         issuer_spec = PermissionSpec(
             agent_type="admin",
-            capabilities=[Capability(resource="secret:openbao", actions=["read"],
-                                     constraints={"openbao_paths": ["*"]})],
+            capabilities=[
+                Capability(resource="secret:openbao", actions=["read"], constraints={"openbao_paths": ["*"]})
+            ],
         )
         subject_spec = PermissionSpec(
             agent_type="subagent",
-            capabilities=[Capability(resource="secret:openbao", actions=["read"],
-                                     constraints={"openbao_paths": ["*"]})],
+            capabilities=[
+                Capability(resource="secret:openbao", actions=["read"], constraints={"openbao_paths": ["*"]})
+            ],
         )
         token = issuer.issue(issuer_spec, subject_spec, "admin-1", "sub-1", ttl_seconds=1)
         assert issuer.validate(token, Capability(resource="secret:openbao", actions=["read"])) is True
@@ -1678,13 +1693,15 @@ class TestSTSTokenLifecycle:
         issuer = StsIssuer(clock=clock)
         issuer_spec = PermissionSpec(
             agent_type="admin",
-            capabilities=[Capability(resource="secret:openbao", actions=["read"],
-                                     constraints={"openbao_paths": ["*"]})],
+            capabilities=[
+                Capability(resource="secret:openbao", actions=["read"], constraints={"openbao_paths": ["*"]})
+            ],
         )
         subject_spec = PermissionSpec(
             agent_type="subagent",
-            capabilities=[Capability(resource="secret:openbao", actions=["read"],
-                                     constraints={"openbao_paths": ["*"]})],
+            capabilities=[
+                Capability(resource="secret:openbao", actions=["read"], constraints={"openbao_paths": ["*"]})
+            ],
         )
         issuer.issue(issuer_spec, subject_spec, "admin-1", "sub-1", ttl_seconds=1)
         assert len(issuer.list_active()) == 1
@@ -2012,11 +2029,7 @@ class TestAdversarialDetector:
         from general_ludd.security.adversarial_detector import AdversarialCodeDetector
 
         detector = AdversarialCodeDetector()
-        diff = (
-            "+++ b/src/main.py\n"
-            "- eval(request.data)\n"
-            "+ print(request.data)\n"
-        )
+        diff = "+++ b/src/main.py\n- eval(request.data)\n+ print(request.data)\n"
         result = detector.scan_diff(diff)
         assert len(result.findings) == 0
 
@@ -2024,10 +2037,7 @@ class TestAdversarialDetector:
         from general_ludd.security.adversarial_detector import AdversarialCodeDetector
 
         detector = AdversarialCodeDetector()
-        diff = (
-            "+++ b/src/main.py\n"
-            "+ eval(base64.b64decode(user_input))\n"
-        )
+        diff = "+++ b/src/main.py\n+ eval(base64.b64decode(user_input))\n"
         result = detector.scan_diff(diff)
         assert len(result.findings) >= 1
 
