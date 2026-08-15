@@ -69,8 +69,24 @@ def _patch(url: str, path: str, payload: dict) -> tuple[int, dict]:
 
 def _request_raw(url: str, path: str, method: str = "GET", headers: dict | None = None) -> tuple[int, bytes]:
     req = urllib.request.Request(f"{url}{path}", headers=headers or {}, method=method)
-    with urllib.request.urlopen(req, timeout=5) as resp:
-        return resp.status, resp.read()
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
+
+def _post_error(url: str, path: str, payload: dict | None = None) -> tuple[int, dict]:
+    data = json.dumps(payload or {}).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    req = urllib.request.Request(f"{url}{path}", data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            body = json.loads(resp.read().decode())
+            return resp.status, body
+    except urllib.error.HTTPError as e:
+        body = json.loads(e.read().decode())
+        return e.code, body
 
 
 def _get_error(url: str, path: str) -> tuple[int, dict]:
@@ -252,12 +268,13 @@ class TestObserveEndpoints:
         assert body["records"][0]["source"] == "prod-logs"
 
     def test_query_broken_source_returns_503(self, url: str):
-        status, _body = _get_error(url, "/api/observe/query")
+        status, body = _post_error(url, "/api/observe/query", {"source": "broken-events"})
         assert status == 503
+        assert "detail" in body
 
     def test_query_unknown_source_returns_404(self, url: str):
-        status, _body = _get_error(url, "/api/observe/query")
-        assert status in (404, 503)
+        status, _body = _post_error(url, "/api/observe/query", {"source": "unknown-source"})
+        assert status == 404
 
 
 class TestMessagesEndpoints:
@@ -300,7 +317,7 @@ class TestMessagesEndpoints:
         assert body["recipient"] == "agent-2"
 
     def test_ack_message_returns_acked_true(self, url: str):
-        status, body = _get_error(url, "/api/messages/any-id/ack")
+        status, body = _post(url, "/api/messages/any-id/ack")
         assert status == 200
         assert body == {"acked": True}
 
@@ -633,14 +650,14 @@ class TestSTSTokenLifecycle:
 
     def test_revoke_token_sets_revoked_status(self, url: str):
         _post(url, "/admin/sts/mint", {"agent_id": "agent-revoke"})
-        status, body = _get_error(url, "/admin/sts/revoke/agent-revoke")
+        status, body = _post(url, "/admin/sts/revoke/agent-revoke")
         assert status == 200
         assert body["status"] == "revoked"
         assert body["agent_id"] == "agent-revoke"
 
     def test_validate_revoked_token_returns_invalid(self, url: str):
         _post(url, "/admin/sts/mint", {"agent_id": "agent-revoked"})
-        _get_error(url, "/admin/sts/revoke/agent-revoked")
+        _post(url, "/admin/sts/revoke/agent-revoked")
         _status, body = _get(url, "/admin/sts/validate/agent-revoked")
         assert body["valid"] is False
         assert body["revoked"] is True
@@ -952,7 +969,7 @@ class TestRequestLogIntrospection:
         _get(url, "/healthz")
         _, body_before = _get(url, "/__requests")
         assert len(body_before["requests"]) > 0
-        _get_error(url, "/__requests/reset")
+        _post(url, "/__requests/reset")
         _, body_after = _get(url, "/__requests")
         assert body_after["requests"] == []
 
@@ -1021,7 +1038,7 @@ class TestConcurrentRequests:
         proc.wait(timeout=5)
 
     def test_concurrent_get_healthz_all_return_200(self, url: str):
-        def hit_healthz() -> int:
+        def hit_healthz(_: int) -> int:
             status, _ = _get(url, "/healthz")
             return status
 
@@ -1058,7 +1075,7 @@ class TestConcurrentRequests:
         assert len(set(agent_ids)) == 5
 
     def test_concurrent_request_log_is_accurate(self, url: str):
-        _get_error(url, "/__requests/reset")
+        _post(url, "/__requests/reset")
 
         def hit_healthz_once(_: int) -> None:
             _get(url, "/healthz")
