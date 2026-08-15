@@ -26,6 +26,7 @@ The trust anchors are:
 from __future__ import annotations
 
 import enum
+import os
 import sys
 from typing import Any, ClassVar
 from unittest import mock
