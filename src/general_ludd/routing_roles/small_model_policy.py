@@ -76,6 +76,26 @@ FORBIDDEN_IMPACTS = frozenset(
 _BOUNDED_IMPACTS = frozenset({TaskImpact.READ_SOURCE, TaskImpact.WRITE_ARTIFACT})
 
 
+def _canonical_role(role: object) -> TaskRole:
+    """Return the canonical TaskRole for a member, rejecting raw strings.
+
+    The package is importable from two roots (``src/`` and the installed
+    distribution), which can materialize two distinct ``TaskRole`` class
+    objects; identity checks then fail even for genuine members. Members
+    from a foreign class copy are canonicalized by their ``.value`` while
+    raw strings and unknown values stay fail-closed.
+    """
+    if isinstance(role, str):
+        raise ValueError("role must be a TaskRole value")
+    value = getattr(role, "value", None)
+    if isinstance(value, str):
+        try:
+            return TaskRole(value)
+        except ValueError:
+            pass
+    raise ValueError("role must be a TaskRole value")
+
+
 @dataclass(frozen=True)
 class TaskContract:
     """Static eligibility contract for one bounded task kind."""
@@ -213,10 +233,7 @@ class SmallModelTaskSpec:
         _require_pattern("task_id", self.task_id, _IDENTIFIER_RE)
         _require_pattern("task_kind", self.task_kind, _TASK_KIND_RE)
         if not isinstance(self.role, TaskRole):
-            try:
-                object.__setattr__(self, "role", TaskRole(self.role))
-            except (ValueError, TypeError):
-                raise ValueError("role must be a TaskRole value") from None
+            object.__setattr__(self, "role", _canonical_role(self.role))
         _require_pattern("collection", self.collection, _COLLECTION_RE)
         _require_digest("input_digest", self.input_digest)
         if not isinstance(self.impacts, frozenset) or not all(
@@ -309,10 +326,7 @@ class CapabilityEvidence:
         _require_digest("model_identity_digest", self.model_identity_digest)
         _require_pattern("task_kind", self.task_kind, _TASK_KIND_RE)
         if not isinstance(self.role, TaskRole):
-            try:
-                object.__setattr__(self, "role", TaskRole(self.role))
-            except (ValueError, TypeError):
-                raise ValueError("role must be a TaskRole value") from None
+            object.__setattr__(self, "role", _canonical_role(self.role))
         _require_pattern("collection", self.collection, _COLLECTION_RE)
         _require_pattern("suite_id", self.suite_id, _IDENTIFIER_RE)
         _require_pattern("suite_revision", self.suite_revision, _IDENTIFIER_RE)
