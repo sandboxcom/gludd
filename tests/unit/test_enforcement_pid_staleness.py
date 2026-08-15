@@ -19,6 +19,7 @@ These tests verify the fix via:
   - Structural pins on the source patterns
   - Runtime invocation of actual plugin hooks via node --experimental-strip-types
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -38,17 +39,14 @@ FLOOR_SRC = (PLUGIN_DIR / "enforce-floor.ts").read_text()
 SHARED_SRC = (ROOT / ".opencode" / "lib" / "shared.ts").read_text()
 
 FAKE_STALE_PID = 999999
-MULTITASK_STATE_FILE = os.environ.get(
-    "GLUDD_MULTITASK_STATE_FILE", "/tmp/gludd-multitask-state.json"
-)
-SHARED_STREAK_FILE = os.environ.get(
-    "GLUDD_STREAK_FILE", "/tmp/gludd-tool-streak.json"
-)
+MULTITASK_STATE_FILE = os.environ.get("GLUDD_MULTITASK_STATE_FILE", "/tmp/gludd-multitask-state.json")
+SHARED_STREAK_FILE = os.environ.get("GLUDD_STREAK_FILE", "/tmp/gludd-tool-streak.json")
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _clean(*paths: str) -> None:
     for p in paths:
@@ -71,9 +69,7 @@ def _read_json(path: str) -> dict:
 
 def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15) -> dict | None:
     """Run TypeScript code with node --experimental-strip-types, return parsed JSON output."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".ts", dir="/tmp", prefix="pid_stale_test_", delete=False
-    ) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".ts", dir="/tmp", prefix="pid_stale_test_", delete=False) as f:
         f.write(ts_code)
         tmp = f.name
     try:
@@ -83,14 +79,14 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15) -
             env.update(env_override)
         proc = subprocess.run(
             ["node", "--experimental-strip-types", tmp],
-            capture_output=True, text=True, timeout=timeout,
-            cwd=str(ROOT), env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(ROOT),
+            env=env,
         )
         if proc.returncode != 0:
-            pytest.fail(
-                f"Node exit {proc.returncode}:\nstderr: {proc.stderr[:800]}\n"
-                f"stdout: {proc.stdout[:400]}"
-            )
+            pytest.fail(f"Node exit {proc.returncode}:\nstderr: {proc.stderr[:800]}\nstdout: {proc.stdout[:400]}")
         stdout = proc.stdout.strip()
         if not stdout:
             return None
@@ -112,18 +108,15 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15) -
 # STRUCTURAL TESTS — verify PID-check patterns exist in source
 # ===========================================================================
 
+
 class TestMultitaskPidCheckStructural:
     """Verify enforce-multitask.ts has PID-based staleness detection."""
 
     def test_state_interface_has_pid_field(self):
-        assert "pid: number" in MULTITASK_SRC, (
-            "MultitaskState interface must include pid field for staleness detection"
-        )
+        assert "pid: number" in MULTITASK_SRC, "MultitaskState interface must include pid field for staleness detection"
 
     def test_fresh_state_sets_current_pid(self):
-        assert "pid: process.pid" in MULTITASK_SRC, (
-            "freshState() must set pid to process.pid"
-        )
+        assert "pid: process.pid" in MULTITASK_SRC, "freshState() must set pid to process.pid"
 
     def test_iife_overwrites_pid_on_load(self):
         """The module-load IIFE must overwrite s.pid = process.pid so a stale
@@ -137,7 +130,8 @@ class TestMultitaskPidCheckStructural:
         session don't bypass enforcement."""
         iife_match = re.search(
             r"let _state.*?=\s*\(\(\)\s*=>\s*\{.*?\}\)\(\)",
-            MULTITASK_SRC, re.DOTALL,
+            MULTITASK_SRC,
+            re.DOTALL,
         )
         assert iife_match, "Module-load IIFE not found"
         body = iife_match.group(0)
@@ -153,16 +147,14 @@ class TestMultitaskPidCheckStructural:
         assert "_state.pid !== process.pid" in MULTITASK_SRC, (
             "tool.execute.before must check _state.pid !== process.pid"
         )
-        assert "freshState()" in MULTITASK_SRC, (
-            "tool.execute.before must call freshState() on PID mismatch"
-        )
+        assert "freshState()" in MULTITASK_SRC, "tool.execute.before must call freshState() on PID mismatch"
 
     def test_pid_check_before_enforcement_logic(self):
         """The PID check must appear BEFORE any enforcement logic so stale
         state is corrected before the floor/streak checks run."""
         pid_check_idx = MULTITASK_SRC.find("_state.pid !== process.pid")
         assert pid_check_idx > 0, "PID check not found"
-        handler_idx = MULTITASK_SRC.find("if (!FLOOR_ENFORCE) return")
+        handler_idx = MULTITASK_SRC.find("if (!FLOOR_ENFORCE) {")
         assert handler_idx > 0, "FLOOR_ENFORCE check not found"
         assert pid_check_idx < handler_idx, (
             "PID staleness check must run BEFORE the FLOOR_ENFORCE gate — "
@@ -174,9 +166,7 @@ class TestFloorPidCheckStructural:
     """Verify enforce-floor.ts has PID-based staleness detection."""
 
     def test_floor_init_pid_variable_exists(self):
-        assert "_floorInitPid" in FLOOR_SRC, (
-            "enforce-floor.ts must track _floorInitPid for staleness detection"
-        )
+        assert "_floorInitPid" in FLOOR_SRC, "enforce-floor.ts must track _floorInitPid for staleness detection"
 
     def test_floor_init_pid_set_to_process_pid(self):
         assert "_floorInitPid = process.pid" in FLOOR_SRC, (
@@ -188,13 +178,12 @@ class TestFloorPidCheckStructural:
         reset is sticky — subsequent calls see the correct PID."""
         reset_match = re.search(
             r"function _resetFloorState\(\):\s*void\s*\{.*?\}",
-            FLOOR_SRC, re.DOTALL,
+            FLOOR_SRC,
+            re.DOTALL,
         )
         assert reset_match, "_resetFloorState function not found"
         body = reset_match.group(0)
-        assert "_floorInitPid = process.pid" in body, (
-            "_resetFloorState must set _floorInitPid = process.pid"
-        )
+        assert "_floorInitPid = process.pid" in body, "_resetFloorState must set _floorInitPid = process.pid"
 
     def test_tool_execute_before_checks_pid_mismatch(self):
         """tool.execute.before must check _floorInitPid !== process.pid and
@@ -221,9 +210,7 @@ class TestSharedStreakPidCheckStructural:
     on the cross-plugin streak file (/tmp/gludd-tool-streak.json)."""
 
     def test_read_shared_streak_checks_pid(self):
-        assert "storedPid !== process.pid" in SHARED_SRC, (
-            "readSharedStreak() must check storedPid !== process.pid"
-        )
+        assert "storedPid !== process.pid" in SHARED_SRC, "readSharedStreak() must check storedPid !== process.pid"
 
     def test_zeroes_state_on_pid_mismatch(self):
         """On PID mismatch, readSharedStreak() must zero streak/readStreak/
@@ -234,7 +221,8 @@ class TestSharedStreakPidCheckStructural:
         `pidMismatch` flag used in a combined staleness condition."""
         pid_check_match = re.search(
             r"storedPid\s*!==\s*process\.pid\s*(?:\)|.*?pidMismatch\s*\))\s*\{.*?\}",
-            SHARED_SRC, re.DOTALL,
+            SHARED_SRC,
+            re.DOTALL,
         )
         assert pid_check_match, "PID mismatch block not found"
         body = pid_check_match.group(0)
@@ -246,16 +234,16 @@ class TestSharedStreakPidCheckStructural:
         so the stale file is corrected for other plugins."""
         pid_check_match = re.search(
             r"storedPid\s*!==\s*process\.pid\s*(?:\)|.*?pidMismatch\s*\))\s*\{.*?writeFileSync.*?\}",
-            SHARED_SRC, re.DOTALL,
+            SHARED_SRC,
+            re.DOTALL,
         )
-        assert pid_check_match, (
-            "PID-mismatch branch must writeFileSync the zeroed state back"
-        )
+        assert pid_check_match, "PID-mismatch branch must writeFileSync the zeroed state back"
 
 
 # ===========================================================================
 # RUNTIME TESTS — invoke actual plugin hooks via node
 # ===========================================================================
+
 
 class TestMultitaskPidStalenessRuntime:
     """Runtime tests: stale state file with a different PID is reset on load."""
@@ -264,18 +252,21 @@ class TestMultitaskPidStalenessRuntime:
         """A state file with pid=999999 (prior session) must be overwritten
         with the current process PID and zeroed counters at module load."""
         _clean(MULTITASK_STATE_FILE)
-        _write_json(MULTITASK_STATE_FILE, {
-            "pid": FAKE_STALE_PID,
-            "thisMessageDispatches": 10,
-            "prevMessageDispatches": 10,
-            "zeroStreak": 5,
-            "estimatedInFlight": 10,
-            "lastTs": 0,
-            "lastToolCallTs": 1234567890,
-            "waveHistory": [10, 10, 10],
-            "consecutiveNonDispatch": 3,
-            "consecutiveNonDispatchStartTs": 1234567890,
-        })
+        _write_json(
+            MULTITASK_STATE_FILE,
+            {
+                "pid": FAKE_STALE_PID,
+                "thisMessageDispatches": 10,
+                "prevMessageDispatches": 10,
+                "zeroStreak": 5,
+                "estimatedInFlight": 10,
+                "lastTs": 0,
+                "lastToolCallTs": 1234567890,
+                "waveHistory": [10, 10, 10],
+                "consecutiveNonDispatch": 3,
+                "consecutiveNonDispatchStartTs": 1234567890,
+            },
+        )
         try:
             code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
@@ -293,17 +284,13 @@ console.log(JSON.stringify({{
             result = _run_ts(code)
             assert result is not None, "No output from node"
             assert result["stalePidGone"] is True, (
-                f"Stale PID {FAKE_STALE_PID} should be gone after module load, "
-                f"got pid={result['statePid']}"
+                f"Stale PID {FAKE_STALE_PID} should be gone after module load, got pid={result['statePid']}"
             )
             assert result["thisMessageDispatches"] == 0, (
-                "thisMessageDispatches must be 0 after reset — "
-                "stale value=10 would bypass the under-floor block"
+                "thisMessageDispatches must be 0 after reset — stale value=10 would bypass the under-floor block"
             )
             assert result["zeroStreak"] == 0, "zeroStreak must be 0 after reset"
-            assert result["estimatedInFlight"] == 0, (
-                "estimatedInFlight must be 0 after reset"
-            )
+            assert result["estimatedInFlight"] == 0, "estimatedInFlight must be 0 after reset"
         finally:
             _clean(MULTITASK_STATE_FILE)
 
@@ -314,18 +301,21 @@ console.log(JSON.stringify({{
         must not fire). This test verifies the PID equality path."""
         _clean(MULTITASK_STATE_FILE)
         current_pid = os.getpid()
-        _write_json(MULTITASK_STATE_FILE, {
-            "pid": current_pid,
-            "thisMessageDispatches": 0,
-            "prevMessageDispatches": 0,
-            "zeroStreak": 0,
-            "estimatedInFlight": 0,
-            "lastTs": 0,
-            "lastToolCallTs": 0,
-            "waveHistory": [],
-            "consecutiveNonDispatch": 0,
-            "consecutiveNonDispatchStartTs": 0,
-        })
+        _write_json(
+            MULTITASK_STATE_FILE,
+            {
+                "pid": current_pid,
+                "thisMessageDispatches": 0,
+                "prevMessageDispatches": 0,
+                "zeroStreak": 0,
+                "estimatedInFlight": 0,
+                "lastTs": 0,
+                "lastToolCallTs": 0,
+                "waveHistory": [],
+                "consecutiveNonDispatch": 0,
+                "consecutiveNonDispatchStartTs": 0,
+            },
+        )
         try:
             code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
@@ -341,9 +331,7 @@ console.log(JSON.stringify({{
 """
             result = _run_ts(code)
             assert result is not None
-            assert result["pidMatchesNode"] is True, (
-                "State file PID must match the running node process PID"
-            )
+            assert result["pidMatchesNode"] is True, "State file PID must match the running node process PID"
             assert result["statePid"] != FAKE_STALE_PID
         finally:
             _clean(MULTITASK_STATE_FILE)
@@ -354,18 +342,21 @@ console.log(JSON.stringify({{
         non-dispatch call (edit) must be DENIED when pending work exists."""
         tasks_path = f"/tmp/gludd-pid-stale-tasks-{os.getpid()}.md"
         _clean(MULTITASK_STATE_FILE, tasks_path, "/tmp/gludd-watchdog-disengage.json")
-        _write_json(MULTITASK_STATE_FILE, {
-            "pid": FAKE_STALE_PID,
-            "thisMessageDispatches": 10,
-            "zeroStreak": 0,
-            "estimatedInFlight": 10,
-            "lastTs": 0,
-            "lastToolCallTs": 0,
-            "waveHistory": [],
-            "consecutiveNonDispatch": 0,
-            "consecutiveNonDispatchStartTs": 0,
-            "prevMessageDispatches": 0,
-        })
+        _write_json(
+            MULTITASK_STATE_FILE,
+            {
+                "pid": FAKE_STALE_PID,
+                "thisMessageDispatches": 10,
+                "zeroStreak": 0,
+                "estimatedInFlight": 10,
+                "lastTs": 0,
+                "lastToolCallTs": 0,
+                "waveHistory": [],
+                "consecutiveNonDispatch": 0,
+                "consecutiveNonDispatchStartTs": 0,
+                "prevMessageDispatches": 0,
+            },
+        )
         with open(tasks_path, "w") as f:
             f.write("- [ ] pid staleness test task\n")
         try:
@@ -377,20 +368,20 @@ const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-            result = _run_ts(code, env_override={
-                "GLUDD_MIN_DISPATCHES": "2",
-                "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
-                "GLUDD_TASKS_MD": tasks_path,
-            })
-            assert result is not None, (
-                "Expected a deny result, got None (enforcement didn't fire)"
+            result = _run_ts(
+                code,
+                env_override={
+                    "GLUDD_MIN_DISPATCHES": "2",
+                    "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+                    "GLUDD_TASKS_MD": tasks_path,
+                },
             )
+            assert result is not None, "Expected a deny result, got None (enforcement didn't fire)"
             assert result.get("permissionDecision") == "deny", (
-                f"After reset, edit must be denied (UNDER-FLOOR HARD BLOCK). "
-                f"Got: {result}"
+                f"After reset, edit must be denied (UNDER-FLOOR HARD BLOCK). Got: {result}"
             )
-            assert "UNDER-FLOOR" in result.get("message", ""), (
-                f"Deny message must mention UNDER-FLOOR. Got: {result.get('message', '')[:200]}"
+            assert "CONFIGURED MINIMUM" in result.get("message", ""), (
+                f"Deny message must mention the configured minimum block. Got: {result.get('message', '')[:200]}"
             )
         finally:
             _clean(MULTITASK_STATE_FILE, tasks_path)
@@ -400,18 +391,21 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
         the ceiling check from firing. After reset, dispatching 10 agents
         should work (each increments from 0), and the 11th would be denied."""
         _clean(MULTITASK_STATE_FILE, "/tmp/gludd-watchdog-disengage.json")
-        _write_json(MULTITASK_STATE_FILE, {
-            "pid": FAKE_STALE_PID,
-            "thisMessageDispatches": 10,
-            "zeroStreak": 0,
-            "estimatedInFlight": 10,
-            "lastTs": 0,
-            "lastToolCallTs": 0,
-            "waveHistory": [],
-            "consecutiveNonDispatch": 0,
-            "consecutiveNonDispatchStartTs": 0,
-            "prevMessageDispatches": 0,
-        })
+        _write_json(
+            MULTITASK_STATE_FILE,
+            {
+                "pid": FAKE_STALE_PID,
+                "thisMessageDispatches": 10,
+                "zeroStreak": 0,
+                "estimatedInFlight": 10,
+                "lastTs": 0,
+                "lastToolCallTs": 0,
+                "waveHistory": [],
+                "consecutiveNonDispatch": 0,
+                "consecutiveNonDispatchStartTs": 0,
+                "prevMessageDispatches": 0,
+            },
+        )
         try:
             code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
@@ -428,11 +422,14 @@ console.log(JSON.stringify({{
   r3_msg: r3?.message?.slice(0, 80) ?? null,
 }}))
 """
-            result = _run_ts(code, env_override={
-                "GLUDD_MIN_DISPATCHES": "2",
-                "GLUDD_MULTITASK_MAX_DISPATCHES": "2",
-                "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
-            })
+            result = _run_ts(
+                code,
+                env_override={
+                    "GLUDD_MIN_DISPATCHES": "2",
+                    "GLUDD_MULTITASK_MAX_DISPATCHES": "2",
+                    "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+                },
+            )
             assert result is not None
             assert result["r1_allowed"] is True, f"Dispatch 1 should be allowed: {result}"
             assert result["r2_allowed"] is True, f"Dispatch 2 should be allowed: {result}"
@@ -452,15 +449,18 @@ class TestFloorPidStalenessRuntime:
         readSharedStreak() detects the PID mismatch."""
         sf = f"/tmp/gludd-tool-streak-pidtest-{os.getpid()}.json"
         _clean(sf, "/tmp/gludd-watchdog-disengage.json")
-        _write_json(sf, {
-            "streak": 5,
-            "lastDispatchTs": 0,
-            "readStreak": 3,
-            "editStreak": 2,
-            "lastUpdateTs": 0,
-            "lastWriter": "enforce-floor",
-            "pid": FAKE_STALE_PID,
-        })
+        _write_json(
+            sf,
+            {
+                "streak": 5,
+                "lastDispatchTs": 0,
+                "readStreak": 3,
+                "editStreak": 2,
+                "lastUpdateTs": 0,
+                "lastWriter": "enforce-floor",
+                "pid": FAKE_STALE_PID,
+            },
+        )
         try:
             code = f"""\
 const shared = await import('{ROOT / ".opencode" / "lib" / "shared.ts"}')
@@ -479,17 +479,12 @@ console.log(JSON.stringify({{
             result = _run_ts(code, env_override={"GLUDD_STREAK_FILE": sf})
             assert result is not None
             assert result["stalePidGone"] is True, (
-                f"File PID should be reset from {FAKE_STALE_PID} to current. "
-                f"Got filePid={result['filePid']}"
+                f"File PID should be reset from {FAKE_STALE_PID} to current. Got filePid={result['filePid']}"
             )
             assert result["returnedStreak"] == 0, (
-                f"readSharedStreak() must return streak=0 on PID mismatch. "
-                f"Got: {result['returnedStreak']}"
+                f"readSharedStreak() must return streak=0 on PID mismatch. Got: {result['returnedStreak']}"
             )
-            assert result["fileStreak"] == 0, (
-                f"File streak must be zeroed on PID mismatch. "
-                f"Got: {result['fileStreak']}"
-            )
+            assert result["fileStreak"] == 0, f"File streak must be zeroed on PID mismatch. Got: {result['fileStreak']}"
         finally:
             _clean(sf)
 
@@ -501,15 +496,18 @@ console.log(JSON.stringify({{
         # We can't know the node PID ahead of time, so we write a dummy file
         # and let the first readSharedStreak() claim it. Then verify a second
         # read preserves the state.
-        _write_json(sf, {
-            "streak": 0,
-            "lastDispatchTs": 0,
-            "readStreak": 0,
-            "editStreak": 0,
-            "lastUpdateTs": 0,
-            "lastWriter": "",
-            "pid": 0,
-        })
+        _write_json(
+            sf,
+            {
+                "streak": 0,
+                "lastDispatchTs": 0,
+                "readStreak": 0,
+                "editStreak": 0,
+                "lastUpdateTs": 0,
+                "lastWriter": "",
+                "pid": 0,
+            },
+        )
         try:
             code = f"""\
 const shared = await import('{ROOT / ".opencode" / "lib" / "shared.ts"}')
@@ -529,12 +527,9 @@ console.log(JSON.stringify({{
             result = _run_ts(code, env_override={"GLUDD_STREAK_FILE": sf})
             assert result is not None
             assert result["streakPreserved"] is True, (
-                f"After same-PID read, streak must be preserved (expected 1). "
-                f"Got: {result}"
+                f"After same-PID read, streak must be preserved (expected 1). Got: {result}"
             )
-            assert result["pidConsistent"] is True, (
-                "PID must be consistent across reads within the same process"
-            )
+            assert result["pidConsistent"] is True, "PID must be consistent across reads within the same process"
         finally:
             _clean(sf)
 
@@ -546,8 +541,7 @@ console.log(JSON.stringify({{
         todowrite_path = f"/tmp/gludd-pid-stale-todo-{os.getpid()}.json"
         session_state = f"/tmp/gludd-pid-stale-session-{os.getpid()}.json"
         sf = f"/tmp/gludd-tool-streak-floor-{os.getpid()}.json"
-        _clean(tasks_path, todowrite_path, session_state, sf,
-               "/tmp/gludd-watchdog-disengage.json")
+        _clean(tasks_path, todowrite_path, session_state, sf, "/tmp/gludd-watchdog-disengage.json")
         with open(tasks_path, "w") as f:
             f.write("- [ ] floor staleness test\n")
         with open(todowrite_path, "w") as f:
@@ -555,15 +549,18 @@ console.log(JSON.stringify({{
         with open(session_state, "w") as f:
             json.dump({}, f)
         # Stale streak file: looks like a prior session just dispatched (streak=0)
-        _write_json(sf, {
-            "streak": 0,
-            "lastDispatchTs": 0,
-            "readStreak": 0,
-            "editStreak": 0,
-            "lastUpdateTs": 0,
-            "lastWriter": "enforce-floor",
-            "pid": FAKE_STALE_PID,
-        })
+        _write_json(
+            sf,
+            {
+                "streak": 0,
+                "lastDispatchTs": 0,
+                "readStreak": 0,
+                "editStreak": 0,
+                "lastUpdateTs": 0,
+                "lastWriter": "enforce-floor",
+                "pid": FAKE_STALE_PID,
+            },
+        )
         try:
             code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-floor.ts')
@@ -580,16 +577,18 @@ console.log(JSON.stringify({{
   r3_deny: r3?.permissionDecision === 'deny',
 }}))
 """
-            result = _run_ts(code, env_override={
-                "GLUDD_TASKS_MD": tasks_path,
-                "GLUDD_TODOWRITE_STATE": todowrite_path,
-                "GLUDD_SESSION_STATE": session_state,
-                "GLUDD_STREAK_FILE": sf,
-            })
+            result = _run_ts(
+                code,
+                env_override={
+                    "GLUDD_TASKS_MD": tasks_path,
+                    "GLUDD_TODOWRITE_STATE": todowrite_path,
+                    "GLUDD_SESSION_STATE": session_state,
+                    "GLUDD_STREAK_FILE": sf,
+                },
+            )
             assert result is not None
             assert result["r3_deny"] is True, (
-                f"Call 3 must be denied after stale streak reset — "
-                f"stale streak=0 must NOT persist. Got: {result}"
+                f"Call 3 must be denied after stale streak reset — stale streak=0 must NOT persist. Got: {result}"
             )
         finally:
             _clean(tasks_path, todowrite_path, session_state, sf)
@@ -598,6 +597,7 @@ console.log(JSON.stringify({{
 # ===========================================================================
 # CROSS-SESSION SIMULATION
 # ===========================================================================
+
 
 class TestCrossSessionSimulation:
     """Simulate two sessions with different PIDs and verify the second
@@ -610,18 +610,21 @@ class TestCrossSessionSimulation:
         tasks_path = f"/tmp/gludd-xsession-tasks-{os.getpid()}.md"
         _clean(MULTITASK_STATE_FILE, tasks_path, "/tmp/gludd-watchdog-disengage.json")
         # Session 1 "left behind" a state file that looks like the floor was met
-        _write_json(MULTITASK_STATE_FILE, {
-            "pid": FAKE_STALE_PID,
-            "thisMessageDispatches": 10,
-            "prevMessageDispatches": 10,
-            "zeroStreak": 0,
-            "estimatedInFlight": 10,
-            "lastTs": 0,
-            "lastToolCallTs": 0,
-            "waveHistory": [10, 10],
-            "consecutiveNonDispatch": 0,
-            "consecutiveNonDispatchStartTs": 0,
-        })
+        _write_json(
+            MULTITASK_STATE_FILE,
+            {
+                "pid": FAKE_STALE_PID,
+                "thisMessageDispatches": 10,
+                "prevMessageDispatches": 10,
+                "zeroStreak": 0,
+                "estimatedInFlight": 10,
+                "lastTs": 0,
+                "lastToolCallTs": 0,
+                "waveHistory": [10, 10],
+                "consecutiveNonDispatch": 0,
+                "consecutiveNonDispatchStartTs": 0,
+            },
+        )
         with open(tasks_path, "w") as f:
             f.write("- [ ] cross-session test task\n")
         try:
@@ -643,22 +646,23 @@ console.log(JSON.stringify({{
   denyMessage: result?.message?.slice(0, 60) ?? null,
 }}))
 """
-            result = _run_ts(code, env_override={
-                "GLUDD_MIN_DISPATCHES": "2",
-                "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
-                "GLUDD_TASKS_MD": tasks_path,
-            })
+            result = _run_ts(
+                code,
+                env_override={
+                    "GLUDD_MIN_DISPATCHES": "2",
+                    "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+                    "GLUDD_TASKS_MD": tasks_path,
+                },
+            )
             assert result is not None
             assert result["stalePidOverwritten"] is True, (
                 "Stale PID from session 1 must be overwritten at session 2 load"
             )
             assert result["stateDispatchesAfterLoad"] == 0, (
-                "Dispatch count must be 0 after reset — "
-                "stale value 10 from session 1 would bypass the floor"
+                "Dispatch count must be 0 after reset — stale value 10 from session 1 would bypass the floor"
             )
             assert result["editDenied"] is True, (
-                f"After stale-state reset, edit must be denied in session 2. "
-                f"Got: {result}"
+                f"After stale-state reset, edit must be denied in session 2. Got: {result}"
             )
         finally:
             _clean(MULTITASK_STATE_FILE, tasks_path)
@@ -671,15 +675,18 @@ console.log(JSON.stringify({{
         _clean(sf, "/tmp/gludd-watchdog-disengage.json")
         # Crashed session left a streak file that looks like grinding was in progress
         # but with the wrong PID
-        _write_json(sf, {
-            "streak": 1,
-            "lastDispatchTs": 0,
-            "readStreak": 0,
-            "editStreak": 1,
-            "lastUpdateTs": int(__import__("time").time() * 1000),
-            "lastWriter": "enforce-floor",
-            "pid": FAKE_STALE_PID,
-        })
+        _write_json(
+            sf,
+            {
+                "streak": 1,
+                "lastDispatchTs": 0,
+                "readStreak": 0,
+                "editStreak": 1,
+                "lastUpdateTs": int(__import__("time").time() * 1000),
+                "lastWriter": "enforce-floor",
+                "pid": FAKE_STALE_PID,
+            },
+        )
         try:
             code = f"""\
 const shared = await import('{ROOT / ".opencode" / "lib" / "shared.ts"}')
@@ -693,14 +700,8 @@ console.log(JSON.stringify({{
 """
             result = _run_ts(code, env_override={"GLUDD_STREAK_FILE": sf})
             assert result is not None
-            assert result["streakReset"] is True, (
-                "Streak must be reset to 0 after detecting stale PID"
-            )
-            assert result["pidClaimed"] is True, (
-                "Recovery session must claim the streak file with its own PID"
-            )
-            assert result["stalePidDetected"] is True, (
-                "lastWriter must be 'pid-reset' to indicate the reset path fired"
-            )
+            assert result["streakReset"] is True, "Streak must be reset to 0 after detecting stale PID"
+            assert result["pidClaimed"] is True, "Recovery session must claim the streak file with its own PID"
+            assert result["stalePidDetected"] is True, "lastWriter must be 'pid-reset' to indicate the reset path fired"
         finally:
             _clean(sf)

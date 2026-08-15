@@ -7572,11 +7572,12 @@ disengage-enforcement:
 	echo "Disengage count: $$COUNT (recommended max 3/session)"
 	@echo "Disengage files written — enforcement hooks will pass through for 1 hour"
 
-# Disengage only the next enforcement hook operation. The plugin consumes and
-# removes this file immediately, so enforcement automatically re-arms.
+# Disengage only the next enforcement hook operation. Writes the dedicated
+# single-use marker that isDisengaged() consumes (delete + return true), so
+# enforcement automatically re-arms after the next hook.
 disengage-next:
-	@$(UV) run python3 -c "import json,time; json.dump({'expires': 1, 'created_at': time.time(), 'reason': 'manual_single_use'},open('/tmp/gludd-watchdog-disengage.json','w'))"
-	@echo "Single-operation disengage armed — enforcement re-arms after the next hook"
+	@$(UV) run python3 -c "import json,time; json.dump({'expires': 1, 'created_at': time.time(), 'reason': 'manual_single_use'},open('/tmp/gludd-disengage-next','w'))"
+	@echo "DISENGAGED: single-operation disengage armed — enforcement re-arms after the next hook"
 
 # --- Reload enforcement state mid-session ---
 # Refresh state files that plugins re-read on every hook invocation so
@@ -7593,6 +7594,8 @@ reload-enforcement:
 	@echo "  /tmp/gludd-mainthread-streak.json  → strength=0"
 	@rm -f /tmp/gludd-watchdog-disengage.json
 	@echo "  /tmp/gludd-watchdog-disengage.json → removed"
+	@rm -f /tmp/gludd-disengage-next
+	@echo "  /tmp/gludd-disengage-next         → removed"
 	@rm -f /tmp/gludd-false-done-blocks.json
 	@echo "  /tmp/gludd-false-done-blocks.json  → removed"
 	@rm -f /tmp/gludd-enhancement-ratio.json
@@ -7605,11 +7608,17 @@ reload-enforcement:
 	@echo "  /tmp/gludd-multitask-state.json    → removed (PID staleness guard)"
 	@echo "=== RELOAD COMPLETE — plugins will re-read state on next hook call ==="
 
-# --- Re-arm enforcement — remove disengage signal so plugins resume blocking ---
+# --- Re-arm enforcement — remove disengage signals so plugins resume blocking ---
 rearm-enforcement:
-	@if [ -f /tmp/gludd-watchdog-disengage.json ]; then \
-		rm -f /tmp/gludd-watchdog-disengage.json \
-		&& echo "REARMED: /tmp/gludd-watchdog-disengage.json removed — enforcement plugins will resume blocking."; \
+	@REMOVED=0; \
+	if [ -f /tmp/gludd-watchdog-disengage.json ]; then \
+		rm -f /tmp/gludd-watchdog-disengage.json; REMOVED=1; \
+	fi; \
+	if [ -f /tmp/gludd-disengage-next ]; then \
+		rm -f /tmp/gludd-disengage-next; REMOVED=1; \
+	fi; \
+	if [ "$$REMOVED" = "1" ]; then \
+		echo "REARMED: disengage signals removed — enforcement plugins will resume blocking."; \
 	else \
 		echo "REARMED (no-op): no disengage signal found — enforcement already active."; \
 	fi
