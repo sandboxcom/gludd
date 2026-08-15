@@ -17,12 +17,19 @@ def test_current_zai_alias_resolution_is_fail_closed(monkeypatch) -> None:
     assert manager.resolve("GLUDD_AUTH_PSK") is None
 
 
-def test_live_dogfood_gap_is_visible_as_a_non_strict_xfail() -> None:
-    """The current scaffold tracks E9 explicitly instead of hiding a TODO skip."""
-    marks = getattr(test_dogfood_todo_site.test_todo_website_live_scenario, "pytestmark", [])
-    xfail_marks = [mark for mark in marks if mark.name == "xfail"]
+def test_live_dogfood_gap_is_visible_as_a_guarded_capability_skip() -> None:
+    """The live scenario stays visible under the E9 skip-smell contract: a
+    guarded skip naming the concrete missing capability (ZAI_API_KEY), never a
+    hidden TODO stub and never an xfail (the reviewed skip-count snapshot
+    S83.110 reconciles its absence)."""
+    import inspect
 
-    assert len(xfail_marks) == 1
-    assert xfail_marks[0].kwargs["strict"] is False
-    assert "E9" in xfail_marks[0].kwargs["reason"]
+    func = test_dogfood_todo_site.test_todo_website_live_scenario
+    marks = getattr(func, "pytestmark", [])
+    assert not any(getattr(mark, "name", None) == "xfail" for mark in marks)
+
+    source = inspect.getsource(func)
+    assert "if credentials is None" in source
+    assert "pytest.skip" in source
+    assert "ZAI_API_KEY is required" in source
     assert test_dogfood_todo_site.pytestmark.name == "e2e"
