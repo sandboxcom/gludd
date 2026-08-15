@@ -436,6 +436,23 @@ def _restore_leaky_env_vars(monkeypatch):
             monkeypatch.delenv(k, raising=False)
     yield
 
+@pytest.fixture(autouse=True)
+def _restore_cwd_after_test() -> None:
+    """Restore the worker CWD after every test.
+
+    Some tests intentionally chdir into temporary project roots. If a test fails
+    before restoring CWD, later tests that use repo-relative paths see missing
+    Makefile, src, or collection files. This fixture confines that process-global
+    mutation to the test that made it.
+    """
+    original_cwd = os.getcwd()
+    try:
+        yield
+    finally:
+        try:
+            os.chdir(original_cwd)
+        except OSError:
+            os.chdir(_REPO_ROOT)
 
 @pytest.fixture(autouse=True)
 def _isolate_root_logger():
