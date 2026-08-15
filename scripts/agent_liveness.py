@@ -19,42 +19,32 @@ DETERMINISM FIX (the wobble bug this revision addresses):
     ``--count`` got a slightly different wall-clock slice, making the floor signal
     incoherent.
 
-    Solution: eliminate the probe sleep entirely. Use a SINGLE fixed wall-clock
-    window (``GLUDD_LIVENESS_WINDOW_SEC``, default 25 s) evaluated identically
-    at every call site. A transcript is LIVE if its mtime falls within that
-    window AND it does not end with a terminal result marker. No sleep → no
-    sampling variance → two consecutive calls at the same instant return the
-    same count.
+    Solution: eliminate the probe sleep entirely. Liveness is determined SOLELY
+    by terminal-detection (see below). No sleep → no sampling variance → two
+    consecutive calls at the same instant return the same count.
 
-DUAL-FILTER APPROACH (over-count fix):
-    A recently-completed agent's transcript has a fresh mtime (the final write
-    happened moments ago), so a window-only filter still counts it as live. This
-    revision adds terminal-detection as the primary filter:
+UNDERCOUNT FIX (the idle-agent bug this revision addresses):
+    The prior dual-filter required BOTH a fresh mtime AND no terminal marker.
+    An alive-but-idle agent (waiting on a long LLM call, no writes for >25s)
+    failed the mtime gate and was silently dropped from the live count even though
+    it had no terminal marker. An agent that is RUNNING but QUIET was being
+    reported as not running — an under-count that hides a floor breach in the
+    opposite direction.
 
-      1. TERMINAL DETECTION (primary): read the last non-empty line of each
-         ``.output`` JSONL file. If it is valid JSON whose ``type`` field equals
-         ``"result"`` OR whose ``subtype`` field equals ``"result"``, the agent
-         has completed — exclude it from the live count regardless of mtime.
-         Fail-open: if the last line cannot be parsed or the file is empty,
-         assume the agent is still running (never under-count a live agent).
+TERMINAL-DETECTION ONLY (current approach):
+    A transcript is counted LIVE iff it does NOT end with a terminal result marker:
 
-      2. SHORT WINDOW (secondary/fallback): ``GLUDD_LIVENESS_WINDOW_SEC``
-         (default 25 s). A genuinely running agent streams tool-calls every few
-         seconds, so a 25 s window catches it. A completed agent whose terminal
-         marker could not be parsed (e.g. partial final write) decays out of the
-         window within 25 s anyway. This provides defense-in-depth.
+      TERMINAL DETECTION: read the last non-empty line of each ``.output`` JSONL
+      file. If it is valid JSON whose ``type`` field equals ``"result"`` OR whose
+      ``subtype`` field equals ``"result"``, the agent has completed — exclude it
+      from the live count. Fail-open: if the last line cannot be parsed or the
+      file is empty, assume the agent is still running (never under-count a live
+      agent).
 
-    A transcript is counted LIVE iff:
-        mtime >= (now - window)  AND  NOT _is_terminal(path)
+    The mtime / window gate has been removed entirely. An alive-but-idle agent is
+    correctly counted live regardless of how long it has been quiet.
 
-BIAS (floor STABILITY):
-    The 25 s window is narrow enough to exclude completed agents within half a
-    minute, without under-counting a live agent that is temporarily quiet (e.g.
-    waiting for a long LLM call). Terminal detection catches completions
-    immediately, before the window even expires.
-
-Format-independent and hook-independent: depends only on filesystem mtimes and
-last-line JSONL content.
+Format-independent and hook-independent: depends only on last-line JSONL content.
 Fail-safe by construction — any error yields 0 / exit 0 (callers treat 0 as
 "could not determine, dispatch toward the floor" rather than wedging).
 
@@ -441,13 +431,16 @@ def live_count(
     total = all transcripts found (tasks dir ``*.output`` + workflow files).
     tasks = the resolved tasks dir (or ``None`` if unresolved).
 
-    A transcript is live iff BOTH conditions hold:
-        (1) mtime >= now - window  (recently active)
-        (2) NOT _is_terminal(path)  (no terminal result marker on last line)
+    A transcript is live iff:
+        NOT _is_terminal(path)  (no terminal result marker on last line)
+
+    The mtime gate has been removed. An alive-but-idle agent (no writes for a
+    long time while waiting on an LLM call) is correctly counted live regardless
+    of how long it has been quiet.
 
     Terminal detection is fail-open: an unparseable last line is treated as
-    non-terminal (agent assumed running). The short window provides defense-in-
-    depth for completed agents whose terminal marker could not be parsed.
+    non-terminal (agent assumed running). An empty file is also treated as live
+    (agent just started).
     """
     tasks = _tasks_dir()
     fs = glob.glob(tasks + "/*.output") if tasks else []
@@ -466,7 +459,7 @@ def live_count(
     total = 0
     for f in fs:
         try:
-            mtime = os.path.getmtime(f)
+            os.path.getmtime(f)
         except OSError:
             # File vanished (agent dir cleaned up): skip it.
             continue
@@ -485,7 +478,7 @@ def live_count(
         except OSError:
             continue
         total += 1
-        if mtime >= cutoff and not _is_terminal(f):
+        if not _is_terminal(f):
             live += 1
 
     return live, total, tasks
