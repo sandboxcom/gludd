@@ -307,10 +307,10 @@ class TestMissingBinaryErrorHandling:
     def test_health_poll_has_bounded_retries(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
         for t in _iter_all_tasks(tasks):
-            if "ansible.builtin.uri" in t and "health" in str(t.get("ansible.builtin.uri", "")).lower():
+            if "ansible.builtin.uri" in t and "/v1/models" in str(t.get("ansible.builtin.uri", "")).lower():
                 assert "retries" in t, "Health poll step must have retries config"
                 return
-        pytest.fail("No health poll uri task found")
+        pytest.fail("No models-URI poll task found")
 
 
 # =============================================================================
@@ -545,13 +545,13 @@ class TestDeepPipelineValidation:
     def test_health_poll_has_until_retries_and_delay(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
         for t in _iter_all_tasks(tasks):
-            if "ansible.builtin.uri" in t and "health" in str(t.get("ansible.builtin.uri", "")).lower():
+            if "ansible.builtin.uri" in t and "/v1/models" in str(t.get("ansible.builtin.uri", "")).lower():
                 assert "retries" in t, "Health poll missing retries"
                 assert "delay" in t, "Health poll missing delay"
                 assert "until" in t, "Health poll missing until condition"
                 assert t.get("changed_when") is False, "Health poll is read-only"
                 return
-        pytest.fail("No health URI poll task found")
+        pytest.fail("No models-URI poll task found")
 
     def test_code_extraction_from_completions_response(self) -> None:
         tasks_text = _combined_text()
