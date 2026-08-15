@@ -7,7 +7,7 @@ through structured research with explicit opt-in toggles.
 
 ## Architecture Overview
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────┐
 │                        Agent / Playbook                          │
 │      (FQCN: general_ludd.business.entity_research)               │

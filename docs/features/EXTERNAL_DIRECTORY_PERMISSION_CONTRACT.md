@@ -116,4 +116,3 @@ errors, and repository static/documentation gates to pass.
 Rollback is a normal revert of this test, document, and task evidence. It has no
 runtime state or data migration to reverse, although reverting intentionally
 restores a structurally stale and red test against the current configuration.
-

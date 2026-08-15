@@ -41,7 +41,7 @@ The rule of thumb: a log line is observation; a `HumanTodo` is a **request**.
 
 ## 2. Lifecycle
 
-```
+```text
         ┌──────┐
  create│ open │────────────────────────┐
         └──┬───┘                       │

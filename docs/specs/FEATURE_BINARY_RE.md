@@ -45,7 +45,7 @@ Each role: `tasks/main.yml`, `defaults/main.yml`, `meta/main.yml`, `vars/main.ym
 
 ## 5. Files
 
-```
+```text
 collections/ansible_collections/general_ludd/binary_re/
 ├── galaxy.yml, README.md
 ├── plugins/module_utils/

@@ -1,8 +1,8 @@
 # Expert Expansion Research and Implementation Specifications
 
-Status: research-backed specification proposal  
-Research cutoff: 2026-07-29  
-Target branch: `research-expert-expansion-2026`, based on `development`  
+Status: research-backed specification proposal
+Research cutoff: 2026-07-29
+Target branch: `research-expert-expansion-2026`, based on `development`
 Release impact: none; these are documentation-only proposals and are not part of
 the `v0.1.0-beta.3` release path.
 

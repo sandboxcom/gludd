@@ -217,7 +217,7 @@ The runtime test harness (`scripts/test_hook_runtime.py`, 2009 lines) is a
 Python file that spawns Node.js subprocesses to execute actual TypeScript plugin
 code. It is NOT a TypeScript-to-Python reimplementation — it runs the real code.
 
-```
+```text
 Python test → writes TS snippet to /tmp/hook_test_<N>.ts
             → spawns: node --experimental-strip-types /tmp/hook_test_<N>.ts
             → TS code imports the real plugin, calls a hook
@@ -248,8 +248,8 @@ Removes state files before/after tests to prevent cross-test contamination.
 
 | Capability | Pattern | Example |
 |---|---|---|
-| Invoke `tool.execute.before` | `await plugin['tool.execute.before'](input, output)` | `test_floor_streak_max_plus_one_denied` |
-| Invoke `text.complete` | `await plugin['experimental.text.complete'](undefined, output)` | `test_floor_text_complete_blocks_on_zero_dispatches` |
+| Invoke `tool.execute.before` | `await plugin['tool.execute.before'] (input, output)` | `test_floor_streak_max_plus_one_denied` |
+| Invoke `text.complete` | `await plugin['experimental.text.complete'] (undefined, output)` | `test_floor_text_complete_blocks_on_zero_dispatches` |
 | Invoke `session.idle` | `await plugin['session.idle']()` | Internal state resets |
 | Call exported pure functions | `mod.functionName(args)` | `test_clean_tree_count_dirty_files_nonzero` |
 | Handle thrown Errors | `try/catch` in TS, log `{permissionDecision: "deny"}` | `test_deletion_over_threshold_blocked` |
@@ -393,7 +393,7 @@ Before writing any enforcement code, write a runtime test that calls the hook
 and asserts the thing you need. It will fail because the plugin doesn't exist
 or doesn't handle the case yet.
 
-```
+```text
 1. Identify the behavior: "After 3 consecutive non-dispatch calls with open work,
    the hook must return {permissionDecision: 'deny'}."
 
@@ -421,7 +421,7 @@ or doesn't handle the case yet.
 
 When modifying an existing plugin:
 
-```
+```text
 1. Find the runtime test for the behavior you're changing.
    If none exists, write one BEFORE touching the plugin code.
 2. Run: make test-hook-runtime -k <test_name>
@@ -437,7 +437,7 @@ When modifying an existing plugin:
 
 ### 5.3 The anti-pattern (forbidden)
 
-```
+```text
 1. Edit plugin code directly.
 2. Run: make test-hook-runtime   → some test fails
 3. "Fix" the test to match the new behavior without understanding
@@ -551,7 +551,7 @@ console.log(JSON.stringify({{
 ### 6.3 Naming convention
 
 Test function names follow the pattern:
-```
+```text
 test_<plugin_short_name>_<what_is_tested>[_<scenario>]
 ```
 
@@ -657,7 +657,7 @@ make test-hook-runtime 2>&1 | grep "passed"
 ```
 
 The `make test-hook-runtime` target (Makefile L734) runs:
-```
+```text
 uv run python scripts/test_hook_runtime.py -v
 ```
 

@@ -84,7 +84,7 @@ escaped and not length-prefixed, two *different* field tuples serialize to the
 Concrete `sign_change` / `verify_signature` collision (five fields
 `file_path | change_type | old_hash | new_hash | detected_at`):
 
-```
+```text
 Record A (legitimately signed):
     file_path   = "config"
     change_type = "app|modified"        # attacker-supplied via spec["kind"]

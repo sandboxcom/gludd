@@ -8,7 +8,7 @@ HTMX, GraphQL), and validate the result against WCAG 2.1 AA.
 
 ## Architecture Overview
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────┐
 │                          Agent / Playbook                            │
 │  general_ludd.web.design_research      general_ludd.web.html_css_core│
@@ -1333,7 +1333,7 @@ marked **Manual** require human judgment.
 | 2.2.1 | **Timing Adjustable**: Time limits can be turned off, adjusted, or extended | A | No | Manual: session timeouts, quiz timers |
 | 2.2.2 | **Pause, Stop, Hide**: Auto-updating/moving/scrolling content can be paused | A | Yes | Carousels have pause button; auto-refreshing feeds have stop control |
 | 2.3.1 | **Three Flashes or Below**: Nothing flashes more than 3 times/second | A | Yes | No strobe-like animations; `prefers-reduced-motion` respected |
-| 2.4.1 | **Bypass Blocks**: Skip-to-content link at top of page | A | Yes | `<a href="#main">Skip to main content</a>` as first focusable element |
+| 2.4.1 | **Bypass Blocks**: Skip-to-content link at top of page | A | Yes | `&lt;a href="#main"&gt;Skip to main content&lt;/a&gt;` as first focusable element |
 | 2.4.2 | **Page Titled**: Every page has a descriptive `<title>` | A | Yes | `<title>` is unique and describes page purpose |
 | 2.4.3 | **Focus Order**: Focus moves in a meaningful sequence | A | Yes | Tab order matches visual order; no `tabindex` values > 0 |
 | 2.4.4 | **Link Purpose (In Context)**: Link text (or link + context) describes destination | A | Yes | No "click here" / "read more" without surrounding context |

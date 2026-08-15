@@ -144,7 +144,7 @@ The default **judge** is an offline keyword-retention check (every expected
 substring appears in the compacted text). A stricter semantic judge (`judge_fn`,
 e.g. an LLM judge) can be injected without changing anything else.
 
-```
+```text
 score = fidelity_weight * mean_fidelity + compression_weight * (1 - mean_ratio)
         (defaults: 0.7 fidelity, 0.3 compression)
 ```

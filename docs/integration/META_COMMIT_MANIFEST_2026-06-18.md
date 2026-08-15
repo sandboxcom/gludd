@@ -125,7 +125,7 @@ Every hook in `.claude/hooks/` was read and assessed for syntax and operational 
 
 Use for the SAFE-TO-COMMIT-NOW group. The WAIT group gets a follow-on commit once agent a166d1a finishes.
 
-```
+```text
 meta: AGENTS.md fix≠disable + at-rest policies; hook hardening (JSON-block, 3 new guardrails, session-start fix); planning docs 2026-06-18
 
 AGENTS.md (+70 lines):
@@ -185,7 +185,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 6. **Follow-on commit (WAIT group):** Once agent a166d1a is done — Makefile + settings.json + hooks + gen_gate_safe_hook.py + enforce-floor.ts + wave3_consolidate.sh (if target added) + multitasking_backlog.json (after SHA fix). Draft commit message for that group:
 
-```
+```text
 harness: enforcing hook hardening — JSON-block stop hooks, 3 new guardrail hooks,
 session-start JSON fix, make test-hooks/test-stop-hooks, gate-concurrency guard
 

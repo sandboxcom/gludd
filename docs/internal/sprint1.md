@@ -62,7 +62,7 @@ A filesystem monitor that watches configured directories for git worktrees conta
 
 ### Architecture
 
-```
+```text
 watchdog.Observer → WorktreeEventHandler (on_created, on_modified, on_deleted)
   → WorktreeScanner.scan() (periodic full scan for existing worktrees)
   → WorktreeMonitor.evaluate() (check activity age, parse agents.md)

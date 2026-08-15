@@ -14,7 +14,7 @@ patterns sourced from blogs, issue trackers, and forums.
 Implemented as an Ansible collection (`general_ludd.e2e_test_gen`) at
 `collections/ansible_collections/general_ludd/e2e_test_gen/`. Five-role pipeline:
 
-```
+```text
 analyze_code_paths → generate_scenarios → validate_scenarios → write_e2e_tests → verify_coverage
 ```
 
@@ -77,7 +77,7 @@ The roles delegate to existing gludd subsystems rather than re-implementing:
 
 ## 4. Collection Structure
 
-```
+```text
 collections/ansible_collections/general_ludd/e2e_test_gen/
 ├── galaxy.yml                              # version 0.1.0
 ├── README.md

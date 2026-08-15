@@ -25,7 +25,7 @@
 
 ## Background Workflow
 
-```
+```text
 make gate-background        # launches gate detached, writes .gate-background.pid
 make gate-status-check      # probe: running/pass/fail + current phase + tail
 make gate-tail              # live log follow (Ctrl-C to stop)

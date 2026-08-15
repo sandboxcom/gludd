@@ -75,7 +75,13 @@ def _iter_candidate_files(root: Path, requested: Iterable[str]) -> Iterable[Path
 def _scan_file(path: Path) -> list[str]:
     if not path.exists():
         return [f"{path}: missing configured scan path"]
-    relative = str(path.relative_to(_repo_root()))
+    try:
+        relative = str(path.resolve().relative_to(_repo_root()))
+    except ValueError:
+        # The path lives outside the repo (e.g. a temp file under pytest's
+        # tmp_path). It can never be an allowlisted repo file, so scan it
+        # without the repo-relative allowlist check.
+        relative = str(path.resolve())
     if relative in ALLOWLIST_FILES:
         return []
     try:

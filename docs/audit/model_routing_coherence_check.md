@@ -97,7 +97,7 @@ The divergence is significant: `CODE_REVIEW` is the starkest case — the doc sa
 
 Neither `docs/research/METRIC_AND_BIBLIOGRAPHY.md` nor `src/general_ludd/scoring/metric.py` exists in the main tree or the worktree. The recommendation doc describes the W$ formula as:
 
-```
+```text
 W$ = W / log10(1 + median_$/Mtok)
 where median_$/Mtok = (input_price + output_price) / 2
 ```

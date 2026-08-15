@@ -2,10 +2,10 @@
 
 Status: READY-TO-IMPLEMENT (2026-08-14)
 
-**Feature ID:** AIML-EXPERT-v1  
+**Feature ID:** AIML-EXPERT-v1
 **Target compatibility:** Gludd `0.1.x`; request/result schema `1.x` with
-additive-only minor revisions  
-**Created:** 2026-07-29  
+additive-only minor revisions
+**Created:** 2026-07-29
 **Owners:** AI/ML collection, evidence, evaluation, security, observability
 
 This document is authoritative for the broad AI/ML product surface, public

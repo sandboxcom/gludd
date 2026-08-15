@@ -1,6 +1,6 @@
 # OpenCode database maintenance runbook
 
-**Last evidence review:** 2026-08-08  
+**Last evidence review:** 2026-08-08
 **Scope:** Gludd's `opencode-disk`, `opencode-db-*`, and `opencode-clean*`
 Make targets.
 

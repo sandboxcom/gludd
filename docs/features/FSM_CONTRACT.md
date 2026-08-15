@@ -1,6 +1,6 @@
 # Finite-State Machine Contract
 
-**Status:** IMPLEMENTED  
+**Status:** IMPLEMENTED
 **Release target:** v0.1.0-beta4
 
 ## Behavioral contract

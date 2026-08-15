@@ -44,7 +44,7 @@ casbin_rule schema) lands as an appendix when its agent reports.
 
 ## 1. Target architecture
 
-```
+```text
  request ─► auth middleware (daemon.py:1568)
               │  resolve per-user PSK → user_id  (NEW: PSK store, hashed, constant-time)
               │  attach request.state.user_id

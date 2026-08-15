@@ -894,7 +894,7 @@ These are not terminal completion claims (✅ / "All done") — they are subtler
 ### Correct response pattern
 
 User: "What did we do so far?"
-```
+```text
 We completed X (commit abc123), Y is in progress, Z hasn't started.
 
 [make git-status tool call]
@@ -904,7 +904,7 @@ We completed X (commit abc123), Y is in progress, Z hasn't started.
 ### Wrong response pattern (will be blanked)
 
 User: "What did we do so far?"
-```
+```text
 Here's what was done since the crash:
 - [x] Item A — completed
 - [x] Item B — committed and merged
@@ -2181,7 +2181,7 @@ Run through EVERY item below. Do NOT skip any. Fix all gaps immediately.
 
 ### How to Execute
 
-```
+```text
 1. Read opencode.db messages (or re-read the conversation history)
 2. For each user request, grep the src/ tree for implementation
 3. For each implementation class, grep for usage (imports) outside test/
@@ -2241,7 +2241,7 @@ recent dispatches, the hook emits an advisory nudge to rebalance toward sonnet.
 
 A stricter 2:1 sonnet target (67%) can be activated for a fixed duration using:
 
-```
+```text
 make set-sonnet-target HOURS=24 SHARE=0.67
 ```
 
@@ -2727,7 +2727,7 @@ venv per worktree). Apply the decision checklist in `docs/ORCHESTRATION.md`
 
 **Lifecycle (run on the main checkout):**
 
-```
+```text
 1. make agent-worktree BRANCH=agent-<short-descriptive-name>
    → prints WORKTREE_PATH=/tmp/gludd-worktrees/agent-<name>
    → dispatch the subagent with cwd=WORKTREE_PATH
@@ -3396,4 +3396,4 @@ enforceable proxy is the existing `model_utilization` `PreToolUse` hook
 (sonnet : non-sonnet dispatch-count ratio ≥ 10:1), which indirectly drives
 sonnet token dominance — plus the terse-main-thread discipline above.
 
-<!-- session: 2026-08-09 -->
+&lt;!-- session: 2026-08-09 --&gt;

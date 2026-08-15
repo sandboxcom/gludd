@@ -15,7 +15,7 @@ Already partially enforced in `AgentDispatcher._check_capability_escalation()`
 (`src/general_ludd/agents/dispatcher.py:138`). On every `dispatch_one`, the
 dispatcher compares the parent agent's `AgentPermission` against the child's:
 
-```
+```text
 child.can_edit              ⊆  parent.can_edit
 child.can_bash              ⊆  parent.can_bash
 child.can_read              ⊆  parent.can_read
@@ -27,7 +27,7 @@ A handoff extends this check: the originating agent is NOT the direct
 dispatcher — handoff traverses a chain of custody. The receiver's effective
 permissions are the **intersection** of every agent in the handoff chain:
 
-```
+```text
 effective = ∩ { sender.permissions, …chain…, receiver.permissions }
 ```
 
@@ -43,7 +43,7 @@ same limit applies. A handoff at the depth ceiling fails immediately.
 
 ### 3.1 Lifecycle
 
-```
+```text
   Agent-A (running)           Dispatcher           Agent-B (receiving)
       │                          │                        │
       │──handoff_task(task_id,──▶│                        │

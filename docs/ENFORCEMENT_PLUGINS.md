@@ -150,7 +150,7 @@ provides a workaround for time-sensitive guardrail fixes.
 
 ### 3.4 Plugin Code Pattern
 
-```
+```ts
 import { loadHotModule, type HotModule } from "./hot_reload.ts"
 
 const defaultImpl: HotModule = {

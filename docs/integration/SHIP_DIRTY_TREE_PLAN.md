@@ -56,7 +56,7 @@ Blockers confirmed by diff-at-commit analysis:
 ### PRE-FLIGHT CHECK
 Before starting: verify no concurrent gate is running.
 
-```
+```text
 make -C /Users/shawnwilson/gludd ps-pytest
 ```
 
@@ -64,7 +64,7 @@ Expected: `NONE running`. If a gate is running, wait for it to finish or use
 `make -C /Users/shawnwilson/gludd kill-gate-force` only if it is stale/orphaned.
 
 Also check disk headroom (each worktree venv is ~320 MB):
-```
+```text
 make -C /Users/shawnwilson/gludd disk
 ```
 
@@ -100,7 +100,7 @@ additions, and the regenerated baseline live ONLY in the working tree and would 
 `git-revert-files` runs `git checkout HEAD -- <file>` per tracked file (verified recipe). It
 does NOT touch the other six dirty files.
 
-```
+```text
 make -C /Users/shawnwilson/gludd git-revert-files FILES='Makefile scripts/run_gate.sh scripts/multitasking_backlog.json .secrets.baseline'
 ```
 
@@ -110,7 +110,7 @@ After this the four blockers match 3223c67 (clean). The other six dirty files
 `--ff-only` will not try to overwrite them — they carry over as local modifications. Safe.
 
 Confirm the tree is ready:
-```
+```text
 make -C /Users/shawnwilson/gludd git-status
 ```
 Expected: the four blockers no longer appear as `M`.
@@ -126,12 +126,12 @@ them — so the revert in 1b does not strand the ship machinery.)
 With the four blockers reverted to 3223c67, the working tree has no modifications that
 conflict with the ff. Run the ff:
 
-```
+```text
 make -C /Users/shawnwilson/gludd ship-ff REF=6063e51 TARGET=master
 ```
 
 Expected output:
-```
+```json
 [ship-ff] checking out master ...
 [ship-ff] BEFORE: 3223c67
 [ship-ff] AFTER:  6063e51...
@@ -139,13 +139,13 @@ Expected output:
 ```
 
 If the ff refuses ("not a fast-forward"), verify with:
-```
+```text
 make -C /Users/shawnwilson/gludd git-is-ancestor A=3223c67 B=6063e51
 ```
 Expected: `exit=0` (3223c67 is an ancestor of 6063e51).
 
 If git refuses because of remaining dirty files, check which files still differ:
-```
+```text
 make -C /Users/shawnwilson/gludd git-diff
 ```
 Any remaining M files that are still dirty AND differ between 3223c67 and 6063e51 must also
@@ -157,7 +157,7 @@ be reverted before the ff. Based on the analysis above, only the four blockers s
 
 After the ff, master is at 6063e51. Now restore the working-tree versions:
 
-```
+```text
 make -C /Users/shawnwilson/gludd wt-import SRC=/tmp/gludd-wt-Makefile DST=Makefile
 make -C /Users/shawnwilson/gludd wt-import SRC=/tmp/gludd-wt-run_gate.sh DST=scripts/run_gate.sh
 make -C /Users/shawnwilson/gludd wt-import SRC=/tmp/gludd-wt-backlog.json DST=scripts/multitasking_backlog.json
@@ -166,7 +166,7 @@ make -C /Users/shawnwilson/gludd wt-import SRC=/tmp/gludd-wt-secrets-baseline DS
 
 Verify the git diff shows the expected additions (working-tree additions to Makefile, OOM
 fix in run_gate.sh, updated backlog statuses, regenerated secrets baseline):
-```
+```text
 make -C /Users/shawnwilson/gludd git-diff
 ```
 
@@ -177,7 +177,7 @@ make -C /Users/shawnwilson/gludd git-diff
 Do NOT run a full gate here — it risks OOM and takes ~3 hours. The branch 6063e51 was
 already gated (confirmed green). Run only the fast non-memory-intensive checks:
 
-```
+```text
 make -C /Users/shawnwilson/gludd lint
 make -C /Users/shawnwilson/gludd typecheck
 make -C /Users/shawnwilson/gludd collect-check
@@ -190,7 +190,7 @@ run_gate.sh introduced a problem. Fix before proceeding.
 
 If collect-check fails, the restored working-tree files have introduced a collection error.
 Investigate with:
-```
+```text
 make -C /Users/shawnwilson/gludd test-count
 ```
 
@@ -217,12 +217,12 @@ make -C /Users/shawnwilson/gludd test-count
 
 5c. Stage everything for the meta-commit:
 
-```
+```text
 make -C /Users/shawnwilson/gludd git-add FILES='pyproject.toml src/general_ludd/__init__.py AGENTS.md README.md BUGS.md SESSION.md .gitignore scripts/multitasking_backlog.json Makefile scripts/run_gate.sh .secrets.baseline docs/integration/SHIP_DIRTY_TREE_PLAN.md'
 ```
 
 Add any other untracked docs that belong in this meta-commit:
-```
+```text
 make -C /Users/shawnwilson/gludd git-add FILES='docs/integration/POSTSHIP_RUNBOOK.md docs/integration/RELEASE_ALPHA2_MECHANICS_2026-06-18.md docs/integration/META_COMMIT_MANIFEST_2026-06-18.md docs/integration/SHIP_EXECUTION_CHECKLIST_2026-06-18.md docs/integration/CASCADE_STATE_2026-06-18.md docs/integration/POSTSHIP_MERGE_CASCADE_2026-06-18.md docs/integration/BATCH3_APPLY_PLAN.md docs/integration/BATCH4_DEFERRED.md docs/integration/NEXT_CYCLES_READY.md docs/integration/CYCLE_APPLY_PLAN_2026-06-17.md docs/integration/REVIEW_FINDINGS_2026-06-17.md'
 ```
 
@@ -230,7 +230,7 @@ make -C /Users/shawnwilson/gludd git-add FILES='docs/integration/POSTSHIP_RUNBOO
     is NOT being run here (Step 4 was lint+typecheck+collect only), use `repo-commit`
     (which does not enforce gate freshness) for the meta-commit:
 
-```
+```text
 make -C /Users/shawnwilson/gludd repo-commit MSG='chore: v0.1.0-alpha.2 meta-commit — version bump + Makefile OOM fix + run_gate.sh mem-cap + meta docs'
 ```
 
@@ -238,7 +238,7 @@ make -C /Users/shawnwilson/gludd repo-commit MSG='chore: v0.1.0-alpha.2 meta-com
 
 ### STEP 6: Release Cut
 
-```
+```text
 make -C /Users/shawnwilson/gludd release-cut TAG=v0.1.0-alpha.2 MSG='v0.1.0-alpha.2 — wave-3 ship: security hardening + convergence fixes + feature packages + connector/registry layer'
 ```
 
@@ -257,11 +257,11 @@ If step 1 fails (README not current), update README.md and re-run from Step 5c.
 After CI confirms v0.1.0-alpha.2 green:
 
 1. Apply feature/gate-oom-fix (c1de962) to master via ff or cherry-pick:
-   ```
+   ```text
    make -C /Users/shawnwilson/gludd git-ff-only REF=c1de962
    ```
    Only do this if c1de962 is a fast-forward from 6063e51. If not, cherry-pick:
-   ```
+   ```bash
    make -C /Users/shawnwilson/gludd git-checkout MSG=master
    # then cherry-pick via a new make target or worktree-merge approach
    ```
@@ -269,12 +269,12 @@ After CI confirms v0.1.0-alpha.2 green:
 2. Apply batch-3 changes (per BATCH3_APPLY_PLAN.md).
 
 3. Gate the combined result:
-   ```
+   ```text
    make -C /Users/shawnwilson/gludd gate
    ```
 
 4. Ship v0.1.0-alpha.3:
-   ```
+   ```text
    make -C /Users/shawnwilson/gludd release-cut TAG=v0.1.0-alpha.3 MSG='...'
    ```
 

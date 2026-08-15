@@ -2,10 +2,10 @@
 
 Status: READY-TO-IMPLEMENT (2026-08-14)
 
-**Feature ID:** CHEM-EXPERT-v1  
+**Feature ID:** CHEM-EXPERT-v1
 **Target compatibility:** Gludd `0.1.x`; chemistry entity/request/result schema
-`1.x` with additive-only minor revisions  
-**Created:** 2026-07-29  
+`1.x` with additive-only minor revisions
+**Created:** 2026-07-29
 **Owners:** chemistry collection, safety, evidence, evaluation, observability
 
 ## 1. Purpose and Safety Boundary

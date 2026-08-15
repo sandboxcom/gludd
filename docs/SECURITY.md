@@ -52,7 +52,7 @@ cannot drift.
 Clients authenticate by sending the key as a bearer token on every protected
 request:
 
-```
+```text
 Authorization: Bearer <GLUDD_PSK>
 ```
 
@@ -150,7 +150,7 @@ The `gludd daemon --host` flag controls the bind address. The current default is
 exposing the daemon. Loopback keeps the admin API reachable only from the local
 host, matching the single-operator threat model.
 
-```
+```text
 gludd daemon --host 127.0.0.1 --port 8000
 ```
 

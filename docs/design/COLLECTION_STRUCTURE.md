@@ -11,7 +11,7 @@ by `src/general_ludd/collections/importer.py` (`TerraformCollectionImporter`).
 A collection that ships terraform/OPA content MUST place it under
 `plugins/terraform/`:
 
-```
+```text
 <collection-root>/
 ├── galaxy.yml                                   # ansible-galaxy metadata
 └── plugins/
@@ -39,7 +39,7 @@ The operator ships core OPA policies at `infra/terraform/policies/core.rego`
 (`package main`, set `deny[level]`). At evaluation time `conftest test` is
 invoked with BOTH policy paths:
 
-```
+```text
 conftest test -p infra/terraform/policies/ -p <collection>/plugins/terraform/policies/ <plan.json>
 ```
 
@@ -139,7 +139,7 @@ the project repository rather than with gludd releases.
 
 Project-specific content lives at:
 
-```
+```text
 <project_dir>/.gludd/collections/ansible_collections/<namespace>/<collection>/
 ├── galaxy.yml                         # ansible-galaxy metadata
 ├── roles/
@@ -176,7 +176,7 @@ multi-root resolution model.
 
 ### Scaffolding via `gludd project init`
 
-```
+```text
 gludd project init --namespace <ns> [--collection <name>] [--force] [PROJECT_DIR]
 ```
 

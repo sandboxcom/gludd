@@ -1,8 +1,8 @@
 # Feature: Materials Engineering Expert Collection
 
-**Spec ID:** MATE-001  
-**Status:** DRAFT — implementation-ready; cited research pass pending  
-**Target:** development after `v0.1.0-beta.3`  
+**Spec ID:** MATE-001
+**Status:** DRAFT — implementation-ready; cited research pass pending
+**Target:** development after `v0.1.0-beta.3`
 **Collection:** `general_ludd.materials`
 
 ## 1. Purpose

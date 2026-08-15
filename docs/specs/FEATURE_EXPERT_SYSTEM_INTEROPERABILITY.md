@@ -2,10 +2,10 @@
 
 Status: READY-TO-IMPLEMENT (2026-08-14)
 
-**Feature ID:** EXPERT-INTEROP-v1  
+**Feature ID:** EXPERT-INTEROP-v1
 **Target compatibility:** Gludd `0.1.x`; expert card, task, event, artifact, and
-conformance schemas `1.x` with N/N-1 readers  
-**Created:** 2026-07-29  
+conformance schemas `1.x` with N/N-1 readers
+**Created:** 2026-07-29
 **Owners:** expert routing, coordination, security, evaluation, observability
 
 Research basis:

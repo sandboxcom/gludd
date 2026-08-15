@@ -152,7 +152,7 @@ if a pass returns a status in `abort_on`. On completion, the chain result
 
 ### 2.4 Pass Lifecycle
 
-```
+```text
 ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
 │ REGISTER │───▶│ VALIDATE │───▶│ DISPATCH │───▶│ VALIDATE │
 │   pass   │    │  schema  │    │ to agent │    │  output  │
@@ -315,7 +315,7 @@ Chains are named, pre-configured sequences of passes. They live in the same
 
 #### review-then-fix
 
-```
+```json
 [code-review-pass] → conditional? → [fix-pass] → [test-runner-pass]
        │                                  │              │
        │ is_clean: true                   │              │
@@ -338,7 +338,7 @@ CHAIN_REGISTRY["review-then-fix"] = PassChain(
 
 #### research-then-apply
 
-```
+```json
 [research-pass] → [fix-pass] → [test-runner-pass]
 ```
 
@@ -347,7 +347,7 @@ verify. Used for tasks like "find all callers of X and update them."
 
 #### test-write-then-run
 
-```
+```json
 [test-writing-pass] → [test-runner-pass]
 ```
 
@@ -357,7 +357,7 @@ write-before-run discipline at the pass level.
 
 #### full-gate-pass
 
-```
+```json
 [lint-pass] → [typecheck-pass] → [test-runner-pass]
 ```
 

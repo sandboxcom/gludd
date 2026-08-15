@@ -238,7 +238,7 @@ Before writing the 149 files' worth of tests, **fix the 416 test-collection erro
 
 ## Reproducing this audit
 
-```
+```text
 make test-unit PYTEST_ADDOPTS='--continue-on-collection-errors --cov=general_ludd --cov-report=json --cov-report=xml'
 make coverage-json THRESHOLD=85 SOURCE=src/general_ludd
 ```

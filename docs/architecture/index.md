@@ -10,7 +10,7 @@ integration) is documented in one place: [docs/architecture.md](../architecture.
 
 ## Quick Reference
 
-```
+```text
 User ──CLI/TUI──▶ Daemon (FastAPI + Gunicorn, :8000)
                       │
         ┌─────────────┼─────────────┐

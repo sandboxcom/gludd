@@ -68,7 +68,7 @@ Top 5 to wire next (highest product value first): `connectors/observe` router re
 
 These are the packages currently reachable from daemon startup (lines 19–62):
 
-```
+```text
 general_ludd.ansible.isolation        general_ludd.ansible.runner
 general_ludd.config.binary_paths      general_ludd.config.loader
 general_ludd.config.model_routing     general_ludd.config.task_loader
@@ -90,7 +90,7 @@ general_ludd.skills.registry
 
 Lazy/deferred imports (loaded inside lifespan or helper functions):
 
-```
+```text
 general_ludd.agents.dispatcher        general_ludd.agents.registry
 general_ludd.controllers.budget_manager general_ludd.controllers.spend_limiter
 general_ludd.daemon_wiring.*          general_ludd.db.migrations

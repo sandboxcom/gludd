@@ -17,13 +17,13 @@ Run `make test-count` in the worktree.  Zero collection errors is the minimum ba
 
 The branch touches `.github/` (workflow files), so it must be pushed to the `sandboxcom` remote (the GitHub-connected remote), not a local-only mirror.
 
-```
+```text
 make git-push-sandboxcom
 ```
 
 After push, confirm the remote tip matches the local HEAD:
 
-```
+```text
 make verify-remote BRANCH=fix/self-update-sec SHA=<local-HEAD>
 ```
 
@@ -31,7 +31,7 @@ A "VERIFIED" line is required.  "Everything up-to-date" without a SHA match is a
 
 Current HEAD as of this document (from `make git-log`):
 
-```
+```text
 9d7bdb1  test+docs: provider_presets + adaptive_router unit tests, ci-live-failure-detection doc
 ```
 
@@ -41,7 +41,7 @@ PR #2 targets `integration/alpha3-rc`.  It was open at handoff (CI run `27919075
 
 If PR #2 needs to be opened:
 
-```
+```text
 gh pr create --base integration/alpha3-rc --head fix/self-update-sec \
   --title "fix/self-update-sec: completion-integrity, security, hooks hardening" \
   --body "Post-ship fixes: budget_guard wiring, SSRF guard, daemon default_registry, no-wait hook, model-ratio enforcer."
@@ -51,7 +51,7 @@ gh pr create --base integration/alpha3-rc --head fix/self-update-sec \
 
 CI now runs sharded test jobs (commit `b99f205`) and emits per-test failure annotations mid-run (commit `608bd3a`).  The fastest path to a failing test is:
 
-```
+```text
 make ci-poll         # streams job-level status; shows first failing shard within minutes
 make ci-annotations  # polls check-run annotations every 30s for per-test ::error:: lines
 ```
@@ -62,7 +62,7 @@ The concurrency group in `build.yml` (commit `666f168`) auto-cancels any superse
 
 ### Step 4 — Confirm green before merge
 
-```
+```text
 make ci-verdict BRANCH=fix/self-update-sec
 ```
 
@@ -80,7 +80,7 @@ All must be `conclusion: success` before merge.
 
 Once `ci-verdict` shows green for the exact HEAD SHA, merge via the PR:
 
-```
+```text
 gh pr merge 2 --squash --delete-branch
 ```
 

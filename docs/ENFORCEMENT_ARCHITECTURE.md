@@ -95,7 +95,7 @@ compiled-in default implementation. On every hook invocation the proxy calls
 4. **No restart needed**: edit the plugin source, run `make hot-reload-plugins`,
    and the next hook call picks up the change.
 
-```
+```ts
 ┌─────────────────────────────────────────────────────────────────┐
 │  opencode runtime (calls hook on every tool invocation)         │
 └────────────────────────┬────────────────────────────────────────┘
@@ -215,7 +215,7 @@ export default (async ({ }) => {
 
 ## 3. Plugin Lifecycle
 
-```
+```text
 opencode.json: plugin[] ─┐
                          │  (load order = array order; earlier wins on ties)
                          ▼
@@ -580,7 +580,7 @@ GLUDD_TDD_ENFORCE=0              # disable enforce-tdd.ts only
 
 ## 10. Plugin Interaction Diagram
 
-```
+```text
                        ┌──────────────────────────────────────┐
                        │       opencode agent runtime         │
                        │   (tool call, text emission, etc.)   │

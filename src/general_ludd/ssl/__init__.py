@@ -1,3 +1,4 @@
+"""TLS/SSL helpers and certificate tooling."""
 from __future__ import annotations
 
 from general_ludd.ssl.algorithms import (

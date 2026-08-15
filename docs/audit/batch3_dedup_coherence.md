@@ -51,7 +51,7 @@ Date: 2026-06-16.
 
 **`markdown_source.py` (`MarkdownSource`):** Subclasses `IssueSource`. Config key `path`. ID derived from `ordinal:text` hash. CLAIM is a no-op; DONE ticks checkbox. **Zero references anywhere — no import, no test, no registry entry.**
 
-**`markdown_todo.py` (`MarkdownTodoSource`):** Standalone (no base class). Has path-confinement. IDs extracted from HTML comment `<!--id:ABC-->` or `(#42)` pattern first, falling back to SHA1. `fetch_issues()` / `update_status()` / `add_comment()` API. Tested by `test_issue_source_markdown.py` (20 tests).
+**`markdown_todo.py` (`MarkdownTodoSource`):** Standalone (no base class). Has path-confinement. IDs extracted from HTML comment `&lt;!--id:ABC--&gt;` or `(#42)` pattern first, falling back to SHA1. `fetch_issues()` / `update_status()` / `add_comment()` API. Tested by `test_issue_source_markdown.py` (20 tests).
 
 **Verdict:** `markdown_source.py` is dead code. Delete it. `markdown_todo.py` is the canonical implementation.
 

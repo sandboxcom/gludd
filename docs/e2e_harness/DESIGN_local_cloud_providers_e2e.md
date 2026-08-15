@@ -215,7 +215,7 @@ permits. The SSRF wall is specifically a *local-backend* problem.
 
 ## 3. Harness layout, shared fixtures, and the skip contract
 
-```
+```text
 tests/e2e/providers/
   conftest.py                  # shared probes, skip helpers, gateway builder
   test_ollama_e2e.py

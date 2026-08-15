@@ -1,3 +1,4 @@
+"""Configuration loading and defaults."""
 from general_ludd.config.binary_paths import BinaryPathResolver, BinaryPaths
 from general_ludd.config.loader import (
     build_config_layer,

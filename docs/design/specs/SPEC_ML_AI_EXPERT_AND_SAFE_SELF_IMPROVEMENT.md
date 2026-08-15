@@ -2,12 +2,12 @@
 
 Status: READY-TO-IMPLEMENT (2026-08-14)
 
-**Feature ID:** MLAI-CONTINUAL-v1  
+**Feature ID:** MLAI-CONTINUAL-v1
 **Target compatibility:** Gludd `0.1.x`; expert, evidence, experiment, and
-promotion schemas `1.x` with N/N-1 readers  
-**Specification date:** 2026-07-28  
+promotion schemas `1.x` with N/N-1 readers
+**Specification date:** 2026-07-28
 **Implementation status:** Not implemented; every numbered requirement below is
-an atomic feature specification, not a claim about current behavior.  
+an atomic feature specification, not a claim about current behavior.
 **Research basis:**
 [`ML_AI_EXPERT_SYSTEM_RESEARCH_2026-07-28.md`](../../research/ML_AI_EXPERT_SYSTEM_RESEARCH_2026-07-28.md)
 

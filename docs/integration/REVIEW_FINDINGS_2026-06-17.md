@@ -118,7 +118,7 @@ finding was confirmed by more than one reviewer it is marked **(2x)**.
 16. **`issue_sources/github_issues.py`** — no pagination; `fetch`/`fetch_issues`
     silently return ≤30 issues. Correctness gap.
 17. **`issue_sources/markdown_todo.py:177-178`** — caller `comment` embedded
-    verbatim in `<!--gludd:{comment}-->` (no `-->` escaping); dedup check uses
+    verbatim in `&lt;!--gludd:{comment}--&gt;` (no `--&gt;` escaping); dedup check uses
     `marker.strip()` but appends with a leading space (double-annotation on
     re-parse).
 18. **`is_path_within` footgun** — two definitions with **swapped arg order**

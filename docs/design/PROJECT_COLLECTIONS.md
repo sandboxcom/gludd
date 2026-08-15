@@ -137,7 +137,7 @@ overrides the role:
 
 1. Scaffold the project-local collection with the SAME FQCN as bundled:
 
-   ```
+   ```text
    $ cd /Users/x/acme-internal
    $ gludd project init --namespace general_ludd --collection agent --force
    ```
@@ -170,7 +170,7 @@ overrides the role:
 
 3. Re-run init — the project-local role wins:
 
-   ```
+   ```text
    $ gludd project init --namespace acme
    ```
 
@@ -203,7 +203,7 @@ playbook invocations (no `os.environ` mutation).
 table so operators can verify the order before debugging a "wrong role
 won" incident:
 
-```
+```text
 Collection search path (highest precedence first):
   1. PROJECT   /Users/x/acme-internal/.gludd/collections/   (exists, 3 roles, 5 modules)
   2. USER      /Users/x/.config/gludd/collections/          (exists, 1 role, 0 modules)
@@ -238,7 +238,7 @@ Setup:
 
 Step 1 — scaffold the project collection with the SAME FQCN as bundled:
 
-```
+```text
 $ cd /Users/x/acme-internal
 $ gludd project init --namespace general_ludd --collection agent --force
 Scaffolded project collection at: .gludd/collections/ansible_collections/general_ludd/agent
@@ -248,7 +248,7 @@ Config updated: .gludd/config.yml
 
 Resulting tree (only the relevant leaves shown):
 
-```
+```text
 /Users/x/acme-internal/
 └── .gludd/
     ├── config.yml
@@ -278,7 +278,7 @@ Resulting tree (only the relevant leaves shown):
 
 Step 2 — verify the precedence:
 
-```
+```text
 $ gludd project paths /Users/x/acme-internal
 Collection search path (highest precedence first):
   1. PROJECT   /Users/x/acme-internal/.gludd/collections/   (exists, 1 role, 0 modules)

@@ -80,7 +80,7 @@ The `+` prefix in `git worktree list` confirmed each disk path is intact.
 
 For each worktree below, after `make wt-sync SRC=<dir>`, manually copy the `__init__.py` using `make wt-import`:
 
-```
+```markdown
 make wt-import SRC=.../agent-a075db9607378180d/src/general_ludd/audit_log/__init__.py \
                DST=src/general_ludd/audit_log/__init__.py
 
@@ -186,11 +186,11 @@ Change type: EOF-append. Adds:
 The current main Makefile ends after `release-validate:` at line 1471. There is no conflict — the worktree change is a clean append.
 
 **Action:** After all pure-new-file wt-syncs are done and committed, apply the Makefile via:
-```
+```text
 make wt-apply SRC=.../agent-a7af6fa1b17155947 FILES=Makefile
 ```
 Then also sync the remaining files from that worktree:
-```
+```text
 make wt-sync SRC=.../agent-a7af6fa1b17155947
 ```
 (wt-sync will transfer the non-Makefile, non-__init__ files; the Makefile was pre-applied by wt-apply.)
@@ -202,7 +202,7 @@ make wt-sync SRC=.../agent-a7af6fa1b17155947
 This worktree modifies existing molecule playbook files that are also modified in the main working tree (noted in `make git-diff` output: molecule/playbooks/role_self_improve_propose and test_gludd_reload are in the main tree's diff). This is a **CLOBBER HAZARD** — `wt-sync` will refuse these files (clobber guard active), which is correct.
 
 **Action:** Use `wt-apply --3way` for the molecule files:
-```
+```text
 make wt-apply SRC=.../agent-ae13d66c078d6dc4e \
   FILES='molecule/playbooks/role_self_improve_propose/default/converge.yml \
          molecule/playbooks/test_gludd_reload/default/converge.yml \
@@ -220,7 +220,7 @@ Integrate in this sequence to minimize conflict risk:
 ### Pass 1 — Pure new-package worktrees (no shared-file edits; wt-sync is safe)
 These worktrees only add new files. Run `make wt-sync` then hand-place `__init__.py` files, then `make test-count` after each batch.
 
-```
+```markdown
 # Batch A — pure greenfield packages
 make wt-sync SRC=.../agent-a075db9607378180d   # audit_log
 make wt-import SRC=.../agent-a075db9607378180d/src/general_ludd/audit_log/__init__.py DST=src/general_ludd/audit_log/__init__.py
@@ -296,7 +296,7 @@ make wt-import SRC=.../agent-afd7934f7e17c4213/src/general_ludd/run_timeline/__i
 ```
 
 **Worktrees that modify existing files (no new __init__ needed):**
-```
+```text
 make wt-sync SRC=.../agent-a3bcdaf779c9c2f54   # ansible runner extensions
 make wt-sync SRC=.../agent-a61d263b97ab0dc3a   # orchestration_guards (agents package)
 make wt-sync SRC=.../agent-abc58f5c2ecd41ce0   # worktree core fix
@@ -304,14 +304,14 @@ make wt-sync SRC=.../agent-ac70c3cf92b4f9710   # pareto routing
 ```
 
 **Ansible/git playbooks (new files in existing collection dirs):**
-```
+```text
 make wt-sync SRC=.../agent-a6658bf05a69d4d36   # git ansible playbooks
 ```
 
 ### Pass 2 — db/models.py via wt-apply (ordered, after Pass 1 committed)
 
 Step 1 (memory) is already applied. After the full batch-3 + Pass-1 commit:
-```
+```markdown
 # Step 2: accounting RoleRunModel column additions
 make wt-apply SRC=.../agent-a819a1994d313cede FILES=src/general_ludd/db/models.py
 # Step 3: sync remaining accounting files (non-models.py)
@@ -320,7 +320,7 @@ make wt-sync SRC=.../agent-a819a1994d313cede
 ```
 
 ### Pass 3 — Makefile EOF-append (after Pass 2 committed)
-```
+```markdown
 make wt-apply SRC=.../agent-a7af6fa1b17155947 FILES=Makefile
 make wt-sync SRC=.../agent-a7af6fa1b17155947
 # backlog_audit.py already modified in main tree (see git-status M scripts/backlog_audit.py)
@@ -329,7 +329,7 @@ make wt-sync SRC=.../agent-a7af6fa1b17155947
 ```
 
 ### Pass 4 — Molecule files (3-way merge needed)
-```
+```markdown
 # ae13d66c078d6dc4e: molecule/quality tool
 # These molecule files are ALSO modified in the main tree; wt-sync will refuse them.
 # Use wt-apply for each conflicting molecule file individually:
@@ -364,7 +364,7 @@ make wt-apply SRC=.../agent-ae13d66c078d6dc4e \
 
 Before syncing a819a1994d313cede, verify whether `accounting/` already exists in main:
 
-```
+```text
 make grep Q="from general_ludd.accounting" PATH_=src
 ```
 

@@ -94,7 +94,7 @@ touching any release target.** The three facts that get this wrong most often:
 - [Issue Tracker](https://github.com/sandboxcom/gludd/issues)
 ## Documentation Structure
 
-```
+```text
 docs/
 ├── index.md                    # This page
 ├── architecture/               # System architecture

@@ -7,7 +7,7 @@ Delegation-wrapper libraries in §5 follow the delegation pattern defined in §3
 
 Core module_utils live under:
 
-```
+```text
 collections/ansible_collections/general_ludd/agent/plugins/module_utils/
 ```
 
@@ -104,7 +104,7 @@ interface) without duplicating the underlying logic.
 
 ### 4.1 `gludd` — Daemon client + structured-output helpers
 
-**File:** `module_utils/gludd.py` (239 lines)  
+**File:** `module_utils/gludd.py` (239 lines)
 **Test:** `tests/unit/test_module_utils_structured.py`
 
 API surface:
@@ -124,7 +124,7 @@ Used by: every module that talks to the daemon (30+ modules).
 
 ### 4.2 `embeddings` — Embedding client + in-memory vector store
 
-**File:** `module_utils/embeddings.py` (212 lines)  
+**File:** `module_utils/embeddings.py` (212 lines)
 **Test:** pending (spec exists, implementation complete; test gap tracked in TASKS.md)
 
 API surface:
@@ -138,7 +138,7 @@ API surface:
 
 ### 4.3 `capability_policy` — Per-role authorisation
 
-**File:** `module_utils/capability_policy.py` (481 lines)  
+**File:** `module_utils/capability_policy.py` (481 lines)
 
 API surface:
 
@@ -155,7 +155,7 @@ Used by: `gludd_db` (the only module that performs capability-gated operations).
 
 ### 4.4 `fs_write_policy` — Filesystem-write allow/deny guard
 
-**File:** `module_utils/fs_write_policy.py` (263 lines)  
+**File:** `module_utils/fs_write_policy.py` (263 lines)
 
 API surface:
 
@@ -173,7 +173,7 @@ Used by: `gludd_worktree`, `fs_write_audit`.
 
 ### 4.5 `fs_write_audit` — FIM-on-write audit log
 
-**File:** `module_utils/fs_write_audit.py` (269 lines)  
+**File:** `module_utils/fs_write_audit.py` (269 lines)
 
 API surface:
 
@@ -190,7 +190,7 @@ Used by: `gludd_worktree`.
 
 ### 4.6 `gludd_stream_buffer` — Rolling byte buffer
 
-**File:** `module_utils/gludd_stream_buffer.py` (147 lines)  
+**File:** `module_utils/gludd_stream_buffer.py` (147 lines)
 **Test:** `tests/unit/test_gludd_stream_buffer.py`
 
 API surface:
@@ -205,7 +205,7 @@ Used by: `gludd_stream`.
 
 ### 4.7 `output_parser` — Structured-output parsers (greenfield)
 
-**File:** `module_utils/output_parser.py` (planned)  
+**File:** `module_utils/output_parser.py` (planned)
 **Kind:** greenfield — no core equivalent; this is a standalone stdlib-only parser library.
 
 API surface:
@@ -214,7 +214,7 @@ API surface:
 |---|---|---|
 | `JsonOutputParser` | class | Extracts a JSON object from arbitrary model output. Strips fences, handles partial JSON recovery (trailing commas, unclosed braces), validates against an optional schema. Method: `parse(text) -> tuple[dict | None, str | None]`. |
 | `PydanticOutputParser` | class | Validates parsed JSON against a Pydantic model at runtime. Constructed with a target model class. Method: `parse(text) -> tuple[BaseModel | None, str | None]`. Falls back to `JsonOutputParser` for the JSON extraction step. |
-| `MarkdownOutputParser` | class | Extracts a Markdown code block by language tag (e.g. ` ```json`), strips fences, and returns the raw inner content. Method: `parse(text) -> tuple[str | None, str | None]`. Useful as a preprocessor before piping to `JsonOutputParser` or `PydanticOutputParser`. |
+| `MarkdownOutputParser` | class | Extracts a Markdown code block by language tag, strips fences, and returns the raw inner content. Method: `parse(text) -> tuple[str | None, str | None]`. Useful as a preprocessor before piping to `JsonOutputParser` or `PydanticOutputParser`. |
 
 Design notes:
 - `parse()` returns `(parsed, error)` tuples — never raises on malformed input.
@@ -225,7 +225,7 @@ Design notes:
 
 ### 4.8 `document_loader` — File/document ingestion (greenfield)
 
-**File:** `module_utils/document_loader.py` (planned)  
+**File:** `module_utils/document_loader.py` (planned)
 **Kind:** greenfield — no core equivalent; stdlib-only document loading from local paths.
 
 API surface:
@@ -260,7 +260,7 @@ delegation pattern described in §3.4–§3.5. Each wraps an existing core modul
 
 ### 5.1 `ansible_tools` — Ansible-to-MCP tool bridge (bridging)
 
-**File:** `module_utils/ansible_tools.py` (planned)  
+**File:** `module_utils/ansible_tools.py` (planned)
 **Kind:** bridging — adapts Ansible module discovery and invocation to the MCP tool-call path so model agents can use Ansible modules through the same interface as external MCP servers.
 
 API surface:

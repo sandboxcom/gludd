@@ -24,7 +24,7 @@ No tags exist in this repo. Running `make git-log` shows no `(tag:...)` decorati
 
 Tag naming convention: `v<semver>` prefix. The CI `build.yml` line 23 matches `refs/tags/v*` and the release job (line 228) is conditioned on `startsWith(github.ref, 'refs/tags/v')`. The annotated-tag target in the Makefile (line 807) uses `TAG=v0.1.0-alpha.N`. Therefore the correct tag for this release is:
 
-```
+```text
 v0.1.0-alpha.2
 ```
 
@@ -36,7 +36,7 @@ Lightweight vs annotated: `git-tag-push` creates an **annotated** tag (`git tag 
 
 Confirmed from `.git/config`:
 
-```
+```json
 [remote "sandboxcom"]
     url = git@github.com:sandboxcom/gludd.git
     fetch = +refs/heads/*:refs/remotes/sandboxcom/*
@@ -121,13 +121,13 @@ list-tags:
 
 `CHANGELOG.md` exists and tracks changes in Keep-a-Changelog format. The current `[Unreleased]` section (lines 5-38) covers the work for this release. Before committing the version bump, rename that section header from:
 
-```
+```markdown
 ## [Unreleased] — next alpha — 2026-06-17
 ```
 
 to:
 
-```
+```markdown
 ## [0.1.0-alpha.2] — 2026-06-18
 ```
 
@@ -159,7 +159,7 @@ Use `make ci-status-anon` to check CI status (public API, no auth needed).
 Run each step in sequence. Bash is make-only in this repo; version string edits use the Edit tool.
 
 ### Step 0 — verify the gate is green locally
-```
+```text
 make gate-status
 ```
 If `.gate-status` shows any `FAIL` or is older than 30 min, run `make gate` first (takes ~16 min).
@@ -187,52 +187,52 @@ version = "0.1.0-alpha.2"
 Using the Edit tool, rename `## [Unreleased] — next alpha — 2026-06-17` to `## [0.1.0-alpha.2] — 2026-06-18` and add a new `## [Unreleased]` block above it.
 
 ### Step 3 — verify the version string
-```
+```text
 make version
 ```
 Expected output: `general-ludd-agent 0.1.0-alpha.2`
 
 ### Step 4 — stage the three changed files
-```
+```text
 make git-add FILES='pyproject.toml src/general_ludd/__init__.py CHANGELOG.md'
 ```
 
 ### Step 5 — commit (gate-guarded)
-```
+```text
 make git-commit MSG='release: bump version to 0.1.0-alpha.2'
 ```
 This will fail if the gate is not fresh and green. If it fails, re-run `make gate`, then retry.
 
 ### Step 6 — push master to sandboxcom
-```
+```text
 make git-push-sandboxcom
 ```
 Pushes the version-bump commit to `git@github.com:sandboxcom/gludd.git`. Triggers a CI branch run (gate + builds). Wait for that run to be green before tagging.
 
 ### Step 7 — wait for CI to be green on the pushed commit
-```
+```text
 make ci-watch-head
 ```
 Or poll manually:
-```
+```text
 make ci-status-anon
 ```
 Proceed to Step 8 ONLY when the run for this commit shows `success`.
 
 ### Step 8 — create and push the annotated tag
-```
+```text
 make git-tag-push TAG=v0.1.0-alpha.2 MSG='v0.1.0-alpha.2 — first tagged alpha release'
 ```
 This creates a local annotated tag and pushes it to `sandboxcom`. The push triggers the CI `release` job (`if: startsWith(github.ref, 'refs/tags/v')` — `build.yml` line 228), which builds Linux/macOS/Windows/Termux artifacts and publishes a prerelease GitHub Release.
 
 ### Step 9 — monitor the release CI run
-```
+```text
 make ci-watch-head
 ```
 The new run (triggered by the tag push) runs all jobs including `release`. It should end with `success`.
 
 ### Step 10 — confirm the GitHub Release was published
-```
+```text
 make release-view TAG=v0.1.0-alpha.2
 ```
 Expected output: `RELEASE: v0.1.0-alpha.2 | https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-alpha.2` with `draft=False prerelease=True` and 4+ artifact files listed.

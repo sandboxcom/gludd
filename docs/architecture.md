@@ -4,7 +4,7 @@
 
 General Ludd is an autonomous agentic SDLC daemon. The core flow:
 
-```
+```text
 User adds task → Daemon queue → Event Loop → Ansible Runner → general_ludd.agent collection → AI Model → Result
 ```
 
@@ -163,7 +163,7 @@ Configuration changes are picked up without restarting:
 
 ### Task States
 
-```
+```text
 pending → in_progress → completed → reviewed
                                         ↓
                                    reconciled
@@ -208,7 +208,7 @@ will fail if scenarios are removed.
 
 The daemon locates its config directory in this order:
 
-```
+```bash
 $GLUDD_CONFIG_DIR  →  ~/.config/general-ludd  →  /etc/general-ludd
 ```
 
@@ -222,7 +222,7 @@ daemon runs but agents do nothing" — set `GLUDD_CONFIG_DIR` when running from 
 
 ### Value layering (within the discovered directory)
 
-```
+```text
 Environment Variables (highest priority)
     ↓
 ~/.config/general-ludd/user.yml

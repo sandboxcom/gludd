@@ -8,7 +8,7 @@ exported GPG private key.
 
 ## Architecture
 
-```
+```text
                  ┌──────────────────────────────┐
                  │  gludd daemon (scheduler)    │
                  │  /api/todos/scheduled        │

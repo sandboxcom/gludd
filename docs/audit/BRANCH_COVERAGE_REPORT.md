@@ -1,8 +1,8 @@
 # Branch Coverage Report
 
-**Generated:** 2026-07-27  
-**Branch:** development  
-**HEAD:** `b3878d2c`  
+**Generated:** 2026-07-27
+**Branch:** development
+**HEAD:** `b3878d2c`
 **Coverage data source:** `.coverage.audit.16981` (partial run, `make audit-coverage` timed out at 180s)
 
 ## Aggregate Branch Coverage

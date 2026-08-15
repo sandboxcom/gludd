@@ -41,7 +41,7 @@ The output is:
 
 gludd's daemon event loop runs a 5-phase cycle every tick:
 
-```
+```text
 claim → dispatch → review → reconcile → (repeat)
 ```
 
@@ -139,7 +139,7 @@ The AI-SDLC Protocol Language defines a chain of validation tokens that
 track a task's passage through the pipeline. Each token is produced by
 one stage and consumed by the next:
 
-```
+```text
 spec_token  →  approach_token  →  code_token  →  review_token
     →  gate_token  →  merge_token  →  release_token  →  production_token
 ```
@@ -241,7 +241,7 @@ gludd already has 109 Ansible roles covering every SDLC phase. The
 `config/ai_sdlc.yml` `role_stage_mapping` section categorizes them into
 the 8 pipeline stages:
 
-```
+```text
 ┌──────────────┐   ┌───────────────┐   ┌────────────────┐   ┌──────────────┐
 │   INTAKE     │   │   PLANNING    │   │ IMPLEMENTATION │   │    REVIEW    │
 │              │   │               │   │                │   │              │

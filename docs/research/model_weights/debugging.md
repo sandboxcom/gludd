@@ -191,7 +191,7 @@ Source: [arxiv 2504.13474][26]
 
 For each sub-category S and model M:
 
-```
+```text
 norm(M, B) = score(M, B) / best_score(B)
 
 W(M, S) = Σ_b [ rel(b, S) × norm(M, b) ] / Σ_b rel(b, S)
@@ -351,7 +351,7 @@ Note: SWE-bench is Python-only so carries extra weight here.
 |-------|-----------------|----------------------|-------------|---|---|-----|
 | Claude Opus 4.8 | ~0.88† | — | 1.000 | **0.924** | 0.80 | **0.689** |
 | GPT-5.4 | 1.000† | 1.000† | 0.854 | **0.960** | 0.80 | **0.873** |
-| DeepSeek-Coder-33B | ~0.72† | 0.947 | — | **0.808** | 0.73 | — | Open-source option |
+| DeepSeek-Coder-33B | ~0.72† | 0.947 | — | **0.808** | 0.73 | — (Open-source option) |
 | DeepSeek-V3 | ~0.75† | ~0.90† | ~0.65† | **0.786** | 0.80 | **1.420** |
 | Gemini 3.1 Pro | ~0.85† | — | 0.667 | **0.780** | 0.73 | **0.750** |
 | Qwen3-Coder 480B | ~0.70† | — | — | **0.700** | 0.53 | **1.155** |
@@ -407,7 +407,7 @@ Niche note: Rust borrow-checker diagnostics are highly structured; models that f
 | DeepSeek-V3.2 | 0.745 | 0.972 | ~0.65† | **0.815** | 0.80 | **1.472** |
 | Gemini 2.5 Pro | ~0.88† | — | 0.667 | **0.813** | 0.73 | **0.783** |
 | Claude Opus 4.8 | ~0.82† | — | 1.000 | **0.876** | 0.73 | **0.653** |
-| WizardCoder-33B | ~0.67† | 0.831 | — | **0.734** | 0.67 | — | Open; no API price |
+| WizardCoder-33B | ~0.67† | 0.831 | — | **0.734** | 0.67 | — (Open; no API price) |
 
 ### Java Debugging
 
@@ -415,12 +415,12 @@ Niche note: Rust borrow-checker diagnostics are highly structured; models that f
 
 | Model | Aider Java norm | DebugBench Java norm | W | C | W$ |
 |-------|----------------|---------------------|---|---|-----|
-| DeepSeek-Coder-33B | ~0.72† | 1.000 | **0.846** | 0.73 | — | Java leader on DebugBench |
+| DeepSeek-Coder-33B | ~0.72† | 1.000 | **0.846** | 0.73 | — (Java leader on DebugBench) |
 | GPT-5 high | 1.000 | 1.000† | **1.000** | 0.73 | **0.910** |
 | DeepSeek-V3 | ~0.75† | ~0.95† | **0.847** | 0.80 | **1.529** |
 | Claude Opus 4.8 | ~0.82† | — | **0.820** | 0.67 | **0.611** |
 | Gemini 3.1 Pro | ~0.85† | — | **0.850** | 0.67 | **0.818** |
-| Llama3-70B | ~0.68† | 0.778 | **0.718** | 0.73 | **1.532** | Open; self-host |
+| Llama3-70B | ~0.68† | 0.778 | **0.718** | 0.73 | **1.532** (Open; self-host) |
 
 ---
 

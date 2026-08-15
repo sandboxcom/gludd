@@ -27,7 +27,7 @@ Goal: get `fix/self-update-sec` green, then merge to master via **PR #2 → `int
   Last referenced run `27919075093` greenness was UNCONFIRMED at handoff.
 - Ship sequence (paste-ready, only after CI is confirmed green; from memory
   `gludd-ship-https-target`):
-  ```
+  ```text
   make require-ci-green SHA=<full-SHA>
   make check-readme-status TAG=v0.1.0-alpha.3
   make ship-https SHA=<full-SHA> TAG=v0.1.0-alpha.3 MSG='v0.1.0-alpha.3 — third alpha'

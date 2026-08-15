@@ -245,6 +245,10 @@ help:
 	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
 	@echo "  codemod-lean-enforcement-plugins Extract bulky enforcement implementations from counted plugin entrypoints"
 	@echo "  check-no-prompt-prone-edit-tools  Enforce make-target-only edit workflow"
+	@echo "  codex-system-skill-read  Print a codex system skill's SKILL.md (SKILL=name [CODEX_SKILLS_ROOT=path])"
+	@echo "  fix-init-drift        Fix __init__.py drift: docstrings, empty namespace inits, unsorted __all__"
+	@echo "  fix-docs-drift        Fix mechanical markdown drift: whitespace, fences, stale audit links"
+	@echo "  report-docs-drift     Enumerate hand-fixable markdown issues (tables, tabs, headers, links)"
 	@echo "  feature-spec-inventory  Inventory all Gludd feature specs + OpenCode behavioral specs (FORMAT=human|json)"
 	@echo "  migrate-test-env-writes  Rewrite test environment mutations to the guarded helper"
 	@echo "  write-text-b64        Write FILE from base64 TEXT_B64 without shell quoting loss"
@@ -1444,7 +1448,7 @@ _gate-run-lock-acquire:
 
 .NOTPARALLEL: gate gate-refresh
 
-gate: _gate-run-lock-acquire _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
+gate: _gate-run-lock-acquire _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets check-no-prompt-prone-edit-tools validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -8127,6 +8131,15 @@ cat-file:
 	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
 	@/bin/cat "$(FILE)"
 
+CODEX_SKILLS_ROOT ?= $$HOME/.codex/skills
+
+codex-system-skill-read:
+	@[ -n "$(SKILL)" ] || { echo "Usage: make codex-system-skill-read SKILL=name [CODEX_SKILLS_ROOT=path]"; exit 2; }
+	@case "$(SKILL)" in *..*|/*) echo "Invalid skill name: $(SKILL)"; exit 1;; *) ;; esac
+	@SKILL_FILE="$(CODEX_SKILLS_ROOT)/.system/$(SKILL)/SKILL.md"; \
+	[ -f "$$SKILL_FILE" ] || { echo "Skill not found: $$SKILL_FILE"; exit 1; }; \
+	/bin/cat "$$SKILL_FILE"
+
 list-files:
 	@[ -n "$(DIR)" ] || { echo "Usage: make list-files DIR=path"; exit 1; }
 	@case "$(DIR)" in /*|*..*) echo "Refusing path outside workspace: $(DIR)"; exit 1;; esac
@@ -8136,11 +8149,19 @@ search:
 	@[ -n "$(PATTERN)" ] || { echo "Usage: make search PATTERN=regex [SEARCH_PATH=path]"; exit 1; }
 	@SEARCH_ROOT="$(if $(SEARCH_PATH),$(SEARCH_PATH),.)"; \
 	case "$$SEARCH_ROOT" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $$SEARCH_ROOT"; exit 1;; esac; \
-	if [ -x /opt/homebrew/bin/rg ]; then RG=/opt/homebrew/bin/rg; elif [ -x /usr/local/bin/rg ]; then RG=/usr/local/bin/rg; else RG=""; fi; \
-	if [ -n "$$RG" ]; then \
-		"$$RG" -n --glob '!.git/**' --glob '!.venv/**' --glob '!.mypy_cache/**' --glob '!.pytest_cache/**' --glob '!.gate-logs/**' -- "$(PATTERN)" "$$SEARCH_ROOT"; \
+	TMP="/tmp/gludd-search.$$$$"; \
+	if command -v rg >/dev/null 2>&1; then \
+		rg -n --glob '!.git/**' --glob '!.venv/**' --glob '!.mypy_cache/**' --glob '!.pytest_cache/**' --glob '!.gate-logs/**' -- "$(PATTERN)" "$$SEARCH_ROOT" > "$$TMP" 2>/dev/null || true; \
 	else \
-		/usr/bin/find "$$SEARCH_ROOT" \( -path '*/.git' -o -path '*/.venv' -o -path '*/.mypy_cache' -o -path '*/.pytest_cache' -o -path '*/.gate-logs' \) -prune -o -type f -print0 | /usr/bin/xargs -0 /usr/bin/grep -n -- "$(PATTERN)" 2>/dev/null; \
+		/usr/bin/grep -R -n -- "$(PATTERN)" "$$SEARCH_ROOT" > "$$TMP" 2>/dev/null || true; \
+	fi; \
+	if [ -s "$$TMP" ]; then \
+		while IFS= read -r line; do printf '%s\n' "$$line"; done < "$$TMP"; \
+		/bin/rm -f "$$TMP"; \
+	else \
+		/bin/rm -f "$$TMP"; \
+		echo "No matches for $(PATTERN) in $$SEARCH_ROOT"; \
+		exit 1; \
 	fi
 
 show-lines:
@@ -8289,6 +8310,15 @@ ci-push-committed-head: git-push-committed-head-nv ci-trigger-committed-head
 
 check-no-prompt-prone-edit-tools:
 	@$(UV) run python scripts/check_no_prompt_prone_edit_tools.py
+
+fix-init-drift:
+	@$(UV) run python scripts/fix_init_drift.py
+
+fix-docs-drift:
+	@$(UV) run python scripts/fix_docs_drift.py
+
+report-docs-drift:
+	@$(UV) run python scripts/fix_docs_drift.py --report
 
 
 git-resolve-theirs:

@@ -503,7 +503,7 @@ A task is done only when ALL are true:
 
 ## 10. Task checklist (tick as you go)
 
-```
+```text
 Phase 0 — baseline
 [ ] 0    BASELINE.md with real test/lint/type numbers, committed
 

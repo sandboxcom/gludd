@@ -23,7 +23,7 @@ capability improvement across releases and compare against published baselines.
 
 ## 3. Architecture
 
-```
+```text
 ag15_benchmarks/
 ├── __init__.py
 ├── benchmark_harness.py   # BenchmarkSuite, BenchmarkResult, aggregation

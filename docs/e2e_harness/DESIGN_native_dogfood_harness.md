@@ -179,7 +179,7 @@ does NOT need the live key (mock profile) — it only asserts `/healthz`,
 
 ## 4. File layout
 
-```
+```text
 tests/e2e/dogfood/
   __init__.py
   conftest.py                 # fixtures (secrets, in-proc app, gateway, workspaces)
@@ -198,7 +198,7 @@ docs/e2e_harness/
 ```
 
 Makefile additions (make-only policy):
-```
+```text
 test-e2e-dogfood:   pytest tests/e2e/dogfood/ -v -s    # -s so live model logs stream
 dogfood-live:       ZAI from .secrets → run both scenarios live
 dogfood-site:       run only the todo-website scenario
@@ -516,7 +516,7 @@ Without a ZAI credential this runs seven cases and skips only the live case.
 
 ## 12. Summary of the concrete flow
 
-```
+```json
 [fixture] load .secrets/llm_keys.env → zai_creds or None (skip live asserts)
 [setup]   in-mem sqlite + create_all + FastAPI app + todos router + AsyncClient
           ProjectManager.add_project(ws)  (clone-self OR git-init greenfield)
@@ -535,4 +535,5 @@ Offline (no key): identical, with the two gateway calls mocked to a deterministi
 known-good artifact so CI is green without secrets; live (`make dogfood-live`):
 the two calls go to real GLM and prove a real model builds a working site and
 makes a real self-edit.
+```text
 ```

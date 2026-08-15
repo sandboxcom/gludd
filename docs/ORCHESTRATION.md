@@ -74,7 +74,7 @@ is expected. Begin new branches before old ones merge.
 
 Before pausing or serializing any work, answer all three questions:
 
-```
+```text
 a) Does this task mutate the shared master working tree RIGHT NOW?
 b) Does it need the one gate / commit / push slot RIGHT NOW?
 c) Does it depend on code that has NOT YET been merged to master?
@@ -102,7 +102,7 @@ Read/Edit/Write tools operate on whatever path you give them — they will not w
 that you are editing a non-master file. For any integration git operation, ALWAYS target
 the main checkout explicitly:
 
-```
+```text
 make -C /Users/shawnwilson/gludd git-merge MSG='feature/my-feature'
 ```
 

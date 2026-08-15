@@ -134,7 +134,7 @@ meaning 2). See Open Questions §6.
 
 ## 2. Architecture
 
-```
+```text
                          ┌──────────────────────────────────────────────┐
                          │  role: agent_orchestrate (tasks/main.yml)     │
                          └──────────────────────────────────────────────┘
@@ -434,7 +434,7 @@ The current `EnvironmentBrief.optimization` (`environment.py:96-97`,
 role branches on. Add a work-type-aware advisor:
 - New pure helper `build_advice(*, work_type, models, routing, budget, system)` in
   `controllers/environment_advisor.py` returning:
-  ```
+  ```text
   advice = {
     "recommendation": {"model_profile": <str>, "use_workflow": <bool>},
     "est_cost_usd": <float|None>,
@@ -541,4 +541,5 @@ on Phases 1-2.
    *record* benchmark rows or task-returns (not just read them via
    `gludd_metrics`), that needs a new `gludd_db` op + endpoint — out of scope
    unless requested.
+```text
 ```

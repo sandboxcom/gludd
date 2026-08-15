@@ -71,7 +71,7 @@ The existing dataclasses are the spine; we extend them, we do not replace them.
 
 Existing (keep verbatim):
 
-```
+```markdown
 # backlog_auditor.py
 FALSE_CLAIM, INCOMPLETE, VERIFIED_COMPLETE        # verdict label constants
 @dataclass TaskVerdict:   id; verdict; reasons:list[str]
@@ -81,7 +81,7 @@ FALSE_CLAIM, INCOMPLETE, VERIFIED_COMPLETE        # verdict label constants
 
 New, additive (proposed `validation/backlog_audit_model.py`):
 
-```
+```python
 @dataclass(frozen=True)
 class TaskRecord:
     """One backlog task, normalised from whatever source produced it."""
@@ -304,7 +304,7 @@ Canonical home: `tests/unit/test_guardrails.py` (every shipped
 `tests/unit/test_guardrails.py::test_no_shell_true_in_src`). The standard guard
 body is a three-liner that calls the registry itself:
 
-```
+```python
 def test_no_<class>_in_src():
     occ = sweep(REPO_ROOT, [by_id["<class>"]])
     assert occ["<class>"] == [], f"bug-class <class> recurred: {occ['<class>']}"
@@ -324,7 +324,7 @@ closing the gap it previously reported.
 New role `collections/ansible_collections/general_ludd/agent/roles/backlog_audit/`
 following the `feature_audit` / `backlog_groom` shape exactly:
 
-```
+```text
 backlog_audit/
   defaults/main.yml      # daemon_url, psk, artifact_dir, file_followups, fail_on
   meta/main.yml          # galaxy_info; dependencies: []  (composes, not duplicates)
@@ -334,7 +334,7 @@ backlog_audit/
 
 `defaults/main.yml` (mirrors `feature_audit/defaults`):
 
-```
+```text
 daemon_url: "http://localhost:8000"
 psk: ""
 artifact_dir: "/tmp/gludd-backlog-audit"
@@ -435,9 +435,9 @@ Add a `make backlog-audit` target (closes D-3) and wire it into `make gate` as a
 new phase between `collect` and `test` (it depends on a clean collection but
 should fail the gate before the long full-suite run):
 
-```
+```text
 backlog-audit:
-	@$(UV) run python scripts/backlog_audit.py --repo-root .
+    @$(UV) run python scripts/backlog_audit.py --repo-root .
 ```
 
 `run_report` already returns exit `1` when there are **occurrences OR guard
@@ -550,4 +550,5 @@ registry has occurrences or guard gaps, and that `.gate-status` gains a
 9. `backlog_audit` role + `playbooks/backlog_audit.yml` + `POST
    /api/audit/backlog` endpoint (PSK-gated) + `GET .../last`.
 10. Tests per Section 5; `make test-count` then `make gate` green before commit.
+```text
 ```

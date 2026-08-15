@@ -83,7 +83,7 @@ make feature-done MSG='feature/my-feature'   # Test + merge to master with --no-
 
 ## Project Structure
 
-```
+```text
 src/general_ludd/
 ├── cli.py                    # CLI entry point
 ├── daemon.py                 # FastAPI daemon

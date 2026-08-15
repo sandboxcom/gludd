@@ -8,7 +8,7 @@ improvement cycles. Each role uses a distinct model profile, and the
 system can route to any of **24 cloud providers** or **3 locally-served
 GGUF models** at each stage.
 
-```
+```text
 PLANNER —→ CODER —→ REVIEWER
    │          │          │
    │ (fix loop ──────────┘
@@ -145,7 +145,7 @@ score, and a boolean `passed` flag. The reviewer uses
 
 **File:** `multi_model_game_pipeline.py:146`, method `generate()`
 
-```
+```text
 spec = plan(description)
 code = code(spec)
 for round in 1..max_review_rounds:

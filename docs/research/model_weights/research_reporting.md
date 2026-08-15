@@ -32,7 +32,7 @@
 
 ### 1.2 Scoring Formula
 
-```
+```text
 W   = relevance-weighted mean of normalized sub-scores
       (each sub-score normalized to [0,1] relative to the best observed result on that benchmark)
 

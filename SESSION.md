@@ -27,7 +27,7 @@
 
 ### Recent Commits (HEAD `9bf42a0f`, 15 from `d4c84303`)
 
-```
+```text
 9bf42a0f fix: add allowlist secret pragma for test_config_compiler.py false positive
 32317f17 fix: use non-secret-looking placeholder in test_config_compiler.py
 f7fb61ee fix: replace secret-scanner-triggering test string in test_config_compiler.py
@@ -53,7 +53,7 @@ d4c84303 fix: 4 spec enforcement texts — M04 MSG= outside backticks, Q29 gate-
 
 ### Recent Commits (HEAD `45c6718c`, 13 since `fcb98aa1`)
 
-```
+```text
 45c6718c feat: enhanced opencode E2E test project — 18 trivial tasks, 10-agent floor rules
 c7f7213b fix: spawner NDJSON parser for nested structure (amend)
 4df53837 fix: spawner NDJSON parser for nested structure
@@ -244,7 +244,7 @@ fcb98aa1 chore: fresh gate-status + all Session 80 deliverables
 
 ### Gate Status (2026-08-03 FINAL)
 
-<!-- gate:begin -->
+&lt;!-- gate:begin --&gt;
 - **gate-lite: PASS** — 6555 passed/0 failed.
 - **gate (full): STALE** (2026-08-02). Needs re-run.
 - **CI: PENDING** — Run `30857059753` on `aa06cfc5` — in_progress
@@ -261,7 +261,7 @@ fcb98aa1 chore: fresh gate-status + all Session 80 deliverables
 - plugin-hook-invoke: PASS (34/34)
 - TASKS.md integrity: PASS
 - Total collection: 70,968, 0 errors
-<!-- gate:end -->
+&lt;!-- gate:end --&gt;
 
 ### Release History
 
@@ -275,7 +275,7 @@ fcb98aa1 chore: fresh gate-status + all Session 80 deliverables
 
 ### Recent Commits (HEAD `aa06cfc5`)
 
-```
+```text
 aa06cfc5 feat: wave 19 — workflow edge cases deep tests (67)
 f6cc8a2c feat: wave 18-19 — agent_memory, dockerfile_audit, shell_scripts, python_imports, skill_discovery, spec_docs, terraform_stack, yaml_config deep tests
 2eb47c7a feat: wave 17-18 — code_review, mcp_connector, memory_persistence, travel_dispatch, sandbox_runner, skill_runner, agent_behavior, game_gen_dispatch, deploy_pipeline deep tests

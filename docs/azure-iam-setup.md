@@ -406,13 +406,13 @@ After `deploy()` completes, the `ComputeInstance.endpoint_url` field contains
 the URL to access the API service. For Container Apps, this is the
 `latest_revision_fqdn` output from Terraform, formatted as:
 
-```
+```text
 https://gpu-inference-<revision>.<region>.azurecontainerapps.io
 ```
 
 The inference API is available at:
 
-```
+```text
 GET  https://gpu-inference-<revision>.<region>.azurecontainerapps.io/v1/models
 POST https://gpu-inference-<revision>.<region>.azurecontainerapps.io/v1/chat/completions
 ```
@@ -499,7 +499,7 @@ semantics, and long-lived operator reports are documented in the
 
 ### Test files
 
-```
+```text
 tests/e2e/game_e2e/test_game_fidelity.py   # Doom+Quake gen, SSIM frame compare (10 tests)
 tests/e2e/providers/test_azure_e2e.py       # Model call, billing, discovery (3 tests)
 tests/e2e/providers/test_azure_provision_e2e.py  # Full deploy E2E (opt-in)

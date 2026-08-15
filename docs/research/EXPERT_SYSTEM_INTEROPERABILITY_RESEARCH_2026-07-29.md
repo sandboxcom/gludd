@@ -1,8 +1,8 @@
 # Expert-System Interoperability Research
 
-Status: research synthesis for implementation specifications  
-Research cutoff: 2026-07-29  
-Target: post-`v0.1.0-beta.3` development work  
+Status: research synthesis for implementation specifications
+Research cutoff: 2026-07-29
+Target: post-`v0.1.0-beta.3` development work
 Release impact: none; this document was produced on the isolated
 `research-expert-expansion-2026` branch and is not a beta.3 input.
 

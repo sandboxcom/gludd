@@ -149,7 +149,7 @@ zero-downtime operation needs no restart or state migration.
 
 ### Runtime verification
 
-```
+```text
 make test-hook-runtime → 52 functional tests across 8 plugins (PASS)
 enforce-multitask.test.node.mjs → runtime behavioral tests T1-T6 pass
   T5: CONSECUTIVE_NON_DISPATCH_THRESHOLD === 5

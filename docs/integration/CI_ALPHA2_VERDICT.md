@@ -64,7 +64,7 @@ Total: **105 failed**, 11256 passed, 31 skipped — on both 3.11 and 3.12.
 
 **1. `general_ludd` not installed in CI venv (import-level failure — root cause for ~70 tests)**
 
-```
+```text
 test_tui_subprocess.py::TestTUIE2E::test_tui_shows_version_in_output
   ModuleNotFoundError: No module named 'general_ludd'
   (subprocess spawning .venv/bin/python3 -m general_ludd.cli fails at CI)
@@ -73,7 +73,7 @@ All `SystemExit: 1` failures in `test_cli_execution_coverage.py`, `test_benchmar
 
 **2. `test_readme_status_gate.py` — RecursionError + normalize bug (6 tests)**
 
-```
+```text
 TestNormalize::test_lowercases: assert 'v0.1.0-alpha.2' == '0.1.0-alpha.2'
 TestMainExitCodes::* — RecursionError: maximum recursion depth exceeded
 ```
@@ -81,28 +81,28 @@ TestMainExitCodes::* — RecursionError: maximum recursion depth exceeded
 
 **3. `test_connector_proc_sys.py::test_confined_explicit_path_allowed` — CI-environment path (1 test)**
 
-```
+```text
 FileNotFoundError: /sys/devices/LNXSYSTM:00/.../net/eth0/statistics/rx_bytes
 ```
 Test hard-codes a specific sysfs ACPI path that exists on one CI runner's hardware but not another. Needs mocking or dynamic path discovery. This is real (not flaky) but environment-specific.
 
 **4. `test_gate_concurrency.py::test_second_invocation_rejected_when_lock_held` (1 test)**
 
-```
+```text
 AssertionError: Rejected invocation must NOT leave a basetemp dir on disk. Found: {'/tmp/gludd-gate-test-xnqacsh1'}
 ```
 `scripts/run_gate.sh` is not cleaning up its basetemp dir when a lock-rejected invocation exits. Race condition or missing `rm -rf` in the rejection path.
 
 **5. `test_tui_e2e.py::test_tui_main_screen_renders` — missing `rich._emoji_codes` (1 test)**
 
-```
+```text
 ModuleNotFoundError: No module named 'rich._emoji_codes'
 ```
 A private `rich` module used in the TUI code changed its internal structure. Either pin `rich` to a specific version or import through the public API.
 
 **6. `test_cli_e2e.py` — mock/patch issues (~31 tests)**
 
-```
+```text
 test_add_success: AssertionError: Expected 'json' to have been called.
 test_*_with_project: TypeError: 'NoneType' object is not subscriptable
 test_list_*/test_log_level_*/etc.: assert 1 == 0
@@ -111,7 +111,7 @@ The mock targets in the e2e CLI tests are patching the wrong path after a refact
 
 **7. `test_self_improve_harness.py::test_integrity_log_uses_handle_connection_error` (1 test)**
 
-```
+```text
 AttributeError: 'NoneType' object has no attribute 'get'
 ```
 Mock is returning `None` where a dict is expected; the harness function changed its return contract.

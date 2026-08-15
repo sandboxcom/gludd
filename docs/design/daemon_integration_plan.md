@@ -541,4 +541,5 @@ no-op until proven. Do after A–F are green.
   `_self_update_audit_sink` are all new and distinct.
 - **Stale TODOs to delete during execution** (they falsely imply unwired):
   `scheduler.py:15-19`, `spend_limiter.py:17-28` (both already wired, §0).
+```text
 ```
