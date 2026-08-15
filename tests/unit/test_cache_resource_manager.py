@@ -22,9 +22,7 @@ def _cache_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
-def test_inventory_is_bounded_and_largest_first(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_inventory_is_bounded_and_largest_first(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _cache_root(tmp_path, monkeypatch)
     for name, size in (("small", 1), ("large", 16), ("medium", 8)):
         child = root / name
@@ -39,9 +37,7 @@ def test_inventory_is_bounded_and_largest_first(
 
 
 @pytest.mark.parametrize("limit", [0, -1, 101])
-def test_inventory_rejects_invalid_limits(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: int
-) -> None:
+def test_inventory_rejects_invalid_limits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: int) -> None:
     root = _cache_root(tmp_path, monkeypatch)
 
     with pytest.raises(CacheResourceError, match="limit must be between 1 and 100"):
@@ -56,9 +52,7 @@ def test_inventory_rejects_root_outside_allowlist(tmp_path: Path) -> None:
         inventory_cache_children(root, limit=5)
 
 
-def test_inventory_rejects_symlink_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_inventory_rejects_symlink_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _cache_root(tmp_path, monkeypatch)
     target = tmp_path / "target"
     target.mkdir()
@@ -96,9 +90,7 @@ def test_inventory_reports_unreadable_child_without_hiding_other_rows(
     assert rows[1].status == "measured"
 
 
-def test_remove_validate_only_preserves_exact_child(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_remove_validate_only_preserves_exact_child(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _cache_root(tmp_path, monkeypatch)
     child = root / "tool-cache"
     child.mkdir()
@@ -109,9 +101,7 @@ def test_remove_validate_only_preserves_exact_child(
     assert child.is_dir()
 
 
-def test_remove_apply_deletes_only_exact_child(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_remove_apply_deletes_only_exact_child(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _cache_root(tmp_path, monkeypatch)
     child = root / "tool-cache"
     sibling = root / "keep"
@@ -147,9 +137,7 @@ def test_remove_rejects_non_child_targets(
         remove_cache_child(root, candidate, apply=True)
 
 
-def test_remove_rejects_symlink_child(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_remove_rejects_symlink_child(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _cache_root(tmp_path, monkeypatch)
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -164,11 +152,7 @@ def test_remove_rejects_symlink_child(
 def test_make_targets_are_validate_first_and_contracted() -> None:
     project_root = Path(__file__).resolve().parents[2]
     makefile = (project_root / "Makefile").read_text(encoding="utf-8")
-    contract = json.loads(
-        (project_root / "config" / "make_target_contract.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    contract = json.loads((project_root / "config" / "make_target_contract.json").read_text(encoding="utf-8"))
 
     assert "cache-resource-inventory:" in makefile
     assert "cache-resource-remove:" in makefile
@@ -176,9 +160,7 @@ def test_make_targets_are_validate_first_and_contracted() -> None:
     entries = {entry["name"]: entry for entry in contract["targets"]}
     assert "cache-resource-inventory" in entries
     assert "cache-resource-remove" in entries
-    assert "CACHE_RESOURCE_VALIDATE_ONLY=1" in entries["cache-resource-remove"][
-        "behavior"
-    ]
+    assert "CACHE_RESOURCE_VALIDATE_ONLY=1" in entries["cache-resource-remove"]["behavior"]
 
 
 @pytest.mark.parametrize("target", ["cache-resource-inventory", "cache-resource-remove"])
@@ -241,15 +223,17 @@ def test_script_runs_under_make_system_python() -> None:
 def test_worktree_cache_cleanup_reaches_nested_feature_branches() -> None:
     project_root = Path(__file__).resolve().parents[2]
     makefile = (project_root / "Makefile").read_text(encoding="utf-8")
-    venv_section = makefile.split("clean-worktree-venvs:", 1)[1].split(
-        "clean-worktree-caches:", 1
-    )[0]
-    cache_section = makefile.split("clean-worktree-caches:", 1)[1].split(
-        "molecule-clean:", 1
-    )[0]
+    venv_section = makefile.split("clean-worktree-venvs:", 1)[1].split("clean-worktree-caches:", 1)[0]
+    cache_section = makefile.split("clean-worktree-caches:", 1)[1].split("molecule-clean:", 1)[0]
 
-    assert "/usr/bin/find /tmp/gludd-worktrees -type d -name .venv" in venv_section
+    # Venv cleanup is registry-driven: delegated to
+    # scripts/clean_worktree_venvs.py, which enumerates every registered
+    # worktree (nested feature branches included) and preserves the invoking
+    # worktree and any worktree with a visible active process.
+    assert "$(SYSTEM_PYTHON) -m scripts.clean_worktree_venvs" in venv_section
     assert "/tmp/gludd-worktrees/*/.venv" not in venv_section
+    # Cache cleanup still uses a recursive find so nested feature-branch
+    # caches are reached rather than only one level of shell glob.
     assert "/usr/bin/find /tmp/gludd-worktrees -type d" in cache_section
     assert "/tmp/gludd-worktrees/*/.pytest_cache" not in cache_section
 
@@ -276,9 +260,7 @@ def test_read_only_resource_targets_do_not_bootstrap_uv() -> None:
         assert target in no_sync_targets
 
 
-def test_measurement_failure_is_bounded_and_classified(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_measurement_failure_is_bounded_and_classified(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     child = tmp_path / "cache"
     child.mkdir()
 
@@ -292,9 +274,7 @@ def test_measurement_failure_is_bounded_and_classified(
         cache_manager._allocated_bytes(child)
 
 
-def test_remove_apply_deletes_exact_file_child(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_remove_apply_deletes_exact_file_child(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _cache_root(tmp_path, monkeypatch)
     child = root / "single-cache-file"
     child.write_text("regenerable", encoding="utf-8")
@@ -303,9 +283,7 @@ def test_remove_apply_deletes_exact_file_child(
     assert not child.exists()
 
 
-def test_remove_rejects_missing_exact_child(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_remove_rejects_missing_exact_child(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _cache_root(tmp_path, monkeypatch)
 
     with pytest.raises(CacheResourceError, match="candidate does not exist"):
@@ -339,12 +317,7 @@ def test_main_remove_validate_only_is_observable(
     child = root / "tool"
     child.mkdir()
 
-    assert (
-        cache_manager.main(
-            ["remove", "--root", str(root), "--candidate", str(child)]
-        )
-        == 0
-    )
+    assert cache_manager.main(["remove", "--root", str(root), "--candidate", str(child)]) == 0
 
     output = json.loads(capsys.readouterr().out)
     assert output == {
@@ -355,9 +328,7 @@ def test_main_remove_validate_only_is_observable(
     assert child.is_dir()
 
 
-def test_main_reports_fail_closed_error(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_main_reports_fail_closed_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     root = tmp_path / "not-allowlisted"
     root.mkdir()
 

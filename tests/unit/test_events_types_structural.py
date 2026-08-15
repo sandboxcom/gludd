@@ -32,7 +32,7 @@ class TestEventType:
             assert len(member.value) > 0
 
     def test_member_count(self):
-        assert len(list(EventType)) == 18
+        assert len(list(EventType)) == 21
 
     def test_custom_event_type(self):
         assert EventType.CUSTOM.value == "custom"
