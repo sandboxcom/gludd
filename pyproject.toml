@@ -127,12 +127,14 @@ sandbox = [
 ]
 game-e2e = [
     "pygame>=2.5.0",
+    "pillow>=12.3.0",
     "scikit-image>=0.22.0",
     "opencv-python-headless>=4.9.0,<4.13",
     "yt-dlp>=2025.1.15",
 ]
 e2e-all = [
     "pygame>=2.5.0",
+    "pillow>=12.3.0",
     "scikit-image>=0.22.0",
     "opencv-python-headless>=4.9.0,<4.13",
     "yt-dlp>=2025.1.15",
@@ -357,6 +359,7 @@ DEP002 = [
     "opentelemetry-exporter-otlp-proto-grpc",
     "opentelemetry-proto",
     "opentelemetry-sdk",
+    "pillow",
     "pqcrypto",
     "torch",
     "uvicorn-worker",
