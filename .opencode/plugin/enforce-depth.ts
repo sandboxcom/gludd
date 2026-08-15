@@ -32,8 +32,8 @@ const defaultImpl: HotModule = {
           permissionDecision: "deny" as const,
           message: [
             `MAX DEPTH EXCEEDED: depth=${depth}, limit=${MAX_DEPTH}.`,
-            "AGENTS.md: Subagent delegation depth MUST NOT exceed 3 levels.",
-            "A depth-3 subagent CANNOT dispatch further. Complete assigned work directly.",
+            "AGENTS.md: Subagent delegation depth MUST NOT exceed 4 levels.",
+            "A depth-4 subagent CANNOT dispatch further. Complete assigned work directly.",
             "Set GLUDD_DEPTH_ENFORCE=0 to disable.",
           ].join("\n"),
         }

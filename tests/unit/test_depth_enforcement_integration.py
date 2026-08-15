@@ -65,6 +65,11 @@ if (result) {{
     else:
         env.pop("GLUDD_DEPTH_ENFORCE", None)
     env["GLUDD_MAX_DEPTH"] = str(max_depth)
+    # Hermetic disengage state: a disengaged orchestrator session must not
+    # change enforcement results. Point both disengage paths at nonexistent
+    # files so isDisengaged() returns false regardless of /tmp session state.
+    env["GLUDD_DISENGAGE_PATH"] = "/tmp/gludd-depth-test-disengage-absent.json"
+    env["GLUDD_DISENGAGE_NEXT_PATH"] = "/tmp/gludd-depth-test-disengage-next-absent.json"
 
     try:
         proc = subprocess.run(
@@ -224,17 +229,24 @@ class TestNonDispatchPassthrough:
         assert _invoke_full_plugin("grep", 3) is None
 
 
-# ── Subagent bypass ────────────────────────────────────────────────────────
+# ── Subagent enforcement (no bypass) ────────────────────────────────────────
 
 
-class TestSubagentBypass:
-    """OPENCODE_SUBAGENT=1 bypasses enforcement at any depth."""
+class TestSubagentEnforced:
+    """Depth enforcement fires INSIDE subagents — enforce-depth is the ONE
+    depth-only plugin that intentionally does NOT bypass subagents
+    (OPENCODE_DEPTH is framework-managed per nesting level)."""
 
     def test_subagent_depth_3_allows_task(self):
-        assert _invoke_full_plugin("task", 3, is_subagent=True) is None
+        assert _invoke_full_plugin("task", 3, max_depth=4, is_subagent=True) is None
 
-    def test_subagent_depth_5_allows_agent(self):
-        assert _invoke_full_plugin("agent", 5, is_subagent=True) is None
+    def test_subagent_depth_4_blocks_agent(self):
+        result = _invoke_full_plugin("agent", 4, is_subagent=True)
+        assert result is not None
+        assert result["permissionDecision"] == "deny"
+        assert "MAX DEPTH EXCEEDED" in result["message"]
 
-    def test_subagent_depth_10_allows_workflow(self):
-        assert _invoke_full_plugin("workflow", 10, is_subagent=True) is None
+    def test_subagent_depth_10_blocks_workflow(self):
+        result = _invoke_full_plugin("workflow", 10, is_subagent=True)
+        assert result is not None
+        assert result["permissionDecision"] == "deny"

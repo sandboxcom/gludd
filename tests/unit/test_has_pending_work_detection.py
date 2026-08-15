@@ -108,13 +108,16 @@ class TestTableRowDetection:
                 f"unexpected keyword '{kw}' in hasPendingWork — "
                 "table-row detection was NOT expected but appears present"
             )
-        # "pending" appears in hasTasksMdPendingWork function name + todowrite check;
-        # strip both references then verify no table-row detection remains.
+        # "pending" appears in hasTasksMdPendingWork function name, the
+        # todowrite status check, and the stop-state mirror probe
+        # (state.hasPendingWork); strip those references then verify no
+        # table-row detection remains.
         cleaned = body_lower
         cleaned = re.sub(r"\bhastasksmdpendingwork\b", "", cleaned)
         cleaned = re.sub(r'"pending"', "", cleaned)
+        cleaned = re.sub(r"state\.haspendingwork", "", cleaned)
         assert "pending" not in cleaned, (
-            "unexpected keyword 'pending' in hasPendingWork outside function-name / todowrite context — "
+            "unexpected keyword 'pending' in hasPendingWork outside function-name / todowrite / stop-state contexts — "
             "table-row detection was NOT expected but appears present"
         )
         # Verify table-row detection IS in shared.ts (hasTasksMdPendingWork delegate)
@@ -281,7 +284,9 @@ class TestRatchetDetection:
 
 
 class TestGateStatusDetection:
-    """Regex: /=== GATE:\\s*FAILED/  or  'test REQUIRED' / 'smoke REQUIRED'"""
+    """Regex: /=== GATE:\\s*FAILED/  plus a per-phase prefix parser that
+    flags any gate-status line starting with a phase name and containing
+    FAIL (replaced the older 'test REQUIRED' / 'smoke REQUIRED' detector)."""
 
     GATE_FAIL_RE = re.compile(r"=== GATE:\s*FAILED")
 
@@ -294,20 +299,24 @@ class TestGateStatusDetection:
     def test_does_not_match_passed(self):
         assert not self.GATE_FAIL_RE.search("=== GATE: PASSED")
 
-    def test_test_required_detected(self):
-        content = "test REQUIRED — run make test first"
-        assert "test REQUIRED" in content
+    def test_phase_line_test_detected(self):
+        content = "test FAIL 2 — run make test first"
+        assert content.startswith("test ")
+        assert "FAIL" in content
 
-    def test_smoke_required_detected(self):
-        content = "smoke REQUIRED — daemon not responding"
-        assert "smoke REQUIRED" in content
+    def test_phase_line_smoke_detected(self):
+        content = "smoke FAIL — daemon not responding"
+        assert content.startswith("smoke ")
+        assert "FAIL" in content
 
     def test_pin_gate_failed_regex_in_has_pending_work(self):
         body = _extract_has_pending_work_body()
         assert "=== GATE" in body
         assert "FAILED" in body
-        assert "test REQUIRED" in body
-        assert "smoke REQUIRED" in body
+        assert "^(lint |typecheck |collect |test |smoke" in body, (
+            "per-phase gate-status prefix parser missing from hasPendingWork"
+        )
+        assert "/FAIL/" in body, "per-phase FAIL matcher missing from hasPendingWork"
 
 
 # ── 6. CI not green ───────────────────────────────────────────────────────────

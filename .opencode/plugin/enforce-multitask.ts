@@ -612,6 +612,12 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
           " dispatches."
         )
       }
+      if (_state.singleDispatchWaves >= 3 && _observedDispatches === 1) {
+        _lines.push(
+          "MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves.",
+          "Batch wider — 2+ dispatches per message."
+        )
+      }
       writeState(_state)
       return { text: _lines.join("\n") }
     }
@@ -626,6 +632,12 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
       warnings.push([
         "DISPATCH FLOOR VIOLATION: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(REQUIRED_DISPATCHES) + " dispatches.",
         "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+      ].join("\n"))
+    }
+    if (_state.singleDispatchWaves >= 3 && _state.prevMessageDispatches === 1) {
+      warnings.push([
+        "MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves.",
+        "Batch wider — 2+ dispatches per message.",
       ].join("\n"))
     }
     if (warnings.length > 0) {
