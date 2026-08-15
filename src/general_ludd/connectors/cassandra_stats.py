@@ -179,7 +179,7 @@ class CassandraStatsSource:
 
         ts = time.time()
         out: list[CassandraRecord] = []
-        seen: set[tuple[object, object, object, object]] = set()
+        seen: set[tuple[object, object, object, object, object]] = set()
         for command in _COMMANDS:
             try:
                 rows = executor(command)
