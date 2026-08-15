@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -23,6 +25,18 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 MOCK_DAEMON_SCRIPT = ROOT / "molecule" / "mock_daemon" / "server.py"
+
+
+# On CI runners `make ansible-syntax` (uv run) can recreate the project venv
+# mid-shard, leaving the running workers' sys.executable path stale. Resolve
+# a live interpreter at each spawn and skip the test if none exists.
+def _python() -> str:
+    if sys.executable and os.path.exists(sys.executable):
+        return sys.executable
+    found = shutil.which("python3")
+    if found and os.path.exists(found):
+        return found
+    pytest.skip("no live python interpreter available to spawn the mock daemon")
 
 
 def _find_free_port() -> int:
@@ -107,7 +121,7 @@ class TestMockDaemonStartup:
         port = _find_free_port()
         pidfile = tmp_path / "mock-daemon.pid"
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--pidfile", str(pidfile)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--pidfile", str(pidfile)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -124,7 +138,7 @@ class TestMockDaemonStartup:
         port = _find_free_port()
         pidfile = tmp_path / "mock-daemon.pid"
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--pidfile", str(pidfile)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--pidfile", str(pidfile)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -140,7 +154,7 @@ class TestMockDaemonStartup:
         port = _find_free_port()
         pidfile = tmp_path / "mock-daemon.pid"
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--pidfile", str(pidfile)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--pidfile", str(pidfile)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -159,7 +173,7 @@ class TestHealthEndpoints:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -201,7 +215,7 @@ class TestFactsMetricsTraces:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -243,7 +257,7 @@ class TestObserveEndpoints:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -284,7 +298,7 @@ class TestMessagesEndpoints:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -329,7 +343,7 @@ class TestTodosEndpoints:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -360,7 +374,7 @@ class TestFeaturesSpendAccounting:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -430,7 +444,7 @@ class TestScheduleDispatch:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -499,7 +513,7 @@ class TestEnvironmentEndpoints:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -541,7 +555,7 @@ class TestModelEndpoints:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -598,7 +612,7 @@ class TestSTSTokenLifecycle:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -670,7 +684,7 @@ class TestProcessManagement:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -720,7 +734,7 @@ class TestOrnithAndHumanTodos:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -771,7 +785,7 @@ class TestStreamDispatch:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -819,7 +833,7 @@ class TestProcessAuditAndResourcePreferences:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -849,7 +863,7 @@ class TestGitHubApiMocks:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -888,7 +902,7 @@ class TestOpenBaoBreakGlass:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -939,7 +953,7 @@ class TestRequestLogIntrospection:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -981,7 +995,7 @@ class TestErrorHandling:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -1027,7 +1041,7 @@ class TestConcurrentRequests:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -1093,7 +1107,7 @@ class TestManagedPidOverride:
     def test_managed_pid_overrides_first_record(self, tmp_path: Path):
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--managed-pid", "99999"],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--managed-pid", "99999"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
