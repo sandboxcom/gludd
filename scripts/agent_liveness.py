@@ -62,6 +62,7 @@ TESTABILITY:
     so concurrent sessions never share/clobber each other's cached count
     (defect #2 fix).
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -239,9 +240,7 @@ def _is_agent_transcript(path: str) -> bool:
                 obj = json.loads(s.decode("utf-8", errors="replace"))
             except Exception:
                 obj = None
-            if isinstance(obj, dict) and bool(
-                {"type", "agentId", "message", "parentUuid"} & set(obj.keys())
-            ):
+            if isinstance(obj, dict) and bool({"type", "agentId", "message", "parentUuid"} & set(obj.keys())):
                 return True
             if checked >= 5:
                 break
@@ -290,10 +289,7 @@ def _is_terminal(path: str) -> bool:
             content = (obj.get("message") or {}).get("content")
             if isinstance(content, list):
                 # Pending tool call -> the agent is mid-turn, still running.
-                return not any(
-                    isinstance(part, dict) and part.get("type") == "tool_use"
-                    for part in content
-                )
+                return not any(isinstance(part, dict) and part.get("type") == "tool_use" for part in content)
             return True  # string content (pure text answer) -> done
         return False
     except Exception:
@@ -362,9 +358,7 @@ def _workflow_transcript_files(window: float = LIVENESS_WINDOW_SEC) -> list[str]
         # *.meta.json siblings are excluded. recursive=True lets ** span the
         # workflows/<runid>/ nesting level.
         session_dir_patterns = [
-            os.path.expanduser(
-                f"~/.claude/projects/{_claude_project_slug()}/*/"
-            ),
+            os.path.expanduser(f"~/.claude/projects/{_claude_project_slug()}/*/"),
             os.path.join(_claude_sessions_base(), "*/"),
         ]
 
@@ -387,9 +381,7 @@ def _workflow_transcript_files(window: float = LIVENESS_WINDOW_SEC) -> list[str]
                 if not os.path.isdir(wf_root):
                     continue
                 try:
-                    agent_files = glob.glob(
-                        os.path.join(wf_root, "**", "agent-*.jsonl"), recursive=True
-                    )
+                    agent_files = glob.glob(os.path.join(wf_root, "**", "agent-*.jsonl"), recursive=True)
                 except Exception:
                     agent_files = []
                 if not agent_files:
@@ -432,11 +424,8 @@ def live_count(
     tasks = the resolved tasks dir (or ``None`` if unresolved).
 
     A transcript is live iff:
-        NOT _is_terminal(path)  (no terminal result marker on last line)
-
-    The mtime gate has been removed. An alive-but-idle agent (no writes for a
-    long time while waiting on an LLM call) is correctly counted live regardless
-    of how long it has been quiet.
+        mtime >= cutoff                (written within the last ``window`` secs)
+        AND NOT _is_terminal(path)     (no terminal result marker on last line)
 
     Terminal detection is fail-open: an unparseable last line is treated as
     non-terminal (agent assumed running). An empty file is also treated as live
@@ -459,7 +448,7 @@ def live_count(
     total = 0
     for f in fs:
         try:
-            os.path.getmtime(f)
+            mtime = os.path.getmtime(f)
         except OSError:
             # File vanished (agent dir cleaned up): skip it.
             continue
@@ -638,9 +627,7 @@ def _write_cache(count: int, cache_file: str) -> None:
         pass
 
 
-def _count_live_total(
-    window: float = LIVENESS_WINDOW_SEC, use_cache: bool = True
-) -> int:
+def _count_live_total(window: float = LIVENESS_WINDOW_SEC, use_cache: bool = True) -> int:
     """Return ``max(claude_count, opencode_count)`` — the live-subagent count
     that drives floor enforcement. Works in either harness.
 
