@@ -13,6 +13,7 @@ Verifies that:
 
 from __future__ import annotations
 
+import datetime
 from typing import Any, cast
 from unittest.mock import MagicMock
 
@@ -23,6 +24,7 @@ from general_ludd.models.gateway import ModelGateway, ModelProfile
 # ---------------------------------------------------------------------------
 # Minimal fake provider + registry
 # ---------------------------------------------------------------------------
+
 
 class _FakeChatModel:
     """Fake LangChain-style chat model that records invocations."""
@@ -121,6 +123,7 @@ def _make_gateway(provider_cls: type) -> tuple[ModelGateway, ModelProfile]:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestBindToolsFix:
     """Verify the bind_tools fix in ModelGateway._invoke_and_bill."""
 
@@ -150,23 +153,15 @@ class TestBindToolsFix:
         base_model = constructed[0]
 
         # bind_tools must have been called on the base model.
-        assert hasattr(base_model, "_bind_tools_result"), (
-            "bind_tools() was never called on the constructed chat model"
-        )
+        assert hasattr(base_model, "_bind_tools_result"), "bind_tools() was never called on the constructed chat model"
         bound_model = base_model._bind_tools_result
 
         # The bound model must have seen the right tool schema.
-        assert bound_model._bound_tools == [_SIMPLE_TOOL_SCHEMA], (
-            f"bound_tools mismatch: {bound_model._bound_tools!r}"
-        )
+        assert bound_model._bound_tools == [_SIMPLE_TOOL_SCHEMA], f"bound_tools mismatch: {bound_model._bound_tools!r}"
 
         # The bound model must have been invoked (not the original).
-        assert bound_model._invoked_with is not None, (
-            "invoke() was not called on the bind_tools result"
-        )
-        assert base_model._invoked_with is None, (
-            "invoke() was called on the BASE model instead of the bound result"
-        )
+        assert bound_model._invoked_with is not None, "invoke() was not called on the bind_tools result"
+        assert base_model._invoked_with is None, "invoke() was called on the BASE model instead of the bound result"
 
     def test_tools_not_forwarded_to_constructor(self) -> None:
         """tools= must NOT appear in the provider constructor kwargs."""
@@ -188,9 +183,7 @@ class TestBindToolsFix:
 
         assert constructed_kwargs, "Provider constructor was never called"
         for ck in constructed_kwargs:
-            assert "tools" not in ck, (
-                f"'tools' was forwarded to provider constructor kwargs: {ck}"
-            )
+            assert "tools" not in ck, f"'tools' was forwarded to provider constructor kwargs: {ck}"
 
     def test_no_tools_path_unchanged(self) -> None:
         """When no tools= arg is given, bind_tools is never called."""
@@ -216,9 +209,7 @@ class TestBindToolsFix:
         )
 
         # The base model itself must have been invoked directly.
-        assert base_model._invoked_with is not None, (
-            "invoke() was not called on the chat model when tools= absent"
-        )
+        assert base_model._invoked_with is not None, "invoke() was not called on the chat model when tools= absent"
 
     def test_empty_tools_list_skips_bind(self) -> None:
         """tools=[] (empty list) is falsy — bind_tools must not be called."""
@@ -236,9 +227,7 @@ class TestBindToolsFix:
 
         assert response.content == "fake model response"
         base_model = constructed[0]
-        assert not hasattr(base_model, "_bind_tools_result"), (
-            "bind_tools() was called for an empty tools list"
-        )
+        assert not hasattr(base_model, "_bind_tools_result"), "bind_tools() was called for an empty tools list"
 
     def test_no_bind_tools_support_fallback(self) -> None:
         """Provider without bind_tools falls back to plain invoke (no AttributeError)."""
@@ -291,6 +280,9 @@ class TestBindToolsFix:
             profiles=[profile],
             provider_registry=registry,
             budget_guard=budget_guard,
+            # Peak-time billing clock (multiplier 1.0) keeps the cost pin
+            # deterministic against peak/off-peak pricing variance.
+            billing_clock=lambda: datetime.datetime(2026, 8, 3, 12, 0, 0, tzinfo=datetime.UTC),
         )
 
         response = gw.call_model(

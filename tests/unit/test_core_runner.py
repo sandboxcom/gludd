@@ -1,4 +1,4 @@
-"""Focused unit tests for spawn-safe Ansible timeout isolation."""
+"""Focused unit tests for thread-safe Ansible timeout isolation (forkserver-preferred, spawn fallback)."""
 
 from __future__ import annotations
 
@@ -32,9 +32,10 @@ def test_timeout_process_uses_spawn_and_module_level_target() -> None:
             playbook_path="/tmp/unit-test.yml",
         )
 
-    get_context.assert_called_once_with("spawn")
+    expected = "forkserver" if "forkserver" in core_runner.multiprocessing.get_all_start_methods() else "spawn"
+    get_context.assert_called_once_with(expected)
     target = context.Process.call_args.kwargs["target"]
-    assert target is core_runner._execute_core_in_child
+    assert target is core_runner._timeout_child_entry
     assert "<locals>" not in target.__qualname__
     assert result.status == "successful"
 
@@ -60,6 +61,7 @@ def test_timeout_child_start_failure_returns_failed_result() -> None:
 
     assert result.status == "failed"
     assert result.rc != 0
-    assert result.error == "failed to start playbook timeout child: TypeError"
+    expected = "forkserver" if "forkserver" in core_runner.multiprocessing.get_all_start_methods() else "spawn"
+    assert result.error == f"unable to start {expected} playbook timeout worker: TypeError: cannot pickle runner"
     queue.close.assert_called_once_with()
     queue.join_thread.assert_called_once_with()

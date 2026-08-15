@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 from collections.abc import Iterator
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -93,6 +94,9 @@ def _gateway(
         langsmith_tracer=tracer,
         health_tracker=health,
         stream_wire_byte_counter=wire_counter,
+        # Peak-time billing clock (multiplier 1.0) keeps record_spend pins
+        # deterministic against peak/off-peak pricing variance.
+        billing_clock=lambda: datetime.datetime(2026, 8, 3, 12, 0, 0, tzinfo=datetime.UTC),
     )
     return gateway, provider_factory, chat_model
 
@@ -228,9 +232,7 @@ def test_stream_decompression_ratio_uses_wire_counter_and_closes_upstream() -> N
 
 
 def test_encoded_stream_without_wire_counter_fails_closed() -> None:
-    upstream = _ClosingIterator(
-        [_chunk("payload", metadata={"content_encoding": "gzip"})]
-    )
+    upstream = _ClosingIterator([_chunk("payload", metadata={"content_encoding": "gzip"})])
     gateway, _, _ = _gateway(_profile(), upstream)
 
     with pytest.raises(StreamLimitError) as caught:
@@ -293,9 +295,7 @@ def test_consumer_close_cancels_upstream_without_success_side_effects() -> None:
         health=health,
     )
 
-    stream = gateway.call_model_stream(
-        "streamed", [{"role": "user", "content": "hi"}]
-    )
+    stream = gateway.call_model_stream("streamed", [{"role": "user", "content": "hi"}])
     assert next(stream).content == "first"
     stream.close()
 
