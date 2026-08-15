@@ -3624,6 +3624,16 @@ ci-verdict-safe:
 	$(PYTHON) scripts/ci_check_cooldown.py record-verdict $$V $$SHA; \
 	exit $$RC
 
+# ci-record-verdict: record a known CI verdict directly (no cooldown, no gh
+# call). For adjudicating already-completed runs when the cooldown would
+# block ci-verdict-safe, and for resetting the AA023 restart cap via a
+# terminal verdict. VERDICT: success|failure|pending. SHA: the commit the
+# verdict refers to.
+ci-record-verdict:
+	@[ -n "$(VERDICT)" ] || { echo "Usage: make ci-record-verdict VERDICT='failure' SHA=<sha>"; exit 1; }
+	@$(PYTHON) scripts/ci_check_cooldown.py record-verdict $(VERDICT) $(SHA)
+	@echo "recorded verdict $(VERDICT) for $(SHA)"
+
 # ci-diagnose: fetch CI failure annotations and group by root cause.
 # Prints a compact diagnosis: run id, conclusion, top-5 failure clusters.
 # Exits 0 if CI is GREEN, 1 if RED (with diagnosis printed).
