@@ -469,6 +469,8 @@ src/general_ludd/hardware_memory_policy.py:evaluate_model_fit
 src/general_ludd/hardware_memory_policy.py:model_guidance
 src/general_ludd/hardware_memory_policy.py:recommend_models
 src/general_ludd/hash_table.py:HashTable
+src/general_ludd/infra/compute_discovery.py:DiscoveryService
+src/general_ludd/infra/compute_discovery.py:select_resource
 src/general_ludd/infra/discovery.py:KubernetesProbe
 src/general_ludd/infra/discovery.py:VSphereProbe
 src/general_ludd/infra/gpu_metrics.py:reset_probe
@@ -615,7 +617,6 @@ src/general_ludd/security/sandboxes/freebsd_jail.py:render_pf_rules
 src/general_ludd/security/sandboxes/linux_selinux.py:render_fc
 src/general_ludd/security/sandboxes/linux_selinux.py:render_te
 src/general_ludd/security/sandboxes/windows_appcontainer.py:render_icacls
-src/general_ludd/security/sanitize.py:sanitize_skill_name
 src/general_ludd/security/sanitize.py:validate_fetch_url
 src/general_ludd/security/session_ttl.py:SessionManager
 src/general_ludd/security/ssh_key_rotation.py:record_rotation
@@ -649,12 +650,10 @@ src/general_ludd/small_models/model_hash_db.py:merge_known_models
 src/general_ludd/small_models/quant_check.py:GGUFMetadata
 src/general_ludd/small_models/quant_check.py:verify_gguf_header
 src/general_ludd/ssl/certificate.py:validate_chain
-src/general_ludd/ssl/tls13_handshake.py:HandshakePeerError
 src/general_ludd/ssl/tls13_handshake.py:Tls13Handshake
 src/general_ludd/ssl/tls13_handshake.py:generate_ec_certificate
 src/general_ludd/ssl/tls13_handshake.py:generate_ec_key_pair
 src/general_ludd/ssl/tls13_handshake.py:generate_key_share
-src/general_ludd/ssl/tls13_handshake.py:generate_self_signed_cert
 src/general_ludd/storage/bptree.py:BPlusTree
 src/general_ludd/storage/lsm_tree.py:LSMEngine
 src/general_ludd/storage/merkle_dag.py:MerkleDAG
@@ -670,8 +669,6 @@ src/general_ludd/util/crc.py:internet_checksum_verify
 src/general_ludd/util/crc.py:xor16_checksum
 src/general_ludd/util/crc.py:xor32_checksum
 src/general_ludd/util/crc.py:xor8_checksum
-src/general_ludd/util/debounce_v2.py:AsyncDebounceV2
-src/general_ludd/util/debounce_v2.py:DebounceV2
 src/general_ludd/util/lru_cache.py:LRUCache
 src/general_ludd/util/memoize.py:memoize_lfu
 src/general_ludd/util/memoize.py:memoize_lru
