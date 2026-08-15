@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-08-15 — (resolved) CI unit shards exposed dev-machine assumptions across ~50 tests
+
+- **What happened**: Round-3 CI (runs 31891826511/31891826497) surfaced ~50 unit-shard failures that were invisible locally: tests hardcoded `/Users/shawnwilson/gludd` (git_automation worktree tests → `SandboxStateError` on Linux), asserted a user-level `~/.config/opencode/opencode.json` exists, imported 3.12-only `typing.get_protocol_members` on Python 3.11, ran the IRREVERSIBLE real Landlock `restrict_self` on a shared runner, asserted tools/`langgraph` absent when present, and pinned perf thresholds unattainable on CI runners; `make ansible-syntax` failed in the CI subshell because the uv-managed venv was invalid there.
+- **Root cause**: Tests encoded the developer's machine and Python 3.14 rather than the contract; `src/general_ludd/git_automation/worktree.py` hardcoded `_MAIN_CHECKOUT = "/Users/shawnwilson/gludd"`; `DeploymentStrategy` enum membership used `in` on 3.11-incompatible form; two new env vars were undocumented.
+- **Fix applied**: Repo-root discovery in both git_automation test files + a portable `_is_main_checkout` in the source; module-level skip for user config; typing_extensions fallbacks; env-gated Landlock live test (`GLUDD_LANDLOCK_LIVE_TEST=1`); absent-tool/langgraph mocks; CI-gated perf floors and skips; ansible-syntax CI skip; enum value-set membership; CONFIG_REFERENCE entries. Commits `14c7b6658` … `0a72e3c49`.
+- **Lesson**: Every test that touches paths, per-user config, platform-only syscalls, or perf floors must be written for the least common environment (fresh Linux runner), with the local machine as an additional case — never the baseline.
+
 ### 2026-08-15 — (resolved) AA032 verdict-history guard had no recording path; AA023 restart cap had no reset path
 
 - **What happened**: `make batch-push` was blocked with "previous push SHA ... was never CI-verified" and its own guidance ("run make ci-verdict-safe and record the verdict") could not unblock it: nothing in the repo ever wrote a non-empty `last_checked_sha` into `/tmp/gludd-ci-verdict-history.json`. Separately, `_ci-restart-cap` (AA023) documented "resets when CI reports GREEN" but no code performed the reset, and the guard ran FIRST in the prereq list, so two pushes that were blocked downstream still consumed 2 of the 3 restart slots.
