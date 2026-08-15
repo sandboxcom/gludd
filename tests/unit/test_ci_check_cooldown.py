@@ -44,10 +44,19 @@ def _write_state(path: Path, **fields: object) -> None:
 
 @pytest.fixture
 def isolated_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Point ci_check_cooldown at a per-test state file under tmp_path."""
+    """Point ci_check_cooldown at per-test state files under tmp_path.
+
+    Isolates ALL THREE state files (check-state, verdict-history, and the
+    AA023 restart counter) — without this, terminal-verdict tests reset the
+    real /tmp/gludd-ci-restart-count and pollute the real verdict-history
+    file, corrupting the live push-guard state (2026-08-15 incident)."""
     state_file = tmp_path / "state.json"
+    history_file = tmp_path / "history.json"
+    restart_file = tmp_path / "restart-count"
     monkeypatch.setenv("GLUDD_CI_STATE_FILE", str(state_file))
     monkeypatch.setattr(ci_check_cooldown, "STATE_FILE", state_file)
+    monkeypatch.setattr(ci_check_cooldown, "HISTORY_FILE", history_file)
+    monkeypatch.setattr(ci_check_cooldown, "RESTART_COUNT_FILE", restart_file)
     return state_file
 
 
