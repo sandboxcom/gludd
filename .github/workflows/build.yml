@@ -599,6 +599,11 @@ jobs:
         env:
           GLUDD_AUTH_PSK: ""
           GLUDD_XDIST_WORKERS: auto
+          # Piped pytest stdout is block-buffered without this, so the
+          # adaptive runner's no-progress watchdog sees zero lines for a
+          # healthy-but-slow shard and kills it (CI unit-3 no-progress
+          # timeout, 2026-08-15). Line-buffering keeps the heartbeat fed.
+          PYTHONUNBUFFERED: "1"
           # GitHub Actions already sets CI=true for every step; set it explicitly
           # here so the adaptive runner's CI branch (skip the load cap, size by
           # RAM + cores) is deterministic and self-documenting even if that
