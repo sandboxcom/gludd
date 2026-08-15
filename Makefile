@@ -3464,7 +3464,7 @@ batch-push-nv: check-clean-tree _no-bypass-guard _stash-before-push-guard _ci-re
 # Batch push: only push after substantial local work (default 5+ unpushed commits).
 # Override: GLUDD_FORCE_PUSH=1. COMMIT_THRESHOLD=1 is blocked.
 # This is the RECOMMENDED push target. Use instead of git-push-sandboxcom directly.
-batch-push: check-clean-tree _no-bypass-guard _stash-before-push-guard _pull-before-push-guard _ci-verdict-history-guard _pre-commit-stash-audit _ci-restart-cap
+batch-push: check-clean-tree _no-bypass-guard _stash-before-push-guard _pull-before-push-guard _ci-verdict-history-guard _pre-commit-stash-audit _ci-restart-cap _push-rate-guard
 	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
 	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
 	if [ "$$THRESHOLD" = "1" ]; then \
@@ -3477,7 +3477,9 @@ batch-push: check-clean-tree _no-bypass-guard _stash-before-push-guard _pull-bef
 		exit 0; \
 	fi; \
 	echo "$$COUNT unpushed commits, threshold met. Pushing..."; \
-	$(MAKE) git-push-sandboxcom
+	BRANCH=$$(git branch --show-current); \
+	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom HEAD:$$BRANCH; \
+	echo "Pushed $$BRANCH to sandboxcom/gludd ($$COUNT commits)"
 
 force-batch-push:
 	@GLUDD_FORCE_PUSH=1 $(MAKE) batch-push FORCE=1
