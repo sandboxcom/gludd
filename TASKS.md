@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-10 Session 82. HEAD `6c0e4f06` on `development`. Tree CLEAN. 2 dispatch waves completed (+490 tests: 145 wave 1 + 345 wave 2). OpenCode DB cleanup safety + gate drift repairs (S82.0–S82.2). Model coverage deep-dives (S82.3–S82.4). 12 commits from `d4c84303`..`6c0e4f06`. Gate-background RUNNING PID 42003. Lint PASS 0. Enforcement 13/13 BLOCKING, 125 runtime PASS. Release v0.1.0-beta.3 shipped.**
+**Last consolidated: 2026-08-15 Session 85. HEAD `253cc1c0` on `development`. Tree CLEAN. CI round 2 (run 31890275650/31890275652 on `df0196d9d`) diagnosed: molecule config_loading + daemon_lifecycle PASS; binary_smoke linux/macos (filelock._windows exclude bug) and local_game_gen (sse_starlette) fixed locally and committed; enforce-floor experimental.text.complete pass-through restored (60/60 pins green); push guardrails AA032/AA023 root-cause fixed. Remaining: push 6 local commits → CI green → development-merge-to-master → release-cut v0.1.0-beta.4.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
