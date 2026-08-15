@@ -19,6 +19,26 @@ from general_ludd.routers import compute as compute_router
 from general_ludd.routers.compute import register
 
 
+def _inject_admin_auth(app):
+    from general_ludd.security.permissions import (
+        Capability,
+        PermissionSpec,
+        PermissionSubject,
+    )
+
+    spec = PermissionSpec(
+        agent_type="admin-test",
+        capabilities=[Capability(resource="admin:compute", actions=["destroy"], constraints={})],
+        subject=PermissionSubject.HUMAN,
+    )
+
+    async def _attach_auth_spec(request, call_next):
+        request.state.auth_spec = spec
+        return await call_next(request)
+
+    app.middleware("http")(_attach_auth_spec)
+
+
 def test_azure_a100_shapes_are_public_compute_values() -> None:
     assert ComputeProvider("azure") is ComputeProvider.AZURE
     assert GPUType("a100_40") is GPUType.A100_40
@@ -29,10 +49,7 @@ def test_compute_router_registers_read_only_azure_preflight() -> None:
     app = FastAPI()
     register(app, {})
 
-    routes = {
-        (route.path, frozenset(route.methods or set()))
-        for route in app.routes
-    }
+    routes = {(route.path, frozenset(route.methods or set())) for route in app.routes}
     assert (
         "/admin/compute/azure/preflight",
         frozenset({"POST"}),
@@ -231,9 +248,7 @@ def test_deploy_rejects_unknown_values_and_defaults_unknown_engine() -> None:
     assert unknown_gpu.status_code == 422
     assert unknown_gpu.json()["detail"] == "Unknown GPU type: not-a-gpu"
     assert unknown_provider.status_code == 422
-    assert unknown_provider.json()["detail"] == (
-        "Unknown provider: not-a-provider"
-    )
+    assert unknown_provider.json()["detail"] == ("Unknown provider: not-a-provider")
     assert default_engine.status_code == 200
     deployed_config = manager.deploy.await_args.args[0]
     assert deployed_config.engine is InferenceEngine.VLLM
@@ -241,10 +256,11 @@ def test_deploy_rejects_unknown_values_and_defaults_unknown_engine() -> None:
 
 def test_compute_destroy_removes_records_and_translates_provider_failure() -> None:
     manager = MagicMock()
-    manager.get_deployment.return_value = object()
+    manager.get_deployment_shared = AsyncMock(return_value=object())
     manager.destroy = AsyncMock()
     app = FastAPI()
     register(app, {})
+    _inject_admin_auth(app)
     app.state._deployment_manager = manager
     app.state._compute_deployments = {
         "i-complete": object(),
@@ -459,9 +475,7 @@ def test_failed_endpoint_registration_rolls_back_paid_deployment(
     )
 
     assert response.status_code == 500
-    assert response.json()["detail"] == (
-        "compute endpoint registration failed; deployment rolled back"
-    )
+    assert response.json()["detail"] == ("compute endpoint registration failed; deployment rolled back")
     manager.destroy.assert_awaited_once_with("i-unregistered")
     assert "i-unregistered" not in app.state._compute_deployments
 
@@ -471,18 +485,20 @@ def test_deployment_listing_lazily_constructs_and_caches_manager(
 ) -> None:
     created_at = datetime(2026, 7, 29, 12, 30, tzinfo=UTC)
     manager = MagicMock()
-    manager.list_deployments.return_value = [
-        SimpleNamespace(
-            instance_id="i-persisted",
-            provider="aws",
-            model_name="org/model",
-            state="running",
-            ip_address="192.0.2.30",
-            endpoint_url="https://gpu.example/v1",
-            working_dir="/tmp/gludd-compute-i-persisted",
-            created_at=created_at,
-        )
-    ]
+    manager.list_deployments_shared = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                instance_id="i-persisted",
+                provider="aws",
+                model_name="org/model",
+                state="running",
+                ip_address="192.0.2.30",
+                endpoint_url="https://gpu.example/v1",
+                working_dir="/tmp/gludd-compute-i-persisted",
+                created_at=created_at,
+            )
+        ]
+    )
     manager_factory = MagicMock(return_value=manager)
     mkdir = MagicMock()
     monkeypatch.setattr(compute_router, "DeploymentManager", manager_factory)
@@ -518,10 +534,13 @@ def test_deployment_listing_lazily_constructs_and_caches_manager(
     }
     assert first.json() == expected
     assert second.json() == expected
-    manager_factory.assert_called_once_with(
-        secrets_resolver=resolver,
-        working_dir="/tmp/gludd-compute-tests/deployments",
-    )
+    assert manager_factory.call_count == 1
+    call = manager_factory.call_args
+    assert call is not None
+    assert call.kwargs["secrets_resolver"] is resolver
+    assert call.kwargs["working_dir"] == "/tmp/gludd-compute-tests/deployments"
+    assert call.kwargs["session_factory"] is None
+    assert call.kwargs["worker_id"].startswith("router-")
     mkdir.assert_called_once_with(
         "/tmp/gludd-compute-tests/deployments",
         exist_ok=True,

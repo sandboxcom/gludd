@@ -117,6 +117,9 @@ class TestFileIntegrity:
             "Qwen/Qwen2.5-0.5B-GGUF",
             "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
             "microsoft/phi-2",
+            "deepseek-ai/DeepSeek-Coder-1.3B",
+            "meta-llama/Llama-3.2-1B",
+            "microsoft/Phi-3-mini-4k-instruct",
         }
         assert set(result.keys()) == expected
 

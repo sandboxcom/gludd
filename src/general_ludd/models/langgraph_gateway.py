@@ -28,6 +28,8 @@ class ReviewVerdict(BaseModel):
 
 
 class GraphState(TypedDict, total=False):
+    """Mutable state shared across langgraph pipeline steps."""
+
     messages: list[object]
     task_context: dict[str, object]
     classification: str | None
@@ -65,6 +67,7 @@ class LangGraphGateway:
         quality_threshold: float = 0.6,
         enable_graph: bool = True,
     ) -> None:
+        """Initialize the gateway with optional model-call and routing hooks."""
         self._call_model: Any = call_model_fn
         self._router: Any = adaptive_router
         self._scoring: Any = scoring_engine
@@ -75,7 +78,13 @@ class LangGraphGateway:
         self._has_langgraph = False
         try:
             import importlib.util
-            self._has_langgraph = importlib.util.find_spec("langgraph.graph") is not None
+            import sys
+
+            # sys.modules-first: a partially loaded (or test-injected) langgraph
+            # counts as available, matching what a real import would observe.
+            self._has_langgraph = (
+                "langgraph.graph" in sys.modules or importlib.util.find_spec("langgraph.graph") is not None
+            )
         except (ImportError, ValueError, ModuleNotFoundError):
             self._has_langgraph = False
 
@@ -274,7 +283,6 @@ class LangGraphGateway:
 
     async def _execute_graph_steps(self, state: GraphState) -> dict[str, object]:
         max_retries = self._max_retries
-        warnings: list[str] = list(state.get("warnings", []))
 
         while state["retry_count"] <= max_retries:
             state = await self._classify_step(state)
@@ -289,16 +297,18 @@ class LangGraphGateway:
             else:
                 if state["retry_count"] < max_retries:
                     state["retry_count"] += 1
-                    warnings.append(
+                    state["warnings"] = [
+                        *list(state.get("warnings", [])),
                         "Retry {}/{}: quality {:.2f} < threshold {}".format(
                             state["retry_count"], max_retries, (quality or 0.0), self._quality_threshold
-                        )
-                    )
+                        ),
+                    ]
                 else:
                     state["final_output"] = state["generated_output"]
-                    warnings.append(
-                        f"Max retries reached ({max_retries}), returning best output with quality {quality:.2f}"
-                    )
+                    state["warnings"] = [
+                        *list(state.get("warnings", [])),
+                        f"Max retries reached ({max_retries}), returning best output with quality {quality:.2f}",
+                    ]
                     break
 
         return {
@@ -307,7 +317,7 @@ class LangGraphGateway:
             "prompt": state.get("selected_prompt"),
             "quality_score": state.get("quality_score"),
             "retries": state["retry_count"],
-            "warnings": warnings,
+            "warnings": list(state.get("warnings", [])),
         }
 
     async def _classify_step(self, state: GraphState) -> GraphState:

@@ -32,7 +32,7 @@ def sanitize_exc_message(exc: BaseException) -> str:
     attacker-controlled exception text, credentials, paths, or URLs into logs.
     """
     error_type = type(exc).__name__
-    logger.warning("connector exception sanitized type=%s", error_type, exc_info=True)
+    logger.warning("connector exception sanitized type=%s", error_type)
     return error_type
 
 

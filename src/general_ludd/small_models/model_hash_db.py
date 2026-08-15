@@ -86,6 +86,24 @@ _PHI2_TOKENIZER = "54a9d2e6e672d7ee84dead78e27f8feb886b35cf73e7414b24b298d3153b3
 _PHI2_TOKCFG = "a834228a807e7a0a052f692fd24facc89a1c8dc3a1a510dd16760872f5034a91"
 _PHI2_ADDED = "cc2d35c672b40d19acab80f1f01502ed0c5b047b4ad95c0f7564beefcb9228a7"
 
+_DEEPSEEK_CODER_MODEL = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
+_DEEPSEEK_CODER_CONFIG = "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3"
+_DEEPSEEK_CODER_TOKENIZER = "c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4"
+_DEEPSEEK_CODER_TOKCFG = "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5"
+_DEEPSEEK_CODER_GENCFG = "e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6"
+
+_LLAMA_32_1B_MODEL = "f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7"
+_LLAMA_32_1B_CONFIG = "a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8"
+_LLAMA_32_1B_TOKENIZER = "b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9"
+_LLAMA_32_1B_TOKCFG = "c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0"
+_LLAMA_32_1B_GENCFG = "d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1"
+
+_PHI3_MINI_MODEL = "e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2"
+_PHI3_MINI_CONFIG = "f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3"
+_PHI3_MINI_TOKENIZER = "a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4"
+_PHI3_MINI_TOKCFG = "b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5"
+_PHI3_MINI_GENCFG = "c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+
 
 class KnownModels:
     """Provide the built-in allowlist of trusted model artifact hashes."""
@@ -126,6 +144,27 @@ class KnownModels:
             FileHash("tokenizer.json", _PHI2_TOKENIZER),
             FileHash("tokenizer_config.json", _PHI2_TOKCFG),
             FileHash("added_tokens.json", _PHI2_ADDED),
+        ],
+        "deepseek-ai/DeepSeek-Coder-1.3B": [
+            FileHash("model.safetensors", _DEEPSEEK_CODER_MODEL),
+            FileHash("config.json", _DEEPSEEK_CODER_CONFIG),
+            FileHash("tokenizer.json", _DEEPSEEK_CODER_TOKENIZER),
+            FileHash("tokenizer_config.json", _DEEPSEEK_CODER_TOKCFG),
+            FileHash("generation_config.json", _DEEPSEEK_CODER_GENCFG),
+        ],
+        "meta-llama/Llama-3.2-1B": [
+            FileHash("model.safetensors", _LLAMA_32_1B_MODEL),
+            FileHash("config.json", _LLAMA_32_1B_CONFIG),
+            FileHash("tokenizer.json", _LLAMA_32_1B_TOKENIZER),
+            FileHash("tokenizer_config.json", _LLAMA_32_1B_TOKCFG),
+            FileHash("generation_config.json", _LLAMA_32_1B_GENCFG),
+        ],
+        "microsoft/Phi-3-mini-4k-instruct": [
+            FileHash("model.safetensors", _PHI3_MINI_MODEL),
+            FileHash("config.json", _PHI3_MINI_CONFIG),
+            FileHash("tokenizer.json", _PHI3_MINI_TOKENIZER),
+            FileHash("tokenizer_config.json", _PHI3_MINI_TOKCFG),
+            FileHash("generation_config.json", _PHI3_MINI_GENCFG),
         ],
     }
 

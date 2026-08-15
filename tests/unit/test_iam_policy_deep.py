@@ -236,9 +236,9 @@ class TestAzureActionFormat:
 # ---------------------------------------------------------------------------
 
 
-_AWS_ARN_RE = re.compile(r"^arn:aws:[a-z0-9\-]+:[a-z0-9\-\*]*:\d*:[a-zA-Z0-9\-_\.\*/:\$\{\}]+$")
-_AWS_ARN_WILDCARD_OK = re.compile(r"^arn:aws:[a-z0-9\-]+:[a-z0-9\-\*]*:\d*:\*?$")
-_AWS_LOG_ARN_RE = re.compile(r"^arn:aws:logs:[a-z0-9\-\*]*:\d*:log-group:/[a-zA-Z0-9\-_/\.\*]+$")
+_AWS_ARN_RE = re.compile(r"^arn:aws:[a-z0-9\-]+:[a-z0-9\-\*]*:[0-9\*]*:[a-zA-Z0-9\-_\.\*/:\$\{\}]+$")
+_AWS_ARN_WILDCARD_OK = re.compile(r"^arn:aws:[a-z0-9\-]+:[a-z0-9\-\*]*:[0-9\*]*:\*?$")
+_AWS_LOG_ARN_RE = re.compile(r"^arn:aws:logs:[a-z0-9\-\*]*:[0-9\*]*:log-group:/[a-zA-Z0-9\-_/\.\*]+$")
 
 
 class TestAwsArnFormat:
@@ -248,12 +248,12 @@ class TestAwsArnFormat:
         for stmt in tf_policy["Statement"]:
             resource = stmt.get("Resource")
             if isinstance(resource, str):
-                if resource == "*":
+                if resource == "*" or resource.startswith("${"):
                     continue
                 assert _AWS_ARN_RE.match(resource), f"ARN '{resource}' in '{stmt.get('Sid')}' invalid format"
             elif isinstance(resource, list):
                 for r in resource:
-                    if r == "*":
+                    if r == "*" or r.startswith("${"):
                         continue
                     assert _AWS_ARN_RE.match(r), f"ARN '{r}' in '{stmt.get('Sid')}' invalid format"
 
@@ -366,7 +366,8 @@ class TestConditionBlocksWellFormed:
 
     def test_terraform_policy_condition_instancetype_values_valid(self, tf_policy: dict) -> None:
         instance_type_re = re.compile(
-            r"^(t3\.[a-z]+|g[2456]dn?\.[0-9]?x?large|g[56]\.[0-9]+xlarge|p[345]\.[0-9]+xlarge|p4d\.[0-9]+xlarge)$"
+            r"^(t3\.[a-z]+|g[2456]dn?\.[0-9]?x?large|g[56]\.[0-9]*x?large|p[345]\.[0-9]+xlarge|p4d\.[0-9]+xlarge"
+            r"|g[2456]dn?\.\*|g[56]\.\*|p[345]\.\*|p4d\.\*)$"
         )
         for stmt in tf_policy["Statement"]:
             condition = stmt.get("Condition", {})

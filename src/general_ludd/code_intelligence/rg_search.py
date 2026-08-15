@@ -124,14 +124,20 @@ class RgSearch:
         # via `globs`/`types`. Anything else is dropped with a warning so a caller
         # (or untrusted config) can never inject arbitrary rg flags (e.g.
         # --passthru, -e, --pre) past the `--` guard.
-        _SAFE_FLAGS = frozenset({
-            "-i", "--ignore-case",
-            "-w", "--word-regexp",
-            "-F", "--fixed-strings",
-            "--multiline",
-            "-U",
-            "-s", "--case-sensitive",
-        })
+        _SAFE_FLAGS = frozenset(
+            {
+                "-i",
+                "--ignore-case",
+                "-w",
+                "--word-regexp",
+                "-F",
+                "--fixed-strings",
+                "--multiline",
+                "-U",
+                "-s",
+                "--case-sensitive",
+            }
+        )
         for flag in flags or []:
             if flag in _SAFE_FLAGS:
                 argv.append(flag)
@@ -202,9 +208,6 @@ class RgSearch:
         except OSError:
             return RgResult(available=False, error=f"Cannot resolve root: {root}")
 
-        if not resolved.is_dir():
-            return RgResult(available=False, error=f"Search root is not a directory: {root}")
-
         if is_denied_path(str(resolved)):
             return RgResult(available=False, error=f"Path denied: {root}")
 
@@ -213,11 +216,16 @@ class RgSearch:
             try:
                 allowed_resolved = Path(allowed_root).resolve()
                 resolved.relative_to(allowed_resolved)
-                return str(resolved)
+                break
             except (ValueError, OSError):
                 continue
+        else:
+            return RgResult(available=False, error=f"Path outside allowed directories: {root}")
 
-        return RgResult(available=False, error=f"Path outside allowed directories: {root}")
+        if not resolved.is_dir():
+            return RgResult(available=False, error=f"Search root is not a directory: {root}")
+
+        return str(resolved)
 
     # --- run ------------------------------------------------------------
 

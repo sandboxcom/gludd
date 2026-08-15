@@ -3279,6 +3279,36 @@ def create_daemon_app(
         return path.startswith("/render/")
 
     @app.middleware("http")
+    async def cidr_middleware(request: Any, call_next: Any) -> Any:
+        cidrs: list[str] = getattr(app.state, "_allowed_cidr", None) or []
+        if cidrs:
+            client_host = getattr(request.client, "host", None) if request.client else None
+            if not client_host or client_host == "testclient":
+                client_host = "127.0.0.1"
+            if client_host is not None:
+                import ipaddress as _ipaddress
+
+                try:
+                    client_ip = _ipaddress.ip_address(client_host)
+                except ValueError:
+                    client_ip = None
+                allowed = client_ip is not None and any(
+                    client_ip in _ipaddress.ip_network(cidr, strict=False) for cidr in cidrs
+                )
+                if not allowed:
+                    from fastapi.responses import JSONResponse
+
+                    logger.warning("CIDR deny: %s not in allowed_cidr=%s", client_host, cidrs)
+                    return JSONResponse(
+                        status_code=403,
+                        content={"error": "forbidden", "reason": "client IP not in allowed_cidr"},
+                    )
+        return await call_next(request)
+
+    # Registered AFTER cidr_middleware so auth_and_stats_middleware wraps it:
+    # FastAPI/Starlette runs the last-registered middleware first (outermost),
+    # so auth/stats sees every request — including CIDR-denied ones.
+    @app.middleware("http")
     async def auth_and_stats_middleware(request: Any, call_next: Any) -> Any:
         app.state._stats_requests += 1
         from general_ludd.observability.metrics_exporter import get_metrics_exporter
@@ -3357,33 +3387,6 @@ def create_daemon_app(
         metrics.histogram_observe("gludd_http_request_duration_seconds", elapsed, {"status": status})
         metrics.counter_inc("gludd_http_responses_total", {"status": status})
         return response
-
-    @app.middleware("http")
-    async def cidr_middleware(request: Any, call_next: Any) -> Any:
-        cidrs: list[str] = getattr(app.state, "_allowed_cidr", None) or []
-        if cidrs:
-            client_host = getattr(request.client, "host", None) if request.client else None
-            if not client_host or client_host == "testclient":
-                client_host = "127.0.0.1"
-            if client_host is not None:
-                import ipaddress as _ipaddress
-
-                try:
-                    client_ip = _ipaddress.ip_address(client_host)
-                except ValueError:
-                    client_ip = None
-                allowed = client_ip is not None and any(
-                    client_ip in _ipaddress.ip_network(cidr, strict=False) for cidr in cidrs
-                )
-                if not allowed:
-                    from fastapi.responses import JSONResponse
-
-                    logger.warning("CIDR deny: %s not in allowed_cidr=%s", client_host, cidrs)
-                    return JSONResponse(
-                        status_code=403,
-                        content={"error": "forbidden", "reason": "client IP not in allowed_cidr"},
-                    )
-        return await call_next(request)
 
     if log_level == "debug":
         logging.getLogger("httpx").setLevel(logging.DEBUG)

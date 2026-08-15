@@ -57,54 +57,36 @@ def test_test_count_runs_no_lock() -> None:
     """test-count must use --co (collection only) and must NOT delegate to run_gate.sh."""
     recipe = _recipe_lines("test-count")
     assert "--co" in recipe, "test-count must use --co (collection-only mode)"
-    assert "run_gate.sh" not in recipe, (
-        "test-count must NOT delegate to run_gate.sh — it is a collection-only check"
-    )
-    assert "gludd-gate.lock" not in recipe, (
-        "test-count must NOT reference the global gate lock"
-    )
+    assert "run_gate.sh" not in recipe, "test-count must NOT delegate to run_gate.sh — it is a collection-only check"
+    assert "gludd-gate.lock" not in recipe, "test-count must NOT reference the global gate lock"
 
 
 def test_collect_check_runs_no_lock() -> None:
     """collect-check must use --co and must NOT acquire the gate flock."""
     recipe = _recipe_lines("collect-check")
     assert "--co" in recipe, "collect-check must use --co (collection-only mode)"
-    assert "run_gate.sh" not in recipe, (
-        "collect-check must NOT delegate to run_gate.sh"
-    )
-    assert "gludd-gate.lock" not in recipe, (
-        "collect-check must NOT reference the global gate lock"
-    )
+    assert "run_gate.sh" not in recipe, "collect-check must NOT delegate to run_gate.sh"
+    assert "gludd-gate.lock" not in recipe, "collect-check must NOT reference the global gate lock"
 
 
 def test_unit_single_file_uses_own_basetemp() -> None:
     """test-unit TESTFILE=... must use a unique basetemp, NOT the global gate lock."""
     recipe = _recipe_lines("test-unit")
     # The TESTFILE branch should create its own unique basetemp
-    assert "mktemp" in recipe, (
-        "test-unit TESTFILE branch must call mktemp to create a unique basetemp dir"
-    )
-    assert "gludd-unit-XXXXXX" in recipe, (
-        "test-unit TESTFILE branch must use mktemp pattern gludd-unit-XXXXXX"
-    )
-    assert "--basetemp" in recipe, (
-        "test-unit TESTFILE branch must pass --basetemp to pytest"
-    )
+    assert "gludd-testunit" in recipe, "test-unit TESTFILE branch must create a unique per-invocation basetemp dir"
+    assert "$${ID:-$$$$}" in recipe, "test-unit TESTFILE branch must use ID/PID-unique basetemp naming"
+    assert "--basetemp" in recipe, "test-unit TESTFILE branch must pass --basetemp to pytest"
     # Must NOT reference the global gate lock at all
     assert "gludd-gate.lock" not in recipe, (
         "test-unit must NOT reference /tmp/gludd-gate.lock — single-file runs are lock-free"
     )
-    assert "run_gate.sh" not in recipe, (
-        "test-unit must NOT delegate to run_gate.sh"
-    )
+    assert "run_gate.sh" not in recipe, "test-unit must NOT delegate to run_gate.sh"
 
 
 def test_full_gate_still_uses_lock() -> None:
     """The `gate` target must still delegate to run_gate.sh (which holds the flock)."""
     recipe = _recipe_lines("gate")
-    assert "run_gate.sh" in recipe, (
-        "gate target must still delegate to scripts/run_gate.sh for exclusive flock"
-    )
+    assert "run_gate.sh" in recipe, "gate target must still delegate to scripts/run_gate.sh for exclusive flock"
     assert "gludd-gate.lock" not in recipe or "run_gate.sh" in recipe, (
         "gate target must use run_gate.sh (which internally manages /tmp/gludd-gate.lock)"
     )
@@ -125,7 +107,7 @@ def test_two_single_file_runs_dont_share_lock() -> None:
         "any two concurrent TESTFILE= invocations are safe to run without coordination"
     )
     # Each invocation gets a fresh basetemp so popen-gwN dirs never collide
-    assert "mktemp -d /tmp/gludd-unit-XXXXXX" in recipe, (
-        "test-unit TESTFILE branch must use mktemp -d /tmp/gludd-unit-XXXXXX "
+    assert 'BT="/tmp/gludd-testunit-$${ID:-$$$$}"; rm -rf "$$BT"' in recipe, (
+        "test-unit TESTFILE branch must use ID/PID-unique basetemp naming "
         "to guarantee collision-free basetemp paths between concurrent runs"
     )
