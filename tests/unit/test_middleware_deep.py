@@ -44,8 +44,14 @@ class TestMiddlewareOrdering:
     """
 
     @pytest.mark.asyncio
-    async def test_auth_middleware_registered_before_cidr(self):
-        """Prove auth middleware is declared higher in source than CIDR."""
+    async def test_cidr_middleware_registered_before_auth(self):
+        """Prove cidr middleware is declared higher in source than auth.
+
+        FastAPI/Starlette runs the LAST-registered middleware first
+        (outermost), so declaring cidr first makes auth_and_stats_middleware
+        the outermost wrapper — auth/stats sees every request, including
+        CIDR-denied ones.
+        """
         import inspect
 
         from general_ludd import daemon as daemon_mod
@@ -55,7 +61,7 @@ class TestMiddlewareOrdering:
         cidr_idx = src.find("cidr_middleware")
         assert auth_idx >= 0, "auth_and_stats_middleware not in source"
         assert cidr_idx >= 0, "cidr_middleware not in source"
-        assert auth_idx < cidr_idx, "auth middleware must be declared before cidr middleware"
+        assert cidr_idx < auth_idx, "cidr middleware must be declared before auth middleware"
 
     @pytest.mark.asyncio
     async def test_both_middleware_are_http_type(self):
@@ -172,9 +178,12 @@ class TestAuthMiddleware:
     @pytest.mark.asyncio
     async def test_no_auth_require_auth_returns_503(self):
         """fail-closed: no PSK + require_auth → 503 on non-public paths."""
-        with patch.dict(os.environ, {}, clear=True), patch.dict(
-            os.environ,
-            {"GLUDD_REQUIRE_AUTH": "1"},
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch.dict(
+                os.environ,
+                {"GLUDD_REQUIRE_AUTH": "1"},
+            ),
         ):
             from general_ludd.daemon import create_daemon_app
 

@@ -862,7 +862,7 @@ class TestModelPipelineDeep:
         )
         pipeline.run(initial_context="")
         call_args = gw.call_model.call_args
-        assert call_args[0][2] == 0.0
+        assert call_args.kwargs["estimated_cost"] == 0.0
 
     def test_gateway_receives_infinite_budget(self):
         gw = _make_gateway(["resp"])
@@ -873,7 +873,7 @@ class TestModelPipelineDeep:
         )
         pipeline.run(initial_context="")
         call_args = gw.call_model.call_args
-        assert call_args[0][3] == float("inf")
+        assert call_args.kwargs["budget_remaining"] == float("inf")
 
     def test_step_result_fields_are_independent(self):
         sr = StepResult(

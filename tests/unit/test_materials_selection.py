@@ -342,7 +342,7 @@ class TestRankCandidates:
             }
         )
         margins = {m["requirement_id"]: m["state"] for m in result["nominal"][0]["margins"]}
-        assert margins.get("") == "pass"
+        assert margins.get("yield") == "pass"
         assert margins.get("extreme") == "fail"
 
     def test_rank_non_numeric_capacity_insufficient_data(self):

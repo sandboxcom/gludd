@@ -845,6 +845,48 @@ class _LimitedChatModel:
         return getattr(self._inner, name)
 
 
+def _load_default_profile_registry() -> dict[str, ModelProfile]:
+    """Load the shipped default model profiles (config/model_profiles/*.yml).
+
+    Returns an empty registry when no profiles directory is discoverable
+    (e.g. an installed package without the repo config tree).
+    """
+    from pathlib import Path
+
+    candidates: list[Path] = []
+    env_dir = os.environ.get("GLUDD_CONFIG_DIR")
+    if env_dir:
+        candidates.append(Path(env_dir) / "model_profiles")
+    candidates.append(Path(__file__).resolve().parents[3] / "config" / "model_profiles")
+    for pdir in candidates:
+        if not pdir.is_dir():
+            continue
+        try:
+            import yaml
+        except ImportError:
+            return {}
+        profiles: dict[str, ModelProfile] = {}
+        for yml_file in sorted(pdir.glob("*.yml")):
+            if yml_file.name.startswith("_"):
+                continue
+            try:
+                with open(yml_file) as f:
+                    data = yaml.safe_load(f) or {}
+                if data.get("enabled", True) is False:
+                    continue
+                prof = ModelProfile(**data)
+                profiles[prof.model_profile_id] = prof
+            except Exception as exc:
+                logger.debug("Skipping default model profile %s: %s", yml_file.name, exc)
+        return profiles
+    return {}
+
+
+# Import-time default registry so local-deploy readiness can discover enabled,
+# non-API-metered profiles without waiting for daemon boot configuration.
+_profiles: dict[str, ModelProfile] = _load_default_profile_registry()
+
+
 class ModelGateway:
     """Route bounded model requests across providers with fail-closed controls."""
 
@@ -2785,8 +2827,7 @@ class ModelGateway:
             )
         if caller_request_timeout_supplied or caller_timeout_supplied:
             logger.warning(
-                "Ignoring caller-supplied timeout override for profile=%s "
-                "(request deadlines are gateway-owned)",
+                "Ignoring caller-supplied timeout override for profile=%s (request deadlines are gateway-owned)",
                 profile_id,
             )
 
