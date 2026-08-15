@@ -3615,7 +3615,8 @@ ci-verdict-safe:
 	@$(PYTHON) scripts/ci_check_cooldown.py check $(CI_CHECK_COOLDOWN_SEC) || exit $$?; \
 	$(MAKE) --no-print-directory ci-verdict; RC=$$?; \
 	if [ $$RC -eq 0 ]; then V="success"; elif [ $$RC -eq 2 ]; then V="pending"; else V="failure"; fi; \
-	$(PYTHON) scripts/ci_check_cooldown.py record-verdict $$V; \
+	SHA=$$(git rev-parse HEAD 2>/dev/null || echo ""); \
+	$(PYTHON) scripts/ci_check_cooldown.py record-verdict $$V $$SHA; \
 	exit $$RC
 
 # ci-diagnose: fetch CI failure annotations and group by root cause.

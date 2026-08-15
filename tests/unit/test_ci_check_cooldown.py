@@ -5,6 +5,7 @@ The cooldown prevents the CI-poll anti-pattern: an agent dispatches a
 for 30-40 minutes, holding a subagent slot while producing zero value.
 CI runs on its own schedule; polling it does not speed it up.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -54,36 +55,28 @@ def test_script_exists() -> None:
     assert SCRIPT_PATH.is_file(), f"scripts/ci_check_cooldown.py must exist at {SCRIPT_PATH}"
 
 
-def test_check_refused_within_cooldown(
-    isolated_state: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_check_refused_within_cooldown(isolated_state: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ci_check_cooldown, "get_head_sha", lambda: "deadbeef")
     _write_state(isolated_state, last_check_epoch=time.time())
     rc = ci_check_cooldown.cmd_check(cooldown=600, force=False)
     assert rc == 3
 
 
-def test_check_allowed_after_cooldown(
-    isolated_state: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_check_allowed_after_cooldown(isolated_state: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ci_check_cooldown, "get_head_sha", lambda: "deadbeef")
     _write_state(isolated_state, last_check_epoch=time.time() - 660)
     rc = ci_check_cooldown.cmd_check(cooldown=600, force=False)
     assert rc == 0
 
 
-def test_force_bypasses_cooldown(
-    isolated_state: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_force_bypasses_cooldown(isolated_state: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ci_check_cooldown, "get_head_sha", lambda: "deadbeef")
     _write_state(isolated_state, last_check_epoch=time.time())
     rc = ci_check_cooldown.cmd_check(cooldown=600, force=True)
     assert rc == 0
 
 
-def test_deploy_records_push_timestamp(
-    isolated_state: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_deploy_records_push_timestamp(isolated_state: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ci_check_cooldown, "get_head_sha", lambda: "cafef00d")
     before = time.time()
     rc = ci_check_cooldown.cmd_deploy()
@@ -113,9 +106,7 @@ def test_state_file_round_trips(isolated_state: Path) -> None:
     assert loaded == payload
 
 
-def test_check_count_increments(
-    isolated_state: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_check_count_increments(isolated_state: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ci_check_cooldown, "get_head_sha", lambda: "deadbeef")
     _write_state(isolated_state, last_check_epoch=0.0, check_count=0)
     ci_check_cooldown.cmd_check(cooldown=600, force=True)
@@ -174,9 +165,7 @@ def test_blocked_check_no_prior_verdict_returns_3(
     assert rc == 3
 
 
-def test_record_verdict_stores_and_can_be_read(
-    isolated_state: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_record_verdict_stores_and_can_be_read(isolated_state: Path, capsys: pytest.CaptureFixture[str]) -> None:
     rc = ci_check_cooldown.cmd_record_verdict("success")
     assert rc == 0
     state = json.loads(isolated_state.read_text())
@@ -192,9 +181,55 @@ def test_record_verdict_stores_and_can_be_read(
     assert state["last_verdict"] == "pending"
 
 
-def test_status_shows_last_verdict(
-    isolated_state: Path, capsys: pytest.CaptureFixture[str]
+def test_record_verdict_with_sha_updates_history_file_preserving_push_sha(
+    isolated_state: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    history_file = tmp_path / "history.json"
+    monkeypatch.setattr(ci_check_cooldown, "HISTORY_FILE", history_file)
+    history_file.write_text(json.dumps({"last_push_sha": "pushsha111", "last_checked_sha": "", "ts": 123}))
+    rc = ci_check_cooldown.cmd_record_verdict("success", "checksha222")
+    assert rc == 0
+    history = json.loads(history_file.read_text())
+    assert history["last_checked_sha"] == "checksha222"
+    assert history["last_push_sha"] == "pushsha111"
+
+
+def test_record_verdict_with_sha_creates_history_file_when_missing(
+    isolated_state: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history_file = tmp_path / "history-missing.json"
+    monkeypatch.setattr(ci_check_cooldown, "HISTORY_FILE", history_file)
+    rc = ci_check_cooldown.cmd_record_verdict("failure", "deadbeef")
+    assert rc == 0
+    history = json.loads(history_file.read_text())
+    assert history["last_checked_sha"] == "deadbeef"
+    assert history["last_verdict"] == "failure"
+
+
+def test_record_verdict_with_sha_handles_corrupt_history_file(
+    isolated_state: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history_file = tmp_path / "history-corrupt.json"
+    monkeypatch.setattr(ci_check_cooldown, "HISTORY_FILE", history_file)
+    history_file.write_text("{not valid json")
+    rc = ci_check_cooldown.cmd_record_verdict("pending", "abcd1234")
+    assert rc == 0
+    history = json.loads(history_file.read_text())
+    assert history["last_checked_sha"] == "abcd1234"
+    assert history["last_verdict"] == "pending"
+
+
+def test_record_verdict_without_sha_does_not_create_history_file(
+    isolated_state: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history_file = tmp_path / "history-untouched.json"
+    monkeypatch.setattr(ci_check_cooldown, "HISTORY_FILE", history_file)
+    rc = ci_check_cooldown.cmd_record_verdict("success")
+    assert rc == 0
+    assert not history_file.exists()
+
+
+def test_status_shows_last_verdict(isolated_state: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _write_state(
         isolated_state,
         last_check_epoch=time.time() - 660,

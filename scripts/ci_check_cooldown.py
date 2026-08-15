@@ -25,8 +25,17 @@ State file: ``/tmp/gludd-ci-check-state.json``
      "last_verdict": "<success|failure|pending|unknown>",
      "last_verdict_epoch": <float>}
 
+Verdict history file: ``/tmp/gludd-ci-verdict-history.json``
+    ``record-verdict <verdict> <sha>`` additionally sets ``last_checked_sha``
+    (and ``last_verdict``/``last_checked_ts``) in this file via an atomic
+    tmp+rename write, preserving ``last_push_sha`` and any other existing
+    keys. This is what unblocks the Makefile ``_ci-verdict-history-guard``
+    (AA032), which refuses a push while ``last_checked_sha`` !=
+    ``last_push_sha``.
+
 Default cooldown: 600s (10 min). Override via ``CI_CHECK_COOLDOWN_SEC``.
 """
+
 from __future__ import annotations
 
 import json
@@ -37,6 +46,7 @@ import time
 from pathlib import Path
 
 STATE_FILE = Path(os.environ.get("GLUDD_CI_STATE_FILE", "/tmp/gludd-ci-check-state.json"))
+HISTORY_FILE = Path(os.environ.get("GLUDD_CI_HISTORY_FILE", "/tmp/gludd-ci-verdict-history.json"))
 DEFAULT_COOLDOWN_SEC = int(os.environ.get("CI_CHECK_COOLDOWN_SEC", "600"))
 
 
@@ -44,12 +54,34 @@ def load_state() -> dict:
     try:
         return json.loads(STATE_FILE.read_text())
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"last_check_epoch": 0.0, "last_push_epoch": 0.0, "last_head_sha": "", "check_count": 0,
-                "last_verdict": "", "last_verdict_epoch": 0.0}
+        return {
+            "last_check_epoch": 0.0,
+            "last_push_epoch": 0.0,
+            "last_head_sha": "",
+            "check_count": 0,
+            "last_verdict": "",
+            "last_verdict_epoch": 0.0,
+        }
 
 
 def save_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state))
+
+
+def load_history() -> dict:
+    """Read the CI verdict history file; missing/corrupt → empty dict."""
+    try:
+        return json.loads(HISTORY_FILE.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_history_atomic(history: dict) -> None:
+    """Write the history file atomically (tmp + rename) so a partial write
+    can never leave the file corrupt (AB074 requires valid JSON at all times)."""
+    tmp_path = HISTORY_FILE.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(history))
+    os.replace(tmp_path, HISTORY_FILE)
 
 
 def remaining_cooldown_sec(state: dict, cooldown: int = DEFAULT_COOLDOWN_SEC) -> float:
@@ -122,11 +154,17 @@ def _age_str(epoch: float) -> str:
     return f" ({age // 60}m{age % 60}s ago)"
 
 
-def cmd_record_verdict(verdict: str) -> int:
+def cmd_record_verdict(verdict: str, sha: str | None = None) -> int:
     state = load_state()
     state["last_verdict"] = verdict.strip().lower()
     state["last_verdict_epoch"] = time.time()
     save_state(state)
+    if sha:
+        history = load_history()
+        history["last_checked_sha"] = sha
+        history["last_verdict"] = verdict.strip().lower()
+        history["last_checked_ts"] = int(time.time())
+        save_history_atomic(history)
     return 0
 
 
@@ -179,7 +217,8 @@ def main() -> int:
         return cmd_status(cooldown)
     if cmd == "record-verdict":
         verdict = sys.argv[2] if len(sys.argv) > 2 else "unknown"
-        return cmd_record_verdict(verdict)
+        sha = sys.argv[3] if len(sys.argv) > 3 else None
+        return cmd_record_verdict(verdict, sha)
     print(f"unknown command: {cmd}", file=sys.stderr)
     return 2
 
