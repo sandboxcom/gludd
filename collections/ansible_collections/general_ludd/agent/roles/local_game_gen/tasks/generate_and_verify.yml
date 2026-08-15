@@ -119,8 +119,6 @@
     - name: "Retry generation with corrective prompt (model fallback on repeated rejection)"
       when: _attempt | int < max_attempts | int
       ansible.builtin.include_tasks: generate_and_verify.yml
-      vars:
-        _attempt: "{{ _attempt | int }}"
 
     - name: "Fail after all attempts rejected"
       when: _attempt | int >= max_attempts | int
