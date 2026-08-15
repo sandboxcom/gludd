@@ -162,6 +162,59 @@ develop and commit locally; check CI before the next push, not before the next f
 
 ---
 
+## 7. Development Branch Reconciliation (beta4)
+
+Work lands on `development` first; only `development` is merge-forwarded into
+`master` (see `development-merge-to-master`). The three targets below classify,
+merge, and recover branch state against `development`.
+
+**a) Classify a branch with `git-patch-equivalence`.**
+Run `make git-patch-equivalence PATCH_UPSTREAM=development PATCH_HEAD=<branch>
+PATCH_LIMIT=20`. It runs `git cherry development <branch>` and reports two
+counts:
+- `patch-equivalent=N` — commits whose patch is already in development under a
+  different SHA (cherry-picked, re-committed, or superseded). These add no code.
+- `unique=N` — commits with content NOT yet in development. Only these carry
+  real work.
+Use the counts to decide: `unique=0` and `patch-equivalent>0` means the branch
+is semantically merged — record ancestry only. Non-zero `unique` means real
+content still needs to land.
+
+**b) Merge forward with `development-merge-forward` (dry-run first, always).**
+`make development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1`.
+`APPLY` defaults to 0; the dry run prints the resolved SHA and changes nothing.
+Never skip it. Then choose the mode:
+- `MODE=content` — the branch carries real work (`unique>0`). Performs
+  `git merge --no-ff --no-commit -X ours`, resolving conflicts in development's
+  favor, aborts if a structural conflict remains, runs `collect-check`, and
+  commits.
+- `MODE=ancestry-only` — the branch is semantically superseded
+  (`patch-equivalent>0`, `unique=0`). Performs `git merge --no-ff -s ours`,
+  recording ancestry while preserving development content verbatim. Forbidden
+  for `master` as SOURCE (content must never be discarded that way).
+`APPLY=1` hard-requires: current branch is `development`, and the worktree is
+clean. Any failure aborts the whole transaction via `git merge --abort`.
+
+**c) Recover conflicted merges with `resolve-development-conflicts`.**
+If a content merge leaves unresolved paths,
+`make resolve-development-conflicts MERGE_SOURCE=<ref> APPLY=0|1` (runs only on
+the `development` branch). `APPLY=0` is a dry run listing unresolved-path count.
+`APPLY=1` verifies `MERGE_HEAD` matches the source ref, then resolves every
+conflicted path by keeping the development side where it exists and the source
+side otherwise, stages them, and fails loudly if any path remains unresolved.
+Non-conflicting source changes are preserved by the merge itself.
+
+**d) Location rules (non-negotiable).**
+All reconciliation merges run on the MAIN checkout (`/Users/shawnwilson/gludd`),
+on the `development` branch, with a clean tree (`git status --porcelain` empty).
+Never merge-forward from inside a worktree. Reconcile one branch at a time —
+the merge/commit slot is serial, exactly like §2. Verify state first:
+`make branches-unmerged-development` lists every local branch not yet in
+development; work through it oldest-first, re-running the (a)→(b) classification
+per branch.
+
+---
+
 ## Summary Table
 
 | Situation | Serial or Parallel? | Who does it? |
