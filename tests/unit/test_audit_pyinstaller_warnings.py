@@ -85,12 +85,9 @@ def _run_audit(
                 "platform": manifest_platform or platform,
                 "pyinstaller_version": manifest_version or version,
                 "allowed_missing_imports": allowed or [],
-                "baseline_pinned_project_modules": (
-                    baseline_pinned_project_modules or []
-                ),
+                "baseline_pinned_project_modules": (baseline_pinned_project_modules or []),
                 "transitive_warning_sha256_by_architecture": (
-                    manifest_architecture_digests
-                    or {architecture: transitive_warning_sha256}
+                    manifest_architecture_digests or {architecture: transitive_warning_sha256}
                 ),
             }
         ),
@@ -141,14 +138,8 @@ def test_linux_policy_pins_hosted_and_container_architectures() -> None:
 
     assert policy["schema_version"] == 3
     assert policy["transitive_warning_sha256_by_architecture"] == {
-        "aarch64": (
-            "fe46fb237e7274fe5f8db70da336b212f"
-            "ac65c3aa6fc65e1e453241f3e0a3d50"
-        ),
-        "x86_64": (
-            "b744f744d6117f6ce2b15e568831e1d4"
-            "0616bfdff55e1c174b9bbcc240abee93"
-        ),
+        "aarch64": ("fe46fb237e7274fe5f8db70da336b212fac65c3aa6fc65e1e453241f3e0a3d50"),
+        "x86_64": ("45803512bc125fb5da4d90ca98f16be21a37a2871da29992115d52890a05618a"),
     }
 
 
@@ -166,10 +157,7 @@ def test_exact_reviewed_conditional_and_optional_edges_pass(tmp_path: Path) -> N
             "general_ludd.compat.copy",
             ["optional"],
             category="interpreter-specific",
-            evidence=(
-                "https://docs.python.org/3/library/platform.html"
-                "#cross-platform"
-            ),
+            evidence=("https://docs.python.org/3/library/platform.html#cross-platform"),
         ),
         _allow(
             "winreg",
@@ -192,8 +180,7 @@ def test_exact_reviewed_conditional_and_optional_edges_pass(tmp_path: Path) -> N
 def test_unreviewed_missing_import_fails(tmp_path: Path) -> None:
     result = _run_audit(
         tmp_path,
-        "missing module named required_package - "
-        "imported by general_ludd.cli (top-level)\n",
+        "missing module named required_package - imported by general_ludd.cli (top-level)\n",
     )
 
     assert result.returncode == 1
@@ -219,8 +206,7 @@ def test_hook_provided_runtime_modules_are_audited_separately(
 def test_unknown_module_status_still_fails_closed(tmp_path: Path) -> None:
     result = _run_audit(
         tmp_path,
-        "deferred module named six.moves - "
-        "imported by dateutil.rrule (top-level)\n",
+        "deferred module named six.moves - imported by dateutil.rrule (top-level)\n",
     )
 
     assert result.returncode == 1
@@ -244,10 +230,7 @@ def test_actionable_edge_cannot_be_allowlisted(
     reason: str,
 ) -> None:
     rendered_flags = ", ".join(flags)
-    warning = (
-        "missing module named required_package - "
-        f"imported by general_ludd.cli ({rendered_flags})\n"
-    )
+    warning = f"missing module named required_package - imported by general_ludd.cli ({rendered_flags})\n"
     result = _run_audit(
         tmp_path,
         warning,
@@ -294,8 +277,7 @@ def test_allowlist_requires_category_and_evidence(tmp_path: Path) -> None:
     ]
     result = _run_audit(
         tmp_path,
-        "missing module named 'org.python' - "
-        "imported by general_ludd.compat.copy (optional)\n",
+        "missing module named 'org.python' - imported by general_ludd.compat.copy (optional)\n",
         allowed=allowed,
     )
 
@@ -341,8 +323,7 @@ def test_allowlist_is_pinned_to_target_platform(tmp_path: Path) -> None:
 def test_importer_and_flags_must_match_exactly(tmp_path: Path) -> None:
     result = _run_audit(
         tmp_path,
-        "missing module named winreg - "
-        "imported by general_ludd.compat.platform (optional)\n",
+        "missing module named winreg - imported by general_ludd.compat.platform (optional)\n",
         allowed=[
             _allow(
                 "winreg",
@@ -381,8 +362,7 @@ a = Analysis([], excludes=["pytest"] + _platform_excludes)
 def test_excluded_warning_not_in_analysis_excludes_fails(tmp_path: Path) -> None:
     result = _run_audit(
         tmp_path,
-        "excluded module named unreviewed - "
-        "imported by general_ludd.app (conditional)\n",
+        "excluded module named unreviewed - imported by general_ludd.app (conditional)\n",
     )
 
     assert result.returncode == 1
@@ -392,8 +372,7 @@ def test_excluded_warning_not_in_analysis_excludes_fails(tmp_path: Path) -> None
 def test_inactive_platform_exclude_is_not_accepted(tmp_path: Path) -> None:
     result = _run_audit(
         tmp_path,
-        "excluded module named fcntl - "
-        "imported by general_ludd.app (conditional)\n",
+        "excluded module named fcntl - imported by general_ludd.app (conditional)\n",
         spec_text="""\
 import sys
 
@@ -425,10 +404,7 @@ def test_missing_or_malformed_spec_fails_closed(tmp_path: Path) -> None:
 def test_transitive_warning_graph_requires_exact_normalized_digest(
     tmp_path: Path,
 ) -> None:
-    warning = (
-        "missing module named optional_backend - "
-        "imported by dependency.compat (optional)\n"
-    )
+    warning = "missing module named optional_backend - imported by dependency.compat (optional)\n"
     result = _run_audit(tmp_path, warning)
 
     assert result.returncode == 1
@@ -436,10 +412,7 @@ def test_transitive_warning_graph_requires_exact_normalized_digest(
 
 
 def test_exact_transitive_warning_graph_digest_passes(tmp_path: Path) -> None:
-    warning = (
-        "missing module named optional_backend - "
-        "imported by dependency.compat (optional)\n"
-    )
+    warning = "missing module named optional_backend - imported by dependency.compat (optional)\n"
     normalized = "missing optional_backend <- dependency.compat (optional)"
     digest = hashlib.sha256(normalized.encode()).hexdigest()
     result = _run_audit(
@@ -455,10 +428,7 @@ def test_exact_transitive_warning_graph_digest_passes(tmp_path: Path) -> None:
 def test_transitive_warning_digest_is_selected_by_architecture(
     tmp_path: Path,
 ) -> None:
-    warning = (
-        "missing module named optional_backend - "
-        "imported by dependency.compat (optional)\n"
-    )
+    warning = "missing module named optional_backend - imported by dependency.compat (optional)\n"
     normalized = "missing optional_backend <- dependency.compat (optional)"
     x86_64_digest = hashlib.sha256(normalized.encode()).hexdigest()
     result = _run_audit(
@@ -527,14 +497,8 @@ def test_project_module_attribute_graph_can_be_digest_pinned(
     )
     normalized = "\n".join(
         [
-            (
-                "missing pydantic.BaseModel <- "
-                "general_ludd.schemas.job (top-level)"
-            ),
-            (
-                "missing pydantic.BaseModel <- "
-                "pydantic._internal._fields (conditional)"
-            ),
+            ("missing pydantic.BaseModel <- general_ludd.schemas.job (top-level)"),
+            ("missing pydantic.BaseModel <- pydantic._internal._fields (conditional)"),
         ]
     )
     digest = hashlib.sha256(normalized.encode()).hexdigest()
@@ -546,10 +510,7 @@ def test_project_module_attribute_graph_can_be_digest_pinned(
             {
                 "module": "pydantic.BaseModel",
                 "category": "module-attribute",
-                "evidence": (
-                    "https://pyinstaller.org/en/stable/"
-                    "when-things-go-wrong.html#build-time-messages"
-                ),
+                "evidence": ("https://pyinstaller.org/en/stable/when-things-go-wrong.html#build-time-messages"),
             }
         ],
     )
@@ -582,8 +543,4 @@ def test_connector_registry_avoids_pyinstaller_path_pseudo_module() -> None:
 def test_optional_gcp_sdk_import_is_locally_guarded() -> None:
     source = _PRICING_SOURCES.read_text(encoding="utf-8")
 
-    assert (
-        "try:\n"
-        "            from google.cloud import billing\n"
-        "        except ImportError as exc:"
-    ) in source
+    assert ("try:\n            from google.cloud import billing\n        except ImportError as exc:") in source

@@ -4,7 +4,7 @@
   "pyinstaller_version": "6.20.0",
   "transitive_warning_sha256_by_architecture": {
     "aarch64": "fe46fb237e7274fe5f8db70da336b212fac65c3aa6fc65e1e453241f3e0a3d50",
-    "x86_64": "b744f744d6117f6ce2b15e568831e1d40616bfdff55e1c174b9bbcc240abee93"
+    "x86_64": "45803512bc125fb5da4d90ca98f16be21a37a2871da29992115d52890a05618a"
   },
   "baseline_pinned_project_modules": [
     {
@@ -93,6 +93,35 @@
       ],
       "category": "optional-dependency",
       "evidence": "https://github.com/googleapis/google-api-python-client"
+    },
+    {
+      "module": "azure.mgmt",
+      "importer": "general_ludd.infra.azure_cost_reconciliation",
+      "flags": [
+        "delayed",
+        "optional"
+      ],
+      "category": "optional-dependency",
+      "evidence": "https://github.com/Azure/azure-sdk-for-python"
+    },
+    {
+      "module": "hindsight_client",
+      "importer": "general_ludd.memory.hindsight_adapter",
+      "flags": [
+        "optional"
+      ],
+      "category": "optional-dependency",
+      "evidence": "https://github.com/oneilsh/hindsight_client"
+    },
+    {
+      "module": "lm_eval",
+      "importer": "general_ludd.small_models.lm_eval_runner",
+      "flags": [
+        "delayed",
+        "optional"
+      ],
+      "category": "optional-dependency",
+      "evidence": "https://github.com/EleutherAI/lm-evaluation-harness"
     },
     {
       "module": "pyVim",
