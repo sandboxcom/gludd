@@ -85,7 +85,11 @@ if sys.platform != "win32":
         'asyncio.windows_utils',
         'click._winconsole',
         'dateutil.tz.win',
-        'filelock._windows',
+        # filelock._windows must NOT be excluded: filelock/__init__.py imports
+        # it via an importlib path that fires in the frozen bundle regardless
+        # of platform, so excluding it crashes the frozen daemon with
+        # ModuleNotFoundError: No module named 'filelock._windows'
+        # (CI binary_smoke_linux/macos, 2026-08-15).
         'mcp.os.win32',
         'multiprocessing.popen_spawn_win32',
         'platformdirs.windows',

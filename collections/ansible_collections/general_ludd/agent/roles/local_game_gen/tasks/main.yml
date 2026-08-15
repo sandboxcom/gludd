@@ -28,6 +28,10 @@
     name:
       - huggingface_hub
       - llama-cpp-python
+      # llama_cpp.server imports sse_starlette at module import; the package
+      # does not declare it as a hard dependency, so install it explicitly
+      # (CI failure 2026-08-15: ModuleNotFoundError: sse_starlette).
+      - sse_starlette
     state: present
 
 - name: "Download model if not present"
