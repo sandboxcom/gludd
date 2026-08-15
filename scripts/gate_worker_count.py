@@ -7,7 +7,7 @@ Formula:
     workers    = min(cpu_based, mem_based)
 
 Environment overrides (all optional):
-    GLUDD_XDIST        — hard override; if set, its value is printed verbatim
+    GLUDD_XDIST_WORKERS        — hard override; if set, its value is printed verbatim
                          and the formula is skipped entirely.
     GLUDD_PER_WORKER_GB — per-worker RAM budget in GB (default: 1.5).
                           Accepts floats, e.g. "2.0".
@@ -121,8 +121,8 @@ def compute_worker_count(
 
 
 def main() -> None:
-    # Hard override: GLUDD_XDIST beats the formula entirely.
-    xdist_env = os.environ.get("GLUDD_XDIST")
+    # Hard override: GLUDD_XDIST_WORKERS beats the formula entirely.
+    xdist_env = os.environ.get("GLUDD_XDIST_WORKERS")
     if xdist_env:
         print(xdist_env)
         return

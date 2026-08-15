@@ -35,7 +35,7 @@ async def _make_app(monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    monkeypatch.setenv("GLUDD_PSK", PSK)
+    monkeypatch.setenv("GLUDD_AUTH_PSK", PSK)
     from general_ludd.daemon import create_daemon_app
 
     app = create_daemon_app(tick_interval=1.0)
@@ -135,14 +135,14 @@ class TestWebmcpAuth:
 
     @pytest.mark.asyncio
     async def test_auth_env_var_named(self, monkeypatch):
-        """auth.env_var must name 'GLUDD_PSK' so the consumer knows where to get the token."""
+        """auth.env_var must name 'GLUDD_AUTH_PSK' so the consumer knows where to get the token."""
         engine, client = await _make_app(monkeypatch)
         try:
             resp = await client.get("/api/webmcp")
             auth = resp.json()["auth"]
-            assert "GLUDD_PSK" in auth.get("env_var", ""), (
+            assert "GLUDD_AUTH_PSK" in auth.get("env_var", ""), (
                 f"auth.env_var is {auth.get('env_var')!r}; "
-                "must reference GLUDD_PSK so a consumer knows which env var to read."
+                "must reference GLUDD_AUTH_PSK so a consumer knows which env var to read."
             )
         finally:
             await client.aclose()

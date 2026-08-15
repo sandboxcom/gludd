@@ -184,7 +184,7 @@ Structure mirrors `langgraph_decision`: `defaults/main.yml`, `meta/main.yml`,
 # agent_orchestrate role defaults — env-fact-driven action dispatch.
 # Daemon connectivity
 daemon_url: "http://localhost:8000"
-psk: ""                       # no_log in tasks; prefer GLUDD_PSK env
+psk: ""                       # no_log in tasks; prefer GLUDD_AUTH_PSK env
 
 # Work shape (drives advice + routing)
 work_type: "code"             # e.g. code | docs | review | mechanical | security

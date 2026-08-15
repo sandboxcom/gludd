@@ -324,7 +324,7 @@ This is the actual product. SESSION.md ticks cover C0/C2/C3/C4/H5/H6 — the rem
 - Any README number/claim ("0 noqa", test counts) gets a preflight grep check or gets deleted. One source of truth: the generated gate block (W1.4).
 
 ### W5.6 Worker endpoints need auth before shipping
-- The daemon enforces auth (`daemon.py:674-689`); the worker does not (`worker/app.py:45-112` — `/jobs/execute` et al. accept anyone who can reach the port). Anyone on the network can make the worker run arbitrary registered playbooks. Apply the same PSK check (the `GLUDD_PSK` mechanism CI already sets) to all worker job endpoints; unauthenticated → 401.
+- The daemon enforces auth (`daemon.py:674-689`); the worker does not (`worker/app.py:45-112` — `/jobs/execute` et al. accept anyone who can reach the port). Anyone on the network can make the worker run arbitrary registered playbooks. Apply the same PSK check (the `GLUDD_AUTH_PSK` mechanism CI already sets) to all worker job endpoints; unauthenticated → 401.
 - TDD: worker test client without the header → 401; with it → current behavior.
 - Commit: `W5.6: worker job endpoints require PSK auth`
 

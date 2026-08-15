@@ -3,14 +3,14 @@
 S-1 (MED/HIGH): EnvSecretsManager.resolve previously returned
 os.environ.get(alias) for ANY name. A caller — or a hot-reloaded model
 profile whose credential_alias is attacker-controlled — could therefore
-exfiltrate arbitrary process env vars: GLUDD_PSK, cloud provider keys
+exfiltrate arbitrary process env vars: GLUDD_AUTH_PSK, cloud provider keys
 (AWS_SECRET_ACCESS_KEY, etc.). ProjectSecretsManager.resolve simply
 delegated to the base manager, so it was not project-scoped either.
 
 FIX: restrict ambient-env resolution to an allowlist — explicitly
 registered overrides, recognized credential naming conventions
 (*_API_KEY, *_API_BASE, *_BASE_URL, *_API_URL, *_AUTH_TOKEN, GLUDD_SECRET_*),
-or an explicit per-instance allow-set. Non-allowlisted names (GLUDD_PSK,
+or an explicit per-instance allow-set. Non-allowlisted names (GLUDD_AUTH_PSK,
 PATH, HOME, AWS_SECRET_ACCESS_KEY) resolve to None. Legitimate model
 gateway api-key/api-base aliases still resolve because they match the
 naming convention.
@@ -33,10 +33,10 @@ from general_ludd.secrets.project_secrets import ProjectSecretsManager
 
 class TestEnvSecretsAllowlist:
     def test_gludd_psk_not_resolvable(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": "super-secret-psk"}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": "super-secret-psk"}):
             mgr = EnvSecretsManager()
-            assert mgr.resolve("GLUDD_PSK") is None, (
-                "S-1: GLUDD_PSK must NEVER resolve through the secrets manager."
+            assert mgr.resolve("GLUDD_AUTH_PSK") is None, (
+                "S-1: GLUDD_AUTH_PSK must NEVER resolve through the secrets manager."
             )
 
     def test_arbitrary_env_var_not_resolvable(self):
@@ -86,11 +86,11 @@ class TestEnvSecretsAllowlist:
 
 class TestProjectSecretsScoping:
     def test_project_resolve_does_not_leak_psk(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": "super-secret-psk"}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": "super-secret-psk"}):
             base = EnvSecretsManager()
             pmgr = ProjectSecretsManager(base_manager=base, project_id="proj-x")
-            assert pmgr.resolve("GLUDD_PSK") is None, (
-                "S-1: project-scoped resolve must not leak GLUDD_PSK either."
+            assert pmgr.resolve("GLUDD_AUTH_PSK") is None, (
+                "S-1: project-scoped resolve must not leak GLUDD_AUTH_PSK either."
             )
 
     def test_project_resolve_prefers_scoped_secret(self):
@@ -145,12 +145,12 @@ class TestMigrationAllowlist:
     def test_psk_alias_skipped_not_migrated(self):
         mgr = MagicMock()
         profiles = [
-            {"model_profile_id": "p1", "credential_alias": "GLUDD_PSK"},
+            {"model_profile_id": "p1", "credential_alias": "GLUDD_AUTH_PSK"},
         ]
-        with patch.dict(os.environ, {"GLUDD_PSK": "super-secret-psk"}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": "super-secret-psk"}):
             result = migrate_profile_secrets(mgr, profiles)
         assert result["migrated"] == 0
-        assert "GLUDD_PSK" in result["skipped"]
+        assert "GLUDD_AUTH_PSK" in result["skipped"]
         mgr.write_secret.assert_not_called()
 
     def test_arbitrary_env_aliases_skipped(self):

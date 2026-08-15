@@ -7,7 +7,7 @@ Every module that talks to the daemon imports this module.  It provides:
   - error_result / ok_result: uniform return helpers
 
 PSK is read from the ``psk`` parameter (marked no_log).  GluddClient
-does NOT fall back to the ``GLUDD_PSK`` env var — the caller must
+does NOT fall back to the ``GLUDD_AUTH_PSK`` env var — the caller must
 pass the PSK explicitly so a module that omits the psk param cannot
 silently scavenge admin credentials from the process environment.
 Never log the PSK.

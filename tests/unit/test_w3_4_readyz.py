@@ -86,7 +86,7 @@ class TestReadyzEndpoint:
             "general_ludd.ansible.runner.AnsibleRunnerAdapter",
             return_value=MagicMock(),
         ):
-            monkeypatch.setenv("GLUDD_PSK", "test-secret-psk")
+            monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-psk")
 
             from general_ludd.daemon import create_daemon_app
 

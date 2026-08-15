@@ -1181,7 +1181,7 @@ class TestAuthPostureDeep:
     def test_load_auth_posture_with_psk_configured(self) -> None:
         from general_ludd.security.auth import load_auth_posture
 
-        posture = load_auth_posture("test", {"GLUDD_PSK": "my-secret"})
+        posture = load_auth_posture("test", {"GLUDD_AUTH_PSK": "my-secret"})
         assert posture.no_auth is False
         assert posture.psk == "my-secret"
 

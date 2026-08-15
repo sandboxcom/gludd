@@ -4,7 +4,7 @@
 
 # Daemon connectivity
 gludd_daemon_url: "http://localhost:8000"
-gludd_psk: ""   # no_log in tasks; prefer GLUDD_PSK env var
+gludd_psk: ""   # no_log in tasks; prefer GLUDD_AUTH_PSK env var
 
 # What the role should do this run.
 #   monitor -> enumerate + gather per-process stats and report (read-only)

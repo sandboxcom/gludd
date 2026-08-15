@@ -45,7 +45,7 @@ Model-backed operations are skipped with a clear opt-in message unless
 | `task_size`           | `medium` (`small`/`medium`/`large`) | no    | Drives doc ceremony (deep-spec sizing).        |
 | `discard_reason`      | `no longer needed`               | no       | Recorded in `DISCARDED.yml` on discard_task.   |
 | `daemon_url`          | `http://localhost:8000`          | no       | Gludd daemon URL (model ops only).             |
-| `psk`                 | `""`                             | no       | Daemon pre-shared key (prefer `GLUDD_PSK`).    |
+| `psk`                 | `""`                             | no       | Daemon pre-shared key (prefer `GLUDD_AUTH_PSK`).    |
 | `model_profile`       | `""`                             | no       | Model profile for agent-backed ops.            |
 | `agent_max_iterations`| `10`                             | no       | Cap for `gludd_agent_run` calls.               |
 | `enable_model_call`   | `false`                          | no       | Opt-in for interview/map/diagram. **Safe-by-default.** |

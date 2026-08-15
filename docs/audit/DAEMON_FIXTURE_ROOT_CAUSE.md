@@ -18,13 +18,13 @@ previously lived in `tests/conftest.py`.
 shared auth opt-out (an autouse fixture / `os.environ` setup setting
 `GLUDD_ALLOW_NO_AUTH=1`) that **all** daemon/worker endpoint tests implicitly
 relied on. With it gone, both surfaces default to fail-closed because no
-`GLUDD_PSK` is configured in the test environment (CI sets `GLUDD_PSK: ""`,
+`GLUDD_AUTH_PSK` is configured in the test environment (CI sets `GLUDD_AUTH_PSK: ""`,
 the Makefile `test` target injects no PSK, and grep finds no
 `GLUDD_REQUIRE_AUTH`/`GLUDD_ALLOW_NO_AUTH` anywhere in the Makefile, CI
 workflow, or pytest config).
 
 `tests/unit/test_worker.py` confirms the dependency: it contains **zero**
-references to `GLUDD_ALLOW_NO_AUTH` / `GLUDD_PSK` / `GLUDD_REQUIRE_AUTH` and
+references to `GLUDD_ALLOW_NO_AUTH` / `GLUDD_AUTH_PSK` / `GLUDD_REQUIRE_AUTH` and
 calls `create_app()` with no opt-out — so once the global opt-out disappeared,
 every worker endpoint it hits returns 503.
 
@@ -55,13 +55,13 @@ are runtime 503s from the auth middleware. The signature is a red herring.
    ```python
    require_auth = require_auth_env(source) or (no_auth and not _allow_no_auth)
    ```
-   With no `GLUDD_PSK` and no `GLUDD_ALLOW_NO_AUTH`: `no_auth=True`,
+   With no `GLUDD_AUTH_PSK` and no `GLUDD_ALLOW_NO_AUTH`: `no_auth=True`,
    `_allow_no_auth=False` → `require_auth=True`.
 
 2. **`src/general_ludd/daemon.py:2264-2282`** (the daemon's inline mirror of the
    same logic — the "P1 fix: FAIL-CLOSED by default"):
    ```python
-   _psk = os.environ.get("GLUDD_PSK", "")
+   _psk = os.environ.get("GLUDD_AUTH_PSK", "")
    _allow_no_auth = os.environ.get("GLUDD_ALLOW_NO_AUTH", "").strip().lower() in {...}
    _no_auth = not _psk
    _require_auth = _no_auth and not _allow_no_auth

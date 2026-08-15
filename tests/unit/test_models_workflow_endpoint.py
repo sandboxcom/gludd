@@ -85,7 +85,7 @@ class TestWorkflowAuth:
     def test_requires_auth_by_default(self) -> None:
         """No PSK + no GLUDD_ALLOW_NO_AUTH -> fail-closed (503/401)."""
         os.environ.pop("GLUDD_ALLOW_NO_AUTH", None)
-        os.environ.pop("GLUDD_PSK", None)
+        os.environ.pop("GLUDD_AUTH_PSK", None)
         os.environ.pop("GLUDD_REQUIRE_AUTH", None)
 
         from general_ludd.daemon import create_daemon_app

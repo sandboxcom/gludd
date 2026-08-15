@@ -24,7 +24,7 @@ class TestEnvSecretsManager:
         assert mgr.resolve("_TEST_ENV_API_KEY2") == "override"
 
     def test_non_allowlisted_env_var_is_not_resolved(self, monkeypatch):
-        # S-1: a non-credential ambient env var (e.g. GLUDD_PSK, PATH) must NOT
+        # S-1: a non-credential ambient env var (e.g. GLUDD_AUTH_PSK, PATH) must NOT
         # be resolvable from os.environ — fail-closed.
         monkeypatch.setenv("_TEST_PLAIN_VAR", "envval")
         mgr = EnvSecretsManager()
@@ -32,9 +32,9 @@ class TestEnvSecretsManager:
 
     def test_gludd_psk_is_never_resolved_from_env(self, monkeypatch):
         # S-1: the PSK must never leak through the secrets manager.
-        monkeypatch.setenv("GLUDD_PSK", "super-secret-psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "super-secret-psk")
         mgr = EnvSecretsManager()
-        assert mgr.resolve("GLUDD_PSK") is None
+        assert mgr.resolve("GLUDD_AUTH_PSK") is None
 
     def test_explicit_allow_set_permits_env_resolution(self, monkeypatch):
         # A caller may vouch for a specific ambient name via the allow-set.

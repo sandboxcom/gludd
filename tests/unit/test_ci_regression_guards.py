@@ -69,11 +69,11 @@ def test_spec_excludes_ansible_cli() -> None:
 
 
 def test_gate_job_sets_gludd_xdist_auto() -> None:
-    """Guard: the gate job must set GLUDD_XDIST=auto in its env.
+    """Guard: the gate job must set GLUDD_XDIST_WORKERS=auto in its env.
 
     CI incident: with a single xdist worker the test suite exceeded the 40-minute
     CI gate budget (timeout-minutes: 40) and the job was killed. Setting
-    ``GLUDD_XDIST: auto`` fans the suite across all available cores so it stays
+    ``GLUDD_XDIST_WORKERS: auto`` fans the suite across all available cores so it stays
     under budget. Dropping this env var re-introduces the timeout.
     """
     wf = _load_build_workflow()
@@ -85,11 +85,11 @@ def test_gate_job_sets_gludd_xdist_auto() -> None:
     job_env = gate.get("env") or {}
     step_envs: list[dict[str, Any]] = [s.get("env") or {} for s in gate.get("steps", []) if isinstance(s, dict)]
     all_envs = [job_env, *step_envs]
-    found = any(str(e.get("GLUDD_XDIST")) == "auto" for e in all_envs)
+    found = any(str(e.get("GLUDD_XDIST_WORKERS")) == "auto" for e in all_envs)
     assert found, (
         "CI regression (gate exceeded the 40-min CI budget with a single xdist "
-        "worker): the gate job no longer sets GLUDD_XDIST=auto. Restore "
-        "'GLUDD_XDIST: auto' in the gate job/step env so the suite parallelizes "
+        "worker): the gate job no longer sets GLUDD_XDIST_WORKERS=auto. Restore "
+        "'GLUDD_XDIST_WORKERS: auto' in the gate job/step env so the suite parallelizes "
         "across cores and stays under timeout-minutes: 40."
     )
 

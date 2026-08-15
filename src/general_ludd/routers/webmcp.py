@@ -414,7 +414,7 @@ _ENDPOINTS: list[dict[str, object]] = [
 _ERROR_RESPONSES: dict[str, dict[str, object]] = {
     "401": {
         "meaning": (
-            "Missing or invalid Bearer token on a protected path (GLUDD_PSK is "
+            "Missing or invalid Bearer token on a protected path (GLUDD_AUTH_PSK is "
             "configured but the request did not present the matching token)."
         ),
         "body": {"error": "unauthorized"},
@@ -432,7 +432,7 @@ _ERROR_RESPONSES: dict[str, dict[str, object]] = {
     },
     "503": {
         "meaning": (
-            "Fail-closed: GLUDD_REQUIRE_AUTH is truthy but no GLUDD_PSK is "
+            "Fail-closed: GLUDD_REQUIRE_AUTH is truthy but no GLUDD_AUTH_PSK is "
             "configured, so every non-public path is refused until a PSK is set. "
             "Also used for readiness failures on /readyz."
         ),
@@ -454,17 +454,17 @@ _SELF_DESCRIPTION: dict[str, object] = {
         "header": "Authorization",
         "scheme": "Bearer",
         "format": "Authorization: Bearer <token>",
-        "env_var": "GLUDD_PSK",
+        "env_var": "GLUDD_AUTH_PSK",
         "require_auth_env_var": "GLUDD_REQUIRE_AUTH",
         "description": (
-            "Set GLUDD_PSK in the daemon environment.  "
-            "Pass the same value as 'Authorization: Bearer <GLUDD_PSK>' on every "
+            "Set GLUDD_AUTH_PSK in the daemon environment.  "
+            "Pass the same value as 'Authorization: Bearer <GLUDD_AUTH_PSK>' on every "
             "request to a protected path.  "
-            "When GLUDD_PSK is unset the daemon runs with auth DISABLED (dev "
+            "When GLUDD_AUTH_PSK is unset the daemon runs with auth DISABLED (dev "
             "mode) — every path is served open and /healthz advertises this via "
             "its no_auth / auth_degraded fields.  "
             "Set GLUDD_REQUIRE_AUTH=1 (or true/yes/on) to FAIL CLOSED instead: "
-            "when GLUDD_REQUIRE_AUTH is truthy AND no GLUDD_PSK is configured, "
+            "when GLUDD_REQUIRE_AUTH is truthy AND no GLUDD_AUTH_PSK is configured, "
             "every non-public path is refused with HTTP 503 "
             "{'error': 'auth_required', 'reason': 'no PSK configured'} rather "
             "than served without a token."

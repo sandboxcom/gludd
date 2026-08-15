@@ -111,30 +111,67 @@ class TestPluginFileExistence:
 
 
 class TestPermissionPathConsistency:
-    _PERM_TOOLS: typing.ClassVar[list[str]] = ["read", "write", "edit", "glob", "grep"]
+    """All file tools must share ONE external-path authorization source.
+
+    OpenCode's current permission model routes write/edit/patch through
+    ``edit``, keeps the workspace implicit (internal), and gates every
+    external path through the single ``external_directory`` block. No tool
+    may carry a private absolute-path grant map — a per-tool map would let
+    one tool diverge from the reviewed prefixes. This is the current-model
+    equivalent of the legacy per-tool path-map pins.
+    """
+
+    _FILE_TOOLS: typing.ClassVar[list[str]] = ["read", "edit", "glob", "grep"]
+    _WORKSPACE = "/Users/shawnwilson/gludd/**"
 
     def test_all_permission_tools_have_same_allowed_paths(self):
         opencode_json = _json_load(REPO_ROOT / "opencode.json")
         perm = opencode_json["permission"]
-        ref_paths = set(perm["read"].keys())
-        for tool in self._PERM_TOOLS:
-            paths = set(perm[tool].keys())
-            assert paths == ref_paths, f"{tool} paths differ from read: {paths ^ ref_paths}"
+        # No file tool may grant absolute paths through a per-tool map: the
+        # only path-authorization surface is the shared external_directory
+        # block, which applies uniformly to every tool.
+        for tool in self._FILE_TOOLS:
+            value = perm[tool]
+            if isinstance(value, dict):
+                for key in value:
+                    assert not key.startswith("/"), (
+                        f"{tool} carries a private absolute-path rule {key!r}; "
+                        "external paths must be authorized only via external_directory"
+                    )
+            else:
+                assert value == "allow", f"{tool} must be 'allow' for the workspace"
+        assert "write" not in perm, (
+            "write/edit/patch route through the 'edit' permission; a separate "
+            "'write' map would diverge from the shared authorization source"
+        )
 
     def test_star_deny_is_first_rule_in_each_permission(self):
         opencode_json = _json_load(REPO_ROOT / "opencode.json")
         perm = opencode_json["permission"]
-        for tool in self._PERM_TOOLS:
-            rules = perm[tool]
-            items = list(rules.items())
-            assert items[0][0] == "*", f"{tool}: * deny must be first rule"
-            assert items[0][1] == "deny", f"{tool}: first rule must be deny"
+        # Every dict-valued permission must place its catch-all first
+        # (last-match-wins); the fail-closed surfaces deny by default.
+        for tool, value in perm.items():
+            if not isinstance(value, dict) or not value:
+                continue
+            items = list(value.items())
+            assert items[0][0] == "*", f"{tool}: '*' catch-all must be the first rule"
+            if tool in ("bash", "external_directory"):
+                assert items[0][1] == "deny", f"{tool}: first rule must be deny"
 
     def test_workspace_is_allowed_in_all_permission_tools(self):
         opencode_json = _json_load(REPO_ROOT / "opencode.json")
         perm = opencode_json["permission"]
-        for tool in self._PERM_TOOLS:
-            assert "/Users/shawnwilson/gludd/**" in perm[tool], f"{tool} missing workspace path"
+        # The workspace is internal: every file tool stays enabled for it and
+        # the workspace prefix must not be duplicated as an external grant.
+        for tool in self._FILE_TOOLS:
+            value = perm[tool]
+            if isinstance(value, dict):
+                assert value.get("*", "allow") != "deny", f"{tool} denies the workspace"
+            else:
+                assert value == "allow", f"{tool} disabled for the workspace"
+        assert self._WORKSPACE not in perm.get("external_directory", {}), (
+            "the active worktree is internal; listing it under external_directory would couple policy to one checkout"
+        )
 
 
 # ── Config File Parsing ───────────────────────────────────────────────────────

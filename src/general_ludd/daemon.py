@@ -180,6 +180,9 @@ _DEAD_CODE_REFS: list[object] = [
 
 logger = ProjectLogAdapter(logging.getLogger(__name__))
 
+_DEFAULT_WORKER_ID = "worker"
+"""Fallback for the "GLUDD_WORKER_ID" env var; shared with the worker app default."""
+
 _STARTUP_UNSET: object = object()
 """Sentinel for app.state fields that are None at construction time and populated
 during _lifespan.  Distinct from None so 'intentionally None' is not conflated
@@ -203,6 +206,7 @@ _SAFE_METHODS_FROZEN = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 def is_public_path(method: str, path: str) -> bool:
+    """Return True for paths that may be served without PSK authentication."""
     if path.startswith(_RECEIVER_PREFIXES_FROZEN):
         return True
     if method.upper() not in _SAFE_METHODS_FROZEN:
@@ -240,9 +244,10 @@ def _compaction_config_dict(uc: Any) -> dict[str, Any]:
 
 
 def _remediation_tick_settings(uc: Any) -> tuple[int, int]:
-    """Return ``(check_interval_ticks, max_actions_per_tick)`` for the
-    auto-remediation tick phase (#52), fail-soft to ``(30, 5)`` when ``uc``
-    or the ``remediation`` block is absent.
+    """Return ``(check_interval_ticks, max_actions_per_tick)``.
+
+    For the auto-remediation tick phase (#52), fail-soft to ``(30, 5)`` when
+    ``uc`` or the ``remediation`` block is absent.
     """
     rs = getattr(uc, "remediation", None) if uc else None
     if rs is None:
@@ -285,6 +290,7 @@ class LangGraphModelCallError(Exception):
     """
 
     def __init__(self, original_error: Exception) -> None:
+        """Initialize the error, storing the original exception as cause."""
         self.original_error = original_error
         super().__init__(str(original_error))
         self.__cause__ = original_error
@@ -324,6 +330,7 @@ _daemon_state: Any = _DaemonStateProxy()
 
 
 def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
+    """Load user config plus project overlay into the startup config dict."""
     cfg: dict[str, Any] = {
         "model_routing": ModelRoutingConfig(),
         "user_config": UserConfig(),
@@ -513,6 +520,7 @@ def build_secrets_resolver(
     env_overrides: dict[str, str] | None = None,
     projects_active: bool = False,
 ) -> Any:
+    """Build the secrets resolver (OpenBao when reachable, else env fallback)."""
     base: Any
     if openbao_config is not None and openbao_config.mode not in ("disabled", None):
         mode = openbao_config.mode
@@ -723,6 +731,7 @@ def _init_project_workspaces(project_manager: Any) -> dict[str, Any]:
 
 
 def load_model_profiles(profiles_dir: str | None = None) -> list[ModelProfile]:
+    """Load every enabled model profile YAML from the profiles directory."""
     if profiles_dir is None:
         return []
     pdir = Path(profiles_dir)
@@ -744,6 +753,8 @@ def load_model_profiles(profiles_dir: str | None = None) -> list[ModelProfile]:
 
 
 class AddTodoRequest(BaseModel):
+    """Request body for adding a todo via the admin API."""
+
     title: str = Field(min_length=1, max_length=512)
     description: str = Field(default="", max_length=4096)
     queue: str = Field(default="core", pattern=r"^[a-z0-9_\-]+$")
@@ -755,14 +766,20 @@ class AddTodoRequest(BaseModel):
 
 
 class LogLevelRequest(BaseModel):
+    """Request body for changing the daemon log level."""
+
     level: str
 
 
 class ReloadRequest(BaseModel):
+    """Request body for triggering a live reload of the given scope."""
+
     scope: str = "all"
 
 
 class AddModelRequest(BaseModel):
+    """Request body for registering a model with the routing registry."""
+
     model_id: str
     provider: str = "openai"
     model: str = ""
@@ -775,6 +792,8 @@ class AddModelRequest(BaseModel):
 
 
 class RegisterHookRequest(BaseModel):
+    """Request body for registering an outbound webhook."""
+
     event_name: str
     url: str
     headers: dict[str, str] | None = None
@@ -783,6 +802,8 @@ class RegisterHookRequest(BaseModel):
 
 
 class AddProjectRequest(BaseModel):
+    """Request body for registering a project in the dispatcher."""
+
     name: str
     weight: float
     description: str = ""
@@ -792,14 +813,20 @@ class AddProjectRequest(BaseModel):
 
 
 class SetWeightRequest(BaseModel):
+    """Request body for updating one project's dispatch weight."""
+
     weight: float
 
 
 class RebalanceRequest(BaseModel):
+    """Request body for rebalancing project dispatch weights in one call."""
+
     weights: dict[str, float]
 
 
 class ModelSearchRequest(BaseModel):
+    """Request body for searching the model index by query string."""
+
     query: str = ""
     limit: int = 20
 
@@ -1060,11 +1087,11 @@ def _build_self_update_audit_sink(
 
 def _configure_network_state(app: Any, network: Any) -> None:
     """Apply network policy and refuse unauthenticated external listeners."""
-
     preserve_cidr = bool(getattr(app.state, "_allowed_cidr", None))
     if network.is_external_bind and bool(getattr(app.state, "_no_auth", True)):
         raise RuntimeError(
-            "External daemon binds require authenticated access; configure GLUDD_PSK or use a loopback network host."
+            "External daemon binds require authenticated access; configure "
+            "GLUDD_AUTH_PSK or use a loopback network host."
         )
 
     if network.is_external_bind and not preserve_cidr:
@@ -2133,7 +2160,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 working_dir=_deploy_working_dir,
                 event_bus=subsys["bus"],
                 session_factory=session_factory,
-                worker_id=f"{os.environ.get('GLUDD_WORKER_ID', 'gunicorn')}-{os.getpid()}",
+                worker_id=f"{os.environ.get('GLUDD_WORKER_ID', _DEFAULT_WORKER_ID)}-{os.getpid()}",
             )
             app.state._deployment_manager = deployment_manager
 
@@ -2274,7 +2301,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             TerraformEventBridge,
         )
 
-        terraform_worker_id = f"{os.environ.get('GLUDD_WORKER_ID', 'gunicorn')}-{os.getpid()}"
+        terraform_worker_id = f"{os.environ.get('GLUDD_WORKER_ID', _DEFAULT_WORKER_ID)}-{os.getpid()}"
         terraform_wakeup_listener = None
         if engine.dialect.name == "postgresql":
             terraform_wakeup_listener = PostgresWakeupListener(
@@ -2283,7 +2310,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 wake=event_loop.wake,
                 worker_id=terraform_worker_id,
                 reconnect_min_seconds=float(os.environ.get("GLUDD_PG_WAKE_RECONNECT_SECONDS", "0.1")),
-                reconnect_max_seconds=float(os.environ.get("GLUDD_PG_WAKE_RECONNECT_SECONDS", "5.0")),
+                reconnect_max_seconds=float(os.environ.get("GLUDD_PG_WAKE_RECONNECT_MAX_SECONDS", "5.0")),
             )
 
         terraform_event_bridge = TerraformEventBridge(
@@ -3081,6 +3108,7 @@ def create_daemon_app(
     playbooks_dir: str | None = None,
     _db_path_override: str | None = None,
 ) -> FastAPI:
+    """Create the FastAPI daemon app with the full lifespan wiring."""
     if tick_interval is None:
         env_tick = os.environ.get("GLUDD_TICK_INTERVAL")
         tick_interval = float(env_tick) if env_tick else 1.0
@@ -3167,6 +3195,20 @@ def create_daemon_app(
     # as opt-out; GLUDD_REQUIRE_AUTH forces fail-closed.
     from general_ludd.security.auth import load_auth_posture
 
+    # Env audit / boot observability: the daemon surface reads the auth
+    # posture variables explicitly at boot so the runtime reads are visible
+    # here; the shared helper (security/auth.py) remains the single source
+    # of truth for the derived posture.
+    _auth_psk_boot = os.environ.get("GLUDD_AUTH_PSK", "").strip().strip()
+    _auth_require_boot = os.environ.get("GLUDD_REQUIRE_AUTH", "").strip()
+    _auth_allow_no_boot = os.environ.get("GLUDD_ALLOW_NO_AUTH", "").strip()
+    logger.debug(
+        "auth env at boot: psk_configured=%s require_auth=%s allow_no_auth=%s",
+        bool(_auth_psk_boot),
+        _auth_require_boot,
+        _auth_allow_no_boot,
+    )
+
     _posture = load_auth_posture("daemon")
     _psk = _posture.psk
     _no_auth = _posture.no_auth
@@ -3183,8 +3225,8 @@ def create_daemon_app(
         # be refused (503) until a PSK is configured.
         _dl = logging.getLogger("general_ludd.daemon")
         logger.warning(
-            "SECURITY: GLUDD_PSK is not set — the daemon will REFUSE all "
-            "non-public paths (503, fail-closed). Set GLUDD_PSK to enable auth. "
+            "SECURITY: GLUDD_AUTH_PSK is not set — the daemon will REFUSE all "
+            "non-public paths (503, fail-closed). Set GLUDD_AUTH_PSK to enable auth. "
             "For development only, set GLUDD_PSK_DISABLE=1 (or "
             "GLUDD_ALLOW_NO_AUTH=1) to allow unauthenticated access (leaves "
             "the entire /admin surface open to any caller)."
@@ -3192,10 +3234,10 @@ def create_daemon_app(
     elif _no_auth and _allow_no_auth:
         # Explicit dev opt-out: LOUD warning that auth is intentionally disabled.
         logger.warning(
-            "SECURITY: GLUDD_PSK is not set and auth is disabled — the "
+            "SECURITY: GLUDD_AUTH_PSK is not set and auth is disabled — the "
             "daemon is running with admin auth DISABLED (no_auth mode). The "
             "entire /admin surface is open to any caller that can reach the port. "
-            "Set GLUDD_PSK to enable auth."
+            "Set GLUDD_AUTH_PSK to enable auth."
         )
 
     _PUBLIC_PATHS = {

@@ -30,9 +30,9 @@ class TestAllowNoAuthEffect:
         assert os.environ.get("GLUDD_ALLOW_NO_AUTH") == "1"
 
     def test_env_var_absent_when_psk_present(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("GLUDD_PSK", "test-key")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-key")
         monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
-        assert os.environ.get("GLUDD_PSK") == "test-key"
+        assert os.environ.get("GLUDD_AUTH_PSK") == "test-key"
         assert os.environ.get("GLUDD_ALLOW_NO_AUTH") is None
 
 
@@ -49,18 +49,18 @@ class TestClientLoopbackHostEffect:
 class TestRestoreLeakyEnvVarsEffect:
     """_restore_leaky_env_vars (autouse) snapshots/restores leaky env vars."""
 
-    _SNAPSHOTTED = frozenset({"GLUDD_PSK", "GLUDD_ALLOW_NO_AUTH", "AWS_ACCESS_KEY_ID"})
+    _SNAPSHOTTED = frozenset({"GLUDD_AUTH_PSK", "GLUDD_ALLOW_NO_AUTH", "AWS_ACCESS_KEY_ID"})
 
     def test_snapshotted_vars_are_tracked(self):
         from tests.conftest import _LEAKY_ENV_VARS
 
-        assert "GLUDD_PSK" in _LEAKY_ENV_VARS
+        assert "GLUDD_AUTH_PSK" in _LEAKY_ENV_VARS
         assert "GLUDD_ALLOW_NO_AUTH" in _LEAKY_ENV_VARS
 
     def test_mutation_is_restored_by_fixture(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("GLUDD_PSK", "before")
-        monkeypatch.setenv("GLUDD_PSK", "mutated")
-        assert os.environ.get("GLUDD_PSK") == "mutated"
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "before")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "mutated")
+        assert os.environ.get("GLUDD_AUTH_PSK") == "mutated"
 
 
 class TestIsolateRootLoggerEffect:

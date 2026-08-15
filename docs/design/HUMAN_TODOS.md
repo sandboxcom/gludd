@@ -226,7 +226,7 @@ separate comments table is unnecessary.
 Subcommand tree: `gludd human-todo {list|show|done|dismiss|in-progress|comment|watch|stats}`
 (see [`cli_human_todos.py`](../../src/general_ludd/cli_human_todos.py)).
 
-Write operations send `GLUDD_PSK` as `Authorization: Bearer <psk>` so the
+Write operations send `GLUDD_AUTH_PSK` as `Authorization: Bearer <psk>` so the
 daemon's PSK middleware authenticates them. The daemon URL defaults to
 `http://localhost:8000` and can be overridden with `--daemon-url` on every
 subcommand. `--json` switches any command from a human-readable table to raw
@@ -341,7 +341,7 @@ the HTTP router both validate against this set.
 
 Rationale (from the router docstring): a human needs to **see** the queue
 without the admin PSK, but **mutating** the queue (filing, resolving,
-deleting) is privileged. The CLI sends `GLUDD_PSK` as a Bearer token on write
+deleting) is privileged. The CLI sends `GLUDD_AUTH_PSK` as a Bearer token on write
 operations; the Ansible module passes `psk` through to the daemon's PSK
 middleware.
 

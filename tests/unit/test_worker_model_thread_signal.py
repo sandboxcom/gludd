@@ -18,7 +18,7 @@ def test_generation_job_calls_gateway_from_testclient_worker_thread(
     monkeypatch,
 ) -> None:
     """Lazy deployment imports must not abort before the model call."""
-    monkeypatch.delenv("GLUDD_PSK", raising=False)
+    monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
     monkeypatch.setenv("GLUDD_PSK_DISABLE", "1")
     gateway = MagicMock()
     gateway.call_model.return_value = ModelResponse(

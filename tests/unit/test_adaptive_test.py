@@ -175,12 +175,12 @@ def test_env_override_nproc_wins() -> None:
 
 
 def test_env_override_gludd_xdist_int() -> None:
-    assert at.env_override({"GLUDD_XDIST": "3"}) == 3
+    assert at.env_override({"GLUDD_XDIST_WORKERS": "3"}) == 3
 
 
 def test_env_override_auto_is_ignored() -> None:
-    # GLUDD_XDIST=auto (the CI-faithfulness value) must NOT be treated as override.
-    assert at.env_override({"GLUDD_XDIST": "auto"}) is None
+    # GLUDD_XDIST_WORKERS=auto (the CI-faithfulness value) must NOT be treated as override.
+    assert at.env_override({"GLUDD_XDIST_WORKERS": "auto"}) is None
 
 
 def test_env_override_absent_or_nonpositive() -> None:

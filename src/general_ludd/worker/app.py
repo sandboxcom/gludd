@@ -232,6 +232,7 @@ def create_app(
     dispatcher: Any = _UNSET,
     permission_spec: Any = None,
 ) -> FastAPI:
+    """Create the worker FastAPI app with PSK auth and gateway/dispatcher wiring."""
     application = FastAPI(
         title="General Ludd Worker",
         version="0.1.0",
@@ -249,7 +250,7 @@ def create_app(
 
     # C20: worker auth fail-closed by default. The worker runs arbitrary
     # registered playbooks for any caller who can reach the port. Enforce the
-    # same pre-shared-key the daemon uses (GLUDD_PSK), via the SHARED
+    # same pre-shared-key the daemon uses (GLUDD_AUTH_PSK), via the SHARED
     # security.auth helper so the two surfaces cannot drift.
     from general_ludd.security.auth import check_bearer_token, load_auth_posture
 
@@ -261,11 +262,11 @@ def create_app(
     _public_paths = {"/healthz", "/docs", "/openapi.json", "/redoc"}
 
     if _psk:
-        logger.info("Worker auth: ON (GLUDD_PSK configured, %s)", _posture.surface)
+        logger.info("Worker auth: ON (GLUDD_AUTH_PSK configured, %s)", _posture.surface)
     elif _posture.require_auth and _posture.no_auth:
         logger.warning(
-            "Worker auth: FAIL-CLOSED — no GLUDD_PSK set, all non-public paths "
-            "will return 403. Set GLUDD_PSK to enable auth or "
+            "Worker auth: FAIL-CLOSED — no GLUDD_AUTH_PSK set, all non-public paths "
+            "will return 403. Set GLUDD_AUTH_PSK to enable auth or "
             "GLUDD_PSK_DISABLE=1 to disable it."
         )
     else:
@@ -286,7 +287,7 @@ def create_app(
                     content={
                         "error": "auth_required",
                         "reason": (
-                            "No GLUDD_PSK configured. Set GLUDD_PSK to enable auth "
+                            "No GLUDD_AUTH_PSK configured. Set GLUDD_AUTH_PSK to enable auth "
                             "or GLUDD_PSK_DISABLE=1 to explicitly disable it."
                         ),
                     },

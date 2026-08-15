@@ -63,12 +63,12 @@ class TestBuildEnvAllowlist:
         # The classic leak: host secrets/creds must NEVER reach the subprocess.
         monkeypatch.setenv("PATH", "/usr/bin")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-secret")
-        monkeypatch.setenv("GLUDD_PSK", "psk-secret")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk-secret")
         monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
         client = MCPStdioClient(_make_config(env={}))
         env = client._build_env()
         assert "ANTHROPIC_API_KEY" not in env
-        assert "GLUDD_PSK" not in env
+        assert "GLUDD_AUTH_PSK" not in env
         assert "AWS_SECRET_ACCESS_KEY" not in env
 
     def test_unset_allowlisted_var_omitted(self, monkeypatch):

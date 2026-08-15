@@ -21,10 +21,10 @@ from general_ludd.worker.app import create_app
 
 @pytest.fixture(autouse=True)
 def _clean_env():
-    for var in ("GLUDD_PSK", "GLUDD_REQUIRE_AUTH"):
+    for var in ("GLUDD_AUTH_PSK", "GLUDD_REQUIRE_AUTH"):
         os.environ.pop(var, None)
     yield
-    for var in ("GLUDD_PSK", "GLUDD_REQUIRE_AUTH"):
+    for var in ("GLUDD_AUTH_PSK", "GLUDD_REQUIRE_AUTH"):
         os.environ.pop(var, None)
 
 
@@ -47,7 +47,7 @@ class TestWorkerAuthParity:
 
     @pytest.mark.asyncio
     async def test_psk_rejects_missing_token(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "s3cret")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "s3cret")
         app = create_app(gateway=None)
         async with _client(app) as client:
             resp = await client.post(
@@ -58,7 +58,7 @@ class TestWorkerAuthParity:
 
     @pytest.mark.asyncio
     async def test_psk_rejects_wrong_token(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "s3cret")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "s3cret")
         app = create_app(gateway=None)
         async with _client(app) as client:
             resp = await client.post(
@@ -70,7 +70,7 @@ class TestWorkerAuthParity:
 
     @pytest.mark.asyncio
     async def test_psk_accepts_correct_token(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "s3cret")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "s3cret")
         app = create_app(gateway=None)
         async with _client(app) as client:
             # Correct token -> passes auth, hits route, 400 for unknown playbook.
@@ -83,7 +83,7 @@ class TestWorkerAuthParity:
 
     @pytest.mark.asyncio
     async def test_healthz_public_even_with_psk(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "s3cret")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "s3cret")
         app = create_app(gateway=None)
         async with _client(app) as client:
             resp = await client.get("/healthz")
@@ -109,7 +109,7 @@ class TestWorkerAuthParity:
     async def test_require_auth_with_psk_uses_token(self, monkeypatch):
         # When both are set, a valid token still passes (require-auth only bites
         # when there is no PSK at all).
-        monkeypatch.setenv("GLUDD_PSK", "s3cret")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "s3cret")
         monkeypatch.setenv("GLUDD_REQUIRE_AUTH", "1")
         app = create_app(gateway=None)
         async with _client(app) as client:

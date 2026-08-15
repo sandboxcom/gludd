@@ -109,7 +109,7 @@ class TestAuthProviders:
     def test_load_auth_posture_with_psk_configured(self):
         from general_ludd.security.auth import load_auth_posture
 
-        env = {"GLUDD_PSK": "my-psk", "GLUDD_REQUIRE_AUTH": "1"}
+        env = {"GLUDD_AUTH_PSK": "my-psk", "GLUDD_REQUIRE_AUTH": "1"}
         posture = load_auth_posture("daemon", env=env)
         assert posture.psk == "my-psk"
         assert posture.require_auth is True

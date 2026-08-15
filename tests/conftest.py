@@ -341,14 +341,14 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 def _allow_no_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """Permit non-public daemon/worker endpoints during tests when no PSK is set.
 
-    The production daemon is fail-closed: ``GLUDD_PSK`` unset + no opt-out ⇒
+    The production daemon is fail-closed: ``GLUDD_AUTH_PSK`` unset + no opt-out ⇒
     every non-public path returns 503 (daemon.py:2270-2303, worker/app.py via
     security/auth.py). Tests that don't care about auth should not have to
     each ``monkeypatch.setenv`` to bypass it. Tests that DO exercise the auth
-    layer override this by setting ``GLUDD_PSK`` or unsetting the env var
+    layer override this by setting ``GLUDD_AUTH_PSK`` or unsetting the env var
     inside their own ``monkeypatch.setenv`` calls.
     """
-    if not os.environ.get("GLUDD_PSK", "").strip():
+    if not os.environ.get("GLUDD_AUTH_PSK", "").strip():
         monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
 
 
@@ -401,7 +401,7 @@ def _testclient_presents_loopback_host():
 _LEAKY_ENV_VARS: frozenset[str] = frozenset(
     {
         "AWS_ACCESS_KEY_ID",
-        "GLUDD_PSK",
+        "GLUDD_AUTH_PSK",
         "GLUDD_REQUIRE_AUTH",
         "GLUDD_ALLOW_NO_AUTH",
         "GLUDD_WEB_FETCH_ALLOWED_DOMAINS",

@@ -21,7 +21,7 @@ Evidence anchors:
 | 35 | widen lint+typecheck to ALL tracked Python | **PARTIAL** | `lint-all`/`typecheck-all` exist but the **gate/CI still run only `ruff check src tests` + `mypy src`** — wider scope is not enforced |
 | 36 | enforce YAML + ansible-lint (no toothless `\|\| true`) | **PARTIAL** | `yaml-lint` fails-closed, but it is **not in `gate`/`validate`/CI**; the in-gate `ansible-syntax` is syntax-only; `ansible-lint-playbooks` still ends `\|\| true` |
 | 37 | molecule coverage real (no no-op / dir!=pass / TODO) | **DONE** | `tests/integration/test_molecule_coverage.py` partitions full module+role inventory; both `_NOT_YET_COVERED_*` sets empty; `molecule-test-all` runs every scenario and fails on any |
-| 39 | CI gate timeout root-cause (1 xdist worker → >40min) | **DONE** | `GLUDD_XDIST` env override (`Makefile:11-15`) + CI sets `GLUDD_XDIST: auto`; per-test `timeout=180`; gate `timeout-minutes: 40` |
+| 39 | CI gate timeout root-cause (1 xdist worker → >40min) | **DONE** | `GLUDD_XDIST_WORKERS` env override (`Makefile:11-15`) + CI sets `GLUDD_XDIST_WORKERS: auto`; per-test `timeout=180`; gate `timeout-minutes: 40` |
 | 40 | concurrent-pytest collision → per-run basetemp | **DONE** | gate pins `--basetemp=/tmp/gludd-gate-basetemp`; `test-iso`/`test-xdist` use unique `$$`/`$ID` basetemp dirs |
 | 47 | re-add test_gludd_reload + role_self_improve_propose molecule scenarios that PASS | **DONE (pass unverified)** | Both scenarios present with full molecule.yml + prepare/converge/verify asserting real behavior; gated by #37's checklist. "Pass" not re-run this session |
 | 62 | standing integrate+reclaim loop (wt-reap/wt-sync-all) | **DONE** | `wt-reap`, `wt-sync-all`, `wt-sync`, `wt-apply`, `wt-import`, `wt-changed`, `wt-remove-many` all present in Makefile |
@@ -100,9 +100,9 @@ re-verified here.
 
 Evidence:
 - Root cause + fix in `Makefile:11-15`: comment states a 4-vCPU runner's `cpu//4 == 1` made the
-  gate sit ~38min near the 40min wall; `_XDIST_WORKERS` now honors a `GLUDD_XDIST` env override:
+  gate sit ~38min near the 40min wall; `_XDIST_WORKERS` now honors a `GLUDD_XDIST_WORKERS` env override:
   `print(v if v else max(1, (os.cpu_count() or 1)//4))`; `_XD = -n $(_XDIST_WORKERS) --dist loadgroup`.
-- CI sets it: `build.yml:54` `GLUDD_XDIST: auto` in the `gate` job env, so CI uses pytest-xdist
+- CI sets it: `build.yml:54` `GLUDD_XDIST_WORKERS: auto` in the `gate` job env, so CI uses pytest-xdist
   auto worker count instead of 1.
 - Belt-and-suspenders: per-test `timeout = 180` / `timeout_method = "signal"` (`pyproject.toml:123-124`)
   caps any single hung test; `gate` job `timeout-minutes: 40` (`build.yml:34`).

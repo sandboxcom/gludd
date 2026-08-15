@@ -191,7 +191,20 @@ class TestCommitLintGuard:
             target_name = first.split(":")[0].strip()
             if target_name.startswith("."):
                 continue
-            if target_name in ("help", "usage", "git-reset", "git-revert", "submodule-pin", "_auto-commit-specs"):
+            if target_name in (
+                "help",
+                "usage",
+                "git-reset",
+                "git-revert",
+                "submodule-pin",
+                "_auto-commit-specs",
+                # merge-forward targets run _commit-lint-guard INLINE in the
+                # recipe (see Makefile); their prereq line must stay empty
+                # because test_development_merge_forward*.py pin
+                # "^development-merge-forward...:" with no prerequisites.
+                "development-merge-forward",
+                "development-merge-forward-batch",
+            ):
                 continue
             # Check the prerequisite line (first line after the target name)
             prereq_line = first

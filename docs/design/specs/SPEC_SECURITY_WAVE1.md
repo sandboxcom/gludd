@@ -458,7 +458,7 @@ Files: `routers/stream.py`, `sandbox_exec/executor.py`,
 - **`routers/stream.py:81-87`** `_run_subprocess` does
   `subprocess.Popen(args, cwd=cwd, stdout=PIPE, stderr=PIPE)` with **no `env=`**
   → the `ansible-playbook` CLI child inherits the daemon's *entire* `os.environ`
-  (ZAI_API_KEY, AWS_*, DATABASE_URL, GLUDD_PSK — not just what a playbook needs).
+  (ZAI_API_KEY, AWS_*, DATABASE_URL, GLUDD_AUTH_PSK — not just what a playbook needs).
   Reachable path: `POST /admin/stream/dispatch` (route registered stream.py:91-92,
   handler `admin_stream_dispatch` :100) → `_run_clone_sync` (:165) when
   `req.wait_for_completion=True` → builds `["ansible-playbook", "run-clone.yml"]`
@@ -478,13 +478,13 @@ Files: `routers/stream.py`, `sandbox_exec/executor.py`,
   executor leak is currently **inert** (not reachable with a real command) but is
   a live footgun the moment a real command is wired.
 - **`collections/ansible_collections/general_ludd/agent/plugins/module_utils/gludd.py:146-154`**:
-  `_headers()` does `psk = self._psk or os.environ.get("GLUDD_PSK", "")` (line
+  `_headers()` does `psk = self._psk or os.environ.get("GLUDD_AUTH_PSK", "")` (line
   148) and, if set, adds `Authorization: Bearer <psk>` + `X-PSK`. Every
   `general_ludd.agent.*` module built on this base **scavenges the admin PSK from
   its inherited env** — converting the stream.py/renderer env leak into *live
   admin API calls*.
 - **`renderers/runner.py:226-232`**: deliberately re-injects
-  `extra_env["GLUDD_PSK"] = os.environ["GLUDD_PSK"]` (and `GLUDD_DAEMON_URL`)
+  `extra_env["GLUDD_AUTH_PSK"] = os.environ["GLUDD_AUTH_PSK"]` (and `GLUDD_DAEMON_URL`)
   which `core_runner.py:818-821` merges in *after* the allowlist strip — an
   intentional opt-in so renderer playbooks can call back into the daemon. This is
   the mechanism by which the PSK legitimately reaches Ansible-dispatched agents
@@ -497,7 +497,7 @@ Files: `routers/stream.py`, `sandbox_exec/executor.py`,
   re-export) `_PLAYBOOK_ENV_ALLOWLIST` from `ansible/core_runner.py` and build
   `env = {k: v for k, v in os.environ.items() if k in _PLAYBOOK_ENV_ALLOWLIST}`,
   then re-add only what the CLI genuinely needs (`PATH`, `HOME`,
-  `ANSIBLE_COLLECTIONS_PATH`, and `GLUDD_PSK`/`GLUDD_DAEMON_URL` *only if* the
+  `ANSIBLE_COLLECTIONS_PATH`, and `GLUDD_AUTH_PSK`/`GLUDD_DAEMON_URL` *only if* the
   clone playbook must call back — decide per playbook, default deny). Pass
   `env=env` to `Popen`. Better still: route this dispatch through
   `CoreAnsibleRunner` so it inherits the same scrub as every other playbook
@@ -555,7 +555,7 @@ Files: `routers/stream.py`, `sandbox_exec/executor.py`,
 ### 6.1 Scope (CORRECTED — do not overstate)
 
 The PSK trust boundary reaches **Ansible-dispatched agents only**:
-`renderers/runner.py:226-232` re-injects `GLUDD_PSK` past the allowlist scrub,
+`renderers/runner.py:226-232` re-injects `GLUDD_AUTH_PSK` past the allowlist scrub,
 and `module_utils/gludd.py:148` scavenges it into `Authorization: Bearer`. It
 does **NOT** reach:
 

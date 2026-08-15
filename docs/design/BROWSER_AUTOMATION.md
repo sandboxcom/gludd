@@ -494,7 +494,7 @@ boundary is invented.
    confines Chromium; the fork-child `os.setsid()` + `killpg` group-kill
    (`core_runner.py:390-411,489-516`) is what reaps a runaway/zombie Chromium and
    **all** its renderer children on timeout. Env is scrubbed to the allowlist
-   (`_PLAYBOOK_ENV_ALLOWLIST`, `core_runner.py:521-568`) so `GLUDD_PSK`,
+   (`_PLAYBOOK_ENV_ALLOWLIST`, `core_runner.py:521-568`) so `GLUDD_AUTH_PSK`,
    `ZAI_API_KEY`, `AWS_*`, `DATABASE_URL` never reach a page's process. Add
    Chromium's own `--no-sandbox` guard: **do not** pass it — keep Chromium's
    internal sandbox on inside the container.
@@ -663,7 +663,7 @@ must be folded in before implementation starts.
    fork-group-kill (`setsid`+`killpg` reap) and env-scrub, **not** real OS
    sandboxing. Two things genuinely ARE unconditional and can be relied on as
    a floor regardless of `iso.enabled`: (a) the `_PLAYBOOK_ENV_ALLOWLIST` env
-   scrub at `core_runner.py:782-800` — `GLUDD_PSK`/API keys/`AWS_*`/
+   scrub at `core_runner.py:782-800` — `GLUDD_AUTH_PSK`/API keys/`AWS_*`/
    `DATABASE_URL` are scrubbed from the child env even without isolation
    enabled; (b) the `setsid`+`killpg` reap that kills the whole process group
    on timeout. Real OS-level sandboxing (podman/bwrap/seccomp) requires the

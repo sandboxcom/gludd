@@ -15,13 +15,13 @@ import general_ludd.cli_self_improve as cli_self_improve
 
 class TestPskHeaders:
     def test_no_psk_env(self, monkeypatch):
-        monkeypatch.delenv("GLUDD_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
         headers = cli_self_improve._psk_headers()
         assert "Content-Type" in headers
         assert "Authorization" not in headers
 
     def test_with_psk_env(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "secret123")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
         headers = cli_self_improve._psk_headers()
         assert headers["Authorization"] == "Bearer secret123"
 
@@ -37,7 +37,7 @@ class TestPrintJson:
 
 class TestCmdPending:
     def test_empty_result(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"pending": []}
@@ -51,7 +51,7 @@ class TestCmdPending:
             assert "(no self-improve todos awaiting approval)" in buf.getvalue()
 
     def test_with_pending_todos(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -76,7 +76,7 @@ class TestCmdPending:
             assert "Improve error handling" in output
 
     def test_json_mode(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"pending": []}
@@ -91,7 +91,7 @@ class TestCmdPending:
             assert output == {"pending": []}
 
     def test_resp_is_none_handled(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = None
@@ -107,7 +107,7 @@ class TestCmdPending:
 
 class TestCmdApprove:
     def test_approve_pretty(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"status": "queued"}
@@ -123,7 +123,7 @@ class TestCmdApprove:
             assert "Approved (queued): t1" in buf.getvalue()
 
     def test_approve_json(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"status": "queued"}
@@ -142,7 +142,7 @@ class TestCmdApprove:
 
 class TestCmdReject:
     def test_reject_pretty(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"status": "cancelled"}
@@ -159,7 +159,7 @@ class TestCmdReject:
             assert "Rejected (cancelled): t1" in buf.getvalue()
 
     def test_reject_without_reason(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"status": "cancelled"}
@@ -178,7 +178,7 @@ class TestCmdReject:
             assert call_kwargs.kwargs["json"] == {}
 
     def test_reject_json(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"status": "cancelled"}
@@ -198,7 +198,7 @@ class TestCmdReject:
 
 class TestHttpHelper:
     def test_success_returns_json(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"ok": True}
@@ -207,7 +207,7 @@ class TestHttpHelper:
             assert result == {"ok": True}
 
     def test_non_ok_status_exits(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 500
         mock_resp.text = "Server error"
@@ -215,7 +215,7 @@ class TestHttpHelper:
             cli_self_improve._http("GET", "http://example.com")
 
     def test_network_error_exits(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         with patch.object(
             cli_self_improve.httpx,
             "request",
@@ -224,7 +224,7 @@ class TestHttpHelper:
             cli_self_improve._http("GET", "http://example.com")
 
     def test_json_parse_failure_returns_none(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.side_effect = ValueError("bad json")

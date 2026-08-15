@@ -518,7 +518,7 @@ Agents can now invoke MCP tools via the `gludd_mcp_tool` Ansible module:
 #### Scenario 5: Run gludd on a Remote Server
 
 By default, gludd binds to `127.0.0.1` (loopback only). To expose it on a remote
-host — **and you MUST configure authentication first** (PSK via `GLUDD_PSK` env var) —
+host — **and you MUST configure authentication first** (PSK via `GLUDD_AUTH_PSK` env var) —
 edit `general-ludd.yml`:
 
 ```yaml
@@ -535,18 +535,18 @@ network:
 **⚠ Security warning:** Binding to `0.0.0.0` without `allowed_cidr` exposes the daemon
 to the entire network. Always configure both:
 
-1. **PSK auth** — set `GLUDD_PSK` env var to a strong random secret on both the daemon
-   and any client (`gludd --psk "$GLUDD_PSK" ...`).
+1. **PSK auth** — set `GLUDD_AUTH_PSK` env var to a strong random secret on both the daemon
+   and any client (`gludd --psk "$GLUDD_AUTH_PSK" ...`).
 2. **CIDR allowlist** — restrict `network.allowed_cidr` to the IPs/networks that need
    access.
 
 ```bash
 # On the remote server
-export GLUDD_PSK="$(openssl rand -hex 32)"
+export GLUDD_AUTH_PSK="$(openssl rand -hex 32)"
 GLUDD_CONFIG_DIR="/etc/general-ludd" uv run gludd daemon --port 8000
 
 # On a client
-export GLUDD_PSK="<same-secret>"
+export GLUDD_AUTH_PSK="<same-secret>"
 gludd --host https://remote.example.com:8000 status
 ```
 

@@ -93,7 +93,7 @@ PARTIAL→DONE. **Do it once, prove each module e2e, the PARTIAL column collapse
 - **1C.5** Build `routers/receiver.py` (`register` mounts only when `receiver_config.enabled`); endpoints `POST /v1/{logs,metrics,traces}`, `/ingest/{webhook,gelf,fluent,beats}`.
   - doc: `observability_receiver.md §1` + `daemon_integration_plan.md §3` (ingest-token auth, NOT admin PSK; body-size/rate/backpressure caps; NEVER in `_PUBLIC_PATHS`).
   - files: NEW `src/general_ludd/routers/receiver.py`. deps: 1C.4 (buffer). size: M.
-  - test: `tests/integration/test_receiver_wired.py` — valid ingest token → 202 + buffer depth up; admin PSK alone → 401 from router; no token+no PSK → 503 `ingest_disabled` (fail-closed); reachable without `GLUDD_PSK` (bypassed admin gate).
+  - test: `tests/integration/test_receiver_wired.py` — valid ingest token → 202 + buffer depth up; admin PSK alone → 401 from router; no token+no PSK → 503 `ingest_disabled` (fail-closed); reachable without `GLUDD_AUTH_PSK` (bypassed admin gate).
 
 ### Batch 1D — the SINGLE `create_daemon_app` daemon.py edit (group ALL router registrations + middleware + cheap constructions) — **[daemon.py — SERIALIZE: one owner]**
 

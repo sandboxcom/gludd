@@ -59,7 +59,7 @@ class TestC20WorkerAuth:
 
     def test_worker_allows_with_valid_psk(self):
         """Valid PSK → /jobs/execute passes auth, reaches endpoint logic."""
-        with patch.dict("os.environ", {"GLUDD_PSK": _PSK}):
+        with patch.dict("os.environ", {"GLUDD_AUTH_PSK": _PSK}):
             app = create_app(gateway=None)
             client = TestClient(app)
             resp = client.post(

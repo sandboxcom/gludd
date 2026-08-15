@@ -52,13 +52,13 @@ class AuthPosture:
 def load_auth_posture(surface: str, env: Mapping[str, str] | None = None) -> AuthPosture:
     """Resolve the shared PSK auth posture from the environment.
 
-    Reads ``GLUDD_PSK`` (the pre-shared key) and ``GLUDD_REQUIRE_AUTH`` (the
+    Reads ``GLUDD_AUTH_PSK`` (the pre-shared key) and ``GLUDD_REQUIRE_AUTH`` (the
     fail-closed opt-in) so the daemon and the worker derive an identical posture
     and cannot drift. Emits the LOUD no-PSK startup warning when auth is required
     but no key is configured. Performs no I/O beyond reading env + logging.
     """
     source = env if env is not None else os.environ
-    psk = (source.get("GLUDD_PSK", "") or "").strip()
+    psk = (source.get("GLUDD_AUTH_PSK", "") or "").strip()
     no_auth = not psk
     # Default-secure: when NO PSK is configured, REQUIRE auth (fail-closed) unless
     # the operator explicitly opts into no-auth via GLUDD_PSK_DISABLE=1.
@@ -82,8 +82,8 @@ def load_auth_posture(surface: str, env: Mapping[str, str] | None = None) -> Aut
         import logging
 
         logging.getLogger("general_ludd.security.auth").warning(
-            "No GLUDD_PSK configured for the %s surface: failing CLOSED on "
-            "all non-public paths. Set GLUDD_PSK to enable auth, or "
+            "No GLUDD_AUTH_PSK configured for the %s surface: failing CLOSED on "
+            "all non-public paths. Set GLUDD_AUTH_PSK to enable auth, or "
             "GLUDD_PSK_DISABLE=1 / GLUDD_ALLOW_NO_AUTH=1 to explicitly disable it.",
             surface,
         )

@@ -208,7 +208,7 @@ def test_register_accepts_safe_address() -> None:
 def test_broadcast_skips_unsafe_worker_even_if_registered(monkeypatch) -> None:
     """Defense-in-depth: even if an unsafe worker IS registered (bypass),
     broadcast must still skip it (re-validate at send time)."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
 
     # Monkey-patch register to bypass SSRF check for this test
@@ -352,7 +352,7 @@ def test_symlink_write_targets_real_file(tmp_path: Path) -> None:
 def test_psk_never_sent_to_non_allowlisted_worker(monkeypatch) -> None:
     """When allowlist is configured, the PSK Bearer header must never be POST'd
     to a worker whose id/address is not in the allowlist."""
-    monkeypatch.setenv("GLUDD_PSK", "secret-psk-value")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret-psk-value")
     monkeypatch.setenv("GLUDD_WORKER_ALLOWLIST", "trusted-w1,trusted-w2")
 
     b = WorkerBroadcaster()
@@ -391,7 +391,7 @@ def test_empty_allowlist_means_unrestricted(monkeypatch) -> None:
     """An empty (or unset) allowlist means no restriction — broadcasts go out
     to all registered safe workers."""
     monkeypatch.delenv("GLUDD_WORKER_ALLOWLIST", raising=False)
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     resolved = b._resolve_allowlist()
     assert resolved == set()  # empty → unrestricted

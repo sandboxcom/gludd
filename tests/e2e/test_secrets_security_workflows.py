@@ -66,9 +66,9 @@ def _make_mock_approle_client() -> MagicMock:
 def _daemon_client(monkeypatch: pytest.MonkeyPatch, psk: str | None = None) -> TestClient:
     """Create a daemon TestClient with PSK auth configured."""
     if psk:
-        monkeypatch.setenv("GLUDD_PSK", psk)
+        monkeypatch.setenv("GLUDD_AUTH_PSK", psk)
     else:
-        monkeypatch.delenv("GLUDD_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
     monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "0")
     monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
 
@@ -115,7 +115,7 @@ class TestSecretResolutionChain:
         from general_ludd.secrets.env import EnvSecretsManager
 
         mgr = EnvSecretsManager()
-        assert mgr.resolve("GLUDD_PSK") is None
+        assert mgr.resolve("GLUDD_AUTH_PSK") is None
         assert mgr.resolve("PATH") is None
         assert mgr.resolve("HOME") is None
 

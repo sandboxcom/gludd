@@ -87,7 +87,6 @@ def _timeout_child_entry(
     pytest parent. The child retains the original seccomp-before-execution and
     process-group ownership guarantees.
     """
-
     if runner._seccomp_filter is not None:
         try:
             applied = runner._seccomp_filter.apply()
@@ -216,6 +215,8 @@ class _EventCollectorCallback(CallbackBase):
 
 
 class AnsibleOptions:
+    """Container for the per-run ansible execution options."""
+
     def __init__(
         self,
         inventory: list[str] | None = None,
@@ -233,6 +234,7 @@ class AnsibleOptions:
         skip_tags: list[str] | None = None,
         start_at_task: str | None = None,
     ) -> None:
+        """Initialize the options with safe defaults for each run mode."""
         self.inventory = inventory or ["localhost,"]
         self.extravars = extravars
         self.verbosity = verbosity
@@ -250,6 +252,8 @@ class AnsibleOptions:
 
 
 class AnsibleResult(BaseModel):
+    """Serialized outcome of one ansible playbook run."""
+
     status: str = "unknown"
     rc: int = 0
     stats: dict[str, Any] = Field(default_factory=dict)
@@ -266,6 +270,8 @@ class AnsibleResult(BaseModel):
 
 
 class CoreAnsibleRunner:
+    """In-process ansible playbook executor with sandboxing hooks."""
+
     def __init__(
         self,
         module_paths: list[str] | None = None,
@@ -275,6 +281,7 @@ class CoreAnsibleRunner:
         network_policy: Any | None = None,
         seccomp_filter: Any | None = None,
     ) -> None:
+        """Initialize the runner with optional module/callback/security wiring."""
         self._module_paths = module_paths or []
         self._callback_plugins = callback_plugins or []
         self._process_isolation = process_isolation
@@ -288,6 +295,7 @@ class CoreAnsibleRunner:
         self._collected_events: list[dict[str, Any]] = []
 
     def close(self) -> None:
+        """Remove the private data dir and release any run-scoped resources."""
         if self._private_data_dir and os.path.isdir(self._private_data_dir):
             import shutil
 
@@ -308,6 +316,7 @@ class CoreAnsibleRunner:
         timeout: float | None = None,
         extra_env: dict[str, str] | None = None,
     ) -> AnsibleResult:
+        """Execute one playbook with the configured options and return its result."""
         if not _HAS_ANSIBLE_CORE:
             raise ImportError("ansible-core is required for playbook execution but is not installed")
 
@@ -552,7 +561,7 @@ class CoreAnsibleRunner:
             proc.join(5.0)
 
     # Env vars whose values are NOT secrets and are safe to pass through to the
-    # playbook subprocess.  Anything not on this list (ZAI_API_KEY, GLUDD_PSK,
+    # playbook subprocess.  Anything not on this list (ZAI_API_KEY, GLUDD_AUTH_PSK,
     # AWS_*, OPENAI_*, DATABASE_URL, …) is stripped before pb_exec.run().
     _PLAYBOOK_ENV_ALLOWLIST: frozenset[str] = frozenset(
         {
@@ -568,7 +577,7 @@ class CoreAnsibleRunner:
             "TEMP",
             "TMP",
             # Gludd runner configuration (not secrets — callers use these to tune
-            # playbook behaviour at the process level; GLUDD_PSK / ZAI_API_KEY /
+            # playbook behaviour at the process level; GLUDD_AUTH_PSK / ZAI_API_KEY /
             # AWS_* are intentionally absent and must stay absent).
             "GLUDD_PLAYBOOK_TIMEOUT",
             # Ansible configuration (not secrets)
@@ -854,7 +863,7 @@ class CoreAnsibleRunner:
         pb_exec._tqm._callback_plugins.append(callback)
 
         # HIGH (env leak): build a minimal allowlisted env so playbook tasks
-        # never inherit ZAI_API_KEY / GLUDD_PSK / AWS_* / DATABASE_URL or any
+        # never inherit ZAI_API_KEY / GLUDD_AUTH_PSK / AWS_* / DATABASE_URL or any
         # other secret that happens to be set in the parent process.  We swap
         # os.environ in-place (Ansible reads it at run time via os.environ
         # directly, not via a captured snapshot), then restore unconditionally
@@ -929,6 +938,7 @@ class CoreAnsibleRunner:
         template_str: str,
         variables: dict[str, Any] | None = None,
     ) -> str:
+        """Render a Jinja2 template string with the given variables."""
         if not _HAS_ANSIBLE_CORE:
             raise ImportError("ansible-core is required for templating but is not installed")
         templar = _get_templar(variables=variables)
@@ -942,6 +952,7 @@ class CoreAnsibleRunner:
         inventory_path: str | None = None,
         extravars: dict[str, Any] | None = None,
     ) -> Any:
+        """Resolve one ansible variable for a host from inventory and extra vars."""
         if not _HAS_ANSIBLE_CORE:
             raise ImportError("ansible-core is required for variable resolution but is not installed")
         return self._resolve_with_variable_manager(var_name, host, inventory_path, extravars)
@@ -976,6 +987,7 @@ class CoreAnsibleRunner:
         playbook_path: str,
         extravars: dict[str, Any] | None = None,
     ) -> list[dict[str, str]]:
+        """List name/module/hosts for each task in a playbook without executing it."""
         _NON_MODULE_KEYS = {
             "name",
             "when",
@@ -1034,6 +1046,7 @@ class CoreAnsibleRunner:
         return tasks
 
     def validate_playbook_syntax(self, playbook_path: str) -> list[str]:
+        """Return a list of syntax/structural errors found in the playbook (empty = valid)."""
         errors: list[str] = []
 
         if not os.path.isfile(playbook_path):

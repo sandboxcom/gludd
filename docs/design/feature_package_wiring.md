@@ -127,7 +127,7 @@ a wiring spec is meaningful. When each is built, append its stanza here.
   `/v1/logs`, `/v1/metrics`, `/v1/traces`, `/ingest/webhook`, `/ingest/gelf`,
   `/ingest/fluent`, `/ingest/beats`
 - `buffer.drain()` — returns list of normalized records and clears them
-- Auth: `GLUDD_INGEST_TOKEN` env var; **distinct from** `GLUDD_PSK`
+- Auth: `GLUDD_INGEST_TOKEN` env var; **distinct from** `GLUDD_AUTH_PSK`
 
 **Entry points:** `register(app, daemon_state)` reads `daemon_state["receiver_buffer"]`
 

@@ -26,7 +26,7 @@ import httpx
 
 
 def _psk_headers() -> dict[str, str]:
-    psk = os.environ.get("GLUDD_PSK", "")
+    psk = os.environ.get("GLUDD_AUTH_PSK", "").strip()
     headers: dict[str, str] = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -104,8 +104,7 @@ def _cmd_backup(args: argparse.Namespace) -> None:
 def _cmd_delete(args: argparse.Namespace) -> None:
     if not args.confirm:
         print(
-            "Refusing to delete without --confirm. "
-            "This operation is irreversible.",
+            "Refusing to delete without --confirm. This operation is irreversible.",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -202,6 +201,7 @@ def _cmd_cleanup(args: argparse.Namespace) -> None:
 def add_account_subparser(
     sub: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> argparse.ArgumentParser:
+    """Register the ``account`` command tree (backup/delete/retention) and return its parser."""
     p = sub.add_parser(
         "account",
         help="Account backup, deletion, and cloud-service retention policy",

@@ -444,7 +444,7 @@ class TestAuthMiddleware:
                 assert client.get("/openapi.json").status_code == 200
 
     def test_admin_path_401_without_psk(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "test-secret-key-12345")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-key-12345")
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -453,7 +453,7 @@ class TestAuthMiddleware:
                 assert resp.status_code == 401
 
     def test_admin_path_200_with_bearer_token(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "test-secret-key-12345")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-key-12345")
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -465,7 +465,7 @@ class TestAuthMiddleware:
                 assert resp.status_code == 200
 
     def test_admin_path_401_with_wrong_token(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "correct-token")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "correct-token")
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -488,7 +488,7 @@ class TestAuthMiddleware:
 
     def test_fail_closed_no_psk_refuses_admin(self, monkeypatch):
         monkeypatch.setenv("GLUDD_REQUIRE_AUTH", "1")
-        monkeypatch.delenv("GLUDD_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
         monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
@@ -499,7 +499,7 @@ class TestAuthMiddleware:
                 assert "auth_required" in resp.text
 
     def test_bearer_token_with_project_claim_stamps_state(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "shared-token-123")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "shared-token-123")
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)

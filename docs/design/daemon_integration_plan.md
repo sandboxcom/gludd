@@ -85,7 +85,7 @@ dedicated `connectors.yml` file, falling back to `uc.connectors`.
 - `GET /api/observe/sources` returns the source metadata (name/kind/family),
   NO secret/env value present.
 - Assert `GET /api/observe/sources` WITHOUT a Bearer PSK returns 401 when
-  `GLUDD_PSK` is set (proves PSK-gated, not public).
+  `GLUDD_AUTH_PSK` is set (proves PSK-gated, not public).
 - `POST /api/observe/query` with `{"source": "<name>", "spec": {}}` returns
   records; unknown source → 404 (`observe.py:117-121`).
 
@@ -229,7 +229,7 @@ stays an ENV var (`GLUDD_INGEST_TOKEN`), never in config (`router.py:108-110`).
   a correct ingest token succeeds).
 - With NO ingest token configured → 503 `ingest_disabled` (`router.py:210-213`),
   proving fail-closed.
-- Assert `/ingest/webhook` is reachable (not 404) without `GLUDD_PSK` set,
+- Assert `/ingest/webhook` is reachable (not 404) without `GLUDD_AUTH_PSK` set,
   proving it bypassed the admin gate.
 
 ---

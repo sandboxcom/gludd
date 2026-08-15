@@ -19,7 +19,7 @@ status is always updated (to `done` or `failed`) regardless of errors.
 |---|---|---|
 | `enable_git_push` | `false` | Push is DISABLED by default — must be explicitly enabled |
 | `quality_gate_cmd` | `make test-count` | Run in the worktree before committing |
-| `psk` | `""` | Prefer `GLUDD_PSK` env var over inline value |
+| `psk` | `""` | Prefer `GLUDD_AUTH_PSK` env var over inline value |
 
 ## Example
 

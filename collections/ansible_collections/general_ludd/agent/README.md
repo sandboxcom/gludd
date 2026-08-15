@@ -119,7 +119,7 @@ role prompt envelope, upstream user reports, and ZDD rollout procedure.
 All modules that contact the daemon accept `daemon_url` and `psk` parameters.
 `psk` is never logged (`no_log: true`).
 
-Set `GLUDD_PSK` in the environment — the module_utils shim reads it automatically.
+Set `GLUDD_AUTH_PSK` in the environment — the module_utils shim reads it automatically.
 
 ## Note on MCP
 

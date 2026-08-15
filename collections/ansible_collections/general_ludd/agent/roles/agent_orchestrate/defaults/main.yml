@@ -17,7 +17,7 @@
 
 # Daemon connectivity
 daemon_url: "http://localhost:8000"
-psk: ""                       # no_log in tasks; prefer GLUDD_PSK env var
+psk: ""                       # no_log in tasks; prefer GLUDD_AUTH_PSK env var
 
 # Work shape (drives advice + routing)
 work_type: "feature"          # e.g. feature | bugfix | refactor | review | docs | chat

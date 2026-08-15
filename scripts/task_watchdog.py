@@ -50,6 +50,11 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - exercised by direct launch
     from process_cleanup import descendant_processes, snapshot_processes
 
+try:
+    from scripts import gludd_env_defaults as gludd_env_defaults
+except ModuleNotFoundError:  # pragma: no cover - direct launch from scripts/
+    import gludd_env_defaults
+
 DEADLINES_FILE = os.environ.get(
     "GLUDD_TASK_DEADLINE_STATE", "/tmp/gludd-task-deadlines.json"
 )
@@ -62,11 +67,11 @@ WATCHDOG_LOG = os.environ.get(
     "GLUDD_TASK_WATCHDOG_LOG", ".gate-logs/task-watchdog.log"
 )
 
-TIMEOUT_MS = int(os.environ.get("GLUDD_TASK_TIMEOUT_MS", "300000"))
+TIMEOUT_MS = int(os.environ.get("GLUDD_TASK_TIMEOUT_MS", gludd_env_defaults.TASK_TIMEOUT_MS_DEFAULT))
 TIMEOUT_SECS = TIMEOUT_MS / 1000.0
 POLL_SECS = int(os.environ.get("GLUDD_TASK_WATCHDOG_POLL", "5"))
 
-GATE_PID_FILE = Path(os.environ.get("GLUDD_WORKSPACE", os.getcwd())) / ".gate-background.pid"
+GATE_PID_FILE = Path(os.environ.get("GLUDD_WORKSPACE_ROOT", os.getcwd())) / ".gate-background.pid"
 
 # Processes matching these patterns are candidates for killing when they run
 # longer than the timeout. These are the commands dispatched subagents execute.

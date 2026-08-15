@@ -5,12 +5,12 @@
 #
 #   docker build --build-arg VERSION=0.1.0-alpha.5 \
 #       -t ghcr.io/<owner>/general-ludd-agent:0.1.0-alpha.5 .
-#   docker run --rm -p 8000:8000 -e GLUDD_PSK=<secret> \
+#   docker run --rm -p 8000:8000 -e GLUDD_AUTH_PSK=<secret> \
 #       -v gludd-data:/var/lib/general-ludd \
 #       ghcr.io/<owner>/general-ludd-agent:0.1.0-alpha.5
 #
 # The daemon binds 0.0.0.0 inside the container; because that is an external
-# interface, it fail-closes (HTTP 503 on protected paths) UNLESS GLUDD_PSK is
+# interface, it fail-closes (HTTP 503 on protected paths) UNLESS GLUDD_AUTH_PSK is
 # supplied at runtime. For throwaway/dev only, pass GLUDD_ALLOW_NO_AUTH=1.
 
 ARG PYTHON_VERSION=3.12
@@ -96,7 +96,7 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     GLUDD_PLAYBOOKS_DIR=/app/playbooks \
     GLUDD_LOG_LEVEL=info
 # AI provider keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, ZAI_API_KEY,
-# OPENROUTER_API_KEY) and GLUDD_PSK must be injected at runtime via
+# OPENROUTER_API_KEY) and GLUDD_AUTH_PSK must be injected at runtime via
 # --env / --env-file / secrets — never baked into the image.
 
 WORKDIR /app

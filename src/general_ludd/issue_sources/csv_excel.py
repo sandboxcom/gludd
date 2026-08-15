@@ -57,6 +57,7 @@ class CsvExcelSource(IssueSource):
     SOURCE = "csv_excel"
 
     def __init__(self, config: dict[str, Any], transport: SourceTransport | None = None) -> None:
+        """Configure the source from ``config['path']`` plus optional column mapping."""
         super().__init__(config, transport, require_base_url=False)
         path = config.get("path")
         if not path:
@@ -64,9 +65,7 @@ class CsvExcelSource(IssueSource):
         self.root = self._resolve_root(config)
         confined = confine_path_multi(str(path), workspace_roots(self.root))
         if confined is None:
-            raise ValueError(
-                f"refusing csv/excel path outside the allowed workspace jail: {path!r}"
-            )
+            raise ValueError(f"refusing csv/excel path outside the allowed workspace jail: {path!r}")
         self.path: str = confined
         cols = config.get("columns")
         self.columns: dict[str, str] = dict(cols) if isinstance(cols, dict) else dict(_DEFAULT_COLUMNS)
@@ -84,11 +83,11 @@ class CsvExcelSource(IssueSource):
         """Resolve the workspace-jail root: ``config['root']`` then env, else None.
 
         Prefers an explicit ``config['root']``, falling back to the
-        ``GLUDD_WORKSPACE`` environment variable. Whitespace-only values are
+        ``GLUDD_WORKSPACE_ROOT`` environment variable. Whitespace-only values are
         treated as absent so the jail defaults to cwd + temp (via
         :func:`workspace_roots`).
         """
-        candidate = config.get("root") or os.environ.get("GLUDD_WORKSPACE")
+        candidate = config.get("root") or os.environ.get("GLUDD_WORKSPACE_ROOT")
         if candidate is None:
             return None
         stripped = str(candidate).strip()
@@ -122,8 +121,7 @@ class CsvExcelSource(IssueSource):
             openpyxl = importlib.import_module("openpyxl")  # openpyxl: optional, only for .xlsx parsing
         except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
             raise RuntimeError(
-                "reading .xlsx requires the optional 'openpyxl' dependency; "
-                "install it or convert the file to .csv"
+                "reading .xlsx requires the optional 'openpyxl' dependency; install it or convert the file to .csv"
             ) from exc
         wb = openpyxl.load_workbook(self.path, read_only=True, data_only=True)
         ws = wb[self.sheet] if self.sheet else wb.active
@@ -162,6 +160,7 @@ class CsvExcelSource(IssueSource):
         )
 
     def fetch(self, spec: dict[str, Any] | None = None) -> list[IssueRecord]:
+        """Read every non-header row and convert it to an IssueRecord."""
         header, rows = self._load_rows()
         if not header:
             return []
@@ -185,6 +184,7 @@ class CsvExcelSource(IssueSource):
         return None
 
     def write_back(self, external_id: str, transition: Transition) -> bool:
+        """Rewrite the status cell for the matching row; idempotent no-op success."""
         word = self.status_words[transition]
         if self._is_xlsx():
             return self._write_back_xlsx(external_id, word)
@@ -204,11 +204,7 @@ class CsvExcelSource(IssueSource):
         id_index = header.index(id_col) if id_col else None
         changed = False
         for ordinal, row in enumerate(all_rows[1:], start=1):
-            row_id = (
-                row[id_index].strip()
-                if id_index is not None and id_index < len(row)
-                else ""
-            ) or f"row-{ordinal}"
+            row_id = (row[id_index].strip() if id_index is not None and id_index < len(row) else "") or f"row-{ordinal}"
             if row_id != external_id:
                 continue
             while len(row) <= status_index:
@@ -230,9 +226,7 @@ class CsvExcelSource(IssueSource):
 
             openpyxl = importlib.import_module("openpyxl")
         except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
-            raise RuntimeError(
-                "writing .xlsx requires the optional 'openpyxl' dependency"
-            ) from exc
+            raise RuntimeError("writing .xlsx requires the optional 'openpyxl' dependency") from exc
         if not os.path.exists(self.path):
             return False
         wb = openpyxl.load_workbook(self.path)

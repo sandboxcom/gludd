@@ -48,7 +48,7 @@ def project_root(start: Path | str | None = None) -> Path:
 def project_namespace(root: Path | str | None = None) -> str:
     """Return a path-safe, stable namespace for one project checkout."""
 
-    override = os.environ.get("GLUDD_PROJECT_NAMESPACE", "").strip()
+    override = (os.environ.get("GLUDD_PROJECT_NAMESPACE") or "").strip()
     if override:
         return _validate_component(override, "project namespace")
 

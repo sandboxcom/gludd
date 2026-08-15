@@ -72,14 +72,17 @@ class RendererTimeout(Exception):
     """Raised when a renderer playbook exceeds its per-renderer timeout."""
 
     def __init__(self, name: str, timeout_s: float) -> None:
+        """Initialize the timeout error with the renderer name and limit."""
         self.name = name
         self.timeout_s = timeout_s
         super().__init__(f"renderer {name!r} exceeded timeout {timeout_s}s")
 
 
 class RendererFailure(Exception):
-    """Raised on non-zero exit, missing render.json, oversize output, or
-    validation error. The router maps this to HTTP 500."""
+    """Raised on non-zero exit, missing render.json, oversize output, or validation error.
+
+    The router maps this to HTTP 500.
+    """
 
     def __init__(
         self,
@@ -89,6 +92,7 @@ class RendererFailure(Exception):
         stdout: str = "",
         stderr: str = "",
     ) -> None:
+        """Initialize the failure with renderer name, detail, and captured output."""
         self.name = name
         self.detail = detail
         self.stdout = stdout
@@ -105,11 +109,10 @@ class SchemaValidationError(Exception):
     """
 
     def __init__(self, name: str, errors: list[str]) -> None:
+        """Initialize the schema error with the renderer name and error list."""
         self.name = name
         self.errors = errors
-        super().__init__(
-            f"renderer {name!r} failed companion schema validation: {len(errors)} error(s)"
-        )
+        super().__init__(f"renderer {name!r} failed companion schema validation: {len(errors)} error(s)")
 
 
 def _max_bytes() -> int:
@@ -136,9 +139,7 @@ def _read_render_json(artifact_dir: Path, name: str) -> dict[str, object]:
     except (OSError, json.JSONDecodeError) as exc:
         raise RendererFailure(name, f"cannot parse {RENDER_ARTIFACT_NAME}: {exc}") from exc
     if not isinstance(data, dict):
-        raise RendererFailure(
-            name, f"{RENDER_ARTIFACT_NAME} root must be an object, got {type(data).__name__}"
-        )
+        raise RendererFailure(name, f"{RENDER_ARTIFACT_NAME} root must be an object, got {type(data).__name__}")
     return data
 
 
@@ -194,9 +195,7 @@ async def run_renderer(app: FastAPI, spec: RendererSpec) -> RendererResult:
     else:
         runner = getattr(app.state, "_runner", None)
         if runner is None:
-            raise RendererFailure(
-                spec.name, "no AnsibleRunnerAdapter on app.state._runner"
-            )
+            raise RendererFailure(spec.name, "no AnsibleRunnerAdapter on app.state._runner")
         raw, start = await _execute_playbook(spec, runner)
 
     if spec.schema_path is not None:
@@ -211,22 +210,18 @@ def _coerce_stub_output(stub_out: Any, spec: RendererSpec) -> dict[str, object]:
         return stub_out.model_dump()
     if isinstance(stub_out, dict):
         return stub_out
-    raise RendererFailure(
-        spec.name, f"stub runner returned {type(stub_out).__name__}; expected dict or RenderDocument"
-    )
+    raise RendererFailure(spec.name, f"stub runner returned {type(stub_out).__name__}; expected dict or RenderDocument")
 
 
-async def _execute_playbook(
-    spec: RendererSpec, runner: Any
-) -> tuple[dict[str, object], float]:
+async def _execute_playbook(spec: RendererSpec, runner: Any) -> tuple[dict[str, object], float]:
     """Run the playbook via AnsibleRunnerAdapter; return ``(raw_dict, start_time)``."""
     artifact_dir = Path(tempfile.mkdtemp(prefix=f"gludd-render-{spec.name}-")) / "artifacts"
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     extra_env: dict[str, str] = {}
-    psk = os.environ.get("GLUDD_PSK")
+    psk = (os.environ.get("GLUDD_AUTH_PSK") or "").strip()
     if psk:
-        extra_env["GLUDD_PSK"] = psk
+        extra_env["GLUDD_AUTH_PSK"] = psk
     daemon_url = os.environ.get("GLUDD_DAEMON_URL")
     if daemon_url:
         extra_env["GLUDD_DAEMON_URL"] = daemon_url
@@ -270,9 +265,7 @@ def _validate_with_schema(spec: RendererSpec, raw: dict[str, object]) -> Rendere
         raise RendererFailure(spec.name, "no companion schema path on spec")
     schema = load_schema(spec.schema_path)
     if schema is None:
-        raise RendererFailure(
-            spec.name, f"companion schema {spec.schema_path} not found at run time"
-        )
+        raise RendererFailure(spec.name, f"companion schema {spec.schema_path} not found at run time")
     ok, errors = validate_against_schema(raw, schema)
     if not ok:
         raise SchemaValidationError(spec.name, errors)
@@ -280,9 +273,7 @@ def _validate_with_schema(spec: RendererSpec, raw: dict[str, object]) -> Rendere
     return RendererResult(data=raw, schema=schema, field_metadata=fm, doc=None)
 
 
-def _validate_canonical(
-    spec: RendererSpec, raw: dict[str, object], start: float
-) -> RendererResult:
+def _validate_canonical(spec: RendererSpec, raw: dict[str, object], start: float) -> RendererResult:
     """Validate ``raw`` against :class:`RenderDocument` (canonical path)."""
     try:
         doc = RenderDocument.model_validate(raw)

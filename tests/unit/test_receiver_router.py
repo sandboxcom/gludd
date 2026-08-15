@@ -97,8 +97,8 @@ class TestAuth:
     def test_admin_psk_does_not_grant_ingest(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Setting GLUDD_PSK (admin) must NOT authenticate against the ingest token.
-        monkeypatch.setenv("GLUDD_PSK", "admin-psk-value")
+        # Setting GLUDD_AUTH_PSK (admin) must NOT authenticate against the ingest token.
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "admin-psk-value")
         client, _ = _make_client()
         resp = client.post(
             "/ingest/webhook",

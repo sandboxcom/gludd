@@ -30,7 +30,7 @@ requested (`CLAUDE_AGENT_FLOOR` 10→7, which you asked for) or advisory-only de
 | Unconditional VC-controlled-file skip | integrity/scanner.py | Monitor was blind to all git-tracked source; now hashes them | Callers must pass `.git/` excludes |
 | Hardcoded `0.0.0.0/0` / `*` firewall ingress | infra/terraform.py | Open-to-internet default removed → validated `allowed_cidr` | Net tighter (default still 0.0.0.0/0 for back-compat — see backlog) |
 | Global `os.environ` mutation | ansible/runner.py, infra/deployment.py | Replaced by per-call env copies (concurrency isolation) | None (capability preserved) |
-| Non-allowlisted env passthrough to playbooks | ansible/core_runner.py | Secrets (ZAI_API_KEY/GLUDD_PSK/AWS_*) scrubbed from playbook env | A playbook relying on a custom inherited env var must pass it via `extra_env` |
+| Non-allowlisted env passthrough to playbooks | ansible/core_runner.py | Secrets (ZAI_API_KEY/GLUDD_AUTH_PSK/AWS_*) scrubbed from playbook env | A playbook relying on a custom inherited env var must pass it via `extra_env` |
 | `stderr=PIPE` → `DEVNULL` | mcp/transport.py | PIPE deadlocks on >64KB stderr | Minor: MCP subprocess stderr no longer captured |
 | Inert `would_exceed()` check | event_loop/loop.py | Never recorded spend (soft cap could never trip) → atomic `try_charge()` | None (fixes a no-op) |
 | Duplicate `record_success` + `D23DEBUG` print | models/gateway.py | Double-count bugfix + leftover debug | None |

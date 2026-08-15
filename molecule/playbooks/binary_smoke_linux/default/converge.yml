@@ -116,7 +116,7 @@
       ansible.builtin.shell:
         cmd: "nohup {{ gludd_bin }} daemon --host {{ daemon_host }} --port {{ daemon_port }} > {{ daemon_log }} 2>&1 &"
       environment:
-        GLUDD_PSK: "{{ daemon_psk }}"
+        GLUDD_AUTH_PSK: "{{ daemon_psk }}"
       changed_when: true
 
     - name: Poll /healthz up to 30s for HTTP 200

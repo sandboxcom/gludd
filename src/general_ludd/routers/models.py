@@ -81,10 +81,10 @@ _MAX_MODELS_CALL_MAX_TOKENS = 1_000_000
 def _workspace_root(app: FastAPI) -> str:
     """The directory attacker-supplied code paths are confined to.
 
-    Prefers GLUDD_WORKSPACE, then the daemon's configured workspace root, then
+    Prefers GLUDD_WORKSPACE_ROOT, then the daemon's configured workspace root, then
     the current working directory. Pure env/attr read — no I/O, no blocking.
     """
-    return os.environ.get("GLUDD_WORKSPACE") or getattr(app.state, "_workspace_root", None) or os.getcwd()
+    return os.environ.get("GLUDD_WORKSPACE_ROOT") or getattr(app.state, "_workspace_root", None) or os.getcwd()
 
 
 def _allowed_code_roots(app: FastAPI) -> list[str]:

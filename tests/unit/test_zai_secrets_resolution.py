@@ -44,7 +44,7 @@ class TestZaiSecretsResolution:
 
     def test_non_allowlisted_name_still_blocked(self, monkeypatch):
         """Security regression: non-allowlisted names are still blocked."""
-        monkeypatch.setenv("GLUDD_PSK", "should-not-resolve")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "should-not-resolve")
         mgr = EnvSecretsManager()
-        assert mgr.resolve("GLUDD_PSK") is None
+        assert mgr.resolve("GLUDD_AUTH_PSK") is None
         assert mgr.resolve("gludd_psk") is None

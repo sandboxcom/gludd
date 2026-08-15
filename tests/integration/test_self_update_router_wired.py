@@ -259,13 +259,13 @@ class TestSelfUpdateRouterWired:
     ) -> None:
         """A request without a valid PSK Bearer token is rejected with 401.
 
-        When ``GLUDD_PSK`` is set, the daemon's auth middleware challenges every
+        When ``GLUDD_AUTH_PSK`` is set, the daemon's auth middleware challenges every
         non-public path (``/admin/self-update/plan`` is NOT in
         ``_PUBLIC_PATHS``). A request missing the ``Authorization`` header must
         get ``401`` — the standard PSK-gate contract every other ``/admin/*``
         router already satisfies.
         """
-        monkeypatch.setenv("GLUDD_PSK", "test-secret-key")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-key")
         config_dir, _db_path = _make_db_config(tmp_path)
         with patch(
             "general_ludd.ansible.runner.AnsibleRunnerAdapter",

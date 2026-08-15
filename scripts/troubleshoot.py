@@ -10,6 +10,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+try:
+    from scripts import gludd_env_defaults as gludd_env_defaults
+except ModuleNotFoundError:  # pragma: no cover - direct launch from scripts/
+    import gludd_env_defaults
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # ---------------------------------------------------------------------------
@@ -25,7 +30,7 @@ _ENV_VARS = [
     "CLAUDE_AGENT_FLOOR",
     "CLAUDE_AGENT_CEILING",
     "CLAUDE_AGENT_TARGET",
-    "GLUDD_PSK",
+    "GLUDD_AUTH_PSK",
     "GLUDD_REQUIRE_AUTH",
     "GLUDD_INTEGRITY_KEY",
 ]
@@ -194,7 +199,7 @@ def check_open_work():
         print(f"  multitasking_backlog.json: missing")
 
     # todowrite state
-    todostate = Path(os.environ.get("GLUDD_TODOWRITE_STATE", "/tmp/gludd-todowrite-state.json"))
+    todostate = Path(os.environ.get("GLUDD_TODOWRITE_STATE", gludd_env_defaults.TODOWRITE_STATE_DEFAULT))
     if todostate.exists():
         try:
             todos = json.loads(todostate.read_text())

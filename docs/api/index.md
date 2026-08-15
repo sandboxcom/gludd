@@ -14,7 +14,7 @@ documented inline below: [Endpoint Overview](#endpoint-overview),
 http://localhost:8000
 ```
 
-All endpoints require PSK authentication via `Authorization: Bearer <GLUDD_PSK>` header, except:
+All endpoints require PSK authentication via `Authorization: Bearer <GLUDD_AUTH_PSK>` header, except:
 - `GET /healthz` — public health check
 - `GET /api/facts` — public (read-only daemon snapshot)
 - `GET /api/human-todos` — public (human-visible queue)
@@ -121,7 +121,7 @@ The model gateway (`src/general_ludd/models/gateway.py`) handles:
 ### Submit a Todo
 ```bash
 curl -X POST http://localhost:8000/api/todos \
-  -H "Authorization: Bearer $GLUDD_PSK" \
+  -H "Authorization: Bearer $GLUDD_AUTH_PSK" \
   -H "Content-Type: application/json" \
   -d '{"title": "Fix login bug", "description": "OAuth callback fails", "queue": "core", "priority": "high", "work_type": "code"}'
 ```

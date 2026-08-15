@@ -282,7 +282,7 @@ class TestSelfUpdateRouterE2E:
                 assert "self-update" in row[1]
 
     def test_missing_psk_returns_401(self, tmp_path: pytest.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("GLUDD_PSK", "test-secret-key")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-key")
         config_dir, _db_path = _make_db_config(tmp_path)
         with patch(
             "general_ludd.ansible.runner.AnsibleRunnerAdapter",

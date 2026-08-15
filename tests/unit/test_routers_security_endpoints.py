@@ -864,7 +864,7 @@ class TestAuthzPosture:
     ) -> None:
         monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
         monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
-        monkeypatch.setenv("GLUDD_PSK", "unit-test-psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "unit-test-psk")
         from general_ludd.daemon import create_daemon_app
 
         daemon_app = create_daemon_app()
@@ -876,11 +876,11 @@ class TestAuthzPosture:
     def test_fails_closed_503_when_no_psk_configured(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Default-secure posture: with GLUDD_PSK unset (and no explicit
+        """Default-secure posture: with GLUDD_AUTH_PSK unset (and no explicit
         GLUDD_ALLOW_NO_AUTH opt-out), every non-public path is REFUSED rather
         than silently left open — the same fail-closed behavior every other
         admin router gets from the shared middleware."""
-        monkeypatch.delenv("GLUDD_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
         monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
         monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
         from general_ludd.daemon import create_daemon_app
@@ -894,7 +894,7 @@ class TestAuthzPosture:
     def test_valid_psk_reaches_the_router(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
         monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
-        monkeypatch.setenv("GLUDD_PSK", "unit-test-psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "unit-test-psk")
         from general_ludd.daemon import create_daemon_app
 
         daemon_app = create_daemon_app()
