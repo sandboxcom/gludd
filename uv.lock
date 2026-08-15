@@ -2037,14 +2037,12 @@ e2e-all = [
     { name = "azure-mgmt-resource" },
     { name = "langchain-openai" },
     { name = "opencv-python-headless" },
-    { name = "pillow" },
     { name = "pygame" },
     { name = "scikit-image" },
     { name = "yt-dlp" },
 ]
 game-e2e = [
     { name = "opencv-python-headless" },
-    { name = "pillow" },
     { name = "pygame" },
     { name = "scikit-image" },
     { name = "yt-dlp" },
@@ -2183,8 +2181,6 @@ requires-dist = [
     { name = "opentelemetry-exporter-otlp-proto-grpc", marker = "extra == 'observability'", specifier = ">=1.20.0" },
     { name = "opentelemetry-proto", marker = "extra == 'observability'", specifier = ">=1.20.0" },
     { name = "opentelemetry-sdk", marker = "extra == 'observability'", specifier = ">=1.20.0" },
-    { name = "pillow", marker = "extra == 'e2e-all'", specifier = ">=12.3.0" },
-    { name = "pillow", marker = "extra == 'game-e2e'", specifier = ">=12.3.0" },
     { name = "pip", marker = "extra == 'dev'", specifier = ">=26.1.2" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=0.3.0" },
     { name = "pqcrypto", specifier = ">=0.4.0,<1" },

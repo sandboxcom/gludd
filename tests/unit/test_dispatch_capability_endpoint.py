@@ -350,6 +350,7 @@ def _make_cap_dispatch_client(
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
+    from general_ludd.dispatch.dynamic_dispatcher import UNRESTRICTED_ROLE
     from general_ludd.routers.dispatch import register
 
     app = FastAPI()
@@ -358,6 +359,7 @@ def _make_cap_dispatch_client(
         {},
         capability_registry=registry,
         collection_handler=collection_handler,
+        role=UNRESTRICTED_ROLE,
     )
     return TestClient(app, raise_server_exceptions=False)
 

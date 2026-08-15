@@ -52,28 +52,19 @@ def test_lint_docstrings_rejects_files_outside_production_package() -> None:
     )
     output = result.stdout + result.stderr
     assert result.returncode == 2
-    assert "only accepts tracked Python files under src/general_ludd" in output
+    assert "only accepts tracked production Python files under src/general_ludd or scripts" in output
 
 
 def test_docstring_policy_is_registered_and_commit_guarded() -> None:
     """Target metadata and every local commit path share the same policy."""
-    contract = json.loads(
-        (ROOT / "config" / "make_target_contract.json").read_text()
-    )
-    entry = next(
-        item for item in contract["targets"] if item["name"] == "lint-docstrings"
-    )
+    contract = json.loads((ROOT / "config" / "make_target_contract.json").read_text())
+    entry = next(item for item in contract["targets"] if item["name"] == "lint-docstrings")
     assert entry["make_variables"] == ["DOCSTRING_FILES"]
-    assert entry["behavior"] == (
-        "make lint-docstrings "
-        "DOCSTRING_FILES=src/general_ludd/security/xmss.py"
-    )
+    assert entry["behavior"] == ("make lint-docstrings DOCSTRING_FILES=src/general_ludd/security/xmss.py")
 
     makefile = (ROOT / "Makefile").read_text()
     for target in ("git-commit", "commit-no-verify", "repo-commit", "ship-commit"):
-        declaration = next(
-            line for line in makefile.splitlines() if line.startswith(f"{target}:")
-        )
+        declaration = next(line for line in makefile.splitlines() if line.startswith(f"{target}:"))
         assert "_commit-docstring-guard" in declaration
 
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())
