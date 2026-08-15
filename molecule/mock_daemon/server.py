@@ -69,8 +69,10 @@ Run in the background from a scenario's prepare.yml and stop it in verify.yml
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
+import signal
 import sys
 import threading
 from datetime import UTC, datetime, timedelta
@@ -1071,15 +1073,20 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _read_body(self) -> dict:
+    def _read_raw_body(self) -> bytes:
         length = int(self.headers.get("Content-Length", 0) or 0)
         if length <= 0:
-            return {}
-        raw = self.rfile.read(length)
+            return b""
+        return self.rfile.read(length)
+
+    def _parse_json_body(self, raw: bytes) -> dict:
         try:
             return json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             return {}
+
+    def _read_body(self) -> dict:
+        return self._parse_json_body(self._read_raw_body())
 
     # ---- GET --------------------------------------------------------------
     def do_GET(self) -> None:
@@ -1299,7 +1306,8 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         _record_request("POST", path)
-        payload = self._read_body()
+        raw_body = self._read_raw_body()
+        payload = self._parse_json_body(raw_body)
         if path == "/__requests/reset":
             # Clear the in-memory request log so the next role invocation's
             # endpoint hits can be snapshotted in isolation.
@@ -1350,8 +1358,7 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             if not token:
                 self._send_json(403, {"detail": "missing X-Vault-Token"})
                 return
-            length = int(self.headers.get("Content-Length", 0) or 0)
-            raw = self.rfile.read(length) if length > 0 else b""
+            raw = raw_body
             global OPENBAO_RESTORE_LAST_PAYLOAD
             OPENBAO_RESTORE_LAST_PAYLOAD = {
                 "size_bytes": len(raw),
@@ -1414,12 +1421,21 @@ def main() -> int:
 
     server = ThreadingHTTPServer((args.host, args.port), MockDaemonHandler)
     sys.stderr.write(f"[mock-daemon] listening on {args.host}:{args.port}\n")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()
+
+    shutdown_event = threading.Event()
+
+    def _on_sigterm(signum: int, frame: object) -> None:
+        shutdown_event.set()
+
+    signal.signal(signal.SIGTERM, _on_sigterm)
+
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    with contextlib.suppress(KeyboardInterrupt):
+        shutdown_event.wait()
+    server.shutdown()
+    server_thread.join(timeout=5)
+    server.server_close()
     return 0
 
 
