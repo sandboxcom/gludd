@@ -973,8 +973,7 @@ class MemoryRecordModel(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_gen_memory_id)
     project_id: Mapped[str | None] = mapped_column(
-        String(32),
-        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        String(256),
         nullable=True,
         index=True,
     )

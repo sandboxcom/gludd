@@ -1073,6 +1073,7 @@ class BenchmarkRepository:
 
     async def record_result(self, data: dict[str, Any]) -> BenchmarkResultModel:
         """Persist and return a benchmark result."""
+
         async def _do(session: AsyncSession) -> BenchmarkResultModel:
             row = BenchmarkResultModel(**data)
             session.add(row)
@@ -1183,6 +1184,7 @@ class BenchmarkRepository:
 
     async def get_model_scores(self, model_profile_id: str) -> list[BenchmarkResultModel]:
         """List bounded benchmark results for a model, newest first."""
+
         async def _do(session: AsyncSession) -> list[BenchmarkResultModel]:
             stmt = (
                 select(BenchmarkResultModel)
@@ -1198,6 +1200,7 @@ class BenchmarkRepository:
 
     async def list_recent(self, limit: int = 50) -> list[BenchmarkResultModel]:
         """List a bounded set of recent benchmark results."""
+
         async def _do(session: AsyncSession) -> list[BenchmarkResultModel]:
             stmt = (
                 select(BenchmarkResultModel)
@@ -2990,12 +2993,16 @@ class MemoryRepository:
         self,
         agent_id: str,
         key: str,
-        value: str,
+        value: str | None = None,
         namespace: str = "default",
         project_id: str | None = None,
         ttl_seconds: int | None = None,
     ) -> MemoryRecordModel:
-        """Upsert and return a scoped agent-memory value with optional TTL."""
+        """Upsert and return a scoped agent-memory value with optional TTL.
+
+        A ``value`` of ``None`` preserves the existing value on update (used by
+        the API when the client omits the field); on create it stores ``""``.
+        """
         async with self._resolve_session() as session:
             now = datetime.now(UTC)
             stmt = select(MemoryRecordModel).where(
@@ -3012,7 +3019,7 @@ class MemoryRepository:
                 existing = MemoryRecordModel(
                     agent_id=agent_id,
                     key=key,
-                    value=value,
+                    value=value or "",
                     namespace=namespace,
                     project_id=project_id,
                     ttl_seconds=ttl_seconds,
@@ -3021,7 +3028,8 @@ class MemoryRepository:
                 )
                 session.add(existing)
             else:
-                existing.value = value
+                if value is not None:
+                    existing.value = value
                 existing.ttl_seconds = ttl_seconds
                 existing.updated_at = now
             await session.flush()
