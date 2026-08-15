@@ -34,11 +34,11 @@ def manacher_odd(s: str) -> list[int]:
 
 
 def manacher_even(s: str) -> list[int]:
-    """Return even-length palindrome radii centred at each position.
+    """Return even-length palindrome radii centred between ``s[i]`` and ``s[i+1]``.
 
     ``radii[i]`` = maximal integer *r* such that
-    ``s[i-r : i+r]`` is a palindrome (radius in characters).
-    The palindrome length at *i* is ``2*radii[i]``.
+    ``s[i-r+1 : i+r+1]`` is a palindrome (radius in characters).
+    The palindrome length at *i* is ``2*radii[i]``; ``radii[-1]`` is always 0.
 
     O(|s|) time, O(|s|) space.
     """
@@ -55,7 +55,7 @@ def manacher_even(s: str) -> list[int]:
         if i + d2[i] - 1 > right:
             left = i - d2[i]
             right = i + d2[i] - 1
-    return d2
+    return [*d2[1:], 0]
 
 
 def longest_palindrome(s: str) -> str:
@@ -81,7 +81,7 @@ def longest_palindrome(s: str) -> str:
         length = 2 * r
         if length > best_len:
             best_len = length
-            best_start = i - r
+            best_start = i - r + 1
     return s[best_start : best_start + best_len]
 
 
@@ -120,8 +120,8 @@ def is_palindrome(s: str, i: int, j: int) -> bool:
         radius = manacher_odd(s)[center]
         return radius * 2 + 1 >= length
     else:
-        center = i + length // 2
-        radius = manacher_even(s)[center]
+        gap = i + length // 2 - 1
+        radius = manacher_even(s)[gap]
         return radius * 2 >= length
 
 
@@ -132,6 +132,8 @@ def _manacher_unified(s: str) -> tuple[list[int], list[int]]:
     for callers that need both. O(|s|) time, O(|s|) space.
     """
     n = len(s)
+    if n == 0:
+        return [], []
     d1, d2 = [0] * n, [0] * n
     l1, r1 = 0, -1
     l2, r2 = 0, -1
@@ -150,4 +152,4 @@ def _manacher_unified(s: str) -> tuple[list[int], list[int]]:
         d2[i] = k_even
         if i + d2[i] - 1 > r2:
             l2, r2 = i - d2[i], i + d2[i] - 1
-    return d1, d2
+    return d1, [*d2[1:], 0]
