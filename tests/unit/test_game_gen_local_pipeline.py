@@ -389,14 +389,16 @@ class TestEnvironmentVariablePropagation:
                 return
         pytest.fail("No top-level pip install task found")
 
-    def test_pip_install_includes_sse_starlette(self) -> None:
+    def test_pip_install_uses_server_extra(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
         for t in tasks:
             if "ansible.builtin.pip" in t:
                 pip_kw = cast(dict[str, Any], t["ansible.builtin.pip"])
-                assert "sse_starlette" in pip_kw["name"], (
-                    "sse_starlette must be in the pip install list: "
-                    "llama_cpp.server imports it at module import (CI failure 2026-08-15)"
+                assert "llama-cpp-python[server]" in pip_kw["name"], (
+                    "llama-cpp-python[server] must be in the pip install list: "
+                    "the [server] extra declares the runtime deps llama_cpp.server "
+                    "imports at module import (CI 2026-08-15: sse_starlette, "
+                    "starlette_context ModuleNotFoundError)"
                 )
                 return
         pytest.fail("No top-level pip install task found")
@@ -565,7 +567,7 @@ class TestDeepPipelineValidation:
         )
         nested_names = [t.get("name", "") for t in all_tasks if t.get("name")]
         top_names = _task_names(tasks)
-        assert "Install llama-cpp-python and huggingface_hub" in top_names
+        assert "Install llama-cpp-python[server] and huggingface_hub" in top_names
         assert "Download GGUF via hf" in nested_names
         assert "Read server PID" in nested_names
         assert "Kill server process" in nested_names

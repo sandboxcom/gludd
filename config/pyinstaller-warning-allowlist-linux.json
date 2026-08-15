@@ -4,7 +4,7 @@
   "pyinstaller_version": "6.20.0",
   "transitive_warning_sha256_by_architecture": {
     "aarch64": "fe46fb237e7274fe5f8db70da336b212fac65c3aa6fc65e1e453241f3e0a3d50",
-    "x86_64": "45803512bc125fb5da4d90ca98f16be21a37a2871da29992115d52890a05618a"
+    "x86_64": "eb32d56ca9b343b784aa7c65aaa39b58f0bba8aef6df795fe51f2c52c4342335"
   },
   "baseline_pinned_project_modules": [
     {

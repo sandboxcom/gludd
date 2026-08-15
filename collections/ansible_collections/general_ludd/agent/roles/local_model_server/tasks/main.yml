@@ -21,15 +21,16 @@
   ansible.builtin.set_fact:
     _model_path: "{{ model_download_dir }}/{{ model_repo | regex_replace('/', '_') }}/{{ model_file }}"
 
-- name: "Install llama-cpp-python and huggingface_hub"
+- name: "Install llama-cpp-python[server] and huggingface_hub"
   ansible.builtin.pip:
     name:
       - huggingface_hub
-      - llama-cpp-python
-      # llama_cpp.server imports sse_starlette at module import; the package
-      # does not declare it as a hard dependency, so install it explicitly
-      # (CI failure 2026-08-15: ModuleNotFoundError: sse_starlette).
-      - sse_starlette
+      # The [server] extra declares llama_cpp.server's real runtime
+      # dependencies (fastapi, sse-starlette, starlette-context, uvicorn,
+      # pydantic-settings); the base package does not, so the server crashes
+      # at import without them (CI 2026-08-15: sse_starlette, then
+      # starlette_context ModuleNotFoundError).
+      - llama-cpp-python[server]
     state: present
 
 - name: "Download model if not present"
