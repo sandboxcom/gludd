@@ -85,49 +85,53 @@ def _runtime_state_path(path: str) -> str:
     """Redirect known machine-global state into the verifier-owned directory."""
     configured = os.environ.get("GLUDD_RUNTIME_TEST_STATE_DIR")
     candidate = Path(path)
-    if (
-        configured
-        and candidate.parent == Path("/tmp")
-        and candidate.name in _GLOBAL_RUNTIME_STATE_NAMES
-    ):
+    if configured and candidate.parent == Path("/tmp") and candidate.name in _GLOBAL_RUNTIME_STATE_NAMES:
         return str(Path(configured).resolve() / candidate.name)
     return path
 
 
 def _dirty_test_path(label: str) -> str:
-    """Return a process-isolated scratch path outside the checkout."""
-    return str(
-        _runtime_state_root()
-        / f"gludd-hook-test-dirty-{label}-{os.getpid()}.txt"
-    )
+    """Return a dirty-fixture path INSIDE the checkout (scripts/).
+
+    The enforce-clean-tree hook runs `git status --porcelain` at the repo
+    root; a fixture outside the checkout is invisible to it, so the deny
+    path can never fire and the deny-expecting tests would be vacuously
+    broken. The session-scoped cleanup fixture globs and removes
+    `scripts/gludd-hook-test-dirty-*.txt` leftovers so a crashed test can
+    never leave the real tree dirty (which would self-lock the plugin).
+    """
+    return str(ROOT / "scripts" / f"gludd-hook-test-dirty-{label}-{os.getpid()}.txt")
 
 
 def _remove_legacy_workspace_artifacts() -> None:
-    """Remove exact historical harness artifacts, never arbitrary repo files."""
+    """Remove exact historical harness artifacts and dirty-fixture leftovers.
+
+    The dirty-fixture glob is bounded to `scripts/gludd-hook-test-dirty-*.txt`
+    — files this harness itself creates — never arbitrary repo files.
+    """
     for name in _LEGACY_WORKSPACE_TEMP_NAMES:
         with contextlib.suppress(OSError):
             (ROOT / "scripts" / name).unlink()
+    for leftover in (ROOT / "scripts").glob("gludd-hook-test-dirty-*.txt"):
+        with contextlib.suppress(OSError):
+            leftover.unlink()
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _cleanup_legacy_workspace_artifacts() -> Iterator[None]:
-    """Clean legacy checkout artifacts before and after the runtime suite."""
+    """Clean legacy checkout artifacts and dirty-fixture leftovers before and after the runtime suite."""
     _remove_legacy_workspace_artifacts()
     yield
     _remove_legacy_workspace_artifacts()
 
 
-def test_runtime_state_root_honors_isolated_directory(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_runtime_state_root_honors_isolated_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Runtime state is rooted in the verifier-owned namespace when configured."""
     monkeypatch.setenv("GLUDD_RUNTIME_TEST_STATE_DIR", str(tmp_path))
     assert _runtime_state_root() == tmp_path.resolve()
 
 
-def test_runtime_state_path_redirects_only_known_global_state(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_runtime_state_path_redirects_only_known_global_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Known global state is isolated without rewriting unrelated paths."""
     monkeypatch.setenv("GLUDD_RUNTIME_TEST_STATE_DIR", str(tmp_path))
     known = "/tmp/gludd-tool-streak.json"
@@ -148,10 +152,7 @@ def _run_ts(
     global _tmp_counter
     _tmp_counter += 1
     state_root = _runtime_state_root()
-    false_done_path = str(
-        state_root
-        / f"gludd-false-done-blocks-test-{os.getpid()}-{_tmp_counter}.json"
-    )
+    false_done_path = str(state_root / f"gludd-false-done-blocks-test-{os.getpid()}-{_tmp_counter}.json")
     hot_prefix = state_root / f"gludd-hot-{os.getpid()}-{_tmp_counter}-"
     with tempfile.NamedTemporaryFile(
         mode="w",
@@ -170,9 +171,7 @@ def _run_ts(
         # isDisengaged() to true and turning expected denies into allows.
         # Point plugins at a per-process nonexistent path unless a test
         # explicitly overrides it.
-        env["GLUDD_DISENGAGE_PATH"] = str(
-            state_root / f"gludd-disengage-hermetic-{os.getpid()}.json"
-        )
+        env["GLUDD_DISENGAGE_PATH"] = str(state_root / f"gludd-disengage-hermetic-{os.getpid()}.json")
         env["GLUDD_FALSE_DONE_BLOCKS_FILE"] = false_done_path
         env["GLUDD_HOT_MODULE_PREFIX"] = str(hot_prefix)
         if env_override:
@@ -277,9 +276,7 @@ def _clean_state_files(*paths: str) -> None:
             os.unlink(_runtime_state_path(path))
 
 
-def _with_open_work(
-    env: dict[str, str], tmp_tasks: str
-) -> tuple[dict[str, str], str]:
+def _with_open_work(env: dict[str, str], tmp_tasks: str) -> tuple[dict[str, str], str]:
     """Create a temp TASKS.md with unchecked items so openWorkExists() returns true."""
     tasks_path = os.path.join("/tmp", f"gludd-test-tasks-{os.getpid()}.md")
     with open(tasks_path, "w") as f:
@@ -1389,9 +1386,7 @@ console.log(JSON.stringify({{
             },
         )
 
-        assert result.get("threw") is False, (
-            f"experimental.text.complete must run without throwing. Result: {result}"
-        )
+        assert result.get("threw") is False, f"experimental.text.complete must run without throwing. Result: {result}"
         assert result["textWasBlocked"] is True, (
             f"Expected THIN WAVE BLOCKED but text passed through unmodified. "
             f"Hook ran without error but did not detect the thin wave. Result: {result}"
@@ -2795,9 +2790,7 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
 # ---------------------------------------------------------------------------
 
 
-def _fresh_session_state(
-    state_path: str, **overrides: object
-) -> dict[str, object]:
+def _fresh_session_state(state_path: str, **overrides: object) -> dict[str, object]:
     """Write a fresh session state file with started_at=now and return the contents."""
     state = {
         "started_at": int(time.time() * 1000),
@@ -3053,9 +3046,7 @@ def test_session_start_dispatch_increment_default_adaptive() -> None:
         "tool.execute.before",
         "await plugin['tool.execute.before']({tool: 'read'}, {})",
     )
-    assert _run_ts(
-        probe_code, env_override={"OPENCODE_SUBAGENT": "1"}
-    ) is None
+    assert _run_ts(probe_code, env_override={"OPENCODE_SUBAGENT": "1"}) is None
     result = _session_start_dispatch_then_bash(configured_min=None)
     assert result["dp1"] == 1, f"Expected dispatches=1 after task call, got: {result}"
     assert result["denied"] is False, f"Adaptive default must allow the bash call: {result}"
@@ -3074,9 +3065,7 @@ def test_session_start_explicit_minimum_denies_under_dispatch() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _enforce_make_bash_test(
-    command: str, env_override: dict[str, str] | None = None
-) -> dict[str, Any]:
+def _enforce_make_bash_test(command: str, env_override: dict[str, str] | None = None) -> dict[str, Any]:
     """Run a bash command through enforce-make.ts tool.execute.before.
     Returns {allowed: true} or {permissionDecision: 'deny', message: '...'}.
     """
@@ -3431,9 +3420,7 @@ def test_release_deadline_runtime_hook_invocation() -> None:
         "tool.execute.before",
         "await plugin['tool.execute.before']({tool: 'read', args: {}}, {args: {}})",
     )
-    result = _run_ts(
-        code, env_override={"GLUDD_RELEASE_DEADLINE_ENFORCE": "0"}
-    )
+    result = _run_ts(code, env_override={"GLUDD_RELEASE_DEADLINE_ENFORCE": "0"})
     assert result is None or isinstance(result, dict)
 
 
