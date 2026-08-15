@@ -1,0 +1,128 @@
+---
+- name: "Validate inputs"
+  ansible.builtin.assert:
+    that:
+      - model_repo | length > 0
+      - model_file | length > 0
+    fail_msg: >-
+      local_model_server requires model_repo and model_file.
+      Got model_repo={{ model_repo | default('<undefined>') }},
+      model_file={{ model_file | default('<undefined>') }}.
+
+- name: "Ensure artifact directory exists"
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Step 1: Download model ───────────────────────────────────────────────
+
+- name: "Compute full local model path"
+  ansible.builtin.set_fact:
+    _model_path: "{{ model_download_dir }}/{{ model_repo | regex_replace('/', '_') }}/{{ model_file }}"
+
+- name: "Install llama-cpp-python and huggingface_hub"
+  ansible.builtin.pip:
+    name:
+      - huggingface_hub
+      - llama-cpp-python
+      # llama_cpp.server imports sse_starlette at module import; the package
+      # does not declare it as a hard dependency, so install it explicitly
+      # (CI failure 2026-08-15: ModuleNotFoundError: sse_starlette).
+      - sse_starlette
+    state: present
+
+- name: "Download model if not present"
+  when: _model_path is not exists
+  block:
+    - name: "Download GGUF via hf"
+      ansible.builtin.command: >-
+        hf download {{ model_repo }} {{ model_file }}
+        --local-dir {{ model_download_dir }}/{{ model_repo | regex_replace('/', '_') }}
+      args:
+        creates: "{{ _model_path }}"
+      changed_when: true
+
+# ── Step 2: Start local inference server ──────────────────────────────────
+
+- name: "Set server log path"
+  ansible.builtin.set_fact:
+    _server_log: "{{ artifact_dir }}/llamacpp-server.log"
+
+- name: "Start llama.cpp server"
+  ansible.builtin.shell: |
+    nohup {{ ansible_playbook_python }} -m llama_cpp.server \
+      --model "{{ _model_path }}" \
+      --host {{ server_host }} \
+      --port {{ server_port }} \
+      --n_ctx {{ server_context_size }} \
+      --n_gpu_layers {{ server_gpu_layers }} \
+      > "{{ _server_log }}" 2>&1 &
+    echo $! > "{{ artifact_dir }}/server.pid"
+  changed_when: true
+
+- name: "Validate health poll parameters"
+  ansible.builtin.assert:
+    that:
+      - health_check_delay | int > 0
+      - health_check_retries | int > 0
+    fail_msg: "health_check_delay and health_check_retries must be positive integers"
+
+- name: "Poll health endpoint until ready"
+  block:
+    - name: "Poll health endpoint"
+      ansible.builtin.uri:
+        url: "http://{{ server_host }}:{{ server_port }}/health"
+        method: GET
+        timeout: 5
+      register: _health_poll
+      until: _health_poll.status == 200
+      retries: "{{ health_check_retries }}"
+      delay: "{{ health_check_delay }}"
+      changed_when: false
+  rescue:
+    - name: "Read server log on health poll failure"
+      ansible.builtin.slurp:
+        src: "{{ _server_log }}"
+      register: _server_log_slurp
+      ignore_errors: true
+      changed_when: false
+
+    - name: "Fail with server log content"
+      ansible.builtin.fail:
+        msg: >-
+          llama.cpp server did not become healthy at
+          http://{{ server_host }}:{{ server_port }}/health after
+          {{ health_check_retries }} attempts.
+          Server log ({{ _server_log }}):
+          {{ (_server_log_slurp.content | default('')) | b64decode }}
+
+# ── Step 3: Shutdown server ──────────────────────────────────────────────
+
+- name: "Stop inference server"
+  block:
+    - name: "Enter server cleanup phase"
+      ansible.builtin.debug:
+        msg: "local_model_server server cleanup phase started"
+  always:
+    - name: "Read server PID"
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/server.pid"
+      register: _server_pid
+      ignore_errors: true
+      changed_when: false
+
+    - name: "Kill server process"
+      when: _server_pid.content is defined
+      ansible.builtin.command: "kill -TERM {{ _server_pid.content | b64decode | trim }}"
+      failed_when: false
+      changed_when: true
+
+    - name: "Remove PID file"
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}/server.pid"
+        state: absent
+
+    - name: "Report server cleanup"
+      ansible.builtin.debug:
+        msg: "local_model_server server cleanup phase completed"

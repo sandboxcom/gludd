@@ -1,0 +1,38 @@
+---
+driver:
+  name: delegated
+platforms:
+  - name: localhost
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
+  config_options:
+    defaults:
+      gathering: explicit
+      fact_caching: memory
+  inventory:
+    hosts:
+      localhost:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+verifier:
+  name: ansible
+scenario:
+  name: default
+  # Converge is env-gated inside converge.yml (MOLECULE_LIVE_MODEL=1) so the
+  # default CI run stays cheap: syntax validation always runs; the live
+  # model download + server lifecycle only runs when explicitly requested.
+  test_sequence:
+    - dependency
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - idempotence
+    - side_effect
+    - verify
+    - cleanup
+    - destroy

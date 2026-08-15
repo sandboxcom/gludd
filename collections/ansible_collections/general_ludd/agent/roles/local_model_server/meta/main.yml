@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: local_model_server
+  author: Agentic Harness Agent
+  description: >
+    Model-agnostic local model server lifecycle: download a GGUF model,
+    serve it via llama.cpp, health-check the server, and shut it down.
+    Reusable by any gludd playbook that needs a small local model.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []
