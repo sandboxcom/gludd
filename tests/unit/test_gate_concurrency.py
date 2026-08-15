@@ -449,3 +449,108 @@ class TestRunGateScript:
         assert "PASS 0" in content, (
             f".gate-status must contain 'PASS 0'. Got:\n{content}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Worker-count formula tests  (scripts/gate_worker_count.py)
+# ---------------------------------------------------------------------------
+
+class TestGateWorkerCount:
+    """Unit tests for the memory-bounded xdist worker-count formula in
+    scripts/gate_worker_count.py.
+
+    Formula:
+        cpu_based  = max(1, cpu_count // 4)
+        mem_based  = max(1, floor(available_ram_gb / per_worker_gb))
+        workers    = min(cpu_based, mem_based)
+    """
+
+    def _import_module(self):
+        """Import gate_worker_count without installing it as a package."""
+        import importlib.util
+        import pathlib
+        spec = importlib.util.spec_from_file_location(
+            "gate_worker_count",
+            pathlib.Path(__file__).parent.parent.parent / "scripts" / "gate_worker_count.py",
+        )
+        assert spec is not None and spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        return mod
+
+    def test_script_exists(self) -> None:
+        script = Path(__file__).parent.parent.parent / "scripts" / "gate_worker_count.py"
+        assert script.exists(), "scripts/gate_worker_count.py must exist"
+
+    def test_cpu_bound_dominates_when_ram_is_ample(self) -> None:
+        """When RAM is very plentiful the CPU term is the binding constraint."""
+        mod = self._import_module()
+        # 8 CPUs → cpu_based=2; 100 GB RAM / 1.5 per worker → mem_based=66
+        result = mod.compute_worker_count(cpu_count=8, available_ram_gb=100.0, per_worker_gb=1.5)
+        assert result == 2, f"Expected 2 (cpu-bound), got {result}"
+
+    def test_mem_bound_dominates_when_ram_is_scarce(self) -> None:
+        """When RAM is scarce the memory term is the binding constraint."""
+        mod = self._import_module()
+        # 64 CPUs → cpu_based=16; 3 GB / 1.5 per worker → mem_based=2
+        result = mod.compute_worker_count(cpu_count=64, available_ram_gb=3.0, per_worker_gb=1.5)
+        assert result == 2, f"Expected 2 (mem-bound), got {result}"
+
+    def test_minimum_is_one_regardless_of_ram(self) -> None:
+        """Even with almost no RAM we must return at least 1 worker."""
+        mod = self._import_module()
+        # 4 CPUs → cpu_based=1; 0.1 GB / 1.5 per worker → mem_based=0 → clamped to 1
+        result = mod.compute_worker_count(cpu_count=4, available_ram_gb=0.1, per_worker_gb=1.5)
+        assert result == 1, f"Expected 1 (minimum floor), got {result}"
+
+    def test_minimum_is_one_with_single_cpu(self) -> None:
+        """1 CPU → cpu_based = max(1, 0) = 1; result must be 1."""
+        mod = self._import_module()
+        result = mod.compute_worker_count(cpu_count=1, available_ram_gb=16.0, per_worker_gb=1.5)
+        assert result == 1, f"Expected 1 for single CPU, got {result}"
+
+    def test_per_worker_gb_override(self) -> None:
+        """A larger per-worker budget further constrains the mem-based count."""
+        mod = self._import_module()
+        # 16 CPUs → cpu_based=4; 6 GB / 3.0 per worker → mem_based=2
+        result = mod.compute_worker_count(cpu_count=16, available_ram_gb=6.0, per_worker_gb=3.0)
+        assert result == 2, f"Expected 2 (mem-bound with 3 GB/worker budget), got {result}"
+
+    def test_invalid_per_worker_gb_raises(self) -> None:
+        """per_worker_gb <= 0 must raise ValueError."""
+        import pytest as _pytest
+        mod = self._import_module()
+        with _pytest.raises(ValueError):
+            mod.compute_worker_count(cpu_count=4, available_ram_gb=8.0, per_worker_gb=0)
+
+    def test_gludd_xdist_env_override_bypasses_formula(self, monkeypatch) -> None:
+        """When GLUDD_XDIST is set, main() must print it verbatim and skip formula."""
+        import contextlib
+        import io
+        mod = self._import_module()
+        monkeypatch.setenv("GLUDD_XDIST", "7")
+        monkeypatch.delenv("GLUDD_PER_WORKER_GB", raising=False)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            mod.main()
+        assert buf.getvalue().strip() == "7", f"Expected '7', got {buf.getvalue().strip()!r}"
+
+    def test_main_returns_positive_int_by_default(self, monkeypatch) -> None:
+        """main() without any env overrides must print a positive integer."""
+        import contextlib
+        import io
+        mod = self._import_module()
+        monkeypatch.delenv("GLUDD_XDIST", raising=False)
+        monkeypatch.delenv("GLUDD_PER_WORKER_GB", raising=False)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            mod.main()
+        val = int(buf.getvalue().strip())
+        assert val >= 1, f"Expected >= 1, got {val}"
+
+    def test_formula_symmetric_boundary(self) -> None:
+        """Exact boundary: cpu_based == mem_based → result equals both."""
+        mod = self._import_module()
+        # 8 CPUs → cpu_based=2; 3.0 GB / 1.5 per worker → mem_based=2
+        result = mod.compute_worker_count(cpu_count=8, available_ram_gb=3.0, per_worker_gb=1.5)
+        assert result == 2, f"Expected 2 at boundary, got {result}"
