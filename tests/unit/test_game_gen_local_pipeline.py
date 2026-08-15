@@ -247,8 +247,8 @@ class TestMissingBinaryErrorHandling:
     def test_python3_referenced_in_verify_steps(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
         cmds = _gather_commands(tasks)
-        python_cmds = [c for c in cmds if c.startswith("python3")]
-        assert len(python_cmds) >= 3, f"Expected >=3 python3 invocations (AST/import/runtime), got {len(python_cmds)}"
+        python_cmds = [c for c in cmds if "ansible_playbook_python" in c or c.startswith("python3")]
+        assert len(python_cmds) >= 3, f"Expected >=3 python invocations (AST/import/runtime), got {len(python_cmds)}"
 
     def test_download_task_has_creates_guard(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))

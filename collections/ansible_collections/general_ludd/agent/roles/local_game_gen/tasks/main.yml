@@ -17,13 +17,6 @@
     state: directory
     mode: "0755"
 
-- name: "Validate health poll parameters"
-  ansible.builtin.assert:
-    that:
-      - health_check_delay | int > 0
-      - health_check_retries | int > 0
-    fail_msg: "health_check_delay and health_check_retries must be positive integers"
-
 # ── Step 1: Download model ───────────────────────────────────────────────
 
 - name: "Compute full local model path"
@@ -66,6 +59,13 @@
       > "{{ _server_log }}" 2>&1 &
     echo $! > "{{ artifact_dir }}/server.pid"
   changed_when: true
+
+- name: "Validate health poll parameters"
+  ansible.builtin.assert:
+    that:
+      - health_check_delay | int > 0
+      - health_check_retries | int > 0
+    fail_msg: "health_check_delay and health_check_retries must be positive integers"
 
 - name: "Poll health endpoint until ready"
   block:
