@@ -451,7 +451,8 @@ export function invalidateProjectRootCache(): void {
 // detection: if a state file was last modified before the current session
 // started, it is stale and must be discarded.
 
-export const SESSION_START_STATE_FILE = "/tmp/gludd-session-start.json"
+export const SESSION_START_STATE_FILE =
+  process.env.GLUDD_SESSION_STATE || "/tmp/gludd-session-start.json"
 
 export function getSessionStartMtimeMs(): number {
   try {

@@ -60,7 +60,7 @@ class TestIsSubagent:
     def test_fail_open_on_error(self):
         src = _src()
         idx = src.find("export function isSubagent")
-        after = src[idx:idx + 300]
+        after = src[idx : idx + 300]
         assert "catch" in after
 
 
@@ -104,7 +104,7 @@ class TestIsDisengaged:
     def test_return_boolean(self):
         src = _src()
         idx = src.find("export function isDisengaged")
-        after = src[idx:idx + 200]
+        after = src[idx : idx + 200]
         assert ": boolean" in after
 
     def test_fail_open_returns_false(self):
@@ -135,7 +135,7 @@ class TestIsDisengaged:
     def test_disengage_path_env_override(self):
         src = _src()
         idx = src.find("DISENGAGE_PATH")
-        after = src[idx:idx + 150]
+        after = src[idx : idx + 150]
         assert "GLUDD_DISENGAGE_PATH" in after
 
 
@@ -154,13 +154,13 @@ class TestJsonHelpers:
     def test_read_returns_default_on_missing(self):
         src = _src()
         idx = src.find("export function readJsonFile")
-        after = src[idx:idx + 400]
+        after = src[idx : idx + 400]
         assert "return defaultVal" in after
 
     def test_read_fail_open_on_corrupt(self):
         src = _src()
         idx = src.find("export function readJsonFile")
-        after = src[idx:idx + 400]
+        after = src[idx : idx + 400]
         assert "catch" in after
 
     def test_write_exported(self):
@@ -170,13 +170,13 @@ class TestJsonHelpers:
     def test_write_accepts_unknown_data(self):
         src = _src()
         idx = src.find("export function writeJsonFile")
-        after = src[idx:idx + 150]
+        after = src[idx : idx + 150]
         assert "unknown" in after
 
     def test_write_fail_open(self):
         src = _src()
         idx = src.find("export function writeJsonFile")
-        after = src[idx:idx + 300]
+        after = src[idx : idx + 300]
         assert "catch" in after
 
 
@@ -191,38 +191,38 @@ class TestReportAlive:
     def test_accepts_plugin_name(self):
         src = _src()
         idx = src.find("export function reportAlive")
-        after = src[idx:idx + 100]
+        after = src[idx : idx + 100]
         assert "pluginName" in after
 
     def test_writes_to_alive_path(self):
         src = _src()
         idx = src.find("export function reportAlive")
-        after = src[idx:idx + 300]
+        after = src[idx : idx + 300]
         assert "ALIVE_PATH" in after
 
     def test_uses_read_json_file(self):
         src = _src()
         idx = src.find("export function reportAlive")
-        after = src[idx:idx + 300]
+        after = src[idx : idx + 300]
         assert "readJsonFile" in after
 
     def test_uses_write_json_file(self):
         src = _src()
         idx = src.find("export function reportAlive")
-        after = src[idx:idx + 600]
+        after = src[idx : idx + 600]
         assert "writeJsonFile" in after
 
     def test_sets_last_seen_timestamp(self):
         src = _src()
         idx = src.find("export function reportAlive")
-        after = src[idx:idx + 600]
+        after = src[idx : idx + 600]
         assert "last_seen" in after
         assert "Date.now()" in after
 
     def test_fail_open(self):
         src = _src()
         idx = src.find("export function reportAlive")
-        after = src[idx:idx + 600]
+        after = src[idx : idx + 600]
         assert "catch" in after
 
 
@@ -241,8 +241,31 @@ class TestAlivePath:
     def test_env_override(self):
         src = _src()
         idx = src.find("ALIVE_PATH")
-        after = src[idx:idx + 150]
+        after = src[idx : idx + 150]
         assert "GLUDD_ALIVE_PATH" in after
+
+
+# ── SESSION_START_STATE_FILE constant ─────────────────────────────────────
+
+
+class TestSessionStartStateFile:
+    def test_exported(self):
+        src = _src()
+        assert "export const SESSION_START_STATE_FILE" in src
+
+    def test_default_path_is_live_session_start(self):
+        src = _src()
+        assert "gludd-session-start.json" in src
+
+    def test_env_override_for_test_isolation(self):
+        src = _src()
+        idx = src.find("SESSION_START_STATE_FILE")
+        after = src[idx : idx + 200]
+        assert "GLUDD_SESSION_STATE" in after, (
+            "SESSION_START_STATE_FILE must honor GLUDD_SESSION_STATE so e2e "
+            "subprocesses can isolate the session-start mtime from the live "
+            "orchestrator (test_text_complete_blocks_thin_wave hermeticity)."
+        )
 
 
 # ── No default export (this is a library, not a plugin) ───────────────────
@@ -269,7 +292,7 @@ class TestNotAPlugin:
 class TestEnforceFloorUsesShared:
     def test_imports_shared_helpers(self):
         src = FLOOR_PATH.read_text()
-        assert 'import {' in src
+        assert "import {" in src
         # shared.ts lives in .opencode/lib/ since the E.5 refactor
         assert '"../lib/shared.ts"' in src
 
@@ -307,9 +330,9 @@ class TestEnforceFloorUsesShared:
         # the guard must come from the shared module instead.
         assert "function _isSubagent(): boolean" not in src
         assert "function _isSubagent()" not in src
-        assert re.search(
-            r'import\s+\{[^}]*\bisSubagent\b[^}]*\}\s+from\s+"[^"]*shared\.ts"', src
-        ), "enforce-floor.ts must import isSubagent from shared.ts"
+        assert re.search(r'import\s+\{[^}]*\bisSubagent\b[^}]*\}\s+from\s+"[^"]*shared\.ts"', src), (
+            "enforce-floor.ts must import isSubagent from shared.ts"
+        )
 
     def test_no_duplicate_report_alive_definition(self):
         src = FLOOR_PATH.read_text()
@@ -318,7 +341,7 @@ class TestEnforceFloorUsesShared:
     def test_uses_is_subagent_in_before_hook(self):
         src = FLOOR_PATH.read_text()
         idx = src.find('"tool.execute.before": async')
-        after = src[idx:idx + 300]
+        after = src[idx : idx + 300]
         assert "isSubagent()" in after
 
     def test_supported_text_complete_hook_only(self):
@@ -335,13 +358,13 @@ class TestEnforceFloorUsesShared:
     def test_no_raw_disengage_json_read(self):
         src = FLOOR_PATH.read_text()
         # Old pattern: reading disengage file directly should be gone
-        assert 'fs.existsSync(disPath)' not in src
+        assert "fs.existsSync(disPath)" not in src
         assert "gludd-watchdog-disengage.json" not in src
 
     def test_uses_report_alive_in_before_hook(self):
         src = FLOOR_PATH.read_text()
         idx = src.find('"tool.execute.before": async')
-        after = src[idx:idx + 300]
+        after = src[idx : idx + 300]
         assert 'reportAlive("enforce-floor")' in after
 
     def test_still_exports_satisfies_plugin(self):
