@@ -29,9 +29,14 @@ The manifest distinguishes four dependency shapes:
    (`scikit-image` to `skimage`, Azure distributions to the `azure`
    namespace, and similar cases) are represented explicitly.
 
-The unused `structlog` runtime dependency and Pillow entries in the game extras
-were removed. The observability extra now directly declares
-`opentelemetry-proto`, whose modules are imported by the receiver.
+The unused `structlog` runtime dependency was removed. The Pillow entries in
+the game extras are intentional and restored: the `game-e2e` and `e2e-all`
+extras declare `pillow>=12.3.0` as a security floor so the game pipeline never
+resolves an image decoder below the current security-fix release, even though
+Pillow is only reached transitively (via scikit-image). Pillow is therefore
+adjudicated in `[tool.deptry.per_rule_ignores]`. The observability extra now
+directly declares `opentelemetry-proto`, whose modules are imported by the
+receiver.
 
 ## Dynamic and entrypoint adjudications
 
