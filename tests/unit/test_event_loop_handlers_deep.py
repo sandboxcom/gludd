@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
@@ -875,6 +876,12 @@ class TestPhaseServiceDiscoveryDeep:
             _service_discovery_last_run=0.0,
         )
         await h._phase_service_discovery()
+        # Flush the event loop so any executor-scheduled work from the mocked
+        # bounded-to-thread wrapper is fully drained before asserting. On CI
+        # runners the discovery call can still be in flight when the coroutine
+        # returns, making assert_called_once race the thread handoff.
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
         mock_sd.run_discovery_pipeline.assert_called_once()
         assert h._service_discovery_last_run > 0
 

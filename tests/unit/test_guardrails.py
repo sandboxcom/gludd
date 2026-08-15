@@ -27,9 +27,21 @@ class TestMakefileTargets:
     def test_makefile_has_required_targets(self):
         content = MAKEFILE.read_text()
         required = [
-            "init", "sync", "test", "test-unit", "lint", "lint-fix",
-            "typecheck", "healthcheck", "clean", "qa", "validate",
-            "bootstrap", "ansible-syntax", "git-status", "test-and-commit",
+            "init",
+            "sync",
+            "test",
+            "test-unit",
+            "lint",
+            "lint-fix",
+            "typecheck",
+            "healthcheck",
+            "clean",
+            "qa",
+            "validate",
+            "bootstrap",
+            "ansible-syntax",
+            "git-status",
+            "test-and-commit",
             "test-guardrails",
         ]
         for target in required:
@@ -41,32 +53,50 @@ class TestMakefileTargets:
         assert "test" in content
         assert "lint" in content
 
+    @pytest.mark.timeout(660)
     def test_make_test_count_passes(self):
-        """Suites collect without errors — fast gate, not full test run."""
+        """Suites collect without errors — fast gate, not full test run.
+
+        ``make test-count`` collects ~105k tests; on CI's constrained runners the
+        bare subprocess can exceed 120s. 600s subprocess timeout + a 660s
+        pytest-timeout margin tolerate CI slowness while still catching a hang.
+        """
         result = subprocess.run(
             ["make", "test-count"],
-            capture_output=True, text=True, cwd=str(ROOT), timeout=120,
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+            timeout=600,
         )
         assert result.returncode == 0, f"make test-count failed:\n{result.stderr}\n{result.stdout}"
 
     def test_make_lint_passes(self):
         result = subprocess.run(
             ["make", "lint"],
-            capture_output=True, text=True, cwd=str(ROOT), timeout=60,
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+            timeout=60,
         )
         assert result.returncode == 0, f"make lint failed:\n{result.stderr}\n{result.stdout}"
 
     def test_make_healthcheck_passes(self):
         result = subprocess.run(
             ["make", "healthcheck"],
-            capture_output=True, text=True, cwd=str(ROOT), timeout=60,
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+            timeout=60,
         )
         assert result.returncode == 0, f"make healthcheck failed:\n{result.stderr}\n{result.stdout}"
 
     def test_make_version_passes(self):
         result = subprocess.run(
             ["make", "version"],
-            capture_output=True, text=True, cwd=str(ROOT), timeout=30,
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+            timeout=30,
         )
         assert result.returncode == 0, f"make version failed:\n{result.stderr}\n{result.stdout}"
         assert "0.1.0" in result.stdout or "0.1.0-alpha" in result.stdout
@@ -85,7 +115,10 @@ class TestMakefileTargets:
         # flaked. 300s tolerates parallel-gate load while still catching a hang.
         result = subprocess.run(
             ["make", "ansible-syntax"],
-            capture_output=True, text=True, cwd=str(ROOT), timeout=300,
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+            timeout=300,
         )
         output = f"{result.stdout}\n{result.stderr}"
         assert result.returncode == 0, f"make ansible-syntax failed:\n{output}"
@@ -162,8 +195,8 @@ class TestOpencodeJsonSchemaGuardPlugin:
 
     def test_plugin_guard_applies_to_write_and_edit(self):
         """Both write and edit tools must be within the guard's scope."""
-        assert "input.tool === \"write\"" in self.PLUGIN_CONTENT or "input.tool === 'write'" in self.PLUGIN_CONTENT
-        assert "input.tool === \"edit\"" in self.PLUGIN_CONTENT or "input.tool === 'edit'" in self.PLUGIN_CONTENT
+        assert 'input.tool === "write"' in self.PLUGIN_CONTENT or "input.tool === 'write'" in self.PLUGIN_CONTENT
+        assert 'input.tool === "edit"' in self.PLUGIN_CONTENT or "input.tool === 'edit'" in self.PLUGIN_CONTENT
 
     def test_plugin_parses_json_to_validate_keys(self):
         """The guard must parse JSON content, not just regex-check."""
@@ -293,9 +326,7 @@ class TestCommitAfterGreenGuardrail:
         assert "git commit" in tac_section
         # The test phase must precede the commit (tests-first ordering).
         run_idx = (
-            tac_section.index("adaptive_test.py")
-            if "adaptive_test.py" in tac_section
-            else tac_section.index("pytest")
+            tac_section.index("adaptive_test.py") if "adaptive_test.py" in tac_section else tac_section.index("pytest")
         )
         assert run_idx < tac_section.index("git commit"), (
             "tests must run BEFORE git commit in the test-and-commit target"
@@ -319,7 +350,7 @@ class TestCommitAfterGreenGuardrail:
 
     def test_makefile_test_and_commit_supports_custom_msg(self):
         content = MAKEFILE.read_text()
-        assert 'MSG' in content, "test-and-commit should support MSG variable"
+        assert "MSG" in content, "test-and-commit should support MSG variable"
         tac_start = content.index("test-and-commit:")
         tac_end = content.index("\n\n", tac_start) if "\n\n" in content[tac_start:] else len(content)
         tac_section = content[tac_start:tac_end]
@@ -332,9 +363,8 @@ class TestCommitAfterGreenGuardrail:
 
     def test_agents_md_has_commit_policy_section(self):
         content = AGENTS_MD.read_text()
-        assert (
-            ("Commit" in content and "Green" in content)
-            or ("commit" in content.lower() and "green" in content.lower())
+        assert ("Commit" in content and "Green" in content) or (
+            "commit" in content.lower() and "green" in content.lower()
         )
         assert "test-and-commit" in content
         assert "uncommitted" in content.lower() or "MUST commit" in content
@@ -404,7 +434,9 @@ class TestSkeletonScript:
     def test_skeleton_creates_directories(self, tmp_path):
         result = subprocess.run(
             ["python3", str(SKELETON_SCRIPT)],
-            capture_output=True, text=True, cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_path),
             timeout=30,
         )
         assert result.returncode == 0
@@ -412,7 +444,9 @@ class TestSkeletonScript:
     def test_skeleton_creates_init_files(self, tmp_path):
         subprocess.run(
             ["python3", str(SKELETON_SCRIPT)],
-            capture_output=True, text=True, cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_path),
             timeout=30,
         )
         src_dir = tmp_path / "src" / "general_ludd"
@@ -435,6 +469,7 @@ class TestEvidencePolicyGuardrail:
 
     def test_evidence_checker_exists(self):
         from general_ludd.review.evidence_checker import EvidenceChecker
+
         checker = EvidenceChecker()
         assert hasattr(checker, "check_claim")
         assert hasattr(checker, "audit_response")
@@ -444,25 +479,23 @@ class TestMakeTargetSmokeTests:
     def test_make_targets_referenced_in_makefile(self):
         import re
         import subprocess
+
         result = subprocess.run(
             ["make", "-qp"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
             cwd=str(ROOT),
         )
         targets = set(re.findall(r"^(\S+):", result.stdout, re.MULTILINE))
         essential = {"test", "lint", "typecheck", "gate", "qa"}
         missing = essential - targets
-        assert not missing, (
-            f"Essential make targets missing from Makefile: {missing}"
-        )
+        assert not missing, f"Essential make targets missing from Makefile: {missing}"
 
 
 class TestGateStatusEnforcement:
     def test_plugin_reads_gate_status_in_response_transform(self):
         content = PLUGIN_CONTRACT
-        assert ".gate-status" in content, (
-            "chat.response.transform must read .gate-status to verify completion claims"
-        )
+        assert ".gate-status" in content, "chat.response.transform must read .gate-status to verify completion claims"
 
     def test_plugin_response_transform_has_state_based_block(self):
         content = PLUGIN_CONTRACT
@@ -475,15 +508,11 @@ class TestGateStatusEnforcement:
         content = PLUGIN_CONTRACT
         has_gate_check = ".gate-status" in content
         has_replace = "output =" in content or "return {" in content
-        assert has_gate_check and has_replace, (
-            "response must be replaced when gate is red/stale/missing"
-        )
+        assert has_gate_check and has_replace, "response must be replaced when gate is red/stale/missing"
 
     def test_plugin_registers_session_idle_event(self):
         content = PLUGIN_CONTRACT
-        assert '"session.idle"' in content, (
-            "session.idle event must be registered to reset turn state per turn"
-        )
+        assert '"session.idle"' in content, "session.idle event must be registered to reset turn state per turn"
 
 
 class TestSystemPromptDiet:
@@ -493,9 +522,7 @@ class TestSystemPromptDiet:
         next_hook = content.index('"experimental.text.complete"')
         transform_block = content[transform_start:next_hook]
         lines = transform_block.split("\n")
-        assert len(lines) < 120, (
-            f"system transform must be ≤120 lines for small-model comprehension, got {len(lines)}"
-        )
+        assert len(lines) < 120, f"system transform must be ≤120 lines for small-model comprehension, got {len(lines)}"
 
 
 RATCHET_MAX = 0
@@ -505,11 +532,7 @@ RATCHET_PATH = ROOT / "config" / "ratchet.yml"
 class TestRatchetGrowthGuard:
     def test_ratchet_count_at_or_below_max(self):
         content = RATCHET_PATH.read_text()
-        entries = [
-            line.strip()
-            for line in content.splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        ]
+        entries = [line.strip() for line in content.splitlines() if line.strip() and not line.strip().startswith("#")]
         actual = len(entries)
         assert actual <= RATCHET_MAX, (
             f"config/ratchet.yml has {actual} entries, exceeding RATCHET_MAX={RATCHET_MAX}. "
@@ -518,11 +541,7 @@ class TestRatchetGrowthGuard:
 
     def test_ratchet_max_equals_actual_count(self):
         content = RATCHET_PATH.read_text()
-        entries = [
-            line.strip()
-            for line in content.splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        ]
+        entries = [line.strip() for line in content.splitlines() if line.strip() and not line.strip().startswith("#")]
         actual = len(entries)
         assert actual == RATCHET_MAX, (
             f"RATCHET_MAX={RATCHET_MAX} but actual entries={actual}. "
@@ -549,9 +568,7 @@ class TestTDDGateSharpened:
 # file). The runtime values are identical to the real PEM/OpenSSH markers.
 _KEY_DASHES = "-" * 5
 _KEY_KINDS = ("OPENSSH ", "RSA ", "DSA ", "EC ", "")
-_PRIVATE_KEY_ARMOR = tuple(
-    f"{_KEY_DASHES}BEGIN {k}PRIVATE KEY{_KEY_DASHES}" for k in _KEY_KINDS
-)
+_PRIVATE_KEY_ARMOR = tuple(f"{_KEY_DASHES}BEGIN {k}PRIVATE KEY{_KEY_DASHES}" for k in _KEY_KINDS)
 
 
 class TestNoTrackedPrivateKeys:
@@ -569,7 +586,10 @@ class TestNoTrackedPrivateKeys:
     def _tracked_files(self) -> list[str]:
         result = subprocess.run(
             ["git", "ls-files"],
-            capture_output=True, text=True, cwd=str(ROOT), timeout=30,
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+            timeout=30,
         )
         assert result.returncode == 0, f"git ls-files failed: {result.stderr}"
         return [f for f in result.stdout.splitlines() if f.strip()]
@@ -658,8 +678,7 @@ def test_cost_cap_fails_closed():
     # 1. Over the numeric cap with no cheaper fit -> fail closed to default.
     over = asyncio.run(_route(0.10))
     assert over.selected_model_profile_id == "safe-default", (
-        "cost cap regressed to FAIL-OPEN: returned over-budget model instead "
-        "of the safe default"
+        "cost cap regressed to FAIL-OPEN: returned over-budget model instead of the safe default"
     )
     assert over.fallback is True
     assert over.estimated_cost_usd <= 0.01
@@ -676,9 +695,5 @@ def test_cost_cap_fails_closed():
     # 4. The bug-class registry's guard_test_id must point at THIS test.
     from general_ludd.quality.bug_class_registry import DEFAULT_BUG_CLASSES
 
-    cap_class = next(
-        c for c in DEFAULT_BUG_CLASSES if c.id == "fail_open_cost_cap"
-    )
-    assert cap_class.guard_test_id == (
-        "tests/unit/test_guardrails.py::test_cost_cap_fails_closed"
-    )
+    cap_class = next(c for c in DEFAULT_BUG_CLASSES if c.id == "fail_open_cost_cap")
+    assert cap_class.guard_test_id == ("tests/unit/test_guardrails.py::test_cost_cap_fails_closed")
