@@ -157,15 +157,11 @@ class TestDetectAvailableTools:
     def test_tool_not_on_path_returns_none(self, tmp_path: Path) -> None:
         from general_ludd.language.tooling import detect_available_tools
 
-        # Temporarily restrict PATH so no tools are findable.
-        result = detect_available_tools(["go"])
+        # A language name that can never resolve to a tool on any PATH.
+        result = detect_available_tools(["definitely-not-a-real-lang-xyz"])
         assert isinstance(result, dict)
-        assert "go" in result
-        for _cat, val in result["go"].items():
-            if val is not None:
-                tool_path = shutil.which(val)
-                if tool_path is None:
-                    assert val is None
+        for _cat, val in result["definitely-not-a-real-lang-xyz"].items():
+            assert val is None, f"absent language must resolve to None, got {val!r}"
 
     def test_python_present_when_pytest_on_path(self) -> None:
         from general_ludd.language.tooling import detect_available_tools

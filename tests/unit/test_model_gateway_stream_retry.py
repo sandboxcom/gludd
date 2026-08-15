@@ -337,7 +337,10 @@ def test_provider_serialization_semaphore_limits_concurrent_streams() -> None:
     assert hasattr(gw, "_stream_provider_semaphores")
     assert isinstance(gw._stream_provider_semaphores, dict)
     assert hasattr(gw, "_stream_provider_semaphore_lock")
-    assert isinstance(gw._stream_provider_semaphore_lock, threading.Lock)
+    # threading.Lock may be a factory function (not a type) on some
+    # platforms/Python versions, so pin the observable interface instead.
+    assert callable(getattr(gw._stream_provider_semaphore_lock, "acquire", None))
+    assert callable(getattr(gw._stream_provider_semaphore_lock, "release", None))
 
 
 def test_stream_provider_semaphore_acquire_and_release() -> None:

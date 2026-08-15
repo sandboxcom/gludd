@@ -38,6 +38,16 @@ DEFAULT_TARGET_BRANCH = "development"
 _MAIN_CHECKOUT = "/Users/shawnwilson/gludd"
 
 
+def _is_main_checkout(path: str, repo_path: str) -> bool:
+    """True when a porcelain ``worktree`` path is the main checkout.
+
+    Compares against the resolved repo_path first (portable across
+    machines), falling back to the historical constant so pre-existing
+    porcelain fixtures and callers that pass the legacy path keep working.
+    """
+    return path in (_MAIN_CHECKOUT, str(Path(repo_path).resolve()))
+
+
 class WorktreeHealthViolation:
     """A single worktree health violation."""
 
@@ -363,7 +373,7 @@ def worktree_list(repo_path: str) -> list[WorktreeInfo]:
             current["commit"] = line[len("HEAD ") :]
         elif line == "":
             if "path" in current:
-                is_main = current.get("path", "") == _MAIN_CHECKOUT
+                is_main = _is_main_checkout(current.get("path", ""), repo_path)
                 worktrees.append(
                     WorktreeInfo(
                         path=current.get("path", ""),
@@ -374,7 +384,7 @@ def worktree_list(repo_path: str) -> list[WorktreeInfo]:
                 )
             current = {}
     if "path" in current:
-        is_main = current.get("path", "") == _MAIN_CHECKOUT
+        is_main = _is_main_checkout(current.get("path", ""), repo_path)
         worktrees.append(
             WorktreeInfo(
                 path=current.get("path", ""),

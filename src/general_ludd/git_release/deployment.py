@@ -168,9 +168,19 @@ class DeploymentOrchestrator:
         prior_digest: str,
         new_digest: str,
     ) -> None:
+        """Validate strategy/digests and record the deployment inputs.
+
+        Args:
+            config: The deployment configuration (strategy + gate thresholds).
+            prior_digest: The artifact digest of the currently-deployed build.
+            new_digest: The artifact digest of the candidate build.
+
+        Raises:
+            ValueError: If either digest is empty or the strategy is unknown.
+        """
         if not prior_digest or not new_digest:
             raise ValueError("prior_digest and new_digest are required")
-        if config.strategy not in DeploymentStrategy:
+        if getattr(config.strategy, "value", config.strategy) not in {m.value for m in DeploymentStrategy}:
             raise ValueError(f"unknown strategy: {config.strategy}")
         self._config = config
         self._prior_digest = prior_digest
@@ -178,10 +188,12 @@ class DeploymentOrchestrator:
 
     @property
     def prior_digest(self) -> str:
+        """The artifact digest of the currently-deployed build."""
         return self._prior_digest
 
     @property
     def new_digest(self) -> str:
+        """The artifact digest of the candidate build being promoted."""
         return self._new_digest
 
     # -- health evaluation (GRC-ZDD-003) -------------------------------------

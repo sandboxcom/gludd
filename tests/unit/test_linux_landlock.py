@@ -280,7 +280,8 @@ def test_backend_kernel_supports_net_delegates_to_module_function():
 
 
 def test_apply_returns_applied_false_when_pylandlock_missing(
-    sample_spec, sample_target,
+    sample_spec,
+    sample_target,
 ):
     """If the landlock module cannot be imported, apply() must return a
     SandboxHandle with applied=False — never raise. This is the contract that
@@ -297,7 +298,10 @@ def test_apply_returns_applied_false_when_pylandlock_missing(
 
 
 def test_apply_returns_applied_false_when_abi_zero(
-    _fake_landlock, sample_spec, sample_target, _prctl_success,
+    _fake_landlock,
+    sample_spec,
+    sample_target,
+    _prctl_success,
 ):
     """abi == 0 means Landlock is disabled at the kernel — apply must fail-open."""
     from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
@@ -316,7 +320,9 @@ def test_apply_returns_applied_false_when_abi_zero(
 
 
 def test_apply_returns_applied_false_when_prctl_fails(
-    _fake_landlock, sample_spec, sample_target,
+    _fake_landlock,
+    sample_spec,
+    sample_target,
 ):
     """If prctl(PR_SET_NO_NEW_PRIVS) returns nonzero errno, apply must fail-open.
 
@@ -328,8 +334,7 @@ def test_apply_returns_applied_false_when_prctl_fails(
 
     fake_libc = mock.MagicMock()
     fake_libc.prctl.return_value = -1
-    with mock.patch("ctypes.CDLL", return_value=fake_libc), \
-         mock.patch("ctypes.get_errno", return_value=1):
+    with mock.patch("ctypes.CDLL", return_value=fake_libc), mock.patch("ctypes.get_errno", return_value=1):
         handle = LandlockBackend.apply(sample_spec, sample_target)
     assert handle.applied is False
     assert "PR_SET_NO_NEW_PRIVS" in handle.extra["reason"]
@@ -338,7 +343,10 @@ def test_apply_returns_applied_false_when_prctl_fails(
 
 
 def test_apply_returns_applied_false_when_rs_apply_raises(
-    _fake_landlock, sample_spec, sample_target, _prctl_success,
+    _fake_landlock,
+    sample_spec,
+    sample_target,
+    _prctl_success,
 ):
     """If rs.apply() (the landlock_restrict_self call) raises, fail-open."""
     from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
@@ -360,7 +368,10 @@ def test_apply_returns_applied_false_when_rs_apply_raises(
 
 
 def test_apply_builds_ruleset_with_file_capabilities(
-    _fake_landlock, sample_spec, sample_target, _prctl_success,
+    _fake_landlock,
+    sample_spec,
+    sample_target,
+    _prctl_success,
 ):
     """The happy path: file caps produce ``rs.allow(prefix, access)`` calls and
     the final handle reports applied=True with the recorded extras."""
@@ -403,7 +414,9 @@ def test_apply_builds_ruleset_with_file_capabilities(
 
 
 def test_apply_uses_read_flags_for_read_only_cap(
-    _fake_landlock, sample_target, _prctl_success,
+    _fake_landlock,
+    sample_target,
+    _prctl_success,
 ):
     """A read-only file cap must use the read flag set, NOT the write set."""
     from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
@@ -432,7 +445,9 @@ def test_apply_uses_read_flags_for_read_only_cap(
 
 
 def test_apply_uses_execute_flags_for_execute_cap(
-    _fake_landlock, sample_target, _prctl_success,
+    _fake_landlock,
+    sample_target,
+    _prctl_success,
 ):
     """An execute cap must use read_flags | EXECUTE."""
     from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
@@ -456,7 +471,9 @@ def test_apply_uses_execute_flags_for_execute_cap(
 
 
 def test_apply_adds_net_rules_when_kernel_supports_net(
-    _fake_landlock, sample_target, _prctl_success,
+    _fake_landlock,
+    sample_target,
+    _prctl_success,
 ):
     """abi >= 6 + net cap with ports -> rs.allow_net(port=..., access=CONNECT_TCP)."""
     from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
@@ -487,7 +504,10 @@ def test_apply_adds_net_rules_when_kernel_supports_net(
 
 
 def test_apply_warns_when_net_hosts_without_ports(
-    _fake_landlock, sample_target, _prctl_success, caplog,
+    _fake_landlock,
+    sample_target,
+    _prctl_success,
+    caplog,
 ):
     """Landlock filters on ports, not DNS names. Hosts-without-ports must log a
     warning and skip the rule (caller must pair with seccomp / eBPF)."""
@@ -516,7 +536,9 @@ def test_apply_warns_when_net_hosts_without_ports(
 
 
 def test_apply_warns_when_kernel_abi_below_net_support(
-    sample_target, _prctl_success, caplog,
+    sample_target,
+    _prctl_success,
+    caplog,
 ):
     """abi < 6 + net cap with ports -> warn that kernel cannot enforce net rules."""
     _install_fake_landlock(abi=5)
@@ -551,7 +573,10 @@ def test_apply_warns_when_kernel_abi_below_net_support(
 
 
 def test_apply_handles_file_rule_exception(
-    _fake_landlock, sample_target, _prctl_success, caplog,
+    _fake_landlock,
+    sample_target,
+    _prctl_success,
+    caplog,
 ):
     """If rs.allow() raises for one path, the exception is logged and the rest
     of the ruleset is still built + applied."""
@@ -597,7 +622,10 @@ def test_apply_handles_file_rule_exception(
 
 
 def test_apply_handles_net_rule_exception(
-    _fake_landlock, sample_target, _prctl_success, caplog,
+    _fake_landlock,
+    sample_target,
+    _prctl_success,
+    caplog,
 ):
     """If rs.allow_net() raises for one port, log + skip; remaining ports still apply."""
     from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
@@ -633,7 +661,9 @@ def test_apply_handles_net_rule_exception(
 
 
 def test_apply_skips_file_cap_with_no_path_prefix(
-    _fake_landlock, sample_target, _prctl_success,
+    _fake_landlock,
+    sample_target,
+    _prctl_success,
 ):
     """A file cap without a path_prefix constraint is silently skipped."""
     from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
@@ -657,7 +687,9 @@ def test_apply_skips_file_cap_with_no_path_prefix(
 
 
 def test_apply_ruleset_name_includes_agent_type(
-    _fake_landlock, sample_target, _prctl_success,
+    _fake_landlock,
+    sample_target,
+    _prctl_success,
 ):
     """The token (ruleset name) embeds the agent_type for audit traceability."""
     from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
@@ -673,7 +705,10 @@ def test_apply_ruleset_name_includes_agent_type(
 
 
 def test_apply_invokes_prctl_with_no_new_privs_constant(
-    _fake_landlock, sample_spec, sample_target, _prctl_success,
+    _fake_landlock,
+    sample_spec,
+    sample_target,
+    _prctl_success,
 ):
     """prctl MUST be called with PR_SET_NO_NEW_PRIVS (=38) + arg=1 before rs.apply()."""
     from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
@@ -774,11 +809,17 @@ def test_release_does_not_close_when_fd_missing_or_negative():
 
     # Missing fd entirely.
     handle_no_fd = SandboxHandle(
-        backend="landlock", token="x", applied=True, extra={},
+        backend="landlock",
+        token="x",
+        applied=True,
+        extra={},
     )
     # Negative fd.
     handle_neg_fd = SandboxHandle(
-        backend="landlock", token="x", applied=True, extra={"ruleset_fd": -1},
+        backend="landlock",
+        token="x",
+        applied=True,
+        extra={"ruleset_fd": -1},
     )
     with mock.patch("general_ludd.security.sandboxes.linux_landlock.os.close") as close:
         LandlockBackend.release(handle_no_fd)
@@ -791,7 +832,10 @@ def test_release_swallows_osclose_errors():
     from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
 
     handle = SandboxHandle(
-        backend="landlock", token="x", applied=True, extra={"ruleset_fd": 5},
+        backend="landlock",
+        token="x",
+        applied=True,
+        extra={"ruleset_fd": 5},
     )
     with mock.patch("general_ludd.security.sandboxes.linux_landlock.os.close", side_effect=OSError("bad fd")):
         # Must not raise.
@@ -816,9 +860,7 @@ def test_backend_satisfies_protocol():
     from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
 
     for attr in ("available", "apply", "verify", "release"):
-        assert callable(getattr(LandlockBackend, attr, None)), (
-            f"LandlockBackend missing Protocol method: {attr}"
-        )
+        assert callable(getattr(LandlockBackend, attr, None)), f"LandlockBackend missing Protocol method: {attr}"
     # The Protocol is @runtime_checkable; isinstance should pass.
     assert isinstance(LandlockBackend, SandboxBackend)
 
@@ -853,9 +895,17 @@ def test_real_available_does_not_raise_on_linux():
     assert isinstance(result, bool)
 
 
-@pytest.mark.skipif(not _LINUX, reason="Landlock is Linux-only")
+@pytest.mark.skipif(
+    not _LINUX or os.environ.get("GLUDD_LANDLOCK_LIVE_TEST") != "1",
+    reason=(
+        "Real Landlock apply is IRREVERSIBLE per-process (restrict_self); it "
+        "must never run on shared CI runners. Set GLUDD_LANDLOCK_LIVE_TEST=1 "
+        "on a dedicated Linux host to exercise the real kernel path."
+    ),
+)
 def test_real_apply_fails_open_if_pylandlock_missing_on_linux(
-    sample_spec, sample_target,
+    sample_spec,
+    sample_target,
 ):
     """If pylandlock is genuinely not installed on this Linux host, apply()
     must fail-open (applied=False) rather than raise. If pylandlock IS

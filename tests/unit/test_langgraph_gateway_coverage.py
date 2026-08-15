@@ -12,6 +12,7 @@ from general_ludd.models.langgraph_gateway import GraphState, LangGraphGateway
 class TestInit:
     def test_with_langgraph_installed(self):
         import importlib.machinery
+
         mock_spec = importlib.machinery.ModuleSpec("langgraph.graph", None)
         mock_module = MagicMock(__spec__=mock_spec)
         with patch.dict("sys.modules", {"langgraph.graph": mock_module}):
@@ -19,9 +20,16 @@ class TestInit:
             assert gw._has_langgraph is True
 
     def test_without_langgraph_installed(self):
-        with patch("importlib.util.find_spec", return_value=None):
-            gw = LangGraphGateway(enable_graph=True)
-            assert gw._has_langgraph is False
+        import sys
+
+        saved = sys.modules.pop("langgraph.graph", None)
+        try:
+            with patch("importlib.util.find_spec", return_value=None):
+                gw = LangGraphGateway(enable_graph=True)
+                assert gw._has_langgraph is False
+        finally:
+            if saved is not None:
+                sys.modules["langgraph.graph"] = saved
 
 
 class TestCall:

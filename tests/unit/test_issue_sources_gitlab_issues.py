@@ -22,14 +22,16 @@ class FakeHTTPTransport:
         self.calls: list[dict[str, Any]] = []
 
     def __call__(self, method, url, *, headers, params=None, json=None, timeout):
-        self.calls.append({
-            "method": method,
-            "url": url,
-            "headers": headers,
-            "params": params,
-            "json": json,
-            "timeout": timeout,
-        })
+        self.calls.append(
+            {
+                "method": method,
+                "url": url,
+                "headers": headers,
+                "params": params,
+                "json": json,
+                "timeout": timeout,
+            }
+        )
         if self.responses:
             return self.responses.pop(0)
         return FakeHTTPResponse(200, [])
@@ -156,9 +158,16 @@ def test_gitlab_normalize_assignees_fallback():
 
 
 def test_gitlab_fetch_issues_open(monkeypatch):
-    transport = FakeHTTPTransport([FakeHTTPResponse(200, [
-        {"iid": 1, "title": "Bug", "description": ""},
-    ])])
+    transport = FakeHTTPTransport(
+        [
+            FakeHTTPResponse(
+                200,
+                [
+                    {"iid": 1, "title": "Bug", "description": ""},
+                ],
+            )
+        ]
+    )
     source = GitLabIssueSource(
         _make_config(),
         transport=transport,
@@ -172,9 +181,16 @@ def test_gitlab_fetch_issues_open(monkeypatch):
 
 
 def test_gitlab_fetch_issues_closed(monkeypatch):
-    transport = FakeHTTPTransport([FakeHTTPResponse(200, [
-        {"iid": 2, "title": "Done", "description": "", "state": "closed"},
-    ])])
+    transport = FakeHTTPTransport(
+        [
+            FakeHTTPResponse(
+                200,
+                [
+                    {"iid": 2, "title": "Done", "description": "", "state": "closed"},
+                ],
+            )
+        ]
+    )
     source = GitLabIssueSource(
         _make_config(),
         transport=transport,
@@ -212,8 +228,10 @@ def test_priority_labels_complete():
 
 # -- import checks ------------------------------------------------------
 
+
 def test_module_exports():
     from general_ludd.issue_sources import gitlab_issues as mod
+
     assert mod.SYSTEM == "gitlab"
     assert mod._DEFAULT_BASE_URL == "https://gitlab.com"
     assert mod._DEFAULT_TIMEOUT == 30.0
@@ -221,7 +239,10 @@ def test_module_exports():
 
 
 def test_http_response_protocol():
-    from typing import get_protocol_members
+    try:
+        from typing import get_protocol_members  # Python 3.12+
+    except ImportError:
+        from typing_extensions import get_protocol_members
 
     from general_ludd.issue_sources.gitlab_issues import HTTPResponse
 
@@ -242,7 +263,10 @@ def test_http_response_satisfies() -> None:
 
 
 def test_http_transport_protocol():
-    from typing import get_protocol_members
+    try:
+        from typing import get_protocol_members  # Python 3.12+
+    except ImportError:
+        from typing_extensions import get_protocol_members
 
     from general_ludd.issue_sources.gitlab_issues import HTTPTransport
 
@@ -271,9 +295,11 @@ def test_http_transport_satisfies() -> None:
 
 # -- is_internal_host ---------------------------------------------------
 
+
 def test_is_internal_host_delegates():
     from general_ludd.issue_sources.gitlab_issues import _is_internal_host
     from general_ludd.security.ssrf import host_is_blocked
+
     assert _is_internal_host("127.0.0.1") is host_is_blocked("127.0.0.1")
     assert _is_internal_host("gitlab.com") is host_is_blocked("gitlab.com")
     assert _is_internal_host("192.168.1.1") is host_is_blocked("192.168.1.1")
@@ -281,13 +307,16 @@ def test_is_internal_host_delegates():
 
 # -- default transport --------------------------------------------------
 
+
 def test_default_transport_returns_callable():
     from general_ludd.issue_sources.gitlab_issues import _default_transport
+
     transport = _default_transport()
     assert callable(transport)
 
 
 # -- default values -----------------------------------------------------
+
 
 def test_default_base_url():
     source = GitLabIssueSource({}, env={}, transport=FakeHTTPTransport())
@@ -305,6 +334,7 @@ def test_default_token_env():
 
 
 # -- SSRF ---------------------------------------------------------------
+
 
 def test_ssrf_base_url_internal_host_parsed():
     source = GitLabIssueSource(
@@ -346,6 +376,7 @@ def test_ssrf_strips_trailing_slash():
 
 # -- _request -----------------------------------------------------------
 
+
 def test_request_permission_error_internal():
     source = GitLabIssueSource(
         {"base_url": "http://127.0.0.1", "project_id": "1"},
@@ -353,6 +384,7 @@ def test_request_permission_error_internal():
         env={"GITLAB_TOKEN": "t"},
     )
     import pytest
+
     with pytest.raises(PermissionError, match="internal host"):
         source._request("GET", "/test")
 
@@ -372,6 +404,7 @@ def test_request_url_construction():
 
 
 # -- _token / _headers --------------------------------------------------
+
 
 def test_token_from_custom_env():
     source = GitLabIssueSource(
@@ -406,6 +439,7 @@ def test_headers_no_token():
 
 # -- _get_transport -----------------------------------------------------
 
+
 def test_get_transport_injected():
     transport = FakeHTTPTransport()
     source = GitLabIssueSource(
@@ -430,10 +464,12 @@ def test_get_transport_creates_default():
 
 # -- health: exception path ---------------------------------------------
 
+
 def test_health_request_exception():
     class FailingTransport:
         def __call__(self, *args, **kwargs):
             raise ConnectionError("network down")
+
     source = GitLabIssueSource(
         _make_config(),
         transport=FailingTransport(),
@@ -446,9 +482,12 @@ def test_health_request_exception():
 
 # -- _normalize edges ---------------------------------------------------
 
+
 def test_normalize_web_url():
     issue = {
-        "iid": 1, "title": "T", "description": "",
+        "iid": 1,
+        "title": "T",
+        "description": "",
         "web_url": "https://gitlab.com/u/p/issues/1",
     }
     result = GitLabIssueSource._normalize(issue)
@@ -463,7 +502,9 @@ def test_normalize_no_web_url():
 
 def test_normalize_updated_ts():
     issue = {
-        "iid": 1, "title": "T", "description": "",
+        "iid": 1,
+        "title": "T",
+        "description": "",
         "updated_at": "2024-01-01T00:00:00Z",
     }
     result = GitLabIssueSource._normalize(issue)
@@ -504,8 +545,10 @@ def test_normalize_default_title_description():
 
 # -- update_status ------------------------------------------------------
 
+
 def test_update_status_invalid_raises():
     import pytest
+
     transport = FakeHTTPTransport()
     source = GitLabIssueSource(
         _make_config(),
@@ -517,10 +560,12 @@ def test_update_status_invalid_raises():
 
 
 def test_update_status_with_comment():
-    transport = FakeHTTPTransport([
-        FakeHTTPResponse(200, {"iid": 1}),
-        FakeHTTPResponse(201, {"id": 100}),
-    ])
+    transport = FakeHTTPTransport(
+        [
+            FakeHTTPResponse(200, {"iid": 1}),
+            FakeHTTPResponse(201, {"id": 100}),
+        ]
+    )
     source = GitLabIssueSource(
         _make_config(),
         transport=transport,
@@ -544,6 +589,7 @@ def test_update_status_reopen():
 
 
 # -- add_comment --------------------------------------------------------
+
 
 def test_add_comment_posts_note():
     transport = FakeHTTPTransport([FakeHTTPResponse(201, {"id": 100})])
@@ -574,6 +620,7 @@ def test_add_comment_non_2xx():
 
 
 # -- fetch_issues -------------------------------------------------------
+
 
 def test_fetch_issues_labels_joined():
     transport = FakeHTTPTransport([FakeHTTPResponse(200, [])])
@@ -608,11 +655,18 @@ def test_fetch_issues_non_list_response():
 
 
 def test_fetch_issues_skips_non_dict_items():
-    transport = FakeHTTPTransport([FakeHTTPResponse(200, [
-        {"iid": 1, "title": "Valid", "description": ""},
-        "not-a-dict",
-        {"iid": 2, "title": "Also valid", "description": ""},
-    ])])
+    transport = FakeHTTPTransport(
+        [
+            FakeHTTPResponse(
+                200,
+                [
+                    {"iid": 1, "title": "Valid", "description": ""},
+                    "not-a-dict",
+                    {"iid": 2, "title": "Also valid", "description": ""},
+                ],
+            )
+        ]
+    )
     source = GitLabIssueSource(
         _make_config(),
         transport=transport,
@@ -623,9 +677,16 @@ def test_fetch_issues_skips_non_dict_items():
 
 
 def test_fetch_issues_no_spec():
-    transport = FakeHTTPTransport([FakeHTTPResponse(200, [
-        {"iid": 1, "title": "Bug", "description": ""},
-    ])])
+    transport = FakeHTTPTransport(
+        [
+            FakeHTTPResponse(
+                200,
+                [
+                    {"iid": 1, "title": "Bug", "description": ""},
+                ],
+            )
+        ]
+    )
     source = GitLabIssueSource(
         _make_config(),
         transport=transport,
@@ -636,6 +697,7 @@ def test_fetch_issues_no_spec():
 
 
 # -- base_url edge cases ------------------------------------------------
+
 
 def test_base_url_config_override():
     source = GitLabIssueSource(
@@ -657,9 +719,11 @@ def test_timeout_config_override():
 
 # -- env fallback to os.environ ----------------------------------------
 
+
 def test_env_defaults_to_os_environ():
     """When env=None, constructor reads os.environ."""
     import os
+
     source = GitLabIssueSource(
         _make_config(),
         transport=FakeHTTPTransport(),
