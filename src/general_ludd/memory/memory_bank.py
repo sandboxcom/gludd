@@ -199,7 +199,9 @@ class MemoryBank:
         self._facts: dict[str, MemoryEntry] = {}
         self._fact_content_index: dict[str, str] = {}
         self._ordered_facts_cache: list[MemoryEntry] | None = None
-        self._fact_score_cache: dict[tuple[tuple[str, ...], str], dict[str, tuple[float, tuple]]] = {}
+        self._fact_score_cache: dict[
+            tuple[tuple[str, ...], str], dict[str, tuple[float, tuple[str, float, str, tuple[str, ...]]]]
+        ] = {}
         self._lock = threading.Lock()
 
     @property
@@ -385,7 +387,7 @@ class MemoryBank:
         query_key = (tuple(qterms), ql)
         with self._lock:
             snapshot = list(self._facts.values())
-        scored: dict[str, tuple[float, tuple]] = {}
+        scored: dict[str, tuple[float, tuple[str, float, str, tuple[str, ...]]]] = {}
         cached = self._fact_score_cache.get(query_key, {})
         for fact in snapshot:
             version = _entry_version(fact)
