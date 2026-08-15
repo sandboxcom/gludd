@@ -426,6 +426,17 @@
       "behavior": "make ci-trigger-committed-head EXAMPLE=1 REF=release/beta3-candidate REMOTE=sandboxcom REPO=sandboxcom/gludd WORKFLOW='Build and Release' DISCOVERY_POLLS=1 CONFIRM_POLLS=1 POLL_INTERVAL=0"
     },
     {
+      "name": "ci-record-verdict",
+      "make_variables": ["VERDICT", "SHA"],
+      "behavior": "make ci-record-verdict VERDICT=failure SHA=<40-hex-sha>"
+    },
+    {
+      "name": "_record-push-verdict",
+      "make_variables": [],
+      "not_for_direct_use": true,
+      "behavior": "make _record-push-verdict"
+    },
+    {
       "name": "active-work-status",
       "make_variables": [],
       "behavior": "make active-work-status"
