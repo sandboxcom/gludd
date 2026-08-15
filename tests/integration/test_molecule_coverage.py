@@ -56,6 +56,7 @@ def _role_scenario(role: str) -> str:
 # matches the strict role_<name> convention, so they're mapped here.
 _ROLE_SCENARIO_ALIASES: dict[str, set[str]] = {
     "local_game_gen": {"local_game_gen"},
+    "local_model_server": {"local_model_server"},
     "project_init": {"project_init_role", "project_init_override"},
     "openbao_break_glass_backup": {"openbao_break_glass_backup"},
     "stream_input_key_both": {"stream_input_key_both"},

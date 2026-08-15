@@ -54,6 +54,7 @@ def _adapt_http_get(fn: object) -> Transport:
         if isinstance(result, tuple) and len(result) == 2:
             return cast(HttpResponse, _TupleResponse(result[0], result[1]))
         return cast(HttpResponse, result)
+
     return call
 
 
@@ -122,6 +123,7 @@ class AzureResourceGraphSource:
     API_VERSION = "2021-03-01"
 
     def __init__(self, config: dict[str, object], *, http_get: object | None = None) -> None:
+        """Build the source from connector config; validates subscriptions and SSRF policy."""
         if not isinstance(config, dict):
             raise TypeError("config must be a dict")
 
@@ -147,6 +149,8 @@ class AzureResourceGraphSource:
         self._timeout: float = float(str(config.get("timeout", 30.0)))
 
         transport = http_get if http_get is not None else config.get("transport")
+        if http_get is not None and config.get("transport") is not None:
+            raise ValueError("http_get and config['transport'] are mutually exclusive")
         if transport is None:
             transport = _default_transport
         if not callable(transport):
@@ -165,10 +169,7 @@ class AzureResourceGraphSource:
         return token
 
     def _query_url(self) -> str:
-        return (
-            f"{self._base_url}/providers/Microsoft.ResourceGraph/resources"
-            f"?api-version={self.API_VERSION}"
-        )
+        return f"{self._base_url}/providers/Microsoft.ResourceGraph/resources?api-version={self.API_VERSION}"
 
     def _post_kql(self, kql: str) -> object:
         headers = {

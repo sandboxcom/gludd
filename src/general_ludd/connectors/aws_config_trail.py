@@ -150,13 +150,22 @@ ClientFactory = Callable[[str], _Client | None]
 
 
 class _TupleAwsClient:
-    def __init__(self, value: object) -> None:
-        self._value = value
+    """Adapt a method-first callback to the per-service client surface the source expects.
 
-    def lookup_events(self, **_kwargs: object) -> object:
-        if isinstance(self._value, tuple) and len(self._value) == 2:
-            return self._value[1]
-        return self._value
+    The callback contract is shared across the connector package: the first
+    positional argument is the AWS API method name and ``service_name`` is a
+    keyword, so a single injected callable can serve every service client.
+    """
+
+    def __init__(self, fn: Callable[..., object], service_name: str) -> None:
+        self._fn = fn
+        self._service_name = service_name
+
+    def lookup_events(self, **kwargs: object) -> object:
+        result = self._fn("lookup_events", service_name=self._service_name, **kwargs)
+        if isinstance(result, tuple) and len(result) == 2:
+            return result[1]
+        return result
 
 
 def _default_factory(region: str | None, timeout: float) -> ClientFactory | None:
@@ -191,6 +200,7 @@ class AwsConfigTrailSource:
     name = "aws_config_trail"
 
     def __init__(self, config: Mapping[str, object], *, aws_client: _Client | None = None) -> None:
+        """Build the source from connector config; an injected client wins over the boto3 factory."""
         self._config: dict[str, object] = dict(config)
         region_raw = config.get("region")
         self._region: str | None = region_raw if isinstance(region_raw, str) else None
@@ -208,10 +218,11 @@ class AwsConfigTrailSource:
         self._client_factory: ClientFactory | None = None
         if aws_client is not None:
             if callable(aws_client) and not hasattr(aws_client, "lookup_events"):
-                self._client_factory = cast(
-                    ClientFactory,
-                    lambda service: cast(_Client, _TupleAwsClient(aws_client(service))),
-                )
+
+                def _tuple_factory(service: str) -> _Client | None:
+                    return cast(_Client, _TupleAwsClient(aws_client, service))
+
+                self._client_factory = _tuple_factory
             else:
                 self._client_factory = lambda _service: aws_client
         elif "client_factory" in config:
@@ -350,6 +361,7 @@ class AwsConfigTrailSource:
     # -- public API ----------------------------------------------------------
 
     def health(self) -> HealthStatus:
+        """Probe the source. Never raises."""
         try:
             if self._client_factory is None:
                 return {"ok": False, "detail": "boto3 unavailable"}
@@ -365,6 +377,7 @@ class AwsConfigTrailSource:
             return {"ok": False, "detail": "health check failed"}
 
     def query(self, spec: Mapping[str, object]) -> list[NormalizedRecord]:
+        """Return normalized records from AWS Config or CloudTrail per ``spec['mode']``."""
         if self._client_factory is None:
             return []
         mode_raw = spec.get("mode", "config")

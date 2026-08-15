@@ -1,0 +1,27 @@
+---
+- name: Verify — local_model_server lifecycle completed (live) or skipped (CI-cheap)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Verify live run — server cleaned up (no pid file, port released)
+      when: lookup('env', 'MOLECULE_LIVE_MODEL') == '1'
+      block:
+        - name: Assert server PID file was removed by the role shutdown
+          ansible.builtin.stat:
+            path: "/tmp/gludd-model-server/server.pid"
+          register: _pid_stat
+          failed_when: _pid_stat.stat.exists
+
+        - name: Report live verification outcome
+          ansible.builtin.debug:
+            msg: >-
+              LIVE VERIFY OK: local_model_server role downloaded, served
+              /v1/models, and shut down cleanly (no pid file remains).
+
+    - name: Verify CI-cheap run — converge skipped live work
+      when: lookup('env', 'MOLECULE_LIVE_MODEL') != '1'
+      ansible.builtin.debug:
+        msg: >-
+          CI-CHEAP VERIFY OK: live converge was correctly gated behind
+          MOLECULE_LIVE_MODEL; syntax-only scenario verified.

@@ -44,7 +44,13 @@ class TestBatchPushTarget:
 
     def test_batch_push_uses_sandboxcom_key(self):
         recipe = _recipe("batch-push")
-        assert "git-push-sandboxcom" in recipe, "batch-push must delegate to git-push-sandboxcom"
+        # AA023 rework: batch-push pushes DIRECTLY (no nested git-push-sandboxcom
+        # re-entry, which re-ran every guard) using the sandboxcom SSH key and
+        # records the push verdict after the push lands.
+        assert "GIT_SSH_COMMAND" in recipe and "sandboxcom" in recipe, (
+            "batch-push must push directly to sandboxcom via the sandboxcom SSH key"
+        )
+        assert "_record-push-verdict" in recipe, "batch-push must record the push verdict AFTER the push lands"
 
 
 class TestForegroundBlockGuardrail:
@@ -68,9 +74,7 @@ class TestForegroundBlockGuardrail:
 
     def test_blocks_make_qa(self):
         content = plugin_contract_source(ENFORCE_MAKE)
-        assert '"qa"' in content or "'qa'" in content or "isQa" in content, (
-            "Foreground block must target 'make qa'"
-        )
+        assert '"qa"' in content or "'qa'" in content or "isQa" in content, "Foreground block must target 'make qa'"
 
     def test_mentions_alternative(self):
         content = plugin_contract_source(ENFORCE_MAKE)
@@ -82,27 +86,19 @@ class TestStopPatternEnforcer:
 
     def test_blocking_default(self):
         content = plugin_contract_source(ENFORCE_STOP)
-        assert 'permissionDecision: "deny"' in content, (
-            "enforce-stop.ts must have hard-deny permissionDecision blocks"
-        )
+        assert 'permissionDecision: "deny"' in content, "enforce-stop.ts must have hard-deny permissionDecision blocks"
 
     def test_has_ratchet_stop_audit(self):
         content = plugin_contract_source(ENFORCE_STOP)
-        assert "ratchet" in content.lower(), (
-            "enforce-stop.ts must have ratchet-based stop audit"
-        )
+        assert "ratchet" in content.lower(), "enforce-stop.ts must have ratchet-based stop audit"
 
     def test_has_deferral_patterns(self):
         content = plugin_contract_source(ENFORCE_STOP)
-        assert "SUBAGENT_TEXT_MARKERS" in content, (
-            "enforce-stop.ts must detect deferral/subagent-result patterns"
-        )
+        assert "SUBAGENT_TEXT_MARKERS" in content, "enforce-stop.ts must detect deferral/subagent-result patterns"
 
     def test_has_question_tool_block(self):
         content = plugin_contract_source(ENFORCE_STOP)
-        assert '"question"' in content or "'question'" in content, (
-            "enforce-stop.ts must block the question tool"
-        )
+        assert '"question"' in content or "'question'" in content, "enforce-stop.ts must block the question tool"
 
 
 class TestAdaptiveDelegationEnforcement:
@@ -110,9 +106,7 @@ class TestAdaptiveDelegationEnforcement:
 
     def test_agents_md_has_10_minimum(self):
         content = AGENTS_MD.read_text()
-        assert "Minimum 10 Subagents" in content, (
-            "AGENTS.md must document the 10-subagent minimum"
-        )
+        assert "Minimum 10 Subagents" in content, "AGENTS.md must document the 10-subagent minimum"
 
     def test_agents_md_has_anti_stall_rule(self):
         content = AGENTS_MD.read_text()
@@ -142,9 +136,7 @@ class TestAdaptiveDelegationEnforcement:
 
     def test_settings_json_floor_is_five(self):
         settings = (ROOT / ".claude" / "settings.json").read_text()
-        assert '"CLAUDE_AGENT_FLOOR": "5"' in settings, (
-            ".claude/settings.json must set CLAUDE_AGENT_FLOOR to 5"
-        )
+        assert '"CLAUDE_AGENT_FLOOR": "5"' in settings, ".claude/settings.json must set CLAUDE_AGENT_FLOOR to 5"
 
 
 class TestMainThreadRestriction:
@@ -152,9 +144,7 @@ class TestMainThreadRestriction:
 
     def test_has_dispatch_pattern(self):
         content = AGENTS_MD.read_text()
-        assert "batch-push" in content, (
-            "AGENTS.md must reference batch-push as the dispatch mechanism"
-        )
+        assert "batch-push" in content, "AGENTS.md must reference batch-push as the dispatch mechanism"
 
     def test_forbids_lint_on_main_thread(self):
         content = AGENTS_MD.read_text()
@@ -162,9 +152,7 @@ class TestMainThreadRestriction:
 
     def test_forbids_typecheck_on_main_thread(self):
         content = AGENTS_MD.read_text()
-        assert "make typecheck" in content, (
-            "AGENTS.md must mention make typecheck in the restriction"
-        )
+        assert "make typecheck" in content, "AGENTS.md must mention make typecheck in the restriction"
 
     def test_describes_wave_pattern(self):
         content = AGENTS_MD.read_text()

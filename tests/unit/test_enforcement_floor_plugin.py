@@ -125,12 +125,13 @@ class TestSubagentGuard:
         assert subagent_idx < report_idx, "OPENCODE_SUBAGENT check must precede reportAlive in tool.execute.before"
 
     def test_guard_also_in_text_complete(self):
-        """No text-complete hook remains (opencode ≥1.17.9 self-contained
-        redesign); subagent isolation lives at the top of tool.execute.before."""
+        """The experimental.text.complete key is declared as a pass-through
+        (opencode ≥1.17.9 registers only the experimental key); subagent
+        isolation and enforcement live in tool.execute.before."""
         src = _src()
-        assert '"experimental.text.complete"' not in src, (
-            "enforce-floor is self-contained in tool.execute.before — "
-            "the text-complete boundary was removed with the redesign"
+        assert '"experimental.text.complete"' in src, (
+            "the experimental.text.complete key must be declared so the pinned "
+            "supported-hooks surface holds on opencode ≥1.17.9"
         )
         idx = src.find('"tool.execute.before": async', src.find("defaultImpl"))
         after = src[idx : idx + 120] if idx > 0 else src
@@ -492,13 +493,19 @@ class TestRefillState:
 
 
 class TestTextCompleteBehavior:
-    """The removed bare hook stays absent; the experimental boundary was
-    replaced by time-based message-boundary detection (self-contained)."""
+    """The experimental.text.complete key is a pass-through: it keeps the
+    pinned supported-hooks surface valid on opencode ≥1.17.9 while all
+    enforcement stays in tool.execute.before via time-based message-boundary
+    detection. The pass-through must return output unchanged."""
 
     def test_experimental_text_complete_passes_output_through(self):
         src = _src()
-        assert '"experimental.text.complete"' not in src, "no text-complete hook remains — boundaries are time-based"
-        assert "MESSAGE_BOUNDARY_MS" in src, "time-based message boundary detection must replace the hook"
+        assert '"experimental.text.complete"' in src, "the experimental.text.complete pass-through key must be declared"
+        assert "return fn ? await fn(_input, output) : output" in src, (
+            "experimental.text.complete must be a pure pass-through: delegate "
+            "to the hot impl if present, otherwise return output unchanged"
+        )
+        assert "MESSAGE_BOUNDARY_MS" in src, "time-based message boundary detection must drive enforcement"
         assert "isNewMessage" in src
         assert "_prevMessageDispatchCount = _thisMessageDispatchCount" in src
 
@@ -702,10 +709,9 @@ class TestPluginHookRegistration:
 
     def test_no_text_complete_hook_returned(self):
         src = _src()
-        assert '"experimental.text.complete"' not in src, (
-            "plugin is self-contained — no text-complete hook is registered"
+        assert re.search(r'(?<!experimental\.)"text\.complete"\s*:', src) is None, (
+            "no bare (non-experimental) text.complete hook may be registered"
         )
-        assert '"text.complete"' not in src
         assert '"tool.execute.before"' in src
 
 

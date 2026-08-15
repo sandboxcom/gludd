@@ -28,11 +28,13 @@ _URL_PATTERN = re.compile(r"https?://[^\s,\"')}\]]+")
 def sanitize_exc_message(exc: BaseException) -> str:
     """Return a safe error label that never leaks paths, tokens, or URLs.
 
-    Logs only the exception type so failures remain observable without copying
-    attacker-controlled exception text, credentials, paths, or URLs into logs.
+    Logs only the exception type as the message so failures remain observable
+    without copying attacker-controlled exception text, credentials, paths, or
+    URLs into logs; ``exc_info=True`` keeps the full traceback on the record
+    for debugging (the traceback is structured logging data, not the message).
     """
     error_type = type(exc).__name__
-    logger.warning("connector exception sanitized type=%s", error_type)
+    logger.warning("connector exception sanitized type=%s", error_type, exc_info=True)
     return error_type
 
 

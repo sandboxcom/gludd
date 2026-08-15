@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 
 
 class ClickhouseRow(TypedDict, total=False):
+    """A single result row from a ClickHouse ``system.*`` query."""
+
     metric: str
     value: float | int | str
     database: str
@@ -48,6 +50,8 @@ class ClickhouseRow(TypedDict, total=False):
 
 
 class ClickhouseConfig(TypedDict, total=False):
+    """Connector configuration for the ClickHouse source."""
+
     name: str
     url: str
     user: str
@@ -55,11 +59,15 @@ class ClickhouseConfig(TypedDict, total=False):
 
 
 class ClickhouseHealthResult(TypedDict, total=False):
+    """Health probe outcome."""
+
     ok: bool
     detail: str
 
 
 class ClickhouseQuerySpec(TypedDict, total=False):
+    """Caller-supplied query selection (currently empty)."""
+
     pass
 
 
@@ -78,8 +86,7 @@ _QUERIES: tuple[tuple[str, str], ...] = (
     ),
     (
         "system.replicas",
-        "SELECT database, table, is_readonly, absolute_delay, "
-        "queue_size FROM system.replicas",
+        "SELECT database, table, is_readonly, absolute_delay, queue_size FROM system.replicas",
     ),
 )
 
@@ -96,6 +103,7 @@ class ClickHouseStatsSource:
         *,
         cursor: object | None = None,
     ) -> None:
+        """Build the source from connector config; executor and cursor are mutually exclusive."""
         cfg: dict[str, object] = dict(config or {})
         self.name: str = str(cfg.get("name", "clickhouse"))
         self._config = cfg
@@ -103,11 +111,15 @@ class ClickHouseStatsSource:
         self._user: str = str(cfg.get("user", "default"))
         self._password_env: str = str(cfg.get("password_env", "CLICKHOUSE_PASSWORD"))
         self._executor: Executor | None
+        if executor is not None and cursor is not None:
+            raise ValueError("provide exactly one of executor or cursor, not both")
         if cursor is not None:
+
             def _cursor_executor(query: str) -> Sequence[ClickhouseRow]:
                 cursor_obj = cast(Any, cursor)
                 cursor_obj.execute(query)
                 return list(cursor_obj)
+
             self._executor = _cursor_executor
         else:
             self._executor = executor
@@ -174,7 +186,8 @@ class ClickHouseStatsSource:
             executor("SELECT 1 AS metric, 1 AS value")
         except Exception as exc:
             logger.warning(
-                "clickhouse_stats probe failed: %s", type(exc).__name__,
+                "clickhouse_stats probe failed: %s",
+                type(exc).__name__,
                 exc_info=False,
             )
             return {"ok": False, "detail": "probe failed"}
@@ -183,6 +196,7 @@ class ClickHouseStatsSource:
     # -- query -------------------------------------------------------------
 
     def query(self, spec: ClickhouseQuerySpec | None = None) -> list[NormalizedRecord]:
+        """Return normalized metric records from the ``system.*`` tables."""
         executor = self._get_executor()
         if executor is None:
             return []
@@ -223,9 +237,7 @@ class ClickHouseStatsSource:
             "raw": raw,
         }
 
-    def _metric_records(
-        self, rows: Sequence[ClickhouseRow], table: str, ts: float
-    ) -> list[NormalizedRecord]:
+    def _metric_records(self, rows: Sequence[ClickhouseRow], table: str, ts: float) -> list[NormalizedRecord]:
         out: list[NormalizedRecord] = []
         for row in rows:
             metric = row.get("metric")
@@ -242,9 +254,7 @@ class ClickHouseStatsSource:
             )
         return out
 
-    def _replica_records(
-        self, rows: Sequence[ClickhouseRow], table: str, ts: float
-    ) -> list[NormalizedRecord]:
+    def _replica_records(self, rows: Sequence[ClickhouseRow], table: str, ts: float) -> list[NormalizedRecord]:
         out: list[NormalizedRecord] = []
         for row in rows:
             db = str(row.get("database", ""))

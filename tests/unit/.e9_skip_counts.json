@@ -1,8 +1,9 @@
 {
   "schema_version": 2,
   "reviewed_task": "S83.110",
+  "review_notes_2026-08-15": "+3 pytest.skip are the env-gated live-model e2e lanes (GLUDD_LIVE_MODEL_E2E=1) added for the user's local-pipeline directive; +1 is the uninitialized-submodule guard in test_conftest_audit_deep.py (CI checkout has no external/ conftests). Each skip has a documented precondition, not a CI smell",
   "scope": "tests/**/*.py excluding conftest and test_e9_skip_smell.py",
-  "pytest_skip_total": 346,
+  "pytest_skip_total": 350,
   "bare_mark_skip_total": 20,
   "xfail_total": 16
 }

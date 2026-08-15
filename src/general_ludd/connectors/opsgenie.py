@@ -35,12 +35,16 @@ def _invoke_get(transport: object, url: str, **kwargs: object) -> HttpResponse:
     else:
         raise TypeError("transport must expose get or be callable")
     if isinstance(result, tuple) and len(result) == 2:
+
         class _TupleResponse:
             status_code = int(result[0]) if isinstance(result[0], int) else 0
+
             def json(self) -> object:
                 return result[1]
+
         return cast(HttpResponse, _TupleResponse())
     return cast(HttpResponse, result)
+
 
 DEFAULT_BASE_URL = "https://api.opsgenie.com"
 DEFAULT_TIMEOUT = 15.0
@@ -49,6 +53,8 @@ DEFAULT_LIMIT = 100
 
 @runtime_checkable
 class HttpTransport(Protocol):
+    """Minimal injectable transport returning an ``HttpResponse``."""
+
     def get(
         self,
         url: str,
@@ -56,7 +62,9 @@ class HttpTransport(Protocol):
         headers: dict[str, str] | None = ...,
         params: Mapping[str, object] | None = ...,
         timeout: float | None = ...,
-    ) -> HttpResponse: ...
+    ) -> HttpResponse:
+        """Fetch ``url`` and return an ``HttpResponse``."""
+        ...
 
 
 def _validate_base_url(base_url: str) -> str:
@@ -126,12 +134,21 @@ class _TupleTransport:
         params: Mapping[str, object] | None = None,
         timeout: float | None = None,
     ) -> HttpResponse:
-        result = self._fn(url, headers or {})
+        result = self._fn(
+            "GET",
+            url,
+            headers=headers or {},
+            params=params,
+            timeout=timeout,
+        )
         status, payload = result if isinstance(result, tuple) and len(result) == 2 else (0, {})
+
         class Response:
             status_code = int(status)
+
             def json(self_nonlocal) -> object:
                 return payload
+
         return cast(HttpResponse, Response())
 
 
@@ -146,16 +163,16 @@ class OpsgenieSource:
         *,
         transport: HttpTransport | None = None,
     ) -> None:
+        """Build the source from connector config and select the transport."""
         self.config = dict(config)
         self.name = str(self.config.get("name", "opsgenie"))
-        self.base_url = _validate_base_url(
-            str(self.config.get("base_url", DEFAULT_BASE_URL))
-        )
+        self.base_url = _validate_base_url(str(self.config.get("base_url", DEFAULT_BASE_URL)))
         self.token_env = str(self.config.get("token_env", "OPSGENIE_API_KEY"))
         self.timeout = float(str(self.config.get("timeout", DEFAULT_TIMEOUT)))
         self.default_limit = int(str(self.config.get("limit", DEFAULT_LIMIT)))
         self._transport: HttpTransport = (
-            _TupleTransport(transport) if callable(transport) and not hasattr(transport, "get")
+            _TupleTransport(transport)
+            if callable(transport) and not hasattr(transport, "get")
             else transport or _DefaultTransport()
         )
 
@@ -164,10 +181,7 @@ class OpsgenieSource:
     def _token(self) -> str:
         token = os.environ.get(self.token_env)
         if not token:
-            raise RuntimeError(
-                f"Opsgenie API key not found in environment variable "
-                f"{self.token_env!r}"
-            )
+            raise RuntimeError(f"Opsgenie API key not found in environment variable {self.token_env!r}")
         return token
 
     def _headers(self) -> dict[str, str]:
@@ -176,10 +190,9 @@ class OpsgenieSource:
     # -- public API -------------------------------------------------------
 
     def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
+        """Return normalized alerts from ``/v2/alerts``."""
         spec = spec or {}
-        params: dict[str, object] = {
-            "limit": int(str(spec.get("limit", self.default_limit)))
-        }
+        params: dict[str, object] = {"limit": int(str(spec.get("limit", self.default_limit)))}
         if spec.get("query"):
             params["query"] = spec["query"]
 
@@ -191,14 +204,13 @@ class OpsgenieSource:
             timeout=self.timeout,
         )
         if resp.status_code >= 400:
-            raise RuntimeError(
-                f"Opsgenie /v2/alerts returned status {resp.status_code}"
-            )
+            raise RuntimeError(f"Opsgenie /v2/alerts returned status {resp.status_code}")
         payload = resp.json() or {}
         alerts = payload.get("data", []) or []
         return [self._normalize(alert) for alert in alerts]
 
     def health(self) -> dict[str, object]:
+        """Probe the source. Never raises."""
         try:
             resp = _invoke_get(
                 self._transport,

@@ -96,6 +96,9 @@ class CassandraStatsSource:
         *,
         cursor: object | None = None,
     ) -> None:
+        """Build the source from connector config; executor and cursor are mutually exclusive."""
+        if executor is not None and cursor is not None:
+            raise ValueError("provide exactly one of executor or cursor, not both")
         cfg = dict(config or {})
         self.name: str = str(cfg.get("name", "cassandra"))
         self._config = cfg
@@ -103,10 +106,12 @@ class CassandraStatsSource:
         self._token_env: str = str(cfg.get("token_env", "CASSANDRA_JMX_TOKEN"))
         self._executor: Executor | None
         if cursor is not None:
+
             def _cursor_executor(command: str) -> Sequence[CassandraRow]:
                 cursor_obj = cast(Any, cursor)
                 cursor_obj.execute(command)
                 return list(cursor_obj)
+
             self._executor = _cursor_executor
         else:
             self._executor = executor
@@ -167,6 +172,7 @@ class CassandraStatsSource:
     # -- query -------------------------------------------------------------
 
     def query(self, spec: CassandraQuerySpec | None = None) -> list[CassandraRecord]:
+        """Return normalized metric records for each logical command group."""
         executor = self._get_executor()
         if executor is None:
             return []
@@ -183,8 +189,11 @@ class CassandraStatsSource:
             for record in self._rows_to_records(rows, command, ts):
                 labels = record["labels"]
                 key = (
-                    record["message"], record["value"],
-                    labels.get("keyspace"), labels.get("table"),
+                    record["message"],
+                    record["value"],
+                    labels.get("keyspace"),
+                    labels.get("table"),
+                    command,
                 )
                 if key in seen:
                     continue
@@ -214,9 +223,7 @@ class CassandraStatsSource:
             "raw": raw,
         }
 
-    def _rows_to_records(
-        self, rows: Sequence[CassandraRow], command: str, ts: float
-    ) -> list[CassandraRecord]:
+    def _rows_to_records(self, rows: Sequence[CassandraRow], command: str, ts: float) -> list[CassandraRecord]:
         out: list[CassandraRecord] = []
         for row in rows:
             metric = row.get("metric")

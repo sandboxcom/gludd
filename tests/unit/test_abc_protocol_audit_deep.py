@@ -260,8 +260,12 @@ class TestNoAbstractInstantiation:
         }
     )
 
+    @pytest.mark.timeout(600)
     def test_no_direct_abc_instantiation(self):
+        # Whole-tree AST scan; CI runners on cold disks exceed the 180s
+        # global timeout under xdist contention (observed 2026-08-15).
         violations: list[str] = []
+        assert isinstance(self.KNOWN_ABC_CLASS_NAMES, frozenset)
         for py_file in SRC_ROOT.rglob("*.py"):
             if py_file.name == "__init__.py" and py_file.stat().st_size < 10:
                 continue

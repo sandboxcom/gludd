@@ -107,6 +107,9 @@ class BuildkiteSource:
         *,
         http_get: Callable[..., tuple[int, object]] | None = None,
     ) -> None:
+        """Build the source from connector config; ``transport`` and ``http_get`` are exclusive."""
+        if transport is not None and http_get is not None:
+            raise ValueError("transport and http_get are mutually exclusive")
         self._config = dict(config)
         self.name = str(self._config.get("name", "buildkite"))
         self.base_url = _guard_base_url(str(self._config.get("base_url", DEFAULT_BASE_URL)))
@@ -117,6 +120,7 @@ class BuildkiteSource:
         self._token = os.environ.get(self._token_env, "")
         transport_impl: Transport
         if http_get is not None:
+
             def _legacy(_method: str, url: str, headers: Mapping[str, str], _timeout: float) -> tuple[int, bytes]:
                 status, body = http_get(url, dict(headers))
                 if isinstance(body, bytes):
@@ -124,6 +128,7 @@ class BuildkiteSource:
                 if isinstance(body, str):
                     return status, body.encode()
                 return status, json.dumps(body).encode()
+
             transport_impl = _legacy
         else:
             transport_impl = transport or _httpx_transport
@@ -187,11 +192,7 @@ class BuildkiteSource:
         payload = json.loads(body.decode("utf-8") or "[]")
         if not isinstance(payload, list):
             raise ConnectorConfigError("buildkite builds response was not a JSON array")
-        return [
-            self._normalize_build(cast("Mapping[str, object]", b))
-            for b in payload
-            if isinstance(b, Mapping)
-        ]
+        return [self._normalize_build(cast("Mapping[str, object]", b)) for b in payload if isinstance(b, Mapping)]
 
     def fetch_log(self, job_id: str) -> str:
         """Fetch the raw log content for a single job within this pipeline."""
