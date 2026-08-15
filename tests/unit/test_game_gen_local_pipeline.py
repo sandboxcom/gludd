@@ -376,6 +376,18 @@ class TestEnvironmentVariablePropagation:
                 return
         pytest.fail("No top-level pip install task found")
 
+    def test_pip_install_includes_sse_starlette(self) -> None:
+        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
+        for t in tasks:
+            if "ansible.builtin.pip" in t:
+                pip_kw = cast(dict[str, Any], t["ansible.builtin.pip"])
+                assert "sse_starlette" in pip_kw["name"], (
+                    "sse_starlette must be in the pip install list: "
+                    "llama_cpp.server imports it at module import (CI failure 2026-08-15)"
+                )
+                return
+        pytest.fail("No top-level pip install task found")
+
 
 # =============================================================================
 #  6. Pipeline resilience configuration
