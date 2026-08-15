@@ -33,18 +33,27 @@
 2. `make release-cut TAG='v0.1.0-beta.4' MSG='...'` once CI is green.
 3. `make verify-release-completeness TAG=v0.1.0-beta.4` after the release job publishes.
 
-### Recent Commits (HEAD `9bffc6290`)
+### Recent Commits (HEAD `86b72ae5`)
 
 ```text
+86b72ae5 fix: unbuffer CI test-shard output so the adaptive no-progress watchdog cannot kill healthy slow shards
+990b2c09 fix: batch-push pushes directly after guards instead of re-entering the guarded push target
+7cb873c2 fix: AA032 verdict guard re-approves the same SHA so batch-push nested push target does not self-block
+8e105658 fix: reorder AA023 restart-cap to run after all other push guards on git-push-sandboxcom-nv
+397edc59 docs: refresh SESSION.md objective line; isolate all ci-cooldown state files in tests
+f192c351 test: fix oserror-swallow regression to use a real directory write failure
+34fd3e09 fix: terminal CI verdicts reset the AA023 restart cap and the cap now runs only on real pushes
+82a3ea1b fix: ci-verdict-safe honors SHA parameter so stale push verdicts can be adjudicated and recorded
+2d543b32 fix: ci-verdict-safe records last_checked_sha into the verdict history so the AA032 push guard can actually unblock
+b232bf8c fix: local_game_gen installs llama-cpp unconditionally, guards poll params, surfaces server log on health failure
+58820a18 test: pin functional STATUS-TABLE and gate comment markers against fix_docs_drift escaping
+fc01ba17 test: isolate e2e multitask hook state from live orchestrator via GLUDD_SESSION_STATE and per-test state paths
+d4a0cac2 fix: CI molecule second round — azure.identity allowlist, safehttpx datas, daemon pidfile poll, functional marker preservation
+51ec89e4 docs: restore functional STATUS-TABLE markers and markdown fences after hook churn
+ab9f5b59 test: pin clean-tree runtime fixture must live inside the checkout
+1024e8c4d docs: codify 2026-08-15 CI-fix and release-prep state in SESSION.md
 9bffc6290 fix: dirty-tree hook runtime fixtures must live inside the checkout or git status never sees them
-7d74ec793 merge: agent-beta4-session-docs worktree work into development
-8b2611cf3 fix: adjudicate azure/hindsight/lm_eval optional import edges and re-pin linux transitive warning digest
-2025967dd merge: agent-fix-ci-daemon-pidfile worktree work into development
-f217fff91 fix: daemon unlinks PID file on graceful shutdown
-f93a0a7f3 merge: agent-fix-ci-compat-hiddenimports worktree work into development
-02528f36a fix: declare general_ludd.compat hiddenimports in PyInstaller spec
-9d3c2d64e merge: agent-fix-ci-gamegen worktree work into development
-6085fa47b fix: language role scripts locate repo root via marker search; regenerate README status table
+```
 ```
 
 <details><summary>SESSION 84 record (2026-08-15, HEAD `5164b1f73`) — condensed</summary>
