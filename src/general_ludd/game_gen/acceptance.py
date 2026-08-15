@@ -30,10 +30,15 @@ from __future__ import annotations
 import argparse
 import ast
 import io
+import json
+import os
 import signal
+import subprocess
+import sys
+import tempfile
 import time
 from collections.abc import Callable
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import FrameType
@@ -80,6 +85,107 @@ FORBIDDEN_ATTR_CALLS: frozenset[tuple[str, str]] = frozenset(
         ("os", "system"),
     }
 )
+
+_RUNTIME_PROBE_SCRIPT = """
+import io
+import json
+import sys
+from contextlib import redirect_stderr, redirect_stdout
+
+MAX_TICKS = 5
+
+
+def _run(source: str) -> dict[str, object]:
+    module_name = "generated_game"
+    namespace: dict[str, object] = {"__name__": module_name, "__builtins__": __builtins__}
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    verdict: dict[str, object] = {"failure": None, "class_name": None, "output": ""}
+    try:
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            exec(compile(source, "<generated_game>", "exec"), namespace)
+    except BaseException as exc:
+        verdict["failure"] = f"generated module raised {type(exc).__name__}: {exc}"
+        return verdict
+    game_class: type | None = None
+    for value in namespace.values():
+        if isinstance(value, type) and getattr(value, "__module__", None) == module_name:
+            game_class = value
+            break
+    if game_class is None:
+        verdict["failure"] = "no game class defined at runtime"
+        return verdict
+    verdict["class_name"] = game_class.__name__
+    try:
+        instance = game_class()
+    except BaseException as exc:
+        verdict["failure"] = f"instantiation raised {type(exc).__name__}: {exc}"
+        return verdict
+    try:
+        instance.start()
+    except BaseException as exc:
+        verdict["failure"] = f"start() raised {type(exc).__name__}: {exc}"
+        return verdict
+    try:
+        score_value = instance.score()
+    except BaseException as exc:
+        verdict["failure"] = f"score() raised {type(exc).__name__}: {exc}"
+        return verdict
+    if not isinstance(score_value, int) or isinstance(score_value, bool):
+        verdict["failure"] = f"score() returned {type(score_value).__name__}, expected int"
+        return verdict
+    try:
+        over_value = instance.is_game_over()
+    except BaseException as exc:
+        verdict["failure"] = f"is_game_over() raised {type(exc).__name__}: {exc}"
+        return verdict
+    if not isinstance(over_value, bool):
+        verdict["failure"] = f"is_game_over() returned {type(over_value).__name__}, expected bool"
+        return verdict
+    for _ in range(MAX_TICKS):
+        try:
+            over_value = instance.is_game_over()
+        except BaseException as exc:
+            verdict["failure"] = f"is_game_over() raised {type(exc).__name__}: {exc}"
+            return verdict
+        if over_value is True:
+            break
+        try:
+            instance.tick("right")
+        except BaseException as exc:
+            verdict["failure"] = f"tick() raised {type(exc).__name__}: {exc}"
+            return verdict
+    try:
+        instance.restart()
+    except BaseException as exc:
+        verdict["failure"] = f"restart() raised {type(exc).__name__}: {exc}"
+        return verdict
+    verdict["output"] = stdout.getvalue() + stderr.getvalue()
+    return verdict
+
+
+def main() -> int:
+    if len(sys.argv) != 3:
+        return 2
+    source_path, verdict_path = sys.argv[1], sys.argv[2]
+    try:
+        with open(source_path, "r", encoding="utf-8") as handle:
+            source = handle.read()
+    except OSError as exc:
+        payload: dict[str, object] = {"failure": f"cannot read file: {exc}", "class_name": None, "output": ""}
+    else:
+        payload = _run(source)
+    try:
+        with open(verdict_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+    except OSError:
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+"""
 
 
 class RuntimeBudgetExceeded(TimeoutError):
@@ -350,6 +456,130 @@ def check_file(
             elapsed_seconds=0.0,
         )
     return check_source(source, module_name=module_name or file_path.stem, timeout=timeout)
+
+
+def _subprocess_probe(file_path: Path, timeout: float) -> tuple[str | None, str | None, str]:
+    """Execute the module in a child process under a hard wall-clock budget.
+
+    Returns ``(failure_reason, game_class_name, output_snippet)``. The child
+    writes its verdict as JSON; a ``TimeoutExpired`` kill means the module
+    hung (infinite loop at import or inside a method) and must be rejected.
+    """
+    fd, verdict_name = tempfile.mkstemp(prefix="gludd-accept-", suffix=".json")
+    os.close(fd)
+    verdict_path = Path(verdict_name)
+    try:
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-c", _RUNTIME_PROBE_SCRIPT, str(file_path), verdict_name],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return f"generated module exceeded the {timeout:g}s runtime budget", None, ""
+        except OSError as exc:
+            return f"runtime probe could not start: {exc}", None, ""
+        try:
+            payload: dict[str, object] = json.loads(verdict_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            stderr_tail = (completed.stderr or "").strip()[:200]
+            detail = f" (probe stderr: {stderr_tail})" if stderr_tail else ""
+            return f"runtime probe produced no verdict{detail}", None, ""
+        failure = payload.get("failure")
+        class_name = payload.get("class_name")
+        output = payload.get("output")
+        if failure is None and completed.returncode != 0:
+            stderr_tail = (completed.stderr or "").strip()[:200]
+            detail = f": {stderr_tail}" if stderr_tail else ""
+            probe_class = class_name if isinstance(class_name, str) else None
+            probe_output = output if isinstance(output, str) else ""
+            return f"runtime probe exited {completed.returncode}{detail}", probe_class, probe_output
+        return (
+            failure if isinstance(failure, str) else None,
+            class_name if isinstance(class_name, str) else None,
+            output if isinstance(output, str) else "",
+        )
+    finally:
+        with suppress(OSError):
+            verdict_path.unlink()
+
+
+def accept_generated_code(path: str, timeout_seconds: float = 10.0) -> AcceptanceResult:
+    """Accept or reject a generated ``.py`` file on disk.
+
+    Static checks (parse, forbidden imports/calls, class contract, junk) run
+    in-process and never execute the code. The runtime exercise runs in a
+    subprocess killed after ``timeout_seconds`` — an infinite loop at import
+    or inside a method can therefore never hang the caller.
+    """
+    started = time.monotonic()
+
+    def _verdict(
+        accepted: bool,
+        reasons: list[str],
+        class_name: str | None = None,
+        snippet: str = "",
+    ) -> AcceptanceResult:
+        return AcceptanceResult(
+            accepted=accepted,
+            reasons=reasons,
+            game_class_name=class_name,
+            stdout_snippet=snippet[:STDOUT_SNIPPET_CHARS],
+            elapsed_seconds=time.monotonic() - started,
+        )
+
+    file_path = Path(path)
+    try:
+        source = file_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return AcceptanceResult(
+            accepted=False,
+            reasons=["file is not valid UTF-8 text"],
+            elapsed_seconds=0.0,
+        )
+    except OSError as exc:
+        return AcceptanceResult(
+            accepted=False,
+            reasons=[f"cannot read file: {exc}"],
+            elapsed_seconds=0.0,
+        )
+
+    reasons: list[str] = []
+    if not source.strip():
+        return _verdict(False, ["empty source"])
+
+    ratio = _non_ascii_ratio(source)
+    if ratio > NON_ASCII_RATIO_LIMIT:
+        reasons.append(f"source is {ratio:.0%} non-ASCII — likely junk output")
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        reasons.append(f"syntax error: line {exc.lineno}: {exc.msg}")
+        return _verdict(False, reasons)
+
+    reasons.extend(_scan_forbidden(tree))
+    class_name, class_problem = _class_contract(tree)
+    if class_problem:
+        reasons.append(class_problem)
+    if reasons:
+        return _verdict(False, reasons, class_name)
+
+    failure, runtime_class, snippet = _subprocess_probe(file_path, timeout_seconds)
+    if failure is not None:
+        reasons.append(failure)
+    if snippet:
+        if len(snippet) > MAX_OUTPUT_CHARS:
+            reasons.append(f"module printed excessive output ({len(snippet)} chars)")
+        output_ratio = _non_ascii_ratio(snippet)
+        if output_ratio > NON_ASCII_RATIO_LIMIT:
+            reasons.append(f"module printed non-ASCII junk output ({output_ratio:.0%})")
+
+    if reasons:
+        return _verdict(False, reasons, runtime_class or class_name, snippet)
+    return _verdict(True, [], runtime_class or class_name, snippet)
 
 
 def _build_parser() -> argparse.ArgumentParser:

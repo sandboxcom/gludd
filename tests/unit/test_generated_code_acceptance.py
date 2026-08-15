@@ -17,9 +17,16 @@ produce must end in rejection:
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
-from general_ludd.game_gen.acceptance import AcceptanceResult, check_file, check_source, main
+from general_ludd.game_gen.acceptance import (
+    AcceptanceResult,
+    accept_generated_code,
+    check_file,
+    check_source,
+    main,
+)
 
 SNAKE_GAME_CODE = """
 import random
@@ -115,6 +122,14 @@ INFINITE_LOOP_CODE = (
 EXCESSIVE_OUTPUT_CODE = 'print("x" * 8192)\n' + SNAKE_GAME_CODE
 
 NON_ASCII_OUTPUT_CODE = 'print("🎮" * 500)\n' + SNAKE_GAME_CODE
+
+OS_SYSTEM_CALL_CODE = SNAKE_GAME_CODE + "\nimport os\nos.system('echo pwned')\n"
+
+SUBPROCESS_RUN_CALL_CODE = SNAKE_GAME_CODE + "\nimport subprocess\nsubprocess.run(['echo', 'pwned'])\n"
+
+SOCKET_CALL_CODE = SNAKE_GAME_CODE + "\nimport socket\nsock = socket.socket()\n"
+
+IMPORT_LEVEL_HANG_CODE = SNAKE_GAME_CODE + "\nwhile True:\n    pass\n"
 
 
 def _joined_reasons(result: AcceptanceResult) -> str:
@@ -270,3 +285,99 @@ class TestGeneratedCodeAcceptance:
         game_path = tmp_path / "hang.py"
         game_path.write_text(INFINITE_LOOP_CODE)
         assert main(["--timeout", "0.5", str(game_path)]) == 1
+
+
+class TestAcceptGeneratedCodeApi:
+    """``accept_generated_code`` — subprocess-isolated, bounded-runtime verdicts."""
+
+    def test_signature_defaults_to_ten_second_budget(self) -> None:
+        signature = inspect.signature(accept_generated_code)
+        assert signature.parameters["timeout_seconds"].default == 10.0
+
+    def test_valid_snake_game_is_accepted(self, tmp_path: Path) -> None:
+        game_path = tmp_path / "snake.py"
+        game_path.write_text(SNAKE_GAME_CODE)
+        result = accept_generated_code(str(game_path))
+        assert result.accepted is True
+        assert result.game_class_name == "Snake"
+        assert result.reasons == []
+
+    def test_syntax_error_is_rejected(self, tmp_path: Path) -> None:
+        game_path = tmp_path / "broken.py"
+        game_path.write_text(SYNTAX_ERROR_CODE)
+        result = accept_generated_code(str(game_path))
+        assert result.accepted is False
+        assert "syntax" in " | ".join(result.reasons)
+
+    def test_source_without_class_is_rejected(self, tmp_path: Path) -> None:
+        game_path = tmp_path / "noclass.py"
+        game_path.write_text(NO_CLASS_CODE)
+        result = accept_generated_code(str(game_path))
+        assert result.accepted is False
+        assert "game class" in " | ".join(result.reasons)
+
+    def test_junk_output_without_class_definition_is_rejected(self, tmp_path: Path) -> None:
+        game_path = tmp_path / "junk.py"
+        game_path.write_text(JUNK_PRINT_NO_CLASS_CODE)
+        result = accept_generated_code(str(game_path))
+        assert result.accepted is False
+        assert "game class" in " | ".join(result.reasons)
+
+    def test_missing_required_methods_is_rejected(self, tmp_path: Path) -> None:
+        game_path = tmp_path / "partial.py"
+        game_path.write_text(MISSING_METHODS_CODE)
+        result = accept_generated_code(str(game_path))
+        assert result.accepted is False
+        joined = " | ".join(result.reasons)
+        assert "tick" in joined
+        assert "score" in joined
+        assert "is_game_over" in joined
+        assert "restart" in joined
+
+    def test_os_system_call_is_rejected(self, tmp_path: Path) -> None:
+        game_path = tmp_path / "evil.py"
+        game_path.write_text(OS_SYSTEM_CALL_CODE)
+        result = accept_generated_code(str(game_path))
+        assert result.accepted is False
+        assert "os" in " | ".join(result.reasons)
+
+    def test_subprocess_import_is_rejected(self, tmp_path: Path) -> None:
+        game_path = tmp_path / "evil.py"
+        game_path.write_text(SUBPROCESS_RUN_CALL_CODE)
+        result = accept_generated_code(str(game_path))
+        assert result.accepted is False
+        assert "subprocess" in " | ".join(result.reasons)
+
+    def test_socket_import_is_rejected(self, tmp_path: Path) -> None:
+        game_path = tmp_path / "evil.py"
+        game_path.write_text(SOCKET_CALL_CODE)
+        result = accept_generated_code(str(game_path))
+        assert result.accepted is False
+        assert "socket" in " | ".join(result.reasons)
+
+    def test_eval_call_is_rejected(self, tmp_path: Path) -> None:
+        game_path = tmp_path / "evil.py"
+        game_path.write_text(EVAL_CALL_CODE)
+        result = accept_generated_code(str(game_path))
+        assert result.accepted is False
+        assert "eval" in " | ".join(result.reasons)
+
+    def test_exec_call_is_rejected(self, tmp_path: Path) -> None:
+        game_path = tmp_path / "evil.py"
+        game_path.write_text(EXEC_CALL_CODE)
+        result = accept_generated_code(str(game_path))
+        assert result.accepted is False
+        assert "exec" in " | ".join(result.reasons)
+
+    def test_infinite_loop_at_import_is_rejected_within_timeout_window(self, tmp_path: Path) -> None:
+        game_path = tmp_path / "hang.py"
+        game_path.write_text(IMPORT_LEVEL_HANG_CODE)
+        result = accept_generated_code(str(game_path), timeout_seconds=0.5)
+        assert result.accepted is False
+        assert "runtime budget" in " | ".join(result.reasons)
+        assert result.elapsed_seconds < 2.0
+
+    def test_missing_file_is_rejected(self, tmp_path: Path) -> None:
+        result = accept_generated_code(str(tmp_path / "does_not_exist.py"))
+        assert result.accepted is False
+        assert any("cannot read file" in reason for reason in result.reasons)
