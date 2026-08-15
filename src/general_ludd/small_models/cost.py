@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 _STORAGE_USD_PER_GB_MONTH = 0.10
 _DATA_EGRESS_USD_PER_GB = 0.09
 _GPU_USD_PER_HOUR = INFRA_PRICING.get("gpu_second", 0.00083) * 3600.0
-_LARGE_DOWNLOAD_GB = 10.0
+_LARGE_DOWNLOAD_GB = 5.0
 _OFF_PEAK_START_HOUR = 18
 _OFF_PEAK_END_HOUR = 6
 
@@ -75,6 +75,7 @@ def _infer_tier(model_id: str) -> str:
 
 
 def estimate_inference_cost(model_id: str) -> dict[str, object]:
+    """Estimate per-token and per-hour inference cost for a model id."""
     lower = model_id.lower()
     tier = _infer_tier(model_id)
 
@@ -121,6 +122,7 @@ def estimate_inference_cost(model_id: str) -> dict[str, object]:
 
 
 def estimate_download_cost(model_id: str, size_gb: float | None = None) -> dict[str, object]:
+    """Estimate egress, storage, and off-peak preference for a model download."""
     size = size_gb if size_gb is not None else _resolve_model_size(model_id)
     data_transfer_usd = round(size * _DATA_EGRESS_USD_PER_GB, 4)
     storage_monthly = round(size * _STORAGE_USD_PER_GB_MONTH, 4)
@@ -135,6 +137,7 @@ def estimate_download_cost(model_id: str, size_gb: float | None = None) -> dict[
 
 
 def estimate_quantize_cost(model_id: str, size_gb: float, method: str = "q4_k_m") -> dict[str, object]:
+    """Estimate GPU hours and cost for quantizing a model with a given method."""
     gpu_hours_per_gb: dict[str, float] = {
         "q4_0": 0.15,
         "q4_k_m": 0.2,
@@ -156,6 +159,7 @@ def estimate_quantize_cost(model_id: str, size_gb: float, method: str = "q4_k_m"
 
 
 def is_off_peak(now: datetime | None = None) -> bool:
+    """Return True when the given time falls in the off-peak window."""
     if now is None:
         now = datetime.now(UTC)
 
@@ -167,6 +171,7 @@ def is_off_peak(now: datetime | None = None) -> bool:
 
 
 def next_off_peak_window(now: datetime | None = None) -> dict[str, object]:
+    """Describe the next off-peak window relative to the given time."""
     if now is None:
         now = datetime.now(UTC)
 
@@ -214,11 +219,17 @@ def next_off_peak_window(now: datetime | None = None) -> dict[str, object]:
     }
 
 
-def should_defer_download(size_gb: float, now: datetime | None = None) -> dict[str, object]:
+def should_defer_download(
+    size_gb: float,
+    now: datetime | None = None,
+    threshold_gb: float | None = None,
+) -> dict[str, object]:
+    """Advise whether a download of the given size should be deferred to off-peak."""
     off_peak = is_off_peak(now)
     window = next_off_peak_window(now)
+    large_threshold = _LARGE_DOWNLOAD_GB if threshold_gb is None else threshold_gb
 
-    if not off_peak and size_gb >= _LARGE_DOWNLOAD_GB:
+    if not off_peak and size_gb >= large_threshold:
         return {
             "defer": True,
             "reason": "large_download_during_peak",
@@ -235,6 +246,7 @@ def should_defer_download(size_gb: float, now: datetime | None = None) -> dict[s
 
 
 def compute_cost_score(model_id: str) -> float:
+    """Compute a 0-1 cost score for a model, weighted by tier."""
     cost_info = estimate_inference_cost(model_id)
     est_raw = cost_info.get("estimated_usd_per_hour", 0.01)
     est_usd_per_hour = float(est_raw) if isinstance(est_raw, (int, float)) else 0.01

@@ -1,3 +1,5 @@
+"""Multi-source model download with progress tracking and scheduling."""
+
 from __future__ import annotations
 
 import logging
@@ -26,6 +28,8 @@ _LARGE_DOWNLOAD_GB = 1.0
 
 
 class DownloadSource(StrEnum):
+    """Where a model file was fetched from."""
+
     HUGGINGFACE = "huggingface"
     GGUF = "gguf"
     OLLAMA = "ollama"
@@ -34,6 +38,8 @@ class DownloadSource(StrEnum):
 
 @dataclass
 class DownloadedModel:
+    """Record of a completed model download."""
+
     model_id: str
     local_path: str
     source: DownloadSource = DownloadSource.HUGGINGFACE
@@ -45,6 +51,8 @@ class DownloadedModel:
 
 @dataclass
 class DownloadProgress:
+    """Mutable progress state for an in-flight download."""
+
     filename: str = ""
     total_bytes: int = 0
     downloaded_bytes: int = 0
@@ -53,6 +61,7 @@ class DownloadProgress:
 
     @property
     def percent(self) -> float:
+        """Percent complete in [0, 100], or 0 when total bytes are unknown."""
         if self.total_bytes <= 0:
             return 0.0
         return min(100.0, (self.downloaded_bytes / self.total_bytes) * 100.0)
@@ -72,6 +81,8 @@ def _map_model_source_to_download_source(source: ModelSource) -> DownloadSource:
 
 
 class ModelDownloader:
+    """Downloads models from Hugging Face, GGUF, and Ollama sources."""
+
     def __init__(
         self,
         cache_dir: str | None = None,
@@ -80,6 +91,7 @@ class ModelDownloader:
         hash_db: ModelHashDB | None = None,
         oidc_auth: object | None = None,
     ) -> None:
+        """Initialize the downloader with an optional cache dir and auth."""
         explicit_cache = cache_dir or os.environ.get("GLUDD_MODEL_DIR")
         self.cache_dir = explicit_cache or DEFAULT_CACHE_DIR
         try:
@@ -102,9 +114,11 @@ class ModelDownloader:
         self._on_progress: Callable[[DownloadProgress], None] | None = None
 
     def on_progress(self, callback: Callable[[DownloadProgress], None]) -> None:
+        """Register a callback invoked as download progress changes."""
         self._on_progress = callback
 
     def get_progress(self) -> DownloadProgress:
+        """Return the current download progress state."""
         return self._progress
 
     def _resolve_token(self) -> str | None:
@@ -123,6 +137,7 @@ class ModelDownloader:
         filename: str | None = None,
         revision: str | None = None,
     ) -> DownloadedModel:
+        """Download a model repo or single file from Hugging Face."""
         from huggingface_hub import hf_hub_download, snapshot_download
 
         os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", str(self.timeout))
@@ -170,6 +185,7 @@ class ModelDownloader:
         filename: str,
         revision: str | None = None,
     ) -> DownloadedModel:
+        """Download a single GGUF file from Hugging Face."""
         import time as _time
 
         from huggingface_hub import hf_hub_download
@@ -206,6 +222,7 @@ class ModelDownloader:
         model_id: str,
         revision: str | None = None,
     ) -> DownloadedModel:
+        """Pull an ollama-tagged model repo snapshot from Hugging Face."""
         import time as _time
 
         from huggingface_hub import snapshot_download
@@ -254,6 +271,7 @@ class ModelDownloader:
         order: list[str] | None = None,
         retries: int = 1,
     ) -> DownloadedModel | None:
+        """Download via the configured source order; None when unknown."""
         from general_ludd.cloud.model_sources import (
             ModelSource,
             download_with_fallback,
@@ -304,9 +322,10 @@ class ModelDownloader:
         verify_hash: bool = True,
         order: list[str] | None = None,
     ) -> DownloadedModel:
+        """Download a model, preferring multi-source dispatch with fallback."""
         from general_ludd.small_models.cost import should_defer_download
 
-        defer_info = should_defer_download(_LARGE_DOWNLOAD_GB + 0.1)
+        defer_info = should_defer_download(_LARGE_DOWNLOAD_GB + 0.1, threshold_gb=_LARGE_DOWNLOAD_GB)
         if defer_info.get("defer") and not force:
             logger.warning(
                 "Download of %s deferred: peak pricing active, large download (%s). "
@@ -348,9 +367,10 @@ class ModelDownloader:
         return result
 
     def check_download_scheduling(self, size_gb: float) -> dict[str, object]:
+        """Report whether a download of the given size should be deferred."""
         from general_ludd.small_models.cost import is_off_peak, next_off_peak_window, should_defer_download
 
-        defer_info = should_defer_download(size_gb)
+        defer_info = should_defer_download(size_gb, threshold_gb=_LARGE_DOWNLOAD_GB)
         return {
             "size_gb": round(size_gb, 2),
             "is_off_peak_now": is_off_peak(),
@@ -360,17 +380,21 @@ class ModelDownloader:
         }
 
     def estimate_download_cost(self, size_gb: float) -> dict[str, object]:
+        """Estimate egress, storage, and off-peak preference for a download."""
         from general_ludd.small_models.cost import estimate_download_cost as _estimate
 
         return _estimate("", size_gb=size_gb)
 
     def list_downloaded(self) -> list[DownloadedModel]:
+        """List every tracked downloaded model."""
         return list(self._downloaded.values())
 
     def get_downloaded(self, model_id: str) -> DownloadedModel | None:
+        """Return the tracked download for a model id, if any."""
         return self._downloaded.get(model_id)
 
     def remove_downloaded(self, model_id: str) -> None:
+        """Forget the tracked download record for a model id."""
         self._downloaded.pop(model_id, None)
 
     def _compute_size(self, model: DownloadedModel) -> None:
@@ -380,7 +404,7 @@ class ModelDownloader:
         elif p.is_file():
             model.size_bytes = p.stat().st_size
 
-    def _make_progress_callback(self, filename: str, total_bytes: int) -> Callable[[int, int], None]:
+    def _make_progress_callback(self, filename: str, total_bytes: int) -> Callable[[int, int, int], None]:
         self._progress = DownloadProgress(
             filename=filename,
             total_bytes=total_bytes,
@@ -390,7 +414,7 @@ class ModelDownloader:
         self._last_bytes = 0
         self._last_time = time.time()
 
-        def _cb(bytes_downloaded: int, total_size: int) -> None:
+        def _cb(_chunk_bytes: int, bytes_downloaded: int, total_size: int) -> None:
             now = time.time()
             elapsed = now - self._last_time
             if elapsed > 0:
