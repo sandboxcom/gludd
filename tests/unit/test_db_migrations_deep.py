@@ -424,8 +424,8 @@ class TestStampOperations:
         result = check_pending(cfg)
         assert result == -1
 
-    def test_check_pending_does_not_raise_on_missing_db_file(self):
-        cfg = get_alembic_config("sqlite:///nonexistent_edge_case_999.db")
+    def test_check_pending_does_not_raise_on_missing_db_file(self, tmp_path):
+        cfg = get_alembic_config(f"sqlite:///{tmp_path / 'nonexistent_edge_case_999.db'}")
         result = check_pending(cfg)
         assert isinstance(result, int)
 

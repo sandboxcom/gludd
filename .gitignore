@@ -139,3 +139,8 @@ web_retriever/
 *.tfvars
 !*.tfvars.example
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Generated test/gate artifacts (never tracked, never task-registered)
+coverage.json
+test.db
+nonexistent_edge_case_999.db
