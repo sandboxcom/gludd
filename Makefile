@@ -3407,7 +3407,7 @@ master-force-push:
 	@$(MAKE) verify-remote BRANCH=master SHA=$$(git rev-parse master)
 	@echo "Master branch force-pushed and verified"
 
-git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard _stash-before-push-guard _ci-restart-cap _pull-before-push-guard _ci-verdict-history-guard _pre-commit-stash-audit
+git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard _stash-before-push-guard _pull-before-push-guard _ci-verdict-history-guard _pre-commit-stash-audit _ci-restart-cap
 	@BRANCH=$$(git branch --show-current); \
 	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom HEAD:$$BRANCH
 	@echo "Pushed $$(git branch --show-current) to sandboxcom/gludd"
@@ -3464,7 +3464,7 @@ batch-push-nv: check-clean-tree _no-bypass-guard _stash-before-push-guard _ci-re
 # Batch push: only push after substantial local work (default 5+ unpushed commits).
 # Override: GLUDD_FORCE_PUSH=1. COMMIT_THRESHOLD=1 is blocked.
 # This is the RECOMMENDED push target. Use instead of git-push-sandboxcom directly.
-batch-push: check-clean-tree _no-bypass-guard _stash-before-push-guard _ci-restart-cap _pull-before-push-guard _ci-verdict-history-guard _pre-commit-stash-audit
+batch-push: check-clean-tree _no-bypass-guard _stash-before-push-guard _pull-before-push-guard _ci-verdict-history-guard _pre-commit-stash-audit _ci-restart-cap
 	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
 	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
 	if [ "$$THRESHOLD" = "1" ]; then \

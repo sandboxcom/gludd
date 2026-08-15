@@ -47,6 +47,7 @@ from pathlib import Path
 
 STATE_FILE = Path(os.environ.get("GLUDD_CI_STATE_FILE", "/tmp/gludd-ci-check-state.json"))
 HISTORY_FILE = Path(os.environ.get("GLUDD_CI_HISTORY_FILE", "/tmp/gludd-ci-verdict-history.json"))
+RESTART_COUNT_FILE = Path(os.environ.get("GLUDD_CI_RESTART_COUNT_FILE", "/tmp/gludd-ci-restart-count"))
 DEFAULT_COOLDOWN_SEC = int(os.environ.get("CI_CHECK_COOLDOWN_SEC", "600"))
 
 
@@ -165,7 +166,26 @@ def cmd_record_verdict(verdict: str, sha: str | None = None) -> int:
         history["last_verdict"] = verdict.strip().lower()
         history["last_checked_ts"] = int(time.time())
         save_history_atomic(history)
+    _reset_restart_cap_on_terminal_verdict(verdict)
     return 0
+
+
+def _reset_restart_cap_on_terminal_verdict(verdict: str) -> None:
+    """Reset the AA023 CI-restart counter once CI has reported a terminal
+    verdict (GREEN or RED) for the pushed SHA.
+
+    The Makefile `_ci-restart-cap` limits CI restarts to 3 per session and
+    documents that pushes unblock "when CI reports GREEN or RED". Without
+    this reset the counter never decreases — a blocked push loop permanently
+    wedges. PENDING/unknown verdicts keep the cap in force (CI has not
+    reported yet, so thrash protection is still needed)."""
+    normalized = verdict.strip().lower()
+    if normalized not in ("success", "failure"):
+        return
+    try:
+        RESTART_COUNT_FILE.write_text("0")
+    except OSError:
+        pass
 
 
 def cmd_deploy() -> int:

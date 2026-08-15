@@ -229,6 +229,35 @@ def test_record_verdict_without_sha_does_not_create_history_file(
     assert not history_file.exists()
 
 
+def test_terminal_verdict_resets_restart_cap(
+    isolated_state: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    restart_file = tmp_path / "restart-count"
+    monkeypatch.setattr(ci_check_cooldown, "RESTART_COUNT_FILE", restart_file)
+    restart_file.write_text("3")
+    assert ci_check_cooldown.cmd_record_verdict("failure", "deadbeef") == 0
+    assert restart_file.read_text() == "0"
+
+
+def test_pending_verdict_keeps_restart_cap(
+    isolated_state: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    restart_file = tmp_path / "restart-count-pending"
+    monkeypatch.setattr(ci_check_cooldown, "RESTART_COUNT_FILE", restart_file)
+    restart_file.write_text("3")
+    assert ci_check_cooldown.cmd_record_verdict("pending", "deadbeef") == 0
+    assert restart_file.read_text() == "3"
+
+
+def test_terminal_verdict_reset_swallows_oserror(
+    isolated_state: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    restart_file = tmp_path / "restart-count-oserror"
+    monkeypatch.setattr(ci_check_cooldown, "RESTART_COUNT_FILE", restart_file)
+    monkeypatch.setattr(Path, "write_text", lambda *a, **k: (_ for _ in ()).throw(OSError("ro")))
+    assert ci_check_cooldown.cmd_record_verdict("success", "deadbeef") == 0
+
+
 def test_status_shows_last_verdict(isolated_state: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _write_state(
         isolated_state,
