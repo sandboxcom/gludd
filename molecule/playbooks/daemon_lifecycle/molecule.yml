@@ -17,11 +17,19 @@ driver:
 platforms: []
 provisioner:
   name: ansible
+  inventory:
+    hosts:
+      all:
+        hosts:
+          localhost:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
   env:
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
     # Isolate this scenario from any host daemon on the default 8000 port.
     GLUDD_DAEMON_LIFECYCLE_PORT: "8767"
   playbooks:
+    prepare: default/prepare.yml
     converge: default/converge.yml
     verify: default/verify.yml
 verifier:
@@ -31,14 +39,7 @@ verifier:
 # would start a new daemon, kill it again, and always report changed.
 scenario:
   test_sequence:
-    - dependency
-    - cleanup
-    - destroy
     - syntax
-    - create
     - prepare
     - converge
-    - side_effect
     - verify
-    - cleanup
-    - destroy

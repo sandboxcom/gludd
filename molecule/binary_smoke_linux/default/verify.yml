@@ -92,9 +92,9 @@
     - name: Assert invalid flag exits non-zero cleanly
       ansible.builtin.assert:
         that:
-          - "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'bad_flag.rc.txt') | list | first).content | b64decode | trim | int != 0 }}"
-          - "'Traceback' not in {{ (_slurp_raw.results | selectattr('item', 'equalto', 'bad_flag.stdout.txt') | list | first).content | b64decode }}"
-          - "'Traceback' not in {{ (_slurp_raw.results | selectattr('item', 'equalto', 'bad_flag.stderr.txt') | list | first).content | b64decode }}"
+          - "(_slurp_raw.results | selectattr('item', 'equalto', 'bad_flag.rc.txt') | list | first).content | b64decode | trim | int != 0"
+          - "'Traceback' not in ((_slurp_raw.results | selectattr('item', 'equalto', 'bad_flag.stdout.txt') | list | first).content | b64decode)"
+          - "'Traceback' not in ((_slurp_raw.results | selectattr('item', 'equalto', 'bad_flag.stderr.txt') | list | first).content | b64decode)"
         fail_msg: "invalid flag did not fail cleanly"
 
     # --- daemon: no traceback ---
@@ -123,7 +123,7 @@
     - name: Assert daemon accepted the job (todo_id present)
       ansible.builtin.assert:
         that:
-          - "{{ _job_json | from_json }}.todo_id is defined"
+          - "(_job_json | from_json).todo_id is defined"
         fail_msg: >-
           Daemon did not accept the job via POST /api/todos.
           result={{ _job_json }}
