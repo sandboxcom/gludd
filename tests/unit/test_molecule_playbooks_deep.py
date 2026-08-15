@@ -35,11 +35,12 @@ SCENARIOS_WITHOUT_PREPARE = frozenset(
         "daemon_lifecycle",
         "default",
         "local_game_gen",
+        "local_model_server",
         "travel",
     }
 )
 SCENARIOS_WITHOUT_CONVERGE = frozenset({"default", "travel"})
-SCENARIOS_WITHOUT_VERIFY = frozenset({"default", "travel"})
+SCENARIOS_WITHOUT_VERIFY = frozenset({"default", "travel", "local_model_server"})
 SCENARIOS_WITHOUT_SCENARIO_KEY = frozenset(
     {
         "noop",
@@ -605,8 +606,7 @@ class TestMoleculeStructuralCoherence:
                 local_path = f"default/{key}.yml"
                 shared_path = f"${{MOLECULE_PROJECT_DIRECTORY}}/molecule/shared/{key}.yml"
                 assert rel_path in {local_path, shared_path}, (
-                    f"[{scenario}] molecule.yml playbooks.{key} = {rel_path}, "
-                    f"expected {local_path} or {shared_path}"
+                    f"[{scenario}] molecule.yml playbooks.{key} = {rel_path}, expected {local_path} or {shared_path}"
                 )
                 if rel_path == shared_path:
                     canonical_shared = PROJECT_ROOT / "molecule" / "shared" / f"{key}.yml"
