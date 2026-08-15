@@ -72,7 +72,7 @@ _NO_UV_SYNC_GOALS := \
     worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
     release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready \
     git-where git-show-file-to repo-status git-status git-remote-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom verify-remote git-patch-equivalence \
-    git-branch git-checkout git-add git-merge git-merge-nc git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip \
+    git-branch git-checkout git-add git-merge git-merge-nc git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip git-uncommit-last \
     git-cherry-pick git-cherry-pick-list git-cherry-pick-continue git-cherry-pick-skip git-cherry-pick-abort \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger ci-shards-log-context \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
@@ -113,7 +113,7 @@ PYTEST_VERBOSITY ?= -v
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged git-stash git-stash-pop \
-        git-merge-abort resolve-development-conflicts git-rebase-abort git-rebase-continue git-rebase-skip git-reset-hard git-cherry-pick git-cherry-pick-list \
+        git-merge-abort resolve-development-conflicts git-rebase-abort git-rebase-continue git-rebase-skip git-uncommit-last git-reset-hard git-cherry-pick git-cherry-pick-list \
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
         feature-start feature-done test-and-commit preflight \
@@ -360,6 +360,7 @@ help:
 	@echo "  commit-and-ship-push MSG='...'  Commit, push development, and request the guarded CI verdict"
 	@echo "  rm-files FILES='...'  Remove only explicitly named workspace paths"
 	@echo "  git-reset FILES='...' Reset to ref (soft by default)"
+	@echo "  git-uncommit-last CONFIRM=1  Uncommit local HEAD while preserving all files"
 	@echo "  git-branch MSG='...'  Create branch"
 	@echo "  git-checkout MSG='...' Switch branch"
 	@echo "  git-merge MSG='...'   Merge branch with --no-ff"
@@ -4992,6 +4993,28 @@ git-reset:
 		exit 1; \
 	fi
 	@git reset -- $(FILES)
+
+git-uncommit-last:
+	@if [ "$(CONFIRM)" != "1" ]; then \
+		echo "Usage: make git-uncommit-last CONFIRM=1 [DRY_RUN=1]"; \
+		exit 1; \
+	fi
+	@parents=$$(git rev-list --parents -n 1 HEAD); \
+	parent_count=$$(printf '%s\n' "$$parents" | awk '{print NF - 1}'); \
+	if [ "$$parent_count" -ne 1 ]; then \
+		echo "Refusing to uncommit a root or merge commit"; \
+		exit 1; \
+	fi; \
+	if git branch -r --contains HEAD | grep -q .; then \
+		echo "Refusing to uncommit a commit contained by a remote-tracking branch"; \
+		exit 1; \
+	fi; \
+	if [ "$(DRY_RUN)" = "1" ]; then \
+		echo "Would run: git reset --mixed HEAD^"; \
+	else \
+		git reset --mixed HEAD^; \
+		echo "Uncommitted local HEAD; all file changes were preserved"; \
+	fi
 
 git-restore:
 	@if [ -z "$(FILES)" ]; then \

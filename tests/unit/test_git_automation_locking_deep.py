@@ -9,6 +9,7 @@ acquire/release ordering.
 
 from __future__ import annotations
 
+import concurrent.futures
 import contextlib
 import errno
 import multiprocessing
@@ -625,15 +626,28 @@ class TestCrossProcessMultiWaiter:
 class TestAsyncGitRepoLockEdge:
     @pytest.mark.asyncio
     async def test_exc_during_enter_shuts_down_executor(self) -> None:
+        class _BoomOnEnter:
+            def __enter__(self) -> None:
+                raise RuntimeError("boom")
+
+            def __exit__(self, *exc: object) -> None:
+                return None
+
         with (
             patch.object(
-                locking.git_repo_lock,
-                "__enter__",
-                side_effect=RuntimeError("boom"),
+                locking,
+                "git_repo_lock",
+                return_value=_BoomOnEnter(),
             ),
+            patch.object(
+                concurrent.futures.ThreadPoolExecutor,
+                "shutdown",
+                autospec=True,
+            ) as shutdown_spy,
             pytest.raises(RuntimeError, match="boom"),
         ):
             await locking.async_git_repo_lock(".", timeout=1.0, stale_after=60.0)
+        assert shutdown_spy.called
 
     @pytest.mark.asyncio
     async def test_double_exit_is_idempotent(self) -> None:
