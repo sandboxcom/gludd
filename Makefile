@@ -3022,6 +3022,13 @@ grepf:
 	@grep -rn -- "$(Q)" $(if $(DIR),$(DIR),src) > "$(OUT)" 2>&1 || echo "No matches" > "$(OUT)"; \
 	echo "wrote $$(wc -l < "$(OUT)" | tr -d ' ') lines to $(OUT)"
 
+# Pure-python recursive grep (system grep is absent in some sandboxes).
+# Usage: make pygrep Q='pattern' [PATH_='src tests']
+pygrep:
+	@[ -n "$(Q)" ] || { echo "Usage: make pygrep Q='pattern' [PATH_='dir']"; exit 1; }
+	@$(PYTHON) -c "import os,sys,re; q=sys.argv[1]; roots=sys.argv[2:] or ['src','tests']; pat=re.compile(re.escape(q));\
+[print(f'{p}:{i}:{ln.rstrip()}') for root in roots for dp,_,fs in os.walk(root) for f in fs if f.endswith(('.py','.cfg','.toml','.yml','.yaml')) for p in [os.path.join(dp,f)] for i,ln in enumerate(open(p,errors='ignore'),1) if pat.search(ln)]" "$(Q)" $(PATH_)
+
 git-tracked-keys:
 	@echo "=== Tracked files matching private-key / key patterns ==="
 	@git ls-files | grep -E 'id_rsa|id_ed25519|\.pem$$|_rsa$$|_rsa\.pub$$|sandboxcom_github' || echo "NONE TRACKED"

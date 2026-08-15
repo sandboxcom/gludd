@@ -9,7 +9,7 @@
 set +e
 
 FLOOR="${CLAUDE_AGENT_FLOOR:-6}"
-TARGET="${CLAUDE_AGENT_TARGET:-10}"
+TARGET="${CLAUDE_AGENT_TARGET:-8}"
 REPO="/Users/shawnwilson/gludd"
 # Live floor override (operator retunes the floor mid-session; see agent_floor_stop.sh).
 if [ -r /tmp/gludd-floor-override ]; then
