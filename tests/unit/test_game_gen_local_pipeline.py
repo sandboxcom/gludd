@@ -252,11 +252,14 @@ class TestMissingBinaryErrorHandling:
 
     def test_download_task_has_creates_guard(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        for t in tasks:
-            if "huggingface" in str(t):
-                assert "creates" in str(t), "Download should have args.creates for idempotency"
+        for t in _iter_all_tasks(tasks):
+            cmd = t.get("ansible.builtin.command")
+            if isinstance(cmd, str) and "hf download" in cmd:
+                args_kw = t.get("args")
+                assert isinstance(args_kw, dict), "Download task must have args"
+                assert "creates" in args_kw, "Download should have args.creates for idempotency"
                 return
-        pytest.fail("No huggingface download task found")
+        pytest.fail("No hf download command task found")
 
     def test_shutdown_ignores_missing_pid_file(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
@@ -290,10 +293,11 @@ class TestMissingBinaryErrorHandling:
 
     def test_health_poll_has_bounded_retries(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        for t in tasks:
-            if "health" in str(t).lower() and "retries" in str(t):
+        for t in _iter_all_tasks(tasks):
+            if "ansible.builtin.uri" in t and "health" in str(t.get("ansible.builtin.uri", "")).lower():
                 assert "retries" in t, "Health poll step must have retries config"
                 return
+        pytest.fail("No health poll uri task found")
 
 
 # =============================================================================
@@ -362,13 +366,15 @@ class TestEnvironmentVariablePropagation:
             f"Defaults not referenced in tasks: {unreferenced - permitted_unreferenced}"
         )
 
-    def test_conditional_block_structure_for_download(self) -> None:
+    def test_pip_install_unconditional_and_idempotent(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
         for t in tasks:
-            if "pip" in str(t) and "huggingface" in str(t).lower():
-                assert "when" in t or "block" in str(t), "huggingface_hub install must be conditional"
+            if "ansible.builtin.pip" in t:
+                assert "when" not in t, "llama-cpp-python install must be unconditional"
+                pip_kw = cast(dict[str, Any], t["ansible.builtin.pip"])
+                assert pip_kw.get("state") == "present", "pip install must be idempotent (state: present)"
                 return
-        pytest.fail("No huggingface_hub pip install task found")
+        pytest.fail("No top-level pip install task found")
 
 
 # =============================================================================
@@ -511,8 +517,8 @@ class TestDeepPipelineValidation:
 
     def test_health_poll_has_until_retries_and_delay(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        for t in tasks:
-            if "health" in str(t).lower() and "uri" in str(t):
+        for t in _iter_all_tasks(tasks):
+            if "ansible.builtin.uri" in t and "health" in str(t.get("ansible.builtin.uri", "")).lower():
                 assert "retries" in t, "Health poll missing retries"
                 assert "delay" in t, "Health poll missing delay"
                 assert "until" in t, "Health poll missing until condition"
@@ -533,10 +539,14 @@ class TestDeepPipelineValidation:
             f"Recursive walk ({len(all_tasks)}) must find more tasks than top-level ({len(tasks)})"
         )
         nested_names = [t.get("name", "") for t in all_tasks if t.get("name")]
-        assert "Install huggingface_hub" in nested_names
+        top_names = _task_names(tasks)
+        assert "Install llama-cpp-python and huggingface_hub" in top_names
+        assert "Download GGUF via hf" in nested_names
         assert "Read server PID" in nested_names
         assert "Kill server process" in nested_names
         assert "Remove PID file" in nested_names
+        assert "Read server log on health poll failure" in nested_names
+        assert "Fail with server log content" in nested_names
 
     def test_shutdown_block_names_not_in_top_level_names(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
@@ -555,6 +565,65 @@ class TestDeepPipelineValidation:
                 assert timeout_val == 300, f"Generation timeout must be 300, got {timeout_val}"
                 return
         pytest.fail("No v1/completions task with timeout found")
+
+
+# =============================================================================
+#  9b. Health poll failure diagnostics + param guards (CI shard 1 regression)
+# =============================================================================
+
+
+class TestHealthPollFailureDiagnostics:
+    def test_poll_block_has_rescue_with_log_slurp(self) -> None:
+        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
+        poll_block = next(t for t in tasks if t.get("name") == "Poll health endpoint until ready")
+        assert "block" in poll_block, "Health poll must be wrapped in a block"
+        rescue = cast(list[dict[str, Any]], poll_block.get("rescue"))
+        assert rescue, "Health poll must have a rescue path"
+        slurp_tasks = [t for t in rescue if "ansible.builtin.slurp" in t]
+        assert slurp_tasks, "Rescue must slurp the server log"
+        assert "{{ _server_log }}" in str(slurp_tasks[0]["ansible.builtin.slurp"]), "Rescue must slurp _server_log"
+
+    def test_rescue_fail_msg_includes_server_log(self) -> None:
+        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
+        poll_block = next(t for t in tasks if t.get("name") == "Poll health endpoint until ready")
+        rescue = cast(list[dict[str, Any]], poll_block.get("rescue"))
+        fail_tasks = [t for t in rescue if "ansible.builtin.fail" in t]
+        assert fail_tasks, "Rescue must fail the play with a diagnostic message"
+        msg = str(fail_tasks[0]["ansible.builtin.fail"])
+        assert "_server_log" in msg, "Fail message must include the server log content"
+        assert "b64decode" in msg, "Fail message must decode the slurped log content"
+
+    def test_poll_still_uses_until_retries_delay(self) -> None:
+        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
+        poll_block = next(t for t in tasks if t.get("name") == "Poll health endpoint until ready")
+        block_tasks = cast(list[dict[str, Any]], poll_block["block"])
+        poll = next(t for t in block_tasks if "ansible.builtin.uri" in t)
+        assert poll["until"] == "_health_poll.status == 200"
+        assert poll["retries"] == "{{ health_check_retries }}"
+        assert poll["delay"] == "{{ health_check_delay }}"
+
+
+class TestHealthPollParamGuards:
+    def test_tasks_assert_positive_health_params(self) -> None:
+        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
+        assert "health_check_delay | int > 0" in tasks_text
+        assert "health_check_retries | int > 0" in tasks_text
+
+    def test_molecule_scenario_does_not_zero_delay(self) -> None:
+        converge_path = Path("molecule/playbooks/local_game_gen/default/converge.yml")
+        assert converge_path.exists(), "local_game_gen molecule converge missing"
+        plays = cast(list[dict[str, Any]], yaml.safe_load(converge_path.read_text()))
+        for play in plays:
+            for task in play.get("tasks", []):
+                include = task.get("ansible.builtin.include_role")
+                if isinstance(include, dict) and "local_game_gen" in str(include.get("name", "")):
+                    role_vars = cast(dict[str, Any], include.get("vars", {}))
+                    if "health_check_delay" in role_vars:
+                        assert int(role_vars["health_check_delay"]) > 0, (
+                            "Molecule scenario must not override health_check_delay to 0"
+                        )
+                        return
+        # Delay left to the role default — acceptable.
 
 
 # =============================================================================
