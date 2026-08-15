@@ -54,6 +54,7 @@ class JobIngressLimits:
     }
 
     def __post_init__(self) -> None:
+        """Reject any limit outside its pinned safe bounds at construction."""
         env_by_field = dict(self._ENV_FIELDS)
         for field_name, (minimum, maximum) in self._SAFE_BOUNDS.items():
             value = getattr(self, field_name)
@@ -72,7 +73,6 @@ class JobIngressLimits:
         permissive default. Passing a mapping makes configuration validation
         deterministic without mutating process-global environment state.
         """
-
         source = os.environ if environ is None else environ
         values: dict[str, int] = {}
         for field_name, env_name in cls._ENV_FIELDS:
@@ -98,7 +98,6 @@ _PLAYBOOK_SEGMENT_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
 
 def _validate_payload_bounds(payload: dict[str, object], limits: JobIngressLimits) -> None:
     """Reject excessive or non-JSON payloads before Pydantic field coercion."""
-
     collection_items = 0
     serialized_bytes = 0
     active_containers: set[int] = set()
@@ -202,6 +201,8 @@ def _required_string(value: object, field_name: str) -> str:
 
 
 class JobSpec(BaseModel):
+    """A validated job specification with fail-closed ingress boundary checks."""
+
     model_config = ConfigDict(extra="forbid")
 
     job_id: str
@@ -292,9 +293,11 @@ class JobSpec(BaseModel):
     ownership: OwnershipSpec | None = None
 
     def policy_version(self) -> str:
+        """Return the versioned policy identifier for this jobspec schema."""
         return f"jobspec-v1:{_JOBSPEC_POLICY_DIGEST_PREFIX}"
 
     def policy_hash(self) -> str:
+        """Return a SHA-256 digest over the policy version and ownership."""
         h = hashlib.sha256()
         h.update(b"jobspec-v1")
         if self.ownership is not None:
@@ -381,6 +384,7 @@ class WorkCeilingSpec(BaseModel):
 
     @classmethod
     def for_work_type(cls, work_type: str) -> WorkCeilingSpec:
+        """Return the ceiling defaults for one work type, falling back to base defaults."""
         defaults: dict[str, dict[str, int]] = {
             "code": {
                 "max_wall_seconds": 1800,
@@ -420,7 +424,7 @@ _REDACTED_FIELDS: Final[frozenset[str]] = frozenset(
         "password",
         "credential",
         "authorization",
-        "GLUDD_PSK",
+        "GLUDD_AUTH_PSK",
     }
 )
 _JOBSPEC_POLICY_DIGEST_PREFIX: Final[str] = "sha256"

@@ -32,7 +32,7 @@ def test_broadcast_and_register_concurrent_no_dict_mutation_error(monkeypatch) -
     """Concurrent register() + broadcast_reload() must not raise RuntimeError
     from dict-mutation-during-iteration. The _workers dict must be guarded by a
     lock so iterating/snapshotting and mutating are serialized."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     worker_count = 20
     b = WorkerBroadcaster(stale_threshold_seconds=3600.0)
 
@@ -79,7 +79,7 @@ def test_broadcast_and_register_concurrent_no_dict_mutation_error(monkeypatch) -
 def test_concurrent_cleanup_and_broadcast_no_crash(monkeypatch) -> None:
     """Concurrent cleanup_stale() + broadcast_reload() must not crash on dict
     mutation during iteration."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster(stale_threshold_seconds=0.0)
     for i in range(30):
         b.register(WorkerInfo(worker_id=f"w{i}", address=f"https://worker-{i}.internal:8001"))
@@ -355,7 +355,7 @@ def test_register_without_psk_still_allowed_but_warns(caplog) -> None:
 def test_broadcast_results_are_thread_safe_snapshot(monkeypatch) -> None:
     """broadcast_reload() results list must be independent of concurrent
     mutations — each invocation gets its own snapshot of the worker set."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="w1", address="https://worker-1.internal:8001"))
 

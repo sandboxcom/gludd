@@ -29,12 +29,12 @@ orchestrator signals and no-progress timeouts never restart the whole shard.
 Env knobs (all optional):
   PER_WORKER_GB / GLUDD_PER_WORKER_GB   GiB budgeted per worker (default 1.5)
   NPROC                                 explicit worker count override (wins)
-  GLUDD_XDIST                           explicit worker count override (wins)
+  GLUDD_XDIST_WORKERS                           explicit worker count override (wins)
   GLUDD_TEST_HEARTBEAT_SECONDS          visible progress interval (default 30)
   GLUDD_TEST_NO_PROGRESS_SECONDS        quiet-output deadline (default 900)
 
 An override that is not a positive integer (e.g. the CI-faithfulness value
-``GLUDD_XDIST=auto``) is ignored, so the adaptive computation still applies.
+``GLUDD_XDIST_WORKERS=auto``) is ignored, so the adaptive computation still applies.
 
 Usage:  adaptive_test.py [pytest args...]   e.g.  adaptive_test.py tests/unit -q
 Only stdlib is required; ``psutil`` is used when importable for the RAM reading.
@@ -108,13 +108,13 @@ def per_worker_gb(env: Mapping[str, str] | None = None) -> float:
 
 
 def env_override(env: Mapping[str, str] | None = None) -> int | None:
-    """Return an explicit worker-count override from NPROC / GLUDD_XDIST.
+    """Return an explicit worker-count override from NPROC / GLUDD_XDIST_WORKERS.
 
     Only a POSITIVE INTEGER counts as an override; anything else (empty,
     ``auto``, non-numeric) returns ``None`` so the adaptive path is used.
     """
     env = os.environ if env is None else env
-    for key in ("NPROC", "GLUDD_XDIST"):
+    for key in ("NPROC", "GLUDD_XDIST_WORKERS"):
         raw = env.get(key)
         if raw is None:
             continue

@@ -135,7 +135,7 @@ def test_start_daemon_launches_gunicorn_and_captures_child_logs(monkeypatch: Any
     assert "--access-logfile" in seen["cmd"]
     assert seen["stderr"] == mod.subprocess.STDOUT
     assert seen["env"]["GLUDD_CONFIG_DIR"] == str(config_dir)
-    assert seen["env"]["GLUDD_PSK"] == mod.SMOKE_AUTH_TOKEN
+    assert seen["env"]["GLUDD_AUTH_PSK"] == mod.SMOKE_AUTH_TOKEN
     assert seen["start_new_session"] is True
 
 

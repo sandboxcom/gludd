@@ -153,7 +153,7 @@ class TestMCPStdioClient:
     async def test_start_passes_minimal_env_not_full_host_env(self, monkeypatch):
         # Finding 2: a sensitive host env var must NEVER reach the subprocess.
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-super-secret")
-        monkeypatch.setenv("GLUDD_PSK", "psk-secret")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk-secret")
         monkeypatch.setenv("PATH", "/usr/bin:/bin")
         config = _make_config(env={"FOO": "bar"})
         proc = _mock_process([_init_response()])
@@ -173,7 +173,7 @@ class TestMCPStdioClient:
         assert env["PATH"] == "/usr/bin:/bin"
         # Host secrets are NOT leaked into the subprocess env.
         assert "ANTHROPIC_API_KEY" not in env
-        assert "GLUDD_PSK" not in env
+        assert "GLUDD_AUTH_PSK" not in env
 
     async def test_readline_timeout_terminates_and_raises(self):
         # Finding 1: a hung server (readline never returns) must time out, kill

@@ -569,7 +569,7 @@ param, no caller comparison. `HumanTodoModel` (db/models.py:842-892) has NO `pro
 column at all (unlike `TodoModel`/`RemediationActionModel`). The router endpoints
 (routers/human_todos.py:187-342) never check the row's agent_id/session_id vs caller.
 Every dispatched agent holds the same admin PSK (renderers/runner.py:227-229 injects
-`GLUDD_PSK` into the agent subprocess env), so ANY agent can read/resolve/dismiss ANOTHER
+`GLUDD_AUTH_PSK` into the agent subprocess env), so ANY agent can read/resolve/dismiss ANOTHER
 agent's human-todo. WORST: routers/security.py:183-218 `_sync_escalation_from_human_todo`
 (invoked from the generic PATCH handler human_todos.py:280-310) flips a linked
 permission-escalation to approved/denied when ANY human-todo carrying the

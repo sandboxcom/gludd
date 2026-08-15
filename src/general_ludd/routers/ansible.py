@@ -1,3 +1,5 @@
+"""Admin router exposing ansible-galaxy search/install and playbook rendering."""
+
 from __future__ import annotations
 
 import asyncio
@@ -14,6 +16,7 @@ from general_ludd.ansible.paths import (
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register the admin ansible endpoints on the FastAPI app."""
 
     @app.get("/admin/ansible/search")
     async def admin_ansible_search(query: str = "", type: str = "role") -> dict[str, object]:
@@ -50,7 +53,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         # undefined / syntax error becomes an HTTP 400 with no traceback.
         #
         # This route is intentionally NOT in the daemon's _PUBLIC_PATHS allow-
-        # list, so when GLUDD_PSK is configured it requires the daemon PSK.
+        # list, so when GLUDD_AUTH_PSK is configured it requires the daemon PSK.
         from general_ludd.ansible.templating import AnsibleTemplater, TemplateRenderError
 
         extra_vars = req.get("extra_vars", {})
@@ -100,7 +103,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 detail="Ansible runner not available",
             )
         activation_root = runner.activate_collection(
-            namespace, collection, version=version,
+            namespace,
+            collection,
+            version=version,
         )
         return {
             "namespace": namespace,

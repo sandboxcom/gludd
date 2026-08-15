@@ -39,10 +39,10 @@ def _reset_daemon_state():
     daemon_mod._daemon_state["todos"] = []
     daemon_mod._daemon_state["tick_metrics"] = {}
     # Ensure PSK/require-auth env never leaks between tests.
-    for var in ("GLUDD_PSK", "GLUDD_REQUIRE_AUTH"):
+    for var in ("GLUDD_AUTH_PSK", "GLUDD_REQUIRE_AUTH"):
         os.environ.pop(var, None)
     yield
-    for var in ("GLUDD_PSK", "GLUDD_REQUIRE_AUTH"):
+    for var in ("GLUDD_AUTH_PSK", "GLUDD_REQUIRE_AUTH"):
         os.environ.pop(var, None)
 
 
@@ -58,7 +58,7 @@ class TestMethodAwarePublicAllowlist:
     async def test_post_to_public_path_is_not_public_when_psk_set(self, monkeypatch):
         # With a PSK configured, a *mutating* verb on a path that is only
         # read-only-public must fall through to auth -> 401 without a token.
-        monkeypatch.setenv("GLUDD_PSK", "topsecret")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "topsecret")
         app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as client:
             resp = await client.post("/api/todos", json={"title": "x", "queue": "core"})
@@ -67,7 +67,7 @@ class TestMethodAwarePublicAllowlist:
     @pytest.mark.asyncio
     async def test_get_public_path_stays_public_with_psk(self, monkeypatch):
         # The read-only verb on the same path stays public (no token needed).
-        monkeypatch.setenv("GLUDD_PSK", "topsecret")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "topsecret")
         app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as client:
             resp = await client.get("/api/todos")
@@ -83,7 +83,7 @@ class TestMethodAwarePublicAllowlist:
 
     @pytest.mark.asyncio
     async def test_post_public_path_with_valid_token_passes(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "topsecret")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "topsecret")
         app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as client:
             resp = await client.post(

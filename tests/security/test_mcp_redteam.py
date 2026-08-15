@@ -5,7 +5,7 @@ Companion findings reproduced here (each test name maps to a finding):
 1. HIGH — readline()/drain() had NO timeout: a hung MCP server blocked the
    agent forever. ``timeout_seconds`` (config, default 30) was dead code.
 2. HIGH — ``env = {**os.environ, **config.env}`` handed the FULL host
-   environment (ANTHROPIC_API_KEY, GLUDD_PSK, cloud creds) to every MCP
+   environment (ANTHROPIC_API_KEY, GLUDD_AUTH_PSK, cloud creds) to every MCP
    subprocess. A malicious/compromised server could exfiltrate them.
 3. HIGH (latent) — model-chosen tool name + args went straight to
    ``call_tool(None, ...)`` with no allowlist: the model could name ANY tool
@@ -117,7 +117,7 @@ class TestFinding1HungServerTimeout:
 class TestFinding2EnvIsolation:
     async def test_full_host_env_not_leaked_to_subprocess(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-leak-me")
-        monkeypatch.setenv("GLUDD_PSK", "psk-leak-me")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk-leak-me")
         monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws-leak-me")
         monkeypatch.setenv("PATH", "/usr/bin")
         monkeypatch.setenv("HOME", "/home/agent")
@@ -143,7 +143,7 @@ class TestFinding2EnvIsolation:
         assert env["HOME"] == "/home/agent"
         assert env["SERVER_FLAG"] == "1"
         # Secrets are categorically absent.
-        for leaked in ("ANTHROPIC_API_KEY", "GLUDD_PSK", "AWS_SECRET_ACCESS_KEY"):
+        for leaked in ("ANTHROPIC_API_KEY", "GLUDD_AUTH_PSK", "AWS_SECRET_ACCESS_KEY"):
             assert leaked not in env, f"{leaked} leaked to MCP subprocess"
 
     async def test_declared_env_can_override_allowlist(self, monkeypatch):

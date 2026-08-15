@@ -49,7 +49,7 @@ class TestStreamDispatchChildEnvIsScrubbed:
             "AWS_ACCESS_KEY_ID",
             "AWS_SECRET_ACCESS_KEY",
             "DATABASE_URL",
-            "GLUDD_PSK",
+            "GLUDD_AUTH_PSK",
             "OPENAI_API_KEY",
         }
     )

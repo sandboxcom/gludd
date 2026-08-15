@@ -420,7 +420,7 @@ _STDERR_LIMIT_CEILINGS = {
 _STDERR_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 # Minimal base environment handed to every MCP subprocess. The full host
-# environment (which includes ANTHROPIC_API_KEY, GLUDD_PSK, cloud creds, etc.)
+# environment (which includes ANTHROPIC_API_KEY, GLUDD_AUTH_PSK, cloud creds, etc.)
 # is NEVER inherited — only these process-hygiene vars plus the server's own
 # declared `env`/resolved secrets are passed. Finding 2.
 _ENV_ALLOWLIST = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")

@@ -45,7 +45,7 @@ handled explicitly. The dogfood contract therefore validates the actual
 - `gludd daemon --port N` → `cli._cmd_daemon` builds a `subprocess.Popen`
   (gunicorn/uvicorn) and forwards signals. Env it passes through:
   `GLUDD_CONFIG_DIR`, `GLUDD_TEMPLATES_DIR`, `GLUDD_PLAYBOOKS_DIR`,
-  `GLUDD_TICK_INTERVAL`, `GLUDD_LOG_LEVEL`, `GLUDD_PSK`.
+  `GLUDD_TICK_INTERVAL`, `GLUDD_LOG_LEVEL`, `GLUDD_AUTH_PSK`.
 - The app object is built by `daemon.create_daemon_app(...)` (FastAPI). Startup
   is the `_lifespan` async context manager (full sequence captured in §1.5).
 - The `make smoke` target already boots the real daemon on a free port, polls
@@ -454,7 +454,7 @@ offline review is deterministic, while live mode uses the configured gateway
 for generation and review. Focused CI verification is:
 
 ```console
-make test-files GLUDD_XDIST=0 TESTFILES='tests/e2e/dogfood/test_dogfood_todo_site.py'
+make test-files GLUDD_XDIST_WORKERS=0 TESTFILES='tests/e2e/dogfood/test_dogfood_todo_site.py'
 ```
 
 Without a ZAI credential this runs seven cases and skips only the live case.

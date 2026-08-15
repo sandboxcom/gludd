@@ -279,7 +279,7 @@ class TestConvergeCoverage:
         tasks = daemon_play["tasks"]
         start = next(task for task in tasks if task["name"].startswith("Start the"))
         submit = next(task for task in tasks if task["name"].startswith("Submit a"))
-        assert start["environment"]["GLUDD_PSK"] == "{{ daemon_psk }}"
+        assert start["environment"]["GLUDD_AUTH_PSK"] == "{{ daemon_psk }}"
         assert submit["ansible.builtin.uri"]["headers"]["Authorization"] == (
             "Bearer {{ daemon_psk }}"
         )

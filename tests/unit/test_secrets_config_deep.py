@@ -453,10 +453,10 @@ class TestScopeEvidence:
 
 
 class TestEnvSecretsPSKBlocked:
-    @patch.dict(os.environ, {"GLUDD_PSK": "preshared-secret-12345"}, clear=True)
+    @patch.dict(os.environ, {"GLUDD_AUTH_PSK": "preshared-secret-12345"}, clear=True)
     def test_psk_is_blocked_by_default(self):
         mgr = EnvSecretsManager()
-        assert mgr.resolve("GLUDD_PSK") is None
+        assert mgr.resolve("GLUDD_AUTH_PSK") is None
 
     @patch.dict(os.environ, {"GLUDD_SECRET_DB_PASSWORD": "s3cret"}, clear=True)
     def test_gludd_secret_prefix_is_allowlisted(self):

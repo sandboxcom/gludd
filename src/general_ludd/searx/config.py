@@ -1,3 +1,5 @@
+"""Generate a SearXNG settings.yml with gludd-safe defaults."""
+
 from __future__ import annotations
 
 import logging
@@ -41,14 +43,21 @@ DEFAULT_SEARX_SETTINGS = {
 }
 
 
+SEARX_PORT_DEFAULT = "8888"
+
+
 class SearXConfig:
+    """Writer for the local SearXNG settings file."""
+
     def __init__(self, base_dir: str = "~/.gludd/searx") -> None:
+        """Initialize with the base directory for the settings file."""
         self.base_dir = Path(base_dir).expanduser()
 
     def generate(self) -> str:
+        """Write settings.yml (with the configured port) and return its path."""
         settings = deepcopy(DEFAULT_SEARX_SETTINGS)
 
-        port = os.environ.get("GLUDD_SEARX_PORT", "8888")
+        port = os.environ.get("GLUDD_SEARX_PORT", SEARX_PORT_DEFAULT)
         server_conf = cast("dict[str, object]", settings["server"])
         server_conf["bind_address"] = f"127.0.0.1:{port}"
 

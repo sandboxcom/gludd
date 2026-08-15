@@ -116,7 +116,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
       - name: Typecheck
         run: |
           echo "=== CI PHASE: typecheck ==="
@@ -125,7 +125,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
       - name: Test collection check
         run: |
           echo "=== CI PHASE: test-count ==="
@@ -134,8 +134,8 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
-          GLUDD_XDIST: auto
+          GLUDD_AUTH_PSK: ""
+          GLUDD_XDIST_WORKERS: auto
       - name: Smoke test
         run: |
           echo "=== CI PHASE: smoke ==="
@@ -144,7 +144,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
       - name: IAM headless smoke
         run: |
           echo "=== CI PHASE: iam-headless-smoke ==="
@@ -153,7 +153,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
       - name: Validate Terraform and IAM OPA policies
         # The make target uses a local OPA binary when available and otherwise
         # runs the pinned OPA image through Docker. This keeps policy checks
@@ -165,7 +165,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
       - name: Verify feature claims (full evidence check)
         # Runs the ansible playbook that loads docs/features.yml and verifies
         # EVERY evidence ref (test:, file:, role:, module:, molecule:) — including
@@ -182,7 +182,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - name: Install locked Node build dependencies
         run: |
@@ -192,7 +192,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - name: Build hot-reload modules
         # Auto-build hot-reload JS modules from current plugin .ts source so CI
@@ -205,7 +205,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - name: Verify hot-reload modules fresh
         # Fails if any /tmp/gludd-hot-*.js is stale (older than its .ts source)
@@ -218,7 +218,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - name: Enforcement hook runtime tests
         # Verifies all 10 enforcement plugins are structurally in BLOCKING mode
@@ -232,7 +232,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - name: Check status table current (fast)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -247,7 +247,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - name: Verify secrets baseline (truffleHog)
         # Cross-references .secrets.baseline entries against truffleHog's live
@@ -261,7 +261,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2 (node24)
         id: css_changes
@@ -281,7 +281,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - name: Collect failure diagnostics (gate, Python ${{ matrix.python-version }})
         if: failure()
@@ -564,8 +564,8 @@ jobs:
           }
           retry_test
         env:
-          GLUDD_PSK: ""
-          GLUDD_XDIST: auto
+          GLUDD_AUTH_PSK: ""
+          GLUDD_XDIST_WORKERS: auto
           # GitHub Actions already sets CI=true for every step; set it explicitly
           # here so the adaptive runner's CI branch (skip the load cap, size by
           # RAM + cores) is deterministic and self-documenting even if that
@@ -742,7 +742,7 @@ jobs:
           }
           retry_molecule
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
       - name: Tail molecule logs (quick triage)
         # `molecule-test-shard` (Makefile) writes one log per scenario to
         # /tmp/gludd-molecule-<scenario>.log and NEVER surfaces it in CI output
@@ -1312,7 +1312,7 @@ jobs:
           uv sync
           uv run python -m pytest tests/e2e/providers/ -v
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
   # Game-building E2E tests — verifies gludd can autonomously build simple games
   # (Snake, Tetris, Checkers, Minesweeper, SkiFree, Banana) via the DeepSeek API.
@@ -1353,7 +1353,7 @@ jobs:
           uv sync
           make test-games
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   release:
@@ -1382,7 +1382,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
       - name: Generate SBOM
         run: |
           echo "=== CI PHASE: release-sbom ==="

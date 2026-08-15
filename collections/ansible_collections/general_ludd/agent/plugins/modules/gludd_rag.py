@@ -160,7 +160,7 @@ def main() -> None:
     if daemon_url:
         os.environ["GLUDD_DAEMON_URL"] = daemon_url
     if psk:
-        os.environ["GLUDD_PSK"] = psk
+        os.environ["GLUDD_AUTH_PSK"] = psk
     if timeout:
         os.environ["GLUDD_MODEL_TIMEOUT"] = str(timeout)
 

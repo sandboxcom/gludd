@@ -26,7 +26,7 @@ def test_no_psk_with_psk_disable_opt_out_serves():
 
 def test_psk_present_does_not_require_env_flags():
     posture = load_auth_posture(
-        "worker", env={"GLUDD_PSK": "s3kr3t"}  # pragma: allowlist secret
+        "worker", env={"GLUDD_AUTH_PSK": "s3kr3t"}  # pragma: allowlist secret
     )
     assert posture.require_auth is False
     assert posture.no_auth is False

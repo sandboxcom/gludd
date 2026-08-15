@@ -14,7 +14,7 @@ from typing import Any, cast
 
 import httpx
 
-SEARX_DEFAULT_URL = os.environ.get("GLUDD_SEARX_URL", "http://localhost:8080")
+SEARX_DEFAULT_URL = os.environ.get("GLUDD_SEARX_URL") or "http://localhost:8888"
 SEARX_DOCKER_URL = os.environ.get("GLUDD_SEARX_DOCKER_URL", "http://localhost:8080")
 INDEX_CACHE_DIR = os.environ.get(
     "GLUDD_MODEL_INDEX_DIR",
@@ -43,6 +43,8 @@ _QUANT_PATTERNS: dict[str, str] = {
 
 @dataclass
 class ModelSearchResult:
+    """One discovered model with its metadata and download sources."""
+
     name: str
     source_url: str = ""
     download_urls: list[str] = field(default_factory=list)
@@ -53,11 +55,14 @@ class ModelSearchResult:
 
 
 class SearXModelSearch:
+    """Query a SearX/SearXNG instance for model metadata across the web."""
+
     def __init__(
         self,
         base_url: str | None = None,
         timeout: float = 15.0,
     ) -> None:
+        """Initialize with the SearX base URL and request timeout."""
         self._base_url = (base_url or SEARX_DEFAULT_URL).rstrip("/")
         self._timeout = timeout
 
@@ -84,6 +89,7 @@ class SearXModelSearch:
         query: str,
         source: str = "huggingface",
     ) -> list[ModelSearchResult]:
+        """Search for models matching the query from the given source engine."""
         engine = _SOURCE_ENGINES.get(source, "google")
         raw = self._do_search(f"site:huggingface.co {query} LLM model", engines=engine)
         results: list[ModelSearchResult] = []
@@ -105,6 +111,7 @@ class SearXModelSearch:
         return results
 
     def find_model(self, model_name: str) -> ModelSearchResult | None:
+        """Search for one named model and return a rich result, or None."""
         raw = self._do_search(
             f"{model_name} huggingface GGUF download quantization parameters",
         )
@@ -166,9 +173,7 @@ class SearXModelSearch:
         urls: list[str] = []
         for word in text.split():
             if word.startswith(("https://huggingface.co/", "https://github.com/")) and (
-                ".gguf" in word.lower()
-                or "resolve/main" in word
-                or "/blob/" in word
+                ".gguf" in word.lower() or "resolve/main" in word or "/blob/" in word
             ):
                 urls.append(word.rstrip(".,;:)"))
         return urls[:5]
@@ -204,9 +209,19 @@ class SearXModelSearch:
         import re
 
         known = [
-            "apache-2.0", "apache 2.0", "MIT", "llama3", "llama 3",
-            "cc-by-nc-4.0", "cc-by-4.0", "gpl-3.0", "gpl 3.0",
-            "bsd-3-clause", "bsd 2-clause", "gemma", "openrail",
+            "apache-2.0",
+            "apache 2.0",
+            "MIT",
+            "llama3",
+            "llama 3",
+            "cc-by-nc-4.0",
+            "cc-by-4.0",
+            "gpl-3.0",
+            "gpl 3.0",
+            "bsd-3-clause",
+            "bsd 2-clause",
+            "gemma",
+            "openrail",
         ]
         text_lower = text.lower()
         for lic in known:
@@ -221,7 +236,10 @@ class SearXModelSearch:
 
 
 class ModelIndex:
+    """Local JSON cache of discovered models keyed by model name."""
+
     def __init__(self, cache_dir: str | None = None) -> None:
+        """Load (or create) the index cache at the given directory."""
         self._cache_dir = Path(cache_dir or INDEX_CACHE_DIR)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._index_path = self._cache_dir / "index.json"
@@ -256,23 +274,25 @@ class ModelIndex:
             json.dump(serializable, f, indent=2)
 
     def get(self, model_name: str) -> ModelSearchResult | None:
+        """Return the cached result for one model name, or None."""
         return self._entries.get(model_name)
 
     def put(self, result: ModelSearchResult) -> None:
+        """Store one result in the index and persist it to disk."""
         self._entries[result.name] = result
         self._save()
 
     def search(self, query: str) -> list[ModelSearchResult]:
+        """Return entries whose name or description contains the query."""
         query_lower = query.lower()
         return [
-            r
-            for r in self._entries.values()
-            if query_lower in r.name.lower()
-            or query_lower in r.description.lower()
+            r for r in self._entries.values() if query_lower in r.name.lower() or query_lower in r.description.lower()
         ]
 
     def list_all(self) -> list[ModelSearchResult]:
+        """Return every cached entry in insertion order."""
         return list(self._entries.values())
 
     def size(self) -> int:
+        """Return the number of cached entries."""
         return len(self._entries)

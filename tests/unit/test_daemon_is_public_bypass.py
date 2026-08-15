@@ -22,7 +22,7 @@ def _client(app):
 
 @pytest.mark.asyncio
 async def test_docs_exact_is_public():
-    with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+    with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
         from general_ludd.daemon import create_daemon_app
         app = create_daemon_app(tick_interval=0.01)
     async with _client(app) as c:
@@ -32,7 +32,7 @@ async def test_docs_exact_is_public():
 
 @pytest.mark.asyncio
 async def test_docs_trailing_slash_is_public():
-    with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+    with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
         from general_ludd.daemon import create_daemon_app
         app = create_daemon_app(tick_interval=0.01)
     async with _client(app) as c:
@@ -42,7 +42,7 @@ async def test_docs_trailing_slash_is_public():
 
 @pytest.mark.asyncio
 async def test_docs_evil_is_not_public():
-    with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+    with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
         from general_ludd.daemon import create_daemon_app
         app = create_daemon_app(tick_interval=0.01)
     async with _client(app) as c:
@@ -52,7 +52,7 @@ async def test_docs_evil_is_not_public():
 
 @pytest.mark.asyncio
 async def test_docs_evil_admin_is_not_public():
-    with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+    with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
         from general_ludd.daemon import create_daemon_app
         app = create_daemon_app(tick_interval=0.01)
     async with _client(app) as c:
@@ -62,7 +62,7 @@ async def test_docs_evil_admin_is_not_public():
 
 @pytest.mark.asyncio
 async def test_healthz_is_public():
-    with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+    with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
         from general_ludd.daemon import create_daemon_app
         app = create_daemon_app(tick_interval=0.01)
     async with _client(app) as c:

@@ -15,13 +15,13 @@ import general_ludd.cli_remediation as cli_remediation
 
 class TestPskHeaders:
     def test_no_psk_env(self, monkeypatch):
-        monkeypatch.delenv("GLUDD_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
         headers = cli_remediation._psk_headers()
         assert "Content-Type" in headers
         assert "Authorization" not in headers
 
     def test_with_psk_env(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "secret123")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
         headers = cli_remediation._psk_headers()
         assert headers["Authorization"] == "Bearer secret123"
 
@@ -37,7 +37,7 @@ class TestPrintJson:
 
 class TestCmdScan:
     def test_empty_result(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"blocked_tasks": []}
@@ -53,7 +53,7 @@ class TestCmdScan:
             assert "(no blocked tasks)" in buf.getvalue()
 
     def test_with_results(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -81,7 +81,7 @@ class TestCmdScan:
             assert "t1" in output
 
     def test_json_mode(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"blocked_tasks": []}
@@ -98,7 +98,7 @@ class TestCmdScan:
             assert output == {"blocked_tasks": []}
 
     def test_scan_passes_project_filter(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"blocked_tasks": []}
@@ -116,7 +116,7 @@ class TestCmdScan:
 
 class TestCmdChronic:
     def test_empty_result(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"chronic_blockers": []}
@@ -133,7 +133,7 @@ class TestCmdChronic:
             assert "(no chronic blockers)" in buf.getvalue()
 
     def test_with_blockers(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -161,7 +161,7 @@ class TestCmdChronic:
             assert "bug_fix" in output
 
     def test_json_mode(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"chronic_blockers": []}
@@ -181,7 +181,7 @@ class TestCmdChronic:
 
 class TestCmdHistory:
     def test_empty_result(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"actions": []}
@@ -199,7 +199,7 @@ class TestCmdHistory:
             assert "(no remediation history)" in buf.getvalue()
 
     def test_with_actions(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -231,7 +231,7 @@ class TestCmdHistory:
 
 class TestCmdConfigShow:
     def test_pretty_output(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -257,7 +257,7 @@ class TestCmdConfigShow:
 
 class TestHttpHelper:
     def test_success_returns_json(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"ok": True}
@@ -266,7 +266,7 @@ class TestHttpHelper:
             assert result == {"ok": True}
 
     def test_non_ok_status_exits(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 500
         mock_resp.text = "Server error"
@@ -274,7 +274,7 @@ class TestHttpHelper:
             cli_remediation._http("GET", "http://example.com")
 
     def test_json_parse_failure_returns_none(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_PSK", "psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "psk")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.side_effect = ValueError("bad json")

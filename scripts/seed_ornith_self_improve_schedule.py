@@ -24,6 +24,11 @@ import sys
 import urllib.error
 import urllib.request
 
+try:
+    from scripts import gludd_env_defaults as gludd_env_defaults
+except ModuleNotFoundError:  # pragma: no cover - direct launch from scripts/
+    import gludd_env_defaults
+
 
 def _ornith_enabled() -> bool:
     try:
@@ -57,8 +62,8 @@ def _existing_entries(daemon_url: str, psk: str) -> list[dict]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--daemon-url",
-                        default=os.environ.get("GLUDD_DAEMON_URL", "http://127.0.0.1:8000"))
-    parser.add_argument("--psk", default=os.environ.get("GLUDD_PSK", ""))
+                        default=os.environ.get("GLUDD_DAEMON_URL", gludd_env_defaults.DAEMON_URL_DEFAULT))
+    parser.add_argument("--psk", default=os.environ.get("GLUDD_AUTH_PSK", "").strip())
     parser.add_argument("--cron", default="0 4 * * 1",
                         help="Monday 04:00 UTC by default (low-impact window)")
     parser.add_argument("--dry-run", action="store_true")

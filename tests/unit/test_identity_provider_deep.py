@@ -413,7 +413,7 @@ class TestAuthPostureCombinatorial:
         ap = load_auth_posture(
             "daemon",
             {
-                "GLUDD_PSK": "present",
+                "GLUDD_AUTH_PSK": "present",
                 "GLUDD_PSK_DISABLE": "1",
             },
         )

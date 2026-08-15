@@ -1,3 +1,5 @@
+"""Lifecycle management for a local SearXNG subprocess (or external instance)."""
+
 from __future__ import annotations
 
 import logging
@@ -7,6 +9,8 @@ import time
 from pathlib import Path
 
 import httpx
+
+from general_ludd.searx.config import SEARX_PORT_DEFAULT
 
 logger = logging.getLogger(__name__)
 
@@ -22,14 +26,14 @@ class SearXServer:
         settings_path: str | None = None,
         external_url: str | None = None,
     ) -> None:
-        self.port = port or int(os.environ.get("GLUDD_SEARX_PORT", "8888"))
-        self.settings_path = Path(
-            settings_path or "~/.gludd/searx/settings.yml"
-        ).expanduser()
+        """Initialize with port, settings path, and optional external URL."""
+        self.port = port or int(os.environ.get("GLUDD_SEARX_PORT", SEARX_PORT_DEFAULT))
+        self.settings_path = Path(settings_path or "~/.gludd/searx/settings.yml").expanduser()
         self.external_url = external_url
         self._process: subprocess.Popen[bytes] | None = None
 
     def start(self) -> bool:
+        """Start the local subprocess and wait (bounded) until it is healthy."""
         if self.external_url is not None:
             return True
         if self._process is not None:
@@ -75,6 +79,7 @@ class SearXServer:
         return False
 
     def stop(self) -> None:
+        """Terminate the subprocess (escalating to kill after a 5s grace)."""
         if self._process is None:
             return
         self._process.terminate()
@@ -86,6 +91,7 @@ class SearXServer:
         self._process = None
 
     def is_running(self) -> bool:
+        """Return True when the instance answers its health check."""
         if self.external_url is not None:
             return self._health_check()
         if self._process is None:
@@ -96,11 +102,13 @@ class SearXServer:
         return self._health_check()
 
     def get_instance_url(self) -> str:
+        """Return the external or local base URL for this instance."""
         if self.external_url:
             return self.external_url
         return f"http://127.0.0.1:{self.port}"
 
     def ensure_started(self) -> bool:
+        """Start the instance if it is not already healthy."""
         if self.is_running():
             return True
         return self.start()

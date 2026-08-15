@@ -372,7 +372,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
 **Auth posture (explicit):**
 - Reuses the *existing* middleware; no new auth code. `/api/observe/*` is absent
-  from `_PUBLIC_PATHS`, so when `GLUDD_PSK` is set every method requires the
+  from `_PUBLIC_PATHS`, so when `GLUDD_AUTH_PSK` is set every method requires the
   Bearer token; when `GLUDD_REQUIRE_AUTH=1` and no PSK, it 503s
   (`daemon.py:913-921`); the open-but-warned default applies as for all other
   non-public routes.
@@ -558,7 +558,7 @@ connectors:
   `general-ludd.yml` has a `connectors:` block using a fake/echo connector
   (monkeypatch `_resolve_class` or point `class` at a test-only module).
 - `GET /api/observe/sources` (with PSK header) → lists the configured sources;
-  without PSK and `GLUDD_PSK` set → 401 (verifies middleware gating, mirrors
+  without PSK and `GLUDD_AUTH_PSK` set → 401 (verifies middleware gating, mirrors
   existing facts/spend auth tests).
 - `GET /api/observe/health` → per-source health dicts; a source whose `health()`
   raises is reported `ok:false`, request still 200.

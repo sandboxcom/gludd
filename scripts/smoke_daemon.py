@@ -110,8 +110,8 @@ def _start_daemon(port: int, *, config_dir: Path) -> tuple[subprocess.Popen[byte
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     log_handle = LOG_PATH.open("wb")
     env = os.environ.copy()
-    env["GLUDD_PORT"] = str(port)
-    env["GLUDD_PSK"] = SMOKE_AUTH_TOKEN
+    env["GLUDD_DAEMON_PORT"] = str(port)
+    env["GLUDD_AUTH_PSK"] = SMOKE_AUTH_TOKEN
     env["GLUDD_CONFIG_DIR"] = str(config_dir)
     env["GLUDD_LOG_LEVEL"] = "info"
     cmd = _build_daemon_start_cmd(host="127.0.0.1", port=port, workers=1)

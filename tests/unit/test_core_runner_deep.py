@@ -920,7 +920,7 @@ class TestPlaybookEnvAllowlist:
 
         allow = CoreAnsibleRunner._PLAYBOOK_ENV_ALLOWLIST
         assert "ZAI_API_KEY" not in allow
-        assert "GLUDD_PSK" not in allow
+        assert "GLUDD_AUTH_PSK" not in allow
         assert "DATABASE_URL" not in allow
         assert "OPENAI_API_KEY" not in allow
 

@@ -10,7 +10,7 @@ through the ``SelfImproveApprovalManager`` + ``TodoRepository``):
 * ``gludd self-improve approve <todo_id>``  — release APPROVAL_REQUIRED -> QUEUED
 * ``gludd self-improve reject <todo_id>``   — retire  APPROVAL_REQUIRED -> CANCELLED
 
-Write operations send ``GLUDD_PSK`` as a Bearer token so the daemon's PSK
+Write operations send ``GLUDD_AUTH_PSK`` as a Bearer token so the daemon's PSK
 middleware authenticates them.
 """
 
@@ -26,7 +26,7 @@ import httpx
 
 
 def _psk_headers() -> dict[str, str]:
-    psk = os.environ.get("GLUDD_PSK", "")
+    psk = os.environ.get("GLUDD_AUTH_PSK", "").strip()
     headers: dict[str, str] = {"Content-Type": "application/json", "Accept": "application/json"}
     if psk:
         headers["Authorization"] = "Bearer " + psk
@@ -42,9 +42,7 @@ def _http(
     ok_codes: tuple[int, ...] = (200, 201),
 ) -> Any:
     try:
-        resp = httpx.request(
-            method, url, json=json_body, headers=_psk_headers(), timeout=timeout
-        )
+        resp = httpx.request(method, url, json=json_body, headers=_psk_headers(), timeout=timeout)
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -73,11 +71,7 @@ def _cmd_pending(args: argparse.Namespace) -> None:
     print(f"{'TODO_ID':<16} {'PRIORITY':<9} {'TITLE'}")
     print(f"{'-' * 16} {'-' * 9} {'-' * 40}")
     for r in rows:
-        print(
-            f"{r.get('todo_id', '')!s:<16} "
-            f"{r.get('priority', '')!s:<9} "
-            f"{str(r.get('title', ''))[:60]}"
-        )
+        print(f"{r.get('todo_id', '')!s:<16} {r.get('priority', '')!s:<9} {str(r.get('title', ''))[:60]}")
 
 
 def _cmd_approve(args: argparse.Namespace) -> None:
@@ -104,9 +98,8 @@ def _cmd_reject(args: argparse.Namespace) -> None:
 
 
 def add_self_improve_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    p = sub.add_parser(
-        "self-improve", help="Review + release self-authored self-improve todos"
-    )
+    """Register the ``self-improve`` subcommand tree for reviewing self-improve todos."""
+    p = sub.add_parser("self-improve", help="Review + release self-authored self-improve todos")
     p.set_defaults(func=None)
     ssub = p.add_subparsers(dest="self_improve_command")
 

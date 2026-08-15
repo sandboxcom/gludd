@@ -92,7 +92,7 @@ drift). Grouped by subsystem; severity is the auditor's call.
 
 ## Reload (`reload/`)
 - **H1 HIGH — TOCTOU between snapshot read and atomic swap** defeats the anti-clobber merge (`hot_reloader.py:200→240`). Add flock/CAS around read→merge→replace. **[OPEN — C8]**
-- **H2 HIGH — unauthenticated worker registration leaks PSK / SSRF** — `broadcast_reload` POSTs `Bearer <GLUDD_PSK>` to any registered `address` (`worker_broadcast.py:34`). Auth+allowlist registration, require https, deny link-local/loopback/metadata. **[OPEN — C8]**
+- **H2 HIGH — unauthenticated worker registration leaks PSK / SSRF** — `broadcast_reload` POSTs `Bearer <GLUDD_AUTH_PSK>` to any registered `address` (`worker_broadcast.py:34`). Auth+allowlist registration, require https, deny link-local/loopback/metadata. **[OPEN — C8]**
 - **M1 MED — no concurrency guard on reloads** (importlib + shared-state races). **[OPEN — C8]**
 - **M2 MED — dict-changed-size during broadcast iteration** — snapshot `list(...)`. **[OPEN — C8]**
 - **M3 MED — lexical-only protected-path check is symlink/`..`-bypassable** — realpath first. **[OPEN — C8]**

@@ -1,7 +1,7 @@
 # Casbin RBAC + Per-User PSK + Per-User Routing + Manager Capabilities — Design
 
 **Date:** 2026-06-25  **Branch:** feature/alpha4-green-the-gate
-**Directive (user, 2026-06-25):** replace the global `GLUDD_PSK` with Casbin roles + per-user PSK;
+**Directive (user, 2026-06-25):** replace the global `GLUDD_AUTH_PSK` with Casbin roles + per-user PSK;
 key per-task routing (which skills/models/prompts work best) to the **user** (borrow other users'
 weights only when the user lacks their own data); add a **manager** role that grants users
 read | read-write access scoped to specific projects / secrets / MCP / skills / models, plus
@@ -73,8 +73,8 @@ agent dispatch. Do not rip out a working primitive in phase 1.
   `psk_hash` (argon2/bcrypt or hmac-sha256 of a high-entropy token — **never store plaintext**),
   `disabled`, `created_at`. Migration (next free rev) — additive, SQLite-safe inline (008 pattern).
 - New `security/principals.py`: `resolve_user(token) -> user_id | None` (constant-time over the PSK
-  store; cache by token-hash). Keep the global `GLUDD_PSK` as a **bootstrap-admin** user so the
-  system is never locked out during migration (seed a `usr-bootstrap` admin from `GLUDD_PSK` if set).
+  store; cache by token-hash). Keep the global `GLUDD_AUTH_PSK` as a **bootstrap-admin** user so the
+  system is never locked out during migration (seed a `usr-bootstrap` admin from `GLUDD_AUTH_PSK` if set).
 - Middleware (`daemon.py:1568-1623`): after bearer extraction, resolve token→user_id; on success set
   `request.state.user_id`; on unknown token → 401. Posture stays fail-closed; default-deny.
 - Tests: per-user PSK accept/reject, bootstrap-admin path, constant-time, no-PSK-in-logs (the
@@ -136,7 +136,7 @@ agent dispatch. Do not rip out a working primitive in phase 1.
 ## 3. Key decisions
 
 1. **PSK at rest = hashed, never plaintext**; resolution constant-time; tokens redacted from logs +
-   EnvironmentBrief. Bootstrap-admin from `GLUDD_PSK` prevents lockout during migration.
+   EnvironmentBrief. Bootstrap-admin from `GLUDD_AUTH_PSK` prevents lockout during migration.
 2. **Casbin model = RBAC-with-domains, DB-backed policy** (runtime-mutable by managers via CLI).
    Typed `obj` strings unify 5 resource types under one policy table.
 3. **Access vs spend separated** — Casbin says yes/no; budget_manager meters. Composed only at the

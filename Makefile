@@ -89,14 +89,14 @@ UV := uv
 endif
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
-# Export xdist worker-count overrides so command-line NPROC=/GLUDD_XDIST= reach
+# Export xdist worker-count overrides so command-line NPROC=/GLUDD_XDIST_WORKERS= reach
 # the adaptive_test.py subprocess used by the gate.
 export NPROC
-export GLUDD_XDIST
-# Worker count: env GLUDD_XDIST overrides (CI sets it so the suite isn't run on a
+export GLUDD_XDIST_WORKERS
+# Worker count: env GLUDD_XDIST_WORKERS overrides (CI sets it so the suite isn't run on a
 # single worker — a 4-vCPU runner's cpu//4=1 made the gate sit ~38min near the
 # 40min wall). Local default stays cpu//4. Accepts an int or "auto".
-_XDIST_WORKERS := $(shell if [ -n "$(GLUDD_XDIST)" ]; then echo "$(GLUDD_XDIST)"; else n=$$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4); v=$$((n / 4)); if [ "$$v" -lt 1 ]; then v=1; fi; echo "$$v"; fi)
+_XDIST_WORKERS := $(shell if [ -n "$(GLUDD_XDIST_WORKERS)" ]; then echo "$(GLUDD_XDIST_WORKERS)"; else n=$$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4); v=$$((n / 4)); if [ "$$v" -lt 1 ]; then v=1; fi; echo "$$v"; fi)
 ifeq ($(_XDIST_WORKERS),0)
 _XD :=
 else
@@ -3394,7 +3394,7 @@ _push-rate-guard:
 		fi; \
 	fi
 	@# Check cancelled-run count in last 2 hours
-	@CANCELLED=$$(GLUDD_WORKSPACE=$(GLUDD_WORKSPACE) python3 scripts/gha_cancelled_count.py 2>/dev/null || echo 0); \
+	@CANCELLED=$$(GLUDD_WORKSPACE_ROOT=$(GLUDD_WORKSPACE_ROOT) python3 scripts/gha_cancelled_count.py 2>/dev/null || echo 0); \
 	if [ "$$CANCELLED" -ge "$(MAX_CANCELLED_RUNS)" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
 		echo "BLOCKED: $$CANCELLED CI runs cancelled in last 2h (max $(MAX_CANCELLED_RUNS))."; \
 		echo "Run 'make gate-background' locally instead. Use GLUDD_FORCE_PUSH=1 to override."; \
@@ -4827,9 +4827,11 @@ git-commit: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _commit-do
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
 	@echo "Gate fresh and green. Running pre-commit directly on staged files..."
-	@# pre-commit-directly: run pre-commit on staged-only, auto-stage fixes, commit -n.
-	@git diff --cached --name-only | xargs -r pre-commit run --files 2>/dev/null || true
-	@git diff --name-only | xargs -r git add 2>/dev/null || true
+	@STAGED_FILES="$$(git diff --cached --name-only -z)"; \
+	if [ -n "$$STAGED_FILES" ]; then \
+		printf '%s' "$$STAGED_FILES" | xargs -0 $(UV) run pre-commit run --files; \
+		printf '%s' "$$STAGED_FILES" | xargs -0 git add; \
+	fi
 	@$(MAKE) --no-print-directory check-gate-fresh
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
@@ -5267,6 +5269,8 @@ development-merge-forward:
 	UNMERGED="$$(git diff --name-only --diff-filter=U)"; \
 	if [ -n "$$UNMERGED" ]; then echo "Structural conflict remains; aborting transaction"; echo "$$UNMERGED"; exit 1; fi; \
 	if ! $(MAKE) --no-print-directory collect-check; then echo "Collection check failed; aborting transaction"; exit 1; fi; \
+	if ! $(MAKE) --no-print-directory _commit-lint-guard; then echo "Lint guard failed; aborting transaction"; exit 1; fi; \
+	if ! $(MAKE) --no-print-directory _gate-fresh-check; then echo "Gate freshness check failed; aborting transaction"; exit 1; fi; \
 	if ! git commit -m "merge-forward: MODE=$$MODE_VALUE SOURCE=$$SOURCE_VALUE SHA=$$SOURCE_SHA into development"; then echo "Merge commit failed; aborting transaction"; exit 1; fi; \
 	MERGE_STARTED=0; trap - EXIT HUP INT TERM; \
 	echo "MERGE_FORWARD_APPLIED source=$$SOURCE_VALUE mode=$$MODE_VALUE sha=$$SOURCE_SHA"
@@ -5305,6 +5309,8 @@ development-merge-forward-batch:
 		exit 0; \
 	fi; \
 	if ! $(MAKE) --no-print-directory collect-check; then echo "Collection check failed; aborting transaction"; exit 1; fi; \
+	if ! $(MAKE) --no-print-directory _commit-lint-guard; then echo "Lint guard failed; aborting transaction"; exit 1; fi; \
+	if ! $(MAKE) --no-print-directory _gate-fresh-check; then echo "Gate freshness check failed; aborting transaction"; exit 1; fi; \
 	if ! git commit -m "merge-forward: batch ancestry-only $$SOURCE_COUNT superseded refs into development" -m "source-shas:$$SOURCE_SHAS"; then echo "Merge commit failed; aborting transaction"; exit 1; fi; \
 	MERGE_STARTED=0; trap - EXIT HUP INT TERM; \
 	echo "MERGE_FORWARD_BATCH_APPLIED sources=$$SOURCE_COUNT mode=ancestry-only shas=$$SOURCE_SHAS"
@@ -6813,7 +6819,7 @@ ci-repro-linux:
 	@# the tee pipe (observability invariant: the pipe must not swallow failures).
 	@rm -f /tmp/gludd-ci-repro-rc; \
 	( $(CONTAINER_RUNTIME) run --rm -v "$$(pwd)":/work -w /work \
-		-e UV_PROJECT_ENVIRONMENT=/opt/venv-linux -e GLUDD_PSK="" \
+		-e UV_PROJECT_ENVIRONMENT=/opt/venv-linux -e GLUDD_AUTH_PSK="" \
 		python:$(PYV)-slim-bookworm bash -c "set -e; \
 			echo '--- installing make/lsof/curl/git + uv ---'; \
 			apt-get update -qq && apt-get install -y -qq make lsof curl procps git >/dev/null; \
@@ -7941,7 +7947,7 @@ test-language:
 # Runs collection schema check + ALL unit tests + integration tests + coverage gate (>=85%).
 test-language-expert:
 	@echo "=== test-language-expert: schema + unit + integration + coverage ==="
-	@GLUDD_XDIST=2 $(UV) run python scripts/adaptive_test.py \
+	@GLUDD_XDIST_WORKERS=2 $(UV) run python scripts/adaptive_test.py \
 		tests/unit/test_language_expert_collection.py \
 		tests/unit/test_language_phase_c.py \
 		tests/unit/test_language_phase_d.py \

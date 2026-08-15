@@ -137,7 +137,7 @@ syslog is connectionless/line-oriented, not request/response.
 ### 1.4 Auth
 
 The daemon already has a global `auth_and_stats_middleware` (in `daemon.py`):
-it requires `Authorization: Bearer <GLUDD_PSK>` (constant-time
+it requires `Authorization: Bearer <GLUDD_AUTH_PSK>` (constant-time
 `hmac.compare_digest`) on every non-public, non-safe request, and **fails
 closed** with `503 {"error":"auth_required"}` when `GLUDD_REQUIRE_AUTH` is set
 but no PSK is configured. Public paths are an explicit allowlist
@@ -164,7 +164,7 @@ on top:
   the admin PSK for any `/admin/...` route. The operator PSK, conversely, also
   works on receiver routes (admin is a superset), so a single-credential
   deployment still functions.
-- If `receiver.ingest_token_envs` resolves empty *and* `GLUDD_PSK` is unset, the
+- If `receiver.ingest_token_envs` resolves empty *and* `GLUDD_AUTH_PSK` is unset, the
   receiver **fails closed**: every ingest POST returns `503 auth_required`.
   (Same posture as the daemon's A-3 rule — no silent open ingest.)
 
@@ -453,7 +453,7 @@ security is the dominant concern, not an afterthought.
    default and docs both state: external exposure is an explicit operator
    decision, paired with a token.
 2. **Token auth, least privilege.** Ingest tokens (`receiver.ingest_token_envs`)
-   are *separate* from the admin `GLUDD_PSK`; an ingest token cannot reach
+   are *separate* from the admin `GLUDD_AUTH_PSK`; an ingest token cannot reach
    `/admin/...`. Tokens are read from **env-var names**, never inlined into YAML
    — this mirrors the hard invariant in `normalize.bundle_credentials` /
    `_iter_env_names` ("only env-var NAMES ever appear; no secret value is read").

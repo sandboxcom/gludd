@@ -1,3 +1,5 @@
+"""Sandboxed subprocess executor with a scrubbed environment allowlist."""
+
 from __future__ import annotations
 
 import os
@@ -5,7 +7,7 @@ import shlex
 import subprocess
 
 # Playbook env allowlist — subprocess children must never inherit daemon
-# secrets (ZAI_API_KEY, AWS_*, DATABASE_URL, GLUDD_PSK, …).  Mirrors
+# secrets (ZAI_API_KEY, AWS_*, DATABASE_URL, GLUDD_AUTH_PSK, …).  Mirrors
 # AnsibleCoreRunner._PLAYBOOK_ENV_ALLOWLIST.
 _SANDBOX_PLAYBOOK_ENV_ALLOWLIST: frozenset[str] = frozenset(
     {
@@ -53,12 +55,16 @@ _SANDBOX_PLAYBOOK_ENV_ALLOWLIST: frozenset[str] = frozenset(
 
 
 class SandboxExecutor:
+    """Run shell commands under bounded time/size limits with a scrubbed env."""
+
     def __init__(self, timeout: int = 30, max_output_bytes: int = 1_000_000) -> None:
+        """Initialize the executor with its timeout and output caps."""
         self.timeout = timeout
         self.max_output_bytes = max_output_bytes
         self.max_command_chars = 1_000_000
 
     def execute(self, command: str, workdir: str | None = None) -> subprocess.CompletedProcess[str]:
+        """Run one command with the allowlisted environment and capture its output."""
         if len(command) > self.max_command_chars:
             raise OSError(f"command length {len(command)} exceeds sandbox limit {self.max_command_chars}")
         scrubbed_env = {k: v for k, v in os.environ.items() if k in _SANDBOX_PLAYBOOK_ENV_ALLOWLIST}

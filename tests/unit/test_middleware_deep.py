@@ -21,7 +21,7 @@ _PSK = "deep-mw-psk-xyz"
 
 
 def _make_app(**kwargs):
-    with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+    with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
         from general_ludd.daemon import create_daemon_app
 
         return create_daemon_app(tick_interval=0.01, **kwargs)
@@ -200,7 +200,7 @@ class TestAuthMiddleware:
     @pytest.mark.asyncio
     async def test_degraded_blocks_mutating_dispatch(self):
         """When _degraded is set, /api/dispatch returns 503."""
-        with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
             from general_ludd.daemon import create_daemon_app
 
             app = create_daemon_app(tick_interval=0.01)

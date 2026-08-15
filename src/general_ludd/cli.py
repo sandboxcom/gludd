@@ -1935,7 +1935,7 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
 
     bind_host = args.host
 
-    psk = os.environ.get("GLUDD_PSK", "")
+    psk = os.environ.get("GLUDD_AUTH_PSK", "").strip()
     if bind_host not in ("127.0.0.1", "localhost", "::1"):
         if not psk:
             psk = secrets.token_urlsafe(32)
@@ -4270,7 +4270,7 @@ def _build_daemon_env(
     normalized_level = _validate_daemon_log_level(log_level)
     if normalized_level != "info":
         env["GLUDD_LOG_LEVEL"] = normalized_level
-    env["GLUDD_PSK"] = psk
+    env["GLUDD_AUTH_PSK"] = psk
     return env
 
 

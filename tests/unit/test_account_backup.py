@@ -274,7 +274,7 @@ class _Args:
 def app_with_account_router(session_factory, monkeypatch):
     """Spin up a FastAPI app with the account router wired in."""
     monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
-    monkeypatch.setenv("GLUDD_PSK", _TEST_PSK)
+    monkeypatch.setenv("GLUDD_AUTH_PSK", _TEST_PSK)
     from general_ludd.daemon import create_daemon_app
 
     app = create_daemon_app(tick_interval=1.0)

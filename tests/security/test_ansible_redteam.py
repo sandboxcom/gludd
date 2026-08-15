@@ -157,7 +157,7 @@ class TestRenderEndpointRequiresPsk:
 
     def test_render_path_not_in_public_allowlist(self):
         env = dict(os.environ)
-        env["GLUDD_PSK"] = "redteam-render-psk"
+        env["GLUDD_AUTH_PSK"] = "redteam-render-psk"
         with patch.dict(os.environ, env, clear=True):
             from general_ludd.daemon import create_daemon_app
 
@@ -175,7 +175,7 @@ class TestRenderEndpointRequiresPsk:
 
     def test_render_path_authorized_with_psk(self):
         env = dict(os.environ)
-        env["GLUDD_PSK"] = "redteam-render-psk"
+        env["GLUDD_AUTH_PSK"] = "redteam-render-psk"
         with patch.dict(os.environ, env, clear=True):
             from general_ludd.daemon import create_daemon_app
 

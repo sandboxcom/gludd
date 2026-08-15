@@ -1,7 +1,7 @@
 """CLI subcommand: ``gludd remediation``.
 
 Operator-facing commands for the remediation system. Mirrors the daemon's
-``/admin/remediation/*`` endpoints. All calls send the ``GLUDD_PSK`` env
+``/admin/remediation/*`` endpoints. All calls send the ``GLUDD_AUTH_PSK`` env
 var as a Bearer token (admin PSK required on /admin paths).
 """
 
@@ -17,7 +17,7 @@ import httpx
 
 
 def _psk_headers() -> dict[str, str]:
-    psk = os.environ.get("GLUDD_PSK", "")
+    psk = os.environ.get("GLUDD_AUTH_PSK", "").strip()
     headers: dict[str, str] = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -150,10 +150,7 @@ def _cmd_config_show(args: argparse.Namespace) -> None:
         return
     print("Remediation config (current thresholds):")
     print(f"  human_input_block_hours        = {res.get('human_input_block_hours')}")
-    print(
-        f"  permission_escalation_block_hours = "
-        f"{res.get('permission_escalation_block_hours')}"
-    )
+    print(f"  permission_escalation_block_hours = {res.get('permission_escalation_block_hours')}")
     print(f"  max_requeues_before_chronic    = {res.get('max_requeues_before_chronic')}")
     print(f"  chronic_lookback_days          = {res.get('chronic_lookback_days')}")
     print(f"  min_chronic_incidents          = {res.get('min_chronic_incidents')}")
@@ -183,11 +180,7 @@ def _cmd_config_edit(args: argparse.Namespace) -> None:
             "retry_delay_hours: 4\n"
         )
         print(f"Created default config at {cfg_path}")
-    editor = (
-        os.environ.get("EDITOR")
-        or os.environ.get("VISUAL")
-        or "vi"
-    )
+    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vi"
     import subprocess
 
     try:
@@ -211,6 +204,7 @@ def _cmd_config_edit(args: argparse.Namespace) -> None:
 
 
 def add_remediation_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register the ``remediation`` subcommand tree for blocker detection and repair."""
     p = sub.add_parser(
         "remediation",
         help="Detect blocked agents/tasks and apply remediation.",
@@ -218,9 +212,7 @@ def add_remediation_subparser(sub: argparse._SubParsersAction[argparse.ArgumentP
     p.set_defaults(func=None)
     rsub = p.add_subparsers(dest="remediation_command")
 
-    scan = rsub.add_parser(
-        "scan", help="Run the blocker detector once and print findings."
-    )
+    scan = rsub.add_parser("scan", help="Run the blocker detector once and print findings.")
     scan.add_argument("--project", default=None, help="Project ID filter")
     scan.add_argument("--daemon-url", default="http://localhost:8000")
     scan.add_argument("--json", action="store_true")

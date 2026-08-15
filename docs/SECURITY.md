@@ -43,8 +43,8 @@ The daemon authenticates every non-public request with a bearer pre-shared key.
 
 ### Setting the PSK
 
-Set the `GLUDD_PSK` environment variable to a strong secret. The daemon reads it
-at startup (`src/general_ludd/daemon.py`, `_psk = os.environ.get("GLUDD_PSK")`)
+Set the `GLUDD_AUTH_PSK` environment variable to a strong secret. The daemon reads it
+at startup (`src/general_ludd/daemon.py`, `_psk = os.environ.get("GLUDD_AUTH_PSK")`)
 and the worker reads the same variable through the shared posture loader (see
 `src/general_ludd/security/auth.py`, `load_auth_posture`), so the two surfaces
 cannot drift.
@@ -53,7 +53,7 @@ Clients authenticate by sending the key as a bearer token on every protected
 request:
 
 ```
-Authorization: Bearer <GLUDD_PSK>
+Authorization: Bearer <GLUDD_AUTH_PSK>
 ```
 
 The comparison is constant-time via `hmac.compare_digest` to avoid timing
@@ -92,7 +92,7 @@ leaked PSK cannot push telemetry (see `_RECEIVER_PREFIXES` in `daemon.py` and
 
 ### Fail-closed posture
 
-When `GLUDD_PSK` is **unset**:
+When `GLUDD_AUTH_PSK` is **unset**:
 
 - If `GLUDD_REQUIRE_AUTH` is truthy (`1`/`true`/`yes`/`on`, see `require_auth_env`
   in `security/auth.py`), the daemon **fails closed**: every non-public path
@@ -103,7 +103,7 @@ When `GLUDD_PSK` is **unset**:
   caller that can reach the port, with a LOUD warning. Do not use outside local
   development.
 
-Recommended posture: always set `GLUDD_PSK`, and set `GLUDD_REQUIRE_AUTH=1` so a
+Recommended posture: always set `GLUDD_AUTH_PSK`, and set `GLUDD_REQUIRE_AUTH=1` so a
 missing key fails closed rather than silently serving unauthenticated.
 
 ---
@@ -156,10 +156,10 @@ gludd daemon --host 127.0.0.1 --port 8000
 
 When the daemon binds to a **non-loopback** interface (anything other than
 `127.0.0.1`, `localhost`, or `::1`), the CLI auto-generates a 256-bit PSK with
-`secrets.token_urlsafe(32)`, injects it as `GLUDD_PSK` for the spawned process,
+`secrets.token_urlsafe(32)`, injects it as `GLUDD_AUTH_PSK` for the spawned process,
 and prints it so clients can authenticate (see `_cmd_daemon` in `cli.py`). This
 ensures an externally-bound daemon is never unauthenticated by accident. You may
-still set `GLUDD_PSK` explicitly to use a key of your own choosing.
+still set `GLUDD_AUTH_PSK` explicitly to use a key of your own choosing.
 
 ### Cloud inference ingress (`allowed_cidr`)
 
@@ -196,7 +196,7 @@ Resolution goes through a fail-closed allowlist (see `EnvSecretsManager` in
 variable if its name matches a recognized credential naming convention
 (`*_API_KEY`, `*_API_BASE`, `*_BASE_URL`, `*_API_URL`, `*_AUTH_TOKEN`,
 `GLUDD_SECRET_*`) or was explicitly registered. Arbitrary names such as
-`GLUDD_PSK`, `PATH`, or `HOME` resolve to `None`, so a maliciously-crafted
+`GLUDD_AUTH_PSK`, `PATH`, or `HOME` resolve to `None`, so a maliciously-crafted
 `credential_alias` cannot exfiltrate non-credential process state.
 
 ### Introspection endpoints exclude secrets
@@ -222,7 +222,7 @@ Child processes never inherit the full host environment:
 - **Ansible playbooks**: before a playbook subprocess runs, the environment is
   reduced to a non-secret allowlist (`PATH`, `HOME`, `USER`, locale/`TMPDIR`,
   selected `ANSIBLE_*` and Python-runtime vars, SSH connection metadata only).
-  Secret-bearing vars — `ZAI_API_KEY`, `GLUDD_PSK`, `AWS_*`, `OPENAI_*`,
+  Secret-bearing vars — `ZAI_API_KEY`, `GLUDD_AUTH_PSK`, `AWS_*`, `OPENAI_*`,
   `DATABASE_URL`, etc. — are stripped; `GLUDD_PLAYBOOK_TIMEOUT` passes through so
   operators can tune timeouts without leaking credentials (see
   `_PLAYBOOK_ENV_ALLOWLIST` and the `scrubbed_env` construction that swaps
@@ -231,7 +231,7 @@ Child processes never inherit the full host environment:
 - **MCP servers**: each MCP subprocess receives only a minimal base environment
   (`PATH`, `HOME`, `LANG`, `LC_ALL`, `TMPDIR`) plus the server's own declared /
   resolved secrets — the full host environment (with `ANTHROPIC_API_KEY`,
-  `GLUDD_PSK`, cloud creds) is never inherited (see `_ENV_ALLOWLIST` /
+  `GLUDD_AUTH_PSK`, cloud creds) is never inherited (see `_ENV_ALLOWLIST` /
   `_build_env` in `src/general_ludd/mcp/transport.py`).
 
 ### Signing-key file permissions
@@ -245,14 +245,14 @@ to disk (see `src/general_ludd/secrets/cosign.py`).
 
 ## Operational hardening checklist
 
-- [ ] Set `GLUDD_PSK` to a strong, unique secret for every deployment.
+- [ ] Set `GLUDD_AUTH_PSK` to a strong, unique secret for every deployment.
 - [ ] Set `GLUDD_REQUIRE_AUTH=1` so a missing PSK fails closed (503) instead of
       serving unauthenticated.
 - [ ] Never set `GLUDD_ALLOW_NO_AUTH=1` outside local development.
 - [ ] Bind the daemon to `127.0.0.1` (`gludd daemon --host 127.0.0.1`) unless you
       are intentionally exposing it; if you must bind externally, confirm a PSK is
       configured (one is auto-generated for non-loopback binds, but prefer an
-      explicit `GLUDD_PSK`).
+      explicit `GLUDD_AUTH_PSK`).
 - [ ] Set `GL_INTEGRITY_KEY` to a stable secret before starting the daemon so
       integrity/self-update approvals can be signed.
 - [ ] Keep cloud-inference `allowed_cidr` at its loopback default and widen it
@@ -260,7 +260,7 @@ to disk (see `src/general_ludd/secrets/cosign.py`).
 - [ ] Supply all model/provider credentials via aliased environment variables
       (`*_API_KEY`, etc.); never embed raw keys in config or profiles.
 - [ ] Keep the receiver ingest token (`GLUDD_INGEST_TOKEN`) distinct from the
-      admin `GLUDD_PSK`.
+      admin `GLUDD_AUTH_PSK`.
 - [ ] If using OpenBao/Vault, leave TLS verification enabled
       (`external_tls_verify`, default `True`).
 - [ ] Never commit API keys, tokens, or credentials; the `detect-secrets`

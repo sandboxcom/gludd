@@ -210,7 +210,7 @@ class TestConfigCompilerFromFile:
         config = {"security": {"schema_version": 1, "posture": "standard"}}
         result = compile_config(config)
         assert result.posture == "standard"
-        assert "GLUDD_PSK" not in json.dumps(result.metadata())
+        assert "GLUDD_AUTH_PSK" not in json.dumps(result.metadata())
 
     def test_compile_truncates_long_names(self) -> None:
         config = {"security": {"schema_version": 1, "posture": "standard", "profile": "unt" + "r" * 500}}

@@ -8,7 +8,7 @@ findings plus each finding's remediation ``config_patch``.
 * ``gludd deploy-check run --config deployment.yaml``
 * ``gludd deploy-check run --config d.json --gpu-type h100 --gpu-count 8``
 
-Requests carry ``GLUDD_PSK`` as a Bearer token so the daemon's PSK middleware
+Requests carry ``GLUDD_AUTH_PSK`` as a Bearer token so the daemon's PSK middleware
 authenticates them.
 """
 
@@ -24,7 +24,7 @@ import httpx
 
 
 def _psk_headers() -> dict[str, str]:
-    psk = os.environ.get("GLUDD_PSK", "")
+    psk = os.environ.get("GLUDD_AUTH_PSK", "").strip()
     headers: dict[str, str] = {"Content-Type": "application/json", "Accept": "application/json"}
     if psk:
         headers["Authorization"] = "Bearer " + psk
@@ -40,9 +40,7 @@ def _http(
     ok_codes: tuple[int, ...] = (200, 201),
 ) -> Any:
     try:
-        resp = httpx.request(
-            method, url, json=json_body, headers=_psk_headers(), timeout=timeout
-        )
+        resp = httpx.request(method, url, json=json_body, headers=_psk_headers(), timeout=timeout)
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -213,18 +211,13 @@ def _cmd_reject(args: argparse.Namespace) -> None:
 
 
 def add_deploy_check_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    p = sub.add_parser(
-        "deploy-check", help="Statically lint a model serving config for misconfigs"
-    )
+    """Register the ``deploy-check`` subcommand tree for serving-config linting."""
+    p = sub.add_parser("deploy-check", help="Statically lint a model serving config for misconfigs")
     p.set_defaults(func=None)
     dsub = p.add_subparsers(dest="deploy_check_command")
 
-    run = dsub.add_parser(
-        "run", help="Lint a deployment config file via the daemon detector"
-    )
-    run.add_argument(
-        "--config", required=True, help="Path to a deployment config (.yaml/.yml/.json)"
-    )
+    run = dsub.add_parser("run", help="Lint a deployment config file via the daemon detector")
+    run.add_argument("--config", required=True, help="Path to a deployment config (.yaml/.yml/.json)")
     run.add_argument("--gpu-type", default=None, help="GPU type (e.g. h100, a100_80, l40s)")
     run.add_argument("--gpu-count", type=int, default=1, help="Number of GPUs (default 1)")
     run.add_argument("--daemon-url", default="http://localhost:8000")
@@ -235,26 +228,16 @@ def add_deploy_check_subparser(sub: argparse._SubParsersAction[argparse.Argument
         "suggest-fix",
         help="Propose a config-patch fix for a deployment's misconfigs (SLM + deterministic)",
     )
-    suggest.add_argument(
-        "--config", required=True, help="Path to a deployment config (.yaml/.yml/.json)"
-    )
-    suggest.add_argument(
-        "--gpu-type", default=None, help="GPU type (e.g. h100, a100_80, l40s)"
-    )
-    suggest.add_argument(
-        "--gpu-count", type=int, default=1, help="Number of GPUs (default 1)"
-    )
+    suggest.add_argument("--config", required=True, help="Path to a deployment config (.yaml/.yml/.json)")
+    suggest.add_argument("--gpu-type", default=None, help="GPU type (e.g. h100, a100_80, l40s)")
+    suggest.add_argument("--gpu-count", type=int, default=1, help="Number of GPUs (default 1)")
     suggest.add_argument("--daemon-url", default="http://localhost:8000")
     suggest.add_argument("--json", action="store_true")
     suggest.set_defaults(func=_cmd_suggest_fix)
 
-    approve = dsub.add_parser(
-        "approve", help="Approve a parked fix proposal and print its merged config"
-    )
+    approve = dsub.add_parser("approve", help="Approve a parked fix proposal and print its merged config")
     approve.add_argument("fix_id", help="The fix_id returned by suggest-fix")
-    approve.add_argument(
-        "--retry", action="store_true", help="Re-run the deploy with the merged config"
-    )
+    approve.add_argument("--retry", action="store_true", help="Re-run the deploy with the merged config")
     approve.add_argument("--daemon-url", default="http://localhost:8000")
     approve.add_argument("--json", action="store_true")
     approve.set_defaults(func=_cmd_approve)

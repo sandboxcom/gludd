@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 class TestPSKAuth:
     def test_psk_env_var_activates_auth(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": "test-key-123"}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": "test-key-123"}):
             from general_ludd.daemon import create_daemon_app
 
             app = create_daemon_app()
@@ -15,14 +15,14 @@ class TestPSKAuth:
 
     def test_no_psk_env_var_disables_auth(self):
         with patch.dict(os.environ, {}, clear=True):
-            os.environ.pop("GLUDD_PSK", None)
+            os.environ.pop("GLUDD_AUTH_PSK", None)
             from general_ludd.daemon import create_daemon_app
 
             app = create_daemon_app()
             assert app.state._psk == ""
 
     def test_healthz_is_public(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": "secret"}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": "secret"}):
             from fastapi.testclient import TestClient
 
             from general_ludd.daemon import create_daemon_app

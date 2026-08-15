@@ -524,11 +524,11 @@ class TestGateWorkerCount:
             mod.compute_worker_count(cpu_count=4, available_ram_gb=8.0, per_worker_gb=0)
 
     def test_gludd_xdist_env_override_bypasses_formula(self, monkeypatch) -> None:
-        """When GLUDD_XDIST is set, main() must print it verbatim and skip formula."""
+        """When GLUDD_XDIST_WORKERS is set, main() must print it verbatim and skip formula."""
         import contextlib
         import io
         mod = self._import_module()
-        monkeypatch.setenv("GLUDD_XDIST", "7")
+        monkeypatch.setenv("GLUDD_XDIST_WORKERS", "7")
         monkeypatch.delenv("GLUDD_PER_WORKER_GB", raising=False)
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -540,7 +540,7 @@ class TestGateWorkerCount:
         import contextlib
         import io
         mod = self._import_module()
-        monkeypatch.delenv("GLUDD_XDIST", raising=False)
+        monkeypatch.delenv("GLUDD_XDIST_WORKERS", raising=False)
         monkeypatch.delenv("GLUDD_PER_WORKER_GB", raising=False)
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):

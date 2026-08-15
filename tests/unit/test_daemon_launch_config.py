@@ -22,7 +22,7 @@ class TestCmdDaemonSignalForwarding:
         mock_proc.wait.return_value = 0
         mock_proc.returncode = 0
         with patch("subprocess.Popen", return_value=mock_proc), \
-             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_PSK": ""}), \
+             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_AUTH_PSK": ""}), \
              patch.dict(os.environ, {}, clear=False):
             args = argparse.Namespace(
                 host="127.0.0.1", port=9999, workers=1,
@@ -53,7 +53,7 @@ class TestCmdDaemonSignalForwarding:
             return mock_proc
 
         with patch("subprocess.Popen", side_effect=fake_popen), \
-             patch.dict(os.environ, {"GLUDD_PSK": "configured-token"}, clear=False):
+             patch.dict(os.environ, {"GLUDD_AUTH_PSK": "configured-token"}, clear=False):
             args = argparse.Namespace(
                 host="127.0.0.1", port=9999, workers=1,
                 log_level="info", config_dir=None, templates_dir=None,
@@ -62,7 +62,7 @@ class TestCmdDaemonSignalForwarding:
             with suppress(SystemExit):
                 _cmd_daemon(args)
 
-        assert captured["env"]["GLUDD_PSK"] == "configured-token"
+        assert captured["env"]["GLUDD_AUTH_PSK"] == "configured-token"
 
     def test_sigterm_handler_kills_child_when_terminate_wait_times_out(self):
         import argparse
@@ -90,7 +90,7 @@ class TestCmdDaemonSignalForwarding:
         mock_proc.kill.side_effect = killed.set
         with patch("subprocess.Popen", return_value=mock_proc), \
              patch("signal.signal", side_effect=capture_signal), \
-             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_PSK": ""}), \
+             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_AUTH_PSK": ""}), \
              patch("general_ludd.cli._DAEMON_SHUTDOWN_TIMEOUT_SECONDS", 0.01), \
              patch.dict(os.environ, {}, clear=False):
             args = argparse.Namespace(
@@ -128,7 +128,7 @@ class TestCmdDaemonSignalForwarding:
         mock_proc.wait.side_effect = wait_once
         with patch("subprocess.Popen", return_value=mock_proc), \
              patch("signal.signal", side_effect=capture_signal), \
-             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_PSK": ""}), \
+             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_AUTH_PSK": ""}), \
              patch.dict(os.environ, {}, clear=False):
             args = argparse.Namespace(
                 host="127.0.0.1", port=9999, workers=1,
@@ -175,7 +175,7 @@ class TestCmdDaemonSignalForwarding:
         mock_proc.wait.side_effect = wait_once
         with patch("subprocess.Popen", return_value=mock_proc), \
              patch("signal.signal", side_effect=capture_signal), \
-             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_PSK": ""}), \
+             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_AUTH_PSK": ""}), \
              patch.dict(os.environ, {}, clear=False):
             args = argparse.Namespace(
                 host="127.0.0.1", port=9999, workers=1,
@@ -201,7 +201,7 @@ class TestCmdDaemonSignalForwarding:
         mock_proc.wait.side_effect = KeyboardInterrupt()
         mock_proc.returncode = 0
         with patch("subprocess.Popen", return_value=mock_proc), \
-             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_PSK": ""}), \
+             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_AUTH_PSK": ""}), \
              patch.dict(os.environ, {}, clear=False):
             args = argparse.Namespace(
                 host="127.0.0.1", port=9999, workers=1,
@@ -228,25 +228,25 @@ class TestBuildDaemonEnv:
         assert env["GLUDD_PLAYBOOKS_DIR"] == "/tmp/my-playbooks"
         assert env["GLUDD_TICK_INTERVAL"] == "2.5"
         assert env["GLUDD_LOG_LEVEL"] == "debug"
-        assert env["GLUDD_PSK"] == "abc123"
+        assert env["GLUDD_AUTH_PSK"] == "abc123"
 
     def test_build_env_empty_when_no_flags(self):
         env = _build_daemon_env()
-        assert env == {"GLUDD_PSK": ""}
+        assert env == {"GLUDD_AUTH_PSK": ""}
 
     def test_build_env_default_values_excluded(self):
         env = _build_daemon_env(tick_interval=1.0, log_level="info")
         assert "GLUDD_TICK_INTERVAL" not in env
         assert "GLUDD_LOG_LEVEL" not in env
-        assert env["GLUDD_PSK"] == ""
+        assert env["GLUDD_AUTH_PSK"] == ""
 
     def test_build_env_includes_psk(self):
         env = _build_daemon_env(psk="abc123")
-        assert env["GLUDD_PSK"] == "abc123"
+        assert env["GLUDD_AUTH_PSK"] == "abc123"
 
     def test_build_env_no_psk_when_empty(self):
         env = _build_daemon_env()
-        assert env["GLUDD_PSK"] == ""
+        assert env["GLUDD_AUTH_PSK"] == ""
 
 
 class TestBuildDaemonStartCmd:

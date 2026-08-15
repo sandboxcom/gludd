@@ -228,7 +228,7 @@ def test_write_back_xlsx_updates_matching_status(
 # -- path-jail confinement (adversarial) --------------------------------- #
 #
 # CsvExcelSource confines config['path'] to the workspace jail (cwd + system
-# temp + an optional config['root'] / $GLUDD_WORKSPACE). A path that resolves
+# temp + an optional config['root'] / $GLUDD_WORKSPACE_ROOT). A path that resolves
 # outside every allowed root is refused at construction with ValueError. Note
 # that tmp_path lives under the system temp dir, which is always allowlisted;
 # escape tests therefore target locations OUTSIDE temp (e.g. an absolute system
@@ -278,9 +278,9 @@ def test_jail_honors_gludd_workspace_env(
 ) -> None:
     workspace = tmp_path / "ws"
     workspace.mkdir()
-    monkeypatch.setenv("GLUDD_WORKSPACE", str(workspace))
+    monkeypatch.setenv("GLUDD_WORKSPACE_ROOT", str(workspace))
     p = workspace / "issues.csv"
     p.write_text(_CSV, encoding="utf-8")
-    # No config['root'] — the root comes from $GLUDD_WORKSPACE.
+    # No config['root'] — the root comes from $GLUDD_WORKSPACE_ROOT.
     src = CsvExcelSource({"path": str(p)})
     assert [r["external_id"] for r in src.fetch({})] == ["T-1", "T-2", "T-3"]

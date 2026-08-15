@@ -287,7 +287,7 @@ class TestSelfImproveApplyEndpoint:
         from general_ludd.db.models import Base
 
         psk = "test-psk-routing"
-        monkeypatch.setenv("GLUDD_PSK", psk)
+        monkeypatch.setenv("GLUDD_AUTH_PSK", psk)
         engine = create_async_engine("sqlite+aiosqlite://", echo=False)
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)

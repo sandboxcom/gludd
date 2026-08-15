@@ -68,7 +68,7 @@ def isolated_env(monkeypatch, tmp_path):
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("GL_CHANGE_STORE_DIR", str(home))
-    monkeypatch.setenv("GLUDD_WORKSPACE", str(tmp_path / "scan"))
+    monkeypatch.setenv("GLUDD_WORKSPACE_ROOT", str(tmp_path / "scan"))
     # Run the scanner without a signing key (tolerant mode) so the test does
     # not depend on GL_INTEGRITY_KEY being provisioned, and clear any key a
     # prior test may have cached so the env delete takes effect.

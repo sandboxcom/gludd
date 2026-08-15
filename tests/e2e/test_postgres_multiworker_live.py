@@ -478,7 +478,7 @@ def test_two_worker_gunicorn_boots_and_serves_health() -> None:
         {
             "DATABASE_URL": POSTGRES_URL,
             "GLUDD_ALLOW_UNCONFIGURED_MODEL": "true",
-            "GLUDD_PSK": "postgres-e2e-psk",
+            "GLUDD_AUTH_PSK": "postgres-e2e-psk",
             "GLUDD_SEARX_AUTOSTART": "false",
             "GLUDD_SERVICE_DISCOVERY_ENABLED": "false",
             "GLUDD_WORKER_ID": "postgres-e2e",

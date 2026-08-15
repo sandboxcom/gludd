@@ -142,7 +142,7 @@ You must know the true starting state. Do not write any feature code yet.
 **Files.** `src/general_ludd/cli.py` (`_build_daemon_start_cmd`, `_cmd_daemon`, the daemon subparser), `src/general_ludd/daemon.py` (`create_daemon_app`, `load_startup_config`).
 
 **Design.**
-1. Pass settings to the gunicorn child via environment variables (`GLUDD_CONFIG_DIR`, `GLUDD_TEMPLATES_DIR`, `GLUDD_PLAYBOOKS_DIR`, `GLUDD_TICK_INTERVAL`, `GLUDD_LOG_LEVEL`) set on the subprocess env — the same mechanism already used for `GLUDD_PSK`. In `create_daemon_app()`, when an argument is `None`, fall back to the corresponding env var.
+1. Pass settings to the gunicorn child via environment variables (`GLUDD_CONFIG_DIR`, `GLUDD_TEMPLATES_DIR`, `GLUDD_PLAYBOOKS_DIR`, `GLUDD_TICK_INTERVAL`, `GLUDD_LOG_LEVEL`) set on the subprocess env — the same mechanism already used for `GLUDD_AUTH_PSK`. In `create_daemon_app()`, when an argument is `None`, fall back to the corresponding env var.
 2. Add a **default config search path**: when nothing is supplied, probe `~/.config/general-ludd` then `/etc/general-ludd` (the locations the shipped YAML header already documents). First hit wins; log which one was chosen, or log clearly that the daemon is running unconfigured.
 3. Add the missing `--templates-dir` / `--playbooks-dir` flags to the daemon subparser (the MAN page already advertises them).
 4. `load_startup_config` must load **all** YAML files in `mcp_servers/` and use the real openbao config dir — not the hardcoded `example.yml` / `default.yml` filenames only.
