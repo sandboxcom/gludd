@@ -47,6 +47,7 @@ artifact_dir: "/tmp/gludd-game-gen"
 
 max_attempts: 1
 fallback_models: []
+fail_on_rejection: true
 retry_prompt: |
   Your previous implementation was rejected because it failed the automated
   verification checks.

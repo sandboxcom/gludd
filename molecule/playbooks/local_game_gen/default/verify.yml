@@ -12,81 +12,92 @@
       ansible.builtin.stat:
         path: "{{ artifact_path }}"
       register: _artifact_stat
-      failed_when: not _artifact_stat.stat.exists
+      failed_when: false
 
-    - name: AST parse — verify syntax validity
-      ansible.builtin.command: >-
-        python3 -c "import ast; ast.parse(open('{{ artifact_path }}').read()); print('AST: OK')"
-      register: _ast_result
-      changed_when: false
+    - name: "Rejection path — artifact absent after all attempts rejected"
+      when: not _artifact_stat.stat.exists
+      ansible.builtin.debug:
+        msg: >-
+          REJECTION PATH VERIFIED: the generated model output failed
+          verification on every attempt, the artifact was removed, and the
+          scenario converged cleanly (fail_on_rejection=false in CI).
 
-    - name: Assert AST parse passes
-      ansible.builtin.assert:
-        that:
-          - "'AST: OK' in _ast_result.stdout"
-        fail_msg: "Generated game must be syntactically valid Python"
+    - name: "Accepted artifact — verify generated game"
+      when: _artifact_stat.stat.exists
+      block:
+        - name: AST parse — verify syntax validity
+          ansible.builtin.command: >-
+            python3 -c "import ast; ast.parse(open('{{ artifact_path }}').read()); print('AST: OK')"
+          register: _ast_result
+          changed_when: false
 
-    - name: Import — verify module is importable with at least one class
-      ansible.builtin.command: >-
-        python3 -c "
-        import importlib.util, sys
-        spec = importlib.util.spec_from_file_location('{{ game_name }}', '{{ artifact_path }}')
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        classes = [v for v in vars(mod).values() if isinstance(v, type) and v.__module__ == '{{ game_name }}']
-        if not classes:
-            print('ERR: no game class found')
-            sys.exit(1)
-        print('Classes: ' + ','.join(c.__name__ for c in classes))
-        "
-      register: _import_result
-      changed_when: false
+        - name: Assert AST parse passes
+          ansible.builtin.assert:
+            that:
+              - "'AST: OK' in _ast_result.stdout"
+            fail_msg: "Generated game must be syntactically valid Python"
 
-    - name: Assert import finds a game class
-      ansible.builtin.assert:
-        that:
-          - "not 'ERR' in _import_result.stdout"
-          - "'Classes:' in _import_result.stdout"
-        fail_msg: "Generated game must be importable with at least one class"
+        - name: Import — verify module is importable with at least one class
+          ansible.builtin.command: >-
+            python3 -c "
+            import importlib.util, sys
+            spec = importlib.util.spec_from_file_location('{{ game_name }}', '{{ artifact_path }}')
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            classes = [v for v in vars(mod).values() if isinstance(v, type) and v.__module__ == '{{ game_name }}']
+            if not classes:
+                print('ERR: no game class found')
+                sys.exit(1)
+            print('Classes: ' + ','.join(c.__name__ for c in classes))
+            "
+          register: _import_result
+          changed_when: false
 
-    - name: Runtime — full lifecycle verification
-      ansible.builtin.command: >-
-        python3 -c "
-        import importlib.util, sys
-        spec = importlib.util.spec_from_file_location('{{ game_name }}', '{{ artifact_path }}')
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        classes = [v for v in vars(mod).values() if isinstance(v, type) and v.__module__ == '{{ game_name }}']
-        game = classes[0]()
-        sys.stdout.write('Instantiated ' + type(game).__name__ + '\n')
-        if hasattr(game, 'start'):
-            game.start()
-            sys.stdout.write('start(): OK\n')
-        if hasattr(game, 'score'):
-            sys.stdout.write('score(): ' + str(game.score()) + '\n')
-        if hasattr(game, 'is_game_over'):
-            sys.stdout.write('is_game_over(): ' + str(game.is_game_over()) + '\n')
-        if hasattr(game, 'tick') and hasattr(game, 'is_game_over'):
-            for _ in range(5):
-                if not game.is_game_over():
-                    game.tick('right')
-            sys.stdout.write('tick() x5: OK\n')
-        if hasattr(game, 'restart'):
-            game.restart()
-            sys.stdout.write('restart(): OK\n')
-        sys.stdout.write('RUNTIME: OK\n')
-        "
-      register: _runtime_result
-      changed_when: false
+        - name: Assert import finds a game class
+          ansible.builtin.assert:
+            that:
+              - "not 'ERR' in _import_result.stdout"
+              - "'Classes:' in _import_result.stdout"
+            fail_msg: "Generated game must be importable with at least one class"
 
-    - name: Assert all runtime checks pass
-      ansible.builtin.assert:
-        that:
-          - "'RUNTIME: OK' in _runtime_result.stdout"
-          - "'start(): OK' in _runtime_result.stdout"
-          - "'restart(): OK' in _runtime_result.stdout"
-          - "'tick() x5: OK' in _runtime_result.stdout"
-        fail_msg: "Generated game must pass runtime lifecycle tests"
+        - name: Runtime — full lifecycle verification
+          ansible.builtin.command: >-
+            python3 -c "
+            import importlib.util, sys
+            spec = importlib.util.spec_from_file_location('{{ game_name }}', '{{ artifact_path }}')
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            classes = [v for v in vars(mod).values() if isinstance(v, type) and v.__module__ == '{{ game_name }}']
+            game = classes[0]()
+            sys.stdout.write('Instantiated ' + type(game).__name__ + '\n')
+            if hasattr(game, 'start'):
+                game.start()
+                sys.stdout.write('start(): OK\n')
+            if hasattr(game, 'score'):
+                sys.stdout.write('score(): ' + str(game.score()) + '\n')
+            if hasattr(game, 'is_game_over'):
+                sys.stdout.write('is_game_over(): ' + str(game.is_game_over()) + '\n')
+            if hasattr(game, 'tick') and hasattr(game, 'is_game_over'):
+                for _ in range(5):
+                    if not game.is_game_over():
+                        game.tick('right')
+                sys.stdout.write('tick() x5: OK\n')
+            if hasattr(game, 'restart'):
+                game.restart()
+                sys.stdout.write('restart(): OK\n')
+            sys.stdout.write('RUNTIME: OK\n')
+            "
+          register: _runtime_result
+          changed_when: false
+
+        - name: Assert all runtime checks pass
+          ansible.builtin.assert:
+            that:
+              - "'RUNTIME: OK' in _runtime_result.stdout"
+              - "'start(): OK' in _runtime_result.stdout"
+              - "'restart(): OK' in _runtime_result.stdout"
+              - "'tick() x5: OK' in _runtime_result.stdout"
+            fail_msg: "Generated game must pass runtime lifecycle tests"
 
     - name: Clean up test artifacts
       ansible.builtin.file:

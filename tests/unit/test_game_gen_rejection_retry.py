@@ -238,6 +238,54 @@ class TestBoundedRetry:
 
 
 # =============================================================================
+#  F. Rejection is fail-closed by default but molecule-observable (CI contract)
+# =============================================================================
+
+
+class TestFailOnRejectionContract:
+    def test_fail_on_rejection_defaults_true(self) -> None:
+        defaults = cast(dict[str, Any], _load_yaml("defaults/main.yml"))
+        assert bool(defaults.get("fail_on_rejection")) is True, (
+            "fail_on_rejection must default to true so production rejections fail closed"
+        )
+
+    def test_hard_fail_gated_by_fail_on_rejection(self) -> None:
+        tasks_text = _combined_text()
+        assert "fail_on_rejection" in tasks_text, "final fail must be gated by fail_on_rejection"
+        assert "fail_on_rejection | default(true) | bool" in tasks_text or (
+            "fail_on_rejection" in tasks_text and "when" in tasks_text
+        ), "final hard-fail must be skippable when fail_on_rejection=false"
+
+    def test_rejected_artifact_removed_on_exhaustion(self) -> None:
+        tasks_text = _combined_text()
+        assert "state: absent" in tasks_text, "rejected artifact must be removed when attempts are exhausted"
+        assert "artifact_dir" in tasks_text, "artifact removal must reference artifact_dir"
+
+    def test_molecule_converge_exercises_retry_without_hard_fail(self) -> None:
+        converge = Path("molecule/playbooks/local_game_gen/default/converge.yml")
+        plays = cast(list[dict[str, Any]], yaml.safe_load(converge.read_text()))
+        role_vars: dict[str, Any] = {}
+        for play in plays:
+            for task in play.get("tasks", []):
+                include = task.get("ansible.builtin.include_role")
+                if isinstance(include, dict) and "local_game_gen" in str(include.get("name", "")):
+                    role_vars = cast(dict[str, Any], include.get("vars", {}))
+        assert int(role_vars.get("max_attempts", 0)) >= 3, (
+            "molecule converge must set max_attempts >= 3 (attempt 1 + a retry requires"
+            " the rescue-incremented counter to satisfy _attempt < max_attempts)"
+        )
+        assert bool(role_vars.get("fail_on_rejection")) is False, (
+            "molecule converge must set fail_on_rejection=false so rejection is observed, not fatal"
+        )
+
+    def test_molecule_verify_tolerates_rejection(self) -> None:
+        verify = Path("molecule/playbooks/local_game_gen/default/verify.yml")
+        text = verify.read_text()
+        assert "_artifact_stat" in text, "verify must stat the artifact to branch on rejection"
+        assert "when:" in text, "verify must gate the accepted-artifact checks on artifact presence"
+
+
+# =============================================================================
 #  Self-pin
 # =============================================================================
 def test_rejection_retry_test_count() -> None:

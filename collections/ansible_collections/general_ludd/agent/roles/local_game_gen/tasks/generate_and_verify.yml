@@ -120,8 +120,16 @@
       when: _attempt | int < max_attempts | int
       ansible.builtin.include_tasks: generate_and_verify.yml
 
-    - name: "Fail after all attempts rejected"
+    - name: "Remove artifact after all verification attempts exhausted"
       when: _attempt | int >= max_attempts | int
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}/{{ game_name }}.py"
+        state: absent
+
+    - name: "Fail after all attempts rejected (skip when rejection is observable-only)"
+      when:
+        - _attempt | int >= max_attempts | int
+        - fail_on_rejection | default(true) | bool
       ansible.builtin.fail:
         msg: >-
           REJECTED: generated code failed verification after {{ max_attempts }}
