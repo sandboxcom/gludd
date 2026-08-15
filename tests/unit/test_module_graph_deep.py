@@ -21,6 +21,34 @@ ROOT = Path(__file__).resolve().parents[2]
 SRC_PKG = ROOT / "src" / "general_ludd"
 PKG_NAME = "general_ludd"
 
+# Dependencies every environment must provide for the in-isolation import
+# check; a ModuleNotFoundError for anything outside this set is an optional
+# third-party package (rapidfuzz, scipy, pycryptodome, srptools, shamir,
+# pywt, pyspx, argon2, ...) and the module is skipped, not failed.
+_REQUIRED_STDLIB_AND_CORE_DEPS = frozenset(
+    {
+        "general_ludd",
+        "ansible",
+        "fastapi",
+        "gunicorn",
+        "httpx",
+        "jinja2",
+        "langchain",
+        "langgraph",
+        "langsmith",
+        "numpy",
+        "pydantic",
+        "sqlalchemy",
+        "starlette",
+        "uvicorn",
+        "yaml",
+        "tenacity",
+        "watchdog",
+        "llama_cpp",
+        "huggingface_hub",
+    }
+)
+
 
 # ═══════════════════════════════════════════════════════════════════
 # Helpers
@@ -313,6 +341,7 @@ OTHER_PACKAGES: frozenset[str] = frozenset(
         "general_ludd.budget_guard_check",
         "general_ludd.hardware_memory_policy",
         "general_ludd.peak_pricing",
+        "general_ludd.game_gen",
     }
 )
 
@@ -491,7 +520,15 @@ def test_each_module_importable_in_isolation(mod_name: str) -> None:
         import importlib
 
         importlib.invalidate_caches()
-        mod = importlib.import_module(mod_name)
+        try:
+            mod = importlib.import_module(mod_name)
+        except ModuleNotFoundError as exc:
+            missing = exc.name or ""
+            if missing and missing.split(".")[0] not in _REQUIRED_STDLIB_AND_CORE_DEPS:
+                pytest.skip(
+                    f"{mod_name} requires optional dependency {missing!r} that is not installed in this environment"
+                )
+            raise
         assert mod is not None
     finally:
         for k, v in saved.items():
