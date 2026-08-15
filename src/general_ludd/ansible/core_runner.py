@@ -469,6 +469,13 @@ class CoreAnsibleRunner:
             )
             proc.start()
         except Exception as exc:
+            # Release the queue's feeder thread + file descriptors even on a
+            # failed child start; a leaked Queue keeps its thread alive.
+            try:
+                queue.close()
+                queue.join_thread()
+            except Exception:
+                pass
             return AnsibleResult(
                 status="failed",
                 rc=1,

@@ -100,7 +100,17 @@ jobs:
           test "$actual" = "$GITHUB_SHA"
           echo "CI_HEAD_SHA=$actual"
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # pinned Node 26 runtime for plugin checks
+        with:
+          node-version: "26"
+      - name: Install pinned esbuild
+        run: |
+          echo "=== CI PHASE: esbuild ==="
+          npm install --no-save --no-package-lock esbuild@0.28.1
+        env:
+          GLUDD_AUTH_PSK: ""
       - name: Inject version
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
           sed -i "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" pyproject.toml
@@ -451,15 +461,38 @@ jobs:
         with:
           ref: ${{ github.sha }}
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
-      # Node >= 22.6 for `node --experimental-strip-types` (tests/unit/_hook_fixtures.py's
+      # Node 26 for `node --experimental-strip-types` (tests/unit/_hook_fixtures.py's
       # hook_plugin_env fixture, which runs scripts/hook_plugin_harness.mjs against
       # .opencode/plugin/*.ts — see tests/unit/test_hook_runtime_verification.py,
       # test_hooks_actually_fire.py). Without this, ubuntu-latest's default node may be
       # too old and the fixture would skip those assertions instead of running them.
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0 (node20)
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # pinned Node 26 runtime for plugin checks
         with:
-          node-version: "22"
+          node-version: "26"
+      - name: Install pinned esbuild
+        run: |
+          echo "=== CI PHASE: esbuild ==="
+          npm install --no-save --no-package-lock esbuild@0.28.1
+        env:
+          GLUDD_AUTH_PSK: ""
+      - name: Install pinned OpenCode CLI (other shard only)
+        if: matrix.shard == 'other'
+        run: |
+          echo "=== CI PHASE: opencode ==="
+          npm install --global opencode-ai@1.18.9
+        env:
+          GLUDD_AUTH_PSK: ""
+      - name: Download pinned OPA CLI (other shard only)
+        if: matrix.shard == 'other'
+        run: |
+          echo "=== CI PHASE: opa ==="
+          curl -fL -o /usr/local/bin/opa "https://openpolicyagent.org/downloads/v${OPA_VERSION}/opa_linux_amd64_static"
+          chmod +x /usr/local/bin/opa
+        env:
+          OPA_VERSION: "1.18.2"
+          GLUDD_AUTH_PSK: ""
       - name: Inject version
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
           sed -i "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" pyproject.toml

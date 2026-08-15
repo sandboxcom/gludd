@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import datetime
 import logging
 from unittest.mock import MagicMock, patch
 
@@ -66,9 +67,7 @@ class TestModelGatewayCallModelWithStub:
         reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
 
         fake_secret_client = MagicMock()
-        fake_secret_client.secrets.kv.v2.read_secret_version.return_value = {
-            "data": {"data": {"value": "sk-test-key"}}
-        }
+        fake_secret_client.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {"value": "sk-test-key"}}}
         secrets = SecretsManager(
             client=fake_secret_client,
             aliases={"openai_key": SecretAlias("openai_key", "keys/openai", "secret")},
@@ -222,9 +221,7 @@ class TestCallerBaseUrlSSRFGuard:
         # Call succeeds normally — the caller's base_url never reaches the provider.
         assert isinstance(resp, ModelResponse)
         assert resp.content == "ok"
-        assert "base_url" not in captured, (
-            f"caller base_url leaked to provider: {captured.get('base_url')}"
-        )
+        assert "base_url" not in captured, f"caller base_url leaked to provider: {captured.get('base_url')}"
 
     def test_caller_base_url_safe_https_is_ignored(self):
         """A caller base_url is now DENIED outright (C6 hardening) — it must
@@ -243,9 +240,7 @@ class TestCallerBaseUrlSSRFGuard:
             )
         assert isinstance(resp, ModelResponse)
         # Caller base_url must NOT reach the provider constructor — it is now denied.
-        assert "base_url" not in captured, (
-            f"caller base_url leaked to provider: {captured.get('base_url')}"
-        )
+        assert "base_url" not in captured, f"caller base_url leaked to provider: {captured.get('base_url')}"
 
     def test_caller_api_key_is_ignored_alias_credential_wins(self):
         """A caller-injected api_key must never override the validated secrets
@@ -430,8 +425,7 @@ class TestToolCallsReachToolLoopProductionPath:
             content="",
             usage_metadata={"input_tokens": 5, "output_tokens": 2},
             tool_calls=[
-                {"name": "read_file", "args": {"path": "/x"}, "id": "c1",
-                 "type": "tool_call"},
+                {"name": "read_file", "args": {"path": "/x"}, "id": "c1", "type": "tool_call"},
             ],
         )
         turn2 = _AIMessageLike(
@@ -487,19 +481,21 @@ class TestToolCallsReachToolLoopProductionPath:
         )
 
         job = JobSpec(
-            job_id="j1", playbook="p", queue="q", model_profile="default",
+            job_id="j1",
+            playbook="p",
+            queue="q",
+            model_profile="default",
         )
 
         with (
             patch.object(reg, "is_installed", return_value=True),
             patch.object(
-                reg, "get_provider_class",
+                reg,
+                "get_provider_class",
                 return_value=lambda **kw: _ScriptedChatModel(),
             ),
         ):
-            result = asyncio.run(
-                loop.run_with_tools(job, "system", "please read /x")
-            )
+            result = asyncio.run(loop.run_with_tools(job, "system", "please read /x"))
 
         # The tool WAS dispatched (the dead-loop bug = this list stays empty).
         assert dispatched == [("fs", "read_file", {"path": "/x"})]
@@ -512,9 +508,7 @@ class TestModelGatewayRecordsUsage:
         reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
 
         fake_secret_client = MagicMock()
-        fake_secret_client.secrets.kv.v2.read_secret_version.return_value = {
-            "data": {"data": {"value": "sk-test-key"}}
-        }
+        fake_secret_client.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {"value": "sk-test-key"}}}
         secrets = SecretsManager(
             client=fake_secret_client,
             aliases={"openai_key": SecretAlias("openai_key", "keys/openai", "secret")},
@@ -542,6 +536,9 @@ class TestModelGatewayRecordsUsage:
             profiles=[profile],
             provider_registry=reg,
             secrets_manager=secrets,
+            # Peak-time billing clock (multiplier 1.0) keeps the usage-cost
+            # pin deterministic against peak/off-peak pricing variance.
+            billing_clock=lambda: datetime.datetime(2026, 8, 3, 12, 0, 0, tzinfo=datetime.UTC),
         )
 
         FakeChatModel, fake_instance = _make_fake_chat_model()
@@ -737,12 +734,10 @@ class TestFallbackRecordSuccessOnce:
         # record_success must be called exactly once (from _invoke_and_bill),
         # NOT twice (the old bug added a second call in _call_fallback itself).
         success_calls = [
-            c for c in mock_tracker.record_success.call_args_list
-            if c.args and c.args[0] == "fallback_model"
+            c for c in mock_tracker.record_success.call_args_list if c.args and c.args[0] == "fallback_model"
         ]
         assert len(success_calls) == 1, (
-            f"record_success('fallback_model') called {len(success_calls)} times, "
-            "expected exactly 1"
+            f"record_success('fallback_model') called {len(success_calls)} times, expected exactly 1"
         )
 
 
@@ -770,21 +765,29 @@ class TestModelRouter:
 
 class TestLocalModelProfileIgnoredUnlessEnabled:
     def test_local_model_disabled(self):
-        gw = ModelGateway([ModelProfile(
-            model_profile_id="local_llm",
-            enabled=False,
-            api_metered=False,
-            resource_profile="local_heavy",
-        )])
+        gw = ModelGateway(
+            [
+                ModelProfile(
+                    model_profile_id="local_llm",
+                    enabled=False,
+                    api_metered=False,
+                    resource_profile="local_heavy",
+                )
+            ]
+        )
         assert gw.is_available("local_llm") is False
 
     def test_local_model_enabled(self):
-        gw = ModelGateway([ModelProfile(
-            model_profile_id="local_llm",
-            enabled=True,
-            api_metered=False,
-            resource_profile="local_heavy",
-        )])
+        gw = ModelGateway(
+            [
+                ModelProfile(
+                    model_profile_id="local_llm",
+                    enabled=True,
+                    api_metered=False,
+                    resource_profile="local_heavy",
+                )
+            ]
+        )
         assert gw.is_available("local_llm") is True
 
 
@@ -794,9 +797,7 @@ class TestExampleConfigsAreValidYaml:
 
         import yaml
 
-        config_dir = os.path.join(
-            os.path.dirname(__file__), "..", "..", "config", "model_profiles"
-        )
+        config_dir = os.path.join(os.path.dirname(__file__), "..", "..", "config", "model_profiles")
         config_dir = os.path.normpath(config_dir)
         if not os.path.isdir(config_dir):
             pytest.skip("config/model_profiles directory not found")
@@ -861,7 +862,7 @@ class TestCheckBudgetServerSideReEstimation:
             gw.call_model(
                 "budget_probe",
                 large_messages,
-                estimated_cost=0.0,   # caller under-reports: should not matter
+                estimated_cost=0.0,  # caller under-reports: should not matter
                 budget_remaining=float("inf"),
             )
 
@@ -910,12 +911,15 @@ class TestRequestedMaxOutputTokensBudgetEstimate:
         gw, _reg = self._make_gateway(run_budget_usd=0.1)
         msg = [{"role": "user", "content": "hi"}]
         # 8000 * 0.00006 = 0.48 USD output leg > 0.001 remaining → rejected.
-        assert gw.check_budget(
-            "lowbudget",
-            estimated_cost=0.0,
-            budget_remaining=0.001,
-            messages=msg,
-        ) is False
+        assert (
+            gw.check_budget(
+                "lowbudget",
+                estimated_cost=0.0,
+                budget_remaining=0.001,
+                messages=msg,
+            )
+            is False
+        )
 
     def test_check_budget_allows_with_small_requested_cap(self):
         """A small requested_max_output_tokens → realistic small estimate →
@@ -924,13 +928,16 @@ class TestRequestedMaxOutputTokensBudgetEstimate:
         gw, _reg = self._make_gateway(run_budget_usd=0.1)
         msg = [{"role": "user", "content": "hi"}]
         # 50 * 0.00006 = 0.003 USD output leg < 0.1 budget → allowed.
-        assert gw.check_budget(
-            "lowbudget",
-            estimated_cost=0.0,
-            budget_remaining=float("inf"),
-            messages=msg,
-            requested_max_output_tokens=50,
-        ) is True
+        assert (
+            gw.check_budget(
+                "lowbudget",
+                estimated_cost=0.0,
+                budget_remaining=float("inf"),
+                messages=msg,
+                requested_max_output_tokens=50,
+            )
+            is True
+        )
 
     def test_requested_cap_cannot_exceed_profile_max(self):
         """Security: requesting MORE than the profile cap cannot inflate the
@@ -941,13 +948,16 @@ class TestRequestedMaxOutputTokensBudgetEstimate:
         msg = [{"role": "user", "content": "hi"}]
         # Request 10x the profile cap; estimate uses min(80000, 8000)=8000 →
         # 0.48 USD > 0.1 → still rejected (cannot bypass the gate upward).
-        assert gw.check_budget(
-            "lowbudget",
-            estimated_cost=0.0,
-            budget_remaining=float("inf"),
-            messages=msg,
-            requested_max_output_tokens=80_000,
-        ) is False
+        assert (
+            gw.check_budget(
+                "lowbudget",
+                estimated_cost=0.0,
+                budget_remaining=float("inf"),
+                messages=msg,
+                requested_max_output_tokens=80_000,
+            )
+            is False
+        )
 
     def test_estimate_cost_uses_min_of_requested_and_profile_max(self):
         """Unit-level: estimate_cost output leg = min(requested, profile max)."""
@@ -964,17 +974,11 @@ class TestRequestedMaxOutputTokensBudgetEstimate:
         # No cap → worst case 8000 * 0.00006 = 0.48
         assert ModelGateway.estimate_cost(profile, msg) == pytest.approx(0.48)
         # Small cap → 50 * 0.00006 = 0.003
-        assert ModelGateway.estimate_cost(
-            profile, msg, requested_max_output_tokens=50
-        ) == pytest.approx(0.003)
+        assert ModelGateway.estimate_cost(profile, msg, requested_max_output_tokens=50) == pytest.approx(0.003)
         # Cap above profile max → min()'d to 8000 → 0.48 (unchanged worst case)
-        assert ModelGateway.estimate_cost(
-            profile, msg, requested_max_output_tokens=99_999
-        ) == pytest.approx(0.48)
+        assert ModelGateway.estimate_cost(profile, msg, requested_max_output_tokens=99_999) == pytest.approx(0.48)
         # Non-positive cap is ignored → worst case (defensive backward-compat)
-        assert ModelGateway.estimate_cost(
-            profile, msg, requested_max_output_tokens=0
-        ) == pytest.approx(0.48)
+        assert ModelGateway.estimate_cost(profile, msg, requested_max_output_tokens=0) == pytest.approx(0.48)
 
     def test_call_model_allows_capped_call_on_low_budget(self):
         """End-to-end through call_model: a call that would be rejected under the
@@ -1106,8 +1110,7 @@ class TestCacheKeyLockEviction:
         # After the call completes the lock dict must be empty — the entry was
         # evicted in the finally block when the ref-count dropped to zero.
         assert len(gw._cache_key_locks) == 0, (
-            f"expected 0 lock entries after call, got {len(gw._cache_key_locks)}: "
-            f"{list(gw._cache_key_locks.keys())}"
+            f"expected 0 lock entries after call, got {len(gw._cache_key_locks)}: {list(gw._cache_key_locks.keys())}"
         )
         assert len(gw._cache_key_lock_refs) == 0
 
@@ -1173,8 +1176,7 @@ class TestCacheKeyLockEviction:
 
         # Every entry must have been evicted — zero residue after all calls.
         assert len(gw._cache_key_locks) == 0, (
-            f"lock dict leaked {len(gw._cache_key_locks)} entries: "
-            f"{list(gw._cache_key_locks.keys())[:5]}"
+            f"lock dict leaked {len(gw._cache_key_locks)} entries: {list(gw._cache_key_locks.keys())[:5]}"
         )
         assert len(gw._cache_key_lock_refs) == 0
 
@@ -1245,8 +1247,7 @@ class TestRetryBackoffCumulativeCap:
 
         total_slept = sum(slept)
         assert total_slept <= 300.0 + 1e-6, (
-            f"cumulative sleep {total_slept:.1f}s exceeded 300s cap "
-            f"(individual sleeps: {slept})"
+            f"cumulative sleep {total_slept:.1f}s exceeded 300s cap (individual sleeps: {slept})"
         )
 
     def test_no_sleep_once_cap_reached(self):
@@ -1278,6 +1279,7 @@ class TestRetryBackoffCumulativeCap:
         exc_429 = httpx.HTTPStatusError("429", request=request, response=response)
 
         from unittest.mock import MagicMock
+
         FakeChatModel = MagicMock()
         fake_instance = MagicMock()
         fake_instance.invoke.side_effect = exc_429
@@ -1302,9 +1304,7 @@ class TestRetryBackoffCumulativeCap:
 
         total_slept = sum(slept)
         # Hard cap: never exceed 300s regardless of per-attempt amounts.
-        assert total_slept <= 300.0 + 1e-6, (
-            f"total sleep {total_slept:.1f}s exceeded cap; individual: {slept}"
-        )
+        assert total_slept <= 300.0 + 1e-6, f"total sleep {total_slept:.1f}s exceeded cap; individual: {slept}"
         # At least one sleep must have been truncated: if any individual sleep
         # after the cap was exceeded was nonzero it was supposed to be skipped.
         # Verify the invariant: once cumulative > 300, all subsequent are 0.

@@ -81,7 +81,7 @@ def is_stale_content(content: str) -> list[str]:
     # Generated modules legitimately contain regex patterns as string values;
     # mask literals before looking for TypeScript syntax so those do not trip
     # the stale-artifact detector.
-    scannable = STRING_LITERAL_RE.sub("\"\"", strip_line_comments(content))
+    scannable = STRING_LITERAL_RE.sub('""', strip_line_comments(content))
     scannable = REGEX_LITERAL_RE.sub("//", scannable)
     scannable = TEMPLATE_LITERAL_RE.sub("``", scannable)
     for pat in STALE_ARTIFACT_PATTERNS:
@@ -109,6 +109,28 @@ def hot_lookup_name(src: Path) -> str | None:
     except OSError:
         return None
     return next(iter(names)) if len(names) == 1 else None
+
+
+def hot_module_name(src: Path, fallback: str) -> str:
+    """Return the hot-module lookup key: the sole loadHotModule key in *src*,
+    else the fallback stem with any 'enforce-' prefix stripped."""
+    lookup = hot_lookup_name(src)
+    if lookup is not None:
+        return lookup
+    stem = Path(fallback).stem
+    return stem[len("enforce-") :] if stem.startswith("enforce-") else stem
+
+
+def implementation_source(wrapper: Path) -> Path:
+    """Resolve the implementation file a thin proxy re-exports, e.g.
+    ``import impl from "./impl/enforce_example_impl.ts"``."""
+    match = re.search(
+        r"import\s+impl\s+from\s+[\"'](\./[^\"']+)[\"']",
+        wrapper.read_text(encoding="utf-8"),
+    )
+    if match is None:
+        raise FileNotFoundError(f"{wrapper}: no relative implementation import found")
+    return wrapper.parent / match.group(1)
 
 
 def find_stale(
@@ -148,9 +170,7 @@ def find_stale(
         src_mtime = src.stat().st_mtime
         hot_mtime = hot.stat().st_mtime
         if hot_mtime < src_mtime:
-            problems.append(
-                f"{name}: hot module stale (source newer by {int(src_mtime - hot_mtime)}s)"
-            )
+            problems.append(f"{name}: hot module stale (source newer by {int(src_mtime - hot_mtime)}s)")
             continue
 
         content = hot.read_text(encoding="utf-8")

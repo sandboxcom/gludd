@@ -59,6 +59,7 @@ class DeploymentIncident:
     remediation_result: str | None = None
 
     def to_audit_details(self) -> dict[str, str | float | list[str] | None]:
+        """Render this incident as a JSON-safe audit detail dict."""
         details: dict[str, str | float | list[str] | None] = {
             "deployment_id": self.deployment_id,
             "model_id": self.model_id,
@@ -107,16 +108,13 @@ class ContentQualityCheck:
     max_length: int | None = None
 
     def evaluate(self, content: str) -> tuple[bool, str]:
+        """Evaluate content against the configured quality gates."""
         if self.non_empty and not content:
             return False, "Content is empty"
         if self.min_length is not None and len(content) < self.min_length:
-            return False, (
-                f"Content too short: {len(content)} < {self.min_length}"
-            )
+            return False, (f"Content too short: {len(content)} < {self.min_length}")
         if self.max_length is not None and len(content) > self.max_length:
-            return False, (
-                f"Content too long: {len(content)} > {self.max_length}"
-            )
+            return False, (f"Content too long: {len(content)} > {self.max_length}")
         if self.parseable_json:
             try:
                 json.loads(content)
@@ -140,7 +138,8 @@ class AuditRepo(Protocol):
         entity_id: str,
         project_id: str | None = None,
         details: str | None = None,
-    ) -> None: ...
+    ) -> None:
+        """Persist an audit event asynchronously."""
 
 
 class DeploymentIncidentLog:
@@ -159,6 +158,7 @@ class DeploymentIncidentLog:
         project_id: str | None = None,
         in_memory: bool = False,
     ) -> None:
+        """Initialise the log with an optional async audit repository."""
         self._audit_repo = audit_repo
         self._max_in_memory = max_in_memory
         self._project_id = project_id
@@ -242,6 +242,7 @@ class DeploymentHealthChecker:
         incident_log: DeploymentIncidentLog | None = None,
         content_quality: ContentQualityCheck | None = None,
     ) -> None:
+        """Initialise the checker with thresholds, trackers, and optional log."""
         self._failure_threshold = failure_threshold
         self._recovery_interval = recovery_interval
         self._max_content_length = max_content_length
@@ -266,6 +267,7 @@ class DeploymentHealthChecker:
     # -- deployment → model mapping -----------------------------------------
 
     def set_deployment_model(self, deployment_id: str, model_id: str) -> None:
+        """Map a deployment id to the model id it serves."""
         with self._lock:
             self._deployment_to_model[deployment_id] = model_id
 
@@ -276,6 +278,7 @@ class DeploymentHealthChecker:
     # -- health checks ------------------------------------------------------
 
     def is_healthy(self, deployment_id: str) -> bool:
+        """Report whether the deployment (and its model) is healthy."""
         with self._lock:
             status = self._statuses.get(deployment_id)
         if status is not None and not status.healthy:
@@ -306,6 +309,7 @@ class DeploymentHealthChecker:
     # -- content quality ----------------------------------------------------
 
     def check_content(self, deployment_id: str, content: object) -> tuple[bool, str]:
+        """Run content-quality checks and return (ok, reason)."""
         if self._content_quality is not None and isinstance(content, str):
             ok, reason = self._content_quality.evaluate(content)
             if not ok:
@@ -326,9 +330,7 @@ class DeploymentHealthChecker:
             elif isinstance(content, (dict, list)):
                 pass
             else:
-                return False, (
-                    f"Content is not JSON-compatible: {type(content).__name__}"
-                )
+                return False, (f"Content is not JSON-compatible: {type(content).__name__}")
 
         if self._max_content_length is not None:
             if isinstance(content, str):
@@ -338,10 +340,7 @@ class DeploymentHealthChecker:
             else:
                 length = len(str(content))
             if length > self._max_content_length:
-                return False, (
-                    f"Content length {length} exceeds max "
-                    f"{self._max_content_length}"
-                )
+                return False, (f"Content length {length} exceeds max {self._max_content_length}")
 
         return True, "Content passes quality checks"
 
@@ -358,10 +357,9 @@ class DeploymentHealthChecker:
     # -- latency tracking ---------------------------------------------------
 
     def record_latency(self, deployment_id: str, latency_s: float) -> None:
+        """Append a latency sample for the deployment."""
         with self._lock:
-            samples = self._latency_samples.setdefault(
-                deployment_id, deque(maxlen=self._max_latency_samples)
-            )
+            samples = self._latency_samples.setdefault(deployment_id, deque(maxlen=self._max_latency_samples))
             samples.append(latency_s)
 
     # -- failure / success recording ---------------------------------------
@@ -372,6 +370,7 @@ class DeploymentHealthChecker:
         error: str | Exception,
         kind: str = "error",
     ) -> None:
+        """Record a failed call: increment counters, log an incident."""
         model_id = self._get_model_id(deployment_id)
 
         timeout_kind: TimeoutKind
@@ -420,6 +419,7 @@ class DeploymentHealthChecker:
         self._incident_log.record(dep_incident)
 
     def record_success(self, deployment_id: str) -> None:
+        """Record a successful call: recover or reset the failure counter."""
         model_id = self._get_model_id(deployment_id)
         self._model_tracker.record_success(model_id)
 
@@ -430,9 +430,7 @@ class DeploymentHealthChecker:
                 self._statuses[deployment_id] = status
             status.last_check = time.time()
             if not status.healthy:
-                status.consecutive_failures = max(
-                    0, status.consecutive_failures - 1
-                )
+                status.consecutive_failures = max(0, status.consecutive_failures - 1)
                 if status.consecutive_failures == 0:
                     status.healthy = True
                     status.last_error = None
@@ -440,26 +438,32 @@ class DeploymentHealthChecker:
                         "Deployment %s recovered after successful call",
                         deployment_id,
                     )
+            else:
+                # A success while still healthy clears any below-threshold
+                # failure streak so a single transient error never lingers.
+                status.consecutive_failures = 0
 
     # -- status queries -----------------------------------------------------
 
     def get_status(self, deployment_id: str) -> DeploymentStatus:
+        """Return the status for a deployment, creating it when unknown."""
         with self._lock:
             if deployment_id not in self._statuses:
-                self._statuses[deployment_id] = DeploymentStatus(
-                    deployment_id=deployment_id
-                )
+                self._statuses[deployment_id] = DeploymentStatus(deployment_id=deployment_id)
             return self._statuses[deployment_id]
 
     def all_statuses(self) -> dict[str, DeploymentStatus]:
+        """Return a snapshot dict of all deployment statuses."""
         with self._lock:
             return dict(self._statuses)
 
     def get_incidents(self, limit: int = 100) -> list[DeploymentHealthIncident]:
+        """Return up to *limit* recent incidents."""
         with self._lock:
             return self._incidents[-limit:]
 
     def force_remediate(self, deployment_id: str) -> bool:
+        """Force a deployment healthy and reset its failure counter."""
         model_id = self._get_model_id(deployment_id)
         self._model_tracker.record_success(model_id)
 
@@ -515,6 +519,7 @@ class SelfHealingRouter:
         health_checker: DeploymentHealthChecker | None = None,
         failover_chain: ModelFailoverChain | None = None,
     ) -> None:
+        """Initialise the router with a checker and optional default chain."""
         self._health_checker = health_checker or DeploymentHealthChecker()
         self._failover_chain = failover_chain
         self._per_deployment_chains: dict[str, ModelFailoverChain] = {}
@@ -526,32 +531,32 @@ class SelfHealingRouter:
 
     @property
     def health_checker(self) -> DeploymentHealthChecker:
+        """The configured DeploymentHealthChecker."""
         return self._health_checker
 
     @property
     def failover_chain(self) -> ModelFailoverChain | None:
+        """The default ModelFailoverChain, when configured."""
         return self._failover_chain
 
     @property
     def deployment_health(self) -> dict[str, dict[str, object]]:
+        """Snapshot of per-deployment health dicts."""
         with self._lock:
-            return {
-                did: dict(data) for did, data in self._deployment_health.items()
-            }
+            return {did: dict(data) for did, data in self._deployment_health.items()}
 
     # -- chain management ---------------------------------------------------
 
-    def set_failover_chain(
-        self, deployment_id: str, chain: ModelFailoverChain
-    ) -> None:
+    def set_failover_chain(self, deployment_id: str, chain: ModelFailoverChain) -> None:
+        """Register a failover chain for a deployment."""
         with self._lock:
             self._per_deployment_chains[deployment_id] = chain
 
-    def set_fallbacks(
-        self, deployment_id: str, fallback_ids: list[str]
-    ) -> None:
-        """Legacy helper: create a :class:`ModelFailoverChain` from a list
-        of string profiles and register it for *deployment_id*.
+    def set_fallbacks(self, deployment_id: str, fallback_ids: list[str]) -> None:
+        """Legacy helper: build a chain from fallback profile ids.
+
+        Create a :class:`ModelFailoverChain` from a list of string profiles
+        and register it for *deployment_id*.
         """
         chain = ModelFailoverChain(
             primary_profile=deployment_id,
@@ -562,9 +567,7 @@ class SelfHealingRouter:
 
     def _get_chain(self, deployment_id: str) -> ModelFailoverChain | None:
         with self._lock:
-            return self._per_deployment_chains.get(
-                deployment_id, self._failover_chain
-            )
+            return self._per_deployment_chains.get(deployment_id, self._failover_chain)
 
     # -- routing ------------------------------------------------------------
 
@@ -573,6 +576,7 @@ class SelfHealingRouter:
         deployment_id: str,
         fallback_profiles: list[str] | None = None,
     ) -> str | None:
+        """Route the call to the deployment or its first healthy fallback."""
         if self._health_checker.is_healthy(deployment_id):
             return deployment_id
 
@@ -580,9 +584,7 @@ class SelfHealingRouter:
         if fallbacks is None:
             chain = self._get_chain(deployment_id)
             if chain is not None:
-                fallbacks = [
-                    p for p in chain.get_chain() if p != deployment_id
-                ]
+                fallbacks = [p for p in chain.get_chain() if p != deployment_id]
 
         if fallbacks:
             for fb in fallbacks:
@@ -610,6 +612,7 @@ class SelfHealingRouter:
         error: str | Exception,
         model_id: str = "",
     ) -> DeploymentIncident:
+        """Record a failure and return the corresponding incident."""
         self._health_checker.record_failure(deployment_id, error)
 
         error_str = str(error)[:500]
@@ -637,8 +640,7 @@ class SelfHealingRouter:
         with self._lock:
             health = self._deployment_health.get(deployment_id, {})
             logger.info(
-                "SelfHealingRouter: diagnostics — "
-                "deployment=%s status=%s error_count=%s last_check=%s",
+                "SelfHealingRouter: diagnostics — deployment=%s status=%s error_count=%s last_check=%s",
                 deployment_id,
                 health.get("status", "unknown"),
                 health.get("error_count", 0),
