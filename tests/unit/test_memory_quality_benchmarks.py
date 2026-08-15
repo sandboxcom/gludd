@@ -911,7 +911,7 @@ class TestConsolidationThroughput:
         # the dev-Mac rate. Require a lower 50/s floor there so the benchmark
         # still catches a real regression (e.g. accidental O(n^2) dedup) without
         # flaking on slow CI hardware; keep the 200/s bar locally.
-        min_rate = 50 if os.environ.get("CI") == "1" else 200
+        min_rate = 50 if os.environ.get("CI") in ("1", "true") else 200
         assert rate > min_rate, f"consolidation rate {rate:.0f}/s below {min_rate}/s"
 
 

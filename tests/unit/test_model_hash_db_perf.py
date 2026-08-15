@@ -121,7 +121,7 @@ class TestPersistencePerformance:
     # CI runners (constrained vCPUs) need >180s for the persist-5000 benchmark,
     # blowing the shard time budget; the benchmark remains enforceable locally.
     pytestmark = pytest.mark.skipif(
-        os.environ.get("CI") == "1",
+        os.environ.get("CI") in ("1", "true"),
         reason="persist-5000 benchmark exceeds CI shard time budget; runs locally",
     )
 
