@@ -10,8 +10,10 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - Quantization ladder: GGUF Q4/Q5/Q8 with per-level quality assessment (severe/moderate/slight impact) (`models/quantization.py`)
 - Local model health check: warm-start at daemon boot, `/api/health` endpoint includes local model status (`health/local_model_check.py`)
 - Ollama health check + URL reachability probing as part of source-chain resolution
+- Branch reconciliation tooling: `development-merge-forward` (dry-run-first transactional reconciliation with current-development content preference), `development-merge-forward-batch` (atomic ancestry-only batching for superseded refs), `git-patch-equivalence` (separate already-applied patches from unique branch work), `resolve-development-conflicts` (preserve development on conflicts), and `branch-reconciliation-summary` (bounded cursor-paginated head classification with current-only and opt-in semantic-summary modes)
 
 ### Fixed
+- S83 reliability/security wave: fail-closed SkillCatalog download-path confinement, ripgrep root confinement, noncanonical GitHub issue-number validation, reviewed provider import policy, FIPS 203 ML-KEM provider boundary replacing custom Kyber, unsafe XMSS fallback removal, strict MessagePack DiskCache serialization, authenticated TLS 1.3 state, X.509 chain validation, and fail-closed dependency audit (100+ S83 items across algorithms, security, connectors, and tooling)
 - gate-lite: per-agent envelope key prefix normalization, YAML parse crash guards for large files and config cascade quotes, cost_pipeline assertion
 - gate-lite: `src.general_ludd` → `general_ludd` import path normalization with uv.lock refresh
 - event_log message assertion + ansible_lint_deep xdist serialization to prevent worker crashes
@@ -23,6 +25,8 @@ All notable changes to this project are documented here. Format follows [Keep a 
 ### Changed
 - 5 CI-smoke-safe local models flagged (Qwen 0.5B, SmolLM2 135M/360M, TinyLlama 1.1B, Phi-2) for lightweight CI model download tests
 - `model_sources.py`: `ALTERNATIVE_SOURCES` dict maps every local model to its multi-source download config with env-var-overridable S3 mirror URLs
+- Test count growth: 105k+ tests collected (latest serialized collection 105,546/105,547 with one intentional deselection and zero collection errors)
+- beta.4 pending release: full gate, development integration, and release fan-in remain outstanding
 
 ## [0.1.0-beta.3] — 2026-07-26
 
