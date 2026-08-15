@@ -76,6 +76,14 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 *(auto-generated with `--fast`; `test:` refs checked by file existence only — run `make gen-status-table` locally to verify tests pass)*
 
 
+### New Features (v0.1.0-beta.4)
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| B.1 — Branch reconciliation tooling: `development-merge-forward`, `git-patch-equivalence`, `branches-unmerged`/`branch-reconcile` | ~ 100% | **PARTIAL** *(file-refs only)*: tracked, dry-runnable Git-native targets; 27 master-relative branches classified in first use; release gate pending (docs/releases/v0.1.0-beta.4.md) |
+| B.2 — S83 reliability/security repairs: ML-KEM provider (pqcrypto 0.4), fail-closed crypto boundaries, data-structure invariants, integration fixes | ~ 100% | **PARTIAL** *(file-refs only)*: 559/559 HLL++, 443/443 MinHash, 130 Alloy tests PASS; integration 3358 PASS, 13 skipped, 0 failures |
+| B.3 — Test collection growth: 89,542 → ~105,175 collected | ~ 100% | **PARTIAL** *(file-refs only)*: 105,175 at latest S83 count, 1 intentional deselection, 0 collection errors |
+
 ### New Features (v0.1.0-beta.2)
 
 | Feature / Task | Verified % | Evidence |
