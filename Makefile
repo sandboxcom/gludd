@@ -3613,9 +3613,10 @@ ci-verdict:
 # Override: FORCE=1 (release-cut ONLY; never use for routine checks).
 ci-verdict-safe:
 	@$(PYTHON) scripts/ci_check_cooldown.py check $(CI_CHECK_COOLDOWN_SEC) || exit $$?; \
-	$(MAKE) --no-print-directory ci-verdict; RC=$$?; \
+	$(MAKE) --no-print-directory ci-verdict SHA=$(SHA); RC=$$?; \
 	if [ $$RC -eq 0 ]; then V="success"; elif [ $$RC -eq 2 ]; then V="pending"; else V="failure"; fi; \
 	SHA=$$(git rev-parse HEAD 2>/dev/null || echo ""); \
+	if [ -n "$(SHA)" ]; then SHA="$(SHA)"; fi; \
 	$(PYTHON) scripts/ci_check_cooldown.py record-verdict $$V $$SHA; \
 	exit $$RC
 
