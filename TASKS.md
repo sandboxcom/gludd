@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-15 Session 85. HEAD `253cc1c0` on `development`. Tree CLEAN. CI round 2 (run 31890275650/31890275652 on `df0196d9d`) diagnosed: molecule config_loading + daemon_lifecycle PASS; binary_smoke linux/macos (filelock._windows exclude bug) and local_game_gen (sse_starlette) fixed locally and committed; enforce-floor experimental.text.complete pass-through restored (60/60 pins green); push guardrails AA032/AA023 root-cause fixed. Remaining: push 6 local commits → CI green → development-merge-to-master → release-cut v0.1.0-beta.4.**
+**Last consolidated: 2026-08-15 Session 85. HEAD `1cd8aafc` on `development`. Tree CLEAN. Round 4 pushed (`VERIFIED development@56bee136e`, CI 31896009443/31896009421 in_progress) with every diagnosed CI failure class fixed. User capability directive delivered: model-fit weight-DB selection + reassessment loop (unit 4/4 + live e2e), hardened generated-code acceptance (12 pinned rejection modes), game-gen rejection events with corrective-prompt retry + model fallback (27/27), reusable local_model_server role (48/48), live e2e for server pipeline + capabilities. Remaining: CI green on `56bee136e` → development-merge-to-master → release-cut v0.1.0-beta.4.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
