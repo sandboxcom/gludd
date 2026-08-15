@@ -294,33 +294,33 @@ class TestHealthPoll:
     def test_health_poll_has_until_retries_delay(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
         for t in _iter_all_tasks(tasks):
-            if "ansible.builtin.uri" in t and "health" in str(t.get("ansible.builtin.uri", "")).lower():
+            if "ansible.builtin.uri" in t and "/v1/models" in str(t.get("ansible.builtin.uri", "")).lower():
                 assert "retries" in t, "Health poll missing retries"
                 assert "delay" in t, "Health poll missing delay"
                 assert "until" in t, "Health poll missing until condition"
                 assert t.get("changed_when") is False, "Health poll is read-only"
                 return
-        pytest.fail("No health URI poll task found")
+        pytest.fail("No models-URI poll task found")
 
     def test_health_poll_retries_and_delay_are_templated(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
         for t in _iter_all_tasks(tasks):
-            if "ansible.builtin.uri" in t and "health" in str(t.get("ansible.builtin.uri", "")).lower():
+            if "ansible.builtin.uri" in t and "/v1/models" in str(t.get("ansible.builtin.uri", "")).lower():
                 assert t["retries"] == "{{ health_check_retries }}", "retries must use health_check_retries var"
                 assert t["delay"] == "{{ health_check_delay }}", "delay must use health_check_delay var"
                 return
-        pytest.fail("No health URI poll task found")
+        pytest.fail("No models-URI poll task found")
 
     def test_health_poll_url_uses_host_and_port_vars(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
         for t in _iter_all_tasks(tasks):
             uri = t.get("ansible.builtin.uri")
-            if isinstance(uri, dict) and "health" in str(uri.get("url", "")).lower():
+            if isinstance(uri, dict) and "/v1/models" in str(uri.get("url", "")).lower():
                 url = cast(str, uri["url"])
                 assert "{{ server_host }}" in url, "Health URL must template server_host"
                 assert "{{ server_port }}" in url, "Health URL must template server_port"
                 return
-        pytest.fail("No health URI poll task found")
+        pytest.fail("No models-URI poll task found")
 
     def test_tasks_assert_positive_health_params(self) -> None:
         tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()

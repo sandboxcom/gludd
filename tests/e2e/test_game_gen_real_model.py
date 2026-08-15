@@ -194,7 +194,7 @@ class TestGameGenRealModel:
             async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
                 for _attempt in range(30):
                     try:
-                        resp = await client.get("/health")
+                        resp = await client.get("/v1/models")
                         if resp.status_code == 200:
                             break
                     except httpx.TransportError:
@@ -202,7 +202,7 @@ class TestGameGenRealModel:
                     await asyncio.sleep(1.0)
                 else:
                     await mgr.stop_all()
-                    pytest.fail("Server /health did not become 200 within 30s")
+                    pytest.fail("Server /v1/models did not become 200 within 30s")
 
                 # Warm-up inference
                 warmup_resp = await client.post(

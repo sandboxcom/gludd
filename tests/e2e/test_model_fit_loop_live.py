@@ -172,7 +172,7 @@ async def test_live_generate_score_record_reassess(tmp_path, repo_session: Async
                         f"stderr tail:\n{_stderr_tail(str(stderr_path))}"
                     )
                 try:
-                    resp = httpx.get(f"{base_url}/health", timeout=5.0)
+                    resp = httpx.get(f"{base_url}/v1/models", timeout=5.0)
                     if resp.status_code == 200:
                         break
                 except httpx.HTTPError:

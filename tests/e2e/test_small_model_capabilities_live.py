@@ -144,7 +144,7 @@ def _start_server(
                 f"llama_cpp.server exited early (rc={proc.returncode}). stderr tail:\n{_stderr_tail(str(stderr_path))}"
             )
         try:
-            resp = httpx.get(f"{base_url}/health", timeout=5.0)
+            resp = httpx.get(f"{base_url}/v1/models", timeout=5.0)
             if resp.status_code == 200:
                 return proc, base_url, str(stderr_path)
         except httpx.HTTPError:

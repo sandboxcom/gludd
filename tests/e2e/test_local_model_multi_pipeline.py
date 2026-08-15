@@ -165,7 +165,7 @@ async def _wait_for_server(base_url: str, timeout: float = 60.0) -> None:
     async with httpx.AsyncClient(base_url=base_url, timeout=timeout) as client:
         for _attempt in range(int(timeout)):
             try:
-                resp = await client.get("/health")
+                resp = await client.get("/v1/models")
                 if resp.status_code == 200:
                     # Warm-up
                     warmup = await client.post(
@@ -177,7 +177,7 @@ async def _wait_for_server(base_url: str, timeout: float = 60.0) -> None:
             except httpx.TransportError:
                 pass
             await asyncio.sleep(1.0)
-    raise RuntimeError(f"Server /health did not become 200 within {timeout}s at {base_url}")
+    raise RuntimeError(f"Server /v1/models did not become 200 within {timeout}s at {base_url}")
 
 
 def _verify_generated_code(code: str, tmpdir: str) -> dict[str, object]:

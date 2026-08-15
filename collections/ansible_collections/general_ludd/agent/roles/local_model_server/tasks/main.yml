@@ -71,9 +71,11 @@
 
 - name: "Poll health endpoint until ready"
   block:
-    - name: "Poll health endpoint"
+    - name: "Poll models endpoint (server readiness)"
       ansible.builtin.uri:
-        url: "http://{{ server_host }}:{{ server_port }}/health"
+        # llama-cpp-python's OpenAI server does not expose /health in
+        # current releases (404) — /v1/models is the stable readiness probe.
+        url: "http://{{ server_host }}:{{ server_port }}/v1/models"
         method: GET
         timeout: 5
       register: _health_poll
@@ -93,7 +95,7 @@
       ansible.builtin.fail:
         msg: >-
           llama.cpp server did not become healthy at
-          http://{{ server_host }}:{{ server_port }}/health after
+          http://{{ server_host }}:{{ server_port }}/v1/models after
           {{ health_check_retries }} attempts.
           Server log ({{ _server_log }}):
           {{ (_server_log_slurp.content | default('')) | b64decode }}
