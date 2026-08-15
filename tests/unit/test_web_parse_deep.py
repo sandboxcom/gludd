@@ -12,7 +12,6 @@ import pytest
 from general_ludd.web.parse import _normalise_link, parse_html
 from general_ludd.web.types import Link, ParsedPage
 
-
 # ── parse_html: empty and minimal input ─────────────────────────────────────
 
 
@@ -302,7 +301,7 @@ def test_link_is_frozen() -> None:
     link = Link(href="https://example.com/a")
 
     with pytest.raises(Exception) as excinfo:
-        setattr(link, "href", "https://evil.example.com")
+        link.href = "https://evil.example.com"
 
     assert "frozen" in str(excinfo.value).lower()
 
@@ -311,7 +310,7 @@ def test_parsed_page_is_frozen() -> None:
     page = parse_html("<p>x</p>")
 
     with pytest.raises(Exception) as excinfo:
-        setattr(page, "title", "tampered")
+        page.title = "tampered"
 
     assert "frozen" in str(excinfo.value).lower()
 
