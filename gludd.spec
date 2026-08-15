@@ -99,6 +99,13 @@ a = Analysis(
     datas=datas,
     hiddenimports=[
         'general_ludd',
+        # general_ludd.compat is imported at package init via a dynamic
+        # importlib.import_module call (src/general_ludd/__init__.py), so
+        # PyInstaller's static analyzer cannot discover it. Without these
+        # hiddenimports the frozen CLI crashes on startup with
+        # "ModuleNotFoundError: No module named 'general_ludd.compat'".
+        'general_ludd.compat',
+        'general_ludd.compat.annotated_types',
         'general_ludd.cli',
         'general_ludd.daemon',
         'general_ludd.worker.app',
