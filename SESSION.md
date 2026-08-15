@@ -29,9 +29,11 @@
 
 ### Next Steps (mandatory)
 
-1. Verify CI green on `9bffc6290` (runs 31885542469 / 31885542461) at the next natural break; re-fix any remaining CI failure classes.
-2. `make release-cut TAG='v0.1.0-beta.4' MSG='...'` once CI is green.
-3. `make verify-release-completeness TAG=v0.1.0-beta.4` after the release job publishes.
+1. Verify CI green on `56bee136e` (runs 31896009443 / 31896009421, round 4) at the next natural break; re-fix any remaining CI failure classes.
+2. Push the pending docs commits (1cd8aafc, 268ba0b4, 9e4b5b8ee, 25bef8c5) with the next batch.
+3. `make development-merge-to-master` once CI is green on development.
+4. `make release-cut TAG='v0.1.0-beta.4' MSG='...'`.
+5. `make verify-release-completeness TAG=v0.1.0-beta.4` after the release job publishes.
 
 ### Recent Commits (HEAD `86b72ae5`)
 
