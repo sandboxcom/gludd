@@ -43,9 +43,9 @@ verifier:
 scenario:
   test_sequence:
     - dependency
-    - syntax
     - cleanup
     - destroy
+    - syntax
     - create
     - prepare
     - converge
