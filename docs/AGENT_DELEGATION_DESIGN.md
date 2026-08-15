@@ -79,7 +79,7 @@ class HandoffRequest:
 The protocol governs the lifecycle of a handoff from initiation to completion.
 Every transition is recorded as an `AuditEvent`.
 
-```
+```text
 States:  PENDING → ACCEPTED → IN_PROGRESS → COMPLETED
               ↘ REJECTED  (agent refused or unavailable)
               ↘ EXPIRED    (deadline passed with no acceptance)
@@ -127,7 +127,7 @@ more via `HandoffContextRequest`.
 Pub/sub message bus for agent-to-agent handoff messages. Built on the existing
 daemon WebSocket infrastructure (`ws_manager` in `daemon.py`).
 
-```
+```text
 Publisher (sender agent) → HandoffBus (daemon) → Subscribers (receiver agents)
 ```
 
@@ -434,7 +434,7 @@ algorithm:
 
 ### 6.1 Handoff Lifecycle in the Event Loop
 
-```
+```text
 Tick:
   1. Claim pending todos (existing flow).
   2. Allocate todos to agents (existing flow).
@@ -516,7 +516,7 @@ acceptance latency by role."
 
 ### 7.3 CLI Commands (Phase 2)
 
-```
+```text
 gludd handoff list [--role R] [--state S]   # list handoffs
 gludd handoff show <id>                      # show handoff with context
 gludd handoff accept <id>                    # accept a pending handoff

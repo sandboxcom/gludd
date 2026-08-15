@@ -47,7 +47,7 @@ SWE-bench classification applied to gludd's self-evaluation scenarios.
 
 ### 3.1 Categories
 
-```
+```text
                 BEFORE agent    AFTER agent
                 ────────────    ───────────
 FAIL_TO_PASS      FAIL           PASS         <-- agent FIXED this
@@ -60,7 +60,7 @@ A successful agent **maximizes FAIL_TO_PASS, maximizes PASS_TO_PASS, eliminates 
 
 ### 3.2 Scoring
 
-```
+```text
 resolution_rate = FAIL_TO_PASS / (FAIL_TO_PASS + FAIL_TO_FAIL + PASS_TO_FAIL)
 regression_rate = PASS_TO_FAIL / total_tests
 ```
@@ -70,7 +70,7 @@ regression_rate = PASS_TO_FAIL / total_tests
 Each benchmark scenario defines a test suite (pytest or behavioral assertions).
 The harness runs tests before and after the agent's work:
 
-```
+```text
 1. checkout baseline_commit
 2. run test suite -> capture BEFORE state (pass/fail per test)
 3. apply agent's change (or checkout agent_commit)
@@ -120,7 +120,7 @@ Runs gludd sessions against standardized tasks and measures outcomes.
 
 ### 4.1 Architecture
 
-```
+```text
 Scenario Loader --> Orchestrator --> Evaluator Pipeline --> Reporter
    (yaml)         (runs agent)      (scores trajectory)    (json + md)
 ```
@@ -208,7 +208,7 @@ def test_commit_gate_scenario():
 
 ### 5.3 Gate Integration
 
-```
+```text
 make gate
   ├── lint
   ├── typecheck

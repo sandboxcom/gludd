@@ -244,7 +244,7 @@ sequence and writes a consolidated `osquery_monitor_index.json`.
 DOCUMENTATION/argument_spec/RETURN shape and `resolve_osquery_binary`, adding
 a second binary name and privilege probe).
 
-```
+```text
 argument_spec:
   ensure_daemon: {type: bool, default: true}   # also resolve/verify osqueryd, not just osqueryi
   allow_download: {type: bool, default: true}  # if PATH/filestore miss, POST /admin/filestore/bootstrap
@@ -315,7 +315,7 @@ a bespoke `gludd_osquery` task inline every time.
 
 **New module**: `gludd_osquery_pack.py`.
 
-```
+```text
 argument_spec:
   pack_name: {type: str, required: true}          # e.g. "gludd_security"
   pack_json: {type: str, required: true}           # the pack's JSON body (rendered by the role from files/packs/*.json.j2 or copied verbatim)
@@ -358,7 +358,7 @@ a config it couldn't validate.
 
 **New module**: `gludd_osquery_results.py`.
 
-```
+```text
 argument_spec:
   logger_path: {type: str, default: ""}     # "" = auto-detect, see §5
   checkpoint_path: {type: str, default: ""} # "" = "<logger_path>/.gludd_osquery_checkpoint.json"

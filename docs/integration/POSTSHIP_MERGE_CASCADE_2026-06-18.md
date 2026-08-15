@@ -9,7 +9,7 @@ fast-forwards to ship commit 6063e51. All commands are `make <target>` only.
 
 Before running any merge step, confirm 6063e51 is reachable from master.
 
-```
+```text
 make git-is-ancestor A="6063e51" B="master"
 ```
 
@@ -18,7 +18,7 @@ Expected output: `exit=0`
 If `exit=1`, the ship has not happened yet. Do not proceed. Trigger the ship
 pipeline first:
 
-```
+```text
 make ship-async REF=6063e51 TARGET=master
 ```
 
@@ -28,7 +28,7 @@ Additional sanity check — confirm master tip matches 6063e51 exactly (a fast-f
 ship produces a clean match; a non-FF merge would make 6063e51 an ancestor but not
 the tip):
 
-```
+```text
 make git-show MSG="master"
 ```
 
@@ -111,7 +111,7 @@ changes must be reviewed against that diff before staging.
 
 **Pre-check:**
 
-```
+```text
 make git-diff
 make git-staged
 ```
@@ -121,14 +121,14 @@ venv-check/git-hard-reset additions from 6063e51.
 
 **Commit command:**
 
-```
+```text
 make git-add FILES='AGENTS.md Makefile scripts/multitasking_backlog.json'
 make git-commit MSG='chore(orchestration): meta-work — AGENTS.md policy + Makefile targets + backlog'
 ```
 
 Gate before proceeding:
 
-```
+```text
 make gate
 ```
 
@@ -147,7 +147,7 @@ This branch is ancestor-clean off 6063e51 (confirmed `exit=0`, 0 commits unique 
 
 **FF pre-check:**
 
-```
+```text
 make git-is-ancestor A="master" B="feature/batch3-security"
 ```
 
@@ -155,13 +155,13 @@ Expected: `exit=0` (master is an ancestor of feature/batch3-security, so FF is p
 
 **Merge command (single branch via gated-merge):**
 
-```
+```text
 make gated-merge BASE=master BRANCHES='feature/batch3-security' MANIFEST='/tmp/gludd-cascade-batch3.txt'
 ```
 
 After merge, verify:
 
-```
+```text
 make gate
 ```
 
@@ -188,13 +188,13 @@ the master version's `.PHONY` line (it includes all additions) and apply only th
 
 **Merge command:**
 
-```
+```text
 make gated-merge BASE=master BRANCHES='floor_controller-consolidated' MANIFEST='/tmp/gludd-cascade-floor.txt'
 ```
 
 After merge:
 
-```
+```text
 make gate
 ```
 
@@ -215,13 +215,13 @@ Being built off 6063e51 by another agent. Files expected: `src/general_ludd/mode
 
 **Merge command:**
 
-```
+```text
 make gated-merge BASE=master BRANCHES='feature/security-batch4' MANIFEST='/tmp/gludd-cascade-batch4.txt'
 ```
 
 After merge:
 
-```
+```text
 make gate
 ```
 
@@ -239,13 +239,13 @@ Being built off 6063e51 (or master post-step-1). Expected files: `scripts/agent_
 
 **Merge command:**
 
-```
+```text
 make gated-merge BASE=master BRANCHES='feature/mt-6-watchdog' MANIFEST='/tmp/gludd-cascade-mt6.txt'
 ```
 
 After merge:
 
-```
+```text
 make gate
 ```
 
@@ -257,7 +257,7 @@ If all four pending branches exist, are ancestor-clean, and have been individual
 verified conflict-free, they can be combined in one gated-merge call. Order matters:
 independent branches first, overlapping ones adjacent (see ordering above).
 
-```
+```text
 make gated-merge \
   BASE=master \
   BRANCHES='feature/batch3-security floor_controller-consolidated feature/security-batch4 feature/mt-6-watchdog' \
@@ -328,37 +328,37 @@ BLOCKING implementation.
 After all merges in the cascade are complete:
 
 1. Run the full gate:
-   ```
+   ```text
    make gate
    ```
    Gate must report all phases PASS (lint, typecheck, collect, test, smoke).
 
 2. Verify test count did not drop (collection errors can silently hide tests):
-   ```
+   ```text
    make test-count
    ```
    Compare against the last known good count. Any drop > 10 tests warrants investigation.
 
 3. Verify mypy is clean (MYPY_MAX=0 is enforced):
-   ```
+   ```text
    make typecheck
    ```
    Expected: 0 errors.
 
 4. Run security scan:
-   ```
+   ```text
    make scan-secrets
    ```
    Confirm no new tracked secrets.
 
 5. Create a release tag:
-   ```
+   ```text
    make git-commit MSG='chore: post-ship cascade — batch3-security + floor-gate-safe + batch4 + mt-6'
    ```
    (Only if there were any post-merge fixups; if all merges were clean no additional commit is needed.)
 
 6. Push to remote:
-   ```
+   ```text
    make git-push-sandboxcom
    ```
 
@@ -379,14 +379,14 @@ The following branches do not exist as of 2026-06-18 and must be handled when th
 If a branch lands after some steps are already complete, perform an ancestor check
 against the current master tip (not 6063e51):
 
-```
+```text
 make git-is-ancestor A="master" B="<new-branch>"
 ```
 
 If `exit=1` (master has diverged ahead of the new branch's base), the branch needs to be
 rebased or merged with master before the FF-only gated-merge will work. Use:
 
-```
+```text
 make git-merge MSG="<new-branch>"
 ```
 
@@ -397,7 +397,7 @@ to perform a standard no-FF merge, then gate.
 The task description says the batch-4 branch may be named `feature/security-batch4`.
 If that name does not resolve, scan the branch list for recent security-related names:
 
-```
+```text
 make git-ls-tracked Q="batch4\|batch-4\|security-b4"
 ```
 
@@ -427,13 +427,13 @@ on conflict. Specify `BASE=master` (not the ship SHA) once master has fast-forwa
 to the ship commit. The script acquires an exclusive flock on `/tmp/gludd-gated-merge.lock`.
 Do not run two gated-merge calls concurrently. Check for a stale lock:
 
-```
+```text
 make ps-gludd
 ```
 
 If a lock is orphaned, clear it with:
 
-```
+```text
 make kill-gate-force
 ```
 

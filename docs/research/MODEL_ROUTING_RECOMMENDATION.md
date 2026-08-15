@@ -14,7 +14,7 @@
 One formula governs every routing decision in gludd. It is defined in
 `src/general_ludd/schemas/benchmark.py::BenchmarkScores.composite_score`:
 
-```
+```text
 composite = completion_score × 0.35
           + code_quality_score × 0.25
           + instruction_adherence_score × 0.25
@@ -33,7 +33,7 @@ the cold-start prior, not the runtime scorer. The two formulas serve different p
 
 The `W$` (cost-adjusted weight) used in research is:
 
-```
+```text
 W$ = W / log10(1 + median_$/Mtok)
 ```
 
@@ -143,7 +143,7 @@ Notes from `research_reporting.md`:
 
 ### 3.1 The Three-Layer Stack
 
-```
+```text
 Layer 1: model_weights DB (cold-start prior)
          ↓ feeds ↓
 Layer 2: AdaptiveRouter learns from BenchmarkResult rows

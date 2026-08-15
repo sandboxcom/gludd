@@ -33,18 +33,16 @@ __all__ = [
     "_FORBIDDEN_SHELL_CHARS",
     "_SAFE_BINARY_RE",
     "RoleCloner",
+    "project_state",
+    "secure_directory",
 ]
 
 # Supported external processor tool kinds. Unknown tool kinds raise ValueError.
-SUPPORTED_PROCESSOR_TOOLS: frozenset[str] = frozenset(
-    {"whisper.cpp", "ffmpeg", "agent"}
-)
+SUPPORTED_PROCESSOR_TOOLS: frozenset[str] = frozenset({"whisper.cpp", "ffmpeg", "agent"})
 
 _SAFE_BINARY_RE = re.compile(r"^(?!.*\.\.)[a-zA-Z0-9_./-]+$")
 
-_FORBIDDEN_SHELL_CHARS: frozenset[str] = frozenset(
-    "`$();|&<>!\n\r'\"\\\0"
-)
+_FORBIDDEN_SHELL_CHARS: frozenset[str] = frozenset("`$();|&<>!\n\r'\"\\\0")
 
 _ARG_FORBIDDEN_CHARS: frozenset[str] = frozenset("`$();|&!<>\n\r\0")
 
@@ -55,23 +53,15 @@ def _parse_processor_args(raw: str) -> list[str]:
     try:
         tokens = shlex.split(raw)
     except ValueError as exc:
-        raise ValueError(
-            f"processor args {raw!r} contain malformed shell quoting"
-        ) from exc
+        raise ValueError(f"processor args {raw!r} contain malformed shell quoting") from exc
     for token in tokens:
         if "\0" in token:
-            raise ValueError(
-                "processor arg contains null byte"
-            )
+            raise ValueError("processor arg contains null byte")
         if "\n" in token or "\r" in token:
-            raise ValueError(
-                "processor arg contains newline/carriage-return"
-            )
+            raise ValueError("processor arg contains newline/carriage-return")
         for ch in token:
             if ch in _ARG_FORBIDDEN_CHARS:
-                raise ValueError(
-                    f"processor arg {token!r} contains forbidden shell character {ch!r}"
-                )
+                raise ValueError(f"processor arg {token!r} contains forbidden shell character {ch!r}")
     return tokens
 
 
@@ -83,13 +73,12 @@ class RoleCloner:
         collection_root: Path,
         work_root: Path | None = None,
     ) -> None:
+        """Initialize the cloner with a collection root and optional work root."""
         self.collection_root = Path(collection_root)
         self.work_root = (
             secure_directory(work_root)
             if work_root is not None
-            else project_state(project_root=self.collection_root).directory(
-                "stream-clones"
-            )
+            else project_state(project_root=self.collection_root).directory("stream-clones")
         )
 
     def clone(self, role_name: str, overrides: dict[str, Any]) -> Path:
@@ -114,9 +103,7 @@ class RoleCloner:
         try:
             src.relative_to(roles_root)
         except ValueError:
-            raise ValueError(
-                f"Role {role_name!r} resolves outside {roles_root}"
-            ) from None
+            raise ValueError(f"Role {role_name!r} resolves outside {roles_root}") from None
         if not src.is_dir():
             raise FileNotFoundError(f"Role {role_name!r} not found under {roles_root}")
         secure_directory(self.work_root)
@@ -126,15 +113,11 @@ class RoleCloner:
         try:
             src.relative_to(roles_root)
         except ValueError:
-            raise ValueError(
-                f"Role {role_name!r} resolves outside {roles_root}"
-            ) from None
+            raise ValueError(f"Role {role_name!r} resolves outside {roles_root}") from None
         shutil.copytree(src, clone_path)
         secure_directory(clone_path)
 
-        (clone_path / "clone-overrides.json").write_text(
-            json.dumps(overrides, indent=2, sort_keys=True)
-        )
+        (clone_path / "clone-overrides.json").write_text(json.dumps(overrides, indent=2, sort_keys=True))
 
         wrapper_lines = [
             "---",
@@ -173,27 +156,18 @@ class RoleCloner:
             return self._write_shell_processor(clone_path, processor, kind="ffmpeg")
         if tool == "agent":
             return self._write_agent_wait_playbook(clone_path, processor)
-        raise ValueError(
-            f"Unknown processor tool {tool!r}; expected one of "
-            f"{sorted(SUPPORTED_PROCESSOR_TOOLS)}"
-        )
+        raise ValueError(f"Unknown processor tool {tool!r}; expected one of {sorted(SUPPORTED_PROCESSOR_TOOLS)}")
 
     @staticmethod
-    def _write_shell_processor(
-        clone_path: Path, processor: dict[str, Any], *, kind: str
-    ) -> Path:
+    def _write_shell_processor(clone_path: Path, processor: dict[str, Any], *, kind: str) -> Path:
         binary = processor.get("binary", kind)
         extra_args_raw = processor.get("args", "")
         binary_str = str(binary)
         if not _SAFE_BINARY_RE.match(binary_str):
-            raise ValueError(
-                f"processor binary {binary!r} contains unsafe characters; "
-                f"expected [a-zA-Z0-9_./-]+"
-            )
+            raise ValueError(f"processor binary {binary!r} contains unsafe characters; expected [a-zA-Z0-9_./-]+")
         if binary_str.startswith("-"):
             raise ValueError(
-                f"processor binary {binary!r} starts with '-'; "
-                f"leading-dash may be interpreted as an exec flag"
+                f"processor binary {binary!r} starts with '-'; leading-dash may be interpreted as an exec flag"
             )
         extra_args_list = _parse_processor_args(str(extra_args_raw))
         out_path = clone_path / "process-chunk.sh"
@@ -203,10 +177,10 @@ class RoleCloner:
             "#!/usr/bin/env bash",
             f"# Auto-generated {kind} chunk processor.",
             "set -euo pipefail",
-            '# CHUNK_PATH is the stream chunk file to process; $1 is a fallback.',
+            "# CHUNK_PATH is the stream chunk file to process; $1 is a fallback.",
             'if [ -z "${CHUNK_PATH:-}" ]; then',
             '  CHUNK_PATH="$1"',
-            'fi',
+            "fi",
             f"PROCESSOR_BINARY={quoted_binary}",
         ]
         if quoted_args:
@@ -242,10 +216,10 @@ class RoleCloner:
             "      ansible.builtin.stat:",
             "        path: \"{{ lookup('env', 'GLUDD_AGENT_RESULT_FILE') | default('agent-result.json', true) }}\"",
             "      register: result_stat",
-            "      loop: \"{{ range(1, max_polls + 1) | list }}\"",
+            '      loop: "{{ range(1, max_polls + 1) | list }}"',
             "      until: result_stat.stat.exists",
-            "      delay: \"{{ poll_interval_seconds }}\"",
-            "      retries: \"{{ max_polls }}\"",
+            '      delay: "{{ poll_interval_seconds }}"',
+            '      retries: "{{ max_polls }}"',
         ]
         out_path.write_text("\n".join(lines) + "\n")
         return out_path

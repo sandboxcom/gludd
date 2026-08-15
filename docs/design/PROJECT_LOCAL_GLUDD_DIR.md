@@ -17,7 +17,7 @@ export/archive/weights, live-reload). Owner artifact for ledger request #17.
 `.gludd/` directory (git-root style). It takes precedence over (layers on top of)
 the user-level `$XDG_CONFIG/gludd`. Layout:
 
-```
+```text
 <repo>/.gludd/
   general-ludd.yml        # project config overlay (merged over user config)
   collections/            # ansible_collections/ + roles/ + group_vars/ (search path)

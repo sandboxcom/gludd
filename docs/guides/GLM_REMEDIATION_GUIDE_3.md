@@ -153,7 +153,7 @@ Nothing for the agent to do here except: **re-verify these files were not hand-e
 - Commit: `W1.3: V1.2 done — state-based stop checks only, vocabulary list deleted`
 
 ### W1.4 status-snapshot writes in place + drift detector (V1.5)
-- Change `make status-snapshot` to rewrite the `<!-- gate:begin -->`/`<!-- gate:end -->` block **inside `SESSION.md` directly** (a small `scripts/status_snapshot.py` invoked by the target; stdlib only). Add the marker comments to SESSION.md around the "Current Gate Status" section.
+- Change `make status-snapshot` to rewrite the `&lt;!-- gate:begin --&gt;`/`&lt;!-- gate:end --&gt;` block **inside `SESSION.md` directly** (a small `scripts/status_snapshot.py` invoked by the target; stdlib only). Add the marker comments to SESSION.md around the "Current Gate Status" section.
 - Preflight: fail if the numbers inside the markers disagree with `.gate-status` (drift detector).
 - **Prove:** hand-edit a number between markers → preflight fails → `make status-snapshot` fixes it.
 - Commit: `W1.4: status-snapshot in-place + preflight drift detector`
@@ -412,7 +412,7 @@ This is the actual product. SESSION.md ticks cover C0/C2/C3/C4/H5/H6 — the rem
 
 ## 9. Checklist (mirror into TASKS.md as you go)
 
-```
+```text
 Phase W0 — truth repairs (done in validation pass 2026-06-12)
 [x] W0.1  SESSION.md ratchet-count contradictions corrected (23)
 [x] W0.2  TASKS.md V3.1 false tick reverted

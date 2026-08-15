@@ -21,7 +21,7 @@ generated token must stream the full set of active weights (plus the growing KV
 cache) through the GPU's memory system once. So the first-order throughput
 ceiling for a single decode stream is roughly:
 
-```
+```text
 tokens/s  ≈  memory_bandwidth (bytes/s)  /  bytes_read_per_token
 bytes_read_per_token  ≈  model_weight_bytes + KV_bytes_touched
 ```
@@ -72,7 +72,7 @@ activations + CUDA-graph capture**. Default `0.90`.
 After weights are loaded, the remaining pool holds the KV cache. Per-token KV
 bytes are:
 
-```
+```text
 KV_bytes ≈ 2 (K+V) · num_layers · num_kv_heads · head_dim · kv_dtype_bytes
 ```
 
@@ -444,7 +444,7 @@ last resort (Sections 2.1, 2.6).
 
 ### 3.3 How VRAM splits
 
-```
+```text
 VRAM = weights + KV-cache pool + activations/workspace + (CUDA-graph capture)
 ```
 

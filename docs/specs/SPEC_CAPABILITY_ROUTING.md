@@ -34,7 +34,7 @@ capability without any operator config changes.
 ### 2.1 Collection Layout
 
 Each collection lives under:
-```
+```text
 collections/ansible_collections/general_ludd/<name>/
   galaxy.yml          ← ansible-galaxy metadata (namespace, name, version, tags, dependencies)
   roles/
@@ -163,7 +163,7 @@ If the operator wants both, they define distinct capability names.
 At startup (and on hot-reload), core walks every tier in the resolved
 collections path:
 
-```
+```text
 for each tier in resolve_collections_paths():
     ns_dir = tier.path / "ansible_collections" / "general_ludd"
     for collection_dir in ns_dir.iterdir():
@@ -224,7 +224,7 @@ class CapabilityRegistry:
 
 `CapabilityRegistry.resolve_to_profile(capability_name, router)` → model profile ID:
 
-```
+```text
 1. Lookup by canonical name in _by_name.
    If not found, try _by_alias (aliases map).
    If not found, return None → fallback to router.default_profile_id.
@@ -427,7 +427,7 @@ The entire mechanism is **zero-configuration for the operator**:
 
 ### Phase 1 — Data Model (src/general_ludd/capability/)
 
-```
+```text
 src/general_ludd/capability/
   __init__.py
   registry.py        # CapabilityEntry, CapabilityRegistry

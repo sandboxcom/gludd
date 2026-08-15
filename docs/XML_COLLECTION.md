@@ -7,7 +7,7 @@ from well-formedness validation to structured data extraction to transformation.
 
 ## Architecture Overview
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────┐
 │                      Agent / Playbook                            │
 │        (FQCN: general_ludd.xml.xml_core)                         │
@@ -455,7 +455,7 @@ Every XML document is a tree of **elements**. Each element has:
 - **Text content** (the characters between tags)
 - Zero or more **child elements** (nested hierarchy)
 
-```
+```text
 <book category="fiction" isbn="978-3-16-148410-0">  <!-- element with attributes -->
   <title>The Great Novel</title>                        <!-- element with text content -->
   <author born="1970">Jane Smith</author>               <!-- element with attribute + text -->
@@ -850,7 +850,7 @@ dependencies: {}
 The collection has no Ansible collection dependencies, but requires these
 Python packages at runtime:
 
-```
+```text
 xml.etree.ElementTree  # stdlib — always available
 lxml                   # optional — enables XSD, XSLT, rich XPath
 plistlib               # stdlib — macOS plist support
@@ -863,7 +863,7 @@ plistlib               # stdlib — macOS plist support
 When `xml_core` encounters a malformed XML document, the error is surfaced
 with the parser's line number and column:
 
-```
+```text
 xml.etree.ElementTree.ParseError: not well-formed (invalid token): line 42, column 17
 ```
 
@@ -880,7 +880,7 @@ issues a warning — it does not fail the playbook by default. Set
 If a namespace prefix in the XPath query is not declared in the
 `namespaces` dict, `lxml` raises:
 
-```
+```text
 lxml.etree.XPathEvalError: Undefined namespace prefix
 ```
 

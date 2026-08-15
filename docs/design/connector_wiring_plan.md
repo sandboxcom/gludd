@@ -599,4 +599,5 @@ grep-style count check in the lifespan test.
    `_spend_facet`; the router mirrors `spend.py`/`todos.py`.
 5. **Least privilege** — `/api/observe/*` is non-public; PSK-gated like
    `/api/facts`.
+```text
 ```

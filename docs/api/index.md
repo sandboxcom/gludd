@@ -10,7 +10,7 @@ documented inline below: [Endpoint Overview](#endpoint-overview),
 
 ## Base URL
 
-```
+```text
 http://localhost:8000
 ```
 

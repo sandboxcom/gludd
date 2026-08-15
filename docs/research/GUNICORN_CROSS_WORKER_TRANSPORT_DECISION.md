@@ -1,7 +1,7 @@
 # Gunicorn Cross-Worker Transport Decision
 
-**Status:** Accepted design; implementation and live Azure acceptance remain gated  
-**Decision date:** 2026-08-01  
+**Status:** Accepted design; implementation and live Azure acceptance remain gated
+**Decision date:** 2026-08-01
 **Scope:** durable Gludd events, work claims, and serialized writes across Gunicorn
 workers
 

@@ -206,7 +206,7 @@ control below is mandatory:
 
 ## 2. The pipeline: receive → parse → normalize → buffer
 
-```
+```text
 HTTP body / syslog line
         │
         ▼

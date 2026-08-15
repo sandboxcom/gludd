@@ -7,7 +7,7 @@ filesystem containment with OS-level kernel enforcement (Landlock, bubblewrap, S
 
 ## Layer Model
 
-```
+```text
 ┌──────────────────────────────────────────────┐
 │  Layer 4: Timeout watchdog (rlimit + SIGALRM)│
 │  Layer 3: Network egress (Landlock / bwrap)  │

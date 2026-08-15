@@ -1,9 +1,9 @@
 # Machine-learning and AI expert-system research dossier
 
-**Date:** 2026-07-28  
-**Status:** Research baseline for implementation specifications  
+**Date:** 2026-07-28
+**Status:** Research baseline for implementation specifications
 **Scope:** Machine learning, artificial intelligence, foundation models, agent
-systems, evaluation, safety, and production systems  
+systems, evaluation, safety, and production systems
 **Companion specification:**
 [`SPEC_ML_AI_EXPERT_AND_SAFE_SELF_IMPROVEMENT.md`](../design/specs/SPEC_ML_AI_EXPERT_AND_SAFE_SELF_IMPROVEMENT.md)
 

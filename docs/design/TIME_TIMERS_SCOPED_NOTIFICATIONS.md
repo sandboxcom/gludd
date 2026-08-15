@@ -264,7 +264,7 @@ current tip at implementation time — re-verify), `db/repository.py`
 
 **Columns (mirrors the `TodoModel` scheduling-column shape,
 `db/models.py:227-248`, so the same due-lookup index pattern applies):**
-```
+```text
 timer_id        str PK (f"TIMER-{uuid4().hex[:8].upper()}")
 fire_at         DateTime(timezone=True), NOT NULL   -- resolved via timekit
 scope_type      String(16), NOT NULL   -- global|project|task|agent|role|event_type

@@ -369,7 +369,7 @@ telemetry pulls subject only to the registry's name-allowlist.
 
 ### 4.1 Where it sits
 
-```
+```text
   ┌─────────────────────────── data-gather role / event-loop turn ───────────────────────────┐
   │  TaskContext  ──►  SourceSelector.select_sources(task)                                     │
   │                         │            │                                                     │

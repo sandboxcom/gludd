@@ -14,7 +14,7 @@ for status. Apply order is one-cycle-per-gate (never two gates concurrently).
 |---|---|---|---|
 | 3b | dispatch key collision | dispatch/variable_store.py:102 | `.replace(".","_DOT_").replace("-","_DASH_")` + flip 2 pinned tests |
 | 3b | SSTI in render() | dispatch/variable_store.py:76 | `SandboxedEnvironment` (import from jinja2.sandbox); disjoint from 3b-2A |
-| 3b | `-->` escape + dedup | issue_sources/markdown_todo.py:176 | escape `comment.replace("-->","--&gt;")`, dedup full marker; external_id = md-+sha1(rel::text)[:12] |
+| 3b | `--&gt;` escape + dedup | issue_sources/markdown_todo.py:176 | escape `comment.replace("--&gt;","--&gt;")`, dedup full marker; external_id = md-+sha1(rel::text)[:12] |
 | A  | gated_commit/gated_merge port | git_automation/{types,repo,__init__}.py | + GatedCommitResult; gate via subprocess(shell=False), commit only if rc==0; also add CloneResult to __all__ |
 | A  | REAL non-stub ansible op | collections/.../gludd_git_automation.py + roles | mandatory caller gate_cmd, module.fail_json if rc!=0 |
 | 3  | is_path_within→is_join_within | security/{auth,__init__}.py + skills/fetcher.py | rename + back-comp alias (covers all importers) |

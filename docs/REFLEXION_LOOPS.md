@@ -9,7 +9,7 @@ persistent memory for cross-episode improvement.
 
 ## Core Loop
 
-```
+```text
 ┌──────────┐   output   ┌──────────────┐   score   ┌──────────────┐
 │  TRY     │──────────▶│  EVALUATE     │─────────▶│  REFLECT      │
 │ (actor)  │           │  (critic)     │          │  (self-crit)  │
@@ -24,7 +24,7 @@ critic's evaluation, and a textual reflexion that steers the next attempt.
 
 ## Data Model
 
-```
+```text
 ReflexionEpisode:
   - episode_id: str
   - task_description: str

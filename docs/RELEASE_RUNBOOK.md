@@ -10,7 +10,7 @@ every safety net in this repo was either bypassed or not wired in.
 **A tag is not a release. A release with assets is not a *complete* release.**
 The only machine-checkable definition of "shipped" is:
 
-```
+```text
 make verify-release-completeness TAG=v0.1.0-beta.2
 ...
 COMPLETENESS CHECK: PASS — all 16 checks passed.
@@ -34,7 +34,7 @@ order; **stop and fix** on any non-zero exit. Do not skip ahead.
 
 ### 1. Verify CI is GREEN on `development`
 
-```
+```text
 make ci-verdict-safe BRANCH=development
 ```
 
@@ -46,7 +46,7 @@ verdict" below); treat cancelled/no-run as red.
 
 ### 2. Merge `development` → `master` (main checkout only)
 
-```
+```text
 make development-merge-to-master
 ```
 
@@ -54,7 +54,7 @@ This performs a `--no-ff` merge on the **main checkout** (`/Users/shawnwilson/gl
 never inside a worktree. It requires CI green on `development`. After it
 completes, verify `master` tip matches the merged commit:
 
-```
+```text
 make verify-remote BRANCH=master SHA=$(make git-rev-parse REF=HEAD)
 ```
 
@@ -63,7 +63,7 @@ Expect `VERIFIED master@<sha>`. A `REMOTE MISMATCH` means the push did not land
 
 ### 3. Cut the release
 
-```
+```text
 make release-cut TAG=v0.1.0-beta.2 MSG='v0.1.0-beta.2: <one-line summary>'
 ```
 
@@ -82,7 +82,7 @@ exhaustion — proceed to step 4.
 
 ### 4. Verify the 12 assets
 
-```
+```text
 make verify-release-completeness TAG=v0.1.0-beta.2
 ```
 
@@ -91,7 +91,7 @@ artifact categories (see "What 'complete' means" below), the prerelease flag
 matching the `-beta` tag, version-stamped asset names, and no zero-size assets.
 Expect:
 
-```
+```text
 COMPLETENESS CHECK: PASS — all 16 checks passed.
 ```
 
@@ -104,7 +104,7 @@ missing, the release is broken; see "If CI is red for the tag" below.
 Once `verify-release-completeness` passes, the GitHub Release created by
 `release-cut` step 4 is already public and non-draft. Confirm:
 
-```
+```text
 make release-view TAG=v0.1.0-beta.2
 ```
 
@@ -184,7 +184,7 @@ completeness check, then un-drafting.
 
 ## Repairing a published release
 
-```
+```text
 make release-upload-assets TAG=v0.1.0-beta.2 FILES='dist/a.tar.gz dist/b.deb'
 make release-set-prerelease TAG=v0.1.0-beta.2
 make verify-release-completeness TAG=v0.1.0-beta.2

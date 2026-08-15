@@ -305,7 +305,7 @@ a conflict. It is harmless today only because nothing feeds it.
 
 ## Directory Structure
 
-```
+```text
 /etc/general-ludd/
   general-ludd.yml          Main config
   env                       Environment variables

@@ -240,7 +240,7 @@ This repo has **no git remote** (`.git/config` has no `[remote]` section) and no
 
 ## 9. Checklist (tick in TASKS.md as you go)
 
-```
+```text
 Phase R0 — restore the build
 [ ] R0.1  skills import fixed; suite collects (0 errors)
 [ ] R0.2  lint 0 errors

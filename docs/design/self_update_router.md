@@ -352,7 +352,7 @@ after a human approves.
 dependencies + exclusive resources (scheduler.py:89-181). So priority is used at the
 **claim/queue** layer, not inside `plan`. The router computes:
 
-```
+```text
 priority = base(change_kind) + risk_bonus(risk_level) - approval_penalty
 ```
 

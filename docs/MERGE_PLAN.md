@@ -16,7 +16,7 @@ Condensed copy-paste plan for promoting `development` → `master` and cutting
 
 ### 1. Verify CI is GREEN on `development`
 
-```
+```text
 make ci-verdict-safe BRANCH=development
 ```
 
@@ -27,14 +27,14 @@ proceed.
 
 ### 2. Merge `development` → `master`
 
-```
+```text
 make development-merge-to-master
 ```
 
 Performs a `--no-ff` merge on the main checkout (never inside a worktree).
 Requires CI green on `development`. After completion, verify the push landed:
 
-```
+```text
 make verify-remote BRANCH=master SHA=$(make git-rev-parse REF=HEAD)
 ```
 
@@ -43,7 +43,7 @@ proceed.
 
 ### 3. Cut the release
 
-```
+```text
 make release-cut TAG=v0.1.0-beta.2 MSG='v0.1.0-beta.2: <one-line summary>'
 ```
 
@@ -60,7 +60,7 @@ not failure. Proceed to step 4.
 
 ### 4. Verify completeness (the real gate)
 
-```
+```text
 make verify-release-completeness TAG=v0.1.0-beta.2
 ```
 
@@ -68,7 +68,7 @@ Requires all 12 artifact categories (4 platform binaries, 4 packages, 4
 metadata), prerelease flag matching `-beta`, version-stamped asset names, no
 zero-size assets. Expect:
 
-```
+```text
 COMPLETENESS CHECK: PASS — all 16 checks passed.
 ```
 
@@ -77,7 +77,7 @@ missing → broken release; see runbook §"If CI is red for the tag".
 
 ### 5. Confirm + record evidence
 
-```
+```text
 make release-view TAG=v0.1.0-beta.2
 ```
 

@@ -193,7 +193,7 @@ A script that:
 
 ## 5. Current Enforcement Architecture (for reference)
 
-```
+```text
 User message → [NO HOOK SURFACE AVAILABLE]
                ↓
 Agent reads TASKS.md (enforce-session-start gate)

@@ -1,7 +1,7 @@
 # Python 3.14 / Starlette Protocol Cache Compatibility
 
-**Status:** Accepted remediation decision  
-**Decision date:** 2026-08-01  
+**Status:** Accepted remediation decision
+**Decision date:** 2026-08-01
 **Affected lock:** CPython 3.14.0, Starlette 1.3.1, AnyIO 4.13.0
 
 ## Decision

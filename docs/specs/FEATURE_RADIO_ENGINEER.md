@@ -43,7 +43,7 @@ ham/marine exam data, frequency regulation lookup, and link budget calculation.
 
 ## 5. Files
 
-```
+```text
 collections/ansible_collections/general_ludd/radio/
 ├── galaxy.yml, README.md
 ├── plugins/module_utils/

@@ -21,7 +21,7 @@ and applying one of three remediation strategies:
 
 ## Architecture
 
-```
+```text
                      ┌──────────────────────────┐
                      │  hourly schedule entry   │
                      │  (work_type=blocker_scan)│

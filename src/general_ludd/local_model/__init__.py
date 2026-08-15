@@ -1,3 +1,5 @@
+"""Local model discovery and routing."""
+
 from __future__ import annotations
 
 from general_ludd.local_model._local_model_configs import (
@@ -27,7 +29,6 @@ __all__ = [
     "qwen2_5_1_5b",
     "qwen2_5_3b",
     "qwen2_5_7b",
-    # All 24 individual model configs by name:
     "qwen2_5_coder_0_5b",
     "qwen2_5_coder_1_5b",
     "qwen2_5_coder_3b",
@@ -77,6 +78,7 @@ def list_models(
     category: Category | None = None,
     ci_safe_only: bool = False,
 ) -> list[LocalModelConfig]:
+    """List configured local models, optionally filtered by category or CI safety."""
     configs = list(_LOCAL_MODELS)
     if category is not None:
         configs = [c for c in configs if c.category == category]
@@ -86,6 +88,7 @@ def list_models(
 
 
 def get_model(model_id: str) -> LocalModelConfig | None:
+    """Look up a local model config by id or identifier-derived name."""
     if model_id in _MODEL_BY_NAME:
         return _MODEL_BY_NAME[model_id]
     key = _identifier_to_name(model_id)

@@ -44,7 +44,7 @@ the orchestration; there is no separate dispatch planner.
 
 ## 4. Implementation
 
-```
+```text
 src/general_ludd/ag16_orchestration/
   __init__.py          — exports (Turn, Conversation, ChatOrchestrator)
   conversation.py      — Turn, Conversation, SpeakerSelector, TerminationCondition

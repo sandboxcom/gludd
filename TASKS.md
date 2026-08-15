@@ -426,7 +426,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 ### Test Tally — 88,291
 
 | System | Test Count |
-|---|---|---|
+|---|---|
 | gate-lite (app) | 6,555 |
 | Integration | 3,252 |
 | Local Model E2E | ~790 |

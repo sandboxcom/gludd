@@ -647,7 +647,7 @@ must be re-pointed at the corrected semantics.
 ## 6. New tests proving a real conflict is now DETECTED and refused
 
 ### 6.1 Unit — reachable clobber refusal (`test_pipeline_daemon_adapters.py`)
-```
+```python
 def make base commit B: f.txt = "a\nb\nc\n"; commit → base_sha
 repo working tree: edit line2 → "a\nREPO\nc\n"        (ours diverged)
 worktree tree:     edit line2 → "a\nWORKTREE\nc\n"    (theirs diverged, same region)
@@ -743,4 +743,5 @@ are independent.
       `test_default_config_is_disabled` green + `state.py:61`.
 - [ ] `make gate-async` green on the exact SHA before any release note claims
       the pipeline is fixed. | evidence: `.gate-status` + run id.
+```text
 ```

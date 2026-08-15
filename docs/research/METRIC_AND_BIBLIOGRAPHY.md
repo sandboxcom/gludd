@@ -9,7 +9,7 @@
 
 The core cost-efficiency metric used to evaluate model candidates:
 
-```
+```text
 W$ = W / log10(1 + median_$/Mtok)
 ```
 
@@ -41,7 +41,7 @@ Computed via SQL `AVG()` over successful benchmark results. Weights reflect the 
 | `instruction_adherence_score` | **0.20** | Did the model follow the prompt's constraints? |
 | `token_efficiency_score` | **0.10** | Did it avoid wasted output tokens (hallucinated boilerplate, circular edits)? |
 
-```
+```text
 composite = completion × 0.4 + quality × 0.3 + instruction × 0.2 + efficiency × 0.1
 ```
 
@@ -49,7 +49,7 @@ composite = completion × 0.4 + quality × 0.3 + instruction × 0.2 + efficiency
 
 The `BenchmarkScores` model exposes a `composite_score` property with slightly different weights, used at collection time (pre-persistence):
 
-```
+```text
 composite = completion × 0.35 + quality × 0.25 + instruction × 0.25 + efficiency × 0.15
 ```
 
@@ -93,7 +93,7 @@ The `AdaptiveRouter.route()` method executes these stages:
 5. **Pareto filter** (`_apply_pareto_filter`) — when a `ParetoRouter` is configured, non-dominated candidates are selected: a candidate is dominated if another has both lower cost and higher quality.
 
 6. **Ranking** — each survivor is scored by:
-   ```
+   ```text
    rank = weights.quality × quality − weights.cost × (cost / max_cost)
    ```
    where `weights` comes from `weights_for(task_type)`. Cost is normalised to [0,1] within the candidate set.
@@ -112,7 +112,7 @@ The `ParetoRouter.route_by_pareto_frontier()` operates independently:
 2. Identifies the Pareto frontier — candidates where no other has strictly lower cost AND strictly higher quality.
 3. Returns frontier candidates in quality-descending order.
 4. `pick_winner()` normalises cost and quality to [0,1] within the frontier and scores each as:
-   ```
+   ```text
    score = quality_norm × quality_weight − cost_norm × cost_weight
    ```
    (Default: `cost_weight=0.5`, `quality_weight=0.5`).

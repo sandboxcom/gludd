@@ -26,7 +26,7 @@ Verified against `src/general_ludd/connectors/`:
 
 # 1. Kubernetes API (events / pods / logs / [metrics])
 
-### What the connector reads (verbatim from `kubernetes.py`)
+## What the connector reads (verbatim from `kubernetes.py`)
 
 - Events: `GET {api_server}/api/v1/namespaces/{ns}/events`, or cluster-wide
   `GET {api_server}/api/v1/events` when `namespace` is blank.
@@ -43,7 +43,7 @@ The token value is read from an environment variable at request time; the connec
 does **not** read the in-pod path `/var/run/secrets/kubernetes.io/serviceaccount/token`
 itself — you supply the token value via env (see the ENV table at the end).
 
-### 1.a Minimal access — cluster-wide read-only (full YAML)
+## 1.a Minimal access — cluster-wide read-only (full YAML)
 
 Use this when gludd watches events/logs across all namespaces (the connector's
 cluster-wide `/api/v1/events` mode). Grants ONLY `get`/`list`/`watch` on
@@ -87,7 +87,7 @@ subjects:
     namespace: gludd
 ```
 
-### 1.b Tighter scope — namespace-scoped Role variant
+## 1.b Tighter scope — namespace-scoped Role variant
 
 Prefer this when gludd only watches one namespace (set the connector's
 `namespace` config to that namespace). Same verbs, but a `Role` + `RoleBinding`
@@ -129,7 +129,7 @@ subjects:
     namespace: app-prod
 ```
 
-### 1.c WHERE / HOW to apply and obtain a token
+## 1.c WHERE / HOW to apply and obtain a token
 
 Apply the manifests:
 
@@ -191,7 +191,7 @@ users:
 TLS: set the connector `ca` config key to the cluster CA path (it is forwarded to
 the transport as `verify`), or `verify: false` only for throwaway/dev clusters.
 
-### 1.d OPTIONAL deploy-compute role (write — schedule model servers)
+## 1.d OPTIONAL deploy-compute role (write — schedule model servers)
 
 Grant this **only** if gludd schedules its own model servers. Keep it as a
 **separate, clearly-named role** so the observability SA stays read-only. Bind it
@@ -234,7 +234,7 @@ subjects:
     namespace: gludd-compute
 ```
 
-### 1.e Verification (`kubectl auth can-i`, run as the SA)
+## 1.e Verification (`kubectl auth can-i`, run as the SA)
 
 `--as=system:serviceaccount:<ns>:<sa>` impersonates the SA so you test the SA's
 real grants. Each line states the expected answer.
@@ -273,7 +273,7 @@ kubectl auth can-i delete deployments -n gludd-compute --as=$SCHED
 > are **not** read by any current connector, so the routes rule is included only
 > commented-out for a future connector.
 
-### 2.a Minimal access — read-only ClusterRole
+## 2.a Minimal access — read-only ClusterRole
 
 ```yaml
 # ocp-gludd-readonly.yaml  —  oc apply -f ocp-gludd-readonly.yaml
@@ -313,7 +313,7 @@ subjects:
     namespace: gludd
 ```
 
-### 2.b `oc adm policy` equivalent (instead of writing the binding YAML)
+## 2.b `oc adm policy` equivalent (instead of writing the binding YAML)
 
 ```bash
 oc create sa gludd-observer -n gludd
@@ -328,7 +328,7 @@ oc adm policy add-role-to-user gludd-observer-readonly \
   -z gludd-observer -n app-prod --role-namespace=app-prod
 ```
 
-### 2.c Minimal SCC note
+## 2.c Minimal SCC note
 
 A read-only API client needs **no elevated SecurityContextConstraints**. If gludd
 runs *as a pod inside* OpenShift, leave it on the default `restricted-v2` SCC
@@ -342,7 +342,7 @@ oc adm policy who-can use scc restricted-v2 -n gludd
 # Do NOT run: oc adm policy add-scc-to-user privileged -z gludd-observer  (unnecessary)
 ```
 
-### 2.d Token + verification
+## 2.d Token + verification
 
 ```bash
 # Mint a token (OpenShift >= 4.11 supports kubectl create token semantics):
@@ -369,7 +369,7 @@ oc auth can-i get secrets  --as=$SA     # Expected: no
 the socket itself is a powerful capability, so least-privilege is about **OS-level
 access to the socket**, not about CRI verbs.
 
-### 3.a OS-level access — no root, group/ACL on the socket
+## 3.a OS-level access — no root, group/ACL on the socket
 
 The runtime socket is typically one of:
 - containerd: `unix:///run/containerd/containerd.sock`
@@ -404,7 +404,7 @@ Do **not**: add `gludd` to the `root`/`wheel`/`sudo` groups; `chmod 666` the
 socket; or run the connector as root. The socket grants full container control at
 the OS level, so confine it to one user/group.
 
-### 3.b Point the connector / crictl at the socket (read-only usage)
+## 3.b Point the connector / crictl at the socket (read-only usage)
 
 ```yaml
 # /etc/crictl.yaml  (or pass --runtime-endpoint each call)
@@ -414,7 +414,7 @@ timeout: 10
 debug: false
 ```
 
-### 3.c Verification (read-only crictl as the gludd user)
+## 3.c Verification (read-only crictl as the gludd user)
 
 ```bash
 # Run AS the gludd user (su/runuser), not root. Expected: succeeds, lists pods.
@@ -433,7 +433,7 @@ stat -c '%A %U:%G' /run/containerd/containerd.sock
 > Forward-looking: no `docker_api.py` connector exists. This section is the
 > least-privilege spec for a future Docker connector.
 
-### 4.a RISK CALLOUT — `docker` group membership is root-equivalent
+## 4.a RISK CALLOUT — `docker` group membership is root-equivalent
 
 **Do NOT add gludd to the `docker` group, and do NOT mount `/var/run/docker.sock`
 read-write into the gludd container.** The Docker daemon runs as root and the API
@@ -442,7 +442,7 @@ with access to the raw Docker socket can trivially gain root on the host.** Grou
 membership in `docker` is therefore equivalent to passwordless root. An
 observability client must never have it.
 
-### 4.b Recommended — read-only socket proxy (least privilege)
+## 4.b Recommended — read-only socket proxy (least privilege)
 
 Put a filtering proxy in front of the socket and expose **only** the read
 endpoints gludd needs (containers, events, logs). `tecnativa/docker-socket-proxy`
@@ -495,7 +495,7 @@ services:
 
 Then point the future Docker connector at the **proxy**, not the raw socket:
 
-```
+```text
 DOCKER_HOST = tcp://127.0.0.1:2375     # the proxy; raw /var/run/docker.sock is never given to gludd
 ```
 
@@ -503,7 +503,7 @@ The gludd container/process gets **no** access to `/var/run/docker.sock` and is
 **not** in the `docker` group. Its only Docker reachability is the loopback proxy,
 which can only answer read calls.
 
-### 4.c Verification (proxy enforces read-only)
+## 4.c Verification (proxy enforces read-only)
 
 ```bash
 # Read calls via the proxy — Expected: 200 OK

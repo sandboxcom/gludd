@@ -46,7 +46,7 @@ project-scoped parent cannot dispatch a global child that escapes its scope.
 
 ## 3. Evaluation Order at Dispatch
 
-```
+```text
 1. AgentRegistry.can_invoke(invoker,target)  — fnmatch on allowed_subagents
 2. _check_capability_escalation()             — coarse AgentPermission gate
 3. (Proposed) tool-permission intersection    — fine ToolPermissionSpec gate

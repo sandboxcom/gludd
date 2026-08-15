@@ -1,8 +1,8 @@
 # Feature: Azure Expert Collection
 
-**Spec ID:** AZUR-001  
-**Status:** In Development  
-**Target:** development after `v0.1.0-beta.3`  
+**Spec ID:** AZUR-001
+**Status:** In Development
+**Target:** development after `v0.1.0-beta.3`
 **Collection:** `general_ludd.azure`
 
 ## 1. Purpose

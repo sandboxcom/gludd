@@ -49,4 +49,3 @@ The regression suite verifies that no `node_modules` path is tracked, every lock
 URL uses the configured public registry, the exact esbuild version matches the
 lock, and CI installs before compiling. A clean platform install builds all 27
 expected hot modules; the Node audit reports zero known vulnerabilities.
-

@@ -477,7 +477,7 @@ threads `project_id` everywhere (e.g. `TodoRepository.scoped`,
 
 ### 4.2 Data flow
 
-```
+```text
 route(task_type, project_id=P)
   -> get_aggregate_scores(project_id=P, task_type=...)            # own history
      thin? (sum(sample_count) < min_samples)                     # threshold gate
@@ -501,7 +501,7 @@ Existing task axis (`router.py:221-230`):
 
 New project-relationship axis:
 
-```
+```text
 project_rel_weight(relation, edge_distance, controlled_by_gludd) =
     base[relation] * (edge_decay ** (edge_distance - 1)) * control_factor
 
@@ -512,7 +512,7 @@ project_rel_weight(relation, edge_distance, controlled_by_gludd) =
 
 Final per-candidate quality multiplier:
 
-```
+```text
 quality_multiplier = task_w(task_similarity) * project_rel_weight(rel, dist, ctl)
 ```
 
@@ -598,7 +598,7 @@ load_vars_for_project` (`db/repository.py:691-708`) and the `gludd_environment` 
 `gludd_facts` ansible modules. Expose relationships + inherited picks as vars under
 a `relationships` namespace so playbooks/roles consume them without bespoke code:
 
-```
+```text
 gludd_parent_project        = "acme-platform"
 gludd_parent_controlled     = true
 gludd_children_projects     = ["ledger", "notifications"]

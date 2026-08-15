@@ -72,7 +72,7 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 
 ## Feature & Task Completion Status
 
-<!-- STATUS-TABLE:START -->
+&lt;!-- STATUS-TABLE:START --&gt;
 *(auto-generated with `--fast`; `test:` refs checked by file existence only — run `make gen-status-table` locally to verify tests pass)*
 
 
@@ -186,7 +186,7 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 | S53.31-S53.32 — Agentic memory: embedding store, consolidation cascade, hybrid search (97 tests) | ✓ 100% | **PASS** *(file-refs only)*: Procedural + semantic + hybrid search + embedding; commit 97432526 |
 | S53.33-S53.34 — PaaS IAM least-privilege roles (AWS/GCP/Azure) + OPA policies for Terraform/IAM (32 tests) | ✗ 100% | **PENDING** *(file-refs only)*: 3 provider IAM files, 4 OPA policy files; commit b4612d1a |
 
-<!-- STATUS-TABLE:END -->
+&lt;!-- STATUS-TABLE:END --&gt;
 
 ## Backlog
 
@@ -212,7 +212,7 @@ serves that, leaving the tracked template byte-for-byte untouched. The
 published Pages URL below is built the same way (via `make deck-build` in CI),
 so it always shows resolved numbers.
 
-**Live URL (GitHub Pages):** [https://sandboxcom.github.io/gludd/](https://sandboxcom.github.io/gludd/)
+**Live URL (GitHub Pages):** [GitHub Pages site](https://sandboxcom.github.io/gludd/)
 &mdash; deployed by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push to
 `master` that touches the deck source. Pages was just enabled for this repo; the
 URL goes live once that workflow completes its next successful run &mdash; check

@@ -14,7 +14,7 @@ cached, rate-limited API surface that the agent platform can query via the
 
 ## Architecture
 
-```
+```text
 ┌─────────┐     JSON API      ┌───────────┐    80+ engines    ┌──────────────┐
 │  gludd  │ ──────────────────│  SearXNG   │ ──────────────────│  arXiv       │
 │  daemon │                   │ (Docker)   │                   │  PubMed      │

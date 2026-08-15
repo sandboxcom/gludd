@@ -135,7 +135,7 @@ For a non-OpenAI provider (Step 2 path), also override `test_provider_uses_opena
 
 Then run the gate (targeted, not main-thread):
 
-```
+```text
 make test TESTFILE='tests/unit/test_provider_presets.py'
 ```
 
@@ -236,13 +236,13 @@ model_id = PROVIDER_FLAGSHIP_MODELS["newprovider"]
 
 **Run locally** (never in CI — live tests hit real APIs and cost money):
 
-```
+```text
 make test TESTFILE='tests/live/test_newprovider_live.py'
 ```
 
 Or export the key and invoke directly:
 
-```
+```text
 export NEWPROVIDER_API_KEY=...
 make test TESTFILE='tests/live/test_newprovider_live.py'
 ```

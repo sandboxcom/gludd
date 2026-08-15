@@ -39,7 +39,7 @@ config has been set. `BehaviorRenderer` is never called during execution.
 
 **Location:** After the existing imports block (after line 18, which imports `JobSpec`).
 
-```
+```text
 old_string:
 from general_ludd.git_automation.repo import GitAutomation
 from general_ludd.schemas.job import JobSpec
@@ -60,7 +60,7 @@ from general_ludd.schemas.task_return import TaskReturn
 
 **Location:** Lines 58–71, the entire `_build_system_prompt` function.
 
-```
+```python
 old_string:
 def _build_system_prompt(job: JobSpec) -> str:
     lines: list[str] = []
@@ -107,7 +107,7 @@ def _build_system_prompt(job: JobSpec, behavior: AgentBehavior | None = None) ->
 
 **Location:** Lines 154–168, the `ExecutionEngine.__init__` method.
 
-```
+```text
 old_string:
     def __init__(
         self,
@@ -153,7 +153,7 @@ new_string:
 
 **Location:** Line 234 inside `execute()`.
 
-```
+```text
 old_string:
         system_prompt = _build_system_prompt(job)
 
@@ -241,7 +241,7 @@ call. Adding it as a first-class `AgentBehavior` field makes it renderable and a
 
 **Location:** Line 49 — after `self_improve_interval: int = 0`.
 
-```
+```text
 old_string:
     max_retries: int = 3
     self_improve_interval: int = 0
@@ -261,7 +261,7 @@ new_string:
 **Location:** Lines 227–238 — after the `self_improve_interval` block and before
 `return "\n".join(sections)`.
 
-```
+```text
 old_string:
         if behavior.self_improve_interval > 0:
             sections.append("## Self-Improvement Cycle")
@@ -310,7 +310,7 @@ new_string:
 
 **Location:** Lines 248–260, `default_primary_behavior()`.
 
-```
+```python
 old_string:
 def default_primary_behavior() -> AgentBehavior:
     return AgentBehavior(
@@ -351,7 +351,7 @@ def default_primary_behavior() -> AgentBehavior:
 
 **Location:** Lines 263–275, `default_subagent_behavior()`.
 
-```
+```python
 old_string:
 def default_subagent_behavior() -> AgentBehavior:
     return AgentBehavior(
@@ -440,7 +440,7 @@ into every system prompt and makes it auditable.
 
 **Location:** After the `never_block_on_questions` field added in PG-1.
 
-```
+```text
 old_string:
     max_retries: int = 3
     self_improve_interval: int = 0
@@ -462,7 +462,7 @@ new_string:
 **Location:** After the `never_block_on_questions` renderer block added in PG-1, before
 `return "\n".join(sections)`.
 
-```
+```text
 old_string:
         if behavior.never_block_on_questions:
             sections.append("## Never Block On Questions")
@@ -512,7 +512,7 @@ new_string:
 
 **Location:** `default_primary_behavior()` — add after `never_block_on_questions=True`.
 
-```
+```python
 old_string:
         stop_conditions=["missing_credentials", "environment_change"],
         never_block_on_questions=True,
@@ -539,7 +539,7 @@ def default_subagent_behavior
 
 **Location:** `default_subagent_behavior()` — add after `never_block_on_questions=True`.
 
-```
+```text
 old_string:
         stop_conditions=["missing_credentials", "environment_change"],
         never_block_on_questions=True,

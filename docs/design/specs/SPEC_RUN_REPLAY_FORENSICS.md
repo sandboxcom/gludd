@@ -2,10 +2,10 @@
 
 Status: READY-TO-IMPLEMENT (2026-08-12)
 
-**Feature ID:** G10-RR1  
+**Feature ID:** G10-RR1
 **Target compatibility:** Gludd `0.1.x`, bundle schema
-`gludd.run-bundle/v1`  
-**Priority / effort:** HIGH / M  
+`gludd.run-bundle/v1`
+**Priority / effort:** HIGH / M
 **Owners:** replay, dispatch, API/CLI, security, observability
 
 This specification closes the remaining half of G10. Gludd already records a
@@ -99,25 +99,25 @@ persisting across mature coding agents.
    March 2026 user report demonstrates that the UI can render the ordered tool
    activity but the exported transcript loses it. Cursor support acknowledged
    the issue and said there was no ETA. Gludd must define one canonical bundle,
-   not a lossy export assembled from a second data path.  
+   not a lossy export assembled from a second data path.
    <https://forum.cursor.com/t/exporting-transcript-doesnt-export-agent-commands/155837>
 2. **Cursor’s on-disk transcript omits tool outputs.** An April 2026 user wanted
    full traces to learn a repeatable pipeline from prior agent work. Cursor
    confirmed that JSONL includes tool inputs but intentionally excludes outputs
    and suggested custom hooks. Gludd needs bounded tool output with explicit
-   truncation markers so audit completeness and disk safety are both visible.  
+   truncation markers so audit completeness and disk safety are both visible.
    <https://forum.cursor.com/t/accessing-the-full-agent-transcript-in-cursor/157311>
 3. **Cline checkpoint restore deleted most of a user’s workspace.** The issue
    was opened in 2024 and reopened after another user reported widespread file
    deletion in February 2025. That history is why Gludd simulation is read-only
    and why any actual rerun must use a disposable worktree, never a destructive
-   “restore the old workspace” operation.  
+   “restore the old workspace” operation.
    <https://github.com/cline/cline/issues/1213>
 4. **Cline checkpoints blocked task activity and degraded on large repos.** The
    June–July 2025 investigation connected checkpoint storage and disk speed to
    severe performance problems, with maintainers planning a redesign for large
    repositories. Gludd therefore needs explicit byte limits, retention,
-   asynchronous cleanup, and capture-latency telemetry.  
+   asynchronous cleanup, and capture-latency telemetry.
    <https://github.com/cline/cline/issues/4578>
 
 The product lesson is narrow: a transcript that cannot prove tool activity is

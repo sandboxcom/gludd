@@ -186,7 +186,7 @@ producing.
   landed for `gate_debounce_seconds` (a quiet window). This batches a burst of
   N integrations into ONE gate run on the coherent post-burst snapshot. Concrete
   rule each turn:
-  ```
+  ```text
   if epoch > last_gated_epoch and (now - last_integration_at) >= gate_debounce_seconds
      and not gate_in_flight:
         run_gate()
@@ -221,7 +221,7 @@ producing.
 
 ### 2.4 Shared state model
 
-```
+```python
 class JobStatus(Enum):
     RUNNING; COMPLETED; FAILED; INTEGRATING; INTEGRATED; CONFLICT; RECLAIMED
 
@@ -291,7 +291,7 @@ heartbeat reason so an operator can see *why* the floor is underrun.
 
 ### 3.1 Class
 
-```
+```python
 class PipelineController:
     def __init__(
         self,
@@ -324,7 +324,7 @@ class PipelineController:
 Internally it owns `DispatchLane`, `IntegrateLane`, `GateLane`, each holding a
 ref to the shared `PipelineState`. `run_forever`-style loops:
 
-```
+```text
 async def _run_lane(self, lane):
     while self._running:
         try:
@@ -514,7 +514,7 @@ The observability invariant ("unseen events aren't events"; AGENTS.md rule 9,
 test_observability_guardrails.py) is binding here. Each lane emits a heartbeat on
 **every** turn via the `EventBus`, carrying at minimum:
 
-```
+```json
 { "lane": "dispatch|integrate|gate",
   "turn": n, "running": k, "pending": p, "conflicts": c,
   "epoch": e, "gate_in_flight": bool,

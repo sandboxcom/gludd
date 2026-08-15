@@ -4,7 +4,7 @@ Companion to `docs/AGENTIC_IMPLEMENTATION_SPEC.md` (Wave D items). Each section 
 produced by a read-only design pass against the live tree on 2026-07-10 with every cited
 seam verified by reading the file. Re-pin line numbers with a Read at apply time.
 
-### Numbering & scope note
+## Numbering & scope note
 
 Section numbers in this compendium (D2–D8, SPD-1) are LOCAL to this file and do NOT correspond to the spec's Wave D item IDs. Mapping: §D2→spec D2 (project gate), §D3→spec D3 (self-improve externalization), §D4→spec D12 slice 1 (Slack OUTBOUND notifications — the connector/inbound half of D12 remains undesigned), §D5→spec D5 (compute discovery), §D6→spec D9 (#52 remediation tick) + D10 (#53 file-claim livelock), §D7→spec D11 (#57 chain guards — NOT spec D7), §D8→spec D4 (DAST), §SPD-1→spec SPD-1. Spec D7 (pause/resume) carries its full design inline in the spec (items D7.1–D7.4) and is deliberately absent here.
 
@@ -118,7 +118,7 @@ todo_completed/todo_failed/human_todo_created members (grep-verified) — add th
 mirroring HookTriggeredEvent (:164-167); publish sites: loop.py after :3147 (`reconciled += 1`,
 gated on new_status in COMPLETE/FAILED; `self._event_bus` already stored at :410) and
 routers/human_todos.py after :144 (post-commit, before return);
-secrets: `resolve(alias) -> str | None` shared by SecretsManager (:286-317) and EnvSecretsManager <!-- pragma: allowlist secret -->
+secrets: `resolve(alias) -> str | None` shared by SecretsManager (:286-317) and EnvSecretsManager &lt;!-- pragma: allowlist secret --&gt;
 (env.py:70-93); EnvSecretsManager is allow-list fail-closed — wiring must call
 `allow_env(webhook_secret_alias)` (env.py:61-63, currently zero callers) so env-only deployments
 resolve; daemon seam: construct after `app.state._secrets_resolver` assignment (daemon.py ~:1081),

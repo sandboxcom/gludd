@@ -1,6 +1,6 @@
 # Gate and orchestration branch reconciliation
 
-Date: 2026-08-12  
+Date: 2026-08-12
 Base: development `4f5d91a6`
 
 ## Source decisions

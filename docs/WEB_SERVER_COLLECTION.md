@@ -48,7 +48,7 @@ ansible-galaxy collection install general_ludd.web_server
 
 ### 2.1 Request Flow — Standard Web Stack
 
-```
+```text
 Client ──[TLS]──> TLS Termination ──[plain]──> Reverse Proxy ──[socket/HTTP]──> WSGI/ASGI App ──> Response
   │                 (ssl_config)               (reverse_proxy)                   (cgi_wsgi)
   │
@@ -69,7 +69,7 @@ Client ──[TLS]──> TLS Termination ──[plain]──> Reverse Proxy ─
 
 ### 2.2 Proxy Chain — Forward + Reverse
 
-```
+```text
 Client ──[explicit proxy config]──> Forward Proxy ──[internet]──> Reverse Proxy ──> App
               (forward_proxy)                                        (reverse_proxy)
 ```
@@ -82,7 +82,7 @@ Client ──[explicit proxy config]──> Forward Proxy ──[internet]──
 
 ### 2.3 Load Balancing
 
-```
+```text
 Client ──> Load Balancer ──┬──> backend-0 (10.0.1.10:80)  weight=1
               │             ├──> backend-1 (10.0.1.11:80)  weight=1
               │             └──> backend-2 (10.0.1.12:80)  weight=2 (backup)
@@ -502,13 +502,13 @@ log rotation (logrotate), structured JSON logging, and log analysis. Will cover:
 
 **Modern** (TLS 1.3 only — best security, most restrictive):
 
-```
+```text
 TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256
 ```
 
 **Intermediate** (TLS 1.2–1.3 — recommended default, broad compatibility):
 
-```
+```text
 ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:
 ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:
 ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:
@@ -517,7 +517,7 @@ DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384
 
 **Old** (TLS 1.0+ — legacy-compatible, use only when required):
 
-```
+```text
 ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:
 ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:
 ECDHE-ECDSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:
@@ -532,11 +532,11 @@ cipher string. The role applies it to nginx (`ssl_ciphers`) or Apache
 ### 4.3 HSTS Quick Setup
 
 1. Start with a short max-age for testing:
-   ```
+   ```text
    Strict-Transport-Security: max-age=300
    ```
 2. Once confirmed working, increase to 1 year:
-   ```
+   ```text
    Strict-Transport-Security: max-age=31536000; includeSubDomains
    ```
 3. For maximum protection, add `preload` and submit to

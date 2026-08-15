@@ -291,9 +291,17 @@ def test_no_trailing_whitespace_in_md():
 
 def test_tables_are_well_formed():
     """Every line that looks like a table row must have matching pipe counts
-    within a contiguous table block.
+    within a contiguous table block. Pipes inside inline code spans and
+    backslash-escaped pipes are cell CONTENT, not column separators, so they
+    are excluded from the structural count.
     """
     violations: list[str] = []
+
+    def _structural_pipes(line: str) -> int:
+        no_code = re.sub(r"`+[^`]*`+", "", line)
+        no_escaped = re.sub(r"\\\|", "P", no_code)
+        return no_escaped.count("|")
+
     _table_row = re.compile(r"^\|.+\|$")
     for p in MD_FILES:
         lines = _read_lines(p)
@@ -301,7 +309,7 @@ def test_tables_are_well_formed():
         for i, line in enumerate(lines, 1):
             stripped = line.strip()
             if _table_row.match(stripped):
-                count = stripped.count("|")
+                count = _structural_pipes(stripped)
                 table_pipe_counts.append((i, count))
             else:
                 if table_pipe_counts:

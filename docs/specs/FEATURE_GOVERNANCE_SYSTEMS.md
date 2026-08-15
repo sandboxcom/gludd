@@ -61,7 +61,7 @@ and the role is callable via FQCN `general_ludd.governance.<role>`.
 
 ## 5. Files
 
-```
+```text
 collections/ansible_collections/general_ludd/governance/
 ├── galaxy.yml
 ├── README.md

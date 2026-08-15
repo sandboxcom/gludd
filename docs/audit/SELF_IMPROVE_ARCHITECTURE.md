@@ -19,7 +19,7 @@ bypassed entirely when gludd improves itself.
 Two distinct entry points feed a shared backlog; both ultimately mutate the
 daemon's live source tree.
 
-```
+```text
                        ┌─────────────────────────────────────────────┐
                        │  ENTRY POINTS                               │
                        └─────────────────────────────────────────────┘

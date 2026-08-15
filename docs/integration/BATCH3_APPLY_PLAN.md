@@ -396,18 +396,18 @@ commit.
 
 ---
 
-### Fix 2B · `issue_sources/markdown_todo.py` — `-->` escaping + dedup (finding #17)
+### Fix 2B · `issue_sources/markdown_todo.py` — `--&gt;` escaping + dedup (finding #17)
 
 **File:** `src/general_ludd/issue_sources/markdown_todo.py`
 
 Two bugs in `update_status`:
 
-1. `comment` is embedded verbatim in `<!--gludd:{comment}-->` — a comment
-   containing `-->` terminates the HTML comment early and may corrupt adjacent
+1. `comment` is embedded verbatim in `&lt;!--gludd:{comment}--&gt;` — a comment
+   containing `--&gt;` terminates the HTML comment early and may corrupt adjacent
    markup.
 2. The dedup check uses `marker.strip()` (strips leading space) but appends
    `text = f"{text}{marker}"` where `marker` already carries a leading space
-   (`f" <!--gludd:...">`). On a re-parse the leading space is part of the
+   (`f" &lt;!--gludd:...">`). On a re-parse the leading space is part of the
    stored text, so `marker.strip()` no longer matches and the comment is
    appended again.
 
@@ -479,8 +479,8 @@ def test_update_status_does_not_double_annotate():
 ```
 
 **Risk:** Minor behavioural change in marker format (space is now placed between
-text and `<!--` rather than inside the marker string). Any test that asserts the
-exact string `" <!--gludd:..."` (with the leading space inside the marker
+text and `&lt;!--` rather than inside the marker string). Any test that asserts the
+exact string `" &lt;!--gludd:..."` (with the leading space inside the marker
 variable) needs updating. No security surface.
 
 ---
@@ -1436,7 +1436,7 @@ an optional feature (e.g. "if resolved is None: skip feature"), changing it to a
 raise will break that path.
 
 Run the following verification before applying:
-```
+```text
 grep -rn "\.resolve(" src/ --include="*.py"
 ```
 and inspect every call site. Safe patterns:
@@ -1542,7 +1542,7 @@ confirming no call site relies on the warn-and-None path for optional features.
 | 1B | LICENSE-in-manifest assertion | `runtime/release.py` | 1 |
 | 1C | Real token count in accounting | `routers/accounting.py` | 1 |
 | 2A | `safe_name` collision guard (`_DOT_`/`_DASH_`) | `dispatch/variable_store.py` | 2 |
-| 2B | `-->` escaping + dedup consistency | `issue_sources/markdown_todo.py` | 2 |
+| 2B | `--&gt;` escaping + dedup consistency | `issue_sources/markdown_todo.py` | 2 |
 | 3 | `is_path_within` → `is_join_within` rename | `security/auth.py`, `security/__init__.py`, `skills/fetcher.py` | 3 |
 | 4 | Cassandra + ClickHouse SSRF guard | `connectors/cassandra_stats.py`, `connectors/clickhouse_stats.py` | 4 |
 | 5 | `_reject_escaping_path` realpath + `_run_git` routing | `git_automation/repo.py` | 5 |
