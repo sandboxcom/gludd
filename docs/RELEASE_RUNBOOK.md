@@ -127,6 +127,69 @@ re-run `verify-release-completeness`.
 Preconditions: the working tree must be clean, and the version must already be
 bumped in `pyproject.toml`, `__init__.py`, `CHANGELOG.md`, and `README.md`.
 
+## Branch reconciliation sweep (beta4 procedure)
+
+The repeatable procedure used to reconcile the beta.4 branch backlog onto
+`development`. Every step runs on the MAIN checkout (`/Users/shawnwilson/gludd`),
+on the `development` branch, with a clean tree — never inside a worktree (see
+`docs/ORCHESTRATION.md` reconciliation section, location rules).
+
+### 1. Inventory unique heads
+
+```
+make branch-reconciliation-summary RECONCILE_TARGET=development \
+  RECONCILE_LIMIT=100 RECONCILE_DETAILS=1 RECONCILE_CURRENT_ONLY=1 \
+  RECONCILE_QUIET_PROGRESS=1
+```
+
+Emits a current-only JSON document listing every local branch whose tip carries
+work not reachable from `development` (`unique` classification). Branches
+classified `ancestor` or `patch-equivalent` need nothing.
+
+### 2. Content merge for genuinely absent work
+
+For each listed branch whose files exist nowhere on `development`:
+
+```
+make development-merge-forward SOURCE=<branch> MODE=content APPLY=0   # dry run first
+make development-merge-forward SOURCE=<branch> MODE=content APPLY=1
+```
+
+`APPLY=1` hard-requires: current branch `development`, clean worktree. Content
+mode merges `--no-ff -X ours` (development wins conflicts), aborts on structural
+conflicts, runs `collect-check`, and commits.
+
+### 3. Ancestry-only for superseded / WIP branches
+
+For each listed branch whose files were **deleted or rewritten on development**
+(WIP experiments, abandoned worktree branches, superseded designs):
+
+```
+make development-merge-forward SOURCE=<branch> MODE=ancestry-only APPLY=1
+```
+
+Records the branch tip in history while preserving development content verbatim
+(`-s ours`). **Document the per-branch rationale** (what was superseded and where
+the replacement landed) before applying — never discard content by habit, and
+`master` is forbidden as SOURCE for this mode.
+
+### 4. End state
+
+Re-run step 1. The sweep is complete only when the summary reports `unique` = 0
+selected heads. A non-zero remainder is unfinished work — keep classifying.
+
+### 5. Duplicate-target check after content merges
+
+Content merges can bring Makefile edits from another branch, so afterwards:
+
+```
+make check-duplicate-targets
+```
+
+This caught the beta.4 incident where a content merge introduced duplicate
+`gate-tail`/`kill-gate-force` targets (same target created independently on two
+branches). If it fails, fix the Makefile before proceeding.
+
 ## What "complete" means
 
 `scripts/verify_release_completeness.py` requires **12 artifact categories** and
