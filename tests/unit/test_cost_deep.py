@@ -381,9 +381,9 @@ class TestMultiSourceCostComparison:
 
     def test_defer_threshold_exactly_at_boundary(self) -> None:
         noon = datetime(2026, 8, 4, 12, 0, 0, tzinfo=UTC)
-        r_eq = should_defer_download(10.0, now=noon)
-        r_above = should_defer_download(10.0001, now=noon)
-        r_below = should_defer_download(9.9999, now=noon)
+        r_eq = should_defer_download(5.0, now=noon)
+        r_above = should_defer_download(5.0001, now=noon)
+        r_below = should_defer_download(4.9999, now=noon)
         assert r_above["defer"] is True
         assert r_below["defer"] is False
         assert r_eq["defer"] is True

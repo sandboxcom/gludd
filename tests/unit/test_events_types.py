@@ -23,7 +23,7 @@ class TestEventType:
         assert len(vals) == len(set(vals))
 
     def test_member_count(self) -> None:
-        assert len(list(EventType)) == 18
+        assert len(list(EventType)) == 21
 
 
 class TestEvent:
@@ -81,7 +81,9 @@ class TestConcreteEventInheritance:
 
     def test_stall_detected_with_thread_stacks(self) -> None:
         ev = StallDetectedEvent(
-            operation="build", elapsed_s=60.0, deadline_s=30.0,
+            operation="build",
+            elapsed_s=60.0,
+            deadline_s=30.0,
             thread_stacks={"main": "line 10"},
         )
         assert ev.payload["thread_stacks"] == {"main": "line 10"}

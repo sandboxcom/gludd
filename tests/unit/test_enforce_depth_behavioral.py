@@ -1,7 +1,7 @@
 """Behavioral tests for enforce-depth.ts — invoke the actual plugin hook.
 
-Monkeypatches OPENCODE_DEPTH to verify dispatch at depths 0→1→2 (allow)
-and depth 3+ (block). Uses a Node subprocess to import and invoke the
+Monkeypatches OPENCODE_DEPTH to verify dispatch at depths 0→1→2→3 (allow)
+and depth 4+ (block). Uses a Node subprocess to import and invoke the
 plugin's tool.execute.before hook with realistic inputs.
 """
 
@@ -20,7 +20,7 @@ NODE_IDEAL = os.environ.get("NODE_IDEAL", "node")
 EXPERIMENTAL_FLAG = os.environ.get("NODE_EXPERIMENTAL_FLAG", "--experimental-strip-types")
 
 
-def _invoke_hook(tool: str, depth: int, max_depth: int = 3, enforce: bool = True) -> dict | None:
+def _invoke_hook(tool: str, depth: int, max_depth: int = 4, enforce: bool = True) -> dict | None:
     """Invoke enforce-depth.ts tool.execute.before via Node subprocess.
 
     Writes a minimal eval script to a temp file, sets OPENCODE_DEPTH,
@@ -84,7 +84,7 @@ if (result) {{
         Path(script_path).unlink(missing_ok=True)
 
 
-# ── Depth levels: 0,1,2 allow; 3+ block ────────────────────────────────────
+# ── Depth levels: 0,1,2,3 allow; 4+ block (MAX_DEPTH=4) ────────────────────
 
 
 class TestDepthAllow:
@@ -116,21 +116,33 @@ class TestDepthAllow:
         result = _invoke_hook("workflow", 2)
         assert result is None, f"depth=2 should allow workflow dispatch, got={result}"
 
+    def test_depth_3_dispatches_task(self):
+        result = _invoke_hook("task", 3)
+        assert result is None, f"depth=3 should allow task dispatch (MAX_DEPTH=4), got={result}"
+
+    def test_depth_3_dispatches_agent(self):
+        result = _invoke_hook("agent", 3)
+        assert result is None, f"depth=3 should allow agent dispatch (MAX_DEPTH=4), got={result}"
+
+    def test_depth_3_dispatches_workflow(self):
+        result = _invoke_hook("workflow", 3)
+        assert result is None, f"depth=3 should allow workflow dispatch (MAX_DEPTH=4), got={result}"
+
 
 class TestDepthBlock:
-    def test_depth_3_blocks_task(self):
-        result = _invoke_hook("task", 3)
+    def test_depth_4_blocks_task(self):
+        result = _invoke_hook("task", 4)
         assert result is not None
         assert result["permissionDecision"] == "deny"
         assert "MAX DEPTH EXCEEDED" in result["message"]
 
-    def test_depth_3_blocks_agent(self):
-        result = _invoke_hook("agent", 3)
+    def test_depth_4_blocks_agent(self):
+        result = _invoke_hook("agent", 4)
         assert result is not None
         assert result["permissionDecision"] == "deny"
 
-    def test_depth_4_blocks_task(self):
-        result = _invoke_hook("task", 4)
+    def test_depth_5_blocks_task(self):
+        result = _invoke_hook("task", 5)
         assert result is not None
         assert result["permissionDecision"] == "deny"
 
@@ -181,8 +193,12 @@ class TestDepthNaNClamping:
         result = _invoke_hook("workflow", 2)
         assert result is None
 
-    def test_depth_3_still_blocked(self):
+    def test_depth_3_still_allowed(self):
         result = _invoke_hook("task", 3)
+        assert result is None
+
+    def test_depth_4_blocks(self):
+        result = _invoke_hook("task", 4)
         assert result is not None
         assert result["permissionDecision"] == "deny"
 
@@ -235,7 +251,7 @@ class TestDepthLogging:
 
 class TestSubagentBypass:
     def test_subagent_env_depth_3_allows(self):
-        """OPENCODE_SUBAGENT=1 bypasses enforcement at any depth."""
+        """OPENCODE_SUBAGENT=1 at depth 3 is below MAX_DEPTH=4 and allows."""
         script = f"""
 const m = await import({json.dumps(str(PLUGIN_PATH))});
 const defaultImpl = m.default;
@@ -255,7 +271,7 @@ if (result) {{
         env = os.environ.copy()
         env["OPENCODE_DEPTH"] = "3"
         env["OPENCODE_SUBAGENT"] = "1"
-        env["GLUDD_MAX_DEPTH"] = "3"
+        env["GLUDD_MAX_DEPTH"] = "4"
 
         try:
             proc = subprocess.run(

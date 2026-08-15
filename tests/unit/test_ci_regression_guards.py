@@ -223,8 +223,9 @@ def test_every_molecule_scenario_is_structurally_complete() -> None:
     unverified/structurally-incomplete scenario and failed. A complete scenario
     must have molecule.yml plus converge.yml/verify.yml (under ``default/`` or
     at the scenario root). The sole exception is Molecule 26's canonical
-    discovery anchor: ``default/molecule.yml`` must be an exact, non-shared
-    no-op with an empty test sequence, so it cannot execute lifecycle work.
+    discovery anchor: ``default/molecule.yml`` must stay a non-shared no-op
+    (``shared_state: false`` and an empty test sequence), so it cannot execute
+    lifecycle work.
 
     This iterates the committed scenarios at runtime, so a future incomplete
     scenario fails here BEFORE it can break `make molecule-test-all` in CI.
@@ -248,10 +249,17 @@ def test_every_molecule_scenario_is_structurally_complete() -> None:
             anchor = scenario / "molecule.yml"
             if anchor.is_file():
                 anchor_data = yaml.safe_load(anchor.read_text(encoding="utf-8"))
-                if anchor_data == {
-                    "shared_state": False,
-                    "scenario": {"test_sequence": []},
-                }:
+                # The playbooks default anchor mirrors the canonical
+                # molecule/default/ discovery anchor: a non-shared no-op with
+                # an empty test sequence so it cannot execute lifecycle work.
+                # Inert provisioner metadata is permitted (the canonical
+                # anchor ships the same block); what must stay is
+                # shared_state:false + no lifecycle steps.
+                if (
+                    isinstance(anchor_data, dict)
+                    and anchor_data.get("shared_state") is False
+                    and anchor_data.get("scenario", {}).get("test_sequence") == []
+                ):
                     continue
         if not any(all((scenario / rel).is_file() for rel in layout) for layout in required_layouts):
             incomplete[scenario.name] = [" or ".join(layout) for layout in required_layouts]

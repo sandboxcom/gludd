@@ -169,14 +169,10 @@ class TestSpecPlatformCompatibility:
         assert excludes, "Spec must have an excludes= list"
 
         # ansible.cli must be in excludes.
-        assert "ansible.cli" in excludes, (
-            "ansible.cli MUST be in excludes= — it hard-fails on Windows cp1252 locale"
-        )
+        assert "ansible.cli" in excludes, "ansible.cli MUST be in excludes= — it hard-fails on Windows cp1252 locale"
 
         # ansible core MUST NOT be excluded.
-        assert "ansible" not in excludes, (
-            "ansible core must NOT be excluded (gludd uses the executor API)"
-        )
+        assert "ansible" not in excludes, "ansible core must NOT be excluded (gludd uses the executor API)"
 
         # And the spec must positively list the ansible executor modules as
         # hidden imports — proving they are NOT being excluded.
@@ -237,9 +233,10 @@ class TestBuildYmlPlatformCoverage:
     """Verify build.yml builds for all target platforms with smoke tests."""
 
     EXPECTED_BUILD_JOBS = ("linux", "macos", "windows", "termux")
-    # Windows job is intentionally fail-closed (no continue-on-error).
-    # Only these jobs are expected to be non-blocking.
-    NON_BLOCKING_BUILD_JOBS = ("linux", "macos", "termux")
+    # All four platform jobs are fail-closed: every platform produces a
+    # required release artifact, so none may set continue-on-error. The
+    # release job fans in on all of them via `needs`.
+    REQUIRED_BUILD_JOBS = ("linux", "macos", "windows", "termux")
 
     def test_linux_job_exists(self, build_yml_text: str):
         """Linux x86_64 build job exists."""
@@ -325,23 +322,36 @@ class TestBuildYmlPlatformCoverage:
         ):
             assert platform_pattern in build_yml_text, f"build.yml must upload an artifact named {platform_pattern!r}"
 
-    def test_continue_on_error_is_true(self, build_yml_text: str):
-        """Build jobs have continue-on-error: true (non-blocking).
+    def test_build_jobs_are_blocking_no_continue_on_error(self, build_yml_text: str):
+        """Platform build jobs are fail-closed (no continue-on-error).
 
-        The platform build jobs are deliberately non-blocking so that a
-        regression on one platform does not sink the release for the others.
-        The release job has its own pre-publish gate that catches missing
-        artifacts.
+        Every platform produces required release artifacts, so each build job
+        must stay blocking: a regression on any platform must fail the job and
+        thereby the release fan-in (the release job `needs` every platform
+        job). Setting continue-on-error on a platform job would let a missing
+        artifact reach the release stage.
         """
-        # For each platform build job, assert that continue-on-error: true
-        # appears in the job body. We split the YAML into per-job chunks at
+        # For each platform build job, assert that continue-on-error does NOT
+        # appear in the job body. We split the YAML into per-job chunks at
         # top-level two-space-indented keys.
-        for job_name in self.NON_BLOCKING_BUILD_JOBS:
+        for job_name in self.REQUIRED_BUILD_JOBS:
             job_body = self._extract_job_body(build_yml_text, job_name)
             assert job_body is not None, f"could not extract job body for {job_name!r}"
-            assert re.search(r"continue-on-error\s*:\s*true", job_body), (
-                f"build job {job_name!r} must set continue-on-error: true "
-                f"so a single-platform regression does not sink the release"
+            assert re.search(r"continue-on-error\s*:\s*true", job_body) is None, (
+                f"build job {job_name!r} must NOT set continue-on-error: true — "
+                f"its artifacts are required release assets and failures must block the release"
+            )
+
+    def test_release_fans_in_on_all_platform_jobs(self, build_yml_text: str):
+        """The release job waits on every platform build job."""
+        release_body = self._extract_job_body(build_yml_text, "release")
+        assert release_body is not None, "could not extract job body for 'release'"
+        needs_match = re.search(r"needs:\s*\[([^\]]*)\]", release_body)
+        assert needs_match is not None, "release job must declare a needs: list"
+        needed = [token.strip() for token in needs_match.group(1).split(",")]
+        for job_name in self.REQUIRED_BUILD_JOBS:
+            assert job_name in needed, (
+                f"release job must `needs` the {job_name!r} platform build so a missing artifact blocks the release"
             )
 
     @staticmethod

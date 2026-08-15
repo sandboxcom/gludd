@@ -130,8 +130,7 @@ def _deny_unowned_unit_gunicorn(
         return
     if Path(executable).name == "gunicorn":
         raise RuntimeError(
-            "unit test attempted an unowned Gunicorn launch; mock "
-            "subprocess.Popen and explicitly own the fake process"
+            "unit test attempted an unowned Gunicorn launch; mock subprocess.Popen and explicitly own the fake process"
         )
 
 
@@ -354,7 +353,14 @@ def _allow_no_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _disable_gate_refresh_autospawn(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep plugin-construction tests from launching background release gates."""
+    """Prevent plugin-construction tests from launching background release gates.
+
+    Autouse is required because the gate-refresh autospawn hook reads the live
+    plugin bundle at import/construction time: without a global, process-wide
+    backstop, any test that merely builds an enforcement plugin would fork a
+    long-running background gate, leaking orphaned ``make`` processes into the
+    pytest runner and polluting CI with phantom work.
+    """
     monkeypatch.setenv("GLUDD_GATE_REFRESH_AUTOSPAWN", "0")
 
 
@@ -436,6 +442,7 @@ def _restore_leaky_env_vars(monkeypatch):
             monkeypatch.delenv(k, raising=False)
     yield
 
+
 @pytest.fixture(autouse=True)
 def _restore_cwd_after_test() -> None:
     """Restore the worker CWD after every test.
@@ -453,6 +460,7 @@ def _restore_cwd_after_test() -> None:
             os.chdir(original_cwd)
         except OSError:
             os.chdir(_REPO_ROOT)
+
 
 @pytest.fixture(autouse=True)
 def _isolate_root_logger():

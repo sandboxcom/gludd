@@ -11,12 +11,14 @@ class TestRootConfinement:
     def test_default_cwd_allowed(self) -> None:
         searcher = RgSearch(rg_path="echo")
         result = searcher._validate_root(".")
-        assert result is None
+        assert isinstance(result, str)
+        assert result == str(Path.cwd().resolve())
 
     def test_subdirectory_of_cwd_allowed(self) -> None:
         searcher = RgSearch(rg_path="echo")
         result = searcher._validate_root(str(Path.cwd() / "src"))
-        assert result is None
+        assert isinstance(result, str)
+        assert result == str((Path.cwd() / "src").resolve())
 
     def test_path_outside_cwd_denied(self) -> None:
         searcher = RgSearch(rg_path="echo")
@@ -41,7 +43,7 @@ class TestRootConfinement:
             inside.mkdir()
             searcher = RgSearch(rg_path="echo", allowed_roots=[allowed])
 
-            assert searcher._validate_root(str(inside)) is None
+            assert searcher._validate_root(str(inside)) == str(inside.resolve())
             assert searcher._validate_root("/etc") is not None
 
     def test_protected_path_denied(self) -> None:
@@ -61,12 +63,14 @@ class TestRootConfinement:
     def test_relative_path_within_cwd_allowed(self) -> None:
         searcher = RgSearch(rg_path="echo")
         result = searcher._validate_root("src")
-        assert result is None
+        assert isinstance(result, str)
+        assert result == str((Path.cwd() / "src").resolve())
 
     def test_no_allowed_roots_defaults_to_cwd(self) -> None:
         searcher = RgSearch(rg_path="echo")
         result = searcher._validate_root(str(Path.cwd()))
-        assert result is None
+        assert isinstance(result, str)
+        assert result == str(Path.cwd().resolve())
 
     def test_oserror_from_resolve_returns_error(self) -> None:
         searcher = RgSearch(rg_path="echo")
