@@ -9,7 +9,7 @@ Background:
     ``importlib.resources``; PyInstaller's static analyzer does not see the
     runtime resource lookup, so the file is silently dropped.
 
-     The fix layers are pinned here:
+    The fix layers are pinned here:
       1. ``collect_data_files('ansible')`` must run AND its result must be
          passed to ``Analysis(... datas=[...] ...)``. (Computing it but
          dropping the value is the bug that re-shipped the crash.)
