@@ -5931,7 +5931,7 @@ _ci-verdict-history-guard:
 	if [ -f "$$STATE_FILE" ]; then \
 		LAST_SHA=$$(cat "$$STATE_FILE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('last_push_sha',''))" 2>/dev/null || echo ""); \
 		LAST_CHECKED=$$(cat "$$STATE_FILE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('last_checked_sha',''))" 2>/dev/null || echo ""); \
-		if [ "$$LAST_SHA" != "$$LAST_CHECKED" ] && [ -n "$$LAST_SHA" ] && [ "$$FORCE" != "1" ]; then \
+		if [ "$$LAST_SHA" != "$$LAST_CHECKED" ] && [ "$$LAST_SHA" != "$$CUR_SHA" ] && [ -n "$$LAST_SHA" ] && [ "$$FORCE" != "1" ]; then \
 			echo "BLOCKED: previous push SHA $$LAST_SHA was never CI-verified."; \
 			echo "Run 'make ci-verdict-safe BRANCH=$$(git branch --show-current)' and record the verdict before pushing again. See AA032."; \
 			exit 1; \
