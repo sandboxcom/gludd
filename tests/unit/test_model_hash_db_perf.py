@@ -411,7 +411,7 @@ class TestFromKnownModelsPerformance:
         start = time.perf_counter()
         db = ModelHashDB.from_known_models()
         elapsed = time.perf_counter() - start
-        assert len(db.list_models()) == 4
+        assert len(db.list_models()) == 8
         assert elapsed < 0.01, f"from_known_models took {elapsed:.6f}s, expected < 0.01s"
 
 

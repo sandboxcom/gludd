@@ -263,6 +263,7 @@ class TestGenerateGameMultiIntegration:
             ModelResponse(content="nope"),  # code v3 (fix)
             ModelResponse(content=self._review_fail(0.0)),  # review v3 → fail
             ModelResponse(content="last try"),  # code v4 (fix)
+            ModelResponse(content=self._review_fail(0.0)),  # final review → fail
         ]
         generator = GameGenerator(gateway=cast(ModelGateway, gateway))
         spec = GameSpec(
@@ -275,6 +276,7 @@ class TestGenerateGameMultiIntegration:
         )
         with pytest.raises(RuntimeError, match="review rounds"):
             generator.generate_game_multi(spec, {})
+        assert gateway.call_model.call_count == 9  # plan + 4x(code+review)
 
     # ── scoring with different quality levels ───────────────────────────
 

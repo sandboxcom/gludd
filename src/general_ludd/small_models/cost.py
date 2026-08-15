@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, datetime
 
 from general_ludd.infra.pricing import INFRA_PRICING, PRICING
@@ -58,11 +59,13 @@ def _resolve_model_size(model_id: str) -> float:
 
 def _infer_tier(model_id: str) -> str:
     lower = model_id.lower()
-    if "70b" in lower or "gpt-4" in lower or "claude" in lower:
+    # Size tokens must not be part of a larger digit string ("2b" must not
+    # match inside "72b" — the preceding digit makes it a different size).
+    if re.search(r"(?<![\d.])70b", lower) or "gpt-4" in lower or "claude" in lower:
         return "large_api"
-    if "8b" in lower or "7b" in lower or "13b" in lower:
+    if re.search(r"(?<![\d.])(?:8b|7b|13b)", lower):
         return "medium_api"
-    if any(t in lower for t in ("1.5b", "2b", "3b", "0.5b", "mini", "phi-2", "phi-3")):
+    if re.search(r"(?<![\d.])(?:1\.5b|2b|3b|0\.5b)", lower) or any(t in lower for t in ("mini", "phi-2", "phi-3")):
         return "small_local"
     if "gpt-3" in lower:
         return "medium_api"

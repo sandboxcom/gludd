@@ -1,16 +1,17 @@
 """Phase F tests: advanced integration + molecule scenario validation.
 
-Phase F exercises the 8 standalone role scripts (``roles/<name>/files/<name>.py``)
+Phase F exercises the 11 standalone role scripts (``roles/<name>/files/<name>.py``)
 end-to-end via subprocess invocation, and validates the molecule scenario YAML
 that drives the collection-level converge/verify cycle.
 
 Coverage:
-    1. All 8 standalone role scripts execute and produce valid JSON output
-    2. Molecule converge.yml references all 8 roles with valid vars
-    3. Molecule verify.yml asserts artifact existence + key fields for all 8 roles
+    1. All 11 standalone role scripts execute and produce valid JSON output
+    2. Molecule converge.yml references all 11 roles with valid vars
+    3. Molecule verify.yml asserts artifact existence + key fields for all 11 roles
     4. Advanced edge cases: empty input, invalid paths, boundary conditions
     5. Cross-role integration: Unicode → encoding → BOM pipeline consistency
 """
+
 from __future__ import annotations
 
 import json
@@ -22,13 +23,7 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-COLLECTION_ROOT = (
-    REPO_ROOT
-    / "collections"
-    / "ansible_collections"
-    / "general_ludd"
-    / "language"
-)
+COLLECTION_ROOT = REPO_ROOT / "collections" / "ansible_collections" / "general_ludd" / "language"
 ROLES_DIR = COLLECTION_ROOT / "roles"
 
 ALL_ROLES = [
@@ -37,8 +32,11 @@ ALL_ROLES = [
     "font_analyze",
     "homoglyph_scan",
     "i18n_extract",
+    "language_detect",
     "locale_format",
     "phonetic_transcribe",
+    "translate",
+    "transliterate",
     "unicode_analyze",
 ]
 
@@ -58,8 +56,7 @@ def _run_role_script(role: str, args: list[str], timeout: int = 15) -> dict[str,
     )
     if proc.returncode != 0:
         pytest.fail(
-            f"{role} script exited {proc.returncode}.\n"
-            f"stdout: {proc.stdout[:500]}\nstderr: {proc.stderr[:500]}"
+            f"{role} script exited {proc.returncode}.\nstdout: {proc.stdout[:500]}\nstderr: {proc.stderr[:500]}"
         )
     output = proc.stdout.strip()
     if not output:
@@ -91,9 +88,7 @@ class TestBomDetectScript:
         assert result["bom_detected"] is False
 
     def test_strip_bom(self) -> None:
-        result = _run_role_script(
-            "bom_detect", ["--input-bytes", "EF BB BF 48 65 6C 6C 6F", "--strip"]
-        )
+        result = _run_role_script("bom_detect", ["--input-bytes", "EF BB BF 48 65 6C 6C 6F", "--strip"])
         assert result["bom_detected"] is True
         assert "stripped_preview" in result
 
@@ -168,9 +163,7 @@ class TestFontAnalyzeScript:
         assert result.get("format") in ("ttf", "otf", "unknown")
 
     def test_analyze_missing_file(self) -> None:
-        result = _run_role_script(
-            "font_analyze", ["--input", "/nonexistent/font.ttf"]
-        )
+        result = _run_role_script("font_analyze", ["--input", "/nonexistent/font.ttf"])
         assert "error" in result
 
     def test_analyze_non_font_file(self, tmp_path: Path) -> None:
@@ -189,22 +182,16 @@ class TestHomoglyphScanScript:
         assert result["total_findings"] == 0
 
     def test_cyrillic_confusable(self) -> None:
-        result = _run_role_script(
-            "homoglyph_scan", ["--input", "paypa" + chr(0x0430) + "l.com"]
-        )
+        result = _run_role_script("homoglyph_scan", ["--input", "paypa" + chr(0x0430) + "l.com"])
         assert result["total_findings"] > 0
         assert result["safe"] is False
 
     def test_invisible_zero_width(self) -> None:
-        result = _run_role_script(
-            "homoglyph_scan", ["--input", "hello\u200bworld"]
-        )
+        result = _run_role_script("homoglyph_scan", ["--input", "hello\u200bworld"])
         assert result["total_findings"] > 0
 
     def test_bidi_override_char(self) -> None:
-        result = _run_role_script(
-            "homoglyph_scan", ["--input", "print\u202eHello"]
-        )
+        result = _run_role_script("homoglyph_scan", ["--input", "print\u202eHello"])
         assert result["total_findings"] > 0
 
     def test_empty_input(self) -> None:
@@ -213,9 +200,7 @@ class TestHomoglyphScanScript:
         assert len(result.get("findings", [])) == 0
 
     def test_severity_counts(self) -> None:
-        result = _run_role_script(
-            "homoglyph_scan", ["--input", chr(0x0410) + "pple"]
-        )
+        result = _run_role_script("homoglyph_scan", ["--input", chr(0x0410) + "pple"])
         assert "severity_counts" in result
 
 
@@ -225,9 +210,7 @@ class TestI18nExtractScript:
     def test_extract_from_python(self, tmp_path: Path) -> None:
         src = tmp_path / "app.py"
         src.write_text(
-            '_("Hello World")\n'
-            '_("Welcome")\n'
-            'ngettext("item", "items", 5)\n',
+            '_("Hello World")\n_("Welcome")\nngettext("item", "items", 5)\n',
             encoding="utf-8",
         )
         result = _run_role_script(
@@ -304,21 +287,15 @@ class TestPhoneticTranscribeScript:
     """phonetic_transcribe standalone script — phonetic transcription."""
 
     def test_transcribe_english(self) -> None:
-        result = _run_role_script(
-            "phonetic_transcribe", ["--input", "hello world", "--method", "arpabet"]
-        )
+        result = _run_role_script("phonetic_transcribe", ["--input", "hello world", "--method", "arpabet"])
         assert "words" in result or "transcription" in result or "ipa" in result
 
     def test_transcribe_method_field(self) -> None:
-        result = _run_role_script(
-            "phonetic_transcribe", ["--input", "test", "--method", "soundex"]
-        )
+        result = _run_role_script("phonetic_transcribe", ["--input", "test", "--method", "soundex"])
         assert result.get("method") == "soundex" or "words" in result
 
     def test_empty_input(self) -> None:
-        result = _run_role_script(
-            "phonetic_transcribe", ["--input", "", "--method", "arpabet"]
-        )
+        result = _run_role_script("phonetic_transcribe", ["--input", "", "--method", "arpabet"])
         assert isinstance(result, dict)
 
 
@@ -352,16 +329,12 @@ class TestUnicodeAnalyzeScript:
         assert "UTF-16-LE" in encs
 
     def test_plane_distribution(self) -> None:
-        result = _run_role_script(
-            "unicode_analyze", ["--input", "A\U0001f600"]
-        )
+        result = _run_role_script("unicode_analyze", ["--input", "A\U0001f600"])
         dist = result.get("plane_distribution", {})
         assert "BMP" in dist
 
     def test_disable_codepoints(self) -> None:
-        result = _run_role_script(
-            "unicode_analyze", ["--input", "A", "--no-codepoints"]
-        )
+        result = _run_role_script("unicode_analyze", ["--input", "A", "--no-codepoints"])
         assert "codepoints" not in result
 
     def test_empty_input(self) -> None:
@@ -385,14 +358,10 @@ class TestMoleculeScenarioStructure:
         )
 
     def test_converge_yml_exists(self) -> None:
-        assert (self.MOLECULE_DIR / "default" / "converge.yml").exists(), (
-            "Phase F gap: converge.yml must exist"
-        )
+        assert (self.MOLECULE_DIR / "default" / "converge.yml").exists(), "Phase F gap: converge.yml must exist"
 
     def test_verify_yml_exists(self) -> None:
-        assert (self.MOLECULE_DIR / "default" / "verify.yml").exists(), (
-            "Phase F gap: verify.yml must exist"
-        )
+        assert (self.MOLECULE_DIR / "default" / "verify.yml").exists(), "Phase F gap: verify.yml must exist"
 
     def test_destroy_playbook_configured(self) -> None:
         with open(self.MOLECULE_DIR / "molecule.yml") as f:
@@ -410,9 +379,7 @@ class TestMoleculeScenarioStructure:
         with open(self.MOLECULE_DIR / "default" / "converge.yml") as f:
             content = f.read()
         for role in ALL_ROLES:
-            assert f"general_ludd.language.{role}" in content, (
-                f"Phase F gap: converge.yml must reference role '{role}'"
-            )
+            assert f"general_ludd.language.{role}" in content, f"Phase F gap: converge.yml must reference role '{role}'"
 
     def test_verify_references_all_8_roles(self) -> None:
         with open(self.MOLECULE_DIR / "default" / "verify.yml") as f:
@@ -440,9 +407,7 @@ class TestMoleculeScenarioStructure:
             data = yaml.safe_load(f)
         seq = data.get("scenario", {}).get("test_sequence", [])
         required = {"converge", "verify", "syntax", "destroy"}
-        assert required.issubset(set(seq)), (
-            f"Phase F gap: molecule test_sequence missing: {required - set(seq)}"
-        )
+        assert required.issubset(set(seq)), f"Phase F gap: molecule test_sequence missing: {required - set(seq)}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -469,9 +434,7 @@ class TestRoleFileCompleteness:
         assert role_dir.exists(), f"Phase F gap: role directory missing for '{role}'"
         for rel in self.REQUIRED_FILES:
             expected = role_dir / rel.format(role=role)
-            assert expected.exists(), (
-                f"Phase F gap: role '{role}' missing file: {rel}"
-            )
+            assert expected.exists(), f"Phase F gap: role '{role}' missing file: {rel}"
 
     @pytest.mark.parametrize("role", ALL_ROLES)
     def test_tasks_main_valid_yaml(self, role: str) -> None:
@@ -488,9 +451,7 @@ class TestRoleFileCompleteness:
             data = yaml.safe_load(f)
         assert isinstance(data, dict), f"defaults/main.yml for {role} must be a YAML dict"
         assert len(data) >= 1, f"defaults/main.yml for {role} must have >=1 default var"
-        assert "name" not in data, (
-            f"defaults/main.yml for {role} must not override Ansible's reserved 'name'"
-        )
+        assert "name" not in data, f"defaults/main.yml for {role} must not override Ansible's reserved 'name'"
 
     @pytest.mark.parametrize("role", ALL_ROLES)
     def test_standalone_script_executable(self, role: str) -> None:
@@ -521,13 +482,8 @@ class TestCollectionMetadata:
         assert (COLLECTION_ROOT / "README.md").exists()
 
     def test_exactly_8_role_dirs(self) -> None:
-        role_dirs = [
-            d.name for d in (ROLES_DIR).iterdir()
-            if d.is_dir() and not d.name.startswith(".")
-        ]
-        assert sorted(role_dirs) == sorted(ALL_ROLES), (
-            f"Expected exactly 8 role dirs, got: {sorted(role_dirs)}"
-        )
+        role_dirs = [d.name for d in (ROLES_DIR).iterdir() if d.is_dir() and not d.name.startswith(".")]
+        assert sorted(role_dirs) == sorted(ALL_ROLES), f"Expected exactly 8 role dirs, got: {sorted(role_dirs)}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -563,9 +519,7 @@ class TestCrossRoleIntegration:
         uni = _run_role_script("unicode_analyze", ["--input", text])
         cps = uni.get("codepoints", [])
         cp_values = [c.get("codepoint", "") for c in cps]
-        assert any("0410" in str(cp) for cp in cp_values), (
-            "unicode_analyze must report U+0410 (Cyrillic A) in the text"
-        )
+        assert any("0410" in str(cp) for cp in cp_values), "unicode_analyze must report U+0410 (Cyrillic A) in the text"
 
     def test_encoding_detect_on_bom_stripped(self) -> None:
         """After bom_detect strips a BOM, encoding_detect should still identify
@@ -573,6 +527,4 @@ class TestCrossRoleIntegration:
         text_hex = "48 65 6C 6C 6F"
         enc = _run_role_script("encoding_detect", ["--input-bytes", text_hex])
         detected = str(enc.get("detected_encoding", "")).lower().replace("-", "")
-        assert detected in ("utf8", "utf_8", "ascii"), (
-            f"Clean ASCII must be detected as utf-8/ascii, got {detected}"
-        )
+        assert detected in ("utf8", "utf_8", "ascii"), f"Clean ASCII must be detected as utf-8/ascii, got {detected}"

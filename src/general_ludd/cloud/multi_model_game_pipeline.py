@@ -32,6 +32,7 @@ class DesignSpec:
     acceptance_criteria: tuple[str, ...] = ()
 
     def to_prompt(self) -> str:
+        """Render this design spec as a planner-model prompt string."""
         lines = [
             f"# Game Design Specification: {self.name}",
             "",
@@ -60,6 +61,7 @@ class ReviewResult:
     passed: bool = False
 
     def to_feedback_prompt(self) -> str:
+        """Render the review issues as a fix-request prompt, empty when clean."""
         if not self.issues_found:
             return ""
         lines = [
@@ -140,6 +142,7 @@ class MultiModelGamePipeline:
         gateway: ModelGateway,
         task_policy: SmallModelTaskPolicy | None = None,
     ) -> None:
+        """Initialize the pipeline with a model gateway and optional task policy."""
         self._gateway = gateway
         self._task_policy = task_policy
 
@@ -152,6 +155,7 @@ class MultiModelGamePipeline:
         reviewer_model: str = "default",
         max_review_rounds: int = 3,
     ) -> str:
+        """Generate a game through plan → code → review-fix cycles."""
         spec = self.plan(description, model_id=planner_model)
         code = self.code(spec, model_id=coder_model)
 
@@ -166,12 +170,19 @@ class MultiModelGamePipeline:
                 feedback=result.to_feedback_prompt(),
             )
 
+        # The final fix is reviewed once more before giving up — a pipeline
+        # that never verifies its last revision rejects work it already fixed.
+        result = self.review(code, spec, model_id=reviewer_model)
+        if result.passed:
+            return result.code
+
         raise RuntimeError(
             f"Game generation failed after {max_review_rounds} review rounds "
             f"for '{spec.name}' — code did not pass review"
         )
 
     def plan(self, description: str, *, model_id: str = "default") -> DesignSpec:
+        """Ask the planner model for a structured game design specification."""
         response = self._gateway.call_model(
             model_id,
             messages=[
@@ -200,6 +211,7 @@ class MultiModelGamePipeline:
         previous_code: str = "",
         feedback: str = "",
     ) -> str:
+        """Ask the coder model to generate (or fix) the game implementation."""
         if previous_code and feedback:
             messages: list[dict[str, str]] = [
                 {"role": "system", "content": _CODER_FIX_SYSTEM_PROMPT},
@@ -228,6 +240,7 @@ class MultiModelGamePipeline:
         *,
         model_id: str = "default",
     ) -> ReviewResult:
+        """Ask the reviewer model to critique the generated code."""
         review_messages: list[dict[str, str]] = [
             {"role": "system", "content": _REVIEWER_SYSTEM_PROMPT},
             {"role": "user", "content": spec.to_prompt()},

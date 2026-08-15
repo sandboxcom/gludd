@@ -298,6 +298,7 @@ class TestMultiModelGamePipeline:
             ModelResponse(content=code_resp),
             ModelResponse(content=review_fail),
             ModelResponse(content="still broken"),
+            ModelResponse(content=review_fail),
         ]
         pipeline = MultiModelGamePipeline(gateway)
         with pytest.raises(RuntimeError, match="review rounds"):

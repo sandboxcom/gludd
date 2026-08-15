@@ -848,8 +848,9 @@ general_ludd.agent.gludd_git:
     - Keeping that core in Python (rather than a pure role) preserves those
     - guarantees; this module simply makes the same operations available on the
     - Ansible execution seam.
-    - 'Idempotent where git is: C(branch) is a no-op if the branch already exists;'
-    - C(commit) reports C(changed=false) when there is nothing to commit.
+    - 'Idempotent where git is: C(init) reports C(changed=false) for an existing'
+    - repository; C(branch) is a no-op if the branch already exists; C(commit)
+    - reports C(changed=false) when there is nothing to commit.
     - Check-mode safe — read-only C(worktree_list) runs; mutating ops are skipped
     - in check mode and report the change they WOULD make.
     module: gludd_git
@@ -874,9 +875,13 @@ general_ludd.agent.gludd_git:
       target_dir: {}
       todo_id: {}
       worktree_path: {}
-    short_description: Git control-plane ops (commit/branch/worktree/merge/push) via
-      git_automation
+    short_description: Git control-plane ops (init/commit/branch/worktree/merge/push)
+      via git_automation
   EXAMPLES:
+  - general_ludd.agent.gludd_git:
+      op: init
+      path: /workspace/myrepo
+    name: Initialize an automation repository
   - general_ludd.agent.gludd_git:
       message: 'auto: apply model-suggested fix'
       op: commit
@@ -917,7 +922,7 @@ general_ludd.agent.gludd_git:
       returned: when op=branch/current_branch
       type: str
     result:
-      description: Typed result dict for worktree/merge/push ops.
+      description: Typed result dict for init/worktree/merge/push ops.
       returned: when op in (worktree_list, worktree_create, worktree_remove, merge,
         push)
       type: dict
@@ -1346,7 +1351,7 @@ general_ludd.agent.gludd_langgraph_workflow:
       description: Number of retries the graph performed.
       returned: success
       type: int
-    warnings:
+    workflow_warnings:
       description: Any warnings emitted by the workflow.
       returned: success
       type: list
@@ -1771,43 +1776,44 @@ general_ludd.agent.gludd_model_call:
   module: gludd_model_call
 general_ludd.agent.gludd_observe:
   DOCUMENTATION:
-    author:
-    - Agentic Harness
     description:
-    - Discovers operator-configured sources through the Gludd daemon.
-    - Adapts those named sources to C(GluddObserve) without accepting arbitrary URLs.
-    - Runs query, timeline, incident-correlation, and topology workflows.
-    - Isolates a failing source so healthy source results still return.
-    - All operations are read-only and check-mode safe.
+    - Provides the Ansible seam for the cross-source C(GluddObserve) facade.
+    - Discovers only operator-registered sources from C(GET /api/observe/sources)
+      and queries them by registered name through C(POST /api/observe/query). Callers
+      cannot supply connector URLs, preserving the daemon's SSRF boundary.
+    - Supports merged queries, timelines, incident correlation, and service/host topology
+      without duplicating the canonical normalization logic.
+    - Read-only and check-mode safe. A failing connector is isolated into the returned
+      C(errors) list instead of aborting successful sources.
     module: gludd_observe
     options:
       by:
         default: trace_id
-        description: Canonical join key used for incident correlation.
-        type: str
-      correlate_by:
-        default: ''
-        description: Optional join key used to group C(query_sources) records.
+        description: Canonical join key for C(correlate_incident).
         type: str
       daemon_url:
         default: http://localhost:8000
         description: Base URL of the Gludd daemon.
         type: str
       end:
-        description: Optional inclusive end time as epoch seconds.
+        description: Optional inclusive end epoch for query and timeline operations.
         type: float
       kinds:
-        default: []
-        description: Connector kinds selected for query, topology, or incident correlation.
+        default:
+        - logs
+        - traces
+        - metrics
+        - events
+        description: Connector kinds admitted to the operation.
         elements: str
         type: list
       op:
         choices:
         - query_sources
-        - correlate_incident
         - timeline
+        - correlate_incident
         - topology
-        description: Cross-source observability operation.
+        description: Cross-source operation to run.
         required: true
         type: str
       psk:
@@ -1816,65 +1822,60 @@ general_ludd.agent.gludd_observe:
         no_log: true
         type: str
       role:
-        default: ''
-        description:
-        - Calling capability role, returned as result metadata.
-        - The default-deny policy must grant access to the daemon host.
+        default: observe
+        description: Capability identity recorded with the result for operator attribution.
         type: str
       seed:
         default: {}
-        description: Normalized incident record for C(correlate_incident).
+        description: Normalized incident record used by C(correlate_incident).
         type: dict
       spec:
         default: {}
-        description: Bounded connector query specification.
+        description: Backend query specification forwarded to each registered source.
         type: dict
       start:
-        description: Optional inclusive start time as epoch seconds.
+        description: Optional inclusive start epoch for query and timeline operations.
         type: float
       timeout:
         default: 30
         description: Per-request timeout in seconds.
         type: int
-      window:
-        default: []
-        description: Connector kinds selected for a timeline operation.
-        elements: str
-        type: list
       window_s:
         default: 300.0
-        description: Seconds before and after the incident seed to query.
+        description: Half-window around the incident seed timestamp, in seconds.
         type: float
-    short_description: Correlate telemetry across daemon-registered observability
-      sources
+    short_description: Correlate registered observability sources through the Gludd
+      daemon
   EXAMPLES:
   - general_ludd.agent.gludd_observe:
-      end: 1750000300
-      op: timeline
-      spec:
-        service: checkout
-      start: 1750000000
-      window:
-      - logs
-      - traces
-    name: Build a bounded telemetry timeline
-    register: timeline
-  - general_ludd.agent.gludd_observe:
-      by: trace_id
+      end: 1785581100
       kinds:
       - logs
       - traces
+      - metrics
+      op: timeline
+      psk: '{{ vault_gludd_psk }}'
+      start: 1785580800
+    name: Build a time-ordered incident timeline
+    register: timeline
+  - general_ludd.agent.gludd_observe:
+      by: trace_id
       op: correlate_incident
-      seed: '{{ incident_seed }}'
+      seed:
+        labels:
+          trace_id: trace-123
+        ts: 1785580950
     name: Correlate an incident by trace ID
   RETURN:
     ansible_facts:
       contains:
         gludd_observe:
-          description: Records, groups, topology, isolated errors, and operation metadata.
+          description:
+          - Result payload. It contains C(records), C(groups), or C(topology) depending
+            on C(op), plus isolated connector C(errors).
           returned: always
           type: dict
-      description: Cross-source observability result.
+      description: Facts containing the selected C(gludd_observe) operation result.
       returned: always
       type: dict
   module: gludd_observe
@@ -2515,6 +2516,106 @@ general_ludd.agent.gludd_push_guard:
       returned: when state is 'check'
       type: float
   module: gludd_push_guard
+general_ludd.agent.gludd_rag:
+  DOCUMENTATION:
+    description:
+    - With C(op=add_document) ingests text into an in-memory vector store backed by
+      the L(rag module_utils,ansible_collections.general_ludd.agent.plugins.module_utils.rag).
+    - With C(op=query) embeds a question, retrieves the top-k closest chunks, builds
+      a prompt with them as context, and asks the daemon model gateway for an answer.
+    - The pipeline uses the pluggable embedder from C(rag.py) (HashEmbedder by default,
+      or a daemon-backed embedder when the daemon is reachable).
+    - Check-mode safe for C(op=query) — returns a placeholder answer.
+    module: gludd_rag
+    options:
+      chunk_overlap:
+        default: 200
+        description: Overlap between chunks in characters.
+        type: int
+      chunk_size:
+        default: 1000
+        description: Target chunk size in characters.
+        type: int
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon (for model calls in C(op=query)).
+        type: str
+      metadata:
+        default: {}
+        description: Key-value metadata attached to the document (C(op=add_document)
+          only).
+        type: dict
+      op:
+        choices:
+        - add_document
+        - query
+        default: query
+        description: Which RAG operation to run.
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      text:
+        description:
+        - Document text to ingest when C(op=add_document), or the question to answer
+          when C(op=query).
+        required: true
+        type: str
+      timeout:
+        default: 120
+        description: Request timeout in seconds.
+        type: int
+      top_k:
+        default: 5
+        description: Number of closest chunks to retrieve for context (C(op=query)
+          only).
+        type: int
+    short_description: Retrieval-Augmented Generation pipeline via module_utils.rag
+  EXAMPLES:
+  - general_ludd.agent.gludd_rag:
+      metadata:
+        destination: Paris
+        region: Europe
+        source: travel_brochure
+      op: add_document
+      text: 'Paris: The City of Light. Visit the Eiffel Tower, Louvre Museum,
+
+        and Notre-Dame Cathedral. Best visited April-June or September-October.
+
+        Famous for croissants, café culture, and the Seine river cruises.
+
+        '
+    name: Add travel brochures to the RAG store
+    register: paris_doc
+  - general_ludd.agent.gludd_rag:
+      op: query
+      text: What are the best cities in Europe for art museums?
+      top_k: 3
+    name: Query the RAG pipeline for travel recommendations
+    register: rag_answer
+  - ansible.builtin.debug:
+      msg: '{{ rag_answer.answer }}'
+    name: Display the answer
+  RETURN:
+    answer:
+      description: Model-generated answer using retrieved context (C(op=query)).
+      returned: when op=query
+      type: str
+    chunk_count:
+      description: Number of chunks created from the document (C(op=add_document)).
+      returned: when op=add_document
+      type: int
+    retrieved_chunks:
+      description: The context chunks that were retrieved and fed to the model.
+      returned: when op=query
+      type: list
+    stored_total:
+      description: Total vector entries in the store after the operation.
+      returned: always
+      type: int
+  module: gludd_rag
 general_ludd.agent.gludd_reload:
   DOCUMENTATION:
     description:
