@@ -1,7 +1,7 @@
 """Drop the projects FK from memory_records.project_id and widen it to 256.
 
-Revision ID: 040
-Revises: 039
+Revision ID: 043
+Revises: 042
 """
 
 from collections.abc import Sequence
@@ -9,8 +9,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "040"
-down_revision: str | None = "039"
+revision: str = "043"
+down_revision: str | None = "042"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
