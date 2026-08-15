@@ -95,6 +95,16 @@
       "evidence": "https://github.com/googleapis/google-api-python-client"
     },
     {
+      "module": "azure.identity",
+      "importer": "general_ludd.infra.azure_cost_reconciliation",
+      "flags": [
+        "delayed",
+        "optional"
+      ],
+      "category": "optional-dependency",
+      "evidence": "https://learn.microsoft.com/en-us/python/api/overview/azure/identity-readme"
+    },
+    {
       "module": "azure.mgmt",
       "importer": "general_ludd.infra.azure_cost_reconciliation",
       "flags": [

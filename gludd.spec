@@ -12,6 +12,10 @@ block_cipher = None
 # collect_data_files pulls all non-.py files from the ansible package.
 _ansible_datas = collect_data_files('ansible')
 _ansible_binaries = []
+# safehttpx reads its version.txt via importlib.resources at import time
+# (general_ludd/security/url_fetch.py); PyInstaller does not auto-collect it,
+# so the frozen CLI crashes with FileNotFoundError .../safehttpx/version.txt.
+_safehttpx_datas = collect_data_files('safehttpx')
 
 datas = [
     ('config', 'config'),
@@ -21,7 +25,7 @@ datas = [
     ('infra/terraform', 'general_ludd/terraform_assets'),
     ('LICENSE', '.'),
     ('THIRD_PARTY_LICENSES.md', '.'),
-] + _ansible_datas
+] + _ansible_datas + _safehttpx_datas
 
 # Also collect ansible submodules that aren't auto-detected by the static
 # analyzer (module_utils, plugins, etc. are imported dynamically).

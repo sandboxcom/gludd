@@ -92,9 +92,23 @@ def _fix_final_newline(text: str) -> str:
     return text + "\n"
 
 
+_FUNCTIONAL_COMMENT_MARKERS = frozenset(
+    {
+        "<!-- STATUS-TABLE:START -->",
+        "<!-- STATUS-TABLE:END -->",
+        "<!-- gate:begin -->",
+        "<!-- gate:end -->",
+    }
+)
+
+
 def _escape_html_comments(text: str) -> str:
     """Entity-escape HTML-comment delimiters on non-fenced lines so prose that
-    discusses ``<!--``/``-->`` markers is not parsed as a live HTML comment."""
+    discusses ``<!--``/``-->`` markers is not parsed as a live HTML comment.
+
+    Functional marker comments stay literal: gen_status_table.py,
+    status_snapshot.py, and quality/preflight.py locate them by exact string,
+    and escaping them breaks their marker detection (2026-08-15 incident)."""
     lines = text.split("\n")
     in_block = False
     out: list[str] = []
@@ -102,6 +116,9 @@ def _escape_html_comments(text: str) -> str:
         stripped = line.strip()
         if stripped.startswith("```"):
             in_block = not in_block
+            out.append(line)
+            continue
+        if not in_block and stripped in _FUNCTIONAL_COMMENT_MARKERS:
             out.append(line)
             continue
         if not in_block and ("<!--" in line or "-->" in line):

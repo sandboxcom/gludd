@@ -66,10 +66,13 @@
         PYTHONPATH: "{{ project_dir }}/src"
       changed_when: true
 
-    - name: Slurp the recorded PID
+    - name: Wait for the daemon to record its PID
       ansible.builtin.slurp:
         src: "{{ pidfile }}"
       register: pid_raw
+      until: pid_raw.content is defined
+      retries: 30
+      delay: 1
 
     - name: Parse the daemon PID
       ansible.builtin.set_fact:
