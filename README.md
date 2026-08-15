@@ -71,18 +71,9 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 ---
 
 ## Feature & Task Completion Status
-
-&lt;!-- STATUS-TABLE:START --&gt;
+<!-- STATUS-TABLE:START -->
 *(auto-generated with `--fast`; `test:` refs checked by file existence only — run `make gen-status-table` locally to verify tests pass)*
 
-
-### New Features (v0.1.0-beta.4)
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| B.1 — Branch reconciliation tooling: `development-merge-forward`, `git-patch-equivalence`, `branches-unmerged`/`branch-reconcile` | ~ 100% | **PARTIAL** *(file-refs only)*: tracked, dry-runnable Git-native targets; 27 master-relative branches classified in first use; release gate pending (docs/releases/v0.1.0-beta.4.md) |
-| B.2 — S83 reliability/security repairs: ML-KEM provider (pqcrypto 0.4), fail-closed crypto boundaries, data-structure invariants, integration fixes | ~ 100% | **PARTIAL** *(file-refs only)*: 559/559 HLL++, 443/443 MinHash, 130 Alloy tests PASS; integration 3358 PASS, 13 skipped, 0 failures |
-| B.3 — Test collection growth: 89,542 → ~105,175 collected | ~ 100% | **PARTIAL** *(file-refs only)*: 105,175 at latest S83 count, 1 intentional deselection, 0 collection errors |
 
 ### New Features (v0.1.0-beta.2)
 
@@ -110,7 +101,7 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
-| J.1-J.4 — HTTP state backend (lock/unlock/get/update), daemon wiring, local-to-HTTP migration, HMAC+OpenBao encryption | ✗ 100% | **PENDING** *(file-refs only)*: State integrity with HMAC signatures, at-rest encryption via OpenBao |
+| J.1-J.4 — HTTP state backend (lock/unlock/get/update), daemon wiring, local-to-HTTP migration, HMAC+OpenBao encryption | ~ 100% | **PARTIAL** *(file-refs only)*: State integrity with HMAC signatures, at-rest encryption via OpenBao |
 
 ### Phase K — Workload-Aware Deployment
 
@@ -174,7 +165,7 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
-| A.1-A.9 — CI fixes, push, release workflow, shard matrix, coverage policy | current gate | **EVIDENCE** *(file refs only)*: run `make gate`; authoritative shard, coverage, CI, and release results are recorded in `.gate-status` and `TASKS.md` |
+| A.1-A.9 — CI fixes, push, release v0.1.0-beta.3 ready, shard matrix (6 shards), coverage threshold | ✓ 100% | **PASS** *(file-refs only)*: CI shard matrix (6 shards), fail_under 85, CI GREEN for v0.1.0-beta.3 |
 
 ### Session 53 — Documentation & Release Polish
 
@@ -186,8 +177,7 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 | S53.31-S53.32 — Agentic memory: embedding store, consolidation cascade, hybrid search (97 tests) | ✓ 100% | **PASS** *(file-refs only)*: Procedural + semantic + hybrid search + embedding; commit 97432526 |
 | S53.33-S53.34 — PaaS IAM least-privilege roles (AWS/GCP/Azure) + OPA policies for Terraform/IAM (32 tests) | ✗ 100% | **PENDING** *(file-refs only)*: 3 provider IAM files, 4 OPA policy files; commit b4612d1a |
 
-&lt;!-- STATUS-TABLE:END --&gt;
-
+<!-- STATUS-TABLE:END -->
 ## Backlog
 
 Completed features are documented in CHANGELOG.md. Only in-progress items are tracked here.

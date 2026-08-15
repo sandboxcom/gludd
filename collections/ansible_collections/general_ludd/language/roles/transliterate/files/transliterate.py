@@ -8,7 +8,20 @@ import json
 import sys
 from pathlib import Path
 
-_SRC = Path(__file__).resolve().parents[11] / "src"
+
+def _find_src_root() -> Path:
+    """Walk upward from this file to the repo root (pyproject.toml marker)."""
+    current = Path(__file__).resolve().parent
+    for _ in range(32):
+        if (current / "pyproject.toml").is_file():
+            return current / "src"
+        if current.parent == current:
+            break
+        current = current.parent
+    return Path(__file__).resolve().parents[3] / "src"
+
+
+_SRC = _find_src_root()
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
