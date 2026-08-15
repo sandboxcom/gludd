@@ -100,92 +100,20 @@
           Server log ({{ _server_log }}):
           {{ (_server_log_slurp.content | default('')) | b64decode }}
 
-# ── Step 3: Generate game via local model ─────────────────────────────────
+# ── Step 3: Generate game via local model (with bounded rejection retry) ───
 
-- name: "Call local model for game generation"
-  ansible.builtin.uri:
-    url: "http://{{ server_host }}:{{ server_port }}/v1/completions"
-    method: POST
-    body_format: json
-    body:
-      prompt: "{{ game_prompt }}"
-      max_tokens: "{{ max_tokens }}"
-      temperature: "{{ temperature }}"
-    timeout: 300
-    headers:
-      Content-Type: application/json
-  register: _model_response
+- name: "Generate and verify game (retry on REJECTED with fallback_models)"
+  ansible.builtin.include_tasks: generate_and_verify.yml
+  vars:
+    _attempt: 1
 
-- name: "Extract generated code from model response"
-  ansible.builtin.set_fact:
-    _generated_code: "{{ _model_response.json.choices[0].text | default('') }}"
-
-- name: "Write generated code to artifact"
-  ansible.builtin.copy:
-    content: "{{ _generated_code }}"
-    dest: "{{ artifact_dir }}/{{ game_name }}.py"
-    mode: "0644"
-
-# ── Step 4: Verify generated code ─────────────────────────────────────────
-
-- name: "Verify — AST parse"
-  ansible.builtin.command: "{{ ansible_playbook_python }} -c 'import ast; ast.parse(open(\"{{ artifact_dir }}/{{ game_name }}.py\").read()); print(\"AST: OK\")'"
-  register: _ast_result
-  changed_when: false
-
-- name: "Verify — import module"
-  ansible.builtin.command: >-
-    {{ ansible_playbook_python }} -c "
-    import importlib.util, sys
-    spec = importlib.util.spec_from_file_location('{{ game_name }}', '{{ artifact_dir }}/{{ game_name }}.py')
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    classes = [v for v in vars(mod).values() if isinstance(v, type) and v.__module__ == '{{ game_name }}']
-    if not classes:
-        print('ERR: no game class found')
-        sys.exit(1)
-    print(f'Classes: {[c.__name__ for c in classes]}')
-    "
-  register: _import_result
-  changed_when: false
-
-- name: "Verify — runtime checks"
-  ansible.builtin.command: >-
-    {{ ansible_playbook_python }} -c "
-    import importlib.util, sys
-    from pathlib import Path
-    spec = importlib.util.spec_from_file_location('{{ game_name }}', '{{ artifact_dir }}/{{ game_name }}.py')
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    classes = [v for v in vars(mod).values() if isinstance(v, type) and v.__module__ == '{{ game_name }}']
-    game = classes[0]()
-    sys.stdout.write(f'Instantiated {type(game).__name__}\n')
-    if hasattr(game, 'start'):
-        game.start()
-        sys.stdout.write('start(): OK\n')
-    if hasattr(game, 'score'):
-        sys.stdout.write(f'score(): {game.score()}\n')
-    if hasattr(game, 'is_game_over'):
-        sys.stdout.write(f'is_game_over(): {game.is_game_over()}\n')
-    if hasattr(game, 'tick') and hasattr(game, 'is_game_over'):
-        for _ in range(5):
-            if not game.is_game_over():
-                game.tick('right')
-        sys.stdout.write('tick() x5: OK\n')
-    if hasattr(game, 'restart'):
-        game.restart()
-        sys.stdout.write('restart(): OK\n')
-    sys.stdout.write('RUNTIME: OK\n')
-    "
-  register: _runtime_result
-  changed_when: false
-
-- name: "Report verification results"
+- name: "REJECTED event — surface verify-failure rejection to the orchestrator"
+  when: _verify_failed | default(false) | bool
   ansible.builtin.debug:
-    msg:
-      - "AST parse: {{ _ast_result.stdout_lines | default([]) }}"
-      - "Import: {{ _import_result.stdout_lines | default([]) }}"
-      - "Runtime: {{ _runtime_result.stdout_lines | default([]) }}"
+    msg: >-
+      REJECTED: model output from {{ _active_repo | default(model_repo) }} failed
+      verification at check '{{ _verify_failed_check | default('unknown') }}'
+      after {{ max_attempts }} attempt(s).
 
 # ── Step 5: Shutdown server ──────────────────────────────────────────────
 

@@ -44,3 +44,28 @@ game_prompt: |
 max_tokens: 1024
 temperature: 0.2
 artifact_dir: "/tmp/gludd-game-gen"
+
+max_attempts: 1
+fallback_models: []
+retry_prompt: |
+  Your previous implementation was rejected because it failed the automated
+  verification checks.
+
+  Write a complete, self-contained Python Snake game as a single class.
+
+  Output ONLY the Python code — no prose, no markdown, no explanation.
+
+  The game must be a class with the following lifecycle methods:
+  - __init__(self): set up initial state
+  - start(self): begin/reset the game
+  - tick(self, direction): advance the snake by one step in the given direction ('up','down','left','right')
+  - score(self) -> int: return current score
+  - is_game_over(self) -> bool: return whether the game is over
+  - restart(self): reset everything
+
+  CORRECT THE PREVIOUS FAILURES: the code must parse as valid Python, expose
+  the game class, and pass all runtime lifecycle checks. Fix syntax errors,
+  missing lifecycle methods, and non-zero initial score before responding.
+
+  class Snake:
+      # your implementation

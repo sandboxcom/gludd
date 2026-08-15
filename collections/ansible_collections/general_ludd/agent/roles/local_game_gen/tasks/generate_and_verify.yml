@@ -1,0 +1,133 @@
+---
+# generate_and_verify.yml — recursive generate → verify loop with bounded retry.
+#
+# Any failure in the block (generation or a verify check) is a REJECTION
+# event. The rescue records the REJECTED event (naming the failing check),
+# increments the attempt counter, and either re-includes this file with the
+# corrective retry_prompt — optionally on the next fallback model — or fails
+# the role hard once max_attempts is exhausted (bounded retry, no infinite
+# loop). Default max_attempts=1 preserves the original single-shot behavior.
+
+- name: "Select model for the current attempt"
+  ansible.builtin.set_fact:
+    _active_repo: >-
+      {{ model_repo if _attempt | int == 1 or fallback_models | length == 0
+         else fallback_models[([(_attempt | int) - 2, fallback_models | length - 1] | min)] }}
+
+- name: "Select effective prompt for the current attempt"
+  ansible.builtin.set_fact:
+    _effective_prompt: "{{ game_prompt if _attempt | int == 1 else retry_prompt }}"
+
+- name: "Generate and verify"
+  block:
+    - name: "Call local model for game generation"
+      ansible.builtin.uri:
+        url: "http://{{ server_host }}:{{ server_port }}/v1/completions"
+        method: POST
+        body_format: json
+        body:
+          prompt: "{{ _effective_prompt }}"
+          max_tokens: "{{ max_tokens }}"
+          temperature: "{{ temperature }}"
+        timeout: 300
+        headers:
+          Content-Type: application/json
+      register: _model_response
+
+    - name: "Extract generated code from model response"
+      ansible.builtin.set_fact:
+        _generated_code: "{{ _model_response.json.choices[0].text | default('') }}"
+
+    - name: "Write generated code to artifact"
+      ansible.builtin.copy:
+        content: "{{ _generated_code }}"
+        dest: "{{ artifact_dir }}/{{ game_name }}.py"
+        mode: "0644"
+
+    - name: "Verify — AST parse"
+      ansible.builtin.command: "{{ ansible_playbook_python }} -c 'import ast; ast.parse(open(\"{{ artifact_dir }}/{{ game_name }}.py\").read()); print(\"AST: OK\")'"
+      register: _ast_result
+      changed_when: false
+
+    - name: "Verify — import module"
+      ansible.builtin.command: >-
+        {{ ansible_playbook_python }} -c "
+        import importlib.util, sys
+        spec = importlib.util.spec_from_file_location('{{ game_name }}', '{{ artifact_dir }}/{{ game_name }}.py')
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        classes = [v for v in vars(mod).values() if isinstance(v, type) and v.__module__ == '{{ game_name }}']
+        if not classes:
+            print('ERR: no game class found')
+            sys.exit(1)
+        print(f'Classes: {[c.__name__ for c in classes]}')
+        "
+      register: _import_result
+      changed_when: false
+
+    - name: "Verify — runtime checks"
+      ansible.builtin.command: >-
+        {{ ansible_playbook_python }} -c "
+        import importlib.util, sys
+        from pathlib import Path
+        spec = importlib.util.spec_from_file_location('{{ game_name }}', '{{ artifact_dir }}/{{ game_name }}.py')
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        classes = [v for v in vars(mod).values() if isinstance(v, type) and v.__module__ == '{{ game_name }}']
+        game = classes[0]()
+        sys.stdout.write(f'Instantiated {type(game).__name__}\n')
+        if hasattr(game, 'start'):
+            game.start()
+            sys.stdout.write('start(): OK\n')
+        if hasattr(game, 'score'):
+            sys.stdout.write(f'score(): {game.score()}\n')
+        if hasattr(game, 'is_game_over'):
+            sys.stdout.write(f'is_game_over(): {game.is_game_over()}\n')
+        if hasattr(game, 'tick') and hasattr(game, 'is_game_over'):
+            for _ in range(5):
+                if not game.is_game_over():
+                    game.tick('right')
+            sys.stdout.write('tick() x5: OK\n')
+        if hasattr(game, 'restart'):
+            game.restart()
+            sys.stdout.write('restart(): OK\n')
+        sys.stdout.write('RUNTIME: OK\n')
+        "
+      register: _runtime_result
+      changed_when: false
+
+    - name: "Report verification results"
+      ansible.builtin.debug:
+        msg:
+          - "AST parse: {{ _ast_result.stdout_lines | default([]) }}"
+          - "Import: {{ _import_result.stdout_lines | default([]) }}"
+          - "Runtime: {{ _runtime_result.stdout_lines | default([]) }}"
+  rescue:
+    - name: "REJECTED event — record model-output rejection with failing check"
+      when: _verify_failed | default(true) | bool
+      ansible.builtin.set_fact:
+        _verify_failed: true
+        _verify_failed_check: >-
+          {{ 'AST parse' if _ast_result is not defined or (_ast_result.failed | default(false))
+             else ('module import' if _import_result is not defined or (_import_result.failed | default(false))
+             else 'runtime checks') }}
+
+    - name: "Increment attempt counter on rejection"
+      ansible.builtin.set_fact:
+        _attempt: "{{ _attempt | int + 1 }}"
+
+    - name: "Retry generation with corrective prompt (model fallback on repeated rejection)"
+      when: _attempt | int < max_attempts | int
+      ansible.builtin.include_tasks: generate_and_verify.yml
+      vars:
+        _attempt: "{{ _attempt | int }}"
+
+    - name: "Fail after all attempts rejected"
+      when: _attempt | int >= max_attempts | int
+      ansible.builtin.fail:
+        msg: >-
+          REJECTED: generated code failed verification after {{ max_attempts }}
+          attempt(s). Last failing check: {{ _verify_failed_check }}.
+          AST result: {{ _ast_result.stdout_lines | default([]) }}
+          Import result: {{ _import_result.stdout_lines | default([]) }}
+          Runtime result: {{ _runtime_result.stdout_lines | default([]) }}

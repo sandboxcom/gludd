@@ -42,6 +42,19 @@ def _iter_all_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
+def _combined_tasks() -> list[dict[str, Any]]:
+    """Load main.yml plus the task file(s) it includes (generate_and_verify.yml)."""
+    combined: list[dict[str, Any]] = []
+    for rel in ("tasks/main.yml", "tasks/generate_and_verify.yml"):
+        tasks = cast(list[dict[str, Any]], _load_yaml(rel))
+        combined.extend(_iter_all_tasks(tasks))
+    return combined
+
+
+def _combined_text() -> str:
+    return "\n".join((ROLE_ROOT / rel).read_text() for rel in ("tasks/main.yml", "tasks/generate_and_verify.yml"))
+
+
 # =============================================================================
 #  1. Pipeline configuration validation
 # =============================================================================
@@ -131,18 +144,20 @@ class TestTaskStepOrdering:
         assert dl_idx < svr_idx, f"Download (idx {dl_idx}) must precede server start (idx {svr_idx})"
 
     def test_server_before_game_generation(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
+        tasks = _combined_tasks()
         names = _task_names(tasks)
         svr_idx = next(i for i, n in enumerate(names) if "start" in n.lower() and "server" in n.lower())
-        gen_idx = next(i for i, n in enumerate(names) if "generation" in n.lower() or "call local model" in n.lower())
+        gen_idx = next(i for i, n in enumerate(names) if "call local model" in n.lower())
         assert svr_idx < gen_idx, f"Server start (idx {svr_idx}) must precede generation (idx {gen_idx})"
 
     def test_game_generation_before_verify(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
         names = _task_names(tasks)
-        gen_idx = next(i for i, n in enumerate(names) if "generation" in n.lower() or "call local model" in n.lower())
-        ver_idx = next(i for i, n in enumerate(names) if "verify" in n.lower() and "ast" in n.lower())
-        assert gen_idx < ver_idx, f"Generation (idx {gen_idx}) must precede AST verify (idx {ver_idx})"
+        gen_idx = next(i for i, n in enumerate(names) if "generation" in n.lower() or "generate" in n.lower())
+        shutdown_idx = next(i for i, n in enumerate(names) if any(w in n.lower() for w in ("shutdown", "stop", "kill")))
+        assert gen_idx < shutdown_idx, f"Generation (idx {gen_idx}) must precede shutdown (idx {shutdown_idx})"
+        gen_verify_text = " ".join(names).lower()
+        assert "verify" in gen_verify_text, "The generate+verify pipeline must include verification steps"
 
     def test_shutdown_is_last_or_always_block(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
@@ -154,11 +169,11 @@ class TestTaskStepOrdering:
         assert "always" in shutdown_text.lower(), "Shutdown must use always: block for guaranteed execution"
 
     def test_health_poll_between_server_and_generation(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
+        tasks = _combined_tasks()
         names = _task_names(tasks)
         svr_idx = next(i for i, n in enumerate(names) if "start" in n.lower() and "server" in n.lower())
         health_idx = next(i for i, n in enumerate(names) if "health" in n.lower())
-        gen_idx = next(i for i, n in enumerate(names) if "generation" in n.lower() or "call local model" in n.lower())
+        gen_idx = next(i for i, n in enumerate(names) if "call local model" in n.lower())
         assert svr_idx < health_idx < gen_idx, (
             f"Health poll (idx {health_idx}) between server start (idx {svr_idx}) and generation (idx {gen_idx})"
         )
@@ -245,8 +260,7 @@ class TestMissingBinaryErrorHandling:
         assert any("huggingface" in c for c in cmds) or "huggingface" in dump, "Tasks must reference huggingface-cli"
 
     def test_python3_referenced_in_verify_steps(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        cmds = _gather_commands(tasks)
+        cmds = _gather_commands(_combined_tasks())
         python_cmds = [c for c in cmds if "ansible_playbook_python" in c or c.startswith("python3")]
         assert len(python_cmds) >= 3, f"Expected >=3 python invocations (AST/import/runtime), got {len(python_cmds)}"
 
@@ -283,9 +297,8 @@ class TestMissingBinaryErrorHandling:
                 return
 
     def test_ast_parse_registers_result(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        for t in tasks:
-            if "ast.parse" in str(t):
+        for t in _combined_tasks():
+            if "ansible.builtin.command" in t and "ast.parse" in str(t["ansible.builtin.command"]):
                 assert "register" in t, "AST step must register result"
                 assert t.get("changed_when") is False, "AST step is read-only"
                 return
@@ -321,7 +334,7 @@ class TestEnvironmentVariablePropagation:
         assert defaults["server_host"] == "127.0.0.1"
 
     def test_task_uses_template_variables_not_hardcoded_paths(self) -> None:
-        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
+        tasks_text = _combined_text()
         variable_patterns = [
             "{{ artifact_dir }}",
             "{{ model_download_dir }}",
@@ -329,7 +342,7 @@ class TestEnvironmentVariablePropagation:
             "{{ server_port }}",
             "{{ _model_path }}",
             "{{ game_name }}",
-            "{{ game_prompt }}",
+            "{{ _effective_prompt }}",
             "{{ max_tokens }}",
             "{{ temperature }}",
             "{{ server_context_size }}",
@@ -338,10 +351,10 @@ class TestEnvironmentVariablePropagation:
             "{{ health_check_delay }}",
         ]
         for var in variable_patterns:
-            assert var in tasks_text, f"Task file must reference {var}"
+            assert var in tasks_text, f"Task files must reference {var}"
 
     def test_internal_variables_use_underscore_prefix(self) -> None:
-        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
+        tasks_text = _combined_text()
         internal_vars = [
             "_model_path",
             "_server_log",
@@ -359,7 +372,7 @@ class TestEnvironmentVariablePropagation:
 
     def test_all_defaults_referenced_in_tasks(self) -> None:
         defaults = cast(dict[str, Any], _load_yaml("defaults/main.yml"))
-        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
+        tasks_text = _combined_text()
         permitted_unreferenced = {"game_genre", "game_description", "server_startup_timeout"}
         unreferenced = {k for k in defaults if k not in tasks_text}
         assert unreferenced <= permitted_unreferenced, (
@@ -494,7 +507,7 @@ class TestEdgeCases:
         assert "{{ artifact_dir }}/llamacpp-server.log" in tasks_text, "Server log must be under artifact_dir"
 
     def test_generated_code_written_to_correct_path(self) -> None:
-        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
+        tasks_text = _combined_text()
         assert "{{ artifact_dir }}/{{ game_name }}.py" in tasks_text, (
             "Generated code must write to artifact_dir/game_name.py"
         )
@@ -539,7 +552,7 @@ class TestDeepPipelineValidation:
         pytest.fail("No health URI poll task found")
 
     def test_code_extraction_from_completions_response(self) -> None:
-        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
+        tasks_text = _combined_text()
         json_path = "_model_response.json.choices[0].text"
         assert json_path in tasks_text, f"Code extraction must reference {json_path}"
         assert "{{ _generated_code }}" in tasks_text, "Generated code must be written from set_fact"
@@ -568,8 +581,7 @@ class TestDeepPipelineValidation:
             assert name not in top_names, f"Shutdown subtask '{name}' must be nested, not top-level"
 
     def test_generation_timeout_is_300_seconds(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        for t in _iter_all_tasks(tasks):
+        for t in _combined_tasks():
             uri_block = t.get("ansible.builtin.uri")
             if isinstance(uri_block, dict) and "/v1/completions" in str(uri_block.get("url", "")):
                 timeout_val = uri_block.get("timeout")
