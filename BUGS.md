@@ -4,6 +4,34 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-08-15 — (resolved) AA032 verdict-history guard had no recording path; AA023 restart cap had no reset path
+
+- **What happened**: `make batch-push` was blocked with "previous push SHA ... was never CI-verified" and its own guidance ("run make ci-verdict-safe and record the verdict") could not unblock it: nothing in the repo ever wrote a non-empty `last_checked_sha` into `/tmp/gludd-ci-verdict-history.json`. Separately, `_ci-restart-cap` (AA023) documented "resets when CI reports GREEN" but no code performed the reset, and the guard ran FIRST in the prereq list, so two pushes that were blocked downstream still consumed 2 of the 3 restart slots.
+- **Root cause**: The verdict guard wrote `last_push_sha` + `last_checked_sha: ""` on every PASSING guard run — including failed push attempts — and the only unblock writer (`ci_check_cooldown.py record-verdict`) wrote to a different state file. The restart cap had no reset writer at all.
+- **Fix applied**: `scripts/ci_check_cooldown.py record-verdict <verdict> <sha>` now updates the verdict history file atomically with `last_checked_sha`, and any terminal verdict (success/failure) resets `/tmp/gludd-ci-restart-count` to 0. `ci-verdict-safe` honors `SHA=` and records the checked SHA. The guard is now check-only; `_record-push-verdict` records the pushed SHA only AFTER a push actually lands (appended to the batch-push/git-push-sandboxcom recipes). Guard ordering moved restart-cap to last, and batch-push now pushes directly instead of re-entering the guarded target (which re-ran every guard). Tests: 22/22 in `test_ci_check_cooldown.py`; all three state files (check-state, verdict-history, restart count) are isolated per test fixture so tests can no longer pollute live push-guard state. Commits: `2d543b32`, `82a3ea1b`, `34fd3e09`, `f192c351`, `7cb873c2`, `8e105658`, `990b2c09`, `ae8ca4cc`.
+- **Lesson**: A stateful guard must have a written unblock path and a written reset path, or it permanently wedges. Guard state must be recorded only after the guarded action succeeds, and guard ordering must not charge failed attempts against rate caps.
+
+### 2026-08-15 — (resolved) CI unit-3 no-progress timeout caused by block-buffered shard output
+
+- **What happened**: CI Build-and-Release run 31885542469: test-shard unit-3 was killed with `[adaptive-test] shard terminated intentionally; reason=no-progress-timeout` after 900s with zero output lines; xdist workers showed only teardown OSErrors from the SIGTERM.
+- **Root cause**: Piped pytest stdout in the CI step is block-buffered; `scripts/adaptive_test.py`'s no-progress watchdog counts output LINES, so a healthy-but-slow shard looked hung and was killed. The shard itself was not hung.
+- **Fix applied**: `PYTHONUNBUFFERED: "1"` added to the test-shard step env in `.github/workflows/build.yml` so the heartbeat sees progress lines. Commit `86b72ae5`.
+- **Lesson**: A watchdog that measures progress by output volume must run the child unbuffered; otherwise the watchdog is blind, not the child.
+
+### 2026-08-15 — (resolved) Pre-commit HTML-escaped the functional STATUS-TABLE markers in README.md
+
+- **What happened**: A pre-commit hook rewrote `<!-- STATUS-TABLE:START/END -->` in README.md to `&lt;!-- ... --&gt;`, which would have broken `scripts/gen_status_table.py`, `status_snapshot.py`, and `preflight.py` marker detection and made CI's `check-status-table` fail.
+- **Root cause**: `scripts/fix_docs_drift.py::_escape_html_comments` escaped every HTML comment delimiter, including functional markers that tooling locates by exact string.
+- **Fix applied**: The escaper now preserves a fixed set of functional markers (STATUS-TABLE START/END, gate:begin/gate:end), including indented forms; prose mentioning delimiters is still escaped. Regression pin: `tests/unit/test_fix_docs_drift.py` (2/2). Commit `d4a0cac2` + `58820a18`.
+- **Lesson**: Comment-escaping formatters must preserve comments that are machine-read markers; pin the marker set with a test in the same change.
+
+### 2026-08-15 — (resolved) Live-session state contaminated opencode-e2e multitask tests
+
+- **What happened**: The local gate's `opencode-e2e` phase failed: `test_text_complete_blocks_thin_wave` got PASS_THROUGH instead of BLOCKED because the spawned Node subprocess read the live orchestrator's `/tmp/gludd-*` state (disengage, dispatch outcomes, session-start mtime) and flipped the block condition.
+- **Root cause**: The e2e subprocess inherited the real session's enforcement state files instead of isolated ones.
+- **Fix applied**: `_isolated_multitask_state_env` sets per-test paths for every state file the multitask plugin reads; `shared.ts` `SESSION_START_STATE_FILE` honors `GLUDD_SESSION_STATE`; structural pins in `test_shared_plugin_module.py` cover the knob. e2e file verified 26/26 green. Commit `fc01ba17`.
+- **Lesson**: E2E tests that execute the real enforcement plugins must isolate every state file the plugins read, or the test measures the orchestrator's state instead of the code under test.
+
 ### 2026-08-08 — (resolved) OpenCode cleanup guard fell through to live VACUUM and sidecar deletion
 
 - **What happened**: `make opencode-clean` detected a running OpenCode process and printed that database maintenance was skipped, but the following Make recipe lines still ran a full `VACUUM` and manually removed `opencode.db-wal`/`opencode.db-shm`. On the affected host the database was about 23 GB with roughly 3 GB free after cache cleanup, so full-file compaction lacked safe headroom and concurrent mutation could crash OpenCode.
