@@ -3411,6 +3411,7 @@ git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard _sta
 	@BRANCH=$$(git branch --show-current); \
 	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom HEAD:$$BRANCH
 	@echo "Pushed $$(git branch --show-current) to sandboxcom/gludd"
+	@$(MAKE) --no-print-directory _record-push-verdict
 
 push-dev: check-clean-tree ci-busy-check _stash-before-push-guard _ci-restart-cap _pull-before-push-guard
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom development
@@ -3479,7 +3480,8 @@ batch-push: check-clean-tree _no-bypass-guard _stash-before-push-guard _pull-bef
 	echo "$$COUNT unpushed commits, threshold met. Pushing..."; \
 	BRANCH=$$(git branch --show-current); \
 	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom HEAD:$$BRANCH; \
-	echo "Pushed $$BRANCH to sandboxcom/gludd ($$COUNT commits)"
+	echo "Pushed $$BRANCH to sandboxcom/gludd ($$COUNT commits)"; \
+	$(MAKE) --no-print-directory _record-push-verdict
 
 force-batch-push:
 	@GLUDD_FORCE_PUSH=1 $(MAKE) batch-push FORCE=1
@@ -5938,9 +5940,18 @@ _ci-verdict-history-guard:
 			echo "Run 'make ci-verdict-safe BRANCH=$$(git branch --show-current)' and record the verdict before pushing again. See AA032."; \
 			exit 1; \
 		fi; \
-	fi; \
-	echo "{\"last_push_sha\": \"$$CUR_SHA\", \"last_checked_sha\": \"\", \"ts\": $$(date +%s)}" > "$$STATE_FILE"
+	fi
 	@echo "_ci-verdict-history-guard: PASS"
+
+# AA032b — records the pushed SHA AFTER a push actually lands. The guard
+# itself is check-only; recording on the guard would re-arm the block on
+# every FAILED push attempt (pre-push hook rejections, rate-limit blocks),
+# forcing a fresh 10-minute cooldown verdict for a push that never happened.
+_record-push-verdict:
+	@CUR_SHA=$$(git rev-parse HEAD); \
+	STATE_FILE=/tmp/gludd-ci-verdict-history.json; \
+	echo "{\"last_push_sha\": \"$$CUR_SHA\", \"last_checked_sha\": \"\", \"ts\": $$(date +%s)}" > "$$STATE_FILE"; \
+	echo "recorded push verdict history for $$CUR_SHA"
 
 # AA034 — _pre-commit-stash-audit: detects pre-commit auto-fix stash conflicts.
 # Pre-commit hooks auto-fix files (trailing whitespace, eof) via stash/unstash.
