@@ -268,8 +268,14 @@ class TestConvertRoleArgs:
         assert result == ["--input", "xyz"]
 
     def test_i18n_extract_with_directory(self):
-        result = _convert_role_args("i18n_extract", {"directory": "/src"})
-        assert result == ["--source-dir", "/src", "--output-dir", "/src"]
+        with patch("tempfile.gettempdir", return_value="/tmp"):
+            result = _convert_role_args("i18n_extract", {"directory": "/src"})
+        assert result[:2] == ["--source-dir", "/src"]
+        assert result[2] == "--output-dir"
+        assert result[3].startswith("/tmp/gludd-i18n-extract-")
+        suffix = result[3].rsplit("-", 1)[-1]
+        assert len(suffix) == 12
+        assert all(c in "0123456789abcdef" for c in suffix)
 
     def test_locale_format_with_locale(self):
         result = _convert_role_args("locale_format", {"locale": "en_US.UTF-8"})
