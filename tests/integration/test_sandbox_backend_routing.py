@@ -68,7 +68,11 @@ class TestSandboxCapabilityRouter:
         result = router.execute("echo error >&2")
         assert "error" in result.stderr
 
+    @pytest.mark.timeout(30)
     def test_process_execute_timeout(self) -> None:
+        # CI runners under xdist contention can take seconds to spawn the
+        # killed child; the per-test mark keeps the shard from tripping the
+        # global 180s budget while the 1s sandbox timeout stays the contract.
         router = SandboxCapabilityRouter(SandboxConfig(backend="process", timeout=1))
         result = router.execute("sleep 10")
         assert result.was_killed is True
