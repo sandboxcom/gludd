@@ -30,7 +30,13 @@
 - name: "Generate and verify"
   block:
     - name: "Switch to fallback model on repeated rejection"
-      when: _attempt | int > 1
+      # The switch block only runs when a fallback model is configured AND
+      # this is a retry attempt; with an empty fallback_models list the
+      # corrective-prompt retry reuses the already-served primary model
+      # (observed locally: pointless re-download + restart of the same GGUF).
+      when:
+        - _attempt | int > 1
+        - fallback_models | length > 0
       block:
         - name: "Download fallback model if not present"
           ansible.builtin.command: >-
