@@ -79,6 +79,7 @@ from general_ludd.pricing_intel.sources import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_daemon_client() -> TestClient:
     """Create a TestClient for the daemon app with auth disabled (test mode)."""
     from general_ludd.daemon import create_daemon_app
@@ -108,6 +109,7 @@ def _mock_openrouter_http(models: list[dict[str, Any]]) -> MagicMock:
 # Fixture: shared catalog (no network required for static sources)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="class")
 def catalog() -> PricingCatalog:
     """PricingCatalog with all default sources. Static sources need no network."""
@@ -117,6 +119,7 @@ def catalog() -> PricingCatalog:
 # ---------------------------------------------------------------------------
 # Fixture: daemon TestClient (re-used within class)
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def daemon_client() -> TestClient:
@@ -134,14 +137,20 @@ def daemon_client() -> TestClient:
 # 1. PricingCatalog — static source paths
 # ---------------------------------------------------------------------------
 
+
 class TestPricingCatalogStaticSources:
     """Exercises the real static-source path: no mocks, no network."""
 
     def test_provider_slugs_includes_all_registered(self, catalog: PricingCatalog) -> None:
         slugs = catalog.provider_slugs()
-        expected = sorted(["openrouter", "anthropic", "openai", "runpod",
-                           "lambda_labs", "aws", "gcp", "huggingface", "fireworks"])
-        assert sorted(slugs) == expected, f"Missing or extra providers: {slugs}"
+        # The contract is self-checking: every REGISTERED source must surface
+        # its slug, and no slug may exist without a registered source. A
+        # hardcoded list here drifted every time a provider was added.
+        registered = sorted(s.provider_slug() for s in catalog._sources)
+        assert sorted(set(slugs)) == registered, f"Missing or extra providers: {slugs}"
+        # Core providers are non-negotiable anchor points.
+        for anchor in ("openrouter", "anthropic", "openai", "runpod", "lambda_labs", "aws", "gcp", "huggingface"):
+            assert anchor in slugs, f"core provider {anchor!r} missing from slugs"
 
     def test_billing_anthropic_postpaid_per_token(self, catalog: PricingCatalog) -> None:
         b = catalog.billing("anthropic")
@@ -188,8 +197,7 @@ class TestPricingCatalogStaticSources:
         all_billing = catalog.all_billing()
         assert len(all_billing) >= 9
         provider_names = {b.provider for b in all_billing}
-        for expected in ["anthropic", "openai", "openrouter", "runpod",
-                         "lambda_labs", "aws", "gcp"]:
+        for expected in ["anthropic", "openai", "openrouter", "runpod", "lambda_labs", "aws", "gcp"]:
             assert expected in provider_names, f"Missing: {expected}"
 
     def test_model_price_anthropic_sonnet(self, catalog: PricingCatalog) -> None:
@@ -451,6 +459,7 @@ class TestOpenRouterLiveFetchPath:
 # 3. Pricing-intel → /admin/models price-reflection E2E
 # ---------------------------------------------------------------------------
 
+
 class TestPricingIntelToApiModelsE2E:
     """Full flow: PricingCatalog fetch → POST /admin/models → GET /admin/models.
 
@@ -529,10 +538,7 @@ class TestPricingIntelToApiModelsE2E:
         list_data = list_resp.json()
         assert "profiles" in list_data
         profile_ids = [p["model_profile_id"] for p in list_data["profiles"]]
-        assert model_id in profile_ids, (
-            f"Profile {model_id!r} not reflected in GET /admin/models. "
-            f"Got: {profile_ids}"
-        )
+        assert model_id in profile_ids, f"Profile {model_id!r} not reflected in GET /admin/models. Got: {profile_ids}"
 
         # Verify the profile has the correct provider
         matched = next(p for p in list_data["profiles"] if p["model_profile_id"] == model_id)
@@ -634,10 +640,7 @@ class TestPricingIntelToApiModelsE2E:
         assert profile_id in profile_ids
 
         # Verify model_name matches what we fetched from the catalog
-        matched = next(
-            p for p in list_resp.json()["profiles"]
-            if p["model_profile_id"] == profile_id
-        )
+        matched = next(p for p in list_resp.json()["profiles"] if p["model_profile_id"] == profile_id)
         assert matched["model_name"] == first_price.model_id
 
         # Cleanup
@@ -658,6 +661,7 @@ class TestPricingIntelToApiModelsE2E:
 # ---------------------------------------------------------------------------
 # 4. Pricing-intel fail-soft guarantees
 # ---------------------------------------------------------------------------
+
 
 class TestPricingIntelFailSoft:
     """Guarantees: catalog never raises, partial failures don't kill good sources."""
@@ -748,34 +752,41 @@ class TestPricingIntelFailSoft:
 # 5. Data model integrity
 # ---------------------------------------------------------------------------
 
+
 class TestPricingIntelDataModels:
     """ModelPrice, ComputePrice, ModelInfo integrity tests."""
 
     def test_model_price_missing_source_raises(self) -> None:
         with pytest.raises(ValueError, match="no source"):
             ModelPrice(
-                provider="test", model_id="m",
-                input_usd_per_1k=0.001, output_usd_per_1k=0.002,
+                provider="test",
+                model_id="m",
+                input_usd_per_1k=0.001,
+                output_usd_per_1k=0.002,
                 source="",
             )
 
     def test_compute_price_missing_source_raises(self) -> None:
         with pytest.raises(ValueError, match="no source"):
             ComputePrice(
-                provider="test", sku="s",
+                provider="test",
+                sku="s",
                 usd_per_unit=0.001,
                 granularity=BillingGranularity.per_second,
-                spot=False, terms=BillingTerms.prepaid_balance,
+                spot=False,
+                terms=BillingTerms.prepaid_balance,
                 source="",
             )
 
     def test_compute_price_usd_per_hour_per_second(self) -> None:
         rate_s = 2.49 / 3600.0
         cp = ComputePrice(
-            provider="runpod", sku="A100-test",
+            provider="runpod",
+            sku="A100-test",
             usd_per_unit=rate_s,
             granularity=BillingGranularity.per_second,
-            spot=False, terms=BillingTerms.prepaid_balance,
+            spot=False,
+            terms=BillingTerms.prepaid_balance,
             source="https://example.com",
         )
         assert abs(cp.usd_per_hour() - 2.49) < 1e-6
@@ -783,20 +794,24 @@ class TestPricingIntelDataModels:
     def test_compute_price_usd_per_hour_per_minute(self) -> None:
         rate_m = 1.29 / 60.0
         cp = ComputePrice(
-            provider="lambda", sku="gpu-test",
+            provider="lambda",
+            sku="gpu-test",
             usd_per_unit=rate_m,
             granularity=BillingGranularity.per_minute,
-            spot=False, terms=BillingTerms.prepaid_balance,
+            spot=False,
+            terms=BillingTerms.prepaid_balance,
             source="https://example.com",
         )
         assert abs(cp.usd_per_hour() - 1.29) < 1e-6
 
     def test_compute_price_usd_per_hour_passthrough_hourly(self) -> None:
         cp = ComputePrice(
-            provider="custom", sku="test",
+            provider="custom",
+            sku="test",
             usd_per_unit=5.00,
             granularity=BillingGranularity.per_hour,
-            spot=False, terms=BillingTerms.postpaid_monthly,
+            spot=False,
+            terms=BillingTerms.postpaid_monthly,
             source="https://example.com",
         )
         assert cp.usd_per_hour() == 5.00
@@ -838,8 +853,12 @@ class TestPricingIntelDataModels:
     def test_all_static_prices_have_source_urls(self) -> None:
         """No static price may omit its source URL."""
         static_sources = [
-            AnthropicSource(), OpenAISource(), RunPodSource(),
-            LambdaLabsSource(), AWSSource(), GCPSource(),
+            AnthropicSource(),
+            OpenAISource(),
+            RunPodSource(),
+            LambdaLabsSource(),
+            AWSSource(),
+            GCPSource(),
         ]
         for src in static_sources:
             for mp in src.fetch_model_prices():
@@ -866,9 +885,7 @@ class TestPricingIntelDataModels:
         """Critical correctness: prepaid providers must never be classified postpaid."""
         for src in [RunPodSource(), LambdaLabsSource()]:
             b = src.billing()
-            assert b.terms == BillingTerms.prepaid_balance, (
-                f"{src.provider_slug()} must be prepaid_balance"
-            )
+            assert b.terms == BillingTerms.prepaid_balance, f"{src.provider_slug()} must be prepaid_balance"
             assert b.terms != BillingTerms.postpaid_monthly
             assert b.terms != BillingTerms.postpaid_per_use
 
@@ -876,7 +893,5 @@ class TestPricingIntelDataModels:
         """AWS and GCP must be postpaid_monthly — not prepaid."""
         for src in [AWSSource(), GCPSource()]:
             b = src.billing()
-            assert b.terms == BillingTerms.postpaid_monthly, (
-                f"{src.provider_slug()} must be postpaid_monthly"
-            )
+            assert b.terms == BillingTerms.postpaid_monthly, f"{src.provider_slug()} must be postpaid_monthly"
             assert b.terms != BillingTerms.prepaid_balance

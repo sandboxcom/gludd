@@ -3237,7 +3237,7 @@ def create_daemon_app(
             "SECURITY: GLUDD_AUTH_PSK is not set and auth is disabled — the "
             "daemon is running with admin auth DISABLED (no_auth mode). The "
             "entire /admin surface is open to any caller that can reach the port. "
-            "Set GLUDD_AUTH_PSK to enable auth."
+            "Set GLUDD_AUTH_PSK (alias: GLUDD_PSK) to enable auth."
         )
 
     _PUBLIC_PATHS = {
@@ -3428,6 +3428,13 @@ def create_daemon_app(
             local_model = await local_model_health_check()
         except Exception:
             local_model = {"model_exists": False, "llama_cpp_available": False, "memory": {}}
+        # SECURITY (gateway-health-budget P1): the memory dict carries numeric
+        # capacity figures — strip it from the unauth'd payload; only the
+        # booleans are public on /healthz.
+        local_model_public = {
+            "model_exists": bool(local_model.get("model_exists", False)),
+            "llama_cpp_available": bool(local_model.get("llama_cpp_available", False)),
+        }
         # N1/C6: a dead/cancelled event-loop task after a successful startup must
         # NOT serve green — the daemon is alive but no longer processing work.
         # Mirror /readyz's check so /healthz also reports degraded in that case
@@ -3444,7 +3451,7 @@ def create_daemon_app(
                 "allow_no_auth": allow_no_auth,
                 "auth_degraded": auth_degraded,
                 "budget_exhausted": budget_exhausted,
-                "local_model": local_model,
+                "local_model": local_model_public,
             }
         return {
             "status": "healthy",
@@ -3453,7 +3460,7 @@ def create_daemon_app(
             "allow_no_auth": allow_no_auth,
             "auth_degraded": auth_degraded,
             "budget_exhausted": budget_exhausted,
-            "local_model": local_model,
+            "local_model": local_model_public,
         }
 
     @app.get(

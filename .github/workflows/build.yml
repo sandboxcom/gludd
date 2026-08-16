@@ -1501,7 +1501,9 @@ jobs:
           cat SHA256SUMS
       - name: Inspect existing release
         # action-gh-release updates the release for an existing tag. Inspect it
-        # for audit visibility without deleting published state before upload.
+        # for audit visibility; a stale DRAFT left from a prior aborted run is
+        # deleted below so the re-publish step never fails with
+        # 'release already_exists'.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -1510,6 +1512,20 @@ jobs:
             echo "Existing release found; assets will be updated in place."
           else
             echo "No existing release found; a new release will be created."
+          fi
+      - name: Clean stale release (already_exists guard)
+        # A previous run's draft/partial release for this tag makes
+        # action-gh-release fail with 'release already_exists'. Delete only
+        # the DRAFT (never a published release) and let the next step recreate.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== CI PHASE: release-clean-stale ==="
+          if gh release view ${{ github.ref_name }} --json isDraft -q .isDraft 2>/dev/null | grep -q true; then
+            echo "Stale draft release for ${{ github.ref_name }} — deleting so action-gh-release can recreate it."
+            gh release delete ${{ github.ref_name }} --yes --cleanup-tag
+          else
+            echo "No stale draft to clean for ${{ github.ref_name }}."
           fi
       - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0 (node24)
         with:
