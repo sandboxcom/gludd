@@ -4,6 +4,19 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-08-16 — (resolved) Infinite game-gen rejection loop: include-var shadowed the retry counter
+
+- **What happened**: The local_game_gen molecule scenario looped forever — 16+ generation attempts with `max_attempts=3`. Every retry re-ran the whole generate→verify→reject cycle because the `when: _attempt | int < max_attempts | int` guard on the self-include always saw the stale value 1.
+- **Root cause**: `main.yml` included `generate_and_verify.yml` with `vars: {_attempt: 1}` — an INCLUDE VAR, not a host fact. Include vars shadow host facts inside the included file, so the rescue's `set_fact: _attempt: "{{ _attempt | int + 1 }}"` wrote the incremented FACT while every subsequent read of `_attempt` inside the file still resolved through the shadowing include var (always 1). The guard could never see the increment → unbounded recursion.
+- **Fix applied** (`de25ad544`, CI-validated round-13 molecule green): the counter starts via `set_fact` as a host fact; the include carries no vars. Regression pin `test_attempt_counter_starts_at_one` asserts set_fact-start + no-vars-on-include. Local molecule run: exactly 3 attempts, artifact removed, `REJECTED ... after 3 attempt(s)` surfaced, verify rejection path green.
+- **Lesson**: Never pass a mutable counter into `include_tasks` as an include var when the included file self-recurses and increments it via `set_fact`. Include vars shadow facts; facts propagate. Counters must be facts from the start.
+
+### 2026-08-16 — (resolved) Round-14 unit-1a1 coverage-data flake failed an all-green shard
+
+- **What happened**: unit-1a1 passed 3662/3662 tests, then the step's `coverage combine` printed "No data to combine" and exited 1 — failing the build on a coverage-data artifact, not a test.
+- **Root cause**: pytest-cov's atexit `.coverage` write was lost (abrupt wrapper-exit race); the shard step treated the missing file as a hard failure.
+- **Fix applied** (`9e6960c1`): the shard step warns instead of failing when coverage data is missing; the aggregate coverage job's `EXPECTED_SHARD_COVERAGE_FILES=7` check remains the completeness gate.
+
 ### 2026-08-16 — (resolved) Round-10 CI: seven residual classes, five self-inflicted
 
 - **What happened**: Round-10 build (31928430094) failed with 7 classes: (1) api_metered zero-cost coercion made explicit metered registrations 200 (unit contract wants 422); (2) `DispatchAction.LOCAL` identity check failed under CI's dual import roots (PermissionError in game-multi authorize); (3) e9 skip snapshot drift (+1 TUI CI-gate); (4) sandbox fork exhaustion ("/bin/sh: Cannot fork") under xdist contention; (5) procsys selector realpath resolved /proc/self → /proc/<pid> outside the test fixtures; (6) journald no-reader contract broke on Linux CI (journalctl present returns real entries); (7) molecule shard 12-minute cap expired mid-local_game_gen; chat scenario idempotence failed (export rewrites markdown every run).
