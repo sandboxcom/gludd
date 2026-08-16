@@ -89,10 +89,26 @@ FORBIDDEN_ATTR_CALLS: frozenset[tuple[str, str]] = frozenset(
 _RUNTIME_PROBE_SCRIPT = """
 import io
 import json
+import os
 import sys
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout, suppress
+from pathlib import Path
 
 MAX_TICKS = 5
+
+
+def _fs_snapshot(root: Path) -> dict[str, tuple[float, int]]:
+    snapshot: dict[str, tuple[float, int]] = {}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in {".git", "__pycache__", ".venv"}]
+        for name in filenames:
+            path = Path(dirpath) / name
+            try:
+                stat = path.stat()
+                snapshot[str(path.relative_to(root))] = (stat.st_mtime, stat.st_size)
+            except OSError:
+                continue
+    return snapshot
 
 
 def _run(source: str) -> dict[str, object]:
@@ -101,11 +117,25 @@ def _run(source: str) -> dict[str, object]:
     stdout = io.StringIO()
     stderr = io.StringIO()
     verdict: dict[str, object] = {"failure": None, "class_name": None, "output": ""}
+    fs_before = _fs_snapshot(Path.cwd())
     try:
         with redirect_stdout(stdout), redirect_stderr(stderr):
             exec(compile(source, "<generated_game>", "exec"), namespace)
     except BaseException as exc:
         verdict["failure"] = f"generated module raised {type(exc).__name__}: {exc}"
+        return verdict
+    fs_after = _fs_snapshot(Path.cwd())
+    created = sorted(set(fs_after) - set(fs_before))
+    modified = sorted(rel for rel in set(fs_after) & set(fs_before) if fs_after[rel] != fs_before[rel])
+    if created or modified:
+        for rel in created:
+            with suppress(OSError):
+                (Path.cwd() / rel).unlink()
+        verdict["failure"] = (
+            "import-time filesystem side effect detected: "
+            f"created={created} modified={modified}"
+        )
+        verdict["output"] = stdout.getvalue() + stderr.getvalue()
         return verdict
     game_class: type | None = None
     for value in namespace.values():
@@ -256,6 +286,33 @@ def _output_snippet(stdout: io.StringIO, stderr: io.StringIO) -> str:
     return stdout.getvalue() + stderr.getvalue()
 
 
+def _fs_snapshot(root: Path) -> dict[str, tuple[float, int]]:
+    """Return {relative path: (mtime, size)} for the CWD tree.
+
+    The acceptance probe rejects any change the generated module makes to
+    this snapshot — games must not touch the filesystem at import time.
+    """
+    snapshot: dict[str, tuple[float, int]] = {}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in {".git", "__pycache__", ".venv"}]
+        for name in filenames:
+            path = Path(dirpath) / name
+            try:
+                stat = path.stat()
+                snapshot[str(path.relative_to(root))] = (stat.st_mtime, stat.st_size)
+            except OSError:
+                continue
+    return snapshot
+
+
+def _cleanup_new_files(root: Path, before: dict[str, tuple[float, int]]) -> None:
+    """Remove files the generated module created during import."""
+    after = _fs_snapshot(root)
+    for rel in set(after) - set(before):
+        with suppress(OSError):
+            (root / rel).unlink()
+
+
 def _runtime_probe(
     source: str,
     module_name: str,
@@ -285,8 +342,19 @@ def _runtime_probe(
             return "runtime watchdog unavailable in this thread", None, ""
         try:
             try:
+                fs_before = _fs_snapshot(Path.cwd())
                 with redirect_stdout(stdout), redirect_stderr(stderr):
                     exec(compile(source, f"<{module_name}>", "exec"), namespace)
+                fs_after = _fs_snapshot(Path.cwd())
+                created = sorted(set(fs_after) - set(fs_before))
+                modified = sorted(rel for rel in set(fs_after) & set(fs_before) if fs_after[rel] != fs_before[rel])
+                if created or modified:
+                    _cleanup_new_files(Path.cwd(), fs_before)
+                    return (
+                        f"import-time filesystem side effect detected: created={created} modified={modified}",
+                        None,
+                        _output_snippet(stdout, stderr),
+                    )
             except (Exception, SystemExit, KeyboardInterrupt, GeneratorExit) as exc:
                 return (
                     f"generated module raised {type(exc).__name__}: {exc}",

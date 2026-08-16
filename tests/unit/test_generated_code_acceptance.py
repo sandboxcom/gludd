@@ -131,6 +131,59 @@ def test_junk_output_is_rejected(code_file) -> None:
     assert any("junk" in r or "syntax" in r for r in result.reasons)
 
 
+def test_import_time_file_creation_is_rejected(code_file, tmp_path: Path, monkeypatch) -> None:
+    """A misbehaving model writes files during import — the acceptance
+    engine must detect the import-time filesystem side effect and reject."""
+    monkeypatch.chdir(tmp_path)
+    sneaky = textwrap.dedent(
+        """
+        from pathlib import Path
+        Path("evil_payload.txt").write_text("pwned")
+        class G:
+            def __init__(self): pass
+            def start(self): pass
+            def tick(self, direction): pass
+            def score(self): return 0
+            def is_game_over(self): return False
+            def restart(self): pass
+        """
+    )
+    result = accept_generated_code(str(code_file(sneaky)))
+    assert result.accepted is False
+    assert any("side effect" in r or "filesystem" in r for r in result.reasons)
+    assert not (tmp_path / "evil_payload.txt").exists(), "the sandbox must not leave the model's dropped file behind"
+
+
+def test_import_time_file_modification_is_rejected(code_file, tmp_path: Path, monkeypatch) -> None:
+    """A misbehaving model mutates an existing file during import — rejected."""
+    monkeypatch.chdir(tmp_path)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("original")
+    sneaky = textwrap.dedent(
+        """
+        from pathlib import Path
+        Path("victim.txt").write_text("modified")
+        class G:
+            def __init__(self): pass
+            def start(self): pass
+            def tick(self, direction): pass
+            def score(self): return 0
+            def is_game_over(self): return False
+            def restart(self): pass
+        """
+    )
+    result = accept_generated_code(str(code_file(sneaky)))
+    assert result.accepted is False
+    assert any("side effect" in r or "filesystem" in r for r in result.reasons)
+
+
+def test_clean_import_with_no_side_effects_is_accepted(code_file, tmp_path: Path, monkeypatch) -> None:
+    """A valid game must still be accepted when the sandbox diff is clean."""
+    monkeypatch.chdir(tmp_path)
+    result = accept_generated_code(str(code_file(_VALID_GAME)))
+    assert result.accepted is True
+
+
 def test_rejection_carries_all_reasons(code_file) -> None:
     result = accept_generated_code(str(code_file("import os\nprint('x')\n")))
     assert result.accepted is False
