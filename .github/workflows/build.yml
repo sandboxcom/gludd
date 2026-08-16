@@ -590,9 +590,9 @@ jobs:
               return $rc
             fi
             uv run coverage combine
-            COVERAGE_FILE=".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
-            if [ -s .coverage ]; then
-              cp .coverage "$COVERAGE_FILE"
+            if [ -s "$COVERAGE_FILE" ]; then
+              # combine merged the xdist parallel parts into the
+              # shard-unique COVERAGE_FILE (set in env below).
               test -s "$COVERAGE_FILE"
             else
               # pytest-cov can lose its atexit write under an abrupt
@@ -607,6 +607,14 @@ jobs:
           }
           retry_test
         env:
+          # Root-cause fix for the round-14 coverage race: every shard runs
+          # in the SAME workspace cwd; `coverage combine` consumes the
+          # shared .coverage.<host>.<pid>.<rand> parallel-part files and
+          # moves them into a single .coverage, so whichever shard combines
+          # LAST steals the others' parts — one shard always finds "No data
+          # to combine". A per-shard COVERAGE_FILE isolates every shard's
+          # data file so parallel combines can never clobber each other.
+          COVERAGE_FILE: ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
           GLUDD_AUTH_PSK: ""
           GLUDD_XDIST_WORKERS: auto
           # Piped pytest stdout is block-buffered without this, so the
