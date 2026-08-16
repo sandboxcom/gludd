@@ -87,6 +87,50 @@ async def test_cross_task_weight_db_reuse(repo_session: AsyncSession) -> None:
 
 
 @pytest.mark.timeout(120)
+async def test_capability_evaluation_feeds_weight_db(repo_session: AsyncSession) -> None:
+    """POST /admin/models/local/evaluate records capability outcomes into the
+    weight DB — capability probes are task performance evidence."""
+    from fastapi.testclient import TestClient
+
+    from general_ludd.daemon import create_daemon_app
+
+    repo = ModelPerformanceRepository(session=repo_session)
+    app = create_daemon_app(tick_interval=0.0)
+    app.state.model_perf_repo = repo
+    client = TestClient(app, raise_server_exceptions=False)
+
+    ok = client.post(
+        "/admin/models/local/evaluate",
+        json={
+            "model_id": "qwen2.5-0.5b",
+            "task_kind": "coding",
+            "total_cases": 10,
+            "passed_cases": 10,
+        },
+    )
+    assert ok.status_code == 200, ok.text
+    bad = client.post(
+        "/admin/models/local/evaluate",
+        json={
+            "model_id": "qwen2.5-0.5b-bad",
+            "task_kind": "coding",
+            "total_cases": 10,
+            "passed_cases": 0,
+        },
+    )
+    assert bad.status_code == 200, bad.text
+
+    ranking = await repo.get_ranking("coding")
+    assert len(ranking) == 2, f"weight DB must hold both capability outcomes, got {ranking}"
+
+    router = ModelPerformanceRouter(perf_repo=repo, config={"min_calls": 1})
+    picked = await router.select_model("coding")
+    assert picked["model_name"] == "qwen2.5-0.5b", (
+        f"capability-evidence-driven selection must prefer the passing model, got {picked}"
+    )
+
+
+@pytest.mark.timeout(120)
 async def test_cross_task_reuse_ranks_good_model_above_bad(repo_session: AsyncSession) -> None:
     """The global ranking must order models by their cross-task record."""
     repo = ModelPerformanceRepository(session=repo_session)

@@ -1362,6 +1362,26 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     ev.passed_cases,
                     ev.total_cases,
                 )
+                # Feed the weight DB: capability probes ARE task performance
+                # evidence — record them so the router learns which model
+                # passes which task kind (cross-task reuse included).
+                perf_repo = getattr(request.app.state, "model_perf_repo", None)
+                if perf_repo is not None:
+                    try:
+                        await perf_repo.record_call(
+                            service="local",
+                            model_name=model_id,
+                            model_profile_id=model_id,
+                            task_type=ev.task_kind,
+                            success=bool(entry["passed"]),
+                            duration_ms=0.0,
+                            cost_usd=0.0,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "capability evidence not recorded to weight DB: %s",
+                            exc,
+                        )
 
             return {
                 "evaluated": True,
@@ -1420,6 +1440,21 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         cap_store.setdefault(key, []).append(evidence_entry)
         ev_store[f"eval:{model_id}:{task_kind}"] = evidence_entry
         logger.info("model evaluate: %s task=%s passed=%s/%s", model_id, task_kind, passed_cases, total_cases)
+        # Feed the weight DB: capability probes ARE task performance evidence.
+        perf_repo = getattr(request.app.state, "model_perf_repo", None)
+        if perf_repo is not None:
+            try:
+                await perf_repo.record_call(
+                    service="local",
+                    model_name=model_id,
+                    model_profile_id=model_id,
+                    task_type=task_kind,
+                    success=bool(evidence_entry["passed"]),
+                    duration_ms=0.0,
+                    cost_usd=0.0,
+                )
+            except Exception as exc:
+                logger.warning("capability evidence not recorded to weight DB: %s", exc)
         return {"evaluated": True, "model_id": model_id, "evidence": evidence_entry}
 
     @app.get("/admin/models/local/evidence")
