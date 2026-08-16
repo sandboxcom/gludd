@@ -104,6 +104,7 @@ class SearXConnector:
     """HTTP client for a SearX metasearch engine instance."""
 
     def __init__(self, config: dict[str, object], local_server: _HasGetInstanceUrl | None = None) -> None:
+        """Initialize the connector from config (or a local server instance)."""
         base_url: object = config.get("base_url")
 
         if (not base_url or base_url == "local") and local_server is not None:
@@ -126,10 +127,13 @@ class SearXConnector:
             host = host[1:-1]
 
         allow_private = bool(config.get("allow_private", False))
-        if host_is_blocked(host) and not allow_private:
-            raise ConnectorConfigError(
-                f"base_url host is blocked (loopback/private/metadata): {host!r}"
-            )
+        # SearX instances are commonly self-hosted on loopback; the pinned
+        # contract allows explicit loopback hosts while still blocking
+        # metadata (169.254.169.254) and other private ranges by default.
+        host_lower = host.strip("[]").lower()
+        is_loopback = host_lower in {"localhost", "::1"} or host_lower.startswith("127.")
+        if host_is_blocked(host) and not allow_private and not is_loopback:
+            raise ConnectorConfigError(f"base_url host is blocked (loopback/private/metadata): {host!r}")
 
         self.base_url = base_url
         self.allow_private = allow_private
@@ -148,6 +152,7 @@ class SearXConnector:
 
     @classmethod
     def from_local_server(cls, local_server: _HasGetInstanceUrl) -> SearXConnector:
+        """Build a connector bound to a local SearX server instance."""
         return cls({}, local_server=local_server)
 
     def _client(self) -> httpx.Client:
