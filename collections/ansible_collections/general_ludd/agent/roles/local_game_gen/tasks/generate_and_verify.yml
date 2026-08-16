@@ -10,9 +10,15 @@
 
 - name: "Select model for the current attempt"
   ansible.builtin.set_fact:
+    _fallback_idx: "{{ [(_attempt | int) - 2, fallback_models | length - 1] | min }}"
     _active_repo: >-
       {{ model_repo if _attempt | int == 1 or fallback_models | length == 0
-         else fallback_models[([(_attempt | int) - 2, fallback_models | length - 1] | min)] }}
+         else fallback_models[([(_attempt | int) - 2, fallback_models | length - 1] | min)].repo }}
+    _active_file: >-
+      {{ model_file if _attempt | int == 1 or fallback_models | length == 0
+         else fallback_models[([(_attempt | int) - 2, fallback_models | length - 1] | min)].file }}
+    _active_model_path: >-
+      {{ model_download_dir }}/{{ _active_repo | regex_replace('/', '_') }}/{{ _active_file }}
 
 - name: "Select effective prompt for the current attempt"
   ansible.builtin.set_fact:
@@ -20,6 +26,52 @@
 
 - name: "Generate and verify"
   block:
+    - name: "Switch to fallback model on repeated rejection"
+      when: _attempt | int > 1
+      block:
+        - name: "Download fallback model if not present"
+          ansible.builtin.command: >-
+            hf download {{ _active_repo }} {{ _active_file }}
+            --local-dir {{ model_download_dir }}/{{ _active_repo | regex_replace('/', '_') }}
+          args:
+            creates: "{{ _active_model_path }}"
+          changed_when: true
+
+        - name: "Stop current server before model switch"
+          ansible.builtin.command: "kill -TERM {{ _server_pid.content | b64decode | trim }}"
+          when: _server_pid.content is defined
+          failed_when: false
+          changed_when: true
+
+        - name: "Start llama.cpp server with fallback model"
+          ansible.builtin.shell: |
+            nohup {{ ansible_playbook_python }} -m llama_cpp.server \
+              --model "{{ _active_model_path }}" \
+              --host {{ server_host }} \
+              --port {{ server_port }} \
+              --n_ctx {{ server_context_size }} \
+              --n_gpu_layers {{ server_gpu_layers }} \
+              > "{{ _server_log }}" 2>&1 &
+            echo $! > "{{ artifact_dir }}/server.pid"
+          changed_when: true
+
+        - name: "Record new server PID after fallback restart"
+          ansible.builtin.slurp:
+            src: "{{ artifact_dir }}/server.pid"
+          register: _server_pid
+          changed_when: false
+
+        - name: "Poll fallback model readiness"
+          ansible.builtin.uri:
+            url: "http://{{ server_host }}:{{ server_port }}/v1/models"
+            method: GET
+            timeout: 5
+          register: _fallback_health
+          until: _fallback_health.status == 200
+          retries: "{{ health_check_retries }}"
+          delay: "{{ health_check_delay }}"
+          changed_when: false
+
     - name: "Call local model for game generation"
       ansible.builtin.uri:
         url: "http://{{ server_host }}:{{ server_port }}/v1/completions"

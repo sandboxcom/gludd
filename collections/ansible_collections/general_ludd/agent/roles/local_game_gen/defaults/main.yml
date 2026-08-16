@@ -46,6 +46,10 @@ temperature: 0.2
 artifact_dir: "/tmp/gludd-game-gen"
 
 max_attempts: 1
+# Fallback models served on repeated rejection: each entry is
+# {repo: "org/repo", file: "name.gguf"}. On attempt N (>= 2) the role
+# downloads the Nth fallback, restarts the llama.cpp server with it, and
+# regenerates with the corrective retry_prompt below.
 fallback_models: []
 fail_on_rejection: true
 retry_prompt: |

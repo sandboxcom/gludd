@@ -148,21 +148,56 @@ class TestModelFallback:
         defaults = cast(dict[str, Any], _load_yaml("defaults/main.yml"))
         assert isinstance(defaults["fallback_models"], list), "fallback_models must be a list"
 
-    def test_fallback_models_entries_are_org_repo_pairs(self) -> None:
+    def test_fallback_models_entries_are_repo_file_dicts(self) -> None:
         defaults = cast(dict[str, Any], _load_yaml("defaults/main.yml"))
         for entry in defaults["fallback_models"]:
-            assert isinstance(entry, str), f"fallback_models entries must be strings, got {entry!r}"
-            assert entry.count("/") == 1, f"fallback model must be org/repo, got {entry!r}"
+            assert isinstance(entry, dict), f"fallback_models entries must be dicts, got {entry!r}"
+            assert "repo" in entry and isinstance(entry["repo"], str), (
+                f"fallback entry must carry repo (org/repo string), got {entry!r}"
+            )
+            assert "file" in entry and isinstance(entry["file"], str), (
+                f"fallback entry must carry file (gguf name), got {entry!r}"
+            )
+            assert entry["repo"].count("/") == 1, f"fallback repo must be org/repo, got {entry['repo']!r}"
+            assert entry["file"].endswith(".gguf"), f"fallback file must be a gguf, got {entry['file']!r}"
 
     def test_fallback_models_does_not_repeat_primary(self) -> None:
         defaults = cast(dict[str, Any], _load_yaml("defaults/main.yml"))
-        assert defaults["model_repo"] not in defaults["fallback_models"], (
-            "fallback_models must not repeat the primary model_repo"
-        )
+        fallback_repos = [entry["repo"] for entry in defaults["fallback_models"]]
+        assert defaults["model_repo"] not in fallback_repos, "fallback_models must not repeat the primary model_repo"
 
     def test_tasks_reference_fallback_models(self) -> None:
         tasks_text = _combined_text()
         assert "fallback_models" in tasks_text, "tasks must reference fallback_models"
+
+    def test_fallback_model_download_task_exists(self) -> None:
+        all_tasks = _combined_tasks()
+        download_tasks = [
+            t
+            for t in all_tasks
+            if any("ansible.builtin.command" in k for k in t)
+            and "hf download" in str(t.get("ansible.builtin.command", ""))
+            and "_active_repo" in str(t)
+            and "_active_file" in str(t)
+        ]
+        assert download_tasks, (
+            "a download task must fetch the active fallback model (hf download _active_repo _active_file)"
+        )
+        switch_tasks = [t for t in all_tasks if t.get("name", "").lower().startswith("switch to fallback model")]
+        assert switch_tasks, "a 'Switch to fallback model on repeated rejection' block must exist"
+
+    def test_server_restarts_with_fallback_model(self) -> None:
+        tasks_text = _combined_text()
+        assert "kill -TERM" in tasks_text, "server must be killed before switching models"
+        assert "_active_file" in tasks_text, "the served model file must follow the active fallback"
+        assert "_attempt | int > 1" in tasks_text or "_attempt | int >= 2" in tasks_text, (
+            "the fallback download/restart path must be gated on attempt >= 2"
+        )
+
+    def test_fallback_attempt_uses_corrective_prompt(self) -> None:
+        tasks_text = _combined_text()
+        assert "retry_prompt" in tasks_text, "the corrective retry prompt must be defined"
+        assert "_effective_prompt" in tasks_text, "generation must use the effective (corrective) prompt"
 
     def test_generation_task_selects_model_per_attempt(self) -> None:
         all_tasks = _combined_tasks()
