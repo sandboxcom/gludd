@@ -1,8 +1,11 @@
 """Salsa20 / XSalsa20 stream cipher — backed by PyCryptodome.
 
-Stream encrypt/decrypt and block generation delegate to Crypto.Cipher.Salsa20.
-HSalsa20 subkey derivation is kept locally since PyCryptodome does not expose
-the raw Salsa20 core.
+Stream encrypt/decrypt and block generation delegate to
+``Crypto.Cipher.Salsa20`` from the MAINTAINED PyCryptodome distribution
+(bandit's B413 blacklists the same legacy ``Crypto`` namespace used by the
+unmaintained pycrypto; the SAST allowlist documents that this import is the
+maintained fork). HSalsa20 subkey derivation is kept locally since
+PyCryptodome does not expose the raw Salsa20 core.
 
 Reference: "Salsa20 specification" — Daniel J. Bernstein, 2005-03-14
            "Extending the Salsa20 nonce" — Daniel J. Bernstein, 2011-08-29

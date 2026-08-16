@@ -13,7 +13,7 @@ from collections import Counter
 
 
 def _hash(key: str) -> int:
-    return int(hashlib.md5(key.encode("utf-8")).hexdigest(), 16)
+    return int(hashlib.md5(key.encode("utf-8"), usedforsecurity=False).hexdigest(), 16)
 
 
 class ConsistentHashRing:
@@ -24,6 +24,7 @@ class ConsistentHashRing:
     """
 
     def __init__(self, virtual_nodes: int = 64) -> None:
+        """Initialize the ring with a virtual node count."""
         if virtual_nodes < 1:
             raise ValueError("virtual_nodes must be >= 1")
         self._vn = virtual_nodes
@@ -35,24 +36,30 @@ class ConsistentHashRing:
 
     @property
     def virtual_nodes(self) -> int:
+        """Return the virtual node count."""
         return self._vn
 
     @property
     def nodes(self) -> tuple[str, ...]:
+        """Return the registered node ids."""
         return tuple(self._nodes)
 
     def weight_of(self, node_id: str) -> int:
+        """Return the weight of a node."""
         return self._nodes[node_id]
 
     def __len__(self) -> int:
+        """Return the number of nodes."""
         return len(self._nodes)
 
     def __contains__(self, node_id: str) -> bool:
+        """Return whether the node is registered."""
         return node_id in self._nodes
 
     # ------------------------------------------------------------------ mutate
 
     def add_node(self, node_id: str, weight: int = 1) -> None:
+        """Add a node with the given weight."""
         if weight < 1:
             raise ValueError(f"weight must be >= 1, got {weight}")
         if node_id in self._nodes:
@@ -62,6 +69,7 @@ class ConsistentHashRing:
         self._insert_points(node_id, weight)
 
     def remove_node(self, node_id: str) -> None:
+        """Remove a node and all its virtual points from the ring."""
         if node_id not in self._nodes:
             raise KeyError(f"unknown node: {node_id!r}")
         total_points = self._nodes.pop(node_id) * self._vn
@@ -72,6 +80,7 @@ class ConsistentHashRing:
             del self._node_for_hash[h]
 
     def set_weight(self, node_id: str, weight: int) -> None:
+        """Set the weight of a node."""
         if weight < 1:
             raise ValueError(f"weight must be >= 1, got {weight}")
         if node_id not in self._nodes:
@@ -90,6 +99,7 @@ class ConsistentHashRing:
     # ------------------------------------------------------------------ lookup
 
     def get_node(self, key: str) -> str:
+        """Return the node responsible for a key."""
         if not self._ring:
             raise RuntimeError("ring is empty")
         h = _hash(key)
