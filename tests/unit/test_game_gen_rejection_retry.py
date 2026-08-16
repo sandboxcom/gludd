@@ -270,8 +270,27 @@ class TestBoundedRetry:
         )
 
     def test_attempt_counter_starts_at_one(self) -> None:
-        tasks_text = _combined_text()
-        assert "_attempt: 1" in tasks_text, "Attempt counter must start at 1"
+        main_tasks = _load_yaml("tasks/main.yml")
+        assert isinstance(main_tasks, list) and main_tasks
+        # Regression pin: the attempt counter MUST start as a set_fact host
+        # fact — never as an include var on the generate_and_verify include.
+        # Include vars shadow host facts inside the included file, so the
+        # retry's set_fact increment is invisible to its own `when` guard
+        # and the rejection loop recurses forever (observed 2026-08-16 local
+        # molecule run: 16+ attempts with max_attempts=3).
+        start = next(
+            (t for t in main_tasks if "attempt counter" in t.get("name", "") and any("set_fact" in k for k in t)),
+            None,
+        )
+        assert start is not None, "main.yml must start the counter via set_fact"
+        assert start["ansible.builtin.set_fact"]["_attempt"] == 1
+        include = next(
+            t
+            for t in main_tasks
+            if any("include_tasks" in k for k in t)
+            and "generate_and_verify.yml" in str(t.get("ansible.builtin.include_tasks"))
+        )
+        assert "vars" not in include, "the game-gen include must NOT carry _attempt as an include var"
 
     def test_max_attempts_positive(self) -> None:
         defaults = cast(dict[str, Any], _load_yaml("defaults/main.yml"))

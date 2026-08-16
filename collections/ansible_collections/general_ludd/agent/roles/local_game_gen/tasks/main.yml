@@ -105,10 +105,12 @@
 
 # ── Step 3: Generate game via local model (with bounded rejection retry) ───
 
+- name: "Start first attempt counter (host fact — never an include var: include vars shadow set_fact increments and loop the retry forever)"
+  ansible.builtin.set_fact:
+    _attempt: 1
+
 - name: "Generate and verify game (retry on REJECTED with fallback_models)"
   ansible.builtin.include_tasks: generate_and_verify.yml
-  vars:
-    _attempt: 1
 
 - name: "REJECTED event — surface verify-failure rejection to the orchestrator"
   when: _verify_failed | default(false) | bool
