@@ -299,12 +299,15 @@ class TestFailOnRejectionContract:
     def test_molecule_converge_exercises_retry_without_hard_fail(self) -> None:
         converge = Path("molecule/playbooks/local_game_gen/default/converge.yml")
         plays = cast(list[dict[str, Any]], yaml.safe_load(converge.read_text()))
+        assert plays, "converge.yml must parse to at least one play"
         role_vars: dict[str, Any] = {}
         for play in plays:
             for task in play.get("tasks", []):
                 include = task.get("ansible.builtin.include_role")
                 if isinstance(include, dict) and "local_game_gen" in str(include.get("name", "")):
-                    role_vars = cast(dict[str, Any], include.get("vars", {}))
+                    # vars live at the TASK level (include_role has no vars
+                    # option — ansible rejects it as an invalid module option).
+                    role_vars = cast(dict[str, Any], task.get("vars", {}))
         assert int(role_vars.get("max_attempts", 0)) >= 3, (
             "molecule converge must set max_attempts >= 3 (attempt 1 + a retry requires"
             " the rescue-incremented counter to satisfy _attempt < max_attempts)"

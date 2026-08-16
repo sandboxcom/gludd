@@ -11,11 +11,11 @@
     - name: Invoke local_game_gen role
       ansible.builtin.include_role:
         name: general_ludd.agent.local_game_gen
-        vars:
-          game_name: "snake"
-          # max_attempts=3 yields two real generation attempts (attempt 1 plus
-          # one corrective-prompt retry) so the CI molecule run exercises the
-          # rejection-retry loop; fail_on_rejection=false keeps model-quality
-          # rejection observable instead of failing the scenario.
-          max_attempts: 3
-          fail_on_rejection: false
+      vars:
+        game_name: "snake"
+        # max_attempts=3 yields two real generation attempts (attempt 1 plus
+        # one corrective-prompt retry) so the CI molecule run exercises the
+        # rejection-retry loop; fail_on_rejection=false keeps model-quality
+        # rejection observable instead of failing the scenario.
+        max_attempts: 3
+        fail_on_rejection: false
