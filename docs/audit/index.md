@@ -37,7 +37,7 @@ Audit findings, security reviews, and backlog reconciliation.
 | [New Findings Triage](NEW_FINDINGS_TRIAGE_2026-06-18.md) | New findings triage |
 | [Alpha5 Security Hardening Changelog](ALPHA5_SECURITY_HARDENING_CHANGELOG_2026-06-24.md) | Alpha 5 security hardening changelog |
 | [Batch 4 Merge Plan](batch4_merge_plan_v2.md) | Batch 4 merge plan v2 |
-| [Burndown](burndown.md) | Burndown chart |
+| [Burndown](BURNDOWN.md) | Burndown chart |
 | [Alpha4 Verified Backlog](ALPHA4_VERIFIED_BACKLOG_2026-06-24.md) | Alpha 4 verified backlog |
 | [Casbin Per-User RBAC](CASBIN_PER_USER_RBAC_DESIGN_2026-06-25.md) | Casbin per-user RBAC design |
 | [Batch 4 Merge Plan](batch4_merge_plan.md) | Batch 4 merge plan |

@@ -57,8 +57,9 @@ class TestSanitizeExcMessage:
         sanitize_exc_message(exc)
         assert len(caplog.records) >= 1
         record = caplog.records[0]
-        assert record.exc_info is not None
-        assert issubclass(record.exc_info[0], BaseException) if record.exc_info[0] is not None else True
+        # No traceback attachment: exc_info would embed the secret-bearing
+        # message in the log record (H20 no-leak contract).
+        assert record.exc_info is None
 
 
 class TestSanitizeStr:

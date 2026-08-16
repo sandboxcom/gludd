@@ -874,6 +874,9 @@ class TestPhaseServiceDiscoveryDeep:
         h = _make_handlers(
             _service_discovery=mock_sd,
             _service_discovery_last_run=0.0,
+            # interval 0 means "already elapsed" — without this the default
+            # 86400s interval makes the phase return before running discovery.
+            config={"service_discovery_interval_seconds": 0},
         )
         await h._phase_service_discovery()
         # Flush the event loop so any executor-scheduled work from the mocked
@@ -892,6 +895,7 @@ class TestPhaseServiceDiscoveryDeep:
         h = _make_handlers(
             _service_discovery=mock_sd,
             _service_discovery_last_run=0.0,
+            config={"service_discovery_interval_seconds": 0},
         )
         await h._phase_service_discovery()
 

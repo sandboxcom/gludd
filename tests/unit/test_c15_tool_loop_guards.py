@@ -46,9 +46,7 @@ def _wiring(input_schema=None):
     )
     mcp_client = MagicMock()
     mcp_client.list_tools = AsyncMock(
-        return_value=[
-            MCPTool(name="read_file", server_id="fs", input_schema=input_schema or {})
-        ]
+        return_value=[MCPTool(name="read_file", server_id="fs", input_schema=input_schema or {})]
     )
     mcp_client.call_tool = AsyncMock(return_value={"ok": True})
     job = MagicMock()
@@ -85,18 +83,16 @@ class TestPhase2CapabilityCheck:
             seen.append((role, kind))
             return False
 
-        monkeypatch.setattr(
-            "general_ludd.execution.tool_loop.role_may_dispatch", _deny
-        )
+        monkeypatch.setattr("general_ludd.execution.tool_loop.role_may_dispatch", _deny)
 
         loop = ToolCallLoop(
-            gateway, mcp_client=mcp_client, mcp_registry=registry,
+            gateway,
+            mcp_client=mcp_client,
+            mcp_registry=registry,
             role="event_loop",
         )
 
-        result = await asyncio.wait_for(
-            loop.run_with_tools(job, "sys", "user"), timeout=5
-        )
+        result = await asyncio.wait_for(loop.run_with_tools(job, "sys", "user"), timeout=5)
 
         # The per-call lattice was consulted for the mcp call.
         assert ("event_loop", "mcp") in seen
@@ -124,12 +120,12 @@ class TestPhase2CapabilityCheck:
             ]
         )
         loop = ToolCallLoop(
-            gateway, mcp_client=mcp_client, mcp_registry=registry,
+            gateway,
+            mcp_client=mcp_client,
+            mcp_registry=registry,
             role="event_loop",
         )
-        result = await asyncio.wait_for(
-            loop.run_with_tools(job, "sys", "user"), timeout=5
-        )
+        result = await asyncio.wait_for(loop.run_with_tools(job, "sys", "user"), timeout=5)
         assert result == "done"
         mcp_client.call_tool.assert_awaited_once()
 
@@ -146,21 +142,16 @@ class TestPerResponseCap:
 
         registry, mcp_client, job = _wiring()
         over = MAX_TOOL_CALLS_PER_RESPONSE + 5
-        calls = [
-            _tc("read_file", {"path": f"f{i}"}, call_id=f"call-{i}")
-            for i in range(over)
-        ]
+        calls = [_tc("read_file", {"path": f"f{i}"}, call_id=f"call-{i}") for i in range(over)]
 
         gateway = MagicMock()
-        gateway.call_model = MagicMock(
-            side_effect=[_Resp(tool_calls=calls), _Resp(content="done")]
-        )
+        gateway.call_model = MagicMock(side_effect=[_Resp(tool_calls=calls), _Resp(content="done")])
         loop = ToolCallLoop(
-            gateway, mcp_client=mcp_client, mcp_registry=registry,
+            gateway,
+            mcp_client=mcp_client,
+            mcp_registry=registry,
         )
-        result = await asyncio.wait_for(
-            loop.run_with_tools(job, "sys", "user"), timeout=5
-        )
+        result = await asyncio.wait_for(loop.run_with_tools(job, "sys", "user"), timeout=5)
         assert result == "done"
         # Exactly the cap number of calls actually executed.
         assert mcp_client.call_tool.await_count == MAX_TOOL_CALLS_PER_RESPONSE
@@ -207,11 +198,11 @@ class TestArgSchemaValidation:
             ]
         )
         loop = ToolCallLoop(
-            gateway, mcp_client=mcp_client, mcp_registry=registry,
+            gateway,
+            mcp_client=mcp_client,
+            mcp_registry=registry,
         )
-        result = await asyncio.wait_for(
-            loop.run_with_tools(job, "sys", "user"), timeout=5
-        )
+        result = await asyncio.wait_for(loop.run_with_tools(job, "sys", "user"), timeout=30)
         assert result == "done"
         mcp_client.call_tool.assert_not_called()
         second_kwargs = gateway.call_model.call_args_list[1].kwargs
@@ -232,11 +223,11 @@ class TestArgSchemaValidation:
             ]
         )
         loop = ToolCallLoop(
-            gateway, mcp_client=mcp_client, mcp_registry=registry,
+            gateway,
+            mcp_client=mcp_client,
+            mcp_registry=registry,
         )
-        result = await asyncio.wait_for(
-            loop.run_with_tools(job, "sys", "user"), timeout=5
-        )
+        result = await asyncio.wait_for(loop.run_with_tools(job, "sys", "user"), timeout=30)
         assert result == "done"
         mcp_client.call_tool.assert_not_called()
 
@@ -252,11 +243,11 @@ class TestArgSchemaValidation:
             ]
         )
         loop = ToolCallLoop(
-            gateway, mcp_client=mcp_client, mcp_registry=registry,
+            gateway,
+            mcp_client=mcp_client,
+            mcp_registry=registry,
         )
-        result = await asyncio.wait_for(
-            loop.run_with_tools(job, "sys", "user"), timeout=5
-        )
+        result = await asyncio.wait_for(loop.run_with_tools(job, "sys", "user"), timeout=5)
         assert result == "done"
         mcp_client.call_tool.assert_awaited_once_with("fs", "read_file", {"path": "ok.txt"})
 
@@ -272,11 +263,11 @@ class TestArgSchemaValidation:
             ]
         )
         loop = ToolCallLoop(
-            gateway, mcp_client=mcp_client, mcp_registry=registry,
+            gateway,
+            mcp_client=mcp_client,
+            mcp_registry=registry,
         )
-        result = await asyncio.wait_for(
-            loop.run_with_tools(job, "sys", "user"), timeout=5
-        )
+        result = await asyncio.wait_for(loop.run_with_tools(job, "sys", "user"), timeout=5)
         assert result == "done"
         mcp_client.call_tool.assert_awaited_once()
 

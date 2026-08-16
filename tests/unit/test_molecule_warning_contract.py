@@ -37,7 +37,7 @@ _DEFAULT_TEST_SEQUENCE = [
     "destroy",
 ]
 _DRIVER_MANAGED_PHASES = {"create", "destroy"}
-_EXPECTED_RELEASE_SCENARIOS = 137
+_EXPECTED_RELEASE_SCENARIOS = 138
 _CONDITIONAL_KEYS = {"changed_when", "failed_when", "that", "until", "when"}
 _RESERVED_ROLE_DEFAULTS = {"timeout"}
 _LEADING_JINJA_TEXT = re.compile(r"""^\s*-\s*["']?\{\{[^{}]+\}\}\s+[A-Za-z]""")

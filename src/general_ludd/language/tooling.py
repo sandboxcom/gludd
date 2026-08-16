@@ -214,9 +214,8 @@ def detect_available_tools(
     languages:
         If given, only probe these languages. When None, probe all.
 
-    Returns
-    -------
-    dict
+    Returns:
+        dict
         Language → {category: tool_name | None}.  A tool_name of None
         means "no standard tool for this category"; a tool that is on PATH
         keeps its name; a tool that is NOT on PATH also keeps its name
@@ -229,6 +228,9 @@ def detect_available_tools(
     for lang in languages:
         tools = get_language_tools(lang)
         if tools is None:
+            # Unknown language: keep the key so callers see an entry for
+            # every requested language, with each tool category unresolved.
+            result[lang] = {cat: None for cat in ("lint", "test", "build", "format", "package_manager")}
             continue
         resolved: dict[str, str | None] = {}
         for cat, tool in tools.items():

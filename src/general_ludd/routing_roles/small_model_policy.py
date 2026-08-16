@@ -14,7 +14,7 @@ import json
 import re
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum, StrEnum
 from types import MappingProxyType
 
 from general_ludd.schemas.benchmark import TaskRole
@@ -84,7 +84,17 @@ def _canonical_role(role: object) -> TaskRole:
     objects; identity checks then fail even for genuine members. Members
     from a foreign class copy are canonicalized by their ``.value`` while
     raw strings and unknown values stay fail-closed.
+
+    ``StrEnum`` members are ``str`` instances, so the enum-membership
+    branch must run before the plain-string rejection.
     """
+    if isinstance(role, TaskRole):
+        return role
+    if isinstance(role, Enum):
+        try:
+            return TaskRole(role.value)
+        except ValueError:
+            raise ValueError("role must be a TaskRole value") from None
     if isinstance(role, str):
         raise ValueError("role must be a TaskRole value")
     value = getattr(role, "value", None)
