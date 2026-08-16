@@ -742,7 +742,11 @@ jobs:
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Run molecule shard ${{ matrix.shard }}/4
         id: molecule-run
-        timeout-minutes: 12
+        # local_game_gen lives in shard 1: its CI run downloads a real GGUF,
+        # serves llama.cpp, generates with up to max_attempts=3 (retry +
+        # corrective prompt), and verifies via the acceptance engine — the
+        # previous 12-minute cap expired mid-scenario (2026-08-16 round 9).
+        timeout-minutes: 20
         # The `default` (localhost) driver needs no container, so this runs on
         # plain GH runners. Each scenario starts its own stdlib mock daemon via
         # prepare.yml — nothing external is required. Scenarios are sorted and
