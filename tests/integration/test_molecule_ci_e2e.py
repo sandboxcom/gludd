@@ -96,18 +96,14 @@ class TestMoleculeMakeTarget:
     def test_target_uses_SHARD_variable(self) -> None:
         content = _read_makefile()
         # Extract the recipe block for molecule-test-shard
-        match = re.search(
-            r"^molecule-test-shard:\n(.*?)(?=^\S|\Z)", content, re.MULTILINE | re.DOTALL
-        )
+        match = re.search(r"^molecule-test-shard:\n(.*?)(?=^\S|\Z)", content, re.MULTILINE | re.DOTALL)
         assert match, "could not extract molecule-test-shard recipe"
         recipe = match.group(1)
         assert "SHARD" in recipe, "SHARD variable not referenced in target recipe"
 
     def test_target_prints_failed_scenario_log_tail(self) -> None:
         content = _read_makefile()
-        match = re.search(
-            r"^molecule-test-shard:\n(.*?)(?=^\S|\Z)", content, re.MULTILINE | re.DOTALL
-        )
+        match = re.search(r"^molecule-test-shard:\n(.*?)(?=^\S|\Z)", content, re.MULTILINE | re.DOTALL)
         assert match, "could not extract molecule-test-shard recipe"
         recipe = match.group(1)
         assert "BEGIN failed molecule log" in recipe
@@ -117,9 +113,7 @@ class TestMoleculeMakeTarget:
     def test_single_scenario_uses_the_canonical_source_glob(self) -> None:
         """Target one source scenario without provoking default discovery errors."""
         content = _read_makefile()
-        match = re.search(
-            r"^molecule-test:\n(.*?)(?=^\S|\Z)", content, re.MULTILINE | re.DOTALL
-        )
+        match = re.search(r"^molecule-test:\n(.*?)(?=^\S|\Z)", content, re.MULTILINE | re.DOTALL)
         assert match, "could not extract molecule-test recipe"
         recipe = match.group(1)
         assert 'MOLECULE_GLOB="molecule/playbooks/*/molecule.yml"' in recipe
@@ -141,9 +135,7 @@ class TestMoleculeMakeTarget:
 
     def test_reset_clears_molecule_state_without_deleting_source(self) -> None:
         content = _read_makefile()
-        match = re.search(
-            r"^molecule-reset:\n(.*?)(?=^\S|\Z)", content, re.MULTILINE | re.DOTALL
-        )
+        match = re.search(r"^molecule-reset:\n(.*?)(?=^\S|\Z)", content, re.MULTILINE | re.DOTALL)
         assert match, "could not extract molecule-reset recipe"
         recipe = match.group(1)
         assert 'MOLECULE_GLOB="molecule/playbooks/*/molecule.yml"' in recipe
@@ -173,9 +165,7 @@ class TestMoleculeScenarioCoverage:
         ],
     )
     def test_six_shard_layout(self, total_shards: int, expected_denominator: int) -> None:
-        assert total_shards == expected_denominator, (
-            f"CI uses {total_shards} shards, expected {expected_denominator}"
-        )
+        assert total_shards == expected_denominator, f"CI uses {total_shards} shards, expected {expected_denominator}"
 
     def test_scenario_count_covered_by_six_shards(self) -> None:
         """Each shard gets ceil(N/6) scenarios, so 6 shards always cover all.
@@ -230,15 +220,9 @@ class TestMoleculeScenarioCoverage:
                 seen.add(idx)
         expected = set(range(1, total + 1))
         missing = expected - seen
-        assert not missing, (
-            f"indices {sorted(missing)} are not covered by any shard "
-            f"(total={total}, size={size})"
-        )
+        assert not missing, f"indices {sorted(missing)} are not covered by any shard (total={total}, size={size})"
         extra = seen - expected
-        assert not extra, (
-            f"indices {sorted(extra)} are out-of-range "
-            f"(total={total}, size={size})"
-        )
+        assert not extra, f"indices {sorted(extra)} are out-of-range (total={total}, size={size})"
 
 
 # ---------------------------------------------------------------------------
@@ -251,4 +235,8 @@ class TestMoleculeJobTimeout:
         cfg = _parse_molecule_yml()
         timeout = cfg["jobs"]["molecule"]["timeout-minutes"]
         assert timeout > 0, "timeout-minutes must be positive"
-        assert timeout <= 30, f"timeout-minutes {timeout} too high for a shard"
+        # local_game_gen (shard 1) downloads a real GGUF, serves llama.cpp,
+        # and runs the bounded retry + acceptance-engine loop — round 11
+        # expired at the old 30-minute cap mid-scenario (cancelled at
+        # 30m20s). The cap is 45 with the terminating retry fix.
+        assert timeout <= 45, f"timeout-minutes {timeout} too high for a shard"
