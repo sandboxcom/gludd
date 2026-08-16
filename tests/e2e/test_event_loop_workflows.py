@@ -139,9 +139,7 @@ async def _seed_todo(factory, **overrides) -> TodoModel:
 
 class TestTodoLifecycleWorkflow:
     @pytest.mark.asyncio
-    async def test_todo_created_as_queued_claimed_and_dispatched(
-        self, session_factory, loop_for_pipeline
-    ):
+    async def test_todo_created_as_queued_claimed_and_dispatched(self, session_factory, loop_for_pipeline):
         await _seed_todo(session_factory, todo_id="TODO-LIFECYCLE-1")
         metrics = await loop_for_pipeline.tick()
         claimed = loop_for_pipeline._tick_state.get("claimed_todos", [])
@@ -150,15 +148,11 @@ class TestTodoLifecycleWorkflow:
         assert metrics["phases_completed"] == len(PHASE_ORDER)
 
     @pytest.mark.asyncio
-    async def test_claimed_todo_has_acquired_lease(
-        self, session_factory, loop_for_pipeline
-    ):
+    async def test_claimed_todo_has_acquired_lease(self, session_factory, loop_for_pipeline):
         await _seed_todo(session_factory, todo_id="TODO-LEASE-1")
         await loop_for_pipeline.tick()
         async with session_factory() as session:
-            stmt = select(BucketLeaseModel).where(
-                BucketLeaseModel.bucket_key == "core:TODO-LEASE-1"
-            )
+            stmt = select(BucketLeaseModel).where(BucketLeaseModel.bucket_key == "core:TODO-LEASE-1")
             result = await session.execute(stmt)
             lease = result.scalar_one_or_none()
             assert lease is not None
@@ -179,9 +173,7 @@ class TestTodoLifecycleWorkflow:
             assert todo.status == TodoStatus.ACTIVE.value
 
     @pytest.mark.asyncio
-    async def test_queued_todo_created_and_transitions_to_complete(
-        self, session_factory, loop_for_pipeline
-    ):
+    async def test_queued_todo_created_and_transitions_to_complete(self, session_factory, loop_for_pipeline):
         await _seed_todo(session_factory, todo_id="TODO-COMPLETE-1")
         await loop_for_pipeline.tick()
         async with session_factory() as session:
@@ -189,9 +181,7 @@ class TestTodoLifecycleWorkflow:
             claimed_todo = await repo.get_by_id("TODO-COMPLETE-1")
             assert claimed_todo is not None
             assert claimed_todo.status == TodoStatus.ACTIVE.value
-            await repo.transition(
-                "TODO-COMPLETE-1", TodoStatus.COMPLETE, expected_version=claimed_todo.version
-            )
+            await repo.transition("TODO-COMPLETE-1", TodoStatus.COMPLETE, expected_version=claimed_todo.version)
             await session.commit()
         async with session_factory() as session:
             repo = TodoRepository(session)
@@ -282,21 +272,21 @@ class TestLeaseAcquisitionWorkflow:
 
 class TestStuckTodoDetection:
     @pytest.mark.asyncio
-    async def test_active_todo_with_expired_lease_is_reaped(
-        self, session_factory
-    ):
+    async def test_active_todo_with_expired_lease_is_reaped(self, session_factory):
 
         async with session_factory() as session:
             repo = TodoRepository(session)
-            await repo.create({
-                "todo_id": "TODO-STUCK-1",
-                "title": "stuck todo",
-                "queue": "core",
-                "priority": 5,
-                "work_type": "code",
-                "status": TodoStatus.ACTIVE.value,
-                "project_id": _PIPELINE_PROJECT_ID,
-            })
+            await repo.create(
+                {
+                    "todo_id": "TODO-STUCK-1",
+                    "title": "stuck todo",
+                    "queue": "core",
+                    "priority": 5,
+                    "work_type": "code",
+                    "status": TodoStatus.ACTIVE.value,
+                    "project_id": _PIPELINE_PROJECT_ID,
+                }
+            )
             await session.commit()
 
         async with session_factory() as session:
@@ -328,30 +318,36 @@ class TestStuckTodoDetection:
             repo = TodoRepository(session)
             recovered = await repo.get_by_id("TODO-STUCK-1")
             assert recovered is not None
-            # Refill requeues the stale ACTIVE row, then the later claim phase
-            # immediately claims it again in the same tick for another attempt.
-            assert recovered.status == TodoStatus.ACTIVE.value
+            # Reap requeues the stale ACTIVE row; the deliberate deferral
+            # (loop.py: stale-requeued todos are never reclaimed in the same
+            # tick — the old runner may still be finishing) leaves it QUEUED.
+            assert recovered.status == TodoStatus.QUEUED.value
             assert recovered.version >= 3
-            assert any(
-                todo.todo_id == "TODO-STUCK-1"
-                for todo in loop._tick_state["claimed_todos"]
-            )
 
-    @pytest.mark.asyncio
-    async def test_active_todo_with_live_lease_not_reaped(
-        self, session_factory
-    ):
+        # A second tick claims the recovered todo for its next attempt.
+        await loop.tick()
         async with session_factory() as session:
             repo = TodoRepository(session)
-            await repo.create({
-                "todo_id": "TODO-LIVE-1",
-                "title": "live todo",
-                "queue": "core",
-                "priority": 5,
-                "work_type": "code",
-                "status": TodoStatus.ACTIVE.value,
-                "project_id": _PIPELINE_PROJECT_ID,
-            })
+            recovered = await repo.get_by_id("TODO-STUCK-1")
+            assert recovered is not None
+            assert recovered.status == TodoStatus.ACTIVE.value
+        assert any(todo.todo_id == "TODO-STUCK-1" for todo in loop._tick_state["claimed_todos"])
+
+    @pytest.mark.asyncio
+    async def test_active_todo_with_live_lease_not_reaped(self, session_factory):
+        async with session_factory() as session:
+            repo = TodoRepository(session)
+            await repo.create(
+                {
+                    "todo_id": "TODO-LIVE-1",
+                    "title": "live todo",
+                    "queue": "core",
+                    "priority": 5,
+                    "work_type": "code",
+                    "status": TodoStatus.ACTIVE.value,
+                    "project_id": _PIPELINE_PROJECT_ID,
+                }
+            )
             await acquire_lease(
                 session,
                 "core:TODO-LIVE-1",
@@ -395,15 +391,17 @@ class TestStuckTodoDetection:
     async def test_stuck_todo_reap_updates_metrics(self, session_factory):
         async with session_factory() as session:
             repo = TodoRepository(session)
-            await repo.create({
-                "todo_id": "TODO-STUCK-MET",
-                "title": "stuck todo for metrics",
-                "queue": "core",
-                "priority": 5,
-                "work_type": "code",
-                "status": TodoStatus.ACTIVE.value,
-                "project_id": _PIPELINE_PROJECT_ID,
-            })
+            await repo.create(
+                {
+                    "todo_id": "TODO-STUCK-MET",
+                    "title": "stuck todo for metrics",
+                    "queue": "core",
+                    "priority": 5,
+                    "work_type": "code",
+                    "status": TodoStatus.ACTIVE.value,
+                    "project_id": _PIPELINE_PROJECT_ID,
+                }
+            )
             await session.commit()
 
         async with session_factory() as session:
@@ -443,9 +441,7 @@ class TestConcurrentDispatch:
         assert loop_for_pipeline._dispatch_semaphore._value == 20
 
     @pytest.mark.asyncio
-    async def test_multiple_todos_gathered_concurrently(
-        self, session_factory, loop_for_pipeline, runner
-    ):
+    async def test_multiple_todos_gathered_concurrently(self, session_factory, loop_for_pipeline, runner):
         for idx in range(5):
             await _seed_todo(
                 session_factory,
@@ -454,8 +450,7 @@ class TestConcurrentDispatch:
             )
         await loop_for_pipeline.tick()
         write_calls = [
-            c for c in runner.write_vars.call_args_list
-            if len(c[0]) >= 1 and "EXEC-TODO-CONC" in str(c[0][0])
+            c for c in runner.write_vars.call_args_list if len(c[0]) >= 1 and "EXEC-TODO-CONC" in str(c[0][0])
         ]
         assert len(write_calls) == 5
 
@@ -464,9 +459,7 @@ class TestConcurrentDispatch:
         assert loop_for_pipeline._to_thread_semaphore._value == 32
 
     @pytest.mark.asyncio
-    async def test_concurrent_dispatch_respects_semaphore_gather(
-        self, session_factory, loop_for_pipeline, runner
-    ):
+    async def test_concurrent_dispatch_respects_semaphore_gather(self, session_factory, loop_for_pipeline, runner):
         for idx in range(10):
             await _seed_todo(
                 session_factory,
@@ -475,8 +468,7 @@ class TestConcurrentDispatch:
             )
         await loop_for_pipeline.tick()
         write_calls = [
-            c for c in runner.write_vars.call_args_list
-            if len(c[0]) >= 1 and "EXEC-TODO-GATHER" in str(c[0][0])
+            c for c in runner.write_vars.call_args_list if len(c[0]) >= 1 and "EXEC-TODO-GATHER" in str(c[0][0])
         ]
         assert len(write_calls) == 10
 
@@ -603,9 +595,7 @@ class TestBudgetEnforcement:
         mock_return = AsyncMock()
         mock_return.claim_unreviewed.return_value = []
         budget = MagicMock()
-        budget.check_all_limits = MagicMock(
-            return_value={"allowed": False, "reason": "budget_exceeded"}
-        )
+        budget.check_all_limits = MagicMock(return_value={"allowed": False, "reason": "budget_exceeded"})
         runner = MagicMock()
         runner.prepare_job_dirs = MagicMock(return_value={"root": "/tmp/bg"})
         runner.write_vars = MagicMock()
@@ -629,9 +619,7 @@ class TestBudgetEnforcement:
         mock_return = AsyncMock()
         mock_return.claim_unreviewed.return_value = []
         budget = MagicMock()
-        budget.check_all_limits = MagicMock(
-            return_value={"allowed": True, "reason": ""}
-        )
+        budget.check_all_limits = MagicMock(return_value={"allowed": True, "reason": ""})
         runner = MagicMock()
         runner.prepare_job_dirs = MagicMock(return_value={"root": "/tmp/bg"})
         runner.write_vars = MagicMock()
@@ -657,9 +645,7 @@ class TestBudgetEnforcement:
         mock_return = AsyncMock()
         mock_return.claim_unreviewed.return_value = []
         budget = MagicMock()
-        budget.check_all_limits = MagicMock(
-            return_value={"allowed": False, "reason": "budget cap hit"}
-        )
+        budget.check_all_limits = MagicMock(return_value={"allowed": False, "reason": "budget cap hit"})
         runner = MagicMock()
         runner.prepare_job_dirs = MagicMock(return_value={"root": "/tmp/bg"})
         runner.write_vars = MagicMock()
@@ -687,9 +673,7 @@ class TestBudgetEnforcement:
 
 class TestModelRouting:
     @pytest.mark.asyncio
-    async def test_todo_with_model_profile_routes_resolve_profile(
-        self, session_factory, loop_for_pipeline
-    ):
+    async def test_todo_with_model_profile_routes_resolve_profile(self, session_factory, loop_for_pipeline):
         await _seed_todo(
             session_factory,
             todo_id="TODO-MODEL-1",
@@ -737,9 +721,7 @@ class TestModelRouting:
         assert metrics["todos_dispatched"] >= 1
 
     @pytest.mark.asyncio
-    async def test_resolve_adaptive_prompt_without_router_is_noop(
-        self, loop_for_pipeline
-    ):
+    async def test_resolve_adaptive_prompt_without_router_is_noop(self, loop_for_pipeline):
         todo = SimpleNamespace(
             todo_id="TODO-ROUTE-1",
             work_type="code",

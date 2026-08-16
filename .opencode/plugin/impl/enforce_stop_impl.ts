@@ -810,11 +810,16 @@ function hasRealPendingWork(): WorkState {
   } catch {}
 
   // ── BINARY LATCH — any signal true = pending work ─────────────────────────
+  // tasksMdUnverified is deliberately NOT a latch signal: a fully-ticked
+  // TASKS.md (even without evidence tokens on every line) is NOT open work —
+  // blocking text-only forever on evidence formatting would prevent the
+  // session from ever going idle (pinned by tests/e2e/test_enforce_stop_live.py
+  // test_empty_tasks_md_is_no_pending_work). It stays in the reported state.
   const signals: PendingWorkSignals = {
     gateStatusRed, gateStale, ciVerdictPendingOrRed, ciVerdictUnknown,
     tasksMdUnchecked, bugsOpen, repoPending, multitaskingBacklogOpen, underFloor,
     coverageIncomplete, fullE2eIncomplete,
-    pushBlocked, gateLiteTestFailed, ciNeverRunOnHead, uncommittedChanges, tasksMdUnverified,
+    pushBlocked, gateLiteTestFailed, ciNeverRunOnHead, uncommittedChanges,
     ratchetHasEntries: ratchetEntries > 0,
   }
   const hasPendingWork = computeHealthScore(signals)

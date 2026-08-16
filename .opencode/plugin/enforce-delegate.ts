@@ -673,14 +673,12 @@ function mainthreadBudgetBefore(tool: string, command: string): string | null {
     // injection. Keeping the file causes re-injection on every watchdog poll.
     consumeForceDispatchSignal()
     // Git shipping operations (commit, push, tag) are NEVER blocked.
-    // They are terminal actions that complete work, not grinding.
+    // They are terminal actions that complete work, not grinding
+    // (AGENTS.md DC.3 — the GIT_SHIPPING_TARGETS allowlist resets the
+    // streak instead of incrementing it; pinned by
+    // tests/e2e/test_delegate_e2e.py test_streak_at_threshold_allows_git_shipping).
     if (tool === "bash" && isGitShippingTarget(command)) {
-      // A commit is the one mutating operation that must still be gated when
-      // the streak is already at the hard threshold; otherwise a final
-      // ``make git-commit`` would bypass the delegate contract entirely.
-      // Other shipping targets remain terminal, streak-resetting operations.
-      const target = command.match(/(?:^|\s)make\s+(\S+)/)?.[1]
-      if (target !== "git-commit") return null
+      return null
     }
     // Quality-gate operations (lint, typecheck, collect-check, etc.) are
     // NEVER blocked — they are validation steps that complete units of work.
