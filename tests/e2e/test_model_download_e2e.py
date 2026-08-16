@@ -452,6 +452,9 @@ class TestFullPipelineMock:
             provider_class_hint="ChatOpenAI",
             model_name="gpt-3.5-turbo",
             enabled=True,
+            # Zero per-token cost is only valid for non-metered profiles;
+            # the validator rejects zero-cost api_metered profiles.
+            api_metered=False,
             cost_per_input_token=0.0,
             cost_per_output_token=0.0,
         )

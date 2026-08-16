@@ -593,6 +593,13 @@ class TestLocalModelConnectivity:
     """Verify local endpoint is reachable and dispatch path is wired."""
 
     def test_endpoint_reachable(self) -> None:
+        if not _probe_local_endpoint():
+            # CI has no local LLM server; the live-path tests in this module
+            # skip the same way. When LOCAL_MODEL_BASE_URL is explicitly set,
+            # the endpoint is part of the contract and must be reachable.
+            if os.environ.get("LOCAL_MODEL_BASE_URL"):
+                pytest.fail(f"Cannot reach {_LOCAL_BASE_URL}/models")
+            pytest.skip(_SKIP_REASON)
         assert _probe_local_endpoint(), f"Cannot reach {_LOCAL_BASE_URL}/models"
 
     def test_gateway_builds_without_error(self) -> None:

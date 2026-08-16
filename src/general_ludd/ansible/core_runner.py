@@ -964,7 +964,17 @@ class CoreAnsibleRunner:
             raise ImportError("ansible-core is required for templating but is not installed")
         templar = _get_templar(variables=variables)
         result = templar.template(template_str)
-        return str(result)
+        rendered = str(result)
+        if rendered == template_str and "{{" in template_str:
+            # Some ansible-core Templar configurations return the input
+            # unchanged for simple expressions. The trusted path may fall
+            # back to a plain Jinja2 render (variables are already validated
+            # by the caller) so basic templates always render.
+            from jinja2 import Environment, StrictUndefined
+
+            env = Environment(undefined=StrictUndefined)
+            rendered = env.from_string(template_str).render(**(variables or {}))
+        return rendered
 
     def resolve_variable(
         self,
