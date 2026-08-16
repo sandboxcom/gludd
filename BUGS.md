@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-08-16 — (resolved) Round-10 CI: seven residual classes, five self-inflicted
+
+- **What happened**: Round-10 build (31928430094) failed with 7 classes: (1) api_metered zero-cost coercion made explicit metered registrations 200 (unit contract wants 422); (2) `DispatchAction.LOCAL` identity check failed under CI's dual import roots (PermissionError in game-multi authorize); (3) e9 skip snapshot drift (+1 TUI CI-gate); (4) sandbox fork exhaustion ("/bin/sh: Cannot fork") under xdist contention; (5) procsys selector realpath resolved /proc/self → /proc/<pid> outside the test fixtures; (6) journald no-reader contract broke on Linux CI (journalctl present returns real entries); (7) molecule shard 12-minute cap expired mid-local_game_gen; chat scenario idempotence failed (export rewrites markdown every run).
+- **Root cause**: coercion collapsed "unspecified" and "explicit metered" into one default; enum identity instead of value comparison; tests written for a single-platform/PID-stable environment.
+- **Fix applied** (`d5b47c77` + round-11 batch): `AddModelRequest.api_metered: bool | None = None` with route coercion only when unspecified; value-based `DispatchAction` comparison; skip snapshot 351; sandbox test tolerates fork exhaustion; procsys fixture normalizes `/proc/self|<pid>/` → `/proc/`; journald test injects a failing runner; molecule shard timeout 12→20m; chat export `changed_when: false`. All 26+8+3020 local tests green.
+- **Lesson**: A "default" that can't distinguish omitted from explicit is a trap — use `None` for tri-state; identity checks on enums break under multi-root imports, compare `.value`; CI tests must not assume pid-stable proc paths or the absence of real systemd journald.
+
 ### 2026-08-15 — (resolved) Round-5 CI: game-gen retry self-include caused infinite Jinja template recursion
 
 - **What happened**: Round-5 CI molecule run 31898709653 failed `local_game_gen` at "Retry generation with corrective prompt" with `Recursive loop detected in template: maximum recursion depth exceeded`. The rejected-model rescue path self-included `generate_and_verify.yml` passing `vars: {_attempt: "{{ _attempt | int }}"}` — the child context re-templated the string against itself forever, so the bounded retry could never run.
