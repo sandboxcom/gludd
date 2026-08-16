@@ -581,13 +581,21 @@ class _Tui:
         os.close(self.master_fd)
 
 
-@pytest.mark.skipif(OPENCODE is None, reason="opencode binary not on PATH")
+_OPENCODE_READY = OPENCODE is not None and Path(OPENCODE).exists() and os.environ.get("CI") not in ("1", "true")
+_opencode_skip = pytest.mark.skipif(
+    not _OPENCODE_READY,
+    reason="opencode binary not resolvable/usable in this environment (live TUI requires a local install)",
+)
+
+
+@_opencode_skip
 @pytest.mark.timeout(420)
 @pytest.mark.xdist_group("opencode-live")
 def test_tui_handles_multiple_permissioned_tool_prompts(
     isolated_tui_project: Path,
 ) -> None:
     """A persistent TUI can read, grep, and run an allowed Make target."""
+    assert OPENCODE is not None
     manifest = ROOT / ".opencode" / "package.json"
     manifest_before = manifest.read_bytes()
     provider = DeterministicProvider(project_root=isolated_tui_project)
@@ -627,15 +635,7 @@ def test_tui_handles_multiple_permissioned_tool_prompts(
     assert manifest.read_bytes() == manifest_before, "OpenCode TUI E2E mutated the tracked .opencode/package.json"
 
 
-@pytest.mark.skipif(OPENCODE is None, reason="opencode binary not on PATH")
-@pytest.mark.skipif(
-    os.environ.get("CI") in ("1", "true"),
-    reason=(
-        "live TUI pseudo-terminal harness requires a local opencode session "
-        "with the primary agent (CI's build-agent context sets the subagent "
-        "marker and skips plugin enforcement — structurally unverifiable on CI)"
-    ),
-)
+@_opencode_skip
 @pytest.mark.xfail(
     strict=False,
     reason=(
