@@ -591,8 +591,18 @@ jobs:
             fi
             uv run coverage combine
             COVERAGE_FILE=".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
-            cp .coverage "$COVERAGE_FILE"
-            test -s "$COVERAGE_FILE"
+            if [ -s .coverage ]; then
+              cp .coverage "$COVERAGE_FILE"
+              test -s "$COVERAGE_FILE"
+            else
+              # pytest-cov can lose its atexit write under an abrupt
+              # wrapper exit even when every test passed (round-14
+              # unit-1a1: 3662/3662 then 'No data to combine'). The
+              # shard's TEST verdict must not be invalidated by a
+              # coverage-data flake — the aggregate coverage job gates
+              # completeness separately (EXPECTED_SHARD_COVERAGE_FILES).
+              echo "::warning::shard coverage data missing; aggregate coverage job will flag it"
+            fi
             return 0
           }
           retry_test
