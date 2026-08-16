@@ -133,6 +133,7 @@ async def _record(
 async def test_live_generate_score_record_reassess(tmp_path, repo_session: AsyncSession) -> None:
     """Serve the small model, score its real output, and prove the weight DB
     reassessment moves the next task's pick toward the better-scored model."""
+    assert repo_session is not None
     repo = ModelPerformanceRepository(session=repo_session)
     router = ModelPerformanceRouter(perf_repo=repo, config={"min_calls": 1})
     task_type = "local_factoid"
