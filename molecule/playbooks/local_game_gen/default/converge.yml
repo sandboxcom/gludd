@@ -19,3 +19,7 @@
         # rejection observable instead of failing the scenario.
         max_attempts: 3
         fail_on_rejection: false
+        # The molecule environment runs from the repo checkout where the
+        # general_ludd package is importable — exercise the full acceptance
+        # engine (incl. import-time FS side-effect rejection).
+        use_acceptance_engine: true

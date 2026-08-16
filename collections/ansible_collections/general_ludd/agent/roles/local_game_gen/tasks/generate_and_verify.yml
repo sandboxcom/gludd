@@ -96,6 +96,14 @@
         dest: "{{ artifact_dir }}/{{ game_name }}.py"
         mode: "0644"
 
+    - name: "Verify — acceptance engine (single rejection choke point)"
+      when: use_acceptance_engine | default(false) | bool
+      ansible.builtin.command: >-
+        {{ ansible_playbook_python }} -m general_ludd.game_gen.acceptance
+        "{{ artifact_dir }}/{{ game_name }}.py"
+      register: _acceptance_result
+      changed_when: false
+
     - name: "Verify — AST parse"
       ansible.builtin.command: "{{ ansible_playbook_python }} -c 'import ast; ast.parse(open(\"{{ artifact_dir }}/{{ game_name }}.py\").read()); print(\"AST: OK\")'"
       register: _ast_result
@@ -160,9 +168,10 @@
       ansible.builtin.set_fact:
         _verify_failed: true
         _verify_failed_check: >-
-          {{ 'AST parse' if _ast_result is not defined or (_ast_result.failed | default(false))
+          {{ 'acceptance engine' if _acceptance_result is defined and (_acceptance_result.failed | default(false))
+             else ('AST parse' if _ast_result is not defined or (_ast_result.failed | default(false))
              else ('module import' if _import_result is not defined or (_import_result.failed | default(false))
-             else 'runtime checks') }}
+             else 'runtime checks')) }}
 
     - name: "Increment attempt counter on rejection"
       ansible.builtin.set_fact:

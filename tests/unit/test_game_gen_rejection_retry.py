@@ -273,6 +273,43 @@ class TestBoundedRetry:
 
 
 # =============================================================================
+#  C2. Acceptance-engine verify — one rejection choke point in the role
+# =============================================================================
+
+
+class TestAcceptanceEngineVerify:
+    def test_use_acceptance_engine_defaults_false(self) -> None:
+        defaults = cast(dict[str, Any], _load_yaml("defaults/main.yml"))
+        assert bool(defaults.get("use_acceptance_engine")) is False, (
+            "use_acceptance_engine must default false so hosts without the"
+            " general_ludd package keep the built-in verify steps"
+        )
+
+    def test_role_has_acceptance_engine_verify_task(self) -> None:
+        tasks_text = _combined_text()
+        assert "general_ludd.game_gen.acceptance" in tasks_text, (
+            "the role must offer the acceptance-engine CLI as its verify path"
+        )
+        assert "use_acceptance_engine" in tasks_text, (
+            "the acceptance-engine verify must be gated by use_acceptance_engine"
+        )
+
+    def test_molecule_converge_enables_acceptance_engine(self) -> None:
+        converge = Path("molecule/playbooks/local_game_gen/default/converge.yml")
+        plays = cast(list[dict[str, Any]], yaml.safe_load(converge.read_text()))
+        role_vars: dict[str, Any] = {}
+        for play in plays:
+            for task in play.get("tasks", []):
+                include = task.get("ansible.builtin.include_role")
+                if isinstance(include, dict) and "local_game_gen" in str(include.get("name", "")):
+                    role_vars = cast(dict[str, Any], task.get("vars", {}))
+        assert bool(role_vars.get("use_acceptance_engine")) is True, (
+            "molecule converge must set use_acceptance_engine=true so CI"
+            " exercises the full acceptance engine (incl. FS side-effect rejection)"
+        )
+
+
+# =============================================================================
 #  F. Rejection is fail-closed by default but molecule-observable (CI contract)
 # =============================================================================
 

@@ -52,6 +52,12 @@ max_attempts: 1
 # regenerates with the corrective retry_prompt below.
 fallback_models: []
 fail_on_rejection: true
+# When true, verification runs the full acceptance engine
+# (python -m general_ludd.game_gen.acceptance) — one rejection choke point
+# covering syntax, forbidden imports/calls, class contract, runtime budget,
+# junk output, and import-time filesystem side effects. Defaults false so
+# hosts without the general_ludd package keep the built-in verify steps.
+use_acceptance_engine: false
 retry_prompt: |
   Your previous implementation was rejected because it failed the automated
   verification checks.
