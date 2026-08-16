@@ -292,12 +292,14 @@ class TestModelServe:
         assert data["shutdown"] is True
         assert data["server_id"] == server_id
 
-    def test_shutdown_nonexistent_server_returns_200(self, client):
+    def test_shutdown_nonexistent_server_returns_404(self, client):
+        # Contract aligned with test_local_serve_e2e.py: unknown/retired
+        # server IDs 404 (the route checks existence before stopping).
         resp = client.post(
             "/admin/models/local/shutdown",
             json={"server_id": "nonexistent-server-id"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 404
 
     def test_shutdown_missing_server_id_returns_422(self, client):
         resp = client.post(

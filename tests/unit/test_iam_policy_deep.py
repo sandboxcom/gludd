@@ -367,7 +367,8 @@ class TestConditionBlocksWellFormed:
     def test_terraform_policy_condition_instancetype_values_valid(self, tf_policy: dict) -> None:
         instance_type_re = re.compile(
             r"^(t3\.[a-z]+|g[2456]dn?\.[0-9]?x?large|g[56]\.[0-9]*x?large|p[345]\.[0-9]+xlarge|p4d\.[0-9]+xlarge"
-            r"|g[2456]dn?\.\*|g[56]\.\*|p[345]\.\*|p4d\.\*)$"
+            r"|p4de\.[0-9]+xlarge"
+            r"|g[2456]dn?\.\*|g[56]\.\*|p[345]\.\*|p4d\.\*|p4de\.\*)$"
         )
         for stmt in tf_policy["Statement"]:
             condition = stmt.get("Condition", {})

@@ -485,11 +485,15 @@ class LocalInferenceManager:
         return server
 
     async def stop_server(self, server_id: str) -> None:
-        """Stop a registered server and retire it (KeyError when unknown)."""
+        """Stop a registered server and retire it (no-op when unknown).
+
+        The shutdown ROUTE checks existence first and maps unknown IDs to
+        404; the manager itself stays a no-op so callers that stop idempotently
+        (unit-pinned contract) never raise.
+        """
         server = self._servers.get(server_id)
         if server is None:
-            # The shutdown route maps this to 404 for unknown server IDs.
-            raise KeyError(server_id)
+            return
 
         adapter = self._ansible_adapter
         process_wait_attempted = False
@@ -571,6 +575,7 @@ class LocalInferenceManager:
         server = self._servers.get(server_id)
         if server and server.is_running:
             raise RuntimeError(f"Cannot remove running server '{server_id}'. Stop it first.")
+        self._servers.pop(server_id, None)
 
     def get_endpoints(self) -> dict[str, str]:
         """Return {server_id: endpoint_url} for running servers."""

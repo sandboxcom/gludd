@@ -10,7 +10,6 @@ import pytest
 
 from general_ludd.connectors.nomad import (
     NomadSource,
-    NomadSSRFError,
     NomadTransportError,
 )
 
@@ -35,9 +34,7 @@ class FakeTransport:
         headers: dict[str, str],
         params: dict[str, str] | None,
     ) -> FakeResponse:
-        self.calls.append(
-            {"method": method, "url": url, "headers": headers, "params": params}
-        )
+        self.calls.append({"method": method, "url": url, "headers": headers, "params": params})
         for suffix, resp in self._routes.items():
             if suffix in url:
                 return resp
@@ -68,22 +65,26 @@ def test_rejects_bad_scheme() -> None:
 
 # -- SSRF -------------------------------------------------------------------
 def test_ssrf_blocks_loopback_by_default() -> None:
+    # Lazy SSRF contract: construction succeeds; the guard fires at
+    # request time (health() reports ssrf-blocked, transport never called).
     transport = FakeTransport({})
-    with pytest.raises(NomadSSRFError):
-        NomadSource({"base_url": "http://127.0.0.1:4646", "transport": transport})
+    src = NomadSource({"base_url": "http://127.0.0.1:4646", "transport": transport})
+    h = src.health()
+    assert h["ok"] is False
+    assert "ssrf" in h["detail"]
     # The transport must never have been called.
     assert transport.calls == []
 
 
 def test_ssrf_blocks_private_literal_by_default() -> None:
-    with pytest.raises(NomadSSRFError):
-        NomadSource({"base_url": "http://10.0.0.5:4646", "transport": FakeTransport({})})
+    src = NomadSource({"base_url": "http://10.0.0.5:4646", "transport": FakeTransport({})})
+    h = src.health()
+    assert h["ok"] is False
+    assert "ssrf" in h["detail"]
 
 
 def test_allow_private_opt_in_permits_internal_host() -> None:
-    transport = FakeTransport(
-        {"/v1/metrics": FakeResponse(200, "nomad_uptime 12.0\n")}
-    )
+    transport = FakeTransport({"/v1/metrics": FakeResponse(200, "nomad_uptime 12.0\n")})
     src = NomadSource(
         {
             "base_url": "http://127.0.0.1:4646",
@@ -101,9 +102,7 @@ def test_health_reports_ssrf_block_after_dns_rebind(monkeypatch: pytest.MonkeyPa
     from general_ludd.connectors import nomad as nomad_mod
 
     transport = FakeTransport({})
-    src = NomadSource(
-        {"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True}
-    )
+    src = NomadSource({"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True})
     src._allow_private = False
     monkeypatch.setattr(nomad_mod, "_host_is_private", lambda _host: True)
     h = src.health()
@@ -114,9 +113,7 @@ def test_health_reports_ssrf_block_after_dns_rebind(monkeypatch: pytest.MonkeyPa
 
 def test_health_ok_with_canned_transport() -> None:
     transport = FakeTransport({"/v1/agent/health": FakeResponse(200, "{}")})
-    src = NomadSource(
-        {"base_url": "http://127.0.0.1:4646", "transport": transport, "allow_private": True}
-    )
+    src = NomadSource({"base_url": "http://127.0.0.1:4646", "transport": transport, "allow_private": True})
     h = src.health()
     assert h["ok"] is True
 
@@ -125,21 +122,15 @@ def test_health_never_raises_on_transport_error() -> None:
     def boom(method: str, url: str, headers: dict[str, str], params: Any) -> Any:
         raise RuntimeError("connection refused")
 
-    src = NomadSource(
-        {"base_url": "http://127.0.0.1:4646", "transport": boom, "allow_private": True}
-    )
+    src = NomadSource({"base_url": "http://127.0.0.1:4646", "transport": boom, "allow_private": True})
     h = src.health()
     assert h["ok"] is False
 
 
 # -- alloc logs -------------------------------------------------------------
 def test_query_alloc_logs_normalized() -> None:
-    transport = FakeTransport(
-        {"/v1/client/fs/logs/": FakeResponse(200, "line one\nline two\n")}
-    )
-    src = NomadSource(
-        {"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True}
-    )
+    transport = FakeTransport({"/v1/client/fs/logs/": FakeResponse(200, "line one\nline two\n")})
+    src = NomadSource({"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True})
     recs = src.query({"type": "logs", "alloc_id": "abc123", "log_type": "stderr"})
     assert len(recs) == 2
     r = recs[0]
@@ -153,18 +144,14 @@ def test_query_alloc_logs_normalized() -> None:
 
 
 def test_logs_require_alloc_id() -> None:
-    src = NomadSource(
-        {"base_url": PUBLIC_BASE, "transport": FakeTransport({}), "allow_private": True}
-    )
+    src = NomadSource({"base_url": PUBLIC_BASE, "transport": FakeTransport({}), "allow_private": True})
     with pytest.raises(ValueError):
         src.query({"type": "logs"})
 
 
 def test_non_2xx_raises_transport_error() -> None:
     transport = FakeTransport({"/v1/client/fs/logs/": FakeResponse(500, "boom")})
-    src = NomadSource(
-        {"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True}
-    )
+    src = NomadSource({"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True})
     with pytest.raises(NomadTransportError):
         src.query({"type": "logs", "alloc_id": "x"})
 
@@ -181,9 +168,7 @@ def test_query_events_parses_frames() -> None:
         }
     )
     transport = FakeTransport({"/v1/event/stream": FakeResponse(200, frame + "\n")})
-    src = NomadSource(
-        {"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True}
-    )
+    src = NomadSource({"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True})
     recs = src.query({"type": "events"})
     assert len(recs) == 2
     assert recs[0]["kind"] == "pipeline"
@@ -194,13 +179,9 @@ def test_query_events_parses_frames() -> None:
 
 
 def test_query_events_tolerates_sse_data_framing() -> None:
-    frame = "data: " + json.dumps(
-        {"Events": [{"Topic": "Node", "Type": "NodeRegistration"}]}
-    )
+    frame = "data: " + json.dumps({"Events": [{"Topic": "Node", "Type": "NodeRegistration"}]})
     transport = FakeTransport({"/v1/event/stream": FakeResponse(200, frame + "\n")})
-    src = NomadSource(
-        {"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True}
-    )
+    src = NomadSource({"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True})
     recs = src.query({"type": "events"})
     assert len(recs) == 1
     assert recs[0]["message"] == "Node:NodeRegistration"
@@ -209,9 +190,7 @@ def test_query_events_tolerates_sse_data_framing() -> None:
 def test_events_skip_heartbeat_and_garbage() -> None:
     body = "\n".join([": heartbeat", "not json", json.dumps({"Events": [{"Topic": "X", "Type": "Y"}]})])
     transport = FakeTransport({"/v1/event/stream": FakeResponse(200, body + "\n")})
-    src = NomadSource(
-        {"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True}
-    )
+    src = NomadSource({"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True})
     recs = src.query({"type": "events"})
     assert len(recs) == 1
 
@@ -225,9 +204,7 @@ def test_query_metrics_prometheus() -> None:
         "nomad_uptime 99.5\n"
     )
     transport = FakeTransport({"/v1/metrics": FakeResponse(200, text)})
-    src = NomadSource(
-        {"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True}
-    )
+    src = NomadSource({"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True})
     recs = src.query({"type": "metrics"})
     assert len(recs) == 2
     by_name = {r["message"]: r for r in recs}
@@ -240,9 +217,7 @@ def test_query_metrics_prometheus() -> None:
 
 
 def test_unknown_query_type_raises() -> None:
-    src = NomadSource(
-        {"base_url": PUBLIC_BASE, "transport": FakeTransport({}), "allow_private": True}
-    )
+    src = NomadSource({"base_url": PUBLIC_BASE, "transport": FakeTransport({}), "allow_private": True})
     with pytest.raises(ValueError):
         src.query({"type": "bogus"})
 
@@ -267,15 +242,11 @@ def test_normalized_keys_across_all_query_types() -> None:
     transport = FakeTransport(
         {
             "/v1/client/fs/logs/": FakeResponse(200, "l\n"),
-            "/v1/event/stream": FakeResponse(
-                200, json.dumps({"Events": [{"Topic": "T", "Type": "E"}]}) + "\n"
-            ),
+            "/v1/event/stream": FakeResponse(200, json.dumps({"Events": [{"Topic": "T", "Type": "E"}]}) + "\n"),
             "/v1/metrics": FakeResponse(200, "m 1\n"),
         }
     )
-    src = NomadSource(
-        {"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True}
-    )
+    src = NomadSource({"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True})
     for spec in (
         {"type": "logs", "alloc_id": "a"},
         {"type": "events"},
@@ -291,9 +262,12 @@ def test_ssrf_blocks_cgnat_literal_without_allow_private() -> None:
     # is False for it in Python's ipaddress module, so the OLD local
     # _host_is_private (missing the `not is_global` flag) would NOT have
     # blocked it. resolved_host_is_blocked (via the canonical _ip_addr_is_blocked
-    # flag set) closes this gap.
-    with pytest.raises(NomadSSRFError):
-        NomadSource({"base_url": "http://100.70.1.1:4646", "transport": FakeTransport({})})
+    # flag set) closes this gap. Lazy contract: construction succeeds, the
+    # guard fires at request time.
+    src = NomadSource({"base_url": "http://100.70.1.1:4646", "transport": FakeTransport({})})
+    h = src.health()
+    assert h["ok"] is False
+    assert "ssrf" in h["detail"]
 
 
 def test_ssrf_blocks_hostname_resolving_to_cgnat_address(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -305,10 +279,10 @@ def test_ssrf_blocks_hostname_resolving_to_cgnat_address(monkeypatch: pytest.Mon
     monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _fake_getaddrinfo)
 
     transport = FakeTransport({})
-    with pytest.raises(NomadSSRFError):
-        NomadSource(
-            {"base_url": "http://internal-nomad.example.com:4646", "transport": transport}
-        )
+    src = NomadSource({"base_url": "http://internal-nomad.example.com:4646", "transport": transport})
+    h = src.health()
+    assert h["ok"] is False
+    assert "ssrf" in h["detail"]
     assert transport.calls == []
 
 
@@ -321,10 +295,10 @@ def test_ssrf_blocks_unresolvable_hostname_fail_closed(monkeypatch: pytest.Monke
     monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _boom)
 
     transport = FakeTransport({})
-    with pytest.raises(NomadSSRFError):
-        NomadSource(
-            {"base_url": "http://does-not-resolve.example.com:4646", "transport": transport}
-        )
+    src = NomadSource({"base_url": "http://does-not-resolve.example.com:4646", "transport": transport})
+    h = src.health()
+    assert h["ok"] is False
+    assert "ssrf" in h["detail"]
     assert transport.calls == []
 
 

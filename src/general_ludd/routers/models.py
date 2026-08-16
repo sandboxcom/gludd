@@ -1517,6 +1517,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if mgr is None:
             raise HTTPException(status_code=503, detail="LocalInferenceManager not available")
 
+        if mgr.get_server(server_id) is None:
+            raise HTTPException(status_code=404, detail=f"Server {server_id} not found")
         try:
             await mgr.stop_server(server_id)
             logger.info("local server shut down: server_id=%s", server_id)
