@@ -20,7 +20,10 @@ permissions:
 jobs:
   molecule:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # local_game_gen (shard 1) downloads a real GGUF, serves llama.cpp,
+    # regenerates through the retry loop, and verifies via the acceptance
+    # engine — the previous 30-minute cap expired mid-scenario (round 11).
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
