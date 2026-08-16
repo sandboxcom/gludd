@@ -130,6 +130,68 @@ async def test_capability_evaluation_feeds_weight_db(repo_session: AsyncSession)
     )
 
 
+@pytest.mark.timeout(60)
+async def test_capability_matrix_drives_policy_authorization() -> None:
+    """Capability outcomes become CapabilityEvidence, and authorize() must
+    approve a local dispatch for the small model when the core checks pass —
+    or escalate when the evidence says the model failed. Offline-safe: the
+    evidence is built from a canned capability matrix, exercising the exact
+    loop the daemon's evaluate endpoint performs before a small-model
+    dispatch is allowed."""
+    from general_ludd.routing_roles.small_model_policy import (
+        CapabilityEvidence,
+        ModelIdentity,
+        SmallModelTaskPolicy,
+        SmallModelTaskSpec,
+        TaskImpact,
+    )
+    from general_ludd.schemas.benchmark import TaskRole
+
+    model_id = "local/qwen2.5-0.5b"
+
+    spec = SmallModelTaskSpec(
+        task_id="fpx.1.capability.authorized",
+        task_kind="coding",
+        role=TaskRole.CODER,
+        collection="general_ludd.agent",
+        input_digest="f" * 64,
+        impacts=frozenset({TaskImpact.READ_SOURCE, TaskImpact.WRITE_ARTIFACT}),
+        acceptance_checks=("syntax_valid", "import_ok", "run_without_crash"),
+    )
+    spec_contract_digest = spec.acceptance_contract_digest
+
+    identity = ModelIdentity(
+        model_profile_id=model_id,
+        model_artifact_digest="e" * 64,
+        runtime_config_digest="c" * 64,
+        prompt_contract_digest="d" * 64,
+    )
+    policy = SmallModelTaskPolicy()
+
+    def _evidence(task_kind: str, passed: bool) -> CapabilityEvidence:
+        return CapabilityEvidence(
+            model_profile_id=model_id,
+            task_kind=task_kind,
+            collection="general_ludd.agent",
+            role=TaskRole.CODER,
+            suite_id=f"suite-{task_kind}",
+            suite_revision="v1",
+            total_cases=25,
+            passed_cases=25 if passed else 0,
+            collection_ok=True,
+            local_only=True,
+            model_identity_digest=identity.fingerprint,
+            acceptance_contract_digest=spec_contract_digest,
+            evidence_digest=("1" if passed else "0") + "a" * 31 + "e" * 32,
+        )
+
+    passing = policy.authorize(spec, identity, [_evidence("coding", True)])
+    assert passing.action.value == "local", f"capability-proven dispatch must be LOCAL, got {passing.action}"
+
+    failing = policy.authorize(spec, identity, [_evidence("coding", False)])
+    assert failing.action.value != "local", "failed capability evidence must escalate, not approve"
+
+
 @pytest.mark.timeout(120)
 async def test_cross_task_reuse_ranks_good_model_above_bad(repo_session: AsyncSession) -> None:
     """The global ranking must order models by their cross-task record."""
