@@ -212,6 +212,23 @@ class TestModelFallback:
                 return
         pytest.fail("No set_fact task selecting the model for the current attempt")
 
+    def test_active_model_path_resolved_in_separate_set_fact(self) -> None:
+        """Regression pin: set_fact resolves every key BEFORE any is set, so
+        _active_model_path must not reference _active_repo/_active_file from
+        the same task (CI molecule 2026-08-16: '_active_repo' is undefined)."""
+        all_tasks = _combined_tasks()
+        select_tasks = [t for t in all_tasks if any("set_fact" in k for k in t) and "_active_repo" in str(t)]
+        assert select_tasks, "model-selection set_fact must exist"
+        for t in select_tasks:
+            fact_keys = t.get("ansible.builtin.set_fact", {})
+            if isinstance(fact_keys, dict):
+                has_path = "_active_model_path" in fact_keys
+                has_repo = "_active_repo" in fact_keys
+                assert not (has_path and has_repo), (
+                    "_active_model_path must live in its own set_fact task: "
+                    "referencing _active_repo from the same task resolves to undefined"
+                )
+
 
 # =============================================================================
 #  D. Bounded retry: no infinite retry

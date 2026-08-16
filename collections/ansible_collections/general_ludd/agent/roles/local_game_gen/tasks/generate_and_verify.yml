@@ -17,6 +17,9 @@
     _active_file: >-
       {{ model_file if _attempt | int == 1 or fallback_models | length == 0
          else fallback_models[([(_attempt | int) - 2, fallback_models | length - 1] | min)].file }}
+
+- name: "Resolve active model path (separate task: set_fact resolves all keys at once)"
+  ansible.builtin.set_fact:
     _active_model_path: >-
       {{ model_download_dir }}/{{ _active_repo | regex_replace('/', '_') }}/{{ _active_file }}
 
