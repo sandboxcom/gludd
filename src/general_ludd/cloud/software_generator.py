@@ -78,6 +78,7 @@ class SoftwareGenerator:
         gateway: ModelGateway | None,
         task_policy: object | None = None,
     ) -> None:
+        """Initialize the generator with a gateway and optional task policy."""
         self._gateway = gateway
         self._task_policy = task_policy
 
@@ -88,6 +89,7 @@ class SoftwareGenerator:
         model_identity: object | None = None,
         evidence: tuple[object, ...] = (),
     ) -> str:
+        """Generate a single project type implementation via the gateway."""
         if self._gateway is None:
             raise ValueError("ModelGateway is not configured")
 
@@ -109,6 +111,7 @@ class SoftwareGenerator:
         model_identity: object | None = None,
         evidence: tuple[object, ...] = (),
     ) -> str:
+        """Generate through a multi-model plan/code/review pipeline."""
         from general_ludd.schemas.benchmark import TaskRole
 
         if self._gateway is None:
@@ -160,9 +163,12 @@ class SoftwareGenerator:
         action = decision.action
         # Older policy adapters represented LOCAL as integer 1.  Accept only
         # that exact legacy value (never arbitrary truthy values); every other
-        # unknown action remains fail-closed.
+        # unknown action remains fail-closed. The package is importable from
+        # two roots in CI, so DispatchAction members can materialize as a
+        # foreign class copy — compare by .value as well as identity.
         legacy_local = isinstance(action, int) and not isinstance(action, bool) and action == 1
-        if action is not DispatchAction.LOCAL and not legacy_local:
+        action_value = getattr(action, "value", None)
+        if action is not DispatchAction.LOCAL and action_value != DispatchAction.LOCAL.value and not legacy_local:
             raise PermissionError(
                 f"SmallModelTaskPolicy denied {spec.project_type} dispatch for {spec.name}: {decision.reason}"
             )
@@ -202,6 +208,7 @@ class GenerationCache:
     """Session cache for generated software, keyed by project spec + model."""
 
     def __init__(self) -> None:
+        """Initialize an empty session cache."""
         self._generated: dict[tuple[str, str, str, tuple[tuple[str, str], ...]], str] = {}
         self.miss_count = 0
 
@@ -213,6 +220,7 @@ class GenerationCache:
         model_id: str = "default",
         model_settings: Mapping[str, str] | None = None,
     ) -> str:
+        """Generate once per (spec, model, settings) key and cache the result."""
         settings = tuple(sorted((model_settings or {}).items()))
         key = (spec.name, spec.prompt_template, model_id, settings)
         cached = self._generated.get(key)

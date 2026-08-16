@@ -786,7 +786,11 @@ class AddModelRequest(BaseModel):
     api_key_env: str | None = None
     api_base_alias: str | None = None
     enabled: bool = True
-    api_metered: bool = True
+    # None = unspecified: the route coerces zero-cost registrations to
+    # un-metered; an EXPLICIT True keeps the metered contract (a metered
+    # model with zero cost is rejected — pinned by
+    # tests/unit/test_model_health_wiring.py).
+    api_metered: bool | None = None
     cost_per_input_token: float = Field(default=0.0, ge=0.0)
     cost_per_output_token: float = Field(default=0.0, ge=0.0)
 
