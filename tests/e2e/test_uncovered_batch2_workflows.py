@@ -198,20 +198,27 @@ class TestRetrievalSearcher:
         with tempfile.TemporaryDirectory() as tmp:
             cache_dir = Path(tmp) / "cache"
             cache_dir.mkdir()
-            import diskcache
+            # Seed through the SAME safe adapter the searcher reads: the
+            # searcher opens the owner-only msgpack-v1 namespace, while a
+            # plain diskcache.Cache writes a separate pickle namespace the
+            # searcher deliberately refuses to deserialize.
+            from general_ludd.security.safe_diskcache import open_safe_diskcache
 
-            cache = diskcache.Cache(str(cache_dir))
+            cache = open_safe_diskcache(cache_dir)
             from general_ludd.retrieval.indexer import _tokenize
 
             tokens = _tokenize("hello world")
             from collections import Counter
 
             vec = {k: float(v) for k, v in Counter(tokens).items()}
-            cache["file1.py"] = {
-                "filepath": "file1.py",
-                "content": "hello world",
-                "vector": vec,
-            }
+            cache.set(
+                "file1.py",
+                {
+                    "filepath": "file1.py",
+                    "content": "hello world",
+                    "vector": vec,
+                },
+            )
             cache.close()
 
             searcher = SemanticSearcher(cache_dir=cache_dir)
@@ -266,9 +273,7 @@ class TestSearXClient:
     def test_searx_client_constructs(self):
         from general_ludd.connectors.searx import SearXConnector
 
-        client = SearXConnector(
-            {"base_url": "http://localhost:8888", "allow_private": True}
-        )
+        client = SearXConnector({"base_url": "http://localhost:8888", "allow_private": True})
         assert client.base_url == "http://localhost:8888"
         assert client.allow_private is True
 

@@ -407,7 +407,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     parser.add_argument(
         "--version",
         action="version",
-        version=__version__,
+        version=f"gludd {__version__}",
         help="Show the installed General Ludd version and exit",
     )
     parser.set_defaults(func=None)
@@ -5099,11 +5099,8 @@ def _cmd_make(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
-    # Keep the module invocation contract aligned with the standalone binary
-    # tests: version is exposed by the ``gludd`` console entry point, while
-    # ``python -m general_ludd.cli --version`` remains an invalid top-level
-    # invocation.  In-process callers still exercise ``main()`` directly.
-    if "--version" in sys.argv[1:]:
-        print("error: unrecognized arguments: --version", file=sys.stderr)
-        sys.exit(2)
+    # The module invocation contract is aligned with the standalone binary:
+    # ``python -m general_ludd.cli --version`` prints the release version and
+    # exits 0 (pinned by tests/e2e/test_binary_functional.py). build_parser()
+    # already declares the version action.
     main()
