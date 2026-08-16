@@ -308,6 +308,11 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             )
             _track_router_owned_gateway(app, app.state._model_gateway)
         gateway: ModelGateway = app.state._model_gateway
+        # A zero-cost profile is un-metered by definition: the ModelProfile
+        # validator rejects enabled + api_metered with zero cost, and the
+        # pinned registration contract accepts zero-cost profiles as 200.
+        if req.cost_per_input_token == 0.0 and req.cost_per_output_token == 0.0:
+            req.api_metered = False
         try:
             profile = gateway.add_profile(
                 model_id=req.model_id,
