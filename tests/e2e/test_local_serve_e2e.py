@@ -330,6 +330,10 @@ class TestLocalCloudRouting:
             provider_class_hint="ChatOpenAI",
             model_name="local-model-v1",
             enabled=True,
+            # Local inference is not API-metered: zero per-token cost is the
+            # whole point of a local profile (the validator only rejects
+            # zero-cost profiles when api_metered=True).
+            api_metered=False,
             cost_per_input_token=0.0,
             cost_per_output_token=0.0,
         )

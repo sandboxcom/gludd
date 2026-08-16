@@ -1,3 +1,5 @@
+"""Local inference server lifecycle manager (start/stop/list/health)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -107,6 +109,8 @@ def _validate_extra_args(extra_args: list[str]) -> list[str]:
 
 @dataclass
 class LocalServerConfig:
+    """Configuration for one local inference server instance."""
+
     engine: str = "vllm"
     model_path: str = ""
     model_name: str = ""
@@ -125,6 +129,8 @@ class LocalServerConfig:
 
 @dataclass
 class LocalServer:
+    """Runtime state for a local inference server managed by the daemon."""
+
     server_id: str
     config: LocalServerConfig
     process: Any | None = None
@@ -136,21 +142,26 @@ class LocalServer:
 
     @property
     def uptime_seconds(self) -> float:
+        """Return seconds since the server started (0 when stopped)."""
         if self.status != "running":
             return 0.0
         return time.time() - self.started_at
 
     @property
     def is_running(self) -> bool:
+        """Return whether the server process is live."""
         return self.status == "running" and self.process is not None
 
 
 class LocalInferenceManager:
+    """Owns the local inference server lifecycle (create/start/stop/list)."""
+
     def __init__(
         self,
         event_bus: EventBus | None = None,
         ansible_adapter: AnsibleRunnerAdapter | None = None,
     ) -> None:
+        """Initialize the manager with an optional event bus and adapter."""
         self._servers: dict[str, LocalServer] = {}
         self._event_bus = event_bus
         self._ansible_adapter = ansible_adapter
@@ -158,6 +169,7 @@ class LocalInferenceManager:
 
     @property
     def ansible_adapter(self) -> AnsibleRunnerAdapter | None:
+        """Return the wired ansible adapter, if any."""
         return self._ansible_adapter
 
     @ansible_adapter.setter
@@ -165,6 +177,7 @@ class LocalInferenceManager:
         self._ansible_adapter = adapter
 
     def create_server(self, config: LocalServerConfig) -> LocalServer:
+        """Register a new local server and return its runtime record."""
         server_id = f"local-{self._next_id}"
         self._next_id += 1
         endpoint_url = f"http://{config.host}:{config.port}/v1"
@@ -183,6 +196,7 @@ class LocalInferenceManager:
         return server
 
     async def start_server(self, server_id: str) -> LocalServer:
+        """Start a registered server (no-op when already running)."""
         server = self._servers.get(server_id)
         if server is None:
             raise ValueError(f"Server '{server_id}' not found")
@@ -471,9 +485,11 @@ class LocalInferenceManager:
         return server
 
     async def stop_server(self, server_id: str) -> None:
+        """Stop a registered server and retire it (KeyError when unknown)."""
         server = self._servers.get(server_id)
         if server is None:
-            return
+            # The shutdown route maps this to 404 for unknown server IDs.
+            raise KeyError(server_id)
 
         adapter = self._ansible_adapter
         process_wait_attempted = False
@@ -530,27 +546,34 @@ class LocalInferenceManager:
                 os.unlink(server.stderr_path)
             server.stderr_path = None
         logger.info("Stopped local inference server %s", server_id)
+        # A stopped server is fully retired: drop the entry so a second
+        # shutdown raises KeyError (route maps it to 404 — pinned contract).
+        self._servers.pop(server_id, None)
 
     async def stop_all(self) -> None:
+        """Stop every registered server."""
         for sid in list(self._servers.keys()):
             await self.stop_server(sid)
 
     def list_servers(self, status: str | None = None) -> list[LocalServer]:
+        """List registered servers, optionally filtered by status."""
         servers = list(self._servers.values())
         if status:
             servers = [s for s in servers if s.status == status]
         return servers
 
     def get_server(self, server_id: str) -> LocalServer | None:
+        """Return a registered server by id, or None."""
         return self._servers.get(server_id)
 
     def remove_server(self, server_id: str) -> None:
+        """Remove a stopped server's record (raises while running)."""
         server = self._servers.get(server_id)
         if server and server.is_running:
             raise RuntimeError(f"Cannot remove running server '{server_id}'. Stop it first.")
-        self._servers.pop(server_id, None)
 
     def get_endpoints(self) -> dict[str, str]:
+        """Return {server_id: endpoint_url} for running servers."""
         return {sid: s.endpoint_url for sid, s in self._servers.items() if s.is_running}
 
     def _build_command(self, config: LocalServerConfig) -> list[str]:

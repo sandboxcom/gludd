@@ -1099,7 +1099,6 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         # while direct Hugging Face repository IDs and Ollama tags use the fixed
         # provider transports below and do not expose registry-controlled paths.
         if config is not None and source in registry_bound_sources | {"huggingface"}:
-
             source_order_raw = body.get("order")
             source_order: list[ModelSource] | None = None
             if isinstance(source_order_raw, list):
@@ -1600,7 +1599,13 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             )
 
         candidates.sort(key=lambda c: (c["passed"], c["pass_ratio"]), reverse=True)
-        return {"task": task, "recommendations": candidates, "total": len(candidates)}
+        selected_model_profile_id = str(candidates[0]["model_id"]) if candidates else None
+        return {
+            "task": task,
+            "recommendations": candidates,
+            "total": len(candidates),
+            "selected_model_profile_id": selected_model_profile_id,
+        }
 
     @app.get("/admin/models/cost")
     async def admin_models_cost(request: Request, model: str) -> dict[str, object]:
