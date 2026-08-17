@@ -139,7 +139,7 @@ def test_linux_policy_pins_hosted_and_container_architectures() -> None:
     assert policy["schema_version"] == 3
     assert policy["transitive_warning_sha256_by_architecture"] == {
         "aarch64": ("fe46fb237e7274fe5f8db70da336b212fac65c3aa6fc65e1e453241f3e0a3d50"),
-        "x86_64": ("eb32d56ca9b343b784aa7c65aaa39b58f0bba8aef6df795fe51f2c52c4342335"),
+        "x86_64": ("2c13f6587ccf3c51c1f8474df595895b028796abd584aedbfdc30b907cc02e59"),
     }
 
 
