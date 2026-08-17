@@ -617,6 +617,13 @@ jobs:
               # unit-1a1: 3662/3662 then 'No data to combine').
               echo "::warning::shard coverage data missing; aggregate coverage job will flag it"
             fi
+            # Upload guarantee: the upload-artifact step fails the whole
+            # shard job when NO file matches its path (if-no-files-found:
+            # error — required by the beta3 fail-closed contract). This
+            # marker exists in every outcome so a lost coverage file can
+            # never fail an otherwise-green shard; the aggregate coverage
+            # job gates completeness by counting only real .coverage.* files.
+            echo "${{ matrix.shard }}" > coverage-shard-marker.txt
             return 0
           }
           retry_test
@@ -684,7 +691,13 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: coverage-${{ matrix.shard }}-${{ matrix.python-version }}
-          path: .coverage.${{ matrix.shard }}-${{ matrix.python-version }}
+          # The marker file always exists (written in every shard outcome),
+          # so a lost pytest-cov atexit write cannot trip if-no-files-found:
+          # error on an otherwise-green shard. The aggregate job only copies
+          # real .coverage.* files — the marker is ignored by its find glob.
+          path: |
+            .coverage.${{ matrix.shard }}-${{ matrix.python-version }}
+            coverage-shard-marker.txt
           if-no-files-found: error
           retention-days: 7
 
