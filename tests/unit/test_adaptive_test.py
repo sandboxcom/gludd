@@ -129,15 +129,13 @@ def test_compute_nproc_caps_by_cores(idle: None) -> None:
 @pytest.mark.parametrize(
     "avail_gb, cpu_count, per_worker, expected",
     [
-        (6.0, 8, 1.5, 4),    # 6 // 1.5 == 4 workers, under cpu + load caps
-        (1.4, 8, 1.5, 1),    # < one worker's budget -> floor of 1
-        (0.0, 8, 1.5, 1),    # zero available -> floor of 1
-        (12.0, 8, 3.0, 4),   # bigger per-worker budget -> fewer workers
+        (6.0, 8, 1.5, 4),  # 6 // 1.5 == 4 workers, under cpu + load caps
+        (1.4, 8, 1.5, 1),  # < one worker's budget -> floor of 1
+        (0.0, 8, 1.5, 1),  # zero available -> floor of 1
+        (12.0, 8, 3.0, 4),  # bigger per-worker budget -> fewer workers
     ],
 )
-def test_compute_nproc_mem_formula_when_idle(
-    idle: None, avail_gb, cpu_count, per_worker, expected
-) -> None:
+def test_compute_nproc_mem_formula_when_idle(idle: None, avail_gb, cpu_count, per_worker, expected) -> None:
     assert at.compute_nproc(avail_gb, cpu_count, per_worker) == expected
 
 
@@ -262,9 +260,7 @@ def test_build_pytest_cmd_adds_n_maxprocesses_and_dist() -> None:
 
 
 def test_build_pytest_cmd_no_dup_when_caller_sets_them() -> None:
-    cmd = at.build_pytest_cmd(
-        ["tests/unit", "-n", "2", "--maxprocesses", "2", "--dist", "no"], 8
-    )
+    cmd = at.build_pytest_cmd(["tests/unit", "-n", "2", "--maxprocesses", "2", "--dist", "no"], 8)
     assert cmd.count("-n") == 1
     assert cmd.count("--maxprocesses") == 1
     assert cmd.count("--dist") == 1
@@ -350,13 +346,53 @@ def test_run_never_retries_after_orchestrator_termination(
     assert calls == 1
 
 
+def test_run_retries_once_on_no_progress_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A collection-phase no-progress timeout retries ONCE (transient infra
+    flake — round-21 unit-3 hung at the fixed 13-line header before any
+    test ran; the same code collected fine in five prior rounds). A second
+    timeout still fails closed."""
+    monkeypatch.setattr(at, "decide_nproc", lambda env=None: 8)
+    outcomes = [
+        (124, "", "no-progress-timeout"),
+        (0, "", None),
+    ]
+    calls = 0
+
+    def flaky_then_ok_runner(cmd):
+        nonlocal calls
+        outcome = outcomes[min(calls, len(outcomes) - 1)]
+        calls += 1
+        return outcome
+
+    rc = at.run(["tests/unit"], env={}, runner=flaky_then_ok_runner)
+
+    assert rc == 0
+    assert calls == 2
+
+
+def test_run_fails_closed_after_second_no_progress_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(at, "decide_nproc", lambda env=None: 8)
+    calls = 0
+
+    def always_hung_runner(cmd):
+        nonlocal calls
+        calls += 1
+        return 124, "", "no-progress-timeout"
+
+    rc = at.run(["tests/unit"], env={}, runner=always_hung_runner)
+
+    assert rc == 124
+    assert calls == 2
+
+
 def test_no_progress_timeout_has_a_positive_bounded_default() -> None:
     assert at.no_progress_timeout_seconds({}) == at.DEFAULT_NO_PROGRESS_SECS
     assert at.no_progress_timeout_seconds({"GLUDD_ADAPTIVE_NO_PROGRESS_SECS": "12.5"}) == 12.5
-    assert (
-        at.no_progress_timeout_seconds({"GLUDD_ADAPTIVE_NO_PROGRESS_SECS": "invalid"})
-        == at.DEFAULT_NO_PROGRESS_SECS
-    )
+    assert at.no_progress_timeout_seconds({"GLUDD_ADAPTIVE_NO_PROGRESS_SECS": "invalid"}) == at.DEFAULT_NO_PROGRESS_SECS
 
 
 # ---- shared-tmp-root isolation (the popen-gwN FileNotFoundError race) -----

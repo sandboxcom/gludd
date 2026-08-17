@@ -179,11 +179,7 @@ def compute_nproc(
     cpu_count = max(1, cpu_count)
 
     # RAM cap (original behaviour).
-    by_mem = (
-        cpu_count
-        if avail_gb is None or gb_per_worker <= 0
-        else max(1, int(avail_gb // gb_per_worker))
-    )
+    by_mem = cpu_count if avail_gb is None or gb_per_worker <= 0 else max(1, int(avail_gb // gb_per_worker))
 
     # CI shards are isolated (fresh, single-purpose runner, ample per-shard RAM,
     # no competing load) and don't OOM, so the shared-LOCAL-box load cap only
@@ -227,11 +223,7 @@ def is_oom_exit(
         return True
     if returncode == 0:
         return False
-    return any(
-        pattern.fullmatch(line)
-        for line in output.splitlines()
-        for pattern in _OOM_DIAGNOSTIC_LINES
-    )
+    return any(pattern.fullmatch(line) for line in output.splitlines() for pattern in _OOM_DIAGNOSTIC_LINES)
 
 
 def heartbeat_interval_seconds(env: Mapping[str, str] | None = None) -> float:
@@ -396,14 +388,8 @@ def _stream_run(cmd: Sequence[str]) -> StreamResult:
             signal.signal(watched_signal, previous_handler)
         with progress_lock:
             child_returncode = proc.returncode if proc.returncode is not None else 1
-            final_returncode = (
-                requested_returncode
-                if requested_returncode is not None
-                else child_returncode
-            )
-            progress["status"] = (
-                "terminated" if termination_reason is not None else "finished"
-            )
+            final_returncode = requested_returncode if requested_returncode is not None else child_returncode
+            progress["status"] = "terminated" if termination_reason is not None else "finished"
             progress["returncode"] = final_returncode
             progress["elapsed_seconds"] = round(time.monotonic() - started, 3)
             progress["updated_at"] = time.time()
@@ -450,11 +436,7 @@ def unique_basetemp() -> str:
     test spawns a nested pytest. This is the same isolation ``scripts/run_gate.sh``
     already applies to the local gate (unique ``mktemp -d`` basetemp).
     """
-    root = (
-        "/tmp"
-        if os.name == "posix" and os.path.isdir("/tmp")
-        else tempfile.gettempdir()
-    )
+    root = "/tmp" if os.name == "posix" and os.path.isdir("/tmp") else tempfile.gettempdir()
     token = uuid.uuid4().hex[:8]
     return os.path.join(root, f"gludd-at-{os.getpid()}-{token}")
 
@@ -504,11 +486,11 @@ def run(
     if not has_basetemp(args):
         args.append(f"--basetemp={unique_basetemp()}")
     nproc = decide_nproc(env)
+    no_progress_retried = False
     while True:
         cmd = build_pytest_cmd(args, nproc)
         print(
-            f"[adaptive-test] running with -n {nproc} "
-            f"(cmd: {' '.join(cmd[2:])})",
+            f"[adaptive-test] running with -n {nproc} (cmd: {' '.join(cmd[2:])})",
             flush=True,
         )
         result = _normalize_runner_result(runner(cmd))
@@ -518,9 +500,20 @@ def run(
             result.termination_reason,
         ):
             if result.termination_reason is not None:
+                if result.termination_reason == "no-progress-timeout" and not no_progress_retried:
+                    # A collection-phase hang is a transient infra flake —
+                    # the identical shard collected fine in prior rounds
+                    # (round-21 unit-3 hung at 13 fixed header lines before
+                    # any test ran, then passed the same code in earlier
+                    # rounds). Retry ONCE; a second hang still fails closed.
+                    no_progress_retried = True
+                    print(
+                        "[adaptive-test] no-progress-timeout; retrying once (transient collection hang).",
+                        flush=True,
+                    )
+                    continue
                 print(
-                    "[adaptive-test] shard terminated intentionally; "
-                    f"reason={result.termination_reason}; no retry.",
+                    f"[adaptive-test] shard terminated intentionally; reason={result.termination_reason}; no retry.",
                     flush=True,
                 )
             return result.returncode
@@ -533,8 +526,7 @@ def run(
             return result.returncode
         new_nproc = max(1, nproc // 2)
         print(
-            f"[adaptive-test] OOM-shaped exit (rc={result.returncode}) at -n {nproc}; "
-            f"retrying with -n {new_nproc}.",
+            f"[adaptive-test] OOM-shaped exit (rc={result.returncode}) at -n {nproc}; retrying with -n {new_nproc}.",
             flush=True,
         )
         nproc = new_nproc
