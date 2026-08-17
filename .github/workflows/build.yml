@@ -589,31 +589,33 @@ jobs:
             if [ $rc -ne 0 ]; then
               return $rc
             fi
-            uv run coverage combine
-            if [ -s "$COVERAGE_FILE" ]; then
-              # combine merged the xdist parallel parts into the
-              # shard-unique COVERAGE_FILE (set in env below).
+            # combine exits 1 when no parts exist ("No data to combine") —
+            # never let that fail the shard's TEST verdict; the aggregate
+            # coverage job gates completeness (EXPECTED_SHARD_COVERAGE_FILES).
+            uv run coverage combine || true
+            COVERAGE_FILE=".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
+            if [ -s .coverage ]; then
+              # pytest-cov wrote the default data file: promote it to the
+              # shard-scoped artifact name the upload step expects.
+              cp .coverage "$COVERAGE_FILE"
+              test -s "$COVERAGE_FILE"
+            elif [ -s "$COVERAGE_FILE" ]; then
+              # combine already merged the shard-scoped parts (COVERAGE_FILE
+              # env) into the artifact path directly.
               test -s "$COVERAGE_FILE"
             else
               # pytest-cov can lose its atexit write under an abrupt
               # wrapper exit even when every test passed (round-14
-              # unit-1a1: 3662/3662 then 'No data to combine'). The
-              # shard's TEST verdict must not be invalidated by a
-              # coverage-data flake — the aggregate coverage job gates
-              # completeness separately (EXPECTED_SHARD_COVERAGE_FILES).
+              # unit-1a1: 3662/3662 then 'No data to combine').
               echo "::warning::shard coverage data missing; aggregate coverage job will flag it"
             fi
             return 0
           }
           retry_test
         env:
-          # Root-cause fix for the round-14 coverage race: every shard runs
-          # in the SAME workspace cwd; `coverage combine` consumes the
-          # shared .coverage.<host>.<pid>.<rand> parallel-part files and
-          # moves them into a single .coverage, so whichever shard combines
-          # LAST steals the others' parts — one shard always finds "No data
-          # to combine". A per-shard COVERAGE_FILE isolates every shard's
-          # data file so parallel combines can never clobber each other.
+          # Shard-scoped coverage data file: parallel shards share this
+          # workspace cwd, and coverage's default data/part files would
+          # collide across shards (round-14/15 coverage race).
           COVERAGE_FILE: ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
           GLUDD_AUTH_PSK: ""
           GLUDD_XDIST_WORKERS: auto
