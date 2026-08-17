@@ -69,6 +69,7 @@ def _run_audit(
     architecture: str = "x86_64",
     manifest_architecture_digests: dict[str, str] | None = None,
     baseline_pinned_project_modules: list[dict[str, str]] | None = None,
+    manifest_alternate_digests: dict[str, list[str]] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     warning_path = tmp_path / "warn-gludd.txt"
     if warning_body is not None:
@@ -89,6 +90,7 @@ def _run_audit(
                 "transitive_warning_sha256_by_architecture": (
                     manifest_architecture_digests or {architecture: transitive_warning_sha256}
                 ),
+                "reviewed_transitive_warning_sha256_alternates_by_architecture": (manifest_alternate_digests or {}),
             }
         ),
         encoding="utf-8",
@@ -457,6 +459,42 @@ def test_missing_architecture_digest_fails_closed(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "no transitive warning digest for architecture 'x86_64'" in result.stderr
+
+
+def test_reviewed_alternate_digest_passes(tmp_path: Path) -> None:
+    """A reviewed alternate digest passes: consecutive CI builds of identical
+    code can flip between two observed transitive graphs (rounds 18/19); any
+    OTHER digest still fails closed."""
+    warnings = "missing module named 'org.python' - imported by general_ludd.compat.copy (optional)\n"
+    allowed = [
+        _allow("org.python", "general_ludd.compat.copy", ["optional"]),
+    ]
+    result = _run_audit(
+        tmp_path,
+        warnings,
+        allowed=allowed,
+        # Primary digest does not match; the reviewed ALTERNATE does.
+        transitive_warning_sha256="f" * 64,
+        manifest_alternate_digests={"x86_64": ["e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"]},
+    )
+    assert "transitive warning digest mismatch" not in result.stderr, result.stderr
+    assert result.returncode == 0, result.stderr
+
+
+def test_unreviewed_digest_still_fails_closed(tmp_path: Path) -> None:
+    """An unknown digest fails closed even when alternates exist."""
+    warnings = "missing module named 'org.python' - imported by general_ludd.compat.copy (optional)\n"
+    allowed = [
+        _allow("org.python", "general_ludd.compat.copy", ["optional"]),
+    ]
+    result = _run_audit(
+        tmp_path,
+        warnings,
+        allowed=allowed,
+        transitive_warning_sha256="f" * 64,
+    )
+    assert "transitive warning digest mismatch" in result.stderr
+    assert result.returncode == 1
 
 
 def test_runtime_architecture_alias_uses_canonical_digest(tmp_path: Path) -> None:
