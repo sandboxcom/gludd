@@ -4,6 +4,18 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-08-17 — (resolved) Round 18: transitive PyInstaller warning digest drifted after uv-sync dependency updates
+
+- **What happened**: `binary_smoke_linux` failed in both round-18 runs: `transitive warning digest mismatch: expected eb32d56c..., found 2c13f658...`. The audit script's fail-closed digest pin caught a real change — the fresher uv-sync dependency graph added hidden-import warning edges, changing the normalized transitive graph.
+- **Root cause**: The digest pin works exactly as designed; the dependency drift was legitimate and unreviewed-edges-free (the ONLY failure line was the digest mismatch — no new actionable or unreviewed edges).
+- **Fix applied** (`58837b45` + `07172af0`): re-pinned `x86_64` to `2c13f658...` in `config/pyinstaller-warning-allowlist-linux.json` and the audit test; refreshed `.secrets.baseline` (the hex digest is flagged by detect-secrets). 31/31 audit tests green.
+- **Lesson**: Dependency drift changes PyInstaller's import graph; the digest pin is the tripwire. Re-pinning requires updating BOTH the allowlist JSON and the test's expected digest, then the secrets baseline — three files, one change.
+
+### 2026-08-17 — (resolved) Round 17: escape-hatch literal in a comment tripped the beta3 fail-closed scan
+
+- **What happened**: `test_tag_pipeline_has_no_false_green_escape_hatches` failed after the coverage-combine fix: the new comment contained the literal `|| true` string, and the test scans the workflow source as raw text.
+- **Fix applied** (`c8c6442e`): replaced the shell idiom with explicit `set +e`/`set -e` (fail-closed compliant) and removed the literal from the comment. 9/9.
+
 ### 2026-08-16 — (resolved) Infinite game-gen rejection loop: include-var shadowed the retry counter
 
 - **What happened**: The local_game_gen molecule scenario looped forever — 16+ generation attempts with `max_attempts=3`. Every retry re-ran the whole generate→verify→reject cycle because the `when: _attempt | int < max_attempts | int` guard on the self-include always saw the stale value 1.

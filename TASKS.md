@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-16 Session 85. HEAD `2fcefad2` on `development`. Round 13 verdicts: molecule 31961002734 SUCCESS (the infinite-retry fix validated in CI — first molecule green since the scenario landed); build 31961002733 FAILED only on the 6 opencode-live/molecule-timeout classes — all fixed locally (e0d56343 fallback gating, 26a6a242 opencode-live binary gates + timeout pin 45, a7816ed3 TUI gate). Round 14 push pending (4 commits, one more docs commit → batch-push). Remaining: round-14 CI green → development-merge-to-master → release-cut v0.1.0-beta.4.**
+**Last consolidated: 2026-08-17 Session 85. HEAD `07172af0` on `development`. Round 18 verdicts: molecule 31993898325 FAILED only binary_smoke_linux (transitive warning digest drift — re-pinned `58837b45`); build 31993898379 FAILED on the same class + beta3 escape-hatch comment (fixed `c8c6442e`). Round 19 push pending (2 commits — one more docs commit → batch-push; force-push rate-guard exhausted). Remaining: round-19 CI green → development-merge-to-master → release-cut v0.1.0-beta.4.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
