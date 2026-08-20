@@ -3,41 +3,23 @@
 from __future__ import annotations
 
 import contextlib
-import importlib
 import json
-import os
 import sys
 from pathlib import Path
 
 import pytest
-
-_COLLECTION_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "collections")
+from ansible_collections.general_ludd.radio.plugins.module_utils import (
+    exam_quiz_runtime as eq,
 )
-
-_ROLE_DIRS = {
-    "propagation_model": os.path.join(
-        _COLLECTION_ROOT, "ansible_collections", "general_ludd",
-        "radio", "roles", "propagation_model", "files",
-    ),
-    "regulation_lookup": os.path.join(
-        _COLLECTION_ROOT, "ansible_collections", "general_ludd",
-        "radio", "roles", "regulation_lookup", "files",
-    ),
-    "exam_quiz": os.path.join(
-        _COLLECTION_ROOT, "ansible_collections", "general_ludd",
-        "radio", "roles", "exam_quiz", "files",
-    ),
-}
-
-for _d in _ROLE_DIRS.values():
-    if _d not in sys.path:
-        sys.path.insert(0, _d)
-
-pm = importlib.import_module("propagation_model")
-rl = importlib.import_module("regulation_lookup")
-eq = importlib.import_module("exam_quiz")
-
+from ansible_collections.general_ludd.radio.plugins.module_utils import (
+    propagation_runtime as pm,
+)
+from ansible_collections.general_ludd.radio.plugins.module_utils import (
+    radio_exam_data,
+)
+from ansible_collections.general_ludd.radio.plugins.module_utils import (
+    regulation_lookup_runtime as rl,
+)
 
 # ============================================================================
 # propagation_model.py
@@ -178,13 +160,17 @@ class TestPropagationInvalid:
 
 class TestPropagationMain:
     def test_main_free_space_writes_json(self, tmp_path: Path, monkeypatch):
-        sys.argv = [
-            "propagation_model.py",
-            "--model", "free_space",
-            "--freq-hz", "433000000",
-            "--distance-m", "1000",
-            "--output-dir", str(tmp_path),
-        ]
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "propagation_model.py",
+                "--model", "free_space",
+                "--freq-hz", "433000000",
+                "--distance-m", "1000",
+                "--output-dir", str(tmp_path),
+            ],
+        )
         with contextlib.suppress(SystemExit):
             pm.main()
         out = tmp_path / "propagation_model.json"
@@ -316,13 +302,17 @@ class TestRegulationVerdictDict:
 
 
 class TestRegulationMain:
-    def test_main_freq_lookup(self, tmp_path: Path):
-        sys.argv = [
-            "regulation_lookup.py",
-            "--country", "US",
-            "--freq-mhz", "146.52",
-            "--output-dir", str(tmp_path),
-        ]
+    def test_main_freq_lookup(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "regulation_lookup.py",
+                "--country", "US",
+                "--freq-mhz", "146.52",
+                "--output-dir", str(tmp_path),
+            ],
+        )
         with contextlib.suppress(SystemExit):
             rl.main()
         out = tmp_path / "regulation_lookup.json"
@@ -331,8 +321,10 @@ class TestRegulationMain:
         assert data["country"] == "US"
         assert data["frequency_lookup"]["band_name"] == "2m"
 
-    def test_main_requires_lookup_arg(self):
-        sys.argv = ["regulation_lookup.py", "--country", "US"]
+    def test_main_requires_lookup_arg(self, monkeypatch):
+        monkeypatch.setattr(
+            sys, "argv", ["regulation_lookup.py", "--country", "US"]
+        )
         with pytest.raises(SystemExit):
             rl.main()
 
@@ -397,8 +389,6 @@ class TestExamLoadQuestions:
 
 class TestExamGrade:
     def test_grade_all_correct(self):
-        import importlib
-        radio_exam_data = importlib.import_module("radio_exam_data")
         qs = radio_exam_data.get_questions("fcc_tech", 3)
         answers = {q["id"]: q["correct"] for q in qs}
         v = eq.grade_answers("fcc_tech", answers, count=3, seed=42)
@@ -409,8 +399,6 @@ class TestExamGrade:
         assert v.grade["passed"] is True
 
     def test_grade_all_wrong(self):
-        import importlib
-        radio_exam_data = importlib.import_module("radio_exam_data")
         qs = radio_exam_data.get_questions("fcc_tech", 3)
         answers = {q["id"]: (q["correct"] + 1) % len(q["choices"]) for q in qs}
         v = eq.grade_answers("fcc_tech", answers, count=3, seed=42)
@@ -419,8 +407,6 @@ class TestExamGrade:
         assert v.grade["passed"] is False
 
     def test_grade_mixed(self):
-        import importlib
-        radio_exam_data = importlib.import_module("radio_exam_data")
         qs = radio_exam_data.get_questions("fcc_tech", 4)
         answers = {}
         for i, q in enumerate(qs):
@@ -441,14 +427,18 @@ class TestExamGrade:
 
 
 class TestExamQuizMain:
-    def test_main_load_writes_json(self, tmp_path: Path):
-        sys.argv = [
-            "exam_quiz.py",
-            "--exam", "fcc_tech",
-            "--count", "3",
-            "--seed", "42",
-            "--output-dir", str(tmp_path),
-        ]
+    def test_main_load_writes_json(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "exam_quiz.py",
+                "--exam", "fcc_tech",
+                "--count", "3",
+                "--seed", "42",
+                "--output-dir", str(tmp_path),
+            ],
+        )
         with contextlib.suppress(SystemExit):
             eq.main()
         out = tmp_path / "exam_quiz.json"
@@ -458,15 +448,19 @@ class TestExamQuizMain:
         assert len(data["questions"]) == 3
         assert data["verdict"] == "loaded"
 
-    def test_main_grade_with_answers(self, tmp_path: Path):
-        sys.argv = [
-            "exam_quiz.py",
-            "--exam", "fcc_tech",
-            "--count", "2",
-            "--seed", "5",
-            "--answers", json.dumps({"T1A01": 1, "T1A02": 2}),
-            "--output-dir", str(tmp_path),
-        ]
+    def test_main_grade_with_answers(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "exam_quiz.py",
+                "--exam", "fcc_tech",
+                "--count", "2",
+                "--seed", "5",
+                "--answers", json.dumps({"T1A01": 1, "T1A02": 2}),
+                "--output-dir", str(tmp_path),
+            ],
+        )
         with contextlib.suppress(SystemExit):
             eq.main()
         out = tmp_path / "exam_quiz.json"
@@ -475,15 +469,19 @@ class TestExamQuizMain:
         assert data["verdict"] == "graded"
         assert "grade" in data
 
-    def test_main_text_format(self, tmp_path: Path):
-        sys.argv = [
-            "exam_quiz.py",
-            "--exam", "fcc_tech",
-            "--count", "2",
-            "--seed", "5",
-            "--format", "text",
-            "--output-dir", str(tmp_path),
-        ]
+    def test_main_text_format(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "exam_quiz.py",
+                "--exam", "fcc_tech",
+                "--count", "2",
+                "--seed", "5",
+                "--format", "text",
+                "--output-dir", str(tmp_path),
+            ],
+        )
         with contextlib.suppress(SystemExit):
             eq.main()
         out = tmp_path / "exam_quiz.txt"
@@ -492,11 +490,15 @@ class TestExamQuizMain:
         assert "Fcc Tech" in text
         assert "Questions loaded" in text
 
-    def test_main_invalid_answers_json(self):
-        sys.argv = [
-            "exam_quiz.py",
-            "--exam", "fcc_tech",
-            "--answers", "{not valid json",
-        ]
+    def test_main_invalid_answers_json(self, monkeypatch):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "exam_quiz.py",
+                "--exam", "fcc_tech",
+                "--answers", "{not valid json",
+            ],
+        )
         with pytest.raises(SystemExit):
             eq.main()

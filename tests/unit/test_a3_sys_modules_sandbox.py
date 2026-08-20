@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from typing import Any, cast
 
 import tests.conftest as ct
 
@@ -9,6 +10,9 @@ def test_fixture_exists_in_conftest():
     assert hasattr(ct, "_sandbox_sys_modules_and_path")
     assert hasattr(ct, "_snapshot_sys_modules_and_path")
     assert hasattr(ct, "_restore_sys_modules_and_path")
+    assert hasattr(ct, "_snapshot_import_state")
+    assert hasattr(ct, "_restore_import_state")
+    assert hasattr(ct, "_load_path_module_isolated")
 
     fixture = ct._sandbox_sys_modules_and_path
     marker = getattr(fixture, "_pytestfixturefunction", None)
@@ -67,6 +71,40 @@ def test_sys_path_restored():
 
     assert sys.path == snap_path
     assert "/fake/injected/path" not in sys.path
+
+
+def test_full_import_state_restored():
+    """Loader hooks, importer cache, and argv are restored as one boundary."""
+    snapshot = ct._snapshot_import_state()
+    fake_finder = cast(Any, object())
+    fake_path_hook = cast(Any, object())
+    fake_cache_entry = cast(Any, object())
+
+    try:
+        sys.meta_path.append(fake_finder)
+        sys.path_hooks.append(fake_path_hook)
+        sys.path_importer_cache["/fake/import-state-entry"] = fake_cache_entry
+        sys.argv[:] = ["polluted-test-argv"]
+    finally:
+        ct._restore_import_state(snapshot)
+
+    assert sys.meta_path == list(snapshot.meta_path)
+    assert sys.path_hooks == list(snapshot.path_hooks)
+    assert sys.path_importer_cache == snapshot.path_importer_cache
+    assert sys.argv == list(snapshot.argv)
+
+
+def test_isolated_path_loader_does_not_cache_short_alias(tmp_path):
+    """Path-loaded compatibility CLIs never survive under a global alias."""
+    module_path = tmp_path / "compatibility_cli.py"
+    module_path.write_text("VALUE = 42\n")
+    alias = "gludd_test_isolated_compatibility_cli"
+    sys.modules.pop(alias, None)
+
+    module = ct._load_path_module_isolated(alias, module_path)
+
+    assert module.VALUE == 42
+    assert alias not in sys.modules
 
 
 def test_replaced_module_restored():

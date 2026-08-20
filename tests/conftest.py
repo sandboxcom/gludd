@@ -37,14 +37,19 @@ from __future__ import annotations
 
 import functools
 import importlib
+import importlib.util
 import logging
 import os
 import shutil
 import socket
 import sys
 import unittest.mock as _mock_mod
+from collections.abc import Iterator
 from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -635,14 +640,14 @@ _A3_DENYLIST_PREFIXES: frozenset[str] = frozenset(
 )
 
 
-def _snapshot_sys_modules_and_path() -> tuple[dict[str, object], list[str]]:
+def _snapshot_sys_modules_and_path() -> tuple[dict[str, ModuleType], list[str]]:
     """Snapshot sys.modules (shallow dict copy) and sys.path (shallow list copy)."""
     import sys
 
     return dict(sys.modules), list(sys.path)
 
 
-def _restore_sys_modules_and_path(snap_modules: dict[str, object], snap_path: list[str]) -> None:
+def _restore_sys_modules_and_path(snap_modules: dict[str, ModuleType], snap_path: list[str]) -> None:
     """Restore sys.path verbatim; evict denylisted test-injected sys.modules keys;
     restore any replaced modules from the snapshot."""
     import sys
@@ -661,9 +666,62 @@ def _restore_sys_modules_and_path(snap_modules: dict[str, object], snap_path: li
             sys.modules[key] = snap_modules[key]
 
 
+@dataclass(frozen=True)
+class _ImportStateSnapshot:
+    """Bounded process-global import state restored after each test."""
+
+    modules: dict[str, ModuleType]
+    path: tuple[str, ...]
+    meta_path: tuple[Any, ...]
+    path_hooks: tuple[Any, ...]
+    path_importer_cache: dict[str, Any]
+    argv: tuple[str, ...]
+
+
+def _snapshot_import_state() -> _ImportStateSnapshot:
+    """Capture mutable import registries without copying module contents."""
+    return _ImportStateSnapshot(
+        modules=dict(sys.modules),
+        path=tuple(sys.path),
+        meta_path=tuple(sys.meta_path),
+        path_hooks=tuple(sys.path_hooks),
+        path_importer_cache=dict(sys.path_importer_cache),
+        argv=tuple(sys.argv),
+    )
+
+
+def _restore_import_state(snapshot: _ImportStateSnapshot) -> None:
+    """Restore import hooks, caches, argv, and test-owned module replacements."""
+    _restore_sys_modules_and_path(snapshot.modules, list(snapshot.path))
+    sys.meta_path[:] = snapshot.meta_path
+    sys.path_hooks[:] = snapshot.path_hooks
+    sys.path_importer_cache.clear()
+    sys.path_importer_cache.update(snapshot.path_importer_cache)
+    sys.argv[:] = snapshot.argv
+
+
+def _load_path_module_isolated(module_name: str, module_path: str | Path) -> ModuleType:
+    """Execute one path module without retaining its test-only cache alias."""
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"unable to create import spec for {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    had_previous = module_name in sys.modules
+    previous = sys.modules.get(module_name)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if not had_previous:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = cast(ModuleType, previous)
+    return module
+
+
 @pytest.fixture(autouse=True)
-def _sandbox_sys_modules_and_path():
-    """Snapshot and restore sys.modules + sys.path around every test.
+def _sandbox_sys_modules_and_path() -> Iterator[None]:
+    """Snapshot and restore process-global import state around every test.
 
     Prevents fake-module injection leaks: tests that inject stub modules
     (live_pkg_*, rbpkg, smg_*, capability_policy, fs_write_policy) into
@@ -672,9 +730,9 @@ def _sandbox_sys_modules_and_path():
 
     Implements CI_GREEN_PLAN_2026-07-01.md Appendix A3.
     """
-    snap_modules, snap_path = _snapshot_sys_modules_and_path()
+    snapshot = _snapshot_import_state()
     yield
-    _restore_sys_modules_and_path(snap_modules, snap_path)
+    _restore_import_state(snapshot)
 
 
 # --- Environmental test-skip probes -----------------------------------------
