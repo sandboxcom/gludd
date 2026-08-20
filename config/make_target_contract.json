@@ -625,6 +625,21 @@
       "name": "update-collection-python-boundary-inventory",
       "make_variables": ["COLLECTION_PYTHON_BOUNDARY_ROOT", "COLLECTION_PYTHON_BOUNDARY_INVENTORY"],
       "behavior": "make update-collection-python-boundary-inventory COLLECTION_PYTHON_BOUNDARY_ROOT=collections/ansible_collections COLLECTION_PYTHON_BOUNDARY_INVENTORY=/tmp/gludd-collection-python-boundary-contract.json"
+    },
+    {
+      "name": "pre-commit-check",
+      "make_variables": [],
+      "behavior": "make pre-commit-check"
+    },
+    {
+      "name": "list-plugins",
+      "make_variables": [],
+      "behavior": "make list-plugins"
+    },
+    {
+      "name": "release-branch-new",
+      "make_variables": ["NAME", "BASE", "RELEASE_BRANCH_VALIDATE_ONLY"],
+      "behavior": "make release-branch-new NAME=release/contract-validation BASE=development RELEASE_BRANCH_VALIDATE_ONLY=1"
     }
   ]
 }

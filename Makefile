@@ -53,7 +53,7 @@ endif
 export TERM
 # SSH deploy keys are credentials and must live outside the repository.
 # Override with `make ... SSH_KEY=/path/to/key` for another external key.
-SSH_KEY ?= $(HOME)/.ssh/sandboxcom_gludd_rsa
+SSH_KEY ?= $(HOME)/.ssh/sandboxcom_github_rsa
 
 _MULTIWORD_VALUE_GOALS := \
     copy-file feature-done feature-start git-add git-branch git-checkout git-cherry-pick-list \
@@ -138,7 +138,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         container-build container-run container-push \
          file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist-clean bundle-binaries bundle-ripgrep \
         sast sast-summary sbom pip-audit security security-backlog-gate \
-        audit-messages qa validate collect-check coverage-files gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory \
+        audit-messages qa validate collect-check pre-commit-check coverage-files gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory \
         status-snapshot audit-evidence deps-audit dogfood-features ruff-audit check-make-help \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
@@ -152,10 +152,10 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
          watchdog-read watchdog-start watchdog-status watchdog-stop agent-watchdog-stop watchdog-log \
         task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
         check-readme-status check-types check-types-baseline check-plugin-versions check-plugin-versions-quiet \
-        check-plugin-liveness check-plugin-health write-plugin-manifest codemod-lean-enforcement-plugins restart-opencode disengage-enforcement disengage-next reload-enforcement \
+         check-plugin-liveness check-plugin-health list-plugins write-plugin-manifest codemod-lean-enforcement-plugins restart-opencode disengage-enforcement disengage-next reload-enforcement \
         rearm-enforcement enforcement-status \
         hot-reload-plugins hot-reload-status hot-reload-clean check-plugin-restart-needed \
-         verify-release-artifact verify-release-completeness git-tag-rm git-tag-delete git-tag-move release-cut release-recut release-create release-delete \
+          verify-release-artifact verify-release-completeness git-tag-rm git-tag-delete git-tag-move release-branch-new release-cut release-recut release-create release-delete \
          release-upload-assets git-restore-from release-deploy \
         build-sandbox-image verify-sandbox-image clean-sandbox-images \
         sandbox-state-dir sandbox-state-list sandbox-state-clean \
@@ -244,6 +244,7 @@ help:
 	@echo "  gate-lite-tail        Print a bounded latest gate-lite-log snapshot (GATE_TAIL_LINES=80)"
 	@echo "  triage-failures       Incrementally group streamed failures (LOG, TRIAGE_STATE, TRIAGE_FORMAT)"
 	@echo "  collect-check         Fast collection-error gate"
+	@echo "  pre-commit-check      Fast lint + collection + typecheck commit preflight"
 	@echo "  test-nodeids          Print bounded pytest node-id slice (START/LIMIT/TESTPATH)"
 	@echo "  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace"
 	@echo "  test-xdist-trace-summary  Summarize /tmp/gludd-xdist-progress.log unfinished tests"
@@ -326,6 +327,7 @@ help:
 	@echo "  test-opa-policies     Execute Rego policy tests when opa is installed"
 	@echo "  check-make-target-contract  Validate target variables, help, and behavioral examples"
 	@echo "  active-work-status    Emit auditable PIDs, gate state, hashes, and open tasks"
+	@echo "  list-plugins          Report the active enforcement plugin roster"
 	@echo "  terminate-project-process-tree  Identity-check and preview/apply one project process tree"
 	@echo "  kill-worktree-e2e    Stop one verified local E2E tree (PID=; validate with KILL_WORKTREE_E2E_VALIDATE_ONLY=1)"
 	@echo "  status-snapshot       Rewrite SESSION.md gate evidence (STATUS_SNAPSHOT_VALIDATE_ONLY=1 for read-only validation)"
@@ -424,6 +426,7 @@ help:
 	@echo ""
 	@echo "  --- Release ---"
 	@echo "  release-list          List all GitHub releases"
+	@echo "  release-branch-new    Cut a release/* branch from a CI-green base (NAME, BASE, RELEASE_BRANCH_VALIDATE_ONLY)"
 	@echo "  release-view TAG=..   Show a published GitHub Release + its assets"
 	@echo "  release-create TAG=.. CI-green-gated DRAFT release (single binary; complete via CI)"
 	@echo "  release-upload-assets TAG=.. FILES='..'  Add assets to an existing release (repair path)"
@@ -758,6 +761,15 @@ check-pytest:
 
 lint:
 	@$(UV) run ruff check src tests
+
+# AGENTS.md OD.10 fast commit preflight.  Keep this intentionally bounded:
+# the release/full-suite gate remains a separate workflow.
+pre-commit-check:
+	@# AGENTS.md OD.10 fast pre-commit contract.
+	@$(MAKE) --no-print-directory lint
+	@$(MAKE) --no-print-directory collect-check
+	@$(MAKE) --no-print-directory typecheck
+	@echo "PRE-COMMIT-CHECK: PASSED"
 
 lint-files:
 	@[ -n "$$FILES" ] || { echo "Usage: make lint-files FILES=path"; exit 1; }
@@ -3457,6 +3469,8 @@ force-push:
 	@GLUDD_FORCE_PUSH=1 $(MAKE) git-push-sandboxcom
 
 master-force-push:
+	@GLUDD_FORCE_PUSH=1 $(MAKE) --no-print-directory _push-rate-guard
+	@$(MAKE) --no-print-directory require-sandboxcom-ssh-key
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom master
 	@$(MAKE) verify-remote BRANCH=master SHA=$$(git rev-parse master)
 	@echo "Master branch force-pushed and verified"
@@ -3467,7 +3481,7 @@ git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard _sta
 	@echo "Pushed $$(git branch --show-current) to sandboxcom/gludd"
 	@$(MAKE) --no-print-directory _record-push-verdict
 
-push-dev: check-clean-tree ci-busy-check _stash-before-push-guard _ci-restart-cap _pull-before-push-guard
+push-dev: check-clean-tree ci-busy-check _push-rate-guard _stash-before-push-guard _ci-restart-cap _pull-before-push-guard
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom development
 	@echo "Pushed development to sandboxcom/gludd"
 	@$(PYTHON) scripts/ci_check_cooldown.py deploy
@@ -3548,7 +3562,7 @@ ci-push: pre-push-check _push-rate-guard
 	$(MAKE) ci-wait
 
 # CI push then poll until green (single script)
-ci-push-and-verify: pre-push-check _require-gh
+ci-push-and-verify: pre-push-check _push-rate-guard _require-gh
 	@bash scripts/ci_push_and_verify.sh
 
 # Verify existing CI on HEAD (dry-run, no push)
@@ -3610,7 +3624,7 @@ verify-remote: require-sandboxcom-ssh-key
 # Create an annotated tag and push it to sandboxcom to trigger the tag-gated
 # release job (version -> gate -> builds -> release). Usage:
 #   make git-tag-push TAG=v0.1.0-alpha.1 COMMIT=<sha> MSG='alpha release'
-git-tag-push:
+git-tag-push: _push-rate-guard require-sandboxcom-ssh-key
 	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-push TAG=v0.1.0-alpha.N [COMMIT=<sha>] [MSG='...']"; exit 1; }
 	@git tag -a "$(TAG)" $(if $(COMMIT),$(COMMIT)) -m "$(if $(MSG),$(MSG),$(TAG))"
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
@@ -3835,6 +3849,21 @@ verify-release-completeness:
 require-ci-green:
 	@$(UV) run python scripts/require_ci_green.py $(SHA)
 
+# Cut a release branch only from an existing CI-green base.  Validation mode
+# exercises all local checks without contacting GitHub or changing refs.
+release-branch-new:
+	@[ -n "$(NAME)" ] || { echo "Usage: make release-branch-new NAME=release/<version> [BASE=master] [RELEASE_BRANCH_VALIDATE_ONLY=1]"; exit 2; }
+	@case "$(NAME)" in release/*) ;; *) echo "ERROR: release branch must use the release/* namespace"; exit 2;; esac
+	@BASE_REF="$(or $(BASE),master)"; \
+	git check-ref-format --branch "$(NAME)" >/dev/null 2>&1 || { echo "ERROR: invalid release branch name: $(NAME)"; exit 2; }; \
+	git check-ref-format --branch "$$BASE_REF" >/dev/null 2>&1 || { echo "ERROR: invalid release base: $$BASE_REF"; exit 2; }; \
+	BASE_SHA=$$(git rev-parse --verify --quiet "$$BASE_REF^{commit}") || { echo "ERROR: release base does not resolve to a commit: $$BASE_REF"; exit 2; }; \
+	if [ "$(RELEASE_BRANCH_VALIDATE_ONLY)" = "1" ]; then echo "RELEASE-BRANCH-NEW VALIDATED name=$(NAME) base=$$BASE_REF sha=$$BASE_SHA"; exit 0; fi; \
+	git show-ref --verify --quiet "refs/heads/$(NAME)" && { echo "ERROR: local branch already exists: $(NAME)"; exit 2; } || true; \
+	$(MAKE) --no-print-directory require-ci-green SHA="$$BASE_SHA"; \
+	git branch "$(NAME)" "$$BASE_SHA"; \
+	echo "Created $(NAME) from CI-green $$BASE_REF@$$BASE_SHA"
+
 # Create an annotated tag at HEAD and force-move it (delete old local+remote,
 # create new at HEAD, push). Usage:
 #   make git-tag-move TAG=v0.1.0-beta.1 MSG='release notes'
@@ -3859,7 +3888,7 @@ git-tag-delete: git-tag-rm
 # Re-trigger a release CI job for an existing tag whose release job was skipped.
 # Deletes and re-pushes the tag, then polls verify-release-artifact.
 # Usage: make release-recut TAG=v0.1.0-alpha.1
-release-recut:
+release-recut: _push-rate-guard require-sandboxcom-ssh-key
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-recut TAG=v0.1.0-alpha.1"; exit 1; }
 	@git tag -l "$(TAG)" | grep -q "$(TAG)" || { echo "ERROR: local tag $(TAG) not found"; exit 1; }
 	@$(MAKE) -s require-ci-green SHA=$$(git rev-parse "$(TAG)^{commit}")
@@ -5358,7 +5387,7 @@ agent-merge-dev:
 	echo "Merged $(BRANCH) into development"
 
 # Push the development branch to the sandboxcom remote.
-development-push: check-clean-tree ci-busy-check
+development-push: check-clean-tree ci-busy-check _push-rate-guard
 	@$(MAKE) ci-busy-check BRANCH=development
 	@$(MAKE) require-sandboxcom-ssh-key
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom development
@@ -5367,6 +5396,7 @@ development-push: check-clean-tree ci-busy-check
 
 # Force-push the development branch (when rebase rewrites history).
 development-force-push:
+	@GLUDD_FORCE_PUSH=1 $(MAKE) --no-print-directory _push-rate-guard
 	@$(MAKE) require-sandboxcom-ssh-key
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom development
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
@@ -7614,6 +7644,10 @@ check-plugin-versions-quiet:
 
 write-plugin-manifest:
 	@$(UV) run python3 scripts/check_plugin_hashes.py --write-manifest
+
+# Stable, read-only roster for operators and monitoring probes.
+list-plugins:
+	@$(UV) run python3 scripts/list_plugins.py --markdown
 
 codemod-lean-enforcement-plugins:
 	@$(UV) run python3 scripts/lean_enforcement_plugins.py

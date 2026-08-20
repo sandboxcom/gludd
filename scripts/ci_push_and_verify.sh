@@ -27,7 +27,7 @@ fi
 # ---- resolve SHA ----
 if [ -z "$SHA" ]; then
     SHA="$(git rev-parse HEAD)" || {
-        echo "[ci-push-and-verify] ERROR: could not resolve HEAD SHA"
+        echo "[ci-push-and-verify] ERROR: could not resolve HEAD SHA" >&2
         exit 2
     }
 fi
@@ -37,7 +37,7 @@ SHA_SHORT="$(echo "$SHA" | cut -c1-7)"
 if [ "$DRY_RUN" = "0" ]; then
     echo "[ci-push-and-verify] pushing $SHA_SHORT to sandboxcom..."
     make git-push-sandboxcom || {
-        echo "[ci-push-and-verify] ERROR: push failed"
+        echo "[ci-push-and-verify] ERROR: push failed" >&2
         exit 2
     }
     echo "[ci-push-and-verify] push OK"
@@ -49,6 +49,10 @@ fi
 echo "[ci-push-and-verify] polling CI for $SHA_SHORT (every ${POLL_INTERVAL}s, max ${MAX_ITERATIONS} iterations)..."
 
 POLL_FILE="${POLL_FILE:-/tmp/gludd-ci-poll-${SHA_SHORT}.json}"
+cleanup() {
+    rm -f "$POLL_FILE"
+}
+trap cleanup EXIT
 
 for i in $(seq 1 "$MAX_ITERATIONS"); do
     ts="$(date +%H:%M:%S)"
@@ -66,18 +70,16 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
         if [ "$run_conclusion" = "success" ]; then
             echo ""
             echo "=== CI PASS: $SHA_SHORT run $run_id ==="
-            rm -f "$POLL_FILE"
             exit 0
         else
             echo ""
-            echo "=== CI FAIL: $SHA_SHORT run $run_id conclusion=$run_conclusion ==="
+            echo "=== CI FAIL: $SHA_SHORT run $run_id conclusion=$run_conclusion ===" >&2
             echo ""
             echo "--- failed jobs ---"
             gh run view "$run_id" --repo "$REPO" --json jobs --jq '.jobs[] | select(.conclusion=="failure") | "  \(.name)"' 2>/dev/null || echo "  (could not list failed jobs)"
             echo ""
             echo "--- failed job logs (first 50 lines each) ---"
             gh run view "$run_id" --repo "$REPO" --log-failed 2>/dev/null | head -50 || echo "  (could not fetch failed logs)"
-            rm -f "$POLL_FILE"
             exit 1
         fi
     fi
@@ -87,8 +89,7 @@ done
 
 # ---- timeout ----
 echo ""
-echo "=== CI TIMEOUT: $SHA_SHORT after ${MAX_ITERATIONS} iterations (${POLL_INTERVAL}s each) ==="
-echo "Last known status: $(python3 -c "import sys,json; a=json.load(sys.stdin) or [{}]; d=a[0]; print(d.get('status') or 'unknown')" < "$POLL_FILE" 2>/dev/null || echo 'unknown')"
-echo "Last known conclusion: $(python3 -c "import sys,json; a=json.load(sys.stdin) or [{}]; d=a[0]; print(d.get('conclusion') or '(pending)')" < "$POLL_FILE" 2>/dev/null || echo '(unknown)')"
-rm -f "$POLL_FILE"
+echo "=== CI TIMEOUT: $SHA_SHORT after ${MAX_ITERATIONS} iterations (${POLL_INTERVAL}s each) ===" >&2
+echo "Last known status: $(python3 -c "import sys,json; a=json.load(sys.stdin) or [{}]; d=a[0]; print(d.get('status') or 'unknown')" < "$POLL_FILE" 2>/dev/null || echo 'unknown')" >&2
+echo "Last known conclusion: $(python3 -c "import sys,json; a=json.load(sys.stdin) or [{}]; d=a[0]; print(d.get('conclusion') or '(pending)')" < "$POLL_FILE" 2>/dev/null || echo '(unknown)')" >&2
 exit 2

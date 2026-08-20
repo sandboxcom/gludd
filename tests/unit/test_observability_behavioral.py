@@ -42,7 +42,11 @@ _KNOWN_HOOKS = {
 class TestEnforcementPluginHooks:
     def test_all_plugins_registered_in_opencode_json(self) -> None:
         cfg = json.loads(OPENCODE_JSON.read_text())
-        registered = {p.get("source", p.get("path", "")).lstrip("./") for p in cfg.get("plugins", [])}
+        plugin_entries = cfg.get("plugin", cfg.get("plugins", []))
+        registered = {
+            (entry if isinstance(entry, str) else entry.get("source", entry.get("path", ""))).lstrip("./")
+            for entry in plugin_entries
+        }
         missing: list[str] = []
         for ts_file in sorted(PLUGIN_DIR.glob("enforce-*.ts")):
             rel = str(ts_file.relative_to(ROOT))
@@ -181,13 +185,36 @@ class TestMakefileMonitoringTargets:
 
 
 class TestGateStatusFile:
+    @staticmethod
+    def _completed_status() -> str | None:
+        """Read a completed snapshot, or validate and identify an active gate.
+
+        ``gate-async`` atomically writes ``RUNNING <epoch> <pid>`` before the
+        first phase completes.  That record is the documented observable
+        in-flight state, while the richer phase snapshot is the terminal form.
+        """
+        content = GATE_STATUS.read_text().strip()
+        assert content, ".gate-status is empty"
+        first_line = content.splitlines()[0]
+        if not first_line.startswith("RUNNING "):
+            return content
+        parts = first_line.split()
+        assert len(parts) == 3, f"Malformed running gate status: {first_line!r}"
+        _marker, epoch_text, pid_text = parts
+        assert epoch_text.isdigit(), f"Running gate epoch is not numeric: {epoch_text!r}"
+        assert pid_text.isdigit(), f"Running gate PID is not numeric: {pid_text!r}"
+        assert 1_700_000_000 < int(epoch_text) < 2_000_000_000
+        assert int(pid_text) > 0
+        return None
+
     def test_gate_status_exists(self) -> None:
         assert GATE_STATUS.exists(), ".gate-status missing — run 'make gate' or 'make gate-refresh'"
 
     def test_gate_status_has_header_with_timestamp(self) -> None:
         """Per G09: gate writes a header with UTC timestamp."""
-        content = GATE_STATUS.read_text().strip()
-        assert content, ".gate-status is empty"
+        content = self._completed_status()
+        if content is None:
+            return
         header_line = content.splitlines()[0]
         assert re.match(
             r"^=== (GATE|GATE-REFRESH) \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z ===",
@@ -196,26 +223,34 @@ class TestGateStatusFile:
 
     def test_gate_status_has_required_phases(self) -> None:
         """Per Q03: gate writes PASS or FAIL for each phase."""
-        content = GATE_STATUS.read_text()
+        content = self._completed_status()
+        if content is None:
+            return
         required_phases = ["lint ", "typecheck ", "collect ", "test "]
         missing_phases = [p for p in required_phases if p not in content]
         assert not missing_phases, f".gate-status missing required phase entries: {missing_phases}"
 
     def test_gate_status_has_epoch(self) -> None:
         """Per K17: gate caches epoch timestamp."""
-        content = GATE_STATUS.read_text()
+        content = self._completed_status()
+        if content is None:
+            return
         assert "epoch " in content, ".gate-status missing epoch timestamp"
 
     def test_gate_status_has_terminal_marker(self) -> None:
         """Per Q03: gate writes PASSED or FAILED terminal marker."""
-        content = GATE_STATUS.read_text()
+        content = self._completed_status()
+        if content is None:
+            return
         assert any(marker in content for marker in ("=== GATE: PASSED ===", "=== GATE: FAILED ===")), (
             ".gate-status missing terminal marker (GATE: PASSED/FAILED)"
         )
 
     def test_gate_status_phases_have_pass_fail_values(self) -> None:
         """Every phase line must have PASS or FAIL."""
-        content = GATE_STATUS.read_text()
+        content = self._completed_status()
+        if content is None:
+            return
         for line in content.splitlines():
             stripped = line.strip()
             if stripped.startswith(
@@ -243,7 +278,9 @@ class TestGateStatusFile:
                 assert "PASS" in stripped or "FAIL" in stripped, f"Phase line missing PASS/FAIL: {stripped!r}"
 
     def test_gate_status_epoch_is_numeric(self) -> None:
-        content = GATE_STATUS.read_text()
+        content = self._completed_status()
+        if content is None:
+            return
         m = re.search(r"^epoch (\d+)$", content, re.MULTILINE)
         assert m, ".gate-status epoch is missing or not numeric"
         epoch = int(m.group(1))
