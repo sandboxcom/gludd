@@ -1,0 +1,77 @@
+---
+- name: Validate the requested Python runtime contract
+  ansible.builtin.assert:
+    that:
+      - os_expert_python_preflight_contract in ['discovered', 'managed']
+      - >-
+        os_expert_python_preflight_contract != 'managed'
+        or os_expert_python_preflight_managed_interpreter | length > 0
+    fail_msg: >-
+      The managed Python contract requires an explicit absolute
+      os_expert_python_preflight_managed_interpreter path.
+
+- name: Gather the managed host Python identity
+  ansible.builtin.setup:
+    gather_subset:
+      - "!all"
+      - min
+  when: os_expert_python_preflight_contract == 'discovered'
+
+- name: Select the contracted Python interpreter
+  ansible.builtin.set_fact:
+    _os_expert_python_candidate: >-
+      {{
+        ansible_facts.python.executable
+        if os_expert_python_preflight_contract == 'discovered'
+        else os_expert_python_preflight_managed_interpreter
+      }}
+  changed_when: false
+
+- name: Validate the contracted Python interpreter path
+  ansible.builtin.assert:
+    that:
+      - _os_expert_python_candidate | length > 0
+      - _os_expert_python_candidate is match('^/')
+    fail_msg: >-
+      Python runtime resolution did not produce an absolute interpreter path;
+      no role artifacts have been changed.
+
+- name: Inspect the contracted Python interpreter
+  ansible.builtin.stat:
+    path: "{{ _os_expert_python_candidate }}"
+    follow: true
+  register: _os_expert_python_interpreter_stat
+
+- name: Require an executable contracted Python interpreter
+  ansible.builtin.assert:
+    that:
+      - _os_expert_python_interpreter_stat.stat.exists
+      - _os_expert_python_interpreter_stat.stat.isreg
+      - _os_expert_python_interpreter_stat.stat.executable
+    fail_msg: >-
+      Contracted Python interpreter {{ _os_expert_python_candidate }} is not
+      an executable file; no role artifacts have been changed.
+
+- name: Probe the contracted Python interpreter in isolation
+  ansible.builtin.command:
+    argv:
+      - "{{ _os_expert_python_candidate }}"
+      - -I
+      - -c
+      - >-
+        import json, sys;
+        print(json.dumps({'executable': sys.executable,
+        'version': list(sys.version_info[:3])}, sort_keys=True))
+  environment:
+    PYTHONNOUSERSITE: "1"
+  check_mode: false
+  changed_when: false
+  register: _os_expert_python_probe
+
+- name: Publish the verified private Python runtime contract
+  ansible.builtin.set_fact:
+    _os_expert_python_runtime:
+      contract: "{{ os_expert_python_preflight_contract }}"
+      executable: "{{ _os_expert_python_candidate }}"
+      identity: "{{ _os_expert_python_probe.stdout | from_json }}"
+  changed_when: false

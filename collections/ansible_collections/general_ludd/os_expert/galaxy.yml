@@ -19,4 +19,5 @@ tags:
   - automation
   - cross-platform
 dependencies:
+  community.general: ">=8.0.0"
   general_ludd.agent: ">=0.1.0"

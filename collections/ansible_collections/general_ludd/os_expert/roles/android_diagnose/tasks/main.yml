@@ -1,7 +1,16 @@
 ---
 # android_diagnose role — gather Android diagnostic data via ADB:
-# logcat, dumpsys, getprop, pm list. Uses the python gatherer backend
+# logcat, dumpsys, getprop, pm list. Uses the managed-runtime gatherer
 # in files/android_gather.py for structured JSON output.
+
+- name: Resolve the managed-host Python runtime before mutation
+  ansible.builtin.include_role:
+    name: general_ludd.os_expert.managed_python_preflight
+    public: false
+    rolespec_validate: true
+  vars:
+    os_expert_python_preflight_contract: "{{ os_expert_python_contract | default('discovered') }}"
+    os_expert_python_preflight_managed_interpreter: "{{ os_expert_managed_python_interpreter | default('') }}"
 
 - name: Create artifact directory
   ansible.builtin.file:
@@ -16,7 +25,7 @@
   ignore_errors: true
   failed_when: false
 
-- name: Gather Android diagnostics via python backend
+- name: Gather Android diagnostics via managed runtime
   when:
     - _adb_check is success
     - gather_logcat | bool or gather_dumpsys | bool or gather_getprop | bool or gather_pm_list | bool
@@ -28,11 +37,19 @@
         mode: "0755"
 
     - name: Run gatherer — collect logcat, dumpsys, getprop, pm list
-      ansible.builtin.command: >
-        python3 {{ artifact_dir }}/android_gather.py
-        --output {{ artifact_dir }}/diagnostics.json
-        --logcat-lines {{ logcat_lines | default(200) }}
-        {{ '--serial ' ~ adb_serial if adb_serial else '' }}
+      ansible.builtin.command:
+        argv: >-
+          {{
+            [
+              _os_expert_python_runtime.executable,
+              artifact_dir ~ '/android_gather.py',
+              '--output',
+              artifact_dir ~ '/diagnostics.json',
+              '--logcat-lines',
+              logcat_lines | default(200) | string
+            ]
+            + (['--serial', adb_serial] if adb_serial else [])
+          }}
       register: _gather_result
       changed_when: false
       ignore_errors: true
@@ -48,7 +65,7 @@
         mode: "0644"
       when: _gather_result is defined
 
-- name: Raw logcat (fallback if python backend unavailable)
+- name: Raw logcat fallback when the managed runtime is unavailable
   when:
     - _adb_check is success
     - _gather_result is not success
