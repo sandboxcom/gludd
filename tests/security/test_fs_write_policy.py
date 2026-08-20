@@ -287,17 +287,25 @@ class TestModuleWiring:
         ast.parse(self._source())
 
     def test_policy_check_precedes_git_mutation(self):
-        """policy.check must run BEFORE any create_worktree/remove_worktree call.
+        """policy.check must run before each authenticated mutation request.
 
         Fail-closed ordering: a denied path must never reach the git layer.
         """
         src = self._source()
         check_idx = src.index("policy.check(")
-        for sink in ("create_worktree(", "remove_worktree("):
-            assert sink in src
-            assert check_idx < src.index(sink), (
-                f"policy.check must precede {sink} (fail-closed ordering)"
-            )
+        check_line = src[:check_idx].count("\n")
+        mutation_lines = [
+            index
+            for index, line in enumerate(src.splitlines())
+            if "client.post(" in line
+        ]
+
+        assert mutation_lines, "gludd_worktree must invoke its authenticated API seam"
+        assert all(check_line < mutation_line for mutation_line in mutation_lines)
+        assert src.count('"/admin/git/operation"') == len(mutation_lines)
+        assert '"op": "worktree_create"' in src
+        assert '"op": "worktree_remove"' in src
+        assert "general_ludd.git_automation" not in src
 
     def test_check_inside_main_function(self):
         """The policy.check call lives in main() (the executed path), via AST."""
