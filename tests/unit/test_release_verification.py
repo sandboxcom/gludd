@@ -14,6 +14,8 @@ from typing import Any
 
 import pytest
 
+from tests.unit.release_asset_fixtures import complete_release_assets
+
 # ---------------------------------------------------------------------------
 # Import the modules under test by path
 # ---------------------------------------------------------------------------
@@ -61,22 +63,9 @@ def _make_artifact_response(**overrides: Any) -> str:
     return json.dumps(d)
 
 
-def _make_all_12_assets() -> list[dict[str, Any]]:
-    """Produce a full set of 12 expected artifact assets."""
-    return [
-        {"name": f"gludd-linux-x86_64-{VERSION}.tar.gz", "size": 5_000_000},
-        {"name": f"gludd-linux-aarch64-{VERSION}.tar.gz", "size": 4_800_000},
-        {"name": f"gludd-darwin-arm64-{VERSION}.tar.gz", "size": 4_500_000},
-        {"name": f"gludd-windows-x86_64-{VERSION}.zip", "size": 5_200_000},
-        {"name": f"gludd_{VERSION}-1_amd64.deb", "size": 5_000_000},
-        {"name": f"gludd_{VERSION}-1.x86_64.rpm", "size": 5_100_000},
-        {"name": f"gludd-{VERSION}.dmg", "size": 6_000_000},
-        {"name": f"gludd-{VERSION}-installer.exe", "size": 5_500_000},
-        {"name": f"gludd-{VERSION}-checksums.sha256", "size": 2048},
-        {"name": f"gludd-{VERSION}.cdx.json", "size": 32000},
-        {"name": "LICENSE", "size": 11000},
-        {"name": "THIRD_PARTY_LICENSES.txt", "size": 45000},
-    ]
+def _make_complete_assets(version: str = VERSION) -> list[dict[str, Any]]:
+    """Produce the canonical 30-asset beta4 release matrix."""
+    return complete_release_assets(version)
 
 
 def _set_run(monkeypatch: pytest.MonkeyPatch, module: Any, stdout: str, rc: int = 0) -> None:
@@ -158,8 +147,8 @@ class TestVersionFromTag:
 
 
 class TestCategoriesStatic:
-    def test_exactly_12_categories(self) -> None:
-        assert len(completeness_mod.EXPECTED_CATEGORIES) == 12
+    def test_exactly_28_categories(self) -> None:
+        assert len(completeness_mod.EXPECTED_CATEGORIES) == 28
 
     def test_optional_categories_is_empty(self) -> None:
         assert frozenset() == completeness_mod.OPTIONAL_CATEGORIES
@@ -171,8 +160,8 @@ class TestCategoriesStatic:
 
 
 def _make_completeness_response(**overrides: Any) -> str:
-    """Build a full completeness JSON string with 12 assets by default."""
-    assets = _make_all_12_assets()
+    """Build a complete beta4 release JSON response by default."""
+    assets = _make_complete_assets()
     d: dict[str, Any] = {
         "tagName": TAG,
         "isDraft": False,
@@ -190,7 +179,7 @@ def _make_completeness_response(**overrides: Any) -> str:
 class TestCheckCompleteness:
     """Tests for ``verify_release_completeness.check_completeness()``."""
 
-    def test_all_12_pass(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_all_28_categories_and_30_assets_pass(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _set_run(monkeypatch, completeness_mod, _make_completeness_response())
         assert completeness_mod.check_completeness(TAG, REPO) == 0
 
@@ -211,7 +200,7 @@ class TestCheckCompleteness:
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
     def test_fail_when_below_minimum_assets(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        few = _make_all_12_assets()[:6]
+        few = _make_complete_assets()[:29]
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=few))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
@@ -220,21 +209,23 @@ class TestCheckCompleteness:
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
     def test_pass_when_stable_tag_has_no_prerelease_flag(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        r = _make_completeness_response(tagName="v1.0.0", isPrerelease=False)
-        # Replace TAG in asset names with stable version
-        r = r.replace(VERSION, "1.0.0")
+        r = _make_completeness_response(
+            tagName="v1.0.0",
+            isPrerelease=False,
+            assets=_make_complete_assets("1.0.0"),
+        )
         _set_run(monkeypatch, completeness_mod, r)
         assert completeness_mod.check_completeness("v1.0.0", REPO) == 0
 
     def test_fail_when_version_not_in_asset_names(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = _make_all_12_assets()
+        assets = _make_complete_assets()
         for a in assets:
             a["name"] = a["name"].replace(VERSION, "mismatched-version")
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=assets))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
     def test_fail_when_zero_size_assets_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = _make_all_12_assets()
+        assets = _make_complete_assets()
         assets.append({"name": "empty-file.txt", "size": 0})
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=assets))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
@@ -242,63 +233,63 @@ class TestCheckCompleteness:
     # --- individual category failures ---
 
     def test_fail_missing_linux_x86_64(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = [a for a in _make_all_12_assets() if "linux-x86_64" not in a["name"]]
+        assets = [a for a in _make_complete_assets() if "linux-x86_64" not in a["name"]]
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=assets))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
     def test_fail_missing_linux_aarch64(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = [a for a in _make_all_12_assets() if "linux-aarch64" not in a["name"]]
+        assets = [a for a in _make_complete_assets() if "linux-aarch64" not in a["name"]]
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=assets))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
     def test_fail_missing_macos_arm64(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = [a for a in _make_all_12_assets() if "darwin" not in a["name"]]
+        assets = [a for a in _make_complete_assets() if "macos-arm64" not in a["name"]]
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=assets))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
     def test_fail_missing_windows_binary(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = [a for a in _make_all_12_assets() if "windows" not in a["name"]]
+        assets = [a for a in _make_complete_assets() if "windows" not in a["name"]]
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=assets))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
     def test_fail_missing_deb(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = [a for a in _make_all_12_assets() if not a["name"].endswith(".deb")]
+        assets = [a for a in _make_complete_assets() if not a["name"].endswith(".deb")]
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=assets))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
     def test_fail_missing_rpm(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = [a for a in _make_all_12_assets() if not a["name"].endswith(".rpm")]
+        assets = [a for a in _make_complete_assets() if not a["name"].endswith(".rpm")]
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=assets))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
     def test_fail_missing_dmg(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = [a for a in _make_all_12_assets() if not a["name"].endswith(".dmg")]
+        assets = [a for a in _make_complete_assets() if not a["name"].endswith(".dmg")]
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=assets))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
     def test_fail_missing_exe_installer(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = [a for a in _make_all_12_assets() if "installer" not in a["name"]]
+        assets = [a for a in _make_complete_assets() if not a["name"].endswith(".exe")]
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=assets))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
     def test_fail_missing_checksums(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = [a for a in _make_all_12_assets() if "sha256" not in a["name"].lower()]
+        assets = [a for a in _make_complete_assets() if "sha256" not in a["name"].lower()]
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=assets))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
     def test_fail_missing_sbom(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = [a for a in _make_all_12_assets() if "cdx" not in a["name"]]
+        assets = [a for a in _make_complete_assets() if "sbom" not in a["name"]]
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=assets))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
     def test_fail_missing_license(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = [a for a in _make_all_12_assets() if a["name"] != "LICENSE" and "LICENSE" not in a["name"]]
+        assets = [a for a in _make_complete_assets() if not a["name"].startswith("LICENSE")]
         assets.append({"name": "gludd-linux-x86_64.tar.gz", "size": 1})
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=assets))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
     def test_fail_missing_third_party_licenses(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = [a for a in _make_all_12_assets() if "THIRD_PARTY" not in a["name"]]
+        assets = [a for a in _make_complete_assets() if "THIRD_PARTY" not in a["name"]]
         _set_run(monkeypatch, completeness_mod, _make_completeness_response(assets=assets))
         assert completeness_mod.check_completeness(TAG, REPO) == 1
 
@@ -360,5 +351,5 @@ class TestCompletenessModuleShape:
         _set_run(monkeypatch, completeness_mod, _make_completeness_response())
         assert completeness_mod.main(["script.py", TAG]) in (0, 1)
 
-    def test_min_assets_constant_is_12(self) -> None:
-        assert completeness_mod.MIN_ASSETS == 12
+    def test_min_assets_constant_is_30(self) -> None:
+        assert completeness_mod.MIN_ASSETS == 30
