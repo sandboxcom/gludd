@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from general_ludd.worker.app import (
     _GENERATION_WORK_TYPES,
     _UNSET,
@@ -119,3 +123,18 @@ class TestCreateApp:
     def test_has_gateway_on_state(self):
         app = create_app()
         assert hasattr(app.state, "gateway")
+
+    @pytest.mark.asyncio
+    async def test_shutdown_drains_tasks_before_closing_owned_gateway(self) -> None:
+        gateway = MagicMock()
+        drain = AsyncMock()
+        app = create_app(gateway=gateway, dispatcher=None)
+
+        with patch(
+            "general_ludd.models.job_invocation.drain_background_tasks",
+            drain,
+        ):
+            await app.router.on_shutdown[-1]()
+
+        drain.assert_awaited_once_with()
+        gateway.close.assert_called_once_with()

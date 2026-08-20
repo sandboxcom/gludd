@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
+from general_ludd.util.async_lifecycle import cancel_and_drain_tasks
+
 if TYPE_CHECKING:
     import asyncio
     from collections.abc import Coroutine
@@ -24,6 +26,11 @@ logger = logging.getLogger(__name__)
 # Strong references to in-flight background tasks so they are not garbage
 # collected before completion (RUF006).
 _BACKGROUND_TASKS: set[asyncio.Task[object]] = set()
+
+
+async def drain_background_tasks() -> None:
+    """Cancel and await benchmark writes owned by this module."""
+    await cancel_and_drain_tasks(_BACKGROUND_TASKS, registry=_BACKGROUND_TASKS)
 
 # Work types whose execute job is a model-driven generation task. For these the
 # caller invokes the ModelGateway and feeds the generated output into the

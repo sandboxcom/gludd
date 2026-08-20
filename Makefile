@@ -199,6 +199,7 @@ help:
 	@echo "  build-ansible-execution-environment  Build the locked controller EE (ANSIBLE_EE_*)"
 	@echo "  verify-ansible-execution-environment Verify one digest-addressed controller EE (ANSIBLE_EE_*)"
 	@echo "  check-collection-python-boundary Enforce exact/strict-zero collection migration inventory"
+	@echo "  check-resource-ownership Enforce exact application acquisition-to-teardown evidence (RESOURCE_OWNERSHIP_*)"
 	@echo "  update-ansible-runtime-lock Refresh deterministic EE input hashes"
 	@echo "  update-collection-python-boundary-inventory Refresh exact legacy migration inventory"
 	@echo "  deps-audit            Fail-closed Python dependency truth audit"
@@ -294,7 +295,7 @@ help:
 	@echo "  test-e2e-providers    All E2E provider tests"
 	@echo "  test-e2e-games        Game generation E2E — AI generates games, compares frames (no Azure provision)"
 	@echo "  test-e2e-games-local  Game unit tests only — video compare, game gen, no Azure needed"
-	@echo "  test-e2e-games-local-model  Hermetic/external local model game E2E (LOCAL_MODEL_E2E_MODE, LOCAL_MODEL_BASE_URL, LOCAL_MODEL_NAME, LOCAL_MODEL_KEY, LOCAL_MODEL_GAME, PYTEST_ARGS)"
+	@echo "  test-e2e-games-local-model  Hermetic/managed/external game E2E (LOCAL_MODEL_E2E_MODE, LOCAL_MODEL_PATH, LOCAL_MODEL_BASE_URL, LOCAL_MODEL_NAME, LOCAL_MODEL_KEY, LOCAL_MODEL_GAME, PYTEST_ARGS)"
 	@echo "  test-e2e-game-pipeline  Full game-dev pipeline — all 24 models × 4 games (CI_SAFE=1 for CI-safe subset)"
 	@echo "  game-reference-preflight  Acquire/verify approved FPS clips before Azure provisioning"
 	@echo "  test-e2e-games-provision  Source AZURE_E2E_ENV_FILE; Azure game E2E (GAME_E2E_TIMEOUT_SECS>=3600)"
@@ -683,6 +684,10 @@ ANSIBLE_EE_CONTEXT ?= /tmp/gludd-ansible-ee-context
 COLLECTION_PYTHON_BOUNDARY_ROOT ?= collections/ansible_collections
 COLLECTION_PYTHON_BOUNDARY_INVENTORY ?= config/ansible/collection-python-boundary-inventory.json
 COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO ?= 0
+RESOURCE_OWNERSHIP_ROOT ?= .
+RESOURCE_OWNERSHIP_PATHS ?= src/general_ludd scripts
+RESOURCE_OWNERSHIP_INVENTORY ?= config/resource_ownership_inventory.json
+RESOURCE_OWNERSHIP_WRITE ?= 0
 
 validate-ansible-runtime-boundary:
 	@$(UV) run python scripts/ansible_runtime_artifacts.py validate
@@ -701,6 +706,10 @@ verify-ansible-execution-environment:
 check-collection-python-boundary:
 	@case "$(COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO)" in 0|1) ;; *) echo "COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO must be 0 or 1"; exit 2;; esac
 	@$(UV) run python scripts/check_collection_python_boundary.py --collections-root "$(COLLECTION_PYTHON_BOUNDARY_ROOT)" --inventory "$(COLLECTION_PYTHON_BOUNDARY_INVENTORY)" $(if $(filter 1,$(COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO)),--strict-zero,)
+
+check-resource-ownership:
+	@case "$(RESOURCE_OWNERSHIP_WRITE)" in 0|1) ;; *) echo "RESOURCE_OWNERSHIP_WRITE must be 0 or 1"; exit 2;; esac
+	@$(UV) run python scripts/check_resource_ownership.py --root "$(RESOURCE_OWNERSHIP_ROOT)" --inventory "$(RESOURCE_OWNERSHIP_INVENTORY)" $(if $(filter 1,$(RESOURCE_OWNERSHIP_WRITE)),--write-inventory,) $(RESOURCE_OWNERSHIP_PATHS)
 
 update-collection-python-boundary-inventory:
 	@$(UV) run python scripts/check_collection_python_boundary.py --collections-root "$(COLLECTION_PYTHON_BOUNDARY_ROOT)" --inventory "$(COLLECTION_PYTHON_BOUNDARY_INVENTORY)" --write-inventory
@@ -1501,7 +1510,7 @@ _gate-run-lock-acquire:
 
 .NOTPARALLEL: gate gate-refresh
 
-gate: _gate-run-lock-acquire _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets check-no-prompt-prone-edit-tools validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
+gate: _gate-run-lock-acquire _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-resource-ownership check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets check-no-prompt-prone-edit-tools validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -2116,15 +2125,21 @@ LOCAL_MODEL_BASE_URL ?=
 LOCAL_MODEL_NAME ?= gludd-hermetic-game-e2e
 LOCAL_MODEL_KEY ?=
 LOCAL_MODEL_GAME ?= snake
+LOCAL_MODEL_PATH ?=
 
 test-e2e-games-local-model:
+	@if [ "$(LOCAL_MODEL_E2E_MODE)" = "managed" ]; then \
+		GLUDD_MANAGED_LOCAL_MODEL_E2E=1 LOCAL_MODEL_PATH="$(LOCAL_MODEL_PATH)" \
+		$(UV) run --extra local-inference pytest tests/e2e/test_managed_local_inference_lifecycle.py -v $(PYTEST_ARGS); \
+	fi
 	@LOCAL_MODEL_E2E_MODE="$(LOCAL_MODEL_E2E_MODE)" \
 	 LOCAL_MODEL_BASE_URL="$(LOCAL_MODEL_BASE_URL)" \
 	 LOCAL_MODEL_NAME="$(LOCAL_MODEL_NAME)" \
 	 LOCAL_MODEL_KEY="$(LOCAL_MODEL_KEY)" \
 	 LOCAL_MODEL_GAME="$(LOCAL_MODEL_GAME)" \
+	 LOCAL_MODEL_PATH="$(LOCAL_MODEL_PATH)" \
 	 PYTEST_ARGS="$(PYTEST_ARGS)" \
-	 $(UV) run python -m scripts.run_local_model_game_e2e
+	 $(UV) run $(if $(filter managed,$(LOCAL_MODEL_E2E_MODE)),--extra local-inference,) python -m scripts.run_local_model_game_e2e
 
 # CI/CD multi-model pipeline E2E — reads keys from env or shared key files.
 # DeepSeek + OpenRouter tiers, structural tests when keys are absent.

@@ -31,6 +31,26 @@ def test_game_target_defaults_to_owned_hermetic_lifecycle() -> None:
     assert "http://localhost:11434" not in body
 
 
+def test_managed_game_target_forwards_artifact_and_runs_real_lifecycle_acceptance() -> None:
+    content = MAKEFILE.read_text(encoding="utf-8")
+    body = _target_body("test-e2e-games-local-model")
+
+    assert "LOCAL_MODEL_PATH ?=" in content
+    assert 'LOCAL_MODEL_PATH="$(LOCAL_MODEL_PATH)"' in body
+    assert "GLUDD_MANAGED_LOCAL_MODEL_E2E=1" in body
+    assert "tests/e2e/test_managed_local_inference_lifecycle.py" in body
+    assert body.index("test_managed_local_inference_lifecycle.py") < body.index(
+        "-m scripts.run_local_model_game_e2e"
+    )
+
+
+def test_external_game_target_does_not_claim_managed_lifecycle() -> None:
+    body = _target_body("test-e2e-games-local-model")
+
+    assert 'if [ "$(LOCAL_MODEL_E2E_MODE)" = "managed" ]' in body
+    assert "GLUDD_MANAGED_LOCAL_MODEL_E2E=1" in body
+
+
 def test_game_target_contract_requires_explicit_external_endpoint() -> None:
     entry = _contract_entry("test-e2e-games-local-model")
 
@@ -40,6 +60,7 @@ def test_game_target_contract_requires_explicit_external_endpoint() -> None:
         "LOCAL_MODEL_NAME",
         "LOCAL_MODEL_KEY",
         "LOCAL_MODEL_GAME",
+        "LOCAL_MODEL_PATH",
         "PYTEST_ARGS",
     ]
     assert "LOCAL_MODEL_E2E_MODE=hermetic" in str(entry["behavior"])

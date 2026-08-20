@@ -494,6 +494,9 @@ def test_stream_run_emits_heartbeat_and_persists_counters(
         stdout = _QuietStream()
         returncode = 0
 
+        def poll(self):
+            return self.returncode
+
         def wait(self):
             return self.returncode
 

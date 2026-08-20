@@ -267,9 +267,9 @@ def run(shards: list[str], pytest_args: list[str], workers_per_shard: int, heart
                 time.sleep(1)
     except KeyboardInterrupt:
         print("SHARD-INTERRUPTED terminating children", flush=True)
-        _terminate_all(running)
         return 130
     finally:
+        _terminate_all(running)
         _cleanup(running)
 
     failed = {name: rc for name, rc in results.items() if rc != 0}

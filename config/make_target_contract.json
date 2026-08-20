@@ -149,8 +149,8 @@
     },
     {
       "name": "test-e2e-games-local-model",
-      "make_variables": ["LOCAL_MODEL_E2E_MODE", "LOCAL_MODEL_BASE_URL", "LOCAL_MODEL_NAME", "LOCAL_MODEL_KEY", "LOCAL_MODEL_GAME", "PYTEST_ARGS"],
-      "behavior": "make test-e2e-games-local-model LOCAL_MODEL_E2E_MODE=hermetic LOCAL_MODEL_BASE_URL= LOCAL_MODEL_NAME=gludd-hermetic-game-e2e LOCAL_MODEL_KEY=local-hermetic LOCAL_MODEL_GAME=snake PYTEST_ARGS=-q"
+      "make_variables": ["LOCAL_MODEL_E2E_MODE", "LOCAL_MODEL_BASE_URL", "LOCAL_MODEL_NAME", "LOCAL_MODEL_KEY", "LOCAL_MODEL_GAME", "LOCAL_MODEL_PATH", "PYTEST_ARGS"],
+      "behavior": "make test-e2e-games-local-model LOCAL_MODEL_E2E_MODE=hermetic LOCAL_MODEL_BASE_URL= LOCAL_MODEL_NAME=gludd-hermetic-game-e2e LOCAL_MODEL_KEY=local-hermetic LOCAL_MODEL_GAME=snake LOCAL_MODEL_PATH= PYTEST_ARGS=-q"
     },
     {
       "name": "grep",
@@ -620,6 +620,11 @@
       "name": "check-collection-python-boundary",
       "make_variables": ["COLLECTION_PYTHON_BOUNDARY_ROOT", "COLLECTION_PYTHON_BOUNDARY_INVENTORY", "COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO"],
       "behavior": "make check-collection-python-boundary COLLECTION_PYTHON_BOUNDARY_ROOT=collections/ansible_collections COLLECTION_PYTHON_BOUNDARY_INVENTORY=config/ansible/collection-python-boundary-inventory.json COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO=0"
+    },
+    {
+      "name": "check-resource-ownership",
+      "make_variables": ["RESOURCE_OWNERSHIP_ROOT", "RESOURCE_OWNERSHIP_PATHS", "RESOURCE_OWNERSHIP_INVENTORY", "RESOURCE_OWNERSHIP_WRITE"],
+      "behavior": "make check-resource-ownership RESOURCE_OWNERSHIP_ROOT=. RESOURCE_OWNERSHIP_PATHS='src/general_ludd scripts' RESOURCE_OWNERSHIP_INVENTORY=config/resource_ownership_inventory.json RESOURCE_OWNERSHIP_WRITE=0"
     },
     {
       "name": "update-collection-python-boundary-inventory",

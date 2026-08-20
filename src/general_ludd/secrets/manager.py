@@ -62,6 +62,7 @@ class SecretPermissionDeniedError(SecretsUnavailableError):
         agent_type: str,
         allowed_patterns: list[str],
     ) -> None:
+        """Describe one denied secret operation without exposing values."""
         self.path = path
         self.action = action
         self.agent_type = agent_type
@@ -87,6 +88,8 @@ def _is_genuine_not_found(exc: BaseException) -> bool:
 
 @dataclass
 class BootstrapResult:
+    """Credentials and endpoint returned by a local bootstrap."""
+
     url: str
     # repr=False: never let a root/bootstrap token leak into a repr()/log line or
     # a traceback frame dump. The value is still a normal required attribute.
@@ -99,6 +102,8 @@ class BootstrapResult:
 
 @dataclass
 class AppRoleCreds:
+    """AppRole identifiers issued for a workload."""
+
     role_id: str
     # repr=False: the AppRole secret_id is a credential — keep it out of reprs/logs.
     secret_id: str = field(repr=False)
@@ -106,6 +111,8 @@ class AppRoleCreds:
 
 @dataclass
 class ImageUpdateCandidate:
+    """A verified replacement digest for a configured image."""
+
     current_digest: str
     candidate_digest: str
     registry: str
@@ -131,7 +138,10 @@ _INVALID_MOUNT_CHARS_RE = re.compile(r"[;|&$`!@#%^*(){}\[\]<>\\'\":]")
 
 
 class SecretAlias:
+    """Map a logical credential alias to one Vault path and mount."""
+
     def __init__(self, alias: str, path: str, mount: str = "secret") -> None:
+        """Validate and retain an alias mapping."""
         if not path:
             raise ValueError("SecretAlias path must not be empty")
         if "\x00" in path:
@@ -178,6 +188,8 @@ class SecretAlias:
 
 
 class SecretsManager:
+    """Resolve and manage fail-closed Vault-backed application secrets."""
+
     def __init__(
         self,
         client: hvac.Client | None = None,
@@ -185,7 +197,9 @@ class SecretsManager:
         config: OpenBaoConfig | None = None,
         permission_spec: PermissionSpec | None = None,
     ) -> None:
+        """Create a manager with an owned or caller-supplied Vault client."""
         self._client = client
+        self._owns_client = False
         self._aliases = aliases or {}
         self._config = config or OpenBaoConfig()
         self._local_bootstrap_result: BootstrapResult | None = None
@@ -298,6 +312,7 @@ class SecretsManager:
             )
 
     def register_alias(self, alias: SecretAlias) -> None:
+        """Register a validated logical secret alias."""
         if not _PATH_RE.match(alias.path) or ".." in alias.path.split("/"):
             raise ValueError(
                 f"invalid secret path {alias.path!r}: must match "
@@ -310,6 +325,7 @@ class SecretsManager:
         self._aliases[alias.alias] = alias
 
     def resolve(self, alias_name: str) -> str | None:
+        """Resolve an alias to a secret value, returning ``None`` if absent."""
         alias = self._aliases.get(alias_name)
         if alias is None:
             return None
@@ -343,14 +359,17 @@ class SecretsManager:
         return None
 
     def list_aliases(self) -> list[str]:
+        """Return registered alias names."""
         return list(self._aliases.keys())
 
     def is_external_configured(self) -> bool:
+        """Return whether an external Vault URL and token are configured."""
         return bool(
             self._config.external_url and self._config.external_token
         )
 
     def bootstrap_local(self) -> BootstrapResult:
+        """Create local-development bootstrap credentials."""
         token = f"s.local-dev-{uuid.uuid4().hex[:16]}"
         url = "http://localhost:8200"
         self._track_secret_value(token)
@@ -362,6 +381,7 @@ class SecretsManager:
         return self._local_bootstrap_result
 
     def connect(self) -> None:
+        """Connect to the configured Vault backend and verify readiness."""
         if self.is_external_configured():
             ext_url = self._config.external_url
             ext_token = self._config.external_token
@@ -381,6 +401,7 @@ class SecretsManager:
                 token=ext_token,
                 verify=self._config.external_tls_verify,
             )
+            self._owns_client = True
             return
         elif self._local_bootstrap_result is not None:
             url = self._local_bootstrap_result.url
@@ -388,6 +409,17 @@ class SecretsManager:
         else:
             raise RuntimeError("No OpenBao backend available. Run bootstrap_local() first.")
         self._client = hvac.Client(url=url, token=token)
+        self._owns_client = True
+
+    def close(self) -> None:
+        """Close only an hvac client created by this manager."""
+        if not self._owns_client or self._client is None:
+            return
+        close = getattr(getattr(self._client, "adapter", None), "close", None)
+        if callable(close):
+            self._client.adapter.close()
+        self._client = None
+        self._owns_client = False
 
     # W5.1: bound the lifetime of AppRole credentials. An un-bounded secret_id /
     # token never expires, so a single leak is permanent. These defaults cap the
@@ -539,6 +571,7 @@ class SecretsManager:
             )
 
     def write_secret(self, path: str, value: dict[str, object]) -> None:
+        """Write a validated secret mapping at *path*."""
         self._validate_secret_path(path)
         self._enforce_permission(path, action="write")
         if self._client is None:
@@ -551,6 +584,7 @@ class SecretsManager:
         )
 
     def read_secret(self, path: str) -> dict[str, object] | None:
+        """Read a validated secret mapping, returning ``None`` if absent."""
         self._validate_secret_path(path)
         self._enforce_permission(path, action="read")
         self._require_connected_for_read(context_label=f"reading {path!r}")
@@ -573,6 +607,7 @@ class SecretsManager:
         return None
 
     def delete_secret(self, path: str) -> None:
+        """Delete the current version of a validated secret path."""
         self._validate_secret_path(path)
         self._enforce_permission(path, action="delete")
         if self._client is None:
@@ -611,6 +646,7 @@ class SecretsManager:
         return list(result["data"].get("keys", []))
 
     def pin_image_digest(self, image_ref: str, digest: str) -> None:
+        """Persist the approved digest for an image reference."""
         self.write_secret(
             f"image-pins/{image_ref}",
             {
@@ -620,6 +656,7 @@ class SecretsManager:
         )
 
     def scan_for_image_updates(self) -> ImageUpdateCandidate | None:
+        """Return a verified image update candidate when available."""
         image_ref = self._config.local_image
         try:
             stored = self.read_secret(f"image-pins/{image_ref}")
@@ -658,6 +695,7 @@ class SecretsManager:
         self,
         binary_resolver: BinaryPathResolver | None = None,
     ) -> str | None:
+        """Start the configured local Vault container and return its ID."""
         # H-1 fail-closed: never spin up a throwaway local dev container when the
         # operator has declared an external/managed OpenBao — that would shadow
         # the real backend with an unsealed dev instance.
@@ -720,6 +758,7 @@ class SecretsManager:
         return container_id or None
 
     async def health_check(self) -> bool:
+        """Return whether the connected Vault client is initialized and ready."""
         if self._client is None:
             return False
         try:

@@ -725,7 +725,12 @@ class CoreAnsibleRunner:
 
         import tempfile
 
-        private_data_dir = self._private_data_dir or tempfile.mkdtemp(prefix="gl-runner-iso-")
+        private_data_owner = None
+        if self._private_data_dir:
+            private_data_dir = self._private_data_dir
+        else:
+            private_data_owner = tempfile.TemporaryDirectory(prefix="gl-runner-iso-")
+            private_data_dir = private_data_owner.name
 
         runner_kwargs: dict[str, Any] = {
             "private_data_dir": private_data_dir,
@@ -770,6 +775,9 @@ class CoreAnsibleRunner:
                 rc=1,
                 error=f"ansible-runner invocation raised: {type(exc).__name__}: {exc}",
             )
+        finally:
+            if private_data_owner is not None:
+                private_data_owner.cleanup()
 
         rc = int(getattr(runner_obj, "rc", 1) or 0)
         raw_status = getattr(runner_obj, "status", None)

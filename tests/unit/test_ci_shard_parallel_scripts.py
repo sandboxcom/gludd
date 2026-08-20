@@ -229,6 +229,37 @@ def test_run_persists_results_and_cleans_workspaces(
     assert "SHARD-FAIL shard=bad" in output
 
 
+def test_run_terminates_children_on_unexpected_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _load_script("run_ci_shards_parallel.py")
+    workspace = tmp_path / "pending"
+    workspace.mkdir()
+
+    class PendingProcess:
+        pid = 9001
+
+        @staticmethod
+        def poll() -> None:
+            return None
+
+    monkeypatch.setattr(
+        module,
+        "_command_for_shard",
+        lambda *_args: (["pytest", "pending"], workspace),
+    )
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *_args, **_kwargs: PendingProcess())
+    terminated: list[object] = []
+    monkeypatch.setattr(module, "_terminate_all", lambda running: terminated.extend(running))
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    with pytest.raises(RuntimeError, match="boom"):
+        module.run(["pending"], [], 1, 5)
+
+    assert len(terminated) == 1
+
+
 def test_run_reports_signal_exit(tmp_path: Path, monkeypatch, capsys) -> None:
     module = _load_script("run_ci_shards_parallel.py")
 

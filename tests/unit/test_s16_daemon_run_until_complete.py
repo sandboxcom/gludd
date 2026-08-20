@@ -215,3 +215,21 @@ class TestRecordGenerationBenchmarkAwaitable:
         asyncio.run(_runner())
         assert bg_tasks_seen, "Task scheduling must have occurred"
         assert bg_tasks_seen[0] >= 0, "Background tasks may have been tracked"
+
+    def test_shutdown_drain_cancels_and_awaits_background_tasks(self) -> None:
+        async def _runner() -> None:
+            from general_ludd.models.job_invocation import (
+                _BACKGROUND_TASKS,
+                drain_background_tasks,
+            )
+
+            task = asyncio.create_task(asyncio.Event().wait())
+            _BACKGROUND_TASKS.add(task)
+            task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+            await drain_background_tasks()
+
+            assert task.done()
+            assert not _BACKGROUND_TASKS
+
+        asyncio.run(_runner())

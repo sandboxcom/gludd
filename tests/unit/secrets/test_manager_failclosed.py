@@ -110,6 +110,23 @@ def test_read_secret_not_connected_does_not_raise_runtime_error() -> None:
     # If we reach here without RuntimeError the guard is correct.
 
 
+def test_close_releases_only_manager_owned_hvac_client(monkeypatch) -> None:
+    owned_client = MagicMock()
+    monkeypatch.setattr(hvac, "Client", MagicMock(return_value=owned_client))
+    manager = SecretsManager()
+    manager.bootstrap_local()
+    manager.connect()
+
+    manager.close()
+    manager.close()
+
+    owned_client.adapter.close.assert_called_once_with()
+
+    injected = MagicMock()
+    SecretsManager(client=injected).close()
+    injected.adapter.close.assert_not_called()
+
+
 def test_scan_for_image_updates_not_connected_raises_secrets_unavailable() -> None:
     """scan_for_image_updates calls read_secret, so a not-connected manager
     must also surface SecretsUnavailableError rather than RuntimeError."""
