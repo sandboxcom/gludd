@@ -13,10 +13,8 @@ Scenarios:
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
-import signal
 import socket
 import subprocess
 import sys
@@ -28,6 +26,8 @@ from pathlib import Path
 import httpx
 import pytest
 import yaml
+
+from tests.e2e._daemon_harness import start_daemon_process, stop_daemon_process
 
 # ---------------------------------------------------------------------------
 # Availability probes
@@ -590,20 +590,14 @@ class TestConfigChainWithDaemon:
         port = find_free_port()
         base_url = f"http://127.0.0.1:{port}"
 
-        proc = subprocess.Popen(
-            [
-                sys.executable, "-m", "general_ludd.cli", "daemon",
-                "--host", "127.0.0.1", "--port", str(port),
-                "--config-dir", str(config_dir),
-                "--tick-interval", "0.5",
-            ],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            cwd=str(tmp_path), env=os.environ.copy(), start_new_session=True,
+        proc = start_daemon_process(
+            config_dir=config_dir,
+            cwd=tmp_path,
+            port=port,
         )
         try:
             if not wait_for_url(f"{base_url}/healthz", timeout=40.0):
-                proc.terminate()
-                out, err = proc.communicate(timeout=10)
+                out, err = stop_daemon_process(proc)
                 pytest.fail(
                     "daemon did not become healthy\n"
                     f"stdout={out!r}\nstderr={err!r}"
@@ -616,13 +610,7 @@ class TestConfigChainWithDaemon:
             assert resp.status_code == 200
             assert isinstance(resp.json(), dict)
         finally:
-            if proc.poll() is None:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                    proc.wait(timeout=10)
-                except Exception:
-                    with contextlib.suppress(Exception):
-                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            stop_daemon_process(proc)
 
     @pytest.mark.skipif(not _GUNICORN_AVAILABLE, reason="gunicorn not available")
     def test_daemon_models_list_endpoint(self, tmp_path: Path):
@@ -631,20 +619,14 @@ class TestConfigChainWithDaemon:
         port = find_free_port()
         base_url = f"http://127.0.0.1:{port}"
 
-        proc = subprocess.Popen(
-            [
-                sys.executable, "-m", "general_ludd.cli", "daemon",
-                "--host", "127.0.0.1", "--port", str(port),
-                "--config-dir", str(config_dir),
-                "--tick-interval", "0.5",
-            ],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            cwd=str(tmp_path), env=os.environ.copy(), start_new_session=True,
+        proc = start_daemon_process(
+            config_dir=config_dir,
+            cwd=tmp_path,
+            port=port,
         )
         try:
             if not wait_for_url(f"{base_url}/healthz", timeout=40.0):
-                proc.terminate()
-                out, err = proc.communicate(timeout=10)
+                out, err = stop_daemon_process(proc)
                 pytest.fail(
                     "daemon did not become healthy\n"
                     f"stdout={out!r}\nstderr={err!r}"
@@ -654,13 +636,7 @@ class TestConfigChainWithDaemon:
             data = resp.json()
             assert "profiles" in data
         finally:
-            if proc.poll() is None:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                    proc.wait(timeout=10)
-                except Exception:
-                    with contextlib.suppress(Exception):
-                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            stop_daemon_process(proc)
 
     @pytest.mark.skipif(not _GUNICORN_AVAILABLE, reason="gunicorn not available")
     def test_cli_models_list_against_daemon(self, tmp_path: Path):
@@ -669,20 +645,14 @@ class TestConfigChainWithDaemon:
         port = find_free_port()
         base_url = f"http://127.0.0.1:{port}"
 
-        proc = subprocess.Popen(
-            [
-                sys.executable, "-m", "general_ludd.cli", "daemon",
-                "--host", "127.0.0.1", "--port", str(port),
-                "--config-dir", str(config_dir),
-                "--tick-interval", "0.5",
-            ],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            cwd=str(tmp_path), env=os.environ.copy(), start_new_session=True,
+        proc = start_daemon_process(
+            config_dir=config_dir,
+            cwd=tmp_path,
+            port=port,
         )
         try:
             if not wait_for_url(f"{base_url}/healthz", timeout=40.0):
-                proc.terminate()
-                out, err = proc.communicate(timeout=10)
+                out, err = stop_daemon_process(proc)
                 pytest.fail(
                     "daemon did not become healthy\n"
                     f"stdout={out!r}\nstderr={err!r}"
@@ -694,13 +664,7 @@ class TestConfigChainWithDaemon:
             assert result.returncode == 0, f"stderr: {result.stderr!r}"
             assert "No models registered" in result.stdout or result.stdout.strip() == ""
         finally:
-            if proc.poll() is None:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                    proc.wait(timeout=10)
-                except Exception:
-                    with contextlib.suppress(Exception):
-                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            stop_daemon_process(proc)
 
     @pytest.mark.skipif(not _GUNICORN_AVAILABLE, reason="gunicorn not available")
     def test_cli_health_against_daemon(self, tmp_path: Path):
@@ -709,20 +673,14 @@ class TestConfigChainWithDaemon:
         port = find_free_port()
         base_url = f"http://127.0.0.1:{port}"
 
-        proc = subprocess.Popen(
-            [
-                sys.executable, "-m", "general_ludd.cli", "daemon",
-                "--host", "127.0.0.1", "--port", str(port),
-                "--config-dir", str(config_dir),
-                "--tick-interval", "0.5",
-            ],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            cwd=str(tmp_path), env=os.environ.copy(), start_new_session=True,
+        proc = start_daemon_process(
+            config_dir=config_dir,
+            cwd=tmp_path,
+            port=port,
         )
         try:
             if not wait_for_url(f"{base_url}/healthz", timeout=40.0):
-                proc.terminate()
-                out, err = proc.communicate(timeout=10)
+                out, err = stop_daemon_process(proc)
                 pytest.fail(
                     "daemon did not become healthy\n"
                     f"stdout={out!r}\nstderr={err!r}"
@@ -734,13 +692,7 @@ class TestConfigChainWithDaemon:
             assert result.returncode == 0, f"stderr: {result.stderr!r}"
             assert "healthy" in result.stdout
         finally:
-            if proc.poll() is None:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                    proc.wait(timeout=10)
-                except Exception:
-                    with contextlib.suppress(Exception):
-                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            stop_daemon_process(proc)
 
 
 # ---------------------------------------------------------------------------
@@ -1028,15 +980,10 @@ class TestBinarySmokeTest:
         port = find_free_port()
         base_url = f"http://127.0.0.1:{port}"
 
-        proc = subprocess.Popen(
-            [
-                sys.executable, "-m", "general_ludd.cli", "daemon",
-                "--host", "127.0.0.1", "--port", str(port),
-                "--config-dir", str(config_dir),
-                "--tick-interval", "0.5",
-            ],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            cwd=str(tmp_path), env=os.environ.copy(), start_new_session=True,
+        proc = start_daemon_process(
+            config_dir=config_dir,
+            cwd=tmp_path,
+            port=port,
         )
         assert proc.poll() is None, "daemon should be running"
 
@@ -1056,14 +1003,7 @@ class TestBinarySmokeTest:
             assert resp.status_code == 200
             assert "profiles" in resp.json()
         finally:
-            if proc.poll() is None:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                    proc.wait(timeout=10)
-                except Exception:
-                    with contextlib.suppress(Exception):
-                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                    proc.wait(timeout=5)
+            stop_daemon_process(proc)
 
         assert proc.returncode is not None, "daemon process should have exited"
 

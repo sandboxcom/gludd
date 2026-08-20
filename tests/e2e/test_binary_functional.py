@@ -35,6 +35,12 @@ from pathlib import Path
 import httpx
 import pytest
 
+from tests.e2e._daemon_harness import (
+    daemon_subprocess_env,
+    start_daemon_process,
+    stop_daemon_process,
+)
+
 # ---------------------------------------------------------------------------
 # Availability probe — skip the entire module if the CLI cannot run at all.
 # ---------------------------------------------------------------------------
@@ -166,49 +172,20 @@ def isolated_daemon(tmp_path: Path):
     port = find_free_port()
     base_url = f"http://127.0.0.1:{port}"
 
-    proc = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "general_ludd.cli",
-            "daemon",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "--config-dir",
-            str(config_dir),
-            "--tick-interval",
-            "0.5",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        cwd=str(tmp_path),
-        env=os.environ.copy(),
-        start_new_session=True,
+    proc = start_daemon_process(
+        config_dir=config_dir,
+        cwd=tmp_path,
+        port=port,
     )
 
     try:
         if not wait_for_url(f"{base_url}/healthz", timeout=40.0):
             # Daemon did not come up — surface its logs for diagnostics.
-            try:
-                proc.terminate()
-                out, err = proc.communicate(timeout=5)
-            except Exception:
-                out, err = "<no output>", "<no stderr>"
+            out, err = stop_daemon_process(proc, terminate_timeout=5)
             pytest.fail(f"daemon did not become healthy on {base_url} within 40s\nstdout={out!r}\nstderr={err!r}")
         yield base_url, proc
     finally:
-        # Clean shutdown: SIGTERM the process group, then SIGKILL if needed.
-        if proc.poll() is None:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                proc.wait(timeout=10)
-            except (ProcessLookupError, subprocess.TimeoutExpired):
-                with contextlib.suppress(Exception):
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                proc.wait(timeout=5)
+        stop_daemon_process(proc)
 
 
 # ---------------------------------------------------------------------------
@@ -479,30 +456,14 @@ class TestErrorHandling:
         port = find_free_port()
 
         # First daemon — should become healthy.
-        first = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "general_ludd.cli",
-                "daemon",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                str(port),
-                "--config-dir",
-                str(config_dir),
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=str(tmp_path),
-            env=os.environ.copy(),
-            start_new_session=True,
+        first = start_daemon_process(
+            config_dir=config_dir,
+            cwd=tmp_path,
+            port=port,
         )
         try:
             if not wait_for_url(f"http://127.0.0.1:{port}/healthz", timeout=40.0):
-                first.terminate()
-                out, err = first.communicate(timeout=10)
+                out, err = stop_daemon_process(first)
                 pytest.fail(
                     f"first daemon did not become healthy; cannot test conflict\nstdout={out!r}\nstderr={err!r}"
                 )
@@ -525,7 +486,7 @@ class TestErrorHandling:
                 text=True,
                 timeout=60,
                 cwd=str(tmp_path),
-                env=os.environ.copy(),
+                env=daemon_subprocess_env(tmp_path, port=port),
             )
             assert second.returncode != 0, "second daemon on an occupied port unexpectedly exited 0"
             # The failure must be a clean bind error, never a Python traceback
@@ -535,10 +496,4 @@ class TestErrorHandling:
                 f"unexpected traceback on port conflict:\n{combined}"
             )
         finally:
-            if first.poll() is None:
-                try:
-                    os.killpg(os.getpgid(first.pid), signal.SIGTERM)
-                    first.wait(timeout=10)
-                except Exception:
-                    with contextlib.suppress(Exception):
-                        os.killpg(os.getpgid(first.pid), signal.SIGKILL)
+            stop_daemon_process(first)
