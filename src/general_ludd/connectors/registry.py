@@ -97,6 +97,7 @@ class ConnectorRegistry:
     """A name -> live connector map built from an operator config list."""
 
     def __init__(self) -> None:
+        """Create an empty, unsealed connector registry."""
         self._sources: dict[str, _SourceLike] = {}
         self._meta: dict[str, dict[str, Any]] = {}
         self._errors: list[dict[str, Any]] = []
@@ -261,7 +262,9 @@ class ConnectorRegistry:
 
     # -- teardown ---------------------------------------------------------- #
     def close(self) -> None:
-        """Best-effort teardown: call ``disconnect()``/``close()`` on any source
+        """Close every source without propagating teardown failures.
+
+        Calls ``disconnect()``/``close()`` on any source
         that exposes one (e.g. a buffered source running a background thread such
         as ``MqttSource``), so rebuilding the registry on reload doesn't leak
         threads/connections. Never raises.
@@ -388,7 +391,7 @@ def _validate_source_class(factory: Any) -> None:
     if missing:
         raise TypeError(
             f"connector class {_qualname(factory)} is missing required "
-            f"Source method(s): {', '.join(missing)}"
+            f"Source method(s) and cannot satisfy _SourceLike: {', '.join(missing)}"
         )
 
 

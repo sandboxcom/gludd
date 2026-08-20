@@ -782,6 +782,14 @@ def _extract_tool_calls(raw_response: object) -> list[dict[str, object]] | None:
     return normalized or None
 
 
+class _ChatModelLike(Protocol):
+    """Minimal provider runnable contract used by the payload-limited wrapper."""
+
+    def invoke(self, messages: list[dict[str, str]], **kwargs: object) -> object: ...
+
+    def stream(self, messages: list[dict[str, str]], **kwargs: object) -> object: ...
+
+
 class _LimitedChatModel:
     """LangChain runnable wrapper that enforces payload limits on every invoke.
 
@@ -807,7 +815,8 @@ class _LimitedChatModel:
 
     def invoke(self, messages: list[dict[str, str]], **kwargs: object) -> object:
         self._enforce_request(messages, dict(kwargs))
-        raw_response = self._inner.invoke(messages, **kwargs)  # type: ignore[attr-defined]
+        inner = cast(_ChatModelLike, self._inner)
+        raw_response = inner.invoke(messages, **kwargs)
         content = str(getattr(raw_response, "content", str(raw_response)))
         usage_obj = getattr(raw_response, "usage_metadata", {}) or {}
         usage = usage_obj if isinstance(usage_obj, dict) else {}
@@ -828,7 +837,8 @@ class _LimitedChatModel:
 
     def stream(self, messages: list[dict[str, str]], **kwargs: object) -> object:
         self._enforce_request(messages, dict(kwargs))
-        return self._inner.stream(messages, **kwargs)  # type: ignore[attr-defined]
+        inner = cast(_ChatModelLike, self._inner)
+        return inner.stream(messages, **kwargs)
 
     def bind_tools(self, tools: list[dict[str, object]]) -> _LimitedChatModel:
         inner = self._inner
@@ -2339,7 +2349,7 @@ class ModelGateway:
             asyncio.get_running_loop()
         except RuntimeError:
             return asyncio.run(coro)
-        return coro  # type: ignore[return-value]
+        return cast(list[object], coro)
 
     async def _call_model_stream_with_retry_async(
         self,
@@ -2650,7 +2660,7 @@ class ModelGateway:
                 from_error=from_error,
                 **kwargs,
             )
-            return coro  # type: ignore[return-value]
+            return cast(list[object], coro)
         except RuntimeError:
             return asyncio.run(
                 self._stream_walk_fallbacks(

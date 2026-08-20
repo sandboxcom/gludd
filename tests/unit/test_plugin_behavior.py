@@ -385,8 +385,8 @@ class TestEnforceStopRepoPendingWork:
     def test_repo_has_pending_work_wired_into_has_local_work(self):
         """Repository state participates in the unified pending-work state."""
         src = ENFORCE_STOP.read_text()
-        assert re.search(r"projectWorkOpen\s*=[\s\S]{0,400}repoPending", src)
-        assert "hasPendingWork = projectWorkOpen || underFloor" in src
+        assert re.search(r"const signals\s*:[^=]+=\s*\{[\s\S]{0,400}repoPending", src)
+        assert "hasPendingWork = computeHealthScore(signals)" in src
 
     def test_no_wait_patterns_include_done_answer(self):
         """NO_WAIT_PATTERNS was removed."""
@@ -660,7 +660,7 @@ class TestEnforceStopCiPendingOrRed:
             "the CI verdict query must be wired into the pre-generation gate"
         )
         assert "ciVerdictPendingOrRed" in src
-        assert re.search(r"projectWorkOpen\s*=[\s\S]{0,400}ciVerdictPendingOrRed", src)
+        assert re.search(r"const signals\s*:[^=]+=\s*\{[\s\S]{0,400}ciVerdictPendingOrRed", src)
 
     def test_session_idle_refreshes_pending_work_state(self):
         """session.idle refreshes pending-work state for the next turn."""
@@ -1128,10 +1128,10 @@ class TestEnforceDelegateDisengageEscape:
         )
 
     def test_disengage_max_duration_clamped(self):
-        """shared.ts enforces maxMs (default 3_600_000 = 1h) via Math.min."""
+        """shared.ts limits disengagement to a short, bounded five minutes."""
         shared_src = (PLUGIN_DIR / "../lib/shared.ts").read_text()
-        assert "3_600_000" in shared_src, (
-            "shared.ts must have the 1-hour maxMs default (3_600_000)"
+        assert "300_000" in shared_src, (
+            "shared.ts must have the five-minute maxMs default (300_000)"
         )
 
     def test_floor_disengage_early_return_exists(self):
@@ -1457,11 +1457,10 @@ class TestEnforceFloorOpenWorkScan:
         )
         # Must match an unchecked markdown task box (`[ ]` with optional inner
         # whitespace) preceded by a list marker.
-        assert re.search(r"\\\[\s*\\\]|\\\[\s*\*\\\]|\\\\\[\s*\\\\\]", body) or \
-               ("\\[" in body and "\\s" in body and "\\]" in body) or \
-               re.search(r"\[\s*\\s\*\]", body), (
-            "openWorkExists must count unchecked markdown task boxes "
-            "(regex matching `^[\\s*][-*]\\s+\\[\\s*\\]`)"
+        assert "hasTasksMdPendingWork(tasksMd)" in body
+        shared_src = (PLUGIN_DIR / "../lib/shared.ts").read_text()
+        assert "[-*]" in shared_src and r"\[\s*\]" in shared_src, (
+            "the shared TASKS.md scanner must match unchecked boxes for both list markers"
         )
 
     def test_open_work_exists_detects_unchecked_tasks_md_asterisk(self):

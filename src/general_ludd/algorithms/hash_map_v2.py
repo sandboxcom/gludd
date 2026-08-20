@@ -78,7 +78,7 @@ class RobinHoodHashMap(Generic[K, V]):
         i = self._find(key)
         if i == -1:
             raise KeyError(key)
-        return self._entries[i].value  # type: ignore[return-value]
+        return cast(V, self._entries[i].value)
 
     def __setitem__(self, key: K, value: V) -> None:
         """Insert or update a key/value pair."""
@@ -203,7 +203,7 @@ class SwissHashMap(Generic[K, V]):
         i = self._find(key)
         if i == -1:
             raise KeyError(key)
-        return self._values[i]  # type: ignore[return-value]
+        return cast(V, self._values[i])
 
     def __setitem__(self, key: K, value: V) -> None:
         """Insert or update a key/value pair."""
@@ -336,7 +336,7 @@ class LinearProbingHashMap(Generic[K, V]):
         i = self._find(key)
         if i == -1:
             raise KeyError(key)
-        return self._values[i]  # type: ignore[return-value]
+        return cast(V, self._values[i])
 
     def __setitem__(self, key: K, value: V) -> None:
         """Insert or update a key/value pair."""
@@ -455,7 +455,7 @@ class QuadraticProbingHashMap(Generic[K, V]):
         i = self._find(key)
         if i == -1:
             raise KeyError(key)
-        return self._values[i]  # type: ignore[return-value]
+        return cast(V, self._values[i])
 
     def __setitem__(self, key: K, value: V) -> None:
         """Insert or update a key/value pair."""

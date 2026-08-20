@@ -77,6 +77,7 @@ class Quadtree:
         max_depth: int = _DEFAULT_MAX_DEPTH,
         depth: int = 0,
     ) -> None:
+        """Initialize a ``Quadtree`` instance."""
         self._bbox = bbox
         self._capacity = capacity
         self._max_depth = max_depth
@@ -88,14 +89,22 @@ class Quadtree:
         self._se: Quadtree | None = None
         self._sw: Quadtree | None = None
 
+    def _child_nodes(self) -> tuple[Quadtree, Quadtree, Quadtree, Quadtree]:
+        """Return the four initialized children of a divided node."""
+        if self._ne is None or self._nw is None or self._se is None or self._sw is None:
+            raise RuntimeError("divided quadtree is missing child nodes")
+        return self._ne, self._nw, self._se, self._sw
+
     @property
     def count(self) -> int:
+        """Execute ``count``."""
         total = len(self._points)
-        if self._divided and self._ne is not None:
-            total += self._ne.count + self._nw.count + self._se.count + self._sw.count  # type: ignore[union-attr]
+        if self._divided:
+            total += sum(child.count for child in self._child_nodes())
         return total
 
     def insert(self, point: Point2D, data: Any = None) -> bool:
+        """Execute ``insert``."""
         if not _contains_2d(self._bbox, point):
             return False
         if not self._divided:
@@ -123,34 +132,35 @@ class Quadtree:
         self._divided = True
 
     def _insert_into_child(self, point: Point2D, data: Any) -> None:
+        ne, nw, se, sw = self._child_nodes()
         x_mid = (self._bbox[0] + self._bbox[2]) / 2
         y_mid = (self._bbox[1] + self._bbox[3]) / 2
         if point[0] >= x_mid:
             if point[1] >= y_mid:
-                self._ne.insert(point, data)  # type: ignore[union-attr]
+                ne.insert(point, data)
             else:
-                self._se.insert(point, data)  # type: ignore[union-attr]
+                se.insert(point, data)
         else:
             if point[1] >= y_mid:
-                self._nw.insert(point, data)  # type: ignore[union-attr]
+                nw.insert(point, data)
             else:
-                self._sw.insert(point, data)  # type: ignore[union-attr]
+                sw.insert(point, data)
 
     def query_range(self, bbox: tuple[float, float, float, float]) -> list[tuple[Point2D, Any]]:
+        """Execute ``query_range``."""
         if not _intersects_2d(self._bbox, bbox):
             return []
         results: list[tuple[Point2D, Any]] = []
         for pt, dt in self._points:
             if _contains_2d(bbox, pt):
                 results.append((pt, dt))
-        if self._divided and self._ne is not None:
-            results.extend(self._ne.query_range(bbox))
-            results.extend(self._nw.query_range(bbox))  # type: ignore[union-attr]
-            results.extend(self._se.query_range(bbox))  # type: ignore[union-attr]
-            results.extend(self._sw.query_range(bbox))  # type: ignore[union-attr]
+        if self._divided:
+            for child in self._child_nodes():
+                results.extend(child.query_range(bbox))
         return results
 
     def query_nearest(self, point: Point2D, k: int = 1) -> list[tuple[Point2D, Any]]:
+        """Execute ``query_nearest``."""
         if k <= 0:
             return []
         heap: list[tuple[float, int, tuple[Point2D, Any]]] = []
@@ -180,16 +190,16 @@ class Quadtree:
                 counter += 1
                 if len(heap) > k:
                     heappop(heap)
-        if self._divided and self._ne is not None:
+        if self._divided:
             children = sorted(
-                [self._ne, self._nw, self._se, self._sw],
-                key=lambda c: _min_dist_bbox_2d(c._bbox, point),  # type: ignore[union-attr]
+                self._child_nodes(),
+                key=lambda child: _min_dist_bbox_2d(child._bbox, point),
             )
             for child in children:
-                c_min = _min_dist_bbox_2d(child._bbox, point)  # type: ignore[union-attr]
+                c_min = _min_dist_bbox_2d(child._bbox, point)
                 if len(heap) >= k and -heap[0][0] < c_min:
                     continue
-                counter = child._nearest_recursive(point, k, heap, counter)  # type: ignore[union-attr]
+                counter = child._nearest_recursive(point, k, heap, counter)
         return counter
 
 
@@ -203,6 +213,7 @@ class Octree:
         max_depth: int = _DEFAULT_MAX_DEPTH,
         depth: int = 0,
     ) -> None:
+        """Initialize a ``Octree`` instance."""
         self._bbox = bbox
         self._capacity = capacity
         self._max_depth = max_depth
@@ -213,6 +224,7 @@ class Octree:
 
     @property
     def count(self) -> int:
+        """Execute ``count``."""
         total = len(self._points)
         if self._divided:
             for c in self._children:
@@ -220,6 +232,7 @@ class Octree:
         return total
 
     def insert(self, point: Point3D, data: Any = None) -> bool:
+        """Execute ``insert``."""
         if not _contains_3d(self._bbox, point):
             return False
         if not self._divided:
@@ -267,6 +280,7 @@ class Octree:
         self._children[idx].insert(point, data)
 
     def query_range(self, bbox: tuple[float, float, float, float, float, float]) -> list[tuple[Point3D, Any]]:
+        """Execute ``query_range``."""
         if not _intersects_3d(self._bbox, bbox):
             return []
         results: list[tuple[Point3D, Any]] = []
@@ -279,6 +293,7 @@ class Octree:
         return results
 
     def query_nearest(self, point: Point3D, k: int = 1) -> list[tuple[Point3D, Any]]:
+        """Execute ``query_nearest``."""
         if k <= 0:
             return []
         heap: list[tuple[float, int, tuple[Point3D, Any]]] = []

@@ -285,29 +285,34 @@ def reap(project_root: Path, *, min_age_seconds: int, apply: bool) -> int:
     )
     if tied:
         print(f"orphan-pytest preserved={tied} trees tied to live owner")
+    action = "REAP" if apply else "WOULD-REAP"
     for record in candidates:
-        action = "REAP" if apply else "WOULD-REAP"
         print(f"{action} pid={record.pid} age={record.elapsed_seconds}s command={record.command}")
-        if apply:
-            tree = descendant_records(record, records)
-            tree_pids = {process.pid for process in tree}
-            for process in tree:
-                with contextlib.suppress(OSError, ProcessLookupError):
-                    os.kill(process.pid, signal.SIGTERM)
-            time.sleep(float(os.environ.get("GLUDD_ORPHAN_PYTEST_GRACE_SECONDS", "1")))
-            resistant = _alive_pids(tree_pids)
-            for process in tree:
-                if process.pid not in resistant:
-                    continue
-                with contextlib.suppress(OSError, ProcessLookupError):
-                    os.kill(process.pid, signal.SIGKILL)
-            print(f"orphan-pytest escalated={len(resistant)}")
-            if resistant:
-                time.sleep(0.1)
-            survivors = _alive_pids(resistant)
-            print(f"orphan-pytest survivors={len(survivors)}")
-            if survivors:
-                return 1
+
+    if apply and candidates:
+        processes_by_pid: dict[int, ProcessRecord] = {}
+        for record in candidates:
+            for process in descendant_records(record, records):
+                processes_by_pid.setdefault(process.pid, process)
+        tree = list(processes_by_pid.values())
+        tree_pids = set(processes_by_pid)
+        for process in tree:
+            with contextlib.suppress(OSError, ProcessLookupError):
+                os.kill(process.pid, signal.SIGTERM)
+        time.sleep(float(os.environ.get("GLUDD_ORPHAN_PYTEST_GRACE_SECONDS", "1")))
+        resistant = _alive_pids(tree_pids)
+        for process in tree:
+            if process.pid not in resistant:
+                continue
+            with contextlib.suppress(OSError, ProcessLookupError):
+                os.kill(process.pid, signal.SIGKILL)
+        print(f"orphan-pytest escalated={len(resistant)}")
+        if resistant:
+            time.sleep(0.1)
+        survivors = _alive_pids(resistant)
+        print(f"orphan-pytest survivors={len(survivors)}")
+        if survivors:
+            return 1
     print(f"orphan-pytest candidates={len(candidates)} apply={apply}")
     return 0
 

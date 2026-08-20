@@ -2,14 +2,57 @@
   "$schema": "https://opencode.ai/config.json",
   "permission": {
     "read": {
-      "*": "allow",
+      "*": "deny",
+      "/Users/shawnwilson/gludd/**": "allow",
+      "/tmp/**": "allow",
+      "/private/tmp/**": "allow",
+      "/private/var/folders/**": "allow",
+      "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/Users/shawnwilson/.local/share/opencode/**": "allow",
+      "/Users/shawnwilson/.cache/**": "allow",
       "*.env": "deny",
-      "*.env.*": "deny",
-      "*.env.example": "allow"
+      "*.env.*": "deny"
     },
-    "edit": "allow",
-    "glob": "allow",
-    "grep": "allow",
+    "write": {
+      "*": "deny",
+      "/Users/shawnwilson/gludd/**": "allow",
+      "/tmp/**": "allow",
+      "/private/tmp/**": "allow",
+      "/private/var/folders/**": "allow",
+      "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/Users/shawnwilson/.local/share/opencode/**": "allow",
+      "/Users/shawnwilson/.cache/**": "allow"
+    },
+    "edit": {
+      "*": "deny",
+      "/Users/shawnwilson/gludd/**": "allow",
+      "/tmp/**": "allow",
+      "/private/tmp/**": "allow",
+      "/private/var/folders/**": "allow",
+      "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/Users/shawnwilson/.local/share/opencode/**": "allow",
+      "/Users/shawnwilson/.cache/**": "allow"
+    },
+    "glob": {
+      "*": "deny",
+      "/Users/shawnwilson/gludd/**": "allow",
+      "/tmp/**": "allow",
+      "/private/tmp/**": "allow",
+      "/private/var/folders/**": "allow",
+      "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/Users/shawnwilson/.local/share/opencode/**": "allow",
+      "/Users/shawnwilson/.cache/**": "allow"
+    },
+    "grep": {
+      "*": "deny",
+      "/Users/shawnwilson/gludd/**": "allow",
+      "/tmp/**": "allow",
+      "/private/tmp/**": "allow",
+      "/private/var/folders/**": "allow",
+      "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/Users/shawnwilson/.local/share/opencode/**": "allow",
+      "/Users/shawnwilson/.cache/**": "allow"
+    },
     "bash": {
       "*": "deny",
       "make *": "allow"
@@ -29,14 +72,57 @@
     "build": {
       "permission": {
         "read": {
-          "*": "allow",
+          "*": "deny",
+          "/Users/shawnwilson/gludd/**": "allow",
+          "/tmp/**": "allow",
+          "/private/tmp/**": "allow",
+          "/private/var/folders/**": "allow",
+          "/Users/shawnwilson/.config/opencode/**": "allow",
+          "/Users/shawnwilson/.local/share/opencode/**": "allow",
+          "/Users/shawnwilson/.cache/**": "allow",
           "*.env": "deny",
-          "*.env.*": "deny",
-          "*.env.example": "allow"
+          "*.env.*": "deny"
         },
-        "edit": "allow",
-        "glob": "allow",
-        "grep": "allow",
+        "write": {
+          "*": "deny",
+          "/Users/shawnwilson/gludd/**": "allow",
+          "/tmp/**": "allow",
+          "/private/tmp/**": "allow",
+          "/private/var/folders/**": "allow",
+          "/Users/shawnwilson/.config/opencode/**": "allow",
+          "/Users/shawnwilson/.local/share/opencode/**": "allow",
+          "/Users/shawnwilson/.cache/**": "allow"
+        },
+        "edit": {
+          "*": "deny",
+          "/Users/shawnwilson/gludd/**": "allow",
+          "/tmp/**": "allow",
+          "/private/tmp/**": "allow",
+          "/private/var/folders/**": "allow",
+          "/Users/shawnwilson/.config/opencode/**": "allow",
+          "/Users/shawnwilson/.local/share/opencode/**": "allow",
+          "/Users/shawnwilson/.cache/**": "allow"
+        },
+        "glob": {
+          "*": "deny",
+          "/Users/shawnwilson/gludd/**": "allow",
+          "/tmp/**": "allow",
+          "/private/tmp/**": "allow",
+          "/private/var/folders/**": "allow",
+          "/Users/shawnwilson/.config/opencode/**": "allow",
+          "/Users/shawnwilson/.local/share/opencode/**": "allow",
+          "/Users/shawnwilson/.cache/**": "allow"
+        },
+        "grep": {
+          "*": "deny",
+          "/Users/shawnwilson/gludd/**": "allow",
+          "/tmp/**": "allow",
+          "/private/tmp/**": "allow",
+          "/private/var/folders/**": "allow",
+          "/Users/shawnwilson/.config/opencode/**": "allow",
+          "/Users/shawnwilson/.local/share/opencode/**": "allow",
+          "/Users/shawnwilson/.cache/**": "allow"
+        },
         "bash": {
           "*": "deny",
           "make *": "allow"

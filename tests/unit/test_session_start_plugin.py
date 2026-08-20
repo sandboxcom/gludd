@@ -213,15 +213,12 @@ class TestSessionStartConstants:
         )
 
     def test_effective_min_bounded(self):
-        """EFFECTIVE_MIN is hardcoded to 10 (floor raised 2026-06-22). The
-        original Math.max/min derivation was simplified when the floor became a
-        user mandate. Both forms are acceptable."""
+        """An explicit minimum is bounded to the supported 0..10 range."""
         src = PLUGIN.read_text()
         assert "EFFECTIVE_MIN" in src, "EFFECTIVE_MIN constant not found."
-        assert (
-            "Math.max(MIN_DISPATCHES, Math.min(FLOOR, 7))" in src
-            or "EFFECTIVE_MIN = 10" in src
-        ), "EFFECTIVE_MIN must be derived via Math.max/min or hardcoded to 10."
+        assert "EFFECTIVE_MIN = HAS_CONFIGURED_MIN_DISPATCHES" in src
+        assert "Math.max(0, Math.min" in src
+        assert re.search(r"\n\s*: 0", src), "Unconfigured sessions must not force needless agents."
 
     def test_fresh_secs_constant_exists(self):
         """FRESH_SECS must be declared with env override and sane default."""

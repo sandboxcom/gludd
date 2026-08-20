@@ -107,6 +107,10 @@ class TestChatMessage:
         restored = ChatMessage.from_dict(record)
         assert restored == original
 
+    def test_from_dict_rejects_unknown_role(self) -> None:
+        with pytest.raises(ValueError, match="unsupported chat role"):
+            ChatMessage.from_dict({"role": "intruder", "content": "Hello"})
+
     def test_frozen_prevents_mutation(self) -> None:
         msg = ChatMessage(role="user", content="Hello")
         with pytest.raises(FrozenInstanceError):

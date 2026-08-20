@@ -2,8 +2,8 @@
 
 Verifies: max depth at 4 levels (main + 3 subagent layers), depth 0-3 allow
 dispatch, depth 4+/MAX_DEPTH override blocks, OPENCODE_DEPTH env var parsing,
-GLUDD_DEPTH_ENFORCE=0 disables, GLUDD_MAX_DEPTH override, no-subagent-bypass
-contract (depth fires in subagents), disengage guard, fail-open, Node v26
+GLUDD_DEPTH_ENFORCE=0 disables, GLUDD_MAX_DEPTH override, subagent isolation,
+disengage guard, fail-open, Node v26
 compat, opencode.json registration, and hot-reload proxy pattern.
 """
 
@@ -55,18 +55,13 @@ class TestPluginHooks:
 
 
 class TestSubagentGuard:
-    """enforce-depth intentionally does NOT bypass subagents — it is the ONE
-    depth-only plugin (OPENCODE_DEPTH fires at every nesting level; see
-    scripts/check_depth_limit.py and the plugin header comment)."""
+    """The orchestrator owns depth policy; delegated contexts are isolated."""
 
-    def test_no_subagent_bypass_in_tool_execute_before(self):
+    def test_subagent_bypass_in_tool_execute_before(self):
         src = _src()
         idx = src.find('"tool.execute.before": async', src.find("defaultImpl"))
         after = src[idx : idx + 500] if idx > 0 else src
-        assert "isSubagent()" not in after, (
-            "enforce-depth must NOT bypass subagents — depth enforcement "
-            "fires inside subagents intentionally via OPENCODE_DEPTH"
-        )
+        assert "isSubagent()" in after
 
     def test_enforce_gate_precedes_depth_check(self):
         src = _src()
@@ -257,9 +252,9 @@ def _simulate(
 ) -> dict | None:
     """Simulation of enforce-depth.ts tool.execute.before logic.
 
-    Depth enforcement fires INSIDE subagents too — enforce-depth is the ONE
-    depth-only plugin that intentionally does NOT bypass subagents."""
-    del is_subagent  # no bypass: depth fires at every nesting level
+    Delegated contexts bypass the orchestrator-owned enforcement stack."""
+    if is_subagent:
+        return None
     if not enforce:
         return None
     lt = tool.lower()
@@ -348,21 +343,17 @@ class TestMaxDepthOverride:
         assert result is not None
 
 
-class TestSubagentEnforced:
-    """Depth enforcement fires inside subagents — no bypass."""
+class TestSubagentIsolation:
+    """Delegated contexts bypass depth enforcement owned by the orchestrator."""
 
     def test_subagent_depth_3_allows_dispatch(self):
         assert _simulate(3, is_subagent=True) is None
 
-    def test_subagent_depth_4_blocks_dispatch(self):
-        result = _simulate(4, is_subagent=True)
-        assert result is not None
-        assert result["permissionDecision"] == "deny"
+    def test_subagent_depth_4_allows_dispatch(self):
+        assert _simulate(4, is_subagent=True) is None
 
-    def test_subagent_depth_10_blocks_dispatch(self):
-        result = _simulate(10, is_subagent=True)
-        assert result is not None
-        assert result["permissionDecision"] == "deny"
+    def test_subagent_depth_10_allows_dispatch(self):
+        assert _simulate(10, is_subagent=True) is None
 
 
 class TestDisengageBypass:

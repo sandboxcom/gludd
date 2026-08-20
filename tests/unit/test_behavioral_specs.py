@@ -543,13 +543,15 @@ class TestEnforceObjective:
         content = (PLUGIN_DIR / "enforce-objective.ts").read_text()
         assert "text.complete" in content, "enforce-objective.ts missing text.complete hook"
 
-    def test_objective_plugin_exports_get_primary_objective(self):
+    def test_objective_plugin_defines_get_primary_objective(self):
         content = (PLUGIN_DIR / "enforce-objective.ts").read_text()
-        assert "getPrimaryObjective" in content, "getPrimaryObjective must be exported"
+        assert "function getPrimaryObjective" in content
+        assert "export function getPrimaryObjective" not in content
 
-    def test_objective_plugin_exports_is_objective_met(self):
+    def test_objective_plugin_defines_is_objective_met(self):
         content = (PLUGIN_DIR / "enforce-objective.ts").read_text()
-        assert "isObjectiveMet" in content, "isObjectiveMet must be exported"
+        assert "function isObjectiveMet" in content
+        assert "export function isObjectiveMet" not in content
 
     def test_objective_plugin_ci_green_detection(self):
         content = (PLUGIN_DIR / "enforce-objective.ts").read_text()

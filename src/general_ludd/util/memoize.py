@@ -7,7 +7,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -238,29 +238,35 @@ def _memoize(backend: _CacheBackend, lock: threading.Lock | None = None) -> Call
                 backend.put(key, computed)
             return computed
 
-        wrapper.cache = backend  # type: ignore[attr-defined]
-        wrapper.cache_clear = backend.clear  # type: ignore[attr-defined]
-        wrapper.cache_stats = backend.stats  # type: ignore[attr-defined]
-        return wrapper  # type: ignore[return-value]
+        wrapper.__dict__.update(
+            cache=backend,
+            cache_clear=backend.clear,
+            cache_stats=backend.stats,
+        )
+        return cast(F, wrapper)
 
     return decorator
 
 
 def memoize_lru(maxsize: int = 128) -> Callable[[F], F]:
+    """Execute ``memoize_lru``."""
     backend = _LRUBackend(maxsize)
     return _memoize(backend)
 
 
 def memoize_lfu(maxsize: int = 128) -> Callable[[F], F]:
+    """Execute ``memoize_lfu``."""
     backend = _LFUBackend(maxsize)
     return _memoize(backend)
 
 
 def memoize_ttl(ttl_seconds: float, maxsize: int = 128) -> Callable[[F], F]:
+    """Execute ``memoize_ttl``."""
     backend = _TTLBackend(ttl_seconds, maxsize)
     return _memoize(backend)
 
 
 def memoize_size(maxsize: int = 128, max_item_bytes: int = 0) -> Callable[[F], F]:
+    """Execute ``memoize_size``."""
     backend = _SizeBackend(maxsize, max_item_bytes)
     return _memoize(backend)

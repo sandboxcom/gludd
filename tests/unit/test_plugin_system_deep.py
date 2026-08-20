@@ -801,8 +801,16 @@ class TestAgentRegistryDeep:
                 type=AgentType.SUBAGENT,
             )
         )
+        reg.register(
+            AgentConfig(
+                name="agent-reviewer",
+                description="r",
+                type=AgentType.SUBAGENT,
+            )
+        )
         assert reg.can_invoke("build", "agent-writer") is True
         assert reg.can_invoke("build", "agent-reviewer") is True
+        assert reg.can_invoke("build", "agent-unknown") is False
 
     def test_get_behavior_returns_default_for_subagent(self):
         reg = AgentRegistry()

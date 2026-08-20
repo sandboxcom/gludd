@@ -209,8 +209,14 @@ def select_resource(
     if work.task_type is not None:
         try:
             from general_ludd.routing_roles.weights import weights_for
+            from general_ludd.schemas.benchmark import TaskType
 
-            weights = weights_for(work.task_type)  # type: ignore[arg-type]
+            task_type = (
+                work.task_type
+                if isinstance(work.task_type, TaskType)
+                else TaskType(str(work.task_type))
+            )
+            weights = weights_for(task_type)
             q_weight, c_weight = weights.quality, weights.cost
         except (AttributeError, KeyError, TypeError, ValueError):
             logger.debug("using default discovery weights for unknown task type")

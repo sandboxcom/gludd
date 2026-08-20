@@ -327,6 +327,7 @@ class TestTodoRepositoryCreate:
     @pytest.mark.asyncio
     async def test_create_sets_version_one(self):
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         repo = TodoRepository(session)
         data = {"title": "test todo", "todo_id": "TODO-001", "project_id": "p1"}
@@ -336,6 +337,7 @@ class TestTodoRepositoryCreate:
     @pytest.mark.asyncio
     async def test_create_adds_and_flushes(self):
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         repo = TodoRepository(session)
         data = {"title": "test", "todo_id": "TODO-002", "project_id": "p1"}
@@ -346,6 +348,7 @@ class TestTodoRepositoryCreate:
     @pytest.mark.asyncio
     async def test_create_rejects_immutable_fields(self):
         session = AsyncMock()
+        session.add = MagicMock()
         repo = TodoRepository(session)
         with pytest.raises(ValueError, match="immutable"):
             await repo.create({"id": 42, "title": "test", "todo_id": "TODO-003"})

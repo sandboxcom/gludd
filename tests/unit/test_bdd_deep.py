@@ -5,7 +5,9 @@ Pure-stdlib, no fixtures.
 
 from __future__ import annotations
 
-from general_ludd.algorithms.bdd import BDD
+import pytest
+
+from general_ludd.algorithms.bdd import BDD, BDDNode, id_of
 
 
 class TestBDDTerminal:
@@ -32,6 +34,15 @@ class TestBDDVar:
             raise AssertionError("should have raised")
         except IndexError:
             pass
+
+    def test_from_expression_preserves_each_assignment(self) -> None:
+        b = BDD(2)
+        root = b.from_expression(lambda bits: bits[0] == 1 and bits[1] == 0)
+
+        assert b.restrict(root, 0, 0) == 0
+        when_first_true = b.restrict(root, 0, 1)
+        assert b.restrict(when_first_true, 1, 0) == 1
+        assert b.restrict(when_first_true, 1, 1) == 0
 
 
 class TestBDDNot:
@@ -78,6 +89,37 @@ class TestBDDAndOrXor:
         ornot = b.or_(b.not_(u), b.not_(v))
         assert b.equals(nand, ornot)
 
+    @pytest.mark.parametrize(
+        ("operator", "left", "right", "expected"),
+        [
+            ("and", 0, 1, 0),
+            ("and", 1, 1, 1),
+            ("or", 0, 0, 0),
+            ("or", 0, 1, 1),
+            ("xor", 0, 0, 0),
+            ("xor", 0, 1, 1),
+        ],
+    )
+    def test_terminal_truth_tables(
+        self,
+        operator: str,
+        left: int,
+        right: int,
+        expected: int,
+    ) -> None:
+        assert BDD(1).apply(operator, left, right) == expected
+
+    def test_apply_rejects_unknown_operator(self) -> None:
+        with pytest.raises(ValueError, match="unknown op"):
+            BDD(1).apply("nor", 0, 1)
+
+    def test_apply_handles_nodes_in_both_variable_orders(self) -> None:
+        b = BDD(3)
+        earlier = b.var(0)
+        later = b.var(2)
+
+        assert b.and_(earlier, later) is b.and_(later, earlier)
+
 
 class TestBDDRestrict:
     def test_restrict_var0_to_0_kills_positive(self) -> None:
@@ -104,6 +146,12 @@ class TestBDDRestrict:
         r = b.restrict(f, 1, 1)
         assert b.equals(r, b.var(0))
 
+    def test_restrict_terminal_and_cached_results(self) -> None:
+        b = BDD(2)
+        assert b.restrict(1, 0, 0) == 1
+        root = b.var(0)
+        assert b.restrict(root, 0, 1) == b.restrict(root, 0, 1)
+
 
 class TestBDDCompose:
     def test_compose_var0_with_true(self) -> None:
@@ -124,6 +172,14 @@ class TestBDDCompose:
         r = b.compose(f, 1, b.var(2))
         s = b.and_(b.var(0), b.var(2))
         assert b.equals(r, s)
+
+    def test_compose_terminal_irrelevant_and_cached_results(self) -> None:
+        b = BDD(3)
+        replacement = b.var(0)
+        assert b.compose(1, 2, replacement) == 1
+        later = b.var(2)
+        assert b.compose(later, 0, replacement) is later
+        assert b.compose(later, 2, replacement) is b.compose(later, 2, replacement)
 
 
 class TestBDDIte:
@@ -167,6 +223,15 @@ class TestBDDSatcount:
         b = BDD(3)
         f = b.and_(b.var(0), b.var(1))
         assert b.satcount(f) == 2
+
+    def test_satcount_with_active_variable_mask(self) -> None:
+        b = BDD(3)
+        root = b.and_(b.var(0), b.var(1))
+
+        assert b.satcount_with_vars(0, 0b111) == 0
+        assert b.satcount_with_vars(1, 0b011) == 4
+        assert b.satcount_with_vars(root, 0b001) == 0
+        assert b.satcount_with_vars(root, 0b011) == 1
 
 
 class TestBDDTautology:
@@ -239,3 +304,11 @@ class TestBDDCanonicity:
         b = BDD(3)
         assert b.equals(b.var(0), b.var(0))
         assert not b.equals(b.var(0), b.var(1))
+
+    def test_node_protocol_handles_non_nodes_and_stable_ids(self) -> None:
+        node = BDDNode(0, 0, 1)
+
+        assert node.__eq__(object()) is NotImplemented
+        assert id_of(node) > 0
+        assert isinstance(id_of("sentinel"), int)
+        assert "var=0" in repr(node)

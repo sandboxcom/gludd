@@ -784,7 +784,7 @@ function _writeHeartbeat(): void {
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
-const defaultImpl = {
+const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
     // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return

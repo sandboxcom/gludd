@@ -24,7 +24,7 @@ import contextlib
 import random
 import threading
 from collections.abc import Iterator
-from typing import Generic, Protocol, TypeVar
+from typing import Generic, Protocol, TypeVar, cast
 
 
 class _Comparable(Protocol):
@@ -71,7 +71,7 @@ class SkipList(Generic[K, V]):
 
     def __init__(self) -> None:
         """Initialize an empty concurrent skip-list map."""
-        self._head = _SkipNode[K, V]("__head__", None, _MAX_LEVEL - 1)  # type: ignore[arg-type]
+        self._head = _SkipNode[K, V](cast(K, "__head__"), cast(V, None), _MAX_LEVEL - 1)
         self._level = 0
 
     def __len__(self) -> int:
@@ -368,7 +368,7 @@ class IndexedSkipList(Generic[K, V]):
 
     def __init__(self) -> None:
         """Initialize an empty rank-indexed skip list."""
-        self._head = _IdxSkipNode[K, V]("__head__", None, _MAX_LEVEL - 1)  # type: ignore[arg-type]
+        self._head = _IdxSkipNode[K, V](cast(K, "__head__"), cast(V, None), _MAX_LEVEL - 1)
         self._level = 0
         self._size = 0
 
@@ -597,7 +597,7 @@ class LockFreeSkipList(Generic[K, V]):
 
     def __init__(self) -> None:
         """Initialize an empty optimistic lock-free skip list."""
-        self._head = _SkipNode[K, V]("__head__", None, _MAX_LEVEL - 1)  # type: ignore[arg-type]
+        self._head = _SkipNode[K, V](cast(K, "__head__"), cast(V, None), _MAX_LEVEL - 1)
         self._level = 0
         self._lock = threading.Lock()  # coarse gate for level bumps only
 

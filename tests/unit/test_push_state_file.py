@@ -107,7 +107,7 @@ class TestPushStateFileWrittenOnBlock:
             reason="ci-restart-cap",
             message="BLOCKED: 3 CI restarts this session. Max is 3.",
             branch="development",
-            commit_sha="abc123def456",  # pragma: allowlist secret
+            commit_sha="test-commit-sha-not-real",
             current_count=3,
             max_allowed=3,
         )

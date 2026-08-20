@@ -52,6 +52,7 @@ class WebAuthnError(ValueError):
 
 @dataclass(frozen=True)
 class ClientData:
+    """Represent ``ClientData`` values."""
     challenge: str
     origin: str
     type: str
@@ -60,6 +61,7 @@ class ClientData:
 
 @dataclass(frozen=True)
 class ParsedAuthenticatorData:
+    """Represent ``ParsedAuthenticatorData`` values."""
     rp_id_hash: bytes
     flags: int
     sign_count: int
@@ -73,6 +75,7 @@ class ParsedAuthenticatorData:
 
 @dataclass(frozen=True)
 class ParsedCredential:
+    """Represent ``ParsedCredential`` values."""
     credential_id: bytes
     public_key_bytes: bytes | None
     cose_key: bytes
@@ -92,10 +95,12 @@ class WebAuthnCredential:
 
 
 def bytes_to_base64url(data: bytes) -> str:
+    """Execute ``bytes_to_base64url``."""
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
 
 def base64url_to_bytes(data: str) -> bytes:
+    """Execute ``base64url_to_bytes``."""
     padding = 4 - len(data) % 4
     if padding != 4:
         data += "=" * padding
@@ -106,6 +111,7 @@ def base64url_to_bytes(data: str) -> bytes:
 
 
 def parse_client_data_json(raw: bytes) -> ClientData:
+    """Execute ``parse_client_data_json``."""
     try:
         obj = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -130,6 +136,7 @@ _AUTH_DATA_MIN_LEN = 37
 
 
 def parse_authenticator_data(auth_data: bytes) -> ParsedAuthenticatorData:
+    """Execute ``parse_authenticator_data``."""
     if len(auth_data) < _AUTH_DATA_MIN_LEN:
         raise WebAuthnError(f"authenticator data too short: {len(auth_data)} bytes")
     rp_id_hash = auth_data[0:32]
@@ -173,6 +180,7 @@ def parse_authenticator_data(auth_data: bytes) -> ParsedAuthenticatorData:
 
 
 def decode_attested_credential_data(data: bytes, offset: int = 0) -> ParsedCredential:
+    """Decode attested credential data."""
     if len(data) < offset + 18:
         raise WebAuthnError("attested credential data too short for aaguid + cred-id length")
     aaguid = data[offset : offset + 16]
@@ -200,6 +208,7 @@ class COSEKeyParser:
     """Parse CBOR-encoded COSE_Key structures and extract public keys."""
 
     def __init__(self, cose_bytes: bytes) -> None:
+        """Initialize a ``COSEKeyParser`` instance."""
         self._raw = cose_bytes
         self._alg: int | None = None
         self._kty: int | None = None
@@ -229,18 +238,26 @@ class COSEKeyParser:
 
     @property
     def algorithm(self) -> int:
-        return self._alg  # type: ignore[return-value]
+        """Execute ``algorithm``."""
+        if self._alg is None:
+            raise WebAuthnError("COSE key: missing algorithm (label 3)")
+        return self._alg
 
     @property
     def key_type(self) -> int:
-        return self._kty  # type: ignore[return-value]
+        """Execute ``key_type``."""
+        if self._kty is None:
+            raise WebAuthnError("COSE key: missing key type (label 1)")
+        return self._kty
 
     @property
     def curve(self) -> int | None:
+        """Execute ``curve``."""
         return self._crv
 
     @property
     def public_key_bytes(self) -> bytes | None:
+        """Execute ``public_key_bytes``."""
         if self._alg == _COSE_ES256 and self._x is not None and self._y is not None:
             return b"\x04" + self._x + self._y
         if self._alg == _COSE_EdDSA and self._x is not None:
@@ -250,6 +267,7 @@ class COSEKeyParser:
         return None
 
     def load_public_key(self) -> ec.EllipticCurvePublicKey | ed25519.Ed25519PublicKey | rsa.RSAPublicKey:
+        """Execute ``load_public_key``."""
         if self._alg == _COSE_ES256:
             if self._x is None or self._y is None:
                 raise WebAuthnError("COSE ES256: missing x or y coordinate")
@@ -384,6 +402,7 @@ def _verify_cose(cose_bytes: bytes, message: bytes, signature: bytes) -> None:
 
 
 def verify_attestation_signature(auth_data: bytes, client_data_hash: bytes, signature: bytes, cose_key: bytes) -> None:
+    """Execute ``verify_attestation_signature``."""
     try:
         _verify_cose(cose_key, auth_data + client_data_hash, signature)
     except InvalidSignature as exc:
@@ -391,6 +410,7 @@ def verify_attestation_signature(auth_data: bytes, client_data_hash: bytes, sign
 
 
 def verify_assertion_signature(auth_data: bytes, client_data_hash: bytes, signature: bytes, cose_key: bytes) -> None:
+    """Execute ``verify_assertion_signature``."""
     try:
         _verify_cose(cose_key, auth_data + client_data_hash, signature)
     except InvalidSignature as exc:
@@ -401,6 +421,7 @@ def verify_assertion_signature(auth_data: bytes, client_data_hash: bytes, signat
 
 
 def generate_challenge(length: int = 32) -> bytes:
+    """Generate challenge."""
     return os.urandom(length)
 
 
@@ -415,6 +436,7 @@ def build_credential_creation_options(
     user_display_name: str | None = None,
     timeout: int = 60000,
 ) -> dict[str, Any]:
+    """Build credential creation options."""
     challenge = generate_challenge()
     return {
         "rp": {"name": rp_name, "id": rp_id},
@@ -442,6 +464,7 @@ def build_credential_request_options(
     timeout: int = 60000,
     user_verification: str = "preferred",
 ) -> dict[str, Any]:
+    """Build credential request options."""
     challenge = generate_challenge()
     opts: dict[str, Any] = {
         "challenge": bytes_to_base64url(challenge),
@@ -466,6 +489,7 @@ def verify_registration_response(
     expected_rp_id: str,
     require_user_verification: bool = False,
 ) -> WebAuthnCredential:
+    """Execute ``verify_registration_response``."""
     client_data_bytes = base64url_to_bytes(client_data_json)
     client_data = parse_client_data_json(client_data_bytes)
 
@@ -543,6 +567,7 @@ def verify_authentication_response(
     expected_rp_id: str,
     require_user_verification: bool = False,
 ) -> WebAuthnCredential:
+    """Execute ``verify_authentication_response``."""
     client_data_bytes = base64url_to_bytes(client_data_json)
     client_data = parse_client_data_json(client_data_bytes)
 

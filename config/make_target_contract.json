@@ -625,6 +625,36 @@
       "name": "update-collection-python-boundary-inventory",
       "make_variables": ["COLLECTION_PYTHON_BOUNDARY_ROOT", "COLLECTION_PYTHON_BOUNDARY_INVENTORY"],
       "behavior": "make update-collection-python-boundary-inventory COLLECTION_PYTHON_BOUNDARY_ROOT=collections/ansible_collections COLLECTION_PYTHON_BOUNDARY_INVENTORY=/tmp/gludd-collection-python-boundary-contract.json"
+    },
+    {
+      "name": "pre-commit-check",
+      "make_variables": [],
+      "behavior": "make pre-commit-check"
+    },
+    {
+      "name": "list-plugins",
+      "make_variables": [],
+      "behavior": "make list-plugins"
+    },
+    {
+      "name": "release-branch-new",
+      "make_variables": ["NAME", "BASE", "RELEASE_BRANCH_VALIDATE_ONLY"],
+      "behavior": "make release-branch-new NAME=release/contract-validation BASE=development RELEASE_BRANCH_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "workstream-register",
+      "make_variables": ["BRANCH", "WORKTREE", "ACTIVE_WORKSTREAM_REGISTRY"],
+      "behavior": "make workstream-register BRANCH=contract/workstream WORKTREE=/tmp/gludd-workstream-contract ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json"
+    },
+    {
+      "name": "workstream-unregister",
+      "make_variables": ["BRANCH", "ACTIVE_WORKSTREAM_REGISTRY"],
+      "behavior": "make workstream-unregister BRANCH=contract/workstream ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json"
+    },
+    {
+      "name": "wt-prune-safe",
+      "make_variables": ["ACTIVE_WORKSTREAM_REGISTRY", "WT_PRUNE_VALIDATE_ONLY"],
+      "behavior": "make wt-prune-safe ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json WT_PRUNE_VALIDATE_ONLY=1"
     }
   ]
 }

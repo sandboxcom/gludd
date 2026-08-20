@@ -12,19 +12,22 @@ Environment:
 from __future__ import annotations
 
 import copy
+import importlib
 import logging
 import os
 import re
 import threading
 import time
 import uuid
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
 _HINDSIGHT_IMPORT_ERROR: str | None = None
+_HindsightClient: type[Any] | None
 try:
-    from hindsight_client import Hindsight as _HindsightClient  # type: ignore[import-not-found]
+    _hindsight_module = importlib.import_module("hindsight_client")
+    _HindsightClient = cast(type[Any], _hindsight_module.Hindsight)
 except ImportError as exc:
     _HindsightClient = None
     _HINDSIGHT_IMPORT_ERROR = str(exc)
@@ -125,6 +128,7 @@ class HindsightMemoryAdapter:
         url: str | None = None,
         enabled: bool | None = None,
     ) -> None:
+        """Initialize a ``HindsightMemoryAdapter`` instance."""
         self._url = url or os.environ.get("HINDSIGHT_URL", "http://localhost:8888")
         self._enabled = (
             enabled
@@ -143,6 +147,7 @@ class HindsightMemoryAdapter:
 
     @classmethod
     def get_instance(cls, **kwargs: Any) -> HindsightMemoryAdapter:
+        """Return get instance."""
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -151,6 +156,7 @@ class HindsightMemoryAdapter:
 
     @classmethod
     def reset_instance(cls) -> None:
+        """Reset instance."""
         with cls._lock:
             cls._instance = None
 
@@ -177,6 +183,7 @@ class HindsightMemoryAdapter:
     def retain(
         self, content: str, metadata: dict[str, object] | None = None,
     ) -> str:
+        """Retain the value."""
         if self._connected and self._client is not None:
             try:
                 obs_id = self._client.observe(
@@ -191,6 +198,7 @@ class HindsightMemoryAdapter:
     # ------------------------------------------------------------------ recall
 
     def recall(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
+        """Return recall."""
         if self._connected and self._client is not None:
             try:
                 results = self._client.recall(query=query, top_k=top_k)
@@ -202,6 +210,7 @@ class HindsightMemoryAdapter:
     # ------------------------------------------------------------------ search
 
     def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
+        """Search the value."""
         if self._connected and self._client is not None:
             try:
                 results = self._client.search(query=query, top_k=top_k)
@@ -213,6 +222,7 @@ class HindsightMemoryAdapter:
     # ----------------------------------------------------------------- reflect
 
     def reflect(self, query: str) -> str:
+        """Return reflect."""
         if self._connected and self._client is not None:
             try:
                 answer = self._client.reflect(query=query)
@@ -234,6 +244,7 @@ class HindsightMemoryAdapter:
         directives: list[str] | None = None,
         disposition: str = "helpful",
     ) -> dict[str, Any]:
+        """Create memory bank."""
         if self._connected and self._client is not None:
             try:
                 result = self._client.create_memory_bank(
@@ -257,6 +268,7 @@ class HindsightMemoryAdapter:
     # ---------------------------------------------------------------- health
 
     def health_check(self) -> dict[str, Any]:
+        """Execute ``health_check``."""
         return {
             "backend": "hindsight" if self._connected else "fallback",
             "enabled": self._enabled,
@@ -266,6 +278,7 @@ class HindsightMemoryAdapter:
 
     @property
     def is_connected(self) -> bool:
+        """Return whether is connected."""
         return self._connected
 
 

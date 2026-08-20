@@ -13,6 +13,7 @@ T = TypeVar("T")
 
 
 class HuffmanNode(Generic[T]):
+    """Represent ``HuffmanNode`` values."""
     __slots__ = ("left", "right", "symbol", "weight")
 
     def __init__(
@@ -22,16 +23,19 @@ class HuffmanNode(Generic[T]):
         left: HuffmanNode[T] | None = None,
         right: HuffmanNode[T] | None = None,
     ) -> None:
+        """Initialize a ``HuffmanNode`` instance."""
         self.symbol = symbol
         self.weight = weight
         self.left = left
         self.right = right
 
     def __lt__(self, other: HuffmanNode[T]) -> bool:
+        """Compare this instance with another value."""
         return self.weight < other.weight
 
 
 def build_huffman_tree(freqs: dict[T, int]) -> HuffmanNode[T]:
+    """Build huffman tree."""
     if len(freqs) == 0:
         raise ValueError("frequency dictionary must be non-empty")
     heap: list[tuple[float, int, HuffmanNode[T]]] = []
@@ -54,6 +58,7 @@ def build_huffman_tree(freqs: dict[T, int]) -> HuffmanNode[T]:
 
 
 def build_huffman_codes(root: HuffmanNode[T]) -> dict[T, str]:
+    """Build huffman codes."""
     codes: dict[T, str] = {}
     _generate_codes(root, "", codes)
     return codes
@@ -70,18 +75,21 @@ def _generate_codes(node: HuffmanNode[T] | None, prefix: str, codes: dict[T, str
 
 
 def huffman_encode(symbols: list[T], codes: dict[T, str]) -> str:
+    """Execute ``huffman_encode``."""
     return "".join(codes[sym] for sym in symbols)
 
 
 def huffman_decode(bitstring: str, root: HuffmanNode[T]) -> list[T]:
+    """Execute ``huffman_decode``."""
     if bitstring == "":
         return []
     result: list[T] = []
     current = root
     for bit in bitstring:
-        current = current.left if bit == "0" else current.right  # type: ignore[assignment]
-        if current is None:
+        next_node = current.left if bit == "0" else current.right
+        if next_node is None:
             raise ValueError(f"invalid bitstring: dead-end at '{bit}'")
+        current = next_node
         if current.symbol is not None:
             result.append(current.symbol)
             current = root
@@ -105,9 +113,11 @@ def _bytes_to_bitstring(data: bytes) -> str:
 
 
 class CanonicalCode(Generic[T]):
+    """Represent ``CanonicalCode`` values."""
     __slots__ = ("base_codes", "bit_widths", "lengths", "symbols")
 
     def __init__(self, symbols: list[T], lengths: list[int]):
+        """Initialize a ``CanonicalCode`` instance."""
         if len(symbols) != len(lengths):
             raise ValueError("symbols and lengths must have the same length")
         if any(w < 0 for w in lengths):
@@ -120,6 +130,7 @@ class CanonicalCode(Generic[T]):
 
     @classmethod
     def from_frequencies(cls, freqs: dict[T, int]) -> CanonicalCode[T]:
+        """Execute ``from_frequencies``."""
         if len(freqs) == 0:
             return cls([], [])
         root = build_huffman_tree(freqs)
@@ -130,6 +141,7 @@ class CanonicalCode(Generic[T]):
         return cls(symbols, lengths)
 
     def encode(self, symbols: list[T]) -> bytes:
+        """Encode the value."""
         if not symbols:
             return b""
         out_bits: list[str] = []
@@ -140,6 +152,7 @@ class CanonicalCode(Generic[T]):
         return _bitstring_to_bytes("".join(out_bits))
 
     def decode(self, data: bytes, num_symbols: int) -> list[T]:
+        """Decode the value."""
         if num_symbols == 0:
             return []
         max(self.lengths) if self.lengths else 1
@@ -187,6 +200,7 @@ def _canonical_assign(
 
 
 class ArithmeticCoder:
+    """Represent ``ArithmeticCoder`` values."""
     PRECISION = 32
     HALF = 1 << (PRECISION - 1)
     QUARTER = 1 << (PRECISION - 2)
@@ -194,6 +208,7 @@ class ArithmeticCoder:
     MAX_CODE = (1 << PRECISION) - 1
 
     def __init__(self, freqs: dict[int, int]):
+        """Initialize a ``ArithmeticCoder`` instance."""
         total = sum(freqs.values())
         if total <= 0:
             raise ValueError("total frequency must be positive")
@@ -209,6 +224,7 @@ class ArithmeticCoder:
             self.high_bound[sym] = cum
 
     def encode(self, symbols: list[int]) -> bytes:
+        """Encode the value."""
         low = 0
         high = self.MAX_CODE
         pending_bits = 0
@@ -251,6 +267,7 @@ class ArithmeticCoder:
         return header + _bitstring_to_bytes(bitstring)
 
     def decode(self, data: bytes, num_symbols: int) -> list[int]:
+        """Decode the value."""
         if num_symbols == 0:
             return []
         bit_count = int.from_bytes(data[:4], "big")

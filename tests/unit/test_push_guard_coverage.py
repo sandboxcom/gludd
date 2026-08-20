@@ -48,6 +48,51 @@ class TestPushGuardCoverage:
                 targets.add(m.group(1))
         return targets
 
+    @classmethod
+    def _is_guarded(
+        cls,
+        content: str,
+        name: str,
+        all_names: set[str],
+        seen: set[str] | None = None,
+    ) -> bool:
+        """Return whether *name* reaches the rate guard directly or transitively.
+
+        Wrapper targets are deliberately DRY: ``force-push`` and
+        ``commit-and-ship-push``, for example, delegate to the canonical push
+        recipes instead of duplicating their safeguards.  Follow both Make
+        prerequisites and recursive ``$(MAKE)`` calls so the audit verifies
+        the effective call graph rather than requiring duplicated guards.
+        """
+        visited = set() if seen is None else seen
+        if name in visited:
+            return False
+        visited.add(name)
+        entry = cls._find_entry(content, name)
+        if not entry:
+            return False
+        if "_push-rate-guard" in entry:
+            return True
+
+        lines = entry.splitlines()
+        dependencies: set[str] = set()
+        if lines:
+            dependencies.update(
+                token
+                for token in re.findall(r"[a-zA-Z_][a-zA-Z0-9_./-]*", lines[0].partition(":")[2])
+                if token in all_names
+            )
+        for line in lines[1:]:
+            if "$(MAKE)" not in line:
+                continue
+            make_args = line.split("$(MAKE)", 1)[1]
+            dependencies.update(
+                token
+                for token in re.findall(r"[a-zA-Z_][a-zA-Z0-9_./-]*", make_args)
+                if token in all_names
+            )
+        return any(cls._is_guarded(content, dependency, all_names, visited.copy()) for dependency in dependencies)
+
     def test_primary_push_targets_include_guard(self):
         content = MAKEFILE.read_text()
         all_names = self._targets(content)
@@ -55,10 +100,7 @@ class TestPushGuardCoverage:
         for name in self._PRIMARY_PUSH_TARGETS:
             if name not in all_names:
                 continue
-            entry = self._find_entry(content, name)
-            if not entry:
-                continue
-            if "_push-rate-guard" not in entry:
+            if not self._is_guarded(content, name, all_names):
                 violations.append(name)
         assert not violations, f"Primary push targets missing _push-rate-guard: {violations}"
 
@@ -76,14 +118,12 @@ class TestPushGuardCoverage:
                 "verify-container-push",
                 "release-deploy",
                 "pre-push-check",
+                "audit-push-cooldown-integrity",
             )
         )
         violations = []
         for name in push_targets:
-            entry = self._find_entry(content, name)
-            if not entry:
-                continue
-            if "_push-rate-guard" not in entry:
+            if not self._is_guarded(content, name, all_names):
                 violations.append(name)
 
         guarded = len(push_targets) - len(violations)
@@ -99,3 +139,8 @@ class TestPushGuardCoverage:
         entry = self._find_entry(content, "ci-push")
         assert entry, "ci-push must exist"
         assert "_push-rate-guard" in entry, "ci-push must include _push-rate-guard"
+
+    def test_transitive_wrapper_guard_is_detected(self):
+        content = "\ncanonical-push: _push-rate-guard\n\t@true\n\nwrapper-push:\n\t@$(MAKE) canonical-push\n"
+        names = self._targets(content)
+        assert self._is_guarded(content, "wrapper-push", names)

@@ -109,6 +109,10 @@ class TestUptimeWithMetrics:
         provider = DashboardDataProvider()
         assert provider._get_uptime() == 0.0
 
+    def test_uptime_with_uninitialized_metrics_returns_zero(self) -> None:
+        provider = DashboardDataProvider(metrics_exporter=FakeMetrics({}))
+        assert provider._get_uptime() == 0.0
+
     def test_uptime_zero_elapsed_returns_near_zero(self) -> None:
         now = time.monotonic()
         metrics = FakeMetrics({}, started_at=now)
