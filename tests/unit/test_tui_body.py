@@ -46,10 +46,11 @@ def _tui_patches(os_read_keys: list[bytes], extra: list | None = None):
                   return_value=_default_config_editor()))
 
         mgr_cls = stack.enter_context(
-            patch("general_ludd.infra.local_inference.LocalInferenceManager"))
+            patch("general_ludd.tui.runner.LocalInferenceManager"))
         mock_mgr = MagicMock()
         mock_mgr.list_servers.return_value = []
         mgr_cls.return_value = mock_mgr
+        _MOCKS["model_mgr"] = mock_mgr
 
         reg_cls = stack.enter_context(
             patch("general_ludd.models.model_registry.ModelRegistry"))
@@ -106,6 +107,10 @@ def _run_tui(keys: list[bytes], extra: list | None = None) -> dict:
 
 
 class TestCmdTUIBody:
+
+    def test_exit_stops_tui_owned_local_model_manager(self) -> None:
+        _run_tui([b"q"])
+        _MOCKS["model_mgr"].stop_all.assert_called_once_with()
 
     @pytest.mark.parametrize("key", ["P", "R", "L", "H", "T", "D", "C"])
     def test_uppercase_commands_preserve_case_for_dispatch(self, key: str) -> None:

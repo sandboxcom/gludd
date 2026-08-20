@@ -248,6 +248,16 @@ def create_app(
         dispatcher = build_dispatcher_from_config()
     application.state.dispatcher = dispatcher
 
+    async def _shutdown_owned_model_resources() -> None:
+        from general_ludd.models.job_invocation import drain_background_tasks
+
+        await drain_background_tasks()
+        owned_gateway = application.state.gateway
+        if owned_gateway is not None:
+            owned_gateway.close()
+
+    application.router.add_event_handler("shutdown", _shutdown_owned_model_resources)
+
     # C20: worker auth fail-closed by default. The worker runs arbitrary
     # registered playbooks for any caller who can reach the port. Enforce the
     # same pre-shared-key the daemon uses (GLUDD_AUTH_PSK), via the SHARED

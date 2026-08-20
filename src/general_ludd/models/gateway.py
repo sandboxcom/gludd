@@ -1006,6 +1006,9 @@ class ModelGateway:
         close = getattr(cache, "close", None)
         if callable(close):
             close()
+        secrets_close = getattr(self._secrets, "close", None)
+        if callable(secrets_close):
+            secrets_close()
         self._closed = True
 
     def _apply_billing_rate(self, base_cost: float) -> tuple[float, str, float]:

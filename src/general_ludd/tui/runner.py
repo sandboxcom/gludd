@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import contextlib
+import inspect
 import os
 import select
 import subprocess
@@ -33,6 +35,7 @@ validate_daemon_spawn_args = validate_gunicorn_spawn_args
 
 
 def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
+    """Run the interactive terminal UI and close resources on exit."""
     try:
         import termios
         import tty
@@ -1146,8 +1149,13 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
                 info = h._gather_offline_status()
                 live.update(make_layout(info))
     finally:
-        sys.stdout.write("\x1b[?1002l")
-        sys.stdout.flush()
-        tui_logger.close()
-        termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_settings)
+        try:
+            shutdown = model_mgr.stop_all()
+            if inspect.isawaitable(shutdown):
+                asyncio.run(shutdown)
+        finally:
+            sys.stdout.write("\x1b[?1002l")
+            sys.stdout.flush()
+            tui_logger.close()
+            termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_settings)
     print("TUI exited.")

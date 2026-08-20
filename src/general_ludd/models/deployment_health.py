@@ -23,6 +23,7 @@ from general_ludd.models.timeout_detector import (
     TimeoutEvent,
     TimeoutKind,
 )
+from general_ludd.util.async_lifecycle import cancel_and_drain_tasks
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,7 @@ class DeploymentIncidentLog:
         self._project_id = project_id
         self._incidents: list[DeploymentIncident] = []
         self._lock = threading.RLock()
+        self._persistence_tasks: set[asyncio.Task[None]] = set()
 
     # -- public API ---------------------------------------------------------
 
@@ -189,8 +191,16 @@ class DeploymentIncidentLog:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        _task = loop.create_task(self._persist(incident))
-        del _task
+        task = loop.create_task(self._persist(incident))
+        self._persistence_tasks.add(task)
+        task.add_done_callback(self._persistence_tasks.discard)
+
+    async def aclose(self) -> None:
+        """Cancel and await every persistence task owned by this log."""
+        await cancel_and_drain_tasks(
+            self._persistence_tasks,
+            registry=self._persistence_tasks,
+        )
 
     async def _persist(self, incident: DeploymentIncident) -> None:
         assert self._audit_repo is not None  # guarded by caller
@@ -263,6 +273,10 @@ class DeploymentHealthChecker:
         self._latency_samples: dict[str, deque[float]] = {}
         self._max_latency_samples = max_latency_samples
         self._lock = threading.RLock()
+
+    async def aclose(self) -> None:
+        """Drain persistence owned by the incident log."""
+        await self._incident_log.aclose()
 
     # -- deployment → model mapping -----------------------------------------
 
@@ -544,6 +558,10 @@ class SelfHealingRouter:
         """Snapshot of per-deployment health dicts."""
         with self._lock:
             return {did: dict(data) for did, data in self._deployment_health.items()}
+
+    async def aclose(self) -> None:
+        """Release resources owned by the underlying health checker."""
+        await self._health_checker.aclose()
 
     # -- chain management ---------------------------------------------------
 

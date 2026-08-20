@@ -514,10 +514,13 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
         mgr = _get_inference_mgr(app)
         if mgr is None:
-            if not hasattr(app.state, "_local_inference") or app.state._local_inference is None:
+            if (
+                not hasattr(app.state, "_local_inference_manager")
+                or app.state._local_inference_manager is None
+            ):
                 subsys = _get_or_create_subsystems(app)
-                app.state._local_inference = LocalInferenceManager(event_bus=subsys["bus"])
-            mgr = app.state._local_inference
+                app.state._local_inference_manager = LocalInferenceManager(event_bus=subsys["bus"])
+            mgr = app.state._local_inference_manager
 
         port = cast(int, body.get("port", 8080))
         if not isinstance(port, int) or not 1024 <= port <= 65535:

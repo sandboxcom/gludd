@@ -172,10 +172,12 @@ class CreditTracker:
         http_client: Any = None,
         timeout: float = 10.0,
     ) -> None:
+        """Configure provider credentials, thresholds, and optional transport."""
         self._api_keys: dict[str, str] = dict(api_keys or {})
         self._thresholds: dict[str, float] = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
         self._spend_rates: dict[str, float] = dict(historical_spend_rates or {})
         self._http_client = http_client
+        self._owns_http_client = False
         self._timeout = timeout
         self._last_balance: dict[str, dict[str, Any]] = {}
 
@@ -195,7 +197,16 @@ class CreditTracker:
         import httpx
 
         self._http_client = httpx.Client(timeout=self._timeout)
+        self._owns_http_client = True
         return self._http_client
+
+    def close(self) -> None:
+        """Close the lazily-created HTTP client without touching injected clients."""
+        if not self._owns_http_client or self._http_client is None:
+            return
+        self._http_client.close()
+        self._http_client = None
+        self._owns_http_client = False
 
     @staticmethod
     def _build_result(
@@ -422,6 +433,7 @@ class CreditTracker:
         return self._last_balance.get(service)
 
     def __repr__(self) -> str:
+        """Return a credential-free tracker summary."""
         return (
             f"CreditTracker("
             f"services={list(SUPPORTED_SERVICES)}, "

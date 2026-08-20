@@ -322,6 +322,23 @@ class TestAsyncDebounceV2:
 
         asyncio.run(run())
 
+    def test_aclose_cancels_and_awaits_leading_and_trailing_tasks(self) -> None:
+        async def fn(_value: int) -> None:
+            await asyncio.Event().wait()
+
+        async def run() -> None:
+            d = AsyncDebounceV2(fn, wait=60.0, leading=True, trailing=True)
+            d(1)
+            d(2)
+            await asyncio.sleep(0)
+
+            await d.aclose()
+
+            assert d._task is None
+            assert not d._leading_tasks
+
+        asyncio.run(run())
+
 
 # ---------------------------------------------------------------------------
 # Multi-instance isolation
