@@ -17,6 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.models import Base
+from general_ludd.ornith import sandbox as ornith_sandbox
 from general_ludd.ornith.training_repo import (
     REWARD_MAP,
     OrnithInvocation,
@@ -126,8 +127,9 @@ class TestOrnithTrainingRepo:
 
     @pytest.mark.asyncio
     async def test_export_dataset_writes_jsonl_with_reward(
-        self, async_session: AsyncSession, tmp_path
+        self, async_session: AsyncSession, tmp_path, monkeypatch
     ):
+        monkeypatch.setattr(ornith_sandbox, "_ALLOWED_EXPORT_ROOTS", [str(tmp_path)])
         repo = OrnithTrainingRepo(async_session)
         r1 = await repo.record_pair(_inv())
         r2 = await repo.record_pair(_inv(scaffold_content="different"))
@@ -152,8 +154,9 @@ class TestOrnithTrainingRepo:
 
     @pytest.mark.asyncio
     async def test_export_dataset_skips_pending(
-        self, async_session: AsyncSession, tmp_path
+        self, async_session: AsyncSession, tmp_path, monkeypatch
     ):
+        monkeypatch.setattr(ornith_sandbox, "_ALLOWED_EXPORT_ROOTS", [str(tmp_path)])
         repo = OrnithTrainingRepo(async_session)
         r1 = await repo.record_pair(_inv())
         await repo.record_pair(_inv(scaffold_content="another"))

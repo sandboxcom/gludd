@@ -638,7 +638,7 @@ class TestGrafanaOnCallAlertNormalization:
         captured = []
 
         def record(method, url, **kwargs):
-            captured.append(kwargs.get("params", {}))
+            captured.append(url)
             return 200, {"results": []}
 
         src = GrafanaOnCallSource(
@@ -647,7 +647,7 @@ class TestGrafanaOnCallAlertNormalization:
         )
         with patch.dict("os.environ", {"FAKE_TOKEN": "test-token"}):
             src.query()
-        assert captured[0].get("perpage") == 100
+        assert "perpage=100" in captured[0]
 
     def test_health_returns_ok_when_reachable(self):
         def record(method, url, **kwargs):
