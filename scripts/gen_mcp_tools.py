@@ -115,7 +115,30 @@ def extract_argument_spec(source: str) -> dict[str, dict[str, Any]]:
         for kw in node.keywords:
             if kw.arg != "argument_spec":
                 continue
-            return _spec_from_node(kw.value)
+            return _resolve_argument_spec(tree, kw.value)
+    return {}
+
+
+def _resolve_argument_spec(
+    tree: ast.Module, node: ast.AST
+) -> dict[str, dict[str, Any]]:
+    """Resolve a literal spec or a call to a local helper returning one."""
+    direct = _spec_from_node(node)
+    if direct or not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+        return direct
+
+    helper_name = node.func.id
+    if node.args or node.keywords:
+        return {}
+    for statement in tree.body:
+        if not isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if statement.name != helper_name:
+            continue
+        for helper_statement in statement.body:
+            if isinstance(helper_statement, ast.Return) and helper_statement.value is not None:
+                return _spec_from_node(helper_statement.value)
+        return {}
     return {}
 
 
@@ -416,8 +439,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     write_artifacts(tool_defs, topics)
-    print(f"Wrote {len(tool_defs)} MCP tool defs -> {MANIFEST_PATH.relative_to(ROOT)}")
-    print(f"Wrote {len(topics)} MCP topics -> {TOPICS_PATH.relative_to(ROOT)}")
+    print(f"Wrote {len(tool_defs)} MCP tool defs -> {MANIFEST_PATH}")
+    print(f"Wrote {len(topics)} MCP topics -> {TOPICS_PATH}")
     return 0
 
 
