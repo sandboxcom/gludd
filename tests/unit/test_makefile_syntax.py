@@ -34,17 +34,22 @@ def _make_exported_term(term: str) -> str:
     return result.stdout
 
 
-def test_makefile_exports_suitable_term_default():
+def test_makefile_exports_suitable_term_default() -> None:
     """Non-interactive TERM=dumb is promoted for TUI-aware test subprocesses."""
     assert _make_exported_term("dumb") == "xterm-256color"
 
 
-def test_makefile_preserves_suitable_caller_term():
+def test_makefile_preserves_suitable_caller_term() -> None:
     """A usable caller-selected terminal type must not be overwritten."""
     assert _make_exported_term("screen-256color") == "screen-256color"
 
 
-def test_makefile_parses():
+def test_makefile_replaces_unavailable_caller_term() -> None:
+    """An uninstalled terminal type must not leak warnings into test output."""
+    assert _make_exported_term("gludd-no-such-terminal") == "xterm-256color"
+
+
+def test_makefile_parses() -> None:
     """make -n on a no-op target must exit 0 (no syntax errors)."""
     result = subprocess.run(
         ["make", "-n", "-f", str(MAKEFILE), "help"],
@@ -55,7 +60,7 @@ def test_makefile_parses():
     )
 
 
-def test_makefile_no_tabs_in_phony():
+def test_makefile_no_tabs_in_phony() -> None:
     """.PHONY continuation lines must use spaces, not tabs."""
     content = MAKEFILE.read_text()
     in_phony = False
@@ -72,11 +77,11 @@ def test_makefile_no_tabs_in_phony():
                 in_phony = False
 
 
-def _parse_targets():
+def _parse_targets() -> tuple[dict[str, int], list[str], list[tuple[int, str]]]:
     """Return {target_name: line_number} for all non-.PHONY targets."""
     content = MAKEFILE.read_text()
     lines = content.split("\n")
-    targets = {}
+    targets: dict[str, int] = {}
     in_phony = False
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
@@ -95,11 +100,11 @@ def _parse_targets():
     return targets, lines, list(enumerate(lines, 1))
 
 
-def test_no_target_without_recipe():
+def test_no_target_without_recipe() -> None:
     """Every non-PHONY target must have a tab-indented recipe or a dependency-only definition."""
     _, lines, _ = _parse_targets()
     in_phony = False
-    violations = []
+    violations: list[str] = []
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
         if stripped.startswith(".PHONY:"):
@@ -132,11 +137,11 @@ def test_no_target_without_recipe():
     )
 
 
-def test_blank_line_between_targets():
+def test_blank_line_between_targets() -> None:
     """Target blocks should be separated by blank lines for readability."""
     _, lines, _ = _parse_targets()
     in_phony = False
-    violations = []
+    violations: list[str] = []
     in_target_block = False
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
@@ -160,10 +165,10 @@ def test_blank_line_between_targets():
     )
 
 
-def test_phony_targets_have_no_file():
+def test_phony_targets_have_no_file() -> None:
     """Targets listed in .PHONY must not also be real file targets on disk."""
     content = MAKEFILE.read_text()
-    phony_names = set()
+    phony_names: set[str] = set()
     in_phony = False
     for line in content.split("\n"):
         stripped = line.strip()
@@ -178,7 +183,7 @@ def test_phony_targets_have_no_file():
             if not line.rstrip("\n").endswith("\\"):
                 in_phony = False
     repo_root = MAKEFILE.parent
-    violations = []
+    violations: list[str] = []
     for name in sorted(phony_names):
         candidate = repo_root / name
         if candidate.exists():
@@ -191,11 +196,11 @@ def test_phony_targets_have_no_file():
 _VAR_ASSIGN_LINE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*\s*[+?]?=')
 
 
-def test_variable_format():
+def test_variable_format() -> None:
     """Variable assignments should use := (simple-expanded) or ?= consistently."""
     content = MAKEFILE.read_text()
     lines = content.split("\n")
-    violations = []
+    violations: list[str] = []
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
         if stripped.startswith("#") or stripped == "":
@@ -211,10 +216,10 @@ def test_variable_format():
     )
 
 
-def test_no_trailing_whitespace():
+def test_no_trailing_whitespace() -> None:
     """No lines should have trailing spaces or tabs."""
     content = MAKEFILE.read_text()
-    violations = []
+    violations: list[str] = []
     for i, line in enumerate(content.split("\n"), 1):
         if line != line.rstrip():
             trailing = line[len(line.rstrip()):]
@@ -229,11 +234,11 @@ def test_no_trailing_whitespace():
     )
 
 
-def test_no_duplicate_targets():
+def test_no_duplicate_targets() -> None:
     """FAIL if any non-PHONY target is defined more than once."""
     targets, _, _ = _parse_targets()
-    seen = {}
-    duplicates = {}
+    seen: dict[str, int] = {}
+    duplicates: dict[str, list[int]] = {}
     for name, line_no in sorted(targets.items()):
         if name in seen:
             duplicates.setdefault(name, [seen[name]]).append(line_no)

@@ -42,9 +42,12 @@ COVERAGE_PER_FILE_MIN ?= 75
 CLEAN_VALIDATE_ONLY ?= 0
 CLEAN_WORKTREE_VENVS_VALIDATE_ONLY ?= 0
 DISK_MIN_FREE_GIB ?= 8
-# Preserve a capable caller terminal; supply a stable terminfo fallback only
-# when workers or CI provide an empty, unknown, or dumb TERM value.
+# Preserve a capable caller terminal; supply a stable terminfo fallback when
+# workers or CI provide an empty, explicitly limited, or uninstalled TERM value.
+_TERMINFO_OK := $(shell infocmp >/dev/null 2>&1 && printf yes)
 ifeq (,$(filter-out dumb unknown,$(strip $(TERM))))
+override TERM := xterm-256color
+else ifeq (,$(_TERMINFO_OK))
 override TERM := xterm-256color
 endif
 export TERM
@@ -8789,10 +8792,10 @@ benchmark-models:
 run-game-gen-1.5b:
 	@$(UV) run python scripts/run_game_gen_1_5b.py
 
-.PHONY: test-local-model-inference
 LOCAL_MODEL_INFERENCE_MODEL_PATH ?= /tmp/gludd-qwen-e2e-model/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf
 LOCAL_MODEL_INFERENCE_VALIDATE_ONLY ?= 0
 
+.PHONY: test-local-model-inference
 test-local-model-inference:
 	@echo "=== Local model inference test ==="
 	@if [ "$(LOCAL_MODEL_INFERENCE_VALIDATE_ONLY)" != "0" ] && [ "$(LOCAL_MODEL_INFERENCE_VALIDATE_ONLY)" != "1" ]; then \
