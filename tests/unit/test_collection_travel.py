@@ -520,7 +520,7 @@ class TestSearxngSearch:
         assert extract_price("Rooms from $350 per night") == 350.0
 
     def testextract_price_simple_with_comma(self) -> None:
-        assert extract_price("Price: $1,250 total") == 125.0
+        assert extract_price("Price: $1,250 total") == 1250.0
 
     def testextract_price_no_match_returns_none(self) -> None:
         assert extract_price("No price info available") is None
