@@ -36,7 +36,7 @@ verdict_from_runs = require_ci_green.verdict_from_runs
 
 
 def _run(
-    db_id: int,
+    db_id: int | str,
     sha: str,
     status: str,
     conclusion: str | None = None,
@@ -196,3 +196,15 @@ class TestCiGreen:
         runs = [_run(77, SHA, "queued")]
         _code, msg = verdict_for(runs, SHA)
         assert "queued" in msg
+
+    def test_non_numeric_run_id_is_tolerated_deterministically(self):
+        run = _run("not-a-number", SHA, "completed", "success")
+        code, message = verdict_for([run], SHA)
+        assert code == 0
+        assert "not-a-number" in message
+
+    def test_unknown_conclusion_remains_red(self):
+        run = _run(78, SHA, "completed", "neutral")
+        code, message = verdict_for([run], SHA)
+        assert code == 1
+        assert "fail-closed" in message

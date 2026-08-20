@@ -454,9 +454,13 @@ def test_multitask_text_allow_with_dispatches(hook_plugin_env: HookEnv):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_results_ingestion_blocks_text(hook_plugin_env: HookEnv):
-    """Pre-seed post-results state with lastTurnHadResults=true (5 results).
-    Text-only response with 0 dispatches → POST-RESULTS TEXT-ONLY BLOCK fires."""
+@pytest.mark.parametrize(("result_count", "had_wave"), [(1, False), (5, True)])
+def test_results_ingestion_blocks_text(
+    hook_plugin_env: HookEnv,
+    result_count: int,
+    had_wave: bool,
+):
+    """Any prior result, including a single result, blocks a text-only stop."""
     _clean_leaked_state_files()
 
     now_ms = int(_time.time() * 1000)
@@ -466,8 +470,8 @@ def test_results_ingestion_blocks_text(hook_plugin_env: HookEnv):
         json.dumps(
             {
                 "lastTurnHadResults": True,
-                "lastTurnHadWave": True,
-                "lastResultCount": 5,
+                "lastTurnHadWave": had_wave,
+                "lastResultCount": result_count,
                 "ts": now_ms - 1000,
             }
         )
@@ -524,8 +528,9 @@ def test_results_ingestion_blocks_text(hook_plugin_env: HookEnv):
         )
     else:
         block_text = parsed.get("text", "").upper()
-        assert "RESULTS INGESTION PROTOCOL: 5 SUBAGENT RESULTS ARRIVED." in block_text
+        assert f"RESULTS INGESTION PROTOCOL: {result_count} SUBAGENT RESULTS ARRIVED." in block_text
         assert "CODIFY RESULTS" in block_text
+        assert "RESUME WORK: DISPATCH SUBAGENTS IMMEDIATELY." in block_text
         assert "TEXT-ONLY AFTER RESULTS IS A STOP." in block_text
 
 

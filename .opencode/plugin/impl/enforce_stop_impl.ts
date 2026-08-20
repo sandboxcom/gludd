@@ -1267,7 +1267,11 @@ const defaultImpl: HotModule = {
     }
 
     // ── SUBAGENT-RESULTS INGESTION GUARD (>=3 <task_result> markers) ───────
-    if (isTextOnly && postResultsState.lastResultCount >= WAVE_RESULT_THRESHOLD && !hasWorkArtifact) {
+    if (
+      isTextOnly
+      && (postResultsState.lastTurnHadResults || postResultsState.lastTurnHadWave)
+      && !hasWorkArtifact
+    ) {
       recordBlock("after-results-text-only")
       logFalseDoneBlock("after-results-text-only", text)
       recordBlankedResponse("after-results-text-only", text)
@@ -1278,6 +1282,7 @@ const defaultImpl: HotModule = {
         text: [
           "RESULTS INGESTION PROTOCOL: " + String(postResultsState.lastResultCount) + " subagent results arrived.",
           "Codify results (commit/tick TASKS.md), then dispatch next wave.",
+          "RESUME WORK: dispatch subagents immediately.",
           "Text-only after results is a stop.",
         ].join("\n"),
       }

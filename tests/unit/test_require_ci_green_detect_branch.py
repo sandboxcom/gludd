@@ -19,6 +19,8 @@ from subprocess import CompletedProcess
 from typing import Any, cast
 from unittest.mock import patch
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Import the module under test by path (it lives in scripts/, not a package)
 # ---------------------------------------------------------------------------
@@ -130,3 +132,22 @@ class TestDetectBranchIntegration:
 
         # The gh command should include the detected branch name
         assert "feature/rp-12" in captured["cmd"]
+
+    def test_rejects_ambiguous_branch_arguments(self):
+        with pytest.raises(TypeError, match="either positionally or by keyword"):
+            verdict_for("deadbeef", "development", branch="master")
+
+    def test_rejects_branch_for_supplied_run_data(self):
+        with pytest.raises(TypeError, match="only valid when querying CI"):
+            verdict_for([], branch="development")
+
+    @pytest.mark.parametrize("stdout, returncode", [("", 1), ('{"runs": []}', 0)])
+    def test_gh_failures_return_error_verdict(
+        self,
+        stdout: str,
+        returncode: int,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        with patch("subprocess.run", return_value=_proc(stdout, returncode)):
+            assert verdict_for("deadbeef", branch="development") == 2
+        assert "CI ERROR:" in capsys.readouterr().out
