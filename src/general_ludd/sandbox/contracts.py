@@ -1,5 +1,4 @@
-"""Sandbox contracts: isolation levels, backend protocol, configuration and
-result contracts, and validation helpers.
+"""Sandbox contracts, configuration, results, and validation helpers.
 
 Defines the formal interface boundary that every sandbox executor
 (ProcessExecutor, DockerExecutor, KubernetesExecutor, FirecrackerBackend,
@@ -14,6 +13,8 @@ from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
 from general_ludd.sandbox.resource_limits import ResourceLimits
+
+_DEFAULT_MAX_PROCESSES = 50
 
 # ---------------------------------------------------------------------------
 # IsolationLevel
@@ -46,6 +47,7 @@ class IsolationLevel(StrEnum):
         return None
 
     def __repr__(self) -> str:
+        """Return a stable qualified representation for diagnostics."""
         return f"{self.__class__.__name__}.{self.name}"
 
 
@@ -102,7 +104,9 @@ class SandboxBackend(Protocol):
     name: str
     """Human-readable backend identifier (``"process"``, ``"firecracker"``, …)."""
 
-    def __init__(self, config: SandboxConfig) -> None: ...
+    def __init__(self, config: SandboxConfig) -> None:
+        """Initialize the backend from a sandbox configuration."""
+        ...
 
     def available(self) -> bool:
         """True iff this backend is usable on the current host."""
@@ -138,7 +142,7 @@ class SandboxConfig:
     cpu_seconds: int = 300
     timeout: int = 300
     max_output_bytes: int = 1_000_000
-    max_processes: int = 50
+    max_processes: int = _DEFAULT_MAX_PROCESSES
     allow_network: bool = False
     allowed_hosts: list[str] = field(default_factory=list)
     fail_open: bool = False
@@ -172,7 +176,11 @@ class SandboxConfig:
             memory_mb=memory_mb,
             cpu_seconds=limits.timeout_seconds,
             timeout=limits.timeout_seconds,
-            max_processes=limits.pids_limit if limits.pids_limit is not None else 50,
+            max_processes=(
+                limits.pids_limit
+                if limits.pids_limit is not None and limits.pids_limit > 0
+                else _DEFAULT_MAX_PROCESSES
+            ),
         )
 
 
@@ -214,6 +222,7 @@ class SandboxResult:
 
     @property
     def success(self) -> bool:
+        """Return whether the sandboxed command exited successfully."""
         return self.returncode == 0
 
 
