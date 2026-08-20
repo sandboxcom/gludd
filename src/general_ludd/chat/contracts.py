@@ -10,7 +10,14 @@ shape and configuration validation, consumed by ChatSession and formatters.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, cast
+
+ChatRole = Literal["system", "user", "assistant", "tool"]
+
+
+def _optional_string(value: object) -> str | None:
+    """Return optional CLI text while rejecting non-string namespace values."""
+    return value if isinstance(value, str) else None
 
 
 @dataclass(frozen=True)
@@ -22,7 +29,7 @@ class ChatMessage:
     metadata (timestamp, model) is optional and used for export/persistence.
     """
 
-    role: Literal["system", "user", "assistant", "tool"]
+    role: ChatRole
     content: str
     timestamp: str | None = None
     model: str | None = None
@@ -43,8 +50,11 @@ class ChatMessage:
     @classmethod
     def from_dict(cls, data: dict[str, str]) -> ChatMessage:
         """Construct from a plain dict (e.g. loaded from history JSONL)."""
+        role = data["role"]
+        if role not in {"system", "user", "assistant", "tool"}:
+            raise ValueError(f"unsupported chat role: {role!r}")
         return cls(
-            role=data["role"],  # type: ignore[arg-type]
+            role=cast(ChatRole, role),
             content=data["content"],
             timestamp=data.get("timestamp"),
             model=data.get("model"),
@@ -75,6 +85,7 @@ class ChatConfig:
     export_output: str | None = None
 
     def __post_init__(self) -> None:
+        """Validate the initialized instance."""
         if self.save_interval < 1:
             raise ValueError(f"save_interval must be >= 1, got {self.save_interval}")
 
@@ -99,18 +110,18 @@ class ChatConfig:
         a: dict[str, object] = args.__dict__
         return cls(
             model=str(a.get("model", "default")),
-            system_prompt=a.get("system_prompt"),  # type: ignore[arg-type]
+            system_prompt=_optional_string(a.get("system_prompt")),
             eval_mode=bool(a.get("eval")),
-            api_base_url=a.get("api_base"),  # type: ignore[arg-type]
-            api_key=a.get("api_key"),  # type: ignore[arg-type]
-            project_dir=a.get("project_dir"),  # type: ignore[arg-type]
-            history_file=a.get("history"),  # type: ignore[arg-type]
+            api_base_url=_optional_string(a.get("api_base")),
+            api_key=_optional_string(a.get("api_key")),
+            project_dir=_optional_string(a.get("project_dir")),
+            history_file=_optional_string(a.get("history")),
             save_interval=int(str(a.get("save_interval"))) if a.get("save_interval") is not None else 5,
             resume=bool(a.get("resume")),
             max_context=int(str(a.get("max_context"))) if a.get("max_context") is not None else None,
             stream=bool(a.get("stream", True)),
-            export_format=a.get("export"),  # type: ignore[arg-type]
-            export_output=a.get("export_output"),  # type: ignore[arg-type]
+            export_format=_optional_string(a.get("export")),
+            export_output=_optional_string(a.get("export_output")),
         )
 
 

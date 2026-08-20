@@ -29,7 +29,9 @@ import logging
 import os
 import time
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, TypedDict, cast
+
+from general_ludd.connectors.cursor_adapter import IterableCursor, adapt_iterable_cursor
 
 if TYPE_CHECKING:
     from general_ludd.connectors.base import NormalizedRecord
@@ -101,7 +103,7 @@ class ClickHouseStatsSource:
         config: ClickhouseConfig | None = None,
         executor: Executor | None = None,
         *,
-        cursor: object | None = None,
+        cursor: IterableCursor[ClickhouseRow] | None = None,
     ) -> None:
         """Build the source from connector config; executor and cursor are mutually exclusive."""
         cfg: dict[str, object] = dict(config or {})
@@ -113,16 +115,7 @@ class ClickHouseStatsSource:
         self._executor: Executor | None
         if executor is not None and cursor is not None:
             raise ValueError("provide exactly one of executor or cursor, not both")
-        if cursor is not None:
-
-            def _cursor_executor(query: str) -> Sequence[ClickhouseRow]:
-                cursor_obj = cast(Any, cursor)
-                cursor_obj.execute(query)
-                return list(cursor_obj)
-
-            self._executor = _cursor_executor
-        else:
-            self._executor = executor
+        self._executor = adapt_iterable_cursor(cursor) if cursor is not None else executor
         self._driver_error: str | None = None
 
     # -- executor wiring ---------------------------------------------------

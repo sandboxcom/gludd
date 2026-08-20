@@ -21,6 +21,8 @@ import re
 import uuid
 from typing import Any
 
+from pydantic import BaseModel as _BaseModel
+
 from general_ludd.chemistry import core as _core
 from general_ludd.chemistry.schemas import (
     ChemicalEntity,
@@ -197,9 +199,6 @@ def resolve_entity(query: str | dict[str, Any]) -> ChemicalEntity:
     return _dict_to_entity(record)
 
 
-from pydantic import BaseModel as _BaseModel  # noqa: E402
-
-
 class RelatedRecord(_BaseModel):
     """A relation between two registered entities (tautomer / salt / solvate …)."""
 
@@ -210,8 +209,7 @@ class RelatedRecord(_BaseModel):
 
 
 class EntityRegistry:
-    """An in-memory store that records distinct chemical entities and their
-    explicit relations.
+    """Store distinct chemical entities and their explicit relations.
 
     Per spec §4.1, distinct structures (tautomers, stereoisomers, salts,
     solvates, isotopologues, mixtures) are NEVER collapsed into a single
@@ -221,6 +219,7 @@ class EntityRegistry:
     """
 
     def __init__(self) -> None:
+        """Initialize a ``EntityRegistry`` instance."""
         self._entities: dict[str, ChemicalEntity] = {}
         self._relations: dict[str, list[RelatedRecord]] = {}
 
@@ -231,6 +230,7 @@ class EntityRegistry:
         return entity
 
     def get(self, entity_id: str) -> ChemicalEntity | None:
+        """Return get."""
         return self._entities.get(entity_id)
 
     def link_related(self, source_id: str, target_id: str, relation: str) -> None:
@@ -254,6 +254,7 @@ class EntityRegistry:
         return list(self._relations.get(entity_id, []))
 
     def all_entities(self) -> list[ChemicalEntity]:
+        """Execute ``all_entities``."""
         return list(self._entities.values())
 
 

@@ -50,7 +50,8 @@ class _TupleResponse:
 
 def _adapt_http_get(fn: object) -> Transport:
     def call(method: str, url: str, headers: Mapping[str, str], body: object, timeout: float) -> HttpResponse:
-        result = fn(method, url, headers=headers, json=body, timeout=timeout)  # type: ignore[operator]
+        transport = cast(Callable[..., object], fn)
+        result = transport(method, url, headers=headers, json=body, timeout=timeout)
         if isinstance(result, tuple) and len(result) == 2:
             return cast(HttpResponse, _TupleResponse(result[0], result[1]))
         return cast(HttpResponse, result)

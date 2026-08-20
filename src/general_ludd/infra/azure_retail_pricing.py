@@ -19,7 +19,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request
 
@@ -101,7 +101,6 @@ class AzureRetailPricingError(RuntimeError):
 
 def _secure_urlopen(request: Request, timeout: float) -> BytesIO:
     """Compatibility-shaped adapter over the central SSRF-safe fetcher."""
-
     result = secure_fetch(
         request.full_url,
         policy=FetchPolicy(
@@ -154,6 +153,7 @@ class AzureRetailMeterSelector:
     arm_sku_name: str | None = None
 
     def __post_init__(self) -> None:
+        """Validate the initialized instance."""
         for name in (
             "service_name",
             "product_name",
@@ -176,6 +176,7 @@ class AzureRetailMeterSelector:
 
     @property
     def cache_identity(self) -> tuple[str, ...]:
+        """Execute ``cache_identity``."""
         return (
             self.service_name,
             self.product_name,
@@ -201,14 +202,17 @@ class AzureContainerAppsCostEstimate:
 
     @property
     def gpu_cost_usd(self) -> float:
+        """Execute ``gpu_cost_usd``."""
         return self.gpu_meter.retail_price * self.duration_seconds
 
     @property
     def vcpu_cost_usd(self) -> float:
+        """Execute ``vcpu_cost_usd``."""
         return self.vcpu_meter.retail_price * self.vcpu * self.duration_seconds
 
     @property
     def memory_cost_usd(self) -> float:
+        """Execute ``memory_cost_usd``."""
         return (
             self.memory_meter.retail_price
             * self.memory_gib
@@ -217,10 +221,12 @@ class AzureContainerAppsCostEstimate:
 
     @property
     def total_cost_usd(self) -> float:
+        """Execute ``total_cost_usd``."""
         return self.gpu_cost_usd + self.vcpu_cost_usd + self.memory_cost_usd
 
     @property
     def hourly_rate_usd(self) -> float:
+        """Execute ``hourly_rate_usd``."""
         return (
             self.gpu_meter.retail_price
             + self.vcpu_meter.retail_price * self.vcpu
@@ -229,6 +235,7 @@ class AzureContainerAppsCostEstimate:
 
     @property
     def meter_ids(self) -> tuple[str, str, str]:
+        """Execute ``meter_ids``."""
         return (
             self.gpu_meter.meter_id,
             self.vcpu_meter.meter_id,
@@ -264,6 +271,7 @@ class AzureContainerAppsRetailPricing:
         monotonic: Callable[[], float] = time.monotonic,
         now: Callable[[], datetime] | None = None,
     ) -> None:
+        """Initialize a ``AzureContainerAppsRetailPricing`` instance."""
         if not math.isfinite(cache_ttl_seconds) or cache_ttl_seconds <= 0:
             raise ValueError("cache_ttl_seconds must be finite and > 0")
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
@@ -521,13 +529,13 @@ class AzureContainerAppsRetailPricing:
             if effective > fetched_at:
                 continue
             raw_price = item.get("retailPrice")
-            if isinstance(raw_price, bool):
+            if isinstance(raw_price, bool) or not isinstance(raw_price, (int, float, str)):
                 raise AzureRetailPricingError(
                     "invalid retail price for "
                     f"{region}/{selector.sku_name}/{selector.meter_name}: {raw_price!r}"
                 )
             try:
-                retail_price = float(cast(Any, raw_price))
+                retail_price = float(raw_price)
             except (TypeError, ValueError) as exc:
                 raise AzureRetailPricingError(
                     "invalid retail price for "
@@ -702,6 +710,7 @@ class AzureVmBillingPhases:
     shutdown_seconds: float
 
     def __post_init__(self) -> None:
+        """Validate the initialized instance."""
         for name in ("warmup_seconds", "shutdown_seconds"):
             value = getattr(self, name)
             if isinstance(value, bool) or not math.isfinite(value) or value < 0:
@@ -715,6 +724,7 @@ class AzureVmBillingPhases:
 
     @property
     def total_seconds(self) -> float:
+        """Execute ``total_seconds``."""
         return self.warmup_seconds + self.runtime_seconds + self.shutdown_seconds
 
 
@@ -735,14 +745,17 @@ class AzureVirtualMachineCostEstimate:
 
     @property
     def elapsed_hours(self) -> float:
+        """Execute ``elapsed_hours``."""
         return self.phases.total_seconds / 3600.0
 
     @property
     def compute_cost_usd(self) -> float:
+        """Execute ``compute_cost_usd``."""
         return self.compute_meter.retail_price * self.elapsed_hours
 
     @property
     def disk_cost_usd(self) -> float:
+        """Execute ``disk_cost_usd``."""
         return (
             self.disk_meter.retail_price
             * self.elapsed_hours
@@ -751,14 +764,17 @@ class AzureVirtualMachineCostEstimate:
 
     @property
     def public_ip_cost_usd(self) -> float:
+        """Execute ``public_ip_cost_usd``."""
         return self.public_ip_meter.retail_price * self.elapsed_hours
 
     @property
     def total_cost_usd(self) -> float:
+        """Execute ``total_cost_usd``."""
         return self.compute_cost_usd + self.disk_cost_usd + self.public_ip_cost_usd
 
     @property
     def phase_costs_usd(self) -> Mapping[str, float]:
+        """Execute ``phase_costs_usd``."""
         rate = self.compute_meter.retail_price / 3600.0
         return {
             "warmup": rate * self.phases.warmup_seconds,
@@ -768,6 +784,7 @@ class AzureVirtualMachineCostEstimate:
 
     @property
     def meter_ids(self) -> tuple[str, str, str]:
+        """Execute ``meter_ids``."""
         return (
             self.compute_meter.meter_id,
             self.disk_meter.meter_id,
@@ -844,6 +861,7 @@ class AzureVirtualMachineRetailPricing:
         monotonic: Callable[[], float] = time.monotonic,
         now: Callable[[], datetime] | None = None,
     ) -> None:
+        """Initialize a ``AzureVirtualMachineRetailPricing`` instance."""
         if retail_client is not None and fetch_json is not None:
             raise ValueError("retail_client and fetch_json are mutually exclusive")
         self._retail = retail_client or AzureContainerAppsRetailPricing(

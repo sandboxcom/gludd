@@ -11,7 +11,10 @@ from general_ludd.algorithms.ecc import (
     ECCError,
     ECCurve,
     ECPoint,
+    _crypto_curve,
+    _hash_alg_for_msg,
     _nonce_rfc6979,
+    _public_key_from_point,
     ecdh_shared_secret,
     ecdsa_sign,
     ecdsa_verify,
@@ -65,12 +68,31 @@ class TestIdentityAndEquality:
         with pytest.raises(ECCError, match="both x and y"):
             ECPoint(1, None, SECP256K1)
 
+    def test_identity_coordinates_fail_closed(self, identity: ECPoint) -> None:
+        with pytest.raises(ECCError, match="no finite coordinates"):
+            identity._coordinates()
+
+    def test_equality_protocol_and_curve_identity(self, G: ECPoint) -> None:
+        other_curve = ECCurve(
+            p=17,
+            a=2,
+            b=2,
+            Gx=5,
+            Gy=1,
+            n=19,
+        )
+
+        assert G.__eq__(object()) is NotImplemented
+        assert ECPoint(5, 1, other_curve) != G
+        assert SECP256K1.identity != G
+
 
 class TestNegation:
     def test_negation_modp(self, G: ECPoint) -> None:
         neg_G = -G
+        assert G.y is not None
         assert neg_G.x == G.x
-        assert neg_G.y == (-G.y) % SECP256K1.p  # type: ignore[operator]
+        assert neg_G.y == (-G.y) % SECP256K1.p
 
     def test_neg_identity(self, identity: ECPoint) -> None:
         assert -identity == identity
@@ -106,6 +128,10 @@ class TestPointAddition:
         Q = ECPoint(5, 1, other_curve)
         with pytest.raises(ECCError, match="different curves"):
             _ = G + Q
+
+    def test_point_operator_protocol_rejects_unrelated_types(self, G: ECPoint) -> None:
+        assert G.__add__(object()) is NotImplemented
+        assert G.__rmul__(object()) is NotImplemented
 
 
 class TestScalarMultiplication:
@@ -153,6 +179,18 @@ class TestECDH:
         secret = ecdh_shared_secret(alice.private, bob.public)
         assert len(secret) > 0
 
+    def test_custom_curve_exchange_and_identity_rejection(self) -> None:
+        curve = ECCurve(p=17, a=2, b=2, Gx=5, Gy=1, n=19)
+        alice = generate_keypair(curve)
+        bob = generate_keypair(curve)
+
+        assert ecdh_shared_secret(alice.private, bob.public) == ecdh_shared_secret(
+            bob.private,
+            alice.public,
+        )
+        with pytest.raises(ECCError, match="identity"):
+            ecdh_shared_secret(alice.private, curve.identity)
+
 
 class TestECDSA:
     def test_sign_and_verify(self) -> None:
@@ -197,6 +235,25 @@ class TestECDSA:
         assert ecdsa_verify(h, sig1, key.public)
         assert ecdsa_verify(h, sig2, key.public)
 
+    @pytest.mark.parametrize(
+        ("digest_size", "algorithm_name"),
+        [(32, "sha256"), (48, "sha384"), (64, "sha512")],
+    )
+    def test_hash_algorithm_matches_digest_size(
+        self,
+        digest_size: int,
+        algorithm_name: str,
+    ) -> None:
+        assert _hash_alg_for_msg(b"\x00" * digest_size).name == algorithm_name
+
+    def test_custom_curve_signature_round_trip(self) -> None:
+        curve = ECCurve(p=17, a=2, b=2, Gx=5, Gy=1, n=19)
+        key = generate_keypair(curve)
+        digest = hashlib.sha256(b"custom curve").digest()
+        signature = ecdsa_sign(digest, key.private, curve)
+
+        assert ecdsa_verify(digest, signature, key.public)
+
 
 class TestKeyGeneration:
     def test_keypair_bounds(self) -> None:
@@ -214,3 +271,10 @@ class TestKeyGeneration:
         kp = generate_keypair(curve=curve)
         assert kp.curve is curve
         assert kp.public.on_curve()
+
+    def test_backend_rejects_custom_curves_and_identity_points(self) -> None:
+        curve = ECCurve(p=17, a=2, b=2, Gx=5, Gy=1, n=19)
+        with pytest.raises(ECCError, match="custom curve"):
+            _crypto_curve(curve)
+        with pytest.raises(ECCError, match="identity"):
+            _public_key_from_point(SECP256K1.identity)

@@ -1602,7 +1602,7 @@ class AgentMessageRepository:
         if keyword_style:
             # Preserve the legacy row-returning mapping API while supporting
             # the newer keyword API's boolean acknowledgement contract.
-            row._keyword_style = True  # type: ignore[attr-defined]
+            row.__dict__["_keyword_style"] = True
         self._session.add(row)
         await self._session.flush()
         return row

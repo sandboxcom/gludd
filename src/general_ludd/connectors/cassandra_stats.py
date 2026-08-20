@@ -28,8 +28,9 @@ import logging
 import os
 import time
 from collections.abc import Callable, Sequence
-from typing import Any, TypedDict, cast
+from typing import TypedDict
 
+from general_ludd.connectors.cursor_adapter import IterableCursor, adapt_iterable_cursor
 from general_ludd.connectors.normalize import sanitize_metric_value
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,7 @@ class CassandraStatsSource:
         config: CassandraConfig | None = None,
         executor: Executor | None = None,
         *,
-        cursor: object | None = None,
+        cursor: IterableCursor[CassandraRow] | None = None,
     ) -> None:
         """Build the source from connector config; executor and cursor are mutually exclusive."""
         if executor is not None and cursor is not None:
@@ -105,16 +106,7 @@ class CassandraStatsSource:
         self._jmx_url: str = str(cfg.get("jmx_url", "http://localhost:7070/metrics"))
         self._token_env: str = str(cfg.get("token_env", "CASSANDRA_JMX_TOKEN"))
         self._executor: Executor | None
-        if cursor is not None:
-
-            def _cursor_executor(command: str) -> Sequence[CassandraRow]:
-                cursor_obj = cast(Any, cursor)
-                cursor_obj.execute(command)
-                return list(cursor_obj)
-
-            self._executor = _cursor_executor
-        else:
-            self._executor = executor
+        self._executor = adapt_iterable_cursor(cursor) if cursor is not None else executor
         self._driver_error: str | None = None
 
     # -- executor wiring ---------------------------------------------------

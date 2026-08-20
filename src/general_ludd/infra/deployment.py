@@ -14,8 +14,9 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -30,13 +31,18 @@ from general_ludd.schemas.deployment import DeploymentRecord
 from general_ludd.security.sanitize import sanitize_error_message
 from general_ludd.security.state import project_state, secure_write_text
 
-try:
-    from general_ludd.cloud.resource_lifecycle import get_lifecycle
+if TYPE_CHECKING:
+    from general_ludd.cloud.resource_lifecycle import ResourceLifecycleManager
 
+get_lifecycle: Callable[[], ResourceLifecycleManager] | None
+try:
+    from general_ludd.cloud.resource_lifecycle import get_lifecycle as _get_lifecycle
+
+    get_lifecycle = _get_lifecycle
     _LIFECYCLE_IMPORTED = True
 except ImportError:
     _LIFECYCLE_IMPORTED = False
-    get_lifecycle = None  # type: ignore[assignment]
+    get_lifecycle = None
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +132,7 @@ def _destroy_instance(instance_id: str, deploy_dir: str) -> None:
 
 
 def _cleanup_orphaned_instances() -> None:
-    if _LIFECYCLE_IMPORTED:
+    if _LIFECYCLE_IMPORTED and get_lifecycle is not None:
         cleaned = get_lifecycle().cleanup_all()
         if cleaned:
             logger.warning("Lifecycle cleanup: %d resources destroyed", cleaned)
@@ -187,14 +193,23 @@ _install_signal_handlers()
 
 
 class SecretsResolver(Protocol):
-    def resolve(self, alias_name: str, project_id: str | None = None) -> str | None: ...
+    """Represent ``SecretsResolver`` values."""
+
+    def resolve(self, alias_name: str, project_id: str | None = None) -> str | None:
+        """Resolve a secret alias for an optional project."""
+        ...
 
 
 class EventPublisher(Protocol):
-    def publish(self, event: Any) -> int: ...
+    """Represent ``EventPublisher`` values."""
+
+    def publish(self, event: Any) -> int:
+        """Publish an event and return the subscriber count."""
+        ...
 
 
 class DeploymentManager:
+    """Represent ``DeploymentManager`` values."""
     def __init__(
         self,
         binary_paths: BinaryPathResolver | None = None,
@@ -204,6 +219,7 @@ class DeploymentManager:
         session_factory: async_sessionmaker[AsyncSession] | None = None,
         worker_id: str | None = None,
     ) -> None:
+        """Initialize a ``DeploymentManager`` instance."""
         _install_signal_handlers()
         self._binary_resolver = binary_paths or BinaryPathResolver()
         self._working_dir = working_dir or str(project_state().temporary_directory("terraform", prefix="gludd-tf-"))
@@ -238,6 +254,7 @@ class DeploymentManager:
             logger.exception("Deployment event subscriber failed for %s", name)
 
     def close(self) -> None:
+        """Close the value."""
         if self._working_dir and os.path.isdir(self._working_dir):
             import shutil
 
@@ -284,9 +301,11 @@ class DeploymentManager:
             json.dump(serializable, f)
 
     def get_deployment(self, instance_id: str) -> DeploymentRecord | None:
+        """Return get deployment."""
         return self._registry.get(instance_id)
 
     def list_deployments(self) -> list[DeploymentRecord]:
+        """List deployments."""
         return list(self._registry.values())
 
     async def get_deployment_shared(self, instance_id: str) -> DeploymentRecord | None:
@@ -418,6 +437,7 @@ class DeploymentManager:
             )
 
     async def deploy(self, config: ComputeConfig) -> ComputeInstance:
+        """Deploy the value."""
         started_at = time.monotonic()
         self._last_config = config
         auth_env = self._build_auth_env(config)
@@ -561,7 +581,7 @@ class DeploymentManager:
             _DEPLOYED_INSTANCES.pop(deployment_id, None)
             _DEPLOYED_INSTANCES[instance_id] = terraform_dir
 
-            if _LIFECYCLE_IMPORTED:
+            if _LIFECYCLE_IMPORTED and get_lifecycle is not None:
                 get_lifecycle().register(
                     config.provider.value,
                     instance_id,
@@ -601,6 +621,7 @@ class DeploymentManager:
             raise
 
     async def plan(self, config: ComputeConfig) -> dict[str, Any]:
+        """Plan the value."""
         auth_env = self._build_auth_env(config)
         plan_token = uuid.uuid4().hex[:12]
         plan_dir = os.path.join(self._working_dir, f"p-{plan_token}")
@@ -640,6 +661,7 @@ class DeploymentManager:
         }
 
     async def validate(self, config: ComputeConfig) -> dict[str, Any]:
+        """Validate the value."""
         auth_env = self._build_auth_env(config)
         validation_token = uuid.uuid4().hex[:12]
         val_dir = os.path.join(self._working_dir, f"v-{validation_token}")
@@ -664,6 +686,7 @@ class DeploymentManager:
         # W2.3 (C5): refuse to destroy an instance we have no record of. Running
         # terraform destroy blind was the money-leak — it could tear down the
         # wrong state, or none, while reporting success.
+        """Destroy the value."""
         record = await self.get_deployment_shared(instance_id)
         if record is None:
             raise ValueError(
@@ -727,7 +750,7 @@ class DeploymentManager:
             if self._session_factory is None:
                 self._save_registry()
 
-            if _LIFECYCLE_IMPORTED:
+            if _LIFECYCLE_IMPORTED and get_lifecycle is not None:
                 get_lifecycle().deregister(instance_id)
             self._publish_event(
                 "terraform_destroy_completed",

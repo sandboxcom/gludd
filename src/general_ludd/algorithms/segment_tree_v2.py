@@ -117,14 +117,17 @@ LazySegmentTreeV2 = _BaseLazyTree  # re-export generic base
 
 
 def lazy_sum_tree(data: list[int]) -> _LazySumTree:
+    """Execute ``lazy_sum_tree``."""
     return _LazySumTree(data)
 
 
 def lazy_min_tree(data: list[int]) -> _LazyMinTree:
+    """Execute ``lazy_min_tree``."""
     return _LazyMinTree(data)
 
 
 def lazy_max_tree(data: list[int]) -> _LazyMaxTree:
+    """Execute ``lazy_max_tree``."""
     return _LazyMaxTree(data)
 
 
@@ -152,6 +155,7 @@ class PersistentSegTree:
     """
 
     def __init__(self, data: list[int]) -> None:
+        """Initialize a ``PersistentSegTree`` instance."""
         self._n = len(data)
         self._roots: list[_Node | None] = []
         if self._n:
@@ -167,9 +171,11 @@ class PersistentSegTree:
 
     @property
     def versions(self) -> int:
+        """Execute ``versions``."""
         return len(self._roots)
 
     def update(self, idx: int, value: int) -> None:
+        """Execute ``update``."""
         root = self._roots[-1]
         new_root = self._update(root, 0, self._n - 1, idx, value)
         self._roots.append(new_root)
@@ -193,6 +199,7 @@ class PersistentSegTree:
         return new
 
     def query(self, version: int, left: int, right: int) -> int:
+        """Execute ``query``."""
         return self._query(self._roots[version], 0, self._n - 1, left, right - 1)
 
     def _query(self, node: _Node | None, lo: int, hi: int, ql: int, qr: int) -> int:
@@ -205,6 +212,7 @@ class PersistentSegTree:
 
     @property
     def n(self) -> int:
+        """Execute ``n``."""
         return self._n
 
 
@@ -218,6 +226,7 @@ class SegTree2D:
     """
 
     def __init__(self, rows: int, cols: int) -> None:
+        """Initialize a ``SegTree2D`` instance."""
         self._rows = rows
         self._cols = cols
         self._row_size = 1 << (rows - 1).bit_length() if rows else 1
@@ -232,6 +241,7 @@ class SegTree2D:
         return inner
 
     def update(self, row: int, col: int, delta: int) -> None:
+        """Execute ``update``."""
         rpos = self._row_size + row
         while rpos:
             inner = self._ensure_inner(rpos)
@@ -242,6 +252,7 @@ class SegTree2D:
             rpos >>= 1
 
     def query(self, r1: int, r2: int, c1: int, c2: int) -> int:
+        """Execute ``query``."""
         def _col_sum(node: int, lo: int, hi: int, inner: list[int], qc1: int, qc2: int) -> int:
             if qc1 > hi or qc2 < lo:
                 return 0
@@ -255,13 +266,15 @@ class SegTree2D:
         r2_pos = self._row_size + r2
         while r1_pos < r2_pos:
             if r1_pos & 1:
-                if self._tree[r1_pos] is not None:
-                    total += _col_sum(1, 0, self._col_size - 1, self._tree[r1_pos], c1, c2 - 1)  # type: ignore[arg-type]
+                inner = self._tree[r1_pos]
+                if inner is not None:
+                    total += _col_sum(1, 0, self._col_size - 1, inner, c1, c2 - 1)
                 r1_pos += 1
             if r2_pos & 1:
                 r2_pos -= 1
-                if self._tree[r2_pos] is not None:
-                    total += _col_sum(1, 0, self._col_size - 1, self._tree[r2_pos], c1, c2 - 1)  # type: ignore[arg-type]
+                inner = self._tree[r2_pos]
+                if inner is not None:
+                    total += _col_sum(1, 0, self._col_size - 1, inner, c1, c2 - 1)
             r1_pos >>= 1
             r2_pos >>= 1
         return total
@@ -278,11 +291,13 @@ class LazySegTree2D:
     """
 
     def __init__(self, rows: int, cols: int) -> None:
+        """Initialize a ``LazySegTree2D`` instance."""
         self._cols = cols
         self._size = 1 << (rows - 1).bit_length() if rows else 1
         self._tree: list[list[int] | None] = [None] * (2 * self._size)
 
     def assign_row(self, row: int, values: list[int]) -> None:
+        """Execute ``assign_row``."""
         pos = self._size + row
         self._tree[pos] = list(values)
         pos >>= 1
@@ -298,6 +313,7 @@ class LazySegTree2D:
             pos >>= 1
 
     def col_query(self, r1: int, r2: int, col: int) -> int:
+        """Execute ``col_query``."""
         def _qry(pos: int, lo: int, hi: int) -> int:
             if r1 > hi or r2 - 1 < lo:
                 return 0

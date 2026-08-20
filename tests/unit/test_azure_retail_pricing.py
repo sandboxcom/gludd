@@ -403,6 +403,9 @@ def test_latest_effective_meter_must_be_unambiguous() -> None:
         ({"isPrimaryMeterRegion": False}, "no exact"),
         ({"effectiveStartDate": "2027-01-01T00:00:00Z"}, "no exact"),
         ({"retailPrice": 0.0}, "invalid retail price"),
+        ({"retailPrice": {"amount": 0.1}}, "invalid retail price"),
+        ({"retailPrice": "not-a-number"}, "invalid retail price"),
+        ({"meterId": ""}, "incomplete meter identity"),
     ],
 )
 def test_inexact_or_invalid_meter_data_fails_closed(
@@ -416,6 +419,39 @@ def test_inexact_or_invalid_meter_data_fails_closed(
     )
 
     with pytest.raises(AzureRetailPricingError, match=match):
+        pricing.resolve_meter(
+            region="eastus",
+            sku_name="Standard",
+            meter_name=T4_SKU,
+            price_type="Consumption",
+            unit_of_measure="1 Second",
+        )
+
+
+def test_naive_pricing_clock_fails_closed() -> None:
+    raw = _item(T4_SKU, 0.000073, "1 Second")
+    pricing = AzureContainerAppsRetailPricing(
+        fetch_json=_SequenceFetcher([_page(raw)]),
+        now=lambda: datetime(2026, 8, 1),
+    )
+
+    with pytest.raises(AzureRetailPricingError, match="timezone-aware"):
+        pricing.resolve_meter(
+            region="eastus",
+            sku_name="Standard",
+            meter_name=T4_SKU,
+            price_type="Consumption",
+            unit_of_measure="1 Second",
+        )
+
+
+def test_response_requires_an_items_list() -> None:
+    pricing = AzureContainerAppsRetailPricing(
+        fetch_json=_SequenceFetcher([{"Items": {}, "NextPageLink": None}]),
+        now=lambda: datetime(2026, 8, 1, tzinfo=UTC),
+    )
+
+    with pytest.raises(AzureRetailPricingError, match="no Items list"):
         pricing.resolve_meter(
             region="eastus",
             sku_name="Standard",

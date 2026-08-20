@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import weakref
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,8 @@ _DEFAULT_WAL_AUTOCHECKPOINT_PAGES = 1000
 _MAX_WAL_AUTOCHECKPOINT_PAGES = 100_000
 _DEFAULT_BUSY_TIMEOUT_MS = 5000
 _MAX_BUSY_TIMEOUT_MS = 60_000
+_closed_engines: set[int] = set()
+_closed_engine_refs: dict[int, weakref.ReferenceType[AsyncEngine]] = {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,12 +119,15 @@ _install_sqlite_async_pool_compat()
 # AsyncEngine uses slots and cannot carry ad-hoc lifecycle attributes. Expose
 # the compatibility marker as a class property backed by our identity set.
 if not isinstance(getattr(AsyncEngine, "_closed", None), property):
-    AsyncEngine._closed = property(  # type: ignore[attr-defined]
-        lambda engine: id(engine) in _closed_engines
+    type.__setattr__(
+        AsyncEngine,
+        "_closed",
+        property(lambda engine: _engine_closed(engine)),
     )
 
 
 def get_default_db_path() -> Path:
+    """Return get default db path."""
     env_path = os.environ.get("GLUDD_DB_PATH")
     if env_path:
         return Path(env_path)
@@ -130,11 +136,13 @@ def get_default_db_path() -> Path:
 
 
 def get_default_db_url() -> str:
+    """Return get default db url."""
     path = get_default_db_path()
     return f"sqlite+aiosqlite:///{path}"
 
 
 def is_sqlite_url(url: str | None) -> bool:
+    """Return whether is sqlite url."""
     if not url:
         return False
     return "sqlite" in url
@@ -143,6 +151,7 @@ def is_sqlite_url(url: str | None) -> bool:
 def run_wal_pragmas(
     engine: AsyncEngine, config: dict[str, Any] | None = None
 ) -> None:
+    """Execute ``run_wal_pragmas``."""
     if not is_sqlite_url(str(engine.url)):
         return
     settings = _resolve_sqlite_wal_settings(config)
@@ -186,6 +195,7 @@ def _compose_db_url(cfg: dict[str, Any]) -> str | None:
 
 
 def init_engine_from_config(config: dict[str, Any] | None = None) -> AsyncEngine:
+    """Execute ``init_engine_from_config``."""
     cfg = config or {}
     url = _compose_db_url(cfg)
     if not url:
@@ -212,6 +222,7 @@ def init_engine_from_config(config: dict[str, Any] | None = None) -> AsyncEngine
 
 
 def run_read_only_pragma(engine: AsyncEngine) -> None:
+    """Execute ``run_read_only_pragma``."""
     dialect_name = engine.dialect.name
     if dialect_name not in {"sqlite", "postgresql"}:
         return
@@ -227,6 +238,7 @@ def run_read_only_pragma(engine: AsyncEngine) -> None:
 
 
 def init_read_only_engine_from_config(config: dict[str, Any] | None = None) -> AsyncEngine:
+    """Execute ``init_read_only_engine_from_config``."""
     cfg = config or {}
     url = _compose_db_url(cfg)
     if not url:
@@ -244,10 +256,12 @@ def init_read_only_engine_from_config(config: dict[str, Any] | None = None) -> A
 
 
 def create_read_only_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """Create read only session factory."""
     return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 def init_async_engine(url: str = "postgresql+psycopg://localhost/general_ludd", **kwargs: Any) -> AsyncEngine:
+    """Execute ``init_async_engine``."""
     engine = create_async_engine(url, **kwargs)
     if is_sqlite_url(url):
         run_wal_pragmas(engine)
@@ -255,10 +269,12 @@ def init_async_engine(url: str = "postgresql+psycopg://localhost/general_ludd", 
 
 
 def create_async_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """Create async session factory."""
     return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def ensure_tables(engine: AsyncEngine) -> None:
+    """Execute ``ensure_tables``."""
     if is_sqlite_url(str(engine.url)):
         # SQLAlchemy's create_all(checkfirst=True) performs an introspection
         # query before each CREATE. Separate Gunicorn/test processes can both
@@ -299,6 +315,7 @@ async def seed_initial_queues(session: AsyncSession) -> int:
     # workers both saw None and both INSERTed -> IntegrityError on the unique
     # constraint. A single statement with on_conflict_do_nothing makes the loser
     # a no-op, mirroring VariableNamespaceRepository.set_var (repository.py:683-708).
+    """Execute ``seed_initial_queues``."""
     dialect_name = session.get_bind().dialect.name
     count = 0
     for q in INITIAL_QUEUES:
@@ -337,23 +354,34 @@ async def seed_initial_queues(session: AsyncSession) -> int:
     return count
 
 
-_closed_engines: set[int] = set()
-
-
 def close_engine(engine: AsyncEngine) -> None:
-    _closed_engines.add(id(engine))
+    """Close engine."""
+    engine_id = id(engine)
+    _closed_engines.add(engine_id)
+
+    def _forget_closed_engine(reference: weakref.ReferenceType[AsyncEngine]) -> None:
+        if _closed_engine_refs.get(engine_id) is reference:
+            _closed_engine_refs.pop(engine_id, None)
+            _closed_engines.discard(engine_id)
+
+    _closed_engine_refs[engine_id] = weakref.ref(engine, _forget_closed_engine)
     # SQLAlchemy intentionally leaves lifecycle state internal.  Keep the
     # compatibility marker used by callers that need a synchronous check
     # before deciding whether to await disposal.
 
 
 def _engine_closed(engine: AsyncEngine) -> bool:
-    return id(engine) in _closed_engines
+    engine_id = id(engine)
+    if engine_id not in _closed_engines:
+        return False
+    closed_ref = _closed_engine_refs.get(engine_id)
+    return closed_ref is None or closed_ref() is engine
 
 
 async def get_async_session(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[AsyncSession, None]:
+    """Return get async session."""
     bind = getattr(session_factory, "bind", None) or session_factory.kw.get("bind")
     # AsyncSession.get_bind() returns the proxied synchronous Engine. Recover
     # its owning AsyncEngine when a caller builds a sessionmaker from that
@@ -378,6 +406,7 @@ async def get_async_session(
 
 
 def json_dumps(obj: Any) -> str:
+    """Execute ``json_dumps``."""
     import json
 
     return "[]" if obj is None else json.dumps(obj)
