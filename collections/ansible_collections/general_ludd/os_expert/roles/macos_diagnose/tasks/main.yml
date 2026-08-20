@@ -1,8 +1,17 @@
 ---
 # macos_diagnose role — gather macOS diagnostic data from unified log,
 # spdisaster_report, launchctl, nvram, and pmset.
-# Uses the python gatherer backend in files/macos_gather.py for
+# Uses the managed-runtime gatherer in files/macos_gather.py for
 # structured JSON output, with raw shell fallbacks.
+
+- name: Resolve the managed-host Python runtime before mutation
+  ansible.builtin.include_role:
+    name: general_ludd.os_expert.managed_python_preflight
+    public: false
+    rolespec_validate: true
+  vars:
+    os_expert_python_preflight_contract: "{{ os_expert_python_contract | default('discovered') }}"
+    os_expert_python_preflight_managed_interpreter: "{{ os_expert_managed_python_interpreter | default('') }}"
 
 - name: Create artifact directory
   ansible.builtin.file:
@@ -11,7 +20,7 @@
     mode: "0755"
   when: ansible_os_family == 'Darwin'
 
-- name: Gather structured diagnostics via python backend
+- name: Gather structured diagnostics via managed runtime
   when:
     - ansible_os_family == 'Darwin'
     - gather_unified_log | bool or gather_launchctl | bool or gather_nvram | bool or gather_pmset | bool
@@ -23,10 +32,14 @@
         mode: "0755"
 
     - name: Run gatherer — collect unified log, launchctl, nvram, pmset as JSON
-      ansible.builtin.command: >
-        python3 {{ artifact_dir }}/macos_gather.py
-        --output {{ artifact_dir }}/diagnostics.json
-        --log-window {{ log_window | default('5m') }}
+      ansible.builtin.command:
+        argv:
+          - "{{ _os_expert_python_runtime.executable }}"
+          - "{{ artifact_dir }}/macos_gather.py"
+          - --output
+          - "{{ artifact_dir }}/diagnostics.json"
+          - --log-window
+          - "{{ log_window | default('5m') }}"
       register: _gather_result
       changed_when: false
       ignore_errors: true

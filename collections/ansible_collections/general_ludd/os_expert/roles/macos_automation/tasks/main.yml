@@ -4,6 +4,15 @@
 # All audit tasks are read-only and run unconditionally.
 # Mutating operations are gated behind explicit manage_* boolean flags.
 
+- name: Resolve the managed-host Python runtime before mutation
+  ansible.builtin.include_role:
+    name: general_ludd.os_expert.managed_python_preflight
+    public: false
+    rolespec_validate: true
+  vars:
+    os_expert_python_preflight_contract: "{{ os_expert_python_contract | default('discovered') }}"
+    os_expert_python_preflight_managed_interpreter: "{{ os_expert_managed_python_interpreter | default('') }}"
+
 - name: Create artifact directory
   ansible.builtin.file:
     path: "{{ artifact_dir }}"
@@ -11,7 +20,7 @@
     mode: "0755"
   when: ansible_os_family == 'Darwin'
 
-- name: Run structured audit via python backend
+- name: Run structured audit via managed runtime
   when:
     - ansible_os_family == 'Darwin'
     - run_backend | default(true) | bool
@@ -23,9 +32,12 @@
         mode: "0755"
 
     - name: Run audit — collect launchd, homebrew, defaults, softwareupdate, profiles as JSON
-      ansible.builtin.command: >
-        python3 {{ artifact_dir }}/macos_automation_audit.py
-        --output {{ artifact_dir }}/automation_audit.json
+      ansible.builtin.command:
+        argv:
+          - "{{ _os_expert_python_runtime.executable }}"
+          - "{{ artifact_dir }}/macos_automation_audit.py"
+          - --output
+          - "{{ artifact_dir }}/automation_audit.json"
       register: _backend_result
       changed_when: false
       ignore_errors: true
