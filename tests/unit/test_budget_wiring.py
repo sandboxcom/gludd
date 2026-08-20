@@ -4,6 +4,7 @@ Also covers the BudgetManager-gated dispatch executor pattern (#49 daily +
 per-todo caps) in TestBudgetManagerGatedExecutor at the bottom of this file.
 """
 
+import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -233,6 +234,13 @@ class TestModelGatewayBudgetTracking:
             profiles=[profile],
             provider_registry=reg,
             budget_guard=guard,
+            billing_clock=lambda: datetime.datetime(
+                2026,
+                8,
+                2,
+                12,
+                tzinfo=datetime.UTC,
+            ),
         )
 
         FakeChatModel = MagicMock()
