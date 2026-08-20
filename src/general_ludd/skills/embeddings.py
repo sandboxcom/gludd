@@ -48,6 +48,7 @@ class Embedder(Protocol):
     """Pluggable embedder interface."""
 
     def embed(self, text: str) -> list[float]:
+        """Return an embedding vector for *text*."""
         ...
 
 
@@ -64,7 +65,7 @@ def _stem(word: str) -> str:
     """
     if len(word) <= 3:
         return word
-    for suffix in ("ing", "ies", "ied", "es", "ed", "s"):
+    for suffix in ("ment", "ing", "ies", "ied", "es", "ed", "s"):
         if word.endswith(suffix):
             stem = word[: -len(suffix)]
             if len(stem) < 3:
@@ -86,11 +87,13 @@ class HashEmbedder:
     """
 
     def __init__(self, dim: int = _DEFAULT_DIM) -> None:
+        """Create a feature-hashing embedder with *dim* dimensions."""
         if dim <= 0:
             raise ValueError("dim must be positive")
         self.dim = dim
 
     def embed(self, text: str) -> list[float]:
+        """Return a normalized feature-hashed vector for *text*."""
         vec = [0.0] * self.dim
         for token in _tokenize(text):
             feature = _stem(token)
@@ -113,6 +116,7 @@ class OpenAIEmbedder:
     MODEL = "text-embedding-3-small"
 
     def __init__(self, api_key: str | None = None) -> None:
+        """Create the optional OpenAI embedder with an explicit or environment key."""
         try:
             import openai
         except ImportError as exc:  # pragma: no cover - env-dependent
@@ -125,6 +129,7 @@ class OpenAIEmbedder:
         self._client = openai.OpenAI(api_key=key)
 
     def embed(self, text: str) -> list[float]:  # pragma: no cover - network
+        """Request and return an embedding from the configured OpenAI model."""
         resp = self._client.embeddings.create(model=self.MODEL, input=text)
         return list(resp.data[0].embedding)
 
@@ -161,6 +166,7 @@ class SkillEmbedder:
         *,
         use_openai_if_available: bool = False,
     ) -> None:
+        """Select an embedder and initialize the per-skill vector cache."""
         if embedder is not None:
             self._embedder: Embedder = embedder
         elif use_openai_if_available and os.environ.get("OPENAI_API_KEY"):
@@ -185,4 +191,5 @@ class SkillEmbedder:
         return self._embedder.embed(text)
 
     def clear_cache(self) -> None:
+        """Remove every cached skill embedding."""
         self._cache.clear()

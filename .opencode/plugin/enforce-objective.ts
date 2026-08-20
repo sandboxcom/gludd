@@ -25,7 +25,7 @@ const MAX_CI_CHECKS_PER_SPEC_WINDOW = 3;
 const OBJECTIVE_STACK_FILE = "/tmp/gludd-objective-stack.json";
 // AB008: behavioral failure recurrence tracking.
 const MAX_RECURRENCE_BEFORE_BLOCK = 3;
-export function getPrimaryObjective(): string {
+function getPrimaryObjective(): string {
   try {
     const root = getProjectRoot();
     const sessionPath = path.join(root, "SESSION.md");
@@ -65,7 +65,7 @@ function persistObjectiveToStack(objective: string): void {
     }
   } catch { /* fail-open */ }
 }
-export function isCiGreenFromCache(): boolean {
+function isCiGreenFromCache(): boolean {
   try {
     const p = "/tmp/gludd-watchdog-ci.json";
     if (!fs.existsSync(p)) return false;
@@ -77,7 +77,7 @@ export function isCiGreenFromCache(): boolean {
     return false;
   }
 }
-export function isObjectiveMet(): boolean {
+function isObjectiveMet(): boolean {
   const obj = getPrimaryObjective();
   if (!obj) return true;
   if (/\bCI\s*GREEN\b|\bGREEN\s*CI\b/i.test(obj)) {

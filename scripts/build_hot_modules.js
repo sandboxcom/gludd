@@ -60,6 +60,19 @@ function extractHotLookupName(content, sourceName) {
   return unique[0];
 }
 
+function resolveImplementationSource(srcPath, content) {
+  if (content.includes("defaultImpl")) return { srcPath, content };
+  const match = content.match(/import\s+\w+\s+from\s+["'](\.\/impl\/[A-Za-z0-9_-]+\.ts)["']/);
+  if (!match) return { srcPath, content };
+  const implPath = path.resolve(path.dirname(srcPath), match[1]);
+  if (!fs.existsSync(implPath)) return { srcPath, content };
+  const implContent = fs.readFileSync(implPath, "utf8");
+  if (!/loadHotModule\(\s*["'][^"']+["']/.test(implContent)) {
+    return { srcPath, content };
+  }
+  return { srcPath: implPath, content: implContent };
+}
+
 function compileDefaultImpl(srcPath, content) {
   const source = `${content}\nexport { defaultImpl as __gluddHotModule };\n`;
   const result = esbuild.buildSync({
@@ -101,7 +114,9 @@ function buildPlugin(name) {
     return false;
   }
 
-  const content = fs.readFileSync(srcPath, "utf8");
+  const facadeContent = fs.readFileSync(srcPath, "utf8");
+  const resolved = resolveImplementationSource(srcPath, facadeContent);
+  const content = resolved.content;
   if (!content.includes("defaultImpl")) {
     console.log(`  SKIP ${name}: not yet converted to proxy pattern (no defaultImpl)`);
     return false;
@@ -117,7 +132,7 @@ function buildPlugin(name) {
 
   let out;
   try {
-    out = compileDefaultImpl(srcPath, content);
+    out = compileDefaultImpl(resolved.srcPath, content);
   } catch (error) {
     return failBuild(name, outPath, `esbuild compilation failed (${error.message})`);
   }

@@ -85,6 +85,22 @@ def _load_ts_file(path: Path) -> str:
     return path.read_text()
 
 
+def _load_hot_reload_contract(path: Path) -> str:
+    """Read a plugin's hot-reload implementation, following a thin facade."""
+    content = _load_ts_file(path)
+    if "defaultImpl" in content:
+        return content
+    match = re.search(
+        r'import\s+\w+\s+from\s+["\'](\./impl/[A-Za-z0-9_-]+\.ts)["\']',
+        content,
+    )
+    if match:
+        implementation = (path.parent / match.group(1)).resolve()
+        if implementation.is_file():
+            return _load_ts_file(implementation)
+    return content
+
+
 def _compute_hotmodule_exclusion_zones(content: str) -> list[tuple[int, int]]:
     """Return byte ranges for HotModule blocks that should be excluded from
     duplicate-hook checking (they are fallback implementations, not registrations)."""
@@ -158,12 +174,12 @@ class TestRegistryCompleteness:
 class TestExportShape:
     @pytest.mark.parametrize("plugin_path", _REGISTERED_PATHS, ids=lambda p: p.name)
     def test_has_export_default(self, plugin_path: Path) -> None:
-        content = _load_ts_file(plugin_path)
+        content = _load_hot_reload_contract(plugin_path)
         assert EXPORT_DEFAULT_RE.search(content), f"{plugin_path.name}: missing 'export default'"
 
     @pytest.mark.parametrize("plugin_path", _REGISTERED_PATHS, ids=lambda p: p.name)
     def test_no_named_const_exports(self, plugin_path: Path) -> None:
-        content = _load_ts_file(plugin_path)
+        content = _load_hot_reload_contract(plugin_path)
         for match in NAMED_CONST_RE.finditer(content):
             line_no = content[: match.start()].count("\n") + 1
             line = content.split("\n")[line_no - 1].strip()[:80]
@@ -226,7 +242,7 @@ class TestHookValidity:
     def test_no_duplicate_hooks_within_single_plugin(self) -> None:
         violations: list[str] = []
         for plugin_path in _REGISTERED_PATHS:
-            content = _load_ts_file(plugin_path)
+            content = _load_hot_reload_contract(plugin_path)
             zones = _compute_hotmodule_exclusion_zones(content)
             seen: dict[str, list[int]] = {}
 
@@ -268,7 +284,7 @@ def _hot_module_names_per_plugin() -> dict[str, set[str]]:
     """Return {plugin_name: {hot_module_name, ...}} -- unique per plugin."""
     result: dict[str, set[str]] = {}
     for plugin_path in _REGISTERED_PATHS:
-        content = _load_ts_file(plugin_path)
+        content = _load_hot_reload_contract(plugin_path)
         names: set[str] = set()
         for m in LOAD_HM_RE.finditer(content):
             names.add(m.group(1))
@@ -281,7 +297,7 @@ def _hot_module_names_global() -> dict[str, set[str]]:
     """Return {hot_module_name: {plugin_name, ...}} -- unique hot-mod names."""
     result: dict[str, set[str]] = {}
     for plugin_path in _REGISTERED_PATHS:
-        content = _load_ts_file(plugin_path)
+        content = _load_hot_reload_contract(plugin_path)
         for m in LOAD_HM_RE.finditer(content):
             name = m.group(1)
             result.setdefault(name, set()).add(plugin_path.name)
@@ -301,24 +317,31 @@ class TestHotReloadIntegrity:
         for plugin_path in _REGISTERED_PATHS:
             if plugin_path.name in _HOT_RELOAD_EXEMPT_PLUGINS:
                 continue
-            content = _load_ts_file(plugin_path)
+            content = _load_hot_reload_contract(plugin_path)
             if not HOT_MODULE_STUB.search(content):
                 no_proxy.append(plugin_path.name)
         assert not no_proxy, "Plugins without hot-reload proxy (loadHotModule(..defaultImpl)): " + ", ".join(no_proxy)
 
-    def test_hot_reload_module_files_exist_or_warn(self) -> None:
+    def test_hot_reload_modules_build_from_a_clean_state(self, tmp_path: Path) -> None:
+        """Every registered hot module must build without relying on global /tmp."""
         global_names = _hot_module_names_global()
-        missing: list[str] = []
-        for name in sorted(global_names):
-            hot_path = f"/tmp/gludd-hot-{name}.js"
-            if not os.path.exists(hot_path):
-                missing.append(f"  {name} → {hot_path}")
-        # Warning only if SOME are missing (expected when hot-reload hasn't run).
-        # Only fail if ALL are missing (indicates a systemic issue).
-        if missing and len(missing) == len(global_names):
-            pytest.fail(
-                f"All {len(missing)} hot-reload modules missing. Run `make hot-reload-plugins`.\n" + "\n".join(missing)
-            )
+        prefix = tmp_path / "gludd-hot-"
+        env = {**os.environ, "GLUDD_HOT_MODULE_PREFIX": str(prefix)}
+        result = subprocess.run(
+            ["node", "scripts/build_hot_modules.js"],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        missing = [
+            name
+            for name in sorted(global_names)
+            if not (tmp_path / f"gludd-hot-{name}.js").is_file()
+        ]
+        assert not missing, f"Hot-reload build omitted registered modules: {missing}"
 
 
 # ---------------------------------------------------------------------------

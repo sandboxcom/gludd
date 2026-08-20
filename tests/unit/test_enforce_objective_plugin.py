@@ -57,17 +57,20 @@ class TestPluginStructure:
 
 
 class TestHelperFunctions:
-    def test_getPrimaryObjective_exported(self):
+    def test_getPrimaryObjective_is_private(self):
         src = _plugin_source()
-        assert "export function getPrimaryObjective" in src
+        assert "function getPrimaryObjective" in src
+        assert "export function getPrimaryObjective" not in src
 
-    def test_isObjectiveMet_exported(self):
+    def test_isObjectiveMet_is_private(self):
         src = _plugin_source()
-        assert "export function isObjectiveMet" in src
+        assert "function isObjectiveMet" in src
+        assert "export function isObjectiveMet" not in src
 
-    def test_isCiGreenFromCache_exported(self):
+    def test_isCiGreenFromCache_is_private(self):
         src = _plugin_source()
-        assert "export function isCiGreenFromCache" in src
+        assert "function isCiGreenFromCache" in src
+        assert "export function isCiGreenFromCache" not in src
 
     def test_nag_prefix_present(self):
         src = _plugin_source()
@@ -76,8 +79,8 @@ class TestHelperFunctions:
 
     def test_getPrimaryObjective_reads_session_md(self):
         src = _plugin_source()
-        pidx = src.index("export function getPrimaryObjective")
-        end = src.find("export function", pidx + 1)
+        pidx = src.index("function getPrimaryObjective")
+        end = src.find("function getStackedObjective", pidx + 1)
         if end == -1:
             end = len(src)
         body = src[pidx:end]
