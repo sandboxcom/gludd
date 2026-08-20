@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from tests.e2e._local_model_configs import (
     _MODELS,
     LOCAL_GGUF_MODELS,
@@ -11,6 +13,7 @@ from tests.e2e._local_model_configs import (
     get_models_by_role,
     list_models,
     model_count,
+    select_models,
 )
 
 
@@ -61,7 +64,7 @@ class TestModelRegistry:
         for c in configs:
             assert isinstance(c, LocalModelConfig)
 
-    def test_get_e2e_configs_single_model(self, monkeypatch) -> None:
+    def test_get_e2e_configs_single_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("E2E_LOCAL_MODEL", "Qwen2.5-Coder-0.5B")
         configs = get_e2e_configs()
         assert len(configs) == 1
@@ -78,17 +81,17 @@ class TestModelRegistry:
         assert len(roles["PLANNER"]) >= 1
         assert len(roles["REVIEWER"]) >= 1
 
-    def test_local_model_filter_coding(self, monkeypatch) -> None:
+    def test_local_model_filter_coding(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LOCAL_MODEL_FILTER", "coding")
         models = list_models()
         assert all(m.category == "coding" for m in models)
 
-    def test_local_model_filter_ci_safe(self, monkeypatch) -> None:
+    def test_local_model_filter_ci_safe(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LOCAL_MODEL_FILTER", "<500mb")
         models = list_models()
         assert all(m.ci_safe for m in models)
 
-    def test_local_model_filter_specific_model(self, monkeypatch) -> None:
+    def test_local_model_filter_specific_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LOCAL_MODEL_FILTER", "DeepSeek-Coder-1.3B")
         models = list_models()
         assert len(models) == 1
@@ -114,6 +117,19 @@ class TestModelRegistry:
         assert _resolve("phi3-mini") is not None
         assert _resolve("gemma-2b") is not None
         assert _resolve("nonexistent-model") is None
+
+    def test_selected_model_accepts_openai_server_identity(self) -> None:
+        selected = select_models(ci_safe=True, target="Qwen2.5-0.5B-Instruct")
+
+        assert [model.name for model in selected] == ["Qwen2.5-0.5B"]
+
+    def test_selected_model_rejects_unknown_identity(self) -> None:
+        with pytest.raises(ValueError, match="Unknown local model"):
+            select_models(ci_safe=True, target="missing-model")
+
+    def test_selected_model_rejects_ci_excluded_identity(self) -> None:
+        with pytest.raises(ValueError, match="excluded by the active filters"):
+            select_models(ci_safe=True, target="DeepSeek-Coder-1.3B")
 
     def test_all_names_unique(self) -> None:
         names = [m.name for m in _MODELS]

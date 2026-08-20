@@ -168,7 +168,8 @@ The heavyweight transformer, real-model game-generation, full
 game-development, and model-matrix pipelines are explicitly opt-in to prevent
 ordinary collection or `make test-e2e` from downloading models. Their
 structural tests remain active in the generic E2E suite. The dedicated game
-target sets the live opt-in itself:
+target sets the live opt-in itself and resolves the locked `local-inference`
+extra, while Gludd core remains free of `llama-cpp-python`:
 
 ```bash
 GLUDD_LIVE_MODEL_E2E=1 make test-files \
@@ -181,6 +182,28 @@ make test-e2e-game-pipeline \
   GAME_DEV_GAME=snake \
   PYTEST_ARGS='-q -W error'
 ```
+
+`GAME_DEV_MODEL` resolves a registry name or declared alias, including the
+OpenAI-compatible identity returned by the selected server. An unknown identity,
+or a model excluded by `CI_SAFE`, fails closed before downloads begin. Selecting
+one model narrows inference only; the always-on structural assertions still
+validate the complete 24-model registry and both capability categories.
+
+The selected model performs planning and coding, while the stable Qwen registry
+entry reviews the result. Roles with the same GGUF and context share one
+download and one loopback server; the Qwen target therefore uses a single
+runtime for all three roles. Generation stays bounded to 1,024 output tokens
+inside an 8,192-token context. Before subjective review, a deterministic
+normalizer may add only the mechanically specified `start()` transition to an
+AST-valid, exactly named game class. Existing methods, malformed source, wrong
+classes, and classless output are unchanged and continue to fail the
+import/lifecycle verifier.
+
+On 2026-08-20, the exact Qwen/Snake command above passed 10/10 tests in 118.46
+seconds. The generated 68-line module was AST-valid, importable, and passed the
+full lifecycle check. The focused local-model measurement passed 384 tests with
+3 intentional live-download skips at 94 percent aggregate branch coverage;
+all five measured files were 84–99 percent.
 
 With no variables, `test-e2e-games-local-model` owns a deterministic
 OpenAI-compatible endpoint on an OS-assigned loopback port, runs the production
@@ -245,7 +268,9 @@ For each model in `TestLocalModelMatrixDownloadServe`, the test:
    (respects `HF_HOME` / `HF_HUB_CACHE` env vars). Skips download if already cached.
 2. **Serve** — `LocalInferenceManager` spawns a llama.cpp server on a random port via
    `LocalServer`. The server exposes an OpenAI-compatible `/v1/chat/completions` endpoint.
-   Waits up to 60s for `/health` 200 + warm-up inference.
+   Readiness uses llama.cpp's supported `/v1/models` route (`/health` remains the
+   contract for other engines), ignores ambient proxy variables, and writes stderr
+   to a namespaced temporary file so an unread pipe cannot deadlock a healthy server.
 3. **Generate** — calls the model through `ModelGateway` with a snake-game coding prompt.
    Records latency, token counts, error category.
 4. **Verify** — `_verify_snake_code()`: AST parse → class detection → method checks
@@ -451,6 +476,8 @@ Expected: prints the aggregated matrix report if prior runs populated
 | `LOCAL_MODEL_NAME` | Model ID sent to the selected endpoint | `gludd-hermetic-game-e2e` |
 | `LOCAL_MODEL_KEY` | Optional external auth key; hermetic mode supplies a local-only token | empty |
 | `LOCAL_MODEL_GAME` | Game selected by the bounded local smoke | `snake` |
+| `GAME_DEV_MODEL` | Registry name or alias selected for the live game-development pipeline | all eligible models |
+| `GAME_DEV_GAME` | Game selected for the live game-development pipeline | all 4 |
 | `LOCAL_MODEL_INFERENCE_MODEL_PATH` | Exact readable GGUF used by direct inference | pinned Qwen artifact path |
 | `LOCAL_MODEL_INFERENCE_VALIDATE_ONLY` | Resolve the locked optional runtime without loading the model | `0` |
 | `HF_HOME` / `HF_HUB_CACHE` | HuggingFace cache directory | HF defaults |

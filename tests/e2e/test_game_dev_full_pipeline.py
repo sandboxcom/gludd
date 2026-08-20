@@ -6,7 +6,7 @@ Records a pass/fail summary matrix and writes results to
 /tmp/gludd-game-dev-pipeline-results.json.
 
 Pipeline per model:
-  1. Download GGUF files (planner=SmolLM2-360M, reviewer=Phi-2, coder=<model under test>)
+  1. Resolve GGUF files (planner/coder=<model under test>, reviewer=Qwen2.5-0.5B)
   2. Serve each on localhost via LocalInferenceManager
   3. Wire ModelGateway with role-specific profiles
   4. MultiModelGamePipeline.generate() for snake, pong, breakout, tetris
@@ -33,6 +33,7 @@ import socket
 import tempfile
 import textwrap
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -42,8 +43,10 @@ import pytest
 from tests.e2e._game_lifecycle import run_lifecycle_checks
 from tests.e2e._local_model_configs import (
     E2EModelEntry,
-    list_models,
+    category_counts,
     model_count,
+    require_model,
+    select_models,
 )
 
 # ---------------------------------------------------------------------------
@@ -223,24 +226,106 @@ _LIVE_MODEL_E2E = os.environ.get("GLUDD_LIVE_MODEL_E2E") == "1"
 _TARGET_MODEL = os.environ.get("GAME_DEV_MODEL", "").strip()
 _TARGET_GAME_ENV = os.environ.get("GAME_DEV_GAME", "").strip().lower()
 
-_ALL_MODELS = list_models(ci_safe=True) if _CI_SAFE_ONLY else list_models()
+_ALL_MODELS = select_models(ci_safe=_CI_SAFE_ONLY, target=_TARGET_MODEL)
 
-if _TARGET_MODEL:
-    _ALL_MODELS = [m for m in _ALL_MODELS if m.name == _TARGET_MODEL or _TARGET_MODEL in m.aliases]
+# Fixed planner + reviewer are derived from the same registry as coder models.
+_E2E_CONTEXT_CEILING = 8192
+_E2E_OUTPUT_TOKEN_BUDGET = 1024
+_LOCAL_MODEL_HOST = "127.0.0.1"
 
-# Fixed planner + reviewer (small, ci_safe)
-_PLANNER_CFG = {
-    "name": "SmolLM2-360M",
-    "repo": "bartowski/SmolLM2-360M-Instruct-GGUF",
-    "filename": "SmolLM2-360M-Instruct-Q4_K_M.gguf",
-    "context_size": 8192,
-}
-_REVIEWER_CFG = {
-    "name": "Phi-2",
-    "repo": "bartowski/phi-2-GGUF",
-    "filename": "phi-2-Q2_K.gguf",
-    "context_size": 2048,
-}
+
+def _entry_config(model: E2EModelEntry) -> dict[str, Any]:
+    return {
+        "name": model.name,
+        "repo": model.repo,
+        "filename": model.filename,
+        "context_size": min(model.context_size, _E2E_CONTEXT_CEILING),
+    }
+
+
+def _role_config(name_or_alias: str) -> dict[str, Any]:
+    return _entry_config(require_model(name_or_alias))
+
+
+def _role_configs_for_model(model: E2EModelEntry) -> dict[str, dict[str, Any]]:
+    """Assign planning/coding to the evaluated model and a stable Qwen reviewer."""
+    target_config = _entry_config(model)
+    return {
+        "planner": dict(target_config),
+        "coder": dict(target_config),
+        "reviewer": dict(_REVIEWER_CFG),
+    }
+
+
+def _group_roles_by_artifact(
+    role_configs: dict[str, dict[str, Any]],
+) -> dict[tuple[str, str], list[str]]:
+    groups: dict[tuple[str, str], list[str]] = {}
+    for role, config in role_configs.items():
+        key = (str(config["repo"]), str(config["filename"]))
+        groups.setdefault(key, []).append(role)
+    return groups
+
+
+def _group_roles_by_runtime(
+    role_configs: dict[str, dict[str, Any]],
+    local_paths: dict[str, str],
+) -> dict[tuple[str, int], list[str]]:
+    groups: dict[tuple[str, int], list[str]] = {}
+    for role, config in role_configs.items():
+        key = (local_paths[role], int(config["context_size"]))
+        groups.setdefault(key, []).append(role)
+    return groups
+
+
+def _payload_limits(context_size: int) -> tuple[int, int]:
+    """Reserve a bounded output budget while allowing review of generated code."""
+    if context_size <= _E2E_OUTPUT_TOKEN_BUDGET:
+        raise ValueError(
+            f"context_size must exceed output budget {_E2E_OUTPUT_TOKEN_BUDGET}: {context_size}"
+        )
+    return context_size - _E2E_OUTPUT_TOKEN_BUDGET, _E2E_OUTPUT_TOKEN_BUDGET
+
+
+async def _start_grouped_servers(
+    manager: Any,
+    role_configs: dict[str, dict[str, Any]],
+    local_paths: dict[str, str],
+    port_factory: Callable[[], int] | None = None,
+) -> dict[str, int]:
+    from general_ludd.infra.local_inference import LocalServerConfig
+
+    ports: dict[str, int] = {}
+    allocate_port = port_factory or _find_free_port
+    try:
+        for runtime_roles in _group_roles_by_runtime(role_configs, local_paths).values():
+            role = runtime_roles[0]
+            config_data = role_configs[role]
+            port = allocate_port()
+            server_config = LocalServerConfig(
+                engine="llamacpp",
+                model_path=local_paths[role],
+                host=_LOCAL_MODEL_HOST,
+                port=port,
+                gpu_layers=0,
+                context_size=int(config_data["context_size"]),
+                startup_timeout=120.0,
+            )
+            server = manager.create_server(server_config)
+            try:
+                await manager.start_server(server.server_id)
+            except Exception as exc:
+                raise RuntimeError(f"Server start failed for {config_data['name']}: {exc}") from exc
+            for runtime_role in runtime_roles:
+                ports[runtime_role] = port
+    except BaseException:
+        with contextlib.suppress(Exception):
+            await manager.stop_all()
+        raise
+    return ports
+
+
+_REVIEWER_CFG = _role_config("Qwen2.5-0.5B")
 
 _REASON = _deps_reason(_ALL_MODELS)
 if _REASON is not None:
@@ -334,16 +419,23 @@ def _verify_code(code: str, game_id: str, tmpdir: str) -> GameResult:
         return GameResult(game_id, True, False, lines, elapsed, "No class found")
 
     methods: set[str] = set()
+    attributes: set[str] = set()
     for cls in classes:
         for node in ast.walk(cls):
             if isinstance(node, ast.FunctionDef):
                 methods.add(node.name)
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "self"
+            ):
+                attributes.add(node.attr)
 
     has_start = bool(methods & _START_NAMES)
     has_restart = bool(methods & _RESTART_NAMES)
     has_tick = bool(methods & _TICK_NAMES)
-    has_score = bool(methods & _SCORE_NAMES)
-    has_over = bool(methods & _OVER_NAMES)
+    has_score = bool((methods | attributes) & _SCORE_NAMES)
+    has_over = bool((methods | attributes) & _OVER_NAMES)
 
     missing = []
     if not has_start:
@@ -388,6 +480,19 @@ def _verify_code(code: str, game_id: str, tmpdir: str) -> GameResult:
         error = "Module not importable"
 
     return GameResult(game_id, ast_valid, importable, lines, elapsed, error)
+
+
+def _candidate_is_usable(code: str, game_id: str, tmpdir: str) -> bool | str:
+    """Return acceptance or bounded deterministic feedback for one candidate."""
+    result = _verify_code(code, game_id, tmpdir)
+    accepted = result.ast_valid and result.importable and not result.error
+    reason = result.error.replace("\n", " ")[:160] if result.error else "none"
+    print(
+        f"phase=candidate-verify game={game_id} ast={result.ast_valid} "
+        f"import={result.importable} accepted={accepted} reason={reason}",
+        flush=True,
+    )
+    return True if accepted else reason
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +613,7 @@ class TestGameDevFullPipeline:
     ) -> tuple[Any, str, str, str, Any]:
         """Download, serve, build gateway → return (pipeline, planner_id, coder_id, reviewer_id, mgr)."""
         from general_ludd.cloud.multi_model_game_pipeline import MultiModelGamePipeline
-        from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
+        from general_ludd.infra.local_inference import LocalInferenceManager
         from general_ludd.models.gateway import ModelGateway, ModelProfile
         from general_ludd.models.provider_registry import ProviderRegistry
         from general_ludd.secrets.env import EnvSecretsManager
@@ -517,24 +622,18 @@ class TestGameDevFullPipeline:
         mgr = LocalInferenceManager()
         downloader = ModelDownloader(cache_dir=tmpdir)
 
-        role_configs: dict[str, dict[str, Any]] = {
-            "planner": _PLANNER_CFG,
-            "coder": {
-                "name": model_entry.name,
-                "repo": model_entry.repo,
-                "filename": model_entry.filename,
-                "context_size": model_entry.context_size,
-            },
-            "reviewer": _REVIEWER_CFG,
-        }
+        role_configs = _role_configs_for_model(model_entry)
 
         downloaded: dict[str, DownloadedModel] = {}
 
-        for role, cfg in role_configs.items():
+        for artifact_roles in _group_roles_by_artifact(role_configs).values():
+            role = artifact_roles[0]
+            cfg = role_configs[role]
             cache_dir = f"/tmp/gludd-{cfg['name']}-e2e-model"
             cached = _find_cached_gguf(cache_dir, cfg["filename"])
             if cached is not None and os.path.isfile(cached):
-                downloaded[role] = DownloadedModel(
+                print(f"      phase=model-resolve status=legacy-cache-hit model={cfg['name']}", flush=True)
+                artifact = DownloadedModel(
                     model_id=cfg["repo"],
                     local_path=cached,
                     source=DownloadSource.CACHE,
@@ -542,78 +641,85 @@ class TestGameDevFullPipeline:
                     size_bytes=os.path.getsize(cached),
                 )
             else:
+                print(f"      phase=model-resolve status=cache-check model={cfg['name']}", flush=True)
                 try:
-                    downloaded[role] = downloader.download_gguf(cfg["repo"], cfg["filename"])
-                except Exception as exc:
-                    raise RuntimeError(f"Download failed for {cfg['name']}: {exc}") from exc
+                    artifact = downloader.download_gguf(
+                        cfg["repo"],
+                        cfg["filename"],
+                        local_files_only=True,
+                    )
+                except Exception as cache_exc:
+                    print(
+                        f"      phase=model-resolve status=cache-miss model={cfg['name']} "
+                        f"reason={type(cache_exc).__name__}",
+                        flush=True,
+                    )
+                    print(f"      phase=model-resolve status=network-start model={cfg['name']}", flush=True)
+                    try:
+                        artifact = downloader.download_gguf(cfg["repo"], cfg["filename"])
+                    except Exception as exc:
+                        raise RuntimeError(f"Download failed for {cfg['name']}: {exc}") from exc
+                    print(f"      phase=model-resolve status=network-complete model={cfg['name']}", flush=True)
+                else:
+                    print(f"      phase=model-resolve status=cache-hit model={cfg['name']}", flush=True)
 
-            mdl = downloaded[role]
-            assert mdl.local_path and os.path.isfile(mdl.local_path), f"Missing: {cfg['name']}"
-            assert mdl.size_bytes > 0
+            assert artifact.local_path and os.path.isfile(artifact.local_path), f"Missing: {cfg['name']}"
+            assert artifact.size_bytes > 0
+            for artifact_role in artifact_roles:
+                downloaded[artifact_role] = artifact
 
-        ports: dict[str, int] = {}
-        servers: list[Any] = []
+        local_paths = {role: str(model.local_path) for role, model in downloaded.items()}
+        ports = await _start_grouped_servers(mgr, role_configs, local_paths)
 
-        for role, cfg in role_configs.items():
-            port = _find_free_port()
-            ports[role] = port
-            config = LocalServerConfig(
-                engine="llamacpp",
-                model_path=downloaded[role].local_path,
-                host="localhost",
-                port=port,
-                gpu_layers=0,
-                context_size=cfg["context_size"],
-                startup_timeout=120.0,
-            )
-            server = mgr.create_server(config)
-            servers.append(server)
-            try:
-                await mgr.start_server(server.server_id)
-            except Exception as exc:
-                raise RuntimeError(f"Server start failed for {cfg['name']}: {exc}") from exc
+        try:
+            registry = ProviderRegistry()
+            registry.register_provider("openai", "langchain_openai", "ChatOpenAI")
+            secrets = EnvSecretsManager()
 
-        registry = ProviderRegistry()
-        registry.register_provider("openai", "langchain_openai", "ChatOpenAI")
-        secrets = EnvSecretsManager()
-
-        profiles: list[ModelProfile] = []
-        for role, _role_key in [("planner", "planner"), ("coder", "coder"), ("reviewer", "reviewer")]:
-            port = ports[role]
-            profile_id = f"local-gdfp-{model_entry.name}-{role}"
-            secrets.set(f"GDFP_{role.upper()}_BASE", f"http://localhost:{port}/v1")
-            secrets.set(f"GDFP_{role.upper()}_KEY", "not-needed")
-            profiles.append(
-                ModelProfile(
-                    model_profile_id=profile_id,
-                    provider="openai",
-                    provider_package="langchain_openai",
-                    provider_class_hint="ChatOpenAI",
-                    model_name="local-model",
-                    api_base_alias=f"GDFP_{role.upper()}_BASE",
-                    credential_alias=f"GDFP_{role.upper()}_KEY",
-                    context_window=2048,
-                    max_input_tokens=1500,
-                    max_output_tokens=1024,
-                    cost_per_input_token=0.0,
-                    cost_per_output_token=0.0,
-                    api_metered=False,
-                    run_budget_usd=0.0,
-                    enabled=True,
-                    resource_profile="ai_light",
-                    roles=[role],
-                    latency_class="medium",
-                    quality_class="variable",
+            profiles: list[ModelProfile] = []
+            for role in ("planner", "coder", "reviewer"):
+                port = ports[role]
+                max_input_tokens, max_output_tokens = _payload_limits(
+                    int(role_configs[role]["context_size"])
                 )
-            )
+                profile_id = f"local-gdfp-{model_entry.name}-{role}"
+                secrets.set(f"GDFP_{role.upper()}_BASE", f"http://{_LOCAL_MODEL_HOST}:{port}/v1")
+                secrets.set(f"GDFP_{role.upper()}_KEY", "not-needed")
+                profiles.append(
+                    ModelProfile(
+                        model_profile_id=profile_id,
+                        provider="openai",
+                        provider_package="langchain_openai",
+                        provider_class_hint="ChatOpenAI",
+                        model_name="local-model",
+                        api_base_alias=f"GDFP_{role.upper()}_BASE",
+                        credential_alias=f"GDFP_{role.upper()}_KEY",
+                        context_window=int(role_configs[role]["context_size"]),
+                        max_input_tokens=max_input_tokens,
+                        max_output_tokens=max_output_tokens,
+                        cost_per_input_token=0.0,
+                        cost_per_output_token=0.0,
+                        api_metered=False,
+                        run_budget_usd=0.0,
+                        enabled=True,
+                        resource_profile="ai_light",
+                        roles=[role],
+                        latency_class="medium",
+                        quality_class="variable",
+                    )
+                )
 
-        gateway = ModelGateway(profiles=profiles, provider_registry=registry, secrets_manager=secrets)
-        pipeline = MultiModelGamePipeline(gateway)
+            gateway = ModelGateway(profiles=profiles, provider_registry=registry, secrets_manager=secrets)
+            pipeline = MultiModelGamePipeline(gateway)
 
-        planner_profile = f"local-gdfp-{model_entry.name}-planner"
-        coder_profile = f"local-gdfp-{model_entry.name}-coder"
-        reviewer_profile = f"local-gdfp-{model_entry.name}-reviewer"
-        return pipeline, planner_profile, coder_profile, reviewer_profile, mgr
+            planner_profile = f"local-gdfp-{model_entry.name}-planner"
+            coder_profile = f"local-gdfp-{model_entry.name}-coder"
+            reviewer_profile = f"local-gdfp-{model_entry.name}-reviewer"
+            return pipeline, planner_profile, coder_profile, reviewer_profile, mgr
+        except BaseException:
+            with contextlib.suppress(Exception):
+                await mgr.stop_all()
+            raise
 
     def _run_generation(
         self,
@@ -629,12 +735,23 @@ class TestGameDevFullPipeline:
         t0 = time.time()
 
         try:
+            from general_ludd.cloud.game_generation import ensure_lifecycle_start_method
+
             code = pipeline.generate(
                 game_def["prompt"],
                 planner_model=planner_model,
                 coder_model=coder_model,
                 reviewer_model=reviewer_model,
                 max_review_rounds=1,
+                candidate_normalizer=lambda candidate: ensure_lifecycle_start_method(
+                    candidate,
+                    class_name=str(game_def["class_name"]),
+                ),
+                candidate_validator=lambda candidate: _candidate_is_usable(
+                    candidate,
+                    game_id,
+                    tmpdir,
+                ),
             )
         except Exception as exc:
             elapsed = int((time.time() - t0) * 1000)
@@ -752,8 +869,7 @@ class TestGameDevFullPipelineStructural:
         assert model_count() == 24
 
     def test_ci_safe_models_exist(self) -> None:
-        ci_safe = [m for m in _ALL_MODELS if m.ci_safe]
-        assert len(ci_safe) >= 1, "Need at least 1 ci_safe model"
+        assert category_counts()["ci_safe"] >= 1, "Need at least 1 ci_safe model"
 
     def test_all_four_game_definitions_present(self) -> None:
         for g in _GAME_IDS:
@@ -769,11 +885,12 @@ class TestGameDevFullPipelineStructural:
             assert "class " in prompt, f"{g}: prompt missing class directive"
 
     def test_models_are_categorized(self) -> None:
-        coders = sum(1 for m in _ALL_MODELS if m.category == "coding")
-        general = sum(1 for m in _ALL_MODELS if m.category == "general")
+        counts = category_counts()
+        coders = counts["coding"]
+        general = counts["general"]
         assert coders > 0
         assert general > 0
-        assert coders + general == len(_ALL_MODELS)
+        assert coders + general == counts["total"]
 
     @pytest.mark.parametrize("game_id", _GAME_IDS)
     def test_verify_can_parse_valid_code(self, game_id: str) -> None:
@@ -800,3 +917,4 @@ class TestGameDevFullPipelineStructural:
         """)
         result = _verify_code(minimal, game_id, tempfile.mkdtemp(prefix="gludd-"))
         assert result.ast_valid, f"{game_id}: should be AST-valid"
+        assert result.importable, f"{game_id}: attribute-based score/game_over contract should import"
