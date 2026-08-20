@@ -233,6 +233,10 @@ class TestBuildWarningPrevention:
         excluded = _excludes_from_spec(spec_text)
         assert {"pysqlite2", "MySQLdb"} <= excluded
 
+    def test_generated_pycparser_tables_are_explicitly_excluded(self, spec_text: str) -> None:
+        excluded = _excludes_from_spec(spec_text)
+        assert {"pycparser.lextab", "pycparser.yacctab"} <= excluded
+
     def test_non_windows_modules_have_platform_excludes(self, spec_text: str) -> None:
         assert 'sys.platform != "win32"' in spec_text
         for module in (

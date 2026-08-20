@@ -144,6 +144,56 @@ def _verify_collection(
     return errors
 
 
+def _verify_native_archives(asset_dir: Path, version: str) -> list[str]:
+    """Verify unpacked native archives expose the files used by installers."""
+    errors: list[str] = []
+    tarballs = (
+        ("linux tar", f"gludd-{version}-linux-x86_64.tar.gz"),
+        ("macos tar", f"gludd-{version}-macos-arm64.tar.gz"),
+        ("linux aarch64 tar", f"gludd-{version}-linux-aarch64.tar.gz"),
+    )
+    for label, filename in tarballs:
+        path = asset_dir / filename
+        if not path.is_file():
+            continue
+        try:
+            with tarfile.open(path, "r:gz") as archive:
+                members = [member for member in archive.getmembers() if member.isfile()]
+        except (OSError, tarfile.TarError) as exc:
+            errors.append(f"{label} archive is invalid: {exc}")
+            continue
+        by_basename: dict[str, list[tarfile.TarInfo]] = {}
+        for member in members:
+            by_basename.setdefault(Path(member.name).name, []).append(member)
+        for required in ("gludd", "install.sh"):
+            candidates = by_basename.get(required, [])
+            if not candidates:
+                errors.append(f"{label} does not contain {required}")
+            elif len(candidates) != 1:
+                errors.append(f"{label} contains multiple {required} files")
+            elif candidates[0].mode & stat.S_IXUSR == 0:
+                errors.append(f"{label} executable {required} must be executable")
+
+    windows_zip = asset_dir / f"gludd-{version}-windows-x86_64.zip"
+    if windows_zip.is_file():
+        try:
+            with zipfile.ZipFile(windows_zip) as archive:
+                executable_names = [
+                    name
+                    for name in archive.namelist()
+                    if not name.endswith("/") and Path(name).name == "gludd.exe"
+                ]
+                if not executable_names:
+                    errors.append("windows zip does not contain gludd.exe")
+                elif len(executable_names) != 1:
+                    errors.append("windows zip contains multiple gludd.exe files")
+                elif archive.getinfo(executable_names[0]).file_size == 0:
+                    errors.append("windows zip gludd.exe is empty")
+        except (OSError, zipfile.BadZipFile) as exc:
+            errors.append(f"windows zip archive is invalid: {exc}")
+    return errors
+
+
 def _verify_distributions(asset_dir: Path, version: str) -> list[str]:
     errors: list[str] = []
     normalized = distribution_version(version)
@@ -151,11 +201,24 @@ def _verify_distributions(asset_dir: Path, version: str) -> list[str]:
     try:
         with zipfile.ZipFile(wheel) as archive:
             names = set(archive.namelist())
-        if "general_ludd/__init__.py" not in names:
-            errors.append("wheel does not contain general_ludd/__init__.py")
-        if not any(name.endswith(".dist-info/METADATA") for name in names):
-            errors.append("wheel does not contain distribution METADATA")
-    except (OSError, zipfile.BadZipFile) as exc:
+            if "general_ludd/__init__.py" not in names:
+                errors.append("wheel does not contain general_ludd/__init__.py")
+            if "general_ludd/cli.py" not in names:
+                errors.append("wheel does not contain general_ludd/cli.py")
+            if not any(name.endswith(".dist-info/METADATA") for name in names):
+                errors.append("wheel does not contain distribution METADATA")
+            entry_points = [
+                name for name in names if name.endswith(".dist-info/entry_points.txt")
+            ]
+            if len(entry_points) != 1:
+                errors.append("wheel does not declare the gludd console entrypoint")
+            else:
+                contents = archive.read(entry_points[0]).decode("utf-8")
+                if re.search(
+                    r"(?m)^\s*gludd\s*=\s*general_ludd\.cli:main\s*$", contents
+                ) is None:
+                    errors.append("wheel does not declare the gludd console entrypoint")
+    except (OSError, UnicodeDecodeError, zipfile.BadZipFile) as exc:
         errors.append(f"wheel is invalid: {exc}")
 
     sdist = asset_dir / f"general_ludd_agent-{normalized}.tar.gz"
@@ -164,6 +227,12 @@ def _verify_distributions(asset_dir: Path, version: str) -> list[str]:
             names = set(archive.getnames())
         if not any(name.endswith("/PKG-INFO") for name in names):
             errors.append("sdist does not contain PKG-INFO")
+        if not any(name.endswith("/src/general_ludd/__init__.py") for name in names):
+            errors.append("sdist does not contain src/general_ludd/__init__.py")
+        if not any(name.endswith("/src/general_ludd/cli.py") for name in names):
+            errors.append("sdist does not contain src/general_ludd/cli.py")
+        if not any(name.endswith("/pyproject.toml") for name in names):
+            errors.append("sdist does not contain pyproject.toml")
     except (OSError, tarfile.TarError) as exc:
         errors.append(f"sdist is invalid: {exc}")
     return errors
@@ -282,6 +351,7 @@ def verify_release_asset_matrix(
             if payload.get("version") != version or listed != expected_list:
                 errors.append("collection artifact manifest is stale or incomplete")
 
+    errors.extend(_verify_native_archives(asset_dir, version))
     errors.extend(_verify_distributions(asset_dir, version))
     errors.extend(_verify_smoke_attestations(asset_dir, version))
 
@@ -334,6 +404,15 @@ def verify_release_asset_matrix(
             or SOURCE_SHA_RE.fullmatch(str(payload.get("source_sha"))) is None
         ):
             errors.append("release manifest schema/version/source SHA is invalid")
+        else:
+            expected_assets = sorted(
+                path.name
+                for path in asset_dir.iterdir()
+                if path.is_file()
+                and path.name not in {manifest.name, "SHA256SUMS"}
+            )
+            if payload.get("assets") != expected_assets:
+                errors.append("release manifest asset inventory is stale or incomplete")
 
     errors.extend(_verify_checksums(asset_dir))
     return sorted(set(errors))

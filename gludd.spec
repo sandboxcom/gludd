@@ -124,6 +124,13 @@ a = Analysis(
         # generic hook otherwise probes these absent legacy/optional drivers.
         'pysqlite2',
         'MySQLdb',
+        # PyInstaller's CFFI hook probes pycparser's optional generated table
+        # modules. Modern pycparser installations build their tables in
+        # memory, so these names are intentionally absent and never imported
+        # by the frozen application. Excluding them prevents false missing
+        # hidden-import warnings without changing the packaged runtime.
+        'pycparser.lextab',
+        'pycparser.yacctab',
     ] + _platform_excludes,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
