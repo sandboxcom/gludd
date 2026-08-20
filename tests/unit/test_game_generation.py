@@ -8,6 +8,7 @@ from general_ludd.cloud.game_generation import (
     _content_text,
     _extract_python_fence,
     _message_text,
+    ensure_lifecycle_start_method,
     normalize_generated_python,
 )
 
@@ -113,6 +114,44 @@ class TestNormalizeGeneratedPython:
         msg = _FakeMessage(content="", raw_response=None)
         with pytest.raises(RuntimeError, match="no text content"):
             normalize_generated_python(msg)
+
+
+class TestEnsureLifecycleStartMethod:
+    def test_adds_start_to_named_class_without_replacing_model_behavior(self):
+        source = (
+            "class Snake:\n"
+            "    def __init__(self):\n"
+            "        self.state = 'ready'\n"
+            "        self.score = 7\n"
+            "\n"
+            "    def tick(self):\n"
+            "        return self.score\n"
+        )
+
+        normalized = ensure_lifecycle_start_method(source, class_name="Snake")
+        namespace: dict[str, object] = {}
+        exec(normalized, namespace)
+        snake = namespace["Snake"]()
+        snake.start()
+
+        assert snake.state == "playing"
+        assert snake.tick() == 7
+
+    def test_existing_start_is_preserved_byte_for_byte(self):
+        source = "class Snake:\n    def start(self):\n        self.state = 'custom'"
+
+        assert ensure_lifecycle_start_method(source, class_name="Snake") == source
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "class Snake(:\n    pass",
+            "class Pong:\n    pass",
+            "print('no classes')",
+        ],
+    )
+    def test_unrepairable_source_is_left_for_fail_closed_validation(self, source):
+        assert ensure_lifecycle_start_method(source, class_name="Snake") == source
 
 
 class TestMessageText:

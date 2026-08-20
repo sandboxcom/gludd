@@ -138,6 +138,36 @@ class TestMultiModelGamePipeline:
         pipeline = MultiModelGamePipeline(gateway, task_policy=policy)
         assert pipeline._task_policy is policy
 
+    def test_stage_token_budgets_are_forwarded_to_provider(self):
+        gateway = MagicMock(spec=ModelGateway)
+        gateway.call_model.side_effect = [
+            ModelResponse(content="name:tiny\ngenre:arcade"),
+            ModelResponse(content="print('game')"),
+            ModelResponse(content="issues:\nfixes:\nscore:1.0\npassed:true"),
+        ]
+        pipeline = MultiModelGamePipeline(
+            gateway,
+            planner_max_tokens=96,
+            coder_max_tokens=768,
+            reviewer_max_tokens=64,
+        )
+
+        assert pipeline.generate("Make a tiny game", max_review_rounds=0) == "print('game')"
+        assert [call.kwargs["max_tokens"] for call in gateway.call_model.call_args_list] == [
+            96,
+            768,
+            64,
+        ]
+        assert [
+            call.kwargs["requested_max_output_tokens"] for call in gateway.call_model.call_args_list
+        ] == [96, 768, 64]
+
+    def test_stage_token_budgets_reject_non_positive_values(self):
+        gateway = self._mock_gateway("ok")
+
+        with pytest.raises(ValueError, match="planner_max_tokens must be a positive int"):
+            MultiModelGamePipeline(gateway, planner_max_tokens=0)
+
     def test_plan_calls_planner(self):
         plan_response = textwrap.dedent("""\
             name:arcade-shooter
@@ -160,6 +190,20 @@ class TestMultiModelGamePipeline:
         assert posargs[0] == "planner-model"
         assert "PLANNER" in kwargs["messages"][0]["content"].upper()
 
+    def test_plan_accepts_small_model_markdown_fields(self):
+        gateway = self._mock_gateway(
+            "**Name:** snake\n- **Genre:** arcade\n"
+            "**Architecture:** headless state machine\n"
+            "- **Components:** snake, food\n"
+            "**Tech:** stdlib\n- **Acceptance:** importable, lifecycle"
+        )
+        spec = MultiModelGamePipeline(gateway).plan("Build headless snake")
+
+        assert spec.name == "snake"
+        assert spec.genre == "arcade"
+        assert spec.component_list == ("snake", "food")
+        assert spec.tech_stack == ("stdlib",)
+
     def test_code_calls_coder(self):
         gateway = self._mock_gateway("import pygame\npygame.init()\nprint('game')")
         pipeline = MultiModelGamePipeline(gateway)
@@ -178,6 +222,29 @@ class TestMultiModelGamePipeline:
         posargs, kwargs = gateway.call_model.call_args
         assert posargs[0] == "coder-model"
         assert "CODER" in kwargs["messages"][0]["content"].upper()
+
+    def test_code_normalizes_unclosed_python_fence(self):
+        gateway = self._mock_gateway("Here is the module:\n```python\nclass Snake:\n    pass\n")
+        pipeline = MultiModelGamePipeline(gateway)
+        spec = DesignSpec(name="snake", genre="arcade", description="headless")
+
+        assert pipeline.code(spec) == "class Snake:\n    pass"
+
+    def test_headless_spec_is_not_overridden_by_pygame_prompt(self):
+        gateway = self._mock_gateway("class Snake:\n    pass")
+        pipeline = MultiModelGamePipeline(gateway)
+        spec = DesignSpec(
+            name="snake",
+            genre="arcade",
+            description="NO external deps; implement a headless state machine",
+            tech_stack=("stdlib",),
+        )
+
+        pipeline.code(spec)
+        system_prompt = gateway.call_model.call_args.kwargs["messages"][0]["content"]
+        assert "pygame" not in system_prompt.lower()
+        assert "explicitly named" in system_prompt.lower()
+        assert "lifecycle" in system_prompt.lower()
 
     def test_review_calls_reviewer(self):
         review_response = textwrap.dedent("""\
@@ -207,6 +274,18 @@ class TestMultiModelGamePipeline:
         assert posargs[0] == "reviewer-model"
         assert "REVIEWER" in kwargs["messages"][0]["content"].upper()
 
+    def test_review_accepts_small_model_markdown_fields(self):
+        gateway = self._mock_gateway(
+            "- **Issues:**\n- **Fixes:** none\n- **Score:** 0.91\n- **Passed:** TRUE"
+        )
+        pipeline = MultiModelGamePipeline(gateway)
+        spec = DesignSpec(name="snake", genre="arcade", description="headless")
+
+        result = pipeline.review("class Snake:\n    pass", spec)
+
+        assert result.passed
+        assert result.quality_score == 0.91
+
     def test_generate_full_pipeline(self):
         plan_resp = textwrap.dedent("""\
             name:simple-game
@@ -235,6 +314,111 @@ class TestMultiModelGamePipeline:
 
         assert "import pygame" in final_code
         assert gateway.call_model.call_count == 3
+
+    def test_generate_accepts_objectively_valid_reviewer_false_negative(self):
+        gateway = MagicMock(spec=ModelGateway)
+        gateway.call_model.side_effect = [
+            ModelResponse(content="name:snake\ngenre:arcade"),
+            ModelResponse(content="class Snake:\n    pass"),
+            ModelResponse(content="issues:style\nfixes:style\nscore:0.5\npassed:false"),
+        ]
+        validator = MagicMock(return_value=True)
+        pipeline = MultiModelGamePipeline(gateway)
+
+        code = pipeline.generate(
+            "Make snake",
+            max_review_rounds=1,
+            candidate_validator=validator,
+        )
+
+        assert code == "class Snake:\n    pass"
+        validator.assert_called_once_with(code)
+        assert gateway.call_model.call_count == 3
+
+    def test_generate_normalizes_each_model_candidate_before_review_and_validation(self):
+        gateway = MagicMock(spec=ModelGateway)
+        gateway.call_model.side_effect = [
+            ModelResponse(content="name:snake\ngenre:arcade"),
+            ModelResponse(content="class Snake:\n    pass"),
+            ModelResponse(content="issues:\nfixes:\nscore:1.0\npassed:true"),
+        ]
+        normalized = "class Snake:\n    def start(self):\n        self.state = 'playing'"
+        normalizer = MagicMock(return_value=normalized)
+        validator = MagicMock(return_value=True)
+
+        code = MultiModelGamePipeline(gateway).generate(
+            "Make snake",
+            max_review_rounds=1,
+            candidate_normalizer=normalizer,
+            candidate_validator=validator,
+        )
+
+        assert code == normalized
+        normalizer.assert_called_once_with("class Snake:\n    pass")
+        validator.assert_called_once_with(normalized)
+        review_messages = gateway.call_model.call_args_list[2].kwargs["messages"]
+        assert review_messages[-1]["content"] == normalized
+
+    def test_generate_rejects_an_empty_normalized_candidate(self):
+        gateway = MagicMock(spec=ModelGateway)
+        gateway.call_model.side_effect = [
+            ModelResponse(content="name:snake\ngenre:arcade"),
+            ModelResponse(content="class Snake:\n    pass"),
+        ]
+
+        with pytest.raises(ValueError, match="candidate_normalizer must return non-empty Python"):
+            MultiModelGamePipeline(gateway).generate(
+                "Make snake",
+                candidate_normalizer=lambda _code: "",
+            )
+
+    def test_generate_uses_deterministic_failure_reason_for_repair(self):
+        review_fail = "issues:style\nfixes:style\nscore:0.5\npassed:false"
+        gateway = MagicMock(spec=ModelGateway)
+        gateway.call_model.side_effect = [
+            ModelResponse(content="name:snake\ngenre:arcade"),
+            ModelResponse(content="class Snake:\n    pass"),
+            ModelResponse(content=review_fail),
+            ModelResponse(content="class Snake:\n    def start(self): pass\n    def restart(self): pass"),
+            ModelResponse(content=review_fail),
+        ]
+        validator = MagicMock(side_effect=["Missing methods: start, restart", True])
+        pipeline = MultiModelGamePipeline(gateway)
+
+        code = pipeline.generate(
+            "Make snake",
+            max_review_rounds=1,
+            candidate_validator=validator,
+        )
+
+        assert "def restart" in code
+        assert gateway.call_model.call_count == 4
+        repair_messages = gateway.call_model.call_args_list[3].kwargs["messages"]
+        assert repair_messages[-1]["content"] == "Missing methods: start, restart"
+        repair_system = repair_messages[0]["content"].lower()
+        assert "complete module" in repair_system
+        assert "indented body" in repair_system
+        assert "partial patch" in repair_system
+
+    def test_deterministic_validator_cannot_be_bypassed_by_reviewer_pass(self):
+        gateway = MagicMock(spec=ModelGateway)
+        gateway.call_model.side_effect = [
+            ModelResponse(content="name:snake\ngenre:arcade"),
+            ModelResponse(content="class Snake:\n    pass"),
+            ModelResponse(content="issues:\nfixes:\nscore:1.0\npassed:true"),
+            ModelResponse(content="class Snake:\n    def start(self): pass"),
+        ]
+        validator = MagicMock(side_effect=["Missing methods: start", True])
+        pipeline = MultiModelGamePipeline(gateway)
+
+        code = pipeline.generate(
+            "Make snake",
+            max_review_rounds=1,
+            candidate_validator=validator,
+        )
+
+        assert "def start" in code
+        assert gateway.call_model.call_count == 4
 
     def test_generate_with_review_feedback_loop(self):
         plan_resp = textwrap.dedent("""\

@@ -11,8 +11,11 @@ The pipeline supports multiple review rounds with iterative feedback.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
+
+from general_ludd.cloud.game_generation import normalize_generated_python
 
 if TYPE_CHECKING:
     from general_ludd.models.gateway import ModelGateway
@@ -93,8 +96,8 @@ You are a GAME CODER. Write complete, runnable Python game code from the design 
 The code must:
 
 - Be self-contained in one file
-- Use pygame for graphics
-- Include pygame.init(), a game loop, and pygame.quit()
+- Honor every explicit constraint in the original description
+- Implement every explicitly named class, method, attribute, signature, and lifecycle step
 - Include ALL components listed in the spec
 - Use ONLY the tech stack specified
 - Pass every acceptance criterion
@@ -110,22 +113,45 @@ fixes:<comma-separated fixes recommended, or empty>
 score:<0.0-1.0 quality score>
 passed:<true or false>
 
-Check: syntax validity, pygame init present, game loop present, all required
-components implemented, tech stack compliance, acceptance criteria met."""
+Check: syntax validity, runnable control flow, all required components implemented,
+tech stack compliance, acceptance criteria met, and all
+explicit constraints from the original description preserved."""
 
 _CODER_FIX_SYSTEM_PROMPT = """\
 You are a GAME CODER fixing review feedback. Given the original code, the design spec,
-and review feedback listing specific issues, produce fixed Python code that addresses
-every issue. Output ONLY the fixed Python code, no explanation."""
+and review feedback listing specific issues, return the complete module with minimal
+changes that address every issue. Preserve working behavior. Every function definition
+must have an indented body. Output the entire corrected Python module. Never return a
+partial patch, explanation, or markdown fence."""
 
-_PLANNER_RESPONSE_RE = re.compile(r"^(name|genre|architecture|components|tech|acceptance):(.*)$", re.MULTILINE)
-_REVIEWER_RESPONSE_RE = re.compile(r"^(issues|fixes|score|passed):(.*)$", re.MULTILINE)
+_MARKDOWN_FIELD_PREFIX = r"^[ \t]*(?:[-+*][ \t]*)?(?:\*\*)?"
+_MARKDOWN_FIELD_VALUE = r"[ \t]*:(?:\*\*)?[ \t]*(.*?)[ \t]*$"
+_PLANNER_RESPONSE_RE = re.compile(
+    _MARKDOWN_FIELD_PREFIX
+    + r"(name|genre|architecture|components|tech|acceptance)"
+    + _MARKDOWN_FIELD_VALUE,
+    re.IGNORECASE | re.MULTILINE,
+)
+_REVIEWER_RESPONSE_RE = re.compile(
+    _MARKDOWN_FIELD_PREFIX + r"(issues|fixes|score|passed)" + _MARKDOWN_FIELD_VALUE,
+    re.IGNORECASE | re.MULTILINE,
+)
+
+_DEFAULT_PLANNER_MAX_TOKENS = 256
+_DEFAULT_CODER_MAX_TOKENS = 1024
+_DEFAULT_REVIEWER_MAX_TOKENS = 128
+_MAX_CANDIDATE_FEEDBACK_CHARS = 1000
+
+
+class _OutputOptions(TypedDict):
+    requested_max_output_tokens: int
+    max_tokens: int
 
 
 def _parse_key_value(text: str, pattern: re.Pattern[str]) -> dict[str, str]:
     result: dict[str, str] = {}
     for match in pattern.finditer(text):
-        result[match.group(1).strip().lower()] = match.group(2).strip()
+        result[match.group(1).strip().lower()] = match.group(2).strip().strip("*_` ")
     return result
 
 
@@ -141,10 +167,66 @@ class MultiModelGamePipeline:
         self,
         gateway: ModelGateway,
         task_policy: SmallModelTaskPolicy | None = None,
+        *,
+        planner_max_tokens: int = _DEFAULT_PLANNER_MAX_TOKENS,
+        coder_max_tokens: int = _DEFAULT_CODER_MAX_TOKENS,
+        reviewer_max_tokens: int = _DEFAULT_REVIEWER_MAX_TOKENS,
     ) -> None:
         """Initialize the pipeline with a model gateway and optional task policy."""
         self._gateway = gateway
         self._task_policy = task_policy
+        self._planner_max_tokens = self._validate_max_tokens(
+            "planner_max_tokens", planner_max_tokens
+        )
+        self._coder_max_tokens = self._validate_max_tokens("coder_max_tokens", coder_max_tokens)
+        self._reviewer_max_tokens = self._validate_max_tokens(
+            "reviewer_max_tokens", reviewer_max_tokens
+        )
+
+    @staticmethod
+    def _validate_max_tokens(name: str, value: int) -> int:
+        """Reject invalid generation limits before any provider call."""
+        if type(value) is not int or value <= 0:
+            raise ValueError(f"{name} must be a positive int")
+        return value
+
+    @staticmethod
+    def _output_options(max_tokens: int) -> _OutputOptions:
+        """Use one cap for provider generation and gateway budget estimation."""
+        return {
+            "requested_max_output_tokens": max_tokens,
+            "max_tokens": max_tokens,
+        }
+
+    @staticmethod
+    def _validate_candidate(
+        validator: Callable[[str], bool | str] | None,
+        code: str,
+    ) -> tuple[bool, str]:
+        """Normalize deterministic acceptance or bounded repair feedback."""
+        if validator is None:
+            return False, ""
+        outcome = validator(code)
+        if outcome is True:
+            return True, ""
+        if outcome is False:
+            return False, ""
+        if isinstance(outcome, str):
+            return False, outcome.strip()[:_MAX_CANDIDATE_FEEDBACK_CHARS]
+        raise TypeError("candidate_validator must return bool or str")
+
+    @staticmethod
+    def _normalize_candidate(
+        normalizer: Callable[[str], str] | None,
+        code: str,
+    ) -> str:
+        """Apply one deterministic repair seam to model-authored source."""
+        if normalizer is None:
+            return code
+        normalized = normalizer(code)
+        if not isinstance(normalized, str) or not normalized.strip():
+            raise ValueError("candidate_normalizer must return non-empty Python source")
+        return normalized
 
     def generate(
         self,
@@ -154,27 +236,55 @@ class MultiModelGamePipeline:
         coder_model: str = "default",
         reviewer_model: str = "default",
         max_review_rounds: int = 3,
+        candidate_normalizer: Callable[[str], str] | None = None,
+        candidate_validator: Callable[[str], bool | str] | None = None,
     ) -> str:
-        """Generate a game through plan → code → review-fix cycles."""
+        """Generate through review cycles, honoring stronger deterministic validation."""
         spec = self.plan(description, model_id=planner_model)
-        code = self.code(spec, model_id=coder_model)
+        code = self._normalize_candidate(
+            candidate_normalizer,
+            self.code(spec, model_id=coder_model),
+        )
 
         for _round in range(max_review_rounds):
             result = self.review(code, spec, model_id=reviewer_model)
-            if result.passed:
-                return result.code
-            code = self.code(
-                spec,
-                model_id=coder_model,
-                previous_code=code,
-                feedback=result.to_feedback_prompt(),
+            candidate_feedback = ""
+            if candidate_validator is None:
+                if result.passed:
+                    return result.code
+            else:
+                candidate_passed, candidate_feedback = self._validate_candidate(
+                    candidate_validator,
+                    result.code,
+                )
+                if candidate_passed:
+                    return result.code
+            code = self._normalize_candidate(
+                candidate_normalizer,
+                self.code(
+                    spec,
+                    model_id=coder_model,
+                    previous_code=code,
+                    feedback=candidate_feedback or result.to_feedback_prompt(),
+                ),
             )
 
-        # The final fix is reviewed once more before giving up — a pipeline
-        # that never verifies its last revision rejects work it already fixed.
-        result = self.review(code, spec, model_id=reviewer_model)
-        if result.passed:
-            return result.code
+        if candidate_validator is not None:
+            # The final revision has already incorporated one reviewer verdict
+            # plus deterministic repair feedback. Validate it directly so a
+            # redundant subjective call cannot bypass or delay the hard gate.
+            candidate_passed, _candidate_feedback = self._validate_candidate(
+                candidate_validator,
+                code,
+            )
+            if candidate_passed:
+                return code
+        else:
+            # Without a deterministic validator, retain the traditional final
+            # reviewer pass so the last revision is never returned unchecked.
+            result = self.review(code, spec, model_id=reviewer_model)
+            if result.passed:
+                return result.code
 
         raise RuntimeError(
             f"Game generation failed after {max_review_rounds} review rounds "
@@ -191,6 +301,7 @@ class MultiModelGamePipeline:
             ],
             estimated_cost=0.0,
             budget_remaining=5.0,
+            **self._output_options(self._planner_max_tokens),
         )
         parsed = _parse_key_value(response.content, _PLANNER_RESPONSE_RE)
         return DesignSpec(
@@ -230,8 +341,9 @@ class MultiModelGamePipeline:
             messages=messages,
             estimated_cost=0.0,
             budget_remaining=5.0,
+            **self._output_options(self._coder_max_tokens),
         )
-        return response.content
+        return normalize_generated_python(response)
 
     def review(
         self,
@@ -252,6 +364,7 @@ class MultiModelGamePipeline:
             messages=review_messages,
             estimated_cost=0.0,
             budget_remaining=5.0,
+            **self._output_options(self._reviewer_max_tokens),
         )
         parsed = _parse_key_value(response.content, _REVIEWER_RESPONSE_RE)
         score_str = parsed.get("score", "0.0")
