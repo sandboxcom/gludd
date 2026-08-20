@@ -3,7 +3,6 @@ Shared daemon-API client shim for general_ludd.agent modules.
 
 Every module that talks to the daemon imports this module.  It provides:
   - GluddClient: HTTP transport (PSK auth, timeouts, error mapping)
-  - LOCAL_TRANSPORT: direct in-process call path (same venv only)
   - error_result / ok_result: uniform return helpers
 
 PSK is read from the ``psk`` parameter (marked no_log).  GluddClient
@@ -91,7 +90,7 @@ def strip_code_fences(text: str) -> str:
 
 
 def parse_structured(
-    text: str,
+    text: str | None,
     schema: dict[str, Any] | None = None,
 ) -> tuple[Any | None, str | None]:
     """Fence-strip ``text`` then ``json.loads`` it.
@@ -183,8 +182,11 @@ class GluddClient:
                 raw = resp.read().decode("utf-8", errors="replace")
                 status = resp.status
         except urllib.error.HTTPError as exc:
-            raw = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-            status = exc.code
+            try:
+                raw = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+                status = exc.code
+            finally:
+                exc.close()
         except urllib.error.URLError as exc:
             return {"_error": str(exc.reason), "_status": 0, "_raw": ""}
         except Exception as exc:
@@ -202,38 +204,37 @@ class GluddClient:
         """Return True if /healthz responds 200."""
         try:
             result = self.get("/healthz")
-            return result.get("_status", 0) == 200
+            status = result.get("_status", 0)
+            return isinstance(status, int) and status == 200
         except Exception:
             return False
 
+    def call_model(
+        self,
+        prompt: str,
+        *,
+        model_profile: str | None = None,
+        route_task_type: str | None = None,
+        max_tokens: int = 2048,
+    ) -> dict[str, Any]:
+        """Call the shared daemon model service over authenticated HTTP.
 
-# ---------------------------------------------------------------------------
-# Local (in-process) transport — same venv only
-# ---------------------------------------------------------------------------
-
-
-def local_model_call(
-    prompt: str,
-    model_profile: str | None = None,
-    route_task_type: str | None = None,
-    max_tokens: int = 2048,
-) -> dict[str, Any]:
-    """Call the gateway directly when running in the same venv as the daemon.
-
-    Falls back gracefully if ``general_ludd`` is not importable.
-    """
-    try:
-        from general_ludd.models.gateway import ModelGateway  # type: ignore[import]
-
-        gw = ModelGateway()
-        text = gw.call_model(
-            prompt=prompt,
-            model_profile=model_profile,
-            task_type=route_task_type,
-            max_tokens=max_tokens,
-        )
-        return ok_result({"text": text, "transport": "local"})
-    except ImportError:
-        return error_result("general_ludd not importable; use daemon_url for HTTP transport")
-    except Exception as exc:
-        return error_result(f"local model call failed: {exc}")
+        Collection processes never import or instantiate model backends.  The
+        caller may reuse this client for multiple requests, keeping endpoint,
+        authentication, timeout, and response handling in one stdlib-only seam.
+        """
+        if not self._psk:
+            return error_result(
+                "authenticated model calls require an explicit psk",
+                _status=0,
+                _error="missing psk",
+            )
+        payload: dict[str, Any] = {
+            "prompt": prompt,
+            "max_tokens": max_tokens,
+        }
+        if model_profile:
+            payload["model_profile"] = model_profile
+        if route_task_type:
+            payload["task_type"] = route_task_type
+        return self.post("/admin/models/call", payload)
