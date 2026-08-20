@@ -6,7 +6,8 @@ import logging
 import os
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 
 from general_ludd.retrieval.indexer import _cosine_similarity, _tokenize
 from general_ludd.security.safe_diskcache import open_safe_diskcache
@@ -18,6 +19,11 @@ class SemanticSearcher:
     """Performs semantic search over an indexed codebase."""
 
     def __init__(self, cache_dir: str | Path = ".gludd/retrieval_cache") -> None:
+        """Open an existing safe retrieval cache.
+
+        Args:
+            cache_dir: Directory containing a previously built retrieval index.
+        """
         path = os.path.expanduser(os.path.expandvars(str(cache_dir)))
         self._cache_dir = path
         if os.path.isdir(path):
@@ -26,6 +32,15 @@ class SemanticSearcher:
             self._cache = None
 
     def search(self, query: str, *, top_k: int = 10) -> list[dict[str, Any]]:
+        """Return the most relevant indexed chunks for a text query.
+
+        Args:
+            query: Text whose token vector is compared with indexed chunks.
+            top_k: Maximum number of results to return.
+
+        Returns:
+            Matching chunks ordered by descending cosine similarity.
+        """
         if self._cache is None:
             return []
 
@@ -55,6 +70,22 @@ class SemanticSearcher:
             for score, entry in top
         ]
 
+    def __enter__(self) -> Self:
+        """Return this searcher while its cache is owned by the context."""
+        return self
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        """Close the cache whenever the owning context exits."""
+        self.close()
+
     def close(self) -> None:
-        if self._cache is not None:
-            self._cache.close()
+        """Close and detach the cache; repeated calls are safe."""
+        cache = self._cache
+        self._cache = None
+        if cache is not None:
+            cache.close()

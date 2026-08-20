@@ -49,6 +49,8 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -80,19 +82,6 @@ from general_ludd.pricing_intel.sources import (
 # ---------------------------------------------------------------------------
 
 
-def _make_daemon_client() -> TestClient:
-    """Create a TestClient for the daemon app with auth disabled (test mode)."""
-    from general_ludd.daemon import create_daemon_app
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config_dir = os.path.join(tmpdir, "config")
-        os.makedirs(config_dir, exist_ok=True)
-        app = create_daemon_app(config_dir=config_dir)
-    # GLUDD_ALLOW_NO_AUTH bypasses the PSK gate so TestClient requests don't 503
-    with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
-        return TestClient(app)
-
-
 def _mock_openrouter_http(models: list[dict[str, Any]]) -> MagicMock:
     """Return a context-manager mock for httpx.Client yielding the given model list."""
     resp = MagicMock()
@@ -114,23 +103,6 @@ def _mock_openrouter_http(models: list[dict[str, Any]]) -> MagicMock:
 def catalog() -> PricingCatalog:
     """PricingCatalog with all default sources. Static sources need no network."""
     return PricingCatalog()
-
-
-# ---------------------------------------------------------------------------
-# Fixture: daemon TestClient (re-used within class)
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def daemon_client() -> TestClient:
-    from general_ludd.daemon import create_daemon_app
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config_dir = os.path.join(tmpdir, "config")
-        os.makedirs(config_dir, exist_ok=True)
-        app = create_daemon_app(config_dir=config_dir)
-    with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
-        return TestClient(app)
 
 
 # ---------------------------------------------------------------------------
@@ -468,16 +440,31 @@ class TestPricingIntelToApiModelsE2E:
     """
 
     @pytest.fixture
-    def app_and_client(self):
+    def app_and_client(self) -> Iterator[tuple[Any, TestClient]]:
         from general_ludd.daemon import create_daemon_app
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            config_dir = os.path.join(tmpdir, "config")
-            os.makedirs(config_dir, exist_ok=True)
-            app = create_daemon_app(config_dir=config_dir)
-        with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
-            client = TestClient(app)
-        return app, client
+        with tempfile.TemporaryDirectory(prefix="gludd-pricing-e2e-") as tmpdir:
+            root = Path(tmpdir)
+            config_dir = root / "config"
+            config_dir.mkdir()
+            (config_dir / "general-ludd.yml").write_text(
+                f"database:\n  url: 'sqlite+aiosqlite:///{root / 'daemon.db'}'\n",
+                encoding="utf-8",
+            )
+            env = {
+                "GLUDD_ALLOW_NO_AUTH": "1",
+                "GLUDD_PROJECT_NAMESPACE": f"gludd-pricing-e2e-{os.getpid()}-{root.name}",
+                "GLUDD_STATE_DIR": str(root / "state"),
+            }
+            with patch.dict(os.environ, env):
+                app = create_daemon_app(config_dir=str(config_dir))
+                with TestClient(app) as client:
+                    yield app, client
+
+    def test_fixture_enters_daemon_lifespan(self, app_and_client) -> None:
+        """The pricing client must own daemon startup and shutdown."""
+        app, _ = app_and_client
+        assert app.state._db_engine is not None
 
     def test_healthz_up_before_pricing_workflow(self, app_and_client) -> None:
         """Daemon must be healthy before we run the pricing workflow."""
