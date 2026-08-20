@@ -2125,7 +2125,8 @@ test-multi-model-pipeline:
 # GAME_DEV_MODEL=Name targets a single model. GAME_DEV_GAME=snake targets one game.
 # Writes results to /tmp/gludd-game-dev-pipeline-results.json
 test-e2e-game-pipeline:
-	@GAME_DEV_CI_SAFE="$${CI_SAFE:-1}" \
+	@GLUDD_LIVE_MODEL_E2E="1" \
+	 GAME_DEV_CI_SAFE="$${CI_SAFE:-1}" \
 	 GAME_DEV_MODEL="$${GAME_DEV_MODEL:-}" \
 	 GAME_DEV_GAME="$${GAME_DEV_GAME:-}" \
 	 $(UV) run pytest tests/e2e/test_game_dev_full_pipeline.py -v -s $(PYTEST_ARGS)

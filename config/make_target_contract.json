@@ -67,6 +67,11 @@
       "behavior": "make test-local-model-inference LOCAL_MODEL_INFERENCE_MODEL_PATH=/tmp/gludd-qwen-e2e-model/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=1"
     },
     {
+      "name": "test-e2e-game-pipeline",
+      "make_variables": ["CI_SAFE", "GAME_DEV_MODEL", "GAME_DEV_GAME", "PYTEST_ARGS"],
+      "behavior": "make test-e2e-game-pipeline CI_SAFE=1 GAME_DEV_MODEL=Qwen2.5-0.5B-Instruct GAME_DEV_GAME=snake PYTEST_ARGS='-q -W error'"
+    },
+    {
       "name": "clean-e2e-small-model",
       "make_variables": ["E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY"],
       "behavior": "make clean-e2e-small-model E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY=1"
