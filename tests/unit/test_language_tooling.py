@@ -15,7 +15,10 @@ These tests FAIL until the module is implemented.
 from __future__ import annotations
 
 import shutil
-from pathlib import Path
+
+import pytest
+
+TOOL_CATEGORIES = {"lint", "test", "build", "format", "package_manager"}
 
 
 class TestLanguageToolsDict:
@@ -154,7 +157,7 @@ class TestDetectAvailableTools:
         assert isinstance(result, dict)
         assert len(result) > 0
 
-    def test_tool_not_on_path_returns_none(self, tmp_path: Path) -> None:
+    def test_tool_not_on_path_returns_none(self) -> None:
         from general_ludd.language.tooling import detect_available_tools
 
         # A language name that can never resolve to a tool on any PATH.
@@ -162,6 +165,33 @@ class TestDetectAvailableTools:
         assert isinstance(result, dict)
         for _cat, val in result["definitely-not-a-real-lang-xyz"].items():
             assert val is None, f"absent language must resolve to None, got {val!r}"
+
+    def test_unknown_language_preserves_complete_fail_closed_schema(self) -> None:
+        from general_ludd.language.tooling import detect_available_tools
+
+        requested = ["unknown-one", "PYTHON", "unknown-two"]
+        result = detect_available_tools(requested)
+
+        assert list(result) == requested
+        assert set(result["unknown-one"]) == TOOL_CATEGORIES
+        assert set(result["unknown-two"]) == TOOL_CATEGORIES
+        assert all(value is None for value in result["unknown-one"].values())
+        assert all(value is None for value in result["unknown-two"].values())
+
+    def test_path_probe_error_fails_closed_per_tool(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from general_ludd.language.tooling import detect_available_tools
+
+        def unavailable(_command: str) -> None:
+            raise OSError("PATH temporarily unavailable")
+
+        monkeypatch.setattr("general_ludd.language.tooling.shutil.which", unavailable)
+
+        result = detect_available_tools(["python"])
+        assert set(result["python"]) == TOOL_CATEGORIES
+        assert all(value is None for value in result["python"].values())
 
     def test_python_present_when_pytest_on_path(self) -> None:
         from general_ludd.language.tooling import detect_available_tools

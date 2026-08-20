@@ -10,6 +10,7 @@ fall outside that gate.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -58,9 +59,11 @@ def test_corpus_analysis_handles_text_binary_language_and_encoding_mix(
 
     complete = analyzer.frequency_analysis()
     limited = analyzer.frequency_analysis(top_n=1)
-    assert complete["word_counts"]["alpha"] == 2
+    word_counts = cast(dict[str, int], complete["word_counts"])
+    top_words = cast(list[object], limited["top_words"])
+    assert word_counts["alpha"] == 2
     assert complete["total_words"] == 7
-    assert len(limited["top_words"]) == 1
+    assert len(top_words) == 1
     assert analyzer.extract_ngrams(2, "char")["al"] == 3
     assert analyzer.extract_ngrams(2, "word")["alpha beta"] == 1
     assert analyzer.language_distribution() == {
@@ -100,10 +103,19 @@ def test_cross_language_detectors_cover_invocation_ffi_and_build_markers(
     (tmp_path / "pyproject.toml").write_text("[project]\nname='bridge'\n", encoding="utf-8")
     (tmp_path / "package.json").write_text("{}\n", encoding="utf-8")
 
-    files = [python_file, rust_file, clean_file, binary_file, tmp_path / "missing.py"]
+    files: list[str | Path] = [
+        python_file,
+        rust_file,
+        clean_file,
+        binary_file,
+        tmp_path / "missing.py",
+    ]
     imports = detect_cross_language_imports(files)
     assert {finding["source_language"] for finding in imports} == {"python", "rust"}
-    assert any("cffi" in finding["patterns"] for finding in imports)
+    assert any(
+        "cffi" in cast(list[str], finding["patterns"])
+        for finding in imports
+    )
 
     ffi = detect_ffi_patterns(files)
     assert {finding["ffi_type"] for finding in ffi} == {"cffi", "extern_block"}
@@ -185,11 +197,13 @@ def test_polyglot_security_and_encoding_reports_include_edge_conditions(
     report = encoding_conflict_report(
         [utf8_bom, utf8_plain, utf16, tmp_path / "missing.py"]
     )
+    boms = cast(list[str], report["boms_present"])
+    conflicts = cast(list[str], report["conflicts"])
     assert report["is_consistent"] is False
-    assert set(report["boms_present"]) == {"UTF-8", "UTF-16-LE"}
-    assert any("Multiple encodings" in conflict for conflict in report["conflicts"])
-    assert any("Inconsistent UTF-8 BOM" in conflict for conflict in report["conflicts"])
-    assert any("Mixed BOM types" in conflict for conflict in report["conflicts"])
+    assert set(boms) == {"UTF-8", "UTF-16-LE"}
+    assert any("Multiple encodings" in conflict for conflict in conflicts)
+    assert any("Inconsistent UTF-8 BOM" in conflict for conflict in conflicts)
+    assert any("Mixed BOM types" in conflict for conflict in conflicts)
 
     assert _sniff_bom(b"") == (None, 0)
     assert _sniff_bom(b"text") == (None, 0)
@@ -300,7 +314,13 @@ def test_tooling_queries_are_case_insensitive_and_path_probes_are_stable(
         "format": None,
         "package_manager": None,
     }
-    assert "unknown" not in selected
+    assert selected["unknown"] == {
+        "lint": None,
+        "test": None,
+        "build": None,
+        "format": None,
+        "package_manager": None,
+    }
     assert set(detect_available_tools()) == set(LANGUAGE_TOOLS)
     assert get_cross_language_compat("JavaScript") == ["typescript"]
     assert get_cross_language_compat("unknown") == []

@@ -175,6 +175,8 @@ LANGUAGE_TOOLS: dict[str, dict[str, str | None]] = {
     },
 }
 
+_TOOL_CATEGORIES = tuple(LANGUAGE_TOOLS["python"])
+
 # Language groups that share toolchains. Used by get_cross_language_compat
 # to report which other languages can use the same tools as the query
 # language.
@@ -216,11 +218,10 @@ def detect_available_tools(
 
     Returns:
         dict
-        Known language → {category: tool_name | None}. A tool_name of None
-        means "no standard tool for this category"; a tool that is on PATH
-        keeps its name; a tool that is NOT on PATH also keeps its name
-        (we report the canonical name regardless — callers filter via
-        :func:`shutil.which` themselves if they need runtime yes/no).
+        Requested language → {category: tool_name | None}. A tool that is on
+        PATH keeps its canonical name. Unknown languages, categories without
+        a standard tool, unavailable tools, and failed PATH probes resolve to
+        ``None`` without dropping the requested language from the result.
     """
     if languages is None:
         languages = sorted(LANGUAGE_TOOLS.keys())
@@ -228,10 +229,15 @@ def detect_available_tools(
     for lang in languages:
         tools = get_language_tools(lang)
         if tools is None:
+            result[lang] = {category: None for category in _TOOL_CATEGORIES}
             continue
         resolved: dict[str, str | None] = {}
         for cat, tool in tools.items():
-            if tool is None or shutil.which(tool.split()[0]) is not None:
+            try:
+                available = tool is not None and shutil.which(tool.split()[0]) is not None
+            except OSError:
+                available = False
+            if tool is None or available:
                 resolved[cat] = tool
             else:
                 resolved[cat] = None
