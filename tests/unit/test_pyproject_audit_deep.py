@@ -10,8 +10,10 @@ from __future__ import annotations
 import importlib
 import re
 import tomllib
+from itertools import combinations, product
 from pathlib import Path
 
+from packaging.markers import default_environment
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
@@ -42,6 +44,77 @@ def _all_dep_keys(section: list[str]) -> set[tuple[str, str]]:
         for spec in section
         if (requirement := Requirement(spec))
     }
+
+
+def _marker_environments() -> list[dict[str, str]]:
+    """Return supported Python/platform combinations for marker overlap checks."""
+    base = default_environment()
+    environments: list[dict[str, str]] = []
+    platforms = (
+        ("linux", "Linux", "posix"),
+        ("darwin", "Darwin", "posix"),
+        ("win32", "Windows", "nt"),
+    )
+    for minor, platform, machine, implementation in product(
+        range(11, 31),
+        platforms,
+        ("x86_64", "arm64", "AMD64"),
+        ("cpython", "pypy"),
+    ):
+        python_version = f"3.{minor}"
+        environments.append(
+            base
+            | {
+                "implementation_name": implementation,
+                "os_name": platform[2],
+                "platform_machine": machine,
+                "platform_system": platform[1],
+                "python_full_version": f"{python_version}.0",
+                "python_version": python_version,
+                "sys_platform": platform[0],
+            }
+        )
+    return environments
+
+
+_MARKER_ENVIRONMENTS = _marker_environments()
+
+
+def _overlapping_requirement_names(section: list[str]) -> set[str]:
+    """Find repeated distributions active in any supported environment."""
+    requirements = [Requirement(spec) for spec in section]
+    duplicates: set[str] = set()
+    for left, right in combinations(requirements, 2):
+        left_name = canonicalize_name(left.name)
+        if left_name != canonicalize_name(right.name):
+            continue
+        if left.marker == right.marker or any(
+            (left.marker is None or left.marker.evaluate(environment))
+            and (right.marker is None or right.marker.evaluate(environment))
+            for environment in _MARKER_ENVIRONMENTS
+        ):
+            duplicates.add(left_name)
+    return duplicates
+
+
+def test_duplicate_requirement_audit_distinguishes_disjoint_markers() -> None:
+    """Marker-split pins are valid, while simultaneously active pins are not."""
+    disjoint = [
+        "ansible-core>=2.19,<2.20; python_version < '3.12'",
+        "ansible-core>=2.21,<2.22; python_version >= '3.12'",
+    ]
+    overlapping = [
+        "ansible-core>=2.20; python_version >= '3.11'",
+        "ansible-core>=2.21; python_version >= '3.12'",
+    ]
+
+    assert _overlapping_requirement_names(disjoint) == set()
+    assert _overlapping_requirement_names(overlapping) == {"ansible-core"}
+
+
+def test_duplicate_requirement_audit_rejects_unmarked_duplicates() -> None:
+    """Two unconditional pins for one distribution remain a hard failure."""
+    assert _overlapping_requirement_names(["httpx>=0.27", "httpx<1"]) == {"httpx"}
 
 
 # ---------------------------------------------------------------------------
@@ -103,19 +176,15 @@ def test_no_duplicate_core_deps():
 def test_no_duplicate_optional_deps():
     data = _load()
     for group, deps in data["project"].get("optional-dependencies", {}).items():
-        names = _all_dep_names(deps)
-        assert len(names) == len(deps), (
-            f"Duplicate in [project.optional-dependencies] {group}: {len(deps)} specs → {len(names)} names"
-        )
+        duplicates = _overlapping_requirement_names(deps)
+        assert not duplicates, f"Overlapping requirements in [project.optional-dependencies] {group}: {duplicates}"
 
 
 def test_no_duplicate_dependency_groups():
     data = _load()
     for group, deps in data.get("dependency-groups", {}).items():
-        names = _all_dep_names(deps)
-        assert len(names) == len(deps), (
-            f"Duplicate in [dependency-groups] {group}: {len(deps)} specs → {len(names)} names"
-        )
+        duplicates = _overlapping_requirement_names(deps)
+        assert not duplicates, f"Overlapping requirements in [dependency-groups] {group}: {duplicates}"
 
 
 # ---------------------------------------------------------------------------
