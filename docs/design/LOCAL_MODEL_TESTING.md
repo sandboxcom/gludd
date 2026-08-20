@@ -61,14 +61,13 @@ lines of code, per-phase latency, token counts, feature/lifecycle failures).
 ### Prerequisites
 
 ```bash
-# Install llama.cpp Python bindings + server support
-make sync-llama-cpp SYNC_LLAMA_CPP_VALIDATE_ONLY=0
-
 # Download the pinned, already-quantized Qwen2.5 0.5B test artifact (~398 MB)
 make e2e-download-small-model
 
-# Prove that the artifact loads and produces tokens in-process
-make test-local-model-inference
+# Prove that the artifact loads and produces tokens with the locked optional runtime
+make test-local-model-inference \
+  LOCAL_MODEL_INFERENCE_MODEL_PATH=/tmp/gludd-qwen-e2e-model/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf \
+  LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=0
 
 # Build llama-quantize CLI (optional, for quantizing models)
 make build-llamacpp-tools
@@ -79,6 +78,11 @@ already Q4_K_M. It pins the Hugging Face revision and atomically hard-links the
 download cache into `/tmp/gludd-qwen-e2e-model` (falling back to a copy only when
 the cache and temporary directory are on different filesystems). Repeated setup is
 therefore deterministic and avoids an unnecessary second 398 MB allocation.
+`test-local-model-inference` requests the locked `local-inference` extra itself;
+`llama-cpp-python` is intentionally absent from Gludd's core runtime. Validation
+mode (`LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=1`) checks the optional dependency
+resolution without loading a model. The smoke uses the GGUF's native context so
+llama.cpp does not emit the misleading reduced-context capacity warning.
 
 Dependency check (`_deps_reason()` in `test_model_matrix_pipeline.py`):
 - `llama-cpp-python` must be importable
@@ -138,7 +142,7 @@ E2E_LOCAL_MODEL=qwen-coder-0.5b make test-e2e TESTFILE=tests/e2e/test_model_matr
 # Filter with LOCAL_MODEL_FILTER (AND logic)
 LOCAL_MODEL_FILTER=coding,ci-safe make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
 
-# Ollama-based local model (self-hosted endpoint)
+# Hermetic random-port endpoint (default, no model download or API cost)
 make test-e2e-games-local-model
 
 # Fail fast — stop on first model failure
@@ -163,11 +167,15 @@ GLUDD_LIVE_MODEL_E2E=1 make test-files \
   PYTEST_ARGS='-q -W error'
 ```
 
-For the real OpenAI-compatible game path, start a local endpoint separately and
-pass its loopback URL explicitly:
+With no variables, `test-e2e-games-local-model` owns a deterministic
+OpenAI-compatible endpoint on an OS-assigned loopback port, runs the production
+dispatch/policy path for Snake, and verifies teardown. For the real model path,
+start a local endpoint separately and select `external` mode with its loopback
+URL explicitly:
 
 ```bash
 make test-e2e-games-local-model \
+  LOCAL_MODEL_E2E_MODE=external \
   LOCAL_MODEL_BASE_URL=http://127.0.0.1:9999/v1 \
   LOCAL_MODEL_NAME=qwen2.5:0.5b \
   LOCAL_MODEL_KEY=local-only \
@@ -175,11 +183,12 @@ make test-e2e-games-local-model \
   PYTEST_ARGS='-q -W error'
 ```
 
-Only loopback endpoints represented by the existing `local-` model-profile
-allowlist are accepted; the suite does not disable the production SSRF guard. A
-generation receives at most the task policy's configured attempt ceiling. Syntax
-repair feeds back a bounded excerpt of the prior response, keeping context growth
-predictable on small models.
+External mode requires an explicit `http` or `https` `/v1` URL whose host is
+`127.0.0.1`, `localhost`, or `::1`. Those endpoints are still represented by the
+existing `local-` model-profile allowlist; the runner and suite do not disable the
+production SSRF guard. A generation receives at most the task policy's configured
+attempt ceiling. Syntax repair feeds back a bounded excerpt of the prior response,
+keeping context growth predictable on small models.
 
 #### Why beta4 keeps these safeguards
 
@@ -401,14 +410,14 @@ Expected: prints the aggregated matrix report if prior runs populated
 | `make e2e-download-small-model` | Materialize the pinned Qwen2.5 0.5B GGUF artifact |
 | `make build-llamacpp-tools` | Build llama-quantize from source |
 | `make test-e2e-multi-model` | Cloud multi-model pipeline (DeepSeek + OpenRouter) |
-| `make test-e2e-games-local-model` | Local model game E2E via SmallModelTaskPolicy |
+| `make test-e2e-games-local-model` | Hermetic or explicit-loopback game E2E via SmallModelTaskPolicy |
 | `make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py` | Full model matrix (env-controlled) |
 | `make local-model-ollama` | Start Ollama server, pull OLLAMA_MODEL |
 | `make local-model-stop` | Stop Ollama server |
 | `make local-model-status` | Check if Ollama is running |
 | `make verify-local-model-quality` | Quality benchmark script |
 | `make benchmark-local-model` | Full local model benchmark |
-| `make test-local-model-inference` | Direct llama.cpp inference smoke test |
+| `make test-local-model-inference` | Direct inference using the locked optional runtime and explicit GGUF |
 
 ### Environment variable reference
 
@@ -422,7 +431,11 @@ Expected: prints the aggregated matrix report if prior runs populated
 | `DEEPSEEK_API_KEY` | DeepSeek API key (env or `.deepseek.key`) | — |
 | `OPENROUTER_API_KEY` | OpenRouter API key (env or `.openrouter.key`) | — |
 | `ANTHROPIC_API_KEY` | Anthropic API key (env or `.anthropic.key`) | — |
-| `LOCAL_MODEL_BASE_URL` | Self-hosted OpenAI-compat endpoint | `http://localhost:11434/v1` |
-| `LOCAL_MODEL_NAME` | Ollama model name | `qwen2.5:0.5b` |
-| `LOCAL_MODEL_KEY` | Optional auth key for self-hosted endpoint | empty |
+| `LOCAL_MODEL_E2E_MODE` | Owned endpoint (`hermetic`) or explicit loopback endpoint (`external`) | `hermetic` |
+| `LOCAL_MODEL_BASE_URL` | Required OpenAI-compatible `/v1` URL in external mode | empty |
+| `LOCAL_MODEL_NAME` | Model ID sent to the selected endpoint | `gludd-hermetic-game-e2e` |
+| `LOCAL_MODEL_KEY` | Optional external auth key; hermetic mode supplies a local-only token | empty |
+| `LOCAL_MODEL_GAME` | Game selected by the bounded local smoke | `snake` |
+| `LOCAL_MODEL_INFERENCE_MODEL_PATH` | Exact readable GGUF used by direct inference | pinned Qwen artifact path |
+| `LOCAL_MODEL_INFERENCE_VALIDATE_ONLY` | Resolve the locked optional runtime without loading the model | `0` |
 | `HF_HOME` / `HF_HUB_CACHE` | HuggingFace cache directory | HF defaults |

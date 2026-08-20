@@ -190,6 +190,7 @@ help:
 	@echo "  init                  Set up project (dirs + deps)"
 	@echo "  sync                  Sync uv dependencies"
 	@echo "  sync-llama-cpp        Sync locked local-inference extra (SYNC_LLAMA_CPP_VALIDATE_ONLY=0|1)"
+	@echo "  test-local-model-inference  Locked optional-runtime smoke (LOCAL_MODEL_INFERENCE_MODEL_PATH, LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=0|1)"
 	@echo "  validate-ansible-runtime-boundary  Validate split core/controller/managed-host artifacts"
 	@echo "  build-ansible-execution-environment  Build the locked controller EE (ANSIBLE_EE_*)"
 	@echo "  verify-ansible-execution-environment Verify one digest-addressed controller EE (ANSIBLE_EE_*)"
@@ -287,7 +288,7 @@ help:
 	@echo "  test-e2e-providers    All E2E provider tests"
 	@echo "  test-e2e-games        Game generation E2E — AI generates games, compares frames (no Azure provision)"
 	@echo "  test-e2e-games-local  Game unit tests only — video compare, game gen, no Azure needed"
-	@echo "  test-e2e-games-local-model  Local model game E2E — SmallModelTaskPolicy + local LLM endpoint"
+	@echo "  test-e2e-games-local-model  Hermetic/external local model game E2E (LOCAL_MODEL_E2E_MODE, LOCAL_MODEL_BASE_URL, LOCAL_MODEL_NAME, LOCAL_MODEL_KEY, LOCAL_MODEL_GAME, PYTEST_ARGS)"
 	@echo "  test-e2e-game-pipeline  Full game-dev pipeline — all 24 models × 4 games (CI_SAFE=1 for CI-safe subset)"
 	@echo "  game-reference-preflight  Acquire/verify approved FPS clips before Azure provisioning"
 	@echo "  test-e2e-games-provision  Source AZURE_E2E_ENV_FILE; Azure game E2E (GAME_E2E_TIMEOUT_SECS>=3600)"
@@ -2087,12 +2088,20 @@ test-games:
 test-e2e-games-local:
 	@$(UV) run --extra game-e2e pytest tests/unit/test_video_compare.py tests/unit/test_game_gen.py tests/unit/test_game_e2e.py -v $(PYTEST_ARGS)
 
+LOCAL_MODEL_E2E_MODE ?= hermetic
+LOCAL_MODEL_BASE_URL ?=
+LOCAL_MODEL_NAME ?= gludd-hermetic-game-e2e
+LOCAL_MODEL_KEY ?=
+LOCAL_MODEL_GAME ?= snake
+
 test-e2e-games-local-model:
-	@LOCAL_MODEL_BASE_URL="$${LOCAL_MODEL_BASE_URL:-http://localhost:11434/v1}" \
-	 LOCAL_MODEL_NAME="$${LOCAL_MODEL_NAME:-qwen2.5:0.5b}" \
-	 LOCAL_MODEL_KEY="$${LOCAL_MODEL_KEY:-}" \
-	 LOCAL_MODEL_GAME="$${LOCAL_MODEL_GAME:-}" \
-	 $(UV) run pytest tests/e2e/test_game_building_local.py -v $(PYTEST_ARGS)
+	@LOCAL_MODEL_E2E_MODE="$(LOCAL_MODEL_E2E_MODE)" \
+	 LOCAL_MODEL_BASE_URL="$(LOCAL_MODEL_BASE_URL)" \
+	 LOCAL_MODEL_NAME="$(LOCAL_MODEL_NAME)" \
+	 LOCAL_MODEL_KEY="$(LOCAL_MODEL_KEY)" \
+	 LOCAL_MODEL_GAME="$(LOCAL_MODEL_GAME)" \
+	 PYTEST_ARGS="$(PYTEST_ARGS)" \
+	 $(UV) run python -m scripts.run_local_model_game_e2e
 
 # CI/CD multi-model pipeline E2E — reads keys from env or shared key files.
 # DeepSeek + OpenRouter tiers, structural tests when keys are absent.
@@ -8781,24 +8790,26 @@ run-game-gen-1.5b:
 	@$(UV) run python scripts/run_game_gen_1_5b.py
 
 .PHONY: test-local-model-inference
+LOCAL_MODEL_INFERENCE_MODEL_PATH ?= /tmp/gludd-qwen-e2e-model/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf
+LOCAL_MODEL_INFERENCE_VALIDATE_ONLY ?= 0
+
 test-local-model-inference:
 	@echo "=== Local model inference test ==="
-	@$(UV) run python -c '\
-import llama_cpp, glob, os, sys;\
-model_dir = "/tmp/gludd-qwen-e2e-model";\
-ggufs = glob.glob(os.path.join(model_dir, "*.gguf"));\
-assert ggufs, f"No GGUF found in {model_dir}";\
-gguf = ggufs[0];\
-print(f"Model: {gguf}");\
-print(f"llama_cpp version: {llama_cpp.__version__}");\
-print("Loading model...");\
-llm = llama_cpp.Llama(model_path=gguf, n_ctx=256, verbose=False);\
-print("Running inference...");\
-output = llm("def hello(): return", max_tokens=32, echo=True);\
-text = output["choices"][0]["text"];\
-print(f"Output: {repr(text)}");\
-print("SUCCESS: Local model inference works.");\
-'
+	@if [ "$(LOCAL_MODEL_INFERENCE_VALIDATE_ONLY)" != "0" ] && [ "$(LOCAL_MODEL_INFERENCE_VALIDATE_ONLY)" != "1" ]; then \
+		echo "ERROR: LOCAL_MODEL_INFERENCE_VALIDATE_ONLY must be 0 or 1"; exit 2; \
+	fi
+	@if [ "$(LOCAL_MODEL_INFERENCE_VALIDATE_ONLY)" = "1" ]; then \
+		UV_NO_PROGRESS=1 $(UV) sync --extra local-inference --locked --dry-run; \
+		echo "LOCAL_MODEL_INFERENCE_CONFIG_OK extra=local-inference model_path=$(LOCAL_MODEL_INFERENCE_MODEL_PATH)"; \
+	else \
+		if [ ! -r "$(LOCAL_MODEL_INFERENCE_MODEL_PATH)" ]; then \
+			echo "ERROR: GGUF artifact not readable: $(LOCAL_MODEL_INFERENCE_MODEL_PATH)"; \
+			echo "Run make e2e-download-small-model or set LOCAL_MODEL_INFERENCE_MODEL_PATH explicitly."; \
+			exit 2; \
+		fi; \
+		UV_NO_PROGRESS=1 $(UV) run --extra local-inference python scripts/local_model_inference_smoke.py \
+			--model-path "$(LOCAL_MODEL_INFERENCE_MODEL_PATH)"; \
+	fi
 
 download-deepseek-1.3b:
 	@echo "=== Downloading DeepSeek-Coder-1.3B-Instruct-Q4_K_M GGUF (~0.8 GB) ==="

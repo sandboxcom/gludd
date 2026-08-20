@@ -6,7 +6,7 @@ into the dispatch flow — THROUGH the same POST /api/dispatch capability=game_l
 code path used by cloud model tests.
 
 Configuration (all via env vars, no files needed):
-    LOCAL_MODEL_BASE_URL   OpenAI-compatible base URL (default: http://localhost:11434/v1)
+    LOCAL_MODEL_BASE_URL   Explicit OpenAI-compatible loopback URL for external mode
     LOCAL_MODEL_NAME       Model name (default: qwen2.5:0.5b)
     LOCAL_MODEL_KEY        API key, if needed (default: empty — most local servers need none)
     LOCAL_MODEL_GAME       Target game to test (default: "" = all 12; use "snake" for one)
@@ -15,10 +15,10 @@ Run:
     LOCAL_MODEL_BASE_URL=http://localhost:11434/v1 \\
         uv run pytest tests/e2e/test_game_building_local.py -v -s
 or:
-    make test-e2e-games-local-model
+    make test-e2e-games-local-model  # owned random-port hermetic endpoint
 
 Smoke mode (one fast game):
-    LOCAL_MODEL_GAME=snake make test-e2e-games-local-model
+    make test-e2e-games-local-model LOCAL_MODEL_E2E_MODE=hermetic LOCAL_MODEL_GAME=snake
 """
 
 from __future__ import annotations
