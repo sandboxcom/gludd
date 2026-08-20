@@ -152,7 +152,11 @@ class TestQuantSelection:
 
 class TestModelQuantizerInit:
     def test_default_quantizer_has_required_methods(self):
-        q = ModelQuantizer()
+        with (
+            patch("shutil.which", return_value=None),
+            patch.object(ModelQuantizer, "_find_bundled_llama_quantize", return_value=None),
+        ):
+            q = ModelQuantizer()
         assert hasattr(q, "convert_to_gguf")
         assert hasattr(q, "quantize")
         assert hasattr(q, "available_methods")
@@ -171,7 +175,11 @@ class TestModelQuantizerInit:
         assert QuantMethod.Q8_0 in methods
 
     def test_available_methods_requires_quantize_tool_for_local(self):
-        q = ModelQuantizer(llama_cpp_quantize_path=None)
+        with (
+            patch("shutil.which", return_value=None),
+            patch.object(ModelQuantizer, "_find_bundled_llama_quantize", return_value=None),
+        ):
+            q = ModelQuantizer(llama_cpp_quantize_path=None)
         assert q._can_quantize_locally() is False
 
 

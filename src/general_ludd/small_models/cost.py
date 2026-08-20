@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from general_ludd.infra.pricing import INFRA_PRICING, PRICING
@@ -16,6 +17,8 @@ _GPU_USD_PER_HOUR = INFRA_PRICING.get("gpu_second", 0.00083) * 3600.0
 _LARGE_DOWNLOAD_GB = 5.0
 _OFF_PEAK_START_HOUR = 18
 _OFF_PEAK_END_HOUR = 6
+
+Clock = Callable[[], datetime]
 
 _MODEL_SIZE_GB: dict[str, float] = {
     "phi-2": 2.7,
@@ -161,10 +164,21 @@ def estimate_quantize_cost(model_id: str, size_gb: float, method: str = "q4_k_m"
     }
 
 
-def is_off_peak(now: datetime | None = None) -> bool:
+def _resolve_now(now: datetime | None, clock: Clock | None) -> datetime:
+    if now is not None:
+        return now
+    if clock is not None:
+        return clock()
+    return datetime.now(UTC)
+
+
+def is_off_peak(
+    now: datetime | None = None,
+    *,
+    clock: Clock | None = None,
+) -> bool:
     """Return True when the given time falls in the off-peak window."""
-    if now is None:
-        now = datetime.now(UTC)
+    now = _resolve_now(now, clock)
 
     if now.weekday() >= 5:
         return True
@@ -173,10 +187,13 @@ def is_off_peak(now: datetime | None = None) -> bool:
     return hour >= _OFF_PEAK_START_HOUR or hour < _OFF_PEAK_END_HOUR
 
 
-def next_off_peak_window(now: datetime | None = None) -> dict[str, object]:
+def next_off_peak_window(
+    now: datetime | None = None,
+    *,
+    clock: Clock | None = None,
+) -> dict[str, object]:
     """Describe the next off-peak window relative to the given time."""
-    if now is None:
-        now = datetime.now(UTC)
+    now = _resolve_now(now, clock)
 
     if is_off_peak(now):
         return {
@@ -226,10 +243,13 @@ def should_defer_download(
     size_gb: float,
     now: datetime | None = None,
     threshold_gb: float | None = None,
+    *,
+    clock: Clock | None = None,
 ) -> dict[str, object]:
     """Advise whether a download of the given size should be deferred to off-peak."""
-    off_peak = is_off_peak(now)
-    window = next_off_peak_window(now)
+    reference_time = _resolve_now(now, clock)
+    off_peak = is_off_peak(reference_time)
+    window = next_off_peak_window(reference_time)
     large_threshold = _LARGE_DOWNLOAD_GB if threshold_gb is None else threshold_gb
 
     if not off_peak and size_gb >= large_threshold:

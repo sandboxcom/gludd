@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import os
 import re
@@ -328,7 +329,17 @@ class LocalInferenceManager:
             server.process = process
             server.started_at = time.time()
             server.pid = process.pid
-            await self._wait_for_ready(server)
+            try:
+                await self._wait_for_ready(server)
+            except BaseException:
+                # The manager owns a subprocess as soon as creation succeeds.
+                # Readiness errors and cancellation must therefore traverse the
+                # same reaping and stderr-removal path as an explicit shutdown.
+                await self.stop_server(server.server_id)
+                # Preserve the failed-start outcome for callers retaining the
+                # returned record, even though the owned resources are retired.
+                server.status = "error"
+                raise
 
         server.status = "running"
         self._emit(
@@ -610,3 +621,33 @@ class LocalInferenceManager:
             return ["sbatch", *extra_args, "--wrap", command]
         else:
             raise ValueError(f"Unsupported engine: {config.engine}")
+
+
+def install_local_inference_lifespan(app: Any) -> None:
+    """Compose managed-server cleanup into an application's lifespan.
+
+    The route layer may create local inference subprocesses after application
+    startup, so cleanup must resolve the manager from application state at
+    shutdown rather than capturing one eagerly.  Composing the existing
+    lifespan preserves every daemon startup/shutdown hook while guaranteeing
+    manager cleanup after normal, failed-startup, and exceptional-body exits.
+    """
+    if getattr(app.state, "_local_inference_lifespan_registered", False):
+        return
+
+    previous_lifespan = app.router.lifespan_context
+
+    @contextlib.asynccontextmanager
+    async def _managed_local_inference_lifespan(owner: Any) -> Any:
+        try:
+            async with previous_lifespan(owner) as state:
+                yield state
+        finally:
+            manager = getattr(owner.state, "_local_inference_manager", None)
+            if manager is not None:
+                shutdown = manager.stop_all()
+                if inspect.isawaitable(shutdown):
+                    await shutdown
+
+    app.router.lifespan_context = _managed_local_inference_lifespan
+    app.state._local_inference_lifespan_registered = True

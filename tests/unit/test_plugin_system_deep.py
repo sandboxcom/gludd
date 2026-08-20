@@ -21,6 +21,7 @@ import os
 import signal
 import tempfile
 from typing import Any, cast
+from unittest.mock import patch
 
 import pytest
 
@@ -319,6 +320,9 @@ class TestTokenizeAndStem:
         assert _stem("cat") == "cat"
         assert _stem("go") == "go"
 
+    def test_stem_action_noun_matches_verb(self):
+        assert _stem("deployment") == "deploy"
+
 
 class TestHashEmbedder:
     def test_embed_returns_correct_dimension(self):
@@ -414,6 +418,26 @@ class TestSkillEmbedder:
     def test_openai_fallback_when_no_key(self):
         se = SkillEmbedder(use_openai_if_available=True)
         assert isinstance(se._embedder, HashEmbedder)
+
+    def test_openai_fallback_when_optional_package_is_missing(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "configured")
+        with patch(
+            "general_ludd.skills.embeddings.OpenAIEmbedder",
+            side_effect=ModuleNotFoundError("openai"),
+        ):
+            se = SkillEmbedder(use_openai_if_available=True)
+        assert isinstance(se._embedder, HashEmbedder)
+
+    def test_openai_configuration_error_is_not_hidden(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "configured")
+        with (
+            patch(
+                "general_ludd.skills.embeddings.OpenAIEmbedder",
+                side_effect=RuntimeError("invalid authentication"),
+            ),
+            pytest.raises(RuntimeError, match="authentication"),
+        ):
+            SkillEmbedder(use_openai_if_available=True)
 
     def test_openai_constructor_requires_key(self):
         with pytest.raises(RuntimeError):

@@ -36,7 +36,11 @@ from general_ludd.daemon import (
 )
 from general_ludd.db.repository import BenchmarkRepository
 from general_ludd.hardware.survey import HardwareInventory
-from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
+from general_ludd.infra.local_inference import (
+    LocalInferenceManager,
+    LocalServerConfig,
+    install_local_inference_lifespan,
+)
 from general_ludd.local_model._local_model_configs import _LOCAL_MODELS
 from general_ludd.models.auto_configurator import AutoConfigurator, ModelPrioritizer
 from general_ludd.models.gateway import ModelGateway, ModelResponse
@@ -264,6 +268,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         app.state._local_inference_manager = LocalInferenceManager(
             ansible_adapter=getattr(app.state, "_runner", None),
         )
+    install_local_inference_lifespan(app)
     if not hasattr(app.state, "_small_model_task_policy"):
         app.state._small_model_task_policy = SmallModelTaskPolicy()
     if not hasattr(app.state, "_model_downloader"):

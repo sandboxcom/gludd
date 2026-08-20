@@ -14,6 +14,9 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+_TEST_INPUT_COST = 0.000001
+_TEST_OUTPUT_COST = 0.000002
+
 
 class TestAsyncSleepBackoff:
     """Prove that call_model_with_retry uses asyncio.sleep during backoff."""
@@ -28,6 +31,8 @@ class TestAsyncSleepBackoff:
         profile = ModelProfile(
             model_profile_id="async-sleep-test", provider="openai",
             model_name="m1", enabled=True,
+            cost_per_input_token=_TEST_INPUT_COST,
+            cost_per_output_token=_TEST_OUTPUT_COST,
         )
         gateway = ModelGateway(profiles=[profile], health_tracker=tracker)
 
@@ -78,6 +83,8 @@ class TestAsyncSleepBackoff:
         profile = ModelProfile(
             model_profile_id="multi-retry", provider="openai", model_name="m1",
             enabled=True, max_failover_retries=5,
+            cost_per_input_token=_TEST_INPUT_COST,
+            cost_per_output_token=_TEST_OUTPUT_COST,
         )
         gateway = ModelGateway(profiles=[profile], health_tracker=tracker)
 
@@ -132,6 +139,8 @@ class TestAsyncSleepBackoff:
         profile = ModelProfile(
             model_profile_id="cap-test", provider="openai", model_name="m1",
             enabled=True, max_failover_retries=5,
+            cost_per_input_token=_TEST_INPUT_COST,
+            cost_per_output_token=_TEST_OUTPUT_COST,
         )
         gateway = ModelGateway(profiles=[profile], health_tracker=tracker)
 
