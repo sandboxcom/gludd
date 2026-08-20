@@ -228,9 +228,18 @@ class TestDaemonStartupConfig:
         config_dir.mkdir()
         ansible_dir = config_dir / "ansible"
         ansible_dir.mkdir()
-        (ansible_dir / "isolation.yml").write_text("process_isolation:\n  enabled: true\n  executable: docker\n")
+        digest = "a" * 64
+        (ansible_dir / "isolation.yml").write_text(
+            "process_isolation:\n"
+            "  enabled: true\n"
+            "  executable: docker\n"
+            f"  container_image: registry.example/gludd-ee:beta4@sha256:{digest}\n"
+        )
         cfg = load_startup_config(config_dir=str(config_dir))
-        assert cfg["process_isolation"] is not None
+        isolation = cfg["process_isolation"]
+        assert isolation is not None
+        assert isolation.enabled is True
+        assert isolation.container_image.endswith(digest)
 
 
 def _lifespan_patches(mock_loop):
