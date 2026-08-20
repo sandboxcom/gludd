@@ -191,7 +191,11 @@ class TestArgumentSpec:
     def _dict_from_ast(self, node: ast.Dict) -> dict[str, dict[str, Any]]:
         result: dict[str, dict[str, Any]] = {}
         for key, val in zip(node.keys, node.values, strict=False):
-            if not isinstance(key, ast.Constant) or not isinstance(val, ast.Call):
+            if (
+                not isinstance(key, ast.Constant)
+                or not isinstance(key.value, str)
+                or not isinstance(val, ast.Call)
+            ):
                 continue
             result[key.value] = self._field_from_call(val)
         return result
