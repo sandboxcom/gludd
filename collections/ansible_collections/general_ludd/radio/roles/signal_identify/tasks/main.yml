@@ -1,5 +1,5 @@
 ---
-# signal_identify role — modulation classification and protocol identification
+# signal_identify role -- modulation classification through the packaged runtime.
 
 - name: Validate parameters
   ansible.builtin.assert:
@@ -8,40 +8,39 @@
       - signal_identify_center_freq_hz | int > 0
       - signal_identify_method in ["fft", "cyclostationary", "auto"]
     fail_msg: "sample_rate must be > 0; method must be fft / cyclostationary / auto"
+  when: signal_identify_enabled | bool
 
-- name: Check numpy/scipy availability
-  ansible.builtin.command: "{{ ansible_python_interpreter }} -c 'import numpy; import scipy.signal'"
-  register: _py_check
-  changed_when: false
-  failed_when: false
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ signal_identify_output_dir }}"
+    state: directory
+    mode: "0755"
+  when: signal_identify_enabled | bool
 
-- name: Identify signals
-  ansible.builtin.command: >
-    {{ ansible_python_interpreter }}
-    {{ role_path }}/files/signal_identify.py
-    {{ ('--input-file ' + signal_identify_input_file) if signal_identify_input_file else '' }}
-    --sample-rate {{ signal_identify_sample_rate }}
-    --center-freq {{ signal_identify_center_freq_hz }}
-    --method {{ signal_identify_method }}
-    --threshold {{ signal_identify_threshold_db }}
-    {{ ('--bandwidth ' + (signal_identify_bandwidth_hz | string)) if signal_identify_bandwidth_hz is defined else '' }}
-    {{ ('--symbol-rate ' + (signal_identify_symbol_rate_baud | string)) if signal_identify_symbol_rate_baud is defined else '' }}
-    {{ ('--spectrum-shape ' + signal_identify_spectrum_shape) if signal_identify_spectrum_shape is defined else '' }}
-  register: _signal_result
-  changed_when: false
-  when:
-    - signal_identify_enabled | bool
+- name: Identify signals through packaged runtime
+  general_ludd.radio.radio_runtime:
+    operation: signal_identify
+    params:
+      input_file: "{{ signal_identify_input_file | default(omit, true) }}"
+      sample_rate: "{{ signal_identify_sample_rate }}"
+      center_freq_hz: "{{ signal_identify_center_freq_hz }}"
+      bandwidth_hz: "{{ signal_identify_bandwidth_hz | default(omit, true) }}"
+      symbol_rate_baud: "{{ signal_identify_symbol_rate_baud | default(omit, true) }}"
+      spectrum_shape: "{{ signal_identify_spectrum_shape | default('') }}"
+      threshold_db: "{{ signal_identify_threshold_db }}"
+      method: "{{ signal_identify_method }}"
+  register: _signal_runtime
+  when: signal_identify_enabled | bool
 
-- name: Parse classification result
+- name: Publish classification result
   ansible.builtin.set_fact:
-    signal_identify_result: "{{ _signal_result.stdout | from_json }}"
-  when:
-    - signal_identify_enabled | bool
+    signal_identify_result: "{{ _signal_runtime.result }}"
+  when: signal_identify_enabled | bool
 
-- name: Write JSON output
+- name: Write JSON output atomically
   ansible.builtin.copy:
-    content: "{{ signal_identify_result | to_nice_json }}"
-    dest: "{{ signal_identify_output_dir }}/signal_identify.json"
+    content: "{{ _signal_runtime.artifact_content }}"
+    dest: "{{ signal_identify_output_dir }}/{{ _signal_runtime.artifact_filename }}"
     mode: "0644"
   when: signal_identify_enabled | bool
 

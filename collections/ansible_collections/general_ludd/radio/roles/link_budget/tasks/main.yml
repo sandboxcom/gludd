@@ -1,7 +1,5 @@
 ---
-# link_budget role -- RF link budget (EIRP, RX signal, fade margin, viability).
-# Invokes the standalone files/link_budget.py CLI backend (same pattern as
-# propagation_model and antenna_design).
+# link_budget role -- RF link budget through the packaged collection runtime.
 
 - name: Validate link budget parameters
   ansible.builtin.assert:
@@ -23,47 +21,41 @@
     mode: "0755"
   when: link_budget_enabled | bool
 
-- name: Compute link budget via link_budget.py
-  ansible.builtin.command: >
-    {{ ansible_python_interpreter }} {{ role_path }}/files/link_budget.py
-    --tx-power {{ link_budget_tx_power_dbm }}
-    --freq-hz {{ link_budget_freq_hz }}
-    --distance-m {{ link_budget_distance_m }}
-    --model {{ link_budget_model }}
-    --tx-antenna-type {{ link_budget_tx_antenna_type }}
-    --tx-antenna-gain-dbi {{ link_budget_tx_antenna_gain_dbi }}
-    --tx-line-loss-db {{ link_budget_tx_line_loss_db }}
-    --tx-height-m {{ link_budget_tx_height_m }}
-    --rx-antenna-type {{ link_budget_rx_antenna_type }}
-    --rx-antenna-gain-dbi {{ link_budget_rx_antenna_gain_dbi }}
-    --rx-line-loss-db {{ link_budget_rx_line_loss_db }}
-    --rx-height-m {{ link_budget_rx_height_m }}
-    --rx-sensitivity-dbm {{ link_budget_rx_sensitivity_dbm }}
-    --required-snr-db {{ link_budget_required_snr_db }}
-    --output-dir {{ link_budget_output_dir }}
-    {% if link_budget_rain_enabled | bool %}
-    --rain-enabled
-    --rain-rate {{ link_budget_rain_rate_mmh }}
-    --rain-polarization {{ link_budget_rain_polarization }}
-    {% endif %}
-  register: _link_budget
-  changed_when: false
+- name: Compute link budget through packaged runtime
+  general_ludd.radio.radio_runtime:
+    operation: link_budget
+    params:
+      tx_power_dbm: "{{ link_budget_tx_power_dbm }}"
+      freq_hz: "{{ link_budget_freq_hz }}"
+      distance_m: "{{ link_budget_distance_m }}"
+      model: "{{ link_budget_model }}"
+      tx_antenna_type: "{{ link_budget_tx_antenna_type }}"
+      tx_antenna_gain_dbi: "{{ link_budget_tx_antenna_gain_dbi }}"
+      tx_line_loss_db: "{{ link_budget_tx_line_loss_db }}"
+      tx_height_m: "{{ link_budget_tx_height_m }}"
+      rx_antenna_type: "{{ link_budget_rx_antenna_type }}"
+      rx_antenna_gain_dbi: "{{ link_budget_rx_antenna_gain_dbi }}"
+      rx_line_loss_db: "{{ link_budget_rx_line_loss_db }}"
+      rx_height_m: "{{ link_budget_rx_height_m }}"
+      rx_sensitivity_dbm: "{{ link_budget_rx_sensitivity_dbm }}"
+      required_snr_db: "{{ link_budget_required_snr_db }}"
+      rain_enabled: "{{ link_budget_rain_enabled }}"
+      rain_rate_mmh: "{{ link_budget_rain_rate_mmh }}"
+      rain_polarization: "{{ link_budget_rain_polarization }}"
+  register: _link_budget_runtime
   when: link_budget_enabled | bool
 
-- name: Parse link budget result
+- name: Publish link budget result
   ansible.builtin.set_fact:
-    link_budget_result: "{{ (_link_budget.stdout | from_json) if _link_budget.stdout is defined and _link_budget.stdout | length > 0 else {} }}"
+    link_budget_result: "{{ _link_budget_runtime.result }}"
   when: link_budget_enabled | bool
 
-- name: Write JSON output
+- name: Write JSON output atomically
   ansible.builtin.copy:
-    content: "{{ link_budget_result | to_nice_json }}"
-    dest: "{{ link_budget_output_dir }}/link_budget.json"
+    content: "{{ _link_budget_runtime.artifact_content }}"
+    dest: "{{ link_budget_output_dir }}/{{ _link_budget_runtime.artifact_filename }}"
     mode: "0644"
-  when:
-    - link_budget_enabled | bool
-    - link_budget_result is defined
-    - link_budget_result | length > 0
+  when: link_budget_enabled | bool
 
 - name: Register link budget verdict
   ansible.builtin.set_fact:
