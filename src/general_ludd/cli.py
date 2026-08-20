@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
+from general_ludd.cli_parser_cache import CommandGraphCache
 from general_ludd.config.binary_paths import BinaryPathResolver
 from general_ludd.db.session import get_default_db_url, is_sqlite_url
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
@@ -396,7 +397,7 @@ def _configure_selftest_parser(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(func=_cmd_selftest)
 
 
-def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
+def _build_parser_uncached() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
     """Build the CLI parser and the parser map used for help dispatch."""
     parser = argparse.ArgumentParser(
         prog="gludd",
@@ -1435,6 +1436,21 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     }
 
     return parser, subcommand_map
+
+
+_ParserBundle = tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]
+_parser_cache = CommandGraphCache(_build_parser_uncached, module_prefix="general_ludd.cli")
+
+
+def build_parser() -> _ParserBundle:
+    """Return one immutable command graph, rebuilding only for patched handlers.
+
+    ``argparse`` parsing stores results in a fresh namespace, so the parser
+    graph is safe to reuse. Tests and embedders sometimes replace command
+    handlers; their changed fingerprint receives an isolated graph instead of
+    contaminating the canonical cache.
+    """
+    return _parser_cache.get()
 
 
 def _cmd_pause_list(args: argparse.Namespace) -> None:
