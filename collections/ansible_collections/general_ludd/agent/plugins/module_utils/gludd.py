@@ -166,6 +166,19 @@ class GluddClient:
         req = urllib.request.Request(url, headers=self._headers(), method="GET")
         return self._send(req)
 
+    def _get(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        """Return the legacy ``(status, body)`` shape over the shared transport."""
+        body = self.get(path, params=params)
+        raw_status = body.get("_status", 0)
+        status = raw_status if isinstance(raw_status, int) else 0
+        payload = dict(body)
+        payload.pop("_status", None)
+        return status, payload
+
     def post(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         data = json.dumps(body or {}).encode("utf-8")
         req = urllib.request.Request(url=self._url(path), data=data, headers=self._headers(), method="POST")
@@ -219,6 +232,14 @@ class GluddClient:
             return isinstance(status, int) and status == 200
         except Exception:
             return False
+
+    def health(self) -> dict[str, Any]:
+        """Return structured health while preserving transport error detail."""
+        status, body = self._get("/healthz")
+        if status == 200:
+            return {"ok": True, "status": status, "body": body}
+        detail = body.get("_error") or body.get("detail") or f"HTTP {status}"
+        return {"ok": False, "status": status, "detail": str(detail)}
 
     def call_model(
         self,
