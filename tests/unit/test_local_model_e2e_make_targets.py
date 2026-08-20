@@ -67,6 +67,13 @@ def test_inference_target_contract_has_safe_behavioral_example() -> None:
     assert "LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=1" in str(entry["behavior"])
 
 
+def test_game_pipeline_target_uses_locked_local_inference_extra() -> None:
+    body = _target_body("test-e2e-game-pipeline")
+
+    assert "--extra local-inference" in body
+    assert "GLUDD_LIVE_MODEL_E2E=\"1\"" in body
+
+
 def test_small_model_cleanup_is_exact_and_recoverable() -> None:
     body = _target_body("clean-e2e-small-model")
 

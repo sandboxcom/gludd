@@ -11,6 +11,7 @@ import pytest
 from general_ludd.infra.local_inference import (
     LocalInferenceManager,
     LocalServerConfig,
+    _readiness_path,
     _validate_host,
 )
 
@@ -147,7 +148,11 @@ class TestStopServerKillpg:
 # ---------------------------------------------------------------------------
 
 class TestReadinessProbe:
-    """start_server must poll /health and raise if the process dies before ready."""
+    """start_server must poll the engine endpoint and surface early process death."""
+
+    def test_readiness_paths_match_engine_contract(self):
+        assert _readiness_path("llamacpp") == "/v1/models"
+        assert _readiness_path("vllm") == "/health"
 
     @pytest.mark.asyncio
     async def test_process_exits_immediately_raises_and_sets_error(self):
@@ -226,10 +231,13 @@ class TestReadinessProbe:
         with patch(
             "general_ludd.infra.local_inference.asyncio.create_subprocess_exec",
             return_value=mock_proc,
-        ), patch("general_ludd.infra.local_inference.httpx.AsyncClient", return_value=mock_client):
+        ), patch(
+            "general_ludd.infra.local_inference.httpx.AsyncClient", return_value=mock_client
+        ) as client_cls:
             server = await mgr.start_server("local-0")
 
         assert server.status == "running"
+        client_cls.assert_called_once_with(timeout=5.0, trust_env=False)
 
     @pytest.mark.asyncio
     async def test_start_new_session_passed_to_subprocess(self):
@@ -257,3 +265,25 @@ class TestReadinessProbe:
             "start_new_session=True is required so that process-group kill "
             "reaches vllm/llama.cpp worker grandchildren"
         )
+
+    @pytest.mark.asyncio
+    async def test_stderr_uses_file_redirection_for_server_lifetime(self):
+        """A long-running server must never block on an undrained stderr pipe."""
+        mgr = LocalInferenceManager()
+        server = mgr.create_server(
+            LocalServerConfig(engine="vllm", model_name="test-model", startup_timeout=0)
+        )
+        mock_proc = AsyncMock()
+        mock_proc.pid = 2223
+        mock_proc.returncode = None
+
+        with patch(
+            "general_ludd.infra.local_inference.asyncio.create_subprocess_exec",
+            return_value=mock_proc,
+        ) as mock_exec:
+            await mgr.start_server(server.server_id)
+
+        _, kwargs = mock_exec.call_args
+        assert kwargs["stderr"] is not asyncio.subprocess.PIPE
+        assert kwargs["stderr"].name == server.stderr_path
+        assert kwargs["stdout"] is asyncio.subprocess.DEVNULL

@@ -2130,7 +2130,7 @@ test-e2e-game-pipeline:
 	 GAME_DEV_CI_SAFE="$${CI_SAFE:-1}" \
 	 GAME_DEV_MODEL="$${GAME_DEV_MODEL:-}" \
 	 GAME_DEV_GAME="$${GAME_DEV_GAME:-}" \
-	 $(UV) run pytest tests/e2e/test_game_dev_full_pipeline.py -v -s $(PYTEST_ARGS)
+	 $(UV) run --extra local-inference pytest tests/e2e/test_game_dev_full_pipeline.py -v -s $(PYTEST_ARGS)
 
 test-local-model-pipeline:
 	@$(UV) run pytest tests/e2e/test_local_model_multi_pipeline.py tests/e2e/test_local_model_discovery_eval.py -v -s $(PYTEST_ARGS)

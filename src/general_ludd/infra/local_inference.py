@@ -64,6 +64,13 @@ def _validate_model(model: str) -> str:
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
+def _readiness_path(engine: str) -> str:
+    """Return the stable readiness endpoint exposed by an inference engine."""
+    if engine == "llamacpp":
+        return "/v1/models"
+    return "/health"
+
+
 def _validate_host(host: str, *, allow_nonloopback: bool = False) -> str:
     """Validate a host value destined for an argv position.
 
@@ -311,40 +318,17 @@ class LocalInferenceManager:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.PIPE,
+                # Direct file redirection keeps diagnostics without a bounded
+                # PIPE that can fill and deadlock long-running inference after
+                # readiness polling has completed. The child owns a duplicate
+                # descriptor for its full lifetime.
+                stderr=stderr_file,
                 start_new_session=True,
             )
-            stderr_reader = process.stderr
-            assert stderr_reader is not None
-
-            async def _drain_stderr() -> None:
-                try:
-                    while True:
-                        chunk = await stderr_reader.read(65536)
-                        if not chunk:
-                            break
-                        stderr_file.write(chunk)
-                        stderr_file.flush()
-                except Exception:
-                    pass
-
-            drain_task = asyncio.ensure_future(_drain_stderr())
             server.process = process
             server.started_at = time.time()
             server.pid = process.pid
-
-            try:
-                # If the child exited before readiness polling begins, finish
-                # its bounded stderr drain first so the raised diagnostic does
-                # not race an empty on-disk capture.
-                if process.returncode is not None:
-                    with contextlib.suppress(TimeoutError):
-                        await asyncio.wait_for(drain_task, timeout=1.0)
-                await self._wait_for_ready(server)
-            finally:
-                drain_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await drain_task
+            await self._wait_for_ready(server)
 
         server.status = "running"
         self._emit(
@@ -376,7 +360,8 @@ class LocalInferenceManager:
         if server.config.startup_timeout <= 0:
             return
 
-        health_url = f"http://{server.config.host}:{server.config.port}/health"
+        readiness_path = _readiness_path(server.config.engine)
+        health_url = f"http://{server.config.host}:{server.config.port}{readiness_path}"
         deadline = time.time() + server.config.startup_timeout
         poll_interval = 2.0
 
@@ -412,7 +397,7 @@ class LocalInferenceManager:
                 )
 
             try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
+                async with httpx.AsyncClient(timeout=5.0, trust_env=False) as client:
                     resp = await client.get(health_url)
                 if resp.status_code == 200:
                     return

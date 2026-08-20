@@ -88,12 +88,16 @@ class TestStartTimeout:
         cfg = _make_config(startup_timeout=0.5)
         server = mgr.create_server(cfg)
         proc = _make_mock_process(returncode=None)
-        proc.stderr.read = AsyncMock(side_effect=[b"cuda out of memory", b""])
+
+        async def spawn_with_stderr(*args: Any, **kwargs: Any) -> AsyncMock:
+            kwargs["stderr"].write(b"cuda out of memory")
+            kwargs["stderr"].flush()
+            return proc
 
         with (
             patch(
                 "general_ludd.infra.local_inference.asyncio.create_subprocess_exec",
-                return_value=proc,
+                side_effect=spawn_with_stderr,
             ),
             patch("general_ludd.infra.local_inference.httpx.AsyncClient") as mock_client,
         ):
@@ -327,12 +331,16 @@ class TestPortConflictEarlyExit:
         cfg = _make_config(startup_timeout=5.0)
         server = mgr.create_server(cfg)
         proc = _make_mock_process(returncode=1)
-        proc.stderr.read = AsyncMock(side_effect=[b"Port 8000 already in use. Try another.", b""])
+
+        async def spawn_with_stderr(*args: Any, **kwargs: Any) -> AsyncMock:
+            kwargs["stderr"].write(b"Port 8000 already in use. Try another.")
+            kwargs["stderr"].flush()
+            return proc
 
         with (
             patch(
                 "general_ludd.infra.local_inference.asyncio.create_subprocess_exec",
-                return_value=proc,
+                side_effect=spawn_with_stderr,
             ),
             pytest.raises(RuntimeError, match="Port 8000 already in use"),
         ):

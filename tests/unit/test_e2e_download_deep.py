@@ -475,6 +475,21 @@ class TestEdgeCases:
             assert result.source == DownloadSource.GGUF
             assert result.filename == "f.gguf"
 
+    def test_gguf_cache_only_resolution_is_forwarded(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch("huggingface_hub.hf_hub_download") as mock_hf:
+            mock_hf.return_value = os.path.join(tmpdir, "f.gguf")
+            d = ModelDownloader(cache_dir=tmpdir, hf_token="tok")
+
+            d.download_gguf(model_id="org/m", filename="f.gguf", local_files_only=True)
+
+            mock_hf.assert_called_once_with(
+                repo_id="org/m",
+                filename="f.gguf",
+                token="tok",
+                revision=None,
+                local_files_only=True,
+            )
+
     def test_downloaded_at_is_set_on_completion(self):
         with tempfile.TemporaryDirectory() as tmpdir, patch("huggingface_hub.hf_hub_download") as mock_hf:
             mock_hf.return_value = os.path.join(tmpdir, "f.gguf")

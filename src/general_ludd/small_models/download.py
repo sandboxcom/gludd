@@ -184,6 +184,8 @@ class ModelDownloader:
         model_id: str,
         filename: str,
         revision: str | None = None,
+        *,
+        local_files_only: bool = False,
     ) -> DownloadedModel:
         """Download a single GGUF file from Hugging Face."""
         import time as _time
@@ -199,6 +201,7 @@ class ModelDownloader:
             filename=filename,
             token=token,
             revision=revision,
+            local_files_only=local_files_only,
         )
 
         downloaded = DownloadedModel(
