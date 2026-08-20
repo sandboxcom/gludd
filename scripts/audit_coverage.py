@@ -71,7 +71,7 @@ def parse_coverage_json(
         if missing:
             missing_arcs[rel] = [list(arc) for arc in missing]
 
-        if pct < threshold or branch_pct < per_file_threshold:
+        if pct < per_file_threshold or branch_pct < per_file_threshold:
             files_under.append(rel)
         else:
             files_ok.append(rel)
@@ -86,13 +86,17 @@ def parse_coverage_json(
         rel: {
             "line_coverage": per_file[rel],
             "branch_coverage": per_file_branch[rel],
-            "line_threshold": threshold,
+            "line_threshold": per_file_threshold,
             "branch_threshold": per_file_threshold,
             "passed": rel not in files_under,
         }
         for rel in sorted(per_file)
     }
-    all_ok = len(files_under) == 0 and aggregate_branch_pct >= threshold
+    all_ok = (
+        len(files_under) == 0
+        and aggregate_line_pct >= threshold
+        and aggregate_branch_pct >= threshold
+    )
 
     report = {
         "generated_at": datetime.now(UTC).isoformat(),
@@ -109,7 +113,7 @@ def parse_coverage_json(
         "per_file_branch": dict(sorted(per_file_branch.items())),
         "per_file_results": per_file_results,
         "per_file_thresholds": {
-            "line": threshold,
+            "line": per_file_threshold,
             "branch": per_file_threshold,
         },
         "line_coverage": aggregate_line_pct,
@@ -618,23 +622,46 @@ def main() -> None:
         json.dump(report, output_file, indent=2)
 
     print(f"Coverage audit complete — report: {json_out}")
-    print(f"  Threshold: {threshold}%")
+    print(f"  Aggregate threshold: {threshold}%")
+    print(f"  Per-file threshold: {per_file_threshold}%")
     print(f"  Files analyzed: {report['total_files']}")
-    print(f"  Files below {threshold}%: {report['files_below_threshold']}")
+    print(f"  Files below {per_file_threshold}%: {report['files_below_threshold']}")
 
     if pyrc != 0:
         print(f"Coverage test command failed with exit code {pyrc}", file=sys.stderr)
         sys.exit(pyrc if pyrc > 1 else 1)
 
     if files_under or not all_ok:
-        print("\nFiles below threshold:")
+        if files_under:
+            print("\nFiles below per-file threshold:")
         for file_path in sorted(files_under):
             per_file = cast(dict[str, float], report["per_file"])
-            pct = per_file[file_path]
-            print(f"  {pct:5.1f}%  {file_path}")
+            per_file_branch = cast(dict[str, float], report["per_file_branch"])
+            line_pct = per_file[file_path]
+            branch_pct = per_file_branch[file_path]
+            reasons = []
+            if line_pct < per_file_threshold:
+                reasons.append(f"line<{per_file_threshold:.1f}%")
+            if branch_pct < per_file_threshold:
+                reasons.append(f"branch<{per_file_threshold:.1f}%")
+            print(
+                f"  line={line_pct:.1f}% branch={branch_pct:.1f}% "
+                f"({', '.join(reasons)})  {file_path}"
+            )
+        aggregate_line = cast(float, report["line_coverage"])
+        aggregate_branch = cast(float, report["branch_coverage"])
+        if aggregate_line < threshold or aggregate_branch < threshold:
+            print("\nAggregate coverage below threshold:")
+            print(
+                f"  line={aggregate_line:.1f}% branch={aggregate_branch:.1f}% "
+                f"required={threshold:.1f}%"
+            )
         sys.exit(1)
 
-    print(f"\nAll {report['total_files']} files meet the {threshold}% threshold.")
+    print(
+        f"\nAll {report['total_files']} files meet the {per_file_threshold}% per-file threshold; "
+        f"aggregate coverage meets {threshold}%."
+    )
     sys.exit(0)
 
 
