@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 import tomllib
@@ -40,6 +41,26 @@ def test_deptry_models_dev_groups_namespaces_and_import_names() -> None:
     assert mappings["opencv-python-headless"] == "cv2"
     assert mappings["google-api-python-client"] == "googleapiclient"
     assert mappings["azure-identity"] == "azure"
+
+
+def test_hindsight_optional_dependency_is_statically_auditable() -> None:
+    """Keep the optional Hindsight import visible without a DEP002 suppression."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    ignored = project["tool"]["deptry"]["per_rule_ignores"]["DEP002"]
+    assert "hindsight-client" not in ignored
+
+    source = (
+        ROOT / "src" / "general_ludd" / "memory" / "hindsight_adapter.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    assert any(
+        isinstance(node, ast.ImportFrom) and node.module == "hindsight_client"
+        for node in ast.walk(tree)
+    )
+
+    stub = ROOT / "typings" / "hindsight_client" / "__init__.pyi"
+    assert stub.is_file()
+    assert "class Hindsight" in stub.read_text(encoding="utf-8")
 
 
 def test_dependency_audit_evidence_documents_practitioner_and_zdd_contracts() -> None:

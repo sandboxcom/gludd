@@ -53,6 +53,13 @@ Each remains a declared dependency because the corresponding runtime path would
 otherwise fail when selected. Adding a new ignored package requires updating
 this document and the focused contract test.
 
+Hindsight is intentionally **not** on that ignore list. On 2026-08-20 the
+repository's literal `importlib.import_module("hindsight_client")` call still
+produced DEP002 despite the distribution-to-module mapping. The adapter now uses
+a guarded static import, so the extra remains optional at runtime while its
+dependency truth is mechanically visible. This avoids turning a real adapter
+dependency into a permanent audit exception.
+
 ## Practitioner evidence
 
 - A long-running [Poetry request to prune unused packages
@@ -67,8 +74,11 @@ this document and the focused contract test.
 - Deptry's [current configuration
   reference](https://deptry.com/usage/) documents development-group
   classification, known-first-party namespaces, package/module mappings, and
-  per-rule adjudication. Gludd uses those native capabilities instead of a
-  custom scanner.
+  limited dynamic-import extraction. Its [0.18.0 changelog
+  entry](https://deptry.com/CHANGELOG/#0180-2024-07-31) records the original
+  `importlib.import_module` support. Gludd uses those native capabilities and a
+  statically auditable guarded import instead of adding a custom scanner or a
+  Hindsight suppression.
 
 ## Security, resources, and ZDD
 

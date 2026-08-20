@@ -12,7 +12,6 @@ Environment:
 from __future__ import annotations
 
 import copy
-import importlib
 import logging
 import os
 import re
@@ -26,8 +25,9 @@ logger = logging.getLogger(__name__)
 _HINDSIGHT_IMPORT_ERROR: str | None = None
 _HindsightClient: type[Any] | None
 try:
-    _hindsight_module = importlib.import_module("hindsight_client")
-    _HindsightClient = cast(type[Any], _hindsight_module.Hindsight)
+    from hindsight_client import Hindsight as _ImportedHindsightClient
+
+    _HindsightClient = cast(type[Any], _ImportedHindsightClient)
 except ImportError as exc:
     _HindsightClient = None
     _HINDSIGHT_IMPORT_ERROR = str(exc)
