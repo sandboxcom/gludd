@@ -46,7 +46,6 @@ def verdict_from_runs(runs: Sequence[dict[str, Any]], sha: str) -> tuple[int, st
     Cancelled and skipped conclusions are red because neither is evidence of a
     successful test execution.
     """
-
     matching = [run for run in runs if str(run.get("headSha", "")) == sha]
     if not matching:
         return 1, f"CI RED: no run found for SHA {sha}"
@@ -106,21 +105,27 @@ def _fetch_runs(sha: str, branch: str) -> list[dict[str, Any]]:
 
 
 def verdict_for(
-    source: Sequence[dict[str, Any]] | str, sha_or_branch: str | None = None
+    source: Sequence[dict[str, Any]] | str,
+    sha_or_branch: str | None = None,
+    *,
+    branch: str | None = None,
 ) -> Any:
     """Evaluate supplied runs (tests) or query ``gh`` (CLI).
 
     The sequence form returns ``(code, message)``. The string form prints the
     message and returns the process exit code for compatibility with Make.
     """
-
+    if branch is not None and sha_or_branch is not None:
+        raise TypeError("pass the branch either positionally or by keyword, not both")
     if not isinstance(source, str):
+        if branch is not None:
+            raise TypeError("branch is only valid when querying CI for a commit")
         return verdict_from_runs(source, sha_or_branch or "")
 
     sha = source
-    branch = sha_or_branch or _detect_branch()
+    selected_branch = branch or sha_or_branch or _detect_branch()
     try:
-        code, message = verdict_from_runs(_fetch_runs(sha, branch), sha)
+        code, message = verdict_from_runs(_fetch_runs(sha, selected_branch), sha)
     except Exception as exc:
         print(f"CI ERROR: {exc}")
         return 2
