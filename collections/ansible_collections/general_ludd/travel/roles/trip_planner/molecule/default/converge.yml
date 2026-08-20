@@ -23,4 +23,4 @@
   tasks:
     - name: "Include trip_planner"
       ansible.builtin.include_role:
-        name: "trip_planner"
+        name: "general_ludd.travel.trip_planner"

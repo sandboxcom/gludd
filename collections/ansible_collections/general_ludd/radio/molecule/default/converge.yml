@@ -15,14 +15,14 @@
 
     - name: "Validate frequency allocation contract"
       ansible.builtin.include_role:
-        name: regulation_lookup
+        name: general_ludd.radio.regulation_lookup
       vars:
         country_code: "US"
         frequency_hz: "{{ test_freq }}"
 
     - name: "Validate propagation model"
       ansible.builtin.include_role:
-        name: propagation_model
+        name: general_ludd.radio.propagation_model
       vars:
         frequency_mhz: 146.52
         distance_km: 10.0
@@ -31,7 +31,7 @@
 
     - name: "Validate link budget"
       ansible.builtin.include_role:
-        name: link_budget
+        name: general_ludd.radio.link_budget
       vars:
         frequency_mhz: 146.52
         distance_km: 50.0

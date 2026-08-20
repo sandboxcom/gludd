@@ -63,14 +63,14 @@ DOCUMENTATION:
 
 EXAMPLES:
   - name: Decode a packet from hex
-    general_ludd.agent.gludd_scapy:
+    general_ludd.networking.gludd_scapy:
       action: dissect_packet
       packet_fields:
         raw_hex: "00010203040506deadbeef00010800..."
     register: decoded
 
   - name: Craft an ICMP echo request
-    general_ludd.agent.gludd_scapy:
+    general_ludd.networking.gludd_scapy:
       action: craft_packet
       protocol_stack: ["Ether", "IP", "ICMP"]
       packet_fields:
@@ -81,7 +81,7 @@ EXAMPLES:
     register: crafted
 
   - name: Sniff DNS queries on eth0 for 10s
-    general_ludd.agent.gludd_scapy:
+    general_ludd.networking.gludd_scapy:
       action: sniff_packets
       interface: eth0
       count: 5
@@ -89,7 +89,7 @@ EXAMPLES:
     register: sniffed
 
   - name: Read and summarize a pcap
-    general_ludd.agent.gludd_scapy:
+    general_ludd.networking.gludd_scapy:
       action: analyze_pcap
       pcap_path: /tmp/capture.pcap
     register: analysis
@@ -113,33 +113,97 @@ RETURN:
 
 from __future__ import annotations
 
-import os
+import dataclasses
+import importlib
+from types import SimpleNamespace
+from typing import Protocol, cast
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
 
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        error_result,
-        ok_result,
-    )
-except ImportError:
-    import sys
 
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import error_result, ok_result  # type: ignore[import]
+def ok_result(data: dict[str, object], changed: bool = False) -> dict[str, object]:
+    """Build an Ansible success payload without importing another collection."""
+    return {"failed": False, "changed": changed, **data}
+
+
+def error_result(msg: str) -> dict[str, object]:
+    """Build an Ansible failure payload without a core-runtime dependency."""
+    return {"failed": True, "changed": False, "msg": msg}
 
 
 _READ_ONLY_ACTIONS = frozenset({"read_pcap", "analyze_pcap", "dissect_packet"})
 _MUTATING_ACTIONS = frozenset({"write_pcap", "craft_packet", "send_packet", "sniff_packets"})
 
 
-def _get_adapter():
-    try:
-        from general_ludd.networking.scapy_adapter import ScapyAdapter  # type: ignore[import]
+class _PacketAdapter(Protocol):
+    def read_pcap(self, path: str) -> list[object]: ...
 
-        return ScapyAdapter()
-    except ImportError:
+    def write_pcap(self, packets: list[object], path: str) -> None: ...
+
+    def craft_packet(
+        self,
+        layers: list[str],
+        fields: dict[str, object],
+    ) -> dict[str, object]: ...
+
+    def send_packet(
+        self,
+        spec: dict[str, object],
+        iface: str,
+        count: int = 1,
+    ) -> dict[str, object]: ...
+
+    def sniff_packets(
+        self,
+        filter_str: str = "",
+        count: int = 1,
+        timeout: int = 1,
+    ) -> list[object]: ...
+
+    def analyze_pcap(self, path: str) -> object: ...
+
+    def dissect_packet(self, raw_bytes: bytes) -> dict[str, object]: ...
+
+
+def _get_adapter() -> _PacketAdapter | None:
+    try:
+        adapter = importlib.import_module("general_ludd.networking.scapy_adapter")
+        return cast(_PacketAdapter, adapter)
+    except (ImportError, ModuleNotFoundError):
         return None
+
+
+def _jsonable(value: object) -> object:
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return dataclasses.asdict(value)
+    if isinstance(value, list):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    return value
+
+
+def _as_float(value: object) -> float:
+    return float(value) if isinstance(value, (str, int, float)) else 0.0
+
+
+def _as_int(value: object) -> int:
+    return int(value) if isinstance(value, (str, int, float)) else 0
+
+
+def _packet_summary(payload: dict[str, object]) -> object:
+    """Adapt an Ansible mapping to the core adapter's structural protocol."""
+    return SimpleNamespace(
+        timestamp=_as_float(payload.get("timestamp", 0.0)),
+        length=_as_int(payload.get("length", 0)),
+        src_ip=str(payload.get("src_ip", payload.get("src", ""))),
+        dst_ip=str(payload.get("dst_ip", payload.get("dst", ""))),
+        protocol=str(payload.get("protocol", "")),
+        src_port=payload.get("src_port"),
+        dst_port=payload.get("dst_port"),
+        flags=payload.get("flags"),
+        info=str(payload.get("info", "")),
+    )
 
 
 def main() -> None:
@@ -164,9 +228,9 @@ def main() -> None:
 
     action: str = module.params["action"]
     pcap_path: str | None = module.params["pcap_path"]
-    packets: list | None = module.params["packets"]
-    protocol_stack: list | None = module.params["protocol_stack"]
-    packet_fields: dict | None = module.params["packet_fields"]
+    packets: list[dict[str, object]] | None = module.params["packets"]
+    protocol_stack: list[str] | None = module.params["protocol_stack"]
+    packet_fields: dict[str, object] | None = module.params["packet_fields"]
     interface: str = module.params["interface"]
     count: int = module.params["count"]
     timeout: int = module.params["timeout"]
@@ -216,7 +280,7 @@ def main() -> None:
             if not pcap_path:
                 module.fail_json(**error_result("pcap_path is required for read_pcap"))
                 return
-            result = adapter.read_pcap(pcap_path)
+            result = [_jsonable(item) for item in adapter.read_pcap(pcap_path)]
             module.exit_json(
                 **ok_result(
                     {"action": action, "output": result, "summary": f"read {len(result)} packets from {pcap_path}"},
@@ -228,7 +292,10 @@ def main() -> None:
             if not pcap_path or not packets:
                 module.fail_json(**error_result("pcap_path and packets are required for write_pcap"))
                 return
-            adapter.write_pcap(pcap_path, packets)
+            adapter.write_pcap(
+                [_packet_summary(packet) for packet in packets],
+                pcap_path,
+            )
             module.exit_json(
                 **ok_result(
                     {"action": action, "output": {"path": pcap_path, "count": len(packets)}},
@@ -249,10 +316,23 @@ def main() -> None:
             )
 
         elif action == "send_packet":
-            if not protocol_stack:
-                module.fail_json(**error_result("protocol_stack is required for send_packet"))
+            packet_specs = list(packets or [])
+            if not packet_specs and protocol_stack:
+                packet_specs.append(
+                    adapter.craft_packet(protocol_stack, packet_fields or {})
+                )
+            if not packet_specs:
+                module.fail_json(
+                    **error_result(
+                        "packets or protocol_stack is required for send_packet"
+                    )
+                )
                 return
-            status = adapter.send_packet(protocol_stack, packet_fields or {}, interface, count)
+            statuses = [
+                adapter.send_packet(packet, interface, count)
+                for packet in packet_specs
+            ]
+            status: object = statuses[0] if len(statuses) == 1 else statuses
             module.exit_json(
                 **ok_result(
                     {"action": action, "output": status, "summary": f"sent {count} packet(s) on {interface}"},
@@ -261,7 +341,7 @@ def main() -> None:
             )
 
         elif action == "sniff_packets":
-            pkts = adapter.sniff_packets(interface=interface, count=count, timeout=timeout)
+            pkts = adapter.sniff_packets("", count=count, timeout=timeout)
             module.exit_json(
                 **ok_result(
                     {"action": action, "output": pkts, "summary": f"sniffed {len(pkts)} packet(s) on {interface}"},
@@ -273,7 +353,7 @@ def main() -> None:
             if not pcap_path:
                 module.fail_json(**error_result("pcap_path is required for analyze_pcap"))
                 return
-            analysis = adapter.analyze_pcap(pcap_path)
+            analysis = _jsonable(adapter.analyze_pcap(pcap_path))
             module.exit_json(
                 **ok_result(
                     {"action": action, "output": analysis, "summary": f"analyzed {pcap_path}"},
@@ -285,7 +365,23 @@ def main() -> None:
             if not packet_fields:
                 module.fail_json(**error_result("packet_fields is required for dissect_packet"))
                 return
-            dissected = adapter.dissect_packet(packet_fields, output_format=output_format)
+            raw_hex = packet_fields.get("raw_hex")
+            if not isinstance(raw_hex, str) or not raw_hex:
+                module.fail_json(
+                    **error_result("packet_fields.raw_hex is required for dissect_packet")
+                )
+                return
+            try:
+                raw_bytes = bytes.fromhex(raw_hex)
+            except ValueError:
+                module.fail_json(
+                    **error_result("packet_fields.raw_hex must be valid hexadecimal")
+                )
+                return
+            dissected: object = adapter.dissect_packet(raw_bytes)
+            dissected = (
+                raw_bytes.hex() if output_format == "hex" else _jsonable(dissected)
+            )
             module.exit_json(
                 **ok_result(
                     {"action": action, "output": dissected},

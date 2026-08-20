@@ -5,4 +5,4 @@
   tasks:
     - name: "Include windows_automation"
       ansible.builtin.include_role:
-        name: "windows_automation"
+        name: "general_ludd.os_expert.windows_automation"

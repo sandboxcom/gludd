@@ -5,6 +5,6 @@
   tasks:
     - name: "Include macos_security"
       ansible.builtin.include_role:
-        name: "macos_security"
+        name: "general_ludd.os_expert.macos_security"
       vars:
         enable_git_push: false

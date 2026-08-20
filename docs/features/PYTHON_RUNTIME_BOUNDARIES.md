@@ -168,6 +168,10 @@ roles do not publish generic facts into shared scope, and a composer does not
 read a child's private variables. This prevents variable precedence from
 becoming an implicit call interface.
 
+The shipped checker, repaired dependency graph, packaging layouts, rollback
+procedure, and focused evidence are documented in
+[Collection and Role Interoperability](COLLECTION_ROLE_INTEROPERABILITY.md).
+
 ## Beta4 implementation slice
 
 The following is the minimum code-gated slice before beta4 can be promoted:

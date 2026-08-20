@@ -25,4 +25,5 @@ tags:
   - local_model_serve
   - local_model_stop
   - local_inference
-dependencies: {}
+dependencies:
+  general_ludd.networking: ">=0.2.0"

@@ -89,6 +89,8 @@ def _role_covered(role: str, scenarios: set[str]) -> bool:
 # test_gludd_stream naming convention, so the module remains on the checklist
 # until a dedicated test_gludd_stream scenario lands. See Phase Stream in
 # TASKS.md.
+# ``gludd_scapy`` is no longer in this agent-only inventory: networking owns
+# the canonical module and agent exposes a metadata redirect for compatibility.
 _NOT_YET_COVERED_MODULES: set[str] = {
     "gludd_break_glass",
     "gludd_embed",
@@ -100,7 +102,6 @@ _NOT_YET_COVERED_MODULES: set[str] = {
     "gludd_ornith",  # TODO: add molecule scenario
     "gludd_proc_monitor",
     "gludd_rag",
-    "gludd_scapy",
     "gludd_slurm_deploy",
     "gludd_stream",
 }
@@ -218,10 +219,10 @@ _NOT_YET_COVERED_ROLES: set[str] = {
 
 
 class TestMoleculeHarnessExists:
-    def test_mock_daemon_server_present(self):
+    def test_mock_daemon_server_present(self) -> None:
         assert MOCK_DAEMON.is_file(), f"missing reusable mock daemon at {MOCK_DAEMON}"
 
-    def test_exemplar_scenarios_present(self):
+    def test_exemplar_scenarios_present(self) -> None:
         scenarios = _scenario_names()
         for exemplar in ("test_gludd_ping", "test_gludd_facts", "role_implement_change"):
             assert exemplar in scenarios, f"exemplar scenario missing: {exemplar}"
@@ -232,7 +233,7 @@ class TestMoleculeHarnessExists:
             assert conv.is_file(), f"{exemplar}: default/converge.yml missing"
             assert ver.is_file(), f"{exemplar}: default/verify.yml missing"
 
-    def test_module_scenarios_start_the_mock_daemon(self):
+    def test_module_scenarios_start_the_mock_daemon(self) -> None:
         # Module scenarios must hit a real (mock) HTTP endpoint — they must ship
         # a prepare.yml that launches the mock daemon. (Honest coverage rule.)
         for exemplar in ("test_gludd_ping", "test_gludd_facts"):
@@ -242,7 +243,7 @@ class TestMoleculeHarnessExists:
 
 
 class TestModuleCoverageChecklist:
-    def test_inventory_partition_is_exact(self):
+    def test_inventory_partition_is_exact(self) -> None:
         """Covered + not-yet-covered must exactly equal the module inventory.
 
         This forces the checklist to stay honest: you cannot add a scenario
@@ -261,7 +262,7 @@ class TestModuleCoverageChecklist:
         stale = _NOT_YET_COVERED_MODULES - not_covered
         assert not stale, f"checklist lists modules that now HAVE a scenario — remove them: {sorted(stale)}"
 
-    def test_at_least_two_module_scenarios_exist(self):
+    def test_at_least_two_module_scenarios_exist(self) -> None:
         modules = _module_names()
         scenarios = _scenario_names()
         covered = {m for m in modules if _module_scenario(m) in scenarios}
@@ -271,7 +272,7 @@ class TestModuleCoverageChecklist:
 class TestGluddObserveScenario:
     """The observe module scenario must exercise real HTTP-backed workflows."""
 
-    def test_scenario_exercises_all_operations_through_mock_daemon(self):
+    def test_scenario_exercises_all_operations_through_mock_daemon(self) -> None:
         scenario = SCENARIOS_DIR / "test_gludd_observe"
         molecule = scenario / "molecule.yml"
         prepare = scenario / "default" / "prepare.yml"
@@ -302,7 +303,7 @@ class TestGluddObserveScenario:
 
 
 class TestRoleCoverageChecklist:
-    def test_inventory_partition_is_exact(self):
+    def test_inventory_partition_is_exact(self) -> None:
         roles = _role_names()
         scenarios = _scenario_names()
         covered = {r for r in roles if _role_covered(r, scenarios)}
@@ -313,7 +314,7 @@ class TestRoleCoverageChecklist:
         stale = _NOT_YET_COVERED_ROLES - not_covered
         assert not stale, f"checklist lists roles that now HAVE a scenario — remove them: {sorted(stale)}"
 
-    def test_at_least_one_role_scenario_exists(self):
+    def test_at_least_one_role_scenario_exists(self) -> None:
         roles = _role_names()
         scenarios = _scenario_names()
         covered = {r for r in roles if _role_covered(r, scenarios)}
@@ -330,7 +331,7 @@ class TestProjectInitScenarios:
     """The project_init role has two non-conventional scenarios: one for the
     scaffolding contract, one for the project-tier override (precedence)."""
 
-    def test_project_init_scenarios_present(self):
+    def test_project_init_scenarios_present(self) -> None:
         scenarios = _scenario_names()
         for name in _PROJECT_INIT_SCENARIOS:
             assert name in scenarios, f"project_init scenario missing: {name}"
@@ -345,7 +346,7 @@ class TestProjectInitScenarios:
             assert prep.is_file(), f"{name}: default/prepare.yml missing"
             assert cleanup.is_file(), f"{name}: default/cleanup.yml missing"
 
-    def test_project_init_scenarios_invoke_the_role(self):
+    def test_project_init_scenarios_invoke_the_role(self) -> None:
         for name in _PROJECT_INIT_SCENARIOS:
             conv = SCENARIOS_DIR / name / "default" / "converge.yml"
             text = conv.read_text()
@@ -353,7 +354,7 @@ class TestProjectInitScenarios:
                 f"{name}: converge.yml must invoke general_ludd.agent.project_init"
             )
 
-    def test_override_scenario_wires_precedence_env(self):
+    def test_override_scenario_wires_precedence_env(self) -> None:
         """project_init_override must set ANSIBLE_COLLECTIONS_PATH project-first."""
         mol = SCENARIOS_DIR / "project_init_override" / "molecule.yml"
         text = mol.read_text()
@@ -383,13 +384,13 @@ _STREAM_SCENARIOS: tuple[str, ...] = (
 
 
 class TestStreamExampleScenarios:
-    def test_stream_dispatch_handler_in_mock_daemon(self):
+    def test_stream_dispatch_handler_in_mock_daemon(self) -> None:
         """Mock daemon MUST implement POST /admin/stream/dispatch."""
         src = MOCK_DAEMON.read_text()
         assert "/admin/stream/dispatch" in src, "mock_daemon/server.py missing POST /admin/stream/dispatch handler"
         assert "_stream_dispatch_response" in src, "mock_daemon/server.py missing _stream_dispatch_response helper"
 
-    def test_stream_scenarios_present(self):
+    def test_stream_scenarios_present(self) -> None:
         scenarios = _scenario_names()
         for name in _STREAM_SCENARIOS:
             assert name in scenarios, f"stream scenario missing: {name}"
@@ -402,14 +403,14 @@ class TestStreamExampleScenarios:
             assert ver.is_file(), f"{name}: default/verify.yml missing"
             assert prep.is_file(), f"{name}: default/prepare.yml missing"
 
-    def test_stream_scenarios_use_mock_daemon(self):
+    def test_stream_scenarios_use_mock_daemon(self) -> None:
         """Each stream scenario's prepare.yml MUST launch the mock daemon."""
         for name in _STREAM_SCENARIOS:
             prep = SCENARIOS_DIR / name / "default" / "prepare.yml"
             text = prep.read_text()
             assert "mock_daemon/server.py" in text, f"{name}: prepare.yml must launch the mock daemon"
 
-    def test_stream_scenarios_target_stream_dispatch_endpoint(self):
+    def test_stream_scenarios_target_stream_dispatch_endpoint(self) -> None:
         """Each stream scenario's converge.yml MUST invoke gludd_stream."""
         for name in _STREAM_SCENARIOS:
             conv = SCENARIOS_DIR / name / "default" / "converge.yml"

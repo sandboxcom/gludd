@@ -57,7 +57,7 @@
 
 - name: Run fingerprint analyst
   ansible.builtin.include_role:
-    name: fingerprint_analyst
+    name: general_ludd.forensics.fingerprint_analyst
     tasks_from: main.yml
   vars:
     fingerprint_enabled: "{{ forensics_pipeline_enabled }}"
@@ -68,7 +68,7 @@
 
 - name: Run DNA analyst
   ansible.builtin.include_role:
-    name: dna_analyst
+    name: general_ludd.forensics.dna_analyst
     tasks_from: main.yml
   vars:
     dna_enabled: "{{ forensics_pipeline_enabled }}"
@@ -79,7 +79,7 @@
 
 - name: Run trace evidence examiner
   ansible.builtin.include_role:
-    name: trace_evidence_examiner
+    name: general_ludd.forensics.trace_evidence_examiner
     tasks_from: main.yml
   vars:
     trace_evidence_enabled: "{{ forensics_pipeline_enabled }}"
@@ -90,7 +90,7 @@
 
 - name: Run photo forensics analyst
   ansible.builtin.include_role:
-    name: photo_forensics_analyst
+    name: general_ludd.forensics.photo_forensics_analyst
     tasks_from: main.yml
   vars:
     photo_forensics_enabled: "{{ forensics_pipeline_enabled }}"

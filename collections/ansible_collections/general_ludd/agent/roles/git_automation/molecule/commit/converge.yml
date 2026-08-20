@@ -43,7 +43,7 @@
 
     - name: "Include commit task from git_automation role"
       ansible.builtin.include_role:
-        name: git_automation
+        name: general_ludd.agent.git_automation
         tasks_from: commit.yml
       vars:
         repo_path: "{{ test_dir }}"

@@ -6,9 +6,15 @@
     fail_msg: branch_plan_repo_path must be defined
 
 - name: Collect repo evidence for branch planning
-  general_ludd.git_release.collect_repo_evidence:
-    path: "{{ branch_plan_repo_path }}"
-  register: branch_plan_repo_evidence
+  ansible.builtin.include_role:
+    name: general_ludd.git_release.collect_repo_evidence
+    public: false
+  vars:
+    git_release_repo_path: "{{ branch_plan_repo_path }}"
+
+- name: Publish branch planning evidence
+  ansible.builtin.set_fact:
+    branch_plan_repo_evidence: "{{ git_release_repo_evidence }}"
 
 - name: Assert branch_plan_base is non-empty
   ansible.builtin.assert:
