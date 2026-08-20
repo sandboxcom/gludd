@@ -44,7 +44,14 @@ searx_log_enabled: false
 
 # Chain-of-thought logging
 log_analyzer_cot_enabled: true
-log_analyzer_cot_log: "{{ log_analyzer_output_dir | default(artifact_dir) }}/log_analyzer_cot.log"
+log_analyzer_cot_filename: "log_analysis_cot.log"
+log_analyzer_cot_log: >-
+  {{ log_analyzer_output_dir | default(artifact_dir) }}/{{ log_analyzer_cot_filename }}
+# Preserve the pre-standardization artifact name for existing consumers.
+log_analyzer_publish_legacy_cot_alias: true
+log_analyzer_legacy_cot_filename: "log_analyzer_cot.log"
+log_analyzer_legacy_cot_log: >-
+  {{ log_analyzer_output_dir | default(artifact_dir) }}/{{ log_analyzer_legacy_cot_filename }}
 
 # Analysis time window (how far back to look, in hours)
 analysis_window_hours: 24
