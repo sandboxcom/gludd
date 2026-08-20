@@ -1,27 +1,20 @@
 ---
-- name: Detect control-flow flattening
-  ansible.builtin.command:
-    cmd: >-
-      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
-      {{ role_path }}/files/deobfuscate.py
-      --mode cfg_flattening
-      --binary {{ binary_path }}
-      --output {{ output_dir }}/cfg_flattening.json
-  register: _cfg_result
-  changed_when: false
-  failed_when: _cfg_result.rc not in [0]
+- name: Detect control-flow flattening through packaged runtime
+  general_ludd.binary_re.binary_runtime:
+    operation: cfg_flattening
+    params:
+      binary_path: "{{ binary_path }}"
+  register: _cfg_runtime
 
-- name: Read CFG flattening artifact
-  ansible.builtin.slurp:
-    src: "{{ output_dir }}/cfg_flattening.json"
-  register: _cfg_artifact_raw
+- name: Write CFG flattening artifact atomically
+  ansible.builtin.copy:
+    content: "{{ _cfg_runtime.artifact_content }}"
+    dest: "{{ output_dir }}/{{ _cfg_runtime.artifact_filename }}"
+    mode: "0644"
 
-- name: Parse CFG flattening artifact
+- name: Publish CFG flattening artifact
   ansible.builtin.set_fact:
-    cfg_flattening_artifact: >-
-      {{ _cfg_artifact_raw.content | b64decode | from_json
-         if (_cfg_artifact_raw is defined and _cfg_artifact_raw.content is defined)
-         else {} }}
+    cfg_flattening_artifact: "{{ _cfg_runtime.result }}"
 
 - name: Report CFG flattening summary
   ansible.builtin.debug:

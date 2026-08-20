@@ -5,9 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-
-_COLLECTION_ROOT = Path(__file__).resolve().parent.parent.parent
-
 from plugins.module_utils.frequency_allocations import (
     bands_by_privilege,
     get_band_plan,
@@ -15,6 +12,8 @@ from plugins.module_utils.frequency_allocations import (
     get_marine_channel,
     lookup_frequency,
 )
+
+_COLLECTION_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def test_regulation_lookup_tasks_file_exists():
@@ -33,23 +32,24 @@ def test_regulation_lookup_tasks_has_validate_step():
 def test_regulation_lookup_tasks_has_lookup_step():
     tasks = _COLLECTION_ROOT / "roles" / "regulation_lookup" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert "files/regulation_lookup.py" in content
-    assert "--freq-mhz" in content
-    assert "--band" in content
-    assert "from_json" in content
+    assert "general_ludd.radio.radio_runtime:" in content
+    assert "operation: regulation_lookup" in content
+    assert "freq_mhz:" in content
+    assert "band_name:" in content
+    assert "artifact_content" in content
 
 
 def test_regulation_lookup_tasks_has_privilege_query():
     tasks = _COLLECTION_ROOT / "roles" / "regulation_lookup" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert "--license-class" in content
+    assert "license_class:" in content
     assert "regulation_lookup_license_class" in content
 
 
 def test_regulation_lookup_tasks_has_service_filter():
     tasks = _COLLECTION_ROOT / "roles" / "regulation_lookup" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert "--marine-channel" in content
+    assert "marine_channel:" in content
     assert "regulation_lookup_marine_channel" in content
 
 

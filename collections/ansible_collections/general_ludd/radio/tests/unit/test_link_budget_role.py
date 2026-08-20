@@ -29,16 +29,17 @@ def test_link_budget_tasks_has_validate_step():
 def test_link_budget_tasks_uses_propagation_models():
     tasks = _COLLECTION_ROOT / "roles" / "link_budget" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert "files/link_budget.py" in content
-    assert "--model" in content
+    assert "general_ludd.radio.radio_runtime:" in content
+    assert "operation: link_budget" in content
+    assert "model:" in content
     assert "free_space" in content
 
 
 def test_link_budget_tasks_uses_antenna_types():
     tasks = _COLLECTION_ROOT / "roles" / "link_budget" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert "--tx-antenna-type" in content
-    assert "--rx-antenna-type" in content
+    assert "tx_antenna_type:" in content
+    assert "rx_antenna_type:" in content
     assert "link_budget_tx_antenna_type" in content
     assert "link_budget_rx_antenna_type" in content
 
@@ -46,7 +47,7 @@ def test_link_budget_tasks_uses_antenna_types():
 def test_link_budget_tasks_has_rain_option():
     tasks = _COLLECTION_ROOT / "roles" / "link_budget" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert "--rain-enabled" in content
+    assert "rain_enabled:" in content
     assert "link_budget_rain_enabled" in content
 
 

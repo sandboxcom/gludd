@@ -38,7 +38,8 @@ def test_signal_identify_tasks_has_validate_step():
 def test_signal_identify_tasks_calls_python_script():
     tasks = _COLLECTION_ROOT / "roles" / "signal_identify" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert "signal_identify.py" in content
+    assert "general_ludd.radio.radio_runtime:" in content
+    assert "operation: signal_identify" in content
 
 
 def test_signal_identify_tasks_has_classify_call():
@@ -86,9 +87,8 @@ def test_signal_identify_script_exists():
     script = _COLLECTION_ROOT / "roles" / "signal_identify" / "files" / "signal_identify.py"
     assert script.exists()
     content = script.read_text()
-    assert "classify_signal" in content
-    assert "signal_identify" in content
-    assert "def main" in content
+    assert "plugins.module_utils.signal_identify_runtime" in content
+    assert '"main"' in content
 
 
 def test_classify_dmr_by_parameters():

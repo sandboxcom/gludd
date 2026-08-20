@@ -9,6 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
 import yaml
 
 COLLECTION_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -19,6 +20,17 @@ DEFAULTS_YML = ROLE_DIR / "defaults" / "main.yml"
 VARS_YML = ROLE_DIR / "vars" / "main.yml"
 META_YML = ROLE_DIR / "meta" / "main.yml"
 FIXTURES_DIR = COLLECTION_ROOT / "tests" / "fixtures"
+COLLECTIONS_ROOT = COLLECTION_ROOT.parents[2]
+
+
+@pytest.fixture(autouse=True)
+def _installed_collection_pythonpath(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make subprocess CLI checks match an installed collection namespace."""
+    inherited = os.environ.get("PYTHONPATH", "")
+    value = str(COLLECTIONS_ROOT)
+    if inherited:
+        value = os.pathsep.join((value, inherited))
+    monkeypatch.setenv("PYTHONPATH", value)
 
 
 class TestRoleStructure:

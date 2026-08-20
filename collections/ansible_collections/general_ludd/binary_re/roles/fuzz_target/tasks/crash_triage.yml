@@ -1,28 +1,21 @@
 ---
-- name: Triage crash findings
-  ansible.builtin.command:
-    cmd: >-
-      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
-      {{ role_path }}/files/fuzz_target.py
-      --mode crash_triage
-      --crash-dir {{ crash_dir | default(output_dir + '/crashes') }}
-      --output {{ output_dir }}/crash_triage.json
-      {% if crash_retention_days | default(0) > 0 %}--retention-days {{ crash_retention_days }}{% endif %}
-  register: _crash_triage_result
-  changed_when: false
-  failed_when: _crash_triage_result.rc not in [0]
+- name: Triage crash findings through packaged runtime
+  general_ludd.binary_re.binary_runtime:
+    operation: crash_triage
+    params:
+      crash_dir: "{{ crash_dir | default(output_dir + '/crashes') }}"
+      retention_days: "{{ crash_retention_days | default(omit, true) }}"
+  register: _crash_triage_runtime
 
-- name: Read crash triage artifact
-  ansible.builtin.slurp:
-    src: "{{ output_dir }}/crash_triage.json"
-  register: _crash_triage_artifact_raw
+- name: Write crash triage artifact atomically
+  ansible.builtin.copy:
+    content: "{{ _crash_triage_runtime.artifact_content }}"
+    dest: "{{ output_dir }}/{{ _crash_triage_runtime.artifact_filename }}"
+    mode: "0644"
 
-- name: Parse crash triage artifact
+- name: Publish crash triage artifact
   ansible.builtin.set_fact:
-    crash_triage_artifact: >-
-      {{ _crash_triage_artifact_raw.content | b64decode | from_json
-         if (_crash_triage_artifact_raw is defined and _crash_triage_artifact_raw.content is defined)
-         else {} }}
+    crash_triage_artifact: "{{ _crash_triage_runtime.result }}"
 
 - name: Report crash triage summary
   ansible.builtin.debug:

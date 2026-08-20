@@ -1,6 +1,5 @@
 ---
-# exam_quiz role -- ham/marine exam Q&A loading and grading
-# Invokes the standalone files/exam_quiz.py CLI backend.
+# exam_quiz role -- ham/marine exam Q&A through the packaged runtime.
 
 - name: Validate exam_quiz parameters
   ansible.builtin.assert:
@@ -20,27 +19,29 @@
     mode: "0755"
   when: exam_quiz_enabled | bool
 
-- name: Run exam_quiz.py with answers (when provided)
-  ansible.builtin.command: >
-    {{ ansible_python_interpreter }} {{ role_path }}/files/exam_quiz.py
-    --exam {{ exam_quiz_exam }}
-    --count {{ exam_quiz_count }}
-    --seed {{ exam_quiz_seed | default(42) }}
-    --output-dir {{ exam_quiz_output_dir }}
-    --format {{ exam_quiz_format | default("json") }}
-    {% if exam_quiz_user_answers | default([]) | length > 0 %}
-    --answers '{{ exam_quiz_user_answers | to_json }}'
-    {% endif %}
-  register: _exam_result
-  changed_when: false
+- name: Load or grade exam through packaged runtime
+  general_ludd.radio.radio_runtime:
+    operation: exam_quiz
+    params:
+      exam: "{{ exam_quiz_exam }}"
+      count: "{{ exam_quiz_count }}"
+      seed: "{{ exam_quiz_seed | default(42) }}"
+      answers: "{{ exam_quiz_user_answers if exam_quiz_user_answers is mapping else {} }}"
+      format: "{{ exam_quiz_format | default('json') }}"
+  register: _exam_runtime
   when: exam_quiz_enabled | bool
 
-- name: Parse exam_quiz result
+- name: Publish exam result
   ansible.builtin.set_fact:
-    exam_quiz_result: "{{ (_exam_result.stdout | from_json) if _exam_result.stdout is defined and _exam_result.stdout | length > 0 else {} }}"
-  when:
-    - exam_quiz_enabled | bool
-    - exam_quiz_format | default("json") == "json"
+    exam_quiz_result: "{{ _exam_runtime.result }}"
+  when: exam_quiz_enabled | bool
+
+- name: Write exam output atomically
+  ansible.builtin.copy:
+    content: "{{ _exam_runtime.artifact_content }}"
+    dest: "{{ exam_quiz_output_dir }}/{{ _exam_runtime.artifact_filename }}"
+    mode: "0644"
+  when: exam_quiz_enabled | bool
 
 - name: Register exam_quiz verdict
   ansible.builtin.set_fact:
