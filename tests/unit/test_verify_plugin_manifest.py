@@ -255,3 +255,147 @@ export default async ({}) => ({
     exit_code, issues = mod.run()
     assert exit_code == 1, f"Expected exit 1, got {exit_code}: {issues}"
     assert any("MISSING-GUARD" in i for i in issues), issues
+
+
+def test_depth_plugin_accepts_only_the_depth_boundary_exemption(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Depth enforcement must run in subagents so depth four cannot recurse."""
+    _setup_repo(
+        tmp_path,
+        opencode_json_plugins=[".opencode/plugin/enforce-depth.ts"],
+        plugin_contents={
+            "enforce-depth.ts": '''
+const MAX_DEPTH = parseInt(process.env.GLUDD_MAX_DEPTH || "4", 10)
+function currentDepth(): number {
+  return parseInt(process.env.OPENCODE_DEPTH || "0", 10)
+}
+function isDispatchTool(tool: string): boolean {
+  return ["task", "agent", "workflow"].includes(tool)
+}
+export default async () => ({
+  "tool.execute.before": async (input: { tool?: string }) => {
+    if (!isDispatchTool(input.tool || "")) return
+    const depth = currentDepth()
+    if (depth >= MAX_DEPTH) {
+      return { permissionDecision: "deny" }
+    }
+  },
+})
+''',
+        },
+    )
+    mod = _verifier(tmp_path, monkeypatch)
+
+    exit_code, issues = mod.run()
+
+    assert exit_code == 0, issues
+
+
+def test_depth_plugin_exemption_rejects_incomplete_boundary_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _setup_repo(
+        tmp_path,
+        opencode_json_plugins=[".opencode/plugin/enforce-depth.ts"],
+        plugin_contents={
+            "enforce-depth.ts": '''
+export default async () => ({
+  "tool.execute.before": async () => ({ permissionDecision: "deny" }),
+})
+''',
+        },
+    )
+    mod = _verifier(tmp_path, monkeypatch)
+
+    exit_code, issues = mod.run()
+
+    assert exit_code == 1
+    assert any("MISSING-GUARD" in issue for issue in issues)
+
+
+def test_invalid_manifest_json_exits(tmp_path: Path) -> None:
+    manifest = tmp_path / "opencode.json"
+    manifest.write_text("{not-json")
+    mod = _load_module()
+
+    with pytest.raises(SystemExit) as exc_info:
+        mod._read_json(manifest)
+
+    assert exc_info.value.code == 1
+
+
+def test_relative_registration_and_hook_aliases_are_supported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _setup_repo(
+        tmp_path,
+        opencode_json_plugins=["./.opencode/plugin/aliases.ts"],
+        plugin_contents={
+            "aliases.ts": '''
+export default async ({ api }) => ({
+  "tool.execute.before": async () => {
+    if (process.env.OPENCODE_SUBAGENT === "1") return
+  },
+  "experimental.text.complete": async () => {
+    if (process.env.OPENCODE_SUBAGENT === "1") return
+  },
+})
+api.tool.execute.before(async () => {})
+''',
+        },
+    )
+    mod = _verifier(tmp_path, monkeypatch)
+
+    exit_code, issues = mod.run()
+
+    assert exit_code == 0, issues
+
+
+def test_shared_subagent_guard_is_accepted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _setup_repo(
+        tmp_path,
+        opencode_json_plugins=[".opencode/plugin/shared-guard.ts"],
+        plugin_contents={
+            "shared-guard.ts": '''
+import { isSubagent } from "../lib/shared.ts"
+export default async () => ({
+  "tool.execute.before": async () => {
+    if (isSubagent()) return
+  },
+})
+''',
+        },
+    )
+    shared = tmp_path / ".opencode" / "lib" / "shared.ts"
+    shared.parent.mkdir(parents=True, exist_ok=True)
+    shared.write_text(
+        'export const isSubagent = () => process.env.OPENCODE_SUBAGENT === "1"\n'
+    )
+    mod = _verifier(tmp_path, monkeypatch)
+
+    exit_code, issues = mod.run()
+
+    assert exit_code == 0, issues
+
+
+def test_helpers_fail_safely_for_missing_or_unknown_files(tmp_path: Path) -> None:
+    mod = _load_module()
+    missing = tmp_path / "missing.ts"
+    existing = tmp_path / "plain.ts"
+    existing.write_text("export default async () => ({})\n")
+
+    assert mod._hook_types_in_file(missing) == set()
+    assert mod._guard_present(missing, "tool.execute.before") is None
+    assert mod._guard_present(existing, "unknown.hook") is None
+    assert mod._is_subagent_recursion_bug(missing) is False
+    assert mod._depth_boundary_contract_present(missing) is False
+
+
+def test_main_returns_run_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    mod = _load_module()
+    monkeypatch.setattr(mod, "run", lambda: (1, ["test issue"]))
+
+    assert mod.main() == 1

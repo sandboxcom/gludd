@@ -249,7 +249,7 @@ class TestDepthLogging:
         assert result is None  # dispatch allowed at depth 2
 
 
-class TestSubagentBypass:
+class TestDelegatedDepthBoundary:
     def test_subagent_env_depth_3_allows(self):
         """OPENCODE_SUBAGENT=1 at depth 3 is below MAX_DEPTH=4 and allows."""
         script = f"""
@@ -269,6 +269,7 @@ if (result) {{
             script_path = f.name
 
         env = os.environ.copy()
+        env["GLUDD_HOT_MODULE_PREFIX"] = f"/tmp/gludd-depth-behavior-hot-{Path(script_path).stem}-"
         env["OPENCODE_DEPTH"] = "3"
         env["OPENCODE_SUBAGENT"] = "1"
         env["GLUDD_MAX_DEPTH"] = "4"

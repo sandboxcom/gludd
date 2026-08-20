@@ -58,6 +58,7 @@ if (result) {{
         script_path = f.name
 
     env = os.environ.copy()
+    env["GLUDD_HOT_MODULE_PREFIX"] = f"/tmp/gludd-depth-integration-hot-{Path(script_path).stem}-"
     env["OPENCODE_DEPTH"] = str(depth)
     env["OPENCODE_SUBAGENT"] = "1" if is_subagent else "0"
     if not enforce:

@@ -1,10 +1,10 @@
-// AGENTS.md CRITICAL: Subagent Enforcement Isolation. The orchestrator owns
-// dispatch-depth policy; delegated contexts must not be blocked by a second
-// copy of the orchestrator's enforcement stack.
+// Depth is the scoped exception to generic subagent isolation: delegated
+// contexts must still be prevented from dispatching beyond the configured
+// recursion boundary. Non-dispatch tools remain unaffected at every depth.
 // HOT-RELOAD: implements the proxy pattern from hot_reload.ts.
 import type { Plugin } from "@opencode-ai/plugin"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
-import { isSubagent, reportAlive, isDisengaged } from "../lib/shared.ts"
+import { reportAlive, isDisengaged } from "../lib/shared.ts"
 const ENFORCE = process.env.GLUDD_DEPTH_ENFORCE !== "0"
 const MAX_DEPTH = parseInt(process.env.GLUDD_MAX_DEPTH || "4", 10)
 function currentDepth(): number {
@@ -17,7 +17,6 @@ function isDispatchTool(tool: string): boolean {
 }
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: { tool?: string }) => {
-    if (isSubagent()) return
     reportAlive("enforce-depth")
     try {
       if (!ENFORCE) return
@@ -45,7 +44,6 @@ const defaultImpl: HotModule = {
 export default (({ }) => {
   return {
     "tool.execute.before": async (input: { tool?: string }) => {
-      if (isSubagent()) return
       const impl = loadHotModule("depth", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input) : undefined
