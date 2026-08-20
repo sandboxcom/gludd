@@ -94,14 +94,10 @@ def test_agent_module_bundles_ansible_serializer_internal_dependencies() -> None
 # ---------------------------------------------------------------------------
 
 class TestRunLocalBehavioral:
-    """W6.8: behavioral coverage for _run_local — actual execution, not source inspection."""
+    """The collection never imports or executes the Gludd core runtime locally."""
 
     def test_run_local_returns_error_result_structure(self):
-        """_run_local error path returns failed=True, changed=False, non-empty msg.
-
-        Forces the ImportError branch deterministically (general_ludd.execution.tool_loop
-        made unimportable) and asserts the ACTUAL error-result VALUES, not just dict shape.
-        """
+        """The legacy helper fails closed without importing core implementation modules."""
         blocked_modules = {
             "general_ludd.execution.tool_loop": None,
             "general_ludd.models.gateway": None,
@@ -125,24 +121,18 @@ class TestRunLocalBehavioral:
         )
         msg = result.get("msg", "")
         assert isinstance(msg, str) and msg, f"Expected non-empty 'msg', got {msg!r}"
-        assert "not importable" in msg, (
-            f"Expected ImportError message, got {msg!r} — the error path changed; update this test."
-        )
+        assert msg == "local agent execution is disabled; use the authenticated daemon"
 
-    def test_run_local_jobspec_now_valid(self):
-        """FIX VERIFIED: _run_local now builds a valid JobSpec (job_id/playbook/queue provided).
-
-        After the BUG 2 fix, JobSpec no longer raises ValidationError.
-        The call falls through to the model gateway, which fails because no
-        real API key is present — but the error is NOT a ValidationError.
-        The result may succeed (with mocked gw) or fail with a different error.
-        """
+    def test_mocked_gateway_cannot_reopen_local_execution(self):
+        """A mocked in-process gateway cannot bypass the daemon-only boundary."""
         _run_local = _import_run_local()
 
         mock_gw = MagicMock()
         mock_gw.call_model.return_value = MagicMock(content="hello from gateway")
 
-        with patch("general_ludd.models.gateway.ModelGateway", return_value=mock_gw):
+        with patch(
+            "general_ludd.models.gateway.ModelGateway", return_value=mock_gw
+        ) as gateway_cls:
             result = _run_local(
                 prompt="test prompt",
                 system_prompt="",
@@ -150,64 +140,37 @@ class TestRunLocalBehavioral:
                 max_iterations=1,
             )
 
-        # With mocked gateway, the call should now succeed (no ValidationError)
-        assert result["failed"] is False, (
-            f"Expected failed=False after JobSpec fix with mocked gateway, got: {result}"
-        )
-        assert result.get("answer") is not None, (
-            f"Expected 'answer' in result, got: {result}"
-        )
+        assert result == {
+            "failed": True,
+            "changed": False,
+            "msg": "local agent execution is disabled; use the authenticated daemon",
+        }
+        gateway_cls.assert_not_called()
 
-    def test_run_local_with_patched_jobspec_gateway_called_correctly(self):
-        """FIX VERIFIED: _call_model now passes profile_id + messages to gateway.
-
-        After the BUG 1 fix, ToolCallLoop._call_model calls:
-            gateway.call_model(profile_id, messages=[...])
-        NOT the old broken form: gateway.call_model(system_prompt=..., user_prompt=...)
-        """
+    def test_in_process_gateway_is_never_called(self):
+        """The collection helper never calls an in-process model gateway."""
         _run_local = _import_run_local()
 
         mock_gw = MagicMock()
         mock_gw.call_model.return_value = MagicMock(content="fixed response")
 
-        with patch("general_ludd.models.gateway.ModelGateway", return_value=mock_gw):
-            _run_local(
+        with patch(
+            "general_ludd.models.gateway.ModelGateway", return_value=mock_gw
+        ) as gateway_cls:
+            result = _run_local(
                 prompt="patched prompt",
                 system_prompt="system",
                 model_profile=None,
                 max_iterations=1,
             )
 
-        assert mock_gw.call_model.called, "gateway.call_model must be called"
-        call_args = mock_gw.call_model.call_args
-        # After fix: profile_id is passed as first positional arg
-        pos_args = call_args.args if hasattr(call_args, "args") else call_args[0]
-        kwargs = call_args.kwargs if hasattr(call_args, "kwargs") else call_args[1]
-        assert len(pos_args) >= 1, (
-            f"Expected profile_id as positional arg, got args={pos_args}, kwargs={kwargs}"
-        )
-        # profile_id should be "default" (model_profile=None falls back)
-        assert pos_args[0] == "default", (
-            f"Expected profile_id='default', got: {pos_args[0]}"
-        )
-        # messages kwarg must be present
-        assert "messages" in kwargs, (
-            f"Expected 'messages' kwarg in gateway call, got: {kwargs}"
-        )
-        # Old broken kwargs must NOT be present
-        assert "system_prompt" not in kwargs, (
-            f"Old broken 'system_prompt' kwarg still present: {kwargs}"
-        )
-        assert "user_prompt" not in kwargs, (
-            f"Old broken 'user_prompt' kwarg still present: {kwargs}"
-        )
+        assert result["failed"] is True
+        assert result["changed"] is False
+        gateway_cls.assert_not_called()
+        mock_gw.call_model.assert_not_called()
 
-    def test_run_local_with_full_mock_succeeds(self):
-        """_run_local succeeds when ALL dependencies are mocked correctly.
-
-        Verifies the happy path now that both bugs are fixed. Patches ModelGateway
-        and ToolCallLoop.run_with_tools to bypass real API calls.
-        """
+    def test_full_core_mock_cannot_reopen_local_execution(self):
+        """Mocked core dependencies cannot reopen local collection execution."""
         _run_local = _import_run_local()
 
         mock_gw = MagicMock()
@@ -215,7 +178,9 @@ class TestRunLocalBehavioral:
         async def fake_run_with_tools(self_inner, job, system, user):
             return "hello from mock"
 
-        with patch("general_ludd.models.gateway.ModelGateway", return_value=mock_gw), \
+        with patch(
+            "general_ludd.models.gateway.ModelGateway", return_value=mock_gw
+        ) as gateway_cls, \
              patch(
                  "general_ludd.execution.tool_loop.ToolCallLoop.run_with_tools",
                  new=fake_run_with_tools,
@@ -227,12 +192,12 @@ class TestRunLocalBehavioral:
                 max_iterations=5,
             )
 
-        assert result.get("failed") is False, (
-            f"Expected success when all deps mocked, got: {result}"
-        )
-        assert result.get("answer") == "hello from mock", (
-            f"Expected answer='hello from mock', got: {result}"
-        )
+        assert result == {
+            "failed": True,
+            "changed": False,
+            "msg": "local agent execution is disabled; use the authenticated daemon",
+        }
+        gateway_cls.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
