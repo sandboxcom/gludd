@@ -883,6 +883,25 @@ class TestMaterializeAzureContainerApp:
             module_dir = Path(tmp) / "modules" / "azure-container-app-vllm"
             assert module_dir.is_dir()
 
+    def test_materialize_copies_every_declared_local_module(self) -> None:
+        gen = TerraformGenerator()
+        cfg = _config(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            gpu_count=1,
+            engine=InferenceEngine.VLLM,
+            deploy_type="containerapp",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            gen.materialize(cfg, tmp, deployment_name="test-dep")
+            dest = Path(tmp)
+            main_tf = (dest / "main.tf").read_text(encoding="utf-8")
+
+            assert 'source = "./modules/azure-container-app-vllm"' in main_tf
+            assert 'source = "./modules/gpu-cost-watchdog"' in main_tf
+            assert (dest / "modules" / "azure-container-app-vllm").is_dir()
+            assert (dest / "modules" / "gpu-cost-watchdog").is_dir()
+
     def test_materialize_non_azure_does_not_create_tfvars(self) -> None:
         gen = TerraformGenerator()
         cfg = _config(provider=ComputeProvider.AWS, region="us-east-1")
