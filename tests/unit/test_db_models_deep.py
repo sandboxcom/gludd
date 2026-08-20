@@ -799,7 +799,7 @@ class TestStsAuditModel:
         async_session.add_all([t1])
         await async_session.flush()
         async_session.add(t2)
-        with pytest.raises(IntegrityError, match="ix_sts_audit" if False else ""):
+        with pytest.raises(IntegrityError):
             await async_session.flush()
         await async_session.rollback()
 
@@ -855,6 +855,7 @@ class TestAgentTokenModel:
         )
         async_session.add(t1)
         await async_session.flush()
+        async_session.expunge(t1)
         async_session.add(t2)
         with pytest.raises(IntegrityError):
             await async_session.flush()

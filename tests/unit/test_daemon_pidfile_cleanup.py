@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
+from queue import SimpleQueue
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -67,6 +68,7 @@ class TestCmdDaemonPidFileLifecycle:
         fake_proc.returncode = 0
         started = threading.Event()
         release = threading.Event()
+        outcome: SimpleQueue[BaseException | None] = SimpleQueue()
 
         def fake_wait():
             started.set()
@@ -75,11 +77,19 @@ class TestCmdDaemonPidFileLifecycle:
 
         fake_proc.wait.side_effect = fake_wait
 
-        def run():
-            with patch("subprocess.Popen", return_value=fake_proc), patch("signal.signal"):
-                _cmd_daemon(_daemon_args(pid_file=str(pid_file)))
+        def run() -> None:
+            try:
+                with patch("subprocess.Popen", return_value=fake_proc), patch("signal.signal"):
+                    _cmd_daemon(_daemon_args(pid_file=str(pid_file)))
+            except BaseException as exc:
+                outcome.put(exc)
+            else:
+                outcome.put(None)
 
-        thread = threading.Thread(target=run, daemon=True)
+        thread = threading.Thread(
+            target=run,
+            name="gludd-test-daemon-pidfile-lifecycle",
+        )
         thread.start()
         try:
             assert started.wait(timeout=10), "daemon command never reached wait()"
@@ -89,6 +99,10 @@ class TestCmdDaemonPidFileLifecycle:
         finally:
             release.set()
             thread.join(timeout=10)
+        assert not thread.is_alive(), "test-owned daemon thread must terminate"
+        thread_outcome = outcome.get(timeout=1)
+        assert isinstance(thread_outcome, SystemExit)
+        assert thread_outcome.code == 0
 
     def test_cmd_daemon_unlinks_pidfile_on_normal_exit(self, tmp_path):
         from general_ludd.cli import _cmd_daemon
