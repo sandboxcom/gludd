@@ -7,12 +7,20 @@ from pathlib import Path
 from typing import cast
 
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, StrictStr
 
 from general_ludd.ansible.galaxy import get_builtin_modules, install_galaxy, search_galaxy
 from general_ludd.ansible.paths import (
     list_collection_versions,
     resolve_collections_paths,
 )
+
+
+class GalaxyInstallRequest(BaseModel):
+    """Strict request body for one bounded ``ansible-galaxy`` installation."""
+
+    name: StrictStr
+    type: StrictStr = "role"
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
@@ -27,13 +35,14 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         return {"query": query, "type": type, "results": results}
 
     @app.post("/admin/ansible/install")
-    async def admin_ansible_install(req: dict[str, object]) -> dict[str, object]:
+    async def admin_ansible_install(req: GalaxyInstallRequest) -> dict[str, object]:
         # install_galaxy shells out to ansible-galaxy via a blocking
         # subprocess.run (300s timeout); offload it so the async handler does
         # not freeze the event loop while the install runs.
-        result = await asyncio.to_thread(
-            install_galaxy, cast(str, req.get("name", "")), cast(str, req.get("type", "role"))
-        )
+        try:
+            result = await asyncio.to_thread(install_galaxy, req.name, req.type)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
         return result
 
     @app.get("/admin/ansible/builtins")
