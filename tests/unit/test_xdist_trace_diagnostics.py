@@ -104,6 +104,34 @@ def test_compact_summary_keeps_every_unique_failure_without_tracebacks(tmp_path:
     assert "longrepr" not in json.dumps(compact)
 
 
+def test_compact_summary_omits_memory_arrays_unless_requested(tmp_path: Path) -> None:
+    from scripts.summarize_xdist_trace import compact_summary, summarize_log
+
+    log_path = tmp_path / "trace.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "event": "START",
+                "worker": "gw0",
+                "nodeid": "tests/demo.py::test_demo",
+                "rss_kb": 100,
+            }
+        )
+        + chr(10),
+        encoding="utf-8",
+    )
+
+    summary = summarize_log(log_path)
+
+    compact = compact_summary(summary)
+    assert "memory_by_worker" not in compact
+    assert "largest_rss_increases" not in compact
+
+    compact_with_memory = compact_summary(summary, include_memory=True)
+    assert compact_with_memory["memory_by_worker"] == summary["memory_by_worker"]
+    assert compact_with_memory["largest_rss_increases"] == summary["largest_rss_increases"]
+
+
 def test_summary_tolerates_missing_blank_malformed_and_non_mapping_events(tmp_path: Path) -> None:
     from scripts.summarize_xdist_trace import summarize_log
 
@@ -146,6 +174,53 @@ def test_summary_cli_defaults_compact_and_retains_verbose_mode(
     assert main(["--verbose", str(log_path)]) == 0
     verbose = json.loads(capsys.readouterr().out)
     assert verbose["failures"][0]["longrepr"] == "secret traceback detail"
+
+
+def test_summary_cli_has_concise_failures_only_mode(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from scripts.summarize_xdist_trace import main
+
+    log_path = tmp_path / "trace.jsonl"
+    log_path.write_text(
+        chr(10).join(
+            [
+                json.dumps(
+                    {
+                        "event": "START",
+                        "worker": "gw1",
+                        "nodeid": "tests/demo.py::test_worker_exit",
+                        "rss_kb": 100,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event": "REPORT",
+                        "worker": "controller",
+                        "nodeid": "tests/demo.py::test_worker_exit",
+                        "outcome": "failed",
+                        "when": "call",
+                        "longrepr": "worker gw1 crashed with a very long traceback",
+                    }
+                ),
+            ]
+        )
+        + chr(10),
+        encoding="utf-8",
+    )
+
+    assert main(["--failures-only", str(log_path)]) == 0
+    failures_only = json.loads(capsys.readouterr().out)
+
+    assert failures_only == {
+        "failure_nodeid_count": 1,
+        "failure_nodeids": ["tests/demo.py::test_worker_exit"],
+        "failure_report_count": 1,
+        "path": str(log_path),
+        "unfinished": [
+            {"nodeid": "tests/demo.py::test_worker_exit", "worker": "gw1"}
+        ],
+    }
 
 
 def test_summary_reports_worker_memory_growth_and_largest_jumps(tmp_path: Path) -> None:
@@ -196,17 +271,68 @@ def test_summary_reports_worker_memory_growth_and_largest_jumps(tmp_path: Path) 
     summary = summarize_log(log_path)
 
     assert summary["memory_by_worker"]["gw0"] == {
-        "first_rss_kb": 100,
-        "peak_rss_kb": 220,
-        "growth_rss_kb": 120,
+        "first_rss_bytes": 100 * 1024,
+        "first_rss_kib": 100,
+        "peak_rss_bytes": 220 * 1024,
+        "peak_rss_kib": 220,
+        "growth_rss_bytes": 120 * 1024,
+        "growth_rss_kib": 120,
         "peak_nodeid": "tests/b.py::test_b",
     }
     assert summary["largest_rss_increases"][0] == {
         "worker": "gw0",
         "nodeid": "tests/b.py::test_b",
         "event": "START",
-        "rss_kb": 220,
-        "increase_rss_kb": 80,
+        "rss_bytes": 220 * 1024,
+        "rss_kib": 220,
+        "increase_rss_bytes": 80 * 1024,
+        "increase_rss_kib": 80,
+    }
+    assert summary["legacy_rss_input_unit"] == "kib"
+
+
+def test_summary_normalizes_legacy_macos_rss_bytes_without_inflation(
+    tmp_path: Path,
+) -> None:
+    from scripts.summarize_xdist_trace import summarize_log
+
+    log_path = tmp_path / "trace.jsonl"
+    log_path.write_text(
+        chr(10).join(
+            [
+                json.dumps(
+                    {
+                        "event": "START",
+                        "worker": "gw0",
+                        "nodeid": "tests/a.py::test_a",
+                        "rss_kb": 92_684_288,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event": "FINISH",
+                        "worker": "gw0",
+                        "nodeid": "tests/a.py::test_a",
+                        "rss_kb": 93_011_968,
+                    }
+                ),
+            ]
+        )
+        + chr(10),
+        encoding="utf-8",
+    )
+
+    summary = summarize_log(log_path)
+
+    assert summary["legacy_rss_input_unit"] == "bytes"
+    assert summary["memory_by_worker"]["gw0"] == {
+        "first_rss_bytes": 92_684_288,
+        "first_rss_kib": 90_512,
+        "peak_rss_bytes": 93_011_968,
+        "peak_rss_kib": 90_832,
+        "growth_rss_bytes": 327_680,
+        "growth_rss_kib": 320,
+        "peak_nodeid": "tests/a.py::test_a",
     }
 
 
