@@ -97,3 +97,13 @@ def test_cli_fails_closed_when_inventory_is_missing(tmp_path: Path) -> None:
 def test_scanner_rejects_missing_root(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="does not exist"):
         scan_collections(tmp_path / "missing")
+
+
+def test_agent_collection_has_no_python_boundary_findings() -> None:
+    """The beta4 agent artifact is independent from Gludd core Python."""
+    repository_root = Path(__file__).resolve().parents[2]
+    agent_collection = (
+        repository_root / "collections/ansible_collections/general_ludd/agent"
+    )
+
+    assert scan_collections(agent_collection) == []

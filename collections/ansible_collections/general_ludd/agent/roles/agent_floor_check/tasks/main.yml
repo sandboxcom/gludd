@@ -86,9 +86,20 @@
     path: "{{ repo_path }}/{{ liveness_probe_path }}"
   register: _afc_probe_stat
 
+- name: Preflight managed-host runtime for liveness probe
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    tasks_from: main
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ ansible_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ gludd_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ gludd_previous_python_interpreter | default('') }}"
+  when: _afc_probe_stat.stat.exists | bool
+
 - name: Run liveness probe (--count)
   ansible.builtin.command:
-    cmd: "python3 {{ liveness_probe_path }} --count"
+    cmd: "{{ ansible_python_interpreter }} {{ liveness_probe_path }} --count"
     chdir: "{{ repo_path }}"
   register: _afc_probe_result
   changed_when: false

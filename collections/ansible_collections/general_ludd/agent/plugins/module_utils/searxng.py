@@ -1,11 +1,9 @@
 """
 SearXNG search client for general_ludd collections.
 
-Thin ansible-compatible wrapper around
-:class:`general_ludd.connectors.searx.SearXConnector`.  All HTTP
-execution, URL building, SSRF protection, retry logic, and JSON
-deserialisation are delegated to SearXConnector.  This module handles
-only ansible-specific parameter coercion and result shaping.
+Thin Ansible-compatible wrapper using the collection's shared stdlib HTTP
+transport. SearXNG is an operator-configured external service, not a reason to
+import the Gludd source checkout into the controller process.
 
 Usage in a module
 -----------------
@@ -32,7 +30,7 @@ from urllib.parse import parse_qs as _parse_qs
 from urllib.parse import urlencode as _urlencode
 from urllib.parse import urlparse as _urlparse
 
-from general_ludd.connectors.searx import SearXConnector
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import GluddClient
 
 _PRICE_RE = _re.compile(r"\$\s*(\d{1,6}(?:[.,]\d{1,2})?)")
 _STAR_RE = _re.compile(r"(\d(?:[.,]\d)?)[\s/]*(?:star|⭐|out of 5)")
@@ -104,15 +102,9 @@ def extract_stars(text: str) -> float | None:
 # ============================================================================
 
 
-def _connector(base_url: str, timeout: float) -> SearXConnector:
-    """Build a SearXConnector for the given instance.
-
-    Allow private hosts by default — ansible modules typically talk to a
-    local or LAN SearXNG instance.
-    """
-    return SearXConnector(
-        {"base_url": base_url, "timeout": timeout, "allow_private": True},
-    )
+def _connector(base_url: str, timeout: float) -> GluddClient:
+    """Build the shared stdlib transport for an operator-selected instance."""
+    return GluddClient(base_url=normalise_url(base_url), timeout=int(timeout))
 
 
 # ============================================================================
@@ -180,7 +172,8 @@ def execute_search(
 
     try:
         conn = _connector(base_url, float(timeout))
-        status, body = conn._get("/search", params=flat_params)
+        body = conn.get("/search", params=flat_params)
+        status = int(body.get("_status", 0))
     except Exception:
         return [], [], search_url
 
@@ -341,7 +334,8 @@ class SearXNGClient:
             "pageno": str(page),
         }
 
-        status, body = self._connector._get("/search", params=flat_params)
+        body = self._connector.get("/search", params=flat_params)
+        status = int(body.get("_status", 0))
 
         if not (200 <= status < 300) or not isinstance(body, dict):
             return SearxResponse(query=query)
@@ -401,7 +395,8 @@ class SearXNGClient:
         }
 
         try:
-            status, raw = self._connector._get("/search", params=params)
+            raw = self._connector.get("/search", params=params)
+            status = int(raw.get("_status", 0))
         except Exception as exc:
             return {
                 "exists": True,
@@ -450,8 +445,8 @@ class SearXNGClient:
     def health(self) -> dict[str, Any]:
         """Check if the SearXNG instance is reachable — delegates to SearXConnector."""
         try:
-            result = self._connector.health()
-            ok = bool(result.get("ok", False))
+            result = self._connector.get("/healthz")
+            ok = result.get("_status") == 200
             if ok:
                 return {
                     "ok": True,

@@ -5,6 +5,16 @@
 # evidence refs via FeatureVerifier, renders a Markdown table per section, and
 # either checks that the README table is current (--check) or writes it (--write).
 
+- name: Preflight managed-host runtime
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    tasks_from: main
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ ansible_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ gludd_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ gludd_previous_python_interpreter | default('') }}"
+
 - name: Create artifact directory
   ansible.builtin.file:
     path: "{{ artifact_dir }}"
@@ -14,7 +24,7 @@
 - name: Generate status table (check mode)
   ansible.builtin.command:
     cmd: >-
-      uv run python scripts/gen_status_table.py
+      {{ ansible_python_interpreter }} scripts/gen_status_table.py
       --check
       --fast
       {% if manifest_path | length > 0 %}--manifest {{ manifest_path }}{% endif %}
@@ -28,7 +38,7 @@
 - name: Generate status table (write mode)
   ansible.builtin.command:
     cmd: >-
-      uv run python scripts/gen_status_table.py
+      {{ ansible_python_interpreter }} scripts/gen_status_table.py
       --write
       --fast
       {% if manifest_path | length > 0 %}--manifest {{ manifest_path }}{% endif %}
@@ -42,7 +52,7 @@
 - name: Generate status table (print mode)
   ansible.builtin.command:
     cmd: >-
-      uv run python scripts/gen_status_table.py
+      {{ ansible_python_interpreter }} scripts/gen_status_table.py
       {% if manifest_path | length > 0 %}--manifest {{ manifest_path }}{% endif %}
       {% if output_path | length > 0 %}--out {{ output_path }}{% endif %}
     chdir: "{{ repo_path }}"

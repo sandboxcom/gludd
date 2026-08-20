@@ -135,9 +135,13 @@ def test_game_module_reuses_authenticated_stdlib_model_client() -> None:
     with patch.object(client, "post", return_value={"_status": 200, "text": "game"}) as post:
         first = client.call_model("one", model_profile="local.test", max_tokens=32)
         second = client.call_model("two", max_tokens=16)
+        third = client.call_model("three", route_task_type="code_generation")
     assert first["text"] == "game"
     assert second["text"] == "game"
-    assert post.call_count == 2
+    assert third["text"] == "game"
+    assert post.call_count == 3
+    assert post.call_args_list[2].args[1]["route_task_type"] == "code_generation"
+    assert "task_type" not in post.call_args_list[2].args[1]
     assert client._headers()["Authorization"] == "Bearer secret"
 
 

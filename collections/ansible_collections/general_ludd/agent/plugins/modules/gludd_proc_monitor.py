@@ -85,29 +85,22 @@ RETURN:
 
 from __future__ import annotations
 
-import os
+from typing import Any
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        GluddClient,
-        error_result,
-        ok_result,
-    )
-except ImportError:
-    import sys
-
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import GluddClient, error_result, ok_result  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    error_result,
+    ok_result,
+)
 
 
-def _is_error(resp: dict) -> bool:
+def _is_error(resp: dict[str, Any]) -> bool:
     """A transport error from GluddClient surfaces as a `_error` key."""
     return "_error" in resp
 
 
-def _status(resp: dict) -> int:
+def _status(resp: dict[str, Any]) -> int:
     """HTTP status code stamped onto a GluddClient response (0 for transport error)."""
     return int(resp.get("_status", 0) or 0)
 
@@ -180,7 +173,7 @@ def main() -> None:
         module.fail_json(**error_result("unexpected daemon output (expected 'processes' to be a list)"))
         return
 
-    collected: list[dict] = []
+    collected: list[dict[str, Any]] = []
     for entry in procs:
         if not isinstance(entry, dict):
             continue

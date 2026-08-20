@@ -628,27 +628,27 @@ class TestSearxngSearch:
         assert data["score"] == 0.95
         assert "google" in data["source"]
 
-    @patch("general_ludd.connectors.searx.SearXConnector._get")
+    @patch(
+        "ansible_collections.general_ludd.agent.plugins.module_utils.searxng.GluddClient.get"
+    )
     def test_search_searxng_returns_structured_results(self, mock_get: MagicMock) -> None:
-        mock_get.return_value = (
-            200,
-            {
-                "results": [
-                    {
-                        "title": "JFK to LHR from $450",
-                        "content": "Direct flight",
-                        "url": "https://example.com/flight",
-                        "engine": "google_flights",
-                    },
-                    {
-                        "title": "JFK to LHR via CDG $380",
-                        "content": "One stop",
-                        "url": "https://example.com/flight2",
-                        "engine": "google_travel",
-                    },
-                ]
-            },
-        )
+        mock_get.return_value = {
+            "_status": 200,
+            "results": [
+                {
+                    "title": "JFK to LHR from $450",
+                    "content": "Direct flight",
+                    "url": "https://example.com/flight",
+                    "engine": "google_flights",
+                },
+                {
+                    "title": "JFK to LHR via CDG $380",
+                    "content": "One stop",
+                    "url": "https://example.com/flight2",
+                    "engine": "google_travel",
+                },
+            ],
+        }
 
         results, raw, search_url = search_searxng(
             query="flights JFK to LHR",
@@ -664,9 +664,11 @@ class TestSearxngSearch:
         assert len(raw) == 2
         assert search_url.startswith("http://localhost:8080/search?")
 
-    @patch("general_ludd.connectors.searx.SearXConnector._get")
+    @patch(
+        "ansible_collections.general_ludd.agent.plugins.module_utils.searxng.GluddClient.get"
+    )
     def test_search_searxng_http_error_returns_empty(self, mock_get: MagicMock) -> None:
-        mock_get.return_value = (500, None)
+        mock_get.return_value = {"_status": 500}
 
         results, raw, _ = search_searxng(
             query="test",
@@ -681,21 +683,21 @@ class TestSearxngSearch:
         assert results == []
         assert raw == []
 
-    @patch("general_ludd.connectors.searx.SearXConnector._get")
+    @patch(
+        "ansible_collections.general_ludd.agent.plugins.module_utils.searxng.GluddClient.get"
+    )
     def test_search_searxng_hotel_category(self, mock_get: MagicMock) -> None:
-        mock_get.return_value = (
-            200,
-            {
-                "results": [
-                    {
-                        "title": "Grand Hotel $350 per night",
-                        "content": "4.5 star luxury hotel",
-                        "url": "https://example.com/hotel",
-                        "engine": "booking",
-                    }
-                ]
-            },
-        )
+        mock_get.return_value = {
+            "_status": 200,
+            "results": [
+                {
+                    "title": "Grand Hotel $350 per night",
+                    "content": "4.5 star luxury hotel",
+                    "url": "https://example.com/hotel",
+                    "engine": "booking",
+                }
+            ],
+        }
 
         results, _, _ = search_searxng(
             query="hotels Paris",
@@ -711,22 +713,22 @@ class TestSearxngSearch:
         assert "hotel_name" in results[0]
         assert results[0]["total_price"] > 0
 
-    @patch("general_ludd.connectors.searx.SearXConnector._get")
+    @patch(
+        "ansible_collections.general_ludd.agent.plugins.module_utils.searxng.GluddClient.get"
+    )
     def test_search_searxng_activities_category(self, mock_get: MagicMock) -> None:
-        mock_get.return_value = (
-            200,
-            {
-                "results": [
-                    {
-                        "title": "Louvre Museum Tour",
-                        "content": "Skip-the-line guided tour",
-                        "url": "https://example.com/activity",
-                        "engine": "tripadvisor",
-                        "category": "sightseeing",
-                    }
-                ]
-            },
-        )
+        mock_get.return_value = {
+            "_status": 200,
+            "results": [
+                {
+                    "title": "Louvre Museum Tour",
+                    "content": "Skip-the-line guided tour",
+                    "url": "https://example.com/activity",
+                    "engine": "tripadvisor",
+                    "category": "sightseeing",
+                }
+            ],
+        }
 
         results, _, _ = search_searxng(
             query="things to do Paris",
@@ -741,22 +743,22 @@ class TestSearxngSearch:
         assert len(results) == 1
         assert results[0]["title"] == "Louvre Museum Tour"
 
-    @patch("general_ludd.connectors.searx.SearXConnector._get")
+    @patch(
+        "ansible_collections.general_ludd.agent.plugins.module_utils.searxng.GluddClient.get"
+    )
     def test_search_searxng_max_results_truncates(self, mock_get: MagicMock) -> None:
-        mock_get.return_value = (
-            200,
-            {
-                "results": [
-                    {
-                        "title": f"Result {i}",
-                        "content": "",
-                        "url": f"https://example.com/result-{i}",
-                        "engine": "google",
-                    }
-                    for i in range(10)
-                ]
-            },
-        )
+        mock_get.return_value = {
+            "_status": 200,
+            "results": [
+                {
+                    "title": f"Result {i}",
+                    "content": "",
+                    "url": f"https://example.com/result-{i}",
+                    "engine": "google",
+                }
+                for i in range(10)
+            ],
+        }
 
         results, _, _ = search_searxng(
             query="test",
@@ -770,9 +772,11 @@ class TestSearxngSearch:
         )
         assert len(results) == 3
 
-    @patch("general_ludd.connectors.searx.SearXConnector._get")
+    @patch(
+        "ansible_collections.general_ludd.agent.plugins.module_utils.searxng.GluddClient.get"
+    )
     def test_search_searxng_empty_engines_uses_default(self, mock_get: MagicMock) -> None:
-        mock_get.return_value = (200, {"results": []})
+        mock_get.return_value = {"_status": 200, "results": []}
 
         _, _, _url = search_searxng(
             query="flights test",

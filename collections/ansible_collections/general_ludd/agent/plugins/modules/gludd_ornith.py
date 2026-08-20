@@ -6,7 +6,7 @@ DOCUMENTATION:
   module: gludd_ornith
   short_description: Pull rejected Ornith training pairs and invoke improvement rollouts
   description:
-    - Bidirectional seam for the gludd × Ornith symbiotic loop. Two states:
+    - Bidirectional seam for the gludd x Ornith symbiotic loop. Two states:
     - C(state=pairs) — fetch the most-recent training pairs whose outcome
       matches a comma-separated status list (e.g.
       C(rejected_by_gate,rejected_by_review,reverted)). These are the
@@ -117,38 +117,44 @@ RETURN:
 
 from __future__ import annotations
 
-import os
+from typing import Any, cast
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        GluddClient,
-        error_result,
-        ok_result,
-    )
-except ImportError:
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import GluddClient, error_result, ok_result  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    error_result,
+    ok_result,
+)
 
 
-def _fetch_pairs(client: GluddClient, status: str, limit: int,
-                 lookback_days: int, project_id: str) -> dict:
-    params: dict = {
+def _fetch_pairs(
+    client: GluddClient,
+    status: str,
+    limit: int,
+    lookback_days: int,
+    project_id: str,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {
         "status": status,
         "limit": limit,
         "lookback_days": lookback_days,
     }
     if project_id:
         params["project_id"] = project_id
-    resp = client.get("/admin/ornith/pairs", params=params)
-    return resp
+    return cast(
+        dict[str, Any],
+        client.get("/admin/ornith/pairs", params=params),
+    )
 
 
-def _run_improve(client: GluddClient, task_description: str,
-                 target_files: list, max_iterations: int,
-                 model_profile: str, agent_id: str) -> dict:
+def _run_improve(
+    client: GluddClient,
+    task_description: str,
+    target_files: list[str],
+    max_iterations: int,
+    model_profile: str,
+    agent_id: str,
+) -> dict[str, Any]:
     """Invoke /admin/models/call with a structured improvement prompt.
 
     The prompt names the target files + the task description verbatim so the
@@ -165,7 +171,7 @@ def _run_improve(client: GluddClient, task_description: str,
         f"Target artifacts:\n{files_block}\n\n"
         f"Task description / failure context:\n{task_description}\n"
     )
-    payload: dict = {
+    payload: dict[str, Any] = {
         "prompt": prompt,
         "max_tokens": 4096,
         "agent_id": agent_id,
@@ -175,8 +181,10 @@ def _run_improve(client: GluddClient, task_description: str,
     # max_iterations is informational here — the daemon's gateway is single-shot.
     # We surface it in the audit metadata so the trainer can correlate.
     payload["metadata"] = {"max_iterations": max_iterations}
-    resp = client.post("/admin/models/call", payload)
-    return resp
+    return cast(
+        dict[str, Any],
+        client.post("/admin/models/call", payload),
+    )
 
 
 def main() -> None:

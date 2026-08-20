@@ -27,7 +27,23 @@ DOCUMENTATION:
       description: Cloud provider (required for auth env resolution).
       type: str
       required: true
-      choices: [aws, azure, gcp, runpod, vast_ai, lambda_labs, modal, coreweave, digital_ocean, oracle, vmware, kubernetes, together_ai, fireworks_ai, huggingface, replicate]
+      choices:
+        - aws
+        - azure
+        - gcp
+        - runpod
+        - vast_ai
+        - lambda_labs
+        - modal
+        - coreweave
+        - digital_ocean
+        - oracle
+        - vmware
+        - kubernetes
+        - together_ai
+        - fireworks_ai
+        - huggingface
+        - replicate
     project_id:
       description: Optional project identifier for credential scoping.
       type: str
@@ -56,9 +72,8 @@ RETURN:
 
 from __future__ import annotations
 
-import os
-
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import GluddClient
 
 
 def main() -> None:
@@ -77,6 +92,8 @@ def main() -> None:
                 ],
             ),
             project_id=dict(type="str", default=None),
+            daemon_url=dict(type="str", default="http://localhost:8000"),
+            psk=dict(type="str", default="", no_log=True),
         ),
         supports_check_mode=True,
     )
@@ -84,37 +101,6 @@ def main() -> None:
     instance_id: str = module.params["instance_id"]
     role: str = module.params["role"]
     provider: str = module.params["provider"]
-
-    # Role allowlist gate (fail-closed).
-    try:
-        from general_ludd.permissions.infra_access import InfraAccessPolicy, load_infra_access_policy
-    except ImportError:
-        try:
-            sys_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..")
-            import sys as _sys
-            _sys.path.insert(0, os.path.abspath(os.path.join(sys_path, "..", "..", "..", "src")))
-            from general_ludd.permissions.infra_access import (  # type: ignore[no-redef]
-                InfraAccessPolicy,
-                load_infra_access_policy,
-            )
-        except ImportError as exc:
-            module.fail_json(
-                msg=f"general_ludd.permissions.infra_access not importable: {exc}",
-                changed=False,
-            )
-            return
-
-    policy = load_infra_access_policy()
-    if not policy.can_destroy(role):
-        module.fail_json(
-            msg=(
-                f"infra destroy denied by access policy: role {role!r} is not in "
-                f"allowed_destroy_roles"
-            ),
-            changed=False,
-            role=role,
-        )
-        return
 
     if module.check_mode:
         module.exit_json(
@@ -126,39 +112,25 @@ def main() -> None:
         )
         return
 
-    try:
-        from general_ludd.infra.deployment import DeploymentManager
-    except ImportError as exc:
+    response = GluddClient(
+        base_url=module.params["daemon_url"],
+        psk=module.params["psk"],
+        timeout=300,
+    ).delete(f"/admin/compute/destroy/{instance_id}")
+    if response.get("_error") or response.get("_status") != 200:
         module.fail_json(
-            msg=f"general_ludd.infra.deployment not importable: {exc}",
+            msg=f"destroy failed: {response.get('detail') or response.get('_error') or 'daemon rejected request'}",
             changed=False,
+            instance_id=instance_id,
         )
         return
-
-    try:
-        import asyncio
-
-        manager = DeploymentManager()
-        asyncio.run(manager.destroy(instance_id))
-
-        module.exit_json(
-            changed=True,
-            destroyed=True,
-            instance_id=instance_id,
-            provider=provider,
-        )
-    except ValueError as exc:
-        module.fail_json(
-            msg=f"cannot destroy {instance_id!r}: {exc}",
-            changed=False,
-            instance_id=instance_id,
-        )
-    except Exception as exc:
-        module.fail_json(
-            msg=f"destroy failed: {exc}",
-            changed=False,
-            instance_id=instance_id,
-        )
+    module.exit_json(
+        changed=True,
+        destroyed=response.get("destroyed") == instance_id,
+        instance_id=instance_id,
+        provider=provider,
+        role=role,
+    )
 
 
 if __name__ == "__main__":

@@ -97,7 +97,12 @@ def test_reachable_and_model_payload_contract() -> None:
         client.call_model("prompt", model_profile="small", route_task_type="game", max_tokens=33)
     assert post.call_args.args == (
         "/admin/models/call",
-        {"prompt": "prompt", "max_tokens": 33, "model_profile": "small", "task_type": "game"},
+        {
+            "prompt": "prompt",
+            "max_tokens": 33,
+            "model_profile": "small",
+            "route_task_type": "game",
+        },
     )
     assert gludd.GluddClient(psk="").call_model("prompt")["failed"] is True
 

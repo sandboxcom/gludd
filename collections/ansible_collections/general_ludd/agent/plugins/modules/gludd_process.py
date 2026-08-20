@@ -125,22 +125,14 @@ RETURN:
 
 from __future__ import annotations
 
-import os
+from typing import Any
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        GluddClient,
-        error_result,
-        ok_result,
-    )
-except ImportError:
-    import sys
-
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import GluddClient, error_result, ok_result  # type: ignore[import]
-
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    error_result,
+    ok_result,
+)
 
 # Signal names this module will deliver. Defence-in-depth: the daemon enforces
 # the same allow-list server-side. Kept as a set for O(1) membership checks.
@@ -159,7 +151,7 @@ ALLOWED_SIGNALS = frozenset(
 )
 
 
-def _error_from_response(resp: dict, default_msg: str) -> str:
+def _error_from_response(resp: dict[str, Any], default_msg: str) -> str:
     """Extract the daemon's error message from a GluddClient response dict.
 
     GluddClient surfaces transport errors as ``_error`` and HTTP status as

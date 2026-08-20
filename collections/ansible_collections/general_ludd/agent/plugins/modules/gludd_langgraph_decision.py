@@ -99,26 +99,15 @@ RETURN:
 
 from __future__ import annotations
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
+from typing import Any
 
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        GluddClient,
-        error_result,
-        ok_result,
-        parse_structured,
-    )
-except ImportError:
-    import os
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import (  # type: ignore[import]
-        GluddClient,
-        error_result,
-        ok_result,
-        parse_structured,
-    )
-
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    error_result,
+    ok_result,
+    parse_structured,
+)
 
 _DEFAULT_SYSTEM = (
     "You are a decision engine; reply with exactly one of the option tokens "
@@ -166,7 +155,7 @@ def main() -> None:
         timeout=module.params["timeout"],
     )
 
-    payload: dict = {
+    payload: dict[str, Any] = {
         "prompt": module.params["prompt"],
         "system": module.params["system"],
         "response_format": "json",

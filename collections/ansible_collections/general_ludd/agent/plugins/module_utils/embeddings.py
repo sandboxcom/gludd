@@ -1,83 +1,80 @@
-"""Embedding utilities for the general_ludd.agent collection.
-
-Thin Ansible-compatible wrapper.  All core logic — tokenizer, stemmer,
-HashEmbedder, OpenAIEmbedder, cosine_similarity — delegates to
-``src/general_ludd/skills/embeddings.py``.  This file only adapts the
-interface for ansible module consumption; it contains ZERO algorithmic
-reimplementations.
-
-Exports
--------
-* ``Embedder``, ``HashEmbedder``, ``OpenAIEmbedder``, ``cosine_similarity``
-  — re-exported directly from ``general_ludd.skills.embeddings``.
-* ``EmbeddingClient`` — thin ansible wrapper around ``HashEmbedder``.
-* ``VectorStore`` — in-memory index delegating ``cosine_similarity`` to core.
-
-Usage (in a module or module_utils)::
-
-    from ansible_collections.general_ludd.agent.plugins.module_utils.embeddings import (
-        EmbeddingClient,
-        VectorStore,
-    )
-
-    client = EmbeddingClient(model_profile="openai/text-embedding-3-small")
-    vec_a = client.embed_text("What is Kubernetes?")
-    vec_b = client.embed_text("Kubernetes is a container orchestrator.")
-    score = client.cosine_similarity(vec_a, vec_b)
-
-    store = VectorStore()
-    store.add("doc-1", client.embed_text("document text here"))
-    results = store.search(client.embed_text("query"), k=3)
-"""
+"""Daemon-backed embedding compatibility utilities for Ansible collections."""
 
 from __future__ import annotations
 
-from general_ludd.skills.embeddings import (  # type: ignore[import]  # ansible runtime path
-    Embedder,
-    HashEmbedder,
-    OpenAIEmbedder,
-    cosine_similarity,
+import math
+from typing import Protocol
+
+from ansible_collections.general_ludd.agent.plugins.module_utils.model_client import (
+    ModelClient,
 )
 
-# ---------------------------------------------------------------------------
-# Re-exports from core — no reimplementations
-# ---------------------------------------------------------------------------
 
-__all__ = (
-    "Embedder",
-    "EmbeddingClient",
-    "HashEmbedder",
-    "OpenAIEmbedder",
-    "VectorStore",
-    "cosine_similarity",
-)
+class Embedder(Protocol):
+    """Minimal embedding interface used by the collection RAG adapter."""
 
-# ---------------------------------------------------------------------------
-# EmbeddingClient — thin ansible wrapper
-# ---------------------------------------------------------------------------
+    def embed(self, text: str) -> list[float]: ...
+
+
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Return bounded cosine similarity without importing core Python."""
+    if len(a) != len(b):
+        raise ValueError("embedding dimensions must match")
+    if not a:
+        return 0.0
+    dot = sum(left * right for left, right in zip(a, b, strict=True))
+    norm_a = math.sqrt(sum(value * value for value in a))
+    norm_b = math.sqrt(sum(value * value for value in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+class DaemonEmbedder:
+    """Compatibility embedder that delegates all vector creation to Gludd."""
+
+    def __init__(
+        self,
+        dim: int | None = None,
+        *,
+        model_profile: str = "default",
+        daemon_url: str = "http://localhost:8000",
+        psk: str = "",
+        timeout: int = 60,
+        **_kwargs: object,
+    ) -> None:
+        self.dim = dim
+        self._client = ModelClient(
+            model_profile,
+            daemon_url=daemon_url,
+            psk=psk,
+            timeout=timeout,
+        )
+
+    def embed(self, text: str) -> list[float]:
+        """Return one vector or fail closed on a daemon transport error."""
+        response = self._client.embed(text)
+        vector = response.get("embedding")
+        if not isinstance(vector, list):
+            raise RuntimeError("daemon embedding response omitted embedding")
+        result = [float(value) for value in vector]
+        if self.dim is not None and result and len(result) != self.dim:
+            raise RuntimeError(
+                f"daemon embedding dimension {len(result)} does not match expected {self.dim}"
+            )
+        return result
+
+
+class HashEmbedder(DaemonEmbedder):
+    """Backward-compatible name for the daemon-selected offline embedder."""
+
+
+class OpenAIEmbedder(DaemonEmbedder):
+    """Backward-compatible name; provider choice remains daemon-owned."""
 
 
 class EmbeddingClient:
-    """Thin ansible adapter around the core embedder interface.
-
-    Delegates all embedding work to :class:`HashEmbedder` (or
-    :class:`OpenAIEmbedder` when an API key is available and
-    ``use_openai_if_available=True``).  No ``ModelGateway`` dependency —
-    the core embedder is stdlib-only.
-
-    Parameters
-    ----------
-    model_profile:
-        Hint for backend selection.  Any profile containing ``"openai"``
-        is treated the same as ``use_openai_if_available=True``.
-    use_openai_if_available:
-        When ``True`` and ``OPENAI_API_KEY`` is set, use
-        :class:`OpenAIEmbedder`; otherwise fall back to
-        :class:`HashEmbedder`.
-    timeout:
-        Preserved for call-site compatibility (unused by the default
-        embedders but reserved for future backends).
-    """
+    """Ansible adapter for the authenticated daemon embedding endpoint."""
 
     def __init__(
         self,
@@ -85,73 +82,33 @@ class EmbeddingClient:
         *,
         use_openai_if_available: bool = False,
         timeout: int = 60,
+        daemon_url: str = "http://localhost:8000",
+        psk: str = "",
     ) -> None:
-        if model_profile and "openai" in model_profile:
-            use_openai_if_available = True
-        self._profile = model_profile
-        self._timeout = timeout
-
-        import os
-
-        if use_openai_if_available and os.environ.get("OPENAI_API_KEY"):
-            try:
-                self._embedder: Embedder = OpenAIEmbedder()
-            except RuntimeError:
-                self._embedder = HashEmbedder()
-        else:
-            self._embedder = HashEmbedder()
-
-    # ------------------------------------------------------------------
-    # delegate every embedding operation to the core embedder
-    # ------------------------------------------------------------------
+        del use_openai_if_available
+        self._embedder: Embedder = DaemonEmbedder(
+            model_profile=model_profile or "default",
+            daemon_url=daemon_url,
+            psk=psk,
+            timeout=timeout,
+        )
 
     def embed_text(self, text: str) -> list[float]:
-        """Return an embedding vector for a single text string."""
         return self._embedder.embed(text)
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Return embedding vectors for multiple texts.
-
-        Each element corresponds positionally to ``texts``.
-        """
-        if not texts:
-            return []
-        return [self._embedder.embed(t) for t in texts]
+        return [self._embedder.embed(text) for text in texts]
 
     @staticmethod
     def cosine_similarity(a: list[float], b: list[float]) -> float:
-        """Cosine similarity — delegates to core."""
         return cosine_similarity(a, b)
 
 
-# ---------------------------------------------------------------------------
-# VectorStore — in-memory index delegating cosine_similarity to core
-# ---------------------------------------------------------------------------
-
-
 class VectorStore:
-    """In-memory vector store for small-to-medium RAG workloads.
-
-    Stores ``(id, vector)`` pairs and supports brute-force
-    cosine-similarity search.  The similarity calculation delegates to
-    the core :func:`cosine_similarity` — no reimplementation lives here.
-
-    Not designed for datasets beyond ~100k vectors; for those, use a
-    dedicated vector DB (pgvector, Qdrant, etc.).
-
-    Usage::
-
-        store = VectorStore()
-        store.add("doc-1", [0.1, 0.2, 0.3])
-        store.add("doc-2", [0.4, 0.5, 0.6])
-        results = store.search([0.15, 0.25, 0.35], k=2)
-        # [("doc-1", 0.999...), ("doc-2", 0.998...)]
-    """
+    """Small in-memory vector index; vector generation stays daemon-owned."""
 
     def __init__(self) -> None:
         self._entries: dict[str, list[float]] = {}
-
-    # -- container protocol -------------------------------------------------
 
     def __len__(self) -> int:
         return len(self._entries)
@@ -159,67 +116,39 @@ class VectorStore:
     def __contains__(self, item_id: str) -> bool:
         return item_id in self._entries
 
-    # -- mutations -----------------------------------------------------------
-
     def add(self, item_id: str, vector: list[float]) -> None:
-        """Insert or update a vector entry."""
         self._entries[item_id] = list(vector)
 
     def remove(self, item_id: str) -> None:
-        """Remove a vector entry.  No-op when *item_id* is absent."""
         self._entries.pop(item_id, None)
 
     def clear(self) -> None:
-        """Remove all entries."""
         self._entries.clear()
 
-    # -- query ---------------------------------------------------------------
-
-    def search(
-        self,
-        query: list[float],
-        k: int = 5,
-    ) -> list[tuple[str, float]]:
-        """Return the top-*k* entries sorted by cosine similarity (descending).
-
-        Parameters
-        ----------
-        query:
-            Query embedding vector.
-        k:
-            Number of results to return.  Clamped to the store size.
-
-        Returns
-        -------
-        list[tuple[str, float]]
-            Each element is ``(item_id, similarity_score)``.
-        """
-        if not self._entries:
-            return []
-        scored: list[tuple[str, float]] = []
-        for item_id, vec in self._entries.items():
-            scored.append((item_id, cosine_similarity(query, vec)))
+    def search(self, query: list[float], k: int = 5) -> list[tuple[str, float]]:
+        scored = [
+            (item_id, cosine_similarity(query, vector))
+            for item_id, vector in self._entries.items()
+        ]
         scored.sort(key=lambda pair: pair[1], reverse=True)
-        return scored[: max(1, min(k, len(scored)))]
+        return scored[: max(0, min(k, len(scored)))]
 
-    def similarity(
-        self,
-        query: list[float],
-        item_id: str,
-    ) -> float:
-        """Return the cosine similarity between *query* and a stored vector.
-
-        Raises ``KeyError`` when *item_id* is absent.
-        """
+    def similarity(self, query: list[float], item_id: str) -> float:
         return cosine_similarity(query, self._entries[item_id])
 
     def get(self, item_id: str) -> list[float]:
-        """Return the stored vector for *item_id*.
-
-        Raises ``KeyError`` when *item_id* is absent.
-        """
         return list(self._entries[item_id])
 
     def list_ids(self) -> list[str]:
-        """Return all stored item ids."""
-        return list(self._entries.keys())
+        return list(self._entries)
+
+
+__all__ = (
+    "DaemonEmbedder",
+    "Embedder",
+    "EmbeddingClient",
+    "HashEmbedder",
+    "OpenAIEmbedder",
+    "VectorStore",
+    "cosine_similarity",
+)

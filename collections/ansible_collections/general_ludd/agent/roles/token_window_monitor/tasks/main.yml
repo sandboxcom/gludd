@@ -13,6 +13,16 @@
 #   - probe: discover rate-limit keys in transcript (diagnostic)
 #   - status: check current floor and recent spend
 
+- name: Preflight managed-host runtime
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    tasks_from: main
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ ansible_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ gludd_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ gludd_previous_python_interpreter | default('') }}"
+
 - name: Create artifact directory
   ansible.builtin.file:
     path: "{{ artifact_dir }}"
@@ -21,7 +31,7 @@
 
 - name: Run token window monitor (once)
   ansible.builtin.command:
-    cmd: "uv run python scripts/token_window_monitor.py --once"
+    cmd: "{{ ansible_python_interpreter }} scripts/token_window_monitor.py --once"
     chdir: "{{ repo_path }}"
   register: _twm_result
   changed_when: false
@@ -30,7 +40,7 @@
 
 - name: Run token window monitor (calibrate)
   ansible.builtin.command:
-    cmd: "uv run python scripts/token_window_monitor.py --calibrate {{ calibrate_pct }}"
+    cmd: "{{ ansible_python_interpreter }} scripts/token_window_monitor.py --calibrate {{ calibrate_pct }}"
     chdir: "{{ repo_path }}"
   register: _twm_result
   changed_when: false
@@ -39,7 +49,7 @@
 
 - name: Run token window monitor (breakdown)
   ansible.builtin.command:
-    cmd: "uv run python scripts/token_window_monitor.py --breakdown"
+    cmd: "{{ ansible_python_interpreter }} scripts/token_window_monitor.py --breakdown"
     chdir: "{{ repo_path }}"
   register: _twm_result
   changed_when: false
@@ -48,7 +58,7 @@
 
 - name: Run token window monitor (probe)
   ansible.builtin.command:
-    cmd: "uv run python scripts/token_window_monitor.py --probe"
+    cmd: "{{ ansible_python_interpreter }} scripts/token_window_monitor.py --probe"
     chdir: "{{ repo_path }}"
   register: _twm_result
   changed_when: false

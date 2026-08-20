@@ -64,9 +64,19 @@
 - name: "Convert model to FP16 GGUF if needed"
   when: not (model_path | regex_search('\\.gguf$'))
   block:
+    - name: Preflight managed-host runtime for model conversion
+      ansible.builtin.include_role:
+        name: general_ludd.agent.managed_python_preflight
+        tasks_from: main
+        public: false
+      vars:
+        managed_python_preflight_interpreter: "{{ ansible_python_interpreter }}"
+        managed_python_preflight_lock_sha256: "{{ gludd_managed_python_lock_sha256 }}"
+        managed_python_preflight_previous_interpreter: "{{ gludd_previous_python_interpreter | default('') }}"
+
     - name: "Run HF-to-GGUF conversion"
       ansible.builtin.command: >-
-        python3 {{ llama_cpp_dir }}/convert_hf_to_gguf.py
+        {{ ansible_python_interpreter }} {{ llama_cpp_dir }}/convert_hf_to_gguf.py
         {{ model_path }}
         --outfile {{ output_dir }}/{{ _source_base }}-fp16.gguf
         {% if keep_fp16 %}--outtype f16{% endif %}

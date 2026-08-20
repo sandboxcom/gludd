@@ -1,15 +1,88 @@
+"""Benchmark and bounded A/B comparison HTTP routes."""
+
 from __future__ import annotations
 
+import asyncio
+from pathlib import Path
 from typing import cast
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import Field, StrictFloat, StrictInt, StrictStr, field_validator
 
+from general_ludd.abtest.compare import run_ab
+from general_ludd.abtest.workloads import import_module_workload
 from general_ludd.db.repository import BenchmarkRepository, PromptProfileRepository
+from general_ludd.routers._runtime import StrictRuntimeRequest
 from general_ludd.routers._util import get_session_factory as _get_session_factory
 from general_ludd.scoring.router import AdaptiveRouter
+from general_ludd.security.capability_guard import RequireCapability
+from general_ludd.security.sanitize import is_path_within
+
+
+class ABTestRequest(StrictRuntimeRequest):
+    """Bounded import-only candidate comparison request."""
+
+    baseline_root: StrictStr = Field(min_length=1, max_length=4096)
+    candidate_root: StrictStr = Field(min_length=1, max_length=4096)
+    module: StrictStr = Field(
+        min_length=1,
+        max_length=512,
+        pattern=r"^general_ludd(?:\.[A-Za-z_][A-Za-z0-9_]*)+$",
+    )
+    expect_attr: StrictStr | None = Field(
+        default=None,
+        max_length=256,
+        pattern=r"^[A-Za-z_][A-Za-z0-9_]*$",
+    )
+    timeout: StrictFloat = Field(default=60.0, ge=0.1, le=120.0)
+    mem_limit_mb: StrictInt = Field(default=512, ge=64, le=8192)
+
+    @field_validator("baseline_root", "candidate_root")
+    @classmethod
+    def _require_absolute_root(cls, value: str) -> str:
+        if not Path(value).is_absolute():
+            raise ValueError("A/B roots must be absolute")
+        return value
+
+
+def _abtest_allowed_roots(app: FastAPI) -> list[Path]:
+    roots = [Path("/tmp/gludd-worktrees")]
+    project_root = getattr(app.state, "_project_root", None)
+    if project_root:
+        roots.append(Path(project_root))
+    return roots
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register benchmark and A/B comparison routes on ``app``."""
+
+    @app.post(
+        "/admin/abtest/run",
+        dependencies=[Depends(RequireCapability(resource="admin:abtest", action="execute"))],
+    )
+    async def admin_abtest_run(req: ABTestRequest) -> dict[str, object]:
+        allowed_roots = _abtest_allowed_roots(app)
+        for selected in (req.baseline_root, req.candidate_root):
+            if not any(is_path_within(selected, str(root)) for root in allowed_roots):
+                raise HTTPException(status_code=422, detail="A/B root is outside daemon-owned worktrees")
+            if not Path(selected).is_dir():
+                raise HTTPException(status_code=422, detail="A/B root does not exist")
+        workload = import_module_workload(req.module, req.expect_attr)
+        try:
+            verdict = await asyncio.wait_for(
+                asyncio.to_thread(
+                    run_ab,
+                    req.baseline_root,
+                    req.candidate_root,
+                    workload,
+                    req.timeout,
+                    req.mem_limit_mb,
+                ),
+                timeout=req.timeout * 2.0 + 10.0,
+            )
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail="A/B comparison timed out") from exc
+        return {"verdict": verdict.to_dict(), "promote": verdict.promote}
 
     @app.get("/admin/benchmark/scores")
     async def admin_benchmark_scores(
