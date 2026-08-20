@@ -283,7 +283,7 @@ class TestImportCyclePrevention:
     def test_weights_module_not_loaded_until_access(self):
         """weights should not be in sys.modules before first access."""
         refreshed = importlib.reload(routing_roles)
-        assert not hasattr(refreshed, "RoleWeights") or "RoleWeights" not in refreshed.__dict__
+        assert "RoleWeights" not in refreshed.__dict__
         _ = refreshed.RoleWeights
         assert "general_ludd.routing_roles.weights" in sys.modules
 
