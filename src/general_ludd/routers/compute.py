@@ -1,3 +1,5 @@
+"""Authenticated compute deployment and utilization routes."""
+
 from __future__ import annotations
 
 import asyncio
@@ -19,7 +21,9 @@ from general_ludd.infra.compute import (
 )
 from general_ludd.infra.deploy_precheck import precheck
 from general_ludd.infra.deployment import DeploymentManager
+from general_ludd.infra.discovery import LocalProbe, discover_all
 from general_ludd.infra.model_deploy_check import Finding
+from general_ludd.infra.providers import ProviderRegistry
 from general_ludd.infra.utilization import UtilizationTracker
 from general_ludd.models.deployment_health import DeploymentHealthChecker
 from general_ludd.security.capability_guard import RequireCapability
@@ -62,6 +66,7 @@ def _get_or_create_extended_subsystems(app: FastAPI) -> dict[str, object]:
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register compute lifecycle routes on ``app``."""
     if not hasattr(app.state, "_compute_deployments"):
         app.state._compute_deployments = {}
 
@@ -213,9 +218,6 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             raise HTTPException(status_code=422, detail=f"Unknown GPU type: {gpu_str}") from None
 
         if not provider_str:
-            from general_ludd.infra.discovery import LocalProbe, discover_all
-            from general_ludd.infra.providers import ProviderRegistry
-
             resources = discover_all([LocalProbe()])
             if resources:
                 resource = resources[0]
