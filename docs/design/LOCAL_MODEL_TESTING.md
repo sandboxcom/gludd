@@ -181,6 +181,38 @@ generation receives at most the task policy's configured attempt ceiling. Syntax
 repair feeds back a bounded excerpt of the prior response, keeping context growth
 predictable on small models.
 
+#### Why beta4 keeps these safeguards
+
+Reviewed 2026-08-20. These upstream practitioner reports document recurring failure modes;
+they do not imply that Gludd inherits every historical upstream bug:
+
+- **Ephemeral ports and verified teardown.** An open llama-cpp-python report from
+  2024-04-18 describes a configured port being ignored and a subsequent collision with an
+  existing service ([issue #1359](https://github.com/abetlen/llama-cpp-python/issues/1359)).
+  The hermetic suite therefore asks the OS for a free port and proves that its named server
+  thread stops, so parallel projects do not share a fixed endpoint or leave one behind.
+- **Immutable revisions and a reusable offline cache.** Hugging Face users have tracked
+  expensive unchanged-file downloads since 2023
+  ([issue #1738](https://github.com/huggingface/huggingface_hub/issues/1738)), while a
+  2025-04-15 report showed that an interrupted snapshot resume could fall back to unsafe
+  cached state ([issue #3007](https://github.com/huggingface/huggingface_hub/issues/3007)).
+  Beta4 pins the model revision, materializes it atomically from the shared cache, and then
+  exercises the local artifact instead of treating a mutable remote branch as test evidence.
+- **Deterministic assertions and explicit bounds.** A 2023-07-04 llama.cpp discussion shows
+  that the same seed can still diverge across operating-system builds
+  ([discussion #2100](https://github.com/ggml-org/llama.cpp/discussions/2100)); an open
+  2023-12-07 llama-cpp-python report shows an unset `max_tokens` turning context overflow into
+  HTTP 500 ([issue #983](https://github.com/abetlen/llama-cpp-python/issues/983)). The suite
+  checks stable API and code properties rather than byte-identical prose, and every repair or
+  generation path has an explicit attempt, context, or output ceiling.
+- **Loopback-only serving and hostile-input coverage.** A llama.cpp report opened
+  2024-05-07 demonstrated that malformed chat JSON could crash the server
+  ([issue #7133](https://github.com/ggml-org/llama.cpp/issues/7133)), and practitioners advised
+  against public exposure in a 2024-08-18 deployment thread
+  ([discussion #9079](https://github.com/ggml-org/llama.cpp/discussions/9079)). The beta4 tests
+  bind only to loopback and retain production SSRF checks while covering authentication,
+  malformed input, invalid contracts, and upstream service failures.
+
 ### What happens during a local model test
 
 For each model in `TestLocalModelMatrixDownloadServe`, the test:
