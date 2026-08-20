@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from general_ludd.cloud.game_generation import ensure_lifecycle_start_method
 from general_ludd.cloud.software_generator import (
     GenerationCache,
     ProjectSpec,
@@ -215,6 +216,7 @@ class GameGenerator:
         gateway: ModelGateway | None,
         task_policy: object | None = None,
     ) -> None:
+        """Initialize game generation with an optional gateway and task policy."""
         self._gateway = gateway
         self._task_policy = task_policy
         self._generator = SoftwareGenerator(gateway, task_policy)
@@ -228,11 +230,13 @@ class GameGenerator:
     ) -> str:
         """Send the prompt template to the LLM and return generated Python game code."""
         project_spec = self._to_project_spec(spec)
-        return self._generator.generate(
-            project_spec,
-            model_id=model_id,
-            model_identity=model_identity,
-            evidence=evidence,
+        return ensure_lifecycle_start_method(
+            self._generator.generate(
+                project_spec,
+                model_id=model_id,
+                model_identity=model_identity,
+                evidence=evidence,
+            )
         )
 
     def generate_game_multi(
@@ -244,11 +248,13 @@ class GameGenerator:
     ) -> str:
         """Generate game code using role-specific models via :class:`MultiModelGamePipeline`."""
         project_spec = self._to_project_spec(spec)
-        return self._generator.generate_multi(
-            project_spec,
-            model_profiles=model_profiles,
-            model_identity=model_identity,
-            evidence=evidence,
+        return ensure_lifecycle_start_method(
+            self._generator.generate_multi(
+                project_spec,
+                model_profiles=model_profiles,
+                model_identity=model_identity,
+                evidence=evidence,
+            )
         )
 
     @staticmethod
@@ -315,11 +321,13 @@ class GameGenerationCache:
     """
 
     def __init__(self) -> None:
+        """Initialize an empty game-generation cache and miss counter."""
         self._cache = GenerationCache()
         self._generated: dict[tuple[str, str, str, tuple[tuple[str, str], ...]], str] = {}
 
     @property
     def miss_count(self) -> int:
+        """Return the number of generation requests that missed the cache."""
         return self._cache.miss_count
 
     @miss_count.setter
@@ -334,6 +342,7 @@ class GameGenerationCache:
         model_id: str = "default",
         model_settings: Mapping[str, str] | None = None,
     ) -> str:
+        """Return cached game code or generate and cache a new result."""
         settings = tuple(sorted((model_settings or {}).items()))
         key = (spec.name, spec.prompt_template, model_id, settings)
         cached = self._generated.get(key)
@@ -401,6 +410,7 @@ class GameRunner:
     """Runs generated games in headless mode and captures frames."""
 
     def __init__(self) -> None:
+        """Initialize process ownership and captured-control state."""
         self._processes: list[subprocess.Popen[Any]] = []
         self.last_injected_controls: set[str] = set()
 
@@ -558,6 +568,7 @@ class GameRunner:
         self._processes.clear()
 
     def __del__(self) -> None:
+        """Best-effort reap any subprocesses still owned during finalization."""
         self.cleanup()
 
 
@@ -718,6 +729,7 @@ class AzureGameE2E:
         deploy_config: DeploymentConfig | None = None,
         model_gateway: ModelGateway | None = None,
     ) -> None:
+        """Initialize the E2E pipeline and its owned generator and runner."""
         self.deploy_config = deploy_config or DeploymentConfig()
         self.gateway = model_gateway
         self.generator = GameGenerator(model_gateway)

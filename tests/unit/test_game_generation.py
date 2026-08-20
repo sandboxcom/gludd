@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from general_ludd.cloud.game_generation import (
@@ -131,7 +133,7 @@ class TestEnsureLifecycleStartMethod:
         normalized = ensure_lifecycle_start_method(source, class_name="Snake")
         namespace: dict[str, object] = {}
         exec(normalized, namespace)
-        snake = namespace["Snake"]()
+        snake = cast(Any, namespace["Snake"])()
         snake.start()
 
         assert snake.state == "playing"
@@ -141,6 +143,22 @@ class TestEnsureLifecycleStartMethod:
         source = "class Snake:\n    def start(self):\n        self.state = 'custom'"
 
         assert ensure_lifecycle_start_method(source, class_name="Snake") == source
+
+    def test_infers_only_single_top_level_game_class(self):
+        source = "class Snake:\n    def __init__(self):\n        self.state = 'ready'"
+
+        normalized = ensure_lifecycle_start_method(source)
+        namespace: dict[str, object] = {}
+        exec(normalized, namespace)
+        snake = cast(Any, namespace["Snake"])()
+        snake.start()
+
+        assert snake.state == "playing"
+
+    def test_multiple_classes_are_left_for_fail_closed_validation(self):
+        source = "class Snake:\n    pass\n\nclass Helper:\n    pass"
+
+        assert ensure_lifecycle_start_method(source) == source
 
     @pytest.mark.parametrize(
         "source",

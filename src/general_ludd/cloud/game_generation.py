@@ -17,7 +17,11 @@ _PYTHON_FENCE_START = re.compile(
 _TEXT_BLOCK_TYPES = frozenset({"text", "output_text", "input_text"})
 
 
-def ensure_lifecycle_start_method(source: str, *, class_name: str) -> str:
+def ensure_lifecycle_start_method(
+    source: str,
+    *,
+    class_name: str | None = None,
+) -> str:
     """Add the minimal explicit ``start`` transition to one generated game class.
 
     Small local models sometimes implement the complete state machine but omit
@@ -31,14 +35,14 @@ def ensure_lifecycle_start_method(source: str, *, class_name: str) -> str:
     except SyntaxError:
         return source
 
-    target = next(
-        (
-            node
-            for node in tree.body
-            if isinstance(node, ast.ClassDef) and node.name == class_name
-        ),
-        None,
-    )
+    top_level_classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
+    if class_name is None:
+        target = top_level_classes[0] if len(top_level_classes) == 1 else None
+    else:
+        target = next(
+            (node for node in top_level_classes if node.name == class_name),
+            None,
+        )
     if target is None or any(
         isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and node.name == "start"

@@ -439,9 +439,7 @@ src/general_ludd/experiments/ab_engine.py:bonferroni_correction
 src/general_ludd/experiments/ab_engine.py:required_sample_size_continuous
 src/general_ludd/experiments/ab_engine.py:required_sample_size_conversion
 src/general_ludd/feature_flags/engine.py:FlagEngine
-src/general_ludd/git_automation/batch_push.py:batch_push
 src/general_ludd/git_automation/ci_ops.py:ci_active
-src/general_ludd/git_automation/ci_ops.py:ci_cancel
 src/general_ludd/git_automation/ci_ops.py:ci_cooldown_status
 src/general_ludd/git_automation/ci_ops.py:ci_verdict_safe
 src/general_ludd/git_automation/feature_branch.py:feature_done
@@ -475,8 +473,6 @@ src/general_ludd/infra/discovery.py:KubernetesProbe
 src/general_ludd/infra/discovery.py:VSphereProbe
 src/general_ludd/infra/gpu_metrics.py:reset_probe
 src/general_ludd/infra/service_catalog.py:merge_catalog
-src/general_ludd/infra/slurm_deployment.py:LlamacppSlurmDeployment
-src/general_ludd/infra/slurm_deployment.py:VllmSlurmDeployment
 src/general_ludd/infra/terraform_http_backend.py:write_http_backend_file
 src/general_ludd/integrity/scanner.py:FileWatcher
 src/general_ludd/integrity/scanner.py:verify_openbao_signature
@@ -506,7 +502,6 @@ src/general_ludd/language/font_data.py:get_font_metrics
 src/general_ludd/language/font_data.py:has_kerning
 src/general_ludd/language/font_data.py:has_variable_axes
 src/general_ludd/language/font_data.py:is_web_font_format
-src/general_ludd/language/homoglyph_data.py:detect_mixed_script
 src/general_ludd/language/homoglyph_data.py:generate_skeleton
 src/general_ludd/language/homoglyph_data.py:is_suspicious
 src/general_ludd/language/i18n_data.py:extract_icu_placeholders
@@ -515,19 +510,9 @@ src/general_ludd/language/i18n_data.py:parse_po
 src/general_ludd/language/i18n_data.py:pseudolocalize
 src/general_ludd/language/i18n_data.py:serialize_po
 src/general_ludd/language/locale_data.py:evaluate_plural
-src/general_ludd/language/locale_data.py:format_currency
-src/general_ludd/language/locale_data.py:format_number
 src/general_ludd/language/locale_data.py:negotiate_locale
-src/general_ludd/language/phonetic_data.py:compute_double_metaphone
-src/general_ludd/language/phonetic_data.py:compute_soundex
-src/general_ludd/language/phonetic_data.py:transcribe_to_arpabet
-src/general_ludd/language/phonetic_data.py:transcribe_to_ipa
 src/general_ludd/language/transliteration.py:list_schemes
-src/general_ludd/language/unicode_data.py:is_high_surrogate
-src/general_ludd/language/unicode_data.py:is_low_surrogate
 src/general_ludd/language/unicode_data.py:is_surrogate
-src/general_ludd/language/unicode_data.py:plane_of
-src/general_ludd/language/unicode_data.py:surrogates_to_codepoint
 src/general_ludd/load_balancer.py:StickySession
 src/general_ludd/load_balancer.py:sticky_dispatch
 src/general_ludd/load_balancer.py:sticky_dispatch_ch

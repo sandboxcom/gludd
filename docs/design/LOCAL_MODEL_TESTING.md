@@ -218,11 +218,14 @@ The selected model performs planning and coding, while the stable Qwen registry
 entry reviews the result. Roles with the same GGUF and context share one
 download and one loopback server; the Qwen target therefore uses a single
 runtime for all three roles. Generation stays bounded to 1,024 output tokens
-inside an 8,192-token context. Before subjective review, a deterministic
-normalizer may add only the mechanically specified `start()` transition to an
-AST-valid, exactly named game class. Existing methods, malformed source, wrong
-classes, and classless output are unchanged and continue to fail the
-import/lifecycle verifier.
+inside an 8,192-token context. Gludd's production `GameGenerator`, rather than
+the E2E harness, owns the deterministic lifecycle normalization. It may add only
+the mechanically specified `start()` transition to an AST-valid generated game
+with one unambiguous top-level class, or to an explicitly named class in the
+multi-model seam. Existing methods, malformed source, ambiguous classes, and
+classless output are unchanged and continue to fail the import/lifecycle
+verifier. The E2E suite observes this application behavior and performs no
+separate source repair.
 
 On 2026-08-20, the exact Qwen/Snake command above passed 10/10 tests in 118.46
 seconds. The generated 68-line module was AST-valid, importable, and passed the
