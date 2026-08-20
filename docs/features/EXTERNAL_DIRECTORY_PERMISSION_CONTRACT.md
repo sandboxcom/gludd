@@ -6,6 +6,11 @@ S83.111 updates Gludd's executable permission evidence for the OpenCode schema
 used by the `0.1.0-beta.4` release train. It changes no runtime permission,
 plugin, Make target, or deployment artifact.
 
+On 2026-08-20, the discovery gate caught a later configuration drift that had
+reintroduced unsupported per-tool absolute-path maps. The repair restores this
+documented schema in both global and build scopes without changing the reviewed
+external allowlist.
+
 ## Problem
 
 `tests/unit/test_no_home_directory_access.py` still treated `read`, `write`,
@@ -21,6 +26,13 @@ that was already enforcing the reviewed boundary. Most failures were test
 exceptions from calling `.items()` on a scalar tool action. The repair migrates
 the evidence to the active schema; it does not edit `opencode.json` or broaden a
 single allow rule.
+
+The later drift inverted the global `read` catch-all, removed the explicit
+`.env.example` exception, added a standalone `write` surface, and duplicated
+external grants under each file tool. That configuration no longer matched the
+supported centralized boundary. The 2026-08-20 repair changes `opencode.json`
+back to the already documented contract and adds a structural guard proving
+that the global and build scopes remain aligned.
 
 ## Executable contract
 
@@ -71,7 +83,8 @@ not imply that Gludd reproduces every upstream platform or symlink defect.
 
 ## Security and fail-closed behavior
 
-This is an evidence migration, not a policy migration. The test rejects a
+The original change was an evidence migration; the 2026-08-20 follow-up is a
+configuration-drift repair. The test rejects a
 missing or non-object external block, a moved/removed deny catch-all, an
 unreviewed allow, a broad home prefix, a narrowed temporary-directory rule, or
 loss of the OpenCode-owned config prefix. It also keeps the independent `.env`
@@ -107,12 +120,14 @@ because no production source file changes.
 
 ## Zero-downtime rollout and rollback
 
-Rollout is additive test, documentation, and ledger evidence. Existing and new
-OpenCode sessions use the same unchanged runtime configuration, so they can
-overlap with zero downtime and no restart. Promotion requires the authoritative
-RED record, the migrated regression, related current-schema tests, warnings-as-
-errors, and repository static/documentation gates to pass.
+Rollout changes only tracked OpenCode permission configuration plus structural
+tests and documentation; it starts no service, migrates no data, and creates no
+persistent artifact. Existing sessions may retain their already loaded policy,
+while new or restarted sessions use the restored boundary, so they can overlap
+without application downtime. Promotion requires the authoritative RED record,
+the migrated regression, related current-schema tests, warnings-as-errors, and
+repository static/documentation gates to pass.
 
-Rollback is a normal revert of this test, document, and task evidence. It has no
-runtime state or data migration to reverse, although reverting intentionally
-restores a structurally stale and red test against the current configuration.
+Rollback is a normal revert with no runtime state or data migration to reverse,
+although it reintroduces unsupported per-tool grants and must therefore remain a
+fail-closed emergency action rather than a routine compatibility path.
