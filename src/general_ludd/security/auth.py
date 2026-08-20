@@ -93,15 +93,14 @@ def load_auth_posture(surface: str, env: Mapping[str, str] | None = None) -> Aut
 def check_bearer_token(auth_header: str, expected: str) -> bool:
     """Constant-time check of a ``Authorization: Bearer <token>`` header.
 
-    Extracts the token after the ``Bearer `` prefix (leading whitespace of the
-    token is ignored; the token itself is otherwise compared literally, so
-    trailing characters — including newlines — are significant) and compares it
-    to ``expected`` via :func:`verify_psk`. Returns ``False`` for a
+    Extracts the token after the ``Bearer `` prefix and removes surrounding
+    optional whitespace before comparing it to ``expected`` via
+    :func:`verify_psk`. Returns ``False`` for a
     missing/malformed header or an empty expected key.
     """
     if not auth_header or not auth_header.startswith("Bearer "):
         return False
-    token = auth_header[len("Bearer ") :].lstrip()
+    token = auth_header[len("Bearer ") :].strip()
     return verify_psk(token, expected)
 
 

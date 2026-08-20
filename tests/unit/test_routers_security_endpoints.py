@@ -37,13 +37,16 @@ import time
 from typing import Any, ClassVar
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from general_ludd.routers import security as sec
 from general_ludd.security.permissions import (
+    Capability,
     PermissionSpec,
     PermissionSpecParser,
+    PermissionSubject,
 )
 
 # ---------------------------------------------------------------------------
@@ -182,6 +185,20 @@ def _build_app(
     if human_spec is not None:
         app.state._human_spec = human_spec
     sec.register(app, {})
+
+    class _InjectAdminCapabilities(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next: Any) -> Any:
+            request.state.auth_spec = PermissionSpec(
+                agent_type="security-router-test",
+                capabilities=[
+                    Capability(resource="admin:sts", actions=["revoke"]),
+                    Capability(resource="admin:permissions", actions=["write"]),
+                ],
+                subject=PermissionSubject.HUMAN,
+            )
+            return await call_next(request)
+
+    app.add_middleware(_InjectAdminCapabilities)
     return app
 
 
