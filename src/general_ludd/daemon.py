@@ -595,6 +595,11 @@ def build_secrets_resolver(
             def for_project(self, project_id: str) -> ProjectSecretsManager:
                 return ProjectSecretsManager(base_manager=self._base, project_id=project_id)
 
+            def close(self) -> None:
+                close = getattr(self._base, "close", None)
+                if callable(close):
+                    close()
+
         return _LazyProjectSecrets(base)
     return base
 
@@ -1026,6 +1031,16 @@ def build_event_loop_mcp_dispatcher(
 # mid-flight (asyncio only holds a weakref to tasks). Mirrors the pattern used
 # for the event-loop tick task.
 _SELF_UPDATE_AUDIT_TASKS: set[asyncio.Task[Any]] = set()
+
+
+async def _drain_self_update_audit_tasks() -> None:
+    """Cancel and await audit writes owned by the daemon module."""
+    from general_ludd.util.async_lifecycle import cancel_and_drain_tasks
+
+    await cancel_and_drain_tasks(
+        _SELF_UPDATE_AUDIT_TASKS,
+        registry=_SELF_UPDATE_AUDIT_TASKS,
+    )
 
 
 def _build_self_update_audit_sink(
@@ -2709,9 +2724,17 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     _proc_default_registry().seal()
 
-    yield
+    _lifespan_failure: BaseException | None = None
+    _shutdown_failures: list[Exception] = []
+    try:
+        yield
+    except BaseException as exc:
+        # Defer propagation until every application-owned resource below has
+        # received its shutdown callback, including cancellation paths.
+        _lifespan_failure = exc
 
     # ── Off-peak scheduler shutdown ──────────────────────────────────────
+    await _drain_self_update_audit_tasks()
     _op_stop = getattr(app.state, "_off_peak_stop", None)
     _op_task = getattr(app.state, "_off_peak_task", None)
     if _op_stop is not None:
@@ -2777,23 +2800,31 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if pipeline_controller is not None:
         try:
             await pipeline_controller.stop()
-        except Exception:
+        except Exception as exc:
             logger.warning("pipeline_controller.stop() failed during shutdown")
-            raise
+            _shutdown_failures.append(exc)
     mcp_client_ref = getattr(app.state, "_mcp_client", None)
     if mcp_client_ref is not None:
         try:
             await mcp_client_ref.stop_all()
-        except Exception:
+        except Exception as exc:
             logger.warning("mcp_client.stop_all() failed during shutdown")
-            raise
+            _shutdown_failures.append(exc)
     _el = event_loop if event_loop is not None else getattr(app.state, "event_loop", None)
     _terraform_bridge = getattr(app.state, "_terraform_event_bridge", None)
     if _terraform_bridge is not None:
-        await _terraform_bridge.aclose()
-        _event_bus = getattr(app.state, "_event_bus", None)
-        if _event_bus is not None:
+        try:
+            await _terraform_bridge.aclose()
+        except Exception as exc:
+            logger.warning("terraform event bridge cleanup failed")
+            _shutdown_failures.append(exc)
+    _event_bus = getattr(app.state, "_event_bus", None)
+    if _event_bus is not None:
+        try:
             await _event_bus.drain()
+        except Exception as exc:
+            logger.warning("event bus drain failed during shutdown")
+            _shutdown_failures.append(exc)
     if _el is not None:
         try:
             _el.stop()
@@ -2816,6 +2847,26 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await execution_engine.shutdown()
         except Exception:
             logger.warning("execution_engine.shutdown() failed")
+    _deployment_router_ref = getattr(app.state, "_deployment_health_router", None)
+    if _deployment_router_ref is not None:
+        try:
+            await _deployment_router_ref.aclose()
+        except Exception:
+            logger.warning("deployment health persistence cleanup failed")
+    _credit_tracker_ref = getattr(app.state, "_credit_tracker", None)
+    if _credit_tracker_ref is not None:
+        try:
+            _credit_tracker_ref.close()
+        except Exception:
+            logger.warning("CreditTracker.close() failed during shutdown")
+    _secrets_resolver_ref = getattr(app.state, "_secrets_resolver", None)
+    if _secrets_resolver_ref is not None:
+        try:
+            close = getattr(_secrets_resolver_ref, "close", None)
+            if callable(close):
+                close()
+        except Exception:
+            logger.warning("secrets resolver close failed during shutdown")
     _searx_client_ref = getattr(app.state, "_searx_client", None)
     if _searx_client_ref is not None:
         try:
@@ -2878,7 +2929,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("engine.dispose() failed")
     otel_bridge_ref = getattr(app.state, "_otel_bridge", None)
     if otel_bridge_ref is not None and hasattr(otel_bridge_ref, "shutdown"):
-        otel_bridge_ref.shutdown()
+        try:
+            otel_bridge_ref.shutdown()
+        except Exception as exc:
+            logger.warning("OTel bridge shutdown failed")
+            _shutdown_failures.append(exc)
     _ornith_proc = getattr(app.state, "_ornith_mcp_proc", None)
     if _ornith_proc is not None:
         with contextlib.suppress(Exception):
@@ -2899,6 +2954,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await _quant_monitor.stop()
         except Exception:
             logger.warning("QuantizationMonitor.stop() failed during shutdown")
+    if _lifespan_failure is not None and _shutdown_failures:
+        raise BaseExceptionGroup(
+            "daemon body and shutdown failures",
+            [_lifespan_failure, *_shutdown_failures],
+        )
+    if _lifespan_failure is not None:
+        raise _lifespan_failure.with_traceback(_lifespan_failure.__traceback__)
+    if _shutdown_failures:
+        raise ExceptionGroup("daemon shutdown failures", _shutdown_failures)
 
 
 def _build_sts_reaper(session_factory: Any, secrets_resolver: Any) -> Any:

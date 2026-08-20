@@ -110,12 +110,12 @@ async def _run_get_async_session(factory: object) -> None:
         yield session
 
 
-# ── Item 2: pipeline/MCP shutdown suppress -> log-and-reraise ────────
+# ── Item 2: pipeline/MCP shutdown failures are retained until full drain ──
 
 
 class TestShutdownLogAndReraise:
     """pipeline_controller.stop() and mcp_client.stop_all() failures
-    must be logged AND reraised, not silently suppressed."""
+    must be logged, retained, and raised after the remaining owners drain."""
 
     DAEMON_PATH = (
         Path(__file__).parent.parent.parent / "src" / "general_ludd" / "daemon.py"
@@ -128,40 +128,44 @@ class TestShutdownLogAndReraise:
         lines = chunk.split("\n")
 
         in_except = False
-        has_reraise = False
+        has_record = False
         has_suppress = False
         for line in lines:
             if "try:" in line:
                 in_except = False
             if "except" in line and "Exception" in line:
                 in_except = True
-            if in_except and "raise" in line:
-                has_reraise = True
+            if in_except and "_shutdown_failures.append" in line:
+                has_record = True
             if in_except and "contextlib.suppress" in line:
                 has_suppress = True
-        return has_reraise, has_suppress
+        return has_record, has_suppress
 
     def test_pipeline_shutdown_raises_not_suppresses(self) -> None:
-        has_reraise, has_suppress = self._scan_except_block(
+        has_record, has_suppress = self._scan_except_block(
             "pipeline_controller.stop() failed during shutdown"
         )
-        assert has_reraise, (
-            "pipeline_controller.stop() exception handler must raise"
+        assert has_record, (
+            "pipeline_controller.stop() failure must be retained for final raise"
         )
         assert not has_suppress, (
             "pipeline_controller.stop() must not use contextlib.suppress"
         )
 
     def test_mcp_shutdown_raises_not_suppresses(self) -> None:
-        has_reraise, has_suppress = self._scan_except_block(
+        has_record, has_suppress = self._scan_except_block(
             "mcp_client.stop_all() failed during shutdown"
         )
-        assert has_reraise, (
-            "mcp_client.stop_all() exception handler must raise"
+        assert has_record, (
+            "mcp_client.stop_all() failure must be retained for final raise"
         )
         assert not has_suppress, (
             "mcp_client.stop_all() must not use contextlib.suppress"
         )
+
+    def test_shutdown_failures_raise_after_all_cleanup(self) -> None:
+        source = self.DAEMON_PATH.read_text(encoding="utf-8")
+        assert 'ExceptionGroup("daemon shutdown failures"' in source
 
 
 # ── Item 3: Ornith PIPE drain on subprocess exit ────────────────────
