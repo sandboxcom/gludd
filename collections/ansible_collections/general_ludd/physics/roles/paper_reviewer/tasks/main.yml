@@ -16,85 +16,27 @@
 
 - name: Review research paper
   block:
-    - name: Analyze paper via module_utils
-      ansible.builtin.script:
-        cmd: |
-          import json, sys
-          sys.path.insert(0, "{{ playbook_dir }}/../../..")
-          from ansible_collections.general_ludd.physics.plugins.module_utils.paper_reviewer import (
-              ReviewConfig, extract_sections, score_rigor, extract_findings,
-              write_review_result
-          )
-          paper_text = "{{ review_paper_text | default('') }}"
-          if not paper_text.strip():
-              paper_text = r'''
-          Abstract
-          We present a novel approach to solving the Schrodinger equation
-          using deep neural networks. Our method achieves state-of-the-art
-          accuracy on benchmark systems.
-
-          Introduction
-          The Schrodinger equation governs quantum mechanical systems.
-          Solving it accurately remains challenging for many-body problems.
-          Deep learning offers a promising alternative to traditional methods.
-          We demonstrate that neural quantum states can capture complex
-          wavefunctions with high fidelity.
-
-          Methods
-          We use a feedforward neural network with 3 hidden layers of 512
-          neurons each. The loss function minimizes the energy expectation
-          value. Training uses the Adam optimizer with learning rate 0.001.
-          We benchmark against exact diagonalization for up to 10 particles.
-          The equation $\hat{H}\psi = E\psi$ is solved variationally.
-          References include \cite{carleo2017} and [1].
-
-          Results
-          Our method achieves 99.8% accuracy on the ground state energy
-          for up to 10 fermions in a harmonic trap. Figure 1 shows the
-          convergence of energy with network size. We find that 3 layers
-          are sufficient for all systems tested.
-
-          Discussion
-          The neural network approach scales favorably compared to exact
-          diagonalization. Our results suggest that deep learning can serve
-          as a general-purpose quantum many-body solver. Future work will
-          extend to periodic systems and excited states.
-
-          Conclusion
-          We have demonstrated that neural quantum states achieve high
-          accuracy for strongly correlated fermionic systems.
-          '''
-          config = ReviewConfig(
-              paper_title="{{ review_paper_title | default('Neural Quantum States') }}",
-              paper_text=paper_text,
-              review_depth="{{ review_depth }}",
-          )
-          sections = extract_sections(paper_text)
-          rigor = score_rigor(sections, paper_text)
-          findings = extract_findings(paper_text)
-          result = {"sections": {k: v[:100] for k, v in sections.items()},
-                     "rigor_scores": rigor, "findings_count": len(findings)}
-          path = write_review_result(result, "{{ review_output_dir }}")
-          print(json.dumps({"status": "success", "path": str(path),
-                            "n_sections": len(sections),
-                            "rigor": rigor.get("overall_rigor", 0),
-                            "n_findings": len(findings)}))
-        executable: python3
+    - name: Analyze paper via packaged physics module
+      general_ludd.physics.physics_analysis:
+        operation: paper_review
+        output_dir: "{{ review_output_dir }}"
+        parameters:
+          paper_title: "{{ review_paper_title | default('Neural Quantum States') }}"
+          paper_text: "{{ review_paper_text | default('') }}"
+          review_depth: "{{ review_depth }}"
       register: review_result
-      failed_when: false
-      changed_when: false
 
     - name: Parse review result
       ansible.builtin.set_fact:
-        review_output: "{{ review_result.stdout | from_json }}"
-      when: review_result.rc == 0
+        review_output: "{{ review_result.result }}"
+      when: review_result.result is defined
 
   rescue:
     - name: Write failure result artifact
       ansible.builtin.copy:
         content: |
           {{ {'role': 'paper_reviewer', 'status': 'failed',
-              'error': review_result.stderr | default('unknown error')} | to_nice_json }}
+              'error': review_result.msg | default('unknown error')} | to_nice_json }}
         dest: "{{ review_output_dir }}/review_result.json"
         mode: "0644"
       failed_when: false
