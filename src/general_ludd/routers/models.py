@@ -327,7 +327,11 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 cost_per_output_token=req.cost_per_output_token,
             )
         except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            logger.warning("invalid model profile: %s", exc, exc_info=True)
+            raise HTTPException(
+                status_code=422,
+                detail="invalid model profile: metered profiles require non-zero cost",
+            ) from exc
         return {"model_id": req.model_id, "profile": profile.model_dump()}
 
     @app.delete("/admin/models/{model_id}")
@@ -599,7 +603,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 "estimated_cost_usd": 0.0,
                 "sample_count": 0,
                 "fallback": True,
-                "reason": f"router_error: {exc!r}",
+                "reason": "router_error",
             }
 
         return {
@@ -1126,7 +1130,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     timeout=downloader.timeout,
                 )
             except ModelSourceDownloadError as exc:
-                raise HTTPException(status_code=502, detail=str(exc)) from exc
+                logger.warning("model download failed: %s", exc, exc_info=True)
+                raise HTTPException(status_code=502, detail="model download failed") from exc
 
             store = cast(dict[str, LocalServerConfig], request.app.state._sm_server_store)
             key = f"{result.source.value}/{model_id}"
