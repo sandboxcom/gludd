@@ -511,9 +511,11 @@ class TestGeneralLuddConfig:
 
     def test_process_isolation_container_runtime_valid(self):
         data = _yaml_load(REPO_ROOT / "config" / "general-ludd.yml")
-        pi = data.get("process_isolation", {})
-        runtime = pi.get("container_runtime", "")
-        assert runtime in ("podman", "docker"), f"unknown container runtime: {runtime}"
+        pi = data["process_isolation"]
+        assert pi["enabled"] is False
+        assert pi["executable"] in ("podman", "docker")
+        assert pi["container_image"] is None
+        assert pi["test_only_in_process"] is False
 
 
 # ── AI SDLC Framework URLs ────────────────────────────────────────────────────
