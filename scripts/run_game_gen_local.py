@@ -7,7 +7,7 @@ Run with: make run-game-gen-local
 from __future__ import annotations
 
 import asyncio
-import os
+import importlib.util
 import sys
 import time
 import traceback
@@ -42,17 +42,21 @@ class Snake:
 """
 
 
-def main():
+def main() -> int:
     # ── Step 0: Check deps ──
     try:
-        import llama_cpp  # noqa: F401
-    except ImportError:
+        llama_cpp_available = importlib.util.find_spec("llama_cpp") is not None
+    except (ImportError, ValueError):
+        llama_cpp_available = False
+    if not llama_cpp_available:
         print("llama-cpp-python not installed. Run: make sync-llama-cpp", flush=True)
         return 1
 
     try:
-        import huggingface_hub  # noqa: F401
-    except ImportError:
+        hub_available = importlib.util.find_spec("huggingface_hub") is not None
+    except (ImportError, ValueError):
+        hub_available = False
+    if not hub_available:
         print("huggingface_hub not installed", flush=True)
         return 1
 
@@ -87,9 +91,10 @@ def main():
         startup_timeout=120.0,
     )
 
-    async def run_pipeline():
+    async def run_pipeline() -> int:
         mgr = LocalInferenceManager()
         server = mgr.create_server(config)
+        tmp_owner = None
         print(f"  Server ID: {server.server_id}", flush=True)
 
         try:
@@ -212,10 +217,10 @@ def main():
                 print(f"  WARNING: Missing methods: {missing}", flush=True)
 
             # Write to temp and import
-            import importlib.util
             import tempfile
 
-            tmp_dir = tempfile.mkdtemp(prefix="gludd-game-")
+            tmp_owner = tempfile.TemporaryDirectory(prefix="gludd-game-")
+            tmp_dir = tmp_owner.name
             game_path = Path(tmp_dir) / "game_snake.py"
             game_path.write_text(code)
 
@@ -276,8 +281,8 @@ def main():
 
             print("=== SUMMARY ===", flush=True)
             print(f"  Generated: {len(code)} chars", flush=True)
-            print(f"  AST parse: OK", flush=True)
-            print(f"  Import: OK", flush=True)
+            print("  AST parse: OK", flush=True)
+            print("  Import: OK", flush=True)
             print(f"  Classes: {class_names}", flush=True)
             print(f"  Methods: {list(methods.keys())}", flush=True)
             if missing:
@@ -294,6 +299,8 @@ def main():
             return 1
 
         finally:
+            if tmp_owner is not None:
+                tmp_owner.cleanup()
             print("\n=== CLEANUP: Stopping server ===", flush=True)
             await mgr.stop_all()
 

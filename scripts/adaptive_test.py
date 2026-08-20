@@ -382,6 +382,13 @@ def _stream_run(cmd: Sequence[str]) -> StreamResult:
                 progress["updated_at"] = time.time()
         proc.wait()
     finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5.0)
         stop_heartbeat.set()
         heartbeat.join(timeout=1.0)
         for watched_signal, previous_handler in previous_handlers.items():

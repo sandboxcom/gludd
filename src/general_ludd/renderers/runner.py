@@ -215,7 +215,8 @@ def _coerce_stub_output(stub_out: Any, spec: RendererSpec) -> dict[str, object]:
 
 async def _execute_playbook(spec: RendererSpec, runner: Any) -> tuple[dict[str, object], float]:
     """Run the playbook via AnsibleRunnerAdapter; return ``(raw_dict, start_time)``."""
-    artifact_dir = Path(tempfile.mkdtemp(prefix=f"gludd-render-{spec.name}-")) / "artifacts"
+    artifact_owner = tempfile.TemporaryDirectory(prefix=f"gludd-render-{spec.name}-")
+    artifact_dir = Path(artifact_owner.name) / "artifacts"
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     extra_env: dict[str, str] = {}
@@ -230,33 +231,36 @@ async def _execute_playbook(spec: RendererSpec, runner: Any) -> tuple[dict[str, 
     start = time.monotonic()
 
     try:
-        result = await asyncio.wait_for(
-            asyncio.to_thread(
-                _run_sync,
-                runner,
-                str(spec.path),
-                str(artifact_dir),
-                float(spec.timeout_seconds),
-                extra_env,
-            ),
-            timeout=float(spec.timeout_seconds),
-        )
-    except TimeoutError as exc:
-        raise RendererTimeout(spec.name, spec.timeout_seconds) from exc
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    _run_sync,
+                    runner,
+                    str(spec.path),
+                    str(artifact_dir),
+                    float(spec.timeout_seconds),
+                    extra_env,
+                ),
+                timeout=float(spec.timeout_seconds),
+            )
+        except TimeoutError as exc:
+            raise RendererTimeout(spec.name, spec.timeout_seconds) from exc
 
-    logger.debug("renderer %s job_id=%s result=%s", spec.name, job_id, result.get("status"))
-    status = str(result.get("status", "")).lower()
-    rc = int(result.get("rc", 1) or 0)
-    if status not in ("successful", "ok", "completed") and rc != 0:
-        raise RendererFailure(
-            spec.name,
-            f"playbook exited status={status!r} rc={rc}",
-            stdout=str(result.get("stdout", "")),
-            stderr=str(result.get("stderr", "") or result.get("error", "")),
-        )
+        logger.debug("renderer %s job_id=%s result=%s", spec.name, job_id, result.get("status"))
+        status = str(result.get("status", "")).lower()
+        rc = int(result.get("rc", 1) or 0)
+        if status not in ("successful", "ok", "completed") and rc != 0:
+            raise RendererFailure(
+                spec.name,
+                f"playbook exited status={status!r} rc={rc}",
+                stdout=str(result.get("stdout", "")),
+                stderr=str(result.get("stderr", "") or result.get("error", "")),
+            )
 
-    raw = _read_render_json(artifact_dir, spec.name)
-    return raw, start
+        raw = _read_render_json(artifact_dir, spec.name)
+        return raw, start
+    finally:
+        artifact_owner.cleanup()
 
 
 def _validate_with_schema(spec: RendererSpec, raw: dict[str, object]) -> RendererResult:

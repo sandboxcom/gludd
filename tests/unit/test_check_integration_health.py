@@ -84,6 +84,11 @@ def test_main_streams_and_reports_exact_xdist_failures(
 ) -> None:
     class FakeProcess:
         stdout = io.StringIO(XDIST_OUTPUT)
+        returncode = 1
+
+        @classmethod
+        def poll(cls) -> int:
+            return cls.returncode
 
         @staticmethod
         def wait(timeout: int) -> int:

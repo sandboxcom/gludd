@@ -314,16 +314,18 @@ class TestExecutePlaybook:
         spec = RendererSpec(name="fail-test", path=Path("/r.yml"), description="d")
         with (
             patch("asyncio.to_thread", side_effect=fake_to_thread),
-            patch("tempfile.mkdtemp", return_value="/tmp/mock-dir"),
             pytest.raises(RendererFailure, match="playbook exited"),
         ):
             await _execute_playbook(spec, mock_runner)
 
     @pytest.mark.asyncio
     async def test_execute_playbook_success_with_render_json(self, tmp_path):
+        import tempfile
+
         from general_ludd.renderers.runner import _execute_playbook
 
-        artifact_root = tmp_path / "render-job"
+        artifact_owner = tempfile.TemporaryDirectory(dir=tmp_path)
+        artifact_root = Path(artifact_owner.name)
         artifact_dir = artifact_root / "artifacts"
         artifact_dir.mkdir(parents=True)
         (artifact_dir / "render.json").write_text('{"title": "ok", "sections": []}')
@@ -336,9 +338,10 @@ class TestExecutePlaybook:
 
         spec = RendererSpec(name="ok-test", path=Path("/r.yml"), description="d")
         with patch("asyncio.to_thread", side_effect=fake_to_thread), \
-             patch("tempfile.mkdtemp", return_value=str(artifact_root)):
+             patch("tempfile.TemporaryDirectory", return_value=artifact_owner):
             raw, _start = await _execute_playbook(spec, mock_runner)
         assert raw["title"] == "ok"
+        assert not artifact_root.exists()
 
 
 class TestRunRendererRealRunner:

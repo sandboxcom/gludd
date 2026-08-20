@@ -31,7 +31,6 @@ verdicts are printed for the caller to relay.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import subprocess
@@ -115,7 +114,7 @@ class InProcessMCPClient:
         self._registry = registry
 
     async def list_tools(self, server_id: str | None = None) -> list[Any]:
-        return self._registry.list_tools(server_id)
+        return list(self._registry.list_tools(server_id))
 
     async def call_tool(
         self, server_id: str, tool_name: str, arguments: dict[str, Any]
@@ -220,7 +219,7 @@ def phase0_supports_tools(gateway: Any) -> bool:
     ]
     try:
         resp = gateway.call_model("default", messages=messages, tools=tool_schema)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f"  PHASE 0 provider error: {type(exc).__name__}: {exc}")
         return False
     tcs = resp.tool_calls
@@ -261,12 +260,18 @@ async def _run_loop(gateway: Any, client: Any, registry: Any, prompt: str) -> st
     )
 
 
-def _phase(label: str, gateway, client, registry, prompt: str) -> dict[str, Any]:
+def _phase(
+    label: str,
+    gateway: Any,
+    client: Any,
+    registry: Any,
+    prompt: str,
+) -> dict[str, Any]:
     print(f"\n=== {label} ===")
     before = len(_TOOL_INVOCATIONS)
     try:
         final = asyncio.run(_run_loop(gateway, client, registry, prompt))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f"  ERROR: {type(exc).__name__}: {exc}")
         return {"dispatched": [], "final": "", "error": str(exc)}
     dispatched = _TOOL_INVOCATIONS[before:]
@@ -301,20 +306,20 @@ def main() -> None:
     p1_works = any(d["name"] == "echo_enumerate" for d in p1["dispatched"])
 
     # PHASE 2: file write
-    tmp_dir = tempfile.mkdtemp(prefix="gludd-toolcall-live-")
-    target = os.path.join(tmp_dir, "hello.txt")
-    p2 = _phase(
-        "PHASE 2: FILE WRITE (model should call write_file)",
-        gateway, client, registry,
-        f"Use the write_file tool to write the exact text 'hello-from-glm' to the "
-        f"file path {target}. Then confirm you wrote it.",
-    )
-    p2_dispatched = any(d["name"] == "write_file" for d in p2["dispatched"])
-    p2_file_exists = os.path.exists(target)
-    p2_content = ""
-    if p2_file_exists:
-        p2_content = Path(target).read_text()
-    p2_works = p2_dispatched and p2_file_exists and "hello-from-glm" in p2_content
+    with tempfile.TemporaryDirectory(prefix="gludd-toolcall-live-") as tmp_dir:
+        target = os.path.join(tmp_dir, "hello.txt")
+        p2 = _phase(
+            "PHASE 2: FILE WRITE (model should call write_file)",
+            gateway, client, registry,
+            f"Use the write_file tool to write the exact text 'hello-from-glm' to the "
+            f"file path {target}. Then confirm you wrote it.",
+        )
+        p2_dispatched = any(d["name"] == "write_file" for d in p2["dispatched"])
+        p2_file_exists = os.path.exists(target)
+        p2_content = ""
+        if p2_file_exists:
+            p2_content = Path(target).read_text()
+        p2_works = p2_dispatched and p2_file_exists and "hello-from-glm" in p2_content
 
     # PHASE 3: git
     p3 = _phase(

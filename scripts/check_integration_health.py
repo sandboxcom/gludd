@@ -25,6 +25,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TESTS_DIR = PROJECT_ROOT / "tests" / "integration"
@@ -65,7 +66,7 @@ def _find_integration_test_files() -> list[Path]:
     return files
 
 
-def _parse_failures(output: str) -> list[dict]:
+def _parse_failures(output: str) -> list[dict[str, Any]]:
     failures = _parse_short_summary_failures(output)
 
     if not failures:
@@ -95,8 +96,8 @@ def _parse_failures(output: str) -> list[dict]:
     return failures
 
 
-def _parse_short_summary_failures(output: str) -> list[dict]:
-    failures_by_test: dict[str, dict] = {}
+def _parse_short_summary_failures(output: str) -> list[dict[str, Any]]:
+    failures_by_test: dict[str, dict[str, Any]] = {}
 
     for match in XDIST_FAILURE_RE.finditer(output):
         test = match.group("test")
@@ -115,7 +116,7 @@ def _parse_short_summary_failures(output: str) -> list[dict]:
     return list(failures_by_test.values())
 
 
-def _write_output(data: dict) -> None:
+def _write_output(data: dict[str, Any]) -> None:
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = OUTPUT_FILE.with_suffix(".tmp")
     tmp_path.write_text(json.dumps(data, indent=2))
@@ -182,7 +183,7 @@ def main() -> int:
     test_count = 0
     error_msg: str | None = None
 
-    def _reader(proc: subprocess.Popen) -> None:
+    def _reader(proc: subprocess.Popen[str]) -> None:
         nonlocal test_count, last_write, error_msg
         prev_failure_count = 0
         assert proc.stdout is not None
@@ -264,13 +265,21 @@ def main() -> int:
 
     timed_out = False
     try:
-        returncode = proc.wait(timeout=TIMEOUT_SEC)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        returncode = proc.wait(timeout=5)
-        timed_out = True
-
-    reader_thread.join(timeout=10)
+        try:
+            returncode = proc.wait(timeout=TIMEOUT_SEC)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            returncode = proc.wait(timeout=5)
+            timed_out = True
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+        reader_thread.join(timeout=10)
 
     elapsed = time.time() - start
 

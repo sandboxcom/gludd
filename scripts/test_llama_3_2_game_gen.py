@@ -6,15 +6,14 @@ Run: make test-llama-game-gen
 
 from __future__ import annotations
 
-import asyncio
 import ast
+import asyncio
 import importlib.util
-import os
 import sys
 import tempfile
 import time
-import traceback
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -62,7 +61,7 @@ Output ONLY the Python code — no prose, no markdown, no explanation.
 """
 
 
-def score_response(code: str) -> dict:
+def score_response(code: str) -> dict[str, Any]:
     """Score generated code quality."""
     result = {
         "len": len(code),
@@ -94,43 +93,42 @@ def score_response(code: str) -> dict:
     result["method_names"] = methods_seen
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.While) or isinstance(node, ast.For):
+        if isinstance(node, (ast.While, ast.For)):
             result["has_game_loop"] = True
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name == "pygame":
                     result["has_pygame_import"] = True
-        elif isinstance(node, ast.ImportFrom):
-            if node.module and "pygame" in node.module:
-                result["has_pygame_import"] = True
+        elif isinstance(node, ast.ImportFrom) and node.module and "pygame" in node.module:
+            result["has_pygame_import"] = True
 
-    tmp_dir = tempfile.mkdtemp(prefix="gludd-game-")
-    game_path = Path(tmp_dir) / "game_test.py"
-    game_path.write_text(code)
-    spec_obj = importlib.util.spec_from_file_location("game_test", str(game_path))
-    if spec_obj and spec_obj.loader:
-        try:
-            mod = importlib.util.module_from_spec(spec_obj)
-            spec_obj.loader.exec_module(mod)
-            result["import_ok"] = True
-            class_names = [n.name for n in classes]
-            for name in class_names:
-                if hasattr(mod, name):
-                    game = getattr(mod, name)()
-                    if hasattr(game, "start"):
-                        game.start()
-                    if hasattr(game, "score"):
-                        result["score_after_start"] = game.score()
-                    if hasattr(game, "tick"):
-                        for _ in range(5):
-                            if hasattr(game, "is_game_over") and not game.is_game_over():
-                                game.tick("right")
-                    if hasattr(game, "restart"):
-                        game.restart()
-                    result["runtime_ok"] = True
-                    break
-        except Exception:
-            pass
+    with tempfile.TemporaryDirectory(prefix="gludd-game-") as tmp_dir:
+        game_path = Path(tmp_dir) / "game_test.py"
+        game_path.write_text(code)
+        spec_obj = importlib.util.spec_from_file_location("game_test", str(game_path))
+        if spec_obj and spec_obj.loader:
+            try:
+                mod = importlib.util.module_from_spec(spec_obj)
+                spec_obj.loader.exec_module(mod)
+                result["import_ok"] = True
+                class_names = [n.name for n in classes]
+                for name in class_names:
+                    if hasattr(mod, name):
+                        game = getattr(mod, name)()
+                        if hasattr(game, "start"):
+                            game.start()
+                        if hasattr(game, "score"):
+                            result["score_after_start"] = game.score()
+                        if hasattr(game, "tick"):
+                            for _ in range(5):
+                                if hasattr(game, "is_game_over") and not game.is_game_over():
+                                    game.tick("right")
+                        if hasattr(game, "restart"):
+                            game.restart()
+                        result["runtime_ok"] = True
+                        break
+            except Exception:
+                pass
     return result
 
 
@@ -197,7 +195,7 @@ async def run_model(
     model_file: str,
     prompts: dict[str, str],
     port: int,
-) -> dict:
+) -> dict[str, Any]:
     from general_ludd.small_models.download import ModelDownloader
 
     print(f"\n{'=' * 60}")
@@ -222,7 +220,7 @@ async def run_model(
         await _wait_ready(url)
         print(f"  Server ready at {url}", flush=True)
 
-        results: dict[str, dict] = {}
+        results: dict[str, dict[str, Any]] = {}
         for pname, prompt in prompts.items():
             print(f"\n  --- Prompt: {pname} ---", flush=True)
             code, elapsed = await _generate(url, prompt)
@@ -250,11 +248,14 @@ async def run_model(
             proc.kill()
 
 
-def print_comparison(entries: list[dict]):
+def print_comparison(entries: list[dict[str, Any]]) -> None:
     print(f"\n{'=' * 60}")
     print("  CROSS-MODEL COMPARISON")
     print(f"{'=' * 60}")
-    header = f"{'Model':<25} {'Prompt':<18} {'Chars':>6} {'Time':>6} {'Tok/s':>7} {'AST':>5} {'Import':>7} {'Runtime':>8} {'Score':>6}"
+    header = (
+        f"{'Model':<25} {'Prompt':<18} {'Chars':>6} {'Time':>6} "
+        f"{'Tok/s':>7} {'AST':>5} {'Import':>7} {'Runtime':>8} {'Score':>6}"
+    )
     print(header)
     print("-" * len(header))
     for entry in entries:
@@ -270,13 +271,17 @@ def print_comparison(entries: list[dict]):
 async def main_async() -> int:
     deps_ok = True
     try:
-        import llama_cpp  # noqa: F401
-    except ImportError:
+        llama_cpp_available = importlib.util.find_spec("llama_cpp") is not None
+    except (ImportError, ValueError):
+        llama_cpp_available = False
+    if not llama_cpp_available:
         print("llama-cpp-python not installed. Run: make sync-llama-cpp")
         deps_ok = False
     try:
-        import huggingface_hub  # noqa: F401
-    except ImportError:
+        hub_available = importlib.util.find_spec("huggingface_hub") is not None
+    except (ImportError, ValueError):
+        hub_available = False
+    if not hub_available:
         print("huggingface_hub not installed")
         deps_ok = False
     if not deps_ok:
