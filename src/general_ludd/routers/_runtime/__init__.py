@@ -1,4 +1,4 @@
-"""Shared bounded request and idempotency primitives for runtime seams."""
+"""Shared bounded request and idempotency primitives for daemon routers."""
 
 from __future__ import annotations
 
