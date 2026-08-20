@@ -22,6 +22,10 @@ from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType, 
 from general_ludd.infra.terraform_state import StateBackendSelector, render_backend_block
 
 _AZURE_CONTAINER_APP_GPUS = {GPUType.T4, GPUType.A100_40, GPUType.A100_80}
+_AZURE_CONTAINER_APP_MODULES = (
+    "azure-container-app-vllm",
+    "gpu-cost-watchdog",
+)
 _UNSPECIFIED_IPV4 = str(ipaddress.IPv4Address(0))
 _LOOPBACK_IPV4 = str(ipaddress.IPv4Address("127.0.0.1"))
 
@@ -145,7 +149,6 @@ def _container_image(config: ComputeConfig) -> str:
 
 def _inference_bind_host(config: ComputeConfig) -> str:
     """Choose loopback unless ingress policy explicitly permits remote clients."""
-
     cidrs = [item.strip() for item in config.allowed_cidr.split(",") if item.strip()]
     if not cidrs:
         raise ValueError("allowed_cidr must contain at least one network")
@@ -286,12 +289,15 @@ def _override_apply(terraform_config: object | None) -> Callable[[str, object], 
 
 
 class TerraformGenerator:
+    """Generate and materialize self-contained Terraform deployment roots."""
+
     def __init__(
         self,
         state_backend_selector: StateBackendSelector | None = None,
         deployment_optimization_config: DeploymentOptimizationConfig | None = None,
         terraform_config: object | None = None,
     ) -> None:
+        """Configure optional backend selection and deployment overrides."""
         # Optional state-backend selector (design doc \u00a710 #2). When attached,
         # every generated main.tf is prepended with the appropriate
         # ``terraform { backend "..." {} }`` block. ``None`` preserves the
@@ -303,6 +309,7 @@ class TerraformGenerator:
         self._terraform_config = terraform_config
 
     def generate(self, config: ComputeConfig) -> str:
+        """Render a Terraform root for the requested compute configuration."""
         body = self._generate_body(config)
         if self._state_backend_selector is None:
             return body
@@ -503,8 +510,13 @@ class TerraformGenerator:
 
         if config.deploy_type == "containerapp":
             stack = assets / "stacks" / "azure-container-app-vllm"
-            module_source = assets / "modules" / "azure-container-app-vllm"
-            if not stack.is_dir() or not module_source.is_dir():
+            module_sources = {
+                module_name: assets / "modules" / module_name
+                for module_name in _AZURE_CONTAINER_APP_MODULES
+            }
+            if not stack.is_dir() or not all(
+                module_source.is_dir() for module_source in module_sources.values()
+            ):
                 raise RuntimeError(
                     "Azure Container Apps Terraform stack assets are incomplete"
                 )
@@ -521,11 +533,12 @@ class TerraformGenerator:
             )
             for filename in ("variables.tf", "outputs.tf"):
                 shutil.copy2(stack / filename, destination_path / filename)
-            shutil.copytree(
-                module_source,
-                destination_path / "modules" / "azure-container-app-vllm",
-                dirs_exist_ok=True,
-            )
+            for module_name, module_source in module_sources.items():
+                shutil.copytree(
+                    module_source,
+                    destination_path / "modules" / module_name,
+                    dirs_exist_ok=True,
+                )
             return destination_path
 
         if config.deploy_type != "vm":
@@ -761,11 +774,18 @@ class TerraformGenerator:
         self._validate_azure_containerapp(config)
         stack_main = _terraform_assets_root() / "stacks" / "azure-container-app-vllm" / "main.tf"
         repository_hcl = stack_main.read_text(encoding="utf-8")
-        return repository_hcl.replace(
-            'source = "../../modules/azure-container-app-vllm"',
-            'source = "./modules/azure-container-app-vllm"',
-            1,
-        )
+        for module_name in _AZURE_CONTAINER_APP_MODULES:
+            repository_source = f'source = "../../modules/{module_name}"'
+            if repository_source not in repository_hcl:
+                raise RuntimeError(
+                    f"Azure Container Apps stack is missing local module {module_name!r}"
+                )
+            repository_hcl = repository_hcl.replace(
+                repository_source,
+                f'source = "./modules/{module_name}"',
+                1,
+            )
+        return repository_hcl
 
     def _generate_runpod(self, config: ComputeConfig) -> str:
         _modules = os.path.join(os.path.dirname(__file__), "..", "..", "..", "infra", "terraform", "modules")

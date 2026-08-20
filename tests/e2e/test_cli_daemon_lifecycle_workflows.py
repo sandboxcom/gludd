@@ -6,6 +6,7 @@ error recovery, route registration, and config handling.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -429,6 +430,10 @@ class TestCliDaemonParsing:
 
 class TestAuthMiddleware:
     def test_public_get_paths_no_auth_required(self, monkeypatch):
+        monkeypatch.setenv("GLUDD_REQUIRE_AUTH", "1")
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
+        monkeypatch.delenv("GLUDD_PSK_DISABLE", raising=False)
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -438,10 +443,21 @@ class TestAuthMiddleware:
                 assert not event_loop_task.done()
                 assert client.get("/healthz").status_code == 200
                 ready_response = client.get("/readyz")
-                assert ready_response.status_code == 200
-                assert ready_response.json() == {"status": "ready"}
+                if os.environ.get("GLUDD_E2E_ACTIVE") == "1":
+                    assert ready_response.status_code == 503
+                    assert ready_response.json() == {
+                        "status": "not_ready",
+                        "reason": "daemon_not_initialized",
+                    }
+                else:
+                    assert ready_response.status_code == 200
+                    assert ready_response.json() == {"status": "ready"}
+                assert "auth_required" not in ready_response.text
                 assert client.get("/docs").status_code == 200
                 assert client.get("/openapi.json").status_code == 200
+                protected = client.get("/admin/daemon/stats")
+                assert protected.status_code == 503
+                assert "auth_required" in protected.text
 
     def test_admin_path_401_without_psk(self, monkeypatch):
         monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-key-12345")
