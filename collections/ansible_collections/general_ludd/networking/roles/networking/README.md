@@ -101,7 +101,7 @@ This role delegates to two Python adapters:
   `read_pcap()`, `craft_packet()`, `send_packet()`, `analyze_pcap()`, `dissect_packet()`,
   `sniff_packets()`. Provides structured Python return types: `list[PacketSummary]`,
   `TrafficReport`, `dict` for spec/send results.
-- **`general_ludd.agent.gludd_scapy`** module: Ansible-native wrapper that translates
+- **`general_ludd.networking.gludd_scapy`** module: Ansible-native wrapper that translates
   YAML task inputs to ScapyAdapter calls. Actions: `read_pcap`, `write_pcap`,
   `craft_packet`, `send_packet`, `sniff_packets`, `analyze_pcap`, `dissect_packet`.
 

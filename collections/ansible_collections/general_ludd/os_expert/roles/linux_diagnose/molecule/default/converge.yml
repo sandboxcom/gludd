@@ -5,6 +5,6 @@
   tasks:
     - name: "Include linux_diagnose"
       ansible.builtin.include_role:
-        name: "linux_diagnose"
+        name: "general_ludd.os_expert.linux_diagnose"
       vars:
         enable_git_push: false

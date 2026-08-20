@@ -6,9 +6,15 @@
     fail_msg: history_investigate_path must be defined
 
 - name: Collect repo evidence for history investigation
-  general_ludd.git_release.collect_repo_evidence:
-    path: "{{ history_investigate_path }}"
-  register: history_repo_evidence
+  ansible.builtin.include_role:
+    name: general_ludd.git_release.collect_repo_evidence
+    public: false
+  vars:
+    git_release_repo_path: "{{ history_investigate_path }}"
+
+- name: Publish history investigation evidence
+  ansible.builtin.set_fact:
+    history_repo_evidence: "{{ git_release_repo_evidence }}"
 
 - name: Surface history investigation seed evidence
   ansible.builtin.set_fact:

@@ -16,7 +16,7 @@
 - name: Craft and send packet
   block:
     - name: Craft packet specification via gludd_scapy
-      general_ludd.agent.gludd_scapy:
+      general_ludd.networking.gludd_scapy:
         action: craft_packet
         protocol_stack: "{{ networking__protocol_stack }}"
         packet_fields: "{{ networking__packet_fields }}"
@@ -36,7 +36,7 @@
           total_bytes={{ _pc_spec.total_bytes | default(0) }}
 
     - name: Send crafted packet when networking__send is true
-      general_ludd.agent.gludd_scapy:
+      general_ludd.networking.gludd_scapy:
         action: send_packet
         packets: "{{ [_pc_spec] }}"
         interface: "{{ networking__interface | default('eth0') }}"

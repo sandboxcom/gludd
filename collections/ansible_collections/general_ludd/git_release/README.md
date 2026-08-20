@@ -8,7 +8,9 @@ investigation, branch planning, release preparation, artifact verification,
 and zero-downtime deployment. Every observation is recorded as
 machine-verifiable evidence so downstream planners can distinguish
 observations, inferences, proposed mutations, completed mutations, and
-verified outcomes.
+verified outcomes. Read-only repository evidence crosses the runtime boundary
+through the authenticated Gludd HTTP API; collection roles do not import the
+core package.
 
 ## Implemented roles (`roles/`)
 
@@ -32,6 +34,9 @@ scoped authorization.
 | `artifact_verify` | Verify signatures, checksums, installability, smoke behavior, and release-page completeness. |
 | `deploy_orchestrate` | Execute canary, rolling, or blue-green deployment with health and rollback gates. |
 | `release_recover` | Halt promotion, preserve evidence, roll back safely, and reconcile tags/releases after failure. |
+
+The private `collect_repo_evidence` composition role is the single transport
+owner reused by `repo_assess`, `history_investigate`, and `branch_plan`.
 
 ## Python service API (`src/general_ludd/git_release/`)
 

@@ -9,30 +9,27 @@
   tasks:
     - name: "Run trip planner role"
       ansible.builtin.include_role:
-        name: trip_planner
+        name: general_ludd.travel.trip_planner
       vars:
         destination: "{{ test_city }}, {{ test_country }}"
         duration_days: 3
 
-    - name: "Run flight search role"
-      ansible.builtin.include_role:
-        name: flight_search
-      vars:
+    - name: "Run flight search module"
+      general_ludd.travel.flight_search:
         origin: "SFO"
         destination: "NRT"
-        departure_date: "2026-09-01"
+        depart_date: "2026-09-01"
 
-    - name: "Run hotel search role"
-      ansible.builtin.include_role:
-        name: hotel_search
-      vars:
-        location: "{{ test_city }}"
-        checkin: "2026-09-01"
-        checkout: "2026-09-04"
+    - name: "Run hotel search module"
+      general_ludd.travel.hotel_search:
+        destination: "{{ test_city }}"
+        check_in: "2026-09-01"
+        check_out: "2026-09-04"
 
-    - name: "Run local guide role"
-      ansible.builtin.include_role:
-        name: local_guide
-      vars:
-        location: "{{ test_city }}"
-        query: "{{ test_query }}"
+    - name: "Resolve local guide results through the travel search module"
+      general_ludd.travel.searxng_search:
+        query: "{{ test_query }} in {{ test_city }}, {{ test_country }}"
+        category: restaurants
+        timeout: 5
+      register: local_guide_results
+      failed_when: false

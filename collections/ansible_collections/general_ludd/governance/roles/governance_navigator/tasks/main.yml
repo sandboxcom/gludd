@@ -65,7 +65,7 @@
     - governance_navigator_country is defined
     - governance_navigator_country | length == 2
   ansible.builtin.include_role:
-    name: navigate_borders
+    name: general_ludd.governance.navigate_borders
     public: true
   vars:
     navigate_borders_enabled: true
@@ -90,7 +90,7 @@
     - governance_navigator_country is defined
     - governance_navigator_country | length == 2
   ansible.builtin.include_role:
-    name: lookup_governing_body
+    name: general_ludd.governance.lookup_governing_body
     public: true
   vars:
     lookup_governing_body_enabled: true
@@ -115,7 +115,7 @@
     - governance_navigator_country is defined
     - governance_navigator_country | length == 2
   ansible.builtin.include_role:
-    name: tax_currency_info
+    name: general_ludd.governance.tax_currency_info
     public: true
   vars:
     tax_currency_info_enabled: true
@@ -140,7 +140,7 @@
     - governance_navigator_country is defined
     - governance_navigator_country | length == 2
   ansible.builtin.include_role:
-    name: conflicts_treaties_lookup
+    name: general_ludd.governance.conflicts_treaties_lookup
     public: true
   vars:
     conflicts_treaties_lookup_enabled: true
@@ -165,7 +165,7 @@
     - governance_navigator_country is defined
     - governance_navigator_country | length == 2
   ansible.builtin.include_role:
-    name: civic_service_finder
+    name: general_ludd.governance.civic_service_finder
     public: true
   vars:
     civic_service_finder_enabled: true
@@ -190,7 +190,7 @@
     - governance_navigator_country is defined
     - governance_navigator_country | length == 2
   ansible.builtin.include_role:
-    name: decision_maker_lookup
+    name: general_ludd.governance.decision_maker_lookup
     public: true
   vars:
     decision_maker_lookup_enabled: true
@@ -212,7 +212,7 @@
 - name: Dispatch info_classification_check
   when: "'info_classification' in _gov_matched_routes"
   ansible.builtin.include_role:
-    name: info_classification_check
+    name: general_ludd.governance.info_classification_check
     public: true
   vars:
     info_classification_check_enabled: true

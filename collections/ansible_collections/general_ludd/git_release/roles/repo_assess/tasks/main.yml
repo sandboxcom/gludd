@@ -5,10 +5,16 @@
       - repo_path | length > 0
     fail_msg: repo_path must be defined for repo_assess
 
-- name: Collect repo evidence (read-only)
-  general_ludd.git_release.collect_repo_evidence:
-    path: "{{ repo_path }}"
-  register: repo_evidence
+- name: Collect repo evidence through the shared read-only role
+  ansible.builtin.include_role:
+    name: general_ludd.git_release.collect_repo_evidence
+    public: false
+  vars:
+    git_release_repo_path: "{{ repo_path }}"
+
+- name: Publish repo assessment evidence
+  ansible.builtin.set_fact:
+    repo_evidence: "{{ git_release_repo_evidence }}"
 
 - name: Assert evidence is well-formed
   ansible.builtin.assert:

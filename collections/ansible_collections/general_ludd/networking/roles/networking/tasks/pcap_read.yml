@@ -19,7 +19,7 @@
       register: _pr_pcap_stat
 
     - name: Read pcap via gludd_scapy
-      general_ludd.agent.gludd_scapy:
+      general_ludd.networking.gludd_scapy:
         action: read_pcap
         pcap_path: "{{ networking__pcap_path }}"
         output_format: "{{ networking__output_format | default('json') }}"

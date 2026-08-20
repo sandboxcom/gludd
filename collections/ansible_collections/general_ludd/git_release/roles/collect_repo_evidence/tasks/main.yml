@@ -1,0 +1,45 @@
+---
+- name: Validate repository evidence request
+  ansible.builtin.assert:
+    that:
+      - git_release_repo_path | length > 0
+      - git_release_daemon_url | length > 0
+      - git_release_daemon_timeout | int > 0
+    fail_msg: Repository evidence requires a path, daemon URL, and positive timeout
+
+- name: Collect repository evidence through the Gludd control-plane API
+  ansible.builtin.uri:
+    url: >-
+      {{ git_release_daemon_url | trim | regex_replace('/+$', '')
+         }}/api/git_release/assess?path={{ git_release_repo_path | urlencode }}
+    method: GET
+    headers: >-
+      {{
+        {
+          'Authorization': 'Bearer ' ~ git_release_daemon_psk,
+          'X-PSK': git_release_daemon_psk,
+        }
+        if git_release_daemon_psk | length > 0
+        else {}
+      }}
+    return_content: true
+    status_code: 200
+    timeout: "{{ git_release_daemon_timeout | int }}"
+    validate_certs: "{{ git_release_daemon_validate_certs | bool }}"
+  register: _git_release_evidence_response
+  changed_when: false
+  no_log: "{{ git_release_daemon_psk | length > 0 }}"
+
+- name: Validate repository evidence response before publishing it
+  ansible.builtin.assert:
+    that:
+      - _git_release_evidence_response.json is mapping
+      - _git_release_evidence_response.json.path == git_release_repo_path
+      - _git_release_evidence_response.json.head_sha | default('') | length > 0
+      - _git_release_evidence_response.json.branch is defined
+    fail_msg: Gludd returned malformed repository evidence; active facts remain unchanged
+
+- name: Publish validated repository evidence atomically
+  ansible.builtin.set_fact:
+    git_release_repo_evidence: "{{ _git_release_evidence_response.json }}"
+
