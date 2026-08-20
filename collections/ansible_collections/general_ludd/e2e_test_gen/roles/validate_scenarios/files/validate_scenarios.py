@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -157,7 +158,10 @@ class DaemonResearchClient:
                     )
                     return {"reports": [], "query_count": 0, "findings_count": 0, "searx_available": False}
                 body = resp.read().decode("utf-8")
-                return json.loads(body)
+                decoded: object = json.loads(body)
+                if not isinstance(decoded, dict):
+                    raise ValueError("daemon response must be a JSON object")
+                return {str(key): value for key, value in decoded.items()}
         except urllib.error.URLError as e:
             logger.warning("daemon unreachable (%s), falling back to heuristic", e)
             return {"reports": [], "query_count": 0, "findings_count": 0, "searx_available": False}
@@ -175,7 +179,11 @@ def main() -> None:
     parser.add_argument("--confidence-threshold", type=float, default=0.4, help="Minimum confidence to keep a scenario")
     parser.add_argument("--mock", action="store_true", default=False, help="Use heuristic scoring (mock mode)")
     parser.add_argument("--daemon-url", default="http://localhost:8000", help="Daemon URL for live research")
-    parser.add_argument("--psk", default="", help="Pre-shared key for daemon auth")
+    parser.add_argument(
+        "--psk",
+        default=os.environ.get("GLUDD_DAEMON_PSK", ""),
+        help="Pre-shared key for daemon auth (defaults to GLUDD_DAEMON_PSK)",
+    )
     parser.add_argument("--research-categories", default="general,it", help="Comma-separated research categories")
     parser.add_argument("--research-time-range", default="year", help="Time range filter")
     parser.add_argument("--max-results", type=int, default=10, help="Max search results per query")

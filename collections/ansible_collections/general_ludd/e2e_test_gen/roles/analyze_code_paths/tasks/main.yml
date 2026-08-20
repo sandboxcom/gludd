@@ -1,135 +1,20 @@
 ---
-# analyze_code_paths — extract public symbols from Python source via tree-sitter
-#
-# Wraps CodePathAnalyzer (tree-sitter AST walk) to extract public functions,
-# classes, and methods. Produces ModuleSymbols JSON artifact. Uses daemon
-# /admin/code/search endpoint for fallback and callgraph for cross-referencing.
+- name: Analyze code paths through the packaged controller action
+  general_ludd.e2e_test_gen.e2e_pipeline:
+    operation: analyze
+    target_module: "{{ target_module }}"
+    output: "{{ artifact_dir }}/{{ analyze_artifact_name }}"
+    timeout: 360
+  register: _acp_pipeline
 
-- name: Create artifact directory
-  ansible.builtin.file:
-    path: "{{ artifact_dir }}"
-    state: directory
-    mode: "0755"
-
-- name: Validate target module exists
-  ansible.builtin.stat:
-    path: "{{ target_module }}"
-  register: _acp_target_stat
-
-- name: Fail if target module not found
-  ansible.builtin.fail:
-    msg: "Target module not found: {{ target_module }}"
-  when: not _acp_target_stat.stat.exists | default(false)
-
-# ── Code path analysis via daemon code_intelligence API ─────────────────
-
-- name: Read source for AST extraction
-  ansible.builtin.slurp:
-    src: "{{ target_module }}"
-  register: _acp_source
-
-- name: Build code graph from source via daemon
-  ansible.builtin.uri:
-    url: "{{ daemon_url }}/admin/code/graph"
-    method: GET
-    body_format: json
-    body:
-      source: "{{ _acp_source.content | b64decode }}"
-      language: python
-    headers:
-      Content-Type: application/json
-      X-PSK: "{{ psk }}"
-    status_code: 200
-  register: _acp_graph_resp
-  ignore_errors: true
-
-- name: Extract code blocks via daemon search (fallback enumeration)
-  ansible.builtin.uri:
-    url: "{{ daemon_url }}/admin/code/search"
-    method: GET
-    body_format: json
-    body:
-      source: "{{ _acp_source.content | b64decode }}"
-      query: ""
-      type_filter: ""
-      language: python
-    headers:
-      Content-Type: application/json
-      X-PSK: "{{ psk }}"
-    status_code: 200
-  register: _acp_search_resp
-  ignore_errors: true
-
-# ── Python-side CodePathAnalyzer invocation ─────────────────────────────
-
-- name: Run CodePathAnalyzer via Python script
-  ansible.builtin.command:
-    cmd: >-
-      python3 -c "
-      import json, sys
-      from general_ludd.agents.test_generation.code_path_analyzer import CodePathAnalyzer
-      analyzer = CodePathAnalyzer()
-      result = analyzer.analyze(sys.argv[1])
-      output = {
-        'name': result.name,
-        'functions': [{'name': f.name, 'line_start': f.line_start, 'line_end': f.line_end, 'is_public': f.is_public} for f in result.functions],
-        'classes': [{'name': c.name, 'line_start': c.line_start, 'line_end': c.line_end, 'is_public': c.is_public, 'methods': [{'name': m.name, 'line_start': m.line_start, 'line_end': m.line_end, 'is_public': m.is_public} for m in c.methods]} for c in result.classes]
-      }
-      print(json.dumps(output, indent=2))
-      " "{{ target_module }}"
-  register: _acp_python_result
-  changed_when: false
-  ignore_errors: true
-
-# ── Build final symbols artifact ────────────────────────────────────────
-
-- name: Parse Python analyzer output
+- name: Publish analyzed symbol facts
   ansible.builtin.set_fact:
-    _acp_python_symbols: "{{ _acp_python_result.stdout | from_json }}"
-  when:
-    - _acp_python_result is defined
-    - _acp_python_result.rc | default(1) == 0
-    - _acp_python_result.stdout | default('') | length > 0
-
-- name: Build code graph info from daemon response
-  ansible.builtin.set_fact:
-    _acp_graph_data: >-
-      {{
-        {
-          'nodes': _acp_graph_resp.json.get('nodes', []) | default([]),
-          'edges': _acp_graph_resp.json.get('edges', []) | default([])
-        } if (_acp_graph_resp.status | default(500) == 200) else {}
-      }}
-
-- name: Assemble final symbols artifact
-  ansible.builtin.set_fact:
-    _acp_output: >-
-      {{
-        {
-          'module': target_module | basename,
-          'path': target_module,
-          'functions': _acp_python_symbols.get('functions', []) | default([]),
-          'classes': _acp_python_symbols.get('classes', []) | default([]),
-          'call_graph': _acp_graph_data,
-          'public_api_count':
-            (_acp_python_symbols.get('functions', []) | default([]) | selectattr('is_public', 'equalto', true) | list | length)
-            + (_acp_python_symbols.get('classes', []) | default([]) | selectattr('is_public', 'equalto', true) | list | length),
-          'status': 'completed'
-        }
-      }}
-
-# ── Write artifact ──────────────────────────────────────────────────────
-
-- name: Write module symbols JSON artifact
-  ansible.builtin.copy:
-    content: "{{ _acp_output | to_nice_json }}"
-    dest: "{{ artifact_dir }}/{{ analyze_artifact_name }}"
-    mode: "0644"
+    _acp_output: "{{ _acp_pipeline.artifact }}"
 
 - name: Report completion
   ansible.builtin.debug:
     msg: >-
-      Code paths analyzed: module={{ target_module }}
-      public_api_count={{ _acp_output.public_api_count }}
-      functions={{ _acp_output.functions | length }}
-      classes={{ _acp_output.classes | length }}
+      Code paths analyzed: module={{ _acp_output.module }}
+      testable_paths={{ _acp_output.testable_path_count }}
+      functions={{ _acp_output.function_count }}
+      classes={{ _acp_output.class_count }}
