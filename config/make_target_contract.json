@@ -62,6 +62,11 @@
       "behavior": "make sync-llama-cpp SYNC_LLAMA_CPP_VALIDATE_ONLY=1"
     },
     {
+      "name": "test-local-model-inference",
+      "make_variables": ["LOCAL_MODEL_INFERENCE_MODEL_PATH", "LOCAL_MODEL_INFERENCE_VALIDATE_ONLY"],
+      "behavior": "make test-local-model-inference LOCAL_MODEL_INFERENCE_MODEL_PATH=/tmp/gludd-qwen-e2e-model/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=1"
+    },
+    {
       "name": "node-deps-sync",
       "make_variables": ["NODE_DEPS_VALIDATE_ONLY", "NODE_DEPS_NPM_USERCONFIG", "NODE_DEPS_NPM_CACHE", "NODE_DEPS_NPM_REGISTRY", "NODE_DEPS_NPM_UPDATE_NOTIFIER"],
       "behavior": "make node-deps-sync NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false"
@@ -131,6 +136,11 @@
       "name": "test-e2e-games-local",
       "make_variables": ["PYTEST_ARGS"],
       "behavior": "make test-e2e-games-local PYTEST_ARGS=-q"
+    },
+    {
+      "name": "test-e2e-games-local-model",
+      "make_variables": ["LOCAL_MODEL_E2E_MODE", "LOCAL_MODEL_BASE_URL", "LOCAL_MODEL_NAME", "LOCAL_MODEL_KEY", "LOCAL_MODEL_GAME", "PYTEST_ARGS"],
+      "behavior": "make test-e2e-games-local-model LOCAL_MODEL_E2E_MODE=hermetic LOCAL_MODEL_BASE_URL= LOCAL_MODEL_NAME=gludd-hermetic-game-e2e LOCAL_MODEL_KEY=local-hermetic LOCAL_MODEL_GAME=snake PYTEST_ARGS=-q"
     },
     {
       "name": "grep",
