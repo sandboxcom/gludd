@@ -10,6 +10,15 @@
       logging_middleware requires a valid error_log_level.
       Got error_log_level={{ error_log_level | default('<undefined>') }}.
 
+- name: Validate managed web runtime and retained rollback
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ web_server_managed_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ web_server_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ web_server_previous_python_interpreter }}"
+
 - name: "Ensure log directory exists"
   ansible.builtin.file:
     path: "{{ log_dir }}"
@@ -17,28 +26,44 @@
     mode: "0755"
 
 - name: "Validate access log format"
-  ansible.builtin.command: >-
-    python3 {{ role_path }}/files/logging_middleware.py validate
-    --format "{{ access_log_format }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ gludd_managed_python_runtime.interpreter }}"
+      - "{{ role_path }}/files/logging_middleware.py"
+      - validate
+      - --format
+      - "{{ access_log_format }}"
   changed_when: false
-  ignore_errors: true
 
 - name: "Generate log format config snippet"
-  ansible.builtin.command: >-
-    python3 {{ role_path }}/files/logging_middleware.py generate-format
-    --format-name main
-    --format "{{ access_log_format }}"
-    --output {{ log_dir }}/log_format.conf
+  ansible.builtin.command:
+    argv:
+      - "{{ gludd_managed_python_runtime.interpreter }}"
+      - "{{ role_path }}/files/logging_middleware.py"
+      - generate-format
+      - --format-name
+      - main
+      - --format
+      - "{{ access_log_format }}"
+      - --output
+      - "{{ log_dir }}/log_format.conf"
   register: _fmt_gen
   changed_when: _fmt_gen.rc == 0
 
 - name: "Generate logrotate config"
-  ansible.builtin.command: >-
-    python3 {{ role_path }}/files/logging_middleware.py generate-rotation
-    --log-dir {{ log_dir }}
-    --rotation {{ rotation }}
-    --retention {{ retention_days }}
-    --output /etc/logrotate.d/{{ log_dir | basename }}
+  ansible.builtin.command:
+    argv:
+      - "{{ gludd_managed_python_runtime.interpreter }}"
+      - "{{ role_path }}/files/logging_middleware.py"
+      - generate-rotation
+      - --log-dir
+      - "{{ log_dir }}"
+      - --rotation
+      - "{{ rotation }}"
+      - --retention
+      - "{{ retention_days }}"
+      - --output
+      - "/etc/logrotate.d/{{ log_dir | basename }}"
   register: _rot_gen
   changed_when: _rot_gen.rc == 0
   become: true
@@ -67,9 +92,13 @@
         enabled: true
 
 - name: "Display current log stats"
-  ansible.builtin.command: >-
-    python3 {{ role_path }}/files/logging_middleware.py stats
-    --log-dir {{ log_dir }}
+  ansible.builtin.command:
+    argv:
+      - "{{ gludd_managed_python_runtime.interpreter }}"
+      - "{{ role_path }}/files/logging_middleware.py"
+      - stats
+      - --log-dir
+      - "{{ log_dir }}"
   register: _log_stats
   changed_when: false
 

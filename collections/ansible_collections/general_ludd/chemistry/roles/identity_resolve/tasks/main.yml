@@ -13,19 +13,18 @@
     mode: "0755"
 
 - name: Run identity resolver
-  ansible.builtin.command: >
-    {{ ansible_python_interpreter | default('python3') }}
-    {{ role_path }}/../../plugins/module_utils/chemistry_dispatch.py
-  environment:
-    CHEMISTRY_ACTION: identity
-    CHEMISTRY_INPUT: "{{ {'query': identity_resolve_query} | to_json }}"
+  general_ludd.chemistry.chemistry_operation:
+    operation: identity
+    request:
+      query: "{{ identity_resolve_query }}"
+    daemon_url: "{{ chemistry_daemon_url | default(daemon_url | default('http://localhost:8000')) }}"
+    psk: "{{ chemistry_psk | default(psk | default('')) }}"
   register: _identity_result
-  changed_when: false
-  failed_when: false
+  no_log: "{{ (chemistry_psk | default(psk | default(''))) | length > 0 }}"
 
 - name: Parse identity result
   ansible.builtin.set_fact:
-    identity_resolve_result: "{{ (_identity_result.stdout | from_json) if _identity_result.stdout | default('') | length > 0 else {} }}"
+    identity_resolve_result: "{{ _identity_result.result }}"
 
 - name: Write JSON output
   ansible.builtin.copy:

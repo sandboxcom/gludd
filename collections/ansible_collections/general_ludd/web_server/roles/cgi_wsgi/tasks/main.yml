@@ -10,15 +10,25 @@
       cgi_wsgi requires gateway_type 'cgi', 'fastcgi', 'wsgi', or 'asgi'.
       Got gateway_type={{ gateway_type | default('<undefined>') }}.
 
+- name: Validate managed web runtime and retained rollback
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ web_server_managed_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ web_server_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ web_server_previous_python_interpreter }}"
+
 - name: "Install WSGI server (gunicorn)"
   when: gateway_type == "wsgi"
   block:
-    - name: "Install gunicorn via pip"
-      ansible.builtin.pip:
-        name: gunicorn
-        state: present
-        extra_args: "--user"
-      become: false
+    - name: "Verify gunicorn is locked in the managed runtime"
+      ansible.builtin.command:
+        argv:
+          - "{{ gludd_managed_python_runtime.interpreter }}"
+          - -c
+          - "import gunicorn"
+      changed_when: false
 
     - name: "Create gunicorn systemd service"
       ansible.builtin.template:
@@ -36,14 +46,13 @@
 - name: "Install ASGI server (uvicorn)"
   when: gateway_type == "asgi"
   block:
-    - name: "Install uvicorn via pip"
-      ansible.builtin.pip:
-        name:
-          - uvicorn
-          - gunicorn
-        state: present
-        extra_args: "--user"
-      become: false
+    - name: "Verify uvicorn and gunicorn are locked in the managed runtime"
+      ansible.builtin.command:
+        argv:
+          - "{{ gludd_managed_python_runtime.interpreter }}"
+          - -c
+          - "import gunicorn,uvicorn"
+      changed_when: false
 
     - name: "Create uvicorn systemd service"
       ansible.builtin.template:
@@ -86,20 +95,33 @@
         state: started
 
 - name: "Validate socket path"
-  ansible.builtin.command: >-
-    python3 {{ role_path }}/files/cgi_wsgi.py validate-socket
-    --socket-path {{ socket_path }}
+  ansible.builtin.command:
+    argv:
+      - "{{ gludd_managed_python_runtime.interpreter }}"
+      - "{{ role_path }}/files/cgi_wsgi.py"
+      - validate-socket
+      - --socket-path
+      - "{{ socket_path }}"
   changed_when: false
   when: gateway_type in ["wsgi", "asgi", "fastcgi"]
 
 - name: "Generate gateway config snippet"
-  ansible.builtin.command: >-
-    python3 {{ role_path }}/files/cgi_wsgi.py generate
-    --gateway-type {{ gateway_type }}
-    --socket-path {{ socket_path }}
-    --app-module {{ app_module }}
-    --processes {{ processes }}
-    --threads {{ threads }}
-    --output {{ gateway_config_output | default('/etc/nginx/conf.d/gateway.conf') }}
+  ansible.builtin.command:
+    argv:
+      - "{{ gludd_managed_python_runtime.interpreter }}"
+      - "{{ role_path }}/files/cgi_wsgi.py"
+      - generate
+      - --gateway-type
+      - "{{ gateway_type }}"
+      - --socket-path
+      - "{{ socket_path }}"
+      - --app-module
+      - "{{ app_module }}"
+      - --processes
+      - "{{ processes }}"
+      - --threads
+      - "{{ threads }}"
+      - --output
+      - "{{ gateway_config_output | default('/etc/nginx/conf.d/gateway.conf') }}"
   register: _gw_gen
   changed_when: _gw_gen.rc == 0

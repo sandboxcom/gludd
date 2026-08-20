@@ -5,3 +5,6 @@ ca_bundle: ""
 hsts_max_age: 31536000
 min_tls_version: "1.2"
 cipher_profile: intermediate
+web_server_managed_python_interpreter: ""
+web_server_managed_python_lock_sha256: ""
+web_server_previous_python_interpreter: ""

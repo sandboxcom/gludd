@@ -5,9 +5,8 @@ via the daemon alongside the existing PSK-gated admin and public API routes:
 
   - ``POST /api/materials/select``   -- screen/rank material candidates
     (delegates to :func:`general_ludd.materials.select_materials`).
-  - ``POST /api/chemistry/resolve``  -- route a chemistry request to its
-    workflow + risk tier (delegates to
-    :func:`general_ludd.chemistry.route_chemistry_task`).
+  - ``POST /api/chemistry/resolve``  -- dispatch one typed, allowlisted
+    chemistry operation with bounded execution and idempotent replay.
   - ``POST /api/ai_ml/query``        -- route an AI/ML expert request to the
     smallest qualified role set (delegates to
     :class:`general_ludd.ai_ml.router.ExpertRouter`).
@@ -23,13 +22,21 @@ the daemon middleware (none of these paths are in ``_PUBLIC_PATHS_FROZEN``).
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictFloat, StrictStr, field_validator
+
+from general_ludd.routers._runtime import IdempotencyStore, StrictRuntimeRequest
 
 logger = logging.getLogger(__name__)
+
+
+class ChemistryRequestError(ValueError):
+    """Signal malformed typed chemistry input without exposing daemon faults."""
 
 
 # ---------------------------------------------------------------------------
@@ -49,14 +56,89 @@ class MaterialsSelectRequest(BaseModel):
     candidates: list[str] | None = None
 
 
-class ChemistryResolveRequest(BaseModel):
+class ChemistryResolveRequest(StrictRuntimeRequest):
     """Body for ``POST /api/chemistry/resolve``.
 
-    The body is forwarded verbatim to :func:`route_chemistry_task`, which
-    expects at least a ``task`` field and optionally ``entities``.
+    ``operation`` selects a fixed daemon-owned chemistry function and
+    ``request`` carries its bounded typed inputs.
     """
 
+    operation: Literal[
+        "route",
+        "identity",
+        "reaction",
+        "molar_mass",
+        "moles",
+        "dilution",
+        "yield",
+        "hazard",
+    ] = "route"
     request: dict[str, Any] = Field(default_factory=dict)
+    timeout_seconds: StrictFloat = Field(default=15.0, ge=0.1, le=30.0)
+    idempotency_key: StrictStr | None = Field(
+        default=None,
+        min_length=1,
+        max_length=256,
+    )
+
+    @field_validator("request")
+    @classmethod
+    def _bound_request(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if len(value) > 128 or len(json.dumps(value, default=str)) > 262_144:
+            raise ValueError("chemistry request exceeds the bounded payload size")
+        return value
+
+
+def _dispatch_chemistry(
+    operation: str,
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    """Dispatch one allowlisted chemistry operation inside the daemon plane."""
+    from general_ludd.chemistry import (
+        analyze_reaction,
+        molar_mass,
+        resolve_identity,
+        route_chemistry_task,
+        screen_hazards,
+        stoichiometry_dilution,
+        stoichiometry_moles,
+        stoichiometry_yield,
+    )
+
+    if operation == "route":
+        return route_chemistry_task(request)
+    if operation == "identity":
+        return resolve_identity(request)
+    if operation == "reaction":
+        return analyze_reaction(request)
+    try:
+        if operation == "molar_mass":
+            return molar_mass(str(request.get("formula", "")))
+        if operation == "moles":
+            return stoichiometry_moles(
+                mass_g=float(request.get("mass_g", 0.0)),
+                formula=str(request.get("formula", "")),
+                mass_uncertainty=float(request.get("mass_uncertainty", 0.0)),
+            )
+        if operation == "dilution":
+            return stoichiometry_dilution(
+                request.get("c1"),
+                request.get("v1"),
+                request.get("c2"),
+                request.get("v2"),
+            )
+        if operation == "yield":
+            return stoichiometry_yield(
+                actual_g=float(request.get("actual_g", 0.0)),
+                theoretical_g=float(request.get("theoretical_g", 0.0)),
+                actual_unc=float(request.get("actual_unc", 0.0)),
+                theoretical_unc=float(request.get("theoretical_unc", 0.0)),
+            )
+    except (TypeError, ValueError) as exc:
+        raise ChemistryRequestError("invalid chemistry operation input") from exc
+    if operation == "hazard":
+        return screen_hazards(request)
+    raise ChemistryRequestError(f"unsupported chemistry operation: {operation}")
 
 
 class ExpertQueryRequest(BaseModel):
@@ -91,7 +173,8 @@ class LanguageOperationRequest(BaseModel):
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
-    """Register PSK-gated expert and language-service endpoints."""
+    """Register authenticated domain-expert and language routes on ``app``."""
+    chemistry_store = IdempotencyStore()
 
     @app.post("/api/materials/select")
     async def materials_select(body: MaterialsSelectRequest) -> dict[str, Any]:
@@ -106,14 +189,35 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/api/chemistry/resolve")
     async def chemistry_resolve(body: ChemistryResolveRequest) -> dict[str, Any]:
-        from general_ludd.chemistry import route_chemistry_task
+        async def _run() -> dict[str, Any]:
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(
+                        _dispatch_chemistry,
+                        body.operation,
+                        body.request,
+                    ),
+                    timeout=body.timeout_seconds,
+                )
+            except TimeoutError as exc:
+                raise HTTPException(
+                    status_code=504,
+                    detail="chemistry operation timed out",
+                ) from exc
+            except ChemistryRequestError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            except Exception as err:
+                logger.exception("chemistry operation failed")
+                raise HTTPException(
+                    status_code=500,
+                    detail="chemistry resolve failed",
+                ) from err
 
-        try:
-            result = route_chemistry_task(body.request)
-        except Exception as err:
-            logger.exception("chemistry.route_chemistry_task failed")
-            raise HTTPException(status_code=500, detail="chemistry resolve failed") from err
-        return result
+        return await chemistry_store.run(
+            key=body.idempotency_key,
+            payload=body.model_dump(mode="json", exclude_none=True),
+            producer=_run,
+        )
 
     @app.post("/api/ai_ml/query")
     async def ai_ml_query(body: ExpertQueryRequest) -> dict[str, Any]:
