@@ -5,13 +5,37 @@
     state: directory
     mode: "0755"
 
-- name: Run unicode_analyze standalone script
-  ansible.builtin.script:
-    cmd: "files/unicode_analyze.py --input '{{ input_text }}' --output '{{ artifact_dir }}/unicode_analysis.json' {% if not include_codepoints | default(true) %}--no-codepoints{% endif %} {% if not include_normalization | default(true) %}--no-normalization{% endif %} {% if not include_grapheme_clusters | default(true) %}--no-grapheme{% endif %} {% if not include_surrogates | default(true) %}--no-surrogates{% endif %} {% if not include_utf_encodings | default(true) %}--no-utf-encodings{% endif %}"
-    executable: "{{ ansible_python_interpreter | default('python3') }}"
-  register: unicode_result
+- name: Read managed-host input for controller analysis
+  ansible.builtin.slurp:
+    src: "{{ input_file }}"
+  register: unicode_input
+  when: input_file | length > 0
   changed_when: false
 
-- name: Print unicode analysis summary
+- name: Analyze Unicode text through Gludd
+  general_ludd.language.language_operation:
+    operation: unicode_analyze
+    payload:
+      input_text: "{{ input_text }}"
+      input_b64: "{{ unicode_input.content | default('') }}"
+      include_codepoints: "{{ include_codepoints }}"
+      include_normalization: "{{ include_normalization }}"
+      include_grapheme_clusters: "{{ include_grapheme_clusters }}"
+      include_surrogates: "{{ include_surrogates }}"
+      include_utf_encodings: "{{ include_utf_encodings }}"
+      include_version_info: "{{ include_version_info }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: unicode_result
+  no_log: true
+  changed_when: false
+
+- name: Write Unicode analysis artifact atomically
+  ansible.builtin.copy:
+    content: "{{ unicode_result.result | to_nice_json }}\n"
+    dest: "{{ artifact_dir }}/unicode_analysis.json"
+    mode: "0600"
+
+- name: Print Unicode analysis summary
   ansible.builtin.debug:
-    msg: "{{ unicode_result.stdout_lines }}"
+    var: unicode_result.result

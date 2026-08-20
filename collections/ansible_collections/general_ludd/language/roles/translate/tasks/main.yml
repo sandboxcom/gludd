@@ -5,13 +5,25 @@
     state: directory
     mode: "0755"
 
-- name: Run translation
-  ansible.builtin.script:
-    cmd: "files/translate.py --text '{{ input_text }}' --source '{{ source_language | default('auto') }}' --target '{{ target_language | default('en') }}' --output '{{ artifact_dir }}/translation.json'"
-    executable: "{{ ansible_python_interpreter | default('python3') }}"
+- name: Translate through Gludd
+  general_ludd.language.language_operation:
+    operation: translate
+    payload:
+      input_text: "{{ input_text }}"
+      source_language: "{{ source_language }}"
+      target_language: "{{ target_language }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
   register: translate_result
+  no_log: true
   changed_when: false
+
+- name: Write translation artifact atomically
+  ansible.builtin.copy:
+    content: "{{ translate_result.result | to_nice_json }}\n"
+    dest: "{{ artifact_dir }}/translation.json"
+    mode: "0600"
 
 - name: Print translation summary
   ansible.builtin.debug:
-    msg: "{{ translate_result.stdout_lines }}"
+    var: translate_result.result

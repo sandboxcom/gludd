@@ -5,13 +5,34 @@
     state: directory
     mode: "0755"
 
-- name: Run encoding_detect standalone script
-  ansible.builtin.script:
-    cmd: "files/encoding_detect.py --input-bytes '{{ input_bytes }}' --output '{{ artifact_dir }}/encoding_detection.json' {% if target_encoding | default('') %}--target-encoding '{{ target_encoding }}'{% endif %} {% if detect_mojibake | default(false) %}--detect-mojibake{% endif %}"
-    executable: "{{ ansible_python_interpreter | default('python3') }}"
-  register: encoding_result
+- name: Read managed-host input for controller analysis
+  ansible.builtin.slurp:
+    src: "{{ input_file }}"
+  register: encoding_input
+  when: input_file | length > 0
   changed_when: false
+
+- name: Detect encoding through Gludd
+  general_ludd.language.language_operation:
+    operation: encoding_detect
+    payload:
+      input_b64: "{{ encoding_input.content | default('') }}"
+      input_bytes: "{{ input_bytes }}"
+      min_confidence: "{{ min_confidence }}"
+      target_encoding: "{{ target_encoding }}"
+      detect_mojibake: "{{ detect_mojibake }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: encoding_result
+  no_log: true
+  changed_when: false
+
+- name: Write encoding analysis artifact atomically
+  ansible.builtin.copy:
+    content: "{{ encoding_result.result | to_nice_json }}\n"
+    dest: "{{ artifact_dir }}/encoding_detection.json"
+    mode: "0600"
 
 - name: Print encoding detection summary
   ansible.builtin.debug:
-    msg: "{{ encoding_result.stdout_lines }}"
+    var: encoding_result.result

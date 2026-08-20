@@ -5,13 +5,29 @@
     state: directory
     mode: "0755"
 
-- name: Run homoglyph_scan standalone script
-  ansible.builtin.script:
-    cmd: "files/homoglyph_scan.py --input '{{ input_text }}' --output '{{ artifact_dir }}/homoglyph_scan.json' {% if input_domain | default('') %}--input-domain '{{ input_domain }}'{% endif %} {% if not check_confusables | default(true) %}--no-confusables{% endif %} {% if not check_invisible | default(true) %}--no-invisible{% endif %} {% if not check_bidi | default(true) %}--no-bidi{% endif %} {% if not check_mixed_script | default(true) %}--no-mixed-script{% endif %}"
-    executable: "{{ ansible_python_interpreter | default('python3') }}"
+- name: Scan text for homoglyph attacks through Gludd
+  general_ludd.language.language_operation:
+    operation: homoglyph_scan
+    payload:
+      input_text: "{{ input_text }}"
+      input_domain: "{{ input_domain }}"
+      check_confusables: "{{ check_confusables }}"
+      check_invisible: "{{ check_invisible }}"
+      check_bidi: "{{ check_bidi }}"
+      check_mixed_script: "{{ check_mixed_script }}"
+      min_severity: "{{ min_severity }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
   register: homoglyph_result
+  no_log: true
   changed_when: false
+
+- name: Write homoglyph analysis artifact atomically
+  ansible.builtin.copy:
+    content: "{{ homoglyph_result.result | to_nice_json }}\n"
+    dest: "{{ artifact_dir }}/homoglyph_scan.json"
+    mode: "0600"
 
 - name: Print homoglyph scan summary
   ansible.builtin.debug:
-    msg: "{{ homoglyph_result.stdout_lines }}"
+    var: homoglyph_result.result

@@ -5,13 +5,25 @@
     state: directory
     mode: "0755"
 
-- name: Run transliteration
-  ansible.builtin.script:
-    cmd: "files/transliterate.py --text '{{ input_text }}' --target-script '{{ target_script | default('Latin') }}' {% if scheme | default('') %}--scheme '{{ scheme }}'{% endif %} --output '{{ artifact_dir }}/transliteration.json'"
-    executable: "{{ ansible_python_interpreter | default('python3') }}"
+- name: Transliterate through Gludd
+  general_ludd.language.language_operation:
+    operation: transliterate
+    payload:
+      input_text: "{{ input_text }}"
+      target_script: "{{ target_script }}"
+      scheme: "{{ scheme }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
   register: transliterate_result
+  no_log: true
   changed_when: false
+
+- name: Write transliteration artifact atomically
+  ansible.builtin.copy:
+    content: "{{ transliterate_result.result | to_nice_json }}\n"
+    dest: "{{ artifact_dir }}/transliteration.json"
+    mode: "0600"
 
 - name: Print transliteration summary
   ansible.builtin.debug:
-    msg: "{{ transliterate_result.stdout_lines }}"
+    var: transliterate_result.result

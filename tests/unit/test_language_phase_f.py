@@ -1,11 +1,11 @@
 """Phase F tests: advanced integration + molecule scenario validation.
 
-Phase F exercises the 11 standalone role scripts (``roles/<name>/files/<name>.py``)
-end-to-end via subprocess invocation, and validates the molecule scenario YAML
-that drives the collection-level converge/verify cycle.
+Phase F exercises the two managed-host file parsers and the nine daemon-owned
+language operations end-to-end, then validates the molecule scenario YAML that
+drives the collection-level converge/verify cycle.
 
 Coverage:
-    1. All 11 standalone role scripts execute and produce valid JSON output
+    1. Every role operation executes and produces valid JSON output
     2. Molecule converge.yml references all 11 roles with valid vars
     3. Molecule verify.yml asserts artifact existence + key fields for all 11 roles
     4. Advanced edge cases: empty input, invalid paths, boundary conditions
@@ -14,6 +14,7 @@ Coverage:
 
 from __future__ import annotations
 
+import base64
 import json
 import subprocess
 import sys
@@ -21,6 +22,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+
+from general_ludd.language.operations import execute_language_operation
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 COLLECTION_ROOT = REPO_ROOT / "collections" / "ansible_collections" / "general_ludd" / "language"
@@ -40,9 +43,91 @@ ALL_ROLES = [
     "unicode_analyze",
 ]
 
+SERVICE_ROLES = frozenset(ALL_ROLES) - {"font_analyze", "i18n_extract"}
+SCRIPT_ROLES = ("font_analyze", "i18n_extract")
+
+
+def _arg(args: list[str], name: str, default: str = "") -> str:
+    try:
+        return args[args.index(name) + 1]
+    except (ValueError, IndexError):
+        return default
+
+
+def _service_payload(role: str, args: list[str]) -> dict[str, object]:
+    """Convert legacy CLI-shaped fixtures to the daemon's JSON contract."""
+    if role == "bom_detect":
+        payload: dict[str, object] = {
+            "input_bytes": _arg(args, "--input-bytes"),
+            "strip_bom": "--strip" in args,
+            "add_bom": "--add-bom" in args,
+            "add_bom_encoding": _arg(args, "--add-bom-encoding", "UTF-8"),
+        }
+        audit_dir = _arg(args, "--audit-directory")
+        if audit_dir:
+            payload["audit_files"] = {
+                path.name: base64.b64encode(path.read_bytes()).decode("ascii")
+                for path in sorted(Path(audit_dir).iterdir())
+                if path.is_file()
+            }
+        return payload
+    if role == "encoding_detect":
+        return {
+            "input_bytes": _arg(args, "--input-bytes"),
+            "target_encoding": _arg(args, "--target-encoding"),
+            "detect_mojibake": "--detect-mojibake" in args,
+        }
+    if role == "homoglyph_scan":
+        return {
+            "input_text": _arg(args, "--input"),
+            "input_domain": _arg(args, "--input-domain"),
+            "check_confusables": "--no-confusables" not in args,
+            "check_invisible": "--no-invisible" not in args,
+            "check_bidi": "--no-bidi" not in args,
+            "check_mixed_script": "--no-mixed-script" not in args,
+        }
+    if role == "language_detect":
+        return {"input_text": _arg(args, "--text")}
+    if role == "locale_format":
+        return {
+            "locale": _arg(args, "--locale", "en-US"),
+            "value": _arg(args, "--value"),
+            "value_type": _arg(args, "--value-type", "date"),
+            "currency_code": _arg(args, "--currency-code", "USD"),
+        }
+    if role == "phonetic_transcribe":
+        return {
+            "input_text": _arg(args, "--input"),
+            "method": _arg(args, "--method", "arpabet"),
+        }
+    if role == "translate":
+        return {
+            "input_text": _arg(args, "--text"),
+            "source_language": _arg(args, "--source", "auto"),
+            "target_language": _arg(args, "--target", "en"),
+        }
+    if role == "transliterate":
+        return {
+            "input_text": _arg(args, "--text"),
+            "target_script": _arg(args, "--target-script", "Latin"),
+            "scheme": _arg(args, "--scheme"),
+        }
+    if role == "unicode_analyze":
+        return {
+            "input_text": _arg(args, "--input"),
+            "include_codepoints": "--no-codepoints" not in args,
+            "include_normalization": "--no-normalization" not in args,
+            "include_grapheme_clusters": "--no-grapheme" not in args,
+            "include_surrogates": "--no-surrogates" not in args,
+            "include_utf_encodings": "--no-utf-encodings" not in args,
+        }
+    raise ValueError(f"unsupported service role: {role}")
+
 
 def _run_role_script(role: str, args: list[str], timeout: int = 15) -> dict[str, object]:
-    """Invoke a standalone role script via subprocess and return parsed JSON."""
+    """Exercise the authoritative service or a managed-host-only parser."""
+    if role in SERVICE_ROLES:
+        return dict(execute_language_operation(role, _service_payload(role, args)))
     script = ROLES_DIR / role / "files" / f"{role}.py"
     if not script.exists():
         pytest.fail(f"Standalone script missing: {script}")
@@ -416,15 +501,13 @@ class TestMoleculeScenarioStructure:
 
 
 class TestRoleFileCompleteness:
-    """Each of the 8 roles must have: tasks/main.yml, defaults/main.yml,
-    vars/main.yml, meta/main.yml, files/<role>.py, README.md."""
+    """Every role ships metadata; managed-host parsers also ship scripts."""
 
     REQUIRED_FILES = (
         "tasks/main.yml",
         "defaults/main.yml",
         "vars/main.yml",
         "meta/main.yml",
-        "files/{role}.py",
         "README.md",
     )
 
@@ -435,6 +518,9 @@ class TestRoleFileCompleteness:
         for rel in self.REQUIRED_FILES:
             expected = role_dir / rel.format(role=role)
             assert expected.exists(), f"Phase F gap: role '{role}' missing file: {rel}"
+        if role in SCRIPT_ROLES:
+            script = role_dir / "files" / f"{role}.py"
+            assert script.exists(), f"managed-host parser missing for role '{role}'"
 
     @pytest.mark.parametrize("role", ALL_ROLES)
     def test_tasks_main_valid_yaml(self, role: str) -> None:
@@ -453,7 +539,7 @@ class TestRoleFileCompleteness:
         assert len(data) >= 1, f"defaults/main.yml for {role} must have >=1 default var"
         assert "name" not in data, f"defaults/main.yml for {role} must not override Ansible's reserved 'name'"
 
-    @pytest.mark.parametrize("role", ALL_ROLES)
+    @pytest.mark.parametrize("role", SCRIPT_ROLES)
     def test_standalone_script_executable(self, role: str) -> None:
         script = ROLES_DIR / role / "files" / f"{role}.py"
         with open(script) as f:

@@ -30,10 +30,49 @@ Tests:
 
 from __future__ import annotations
 
+import base64
 import tempfile
 from pathlib import Path
 
 import pytest
+
+from general_ludd.language.operations import execute_language_operation
+
+_SERVICE_ROLES = {
+    "bom_detect",
+    "encoding_detect",
+    "homoglyph_scan",
+    "locale_format",
+    "phonetic_transcribe",
+    "unicode_analyze",
+}
+
+
+async def _run_test_role(role_name: str, extra_vars: dict[str, object]) -> dict[str, object]:
+    """Exercise migrated service roles or the two remaining host parsers."""
+    if role_name in _SERVICE_ROLES:
+        payload: dict[str, object] = {}
+        file_path = extra_vars.get("file_path")
+        if isinstance(file_path, str):
+            payload["input_b64"] = base64.b64encode(Path(file_path).read_bytes()).decode("ascii")
+        if "text" in extra_vars:
+            payload["input_text"] = str(extra_vars["text"])
+        if "locale" in extra_vars:
+            payload["locale"] = str(extra_vars["locale"])
+        if role_name == "phonetic_transcribe":
+            payload["method"] = "ipa"
+        raw = dict(execute_language_operation(role_name, payload))
+        from general_ludd.ansible.runner import _normalize_role_output
+
+        return _normalize_role_output(role_name, raw)
+
+    from general_ludd.ansible.runner import AnsibleRunnerAdapter
+
+    runner = AnsibleRunnerAdapter()
+    task_args = {"collection": "general_ludd.language", "role": role_name}
+    task_args.update(extra_vars)
+    result = await runner.run_role(task_args)
+    return result if isinstance(result, dict) else {"status": str(result)}
 
 
 def test_i18n_role_args_confine_default_output(tmp_path: Path) -> None:
@@ -109,17 +148,7 @@ class TestBomDetectRole:
 
     @staticmethod
     async def _run_role(role_name: str, extra_vars: dict) -> dict:
-        """Run a language collection role via AnsibleRunnerAdapter mock."""
-        from general_ludd.ansible.runner import AnsibleRunnerAdapter
-
-        runner = AnsibleRunnerAdapter()
-        task_args = {
-            "collection": "general_ludd.language",
-            "role": role_name,
-        }
-        task_args.update(extra_vars)
-        result = await runner.run_role(task_args)
-        return result if isinstance(result, dict) else {"status": str(result)}
+        return await _run_test_role(role_name, extra_vars)
 
 
 # ── encoding_detect ─────────────────────────────────────────────────────────
@@ -164,13 +193,7 @@ class TestEncodingDetectRole:
 
     @staticmethod
     async def _run_role(role_name: str, extra_vars: dict) -> dict:
-        from general_ludd.ansible.runner import AnsibleRunnerAdapter
-
-        runner = AnsibleRunnerAdapter()
-        task_args = {"collection": "general_ludd.language", "role": role_name}
-        task_args.update(extra_vars)
-        result = await runner.run_role(task_args)
-        return result if isinstance(result, dict) else {"status": str(result)}
+        return await _run_test_role(role_name, extra_vars)
 
 
 # ── font_analyze ────────────────────────────────────────────────────────────
@@ -207,13 +230,7 @@ class TestFontAnalyzeRole:
 
     @staticmethod
     async def _run_role(role_name: str, extra_vars: dict) -> dict:
-        from general_ludd.ansible.runner import AnsibleRunnerAdapter
-
-        runner = AnsibleRunnerAdapter()
-        task_args = {"collection": "general_ludd.language", "role": role_name}
-        task_args.update(extra_vars)
-        result = await runner.run_role(task_args)
-        return result if isinstance(result, dict) else {"status": str(result)}
+        return await _run_test_role(role_name, extra_vars)
 
 
 # ── homoglyph_scan ──────────────────────────────────────────────────────────
@@ -264,13 +281,7 @@ class TestHomoglyphScanRole:
 
     @staticmethod
     async def _run_role(role_name: str, extra_vars: dict) -> dict:
-        from general_ludd.ansible.runner import AnsibleRunnerAdapter
-
-        runner = AnsibleRunnerAdapter()
-        task_args = {"collection": "general_ludd.language", "role": role_name}
-        task_args.update(extra_vars)
-        result = await runner.run_role(task_args)
-        return result if isinstance(result, dict) else {"status": str(result)}
+        return await _run_test_role(role_name, extra_vars)
 
 
 # ── i18n_extract ────────────────────────────────────────────────────────────
@@ -312,13 +323,7 @@ class TestI18nExtractRole:
 
     @staticmethod
     async def _run_role(role_name: str, extra_vars: dict) -> dict:
-        from general_ludd.ansible.runner import AnsibleRunnerAdapter
-
-        runner = AnsibleRunnerAdapter()
-        task_args = {"collection": "general_ludd.language", "role": role_name}
-        task_args.update(extra_vars)
-        result = await runner.run_role(task_args)
-        return result if isinstance(result, dict) else {"status": str(result)}
+        return await _run_test_role(role_name, extra_vars)
 
 
 # ── locale_format ───────────────────────────────────────────────────────────
@@ -366,13 +371,7 @@ class TestLocaleFormatRole:
 
     @staticmethod
     async def _run_role(role_name: str, extra_vars: dict) -> dict:
-        from general_ludd.ansible.runner import AnsibleRunnerAdapter
-
-        runner = AnsibleRunnerAdapter()
-        task_args = {"collection": "general_ludd.language", "role": role_name}
-        task_args.update(extra_vars)
-        result = await runner.run_role(task_args)
-        return result if isinstance(result, dict) else {"status": str(result)}
+        return await _run_test_role(role_name, extra_vars)
 
 
 # ── phonetic_transcribe ─────────────────────────────────────────────────────
@@ -409,13 +408,7 @@ class TestPhoneticTranscribeRole:
 
     @staticmethod
     async def _run_role(role_name: str, extra_vars: dict) -> dict:
-        from general_ludd.ansible.runner import AnsibleRunnerAdapter
-
-        runner = AnsibleRunnerAdapter()
-        task_args = {"collection": "general_ludd.language", "role": role_name}
-        task_args.update(extra_vars)
-        result = await runner.run_role(task_args)
-        return result if isinstance(result, dict) else {"status": str(result)}
+        return await _run_test_role(role_name, extra_vars)
 
 
 # ── unicode_analyze ─────────────────────────────────────────────────────────
@@ -465,10 +458,4 @@ class TestUnicodeAnalyzeRole:
 
     @staticmethod
     async def _run_role(role_name: str, extra_vars: dict) -> dict:
-        from general_ludd.ansible.runner import AnsibleRunnerAdapter
-
-        runner = AnsibleRunnerAdapter()
-        task_args = {"collection": "general_ludd.language", "role": role_name}
-        task_args.update(extra_vars)
-        result = await runner.run_role(task_args)
-        return result if isinstance(result, dict) else {"status": str(result)}
+        return await _run_test_role(role_name, extra_vars)

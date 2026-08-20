@@ -1,6 +1,6 @@
 """HTTP router: expert collection endpoint stubs.
 
-Surfaces the four domain expert collections over HTTP so they are accessible
+Surfaces domain expert collections over HTTP so they are accessible
 via the daemon alongside the existing PSK-gated admin and public API routes:
 
   - ``POST /api/materials/select``   -- screen/rank material candidates
@@ -11,6 +11,8 @@ via the daemon alongside the existing PSK-gated admin and public API routes:
   - ``POST /api/ai_ml/query``        -- route an AI/ML expert request to the
     smallest qualified role set (delegates to
     :class:`general_ludd.ai_ml.router.ExpertRouter`).
+  - ``POST /api/language/execute``   -- execute one bounded language operation
+    through the daemon-owned implementation.
   - ``GET  /api/git_release/assess`` -- collect read-only repo evidence
     (delegates to :func:`general_ludd.git_release.collect_repo_evidence`).
 
@@ -76,12 +78,21 @@ class ExpertQueryRequest(BaseModel):
     budget_usd: float = Field(default=0.0, ge=0.0)
 
 
+class LanguageOperationRequest(BaseModel):
+    """Body for authenticated ``POST /api/language/execute``."""
+
+    operation: str = Field(min_length=1, max_length=64)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register PSK-gated expert and language-service endpoints."""
+
     @app.post("/api/materials/select")
     async def materials_select(body: MaterialsSelectRequest) -> dict[str, Any]:
         from general_ludd.materials import select_materials
@@ -140,6 +151,19 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "matched_roles": list(decision.matched_roles),
             "refusal_reason": decision.refusal_reason,
         }
+
+    @app.post("/api/language/execute")
+    async def language_execute(body: LanguageOperationRequest) -> dict[str, Any]:
+        from general_ludd.language.operations import execute_language_operation
+
+        try:
+            result = execute_language_operation(body.operation, body.payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as err:
+            logger.exception("language operation failed")
+            raise HTTPException(status_code=500, detail="language operation failed") from err
+        return {"result": result}
 
     @app.get("/api/git_release/assess")
     async def git_release_assess(
