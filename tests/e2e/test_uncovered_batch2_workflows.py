@@ -221,8 +221,8 @@ class TestRetrievalSearcher:
             )
             cache.close()
 
-            searcher = SemanticSearcher(cache_dir=cache_dir)
-            results = searcher.search("hello")
+            with SemanticSearcher(cache_dir=cache_dir) as searcher:
+                results = searcher.search("hello")
             assert len(results) >= 1
             assert results[0]["filepath"] == "file1.py"
 
