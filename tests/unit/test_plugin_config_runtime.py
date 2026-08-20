@@ -19,12 +19,13 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+SUBAGENT_GUARD_EXCEPTIONS = frozenset({"enforce-depth.ts"})
 
 
 class TestPluginFilesSyntax:
     """Every .ts plugin file must pass node --check."""
 
-    def test_all_plugins_syntax_ok(self):
+    def test_all_plugins_syntax_ok(self) -> None:
         plugin_dir = ROOT / ".opencode" / "plugin"
         plugins_dir = ROOT / ".opencode" / "plugins"
         errors = []
@@ -46,7 +47,7 @@ class TestPluginFilesSyntax:
 class TestPluginRegistration:
     """Every plugin in opencode.json must exist on disk."""
 
-    def test_all_registered_plugins_exist(self):
+    def test_all_registered_plugins_exist(self) -> None:
         config = json.loads((ROOT / "opencode.json").read_text())
         registered = config.get("plugin", [])
         for path in registered:
@@ -55,7 +56,7 @@ class TestPluginRegistration:
             full = ROOT / path
             assert full.is_file(), f"Registered plugin {path} not found on disk at {full}"
 
-    def test_all_disk_files_registered_or_utility(self):
+    def test_all_disk_files_registered_or_utility(self) -> None:
         config = json.loads((ROOT / "opencode.json").read_text())
         registered = set()
         for p in config.get("plugin", []):
@@ -74,7 +75,7 @@ class TestPluginRegistration:
                 rel = str(f.relative_to(ROOT))
                 assert rel in registered or rel in utilities, f"{rel} on disk but not registered (or utility)"
 
-    def test_enforce_stop_registered(self):
+    def test_enforce_stop_registered(self) -> None:
         config = json.loads((ROOT / "opencode.json").read_text())
         plugins = config.get("plugin", [])
         stop_paths = [p for p in plugins if "enforce-stop" in p]
@@ -84,7 +85,7 @@ class TestPluginRegistration:
 class TestPermissionOrdering:
     """opencode.json bash permission must deny first, then allow make."""
 
-    def test_bash_deny_before_allow(self):
+    def test_bash_deny_before_allow(self) -> None:
         config = json.loads((ROOT / "opencode.json").read_text())
         bash_rules = config.get("permission", {}).get("bash", {})
         keys = list(bash_rules.keys())
@@ -99,9 +100,9 @@ class TestPermissionOrdering:
 
 
 class TestSubagentGuards:
-    """All enforcement plugins with hooks must have subagent guards."""
+    """All non-depth enforcement plugins with hooks have subagent guards."""
 
-    def test_all_enforcement_plugins_guard_import_or_inline(self):
+    def test_all_enforcement_plugins_guard_import_or_inline(self) -> None:
         plugin_dir = ROOT / ".opencode" / "plugin"
         enforcement_plugins = [f for f in plugin_dir.glob("enforce-*.ts")]
         # shared.ts moved from .opencode/plugin/ to .opencode/lib/ (E.5 refactor),
@@ -112,11 +113,20 @@ class TestSubagentGuards:
         guard_inline = re.compile(r'process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"')
         _is_subagent_defined = re.compile(r"function\s+_isSubagent\s*\(\s*\)")
 
+        plugins_without_guard: set[str] = set()
         for plugin in enforcement_plugins:
             src = plugin.read_text()
             # Must either import isSubagent from shared.ts or define _isSubagent inline
             has_import = bool(guard_imported.search(src))
             has_inline = bool(_is_subagent_defined.search(src) and guard_inline.search(src))
+            if plugin.name in SUBAGENT_GUARD_EXCEPTIONS:
+                assert plugin.name == "enforce-depth.ts"
+                assert not has_import and not has_inline, (
+                    "enforce-depth.ts must enforce dispatch depth inside delegated contexts"
+                )
+                plugins_without_guard.add(plugin.name)
+                continue
+
             assert has_import or has_inline, (
                 f"{plugin.name}: no isSubagent guard — must either import from shared.ts or define _isSubagent() inline"
             )
@@ -124,11 +134,32 @@ class TestSubagentGuards:
             has_call = bool(guard_called.search(src)) or bool(guard_inline.search(src))
             assert has_call, f"{plugin.name}: imports/defines guard but never calls it"
 
+        assert plugins_without_guard == SUBAGENT_GUARD_EXCEPTIONS
+
+    def test_depth_exception_is_dispatch_only(self) -> None:
+        """The sole subagent exception cannot expand beyond dispatch tools."""
+        src = (ROOT / ".opencode" / "plugin" / "enforce-depth.ts").read_text()
+        dispatch_guard = re.search(
+            r"function isDispatchTool\([^)]*\).*?\{(?P<body>.*?)\n\}",
+            src,
+            re.DOTALL,
+        )
+
+        assert dispatch_guard is not None
+        assert set(re.findall(r'lt === "([^"]+)"', dispatch_guard.group("body"))) == {
+            "task",
+            "agent",
+            "workflow",
+        }
+        assert "if (!isDispatchTool(tool)) return" in src
+        assert "if (depth >= MAX_DEPTH)" in src
+        assert 'permissionDecision: "deny"' in src
+
 
 class TestCleanTreeFix:
     """enforce-clean-tree.ts must avoid static process-module imports."""
 
-    def test_clean_tree_uses_wrapped_process_import(self):
+    def test_clean_tree_uses_wrapped_process_import(self) -> None:
         src = (ROOT / ".opencode" / "plugin" / "enforce-clean-tree.ts").read_text()
         helper = (ROOT / ".opencode" / "lib" / "plugin_test_exports.ts").read_text()
         assert "getGitStatus" in src, (
@@ -143,19 +174,19 @@ class TestCleanTreeFix:
 class TestEnforceStopFix:
     """enforce-stop.ts must not use patterns that break opencode startup."""
 
-    def test_enforce_stop_no_bare_satisfies(self):
+    def test_enforce_stop_no_bare_satisfies(self) -> None:
         src = (ROOT / ".opencode" / "plugin" / "enforce-stop.ts").read_text()
         # Node v26 strip-types supports the TypeScript `satisfies` operator.
         assert "satisfies Plugin" in src, "enforce-stop.ts: export should retain `satisfies Plugin` typing"
 
-    def test_enforce_stop_ends_correctly(self):
+    def test_enforce_stop_ends_correctly(self) -> None:
         src = (ROOT / ".opencode" / "plugin" / "enforce-stop.ts").read_text()
         trimmed_end = src.rstrip()
         assert trimmed_end.endswith("}) satisfies Plugin"), (
             f"enforce-stop.ts must end with '}}) satisfies Plugin' — got: ...{trimmed_end[-45:]}"
         )
 
-    def test_enforce_stop_uses_simple_export(self):
+    def test_enforce_stop_uses_simple_export(self) -> None:
         src = (ROOT / ".opencode" / "plugin" / "enforce-stop.ts").read_text()
         # Must use async () => not async ({ }) =>
         assert "async () =>" in src, "enforce-stop.ts: export default must use async () =>, not async ({ }) =>"
@@ -167,7 +198,7 @@ class TestEnforceStopFix:
 class TestDeletionGateFix:
     """enforce-deletion-gate.ts import fix."""
 
-    def test_deletion_gate_uses_correct_import(self):
+    def test_deletion_gate_uses_correct_import(self) -> None:
         src = (ROOT / ".opencode" / "plugin" / "enforce-deletion-gate.ts").read_text()
         assert "@opencode-ai/plugin" in src, (
             "enforce-deletion-gate.ts must import from @opencode-ai/plugin, not @opencode/core"
@@ -180,11 +211,11 @@ class TestDeletionGateFix:
 class TestPluginCompilation:
     """scripts/compile_plugins_for_test.mjs exists and can compile plugins."""
 
-    def test_compiler_script_exists(self):
+    def test_compiler_script_exists(self) -> None:
         script = ROOT / "scripts" / "compile_plugins_for_test.mjs"
         assert script.is_file(), "compile_plugins_for_test.mjs not found"
 
-    def test_compiler_produces_output(self):
+    def test_compiler_produces_output(self) -> None:
         script = ROOT / "scripts" / "compile_plugins_for_test.mjs"
         result = subprocess.run(
             ["node", str(script)],
