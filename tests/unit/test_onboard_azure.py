@@ -55,6 +55,10 @@ class TestCreateRoleInstructions:
         assert "operator_principal_id" in text
         assert ACCELERATOR_ROLE in text
 
+    def test_rejects_unsafe_instruction_values(self) -> None:
+        with pytest.raises(ValueError, match="unsafe subscription_id"):
+            azure_onboard.create_role_instructions(subscription_id="sub id; unsafe")
+
 
 # ---------------------------------------------------------------------------
 # token_acquisition_guide
@@ -146,6 +150,17 @@ class TestValidateTokenAndRole:
         with pytest.raises(ValueError, match="principal_id is required"):
             azure_onboard.validate_token_and_role(subscription_id="sub-1")
 
+    def test_requires_subscription_id_when_environment_is_unset(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("AZURE_SUBSCRIPTION_ID", raising=False)
+
+        with pytest.raises(ValueError, match="AZURE_SUBSCRIPTION_ID is unset"):
+            azure_onboard.validate_token_and_role(
+                principal_id="11111111-1111-1111-1111-111111111111",
+            )
+
 
 class TestAzureSdkBoundaries:
     @staticmethod
@@ -157,8 +172,8 @@ class TestAzureSdkBoundaries:
         authorization = ModuleType("azure.mgmt.authorization")
         credential = MagicMock(name="DefaultAzureCredential")
         compute_client = MagicMock(name="ComputeManagementClient")
-        identity.DefaultAzureCredential = credential
-        compute.ComputeManagementClient = compute_client
+        identity.__dict__["DefaultAzureCredential"] = credential
+        compute.__dict__["ComputeManagementClient"] = compute_client
         return (
             {
                 "azure": azure,
@@ -185,7 +200,7 @@ class TestAzureSdkBoundaries:
     def test_role_assignments_are_normalized(self) -> None:
         modules, credential, _compute_client = self._sdk_modules()
         auth_client_type = MagicMock(name="AuthorizationManagementClient")
-        modules["azure.mgmt.authorization"].AuthorizationManagementClient = (
+        modules["azure.mgmt.authorization"].__dict__["AuthorizationManagementClient"] = (
             auth_client_type
         )
         auth_client = auth_client_type.return_value
@@ -288,6 +303,55 @@ class TestTerraformModuleLeastPriv:
         assert "principal_id" in outputs_tf
         assert "client_id" in outputs_tf
         assert "tenant_id" in outputs_tf
+
+
+class TestAzureOnboardProvider:
+    def test_adapter_forwards_azure_identifiers_and_renders_guides(self) -> None:
+        provider = azure_onboard.AzureOnboardProvider(
+            subscription_id="sub-123",
+            resource_group_name="gludd-accelerator",
+            location="westus3",
+            identity_name="gludd-operator",
+        )
+        expected = (True, {"roles_verified": [ACCELERATOR_ROLE]})
+
+        instructions = provider.create_role_instructions()
+        assert "sub-123" in instructions
+        assert "gludd-accelerator" in instructions
+        assert provider.token_acquisition_guide() == azure_onboard.token_acquisition_guide()
+        with patch.object(
+            azure_onboard,
+            "validate_token_and_role",
+            return_value=expected,
+        ) as validate:
+            assert provider.validate_token_and_role(
+                token="unused",
+                role_arn="principal-123",
+                region="unused",
+            ) == expected
+
+        validate.assert_called_once_with(
+            subscription_id="sub-123",
+            resource_group_name="gludd-accelerator",
+            principal_id="principal-123",
+        )
+
+    def test_adapter_returns_structured_failure(self) -> None:
+        provider = azure_onboard.AzureOnboardProvider(subscription_id="sub-123")
+
+        with patch.object(
+            azure_onboard,
+            "validate_token_and_role",
+            side_effect=RuntimeError("sdk unavailable"),
+        ):
+            ok, info = provider.validate_token_and_role(
+                token="unused",
+                role_arn="principal-123",
+                region="unused",
+            )
+
+        assert ok is False
+        assert info == {"detail": "RuntimeError: sdk unavailable"}
 
 
 if __name__ == "__main__":
