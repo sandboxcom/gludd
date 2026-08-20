@@ -70,6 +70,7 @@ class RetryItem:
 
     @property
     def poisoned(self) -> bool:
+        """Return whether this item is the poison-pill sentinel."""
         return self.is_poison
 
 
@@ -124,6 +125,7 @@ class RetryQueue:
         max_delay: float = 60.0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        """Initialize a queue with bounded retries and injectable timing."""
         if max_retries < 0:
             raise ValueError("max_retries must be >= 0")
         if base_delay < 0:
@@ -348,19 +350,39 @@ class RetryQueue:
         Must be called while holding ``self._lock``.
         """
         now = self._clock()
+        deferred: list[RetryItem] = []
         while self._heap:
             _pri, _ts, item_id = _MaxHeap.pop(self._heap)
             item = self._items.get(item_id)
             if item is None:
                 continue  # stale entry; skip
-            if item_id not in self._items:
-                continue
             if item.ready_at > now:
-                # not ready yet; put it back and stop
-                _MaxHeap.push(self._heap, item.priority, item.enqueued_at, item_id)
-                return None
-            del self._items[item_id]
+                # A delayed high-priority item must not starve a lower-priority
+                # item that is already ready. Preserve it while scanning.
+                deferred.append(item)
+                continue
+            for waiting in deferred:
+                _MaxHeap.push(
+                    self._heap,
+                    waiting.priority,
+                    waiting.enqueued_at,
+                    waiting.item_id,
+                )
             if activate:
-                self._active[item_id] = item
+                del self._items[item_id]
+            else:
+                _MaxHeap.push(
+                    self._heap,
+                    item.priority,
+                    item.enqueued_at,
+                    item.item_id,
+                )
             return item
+        for waiting in deferred:
+            _MaxHeap.push(
+                self._heap,
+                waiting.priority,
+                waiting.enqueued_at,
+                waiting.item_id,
+            )
         return None

@@ -289,7 +289,16 @@ class TestSagaCompensation:
 
 class TestSagaRetry:
     def test_retry_succeeds_on_second_attempt(self):
-        fail = FailingAction(fail_on_call=2)
+        class FailOnce:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def __call__(self) -> None:
+                self.calls += 1
+                if self.calls == 1:
+                    raise RuntimeError("transient failure")
+
+        fail = FailOnce()
         saga = SagaOrchestrator(
             "s1",
             [
@@ -355,6 +364,34 @@ class TestSagaTimeout:
         results = saga.run()
         assert results[0].success is True
 
+    def test_timeout_compensates_completed_steps_and_persists_terminal_state(self):
+        store = InMemoryStore()
+        compensations: list[str] = []
+        saga = SagaOrchestrator(
+            "timeout-with-prior-work",
+            [
+                SagaStep(
+                    "prepared",
+                    action=lambda: None,
+                    compensation=lambda: compensations.append("prepared"),
+                ),
+                SagaStep(
+                    "slow",
+                    action=lambda: time.sleep(0.2),
+                    timeout_seconds=0.01,
+                ),
+            ],
+            store=store,
+        )
+
+        results = saga.run()
+
+        assert saga.state == SagaState.TIMED_OUT
+        assert compensations == ["prepared"]
+        assert results[-1].step_name == "slow"
+        assert results[-1].success is False
+        assert store.load("timeout-with-prior-work")["state"] == "timed_out"
+
 
 # ===========================================================================
 # SagaOrchestrator — persistence
@@ -404,14 +441,14 @@ class TestSagaPersistence:
         )
         assert saga.state == SagaState.PENDING
         saga.run()
-        assert saga.state == SagaState.COMPLETED
+        assert saga.state == SagaState.COMPENSATED
 
     def test_no_store_no_persistence_calls(self):
         saga = SagaOrchestrator("s1", [SagaStep("a", action=lambda: None)])
         saga.run()
         assert saga.state == SagaState.COMPLETED
 
-    def test_persist_on_each_step_disabled(self):
+    def test_persist_on_each_step_disabled_still_persists_terminal_state(self):
         store = InMemoryStore()
         saga = SagaOrchestrator(
             "abc",
@@ -423,7 +460,8 @@ class TestSagaPersistence:
         )
         saga.run()
         saved = store.load("abc")
-        assert saved is None
+        assert saved is not None
+        assert saved["state"] == "completed"
 
     def test_restore_rebuilds_results_for_failed_saga(self):
         store = InMemoryStore()
@@ -447,6 +485,56 @@ class TestSagaPersistence:
         saga.run()
         results = saga.results
         assert len(results) == 2
+
+    @pytest.mark.parametrize("stored_state", ["completed", "compensated"])
+    def test_restore_terminal_saga_does_not_repeat_side_effects(self, stored_state: str):
+        store = InMemoryStore()
+        store.save(
+            "abc",
+            {
+                "state": stored_state,
+                "results": [
+                    {
+                        "step_index": 0,
+                        "step_name": "a",
+                        "success": True,
+                        "error": None,
+                        "duration_ms": 1.0,
+                    }
+                ],
+                "completed_at": 1.0,
+            },
+        )
+        calls: list[str] = []
+        saga = SagaOrchestrator(
+            "abc",
+            [SagaStep("a", action=lambda: calls.append("repeated"))],
+            store=store,
+        )
+
+        results = saga.run()
+
+        assert calls == []
+        assert saga.state.value == stored_state
+        assert [result.step_name for result in results] == ["a"]
+
+    def test_failed_step_persists_compensated_terminal_state(self):
+        store = InMemoryStore()
+        saga = SagaOrchestrator(
+            "failed",
+            [
+                SagaStep("done", action=lambda: None, compensation=lambda: None),
+                SagaStep("broken", action=FailingAction()),
+            ],
+            store=store,
+        )
+
+        saga.run()
+
+        saved = store.load("failed")
+        assert saga.state == SagaState.COMPENSATED
+        assert saved is not None
+        assert saved["state"] == "compensated"
 
 
 # ===========================================================================
@@ -509,13 +597,13 @@ class TestSagaBuilder:
         saga.run()
         assert store.load("s1") is not None
 
-    def test_builder_without_step_persistence(self):
+    def test_builder_without_step_persistence_still_saves_terminal_state(self):
         store = InMemoryStore()
         saga = (
             SagaBuilder().step("a", action=lambda: None).with_persistence(store).without_step_persistence().build("s1")
         )
         saga.run()
-        assert store.load("s1") is None
+        assert store.load("s1")["state"] == "completed"
 
     def test_builder_with_compensation_timeout(self):
         saga = SagaBuilder().with_compensation_timeout(5.0).build("s1")
