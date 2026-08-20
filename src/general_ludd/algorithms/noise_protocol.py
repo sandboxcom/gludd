@@ -42,11 +42,19 @@ _HASH_LEN: Final[int] = 32
 _KEY_LEN: Final[int] = 32
 _BLOCK_LEN: Final[int] = 16
 _MAX_NONCE: Final[int] = 2**64 - 1
+_MAX_MESSAGE_LEN: Final[int] = 65_535
 _TAG_LEN: Final[int] = 16
 
 _empty = bytes(_HASH_LEN)
 
-_protocol_name = b"Noise_XX_25519_AESGCM_SHA256"
+_DEFAULT_PROTOCOL_NAME: Final[bytes] = b"Noise_XX_25519_AESGCM_SHA256"
+
+
+def _noise_nonce(nonce: int) -> bytes:
+    """Encode an AES-GCM nonce as specified by Noise revision 34."""
+    if nonce >= _MAX_NONCE:
+        raise NoiseError("Nonce exhausted (2^64-1)")
+    return bytes(4) + nonce.to_bytes(8, "big")
 
 
 # ── key material ───────────────────────────────────────────────────────
@@ -61,6 +69,7 @@ class KeyPair:
 
     @staticmethod
     def generate() -> KeyPair:
+        """Generate an X25519 key pair."""
         priv = _CryptoPrivateKey.generate()
         return KeyPair(
             private=priv.private_bytes_raw(),
@@ -89,38 +98,39 @@ class CipherState:
     nonce: int = 0
 
     def initialize_key(self, key: bytes) -> None:
+        """Set a 256-bit cipher key and reset the nonce."""
         if len(key) != _KEY_LEN:
             raise NoiseError(f"CipherState key must be {_KEY_LEN} bytes")
         self.key = key
         self.nonce = 0
 
     def has_key(self) -> bool:
+        """Return whether this cipher state has a key."""
         return self.key is not None
 
     def encrypt_with_ad(self, ad: bytes, plaintext: bytes) -> bytes:
+        """Encrypt plaintext with associated data and advance the nonce."""
         if self.key is None:
             return plaintext
-        if self.nonce > _MAX_NONCE:
-            raise NoiseError("Nonce exhausted (2^64-1)")
         aead = _CryptoAESGCM(self.key)
-        msg = aead.encrypt(self.nonce.to_bytes(8, "little"), plaintext, ad)
+        msg = aead.encrypt(_noise_nonce(self.nonce), plaintext, ad)
         self.nonce += 1
         return msg
 
     def decrypt_with_ad(self, ad: bytes, ciphertext: bytes) -> bytes:
+        """Authenticate and decrypt ciphertext, then advance the nonce."""
         if self.key is None:
             return ciphertext
-        if self.nonce > _MAX_NONCE:
-            raise NoiseError("Nonce exhausted (2^64-1)")
         aead = _CryptoAESGCM(self.key)
         try:
-            msg = aead.decrypt(self.nonce.to_bytes(8, "little"), ciphertext, ad)
+            msg = aead.decrypt(_noise_nonce(self.nonce), ciphertext, ad)
         except _InvalidTag as exc:
             raise DecryptError("AEAD decryption failed") from exc
         self.nonce += 1
         return msg
 
     def split(self) -> tuple[CipherState, CipherState]:
+        """Derive two independent cipher states from this key."""
         if self.key is None:
             raise HandshakeError("Cannot split uninitialized CipherState")
         hkdf = _CryptoHKDF(
@@ -161,6 +171,7 @@ class SymmetricState:
     h: bytes = field(default_factory=lambda: bytes(_HASH_LEN))
 
     def initialize_symmetric(self, protocol_name: bytes) -> None:
+        """Initialize the chaining key and handshake hash."""
         if len(protocol_name) <= _HASH_LEN:
             self.h = protocol_name.ljust(_HASH_LEN, b"\x00")
         else:
@@ -169,33 +180,40 @@ class SymmetricState:
         self.cipher_state = CipherState()
 
     def mix_key(self, ikm: bytes) -> None:
+        """Mix input key material into the chaining key."""
         ck, key = _hkdf(self.chaining_key, ikm, 2)
         self.chaining_key = ck
         self.cipher_state.initialize_key(key)
 
     def mix_hash(self, data: bytes) -> None:
+        """Mix data into the handshake hash."""
         self.h = hashlib.sha256(self.h + data).digest()
 
     def mix_key_and_hash(self, ikm: bytes) -> None:
+        """Mix input key material into both symmetric values."""
         ck, temp_h, temp_k = _hkdf(self.chaining_key, ikm, 3)
         self.chaining_key = ck
         self.mix_hash(temp_h)
         self.cipher_state.initialize_key(temp_k)
 
     def get_handshake_hash(self) -> bytes:
+        """Return the current handshake hash."""
         return self.h
 
     def encrypt_and_hash(self, plaintext: bytes) -> bytes:
+        """Encrypt plaintext and mix the ciphertext into the hash."""
         ciphertext = self.cipher_state.encrypt_with_ad(self.h, plaintext)
         self.mix_hash(ciphertext)
         return ciphertext
 
     def decrypt_and_hash(self, ciphertext: bytes) -> bytes:
+        """Decrypt ciphertext and mix it into the hash."""
         plaintext = self.cipher_state.decrypt_with_ad(self.h, ciphertext)
         self.mix_hash(ciphertext)
         return plaintext
 
     def split(self) -> tuple[CipherState, CipherState]:
+        """Derive the two post-handshake transport cipher states."""
         hkdf = _CryptoHKDF(
             algorithm=_hashes.SHA256(),
             length=_KEY_LEN * 2,
@@ -214,6 +232,8 @@ class SymmetricState:
 
 
 class TokenType(enum.IntEnum):
+    """Token types used by Noise handshake patterns."""
+
     E = 1
     S = 2
     DH_EE = 3
@@ -334,10 +354,13 @@ _PATTERN_IN: Final[str] = """
 
 
 class Direction(enum.IntEnum):
+    """A participant's role in a Noise handshake."""
+
     INITIATOR = 0
     RESPONDER = 1
 
     def opposite(self) -> Direction:
+        """Return the other handshake role."""
         return Direction.RESPONDER if self == Direction.INITIATOR else Direction.INITIATOR
 
 
@@ -369,18 +392,17 @@ class HandshakeState:
         e: KeyPair | None = None,
         rs: bytes | None = None,
         psk: bytes | None = None,
+        protocol_name: bytes = _DEFAULT_PROTOCOL_NAME,
     ) -> None:
+        """Initialize a handshake from a pattern and participant keys."""
         self.role = Direction.INITIATOR if initiator else Direction.RESPONDER
         self.s = s
         self.e = e
         self.rs = rs
         self.psk = psk
         self.symmetric_state = SymmetricState()
-        self.symmetric_state.initialize_symmetric(_protocol_name)
+        self.symmetric_state.initialize_symmetric(protocol_name)
         self.symmetric_state.mix_hash(prologue)
-
-        pre_initiator_s = s.public if s else None
-        pre_responder_s = rs
 
         lines = handshake_pattern.strip().split("\n")
 
@@ -411,14 +433,13 @@ class HandshakeState:
             token_strs = [t.strip() for t in content.split(",") if t.strip()]
             for tok_str in token_strs:
                 if tok_str == "s":
-                    if direction == Direction.INITIATOR and pre_initiator_s is not None:
-                        self.symmetric_state.mix_hash(pre_initiator_s)
-                        if self.role == Direction.RESPONDER:
-                            self.rs = pre_initiator_s
-                    elif direction == Direction.RESPONDER and pre_responder_s is not None:
-                        self.symmetric_state.mix_hash(pre_responder_s)
-                        if self.role == Direction.INITIATOR:
-                            self.rs = pre_responder_s
+                    public_key = (
+                        self.s.public if direction == self.role and self.s is not None else self.rs
+                    )
+                    if public_key is None:
+                        identity = "local" if direction == self.role else "remote"
+                        raise NoiseError(f"Missing {identity} static pre-message key")
+                    self.symmetric_state.mix_hash(public_key)
 
         # Parse message patterns (after pre-messages)
         self._message_patterns = []
@@ -444,6 +465,9 @@ class HandshakeState:
         self._step = 0
 
     def write_message(self, payload: bytes = b"") -> bytes:
+        """Write the next handshake message for this participant."""
+        if len(payload) > _MAX_MESSAGE_LEN:
+            raise NoiseError("Noise messages cannot exceed 65,535 bytes")
         if self._step >= len(self._message_patterns):
             raise NoiseError("No more messages to write in this handshake pattern")
         tokens = self._message_patterns[self._step]
@@ -493,12 +517,20 @@ class HandshakeState:
                     raise NoiseError("PSK not set")
                 self.symmetric_state.mix_key_and_hash(self.psk)
 
+        payload_size = len(payload) + (
+            _TAG_LEN if self.symmetric_state.cipher_state.has_key() else 0
+        )
+        if len(buffer) + payload_size > _MAX_MESSAGE_LEN:
+            raise NoiseError("Noise messages cannot exceed 65,535 bytes")
         ct = self.symmetric_state.encrypt_and_hash(payload)
         buffer.extend(ct)
         self._step += 1
         return bytes(buffer)
 
     def read_message(self, message: bytes) -> bytes:
+        """Read and authenticate the next peer handshake message."""
+        if len(message) > _MAX_MESSAGE_LEN:
+            raise NoiseError("Noise messages cannot exceed 65,535 bytes")
         if self._step >= len(self._message_patterns):
             raise NoiseError("No more messages to read in this handshake pattern")
         tokens = self._message_patterns[self._step]
@@ -569,9 +601,11 @@ class HandshakeState:
         return self.symmetric_state.get_handshake_hash()
 
     def completed(self) -> bool:
+        """Return whether all handshake messages were processed."""
         return self._step >= len(self._message_patterns) and len(self._message_patterns) > 0
 
     def split(self) -> tuple[CipherState, CipherState]:
+        """Return the post-handshake transport cipher states."""
         return self.symmetric_state.split()
 
 
@@ -604,6 +638,12 @@ def create_noise_session(
     """Create a Noise handshake session for the given pattern and role."""
     hs = HandshakeState()
     full_pattern = _PATTERN_MAP.get(pattern.strip(), pattern)
+    normalized_pattern = pattern.strip()
+    protocol_name = (
+        f"Noise_{normalized_pattern}_25519_AESGCM_SHA256".encode()
+        if normalized_pattern in _PATTERN_MAP
+        else _DEFAULT_PROTOCOL_NAME
+    )
     hs.initialize(
         handshake_pattern=full_pattern,
         initiator=initiator,
@@ -611,5 +651,6 @@ def create_noise_session(
         s=local_static,
         rs=remote_static,
         psk=psk,
+        protocol_name=protocol_name,
     )
     return hs

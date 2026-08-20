@@ -147,7 +147,7 @@ class TestChatMessageRoundtrip:
     def test_json_serializable(self):
         msg = ChatMessage(role="assistant", content='{"key": "val"}', timestamp="2025-01-01T00:00:00Z")
         serialized = json.dumps(msg.as_persistent_record(), sort_keys=True)
-        assert msg.content in serialized
+        assert json.loads(serialized)["content"] == msg.content
 
     def test_long_content_roundtrip(self):
         content = "a" * 100_000
