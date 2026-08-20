@@ -751,16 +751,16 @@ class TestTuiLogGetEdges:
         import general_ludd.routers.projects as _mod
 
         _mod._tui_log_entries.clear()
-        # Pre-fill to just below threshold
-        _mod._tui_log_entries.extend({"n": i} for i in range(9000))
+        # Pre-fill so one maximum-size request crosses the ring-buffer limit.
+        _mod._tui_log_entries.extend({"n": i} for i in range(9001))
 
         app = _make_app()
         _register(app)
         client = TestClient(app)
 
-        # Push 1001 entries through the POST endpoint — the truncation fires
-        # inside the handler because 9000+1001=10001 > 10000
-        entries = [{"n": i} for i in range(1001)]
+        # Push the accepted maximum through the endpoint; 9001+1000 exceeds
+        # the 10,000-entry retained ring without bypassing the request cap.
+        entries = [{"n": i} for i in range(1000)]
         resp = client.post("/admin/tui-log", json={"entries": entries})
         assert resp.status_code == 200
 
