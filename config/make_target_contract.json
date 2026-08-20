@@ -477,6 +477,11 @@
       "behavior": "make terminate-project-process-tree PROCESS_ROOT_PID=1 PROCESS_NAMESPACE=/tmp/gludd-contract PROCESS_CLEANUP_APPLY=0 PROCESS_CLEANUP_VALIDATE_ONLY=1"
     },
     {
+      "name": "kill-worktree-e2e",
+      "make_variables": ["PID", "KILL_WORKTREE_E2E_VALIDATE_ONLY"],
+      "behavior": "make kill-worktree-e2e PID=1 KILL_WORKTREE_E2E_VALIDATE_ONLY=1"
+    },
+    {
       "name": "status-snapshot",
       "make_variables": ["STATUS_SNAPSHOT_VALIDATE_ONLY"],
       "behavior": "make status-snapshot STATUS_SNAPSHOT_VALIDATE_ONLY=1"
