@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 from typing import Protocol
 
@@ -19,7 +20,7 @@ class Embedder(Protocol):
 def cosine_similarity(a: list[float], b: list[float]) -> float:
     """Return bounded cosine similarity without importing core Python."""
     if len(a) != len(b):
-        raise ValueError("embedding dimensions must match")
+        raise ValueError("vector length mismatch")
     if not a:
         return 0.0
     dot = sum(left * right for left, right in zip(a, b, strict=True))
@@ -65,8 +66,29 @@ class DaemonEmbedder:
         return result
 
 
-class HashEmbedder(DaemonEmbedder):
-    """Backward-compatible name for the daemon-selected offline embedder."""
+class HashEmbedder:
+    """Deterministic stdlib-only lexical fallback for unauthenticated use."""
+
+    def __init__(self, dim: int = 384, **_kwargs: object) -> None:
+        if dim < 1:
+            raise ValueError("embedding dimension must be positive")
+        self.dim = dim
+
+    def embed(self, text: str) -> list[float]:
+        """Feature-hash bounded lexical tokens into a normalized vector."""
+        normalized = " ".join(text.lower().split())[:8192]
+        vector = [0.0] * self.dim
+        if not normalized:
+            return vector
+        features = normalized.split()
+        for feature in features:
+            digest = hashlib.blake2b(feature.encode("utf-8"), digest_size=8).digest()
+            bucket = int.from_bytes(digest[:4], "big") % self.dim
+            vector[bucket] += 1.0 if digest[4] & 1 else -1.0
+        norm = math.sqrt(sum(value * value for value in vector))
+        if norm:
+            vector = [value / norm for value in vector]
+        return vector
 
 
 class OpenAIEmbedder(DaemonEmbedder):
@@ -86,12 +108,17 @@ class EmbeddingClient:
         psk: str = "",
     ) -> None:
         del use_openai_if_available
-        self._embedder: Embedder = DaemonEmbedder(
-            model_profile=model_profile or "default",
-            daemon_url=daemon_url,
-            psk=psk,
-            timeout=timeout,
-        )
+        self._profile = model_profile or "default"
+        self._timeout = timeout
+        if psk:
+            self._embedder: Embedder = DaemonEmbedder(
+                model_profile=self._profile,
+                daemon_url=daemon_url,
+                psk=psk,
+                timeout=timeout,
+            )
+        else:
+            self._embedder = HashEmbedder()
 
     def embed_text(self, text: str) -> list[float]:
         return self._embedder.embed(text)
@@ -131,7 +158,8 @@ class VectorStore:
             for item_id, vector in self._entries.items()
         ]
         scored.sort(key=lambda pair: pair[1], reverse=True)
-        return scored[: max(0, min(k, len(scored)))]
+        limit = min(max(1, k), len(scored))
+        return scored[:limit]
 
     def similarity(self, query: list[float], item_id: str) -> float:
         return cosine_similarity(query, self._entries[item_id])

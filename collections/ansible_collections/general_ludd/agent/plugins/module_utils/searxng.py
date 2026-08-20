@@ -32,7 +32,9 @@ from urllib.parse import urlparse as _urlparse
 
 from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import GluddClient
 
-_PRICE_RE = _re.compile(r"\$\s*(\d{1,6}(?:[.,]\d{1,2})?)")
+_PRICE_RE = _re.compile(
+    r"\$\s*(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d{1,6}(?:\.\d{1,2})?)"
+)
 _STAR_RE = _re.compile(r"(\d(?:[.,]\d)?)[\s/]*(?:star|⭐|out of 5)")
 
 _VALID_CATEGORIES: set[str] = {
@@ -172,8 +174,7 @@ def execute_search(
 
     try:
         conn = _connector(base_url, float(timeout))
-        body = conn.get("/search", params=flat_params)
-        status = int(body.get("_status", 0))
+        status, body = conn._get("/search", params=flat_params)
     except Exception:
         return [], [], search_url
 
@@ -334,8 +335,7 @@ class SearXNGClient:
             "pageno": str(page),
         }
 
-        body = self._connector.get("/search", params=flat_params)
-        status = int(body.get("_status", 0))
+        status, body = self._connector._get("/search", params=flat_params)
 
         if not (200 <= status < 300) or not isinstance(body, dict):
             return SearxResponse(query=query)
@@ -395,8 +395,7 @@ class SearXNGClient:
         }
 
         try:
-            raw = self._connector.get("/search", params=params)
-            status = int(raw.get("_status", 0))
+            status, raw = self._connector._get("/search", params=params)
         except Exception as exc:
             return {
                 "exists": True,
@@ -445,15 +444,15 @@ class SearXNGClient:
     def health(self) -> dict[str, Any]:
         """Check if the SearXNG instance is reachable — delegates to SearXConnector."""
         try:
-            result = self._connector.get("/healthz")
-            ok = result.get("_status") == 200
-            if ok:
+            result = self._connector.health()
+            if result.get("ok") is True:
                 return {
                     "ok": True,
                     "detail": "SearXNG reachable",
                     "base_url": self.base_url,
                 }
-            return {"ok": False, "detail": f"HTTP error: {result.get('error', 'unknown')}"}
+            detail = result.get("detail") or result.get("error") or "unknown"
+            return {"ok": False, "detail": f"HTTP error: {detail}"}
         except Exception as exc:
             return {"ok": False, "detail": str(exc)}
 
