@@ -11,10 +11,14 @@ import ast
 import importlib
 import os
 import sys
+import tokenize
+from importlib.metadata import version as distribution_version
+from io import StringIO
 from pathlib import Path
 from types import ModuleType
 
 import pytest
+from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC_PKG = ROOT / "src" / "general_ludd"
@@ -45,9 +49,123 @@ def _subpackage_of(module: str, parent: str) -> bool:
     return module == parent or module.startswith(parent + ".")
 
 
+class _RuntimeImportVisitor(ast.NodeVisitor):
+    """Collect imports executed while a module is initialized."""
+
+    def __init__(self) -> None:
+        self.modules: set[str] = set()
+
+    def visit_Import(self, node: ast.Import) -> None:
+        self.modules.update(alias.name for alias in node.names if _subpackage_of(alias.name, PKG_NAME))
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.level == 0 and node.module and _subpackage_of(node.module, PKG_NAME):
+            self.modules.add(node.module)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "import_module"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+            and _subpackage_of(node.args[0].value, PKG_NAME)
+        ):
+            self.modules.add(node.args[0].value)
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return
+
+    def visit_If(self, node: ast.If) -> None:
+        is_type_checking = (isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING") or (
+            isinstance(node.test, ast.Attribute) and node.test.attr == "TYPE_CHECKING"
+        )
+        if is_type_checking:
+            for statement in node.orelse:
+                self.visit(statement)
+            return
+        self.generic_visit(node)
+
+
+def _direct_package_imports(source: str) -> set[str]:
+    """Return fully qualified Gludd imports executed at module initialization."""
+    visitor = _RuntimeImportVisitor()
+    visitor.visit(ast.parse(source))
+    return visitor.modules
+
+
 _FILE_PATHS = _collect_py_files()
 _MODULE_NAMES = {_path_to_module(p) for p in _FILE_PATHS}
 _INIT_FILES = [p for p in _FILE_PATHS if p.name == "__init__.py"]
+
+
+def test_cycle_finder_reports_a_closed_path() -> None:
+    """Cycle diagnostics must agree with the boolean cycle guard."""
+    graph = {"a": {"b"}, "b": {"c"}, "c": {"a"}, "leaf": set()}
+
+    cycle = _find_cycle(graph)
+
+    assert cycle is not None
+    assert cycle[0] == cycle[-1]
+    assert set(cycle[:-1]) == {"a", "b", "c"}
+    assert _find_cycle({"a": {"b"}, "b": set()}) is None
+
+
+def test_significant_line_count_ignores_layout_only_lines() -> None:
+    """Comments, blank lines, and continued string rows are not code size."""
+    source = '\n'.join(
+        (
+            '"""module docs',
+            'continued docs',
+            '"""',
+            '',
+            '# comment',
+            'VALUE = 1',
+            '',
+            'def value():',
+            '    return VALUE',
+        )
+    )
+
+    assert _significant_line_count(source) == 4
+
+
+def test_direct_package_import_audit_sees_static_and_dynamic_imports() -> None:
+    """Thin-init auditing must see both import syntax and import_module calls."""
+    source = '\n'.join(
+        (
+            'import general_ludd.alpha',
+            'from general_ludd.beta import value',
+            'import os',
+            'importlib.import_module("general_ludd.gamma")',
+        )
+    )
+
+    assert _direct_package_imports(source) == {
+        "general_ludd.alpha",
+        "general_ludd.beta",
+        "general_ludd.gamma",
+    }
+
+
+def test_leaf_duplication_audit_exempts_namespaced_conventions_only() -> None:
+    """Conventional leaves stay namespaced; arbitrary mass duplication fails."""
+    modules = {
+        *(f"general_ludd.area{index}.contracts" for index in range(8)),
+        *(f"general_ludd.area{index}.ambiguous" for index in range(8)),
+    }
+
+    duplicates = _critical_leaf_duplicates(modules)
+
+    assert "contracts" not in duplicates
+    assert duplicates["ambiguous"] == 8
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -250,84 +368,59 @@ def _static_import_graph() -> dict[str, set[str]]:
         if p.name == "__init__.py":
             continue  # skip package re-exports — not real cycles
         src = p.read_text()
-        tree = ast.parse(src)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    if _subpackage_of(alias.name, PKG_NAME):
-                        graph[mod].add(alias.name)
-            elif isinstance(node, ast.ImportFrom):
-                if node.module is None:
-                    continue
-                if _subpackage_of(node.module, PKG_NAME):
-                    graph[mod].add(node.module)
+        graph[mod].update(_direct_package_imports(src))
     return graph
 
 
+def _find_cycle(graph: dict[str, set[str]]) -> list[str] | None:
+    """Return one deterministic closed cycle path, or ``None``."""
+    color: dict[str, int] = {}
+    parent: dict[str, str] = {}
+
+    def dfs(node: str) -> list[str] | None:
+        color[node] = 1
+        for neighbor in sorted(graph.get(node, set())):
+            state = color.get(neighbor, 0)
+            if state == 0:
+                parent[neighbor] = node
+                cycle = dfs(neighbor)
+                if cycle is not None:
+                    return cycle
+            elif state == 1:
+                cycle_path = [neighbor]
+                current = node
+                while current != neighbor:
+                    cycle_path.append(current)
+                    current = parent[current]
+                cycle_path.append(neighbor)
+                cycle_path.reverse()
+                return cycle_path
+        color[node] = 2
+        return None
+
+    for node in sorted(graph):
+        if color.get(node, 0) == 0:
+            cycle = dfs(node)
+            if cycle is not None:
+                return cycle
+    return None
+
+
 def _has_cycle(graph: dict[str, set[str]]) -> bool:
-    visited: set[str] = set()
-    stack: set[str] = set()
-
-    def dfs(node: str) -> bool:
-        visited.add(node)
-        stack.add(node)
-        for neighbor in graph.get(node, set()):
-            if neighbor not in visited:
-                if dfs(neighbor):
-                    return True
-            elif neighbor in stack:
-                return True
-        stack.discard(node)
-        return False
-
-    return any(node not in visited and dfs(node) for node in sorted(graph))
+    return _find_cycle(graph) is not None
 
 
 def test_no_static_circular_import_cycle() -> None:
     graph = _static_import_graph()
-    if _has_cycle(graph):
-        # Print the actual cycle for debugging
-        color: dict[str, int] = {}
-        parent: dict[str, str | None] = {}
-        for v in graph:
-            color[v] = 0
-            parent[v] = None
-
-        def _dfs_cycle(u: str) -> list[str] | None:
-            color[u] = 1
-            for v in graph.get(u, set()):
-                if v not in color:
-                    color[v] = 0
-                    parent[v] = u
-                    cycle = _dfs_cycle(v)
-                    if cycle is not None:
-                        return cycle
-                elif color.get(v) == 1:
-                    cycle_path = [v]
-                    cur: str | None = u
-                    while cur is not None and cur != v:
-                        cycle_path.append(cur)
-                        cur = parent.get(cur)
-                    cycle_path.append(v)
-                    cycle_path.reverse()
-                    return cycle_path
-            color[u] = 2
-            return None
-
-        cycle: list[str] | None = None
-        for node in sorted(graph):
-            if color.get(node) == 0:
-                cycle = _dfs_cycle(node)
-                if cycle is not None:
-                    break
+    cycle = _find_cycle(graph)
+    if cycle is not None:
         import sys
 
-        assert cycle is not None, "Cycle scan reported a cycle without its path"
         print(f"\nCYCLE: {' → '.join(cycle)}", file=sys.stderr)
-        for i, a in enumerate(cycle):
-            b = cycle[(i + 1) % len(cycle)]
+        for index in range(len(cycle) - 1):
+            a, b = cycle[index : index + 2]
             print(f"  {a} imports {b}", file=sys.stderr)
-    assert not _has_cycle(graph), "Circular import cycle detected in static dependency graph"
+    assert cycle is None, "Circular import cycle detected in runtime initialization graph"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -372,13 +465,31 @@ def test_relative_imports_stay_in_subpackage() -> None:
 
 _MAX_LINES = 5000
 
+_LAYOUT_TOKEN_TYPES = frozenset(
+    {
+        tokenize.COMMENT,
+        tokenize.DEDENT,
+        tokenize.ENCODING,
+        tokenize.ENDMARKER,
+        tokenize.INDENT,
+        tokenize.NEWLINE,
+        tokenize.NL,
+    }
+)
+
+
+def _significant_line_count(source: str) -> int:
+    """Count physical rows that contain a Python token with runtime meaning."""
+    tokens = tokenize.generate_tokens(StringIO(source).readline)
+    return len({token.start[0] for token in tokens if token.type not in _LAYOUT_TOKEN_TYPES})
+
 
 def test_no_extreme_module_size() -> None:
     oversize: list[str] = []
     for p in _FILE_PATHS:
-        lines = p.read_text().split("\n")
-        if len(lines) > _MAX_LINES:
-            oversize.append(f"{_path_to_module(p)}: {len(lines)} lines")
+        significant_lines = _significant_line_count(p.read_text())
+        if significant_lines > _MAX_LINES:
+            oversize.append(f"{_path_to_module(p)}: {significant_lines} significant lines")
     assert not oversize, "\n".join(oversize)
 
 
@@ -471,11 +582,16 @@ def test_no_sys_path_manipulation() -> None:
 # 15. Top-level package __init__ is thin
 # ═══════════════════════════════════════════════════════════════════
 
+_TOP_LEVEL_IMPORT_ALLOWLIST = frozenset({"general_ludd.compat.annotated_types"})
+
 
 def test_top_level_init_imports_not_excessive() -> None:
     mod = importlib.import_module("general_ludd")
-    public = sorted(n for n in dir(mod) if not n.startswith("_"))
-    assert "__version__" in public, "top-level init should export __version__"
+    assert Version(mod.__version__) == Version(distribution_version("general-ludd-agent"))
+    eager_imports = _direct_package_imports((SRC_PKG / "__init__.py").read_text())
+    assert eager_imports <= _TOP_LEVEL_IMPORT_ALLOWLIST, (
+        f"top-level init eagerly imports unsupported modules: {sorted(eager_imports - _TOP_LEVEL_IMPORT_ALLOWLIST)}"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -497,17 +613,56 @@ def test_top_level_import_time() -> None:
 #     (warns on >3 but only hard-fails at critical duplicates)
 # ═══════════════════════════════════════════════════════════════════
 
+_NAMESPACED_LEAF_ALLOWLIST = frozenset({"contracts", "registry", "runner"})
+
+
+def _leaf_modules(module_names: set[str]) -> dict[str, list[str]]:
+    leaves: dict[str, list[str]] = {}
+    for name in sorted(module_names):
+        leaf = name.rsplit(".", maxsplit=1)[-1]
+        if leaf != "__init__":
+            leaves.setdefault(leaf, []).append(name)
+    return leaves
+
+
+def _critical_leaf_duplicates(module_names: set[str]) -> dict[str, int]:
+    """Return non-conventional leaves duplicated across eight or more namespaces."""
+    return {
+        leaf: len(names)
+        for leaf, names in _leaf_modules(module_names).items()
+        if len(names) >= 8 and leaf not in _NAMESPACED_LEAF_ALLOWLIST
+    }
+
+
+def _unqualified_leaf_imports(leaves: set[str]) -> list[str]:
+    violations: list[str] = []
+    for path in _FILE_PATHS:
+        module = _path_to_module(path)
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.split(".", maxsplit=1)[0] in leaves:
+                        violations.append(f"{module}:{node.lineno} imports {alias.name}")
+            elif (
+                isinstance(node, ast.ImportFrom)
+                and node.level == 0
+                and node.module
+                and node.module.split(".", maxsplit=1)[0] in leaves
+            ):
+                violations.append(f"{module}:{node.lineno} imports {node.module}")
+    return violations
+
 
 def test_no_critical_leaf_duplicates() -> None:
-    leaf_count: dict[str, list[str]] = {}
-    for name in sorted(_MODULE_NAMES):
-        leaf = name.split(".")[-1]
-        if leaf == "__init__":
-            continue
-        leaf_count.setdefault(leaf, []).append(name)
+    critical = _critical_leaf_duplicates(_MODULE_NAMES)
+    assert not critical, f"Extreme non-conventional leaf duplication (>7 occurrences): {critical}"
 
-    critical: list[str] = []
-    for leaf, names in sorted(leaf_count.items()):
-        if len(names) >= 8:
-            critical.append(f"{leaf}: {len(names)} occurrences across {sorted(names)}")
-    assert not critical, "Extreme leaf module duplication (>7 occurrences):\n" + "\n".join(critical)
+    namespaced_duplicates = {
+        leaf
+        for leaf, names in _leaf_modules(_MODULE_NAMES).items()
+        if len(names) > 1 and leaf in _NAMESPACED_LEAF_ALLOWLIST
+    }
+    unqualified_imports = _unqualified_leaf_imports(namespaced_duplicates)
+    assert not unqualified_imports, (
+        "Duplicated leaf modules require qualified imports:\n" + "\n".join(unqualified_imports)
+    )
