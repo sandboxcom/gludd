@@ -145,4 +145,3 @@ Promotion evidence must additionally include the full collection build,
 Ansible syntax and Molecule gates, aggregate coverage of at least 85 percent,
 at least 75 percent for every touched Python file, and the release artifact
 checks described in the beta4 runbook.
-

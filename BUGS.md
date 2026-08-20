@@ -80,7 +80,7 @@ All premature-stop incidents and process failures are tracked here.
 
 ### 2026-08-15 — (resolved) Pre-commit HTML-escaped the functional STATUS-TABLE markers in README.md
 
-- **What happened**: A pre-commit hook rewrote `<!-- STATUS-TABLE:START/END -->` in README.md to `&lt;!-- ... --&gt;`, which would have broken `scripts/gen_status_table.py`, `status_snapshot.py`, and `preflight.py` marker detection and made CI's `check-status-table` fail.
+- **What happened**: A pre-commit hook rewrote `&lt;!-- STATUS-TABLE:START/END --&gt;` in README.md to `&lt;!-- ... --&gt;`, which would have broken `scripts/gen_status_table.py`, `status_snapshot.py`, and `preflight.py` marker detection and made CI's `check-status-table` fail.
 - **Root cause**: `scripts/fix_docs_drift.py::_escape_html_comments` escaped every HTML comment delimiter, including functional markers that tooling locates by exact string.
 - **Fix applied**: The escaper now preserves a fixed set of functional markers (STATUS-TABLE START/END, gate:begin/gate:end), including indented forms; prose mentioning delimiters is still escaped. Regression pin: `tests/unit/test_fix_docs_drift.py` (2/2). Commit `d4a0cac2` + `58820a18`.
 - **Lesson**: Comment-escaping formatters must preserve comments that are machine-read markers; pin the marker set with a test in the same change.
