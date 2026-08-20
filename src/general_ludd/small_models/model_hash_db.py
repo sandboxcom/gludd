@@ -10,6 +10,8 @@ import hashlib
 import json
 import logging
 import os
+import tempfile
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -230,6 +232,17 @@ class ModelHashDB:
         self._persist()
         logger.info("Registered %d file hashes for %s", len(files), model_id)
 
+    def register_models(self, models: Mapping[str, Iterable[FileHash]]) -> None:
+        """Replace multiple models and persist the complete registry once."""
+        prepared = {model_id: list(files) for model_id, files in models.items()}
+        self._entries.update(prepared)
+        self._persist()
+        logger.info(
+            "Registered %d file hashes for %d models",
+            sum(len(files) for files in prepared.values()),
+            len(prepared),
+        )
+
     def get_hashes(self, model_id: str) -> list[FileHash] | None:
         """Return registered artifact hashes for a model, if present."""
         return self._entries.get(model_id)
@@ -353,8 +366,34 @@ class ModelHashDB:
         if self._db_path is None:
             return
         data = {model_id: [fh.to_dict() for fh in files] for model_id, files in self._entries.items()}
-        with open(self._db_path, "w") as f:
-            json.dump(data, f, indent=2, sort_keys=True)
+        target = Path(self._db_path)
+
+        # Preserve the established permission contract before replacing the
+        # file atomically; replacing a read-only file can otherwise succeed
+        # when its parent directory is writable.
+        if target.exists():
+            with target.open("r+"):
+                pass
+
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=target.parent,
+                prefix=f".{target.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temp_file:
+                temp_path = Path(temp_file.name)
+                json.dump(data, temp_file, indent=2, sort_keys=True)
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+            os.replace(temp_path, target)
+        except Exception:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+            raise
 
 
 def _sha256_file(path: str) -> str:

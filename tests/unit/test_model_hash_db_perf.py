@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import tempfile
 import threading
 import time
+import tracemalloc
 from pathlib import Path
-
-import pytest
 
 from general_ludd.small_models.model_hash_db import FileHash, ModelHashDB
 
@@ -118,13 +116,6 @@ class TestQueryThroughput:
 
 
 class TestPersistencePerformance:
-    # CI runners (constrained vCPUs) need >180s for the persist-5000 benchmark,
-    # blowing the shard time budget; the benchmark remains enforceable locally.
-    pytestmark = pytest.mark.skipif(
-        os.environ.get("CI") in ("1", "true"),
-        reason="persist-5000 benchmark exceeds CI shard time budget; runs locally",
-    )
-
     def test_load_1000_models_from_json(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "large.json"
@@ -167,17 +158,26 @@ class TestPersistencePerformance:
             assert db_path.stat().st_size > 50000
             assert elapsed < 2.0, f"persist 1000 models took {elapsed:.3f}s, expected < 2.0s"
 
-    def test_persist_5000_models_to_json(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "persist5000.json"
-            db = ModelHashDB(db_path=str(db_path))
-            for i in range(5000):
-                db.register_model(f"org/model-{i:05d}", [_make_filehash(i)])
+    def test_persist_5000_models_to_json(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "persist5000.json"
+        db = ModelHashDB(db_path=str(db_path))
+        models = {f"org/model-{i:05d}": [_make_filehash(i)] for i in range(5000)}
+
+        tracemalloc.start()
+        try:
             start = time.perf_counter()
-            db._persist()
+            db.register_models(models)
             elapsed = time.perf_counter() - start
-            assert db_path.exists()
-            assert elapsed < 10.0, f"persist 5000 models took {elapsed:.3f}s, expected < 10.0s"
+            _, peak_bytes = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+
+        persisted = json.loads(db_path.read_text())
+        assert len(persisted) == 5000
+        assert persisted["org/model-04999"][0] == _make_filehash(4999).to_dict()
+        assert elapsed < 10.0, f"persist 5000 models took {elapsed:.3f}s, expected < 10.0s"
+        assert peak_bytes < 16 * 1024 * 1024, f"persist peak allocation was {peak_bytes / (1024 * 1024):.1f} MiB"
+        assert list(tmp_path.iterdir()) == [db_path]
 
 
 class TestFileSizeEstimation:

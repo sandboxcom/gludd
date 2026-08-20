@@ -218,6 +218,22 @@ class TestModelHashDB:
             assert files[0].filename == "x.bin"
             assert files[0].sha256 == "a" * 64
 
+    def test_atomic_persist_failure_preserves_previous_file(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "hashes.json"
+        original = '{"org/existing": [{"filename": "safe.bin", "sha256": "safe"}]}'
+        db_path.write_text(original)
+        db = ModelHashDB(db_path=str(db_path))
+        db._entries["org/new"] = [FileHash("new.bin", "n" * 64)]
+
+        with (
+            patch("general_ludd.small_models.model_hash_db.json.dump", side_effect=OSError("disk full")),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            db._persist()
+
+        assert db_path.read_text() == original
+        assert list(tmp_path.iterdir()) == [db_path]
+
     def test_json_persistence_empty_db(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "hashes.json"
