@@ -1,11 +1,14 @@
 # Release runbook
 
-This is the fail-closed procedure for cutting Gludd `v0.1.0-beta.4`. A tag is
-not a release, and a release is not complete until every required artifact has
-passed both the pre-publish functional matrix and the post-publish remote
-completeness check.
+This is the fail-closed procedure for cutting Gludd `v0.1.0-beta.4`.
 
-## Release verdict
+## The rule
+
+A tag is not a release. A release is complete only when the exact tagged commit
+has green CI, every required artifact has passed the pre-publish functional
+matrix, and the published release passes the remote completeness check.
+
+## What "complete" means
 
 The only acceptable remote verdict is:
 
@@ -20,6 +23,10 @@ assets, a non-draft prerelease, the exact tag version in release artifacts, and
 no zero-byte asset. Before publication, CI also verifies artifact contents,
 aggregate checksums, digest-pinned image references, canonical Ansible runtime
 metadata, and all smoke attestations.
+
+The legacy 12 artifact categories remain a compatibility floor within beta4's
+28-category matrix; satisfying those 12 categories alone is not a complete
+beta4 release.
 
 ## Preconditions
 
@@ -36,6 +43,8 @@ make ci-verdict-safe BRANCH=development
 
 Required evidence:
 
+- `pyproject.toml`, `src/general_ludd/__init__.py`, and the README carry the same
+  committed version bump;
 - the project version is `0.1.0-beta.4` everywhere;
 - the core/controller/managed-host Python boundary is valid and locked;
 - every cross-collection role edge resolves and its dependency is declared;
@@ -45,7 +54,14 @@ Required evidence:
 - CI is successful for the exact `development` tip. Missing, stale, pending,
   or cancelled CI is not green.
 
-## Promote development
+## Verify CI
+
+Run `make ci-verdict-safe BRANCH=development` only after the full gate passes.
+The verdict must belong to the exact development SHA that will be merged. A
+missing, pending, stale, skipped, timed-out, or cancelled run is not a green
+verdict and cannot authorize a release.
+
+## Merge development
 
 Only the main checkout may merge development to master.
 
@@ -57,7 +73,7 @@ make verify-remote BRANCH=master SHA=<master-full-sha>
 Do not create a release from a feature worktree. Do not rebase either shared
 branch.
 
-## Cut beta4
+## Cut beta4 with release-cut
 
 ```text
 make release-cut TAG=v0.1.0-beta.4 MSG='v0.1.0-beta.4: sandbox, local-model, runtime-boundary, and artifact-matrix hardening'
@@ -120,7 +136,7 @@ revision. Never mutate or retag the prior digest. Platform release assets are
 also immutable: a repair must come from the same tagged CI SHA or from a new
 beta tag.
 
-## Verify the published release
+## Verify with verify-release-completeness
 
 ```text
 make verify-release-completeness TAG=v0.1.0-beta.4
@@ -154,6 +170,21 @@ make verify-release-completeness TAG=v0.1.0-beta.4
 If the tagged SHA is red or an artifact is functionally invalid, do not paper
 over it. Fix forward on development, repeat the full gate and exact-SHA CI
 check, then cut the next prerelease tag.
+
+## Traps
+
+- **A cancelled CI run is NOT a verdict.** Cancellation, timeout, missing CI,
+  and a successful run for a different SHA all block promotion.
+- A successful build command does not prove a usable package. Execute each
+  packaged form and require its smoke attestation before publication.
+- Workflow-artifact retention is not release publication. Missing uploads fail
+  immediately, and only the checksummed GitHub Release set is the durable
+  release verdict.
+- Cleanup traps are part of the gate. They preserve an existing primary failure
+  and turn a detach, container-removal, or temporary-directory cleanup failure
+  into a red step when the smoke itself succeeded.
+- Never repair a release with locally rebuilt files. Re-run CI from the exact
+  tagged SHA when safe, or fix forward and cut a new prerelease.
 
 ## Long-lived practitioner failure history
 

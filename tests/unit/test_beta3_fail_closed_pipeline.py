@@ -20,6 +20,7 @@ REQUIRED_RELEASE_JOBS = {
     "windows",
     "termux",
     "container",
+    "ansible-ee",
     "game-building",
 }
 REQUIRED_FAIL_CLOSED_JOBS = REQUIRED_RELEASE_JOBS - {"gate", "coverage"}
@@ -63,6 +64,13 @@ def test_tag_pipeline_has_no_false_green_escape_hatches() -> None:
     assert "|| true" not in source
     assert "(informational)" not in source
     assert "reporting-only, non-gating" not in source
+
+
+def test_cleanup_traps_preserve_primary_failures_and_fail_closed() -> None:
+    source = WORKFLOW_PATH.read_text(encoding="utf-8")
+    assert source.count("primary_status=$?") >= 2
+    assert source.count("cleanup_failed=1") >= 2
+    assert source.count('return "$primary_status"') >= 2
 
 
 def test_all_release_prerequisites_are_blocking() -> None:
