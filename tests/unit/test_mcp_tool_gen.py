@@ -143,6 +143,39 @@ def test_extract_argument_spec_from_source():
     assert spec["timeout"]["default"] == 10
 
 
+def test_extract_argument_spec_from_local_helper_call():
+    """A module may keep its literal argument spec in a local typed helper."""
+    source = """
+def _argument_spec():
+    return {
+        "path": {"type": "str", "required": True},
+        "op": {"type": "str", "choices": ["read", "write"]},
+    }
+
+module = AnsibleModule(argument_spec=_argument_spec())
+"""
+
+    spec = gen.extract_argument_spec(source)
+
+    assert spec == {
+        "path": {"type": "str", "required": True},
+        "op": {"type": "str", "choices": ["read", "write"]},
+    }
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "AnsibleModule(supports_check_mode=True)",
+        "def build(value):\n    return {}\nAnsibleModule(argument_spec=build('x'))",
+        "AnsibleModule(argument_spec=missing_helper())",
+        "def empty():\n    value = 1\nAnsibleModule(argument_spec=empty())",
+    ],
+)
+def test_extract_argument_spec_helper_resolution_fails_closed(source: str) -> None:
+    assert gen.extract_argument_spec(source) == {}
+
+
 def test_parse_doc_blocks():
     src = MODULES_DIR.joinpath("gludd_ping.py").read_text(encoding="utf-8")
     doc = gen.parse_doc_blocks(src)
@@ -254,6 +287,37 @@ def test_write_and_reload_manifest(tmp_path: Path, monkeypatch):
     for entry in loaded:
         assert set(entry) >= {"name", "description", "input_schema", "server_id"}
         assert entry["name"].startswith("general_ludd.agent.gludd_")
+
+
+def test_generator_main_check_is_read_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    manifest = tmp_path / "MCP_TOOLS_MANIFEST.json"
+    topics = tmp_path / "MCP_TOOLS_TOPICS.yml"
+    monkeypatch.setattr(gen, "MANIFEST_PATH", manifest)
+    monkeypatch.setattr(gen, "TOPICS_PATH", topics)
+
+    assert gen.main(["--check"]) == 0
+
+    output = capsys.readouterr().out
+    assert "Would write 39 tool defs" in output
+    assert not manifest.exists()
+    assert not topics.exists()
+
+
+def test_generator_main_writes_both_canonical_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    manifest = tmp_path / "MCP_TOOLS_MANIFEST.json"
+    topics = tmp_path / "MCP_TOOLS_TOPICS.yml"
+    monkeypatch.setattr(gen, "MANIFEST_PATH", manifest)
+    monkeypatch.setattr(gen, "TOPICS_PATH", topics)
+
+    assert gen.main([]) == 0
+
+    assert len(json.loads(manifest.read_text(encoding="utf-8"))) == 39
+    assert "Wrote 39 MCP tool defs" in capsys.readouterr().out
+    assert topics.read_text(encoding="utf-8")
 
 
 def test_committed_manifest_is_valid_if_present():

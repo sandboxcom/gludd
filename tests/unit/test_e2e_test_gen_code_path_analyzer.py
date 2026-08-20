@@ -57,10 +57,7 @@ class TestDogfoodSelfAnalysis:
         out = str(tmp_path / "funcs.json")
         data = _run_analyzer(str(ANALYZER_SCRIPT), out)
         func_names = {f["name"] for f in _get_functions(data)}
-        assert "main" in func_names
-        assert "_try_code_path_analyzer" in func_names
-        assert "_extract_calls" in func_names
-        assert "_call_name" in func_names
+        assert func_names == {"main", "_extract_calls", "_call_name"}
 
     def test_finds_own_classes(self, tmp_path: Path) -> None:
         out = str(tmp_path / "classes.json")
@@ -89,10 +86,8 @@ class TestDogfoodSelfAnalysis:
         data = _run_analyzer(str(ANALYZER_SCRIPT), out)
         funcs_by_name = {f["name"]: f for f in _get_functions(data)}
         assert funcs_by_name["main"]["is_public"] is True
-        assert funcs_by_name["_try_code_path_analyzer"]["is_public"] is False
         assert funcs_by_name["_extract_calls"]["is_public"] is False
         assert funcs_by_name["_call_name"]["is_public"] is False
-        assert funcs_by_name["_ensure_path"]["is_public"] is False
 
     def test_private_class_is_flagged(self, tmp_path: Path) -> None:
         sample = tmp_path / "_sample_for_test.py"

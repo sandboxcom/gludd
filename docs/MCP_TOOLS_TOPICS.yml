@@ -837,99 +837,64 @@ general_ludd.agent.gludd_gate_check:
 general_ludd.agent.gludd_git:
   DOCUMENTATION:
     description:
-    - Exposes gludd's hardened C(general_ludd.git_automation.GitAutomation)
-    - control plane to roles/playbooks so an agent-authored job can perform git
-    - operations WITHOUT reimplementing the safety logic.
-    - This is a thin B(delegating wrapper) — it does not reimplement git. The
-    - 'Python core provides per-repo C(.git/index.lock) serialization (issue #63),'
-    - a bounded subprocess timeout, a non-interactive git environment,
-    - leading-dash ref rejection, C(--) end-of-options separators, worktree-path
-    - traversal guards, and typed results the daemon also consumes synchronously.
-    - Keeping that core in Python (rather than a pure role) preserves those
-    - guarantees; this module simply makes the same operations available on the
-    - Ansible execution seam.
-    - 'Idempotent where git is: C(init) reports C(changed=false) for an existing'
-    - repository; C(branch) is a no-op if the branch already exists; C(commit)
-    - reports C(changed=false) when there is nothing to commit.
-    - Check-mode safe — read-only C(worktree_list) runs; mutating ops are skipped
-    - in check mode and report the change they WOULD make.
+    - Sends a typed, authenticated request to the daemon-owned GitAutomation service.
+    - Collection Python never imports Gludd core or launches git itself.
+    - Mutations remain check-mode safe and preserve the historical result schema.
     module: gludd_git
     options:
-      branch: {}
-      clone_allow_local: {}
-      clone_url: {}
-      files: {}
-      gate_cmd: {}
-      git_clone_timeout: {}
-      message: {}
-      op: {}
-      path: {}
-      remote: {}
-      sha: {}
-      source: {}
-      state_reconciled_preserve_head_file: {}
-      state_reconciled_preserve_heads: {}
-      strategy: {}
-      tag: {}
-      target: {}
-      target_dir: {}
-      todo_id: {}
-      worktree_path: {}
-    short_description: Git control-plane ops (init/commit/branch/worktree/merge/push)
-      via git_automation
+      daemon_url:
+        default: http://localhost:8000
+        type: str
+      op:
+        choices:
+        - init
+        - clone
+        - commit
+        - gated_commit
+        - current_branch
+        - branch
+        - branch_list
+        - branch_delete
+        - worktree_list
+        - worktree_create
+        - worktree_remove
+        - merge
+        - gated_merge
+        - push
+        - verify_remote
+        - tag_release
+        - tag_checkpoint
+        - release_tag
+        - checkpoint_tag
+        - state
+        - batch_push
+        - release_cut
+        - release_delete
+        - release_recut
+        - ci_verdict
+        - ci_cancel
+        required: true
+        type: str
+      path:
+        required: true
+        type: str
+      psk:
+        default: ''
+        no_log: true
+        type: str
+    short_description: Run hardened git control-plane operations through Gludd
   EXAMPLES:
   - general_ludd.agent.gludd_git:
-      op: init
-      path: /workspace/myrepo
-    name: Initialize an automation repository
-  - general_ludd.agent.gludd_git:
-      message: 'auto: apply model-suggested fix'
-      op: commit
-      path: /tmp/worktrees/fix-auto-20260612
-    name: Commit changes in worktree
-    register: git_result
-  - general_ludd.agent.gludd_git:
-      branch: fix/auto-20260612
+      branch: feature/example
       op: branch
-      path: /workspace/myrepo
-    name: Create branch
-  - general_ludd.agent.gludd_git:
-      op: worktree_list
-      path: /workspace/myrepo
-    name: List worktrees
-    register: wts
-  - general_ludd.agent.gludd_git:
-      branch: agent/TODO-1234/feature
-      op: worktree_create
-      path: /workspace/myrepo
-      worktree_path: /workspace/myrepo-wt-1234
-    name: Add an agent worktree on a new branch
-  - general_ludd.agent.gludd_git:
-      op: merge
-      path: /workspace/myrepo
-      source: agent/TODO-1234/feature
-      strategy: ff
-      target: main
-    name: Fast-forward merge a green branch
-  - general_ludd.agent.gludd_git:
-      branch: main
-      op: push
-      path: /workspace/myrepo
-    name: Push a branch to origin (bounded by the control-plane timeout)
+      path: /workspace/repo
+      psk: '{{ vault_gludd_psk }}'
+    name: Create a branch through the daemon control plane
   RETURN:
-    branch:
-      description: Branch name (op=branch/current_branch).
-      returned: when op=branch/current_branch
-      type: str
     result:
-      description: Typed result dict for init/worktree/merge/push ops.
-      returned: when op in (worktree_list, worktree_create, worktree_remove, merge,
-        push)
+      description: Typed daemon result for the selected operation.
+      returned: always
       type: dict
-    sha:
-      description: Commit SHA (op=commit only).
-      returned: when op=commit and changed=true
-      type: str
   module: gludd_git
 general_ludd.agent.gludd_human_todo:
   DOCUMENTATION:
@@ -2011,7 +1976,7 @@ general_ludd.agent.gludd_open_code:
 general_ludd.agent.gludd_ornith:
   DOCUMENTATION:
     description:
-    - Bidirectional seam for the gludd × Ornith symbiotic loop. Two states: null
+    - Bidirectional seam for the gludd x Ornith symbiotic loop. Two states: null
     - C(state=pairs) — fetch the most-recent training pairs whose outcome matches
       a comma-separated status list (e.g. C(rejected_by_gate,rejected_by_review,reverted)).
       These are the artifacts that NEED improvement. Hits the daemon's C(GET /admin/ornith/pairs)
@@ -2619,7 +2584,8 @@ general_ludd.agent.gludd_rag:
 general_ludd.agent.gludd_reload:
   DOCUMENTATION:
     description:
-    - 'Wraps C(general_ludd.reload.hot_reloader.HotReloader.reload_code_module):'
+    - Calls the authenticated Gludd daemon reload endpoint, which wraps
+    - 'C(general_ludd.reload.hot_reloader.HotReloader.reload_code_module):'
     - snapshots the live module bytes, C(os.replace)s the candidate source over
     - the live path, C(importlib.reload)s the module, then runs a health gate
     - (a C(/readyz) poll). If the health gate fails or the reload raises, the
@@ -2627,7 +2593,8 @@ general_ludd.agent.gludd_reload:
     - module ends up exactly as it started.
     - 'Fail-closed: a missing/non-importable target, a missing candidate, or a'
     - failed health gate all yield C(success=false).
-    - Runs in-process (same venv as C(general_ludd)).
+    - The collection validates and hashes the candidate but never imports the
+    - Gludd core runtime; daemon authentication is explicit.
     module: gludd_reload
     options:
       candidate_source_path: {}
@@ -2655,114 +2622,6 @@ general_ludd.agent.gludd_reload:
       returned: always
       type: bool
   module: gludd_reload
-general_ludd.agent.gludd_scapy:
-  DOCUMENTATION:
-    description:
-    - Wraps the C(general_ludd.networking.scapy_adapter) so networking playbooks can
-      craft, send, sniff, and analyze packets directly.
-    - Read-only actions (C(read_pcap), C(analyze_pcap), C(dissect_packet)) are check-mode
-      safe and return C(changed=False).
-    - Mutating actions (C(write_pcap), C(craft_packet), C(send_packet), C(sniff_packets))
-      require the adapter binary (C(scapy)) and return C(changed=True) on success.
-    - All actions run via the adapter's Python API (never C(shell=True)).
-    module: gludd_scapy
-    options:
-      action:
-        choices:
-        - read_pcap
-        - write_pcap
-        - craft_packet
-        - send_packet
-        - sniff_packets
-        - analyze_pcap
-        - dissect_packet
-        description: The Scapy operation to perform.
-        required: true
-        type: str
-      count:
-        default: 1
-        description: Packet count for C(sniff_packets) or repeat count for C(send_packet).
-        type: int
-      interface:
-        default: eth0
-        description: Network interface for C(send_packet) or C(sniff_packets).
-        type: str
-      output_format:
-        choices:
-        - json
-        - hex
-        default: json
-        description: Output format for C(dissect_packet) — C(json) or C(hex).
-        type: str
-      packet_fields:
-        description: Per-layer field overrides for C(craft_packet) or C(dissect_packet).
-        type: dict
-      packets:
-        description: List of packet dicts for C(craft_packet) batch construction.
-        elements: dict
-        type: list
-      pcap_path:
-        description: Filesystem path to a pcap file for read/write/analyze actions.
-        type: str
-      protocol_stack:
-        description: Ordered protocol layers for C(craft_packet), e.g. C(["Ether",
-          "IP", "TCP"]).
-        elements: str
-        type: list
-      timeout:
-        default: 30
-        description: Sniff timeout in seconds.
-        type: int
-    short_description: Packet crafting, sniffing, and pcap manipulation via Scapy
-  EXAMPLES:
-  - general_ludd.agent.gludd_scapy:
-      action: dissect_packet
-      packet_fields:
-        raw_hex: 00010203040506deadbeef00010800...
-    name: Decode a packet from hex
-    register: decoded
-  - general_ludd.agent.gludd_scapy:
-      action: craft_packet
-      packet_fields:
-        ICMP:
-          type: 8
-        IP:
-          dst: 8.8.8.8
-      protocol_stack:
-      - Ether
-      - IP
-      - ICMP
-    name: Craft an ICMP echo request
-    register: crafted
-  - general_ludd.agent.gludd_scapy:
-      action: sniff_packets
-      count: 5
-      interface: eth0
-      timeout: 10
-    name: Sniff DNS queries on eth0 for 10s
-    register: sniffed
-  - general_ludd.agent.gludd_scapy:
-      action: analyze_pcap
-      pcap_path: /tmp/capture.pcap
-    name: Read and summarize a pcap
-    register: analysis
-  RETURN:
-    result:
-      contains:
-        action:
-          description: The action that was executed.
-          type: str
-        output:
-          description: Action-specific output (packet hex/dicts, sniffed packets,
-            analysis summary).
-          type: raw
-        summary:
-          description: Human-readable summary when applicable.
-          type: str
-      description: Action-specific result payload.
-      returned: always
-      type: dict
-  module: gludd_scapy
 general_ludd.agent.gludd_schedule:
   DOCUMENTATION:
     description:
