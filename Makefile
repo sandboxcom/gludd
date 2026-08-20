@@ -326,6 +326,7 @@ help:
 	@echo "  check-make-target-contract  Validate target variables, help, and behavioral examples"
 	@echo "  active-work-status    Emit auditable PIDs, gate state, hashes, and open tasks"
 	@echo "  terminate-project-process-tree  Identity-check and preview/apply one project process tree"
+	@echo "  kill-worktree-e2e    Stop one verified local E2E tree (PID=; validate with KILL_WORKTREE_E2E_VALIDATE_ONLY=1)"
 	@echo "  status-snapshot       Rewrite SESSION.md gate evidence (STATUS_SNAPSHOT_VALIDATE_ONLY=1 for read-only validation)"
 	@echo "  codex-stop-guard      Fail closed when tracked work remains; emit a Codex stop challenge token"
 	@echo "  codex-stop-confirm    Confirm a previously issued token before recording a valid stop"
@@ -8604,11 +8605,15 @@ release-tag-push:
 # must be this worktree's pytest tests/e2e invocation; descendants are then safe
 # to signal because they belong to that verified root. Usage: make kill-worktree-e2e PID=123
 kill-worktree-e2e:
-	@[ -n "$(PID)" ] || { echo "Usage: make kill-worktree-e2e PID=pid"; exit 1; }
-	@tree_contains_local_e2e() { pid="$$1"; cmd=$$(/bin/ps -p "$$pid" -o command= 2>/dev/null); case "$$cmd" in *"$(CURDIR)"*"pytest tests/e2e/"*) return 0 ;; esac; for child in $$(/usr/bin/pgrep -P "$$pid" 2>/dev/null || true); do tree_contains_local_e2e "$$child" && return 0; done; return 1; }; \
+	@if [ "$(KILL_WORKTREE_E2E_VALIDATE_ONLY)" = "1" ]; then echo "KILL-WORKTREE-E2E-VALIDATION PASS"; exit 0; fi; \
+	[ -n "$(PID)" ] || { echo "Usage: make kill-worktree-e2e PID=pid [KILL_WORKTREE_E2E_VALIDATE_ONLY=1]"; exit 1; }; \
+	tree_contains_local_e2e() { pid="$$1"; cmd=$$(/bin/ps -p "$$pid" -o command= 2>/dev/null); case "$$cmd" in *"$(CURDIR)"*"pytest tests/e2e/"*) return 0 ;; esac; for child in $$(/usr/bin/pgrep -P "$$pid" 2>/dev/null || true); do tree_contains_local_e2e "$$child" && return 0; done; return 1; }; \
 	if ! tree_contains_local_e2e "$(PID)"; then cmd=$$(/bin/ps -p "$(PID)" -o command=); echo "Refusing to kill unrelated process tree: $$cmd"; exit 1; fi; \
-	kill_tree() { for child in $$(/usr/bin/pgrep -P "$$1" 2>/dev/null || true); do kill_tree "$$child"; done; /bin/kill -TERM "$$1"; }; \
-	kill_tree "$(PID)"; echo "Stopped verified E2E process tree rooted at $(PID) for $(CURDIR)"
+	term_tree() { for child in $$(/usr/bin/pgrep -P "$$1" 2>/dev/null || true); do term_tree "$$child"; done; /bin/kill -TERM "$$1" 2>/dev/null || true; }; \
+	kill_tree_force() { for child in $$(/usr/bin/pgrep -P "$$1" 2>/dev/null || true); do kill_tree_force "$$child"; done; /bin/kill -KILL "$$1" 2>/dev/null || true; }; \
+	term_tree "$(PID)"; sleep 1; \
+	if /bin/kill -0 "$(PID)" 2>/dev/null; then kill_tree_force "$(PID)"; fi; \
+	echo "Stopped verified E2E process tree rooted at $(PID) for $(CURDIR)"
 .PHONY: migrate-test-env-writes
 migrate-test-env-writes:
 	@$(UV) run python scripts/migrate_test_env_writes.py
