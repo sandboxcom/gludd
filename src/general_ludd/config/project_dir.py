@@ -13,6 +13,7 @@ See docs/design/PROJECT_LOCAL_GLUDD_DIR.md (request #17).
 from __future__ import annotations
 
 import os
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -193,14 +194,20 @@ def merge_config(user: dict[str, Any], project: dict[str, Any]) -> dict[str, Any
       an append).  Callers that need append semantics must do so explicitly
       before calling this function.
 
-    Neither *user* nor *project* is mutated; a new dict is returned.
+    Neither *user* nor *project* is mutated; a structurally independent dict
+    is returned so later mutations cannot change either input snapshot.
     """
-    result: dict[str, Any] = dict(user)
+    result = deepcopy(user)
+    _merge_project_into(result, project)
+    return result
+
+
+def _merge_project_into(result: dict[str, Any], project: dict[str, Any]) -> None:
+    """Overlay *project* onto an already detached result in place."""
     for key, proj_val in project.items():
-        user_val = result.get(key)
-        if isinstance(proj_val, dict) and isinstance(user_val, dict):
-            result[key] = merge_config(user_val, proj_val)
+        result_val = result.get(key)
+        if isinstance(proj_val, dict) and isinstance(result_val, dict):
+            _merge_project_into(result_val, proj_val)
         else:
             # Scalars and lists: project wins outright.
-            result[key] = proj_val
-    return result
+            result[key] = deepcopy(proj_val)

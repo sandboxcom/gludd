@@ -59,6 +59,36 @@ def _nested_dict(depth: int = 0) -> st.SearchStrategy[dict[str, Any]]:
 
 
 class TestMergeConfigAlgebraic:
+    def test_merge_cfg_idempotent_result_is_detached_from_source(self) -> None:
+        """An idempotent merge must not couple later result mutations to its input."""
+        source: dict[str, Any] = {
+            "pipeline": {"steps": [{"name": "build"}]},
+            "rules": [{"enabled": True}],
+        }
+
+        merged = merge_config(source, source)
+        assert merged == source
+
+        merged["pipeline"]["steps"][0]["name"] = "deploy"
+        merged["rules"][0]["enabled"] = False
+
+        assert source == {
+            "pipeline": {"steps": [{"name": "build"}]},
+            "rules": [{"enabled": True}],
+        }
+
+    @given(items=st.lists(_simple_dict(), min_size=1, max_size=5))
+    @settings(max_examples=100)
+    def test_merge_cfg_detaches_mutable_values_for_every_merge_path(self, items: list[dict[str, Any]]) -> None:
+        """User-only, project-only, and idempotent values are independent snapshots."""
+        user_only = merge_config({"rules": items}, {})
+        project_only = merge_config({}, {"rules": items})
+        idempotent = merge_config({"rules": items}, {"rules": items})
+
+        for merged in (user_only, project_only, idempotent):
+            assert merged["rules"] is not items
+            assert merged["rules"][0] is not items[0]
+
     @given(_nested_dict(), _nested_dict())
     @settings(max_examples=200)
     def test_merge_cfg_idempotent(self, a: dict[str, Any], b: dict[str, Any]) -> None:

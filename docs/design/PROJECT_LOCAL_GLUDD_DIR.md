@@ -102,6 +102,33 @@ the user-level `$XDG_CONFIG/gludd`. Layout:
 - `bootstrap.py`: mirror `sync_bundled_to_filestore` reverse (filestore → `.gludd/`).
 - Tests: archive round-trips DB+filestore+weights; restore rehydrates a clean tree.
 
+## Merge snapshot integrity
+
+Implemented and re-verified on 2026-08-20. `merge_config()` returns a detached
+configuration graph: mutable mappings and lists in the result do not alias either
+input. The project layer still wins, mappings still merge recursively, and lists
+still replace wholesale. This makes idempotence durable across later state changes,
+not merely equal at the instant the merge returns.
+
+Practitioner and upstream evidence reviewed on 2026-08-20:
+
+- A [Python practitioner report from 2022-06-11](https://stackoverflow.com/questions/72587500/python-merging-nested-dictionaries-into-a-new-dictionary-and-update-that-diction)
+  reproduces the same failure mode: a new top-level merged dictionary retained
+  references to nested mutable inputs, so editing the result edited both sources.
+- OmegaConf's [documented safe and unsafe merge split](https://omegaconf.readthedocs.io/en/latest/usage.html#omegaconf-unsafe-merge)
+  makes the ownership contract explicit: safe merge preserves inputs, while its
+  faster destructive merge requires callers to stop using them. Its
+  [safe merge implementation](https://github.com/omry/omegaconf/blob/main/omegaconf/omegaconf.py)
+  starts from a deep copy. Gludd keeps only the safe behavior because user config
+  remains the rollback source if a project overlay fails validation.
+
+ZDD follows from building and validating an independent candidate before replacing
+the active config object: readers retain the previous snapshot until validation
+succeeds, and rollback discards the candidate without repairing mutated source
+state. The merge allocates one detached user graph plus copied project replacements,
+does no I/O, and starts no processes; CPU and peak memory remain linear in the
+already-loaded configuration size.
+
 ## Risks / decisions
 1. **Merge semantics** for `general-ludd.yml` — deep-merge with project-wins, but
    list fields (rules/queues) need a documented merge rule (replace vs append).
