@@ -1,11 +1,12 @@
 """Deep tests for the expert collection HTTP router.
 
-Tests the 4 endpoint handlers registered in
+Tests the endpoint handlers registered in
 :func:`general_ludd.routers.experts.register`:
 
 - ``POST /api/materials/select``   — MaterialsSelectRequest
 - ``POST /api/chemistry/resolve``  — ChemistryResolveRequest
 - ``POST /api/ai_ml/query``        — ExpertQueryRequest
+- ``POST /api/language/execute``   — LanguageOperationRequest
 - ``GET  /api/git_release/assess`` — git_release_assess
 
 Covers request validation, success paths, error handling, and edge cases.
@@ -22,9 +23,66 @@ from pydantic import ValidationError
 from general_ludd.routers.experts import (
     ChemistryResolveRequest,
     ExpertQueryRequest,
+    LanguageOperationRequest,
     MaterialsSelectRequest,
     register,
 )
+
+# ---------------------------------------------------------------------------
+# LanguageOperationRequest and POST /api/language/execute
+# ---------------------------------------------------------------------------
+
+
+class TestLanguageOperationRequest:
+    def test_payload_defaults_to_empty_dict(self) -> None:
+        request = LanguageOperationRequest(operation="language_detect")
+        assert request.operation == "language_detect"
+        assert request.payload == {}
+
+    def test_empty_operation_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            LanguageOperationRequest(operation="")
+
+    def test_non_dict_payload_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            LanguageOperationRequest(operation="language_detect", payload=[])  # type: ignore[arg-type]
+
+
+_LANGUAGE_PATH = "general_ludd.language.operations.execute_language_operation"
+
+
+class TestLanguageEndpoint:
+    def test_execute_returns_wrapped_result(self) -> None:
+        expected = {"language": "English", "confidence": 1.0}
+        with patch(_LANGUAGE_PATH, return_value=expected) as mock_execute:
+            client = _make_app()
+            response = client.post(
+                "/api/language/execute",
+                json={"operation": "language_detect", "payload": {"input_text": "hello"}},
+            )
+        assert response.status_code == 200
+        assert response.json() == {"result": expected}
+        mock_execute.assert_called_once_with("language_detect", {"input_text": "hello"})
+
+    def test_value_error_is_client_error(self) -> None:
+        with patch(_LANGUAGE_PATH, side_effect=ValueError("unknown operation")):
+            client = _make_app()
+            response = client.post(
+                "/api/language/execute",
+                json={"operation": "not-real", "payload": {}},
+            )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "unknown operation"
+
+    def test_unexpected_error_is_fail_closed(self) -> None:
+        with patch(_LANGUAGE_PATH, side_effect=RuntimeError("sensitive detail")):
+            client = _make_app()
+            response = client.post(
+                "/api/language/execute",
+                json={"operation": "language_detect", "payload": {}},
+            )
+        assert response.status_code == 500
+        assert response.json()["detail"] == "language operation failed"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -455,7 +513,7 @@ class TestGitReleaseEndpoint:
 
 
 # ---------------------------------------------------------------------------
-# register() wiring — all 4 routes reachable
+# register() wiring — all routes reachable
 # ---------------------------------------------------------------------------
 
 
@@ -469,6 +527,7 @@ class TestRegisterWiring:
         assert "/api/materials/select" in routes
         assert "/api/chemistry/resolve" in routes
         assert "/api/ai_ml/query" in routes
+        assert "/api/language/execute" in routes
         assert "/api/git_release/assess" in routes
 
     def test_materials_select_method_is_post(self) -> None:
@@ -503,6 +562,18 @@ class TestRegisterWiring:
         for r in app.routes:
             if hasattr(r, "path") and r.path == "/api/ai_ml/query":  # type: ignore[union-attr]
                 assert "POST" in r.methods  # type: ignore[union-attr]
+                break
+        else:
+            pytest.fail("route not found")
+
+    def test_language_execute_method_is_post(self) -> None:
+        from fastapi import FastAPI
+
+        app = FastAPI()
+        register(app, {})
+        for route in app.routes:
+            if hasattr(route, "path") and route.path == "/api/language/execute":  # type: ignore[union-attr]
+                assert "POST" in route.methods  # type: ignore[union-attr]
                 break
         else:
             pytest.fail("route not found")
