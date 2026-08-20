@@ -341,6 +341,7 @@ known_first_party = ["ansible_collections"]
 "opentelemetry-exporter-otlp-proto-grpc" = "opentelemetry"
 "opentelemetry-proto" = "opentelemetry"
 "opentelemetry-sdk" = "opentelemetry"
+"pillow" = "PIL"
 "pygame" = "pygame"
 "pymysql" = "pymysql"
 "pyvmomi" = ["pyVim", "pyVmomi"]
