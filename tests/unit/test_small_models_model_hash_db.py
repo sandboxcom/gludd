@@ -300,7 +300,7 @@ class TestModelDownloaderHashIntegration:
                 with contextlib.suppress(ModelIntegrityError):
                     dl.download("HuggingFaceTB/SmolLM2-135M", verify_hash=True)
 
-    def test_download_skips_hash_verify_when_disabled(self):
+    def test_download_skips_hash_verify_when_disabled(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             from general_ludd.small_models.download import ModelDownloader
 
@@ -308,7 +308,10 @@ class TestModelDownloaderHashIntegration:
             dl._hash_db = ModelHashDB()
 
             with patch.object(dl, "download_huggingface") as mock_dl:
-                mock_dl.return_value.local_path = tmpdir
+                mock_dl.return_value = DownloadedModel(
+                    model_id="org/model",
+                    local_path=tmpdir,
+                )
                 result = dl.download("org/model", verify_hash=False)
             assert result.model_id == "org/model"
 
@@ -620,15 +623,22 @@ class TestModelDownloaderResilience:
             scheduling_small = dl.check_download_scheduling(0.1)
             assert scheduling_small["size_gb"] == 0.1
 
-    def test_download_force_overrides_defer(self):
+    def test_download_force_overrides_defer(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             from general_ludd.small_models.download import ModelDownloader
 
             dl = ModelDownloader(cache_dir=tmpdir)
-            with patch.object(dl, "download_huggingface") as mock_dl:
-                mock_dl.return_value.local_path = tmpdir
+            with (
+                patch("general_ludd.small_models.cost.should_defer_download") as mock_defer,
+                patch.object(dl, "download_huggingface") as mock_dl,
+            ):
+                mock_dl.return_value = DownloadedModel(
+                    model_id="org/model",
+                    local_path=tmpdir,
+                )
                 result = dl.download("org/model", force=True, verify_hash=False)
             assert result.model_id == "org/model"
+            mock_defer.assert_not_called()
 
     def test_download_respects_timeout_configuration(self):
 

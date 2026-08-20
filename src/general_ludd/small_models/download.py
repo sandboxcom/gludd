@@ -324,18 +324,40 @@ class ModelDownloader:
         force: bool = False,
         verify_hash: bool = True,
         order: list[str] | None = None,
+        estimated_size_gb: float | None = None,
     ) -> DownloadedModel:
-        """Download a model, preferring multi-source dispatch with fallback."""
-        from general_ludd.small_models.cost import should_defer_download
+        """Download a model, preferring multi-source dispatch with fallback.
 
-        defer_info = should_defer_download(_LARGE_DOWNLOAD_GB + 0.1, threshold_gb=_LARGE_DOWNLOAD_GB)
-        if defer_info.get("defer") and not force:
-            logger.warning(
-                "Download of %s deferred: peak pricing active, large download (%s). "
-                "Use force=True to override or wait for off-peak window.",
-                model_id,
-                defer_info.get("next_off_peak", {}),
+        Peak-window advice is evaluated only when the model size is known.  An
+        explicit estimate takes precedence over catalog metadata, while
+        ``force=True`` bypasses scheduling advice entirely.
+        """
+        download_size_gb = estimated_size_gb
+        if download_size_gb is None:
+            from general_ludd.local_model._local_model_configs import _LOCAL_MODELS
+
+            config = next(
+                (
+                    candidate
+                    for candidate in _LOCAL_MODELS
+                    if model_id in (candidate.name, candidate.repo, *candidate.aliases)
+                ),
+                None,
             )
+            if config is not None and config.size_mb > 0:
+                download_size_gb = config.size_mb / 1024
+
+        if not force and download_size_gb is not None:
+            from general_ludd.small_models.cost import should_defer_download
+
+            defer_info = should_defer_download(download_size_gb, threshold_gb=_LARGE_DOWNLOAD_GB)
+            if defer_info.get("defer"):
+                logger.warning(
+                    "Large download of %s is starting during peak pricing (%s). "
+                    "Use force=True to acknowledge peak transfer cost or wait for the off-peak window.",
+                    model_id,
+                    defer_info.get("next_off_peak", {}),
+                )
 
         multi_result = self.download_multi_source(
             model_id=model_id,
@@ -343,20 +365,15 @@ class ModelDownloader:
             order=order,
         )
         if multi_result is not None:
-            if verify_hash and self._hash_db is not None:
-                from general_ludd.small_models.model_hash_db import ModelIntegrityError
-
-                try:
-                    self._hash_db.verify_download(model_id, multi_result.local_path)
-                except ModelIntegrityError:
-                    self._downloaded.pop(model_id, None)
-                    raise
-            return multi_result
-
-        if filename and filename.lower().endswith(".gguf"):
+            result = multi_result
+        elif filename and filename.lower().endswith(".gguf"):
             result = self.download_gguf(model_id=model_id, filename=filename, revision=revision)
         else:
             result = self.download_huggingface(model_id=model_id, filename=filename, revision=revision)
+
+        # The public orchestration method owns its state invariant even when a
+        # backend implementation is replaced or wrapped by an integration.
+        self._downloaded[model_id] = result
 
         if verify_hash and self._hash_db is not None:
             from general_ludd.small_models.model_hash_db import ModelIntegrityError
