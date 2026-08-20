@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import pytest
 import yaml
@@ -27,28 +27,28 @@ INFRA_DIR = REPO_ROOT / "config" / "infra"
 def aws_doc() -> dict[str, Any]:
     path = INFRA_DIR / "aws-iam-roles.yml"
     assert path.exists(), f"Missing: {path}"
-    return yaml.safe_load(path.read_text())
+    return cast(dict[str, Any], yaml.safe_load(path.read_text()))
 
 
 @pytest.fixture(scope="module")
 def gcp_doc() -> dict[str, Any]:
     path = INFRA_DIR / "gcp-iam-roles.yml"
     assert path.exists(), f"Missing: {path}"
-    return yaml.safe_load(path.read_text())
+    return cast(dict[str, Any], yaml.safe_load(path.read_text()))
 
 
 @pytest.fixture(scope="module")
 def azure_doc() -> dict[str, Any]:
     path = INFRA_DIR / "azure-iam-roles.yml"
     assert path.exists(), f"Missing: {path}"
-    return yaml.safe_load(path.read_text())
+    return cast(dict[str, Any], yaml.safe_load(path.read_text()))
 
 
 @pytest.fixture(scope="module")
 def azure_custom_role() -> dict[str, Any]:
     path = INFRA_DIR / "azure-iam-policy.json"
     assert path.exists(), f"Missing: {path}"
-    return json.loads(path.read_text())
+    return cast(dict[str, Any], json.loads(path.read_text()))
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +218,7 @@ class TestActionsScopedToServices:
 
     def test_azure_role_definitions_from_allowlisted_set(self, azure_doc: dict[str, Any]) -> None:
         ALLOWED = frozenset({
-            "General Ludd Container App Deployer",
+            "General Ludd Accelerator Deployer",
             "Contributor",
             "Storage Blob Data Contributor",
             "Storage Blob Data Reader",

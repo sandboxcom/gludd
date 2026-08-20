@@ -346,7 +346,7 @@ MO_ID=$(az identity show --name gludd-monitor --resource-group "${RG}" --query p
 SCOPE="/subscriptions/${SUB_ID}/resourceGroups/${RG}"
 
 # Assign roles to Terraform deployer
-az role assignment create --assignee "${TF_ID}" --role "General Ludd Container App Deployer" --scope "${SCOPE}"
+az role assignment create --assignee "${TF_ID}" --role "General Ludd Accelerator Deployer" --scope "${SCOPE}"
 az role assignment create --assignee "${TF_ID}" --role "Contributor" --scope "${SCOPE}"
 az role assignment create --assignee "${TF_ID}" --role "Storage Blob Data Contributor" --scope "${SCOPE}"
 az role assignment create --assignee "${TF_ID}" --role "Key Vault Secrets User" --scope "${SCOPE}"
@@ -390,7 +390,7 @@ EOF
 )"
 
 # Test: verify custom role definition exists
-az role definition list --name "General Ludd Container App Deployer" -o table
+az role definition list --name "General Ludd Accelerator Deployer" -o table
 ```
 
 ### Audit

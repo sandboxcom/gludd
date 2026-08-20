@@ -253,6 +253,16 @@ test_azure_subscription_scope_passes if {
 	count(result) == 0
 }
 
+test_azure_accelerator_role_subscription_scope_passes if {
+	result := data.iam.deny_azure_invalid_scope with input as {
+		"provider": "azure",
+		"Name": "General Ludd Accelerator Deployer",
+		"Actions": ["Microsoft.Compute/virtualMachines/read"],
+		"AssignableScopes": ["/subscriptions/sub-123"]
+	}
+	count(result) == 0
+}
+
 test_azure_missing_scopes_denied if {
 	result := data.iam.deny_azure_missing_assignable_scopes with input as {
 		"provider": "azure",
@@ -266,8 +276,8 @@ test_azure_missing_scopes_denied if {
 test_azure_custom_role_valid if {
 	data.iam.azure_custom_role_valid with input as {
 		"provider": "azure",
-		"Name": "General Ludd Container App Deployer",
-		"Description": "Least-privilege role for deploying Azure Container Apps",
+		"Name": "General Ludd Accelerator Deployer",
+		"Description": "Least-privilege role for ephemeral Azure GPU workers",
 		"AssignableScopes": ["/subscriptions/sub-123"],
 		"Actions": [
 			"Microsoft.Resources/subscriptions/resourceGroups/read",

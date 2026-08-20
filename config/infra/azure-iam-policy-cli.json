@@ -1,7 +1,7 @@
 {
   "properties": {
-    "roleName": "General Ludd Container App Deployer",
-    "description": "Least-privilege role for deploying and destroying Azure Container Apps with GPU compute via Terraform/OpenTofu. Covers Container App, ACR, VNet, Subnet, Resource Group, and supporting VM resources.",
+    "roleName": "General Ludd Accelerator Deployer",
+    "description": "Deploy, validate, monitor, and destroy ephemeral Azure GPU workers for gludd.",
     "assignableScopes": [
       "/subscriptions/{subscription_id}"
     ],
@@ -12,6 +12,8 @@
           "Microsoft.Resources/subscriptions/resourceGroups/write",
           "Microsoft.Resources/subscriptions/resourceGroups/delete",
           "Microsoft.Resources/subscriptions/locations/read",
+          "Microsoft.Resources/subscriptions/providers/read",
+          "Microsoft.Resources/subscriptions/providers/register/action",
           "Microsoft.Resources/deployments/read",
           "Microsoft.Resources/deployments/write",
           "Microsoft.Resources/deployments/delete",
@@ -71,6 +73,9 @@
           "Microsoft.Network/networkInterfaces/delete",
           "Microsoft.Network/networkInterfaces/join/action",
 
+          "Microsoft.Compute/skus/read",
+          "Microsoft.Compute/locations/usages/read",
+          "Microsoft.Compute/locations/vmSizes/read",
           "Microsoft.Compute/virtualMachines/read",
           "Microsoft.Compute/virtualMachines/write",
           "Microsoft.Compute/virtualMachines/delete",
@@ -78,6 +83,9 @@
           "Microsoft.Compute/virtualMachines/restart/action",
           "Microsoft.Compute/virtualMachines/deallocate/action",
           "Microsoft.Compute/virtualMachines/instanceView/read",
+          "Microsoft.Compute/virtualMachines/extensions/read",
+          "Microsoft.Compute/virtualMachines/extensions/write",
+          "Microsoft.Compute/virtualMachines/extensions/delete",
           "Microsoft.Compute/disks/read",
           "Microsoft.Compute/disks/write",
           "Microsoft.Compute/disks/delete",

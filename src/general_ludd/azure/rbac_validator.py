@@ -1,6 +1,7 @@
-"""Azure RBAC validator — action-string validation, security-critical
-NotAction enforcement, built-in role lookup, provider catalog, and
-high-level role-definition generation.
+"""Validate Azure RBAC action strings and role definitions.
+
+Provides security-critical NotAction enforcement, built-in role lookup, a
+provider catalog, and high-level role-definition generation.
 """
 
 from __future__ import annotations
@@ -167,6 +168,8 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
             "Microsoft.Resources/subscriptions/resourceGroups/delete",
             "Microsoft.Resources/subscriptions/resourceGroups/moveResources/action",
             "Microsoft.Resources/subscriptions/locations/read",
+            "Microsoft.Resources/subscriptions/providers/read",
+            "Microsoft.Resources/subscriptions/providers/register/action",
             "Microsoft.Resources/deployments/read",
             "Microsoft.Resources/deployments/write",
             "Microsoft.Resources/deployments/delete",
@@ -279,6 +282,9 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
     ),
     "Microsoft.Compute": frozenset(
         {
+            "Microsoft.Compute/skus/read",
+            "Microsoft.Compute/locations/usages/read",
+            "Microsoft.Compute/locations/vmSizes/read",
             "Microsoft.Compute/virtualMachines/read",
             "Microsoft.Compute/virtualMachines/write",
             "Microsoft.Compute/virtualMachines/delete",
@@ -286,6 +292,9 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
             "Microsoft.Compute/virtualMachines/restart/action",
             "Microsoft.Compute/virtualMachines/deallocate/action",
             "Microsoft.Compute/virtualMachines/instanceView/read",
+            "Microsoft.Compute/virtualMachines/extensions/read",
+            "Microsoft.Compute/virtualMachines/extensions/write",
+            "Microsoft.Compute/virtualMachines/extensions/delete",
             "Microsoft.Compute/virtualMachines/powerOff/action",
             "Microsoft.Compute/virtualMachines/runCommand/action",
             "Microsoft.Compute/virtualMachines/runCommands/read",
@@ -512,8 +521,9 @@ _ACTIONS_BY_PROVIDER: dict[str, list[str]] = {}
 
 
 def _lazy_provider_map() -> dict[str, list[str]]:
-    """Build a reverse map from provider namespace to list of known read/write/delete
-    actions, used by generate_role_definition to auto-populate actions.
+    """Build a reverse map from provider namespace to known actions.
+
+    The role-definition generator uses the map to populate actions automatically.
     """
     if _ACTIONS_BY_PROVIDER:
         return _ACTIONS_BY_PROVIDER
