@@ -6,6 +6,10 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ---
 
+## Session 86 — v0.1.0-beta4 completion (2026-08-20)
+
+- [ ] S86.0 — **Document the beta4 local-model E2E practitioner rationale** in `docs/design/LOCAL_MODEL_TESTING.md`: connect ephemeral ports and verified teardown, immutable revisions and offline cache reuse, deterministic structural assertions with explicit generation bounds, and loopback-only hostile-input coverage to dated upstream issue history without changing commands or runtime contracts. | evidence: locked Markdown lint passed with 0 issues; the hermetic endpoint lifecycle passed 4/4; repository collection counted 106148/106149 tests with one intentional deselection and zero collection errors; full gate pending after task registration | priority: high | effort: XS | status: in_progress
+
 ## Session 83 — beta4 branch reconciliation and release (2026-08-12)
 
 ### Session 84 — Reconciliation complete + gate campaign closed (2026-08-15, HEAD `5164b1f73`)
