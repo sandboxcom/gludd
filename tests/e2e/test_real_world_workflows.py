@@ -758,7 +758,10 @@ class TestDaemonTodoPipeline:
         from general_ludd.routers.todos import register as register_todos
 
         register_todos(app, daemon_state)
-        return app
+        try:
+            yield app
+        finally:
+            asyncio.run(engine.dispose())
 
     def test_create_todo_returns_201(self, todo_app):
         """POST /api/todos with valid payload returns 201."""
