@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 DEFAULT_TRACE_LOG = "/tmp/gludd-xdist-progress.log"
+LEGACY_RSS_BYTES_THRESHOLD = 16 * 1024 * 1024
+LegacyRssUnit = Literal["auto", "bytes", "kib"]
+
+_MEMORY_KEYS = (
+    "legacy_rss_input_unit",
+    "memory_by_worker",
+    "largest_rss_increases",
+)
 
 
 def _events(path: Path) -> list[dict[str, Any]]:
@@ -25,8 +34,49 @@ def _events(path: Path) -> list[dict[str, Any]]:
     return parsed
 
 
-def summarize_log(path: Path) -> dict[str, Any]:
+def _legacy_rss_input_unit(
+    events: list[dict[str, Any]], requested_unit: LegacyRssUnit
+) -> Literal["bytes", "kib"] | None:
+    """Resolve the platform-dependent unit used by the legacy ``rss_kb`` field."""
+    if requested_unit != "auto":
+        return requested_unit
+    values = [
+        value
+        for event in events
+        if isinstance((value := event.get("rss_kb")), int) and value >= 0
+    ]
+    if not values:
+        return None
+    # ``ru_maxrss`` is bytes on macOS and KiB on Linux. Existing trace events did
+    # not record the platform, so a value above 16M is overwhelmingly likely to
+    # be macOS bytes. Callers can override this inference for exceptional logs.
+    return "bytes" if max(values) >= LEGACY_RSS_BYTES_THRESHOLD else "kib"
+
+
+def _rss_bytes(
+    event: dict[str, Any], legacy_unit: Literal["bytes", "kib"] | None
+) -> int | None:
+    rss_bytes = event.get("rss_bytes")
+    if isinstance(rss_bytes, int) and rss_bytes >= 0:
+        return rss_bytes
+    rss_kib = event.get("rss_kib")
+    if isinstance(rss_kib, int) and rss_kib >= 0:
+        return rss_kib * 1024
+    legacy_rss = event.get("rss_kb")
+    if not isinstance(legacy_rss, int) or legacy_rss < 0:
+        return None
+    return legacy_rss if legacy_unit == "bytes" else legacy_rss * 1024
+
+
+def _as_kib(value: int) -> int:
+    return value // 1024
+
+
+def summarize_log(
+    path: Path, *, legacy_rss_unit: LegacyRssUnit = "auto"
+) -> dict[str, Any]:
     events = _events(path)
+    resolved_legacy_unit = _legacy_rss_input_unit(events, legacy_rss_unit)
     unfinished: dict[tuple[str, str], dict[str, str]] = {}
     failures: list[dict[str, Any]] = []
     failure_nodeids: list[str] = []
@@ -41,35 +91,45 @@ def summarize_log(path: Path) -> dict[str, Any]:
         event_name = str(event.get("event", ""))
         worker = str(event.get("worker") or "controller")
         nodeid = event.get("nodeid")
-        rss_kb = event.get("rss_kb")
-        if isinstance(rss_kb, int) and rss_kb >= 0:
+        rss_bytes = _rss_bytes(event, resolved_legacy_unit)
+        if rss_bytes is not None:
             memory = memory_by_worker.setdefault(
                 worker,
                 {
-                    "first_rss_kb": rss_kb,
-                    "peak_rss_kb": rss_kb,
-                    "growth_rss_kb": 0,
+                    "first_rss_bytes": rss_bytes,
+                    "first_rss_kib": _as_kib(rss_bytes),
+                    "peak_rss_bytes": rss_bytes,
+                    "peak_rss_kib": _as_kib(rss_bytes),
+                    "growth_rss_bytes": 0,
+                    "growth_rss_kib": 0,
                     "peak_nodeid": nodeid,
-                    "_previous_rss_kb": rss_kb,
+                    "_previous_rss_bytes": rss_bytes,
                 },
             )
-            previous_rss_kb = int(memory["_previous_rss_kb"])
-            increase_rss_kb = rss_kb - previous_rss_kb
-            if increase_rss_kb > 0:
+            previous_rss_bytes = int(memory["_previous_rss_bytes"])
+            increase_rss_bytes = rss_bytes - previous_rss_bytes
+            if increase_rss_bytes > 0:
                 largest_rss_increases.append(
                     {
                         "worker": worker,
                         "nodeid": nodeid,
                         "event": event_name,
-                        "rss_kb": rss_kb,
-                        "increase_rss_kb": increase_rss_kb,
+                        "rss_bytes": rss_bytes,
+                        "rss_kib": _as_kib(rss_bytes),
+                        "increase_rss_bytes": increase_rss_bytes,
+                        "increase_rss_kib": _as_kib(increase_rss_bytes),
                     }
                 )
-            memory["_previous_rss_kb"] = rss_kb
-            if rss_kb > int(memory["peak_rss_kb"]):
-                memory["peak_rss_kb"] = rss_kb
+            memory["_previous_rss_bytes"] = rss_bytes
+            if rss_bytes > int(memory["peak_rss_bytes"]):
+                memory["peak_rss_bytes"] = rss_bytes
+                memory["peak_rss_kib"] = _as_kib(rss_bytes)
                 memory["peak_nodeid"] = nodeid
-            memory["growth_rss_kb"] = int(memory["peak_rss_kb"]) - int(memory["first_rss_kb"])
+            growth_rss_bytes = int(memory["peak_rss_bytes"]) - int(
+                memory["first_rss_bytes"]
+            )
+            memory["growth_rss_bytes"] = growth_rss_bytes
+            memory["growth_rss_kib"] = _as_kib(growth_rss_bytes)
         if event_name == "START" and isinstance(nodeid, str):
             started += 1
             unfinished[(worker, nodeid)] = {"worker": worker, "nodeid": nodeid}
@@ -92,8 +152,10 @@ def summarize_log(path: Path) -> dict[str, Any]:
                 failure_nodeids.append(nodeid)
 
     for memory in memory_by_worker.values():
-        memory.pop("_previous_rss_kb", None)
-    largest_rss_increases.sort(key=lambda value: int(value["increase_rss_kb"]), reverse=True)
+        memory.pop("_previous_rss_bytes", None)
+    largest_rss_increases.sort(
+        key=lambda value: int(value["increase_rss_bytes"]), reverse=True
+    )
 
     return {
         "path": str(path),
@@ -106,12 +168,24 @@ def summarize_log(path: Path) -> dict[str, Any]:
         "failure_nodeid_count": len(failure_nodeids),
         "failure_nodeids": failure_nodeids,
         "failures": failures[:50],
+        "legacy_rss_input_unit": resolved_legacy_unit,
         "memory_by_worker": dict(sorted(memory_by_worker.items())),
         "largest_rss_increases": largest_rss_increases[:25],
     }
 
 
-def compact_summary(summary: dict[str, Any]) -> dict[str, Any]:
+def _selected_summary(
+    summary: dict[str, Any], keys: tuple[str, ...], *, include_memory: bool
+) -> dict[str, Any]:
+    selected = {key: summary[key] for key in keys}
+    if include_memory:
+        selected.update({key: summary[key] for key in _MEMORY_KEYS})
+    return selected
+
+
+def compact_summary(
+    summary: dict[str, Any], *, include_memory: bool = False
+) -> dict[str, Any]:
     """Return complete failure/crash evidence without verbose tracebacks."""
     keys = (
         "path",
@@ -123,19 +197,46 @@ def compact_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "failure_nodeids",
         "unfinished",
         "last_by_worker",
-        "memory_by_worker",
-        "largest_rss_increases",
     )
-    return {key: summary[key] for key in keys}
+    return _selected_summary(summary, keys, include_memory=include_memory)
+
+
+def failures_only_summary(
+    summary: dict[str, Any], *, include_memory: bool = False
+) -> dict[str, Any]:
+    """Return concise failure and incomplete-test evidence for long trace runs."""
+    keys = (
+        "path",
+        "failure_report_count",
+        "failure_nodeid_count",
+        "failure_nodeids",
+        "unfinished",
+    )
+    return _selected_summary(summary, keys, include_memory=include_memory)
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = list(sys.argv[1:] if argv is None else argv)
-    verbose = "--verbose" in args
-    positional = [arg for arg in args if arg != "--verbose"]
-    path = Path(positional[0]) if positional else Path(DEFAULT_TRACE_LOG)
-    summary = summarize_log(path)
-    output = summary if verbose else compact_summary(summary)
+    parser = argparse.ArgumentParser(description="Summarize a Gludd xdist JSONL trace")
+    output_mode = parser.add_mutually_exclusive_group()
+    output_mode.add_argument("--verbose", action="store_true")
+    output_mode.add_argument("--failures-only", action="store_true")
+    parser.add_argument("--include-memory", action="store_true")
+    parser.add_argument(
+        "--legacy-rss-unit",
+        choices=("auto", "bytes", "kib"),
+        default="auto",
+        help="unit of legacy rss_kb events (default: infer safely)",
+    )
+    parser.add_argument("path", nargs="?", default=DEFAULT_TRACE_LOG)
+    args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+    path = Path(args.path)
+    summary = summarize_log(path, legacy_rss_unit=args.legacy_rss_unit)
+    if args.verbose:
+        output = summary
+    elif args.failures_only:
+        output = failures_only_summary(summary, include_memory=args.include_memory)
+    else:
+        output = compact_summary(summary, include_memory=args.include_memory)
     print(json.dumps(output, indent=2, sort_keys=True))
     return 0
 
