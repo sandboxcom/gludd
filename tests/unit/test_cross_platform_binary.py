@@ -143,13 +143,12 @@ class TestSpecPlatformCompatibility:
                 f"UPX path must not be absolute (breaks other OSes): {upx_path}"
             )
 
-    def test_ansible_cli_excluded(self, spec_text: str):
-        """ansible.cli is excluded (Windows locale issue) but ansible core is NOT excluded.
+    def test_ansible_controller_runtime_excluded(self, spec_text: str):
+        """The frozen core excludes the independently packaged controller runtime.
 
-        ansible.cli calls ``initialize_locale()`` which hard-fails on Windows'
-        cp1252 locale. The spec excludes ansible.cli to avoid pulling it in at
-        build time. But ansible core (executor API) MUST NOT be excluded —
-        gludd drives ansible.runner/core_runner/templating at runtime.
+        Beta4 runs Ansible in its digest-pinned execution environment. Bundling
+        ansible-core or ansible-runner into the platform executable would merge
+        the two Python dependency planes and make the EE lock unenforceable.
         """
         tree = ast.parse(spec_text, filename=str(SPEC_PATH))
         excludes: set[str] = set()
@@ -168,20 +167,11 @@ class TestSpecPlatformCompatibility:
 
         assert excludes, "Spec must have an excludes= list"
 
-        # ansible.cli must be in excludes.
-        assert "ansible.cli" in excludes, "ansible.cli MUST be in excludes= — it hard-fails on Windows cp1252 locale"
-
-        # ansible core MUST NOT be excluded.
-        assert "ansible" not in excludes, "ansible core must NOT be excluded (gludd uses the executor API)"
-
-        # And the spec must positively list the ansible executor modules as
-        # hidden imports — proving they are NOT being excluded.
-        assert re.search(r"general_ludd\.ansible\.runner", spec_text), (
-            "Spec must include general_ludd.ansible.runner as a hidden import"
-        )
-        assert re.search(r"general_ludd\.ansible\.core_runner", spec_text), (
-            "Spec must include general_ludd.ansible.core_runner as a hidden import"
-        )
+        for package in ("ansible", "ansible_runner", "ansible.cli"):
+            assert package in excludes, (
+                f"{package} MUST be excluded so the frozen core cannot import "
+                "the separately locked Ansible controller runtime"
+            )
 
     def test_data_files_use_relative_paths(self, spec_text: str):
         """All ``datas`` entries use relative paths, not absolute.

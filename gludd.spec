@@ -102,10 +102,11 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # ansible.cli is excluded: gludd drives ansible-core's executor API
-    # (ansible.runner/core_runner/templating), never the CLI. Bundling ansible.cli
-    # makes pyinstaller import it at build time, and ansible.cli.initialize_locale()
-    # hard-fails on Windows' cp1252 locale ("Ansible requires UTF-8; Detected 1252").
+    # The beta4 core executable and Ansible controller are separate Python
+    # dependency planes. Playbooks run in the digest-pinned execution
+    # environment, so no ansible-core/runner implementation belongs in this
+    # frozen artifact. Excluding the complete controller runtime also avoids
+    # ansible.cli's Windows cp1252 locale failure during PyInstaller analysis.
     excludes=[
         'pytest',
         'mypy',
