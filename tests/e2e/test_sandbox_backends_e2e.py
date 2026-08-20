@@ -30,18 +30,25 @@ from __future__ import annotations
 
 import importlib
 import json
+import pkgutil
 import shutil
 import subprocess
 import sys
 import textwrap
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from general_ludd.security.permissions import Capability, PermissionSpec
 from general_ludd.security.sandboxes import (
+    SandboxBackend,
     SandboxHandle,
     SandboxTarget,
+    allowed_hosts,
+    allowed_ports,
+    constraint_value,
+    path_prefix,
 )
 
 IS_LINUX = sys.platform.startswith("linux")
@@ -57,6 +64,12 @@ BACKEND_MODULES: list[tuple[str, str]] = [
     ("general_ludd.security.sandboxes.freebsd_jail", "jail"),
     ("general_ludd.security.sandboxes.macos_seatbelt", "seatbelt"),
     ("general_ludd.security.sandboxes.windows_appcontainer", "appcontainer"),
+    ("general_ludd.security.sandboxes.vm.firecracker_backend", "firecracker"),
+    ("general_ludd.security.sandboxes.vm.gvisor_backend", "gvisor"),
+]
+
+VM_BACKEND_MODULES = [
+    item for item in BACKEND_MODULES if ".sandboxes.vm." in item[0]
 ]
 
 
@@ -133,7 +146,7 @@ def test_backend_class_exposes_protocol_shape(module_name: str, expected_name: s
         )
 
 
-def _find_backend_class(mod: object) -> type | None:
+def _find_backend_class(mod: object) -> type[SandboxBackend] | None:
     """Find the class in ``mod`` that has ``name`` and ``available`` attributes."""
     for attr in dir(mod):
         obj = getattr(mod, attr)
@@ -144,8 +157,140 @@ def _find_backend_class(mod: object) -> type | None:
             and hasattr(obj, "apply")
             and hasattr(obj, "verify")
         ):
-            return obj
+            return cast(type[SandboxBackend], obj)
     return None
+
+
+def _discover_concrete_backend_modules() -> dict[str, str]:
+    """Discover concrete backends so the E2E matrix cannot silently drift."""
+    import general_ludd.security.sandboxes as sandbox_package
+
+    discovered: dict[str, str] = {}
+    for module_info in pkgutil.walk_packages(
+        sandbox_package.__path__,
+        prefix=f"{sandbox_package.__name__}.",
+    ):
+        mod = importlib.import_module(module_info.name)
+        backend_cls = _find_backend_class(mod)
+        if (
+            backend_cls is not None
+            and backend_cls.__module__ == module_info.name
+            and isinstance(getattr(backend_cls, "name", None), str)
+        ):
+            discovered[module_info.name] = backend_cls.name
+    return discovered
+
+
+def test_backend_matrix_covers_every_concrete_runtime_backend() -> None:
+    """Every shipped backend must be represented in this cross-platform E2E file."""
+    assert dict(BACKEND_MODULES) == _discover_concrete_backend_modules()
+
+
+@pytest.mark.parametrize("module_name,expected_name", BACKEND_MODULES)
+def test_backend_runtime_protocol_and_probe_contract(
+    module_name: str,
+    expected_name: str,
+) -> None:
+    """Every concrete backend conforms at runtime and probes without raising."""
+    backend_cls = _find_backend_class(importlib.import_module(module_name))
+    assert backend_cls is not None
+    assert backend_cls.name == expected_name
+    assert isinstance(backend_cls, SandboxBackend)
+    assert isinstance(backend_cls.available(), bool)
+
+
+@pytest.mark.parametrize("module_name,expected_name", VM_BACKEND_MODULES)
+def test_unavailable_vm_backend_fails_closed_at_verification_and_releases_twice(
+    module_name: str,
+    expected_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+    file_spec: PermissionSpec,
+    file_target: SandboxTarget,
+) -> None:
+    """Unavailable VM backends expose a negative attestation and idempotent cleanup."""
+    backend_cls = _find_backend_class(importlib.import_module(module_name))
+    assert backend_cls is not None
+    monkeypatch.setattr(backend_cls, "available", staticmethod(lambda: False))
+
+    handle = backend_cls.apply(file_spec, file_target)
+    assert handle.backend == expected_name
+    assert handle.applied is False
+    assert handle.extra.get("reason")
+    findings = backend_cls.verify(file_spec, handle)
+    assert findings
+    assert all(finding.severity != "ok" for finding in findings)
+
+    backend_cls.release(handle)
+    backend_cls.release(handle)
+
+
+def test_auto_detected_backend_is_in_the_complete_e2e_matrix() -> None:
+    """The host-selected backend must be a probed backend, never an untested class."""
+    from general_ludd.security.sandboxes.detect import auto
+
+    backend_cls = auto()
+    if backend_cls is None:
+        return
+    assert backend_cls.__module__ in dict(BACKEND_MODULES)
+    assert backend_cls.name == dict(BACKEND_MODULES)[backend_cls.__module__]
+    assert isinstance(backend_cls, SandboxBackend)
+    assert backend_cls.available() is True
+
+
+def test_permission_constraints_round_trip_through_portable_backend_adapters() -> None:
+    """Canonical permission constraints retain path, host, and port semantics."""
+    file_cap = Capability(
+        resource="file:repo",
+        actions=["read"],
+        constraints={"path_prefix": "/srv/gludd"},
+    )
+    assert constraint_value(file_cap, "path_prefix") == "/srv/gludd"
+    assert constraint_value(file_cap, "missing") is None
+    assert path_prefix(file_cap) == "/srv/gludd"
+    assert path_prefix(
+        Capability(
+            resource="file:repo",
+            actions=["read"],
+            constraints={"path_prefix": 7},
+        ),
+    ) is None
+
+    explicit_net = Capability(
+        resource="net:tcp",
+        actions=["connect"],
+        constraints={
+            "allowed_hosts": ["model.internal", "audit.internal"],
+            "allowed_ports": (443, 8443),
+        },
+    )
+    assert allowed_hosts(explicit_net) == ["model.internal", "audit.internal"]
+    assert allowed_ports(explicit_net) == [443, 8443]
+
+    scalar_net = Capability(
+        resource="net:tcp",
+        actions=["connect"],
+        constraints={"allowed_hosts": "model.internal", "allowed_ports": 443},
+    )
+    assert allowed_hosts(scalar_net) == ["model.internal"]
+    assert allowed_ports(scalar_net) == [443]
+
+    resource_net = Capability(
+        resource="net:tcp:model.internal:9443",
+        actions=["connect"],
+        constraints={},
+    )
+    assert allowed_hosts(resource_net) == ["model.internal"]
+    assert allowed_ports(resource_net) == [9443]
+    assert allowed_hosts(
+        Capability(resource="net", actions=["connect"], constraints={}),
+    ) == []
+    assert allowed_ports(
+        Capability(
+            resource="net:tcp:model.internal:not-a-port",
+            actions=["connect"],
+            constraints={},
+        ),
+    ) == []
 
 
 # ---------------------------------------------------------------------------
@@ -510,14 +655,26 @@ def test_bubblewrap_denies_access_outside_allowlist(
         f"but got rc={rc_allowed}"
     )
 
-    rc_denied = subprocess.run(
-        render_argv(spec, target, cmd=["/usr/bin/cat", str(outside_secret)]),
+    writable_file = allow_dir / "created-inside.txt"
+    rc_writable = subprocess.run(
+        render_argv(spec, target, cmd=["/usr/bin/touch", str(writable_file)]),
         check=False, capture_output=True, timeout=10,
     ).returncode
-    assert rc_denied != 0, (
-        "SECURITY INVARIANT BROKEN: bwrap allowed reading "
-        f"{outside_secret} which is not bind-mounted in the namespace"
+    assert rc_writable == 0 and writable_file.is_file(), (
+        "bwrap did not preserve the declared read-write workspace contract"
     )
+
+    escape_link = allow_dir / "outside-link"
+    escape_link.symlink_to(outside_secret)
+    for forbidden_path in (outside_secret, escape_link):
+        rc_denied = subprocess.run(
+            render_argv(spec, target, cmd=["/usr/bin/cat", str(forbidden_path)]),
+            check=False, capture_output=True, timeout=10,
+        ).returncode
+        assert rc_denied != 0, (
+            "SECURITY INVARIANT BROKEN: bwrap allowed reading "
+            f"{forbidden_path} outside its bind-mounted namespace"
+        )
 
 
 @pytest.mark.skipif(not IS_LINUX, reason="Linux-only")
