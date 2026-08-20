@@ -11,8 +11,14 @@ import sys
 from pathlib import Path
 
 
-def run_git(args):
-    result = subprocess.run(["git"] + args, capture_output=True, text=True)
+def run_git(args: list[str]) -> tuple[str, str, int]:
+    result = subprocess.run(
+        ["git", *args],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
     return result.stdout.strip(), result.stderr.strip(), result.returncode
 
 
@@ -49,7 +55,10 @@ def parse_changelog_entries(changelog_content: str, version: str) -> list[str]:
     return entries
 
 
-def crossref_changelog_against_commits(section_text: str, commits: list[str]) -> dict[str, list]:
+def crossref_changelog_against_commits(
+    section_text: str,
+    commits: list[str],
+) -> dict[str, list[str]]:
     missing_in_changelog = []
     for commit in commits:
         parts = commit.split()
@@ -69,37 +78,52 @@ def find_phantom_entries(section_text: str, commits: list[str]) -> list[str]:
     return sorted(phantom_shas)
 
 
-def get_tags():
+def get_tags() -> list[str]:
     out, _, rc = run_git(["tag", "--sort=-creatordate", "-l", "v*"])
     if rc != 0:
         return []
-    return [t for t in out.split("\n") if t]
+    return [tag for tag in out.split("\n") if tag]
 
 
-def main():
+def comparison_refs(tags: list[str], tag: str) -> tuple[str | None, str]:
+    """Return the prior release and candidate ref for changelog validation."""
+    if tag in tags:
+        index = tags.index(tag)
+        prior = tags[index + 1] if index + 1 < len(tags) else None
+        return prior, tag
+    return (tags[0] if tags else None), "HEAD"
+
+
+def candidate_documents_complete(
+    changelog_content: str,
+    release_notes_content: str,
+    version: str,
+) -> bool:
+    """Require substantive, version-matched documents before a tag is cut."""
+    return bool(
+        parse_changelog_entries(changelog_content, version)
+        and version in release_notes_content
+    )
+
+
+def main() -> None:
     tag = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TAG", "")
     if not tag:
         print("AC015: TAG required")
         sys.exit(2)
 
     tags = get_tags()
-    if tag not in tags:
-        print(f"AC015: INCONCLUSIVE — tag '{tag}' not found in git tags")
-        sys.exit(2)
-
-    try:
-        idx = tags.index(tag)
-        prev_tag = tags[idx + 1] if idx + 1 < len(tags) else None
-    except ValueError:
-        prev_tag = None
-
+    prev_tag, candidate_ref = comparison_refs(tags, tag)
     if not prev_tag:
         print("AC015: WARN — no prior tag found, skipping commit range check")
         sys.exit(0)
 
-    range_spec = f"{prev_tag}..{tag}"
-    out, _, _ = run_git(["log", "--oneline", range_spec])
-    commits = [l for l in out.split("\n") if l]
+    range_spec = f"{prev_tag}..{candidate_ref}"
+    out, error, returncode = run_git(["log", "--oneline", range_spec])
+    if returncode != 0:
+        print(f"AC015: FAIL — cannot inspect commit range {range_spec}: {error}")
+        sys.exit(1)
+    commits = [line for line in out.split("\n") if line]
 
     root = Path(__file__).resolve().parent.parent
     changelog = root / "CHANGELOG.md"
@@ -117,6 +141,24 @@ def main():
         sys.exit(1)
 
     section = version_section.group(0)
+
+    if candidate_ref == "HEAD":
+        release_notes = root / "docs" / "releases" / f"{tag}.md"
+        if not release_notes.exists():
+            print(f"AC015: FAIL — release notes not found: {release_notes}")
+            sys.exit(1)
+        notes_text = release_notes.read_text()
+        if not candidate_documents_complete(changelog_text, notes_text, version):
+            print(
+                "AC015: FAIL — candidate changelog or release notes are empty "
+                f"or do not identify {version}"
+            )
+            sys.exit(1)
+        print(
+            f"AC015: PASS — candidate documents cover {version}; "
+            f"inspected {len(commits)} commits in {range_spec}"
+        )
+        sys.exit(0)
 
     missing = []
     for commit in commits:
