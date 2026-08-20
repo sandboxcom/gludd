@@ -17,6 +17,8 @@ import contextlib
 import logging
 import multiprocessing
 import os
+import sys
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +75,59 @@ def _env_default_timeout() -> float:
     except ValueError:
         return _DEFAULT_PLAYBOOK_TIMEOUT
     return val if val > 0 else _DEFAULT_PLAYBOOK_TIMEOUT
+
+
+@contextlib.contextmanager
+def _isolated_ansible_process_state(
+    extra_env: dict[str, str] | None,
+) -> Iterator[None]:
+    """Bound Ansible's process-global loader and CLI state to one execution.
+
+    ``ansible-core`` installs a collection finder in ``sys.meta_path`` and
+    stores CLI options on a module global.  Inline playbook execution must not
+    leave either mutation behind for unrelated imports in a long-lived worker.
+    Newly imported production modules remain cached; only registries and hooks
+    owned by this call are restored.
+    """
+    from ansible import context
+    from ansible.plugins.loader import init_plugin_loader
+    from ansible.utils.collection_loader import AnsibleCollectionConfig
+
+    ansible_env_keys = (
+        "ANSIBLE_COLLECTIONS_PATH",
+        "ANSIBLE_ROLES_PATH",
+        "ANSIBLE_COLLECTIONS_PATHS",
+    )
+    original_env = {key: os.environ.get(key) for key in ansible_env_keys}
+    original_cliargs = context.CLIARGS
+    original_finder = AnsibleCollectionConfig._collection_finder
+    original_path = list(sys.path)
+    original_meta_path = list(sys.meta_path)
+    original_path_hooks = list(sys.path_hooks)
+    original_importer_cache = dict(sys.path_importer_cache)
+
+    if extra_env:
+        for key in ansible_env_keys:
+            if key in extra_env:
+                os.environ[key] = extra_env[key]
+
+    try:
+        if AnsibleCollectionConfig._collection_finder is None:
+            init_plugin_loader()
+        yield
+    finally:
+        context.CLIARGS = original_cliargs
+        AnsibleCollectionConfig._collection_finder = original_finder
+        sys.path[:] = original_path
+        sys.meta_path[:] = original_meta_path
+        sys.path_hooks[:] = original_path_hooks
+        sys.path_importer_cache.clear()
+        sys.path_importer_cache.update(original_importer_cache)
+        for key, value in original_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def _timeout_child_entry(
@@ -537,6 +592,13 @@ class CoreAnsibleRunner:
                     default_registry().deregister(_pid)
             except Exception:
                 logger.debug("managed-process deregister failed", exc_info=True)
+            try:
+                queue.close()
+                queue.join_thread()
+            except Exception:
+                logger.debug("playbook timeout queue cleanup failed", exc_info=True)
+            with contextlib.suppress(AttributeError, ValueError):
+                proc.close()
 
     @staticmethod
     def _terminate_tree(proc: Any) -> None:
@@ -754,51 +816,39 @@ class CoreAnsibleRunner:
         become: bool = False,
         extra_env: dict[str, str] | None = None,
     ) -> AnsibleResult:
-        # Pre-set ansible collections env vars so that AnsibleCollectionConfig
-        # (which reads ANSIBLE_COLLECTIONS_PATH at module-import time and caches
-        # it) picks up the correct paths.  The post-import os.environ swap below
-        # is too late — the cached value is already stale by then.
-        _ansible_env_restore: dict[str, str | None] = {}
-        if extra_env:
-            for _ak in (
-                "ANSIBLE_COLLECTIONS_PATH",
-                "ANSIBLE_ROLES_PATH",
-                "ANSIBLE_COLLECTIONS_PATHS",
-            ):
-                if _ak in extra_env:
-                    _ansible_env_restore[_ak] = os.environ.get(_ak)
-                    os.environ[_ak] = extra_env[_ak]
+        """Execute with every ansible-core process-global mutation bounded."""
+        with _isolated_ansible_process_state(extra_env):
+            return self._execute_with_core_active_state(
+                playbook_path=playbook_path,
+                inventory=inventory,
+                extravars=extravars,
+                verbosity=verbosity,
+                check=check,
+                tags=tags,
+                skip_tags=skip_tags,
+                connection=connection,
+                become=become,
+                extra_env=extra_env,
+            )
 
+    def _execute_with_core_active_state(
+        self,
+        playbook_path: str,
+        inventory: list[str] | None = None,
+        extravars: dict[str, Any] | None = None,
+        verbosity: int = 0,
+        check: bool = False,
+        tags: list[str] | None = None,
+        skip_tags: list[str] | None = None,
+        connection: str = "local",
+        become: bool = False,
+        extra_env: dict[str, str] | None = None,
+    ) -> AnsibleResult:
         from ansible import context
         from ansible.executor.playbook_executor import PlaybookExecutor
         from ansible.inventory.manager import InventoryManager
         from ansible.module_utils.common.collections import ImmutableDict
         from ansible.vars.manager import VariableManager
-
-        # Ensure the collection/plugin loader is initialized in THIS process.
-        # When the run is bounded in a fork child, the child must (re)install the
-        # AnsibleCollectionFinder on its own sys.meta_path or ansible.builtin.*
-        # module resolution fails ("couldn't resolve module/action"). Idempotent.
-        # Re-initializing while a finder is already installed re-scans the
-        # collection paths and re-fires AnsibleCollectionConfig warnings, so only
-        # initialize when the finder is missing.
-        try:
-            from ansible.plugins.loader import init_plugin_loader
-            from ansible.utils.collection_loader import AnsibleCollectionConfig
-
-            if AnsibleCollectionConfig._collection_finder is None:
-                init_plugin_loader()
-        except Exception:  # pragma: no cover - older cores auto-init on use
-            pass
-
-        # Restore pre-existing ansible env values after AnsibleCollectionConfig
-        # has read the overridden paths.  The full env swap below takes over from
-        # here.
-        for _k, _v in _ansible_env_restore.items():
-            if _v is None:
-                os.environ.pop(_k, None)
-            else:
-                os.environ[_k] = _v
 
         loader = DataLoader()
 
@@ -900,6 +950,14 @@ class CoreAnsibleRunner:
         finally:
             os.environ.clear()
             os.environ.update(_original_env)
+            # ansible-core closes its worker queue but currently leaves the
+            # TaskQueueManager connection lock's TemporaryFile open.  Bound
+            # that descriptor to this execution so repeated inline runs do not
+            # leak pytest capture resources or exhaust a long-lived worker.
+            tqm = getattr(pb_exec, "_tqm", None)
+            connection_lock = getattr(tqm, "_connection_lockfile", None)
+            if connection_lock is not None:
+                connection_lock.close()
 
         self._collected_events = list(callback._events)
 

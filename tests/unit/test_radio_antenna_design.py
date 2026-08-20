@@ -3,31 +3,21 @@
 from __future__ import annotations
 
 import contextlib
-import importlib
 import math
-import os
 import sys
 from pathlib import Path
 
 import pytest
 
-_collection_files_dir = os.path.join(
-    os.path.dirname(__file__),
-    "..",
-    "..",
-    "collections",
-    "ansible_collections",
-    "general_ludd",
-    "radio",
-    "roles",
-    "antenna_design",
-    "files",
-)
-_collection_files_dir = os.path.abspath(_collection_files_dir)
-if _collection_files_dir not in sys.path:
-    sys.path.insert(0, _collection_files_dir)
+import tests.conftest as test_support
 
-ad = importlib.import_module("antenna_design")
+_ANTENNA_DESIGN_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "collections/ansible_collections/general_ludd/radio/roles/antenna_design/files/antenna_design.py"
+)
+ad = test_support._load_path_module_isolated(
+    "general_ludd_radio_antenna_design_under_test", _ANTENNA_DESIGN_PATH
+)
 
 SPEED_OF_LIGHT_MS = 299_792_458.0
 
@@ -375,15 +365,19 @@ class TestWireGaugeMM:
 
 
 class TestMainFunction:
-    def test_main_dipole_creates_json_output(self, tmp_path: Path):
+    def test_main_dipole_creates_json_output(self, tmp_path: Path, monkeypatch):
         import json
-        sys.argv = [
-            "antenna_design.py",
-            "--type", "dipole",
-            "--freq", "146000000",
-            "--polarization", "vertical",
-            "--output-dir", str(tmp_path),
-        ]
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "antenna_design.py",
+                "--type", "dipole",
+                "--freq", "146000000",
+                "--polarization", "vertical",
+                "--output-dir", str(tmp_path),
+            ],
+        )
         with contextlib.suppress(SystemExit):
             ad.main()
         output_file = tmp_path / "antenna_design.json"
@@ -394,75 +388,99 @@ class TestMainFunction:
         assert "design_notes" in data
         assert len(data["design_notes"]) >= 2
 
-    def test_main_yagi_adds_tuning_note(self, tmp_path: Path):
+    def test_main_yagi_adds_tuning_note(self, tmp_path: Path, monkeypatch):
         import json
-        sys.argv = [
-            "antenna_design.py",
-            "--type", "yagi",
-            "--freq", "146000000",
-            "--output-dir", str(tmp_path),
-        ]
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "antenna_design.py",
+                "--type", "yagi",
+                "--freq", "146000000",
+                "--output-dir", str(tmp_path),
+            ],
+        )
         with contextlib.suppress(SystemExit):
             ad.main()
         data = json.loads((tmp_path / "antenna_design.json").read_text())
         assert any("tuning" in note.lower() for note in data["design_notes"])
 
-    def test_main_patch_adds_fr4_note(self, tmp_path: Path):
+    def test_main_patch_adds_fr4_note(self, tmp_path: Path, monkeypatch):
         import json
-        sys.argv = [
-            "antenna_design.py",
-            "--type", "patch",
-            "--freq", "2450000000",
-            "--output-dir", str(tmp_path),
-        ]
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "antenna_design.py",
+                "--type", "patch",
+                "--freq", "2450000000",
+                "--output-dir", str(tmp_path),
+            ],
+        )
         with contextlib.suppress(SystemExit):
             ad.main()
         data = json.loads((tmp_path / "antenna_design.json").read_text())
         assert any("FR-4" in note for note in data["design_notes"])
 
-    def test_main_discone_adds_gap_note(self, tmp_path: Path):
+    def test_main_discone_adds_gap_note(self, tmp_path: Path, monkeypatch):
         import json
-        sys.argv = [
-            "antenna_design.py",
-            "--type", "discone",
-            "--freq", "146000000",
-            "--output-dir", str(tmp_path),
-        ]
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "antenna_design.py",
+                "--type", "discone",
+                "--freq", "146000000",
+                "--output-dir", str(tmp_path),
+            ],
+        )
         with contextlib.suppress(SystemExit):
             ad.main()
         data = json.loads((tmp_path / "antenna_design.json").read_text())
         assert any("gap" in note.lower() for note in data["design_notes"])
 
-    def test_main_outputs_to_stdout(self, capsys, tmp_path: Path):
-        sys.argv = [
-            "antenna_design.py",
-            "--type", "dipole",
-            "--freq", "144000000",
-            "--output-dir", str(tmp_path),
-        ]
+    def test_main_outputs_to_stdout(self, capsys, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "antenna_design.py",
+                "--type", "dipole",
+                "--freq", "144000000",
+                "--output-dir", str(tmp_path),
+            ],
+        )
         with contextlib.suppress(SystemExit):
             ad.main()
         captured = capsys.readouterr()
         assert "dipole" in captured.out
         assert "144000000" in captured.out
 
-    def test_main_unsupported_type_exits(self):
-        sys.argv = [
-            "antenna_design.py",
-            "--type", "flux_capacitor",
-            "--freq", "146000000",
-        ]
+    def test_main_unsupported_type_exits(self, monkeypatch):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "antenna_design.py",
+                "--type", "flux_capacitor",
+                "--freq", "146000000",
+            ],
+        )
         with pytest.raises(SystemExit):
             ad.main()
 
-    def test_main_non_existent_output_dir_created(self, tmp_path: Path):
+    def test_main_non_existent_output_dir_created(self, tmp_path: Path, monkeypatch):
         nested = tmp_path / "deeply" / "nested" / "output"
-        sys.argv = [
-            "antenna_design.py",
-            "--type", "dipole",
-            "--freq", "146000000",
-            "--output-dir", str(nested),
-        ]
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "antenna_design.py",
+                "--type", "dipole",
+                "--freq", "146000000",
+                "--output-dir", str(nested),
+            ],
+        )
         with contextlib.suppress(SystemExit):
             ad.main()
         assert (nested / "antenna_design.json").exists()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 import textwrap
 from unittest.mock import MagicMock, patch
 
@@ -660,12 +662,46 @@ class TestRunWithTimeout:
             assert result.status == "successful"
             assert result.rc == 0
             assert result.stats == {"ok": 3}
+            mock_queue.close.assert_called_once_with()
+            mock_queue.join_thread.assert_called_once_with()
 
 
 # ── CoreAnsibleRunner _execute_with_core ────────────────────────────────────
 
 
 class TestExecuteWithCore:
+    def test_process_state_context_restores_import_and_ansible_globals(self):
+        from ansible import context
+        from ansible.utils.collection_loader import AnsibleCollectionConfig
+
+        from general_ludd.ansible.core_runner import _isolated_ansible_process_state
+
+        env_key = "ANSIBLE_COLLECTIONS_PATH"
+        original_env = os.environ.get(env_key)
+        original_cliargs = context.CLIARGS
+        original_finder = AnsibleCollectionConfig._collection_finder
+        original_meta_path = list(sys.meta_path)
+        original_path_hooks = list(sys.path_hooks)
+        original_importer_cache = dict(sys.path_importer_cache)
+        fake_finder = MagicMock(name="test_collection_finder")
+        fake_path_hook = MagicMock(name="test_path_hook")
+        fake_cliargs = MagicMock(name="test_cliargs")
+
+        with _isolated_ansible_process_state({env_key: "/tmp/gludd-test-collections"}):
+            assert os.environ[env_key] == "/tmp/gludd-test-collections"
+            context.CLIARGS = fake_cliargs
+            AnsibleCollectionConfig._collection_finder = fake_finder
+            sys.meta_path.append(fake_finder)
+            sys.path_hooks.append(fake_path_hook)
+            sys.path_importer_cache["/tmp/gludd-test-import-cache"] = fake_finder
+
+        assert os.environ.get(env_key) == original_env
+        assert context.CLIARGS is original_cliargs
+        assert AnsibleCollectionConfig._collection_finder is original_finder
+        assert sys.meta_path == original_meta_path
+        assert sys.path_hooks == original_path_hooks
+        assert sys.path_importer_cache == original_importer_cache
+
     def test_inline_run_successful(self, tmp_path):
         from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
@@ -675,6 +711,30 @@ class TestExecuteWithCore:
         result = runner._execute_with_core(playbook_path=str(pb))
         assert result.status == "successful"
         assert result.rc == 0
+
+    def test_inline_run_closes_ansible_connection_lock(self, tmp_path):
+        from ansible.executor.playbook_executor import PlaybookExecutor
+
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
+
+        pb = tmp_path / "simple.yml"
+        pb.write_text("- hosts: localhost\n  connection: local\n  tasks: []\n")
+        executors = []
+
+        def capture_executor(*args, **kwargs):
+            executor = PlaybookExecutor(*args, **kwargs)
+            executors.append(executor)
+            return executor
+
+        with patch(
+            "ansible.executor.playbook_executor.PlaybookExecutor",
+            side_effect=capture_executor,
+        ):
+            result = CoreAnsibleRunner()._execute_with_core(playbook_path=str(pb))
+
+        assert result.status == "successful"
+        assert executors
+        assert executors[0]._tqm._connection_lockfile.closed
 
     def test_inline_run_with_failed_task(self, tmp_path):
         from general_ludd.ansible.core_runner import CoreAnsibleRunner
