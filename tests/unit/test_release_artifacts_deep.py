@@ -2,8 +2,8 @@
 Deep release artifact and asset tests.
 
 Covers: asset naming convention, version stamping, platform coverage, size
-sanity, checksum verification, GPG signature, and edge cases for all 12
-EXPECTED_CATEGORIES in verify_release_completeness.py.
+sanity, checksum verification, GPG signature, and edge cases for all 28
+required categories in the 30-asset beta4 release matrix.
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ import os
 from typing import Any
 
 import pytest
+
+from tests.unit.release_asset_fixtures import complete_release_assets
 
 
 def _load_module(name: str) -> Any:
@@ -33,20 +35,7 @@ VERSION_STABLE = "1.0.0"
 
 
 def _full_asset_set(version: str = VERSION) -> list[dict[str, Any]]:
-    return [
-        {"name": f"gludd-linux-x86_64-{version}.tar.gz", "size": 5_000_000},
-        {"name": f"gludd-linux-aarch64-{version}.tar.gz", "size": 4_800_000},
-        {"name": f"gludd-darwin-arm64-{version}.tar.gz", "size": 4_500_000},
-        {"name": f"gludd-windows-x86_64-{version}.zip", "size": 5_200_000},
-        {"name": f"gludd_{version}-1_amd64.deb", "size": 5_000_000},
-        {"name": f"gludd_{version}-1.x86_64.rpm", "size": 5_100_000},
-        {"name": f"gludd-{version}.dmg", "size": 6_000_000},
-        {"name": f"gludd-{version}-installer.exe", "size": 5_500_000},
-        {"name": f"gludd-{version}-checksums.sha256", "size": 2048},
-        {"name": f"gludd-{version}.cdx.json", "size": 32000},
-        {"name": "LICENSE", "size": 11000},
-        {"name": "THIRD_PARTY_LICENSES.txt", "size": 45000},
-    ]
+    return complete_release_assets(version)
 
 
 def _asset_names(version: str = VERSION) -> set[str]:
@@ -178,7 +167,9 @@ class TestVersionStamping:
         assert completeness_mod.check_completeness("v0.1.0-beta.1", "sandboxcom/gludd") == 0
 
     def test_mismatched_version_in_asset_names_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assets = [{"name": "gludd-linux-x86_64-wrong-version.tar.gz", "size": 100} for _ in range(12)]
+        assets = _full_asset_set()
+        for asset in assets:
+            asset["name"] = asset["name"].replace(VERSION, "wrong-version")
         _monkey_run(
             monkeypatch,
             _response(
@@ -201,8 +192,8 @@ class TestVersionStamping:
 
 
 class TestPlatformCoverage:
-    def test_all_12_categories_are_exactly_defined(self) -> None:
-        assert len(completeness_mod.EXPECTED_CATEGORIES) == 12
+    def test_all_28_categories_are_exactly_defined(self) -> None:
+        assert len(completeness_mod.EXPECTED_CATEGORIES) == 28
 
     def test_every_category_has_a_callable_check(self) -> None:
         for label, fn in completeness_mod.EXPECTED_CATEGORIES.items():
@@ -250,11 +241,11 @@ class TestSizeSanity:
         _monkey_run(monkeypatch, _response(assets=assets))
         assert completeness_mod.check_completeness("v0.1.0-beta.1", "sandboxcom/gludd") == 0
 
-    def test_minimum_12_assets_required(self) -> None:
-        assert completeness_mod.MIN_ASSETS == 12
+    def test_minimum_30_assets_required(self) -> None:
+        assert completeness_mod.MIN_ASSETS == 30
 
-    def test_release_with_only_11_assets_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        few = _full_asset_set()[:11]
+    def test_release_with_only_29_assets_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        few = _full_asset_set()[:29]
         _monkey_run(monkeypatch, _response(assets=few))
         assert completeness_mod.check_completeness("v0.1.0-beta.1", "sandboxcom/gludd") == 1
 
@@ -308,8 +299,8 @@ class TestGpgSignature:
 
 
 class TestStructuralIntegrity:
-    def test_exactly_12_categories_assertion_lives(self) -> None:
-        assert len(completeness_mod.EXPECTED_CATEGORIES) == 12
+    def test_exactly_28_categories_assertion_lives(self) -> None:
+        assert len(completeness_mod.EXPECTED_CATEGORIES) == 28
 
     def test_optional_categories_is_empty_frozenset(self) -> None:
         assert frozenset() == completeness_mod.OPTIONAL_CATEGORIES

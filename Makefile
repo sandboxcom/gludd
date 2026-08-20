@@ -213,6 +213,7 @@ help:
 	@echo "  --- Quality ---"
 	@echo "  gate-all                full CI-matching gate: all unit + integration + e2e + molecule tests"
 	@echo "  gate-full               full gate matching CI: gate-refresh + integration + e2e + molecule"
+	@echo "  gate-release-phases     bounded integration + e2e + molecule release phases (GATE_RELEASE_*)"
 	@echo "  test-atomic-validate    verify atomic target creation with tempfile validation"
 	@echo "  gate-check              Run gate check"
 	@echo "  lint                  Run ruff linter"
@@ -431,7 +432,7 @@ help:
 	@echo "  release-deploy TAG=.. MSG=..  Auto-deploy: merge dev->master, push, tag, wait for CI"
 	@echo "  release-delete TAG=.. Delete GitHub Release + local + remote git tags"
 	@echo "  verify-release-artifact       TAG=..  Confirm a release has published assets (exit 0 = shipped)"
-	@echo "  verify-release-completeness   TAG=..  Verify ALL 12 required artifact categories present"
+	@echo "  verify-release-completeness   TAG=..  Verify all 28 categories / 30 beta4 assets present"
 	@echo ""
 	@echo "  --- Build + Deploy ---"
 	@echo "  dist                  Build distribution tarball"
@@ -1863,7 +1864,9 @@ run-watched:
 	wait $$CMDPID; RC=$$?; echo "[watchdog] RESULT=EXIT rc=$$RC elapsed=$$(($$(date +%s)-START))s"; exit $$RC
 
 test-integration:
-	@$(UV) run python -m pytest tests/integration/ $(_XD) -v
+	@BT=$$(mktemp -d /tmp/gludd-test-integration-XXXXXX); \
+	trap 'rm -rf "$$BT"' EXIT; trap 'exit 130' INT TERM; \
+	$(UV) run python -m pytest tests/integration/ $(_XD) -v --basetemp="$$BT"
 
 E2E_TEST_TIMEOUT ?= 180
 E2E_STALL_SECS ?= 180
@@ -1880,13 +1883,13 @@ E2E_TOTAL ?= 1
 # spellings in this contract comment for downstream target-shape checks.
 test-e2e:
 	@# Legacy shape markers: BT="/tmp/gludd-e2e-" LOG="/tmp/gludd-e2e-$$$$.log" LOCK="/tmp/gludd-e2e-run.lock" (paths are namespaced below).
-	@PROJECT_NAMESPACE="$${GLUDD_PROJECT_NAMESPACE:-}"; if [ -z "$$PROJECT_NAMESPACE" ]; then PROJECT_NAMESPACE="$$($(PYTHON) scripts/resource_arbiter.py namespace)"; fi; RESOURCE_BASE="$${GLUDD_RESOURCE_ROOT:-$${TMPDIR:-/tmp}/gludd-resources}/$$PROJECT_NAMESPACE"; mkdir -p "$$RESOURCE_BASE"; SHARD="$(E2E_SHARD)"; TOTAL="$(E2E_TOTAL)"; LOCK="$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL.lock"; STATE="$$RESOURCE_BASE/e2e-state-shard-$$SHARD-of-$$TOTAL.json"; BT="$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-$${ID:-$$$$}"; LOG="$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-$$$$.log"; REVISION="$$(git rev-parse HEAD)"; \
+	@PROJECT_NAMESPACE="$${GLUDD_PROJECT_NAMESPACE:-}"; if [ -z "$$PROJECT_NAMESPACE" ]; then PROJECT_NAMESPACE="$$($(PYTHON) scripts/resource_arbiter.py namespace)"; fi; RESOURCE_BASE="$${GLUDD_RESOURCE_ROOT:-$${TMPDIR:-/tmp}/gludd-resources}/$$PROJECT_NAMESPACE"; mkdir -p "$$RESOURCE_BASE"; SHARD="$(E2E_SHARD)"; TOTAL="$(E2E_TOTAL)"; LOCK="$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL.lock"; STATE="$$RESOURCE_BASE/e2e-state-shard-$$SHARD-of-$$TOTAL.json"; BT=$$(mktemp -d /tmp/gludd-test-e2e-XXXXXX); LOG="$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-$$$$.log"; REVISION="$$(git rev-parse HEAD)"; \
 	if ! mkdir "$$LOCK" 2>/dev/null; then OWNER="$$(cat "$$LOCK/pid" 2>/dev/null || true)"; if [ -n "$$OWNER" ] && kill -0 "$$OWNER" 2>/dev/null; then echo "E2E_RUN_BUSY owner_pid=$$OWNER log=$$(cat "$$LOCK/log" 2>/dev/null || true)" >&2; exit 75; fi; echo "E2E_RUN_STALE owner_pid=$$OWNER; reclaiming"; rm -rf "$$LOCK"; mkdir "$$LOCK" || { echo "E2E_RUN_BUSY lock_reclaim_failed" >&2; exit 75; }; fi; \
-	printf "%s\n" "$$$$" > "$$LOCK/pid"; printf "%s\n" "$$LOG" > "$$LOCK/log"; $(PYTHON) scripts/e2e_supervisor.py ensure --state "$$STATE" --revision "$$REVISION" >/dev/null; $(PYTHON) scripts/e2e_supervisor.py heartbeat-loop --state "$$STATE" --interval "$(E2E_HEARTBEAT_SECS)" & HBPID=$$!; trap 'kill "$$HBPID" 2>/dev/null || true; wait "$$HBPID" 2>/dev/null || true; rm -rf "$$LOCK"' EXIT HUP INT TERM; rm -rf "$$BT"; mkdir -p "$$BT" "$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-logs-$$$$"; \
+	printf "%s\n" "$$$$" > "$$LOCK/pid"; printf "%s\n" "$$LOG" > "$$LOCK/log"; $(PYTHON) scripts/e2e_supervisor.py ensure --state "$$STATE" --revision "$$REVISION" >/dev/null; $(PYTHON) scripts/e2e_supervisor.py heartbeat-loop --state "$$STATE" --interval "$(E2E_HEARTBEAT_SECS)" & HBPID=$$!; trap 'kill "$$HBPID" 2>/dev/null || true; wait "$$HBPID" 2>/dev/null || true; rm -rf "$$LOCK" "$$BT"' EXIT; trap 'exit 130' INT TERM; trap 'exit 129' HUP; mkdir -p "$$BT" "$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-logs-$$$$"; \
 	FILE_WORKERS="$(E2E_FILE_WORKERS)"; case "$$FILE_WORKERS" in ''|*[!0-9]*) echo "E2E_FILE_WORKERS must be a positive integer" >&2; exit 2;; esac; if [ "$$FILE_WORKERS" -lt 1 ] || [ "$$FILE_WORKERS" -gt 8 ]; then echo "E2E_FILE_WORKERS must be between 1 and 8" >&2; exit 2; fi; \
-	run_e2e_file() { test_file="$$1"; file_key="$$(printf '%s' "$$test_file" | shasum -a 256 | cut -c1-16)"; FILE_BT="$$BT/$$file_key"; FILE_LOG="$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-logs-$$$$/$$file_key.log"; mkdir -p "$$FILE_BT/state"; echo "=== E2E FILE: $$test_file key=$$file_key ==="; $(PYTHON) scripts/e2e_supervisor.py record --state "$$STATE" --file "$$test_file" --status RUNNING; $(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_STATE_ROOT=$$FILE_BT/state GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest $$test_file -n $(E2E_WORKERS) --dist loadgroup -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=$$FILE_BT" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_FILE_MAX_SECS)" LOG="$$FILE_LOG"; FILE_RC=$$?; if [ "$$FILE_RC" -eq 0 ]; then STATUS=PASS; elif [ "$$FILE_RC" -eq 5 ]; then STATUS=SKIP; else STATUS=FAIL; fi; $(PYTHON) scripts/e2e_supervisor.py record --state "$$STATE" --file "$$test_file" --status "$$STATUS"; if [ "$$FILE_RC" -eq 5 ]; then return 0; fi; return "$$FILE_RC"; }; \
+	run_e2e_file() { test_file="$$1"; file_key="$$(printf '%s' "$$test_file" | shasum -a 256 | cut -c1-16)"; FILE_BT="$$BT/$$file_key"; FILE_LOG="$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-logs-$$$$/$$file_key.log"; mkdir -p "$$FILE_BT/state"; echo "=== E2E FILE: $$test_file key=$$file_key ==="; $(PYTHON) scripts/e2e_supervisor.py record --state "$$STATE" --file "$$test_file" --status RUNNING; $(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_STATE_ROOT=$$FILE_BT/state GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest $$test_file -n $(E2E_WORKERS) --dist loadgroup -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=\"$$FILE_BT\"" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_FILE_MAX_SECS)" LOG="$$FILE_LOG"; FILE_RC=$$?; if [ "$$FILE_RC" -eq 0 ]; then STATUS=PASS; elif [ "$$FILE_RC" -eq 5 ]; then STATUS=SKIP; else STATUS=FAIL; fi; $(PYTHON) scripts/e2e_supervisor.py record --state "$$STATE" --file "$$test_file" --status "$$STATUS"; if [ "$$FILE_RC" -eq 5 ]; then return 0; fi; return "$$FILE_RC"; }; \
 	TEST_FILES="$$($(PYTHON) scripts/e2e_supervisor.py pending --state "$$STATE" --revision "$$REVISION" --root tests/e2e --glob "$(E2E_FILE_GLOB)" --shard "$$SHARD" --total "$$TOTAL")"; RC=0; active=0; PIDS=""; for test_file in $$TEST_FILES; do while [ "$$active" -ge "$$FILE_WORKERS" ]; do set -- $$PIDS; pid="$$1"; shift; PIDS="$$*"; wait "$$pid"; WAIT_RC=$$?; if [ "$$WAIT_RC" -ne 0 ] && [ "$$RC" -eq 0 ]; then RC="$$WAIT_RC"; fi; active=$$((active - 1)); done; run_e2e_file "$$test_file" & PIDS="$$PIDS $$!"; active=$$((active + 1)); done; for pid in $$PIDS; do wait "$$pid"; WAIT_RC=$$?; if [ "$$WAIT_RC" -ne 0 ] && [ "$$RC" -eq 0 ]; then RC="$$WAIT_RC"; fi; done; \
-	chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
+	chmod -R u+rwx "$$BT" 2>/dev/null || true; exit $$RC
 
 # Azure E2E — env-pointer (CI-friendly, no provisioning)
 GLUDD_E2E_MAX_SPEND_USD ?= 5
@@ -4234,16 +4237,73 @@ branch-reconciliation-summary:
 ci-greenness:
 	@gh run list -R sandboxcom/gludd -L 20 --json conclusion,status 2>/dev/null | $(PYTHON) -c "import sys,json; r=json.load(sys.stdin); done=[x for x in r if x.get('status')=='completed']; g=[x for x in done if x.get('conclusion')=='success']; total=len(done); print('CI greenness (last %d completed runs): %d GREEN, %d not-green = %d%%.' % (total, len(g), total-len(g), (100*len(g)//total if total else 0))); print('  -> Do NOT call CI \"reliable/green\" without quoting this ratio.')" || echo "ci-greenness-failed"
 
+GATE_STATUS_FILE ?= .gate-status
+GATE_RELEASE_PYTEST ?= $(UV) run python -m pytest
+GATE_RELEASE_MAKE ?= $(MAKE) --no-print-directory
+GATE_RELEASE_WORKERS ?= 2
+GATE_RELEASE_TAIL_LINES ?= 80
+
+gate-release-phases:
+	@RUN_ROOT=$$(mktemp -d /tmp/gludd-gate-release-XXXXXX); \
+	trap 'rm -rf "$$RUN_ROOT"' EXIT; trap 'exit 130' INT TERM; \
+	if [ -f "$(GATE_STATUS_FILE)" ]; then \
+		sed -e '/^=== GATE: PASSED ===$$/d' -e '/^=== GATE: FAILED ===$$/d' \
+			"$(GATE_STATUS_FILE)" > "$$RUN_ROOT/status.clean"; \
+	else \
+		: > "$$RUN_ROOT/status.clean"; \
+	fi; \
+	mv "$$RUN_ROOT/status.clean" "$(GATE_STATUS_FILE)"; \
+	fail_release() { \
+		FAILED_PHASE="$$1"; FAILED_RC="$$2"; \
+		printf '%s FAIL %s\n' "$$FAILED_PHASE" "$$FAILED_RC" >> "$(GATE_STATUS_FILE)"; \
+		printf '%s\n' '=== GATE: FAILED ===' >> "$(GATE_STATUS_FILE)"; \
+		return "$$FAILED_RC"; \
+	}; \
+	run_command() { \
+		PHASE="$$1"; shift; RC_FILE="$$RUN_ROOT/$$PHASE.rc"; LOG_FILE="$$RUN_ROOT/$$PHASE.log"; \
+		rm -f "$$RC_FILE"; \
+		echo "=== GATE RELEASE PHASE: $$PHASE ==="; \
+		( "$$@"; COMMAND_RC=$$?; printf '%s\n' "$$COMMAND_RC" > "$$RC_FILE"; exit "$$COMMAND_RC" ) \
+			2>&1 | tee -a "$$LOG_FILE"; \
+		STREAM_RC=$$?; \
+		if [ ! -s "$$RC_FILE" ]; then \
+			echo "release phase $$PHASE did not record an exit status" >&2; \
+			return 125; \
+		fi; \
+		COMMAND_RC=$$(cat "$$RC_FILE"); \
+		if [ "$$COMMAND_RC" -eq 0 ] && [ "$$STREAM_RC" -ne 0 ]; then \
+			echo "release phase $$PHASE output stream failed with exit $$STREAM_RC" >&2; \
+			COMMAND_RC="$$STREAM_RC"; \
+		fi; \
+		if [ "$$COMMAND_RC" -ne 0 ]; then \
+			echo "=== BOUNDED FAILURE TAIL: $$PHASE ===" >&2; \
+			tail -n "$(GATE_RELEASE_TAIL_LINES)" "$$LOG_FILE" >&2; \
+		fi; \
+		return "$$COMMAND_RC"; \
+	}; \
+	case "$(GATE_RELEASE_WORKERS)" in 1|2) ;; *) \
+		echo "GATE_RELEASE_WORKERS must be 1 or 2" >&2; \
+		fail_release configuration 2; exit 2;; \
+	esac; \
+	run_command integration $(GATE_RELEASE_PYTEST) tests/integration/ -n "$(GATE_RELEASE_WORKERS)" --maxprocesses="$(GATE_RELEASE_WORKERS)" --maxfail=1 --tb=line --basetemp="$$RUN_ROOT/integration"; RC=$$?; \
+	if [ "$$RC" -ne 0 ]; then fail_release integration "$$RC"; exit "$$RC"; fi; \
+	printf '%s\n' 'integration PASS 0' >> "$(GATE_STATUS_FILE)"; \
+	run_command e2e $(GATE_RELEASE_PYTEST) tests/e2e/ -n 1 --maxfail=1 --tb=line --basetemp="$$RUN_ROOT/e2e"; RC=$$?; \
+	if [ "$$RC" -ne 0 ]; then fail_release e2e "$$RC"; exit "$$RC"; fi; \
+	printf '%s\n' 'e2e PASS 0' >> "$(GATE_STATUS_FILE)"; \
+	SCENARIOS=0; \
+	for scenario_dir in molecule/playbooks/*/; do \
+		[ -d "$$scenario_dir" ] || continue; \
+		SCENARIOS=$$((SCENARIOS + 1)); SCENARIO=$$(basename "$$scenario_dir"); \
+		run_command molecule $(GATE_RELEASE_MAKE) molecule-test SCENARIO="$$SCENARIO"; RC=$$?; \
+		if [ "$$RC" -ne 0 ]; then fail_release molecule "$$RC"; exit "$$RC"; fi; \
+	done; \
+	if [ "$$SCENARIOS" -eq 0 ]; then fail_release molecule 2; exit 2; fi; \
+	printf '%s\n' 'molecule PASS 0' >> "$(GATE_STATUS_FILE)"; \
+	printf '%s\n' '=== GATE: PASSED ===' >> "$(GATE_STATUS_FILE)"
+
 gate-full: gate-refresh
-	@echo "=== GATE PHASE: integration ==="; \
-	printf "integration " >> .gate-status; \
-	echo run python -m pytest tests/integration/ -q --no-header -n 2 --maxprocesses=2 > /tmp/gludd-gate-integration.log 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-integration.log); \
-	echo "=== GATE PHASE: e2e ==="; \
-	printf "e2e " >> .gate-status; \
-	echo run python -m pytest tests/e2e/ -q --no-header > /tmp/gludd-gate-e2e.log 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-e2e.log); \
-	echo "=== GATE PHASE: molecule ==="; \
-	printf "molecule " >> .gate-status; \
-	/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory molecule-test > /tmp/gludd-gate-molecule.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-molecule.log)
+	@$(MAKE) --no-print-directory gate-release-phases
 
 test-atomic-validate:
 	@echo "test-atomic-validate: verify atomic target creation with tempfile validation"
@@ -6309,18 +6369,7 @@ audit-untested-code:
 	@$(UV) run python scripts/audit_untested_code.py
 
 gate-all: gate-refresh
-	@echo "=== GATE PHASE: integration ==="; \
-	printf "integration " >> .gate-status; \
-	echo run python -m pytest tests/integration/ -q --no-header -n 2 --maxprocesses=2 > /tmp/gludd-gate-integration.log 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-integration.log); \
-	echo "=== GATE PHASE: e2e ==="; \
-	printf "e2e " >> .gate-status; \
-	echo run python -m pytest tests/e2e/ -q --no-header > /tmp/gludd-gate-e2e.log 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-e2e.log); \
-	echo "=== GATE PHASE: molecule ==="; \
-	printf "molecule " >> .gate-status; \
-	for shard in 1 2 3 4 5 6; do \
-		/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory molecule-test-shard SHARD=$shard > /tmp/gludd-gate-mol$shard.log 2>&1 || touch /tmp/gludd-gate-mol-failed; \
-	done; \
-	if [ -f /tmp/gludd-gate-mol-failed ]; then rm -f /tmp/gludd-gate-mol-failed; echo "FAIL" >> .gate-status; else echo "PASS" >> .gate-status; fi
+	@$(MAKE) --no-print-directory gate-release-phases
 
 check-test-quality:
 	@$(UV) run python scripts/check_test_quality.py

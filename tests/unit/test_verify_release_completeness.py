@@ -4,6 +4,9 @@ Unit tests for verify_release_completeness.py.
 import json
 import sys
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
 import verify_release_completeness as vrc
@@ -14,6 +17,8 @@ from verify_release_completeness import (
     expected_prerelease,
     version_from_tag,
 )
+
+from tests.unit.release_asset_fixtures import complete_release_assets
 
 
 class TestExpectedCategories:
@@ -129,41 +134,16 @@ class TestExpectedCategories:
             assert EXPECTED_CATEGORIES[label](assets), label
 
 
-COMPLETE_ASSETS = [
-    {"name": "gludd-0.1.0-linux-x86_64.tar.gz", "size": 100},
-    {"name": "gludd-0.1.0-linux-aarch64.tar.gz", "size": 100},
-    {"name": "gludd-0.1.0-macos-arm64.tar.gz", "size": 100},
-    {"name": "gludd-0.1.0-windows-x86_64.zip", "size": 100},
-    {"name": "gludd_0.1.0_amd64.deb", "size": 100},
-    {"name": "gludd-0.1.0-1.x86_64.rpm", "size": 100},
-    {"name": "gludd-0.1.0-macos-arm64.dmg", "size": 100},
-    {"name": "gludd-0.1.0-setup-x86_64.exe", "size": 100},
-    {"name": "general_ludd_agent-0.1.0-py3-none-any.whl", "size": 100},
-    {"name": "general_ludd_agent-0.1.0.tar.gz", "size": 100},
-    {"name": "general_ludd-agent-0.2.0.tar.gz", "size": 100},
-    {"name": "general_ludd-language-0.1.0.tar.gz", "size": 100},
-    {"name": "general_ludd-networking-0.2.0.tar.gz", "size": 100},
-    {"name": "gludd-collections-0.1.0.json", "size": 100},
-    {"name": "ansible-ee-execution-environment.yml", "size": 100},
-    {"name": "ansible-ee-requirements.yml", "size": 100},
-    {"name": "ansible-ee-requirements.txt", "size": 100},
-    {"name": "ansible-ee-bindep.txt", "size": 100},
-    {"name": "ansible-ee-runtime-lock.json", "size": 100},
-    {"name": "ansible-managed-host-python.lock.json", "size": 100},
-    {"name": "ansible-collection-python-boundary-inventory.json", "size": 100},
-    {"name": "gludd-ee-image-0.1.0.json", "size": 100},
-    {"name": "gludd-container-0.1.0.json", "size": 100},
-    {"name": "SHA256SUMS", "size": 100},
-    {"name": "sbom.json", "size": 100},
-    {"name": "install.sh", "size": 100},
-    {"name": "LICENSE", "size": 100},
-    {"name": "THIRD_PARTY_LICENSES.md", "size": 100},
-    {"name": "gludd-smoke-release-0.1.0.json", "size": 100},
-    {"name": "gludd-release-manifest-0.1.0.json", "size": 100},
-]
+COMPLETE_ASSETS = complete_release_assets()
 
 
-def _payload(tag="v0.1.0", *, draft=False, prerelease=False, assets=None):
+def _payload(
+    tag: str = "v0.1.0",
+    *,
+    draft: bool = False,
+    prerelease: bool = False,
+    assets: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     return {
         "tagName": tag,
         "isDraft": draft,
@@ -174,48 +154,82 @@ def _payload(tag="v0.1.0", *, draft=False, prerelease=False, assets=None):
     }
 
 
-def _mock_gh(monkeypatch, payload=None, rc=0, out=None, err=""):
+def _mock_gh(
+    monkeypatch: pytest.MonkeyPatch,
+    payload: dict[str, Any] | None = None,
+    rc: int = 0,
+    out: str | None = None,
+    err: str = "",
+) -> None:
     body = out if out is not None else json.dumps(payload)
 
-    def fake_run(cmd):
+    def fake_run(_cmd: list[str]) -> tuple[int, str, str]:
         return (rc, body, err)
 
     monkeypatch.setattr(vrc, "_run", fake_run)
 
 
 class TestCheckCompleteness:
-    def test_complete_release_passes(self, monkeypatch, capsys) -> None:
+    def test_complete_release_passes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         _mock_gh(monkeypatch, _payload())
         assert check_completeness("v0.1.0", "sandboxcom/gludd") == 0
         assert "COMPLETENESS CHECK: PASS" in capsys.readouterr().out
 
-    def test_gh_failure_fails_closed(self, monkeypatch, capsys) -> None:
+    def test_gh_failure_fails_closed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         _mock_gh(monkeypatch, rc=1, out="", err="release not found")
         assert check_completeness("v0.1.0", "sandboxcom/gludd") == 1
         assert "fail-closed" in capsys.readouterr().out
 
-    def test_bad_json_fails_closed(self, monkeypatch, capsys) -> None:
+    def test_bad_json_fails_closed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         _mock_gh(monkeypatch, out="this is not json")
         assert check_completeness("v0.1.0", "sandboxcom/gludd") == 1
         assert "fail-closed" in capsys.readouterr().out
 
-    def test_draft_release_fails(self, monkeypatch, capsys) -> None:
+    def test_draft_release_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         _mock_gh(monkeypatch, _payload(draft=True))
         assert check_completeness("v0.1.0", "sandboxcom/gludd") == 1
         assert "DRAFT" in capsys.readouterr().out
 
-    def test_zero_assets_fails(self, monkeypatch, capsys) -> None:
+    def test_zero_assets_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         _mock_gh(monkeypatch, _payload(assets=[]))
         assert check_completeness("v0.1.0", "sandboxcom/gludd") == 1
         assert "zero assets" in capsys.readouterr().out
 
-    def test_missing_category_fails(self, monkeypatch, capsys) -> None:
-        assets = [a for a in COMPLETE_ASSETS if a["name"] != "sbom.json"]
+    def test_missing_category_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        assets = [a for a in COMPLETE_ASSETS if "sbom" not in a["name"]]
         _mock_gh(monkeypatch, _payload(assets=assets))
         assert check_completeness("v0.1.0", "sandboxcom/gludd") == 1
         assert "SBOM — MISSING" in capsys.readouterr().out
 
-    def test_single_asset_fails_min_count(self, monkeypatch, capsys) -> None:
+    def test_single_asset_fails_min_count(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         _mock_gh(
             monkeypatch,
             _payload(assets=[{"name": "gludd-0.1.0-macos-arm64.tar.gz", "size": 100}]),
@@ -223,7 +237,11 @@ class TestCheckCompleteness:
         assert check_completeness("v0.1.0", "sandboxcom/gludd") == 1
         assert "minimum asset count" in capsys.readouterr().out
 
-    def test_beta_tag_without_prerelease_flag_fails(self, monkeypatch, capsys) -> None:
+    def test_beta_tag_without_prerelease_flag_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         tag = "v0.1.0-beta.9"
         assets = [
             {
@@ -240,7 +258,11 @@ class TestCheckCompleteness:
         assert check_completeness(tag, "sandboxcom/gludd") == 1
         assert "prerelease" in capsys.readouterr().out
 
-    def test_beta_tag_with_prerelease_flag_passes(self, monkeypatch, capsys) -> None:
+    def test_beta_tag_with_prerelease_flag_passes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         tag = "v0.1.0-beta.9"
         assets = [
             {
@@ -256,19 +278,31 @@ class TestCheckCompleteness:
         _mock_gh(monkeypatch, _payload(tag, prerelease=True, assets=assets))
         assert check_completeness(tag, "sandboxcom/gludd") == 0
 
-    def test_stable_tag_with_prerelease_flag_fails(self, monkeypatch, capsys) -> None:
+    def test_stable_tag_with_prerelease_flag_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         _mock_gh(monkeypatch, _payload(prerelease=True))
         assert check_completeness("v0.1.0", "sandboxcom/gludd") == 1
         assert "prerelease" in capsys.readouterr().out
 
-    def test_zero_size_asset_fails(self, monkeypatch, capsys) -> None:
+    def test_zero_size_asset_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         assets = [dict(a) for a in COMPLETE_ASSETS]
         assets[0]["size"] = 0
         _mock_gh(monkeypatch, _payload(assets=assets))
         assert check_completeness("v0.1.0", "sandboxcom/gludd") == 1
         assert "zero-size" in capsys.readouterr().out
 
-    def test_version_absent_from_assets_fails(self, monkeypatch, capsys) -> None:
+    def test_version_absent_from_assets_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         _mock_gh(monkeypatch, _payload("v9.9.9"))
         assert check_completeness("v9.9.9", "sandboxcom/gludd") == 1
         assert "version" in capsys.readouterr().out
@@ -286,20 +320,24 @@ class TestHelpers:
         assert version_from_tag("v0.1.0-beta.1") == "0.1.0-beta.1"
         assert version_from_tag("0.2.0") == "0.2.0"
 
-    def test_resolve_repo_ssh_url(self, monkeypatch) -> None:
+    def test_resolve_repo_ssh_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _mock_gh(monkeypatch, out="git@github.com:sandboxcom/gludd.git")
         assert vrc._resolve_repo() == "sandboxcom/gludd"
 
-    def test_resolve_repo_https_url(self, monkeypatch) -> None:
+    def test_resolve_repo_https_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _mock_gh(monkeypatch, out="https://github.com/sandboxcom/gludd.git")
         assert vrc._resolve_repo() == "sandboxcom/gludd"
 
-    def test_resolve_repo_name_ending_in_git_chars(self, monkeypatch) -> None:
+    def test_resolve_repo_name_ending_in_git_chars(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         # rstrip(".git") would mangle a repo name ending in g/i/t/. — guard the fix.
         _mock_gh(monkeypatch, out="git@github.com:foo/loggit.git")
         assert vrc._resolve_repo() == "foo/loggit"
 
-    def test_resolve_repo_fallback_on_failure(self, monkeypatch) -> None:
+    def test_resolve_repo_fallback_on_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _mock_gh(monkeypatch, rc=1, out="", err="no remote")
         assert vrc._resolve_repo() == vrc.FALLBACK_REPO
 
@@ -307,13 +345,13 @@ class TestHelpers:
 class TestMockCheckCompleteness:
     def test_missing_one_category_counts_as_failure(self) -> None:
         """Without actually calling gh, verify logic: if one check fails, result is 1."""
-        mock_data = {
+        mock_data: dict[str, Any] = {
             "tagName": "v0.1.0-test",
             "isDraft": False,
             "assets": [
                 {"name": item["name"]}
                 for item in COMPLETE_ASSETS
-                if item["name"] != "sbom.json"
+                if "sbom" not in item["name"]
             ],
             "url": "https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-test",
             "publishedAt": "2026-01-01T00:00:00Z",
