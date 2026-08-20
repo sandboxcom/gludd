@@ -121,6 +121,24 @@ def test_e2e_runner_isolates_artifacts_per_file() -> None:
     assert "LOG=\"$$FILE_LOG\"" in body
 
 
+def test_e2e_runner_namespaces_mutable_enforcement_state_per_file() -> None:
+    """Separate pytest processes must not race on plugin simulator state."""
+    body = _target_body("test-e2e")
+    assert "GLUDD_E2E_STATE_ROOT=$$FILE_BT/state" in body
+
+    helper = (MAKEFILE.parent / "tests/e2e/enforcement_state.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'os.environ.get("GLUDD_E2E_STATE_ROOT", "/tmp")' in helper
+
+    for relative_path in (
+        "tests/e2e/test_enforcement_e2e.py",
+        "tests/e2e/test_enforcement_plugin_e2e.py",
+    ):
+        source = (MAKEFILE.parent / relative_path).read_text(encoding="utf-8")
+        assert "from tests.e2e.enforcement_state import" in source
+
+
 def test_e2e_runner_keeps_file_pool_bounded() -> None:
     body = _target_body("test-e2e")
     assert 'active" -ge "$$FILE_WORKERS' in body

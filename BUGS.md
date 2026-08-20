@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-08-20 — (resolved) Outer E2E file workers raced on enforcement simulator state
+
+- **What happened**: The authoritative beta4 E2E run executed two enforcement files in separate pytest processes. Their identical xdist group names only serialized tests within each controller, so one file intermittently deleted or rewrote the other file's `/tmp/gludd-*` simulator state; one file failed despite both passing alone and in one pytest invocation.
+- **Root cause**: The outer two-file scheduler already isolated `--basetemp` and logs, but did not pass that boundary to helpers that modeled production plugin state paths. Xdist scheduling metadata cannot coordinate independent pytest controllers.
+- **Fix applied**: `test-e2e` now supplies a private `GLUDD_E2E_STATE_ROOT` below each file's namespaced resource directory. Both simulators share one traversal-rejecting path helper and retain `/tmp` only for direct invocations. The exact outer two-process reproduction passes 55/55 and 30/30 concurrently; the focused selection passes 118/118 and the helper has 100% branch coverage.
+- **Lesson**: Parallel-test isolation belongs at the outermost process boundary. Worker grouping is an optimization inside one controller, not a cross-controller lock or state namespace.
+
 ### 2026-08-17 — (resolved) Round 18: transitive PyInstaller warning digest drifted after uv-sync dependency updates
 
 - **What happened**: `binary_smoke_linux` failed in both round-18 runs: `transitive warning digest mismatch: expected eb32d56c..., found 2c13f658...`. The audit script's fail-closed digest pin caught a real change — the fresher uv-sync dependency graph added hidden-import warning edges, changing the normalized transitive graph.
