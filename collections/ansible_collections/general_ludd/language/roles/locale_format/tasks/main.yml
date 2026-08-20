@@ -5,13 +5,27 @@
     state: directory
     mode: "0755"
 
-- name: Run locale_format standalone script
-  ansible.builtin.script:
-    cmd: "files/locale_format.py --locale '{{ locale }}' --value '{{ value }}' --value-type '{{ value_type }}' --output '{{ artifact_dir }}/locale_format.json'"
-    executable: "{{ ansible_python_interpreter | default('python3') }}"
+- name: Format locale value through Gludd
+  general_ludd.language.language_operation:
+    operation: locale_format
+    payload:
+      value: "{{ value }}"
+      value_type: "{{ value_type }}"
+      locale: "{{ locale }}"
+      date_length: "{{ date_length }}"
+      currency_code: "{{ currency_code }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
   register: locale_result
+  no_log: true
   changed_when: false
+
+- name: Write locale format artifact atomically
+  ansible.builtin.copy:
+    content: "{{ locale_result.result | to_nice_json }}\n"
+    dest: "{{ artifact_dir }}/locale_format.json"
+    mode: "0600"
 
 - name: Print locale format summary
   ansible.builtin.debug:
-    msg: "{{ locale_result.stdout_lines }}"
+    var: locale_result.result
