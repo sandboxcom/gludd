@@ -1,4 +1,4 @@
-"""Security regression floors for dependencies used by the beta.3 release."""
+"""Security regression floors for dependencies used by the beta4 release."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def _locked_versions(package: str) -> set[Version]:
 
 
 def test_ansible_core_excludes_argument_injection_releases() -> None:
-    requirements = _declared_requirements("runtime", "ansible-core")
+    requirements = _declared_requirements("ansible-controller", "ansible-core")
     assert any(
         requirement.specifier.contains("2.19.11")
         and not requirement.specifier.contains("2.19.10")

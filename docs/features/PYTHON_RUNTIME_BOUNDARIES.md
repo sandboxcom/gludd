@@ -198,6 +198,56 @@ Follow-up work may consolidate additional domain utilities, optimize EE layers,
 or split large collections further. It may not defer any release-path import,
 interpreter, artifact, authentication, or rollback boundary above.
 
+## Implemented beta4 foundation
+
+The controller boundary is now represented by tracked, independently
+verifiable artifacts under `config/ansible/`:
+
+- `execution-environment.yml` is an Ansible Builder v3 definition whose base
+  image is digest-pinned and whose Galaxy, Python, and bindep inputs are
+  separate files;
+- `runtime-lock.json` content-addresses all four EE inputs and records the
+  one-at-a-time build budget, adjacent rollout, drain, and rollback contract;
+- `managed-host-python.lock.json` rejects ambient interpreters and establishes
+  the content-addressed `/opt/gludd/role-envs/<lock>/bin/python` interface; and
+- `collection-python-boundary-inventory.json` records every remaining
+  migration finding by exact path, line, rule, and offending-line SHA-256.
+
+The core dependency set no longer contains `ansible-core` or
+`ansible-runner`. They live in the `ansible-controller` optional extra and the
+development test group; `ansible-builder` is development tooling. The
+PyInstaller specification excludes Ansible, Ansible Runner, collection source,
+and playbooks so the frozen core cannot silently become a second controller
+runtime. A clean subprocess regression blocks both Ansible imports and proves
+the core CLI remains importable.
+
+`ProcessIsolationConfig` now rejects enabled isolation unless
+`container_image` uses the full `registry/name@sha256:<64 lowercase hex>` form.
+In-process execution is named `test_only_in_process` and cannot be combined
+with enabled isolation. This prevents a missing, mutable, or truncated image
+reference from degrading into an ambient controller run.
+
+Collection model execution now has one stdlib-only HTTP implementation:
+`GluddClient.call_model`. It requires an explicit PSK, attaches both supported
+authentication headers, and sends all game generation to the shared daemon
+model service. The collection no longer imports `ModelGateway`, constructs a
+per-fork model singleton, or mutates `sys.path` for `game_build`.
+
+The executable checks are:
+
+```text
+make validate-ansible-runtime-boundary
+make build-ansible-execution-environment ANSIBLE_EE_VALIDATE_ONLY=1 ANSIBLE_EE_RUNTIME=podman ANSIBLE_EE_IMAGE=gludd-ansible-ee:0.1.0-beta.4 ANSIBLE_EE_CONTEXT=/tmp/gludd-ansible-ee-contract
+make verify-ansible-execution-environment ANSIBLE_EE_VALIDATE_ONLY=1 ANSIBLE_EE_RUNTIME=podman ANSIBLE_EE_IMAGE=registry.example/gludd-ee:beta4@sha256:<64-hex>
+make check-collection-python-boundary COLLECTION_PYTHON_BOUNDARY_ROOT=collections/ansible_collections COLLECTION_PYTHON_BOUNDARY_INVENTORY=config/ansible/collection-python-boundary-inventory.json COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO=0
+```
+
+Baseline mode currently tracks 213 exact release-path findings and fails on a
+new, changed, duplicated, or stale entry. Strict-zero mode uses the same
+scanner with `COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO=1`; it fails until every
+tracked migration is removed, then becomes the permanent release gate without
+changing code or replacing the ledger with a path allowlist.
+
 ## Compatibility, ZDD, rollback, resources, and tests
 
 | Concern | Beta4 acceptance | Failure and rollback behavior |

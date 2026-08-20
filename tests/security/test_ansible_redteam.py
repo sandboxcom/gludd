@@ -447,7 +447,9 @@ class TestProcessIsolationRouting:
         from general_ludd.ansible.isolation import ProcessIsolationConfig
 
         iso = ProcessIsolationConfig(
-            enabled=True, executable="definitely-not-a-real-binary-xyz"
+            enabled=True,
+            executable="definitely-not-a-real-binary-xyz",
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
         )
         runner = CoreAnsibleRunner(process_isolation=iso)
         with (
@@ -466,6 +468,7 @@ class TestProcessIsolationRouting:
 
         iso = ProcessIsolationConfig(
             enabled=True,
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
             executable="podman",
             hide_paths=["/secret"],
         )
@@ -523,7 +526,11 @@ class TestProcessIsolationRouting:
         from general_ludd.ansible.core_runner import CoreAnsibleRunner
         from general_ludd.ansible.isolation import ProcessIsolationConfig
 
-        iso = ProcessIsolationConfig(enabled=True, executable="podman")
+        iso = ProcessIsolationConfig(
+            enabled=True,
+            executable="podman",
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
+        )
         runner = CoreAnsibleRunner(process_isolation=iso)
 
         fake_runner_obj = MagicMock()

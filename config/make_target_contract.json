@@ -570,6 +570,36 @@
         "COVERAGE_PER_FILE_MIN"
       ],
       "behavior": "make coverage-files COVERAGE_TESTFILES='scripts/test_hook_runtime.py tests/unit/test_floor_controller.py tests/unit/test_opencode_integrity.py tests/unit/test_w22_opencode_integrity.py' COVERAGE_CONFIG=config/coverage_gate_runtime.ini COVERAGE_REPORT=.gate-logs/coverage-files.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75"
+    },
+    {
+      "name": "validate-ansible-runtime-boundary",
+      "make_variables": [],
+      "behavior": "make validate-ansible-runtime-boundary"
+    },
+    {
+      "name": "update-ansible-runtime-lock",
+      "make_variables": [],
+      "behavior": "make update-ansible-runtime-lock"
+    },
+    {
+      "name": "build-ansible-execution-environment",
+      "make_variables": ["ANSIBLE_EE_VALIDATE_ONLY", "ANSIBLE_EE_RUNTIME", "ANSIBLE_EE_IMAGE", "ANSIBLE_EE_CONTEXT"],
+      "behavior": "make build-ansible-execution-environment ANSIBLE_EE_VALIDATE_ONLY=1 ANSIBLE_EE_RUNTIME=podman ANSIBLE_EE_IMAGE=gludd-ansible-ee:0.1.0-beta.4 ANSIBLE_EE_CONTEXT=/tmp/gludd-ansible-ee-contract"
+    },
+    {
+      "name": "verify-ansible-execution-environment",
+      "make_variables": ["ANSIBLE_EE_VALIDATE_ONLY", "ANSIBLE_EE_RUNTIME", "ANSIBLE_EE_IMAGE"],
+      "behavior": "make verify-ansible-execution-environment ANSIBLE_EE_VALIDATE_ONLY=1 ANSIBLE_EE_RUNTIME=podman ANSIBLE_EE_IMAGE=registry.example/gludd-ee:beta4@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "check-collection-python-boundary",
+      "make_variables": ["COLLECTION_PYTHON_BOUNDARY_ROOT", "COLLECTION_PYTHON_BOUNDARY_INVENTORY", "COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO"],
+      "behavior": "make check-collection-python-boundary COLLECTION_PYTHON_BOUNDARY_ROOT=collections/ansible_collections COLLECTION_PYTHON_BOUNDARY_INVENTORY=config/ansible/collection-python-boundary-inventory.json COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO=0"
+    },
+    {
+      "name": "update-collection-python-boundary-inventory",
+      "make_variables": ["COLLECTION_PYTHON_BOUNDARY_ROOT", "COLLECTION_PYTHON_BOUNDARY_INVENTORY"],
+      "behavior": "make update-collection-python-boundary-inventory COLLECTION_PYTHON_BOUNDARY_ROOT=collections/ansible_collections COLLECTION_PYTHON_BOUNDARY_INVENTORY=/tmp/gludd-collection-python-boundary-contract.json"
     }
   ]
 }

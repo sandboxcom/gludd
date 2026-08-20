@@ -187,126 +187,41 @@ def _compat_submodules() -> set[str]:
     return submodules
 
 
-class TestAnsibleDataCollection:
-    """The gludd binary crashed on macOS because ``ansible/config/base.yml``
-    wasn't bundled. These tests verify the spec collects ALL ansible data."""
+class TestAnsibleArtifactBoundary:
+    """The beta4 frozen core excludes the separately shipped controller EE."""
 
-    def test_spec_uses_collect_data_files(self, spec_text: str) -> None:
-        """Verify gludd.spec calls ``collect_data_files('ansible')``.
+    def test_spec_does_not_collect_ansible_data(self, spec_text: str) -> None:
+        assert re.search(r"collect_data_files\(\s*['\"]ansible['\"]\s*\)", spec_text) is None
+        assert "_ansible_datas" not in spec_text
 
-        Without this call, PyInstaller's static analyzer misses every
-        non-.py file under the ansible package — including
-        ``ansible/config/base.yml`` (the crash file), the plugin YAML
-        definitions, and the module-utils data files.
-        """
-        assert re.search(r"collect_data_files\(\s*['\"]ansible['\"]\s*\)", spec_text), (
-            "gludd.spec must call collect_data_files('ansible') to bundle "
-            "ansible/config/base.yml and the rest of ansible's YAML data. "
-            "Without it the binary crashes on startup with "
-            "'Missing base YAML definition file (bad install?)'."
-        )
-
-    def test_ansible_datas_actually_passed_to_analysis(self, spec_text: str) -> None:
-        """The ``collect_data_files('ansible')`` result MUST reach Analysis.
-
-        PyInstaller only bundles what is in ``Analysis(datas=[...])``. A
-        module-level ``datas = [...] + _ansible_datas`` variable is computed
-        but IGNORED unless it is the same object passed to ``Analysis``.
-        The v0.1.0-beta.1 crash returned because the spec computed the data
-        and then handed Analysis a different (ansible-less) inline list.
-
-        This test pins the fix: the Analysis ``datas=`` body must reference
-        the ansible-data variable (or contain the collect_data_files call
-        inline).
-        """
+    def test_core_datas_are_passed_to_analysis(self, spec_text: str) -> None:
         body = _analysis_datas_body(spec_text)
         assert body is not None, "gludd.spec must have an Analysis(...) block with a datas=[...] argument"
-        # Accept either (a) the module-level variable pattern, or (b) an
-        # inline collect_data_files('ansible') call inside Analysis(datas=).
-        uses_module_var = bool(re.search(r"\b_ansible_datas\b", body))
         uses_module_datas_var = bool(re.search(r"\bdatas\b", body)) and bool(
             re.search(r"^datas\s*=\s*\[", spec_text, re.MULTILINE)
         )
-        inline_collect = bool(re.search(r"collect_data_files\(\s*['\"]ansible['\"]\s*\)", body))
-        assert uses_module_var or uses_module_datas_var or inline_collect, (
-            "Analysis(datas=[...]) must include the ansible data — either by "
-            "appending _ansible_datas, by passing the module-level `datas` "
-            "variable, or by calling collect_data_files('ansible') inline. "
-            "The current spec computes _ansible_datas but drops it before "
-            "Analysis, so ansible/config/base.yml is NOT bundled. This is "
-            "the root cause of the 'Missing base YAML definition file' crash."
-        )
+        assert uses_module_datas_var
 
-    def test_spec_uses_collect_submodules(self, spec_text: str) -> None:
-        """Verify gludd.spec calls ``collect_submodules('ansible.module_utils')``.
-
-        ansible performs dynamic imports inside module_utils, plugins,
-        template, and galaxy. PyInstaller's static analyzer cannot follow
-        importlib.import_module() calls, so each must be collected
-        explicitly. Without this, the bundle's executor path silently
-        fails the first time ansible resolves a module/action.
-        """
+    def test_spec_does_not_collect_ansible_submodules(self, spec_text: str) -> None:
         packages = _collect_submodule_packages(spec_text)
-        assert "ansible.module_utils" in packages, (
-            "gludd.spec must call collect_submodules('ansible.module_utils') "
-            "to bundle ansible's dynamically-imported subpackage. The static "
-            "analyzer misses these imports otherwise."
-        )
-        # The spec should also collect the other dynamically-loaded ansible
-        # subpackages (plugins, template, galaxy) — these are the ones
-        # core_runner.py and the executor touch at runtime.
-        for sub in ("ansible.plugins", "ansible.template", "ansible.galaxy"):
-            assert sub in packages, (
-                f"gludd.spec must call collect_submodules('{sub}') — used at runtime by ansible's executor path."
-            )
+        assert not any(package == "ansible" or package.startswith("ansible.") for package in packages)
 
-    def test_spec_does_not_exclude_ansible(self, spec_text: str) -> None:
-        """Verify ansible is NOT in the excludes list (only ansible.cli is).
-
-        ``ansible.cli`` is excluded because ``ansible.cli.initialize_locale()``
-        hard-fails on Windows' cp1252 locale. The executor stack
-        (ansible.parsing, ansible.executor, ansible.inventory, ansible.vars,
-        ansible.template, ansible.plugins) MUST be bundled — core_runner.py
-        drives it at runtime.
-        """
+    def test_spec_excludes_controller_packages(self, spec_text: str) -> None:
         excluded = _excludes_from_spec(spec_text)
-        # The whole 'ansible' package must NOT be excluded.
-        assert "ansible" not in excluded, (
-            "ansible must NOT be in excludes — gludd drives ansible-core's "
-            "executor API (src/general_ludd/ansible/core_runner.py:77-83) at "
-            "runtime. Excluding it strips the entire executor stack."
-        )
-        # Sanity: ansible.cli SHOULD remain excluded (Windows cp1252 issue).
-        assert "ansible.cli" in excluded, (
-            "ansible.cli MUST remain in excludes — "
-            "ansible.cli.initialize_locale() hard-fails on Windows cp1252 "
-            "locale ('Ansible requires UTF-8; Detected 1252')."
-        )
+        assert {"ansible", "ansible.cli", "ansible_runner"} <= excluded
 
-    def test_spec_filters_nonexistent_ansible_distro_children(self, spec_text: str) -> None:
-        """Ansible's distro compatibility package advertises two absent children."""
-        assert "filter=_is_collectable_ansible_submodule" in spec_text
-        assert "ansible.module_utils.distro.__main__" in spec_text
-        assert "ansible.module_utils.distro.distro" in spec_text
+    def test_spec_excludes_collection_and_playbook_payloads(self, spec_text: str) -> None:
+        assert "('collections', 'collections')" not in spec_text
+        assert "('playbooks', 'playbooks')" not in spec_text
 
 
 class TestBuildWarningPrevention:
     """Intentional optional/platform imports must not pollute release builds."""
 
-    def test_windows_ansible_collection_ignores_posix_import_failures(self, spec_text: str) -> None:
-        """Windows discovery skips warnings from unsupported Ansible internals."""
+    def test_recursive_ansible_discovery_is_absent(self, spec_text: str) -> None:
         calls = _collect_submodule_calls(spec_text)
-        assert calls
-        for call in calls:
-            on_error = next(
-                (item.value for item in call.keywords if item.arg == "on_error"),
-                None,
-            )
-            assert isinstance(on_error, ast.Name)
-            assert on_error.id == "_ansible_collect_error_mode"
-
-        assert 'sys.platform == "win32"' in spec_text
-        assert '_ansible_collect_error_mode = "ignore"' in spec_text
+        assert not calls
+        assert "_ansible_collect_error_mode" not in spec_text
 
     def test_windows_excludes_posix_only_stdlib_modules(self, spec_text: str) -> None:
         """Static analysis must not warn for stdlib modules absent on Windows."""

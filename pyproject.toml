@@ -33,9 +33,6 @@ dependencies = [
     "prometheus-client>=0.21.0",
     "psutil>=6.0.0",
     "tenacity>=9.0.0",
-    "ansible-core>=2.19.11,<2.20; python_version < '3.12'",
-    "ansible-core>=2.21.2,<2.22; python_version >= '3.12'",
-    "ansible-runner>=2.4.0",
     "jinja2>=3.1.0",
     "jsonschema>=4.21",
     "pyyaml>=6.0.2",
@@ -67,12 +64,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ansible-controller = [
+    "ansible-core>=2.19.11,<2.20; python_version < '3.12'",
+    "ansible-core>=2.21.2,<2.22; python_version >= '3.12'",
+    "ansible-runner>=2.4.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=6.0.0",
     "pytest-asyncio>=0.25.0",
     "pytest-xdist>=3.5.0",
     "pytest-timeout>=2.3.0",
+    "ansible-core>=2.19.11,<2.20; python_version < '3.12'",
+    "ansible-core>=2.21.2,<2.22; python_version >= '3.12'",
+    "ansible-runner>=2.4.0",
+    "ansible-builder>=3.1.1,<3.2",
     "httpx2>=2.7.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
@@ -373,6 +379,10 @@ dev = [
     "pytest-asyncio>=0.25.0",
     "pytest-xdist>=3.5.0",
     "pytest-timeout>=2.3.0",
+    "ansible-core>=2.19.11,<2.20; python_version < '3.12'",
+    "ansible-core>=2.21.2,<2.22; python_version >= '3.12'",
+    "ansible-runner>=2.4.0",
+    "ansible-builder>=3.1.1,<3.2",
     "httpx2>=2.7.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",

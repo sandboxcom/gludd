@@ -1,17 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 
-# Ansible ships YAML config files (ansible/config/base.yml, etc.) that are
-# loaded at runtime via importlib resources. PyInstaller doesn't auto-detect
-# these — without explicit collection, the binary crashes on startup with
-# "Missing base YAML definition file (bad install?)".
-# collect_data_files pulls all non-.py files from the ansible package.
-_ansible_datas = collect_data_files('ansible')
-_ansible_binaries = []
 # safehttpx reads its version.txt via importlib.resources at import time
 # (general_ludd/security/url_fetch.py); PyInstaller does not auto-collect it,
 # so the frozen CLI crashes with FileNotFoundError .../safehttpx/version.txt.
@@ -19,50 +12,11 @@ _safehttpx_datas = collect_data_files('safehttpx')
 
 datas = [
     ('config', 'config'),
-    ('collections', 'collections'),
     ('templates', 'templates'),
-    ('playbooks', 'playbooks'),
     ('infra/terraform', 'general_ludd/terraform_assets'),
     ('LICENSE', '.'),
     ('THIRD_PARTY_LICENSES.md', '.'),
-] + _ansible_datas + _safehttpx_datas
-
-# Also collect ansible submodules that aren't auto-detected by the static
-# analyzer (module_utils, plugins, etc. are imported dynamically).
-_ABSENT_ANSIBLE_SUBMODULES = {
-    'ansible.module_utils.distro.__main__',
-    'ansible.module_utils.distro.distro',
-}
-
-
-def _is_collectable_ansible_submodule(name):
-    return name not in _ABSENT_ANSIBLE_SUBMODULES
-
-
-# Ansible is not a supported native-Windows control node. Its recursive
-# packages import POSIX stdlib modules while PyInstaller enumerates dynamic
-# children, even though non-Ansible Gludd commands do not use those paths.
-# PyInstaller documents ``on_error="ignore"`` for skipping those known
-# unimportable children without emitting misleading build warnings.
-_ansible_collect_error_mode = "ignore" if sys.platform == "win32" else "warn once"
-
-_hidden_ansible = collect_submodules(
-    'ansible.module_utils',
-    filter=_is_collectable_ansible_submodule,
-    on_error=_ansible_collect_error_mode,
-)
-_hidden_ansible += collect_submodules(
-    'ansible.plugins',
-    on_error=_ansible_collect_error_mode,
-)
-_hidden_ansible += collect_submodules(
-    'ansible.template',
-    on_error=_ansible_collect_error_mode,
-)
-_hidden_ansible += collect_submodules(
-    'ansible.galaxy',
-    on_error=_ansible_collect_error_mode,
-)
+] + _safehttpx_datas
 
 # PyInstaller follows conditional imports from both platform branches. Exclude
 # unavailable stdlib modules on Windows and Windows-only implementation modules
@@ -119,9 +73,6 @@ a = Analysis(
         'general_ludd.worker.app',
         'general_ludd.event_loop.loop',
         'general_ludd.event_loop.lease',
-        'general_ludd.ansible.runner',
-        'general_ludd.ansible.core_runner',
-        'general_ludd.ansible.templating',
         'general_ludd.models.gateway',
         'general_ludd.models.router',
         'general_ludd.db.models',
@@ -147,7 +98,7 @@ a = Analysis(
         'uvicorn.protocols.websockets.auto',
         'uvicorn.lifespan',
         'uvicorn.lifespan.on',
-    ] + _hidden_ansible,
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -162,6 +113,11 @@ a = Analysis(
         'pre_commit',
         'molecule',
         'ansible_lint',
+        # Ansible controller code and collections ship in the separately
+        # locked execution-environment artifact.  The frozen core talks to
+        # that controller boundary and must not carry a second Python runtime.
+        'ansible',
+        'ansible_runner',
         'ansible.cli',
         # The application uses stdlib sqlite3 and psycopg 3. SQLAlchemy's
         # generic hook otherwise probes these absent legacy/optional drivers.
