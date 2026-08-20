@@ -1,0 +1,9 @@
+---
+collections:
+  - name: ../../dist/collections/general_ludd-agent-0.2.0.tar.gz
+    type: file
+  - name: ../../dist/collections/general_ludd-language-0.1.0.tar.gz
+    type: file
+  - name: ../../dist/collections/general_ludd-networking-0.2.0.tar.gz
+    type: file
+

@@ -87,7 +87,10 @@ orchestration:
 # See src/general_ludd/ansible/isolation.py for the full ProcessIsolationConfig.
 process_isolation:
   enabled: false             # OFF by default; opt-in for hardening.
-  container_runtime: podman  # 'podman' or 'docker'.
+  executable: podman         # 'podman' or 'docker'.
+  # Required when enabled; use the promoted beta4 EE by immutable digest.
+  container_image: null      # registry/name@sha256:<64 lowercase hex>
+  test_only_in_process: false # Test harness only; never combine with enabled.
 
 # ── budget ────────────────────────────────────────────────────────────────────
 # Spend caps for model API calls. Tracked by spend_limiter; enforce_deallocate

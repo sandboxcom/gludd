@@ -66,7 +66,9 @@ orchestration:
 # THE key section for this profile. Each agent runs inside a container with
 # no host filesystem access beyond its scratch volume.
 process_isolation:
-  enabled: true               # turn isolation ON (default is false)
+  enabled: false              # set true only after replacing the digest below
+  container_image: null       # registry/name@sha256:<promoted beta4 EE digest>
+  test_only_in_process: false
   container_runtime: podman   # podman preferred — rootless by default
   # Optional: pin the image so supply-chain changes do not silently land.
   # image: registry.internal/gludd-agent:0.1.0

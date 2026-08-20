@@ -108,7 +108,11 @@ class TestCoreAnsibleRunnerInit:
     def test_accepts_process_isolation_config(self):
         from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
-        iso = ProcessIsolationConfig(enabled=True, executable="bwrap")
+        iso = ProcessIsolationConfig(
+            enabled=True,
+            executable="bwrap",
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
+        )
         runner = CoreAnsibleRunner(process_isolation=iso)
         assert runner._process_isolation is iso
 
@@ -462,6 +466,7 @@ class TestProcessIsolationWithCoreRunner:
     def test_isolation_config_produces_core_options(self):
         iso = ProcessIsolationConfig(
             enabled=True,
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
             executable="bwrap",
             hide_paths=["/secret"],
         )
@@ -474,6 +479,7 @@ class TestProcessIsolationWithCoreRunner:
     def test_isolation_to_core_kwargs(self):
         iso = ProcessIsolationConfig(
             enabled=True,
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
             executable="bwrap",
             hide_paths=["/secret"],
         )

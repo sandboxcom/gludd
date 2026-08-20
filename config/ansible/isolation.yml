@@ -1,6 +1,10 @@
 process_isolation:
   enabled: false
   executable: podman
+  # Required when enabled; release/deployment automation supplies the promoted
+  # beta4 EE as registry/name@sha256:<64 lowercase hex>.
+  container_image: null
+  test_only_in_process: false
   hide_paths: []
   show_paths: []
   ro_paths: []

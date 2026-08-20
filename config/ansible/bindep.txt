@@ -1,0 +1,3 @@
+# The digest-pinned Python base image already supplies the controller runtime.
+# Collection system dependencies are merged here by ansible-builder introspection.
+
