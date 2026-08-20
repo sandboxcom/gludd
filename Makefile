@@ -123,7 +123,7 @@ PYTEST_VERBOSITY ?= -v
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
         test-self-improve test-self-improve-all \
-         development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key \
+          development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key workstream-register workstream-unregister wt-prune-safe \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
         release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready ship-commit-files remove-workspace-file-b64 \
@@ -383,6 +383,9 @@ help:
 	@echo "  feature-done MSG='...' Test, merge to master with --no-ff"
 	@echo "  agent-worktree BRANCH=<name>  Isolated git worktree for a subagent (no shared-tree races)"
 	@echo "  agent-worktree-base BRANCH=<name> BASE=<ref>  Isolated worktree from an explicit base ref"
+	@echo "  workstream-register BRANCH=<name> WORKTREE=<path>  Protect an active logical workstream"
+	@echo "  workstream-unregister BRANCH=<name>  Release a completed logical workstream"
+	@echo "  wt-prune-safe         Prune clean worktrees except registered active workstreams (ACTIVE_WORKSTREAM_REGISTRY, WT_PRUNE_VALIDATE_ONLY)"
 	@echo "  agent-merge BRANCH=<name>     Merge a subagent worktree branch into master (--no-ff)"
 	@echo "  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge"
 	@echo "  agent-worktree-list           List active git worktrees"
@@ -4210,13 +4213,9 @@ wt-remove-locked-many:
 # persist, so committed feature branches survive removal and can be merged by
 # name or re-checked-out later. Protects the main checkout + the orchestrator cwd.
 wt-prune-safe:
-	@git worktree list --porcelain | awk '/^worktree /{print $$2}' | while read -r wt; do \
-		case "$$wt" in \
-			*/gludd|*a2fb5d73d80b29494) echo "  protected: $$wt"; continue;; \
-		esac; \
-		git worktree remove "$$wt" 2>/dev/null && echo "  removed (clean): $$wt" || echo "  kept (dirty/unsynced): $$wt"; \
-	done
-	@echo "wt-prune-safe done"
+	@$(UV) run python -m scripts.prune_worktrees_safe \
+		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry "$(ACTIVE_WORKSTREAM_REGISTRY)") \
+		$(if $(filter 1,$(WT_PRUNE_VALIDATE_ONLY)),--validate-only)
 
 # Read-only: which feature/* branches still have work NOT yet in master (the real
 # integration backlog). A branch absent here is already merged.
@@ -5281,6 +5280,7 @@ agent-worktree:
 	@WORKTREE_PATH="/tmp/gludd-worktrees/$(BRANCH)"; \
 	mkdir -p /tmp/gludd-worktrees; \
 	git worktree add "$$WORKTREE_PATH" -b "$(BRANCH)" 2>/dev/null || git worktree add "$$WORKTREE_PATH" "$(BRANCH)"; \
+	$(MAKE) --no-print-directory workstream-register BRANCH="$(BRANCH)" WORKTREE="$$WORKTREE_PATH" ACTIVE_WORKSTREAM_REGISTRY="$(ACTIVE_WORKSTREAM_REGISTRY)"; \
 	echo "WORKTREE_PATH=$$WORKTREE_PATH"; \
 	echo "Worktree ready at $$WORKTREE_PATH on branch $(BRANCH)"
 
@@ -5292,6 +5292,7 @@ agent-worktree-base:
 	mkdir -p /tmp/gludd-worktrees; \
 	git rev-parse --verify "$(BASE)^{commit}" >/dev/null 2>&1 || { echo "ERROR: BASE $(BASE) is not a valid commit"; exit 1; }; \
 	git worktree add "$$WORKTREE_PATH" -b "$(BRANCH)" "$(BASE)" 2>/dev/null || git worktree add "$$WORKTREE_PATH" "$(BRANCH)"; \
+	$(MAKE) --no-print-directory workstream-register BRANCH="$(BRANCH)" WORKTREE="$$WORKTREE_PATH" ACTIVE_WORKSTREAM_REGISTRY="$(ACTIVE_WORKSTREAM_REGISTRY)"; \
 	echo "WORKTREE_PATH=$$WORKTREE_PATH"; \
 	echo "Worktree ready at $$WORKTREE_PATH on branch $(BRANCH) from $(BASE)"
 
@@ -5314,7 +5315,20 @@ agent-cleanup:
 	git worktree unlock "$$CLAUDE_WT_PATH" 2>/dev/null || true; \
 	git worktree remove "$$CLAUDE_WT_PATH" --force 2>/dev/null || true; \
 	git branch -d "$(BRANCH)" 2>/dev/null || true; \
+	$(MAKE) --no-print-directory workstream-unregister BRANCH="$(BRANCH)" ACTIVE_WORKSTREAM_REGISTRY="$(ACTIVE_WORKSTREAM_REGISTRY)"; \
 	echo "Cleaned up worktree + branch for $(BRANCH)"
+
+# Logical workstreams represent model-agent ownership and therefore cannot be
+# inferred from OS PIDs.  Registration is explicit and shared by all worktrees.
+workstream-register:
+	@[ -n "$(BRANCH)" ] && [ -n "$(WORKTREE)" ] || { echo "Usage: make workstream-register BRANCH=<name> WORKTREE=<path>"; exit 2; }
+	@$(UV) run python -m scripts.workstream_registry register --branch "$(BRANCH)" --worktree "$(WORKTREE)" \
+		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry "$(ACTIVE_WORKSTREAM_REGISTRY)")
+
+workstream-unregister:
+	@[ -n "$(BRANCH)" ] || { echo "Usage: make workstream-unregister BRANCH=<name>"; exit 2; }
+	@$(UV) run python -m scripts.workstream_registry unregister --branch "$(BRANCH)" \
+		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry "$(ACTIVE_WORKSTREAM_REGISTRY)")
 
 # Bulk cleanup of all stale worktrees in .claude/worktrees/.
 # Unlocks then force-removes every worktree, deletes branches, prunes metadata.
