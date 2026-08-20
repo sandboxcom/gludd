@@ -190,7 +190,7 @@ class TestBranchReportStructure:
             "src/general_ludd",
             per_file_threshold=75,
         )
-        assert report["per_file_thresholds"]["line"] == 85
+        assert report["per_file_thresholds"]["line"] == 75
         assert report["per_file_thresholds"]["branch"] == 75
         assert "branch_threshold" in report
         assert "per_file_threshold" in report

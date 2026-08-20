@@ -13,10 +13,14 @@ Covers:
   - Full integration: add model → hook fires → workers notified → config refreshed
 """
 
+import contextlib
 import tempfile
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.events.bus import Event, EventBus
@@ -824,6 +828,36 @@ class TestSkillRegistryDynamicE2E:
 
 class TestDaemonReloadEndpointsE2E:
     """Verbose E2E tests for daemon admin reload endpoints."""
+
+    @pytest.fixture(autouse=True)
+    def _manage_test_client_lifecycles(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> Iterator[None]:
+        """Close every daemon lifespan and its database even on assertion failure."""
+        from starlette import testclient as testclient_module
+
+        from general_ludd import daemon as daemon_module
+
+        original_test_client = testclient_module.TestClient
+        original_create_app = daemon_module.create_daemon_app
+
+        def create_isolated_app(*args, **kwargs):
+            config_dir = Path(kwargs["config_dir"])
+            kwargs.setdefault("_db_path_override", str(config_dir.parent / "daemon.sqlite3"))
+            kwargs.setdefault("tick_interval", 3600.0)
+            return original_create_app(*args, **kwargs)
+
+        with contextlib.ExitStack() as clients:
+            monkeypatch.setattr(daemon_module, "create_daemon_app", create_isolated_app)
+            monkeypatch.setattr(
+                testclient_module,
+                "TestClient",
+                lambda *args, **kwargs: clients.enter_context(
+                    original_test_client(*args, **kwargs)
+                ),
+            )
+            yield
 
     def test_post_admin_reload_models(self):
         from starlette.testclient import TestClient
