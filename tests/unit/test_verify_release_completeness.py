@@ -93,20 +93,7 @@ class TestExpectedCategories:
         assert not fn({"gludd-0.1.0-windows-x86_64.zip"})
 
     def test_complete_release_passes_all(self) -> None:
-        assets = {
-            "gludd-linux-x86_64",
-            "gludd-linux-aarch64",
-            "gludd-macos-arm64",
-            "gludd-windows-x86_64",
-            "gludd_0.1.0_amd64.deb",
-            "gludd-0.1.0-1.x86_64.rpm",
-            "gludd-0.1.0-macos-arm64.dmg",
-            "gludd-0.1.0-setup-x86_64.exe",
-            "SHA256SUMS",
-            "sbom.spdx.json",
-            "LICENSE",
-            "THIRD_PARTY_LICENSES",
-        }
+        assets = {item["name"] for item in COMPLETE_ASSETS}
         for label, fn in EXPECTED_CATEGORIES.items():
             assert fn(assets), f"{label} should match in complete set"
 
@@ -116,7 +103,30 @@ class TestExpectedCategories:
             assert not fn(assets), f"{label} should not match empty set"
 
     def test_min_asset_threshold(self) -> None:
-        assert MIN_ASSETS == 12
+        assert len(EXPECTED_CATEGORIES) == 28
+        assert MIN_ASSETS == 30
+
+    def test_beta4_distribution_and_runtime_categories(self) -> None:
+        assets = {item["name"] for item in COMPLETE_ASSETS}
+        for label in (
+            "wheel",
+            "sdist",
+            "runtime collection tarballs",
+            "collection manifest",
+            "execution-environment definition",
+            "execution-environment requirements",
+            "execution-environment Python requirements",
+            "execution-environment system requirements",
+            "execution-environment runtime lock",
+            "managed-host Python lock",
+            "collection Python boundary inventory",
+            "execution-environment image metadata",
+            "container image metadata",
+            "install script",
+            "smoke attestations",
+            "release manifest",
+        ):
+            assert EXPECTED_CATEGORIES[label](assets), label
 
 
 COMPLETE_ASSETS = [
@@ -128,10 +138,28 @@ COMPLETE_ASSETS = [
     {"name": "gludd-0.1.0-1.x86_64.rpm", "size": 100},
     {"name": "gludd-0.1.0-macos-arm64.dmg", "size": 100},
     {"name": "gludd-0.1.0-setup-x86_64.exe", "size": 100},
+    {"name": "general_ludd_agent-0.1.0-py3-none-any.whl", "size": 100},
+    {"name": "general_ludd_agent-0.1.0.tar.gz", "size": 100},
+    {"name": "general_ludd-agent-0.2.0.tar.gz", "size": 100},
+    {"name": "general_ludd-language-0.1.0.tar.gz", "size": 100},
+    {"name": "general_ludd-networking-0.2.0.tar.gz", "size": 100},
+    {"name": "gludd-collections-0.1.0.json", "size": 100},
+    {"name": "ansible-ee-execution-environment.yml", "size": 100},
+    {"name": "ansible-ee-requirements.yml", "size": 100},
+    {"name": "ansible-ee-requirements.txt", "size": 100},
+    {"name": "ansible-ee-bindep.txt", "size": 100},
+    {"name": "ansible-ee-runtime-lock.json", "size": 100},
+    {"name": "ansible-managed-host-python.lock.json", "size": 100},
+    {"name": "ansible-collection-python-boundary-inventory.json", "size": 100},
+    {"name": "gludd-ee-image-0.1.0.json", "size": 100},
+    {"name": "gludd-container-0.1.0.json", "size": 100},
     {"name": "SHA256SUMS", "size": 100},
-    {"name": "sbom.spdx.json", "size": 100},
+    {"name": "sbom.json", "size": 100},
+    {"name": "install.sh", "size": 100},
     {"name": "LICENSE", "size": 100},
     {"name": "THIRD_PARTY_LICENSES.md", "size": 100},
+    {"name": "gludd-smoke-release-0.1.0.json", "size": 100},
+    {"name": "gludd-release-manifest-0.1.0.json", "size": 100},
 ]
 
 
@@ -182,7 +210,7 @@ class TestCheckCompleteness:
         assert "zero assets" in capsys.readouterr().out
 
     def test_missing_category_fails(self, monkeypatch, capsys) -> None:
-        assets = [a for a in COMPLETE_ASSETS if a["name"] != "sbom.spdx.json"]
+        assets = [a for a in COMPLETE_ASSETS if a["name"] != "sbom.json"]
         _mock_gh(monkeypatch, _payload(assets=assets))
         assert check_completeness("v0.1.0", "sandboxcom/gludd") == 1
         assert "SBOM — MISSING" in capsys.readouterr().out
@@ -198,7 +226,14 @@ class TestCheckCompleteness:
     def test_beta_tag_without_prerelease_flag_fails(self, monkeypatch, capsys) -> None:
         tag = "v0.1.0-beta.9"
         assets = [
-            {"name": a["name"].replace("0.1.0", "0.1.0-beta.9"), "size": a["size"]}
+            {
+                "name": (
+                    a["name"]
+                    if a["name"].startswith("general_ludd-")
+                    else a["name"].replace("0.1.0", "0.1.0-beta.9")
+                ),
+                "size": a["size"],
+            }
             for a in COMPLETE_ASSETS
         ]
         _mock_gh(monkeypatch, _payload(tag, prerelease=False, assets=assets))
@@ -208,7 +243,14 @@ class TestCheckCompleteness:
     def test_beta_tag_with_prerelease_flag_passes(self, monkeypatch, capsys) -> None:
         tag = "v0.1.0-beta.9"
         assets = [
-            {"name": a["name"].replace("0.1.0", "0.1.0-beta.9"), "size": a["size"]}
+            {
+                "name": (
+                    a["name"]
+                    if a["name"].startswith("general_ludd-")
+                    else a["name"].replace("0.1.0", "0.1.0-beta.9")
+                ),
+                "size": a["size"],
+            }
             for a in COMPLETE_ASSETS
         ]
         _mock_gh(monkeypatch, _payload(tag, prerelease=True, assets=assets))
@@ -269,15 +311,10 @@ class TestMockCheckCompleteness:
             "tagName": "v0.1.0-test",
             "isDraft": False,
             "assets": [
-                {"name": f"gludd-{plat}"}
-                for plat in ("linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64")
-            ]
-            + [
-                {"name": n}
-                for n in ("gludd_0.1.0_amd64.deb", "gludd-0.1.0-1.x86_64.rpm",
-                          "gludd-0.1.0-macos-arm64.dmg", "gludd-0.1.0-setup-x86_64.exe")
-            ]
-            + [{"name": "checksums.txt"}, {"name": "LICENSE"}, {"name": "THIRD_PARTY_LICENSES"}],
+                {"name": item["name"]}
+                for item in COMPLETE_ASSETS
+                if item["name"] != "sbom.json"
+            ],
             "url": "https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-test",
             "publishedAt": "2026-01-01T00:00:00Z",
         }
