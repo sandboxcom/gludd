@@ -6,13 +6,13 @@ single dispatch blocked, zero-streak text blocked, dispatch resets streak.
 
 from __future__ import annotations
 
-import contextlib
 import json
-import os
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, cast
+
+from tests.e2e.state_isolation import build_state_environment
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-multitask.ts"
@@ -24,9 +24,19 @@ PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-multitask.ts"
 _GAP_MS = 500
 _GAP_ENV = {"GLUDD_MSG_GAP_MS": str(_GAP_MS)}
 _GAP_SLEEP_JS = f"await new Promise(res => setTimeout(res, {_GAP_MS * 2}))"
-
-_ts_counter = 0
-
+_MUTABLE_STATE_FILENAMES = {
+    "GLUDD_ALIVE_PATH": "alive.json",
+    "GLUDD_CI_CACHE_PATH": "ci.json",
+    "GLUDD_DISENGAGE_PATH": "disengage.json",
+    "GLUDD_DISPATCH_OUTCOMES_FILE": "dispatch-outcomes.json",
+    "GLUDD_HOT_MODULE_PREFIX": "hot-",
+    "GLUDD_MULTITASK_DISPATCH_COUNT_FILE": "dispatch-count.json",
+    "GLUDD_MULTITASK_STATE_FILE": "multitask.json",
+    "GLUDD_RELEASE_COMPLETENESS_FILE": "release.json",
+    "GLUDD_STOP_STATE_PATH": "stop.json",
+    "GLUDD_TODOWRITE_STATE_PATH": "todo.json",
+}
+_MUTABLE_STATE_ENV_KEYS = tuple(_MUTABLE_STATE_FILENAMES)
 
 def _run_plugin(
     ts_code: str,
@@ -34,27 +44,20 @@ def _run_plugin(
     cwd: str | None = None,
     timeout: int = 15,
 ) -> str:
-    global _ts_counter
-    _ts_counter += 1
-    tmp = Path(tempfile.mktemp(suffix=".ts", prefix=f"multitask_e2e_{_ts_counter}_"))
-    state_file = Path(tempfile.mktemp(suffix=".json", prefix=f"gludd-multitask-e2e-{_ts_counter}-"))
-    ci_cache_state = state_file.with_name(state_file.stem + "-ci.json")
-    todowrite_state = state_file.with_name(state_file.stem + "-todo.json")
-    hot_module_prefix = state_file.with_name(state_file.stem + "-hot-")
-    tmp.write_text(ts_code)
-    try:
-        env = os.environ.copy()
-        env["OPENCODE_SUBAGENT"] = ""
-        env["GLUDD_MULTITASK_FLOOR_ENFORCE"] = "1"
-        env["GLUDD_MIN_DISPATCHES"] = "10"
-        env["GLUDD_DISENGAGE_PATH"] = str(
-            Path(tempfile.mktemp(suffix=".json", prefix=f"gludd-disengage-e2e-{_ts_counter}-"))
+    with tempfile.TemporaryDirectory(prefix="gludd-multitask-e2e-") as state_dir_text:
+        state_dir = Path(state_dir_text)
+        tmp = state_dir / "runner.ts"
+        tmp.write_text(ts_code, encoding="utf-8")
+        env = build_state_environment(
+            state_dir,
+            _MUTABLE_STATE_FILENAMES,
+            extra={
+                "OPENCODE_SUBAGENT": "",
+                "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+                "GLUDD_MIN_DISPATCHES": "10",
+                "GLUDD_PROJECT_ROOT": str(Path(cwd or ROOT)),
+            },
         )
-        env["GLUDD_MULTITASK_STATE_FILE"] = str(state_file)
-        env["GLUDD_CI_CACHE_PATH"] = str(ci_cache_state)
-        env["GLUDD_TODOWRITE_STATE_PATH"] = str(todowrite_state)
-        env["GLUDD_HOT_MODULE_PREFIX"] = str(hot_module_prefix)
-        env["GLUDD_PROJECT_ROOT"] = str(Path(cwd or ROOT))
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -70,14 +73,6 @@ def _run_plugin(
                 f"Node exit {proc.returncode}:\nstderr: {proc.stderr[:800]}\nstdout: {proc.stdout[:400]}"
             )
         return proc.stdout.strip()
-    finally:
-        with contextlib.suppress(OSError):
-            tmp.unlink()
-        with contextlib.suppress(OSError):
-            state_file.unlink()
-        for state_path in (ci_cache_state, todowrite_state):
-            with contextlib.suppress(OSError):
-                state_path.unlink()
 
 
 def _last_json(stdout: str) -> dict[str, Any] | None:
@@ -92,6 +87,25 @@ def _last_json(stdout: str) -> dict[str, Any] | None:
         except json.JSONDecodeError:
             continue
     return None
+
+
+def test_plugin_runner_namespaces_every_mutable_state_path(tmp_path: Path) -> None:
+    """Concurrent workers must never read or write another session's state."""
+    workspace = tmp_path / "isolated-state"
+    workspace.mkdir()
+    keys = json.dumps(_MUTABLE_STATE_ENV_KEYS)
+    code = f"""\
+const keys = {keys}
+console.log(JSON.stringify(Object.fromEntries(keys.map(key => [key, process.env[key] ?? null]))))
+"""
+
+    result = _last_json(_run_plugin(code, cwd=str(workspace)))
+
+    assert result is not None
+    assert all(isinstance(result[key], str) and result[key] for key in _MUTABLE_STATE_ENV_KEYS)
+    state_parents = {Path(cast(str, result[key])).parent for key in _MUTABLE_STATE_ENV_KEYS}
+    assert len(state_parents) == 1
+    assert not state_parents.pop().exists()
 
 
 def _make_working_workspace(path: Path) -> None:
