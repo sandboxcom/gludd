@@ -319,6 +319,15 @@ class TestCrossConfigConsistency:
 
     def test_no_unknown_top_level_keys_in_project(self):
         cfg = _load_project_config()
-        known = {"$schema", "permission", "compaction", "formatter", "lsp", "snapshot", "plugin"}
+        known = {
+            "$schema",
+            "agent",
+            "permission",
+            "compaction",
+            "formatter",
+            "lsp",
+            "snapshot",
+            "plugin",
+        }
         unknown = set(cfg.keys()) - known
         assert not unknown, f"unknown top-level keys in opencode.json: {unknown}"
