@@ -168,6 +168,115 @@ roles do not publish generic facts into shared scope, and a composer does not
 read a child's private variables. This prevents variable precedence from
 becoming an implicit call interface.
 
+## Remaining non-agent collection migration map
+
+### Audited inventory
+
+The beta4 inventory is based on repository-wide searches of `collections/` for
+core imports, `sys.path` mutation, and ambient interpreter fallbacks. The
+`general_ludd.agent` collection is tracked by its own migration; this inventory
+covers every remaining collection finding.
+
+- Nineteen runtime files import `general_ludd` directly. They are
+  `chat/plugins/modules/chat_export.py`,
+  `azure/plugins/module_utils/azure.py`,
+  `chemistry/plugins/module_utils/chemistry_dispatch.py`,
+  `operations/roles/log_analyzer/files/analyze_logs.py`,
+  `infrastructure/roles/auto_register_service/templates/connector.py.j2`, the
+  two language module utilities, the nine language role scripts, and the three
+  E2E-test-generation task/script files. Seven language test files repeat the
+  core import, while `business/roles/entity_research/README.md` contains one
+  documentation-only example.
+- Thirty-three runtime files mutate `sys.path`: five radio role scripts, three
+  binary-RE role scripts, the language module utility plus nine language role
+  scripts, five forensics task files, eight physics task files, and two
+  E2E-test-generation scripts. Twenty-one additional test files do so across
+  radio, binary-RE, language, governance, E2E-test-generation, and OS-expert.
+- The three audited ambient-interpreter patterns account for 82 runtime sites:
+  13 bare `executable: python3` sites in forensics and physics; 35
+  `default('python3')` sites in chemistry, language, and governance; and 34
+  `default('/usr/bin/env python3')` sites in web, binary-RE, and XML.
+- No collection currently declares `requires_ansible`, references
+  `meta/execution-environment.yml`, or exposes an EE Python requirements file.
+  Collection-to-collection edges in `galaxy.yml` therefore cover installation
+  order but not the controller or target Python contract.
+
+Counts are file counts, not import-line counts, except for the explicitly
+identified 82 interpreter sites. A file with several imports or path insertions
+is counted once. Generated strings inside tests are test findings, not runtime
+files.
+
+### Per-collection disposition
+
+| Collection | Current coupling | Required landing point |
+| --- | --- | --- |
+| Chat | `chat_export` imports the core session exporter inside a transported module | Make export a real chat collection module backed by chat `module_utils`; keep format conversion and idempotence in that collection |
+| Azure | collection `module_utils` only re-export `general_ludd.azure.core` | Move the authoritative Azure functions into Azure `module_utils`; core callers submit an Azure FQCN job instead of importing the collection |
+| Chemistry | dynamic import and repository-path fallback load core chemistry; five roles run the bridge as a command | Create one FQCN chemistry module with action choices and collection-local `module_utils`; remove `importlib`, `GLUDD_REPO_ROOT`, and command dispatch |
+| Language | two utilities, nine role scripts, and seven tests depend on core language packages | Put pure language data and algorithms in language `module_utils`, make role entry points modules, make cross-source scans controller action plugins, and call the model daemon through the shared client |
+| Operations | a role script imports the core log analyzer | Make log analysis a module backed by operations `module_utils`; if the input is controller-local, pair it with an action plugin instead of copying controller paths to a target |
+| Infrastructure | a generated connector imports an internal core helper | Publish the minimal record schema/helper as a versioned connector SDK; generated projects declare that SDK and its compatible core ABI explicitly |
+| E2E test generation | role scripts add checkout `src` and import core analyzers/generators | Make code-path analysis and scenario generation controller action plugins with collection `plugin_utils`; declare tree-sitter and other controller dependencies in EE metadata |
+| Radio and binary-RE | role scripts add collection directories to `sys.path` before importing helpers | Convert each script mode to a collection module and import its owning `module_utils` by collection path; consolidate repeated modes behind a typed argument spec |
+| Forensics and physics | YAML embeds Python, edits `sys.path`, and runs ambient Python; coordinators use short role names | Replace each inline program with an FQCN module, import local `module_utils`, and call child roles by FQCN with private variables |
+| Web, governance, and XML | roles retain ambient interpreter fallbacks | Prefer FQCN modules; any unavoidable external program receives a required, verified role-venv executable with no system default |
+| Business | README demonstrates a core package import | Show the public FQCN module or collection utility contract so copied examples work from the Galaxy artifact |
+
+The connector SDK is the sole intentional Python ABI shared with generated
+applications. It contains only stable protocols, schemas, normalization, and
+version negotiation; it does not import the Gludd daemon or an Ansible package.
+All other cross-plane reuse occurs over the job or daemon wire contract.
+
+### Supported Ansible mechanism by execution site
+
+1. Code that must inspect the controller checkout, such as E2E source analysis,
+   is an action plugin. Its Python dependencies belong in the EE, and its file
+   access is constrained to Runner's declared project mount.
+2. Code that must inspect or change a managed host is an Ansible module. Shared
+   pure Python belongs in its collection's `plugins/module_utils` and is pulled
+   into the module payload by Ansible's module assembler.
+3. A role remains declarative composition. It validates arguments, invokes
+   FQCN modules or roles, and publishes namespaced results; it does not embed a
+   Python program in YAML or discover a checkout path.
+4. Code that calls Gludd policy, model, persistence, or secret-bearing services
+   uses the authenticated standard-library daemon client. It never imports the
+   service implementation into the EE or managed host.
+5. Test code installs the built collection under a temporary
+   `ansible_collections/<namespace>/<collection>` root and the harness sets
+   `ANSIBLE_COLLECTIONS_PATH` before Python starts. Tests import FQCNs without
+   changing `sys.path`, so a missing artifact or dependency fails honestly.
+
+### Migration order and mechanical exit gates
+
+The work lands in dependency order so no temporary duplicate implementation
+becomes authoritative:
+
+1. Add `meta/runtime.yml` and `meta/execution-environment.yml` to affected
+   collections, build the combined EE dependency inventory, and pin the
+   collection graph. This is metadata only and does not switch live jobs.
+2. Convert self-contained path hacks first: radio, binary-RE, forensics,
+   physics, web, governance, and XML. Build and execute their Galaxy tarballs
+   against explicit localhost and remote interpreters.
+3. Move each domain implementation exactly once for chat, Azure, chemistry,
+   language, and operations. Preserve a compatibility adapter only at the old
+   public API, and have that adapter cross the job boundary rather than import
+   the new collection implementation.
+4. Convert E2E-test-generation controller work to action plugins and add its EE
+   Python requirements. Prove it never transfers the source checkout or parser
+   environment to the managed host.
+5. Publish and consume the connector SDK, then update the business example and
+   all collection tests. Remove compatibility adapters after the beta4 support
+   window, not during the ownership move.
+
+The non-agent migration is complete only when a mechanical scan finds zero
+runtime `general_ludd` imports, zero runtime `sys.path` mutation, and zero
+ambient interpreter defaults in collections. The gate separately allows only
+the documented connector-SDK import and test fixture strings that are
+explicitly testing rejection. Each collection tarball must pass syntax,
+argument-spec, module, role-composition, clean-install, and EE execution tests
+without `src/`, the repository root, a user Galaxy directory, or the Gludd core
+virtual environment on `sys.path`.
+
 ## Beta4 implementation slice
 
 The following is the minimum code-gated slice before beta4 can be promoted:
@@ -244,6 +353,16 @@ offline artifact installation, and executable/wheel parity.
   recommends explicit import/include task flow over hidden role dependencies
   because execution, inheritance, and conditional behavior are visible. Gludd
   follows that pattern for composers.
+- In a [custom-module support thread from March 24,
+  2017](https://groups.google.com/g/ansible-project/c/vKgky33rdKw), an Ansible
+  maintainer explains that remote modules cannot rely on Ansible code outside
+  `module_utils` because that is the code Ansible bundles into the payload.
+  This directly rules out treating checkout `sys.path` edits as packaging.
+- A [shared-code thread from January 11-13,
+  2023](https://groups.google.com/g/ansible-project/c/0dCmwgjXdKI) confirms that
+  controller plugins use collection `module_utils`, while collection search
+  helpers should resolve data files. That supports separate action-plugin and
+  managed-module dispositions instead of one executable-script convention.
 
 The supported mechanisms reinforce these reports: Ansible's [interpreter
 discovery documentation](https://docs.ansible.com/projects/ansible/latest/reference_appendices/interpreter_discovery.html)
@@ -255,6 +374,15 @@ defines the remote shared-code mechanism; and the [collection Galaxy metadata
 contract](https://docs.ansible.com/projects/ansible/latest/dev_guide/collections_galaxy_meta.html)
 defines install-time collection edges. Beta4 uses these maintained mechanisms
 instead of a custom package loader.
+
+Ansible's [module program-flow
+documentation](https://docs.ansible.com/projects/ansible/latest/dev_guide/developing_program_flow_modules.html)
+also fixes the execution-site distinction: action plugins always run on the
+controller, while the normal action plugin assembles and executes modules on a
+managed host. The [collection structure
+contract](https://docs.ansible.com/projects/ansible-core/devel/dev_guide/developing_collections_structure.html)
+defines `meta/runtime.yml` and `requires_ansible`; both become required beta4
+metadata rather than implicit compatibility assumptions.
 
 ## Verification evidence required at promotion
 
