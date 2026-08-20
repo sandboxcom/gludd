@@ -40,11 +40,15 @@ DOCUMENTATION:
       type: str
       default: ""
     daemon_url:
-      description: Base URL of the daemon (reserved for future remote resolution).
+      description:
+        - Reserved for future controller-backed resolution.
+        - Non-default values emit a warning and are not used on the managed host.
       type: str
       default: "http://localhost:8000"
     psk:
-      description: Pre-shared key for daemon auth.
+      description:
+        - Reserved pre-shared key for future daemon auth.
+        - Non-empty values emit a warning and are not used on the managed host.
       type: str
       no_log: true
       default: ""
@@ -130,6 +134,7 @@ _FORBIDDEN_RE = re.compile(
 # a comment (or, conversely, so a benign comment can't trip the blacklist).
 _BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 _LINE_COMMENT_RE = re.compile(r"--[^\n]*")
+_DEFAULT_DAEMON_URL = "http://localhost:8000"
 
 
 def _strip_comments(query: str) -> str:
@@ -177,13 +182,31 @@ def resolve_osquery_binary(explicit: str = "", module: object | None = None) -> 
     return None
 
 
+def _warn_reserved_controller_params(
+    module: Any,
+    daemon_url: str,
+    psk: str,
+) -> None:
+    """Make ignored controller-only inputs observable without exposing secrets."""
+    if daemon_url != _DEFAULT_DAEMON_URL:
+        module.warn(
+            "daemon_url is reserved and has no effect in this managed-host module; "
+            "osquery resolves only from the explicit path or managed-host PATH"
+        )
+    if psk:
+        module.warn(
+            "psk is reserved and has no effect in this managed-host module; "
+            "no controller credential is sent or consumed"
+        )
+
+
 def main() -> None:
     module = AnsibleModule(
         argument_spec=dict(
             query=dict(type="str", required=True),
             timeout=dict(type="int", default=10),
             osquery_path=dict(type="str", default=""),
-            daemon_url=dict(type="str", default="http://localhost:8000"),
+            daemon_url=dict(type="str", default=_DEFAULT_DAEMON_URL),
             psk=dict(type="str", default="", no_log=True),
         ),
         supports_check_mode=True,
@@ -192,6 +215,9 @@ def main() -> None:
     query: str = module.params["query"]
     timeout: int = module.params["timeout"]
     explicit_path: str = module.params["osquery_path"]
+    daemon_url: str = module.params["daemon_url"]
+    psk: str = module.params["psk"]
+    _warn_reserved_controller_params(module, daemon_url, psk)
     if explicit_path and os.path.isfile(explicit_path) and not os.access(explicit_path, os.X_OK):
         module.fail_json(
             **error_result(
