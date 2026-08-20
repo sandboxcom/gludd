@@ -31,6 +31,7 @@ from general_ludd.local_model._local_model_configs import LocalModelConfig
 from ._local_model_configs import get_e2e_configs
 
 _E2E_MODELS = get_e2e_configs()
+_LIVE_MODEL_E2E = os.environ.get("GLUDD_LIVE_MODEL_E2E") == "1"
 
 
 def _find_cached_gguf(cache_dir: str) -> str | None:
@@ -90,6 +91,8 @@ def _has_huggingface_hub() -> bool:
 
 
 def _deps_reason() -> str | None:
+    if not _LIVE_MODEL_E2E:
+        return "set GLUDD_LIVE_MODEL_E2E=1 to load the local inference runtime"
     missing: list[str] = []
     if not _has_llama_cpp():
         missing.append("llama-cpp-python")
@@ -106,7 +109,7 @@ if _REASON is not None:
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
-        return s.getsockname()[1]
+        return int(s.getsockname()[1])
 
 
 _TMPDIR: str | None = None
@@ -119,6 +122,10 @@ def teardown_module() -> None:
 
 @pytest.mark.e2e
 @pytest.mark.slow
+@pytest.mark.skipif(
+    not _LIVE_MODEL_E2E,
+    reason="set GLUDD_LIVE_MODEL_E2E=1 to run model downloads and inference",
+)
 @pytest.mark.parametrize(
     "model_config",
     [pytest.param(m, id=m.name) for m in _E2E_MODELS],

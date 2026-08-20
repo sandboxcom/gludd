@@ -164,10 +164,11 @@ malformed requests, invalid response contracts, HTTP 503 propagation, early serv
 exit, and then proves idempotent teardown. It never assumes a fixed port and its
 named server thread must be stopped before the fixture returns.
 
-The heavyweight transformer, full game-development, and model-matrix pipelines
-are explicitly opt-in to prevent ordinary collection or `make test-e2e` from
-downloading models. Their structural tests remain active in the generic E2E
-suite. The dedicated game target sets the live opt-in itself:
+The heavyweight transformer, real-model game-generation, full
+game-development, and model-matrix pipelines are explicitly opt-in to prevent
+ordinary collection or `make test-e2e` from downloading models. Their
+structural tests remain active in the generic E2E suite. The dedicated game
+target sets the live opt-in itself:
 
 ```bash
 GLUDD_LIVE_MODEL_E2E=1 make test-files \

@@ -50,3 +50,15 @@ def test_generic_model_matrix_does_not_import_local_inference_runtime() -> None:
 
     assert "if not _LIVE_MODEL_E2E:" in deps_body
     assert deps_body.index("if not _LIVE_MODEL_E2E:") < deps_body.index("_has_llama_cpp()")
+
+
+def test_real_model_game_generation_requires_explicit_live_opt_in() -> None:
+    source = (ROOT / "tests/e2e/test_game_gen_real_model.py").read_text()
+    prefix = _class_prefix(source, "TestGameGenRealModel")
+    deps_body = source[source.index("def _deps_reason()") : source.index("_REASON =")]
+
+    assert '_LIVE_MODEL_E2E = os.environ.get("GLUDD_LIVE_MODEL_E2E") == "1"' in source
+    assert "@pytest.mark.skipif(" in prefix
+    assert "not _LIVE_MODEL_E2E" in prefix
+    assert "if not _LIVE_MODEL_E2E:" in deps_body
+    assert deps_body.index("if not _LIVE_MODEL_E2E:") < deps_body.index("_has_llama_cpp()")
