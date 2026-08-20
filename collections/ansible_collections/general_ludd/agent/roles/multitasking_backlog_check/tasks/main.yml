@@ -5,6 +5,16 @@
 # multitasking_backlog.json file. Supports --open-count, --list-open,
 # and --assert-done (anti-rubber-stamp: "done" with empty evidence = still open).
 
+- name: Preflight managed-host runtime
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    tasks_from: main
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ ansible_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ gludd_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ gludd_previous_python_interpreter | default('') }}"
+
 - name: Create artifact directory
   ansible.builtin.file:
     path: "{{ artifact_dir }}"
@@ -13,7 +23,7 @@
 
 - name: Run multitasking backlog check (assert-done)
   ansible.builtin.command:
-    cmd: "uv run python scripts/multitasking_backlog_check.py --assert-done"
+    cmd: "{{ ansible_python_interpreter }} scripts/multitasking_backlog_check.py --assert-done"
     chdir: "{{ repo_path }}"
   environment:
     GLUDD_MT_BACKLOG: "{{ backlog_file | default('') }}"
@@ -24,7 +34,7 @@
 
 - name: Run multitasking backlog check (open-count)
   ansible.builtin.command:
-    cmd: "uv run python scripts/multitasking_backlog_check.py --open-count"
+    cmd: "{{ ansible_python_interpreter }} scripts/multitasking_backlog_check.py --open-count"
     chdir: "{{ repo_path }}"
   environment:
     GLUDD_MT_BACKLOG: "{{ backlog_file | default('') }}"
@@ -35,7 +45,7 @@
 
 - name: Run multitasking backlog check (list-open)
   ansible.builtin.command:
-    cmd: "uv run python scripts/multitasking_backlog_check.py --list-open"
+    cmd: "{{ ansible_python_interpreter }} scripts/multitasking_backlog_check.py --list-open"
     chdir: "{{ repo_path }}"
   environment:
     GLUDD_MT_BACKLOG: "{{ backlog_file | default('') }}"

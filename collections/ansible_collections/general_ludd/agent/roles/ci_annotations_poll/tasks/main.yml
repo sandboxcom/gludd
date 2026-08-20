@@ -5,6 +5,16 @@
 # from a GitHub Actions CI run as jobs complete. Polls until all jobs done
 # or timeout, then writes artifact with summary.
 
+- name: Preflight managed-host runtime
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    tasks_from: main
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ ansible_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ gludd_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ gludd_previous_python_interpreter | default('') }}"
+
 - name: Create artifact directory
   ansible.builtin.file:
     path: "{{ artifact_dir }}"
@@ -13,7 +23,7 @@
 
 - name: Poll CI annotations for run
   ansible.builtin.command:
-    cmd: "uv run python scripts/ci_annotations_poll.py {{ ci_run_id }}"
+    cmd: "{{ ansible_python_interpreter }} scripts/ci_annotations_poll.py {{ ci_run_id }}"
     chdir: "{{ repo_path }}"
   environment:
     CI_ANN_INTERVAL: "{{ poll_interval_seconds }}"

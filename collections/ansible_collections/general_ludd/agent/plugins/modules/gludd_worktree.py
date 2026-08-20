@@ -62,27 +62,20 @@ from __future__ import annotations
 
 import os
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.fs_write_audit import (
-        IntegrityViolation,
-        WriteAuditLog,
-    )
-    from ansible_collections.general_ludd.agent.plugins.module_utils.fs_write_policy import (
-        WritePolicyError,
-        default_policy,
-    )
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        error_result,
-        ok_result,
-    )
-except ImportError:
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from fs_write_audit import IntegrityViolation, WriteAuditLog  # type: ignore[import]
-    from fs_write_policy import WritePolicyError, default_policy  # type: ignore[import]
-    from gludd import error_result, ok_result  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.fs_write_audit import (
+    IntegrityViolation,
+    WriteAuditLog,
+)
+from ansible_collections.general_ludd.agent.plugins.module_utils.fs_write_policy import (
+    WritePolicyError,
+    default_policy,
+)
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    error_result,
+    ok_result,
+)
 
 
 def main() -> None:
@@ -92,6 +85,9 @@ def main() -> None:
             branch=dict(type="str", required=True),
             worktree_path=dict(type="str", required=True),
             state=dict(type="str", default="present", choices=["present", "absent"]),
+            daemon_url=dict(type="str", default="http://localhost:8000"),
+            psk=dict(type="str", default="", no_log=True),
+            timeout=dict(type="int", default=120),
         ),
         supports_check_mode=True,
     )
@@ -131,13 +127,11 @@ def main() -> None:
     )
     marker_path = os.path.join(worktree_path, ".gludd_worktree_state")
 
-    try:
-        from general_ludd.git_automation.repo import GitAutomation  # type: ignore[import]
-    except ImportError as exc:
-        module.fail_json(**error_result(f"general_ludd not importable: {exc}"))
-        return
-
-    git = GitAutomation(repo_path=repo_path)
+    client = GluddClient(
+        base_url=module.params["daemon_url"],
+        psk=module.params["psk"],
+        timeout=module.params["timeout"],
+    )
     existing = os.path.isdir(worktree_path)
 
     if state == "present":
@@ -153,13 +147,25 @@ def main() -> None:
                 changed=True,
             ))
             return
-        result = git.create_worktree(repo_path, branch, worktree_path)
-        if not result.success:
-            module.fail_json(**error_result(
-                f"Failed to create worktree: {result.message}",
-                worktree_path=worktree_path,
-                branch=branch,
-            ))
+        result = client.post(
+            "/admin/git/operation",
+            {"op": "worktree_create", "path": repo_path, "branch": branch, "worktree_path": worktree_path},
+        )
+        operation = result.get("result")
+        if (
+            result.get("_error")
+            or result.get("_status") != 200
+            or not isinstance(operation, dict)
+            or not operation.get("success")
+        ):
+            module.fail_json(
+                **error_result(
+                    "Failed to create worktree: "
+                    f"{result.get('detail') or result.get('_error') or operation}",
+                    worktree_path=worktree_path,
+                    branch=branch,
+                )
+            )
             return
         # Record an auditable, FIM-tracked state marker for the new worktree.
         # audited_write fail-closes on policy violation AND on out-of-band
@@ -195,7 +201,12 @@ def main() -> None:
                 changed=True,
             ))
             return
-        removed = git.remove_worktree(repo_path, worktree_path)
+        result = client.post(
+            "/admin/git/operation",
+            {"op": "worktree_remove", "path": repo_path, "worktree_path": worktree_path},
+        )
+        operation = result.get("result")
+        removed = isinstance(operation, dict) and bool(operation.get("removed"))
         if not removed:
             module.fail_json(**error_result(
                 "Failed to remove worktree",

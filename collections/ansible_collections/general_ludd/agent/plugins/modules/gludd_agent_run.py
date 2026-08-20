@@ -84,9 +84,9 @@ RETURN:
 
 from __future__ import annotations
 
-import os
+from typing import Any, cast
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
 
 # ansible-core's JSON serializer imports Sentinel dynamically.  Explicitly
 # reference it so Ansible's module payload bundler includes the dependency.
@@ -119,16 +119,11 @@ except ImportError:  # pragma: no cover - older controller versions
     _ansible_traceback = None
     _ansible_yaml = None
 
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        GluddClient,
-        error_result,
-        ok_result,
-    )
-except ImportError:
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import GluddClient, error_result, ok_result  # type: ignore[import]
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    error_result,
+    ok_result,
+)
 
 _DEFAULT_SYSTEM_PROMPT = (
     "You are a coding agent in the general_ludd harness. "
@@ -143,14 +138,13 @@ def _run_via_daemon(
     system_prompt: str,
     model_profile: str,
     max_tokens: int = 4096,
-) -> dict:
+) -> dict[str, Any]:
     """Call the daemon's /admin/models/call endpoint."""
     full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
-    payload: dict = {"prompt": full_prompt, "max_tokens": max_tokens}
+    payload: dict[str, Any] = {"prompt": full_prompt, "max_tokens": max_tokens}
     if model_profile:
         payload["model_profile"] = model_profile
-    resp = client.post("/admin/models/call", payload)
-    return resp
+    return cast(dict[str, Any], client.post("/admin/models/call", payload))
 
 
 def _run_local(
@@ -158,34 +152,13 @@ def _run_local(
     system_prompt: str,
     model_profile: str | None,
     max_iterations: int,
-) -> dict:
-    """Run ToolCallLoop in-process (same venv)."""
-    try:
-        import asyncio
-        import uuid as _uuid
-
-        from general_ludd.execution.tool_loop import ToolCallLoop  # type: ignore[import]
-        from general_ludd.models.gateway import ModelGateway  # type: ignore[import]
-        from general_ludd.schemas.job import JobSpec  # type: ignore[import]
-
-        gw = ModelGateway()
-        loop_runner = ToolCallLoop(model_gateway=gw, max_iterations=max_iterations)
-        job = JobSpec(
-            job_id=str(_uuid.uuid4()),
-            todo_id="agent-run",
-            playbook="noop.yml",
-            queue="default",
-            prompt_text=prompt,
-            model_profile=model_profile or "",
-        )
-        full_system = system_prompt or _DEFAULT_SYSTEM_PROMPT
-
-        answer = asyncio.run(loop_runner.run_with_tools(job, full_system, prompt))
-        return ok_result({"answer": answer, "tool_calls": [], "usage": {}, "iterations": 1})
-    except ImportError as exc:
-        return error_result(f"general_ludd not importable for local run: {exc}")
-    except Exception as exc:
-        return error_result(f"local agent run failed: {exc}")
+) -> dict[str, Any]:
+    """Fail closed: in-process execution is forbidden in collection Python."""
+    del prompt, system_prompt, model_profile, max_iterations
+    return cast(
+        dict[str, Any],
+        error_result("local agent execution is disabled; use the authenticated daemon"),
+    )
 
 
 def main() -> None:
@@ -212,29 +185,12 @@ def main() -> None:
 
     prompt: str = module.params["prompt"]
     system_prompt: str = module.params["system_prompt"] or _DEFAULT_SYSTEM_PROMPT
-    max_iterations: int = module.params["max_iterations"]
     model_profile: str = module.params["model_profile"]
     daemon_url: str = module.params["daemon_url"]
     psk: str = module.params["psk"]
     timeout: int = module.params["timeout"]
 
-    # Try local first; fall back to HTTP
-    try:
-        from general_ludd.execution.tool_loop import ToolCallLoop  # noqa: F401 type: ignore[import]
-        local_available = True
-    except ImportError:
-        local_available = False
-
-    if local_available:
-        result = _run_local(prompt, system_prompt, model_profile or None, max_iterations)
-        if result.get("failed"):
-            # Fall through to HTTP
-            local_available = False
-        else:
-            module.exit_json(**result)
-            return
-
-    # HTTP transport
+    # Collection execution always crosses the authenticated daemon boundary.
     client = GluddClient(base_url=daemon_url, psk=psk, timeout=timeout)
     resp = _run_via_daemon(client, prompt, system_prompt, model_profile)
 

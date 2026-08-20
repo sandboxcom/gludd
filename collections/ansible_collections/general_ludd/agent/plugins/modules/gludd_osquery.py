@@ -95,19 +95,13 @@ import os
 import re
 import shutil
 import subprocess
+from typing import Any
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        error_result,
-        ok_result,
-    )
-except ImportError:
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import error_result, ok_result  # type: ignore[import]
-
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    error_result,
+    ok_result,
+)
 
 # Keywords that must never appear in a query handed to osquery. Matched as whole
 # words, case-insensitively, anywhere in the (comment-stripped) query.
@@ -167,7 +161,7 @@ def validate_select_only(query: str) -> str | None:
 def resolve_osquery_binary(explicit: str = "", module: object | None = None) -> str | None:
     """Resolve the osqueryi binary path.
 
-    Order: explicit param -> daemon filestore (same-venv) -> system PATH.
+    Order: explicit managed-host path, then the managed host's system PATH.
     Returns ``None`` if no usable binary is found.
     """
     if explicit:
@@ -175,19 +169,8 @@ def resolve_osquery_binary(explicit: str = "", module: object | None = None) -> 
             return explicit
         return None
 
-    # Same-venv: resolve from the daemon's binary filestore.
-    try:
-        from general_ludd.filestore.bootstrap import BinaryBootstrapper  # type: ignore[import]
-
-        boot = BinaryBootstrapper()
-        path = boot.get_binary_path("osquery")
-        if path and os.path.isfile(path) and os.access(path, os.X_OK):
-            return path
-    except Exception as exc:
-        if module is not None:
-            module.warn(f"osquery filestore probe failed, falling back to PATH: {exc}")  # type: ignore[attr-defined]
-
-    # Fall back to a system-installed osqueryi.
+    # Controller filestore binaries are deliberately not visible to managed
+    # hosts. Roles provision osquery separately before this module runs.
     on_path = shutil.which("osqueryi")
     if on_path:
         return on_path
@@ -209,18 +192,6 @@ def main() -> None:
     query: str = module.params["query"]
     timeout: int = module.params["timeout"]
     explicit_path: str = module.params["osquery_path"]
-    daemon_url: str = module.params["daemon_url"]
-    psk: str = module.params["psk"]
-    if daemon_url != "http://localhost:8000":
-        module.warn(
-            "daemon_url is set but is reserved for future remote resolution "
-            "and has no effect in this module version"
-        )
-    if psk:
-        module.warn(
-            "psk is set but is reserved for future use "
-            "and has no effect in this module version"
-        )
     if explicit_path and os.path.isfile(explicit_path) and not os.access(explicit_path, os.X_OK):
         module.fail_json(
             **error_result(
@@ -241,9 +212,8 @@ def main() -> None:
     if binary is None:
         module.fail_json(
             **error_result(
-                "osquery binary not found: not in daemon filestore "
-                "(binaries/osquery) and no 'osqueryi' on PATH. Bootstrap it via "
-                "POST /admin/filestore/bootstrap or install osquery."
+                "osquery binary not found in the explicit managed-host path or PATH; "
+                "provision osquery in the role environment before this task"
             )
         )
         return
@@ -291,7 +261,7 @@ def main() -> None:
     # 5. Parse the JSON rows.
     raw = (proc.stdout or "").strip()
     if not raw:
-        rows: list = []
+        rows: list[Any] = []
     else:
         try:
             rows = json.loads(raw)

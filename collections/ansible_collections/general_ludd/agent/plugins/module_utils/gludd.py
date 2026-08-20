@@ -176,6 +176,17 @@ class GluddClient:
         req = urllib.request.Request(url=self._url(path), data=data, headers=self._headers(), method="PATCH")
         return self._send(req)
 
+    def delete(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Send a DELETE request through the same authenticated transport."""
+        data = None if body is None else json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(
+            url=self._url(path),
+            data=data,
+            headers=self._headers(),
+            method="DELETE",
+        )
+        return self._send(req)
+
     def _send(self, req: urllib.request.Request) -> dict[str, Any]:
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
@@ -216,6 +227,9 @@ class GluddClient:
         model_profile: str | None = None,
         route_task_type: str | None = None,
         max_tokens: int = 2048,
+        system: str | None = None,
+        response_format: str | None = None,
+        response_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Call the shared daemon model service over authenticated HTTP.
 
@@ -236,5 +250,11 @@ class GluddClient:
         if model_profile:
             payload["model_profile"] = model_profile
         if route_task_type:
-            payload["task_type"] = route_task_type
+            payload["route_task_type"] = route_task_type
+        if system:
+            payload["system"] = system
+        if response_format:
+            payload["response_format"] = response_format
+        if response_schema is not None:
+            payload["response_schema"] = response_schema
         return self.post("/admin/models/call", payload)

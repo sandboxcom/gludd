@@ -122,7 +122,12 @@ RETURN:
 
 from __future__ import annotations
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
+import hashlib
+import json
+import os
+
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import GluddClient
 
 
 def main() -> None:
@@ -142,6 +147,9 @@ def main() -> None:
             poll_interval=dict(type="float", default=5.0),
             module_loads=dict(type="list", elements="str", default=[]),
             extra_args=dict(type="list", elements="str", default=[]),
+            idempotency_key=dict(type="str", default=None),
+            daemon_url=dict(type="str", default="http://localhost:8000"),
+            psk=dict(type="str", default="", no_log=True),
         ),
         supports_check_mode=True,
     )
@@ -155,31 +163,11 @@ def main() -> None:
     mem_gb: int = module.params["mem_gb"]
     partition: str = module.params["partition"]
     max_ctx: int = module.params["max_ctx"]
-    artifact_dir: str = module.params["artifact_dir"]
+    artifact_dir = os.path.abspath(module.params["artifact_dir"])
     poll_timeout: int = module.params["poll_timeout"]
     poll_interval: float = module.params["poll_interval"]
     module_loads: list[str] = module.params["module_loads"]
     extra_args: list[str] = module.params["extra_args"]
-
-    # Lazy import so the module is importable in environments without the
-    # general_ludd package present (e.g. molecule check_mode smoke).
-    try:
-        from general_ludd.infra.slurm_deployment import (
-            DeploymentError,
-            LlamacppSlurmDeployment,
-            VllmSlurmDeployment,
-        )
-    except ImportError as exc:
-        module.fail_json(
-            msg=f"general_ludd.infra.slurm_deployment not importable: {exc}",
-            changed=False,
-        )
-        return
-
-    if engine == "vllm":
-        deployment: object = VllmSlurmDeployment()
-    else:
-        deployment = LlamacppSlurmDeployment()
 
     if module.check_mode:
         module.exit_json(
@@ -193,56 +181,54 @@ def main() -> None:
         )
         return
 
-    try:
-        job_id = deployment.submit(  # type: ignore[attr-defined]
-            model_id=model_id,
-            gpu_count=gpu_count,
-            gpu_type=gpu_type,
-            port=port,
-            max_hours=max_hours,
-            mem_gb=mem_gb,
-            partition=partition,
-            max_ctx=max_ctx,
-            artifact_dir=artifact_dir,
-            module_loads=module_loads or None,
-            extra_args=extra_args or None,
-        )
-    except (ValueError, RuntimeError) as exc:
+    request_body = {
+        "engine": engine,
+        "model_id": model_id,
+        "gpu_count": gpu_count,
+        "gpu_type": gpu_type,
+        "port": port,
+        "max_hours": max_hours,
+        "mem_gb": mem_gb,
+        "partition": partition,
+        "max_ctx": max_ctx,
+        "artifact_dir": artifact_dir,
+        "poll_timeout": poll_timeout,
+        "poll_interval": poll_interval,
+        "module_loads": module_loads,
+        "extra_args": extra_args,
+    }
+    body_digest = hashlib.sha256(
+        json.dumps(request_body, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    request_body["idempotency_key"] = (
+        module.params["idempotency_key"] or f"slurm-deploy:{body_digest}"
+    )
+    response = GluddClient(
+        base_url=module.params["daemon_url"],
+        psk=module.params["psk"],
+        timeout=max(30, poll_timeout + 30),
+    ).post(
+        "/admin/slurm/deploy",
+        request_body,
+    )
+    if response.get("_error") or response.get("_status") not in {200, 201}:
+        detail = str(response.get("detail") or response.get("_error") or "daemon deployment failed")
         module.fail_json(
-            msg=f"submit failed: {exc}",
+            msg=f"submit failed: {detail}",
             changed=False,
             engine=engine,
             model_id=model_id,
-            error=str(exc),
-        )
-        return
-
-    try:
-        servable_url = deployment.poll_until_servable(  # type: ignore[attr-defined]
-            job_id=job_id,
-            artifact_dir=artifact_dir,
-            timeout=float(poll_timeout),
-            poll_interval=poll_interval,
-        )
-    except DeploymentError as exc:
-        # The job was submitted (changed=true) but it did not become servable.
-        module.exit_json(
-            changed=True,
-            job_id=job_id,
-            servable_url="",
-            engine=engine,
-            model_id=model_id,
-            error=str(exc),
+            error=detail,
         )
         return
 
     module.exit_json(
         changed=True,
-        job_id=job_id,
-        servable_url=servable_url,
+        job_id=response.get("job_id", ""),
+        servable_url=response.get("servable_url", ""),
         engine=engine,
         model_id=model_id,
-        error="",
+        error=response.get("error", ""),
     )
 
 

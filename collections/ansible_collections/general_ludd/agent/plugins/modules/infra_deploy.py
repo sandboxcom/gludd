@@ -21,7 +21,23 @@ DOCUMENTATION:
       description: Cloud provider to provision on.
       type: str
       required: true
-      choices: [aws, azure, gcp, runpod, vast_ai, lambda_labs, modal, coreweave, digital_ocean, oracle, vmware, kubernetes, together_ai, fireworks_ai, huggingface, replicate]
+      choices:
+        - aws
+        - azure
+        - gcp
+        - runpod
+        - vast_ai
+        - lambda_labs
+        - modal
+        - coreweave
+        - digital_ocean
+        - oracle
+        - vmware
+        - kubernetes
+        - together_ai
+        - fireworks_ai
+        - huggingface
+        - replicate
     engine:
       description: Model server engine to deploy.
       type: str
@@ -118,9 +134,10 @@ RETURN:
 
 from __future__ import annotations
 
-import os
+from typing import Any
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import GluddClient
 
 
 def main() -> None:
@@ -149,6 +166,8 @@ def main() -> None:
             max_cost_usd=dict(type="float", default=10.0),
             timeout_minutes=dict(type="float", default=60.0),
             project_id=dict(type="str", default=None),
+            daemon_url=dict(type="str", default="http://localhost:8000"),
+            psk=dict(type="str", default="", no_log=True),
         ),
         supports_check_mode=True,
     )
@@ -156,7 +175,7 @@ def main() -> None:
     stack: str = module.params["stack"]
     provider: str = module.params["provider"]
     engine: str = module.params["engine"]
-    config: dict = module.params["config"]
+    config: dict[str, Any] = module.params["config"]
     workload_type: str = module.params["workload_type"]
     role: str = module.params["role"]
     gpu_type: str = module.params["gpu_type"]
@@ -167,38 +186,6 @@ def main() -> None:
     max_cost_usd: float = module.params["max_cost_usd"]
     timeout_minutes: float = module.params["timeout_minutes"]
     project_id: str | None = module.params["project_id"]
-
-    # Role allowlist gate (fail-closed): only roles in the infra access
-    # policy may deploy. An unknown/empty role is denied.
-    try:
-        from general_ludd.permissions.infra_access import InfraAccessPolicy, load_infra_access_policy
-    except ImportError:
-        try:
-            sys_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..")
-            import sys as _sys
-            _sys.path.insert(0, os.path.abspath(os.path.join(sys_path, "..", "..", "..", "src")))
-            from general_ludd.permissions.infra_access import (  # type: ignore[no-redef]
-                InfraAccessPolicy,
-                load_infra_access_policy,
-            )
-        except ImportError as exc:
-            module.fail_json(
-                msg=f"general_ludd.permissions.infra_access not importable: {exc}",
-                changed=False,
-            )
-            return
-
-    policy = load_infra_access_policy()
-    if not policy.can_deploy(role):
-        module.fail_json(
-            msg=(
-                f"infra deploy denied by access policy: role {role!r} is not in "
-                f"allowed_deploy_roles"
-            ),
-            changed=False,
-            role=role,
-        )
-        return
 
     if module.check_mode:
         module.exit_json(
@@ -212,63 +199,47 @@ def main() -> None:
         )
         return
 
-    try:
-        from general_ludd.infra.compute import (
-            ComputeConfig,
-            ComputeProvider,
-            GPUType,
-            InferenceEngine,
-        )
-        from general_ludd.infra.deployment import DeploymentManager
-    except ImportError as exc:
+    body = dict(config)
+    body.update(
+        {
+            "provider": provider,
+            "engine": engine,
+            "gpu_type": gpu_type,
+            "gpu_count": gpu_count,
+            "model_name": model_name,
+            "region": region,
+            "spot": spot,
+            "max_cost_usd": max_cost_usd,
+            "timeout_minutes": timeout_minutes,
+            "project_id": project_id,
+            "role": role,
+            "workload_type": workload_type,
+            "stack": stack,
+        }
+    )
+    response = GluddClient(
+        base_url=module.params["daemon_url"],
+        psk=module.params["psk"],
+        timeout=max(30, int(timeout_minutes * 60) + 30),
+    ).post("/admin/compute/deploy", body)
+    if response.get("_error") or response.get("_status") not in {200, 201}:
         module.fail_json(
-            msg=f"general_ludd.infra not importable: {exc}",
-            changed=False,
-        )
-        return
-
-    try:
-        compute_config = ComputeConfig(
-            provider=ComputeProvider(provider),
-            engine=InferenceEngine(engine),
-            gpu_type=GPUType(gpu_type),
-            gpu_count=gpu_count,
-            model_name=model_name,
-            region=region,
-            spot=spot,
-            max_cost_usd=max_cost_usd,
-            timeout_minutes=timeout_minutes,
-        )
-    except (ValueError, KeyError) as exc:
-        module.fail_json(
-            msg=f"invalid configuration: {exc}",
-            changed=False,
-        )
-        return
-
-    try:
-        import asyncio
-
-        manager = DeploymentManager()
-        instance = asyncio.run(manager.deploy(compute_config))
-
-        module.exit_json(
-            changed=True,
-            instance_id=instance.instance_id,
-            endpoint_url=instance.endpoint_url or "",
-            engine=engine,
-            provider=provider,
-            stack=stack,
-            gpu_type=instance.gpu_type.value,
-        )
-    except Exception as exc:
-        module.fail_json(
-            msg=f"deployment failed: {exc}",
+            msg=f"deployment failed: {response.get('detail') or response.get('_error') or 'daemon rejected request'}",
             changed=False,
             engine=engine,
             provider=provider,
             stack=stack,
         )
+        return
+    module.exit_json(
+        changed=True,
+        instance_id=response.get("instance_id", ""),
+        endpoint_url=response.get("endpoint_url", ""),
+        engine=engine,
+        provider=provider,
+        stack=stack,
+        gpu_type=response.get("gpu_type", gpu_type),
+    )
 
 
 if __name__ == "__main__":

@@ -1,179 +1,100 @@
-"""
-Thin Ansible-compatible wrapper around core ModelGateway and HashEmbedder.
+"""Authenticated stdlib model client for collection execution.
 
-All chat / stream / list logic delegates to ``ModelGateway``; all
-embedding to ``HashEmbedder``.  This module contains ZERO algorithmic
-reimplementations — only import-path setup, interface adaptation, and
-lazy gateway construction.
-
-Usage
------
-    from ansible_collections.general_ludd.agent.plugins.module_utils.model_client import (
-        ModelClient,
-        Message,
-    )
-
-    client = ModelClient("default")
-    response = client.chat([{"role": "user", "content": "Hello"}])
-    for event in client.chat_stream([{"role": "user", "content": "Write a haiku"}]):
-        print(event)
-    embedding = client.embed("What is the meaning of life?")
-    profiles = client.list_models()
-
-Environment variables
----------------------
-GLUDD_MODEL_PROFILE_ID
-    Model profile ID used by the gateway (default ``"default"``).
-GLUDD_MODEL_PROVIDER
-    Provider name — ``openai``, ``deepseek``, etc. (default ``"deepseek"``).
-GLUDD_MODEL_NAME
-    Model name (default ``"deepseek-chat"``).
+The Ansible execution environment never imports model providers or loads model
+weights.  Every operation crosses the versioned Gludd daemon HTTP boundary and
+therefore shares the daemon's model cache, budget guard, and routing policy.
 """
 
 from __future__ import annotations
 
-import os
-import sys
 from collections.abc import Generator
-from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-# -- sys.path for ansible runtime ----------------------------------------
-_SRC = Path(__file__).resolve().parents[6] / "src"
-if _SRC.is_dir() and str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
-
-from general_ludd.models.gateway import ModelGateway, ModelProfile  # type: ignore[import]  # noqa: E402
-from general_ludd.models.provider_registry import ProviderRegistry  # type: ignore[import]  # noqa: E402
-from general_ludd.skills.embeddings import HashEmbedder  # type: ignore[import]  # noqa: E402
-
-
-# ---------------------------------------------------------------------------
-# Gateway singleton — constructed lazily from environment
-# ---------------------------------------------------------------------------
-
-_gateway: ModelGateway | None = None
-
-
-def _get_gateway() -> ModelGateway:  # pragma: no cover — live deps
-    """Return a lazily-built ModelGateway from env vars.
-
-    On first call creates a single ``ModelProfile`` from
-    ``GLUDD_MODEL_*`` env vars and builds a ``ModelGateway`` with a
-    ``ProviderRegistry`` seeded from that profile.  Subsequent calls
-    return the cached instance.
-
-    The lazy singleton avoids importing heavy langchain / pydantic deps
-    at module-load time — construction only happens on first use.
-    """
-    global _gateway
-    if _gateway is not None:
-        return _gateway
-
-    profile_id = os.environ.get("GLUDD_MODEL_PROFILE_ID", "default")
-    provider = os.environ.get("GLUDD_MODEL_PROVIDER", "deepseek")
-    model_name = os.environ.get("GLUDD_MODEL_NAME", "deepseek-chat")
-
-    profile = ModelProfile(
-        model_profile_id=profile_id,
-        provider=provider,
-        model_name=model_name,
-        enabled=True,
-        api_metered=False,
-    )
-
-    _gateway = ModelGateway(
-        profiles=[profile],
-        provider_registry=ProviderRegistry.from_profiles([profile]),
-    )
-    return _gateway
-
-
-# ---------------------------------------------------------------------------
-# Message helper
-# ---------------------------------------------------------------------------
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    DEFAULT_DAEMON_URL,
+    DEFAULT_TIMEOUT,
+    GluddClient,
+)
 
 
 def Message(role: str, content: str) -> dict[str, str]:
-    """Build a ``{"role": …, "content": …}`` message dict."""
+    """Build one validated-on-the-server chat message."""
     return {"role": role, "content": content}
 
 
-# ---------------------------------------------------------------------------
-# ModelClient — thin wrapper class (backward-compatible with prior HTTP impl)
-# ---------------------------------------------------------------------------
+def _prompt_parts(messages: list[dict[str, str]]) -> tuple[str, str]:
+    """Convert chat messages to the daemon's bounded single-turn contract."""
+    if not messages:
+        raise ValueError("messages must not be empty")
+    system_parts: list[str] = []
+    prompt_parts: list[str] = []
+    for message in messages:
+        role = str(message.get("role", "user"))
+        content = str(message.get("content", ""))
+        if role == "system":
+            system_parts.append(content)
+        else:
+            prompt_parts.append(f"{role}: {content}")
+    prompt = "\n".join(prompt_parts).strip()
+    if not prompt:
+        raise ValueError("messages must contain non-system content")
+    return prompt, "\n".join(system_parts).strip()
 
 
 class ModelClient:
-    """Synchronous model client backed by :class:`ModelGateway`.
+    """Synchronous compatibility client backed only by :class:`GluddClient`."""
 
-    Parameters
-    ----------
-    profile_name:
-        Model profile ID to use for ``chat`` / ``chat_stream`` calls.
-        Default ``"default"``.
-    """
-
-    def __init__(self, profile_name: str = "default") -> None:
+    def __init__(
+        self,
+        profile_name: str = "default",
+        *,
+        daemon_url: str = DEFAULT_DAEMON_URL,
+        psk: str = "",
+        timeout: int = DEFAULT_TIMEOUT,
+    ) -> None:
         self._profile = profile_name
-        self._gateway = _get_gateway()
-        self._embedder = HashEmbedder()
-
-    # ------------------------------------------------------------------
-    # chat
-    # ------------------------------------------------------------------
+        self._client = GluddClient(base_url=daemon_url, psk=psk, timeout=timeout)
 
     def chat(
         self,
         messages: list[dict[str, str]],
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Synchronous chat completion via ModelGateway.call_model.
-
-        Returns a dict with keys ``text``, ``model_profile_id``,
-        ``usage``, and ``_status``.
-        """
-        from general_ludd.models.gateway import ModelResponse  # type: ignore[import]
-
-        response: ModelResponse = self._gateway.call_model(
-            self._profile,
-            messages,
-            **kwargs,
+        """Return the daemon model response without an in-process fallback."""
+        prompt, system = _prompt_parts(messages)
+        max_tokens = kwargs.get("max_tokens", 2048)
+        if not isinstance(max_tokens, int) or isinstance(max_tokens, bool):
+            raise TypeError("max_tokens must be an integer")
+        result = self._client.call_model(
+            prompt,
+            model_profile=self._profile,
+            route_task_type=kwargs.get("route_task_type"),
+            max_tokens=max_tokens,
+            system=system or None,
+            response_format=kwargs.get("response_format"),
+            response_schema=kwargs.get("response_schema"),
         )
+        if result.get("_error"):
+            return cast(dict[str, Any], result)
         return {
-            "text": response.content,
-            "model_profile_id": self._profile,
-            "model_name": response.model_name,
-            "usage": response.usage_metadata,
-            "cost_estimate": response.cost_estimate,
-            "_status": 200,
+            "text": result.get("text", ""),
+            "model_profile_id": result.get("model_profile_id", self._profile),
+            "model_name": result.get("model_name", ""),
+            "usage": result.get("usage", result.get("usage_metadata", {})),
+            "cost_estimate": result.get("cost_estimate"),
+            "_status": result.get("_status", 200),
         }
-
-    # ------------------------------------------------------------------
-    # chat_stream
-    # ------------------------------------------------------------------
 
     def chat_stream(
         self,
         messages: list[dict[str, str]],
         **kwargs: Any,
     ) -> Generator[dict[str, Any], None, None]:
-        """Streaming chat completion via ModelGateway.call_model_stream.
-
-        Yields dicts with ``delta`` (the incremental text content).
-        """
-        for chunk in self._gateway.call_model_stream(
-            self._profile,
-            messages,
-            **kwargs,
-        ):
-            content = getattr(chunk, "content", "")
-            if content:
-                yield {"delta": str(content)}
-
-    # ------------------------------------------------------------------
-    # embed
-    # ------------------------------------------------------------------
+        """Yield one compatible delta from the bounded synchronous endpoint."""
+        result = self.chat(messages, **kwargs)
+        text = result.get("text")
+        if isinstance(text, str) and text:
+            yield {"delta": text}
 
     def embed(
         self,
@@ -181,57 +102,44 @@ class ModelClient:
         *,
         include_embedding: bool = True,
     ) -> dict[str, Any]:
-        """Get embeddings via :class:`HashEmbedder`.
-
-        Single-string input returns ``{"embedding": [...], "dim": N}``.
-        List input returns ``{"embeddings": [[...], ...], "dim": N}``.
-        """
+        """Embed text through the daemon's canonical embeddings endpoint."""
+        batch = [texts] if isinstance(texts, str) else list(texts)
+        if not batch:
+            return {"embeddings": [], "embedding_method": "daemon", "dim": 0}
+        # The compare endpoint deliberately requires at least two texts.  A
+        # duplicate sentinel keeps one-text calls on that same canonical path.
+        request_batch = batch if len(batch) >= 2 else [batch[0], batch[0]]
+        result = self._client.post(
+            "/api/embeddings/compare",
+            {"texts": request_batch, "include_embeddings": include_embedding},
+        )
+        embeddings = result.get("embeddings")
+        vectors = embeddings if isinstance(embeddings, list) else []
         if isinstance(texts, str):
-            vec = self._embedder.embed(texts)
             return {
-                "embedding": vec,
-                "embedding_method": "hash",
-                "dim": len(vec),
+                "embedding": vectors[0] if vectors else [],
+                "embedding_method": result.get("embedding_method", "daemon"),
+                "dim": result.get("dim", 0),
+                "_status": result.get("_status", 0),
             }
-
-        results = [self._embedder.embed(t) for t in texts]
         return {
-            "embeddings": results,
-            "embedding_method": "hash",
-            "dim": len(results[0]) if results else 0,
+            "embeddings": vectors[: len(batch)],
+            "embedding_method": result.get("embedding_method", "daemon"),
+            "dim": result.get("dim", 0),
+            "_status": result.get("_status", 0),
         }
-
-    # ------------------------------------------------------------------
-    # list_models
-    # ------------------------------------------------------------------
 
     def list_models(self) -> dict[str, Any]:
-        """Return available model profiles from the gateway."""
-        profiles = self._gateway.list_profiles()
-        return {
-            "profiles": [p.model_dump() for p in profiles],
-            "_status": 200,
-        }
-
-    # ------------------------------------------------------------------
-    # reachable
-    # ------------------------------------------------------------------
+        """Return daemon-owned model profiles."""
+        return cast(dict[str, Any], self._client.get("/admin/models"))
 
     def reachable(self) -> bool:
-        """Return ``True`` when at least one profile is configured."""
-        try:
-            return len(self._gateway.list_profiles()) > 0
-        except Exception:
-            return False
-
-
-# ---------------------------------------------------------------------------
-# Top-level convenience functions (ansible-compatible, stdlib-only signature)
-# ---------------------------------------------------------------------------
+        """Return whether the authenticated daemon health endpoint responds."""
+        return bool(self._client.reachable())
 
 
 def chat(messages: list[dict[str, str]], **kwargs: Any) -> dict[str, Any]:
-    """Top-level chat — delegates to :meth:`ModelClient.chat`."""
+    """Top-level compatibility wrapper."""
     return ModelClient().chat(messages, **kwargs)
 
 
@@ -239,15 +147,15 @@ def chat_stream(
     messages: list[dict[str, str]],
     **kwargs: Any,
 ) -> Generator[dict[str, Any], None, None]:
-    """Top-level streaming chat — delegates to :meth:`ModelClient.chat_stream`."""
+    """Top-level streaming compatibility wrapper."""
     return ModelClient().chat_stream(messages, **kwargs)
 
 
 def embed(text: str) -> dict[str, Any]:
-    """Top-level embed — delegates to :meth:`ModelClient.embed`."""
+    """Top-level embedding compatibility wrapper."""
     return ModelClient().embed(text)
 
 
 def list_models() -> dict[str, Any]:
-    """Top-level profile listing — delegates to :meth:`ModelClient.list_models`."""
+    """Top-level profile-list compatibility wrapper."""
     return ModelClient().list_models()

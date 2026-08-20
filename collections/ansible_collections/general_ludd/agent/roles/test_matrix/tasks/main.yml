@@ -69,9 +69,20 @@
     - not enable_pytest_collect | bool
     - pytest_collect_override | length > 0
 
+- name: Preflight managed-host runtime for test collection
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    tasks_from: main
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ ansible_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ gludd_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ gludd_previous_python_interpreter | default('') }}"
+  when: enable_pytest_collect | bool
+
 - name: Run pytest --collect-only (when enabled)
   ansible.builtin.command:
-    cmd: "python3 -m pytest {{ test_dir }} --collect-only -q 2>&1"
+    cmd: "{{ ansible_python_interpreter }} -m pytest {{ test_dir }} --collect-only -q"
   register: _tm_pytest_raw
   changed_when: false
   failed_when: false

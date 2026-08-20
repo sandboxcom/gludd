@@ -103,27 +103,17 @@ RETURN:
 from __future__ import annotations
 
 import os
-import sys
+from typing import Any
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        error_result,
-        ok_result,
-    )
-    from ansible_collections.general_ludd.agent.plugins.module_utils.model_client import (
-        ModelClient,
-    )
-    from ansible_collections.general_ludd.agent.plugins.module_utils.rag import (
-        RAGPipeline,
-    )
-except ImportError:
-    _mu = os.path.join(os.path.dirname(__file__), "..", "module_utils")
-    sys.path.insert(0, _mu)
-    from gludd import error_result, ok_result  # type: ignore[import]
-    from model_client import ModelClient  # type: ignore[import]
-    from rag import RAGPipeline  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    error_result,
+    ok_result,
+)
+from ansible_collections.general_ludd.agent.plugins.module_utils.model_client import (
+    ModelClient,
+)
+from ansible_collections.general_ludd.agent.plugins.module_utils.rag import RAGPipeline
 
 
 def main() -> None:
@@ -204,7 +194,7 @@ def main() -> None:
         module.fail_json(**error_result(f"RAG query failed — is the daemon reachable? {exc}"))
         return
 
-    results: list[dict] = []
+    results: list[dict[str, Any]] = []
     query_vec = pipeline._embedder.embed(text)
     for entry in pipeline._store.search(query_vec, top_k=top_k):
         results.append(

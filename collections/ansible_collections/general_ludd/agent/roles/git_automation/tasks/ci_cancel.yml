@@ -1,5 +1,5 @@
 ---
-# ci_cancel.yml — cancel a CI run through ci_ops.py.
+# ci_cancel.yml — cancel a CI run through the authenticated daemon seam.
 
 - name: "Assert run_id"
   ansible.builtin.assert:
@@ -8,14 +8,17 @@
     fail_msg: "ci_run_id is required for ci_cancel"
 
 - name: "Cancel CI run"
-  ansible.builtin.command:
-    argv:
-      - "{{ ansible_python_interpreter | default('/usr/bin/python3') }}"
-      - "-c"
-      - "from general_ludd.git_automation.ci_ops import ci_cancel; import json, sys; sys.stdout.write(json.dumps(ci_cancel('{{ ci_run_id }}')))"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: ci_cancel
+    run_id: "{{ ci_run_id }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    timeout: "{{ git_api_timeout }}"
+    idempotency_key: "ci-cancel:{{ ci_run_id }}"
   register: _ci_cancel_raw
-  changed_when: false
+  no_log: "{{ psk | length > 0 }}"
 
 - name: "Parse CI cancel result"
   ansible.builtin.set_fact:
-    ci_cancel_result: "{{ _ci_cancel_raw.stdout | from_json }}"
+    ci_cancel_result: "{{ _ci_cancel_raw.result }}"

@@ -62,19 +62,14 @@ RETURN:
 
 from __future__ import annotations
 
-import os
+from typing import Any
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        error_result,
-        ok_result,
-    )
-except ImportError:
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import error_result, ok_result  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    error_result,
+    ok_result,
+)
 
 
 def main() -> None:
@@ -84,6 +79,9 @@ def main() -> None:
             trigger=dict(type="str", default=None),
             variables=dict(type="dict", default={}),
             skills_path=dict(type="str", default=""),
+            daemon_url=dict(type="str", default="http://localhost:8000"),
+            psk=dict(type="str", default="", no_log=True),
+            timeout=dict(type="int", default=30),
         ),
         mutually_exclusive=[["name", "trigger"]],
         required_one_of=[["name", "trigger"]],
@@ -92,76 +90,31 @@ def main() -> None:
 
     skill_name_param: str | None = module.params["name"]
     trigger: str | None = module.params["trigger"]
-    variables: dict = module.params["variables"] or {}
+    variables: dict[str, Any] = module.params["variables"] or {}
     skills_path_param: str = module.params["skills_path"]
 
-    try:
-        from general_ludd.skills.loader import discover_skills  # type: ignore[import]
-        from general_ludd.skills.renderer import render_skill  # type: ignore[import]
-    except ImportError as exc:
-        module.fail_json(**error_result(f"general_ludd not importable: {exc}"))
-        return
-
-    # Build search paths
-    search_paths: list[str] = []
-    if skills_path_param:
-        search_paths.append(skills_path_param)
-    # Common fallbacks
-    for candidate in [
-        os.path.join(os.getcwd(), ".opencode", "skills"),
-        os.path.expanduser("~/.config/general_ludd/skills"),
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "..", ".opencode", "skills"),
-    ]:
-        if os.path.isdir(candidate) and candidate not in search_paths:
-            search_paths.append(candidate)
-
-    skills = discover_skills(*search_paths)
-
-    if not skills:
-        module.fail_json(**error_result("No skills found in search paths", search_paths=search_paths))
-        return
-
-    # Resolve the skill
-    found = None
-    if skill_name_param:
-        for s in skills:
-            if s.name == skill_name_param:
-                found = s
-                break
-        if found is None:
-            module.fail_json(**error_result(
-                f"Skill not found: {skill_name_param}",
-                available=[s.name for s in skills],
-            ))
-            return
-    else:  # trigger
-        import re
-        for s in skills:
-            for pattern in s.trigger_patterns:
-                if re.search(pattern, trigger or "", re.IGNORECASE):
-                    found = s
-                    break
-            if found:
-                break
-        if found is None:
-            module.fail_json(**error_result(
-                f"No skill matched trigger: {trigger!r}",
-                available=[s.name for s in skills],
-            ))
-            return
-
-    # Render — render_skill raises on missing StrictUndefined vars
-    try:
-        rendered = render_skill(found.body, variables)
-    except Exception as exc:
-        module.fail_json(**error_result(f"Skill render failed: {exc}", skill_name=found.name))
+    response = GluddClient(
+        base_url=module.params["daemon_url"],
+        psk=module.params["psk"],
+        timeout=module.params["timeout"],
+    ).post(
+        "/admin/skills/render",
+        {
+            "name": skill_name_param,
+            "trigger": trigger,
+            "variables": variables,
+            "skills_path": skills_path_param or None,
+        },
+    )
+    if response.get("_error") or response.get("_status") != 200:
+        module.fail_json(**error_result(str(response.get("detail") or response.get("_error") or "Skill render failed")))
         return
 
     module.exit_json(**ok_result(
         {
-            "skill_name": found.name,
-            "rendered_body": rendered,
-            "required_vars": getattr(found, "required_vars", []),
+            "skill_name": response.get("skill_name", skill_name_param),
+            "rendered_body": response.get("rendered_body", ""),
+            "required_vars": response.get("required_vars", []),
         },
         changed=False,
     ))
