@@ -21,7 +21,7 @@ import json
 import re
 import subprocess
 import sys
-from typing import Callable
+from collections.abc import Callable
 
 FALLBACK_REPO = "sandboxcom/gludd"
 
@@ -34,7 +34,7 @@ FALLBACK_REPO = "sandboxcom/gludd"
 # build, not weaken this gate. Every category below MUST pass or the release
 # is incomplete.
 #
-# To prevent regression: (a) the assertion below pins the count at 12, and
+# To prevent regression: (a) the assertion below pins the count at 28, and
 # (b) OPTIONAL_CATEGORIES is intentionally an empty frozenset so no code path
 # can ever treat a category as non-blocking.
 # ---------------------------------------------------------------------------
@@ -79,20 +79,54 @@ EXPECTED_CATEGORIES: dict[str, Callable[[set[str]], bool]] = {
     "THIRD_PARTY_LICENSES": lambda a: any(
         re.search(r"THIRD_PARTY", n, re.IGNORECASE) for n in a
     ),
+    "wheel": lambda a: any(n.endswith("-py3-none-any.whl") for n in a),
+    "sdist": lambda a: any(
+        n.startswith("general_ludd_agent-") and n.endswith(".tar.gz") for n in a
+    ),
+    "runtime collection tarballs": lambda a: {
+        "general_ludd-agent-0.2.0.tar.gz",
+        "general_ludd-language-0.1.0.tar.gz",
+        "general_ludd-networking-0.2.0.tar.gz",
+    }.issubset(a),
+    "collection manifest": lambda a: any(
+        n.startswith("gludd-collections-") and n.endswith(".json") for n in a
+    ),
+    "execution-environment definition": lambda a: "ansible-ee-execution-environment.yml" in a,
+    "execution-environment requirements": lambda a: "ansible-ee-requirements.yml" in a,
+    "execution-environment Python requirements": lambda a: "ansible-ee-requirements.txt" in a,
+    "execution-environment system requirements": lambda a: "ansible-ee-bindep.txt" in a,
+    "execution-environment runtime lock": lambda a: "ansible-ee-runtime-lock.json" in a,
+    "managed-host Python lock": lambda a: "ansible-managed-host-python.lock.json" in a,
+    "collection Python boundary inventory": lambda a: (
+        "ansible-collection-python-boundary-inventory.json" in a
+    ),
+    "execution-environment image metadata": lambda a: any(
+        n.startswith("gludd-ee-image-") and n.endswith(".json") for n in a
+    ),
+    "container image metadata": lambda a: any(
+        n.startswith("gludd-container-") and n.endswith(".json") for n in a
+    ),
+    "install script": lambda a: "install.sh" in a,
+    "smoke attestations": lambda a: any(
+        n.startswith("gludd-smoke-") and n.endswith(".json") for n in a
+    ),
+    "release manifest": lambda a: any(
+        n.startswith("gludd-release-manifest-") and n.endswith(".json") for n in a
+    ),
 }
 
 # Structural guard: if anyone removes or adds a category, this assertion
 # fires at import time — catching the regression before a release ships.
-assert len(EXPECTED_CATEGORIES) == 12, (
-    f"EXPECTED_CATEGORIES must have exactly 12 entries (ALL required, none optional), "
-    f"got {len(EXPECTED_CATEGORIES)}. See TASKS CP.11/RL.4."
+assert len(EXPECTED_CATEGORIES) == 28, (
+    f"EXPECTED_CATEGORIES must have exactly 28 entries (ALL required, none optional), "
+    f"got {len(EXPECTED_CATEGORIES)}."
 )
 
 # Explicitly empty: no category is optional. Exists so future code can
 # reference OPTIONAL_CATEGORIES without introducing a new exception list.
 OPTIONAL_CATEGORIES: frozenset[str] = frozenset()
 
-MIN_ASSETS = 12  # 4 platform tarballs + .deb + .rpm + .dmg + .exe installer + checksums + SBOM + 2 docs
+MIN_ASSETS = 30  # 28 categories; the collection category expands to three locked tarballs.
 
 PRERELEASE_RE = re.compile(r"-(alpha|beta|rc)", re.IGNORECASE)
 
