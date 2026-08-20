@@ -67,6 +67,11 @@
       "behavior": "make test-local-model-inference LOCAL_MODEL_INFERENCE_MODEL_PATH=/tmp/gludd-qwen-e2e-model/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=1"
     },
     {
+      "name": "clean-e2e-small-model",
+      "make_variables": ["E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY"],
+      "behavior": "make clean-e2e-small-model E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY=1"
+    },
+    {
       "name": "node-deps-sync",
       "make_variables": ["NODE_DEPS_VALIDATE_ONLY", "NODE_DEPS_NPM_USERCONFIG", "NODE_DEPS_NPM_CACHE", "NODE_DEPS_NPM_REGISTRY", "NODE_DEPS_NPM_UPDATE_NOTIFIER"],
       "behavior": "make node-deps-sync NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false"

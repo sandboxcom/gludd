@@ -194,6 +194,7 @@ help:
 	@echo "  sync                  Sync uv dependencies"
 	@echo "  sync-llama-cpp        Sync locked local-inference extra (SYNC_LLAMA_CPP_VALIDATE_ONLY=0|1)"
 	@echo "  test-local-model-inference  Locked optional-runtime smoke (LOCAL_MODEL_INFERENCE_MODEL_PATH, LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=0|1)"
+	@echo "  clean-e2e-small-model       Remove only the reproducible /tmp GGUF materialization (E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY=0|1)"
 	@echo "  validate-ansible-runtime-boundary  Validate split core/controller/managed-host artifacts"
 	@echo "  build-ansible-execution-environment  Build the locked controller EE (ANSIBLE_EE_*)"
 	@echo "  verify-ansible-execution-environment Verify one digest-addressed controller EE (ANSIBLE_EE_*)"
@@ -8759,6 +8760,20 @@ e2e-download-small-model:
 	@$(UV) run python scripts/e2e_download_small_model.py
 	@echo "=== Model cached at /tmp/gludd-qwen-e2e-model/ ==="
 	@ls -lh /tmp/gludd-qwen-e2e-model/
+
+E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY ?= 1
+
+.PHONY: clean-e2e-small-model
+clean-e2e-small-model:
+	@if [ "$(E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY)" != "0" ] && [ "$(E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY)" != "1" ]; then \
+		echo "ERROR: E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY must be 0 or 1"; exit 2; \
+	fi
+	@if [ "$(E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY)" = "1" ]; then \
+		echo "Would remove only /tmp/gludd-qwen-e2e-model"; \
+	else \
+		rm -rf -- /tmp/gludd-qwen-e2e-model; \
+		echo "Removed /tmp/gludd-qwen-e2e-model (recover with make e2e-download-small-model)"; \
+	fi
 
 download-1.5b-model:
 	@echo "=== Downloading Qwen2.5-1.5B-Instruct-Q4_K_M GGUF (~1.0 GB) ==="

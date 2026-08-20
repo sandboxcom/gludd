@@ -65,3 +65,18 @@ def test_inference_target_contract_has_safe_behavioral_example() -> None:
         "LOCAL_MODEL_INFERENCE_VALIDATE_ONLY",
     ]
     assert "LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=1" in str(entry["behavior"])
+
+
+def test_small_model_cleanup_is_exact_and_recoverable() -> None:
+    body = _target_body("clean-e2e-small-model")
+
+    assert "rm -rf -- /tmp/gludd-qwen-e2e-model" in body
+    assert "e2e-download-small-model" in body
+    assert "E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY" in body
+
+
+def test_small_model_cleanup_contract_defaults_to_validation() -> None:
+    entry = _contract_entry("clean-e2e-small-model")
+
+    assert entry["make_variables"] == ["E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY"]
+    assert "E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY=1" in str(entry["behavior"])
