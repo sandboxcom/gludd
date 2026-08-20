@@ -53,28 +53,45 @@
   ansible.builtin.set_fact:
     _ap_extension: "{{ _ap_spec_path | regex_search('\\.([a-zA-Z0-9]+)$', '\\1') | first | default('unknown') | lower }}"
 
+- name: Validate managed parser interpreter and retained rollback
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ audit_framework__managed_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ audit_framework__managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ audit_framework__previous_python_interpreter }}"
+  when: _ap_extension in ['docx', 'html', 'htm']
+
 - name: Parse PDF with pdftotext
   ansible.builtin.command:
     cmd: "pdftotext {{ _ap_spec_path | quote }} -"
   register: _ap_parsed
   changed_when: false
-  failed_when: false
   when: _ap_extension in ['pdf']
 
-- name: Parse DOCX with python3 docx2txt
+- name: Parse DOCX with the verified managed interpreter
   ansible.builtin.command:
-    cmd: "python3 -c \"import docx2txt; print(docx2txt.process('{{ _ap_spec_path }}'))\""
+    argv:
+      - "{{ gludd_managed_python_runtime.interpreter }}"
+      - -c
+      - "import docx2txt,sys; print(docx2txt.process(sys.argv[1]))"
+      - "{{ _ap_spec_path }}"
   register: _ap_parsed
   changed_when: false
-  failed_when: false
   when: _ap_extension in ['docx']
 
-- name: Parse HTML with python3 html2text
+- name: Parse HTML with the verified managed interpreter
   ansible.builtin.command:
-    cmd: "python3 -c \"import html2text; print(html2text.html2text(open('{{ _ap_spec_path }}').read()))\""
+    argv:
+      - "{{ gludd_managed_python_runtime.interpreter }}"
+      - -c
+      - >-
+        import html2text,pathlib,sys;
+        print(html2text.html2text(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')))
+      - "{{ _ap_spec_path }}"
   register: _ap_parsed
   changed_when: false
-  failed_when: false
   when: _ap_extension in ['html', 'htm']
 
 - name: Read plain text as-is (unknown extension)

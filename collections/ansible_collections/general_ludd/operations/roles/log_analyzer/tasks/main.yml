@@ -60,24 +60,24 @@
   register: _found_agent_logs
   no_log: true
 
-- name: Run log analysis via Python CLI
-  ansible.builtin.command:
-    argv:
-      - python3
-      - "{{ role_path }}/files/analyze_logs.py"
-      - --log-dir
-      - "{{ log_analyzer_glob | dirname | default(log_source_dirs.split(',') | first | trim) }}"
-      - --glob
-      - "{{ log_analyzer_glob | basename | default('*.log') }}"
-      - --output-dir
-      - "{{ log_analyzer_output_dir | default(artifact_dir) }}"
-      - --error-threshold
-      - "{{ log_analyzer_error_rate_threshold | default(0.1) }}"
-      - --min-cluster-size
-      - "{{ log_analyzer_min_cluster_size | default(2) }}"
-  changed_when: false
+- name: Run log analysis through the packaged collection module
+  general_ludd.operations.log_analyze:
+    log_dir: >-
+      {{
+        (log_analyzer_glob | dirname)
+        if log_analyzer_glob | length > 0
+        else (log_source_dirs.split(',') | first | trim)
+      }}
+    glob_pattern: >-
+      {{
+        (log_analyzer_glob | basename)
+        if log_analyzer_glob | length > 0
+        else '*.log'
+      }}
+    output_dir: "{{ log_analyzer_output_dir | default(artifact_dir) }}"
+    error_threshold: "{{ log_analyzer_error_rate_threshold | default(0.1) }}"
+    min_cluster_size: "{{ log_analyzer_min_cluster_size | default(2) }}"
   register: _log_analyzer_result
-  failed_when: false
 
 - name: Gather CI/gate log files
   ansible.builtin.find:

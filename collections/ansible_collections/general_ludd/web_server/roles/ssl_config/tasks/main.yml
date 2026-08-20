@@ -10,6 +10,15 @@
       ssl_config requires cipher_profile 'modern', 'intermediate', or 'old'.
       Got cipher_profile={{ cipher_profile | default('<undefined>') }}.
 
+- name: Validate managed web runtime and retained rollback
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ web_server_managed_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ web_server_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ web_server_previous_python_interpreter }}"
+
 - name: "Ensure SSL directories exist"
   ansible.builtin.file:
     path: "{{ item }}"
@@ -65,29 +74,44 @@
     mode: "0644"
 
 - name: "Generate Mozilla SSL config snippet"
-  ansible.builtin.command: >-
-    python3 {{ role_path }}/files/ssl_config.py generate
-    --profile {{ cipher_profile }}
-    --min-tls {{ min_tls_version }}
-    --hsts-max-age {{ hsts_max_age }}
-    --output {{ ssl_config_output | default('/etc/nginx/conf.d/ssl_params.conf') }}
+  ansible.builtin.command:
+    argv:
+      - "{{ gludd_managed_python_runtime.interpreter }}"
+      - "{{ role_path }}/files/ssl_config.py"
+      - generate
+      - --profile
+      - "{{ cipher_profile }}"
+      - --min-tls
+      - "{{ min_tls_version }}"
+      - --hsts-max-age
+      - "{{ hsts_max_age }}"
+      - --output
+      - "{{ ssl_config_output | default('/etc/nginx/conf.d/ssl_params.conf') }}"
   register: _ssl_gen
   changed_when: _ssl_gen.rc == 0
   when: ssl_config_output is defined or true
 
 - name: "Validate certificate"
-  ansible.builtin.command: >-
-    python3 {{ role_path }}/files/ssl_config.py validate
-    --cert {{ cert_path }}
-    --key {{ key_path }}
+  ansible.builtin.command:
+    argv:
+      - "{{ gludd_managed_python_runtime.interpreter }}"
+      - "{{ role_path }}/files/ssl_config.py"
+      - validate
+      - --cert
+      - "{{ cert_path }}"
+      - --key
+      - "{{ key_path }}"
   register: _ssl_validate
   changed_when: false
-  ignore_errors: "{{ ssl_validate_ignore_errors | default(true) }}"
 
 - name: "Report certificate info"
-  ansible.builtin.command: >-
-    python3 {{ role_path }}/files/ssl_config.py info
-    --cert {{ cert_path }}
+  ansible.builtin.command:
+    argv:
+      - "{{ gludd_managed_python_runtime.interpreter }}"
+      - "{{ role_path }}/files/ssl_config.py"
+      - info
+      - --cert
+      - "{{ cert_path }}"
   register: _ssl_info
   changed_when: false
 

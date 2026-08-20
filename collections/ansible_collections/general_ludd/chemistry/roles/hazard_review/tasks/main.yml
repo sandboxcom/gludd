@@ -21,19 +21,17 @@
       }}
 
 - name: Run hazard screen
-  ansible.builtin.command: >
-    {{ ansible_python_interpreter | default('python3') }}
-    {{ role_path }}/../../plugins/module_utils/chemistry_dispatch.py
-  environment:
-    CHEMISTRY_ACTION: hazard
-    CHEMISTRY_INPUT: "{{ _hazard_payload | to_json }}"
+  general_ludd.chemistry.chemistry_operation:
+    operation: hazard
+    request: "{{ _hazard_payload }}"
+    daemon_url: "{{ chemistry_daemon_url | default(daemon_url | default('http://localhost:8000')) }}"
+    psk: "{{ chemistry_psk | default(psk | default('')) }}"
   register: _hazard_result
-  changed_when: false
-  failed_when: false
+  no_log: "{{ (chemistry_psk | default(psk | default(''))) | length > 0 }}"
 
 - name: Parse hazard result
   ansible.builtin.set_fact:
-    hazard_review_result: "{{ (_hazard_result.stdout | from_json) if _hazard_result.stdout | default('') | length > 0 else {} }}"
+    hazard_review_result: "{{ _hazard_result.result }}"
 
 - name: Refuse actionable output when risk tier is high or prohibited
   ansible.builtin.assert:

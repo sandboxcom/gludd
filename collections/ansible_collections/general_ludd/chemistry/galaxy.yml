@@ -30,4 +30,5 @@ tags:
   - cheminformatics
   - laboratory
   - decision_support
-dependencies: {}
+dependencies:
+  general_ludd.agent: ">=0.2.0"

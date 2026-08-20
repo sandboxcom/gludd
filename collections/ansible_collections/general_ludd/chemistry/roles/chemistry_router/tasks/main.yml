@@ -13,19 +13,17 @@
     mode: "0755"
 
 - name: Run chemistry router
-  ansible.builtin.command: >
-    {{ ansible_python_interpreter | default('python3') }}
-    {{ role_path }}/../../plugins/module_utils/chemistry_dispatch.py
-  environment:
-    CHEMISTRY_ACTION: route
-    CHEMISTRY_INPUT: "{{ chemistry_router_request | to_json }}"
+  general_ludd.chemistry.chemistry_operation:
+    operation: route
+    request: "{{ chemistry_router_request }}"
+    daemon_url: "{{ chemistry_daemon_url | default(daemon_url | default('http://localhost:8000')) }}"
+    psk: "{{ chemistry_psk | default(psk | default('')) }}"
   register: _router_result
-  changed_when: false
-  failed_when: false
+  no_log: "{{ (chemistry_psk | default(psk | default(''))) | length > 0 }}"
 
 - name: Parse router result
   ansible.builtin.set_fact:
-    chemistry_router_result: "{{ (_router_result.stdout | from_json) if _router_result.stdout | default('') | length > 0 else {} }}"
+    chemistry_router_result: "{{ _router_result.result }}"
 
 - name: Write JSON output
   ansible.builtin.copy:

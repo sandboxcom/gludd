@@ -1,13 +1,16 @@
-"""Ansible module: export a chat session to markdown/json/html.
-
-Wraps ``general_ludd.chat.session.export_session``.
-"""
+"""Ansible module: export a chat session to markdown, JSON, or HTML."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.chat.plugins.module_utils.session_export import (
+    ExportFormat,
+    publish_export,
+    render_session,
+)
 
 
 def run_module() -> None:
@@ -16,31 +19,34 @@ def run_module() -> None:
         "format": {"type": "str", "default": "md", "choices": ["md", "json", "html"]},
         "output_file": {"type": "str", "required": False, "default": None},
     }
-    module = AnsibleModule(argument_spec=module_args)
+    module = AnsibleModule(argument_spec=module_args, supports_check_mode=True)
 
     session_file = module.params["session_file"]
     export_format = module.params["format"]
     output_file = module.params["output_file"]
 
     try:
-        from general_ludd.chat.session import export_session
-
-        result = export_session(
+        rendered = render_session(
             Path(session_file),
-            format=export_format,
-            output_file=Path(output_file) if output_file else None,
+            cast(ExportFormat, export_format),
         )
-
-        changed = True
+        changed = False
+        result: str
         if output_file:
             out_path = Path(output_file)
-            expected = result if isinstance(result, str) else str(result)
-            if out_path.exists() and out_path.read_text(encoding="utf-8") == expected:
-                changed = False
+            previous = (
+                out_path.read_text(encoding="utf-8") if out_path.is_file() else None
+            )
+            changed = previous != rendered
+            if not module.check_mode:
+                publish_export(out_path, rendered)
+            result = str(out_path)
+        else:
+            result = rendered
 
         module.exit_json(
             changed=changed,
-            output=str(result) if output_file else result,
+            output=result,
         )
     except Exception as exc:
         module.fail_json(msg=str(exc))

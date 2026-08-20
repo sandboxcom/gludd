@@ -6,7 +6,9 @@ import argparse
 import json
 import sys
 
-from general_ludd.log_analyzer import analyze
+from ansible_collections.general_ludd.operations.plugins.module_utils.log_analyzer import (
+    analyze,
+)
 
 
 def main() -> None:
@@ -21,7 +23,7 @@ def main() -> None:
 
     result = analyze(
         log_dir=args.log_dir,
-        glob_str=args.glob_str,
+        glob_pattern=args.glob_str,
         output_dir=args.output_dir,
         error_threshold=args.error_threshold,
         cluster_window=args.cluster_window,
