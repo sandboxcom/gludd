@@ -128,6 +128,10 @@ _NOT_YET_COVERED_MODULES: set[str] = {
 # run_tests / lint_and_check: thin wrappers ported from the legacy root
 # roles/ dir during the single-home migration (2026-06-28). They do not hit
 # the daemon — scenarios are TODO but the roles are wired via FQCN.
+# managed_python_preflight is a private ``include_role`` dependency exercised
+# by managed-host roles with ``public: false``. It remains explicitly listed
+# until a dedicated role_managed_python_preflight scenario is added; private
+# roles are not exempt from the exhaustive inventory partition.
 _NOT_YET_COVERED_ROLES: set[str] = {
     "account_lifecycle",
     "agent_floor_check",
@@ -151,6 +155,7 @@ _NOT_YET_COVERED_ROLES: set[str] = {
     "gludd_update",
     "log_prompt_evaluator",
     "guardrail_pattern",
+    "managed_python_preflight",
     "manage_processes",
     "model_benchmark",
     "model_download",

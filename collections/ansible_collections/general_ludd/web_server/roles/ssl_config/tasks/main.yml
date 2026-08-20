@@ -56,13 +56,13 @@
   block:
     - name: "Write certificate"
       ansible.builtin.copy:
-        content: "{{ ssl_cert_content }}"
+        content: "{{ ssl_cert_content | default('') }}"
         dest: "{{ cert_path }}"
         mode: "0644"
 
     - name: "Write private key"
       ansible.builtin.copy:
-        content: "{{ ssl_key_content }}"
+        content: "{{ ssl_key_content | default('') }}"
         dest: "{{ key_path }}"
         mode: "0600"
 

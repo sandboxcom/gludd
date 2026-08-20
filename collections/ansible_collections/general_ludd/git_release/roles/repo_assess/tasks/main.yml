@@ -14,7 +14,7 @@
 
 - name: Publish repo assessment evidence
   ansible.builtin.set_fact:
-    repo_evidence: "{{ git_release_repo_evidence }}"
+    repo_evidence: "{{ git_release_repo_evidence | default({}) }}"
 
 - name: Assert evidence is well-formed
   ansible.builtin.assert:

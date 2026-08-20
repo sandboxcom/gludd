@@ -14,7 +14,7 @@
 
 - name: Publish history investigation evidence
   ansible.builtin.set_fact:
-    history_repo_evidence: "{{ git_release_repo_evidence }}"
+    history_repo_evidence: "{{ git_release_repo_evidence | default({}) }}"
 
 - name: Surface history investigation seed evidence
   ansible.builtin.set_fact:
