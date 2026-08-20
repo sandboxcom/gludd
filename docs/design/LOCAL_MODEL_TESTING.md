@@ -1,6 +1,6 @@
 # Local Model Testing & E2E Validation
 
-**Status:** design (2026-08-07)
+**Status:** beta4 validated (2026-08-20)
 **Source:** `tests/e2e/test_ci_multi_model_pipeline.py`, `tests/e2e/test_model_matrix_pipeline.py`,
 `tests/e2e/_local_model_configs.py`, `src/general_ludd/local_model/_local_model_configs.py`
 
@@ -62,11 +62,23 @@ lines of code, per-phase latency, token counts, feature/lifecycle failures).
 
 ```bash
 # Install llama.cpp Python bindings + server support
-make sync-llama-cpp
+make sync-llama-cpp SYNC_LLAMA_CPP_VALIDATE_ONLY=0
+
+# Download the pinned, already-quantized Qwen2.5 0.5B test artifact (~398 MB)
+make e2e-download-small-model
+
+# Prove that the artifact loads and produces tokens in-process
+make test-local-model-inference
 
 # Build llama-quantize CLI (optional, for quantizing models)
 make build-llamacpp-tools
 ```
+
+`e2e-download-small-model` does not require `llama-quantize`: its source GGUF is
+already Q4_K_M. It pins the Hugging Face revision and atomically hard-links the
+download cache into `/tmp/gludd-qwen-e2e-model` (falling back to a copy only when
+the cache and temporary directory are on different filesystems). Repeated setup is
+therefore deterministic and avoids an unnecessary second 398 MB allocation.
 
 Dependency check (`_deps_reason()` in `test_model_matrix_pipeline.py`):
 - `llama-cpp-python` must be importable
@@ -132,6 +144,42 @@ make test-e2e-games-local-model
 # Fail fast — stop on first model failure
 MATRIX_FAIL_FAST=1 make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
 ```
+
+### Beta4 endpoint and game E2E layers
+
+The default endpoint lifecycle suite is hermetic and has no external model or API
+cost. It binds an OpenAI-compatible server to `127.0.0.1` on an OS-assigned port,
+tests chat and text completions through the production `ChatSession`, covers auth,
+malformed requests, invalid response contracts, HTTP 503 propagation, early server
+exit, and then proves idempotent teardown. It never assumes a fixed port and its
+named server thread must be stopped before the fixture returns.
+
+The heavyweight transformer pipeline is explicitly opt-in to prevent ordinary
+collection from downloading a model:
+
+```bash
+GLUDD_LIVE_MODEL_E2E=1 make test-files \
+  TESTFILES=tests/e2e/test_small_model_pipeline_real.py \
+  PYTEST_ARGS='-q -W error'
+```
+
+For the real OpenAI-compatible game path, start a local endpoint separately and
+pass its loopback URL explicitly:
+
+```bash
+make test-e2e-games-local-model \
+  LOCAL_MODEL_BASE_URL=http://127.0.0.1:9999/v1 \
+  LOCAL_MODEL_NAME=qwen2.5:0.5b \
+  LOCAL_MODEL_KEY=local-only \
+  LOCAL_MODEL_GAME=snake \
+  PYTEST_ARGS='-q -W error'
+```
+
+Only loopback endpoints represented by the existing `local-` model-profile
+allowlist are accepted; the suite does not disable the production SSRF guard. A
+generation receives at most the task policy's configured attempt ceiling. Syntax
+repair feeds back a bounded excerpt of the prior response, keeping context growth
+predictable on small models.
 
 ### What happens during a local model test
 
@@ -318,6 +366,7 @@ Expected: prints the aggregated matrix report if prior runs populated
 | Target | Purpose |
 |--------|---------|
 | `make sync-llama-cpp` | Install llama-cpp-python[server] |
+| `make e2e-download-small-model` | Materialize the pinned Qwen2.5 0.5B GGUF artifact |
 | `make build-llamacpp-tools` | Build llama-quantize from source |
 | `make test-e2e-multi-model` | Cloud multi-model pipeline (DeepSeek + OpenRouter) |
 | `make test-e2e-games-local-model` | Local model game E2E via SmallModelTaskPolicy |

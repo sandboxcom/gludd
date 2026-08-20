@@ -60,7 +60,16 @@ _SKIP_REASON = (
     "start a local LLM (ollama serve, llama.cpp server) and set LOCAL_MODEL_BASE_URL"
 )
 
-_LOCAL_PROFILE_ID = f"local.{_LOCAL_MODEL_NAME.replace('/', '_').replace(':', '_')}"
+_LOCAL_PROFILE_ID = f"local-{_LOCAL_MODEL_NAME.replace('/', '_').replace(':', '_')}"
+_MAX_REPAIR_CODE_CHARS = 8_000
+
+_LOCAL_GENERATION_CONSTRAINTS = """
+Local-model reliability constraints:
+- Return one complete, syntactically valid Python module and no prose.
+- Keep the implementation under 120 lines; prefer small methods and direct state.
+- Use ordinary quoted strings only; do not use triple-quoted strings.
+- Close every string, bracket, and block before finishing the response.
+""".strip()
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +258,7 @@ def _call_local_model_direct(prompt: str, temperature: float = 0.0) -> str:
         messages=[{"role": "user", "content": prompt}],
         temperature=temperature,
     )
-    return response.content
+    return str(response.content)
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +290,7 @@ def _dispatch_collection_handler(name: str, args: dict[str, object]) -> dict[str
         return {"failed": True, "msg": str(exc)}
 
 
-def _make_dispatch_test_client():
+def _make_dispatch_test_client() -> Any:
     """Build a FastAPI TestClient with the dispatch router wired for game_logic.
 
     Registers a CapabilityRegistry with the ``agent`` collection tagged
@@ -324,20 +333,51 @@ def _make_dispatch_test_client():
     return client
 
 
-def dispatch_game_build(game_id: str) -> dict[str, object]:
+def _build_game_prompt(
+    game_id: str,
+    *,
+    repair_reason: str | None = None,
+    previous_code: str | None = None,
+) -> str:
+    """Build a compact first-pass or bounded syntax-repair prompt."""
+    prompt = f"{GAME_DEFINITIONS[game_id]['prompt']}\n\n{_LOCAL_GENERATION_CONSTRAINTS}"
+    if repair_reason is None:
+        return prompt
+    bounded_code = (previous_code or "")[:_MAX_REPAIR_CODE_CHARS]
+    return (
+        f"{prompt}\n\nA previous response failed validation: {repair_reason[:300]}.\n"
+        "Start over and return the complete corrected module. Previous response follows:\n"
+        f"<previous_python>\n{bounded_code}\n</previous_python>"
+    )
+
+
+def dispatch_game_build(
+    game_id: str,
+    *,
+    repair_reason: str | None = None,
+    previous_code: str | None = None,
+) -> dict[str, object]:
     """POST /api/dispatch capability=game_logic action=game_build → model call.
 
     Returns the JSON response from the dispatch endpoint.  On success the
     output dict contains ``text`` (generated code) and ``transport_used``.
     """
-    prompt = GAME_DEFINITIONS[game_id]["prompt"]
+    prompt = _build_game_prompt(
+        game_id,
+        repair_reason=repair_reason,
+        previous_code=previous_code,
+    )
     client = _make_dispatch_test_client()
     resp = client.post(
         "/api/dispatch",
         json={
             "capability": "game_logic",
             "action": "game_build",
-            "args": {"prompt": prompt, "model_profile": _LOCAL_PROFILE_ID},
+            "args": {
+                "prompt": prompt,
+                "model_profile": _LOCAL_PROFILE_ID,
+                "temperature": 0.0,
+            },
         },
     )
     return cast(dict[str, object], resp.json())
@@ -354,8 +394,10 @@ def _extract_game_code_from_dispatch_result(result: dict[str, object]) -> str | 
     output = first.get("output")
     if isinstance(output, dict):
         text = output.get("text")
-        if isinstance(text, str) and len(text) > 50:
-            return text
+        if isinstance(text, str):
+            extracted = _extract_python_module(text)
+            if extracted and extracted.strip():
+                return extracted.strip()
     return None
 
 
@@ -495,6 +537,19 @@ class TestGamePromptTemplates:
                 "only the python code" in prompt_lower or "output only" in prompt_lower or "no prose" in prompt_lower
             ), f"{game_id} missing output-only directive"
 
+    def test_repair_prompt_is_complete_and_bounded(self) -> None:
+        prompt = _build_game_prompt(
+            "snake",
+            repair_reason="unterminated string literal",
+            previous_code="x" * (_MAX_REPAIR_CODE_CHARS + 100),
+        )
+
+        assert "complete corrected module" in prompt
+        assert "unterminated string literal" in prompt
+        bounded_code = prompt.split("<previous_python>\n", 1)[1].split("\n</previous_python>", 1)[0]
+        assert bounded_code == "x" * _MAX_REPAIR_CODE_CHARS
+        assert "under 120 lines" in prompt
+
     def test_verification_lists_cover_lifecycle(self) -> None:
         lifecycle_checks = {
             "lifecycle_initial_state",
@@ -538,6 +593,39 @@ class TestGameCodeExtraction:
         assert not result["parseable"]
         assert result["error"]
 
+    def test_dispatch_extraction_strips_unclosed_python_fence(self) -> None:
+        result: dict[str, object] = {
+            "results": [
+                {
+                    "ok": True,
+                    "output": {
+                        "text": "```python\nimport random\n\nclass Snake:\n    pass\n",
+                    },
+                }
+            ]
+        }
+
+        code = _extract_game_code_from_dispatch_result(result)
+
+        assert code == "import random\n\nclass Snake:\n    pass"
+        assert _parse_ast(code)["parseable"]
+
+    @pytest.mark.parametrize(
+        "result",
+        [
+            {},
+            {"results": [{"ok": False}]},
+            {"results": [{"ok": True, "output": "not-a-mapping"}]},
+            {"results": [{"ok": True, "output": {"text": 42}}]},
+            {"results": [{"ok": True, "output": {"text": "not Python source"}}]},
+        ],
+    )
+    def test_dispatch_extraction_rejects_invalid_envelopes(
+        self,
+        result: dict[str, object],
+    ) -> None:
+        assert _extract_game_code_from_dispatch_result(result) is None
+
 
 # ---------------------------------------------------------------------------
 # Dispatch-routing structural tests (no LLM call needed)
@@ -556,6 +644,11 @@ class TestDispatchCapabilityRouting:
         assert data["ok"] is True
         assert len(data["matches"]) == 1
         assert data["matches"][0]["collection"] == "agent"
+
+    def test_collection_handler_rejects_unknown_module(self) -> None:
+        result = _dispatch_collection_handler("general_ludd.agent.unknown", {})
+
+        assert result == {"failed": True, "msg": "unknown module: general_ludd.agent.unknown"}
 
     def test_dispatch_game_build_without_prompt_handles_gracefully(self) -> None:
         client = _make_dispatch_test_client()
@@ -605,6 +698,8 @@ class TestLocalModelConnectivity:
     def test_gateway_builds_without_error(self) -> None:
         gateway = _build_local_gateway()
         assert gateway is not None
+        profile_ids = {profile.model_profile_id for profile in gateway.list_profiles()}
+        assert _LOCAL_PROFILE_ID in profile_ids
 
     def test_dispatch_client_created(self) -> None:
         client = _make_dispatch_test_client()
@@ -619,14 +714,8 @@ class TestLocalModelConnectivity:
         print("\n[local-e2e] Testing connectivity — dispatch path...\n", flush=True)
         result = dispatch_game_build("snake")
         code = _extract_game_code_from_dispatch_result(result)
-        if code:
-            print(f"[local-e2e] Connectivity OK — dispatch returned {len(code)} chars\n", flush=True)
-        else:
-            print(
-                f"[local-e2e] Dispatch result: ok_count={result.get('ok_count')} "
-                f"error_count={result.get('error_count')}\n",
-                flush=True,
-            )
+        assert code, f"Local model dispatch returned no usable code: {result!r}"
+        print(f"[local-e2e] Connectivity OK — dispatch returned {len(code)} chars\n", flush=True)
 
 
 @pytest.mark.e2e
@@ -666,34 +755,58 @@ class TestLocalModelGameGeneration:
             result["time_ms"] = int((time.time() - t0) * 1000)
             return result
 
-        # 2. POST /api/dispatch capability=game_logic action=game_build
-        try:
-            print(f"\n[local-e2e] Dispatching {game_id} via capability=game_logic...\n", flush=True)
-            dispatch_result = dispatch_game_build(game_id)
-        except Exception as exc:
-            result["error"] = f"Dispatch failed: {type(exc).__name__}: {exc}"
-            result["time_ms"] = int((time.time() - t0) * 1000)
-            return result
+        # 2. POST /api/dispatch and use the policy's bounded retry allowance
+        # for syntax repair. Small models often produce a useful first draft
+        # with one truncated string or block; feeding that exact failure back
+        # is both cheaper and more reliable than an unbounded blind rerun.
+        repair_reason: str | None = None
+        previous_code: str | None = None
+        code: str | None = None
+        max_attempts = max(1, int(auth["max_attempts"]))
+        for attempt in range(1, max_attempts + 1):
+            try:
+                print(
+                    f"\n[local-e2e] Dispatching {game_id} via capability=game_logic "
+                    f"attempt={attempt}/{max_attempts}...\n",
+                    flush=True,
+                )
+                dispatch_result = dispatch_game_build(
+                    game_id,
+                    repair_reason=repair_reason,
+                    previous_code=previous_code,
+                )
+            except Exception as exc:
+                result["error"] = f"Dispatch failed: {type(exc).__name__}: {exc}"
+                repair_reason = str(result["error"])
+                continue
 
-        code = _extract_game_code_from_dispatch_result(dispatch_result)
-        if not code:
+            code = _extract_game_code_from_dispatch_result(dispatch_result)
+            if not code:
+                result["error"] = (
+                    f"Dispatch returned no code: "
+                    f"ok_count={dispatch_result.get('ok_count')} "
+                    f"error_count={dispatch_result.get('error_count')}"
+                )
+                repair_reason = str(result["error"])
+                continue
+            result["dispatched"] = True
+            result["code_len"] = len(code)
+
+            ast_result = _parse_ast(code)
+            result["ast_ok"] = ast_result["parseable"]
+            if ast_result["parseable"]:
+                break
             result["error"] = (
-                f"Dispatch returned no code: "
-                f"ok_count={dispatch_result.get('ok_count')} "
-                f"error_count={dispatch_result.get('error_count')}"
+                f"AST parse failed: {ast_result['error']}; "
+                f"code_preview={code[:300]!r}"
             )
+            repair_reason = str(result["error"])
+            previous_code = code
+        else:
             result["time_ms"] = int((time.time() - t0) * 1000)
             return result
-        result["dispatched"] = True
-        result["code_len"] = len(code)
 
-        # 3. AST parse
-        ast_result = _parse_ast(code)
-        result["ast_ok"] = ast_result["parseable"]
-        if not ast_result["parseable"]:
-            result["error"] = f"AST parse failed: {ast_result['error']}"
-            result["time_ms"] = int((time.time() - t0) * 1000)
-            return result
+        assert code is not None
 
         # 4. Import and verify
         with tempfile.TemporaryDirectory(prefix="gludd-game-local-") as tmp_dir:
@@ -842,7 +955,12 @@ class TestGameGeneratorWiredPolicy:
         evidence_data = _build_capability_evidence(identity_data, _build_task_spec("snake"))
         evidence = (CapabilityEvidence(**evidence_data),)
 
-        code = gen.generate_game(spec, model_identity=identity, evidence=evidence)
+        code = gen.generate_game(
+            spec,
+            model_id=_LOCAL_PROFILE_ID,
+            model_identity=identity,
+            evidence=evidence,
+        )
         assert code, "generate_game returned empty code"
         assert "class" in code.lower(), f"No class in generated code: {code[:200]}"
 
@@ -858,7 +976,7 @@ class TestGameGeneratorWiredPolicy:
             expected_frames=30,
             similarity_threshold=0.0,
         )
-        code = gen.generate_game(spec)
+        code = gen.generate_game(spec, model_id=_LOCAL_PROFILE_ID)
         assert code, "generate_game returned empty code"
         assert "class" in code.lower(), f"No class in generated code: {code[:200]}"
 
