@@ -23,12 +23,21 @@ from pathlib import Path
 
 import pytest
 
+from ._spawner import (
+    STEP_START_RE,
+    TASK_TOOL_NAME_RE,
+    TEXT_ASSISTANT_RE,
+    TEXT_EVENT_RE,
+    TOOL_CALL_RE,
+    OpencodeSpawner,
+    ResponseFrame,
+    SpawnResult,
+    ToolCallSnapshot,
+)
+
 ROOT = Path(__file__).resolve().parents[2]
 TEST_PROJECT_SRC = ROOT / "tests" / "opencode_e2e" / "_test_project"
 OPENCODE_BIN = "opencode"
-
-sys.path.insert(0, str(ROOT / "tests"))
-
 
 def _has_opencode() -> bool:
     try:
@@ -65,10 +74,7 @@ def _reset_tasks(tasks_path: Path) -> None:
 
 
 @pytest.fixture(scope="module")
-def _spawner_class():
-    sys.path.insert(0, str(ROOT / "tests"))
-    from opencode_e2e._spawner import OpencodeSpawner
-
+def _spawner_class() -> type[OpencodeSpawner]:
     return OpencodeSpawner
 
 
@@ -79,7 +85,10 @@ def _spawner_class():
 class TestSpawnerFramework:
     """Spawner can launch opencode, capture output, handle errors."""
 
-    def test_spawner_launches_opencode_and_captures_output(self, _spawner_class):
+    def test_spawner_launches_opencode_and_captures_output(
+        self,
+        _spawner_class: type[OpencodeSpawner],
+    ) -> None:
         """Spawner launches opencode and captures at least some output."""
         spawner = _spawner_class(
             project_dir=str(TEST_PROJECT_SRC),
@@ -93,7 +102,10 @@ class TestSpawnerFramework:
         assert result.total_messages >= 0, "Should have message count (even if 0)"
         assert result.elapsed_sec > 0, "Should have measured elapsed time"
 
-    def test_spawner_writes_structured_log(self, _spawner_class):
+    def test_spawner_writes_structured_log(
+        self,
+        _spawner_class: type[OpencodeSpawner],
+    ) -> None:
         """Spawner writes a structured JSON log with spawn_meta header."""
         spawner = _spawner_class(
             project_dir=str(TEST_PROJECT_SRC),
@@ -112,25 +124,46 @@ class TestSpawnerFramework:
         assert "project_dir" in header
         assert header["project_dir"] in str(TEST_PROJECT_SRC) or str(TEST_PROJECT_SRC) in header["project_dir"]
 
-    def test_spawner_kills_on_timeout(self, _spawner_class):
-        """Spawner kills the process when timeout expires."""
+    def test_spawner_kills_on_timeout(
+        self,
+        _spawner_class: type[OpencodeSpawner],
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """Spawner kills a silent process that genuinely outlives the deadline."""
+
+        def _silent_command(_spawner: object) -> list[str]:
+            return [sys.executable, "-u", "-c", "import time; time.sleep(5)"]
+
+        monkeypatch.setattr(_spawner_class, "_build_command", _silent_command)
         spawner = _spawner_class(
-            project_dir=str(TEST_PROJECT_SRC),
+            project_dir=str(tmp_path),
             prompt="sleep 999999",
-            timeout_sec=3,
-            model="fake-model",
+            timeout_sec=0.1,
+            log_dir=str(tmp_path / "logs"),
         )
         result = spawner.run()
         assert result.killed, "Should be killed by timeout"
-        assert result.elapsed_sec <= 10, "Should not run much past timeout"
+        assert result.elapsed_sec <= 2, "Should not run much past timeout"
 
-    def test_spawner_produces_progress_log(self, _spawner_class):
-        """Spawner writes a progress log during operation."""
+    def test_spawner_produces_progress_log(
+        self,
+        _spawner_class: type[OpencodeSpawner],
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """Spawner immediately writes progress even for a short process."""
+
+        def _short_command(_spawner: object) -> list[str]:
+            return [sys.executable, "-u", "-c", "print('progress-complete')"]
+
+        monkeypatch.setattr(_spawner_class, "_build_command", _short_command)
         spawner = _spawner_class(
-            project_dir=str(TEST_PROJECT_SRC),
+            project_dir=str(tmp_path),
             prompt="echo progress-test",
-            timeout_sec=10,
-            model="fake-model",
+            timeout_sec=2,
+            log_dir=str(tmp_path / "logs"),
+            progress_interval_sec=30,
         )
         result = spawner.run()
         progress_path = Path(result.progress_log)
@@ -138,7 +171,10 @@ class TestSpawnerFramework:
         content = progress_path.read_text()
         assert "PROGRESS" in content, "Progress log should contain PROGRESS entries"
 
-    def test_spawner_result_has_all_fields(self, _spawner_class):
+    def test_spawner_result_has_all_fields(
+        self,
+        _spawner_class: type[OpencodeSpawner],
+    ) -> None:
         """SpawnResult has all expected fields populated."""
         spawner = _spawner_class(
             project_dir=str(TEST_PROJECT_SRC),
@@ -166,7 +202,10 @@ class TestSpawnerFramework:
 class TestSpawnerWithProject:
     """Spawner runs opencode against a real test project with tasks."""
 
-    def test_spawner_runs_against_test_project(self, _spawner_class):
+    def test_spawner_runs_against_test_project(
+        self,
+        _spawner_class: type[OpencodeSpawner],
+    ) -> None:
         """Spawner launches opencode against _test_project/ with real tasks."""
         tmp = _make_temp_project()
         _reset_tasks(tmp / "TASKS.md")
@@ -202,7 +241,10 @@ class TestSpawnerWithProject:
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
-    def test_spawner_captures_ndjson_output_from_live_opencode(self, _spawner_class):
+    def test_spawner_captures_ndjson_output_from_live_opencode(
+        self,
+        _spawner_class: type[OpencodeSpawner],
+    ) -> None:
         """Live opencode produces NDJSON that the spawner parses into frames."""
         tmp = _make_temp_project()
         _reset_tasks(tmp / "TASKS.md")
@@ -234,56 +276,43 @@ class TestNDJSONParsing:
     """OpencodeSpawner parses opencode NDJSON output correctly."""
 
     @staticmethod
-    def _run_spawner_with_log(log_content: str) -> tuple:
+    def _run_spawner_with_log(
+        log_content: str,
+    ) -> tuple[type[OpencodeSpawner], type[ResponseFrame], type[ToolCallSnapshot]]:
         """Create a spawner, feed it pre-recorded log lines, check parsing."""
-        sys.path.insert(0, str(ROOT / "tests"))
-        from opencode_e2e._spawner import OpencodeSpawner, ResponseFrame, ToolCallSnapshot
-
         return OpencodeSpawner, ResponseFrame, ToolCallSnapshot
 
-    def test_parses_step_start_marker(self):
+    def test_parses_step_start_marker(self) -> None:
         """STEP_START_RE matches opencode step_start events."""
-        from opencode_e2e._spawner import STEP_START_RE
-
         assert STEP_START_RE.search('{"type":"step_start"}')
         assert STEP_START_RE.search('{"type": "step_start", "data": {}}')
         assert STEP_START_RE.search('"type":"step_start"')
 
-    def test_parses_tool_use_marker(self):
+    def test_parses_tool_use_marker(self) -> None:
         """TOOL_CALL_RE matches opencode tool_use events."""
-        from opencode_e2e._spawner import TOOL_CALL_RE
-
         assert TOOL_CALL_RE.search('{"type":"tool_use"}')
         assert TOOL_CALL_RE.search('{"type": "tool_use", "name": "bash"}')
         assert TOOL_CALL_RE.search('"type":"tool_use"')
 
-    def test_parses_task_dispatch_marker(self):
+    def test_parses_task_dispatch_marker(self) -> None:
         """TASK_TOOL_NAME_RE matches task/agent/workflow dispatches."""
-        from opencode_e2e._spawner import TASK_TOOL_NAME_RE
-
         assert TASK_TOOL_NAME_RE.search('{"type":"tool_use","name":"task"}')
         assert TASK_TOOL_NAME_RE.search('"name":"agent"')
         assert TASK_TOOL_NAME_RE.search('"name":"workflow"')
 
-    def test_parses_text_event_marker(self):
+    def test_parses_text_event_marker(self) -> None:
         """TEXT_EVENT_RE matches opencode text events."""
-        from opencode_e2e._spawner import TEXT_EVENT_RE
-
         assert TEXT_EVENT_RE.search('{"type":"text"}')
         assert TEXT_EVENT_RE.search('"type":"text"')
 
-    def test_text_assistant_re_matches(self):
+    def test_text_assistant_re_matches(self) -> None:
         """TEXT_ASSISTANT_RE matches assistant: prefix lines."""
-        from opencode_e2e._spawner import TEXT_ASSISTANT_RE
-
         assert TEXT_ASSISTANT_RE.search("assistant: hello")
         assert TEXT_ASSISTANT_RE.search("Assistant: testing")
         assert TEXT_ASSISTANT_RE.search("ASSISTANT: loud")
 
-    def test_extracts_tool_call_from_json(self):
+    def test_extracts_tool_call_from_json(self) -> None:
         """_extract_tool_call correctly parses a tool_use JSON line."""
-        from opencode_e2e._spawner import OpencodeSpawner
-
         tc = OpencodeSpawner._extract_tool_call(
             '{"type":"tool_use","tool":"bash","id":"abc123","part":{"input":{"command":"ls"}}}'
         )
@@ -291,10 +320,8 @@ class TestNDJSONParsing:
         assert tc.tool_use_id == "abc123"
         assert tc.args == {"command": "ls"}
 
-    def test_extracts_tool_call_from_nested_part(self):
+    def test_extracts_tool_call_from_nested_part(self) -> None:
         """_extract_tool_call handles nested part.state format."""
-        from opencode_e2e._spawner import OpencodeSpawner
-
         raw = (
             '{"type":"tool_use","part":{"state":'
             '{"tool":"task","id":"x1","input":'
@@ -305,19 +332,15 @@ class TestNDJSONParsing:
         assert tc.tool_use_id == "x1"
         assert tc.args == {"description": "do X", "prompt": "run X"}
 
-    def test_extracts_text_from_json(self):
+    def test_extracts_text_from_json(self) -> None:
         """_extract_text correctly parses text from JSON events."""
-        from opencode_e2e._spawner import OpencodeSpawner
-
         text = OpencodeSpawner._extract_text('{"type":"text","text":"hello world"}')
         assert text == "hello world"
         text2 = OpencodeSpawner._extract_text('{"type":"text","part":{"text":"from part"}}')
         assert text2 == "from part"
 
-    def test_extracts_tool_result(self):
+    def test_extracts_tool_result(self) -> None:
         """_extract_tool_result returns (tool_use_id, is_error)."""
-        from opencode_e2e._spawner import OpencodeSpawner
-
         tid, is_err = OpencodeSpawner._extract_tool_result('{"type":"tool_result","tool_use_id":"abc","is_error":true}')
         assert tid == "abc"
         assert is_err is True
@@ -329,11 +352,8 @@ class TestNDJSONParsing:
 class TestBuildCommand:
     """_build_command produces correct command line."""
 
-    def test_default_build_command(self):
+    def test_default_build_command(self) -> None:
         """Default command includes --format json --auto."""
-        sys.path.insert(0, str(ROOT / "tests"))
-        from opencode_e2e._spawner import OpencodeSpawner
-
         spawner = OpencodeSpawner(project_dir="/tmp/test", prompt="hello")
         cmd = spawner._build_command()
         assert OPENCODE_BIN in cmd[0]
@@ -343,21 +363,15 @@ class TestBuildCommand:
         assert "--auto" in cmd
         assert "hello" in cmd
 
-    def test_build_command_with_model(self):
+    def test_build_command_with_model(self) -> None:
         """--model is added when model is specified."""
-        sys.path.insert(0, str(ROOT / "tests"))
-        from opencode_e2e._spawner import OpencodeSpawner
-
         spawner = OpencodeSpawner(project_dir="/tmp/test", prompt="hello", model="sonnet")
         cmd = spawner._build_command()
         assert "--model" in cmd
         assert "sonnet" in cmd
 
-    def test_build_command_sets_agent(self):
+    def test_build_command_sets_agent(self) -> None:
         """--agent defaults to 'build'."""
-        sys.path.insert(0, str(ROOT / "tests"))
-        from opencode_e2e._spawner import OpencodeSpawner
-
         spawner = OpencodeSpawner(project_dir="/tmp/test", prompt="hello")
         cmd = spawner._build_command()
         assert "--agent" in cmd
@@ -369,11 +383,8 @@ class TestBuildCommand:
 class TestSpawnResult:
     """SpawnResult dataclass has correct defaults and fields."""
 
-    def test_result_defaults(self):
+    def test_result_defaults(self) -> None:
         """SpawnResult instantiation with minimal fields."""
-        sys.path.insert(0, str(ROOT / "tests"))
-        from opencode_e2e._spawner import SpawnResult
-
         r = SpawnResult(verdict="PASS", verdict_reason="test")
         assert r.verdict == "PASS"
         assert r.verdict_reason == "test"
@@ -382,11 +393,8 @@ class TestSpawnResult:
         assert r.elapsed_sec == 0.0
         assert r.killed is False
 
-    def test_result_with_data(self):
+    def test_result_with_data(self) -> None:
         """SpawnResult with populated fields."""
-        sys.path.insert(0, str(ROOT / "tests"))
-        from opencode_e2e._spawner import SpawnResult
-
         r = SpawnResult(
             verdict="FAIL",
             verdict_reason="timeout",
@@ -420,7 +428,10 @@ class TestFullE2EWithAPI:
        # with OPENCODE_API_KEY set
     """
 
-    def test_full_multitask_dispatch_wave(self, _spawner_class):
+    def test_full_multitask_dispatch_wave(
+        self,
+        _spawner_class: type[OpencodeSpawner],
+    ) -> None:
         """Launch opencode with 18 tasks, verify it dispatches subagents."""
         tmp = _make_temp_project()
         _reset_tasks(tmp / "TASKS.md")
