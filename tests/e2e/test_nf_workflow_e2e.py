@@ -32,6 +32,7 @@ import ast
 import json
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -122,7 +123,7 @@ class TestStsMintToVmSandboxDispatch:
     sandbox was constructed to allow — nothing wider, nothing narrower.
     """
 
-    def test_minted_token_spec_matches_vm_sandbox_spec(self):
+    def test_minted_token_spec_matches_vm_sandbox_spec(self) -> None:
         """The PermissionSpec handed to VMSandboxManager.boot is the SAME
         narrowed spec the STS token carries — they are a single source of
         truth for what the dispatched agent can do."""
@@ -177,7 +178,7 @@ class TestStsMintToVmSandboxDispatch:
         # the issuer had it.
         assert issuer.validate(token, write_cap) is False
 
-    def test_dispatch_records_audit_event_against_tokened_spec(self):
+    def test_dispatch_records_audit_event_against_tokened_spec(self) -> None:
         """A dispatch against a tokened instance emits a lifecycle event
         whose spec field carries the token's agent_type — proving the audit
         trail binds the VM action back to the STS delegation chain."""
@@ -222,7 +223,7 @@ class TestStsMintToVmSandboxDispatch:
         assert issuer.get_token(token.token_id) is not None
         assert instance.spec.agent_type == token.spec.agent_type
 
-    def test_revoked_token_does_not_authorize_post_revocation_dispatch(self):
+    def test_revoked_token_does_not_authorize_post_revocation_dispatch(self) -> None:
         """If the orchestrator revokes the STS token mid-flight, a subsequent
         capability check for a NEW dispatch against the same VM must fail —
         even though the VM instance is still running with the (now-stale)
@@ -273,7 +274,7 @@ class TestStsMintToVmSandboxDispatch:
             # The real dispatch path would not reach validate() because the
             # pre-check (get_token) returned None. Simulate that by asserting
             # validate is never callable on the resolved (None) handle.
-            issuer.validate(issuer.get_token(token.token_id), cap)
+            issuer.validate(cast(Any, issuer.get_token(token.token_id)), cap)
 
 
 # ---------------------------------------------------------------------------
@@ -326,7 +327,7 @@ class TestChatLanguageExpertExport:
 
     def test_language_analysis_appears_in_exported_markdown(
         self, chat_session_with_analysis: ChatSession
-    ):
+    ) -> None:
         md = chat_session_with_analysis.export_markdown()
         assert isinstance(md, str)
         assert "# Chat Session Export" in md
@@ -338,7 +339,7 @@ class TestChatLanguageExpertExport:
 
     def test_language_analysis_appears_in_exported_json(
         self, chat_session_with_analysis: ChatSession, suspicious_input: str
-    ):
+    ) -> None:
         js = chat_session_with_analysis.export_json()
         assert isinstance(js, str)
         parsed = json.loads(js)
@@ -358,7 +359,7 @@ class TestChatLanguageExpertExport:
         self,
         chat_session_with_analysis: ChatSession,
         tmp_path: Path,
-    ):
+    ) -> None:
         """Exporting to a file and re-reading via _export_to_markdown yields
         the same content — the file path is not lossy."""
         out = tmp_path / "session.md"
@@ -370,7 +371,7 @@ class TestChatLanguageExpertExport:
         body_lines = [ln for ln in text.splitlines() if ln.strip()]
         assert len(body_lines) >= 4  # header + user heading + user content + assistant heading + ...
 
-    def test_empty_input_produces_no_findings_but_still_exports(self):
+    def test_empty_input_produces_no_findings_but_still_exports(self) -> None:
         """A clean string yields zero findings; the export must still contain
         the assistant turn stating so."""
         session = ChatSession(
@@ -387,8 +388,11 @@ class TestChatLanguageExpertExport:
         )
 
         md = session.export_markdown()
+        assert isinstance(md, str)
         assert "No confusable characters detected." in md
-        js = json.loads(session.export_json())
+        exported_json = session.export_json()
+        assert isinstance(exported_json, str)
+        js = json.loads(exported_json)
         assert len(js["messages"]) == 3
 
 
@@ -404,7 +408,7 @@ class TestBinaryReToE2eTestGen:
     (code_path_analyzer → scenario_generator → write_e2e_tests) to produce
     a pytest file that exercises the analysis command generators."""
 
-    def test_radare2_artifact_then_generated_tests_parse(self, tmp_path: Path):
+    def test_radare2_artifact_then_generated_tests_parse(self, tmp_path: Path) -> None:
         """End-to-end: radare2 backend produces an artifact; the SAME backend
         module is analyzed for E2E scenarios; the generated test file parses
         as valid Python and references the public functions."""
@@ -467,7 +471,7 @@ class TestBinaryReToE2eTestGen:
         # The pipeline accepts validated scenarios; build one by hand that
         # references the radare2 backend's real public functions so the
         # generated test is meaningful.
-        scenarios_payload = {
+        scenarios_payload: dict[str, Any] = {
             "module": "radare2_analyze",
             "valid": [
                 {
@@ -573,11 +577,21 @@ class TestBinaryReToE2eTestGen:
                 assertion, {"result": entropy_artifact}
             ), f"generated assertion failed: {assertion!r}"
 
-    def test_binary_re_role_scripts_are_importable(self):
+    def test_binary_re_role_scripts_are_importable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Sanity: every binary_re role backend script can be imported as a
         module — the E2E test-gen pipeline requires importable targets."""
         import importlib.util
         import sys as _sys
+
+        # Collection role shims import their packaged FQCN implementation.  Mirror
+        # an installed Galaxy collection instead of coupling them to core Python.
+        monkeypatch.setattr(
+            _sys,
+            "path",
+            [str(_WORKSPACE_ROOT / "collections"), *_sys.path],
+        )
 
         binary_re_roles = (
             _WORKSPACE_ROOT

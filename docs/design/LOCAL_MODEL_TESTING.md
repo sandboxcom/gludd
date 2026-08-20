@@ -127,26 +127,32 @@ a development workstation.
 ### Running local model tests
 
 ```bash
-# Single CI-safe model (fastest path for dev)
-E2E_LOCAL_MODEL=Qwen2.5-Coder-0.5B make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
+# Single CI-safe model (fastest live path for dev)
+GLUDD_LIVE_MODEL_E2E=1 E2E_LOCAL_MODEL=Qwen2.5-Coder-0.5B \
+  make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
 
 # All CI-safe models (6 models, runs in CI)
-CI_SAFE_ONLY=1 make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
+GLUDD_LIVE_MODEL_E2E=1 CI_SAFE_ONLY=1 \
+  make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
 
 # All 24 local models (development workstation only)
-make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
+GLUDD_LIVE_MODEL_E2E=1 \
+  make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
 
 # Single model by alias
-E2E_LOCAL_MODEL=qwen-coder-0.5b make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
+GLUDD_LIVE_MODEL_E2E=1 E2E_LOCAL_MODEL=qwen-coder-0.5b \
+  make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
 
 # Filter with LOCAL_MODEL_FILTER (AND logic)
-LOCAL_MODEL_FILTER=coding,ci-safe make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
+GLUDD_LIVE_MODEL_E2E=1 LOCAL_MODEL_FILTER=coding,ci-safe \
+  make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
 
 # Hermetic random-port endpoint (default, no model download or API cost)
 make test-e2e-games-local-model
 
 # Fail fast — stop on first model failure
-MATRIX_FAIL_FAST=1 make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
+GLUDD_LIVE_MODEL_E2E=1 MATRIX_FAIL_FAST=1 \
+  make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
 ```
 
 ### Beta4 endpoint and game E2E layers
@@ -158,12 +164,20 @@ malformed requests, invalid response contracts, HTTP 503 propagation, early serv
 exit, and then proves idempotent teardown. It never assumes a fixed port and its
 named server thread must be stopped before the fixture returns.
 
-The heavyweight transformer pipeline is explicitly opt-in to prevent ordinary
-collection from downloading a model:
+The heavyweight transformer, full game-development, and model-matrix pipelines
+are explicitly opt-in to prevent ordinary collection or `make test-e2e` from
+downloading models. Their structural tests remain active in the generic E2E
+suite. The dedicated game target sets the live opt-in itself:
 
 ```bash
 GLUDD_LIVE_MODEL_E2E=1 make test-files \
   TESTFILES=tests/e2e/test_small_model_pipeline_real.py \
+  PYTEST_ARGS='-q -W error'
+
+make test-e2e-game-pipeline \
+  CI_SAFE=1 \
+  GAME_DEV_MODEL=Qwen2.5-0.5B-Instruct \
+  GAME_DEV_GAME=snake \
   PYTEST_ARGS='-q -W error'
 ```
 

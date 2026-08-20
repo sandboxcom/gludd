@@ -219,6 +219,7 @@ _CI_SAFE_ONLY = os.environ.get("GAME_DEV_CI_SAFE", os.environ.get("CI_SAFE", "")
     "True",
     "YES",
 )
+_LIVE_MODEL_E2E = os.environ.get("GLUDD_LIVE_MODEL_E2E") == "1"
 _TARGET_MODEL = os.environ.get("GAME_DEV_MODEL", "").strip()
 _TARGET_GAME_ENV = os.environ.get("GAME_DEV_GAME", "").strip().lower()
 
@@ -279,7 +280,7 @@ class ModelResult:
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
-        return s.getsockname()[1]
+        return int(s.getsockname()[1])
 
 
 def _find_cached_gguf(cache_dir: str, filename: str) -> str | None:
@@ -493,6 +494,10 @@ def _print_summary(results: list[ModelResult]) -> None:
 
 @pytest.mark.e2e
 @pytest.mark.slow
+@pytest.mark.skipif(
+    not _LIVE_MODEL_E2E,
+    reason="set GLUDD_LIVE_MODEL_E2E=1 to run model downloads and inference",
+)
 class TestGameDevFullPipeline:
     """Iterate all local models through the full game-dev pipeline."""
 
