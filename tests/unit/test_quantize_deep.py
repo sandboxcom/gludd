@@ -329,6 +329,20 @@ class TestFindBundledLlamaQuantizeEdgeCases:
             result = ModelQuantizer._find_bundled_llama_quantize()
             assert result == "/usr/local/bin/llama-quantize"
 
+    def test_filesystem_probe_oserror_is_fail_soft(self):
+        with (
+            patch("os.path.isfile", side_effect=OSError("probe unavailable")),
+            patch("shutil.which", return_value=None),
+        ):
+            assert ModelQuantizer._find_bundled_llama_quantize() is None
+
+    def test_path_probe_oserror_is_fail_soft(self):
+        with (
+            patch("os.path.isfile", return_value=False),
+            patch("shutil.which", side_effect=OSError("PATH unavailable")),
+        ):
+            assert ModelQuantizer._find_bundled_llama_quantize() is None
+
 
 # ---------------------------------------------------------------------------
 # ModelQuantizer — constructor edge cases

@@ -12,8 +12,8 @@ skills above a similarity threshold are returned.
 
 Design notes:
 - ``HashEmbedder`` uses token hashing into a fixed-dimensional vector, giving a
-  lightweight bag-of-words representation that is good enough to surface
-  synonym matches (e.g. "deadlock" → "concurrency") without external deps.
+  lightweight bag-of-words representation with stable morphology and operational
+  aliases (for example, ``deployment`` → ``deploy`` and ``OOM`` → ``memory``).
 - ``SkillEmbedder`` caches per-skill vectors keyed by ``Skill.name`` so each
   description is embedded exactly once per registry lifetime.
 - The OpenAI embedder is imported lazily so the dependency stays optional.
@@ -41,6 +41,12 @@ _STOPWORDS = frozenset(
         "we", "they", "he", "she", "but", "not", "your", "our", "their",
     }
 )
+_SEMANTIC_ALIASES = {
+    "allocation": "memory",
+    "heap": "memory",
+    "oom": "memory",
+    "ram": "memory",
+}
 
 
 @runtime_checkable
@@ -48,6 +54,7 @@ class Embedder(Protocol):
     """Pluggable embedder interface."""
 
     def embed(self, text: str) -> list[float]:
+        """Embed text as a numeric feature vector."""
         ...
 
 
@@ -64,7 +71,7 @@ def _stem(word: str) -> str:
     """
     if len(word) <= 3:
         return word
-    for suffix in ("ing", "ies", "ied", "es", "ed", "s"):
+    for suffix in ("ing", "ies", "ied", "ment", "es", "ed", "s"):
         if word.endswith(suffix):
             stem = word[: -len(suffix)]
             if len(stem) < 3:
@@ -73,6 +80,12 @@ def _stem(word: str) -> str:
                 return stem + "y"
             return stem
     return word
+
+
+def normalize_semantic_token(token: str) -> str:
+    """Normalize morphology and a small stable set of operational aliases."""
+    stem = _stem(token)
+    return _SEMANTIC_ALIASES.get(stem, stem)
 
 
 class HashEmbedder:
@@ -86,14 +99,16 @@ class HashEmbedder:
     """
 
     def __init__(self, dim: int = _DEFAULT_DIM) -> None:
+        """Initialize a stable feature-hash vector with positive dimension."""
         if dim <= 0:
             raise ValueError("dim must be positive")
         self.dim = dim
 
     def embed(self, text: str) -> list[float]:
+        """Return a deterministic L2-normalized hash embedding."""
         vec = [0.0] * self.dim
         for token in _tokenize(text):
-            feature = _stem(token)
+            feature = normalize_semantic_token(token)
             h = hashlib.sha256(feature.encode("utf-8")).digest()  # nosec B324 — feature hashing, not crypto
             bucket = int.from_bytes(h[:8], "little") % self.dim
             vec[bucket] += 1.0
@@ -113,10 +128,11 @@ class OpenAIEmbedder:
     MODEL = "text-embedding-3-small"
 
     def __init__(self, api_key: str | None = None) -> None:
+        """Initialize the optional OpenAI client with an explicit or env key."""
         try:
             import openai
         except ImportError as exc:  # pragma: no cover - env-dependent
-            raise RuntimeError(
+            raise ModuleNotFoundError(
                 "openai package is required for OpenAIEmbedder"
             ) from exc
         key = api_key or os.environ.get("OPENAI_API_KEY")
@@ -125,6 +141,7 @@ class OpenAIEmbedder:
         self._client = openai.OpenAI(api_key=key)
 
     def embed(self, text: str) -> list[float]:  # pragma: no cover - network
+        """Request an embedding from the configured OpenAI client."""
         resp = self._client.embeddings.create(model=self.MODEL, input=text)
         return list(resp.data[0].embedding)
 
@@ -152,7 +169,8 @@ class SkillEmbedder:
     By default uses :class:`HashEmbedder` (no external deps). When
     ``use_openai_if_available=True`` and ``OPENAI_API_KEY`` is set, it uses
     :class:`OpenAIEmbedder` (``text-embedding-3-small``). An explicit
-    ``embedder`` argument always wins.
+    ``embedder`` argument always wins. Only a missing optional package falls back;
+    configured authentication errors remain visible.
     """
 
     def __init__(
@@ -161,12 +179,13 @@ class SkillEmbedder:
         *,
         use_openai_if_available: bool = False,
     ) -> None:
+        """Select an embedder while preserving configured provider failures."""
         if embedder is not None:
             self._embedder: Embedder = embedder
         elif use_openai_if_available and os.environ.get("OPENAI_API_KEY"):
             try:
                 self._embedder = OpenAIEmbedder()
-            except RuntimeError:
+            except ModuleNotFoundError:
                 self._embedder = HashEmbedder()
         else:
             self._embedder = HashEmbedder()
@@ -185,4 +204,5 @@ class SkillEmbedder:
         return self._embedder.embed(text)
 
     def clear_cache(self) -> None:
+        """Discard cached per-skill embeddings."""
         self._cache.clear()

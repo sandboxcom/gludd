@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -35,6 +36,18 @@ from general_ludd.pricing_intel.models import (
 
 logger = logging.getLogger(__name__)
 
+
+class PricingSourceAuthenticationError(RuntimeError):
+    """A pricing endpoint rejected the configured provider credentials."""
+
+
+class PricingSourceDataError(ValueError):
+    """A reachable pricing endpoint returned an invalid pricing contract."""
+
+
+class UnavailableModelPrices(list[ModelPrice]):
+    """Empty list marker for a transient fetch failure that must not replace cache."""
+
 # ---------------------------------------------------------------------------
 # Protocol (interface) for all pricing sources
 # ---------------------------------------------------------------------------
@@ -44,8 +57,8 @@ logger = logging.getLogger(__name__)
 class PricingSource(Protocol):
     """Protocol every pricing source must implement.
 
-    Sources MUST be fail-soft: any network error returns an empty list /
-    falls back gracefully. They MUST NOT raise exceptions to callers.
+    Sources are fail-soft for transient availability errors. Authentication and
+    invalid pricing data remain visible so callers cannot treat bad data as free.
     """
 
     def provider_slug(self) -> str:
@@ -61,7 +74,7 @@ class PricingSource(Protocol):
         ...
 
     def fetch_model_prices(self) -> list[ModelPrice]:
-        """Fetch current model prices. Returns [] on any error (fail-soft)."""
+        """Fetch prices; return [] on outages and raise on auth/data errors."""
         ...
 
     def fetch_compute_prices(self) -> list[ComputePrice]:
@@ -123,36 +136,73 @@ class OpenRouterSource:
           data[].pricing.completion — USD per token (output)
           data[].context_length — context window in tokens
 
-        NETWORK errors RAISE so the PricingCatalog can fall back to its
-        stale cache (fail-soft at the catalog layer). A successful-but-empty
-        response returns [] and refreshes the cache normally.
+        Transient network and provider availability errors return ``[]``.
+        Authentication failures and invalid pricing payloads raise because
+        treating either as an empty/free price catalog would be unsafe.
         """
         try:
             with httpx.Client(timeout=20.0) as client:
                 resp = client.get(self._ENDPOINT)
-        except Exception as exc:
+        except (httpx.TransportError, ConnectionError, TimeoutError, OSError) as exc:
             logger.warning("OpenRouter pricing fetch failed: %s", exc)
-            raise
-        if resp.status_code != 200:
+            return UnavailableModelPrices()
+        if resp.status_code in {401, 403}:
+            raise PricingSourceAuthenticationError(
+                f"OpenRouter pricing authentication failed with HTTP {resp.status_code}"
+            )
+        if resp.status_code >= 500 or resp.status_code in {408, 429}:
             logger.warning("OpenRouter pricing API returned HTTP %s", resp.status_code)
-            raise RuntimeError(f"OpenRouter pricing API returned HTTP {resp.status_code}")
+            return UnavailableModelPrices()
+        if resp.status_code != 200:
+            raise PricingSourceDataError(
+                f"OpenRouter pricing API returned unexpected HTTP {resp.status_code}"
+            )
         try:
             data = resp.json()
-        except Exception as exc:
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
             logger.warning("OpenRouter pricing response not JSON: %s", exc)
-            raise
+            raise PricingSourceDataError(
+                "invalid OpenRouter pricing response: expected JSON"
+            ) from exc
+
+        if not isinstance(data, dict) or not isinstance(data.get("data", []), list):
+            raise PricingSourceDataError(
+                "invalid OpenRouter pricing response: data must be a list"
+            )
 
         models = data.get("data", [])
         fetched_at = time.time()
         results: list[ModelPrice] = []
 
         for m in models:
+            if not isinstance(m, dict):
+                raise PricingSourceDataError(
+                    "invalid OpenRouter pricing response: model entry must be an object"
+                )
             model_id = m.get("id", "")
             pricing = m.get("pricing", {})
+            if not isinstance(pricing, dict):
+                raise PricingSourceDataError(
+                    f"invalid OpenRouter pricing for {model_id!r}: pricing must be an object"
+                )
             try:
                 prompt_per_token = float(pricing.get("prompt", 0) or 0)
                 completion_per_token = float(pricing.get("completion", 0) or 0)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError) as exc:
+                raise PricingSourceDataError(
+                    f"invalid OpenRouter pricing for {model_id!r}: non-numeric token rate"
+                ) from exc
+            if not math.isfinite(prompt_per_token) or not math.isfinite(
+                completion_per_token
+            ):
+                raise PricingSourceDataError(
+                    f"invalid OpenRouter pricing for {model_id!r}: token rates must be finite"
+                )
+            if prompt_per_token < 0 or completion_per_token < 0:
+                logger.info(
+                    "Omitting OpenRouter model %s with unavailable sentinel pricing",
+                    model_id,
+                )
                 continue
 
             # OpenRouter returns USD-per-token; convert to USD-per-1k-tokens
@@ -174,7 +224,7 @@ class OpenRouterSource:
                     fetched_at=fetched_at,
                     source=self._ENDPOINT,
                     context_window=ctx,
-                    notes=m.get("description", "")[:200],
+                    notes=str(m.get("description", ""))[:200],
                 )
             )
 

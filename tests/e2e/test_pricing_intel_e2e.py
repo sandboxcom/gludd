@@ -217,7 +217,10 @@ class TestPricingCatalogStaticSources:
         assert "claude-3-opus-20240229" in model_ids
 
     def test_all_model_prices_all_providers(self, catalog: PricingCatalog) -> None:
-        prices = catalog.all_model_prices()
+        # Keep the static-source contract hermetic; OpenRouter's live path has
+        # dedicated mocked tests below.
+        with patch.object(OpenRouterSource, "fetch_model_prices", return_value=[]):
+            prices = catalog.all_model_prices()
         # Static sources: anthropic + openai at minimum
         assert len(prices) >= 15
         providers = {p.provider for p in prices}

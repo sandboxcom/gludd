@@ -92,13 +92,18 @@ def test_suggest_model_router_failure_is_deterministic_and_redacted(tmp_path: Pa
 
 
 def test_local_consume_serializes_bounded_upstream_response() -> None:
+    decoy = SimpleNamespace(
+        server_id="server-decoy",
+        status="running",
+        endpoint_url="http://decoy.local",
+    )
     server = SimpleNamespace(
         server_id="server-1",
         status="running",
         endpoint_url="http://model.local",
     )
     manager = MagicMock()
-    manager.list_servers.return_value = [server]
+    manager.list_servers.return_value = [decoy, server]
 
     upstream_response = MagicMock()
     upstream_response.json.return_value = {

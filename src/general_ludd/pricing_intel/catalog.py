@@ -1,7 +1,7 @@
 """PricingCatalog: aggregates all PricingSource implementations.
 
 Provides unified lookup of model prices, compute prices, and billing semantics.
-All lookups are fail-soft: if a source fails, its data is omitted (not raised).
+Availability failures are fail-soft; authentication and corrupt pricing data raise.
 
 Cache behavior:
   - Model prices are cached in memory after first fetch (per-source).
@@ -40,7 +40,13 @@ from general_ludd.pricing_intel.models import (
     ModelPrice,
     ProviderBilling,
 )
-from general_ludd.pricing_intel.sources import PricingSource, all_sources
+from general_ludd.pricing_intel.sources import (
+    PricingSource,
+    PricingSourceAuthenticationError,
+    PricingSourceDataError,
+    UnavailableModelPrices,
+    all_sources,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +81,7 @@ class PricingCatalog:
         sources: Sequence[PricingSource] | None = None,
         ttl_seconds: float = _DEFAULT_TTL_SECONDS,
     ) -> None:
+        """Initialize the catalog with explicit sources and a cache TTL."""
         self._sources: list[PricingSource] = list(sources) if sources is not None else all_sources()
         self._ttl = ttl_seconds
 
@@ -145,12 +152,17 @@ class PricingCatalog:
 
         try:
             prices = src.fetch_model_prices()
+        except (PricingSourceAuthenticationError, PricingSourceDataError):
+            raise
         except Exception as exc:
             logger.warning(
                 "PricingCatalog: fetch_model_prices() failed for %s: %s",
                 provider, exc,
             )
             return self._model_cache.get(provider, [])  # return stale cache on error
+
+        if isinstance(prices, UnavailableModelPrices):
+            return self._model_cache.get(provider, [])
 
         self._model_cache[provider] = prices
         self._model_cache_time[provider] = time.time()

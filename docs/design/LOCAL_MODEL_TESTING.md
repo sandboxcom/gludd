@@ -84,6 +84,31 @@ mode (`LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=1`) checks the optional dependency
 resolution without loading a model. The smoke uses the GGUF's native context so
 llama.cpp does not emit the misleading reduced-context capacity warning.
 
+### Dated upstream user evidence
+
+Reviewed on 2026-08-20; these reports remain useful because they describe failure
+classes at the tool and network boundaries, not a single Gludd release:
+
+- A llama.cpp user reported a missing `quantize.exe` on 2023-03-24
+  ([llama.cpp #479](https://github.com/ggml-org/llama.cpp/issues/479)). Gludd therefore
+  treats converter and quantizer discovery as bounded optional probes: filesystem or
+  `PATH` errors disable the local method instead of crashing startup.
+- A Hugging Face Hub user reported on 2023-12-13 that a timed-out snapshot download
+  restarted instead of resuming
+  ([huggingface_hub #1903](https://github.com/huggingface/huggingface_hub/issues/1903)).
+  The beta4 Qwen fixture consequently keeps the Hub cache, pins a revision, and
+  atomically materializes the artifact rather than repeatedly downloading it.
+- An embeddings user reported intermittent 600-second responses after idle periods
+  on 2023-04-13
+  ([openai-python #392](https://github.com/openai/openai-python/issues/392)). Gludd's
+  skill matcher keeps the deterministic local hash embedder as its default and makes
+  remote embeddings opt-in.
+- An embeddings user reported an authentication failure with an empty diagnostic on
+  2023-05-25
+  ([openai-python #464](https://github.com/openai/openai-python/issues/464)). A missing
+  optional OpenAI package may use the deterministic local fallback, but configured
+  authentication or pricing-data errors are surfaced rather than silently downgraded.
+
 Dependency check (`_deps_reason()` in `test_model_matrix_pipeline.py`):
 - `llama-cpp-python` must be importable
 - `huggingface_hub` must be importable (GGUF download from HuggingFace)
@@ -158,7 +183,7 @@ GLUDD_LIVE_MODEL_E2E=1 MATRIX_FAIL_FAST=1 \
 ### Beta4 endpoint and game E2E layers
 
 The default endpoint lifecycle suite is hermetic and has no external model or API
-cost. It binds an OpenAI-compatible server to `127.0.0.1` on an OS-assigned port,
+cost. It binds an OpenAI-compatible test server to `127.0.0.1` on an OS-assigned port,
 tests chat and text completions through the production `ChatSession`, covers auth,
 malformed requests, invalid response contracts, HTTP 503 propagation, early server
 exit, and then proves idempotent teardown. It never assumes a fixed port and its
@@ -205,11 +230,28 @@ full lifecycle check. The focused local-model measurement passed 384 tests with
 3 intentional live-download skips at 94 percent aggregate branch coverage;
 all five measured files were 84–99 percent.
 
-With no variables, `test-e2e-games-local-model` owns a deterministic
+With no variables, `test-e2e-games-local-model` owns a deterministic hermetic
 OpenAI-compatible endpoint on an OS-assigned loopback port, runs the production
-dispatch/policy path for Snake, and verifies teardown. For the real model path,
-start a local endpoint separately and select `external` mode with its loopback
-URL explicitly:
+dispatch/policy path for Snake, and verifies teardown. Managed mode instead starts
+an actual llama.cpp server through Gludd's `LocalInferenceManager`, using one
+random loopback port and the exact readable GGUF supplied by the operator. Start,
+test, startup-failure, and test-failure paths all call the manager's normal
+`stop_all()` cleanup, wait for the child, and remove its captured stderr file:
+
+```bash
+make sync-llama-cpp SYNC_LLAMA_CPP_VALIDATE_ONLY=0
+make test-e2e-games-local-model \
+  LOCAL_MODEL_E2E_MODE=managed \
+  LOCAL_MODEL_PATH=/path/to/Qwen2.5-0.5B-Instruct-Q5_K_M.gguf \
+  LOCAL_MODEL_NAME=gludd-managed-qwen \
+  LOCAL_MODEL_GAME=snake \
+  PYTEST_ARGS='-q -W error'
+```
+
+Application shutdown follows the same ownership rule: the FastAPI lifespan calls
+`stop_all()` on its application-owned manager on normal and exceptional exit.
+External endpoints never enter that registry. To use an already-running model,
+select `external` mode with its loopback URL explicitly:
 
 ```bash
 make test-e2e-games-local-model \
@@ -224,9 +266,10 @@ make test-e2e-games-local-model \
 External mode requires an explicit `http` or `https` `/v1` URL whose host is
 `127.0.0.1`, `localhost`, or `::1`. Those endpoints are still represented by the
 existing `local-` model-profile allowlist; the runner and suite do not disable the
-production SSRF guard. A generation receives at most the task policy's configured
-attempt ceiling. Syntax repair feeds back a bounded excerpt of the prior response,
-keeping context growth predictable on small models.
+production SSRF guard. Gludd does not claim or stop an external endpoint's PID,
+including a user-managed server on port 9999. A generation receives at most the
+task policy's configured attempt ceiling. Syntax repair feeds back a bounded excerpt
+of the prior response, keeping context growth predictable on small models.
 
 #### Why beta4 keeps these safeguards
 
@@ -236,8 +279,9 @@ they do not imply that Gludd inherits every historical upstream bug:
 - **Ephemeral ports and verified teardown.** An open llama-cpp-python report from
   2024-04-18 describes a configured port being ignored and a subsequent collision with an
   existing service ([issue #1359](https://github.com/abetlen/llama-cpp-python/issues/1359)).
-  The hermetic suite therefore asks the OS for a free port and proves that its named server
-  thread stops, so parallel projects do not share a fixed endpoint or leave one behind.
+  Hermetic and managed suites therefore ask the OS for a free port. Managed acceptance
+  additionally proves that the real child is waited, its stderr artifact is removed, and
+  no owned process remains, so parallel projects do not share a fixed endpoint.
 - **Immutable revisions and a reusable offline cache.** Hugging Face users have tracked
   expensive unchanged-file downloads since 2023
   ([issue #1738](https://github.com/huggingface/huggingface_hub/issues/1738)), while a
@@ -450,7 +494,7 @@ Expected: prints the aggregated matrix report if prior runs populated
 | `make e2e-download-small-model` | Materialize the pinned Qwen2.5 0.5B GGUF artifact |
 | `make build-llamacpp-tools` | Build llama-quantize from source |
 | `make test-e2e-multi-model` | Cloud multi-model pipeline (DeepSeek + OpenRouter) |
-| `make test-e2e-games-local-model` | Hermetic or explicit-loopback game E2E via SmallModelTaskPolicy |
+| `make test-e2e-games-local-model` | Hermetic, manager-owned llama.cpp, or external-loopback game E2E |
 | `make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py` | Full model matrix (env-controlled) |
 | `make local-model-ollama` | Start Ollama server, pull OLLAMA_MODEL |
 | `make local-model-stop` | Stop Ollama server |
@@ -471,8 +515,9 @@ Expected: prints the aggregated matrix report if prior runs populated
 | `DEEPSEEK_API_KEY` | DeepSeek API key (env or `.deepseek.key`) | — |
 | `OPENROUTER_API_KEY` | OpenRouter API key (env or `.openrouter.key`) | — |
 | `ANTHROPIC_API_KEY` | Anthropic API key (env or `.anthropic.key`) | — |
-| `LOCAL_MODEL_E2E_MODE` | Owned endpoint (`hermetic`) or explicit loopback endpoint (`external`) | `hermetic` |
+| `LOCAL_MODEL_E2E_MODE` | `hermetic`, manager-owned `managed`, or non-owning `external` endpoint | `hermetic` |
 | `LOCAL_MODEL_BASE_URL` | Required OpenAI-compatible `/v1` URL in external mode | empty |
+| `LOCAL_MODEL_PATH` | Exact readable GGUF required in managed mode | empty |
 | `LOCAL_MODEL_NAME` | Model ID sent to the selected endpoint | `gludd-hermetic-game-e2e` |
 | `LOCAL_MODEL_KEY` | Optional external auth key; hermetic mode supplies a local-only token | empty |
 | `LOCAL_MODEL_GAME` | Game selected by the bounded local smoke | `snake` |

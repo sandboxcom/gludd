@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from scripts import run_local_model_game_e2e as runner
 
+from general_ludd.infra.local_inference import LocalServerConfig
 from tests.e2e._local_model_endpoint import EndpointLifecycle
 
 
@@ -116,17 +119,112 @@ def test_external_main_uses_explicit_endpoint_without_owning_it(
     monkeypatch.setenv("LOCAL_MODEL_KEY", "local-only")
     monkeypatch.setenv("LOCAL_MODEL_GAME", "snake")
     monkeypatch.setattr(runner, "_run_pytest", fake_run)
+    monkeypatch.setattr(
+        runner,
+        "LocalInferenceManager",
+        lambda: pytest.fail("external mode must not construct an owned manager"),
+        raising=False,
+    )
 
     assert runner.main() == 7
     assert child_environment["LOCAL_MODEL_BASE_URL"] == "http://127.0.0.1:9999/v1"
     assert child_environment["LOCAL_MODEL_NAME"] == "qwen2.5:0.5b"
 
 
+def _configure_managed_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    events: list[str],
+    *,
+    startup_fails: bool = False,
+) -> None:
+    """Install a deterministic manager double for managed runner tests."""
+    model_path = tmp_path / "managed-model.gguf"
+    model_path.write_bytes(b"gguf")
+
+    class FakeManager:
+        def __init__(self) -> None:
+            self.server = SimpleNamespace(
+                server_id="local-0",
+                endpoint_url="http://127.0.0.1:43211/v1",
+            )
+
+        def create_server(self, config: LocalServerConfig) -> object:
+            assert config.host == "127.0.0.1"
+            assert config.port == 43211
+            assert config.model_path == str(model_path)
+            events.append("created")
+            return self.server
+
+        async def start_server(self, server_id: str) -> object:
+            assert server_id == self.server.server_id
+            events.append("started")
+            if startup_fails:
+                raise RuntimeError("managed startup failed")
+            return self.server
+
+        async def stop_all(self) -> None:
+            events.append("stopped")
+
+    monkeypatch.setenv("LOCAL_MODEL_E2E_MODE", "managed")
+    monkeypatch.setenv("LOCAL_MODEL_PATH", str(model_path))
+    monkeypatch.setenv("LOCAL_MODEL_NAME", "managed-model")
+    monkeypatch.setenv("LOCAL_MODEL_GAME", "snake")
+    monkeypatch.setattr(runner, "LocalInferenceManager", FakeManager, raising=False)
+    monkeypatch.setattr(runner, "_find_free_loopback_port", lambda: 43211, raising=False)
+
+
+@pytest.mark.parametrize("test_fails", [False, True], ids=["success", "test-failure"])
+def test_managed_main_owns_manager_and_always_reaps(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    test_fails: bool,
+) -> None:
+    events: list[str] = []
+    environment: dict[str, str] = {}
+    _configure_managed_mode(monkeypatch, tmp_path, events)
+
+    def fake_run(child_environment: dict[str, str]) -> int:
+        environment.update(child_environment)
+        if test_fails:
+            raise RuntimeError("managed test failed")
+        return 0
+
+    monkeypatch.setattr(runner, "_run_pytest", fake_run)
+
+    if test_fails:
+        with pytest.raises(RuntimeError, match="managed test failed"):
+            runner.main()
+    else:
+        assert runner.main() == 0
+
+    assert events == ["created", "started", "stopped"]
+    assert environment["LOCAL_MODEL_BASE_URL"] == "http://127.0.0.1:43211/v1"
+
+
+def test_managed_main_reaps_after_startup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    _configure_managed_mode(monkeypatch, tmp_path, events, startup_fails=True)
+    monkeypatch.setattr(
+        runner,
+        "_run_pytest",
+        lambda _environment: pytest.fail("tests must not run after startup failure"),
+    )
+
+    with pytest.raises(RuntimeError, match="managed startup failed"):
+        runner.main()
+
+    assert events == ["created", "started", "stopped"]
+
+
 def test_runner_rejects_unknown_mode_and_non_snake_hermetic_game(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LOCAL_MODEL_E2E_MODE", "unknown")
-    with pytest.raises(ValueError, match="must be hermetic or external"):
+    with pytest.raises(ValueError, match="must be hermetic, managed, or external"):
         runner.main()
 
     monkeypatch.setenv("LOCAL_MODEL_E2E_MODE", "hermetic")
