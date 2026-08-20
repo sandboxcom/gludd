@@ -58,7 +58,7 @@ def _run_verifier() -> dict[str, Any]:
 class TestPluginLoad:
     """Every .ts file in plugin directories must import and instantiate cleanly."""
 
-    def test_verifier_script_is_checked_in(self):
+    def test_verifier_script_is_checked_in(self) -> None:
         """The executable verifier must exist before any plugin E2E can pass."""
         assert VERIFIER_SCRIPT.is_file(), (
             "Missing .opencode/scripts/verify-plugins.mjs would make the plugin "
@@ -66,7 +66,7 @@ class TestPluginLoad:
         )
         assert VERIFIER_SCRIPT.stat().st_size > 0, "Verifier script is empty"
 
-    def test_all_plugins_load_without_errors(self):
+    def test_all_plugins_load_without_errors(self) -> None:
         """No plugin import or factory call throws an error."""
         data = _run_verifier()
         failures = data.get("failures", [])
@@ -81,7 +81,7 @@ class TestPluginLoad:
             + "\n".join(f"  {p['file']}: {p.get('reason', 'unknown')}" for p in failed_plugins)
         )
 
-    def test_verifier_exit_code_pass(self):
+    def test_verifier_exit_code_pass(self) -> None:
         """Verifier exits 0 when all checks pass."""
         result = subprocess.run(
             [NODE_BIN, "--experimental-strip-types", str(VERIFIER_SCRIPT)],
@@ -99,7 +99,7 @@ class TestPluginLoad:
 class TestPluginDirectoryHygiene:
     """No dangerous non-plugin files in plugin directories."""
 
-    def test_no_underscore_prefixed_ts_files_in_plugin_dir(self):
+    def test_no_underscore_prefixed_ts_files_in_plugin_dir(self) -> None:
         """Files like _exports.ts are auto-discovered and crash opencode."""
         assert PLUGIN_DIR.is_dir(), "Required .opencode/plugin directory is missing"
         unders = [f for f in PLUGIN_DIR.iterdir()
@@ -109,7 +109,7 @@ class TestPluginDirectoryHygiene:
             f"(Session 51 incident): {[f.name for f in unders]}"
         )
 
-    def test_no_backup_orig_files_in_plugin_dir(self):
+    def test_no_backup_orig_files_in_plugin_dir(self) -> None:
         """Backup/orig files are auto-discovered as plugins."""
         for dir_ in [PLUGIN_DIR, PLUGINS_DIR]:
             if not dir_.exists():
@@ -120,7 +120,7 @@ class TestPluginDirectoryHygiene:
                 f"Backup files in plugin dir: {[f.name for f in dangerous]}"
             )
 
-    def test_all_ts_files_export_valid_plugin_factory(self):
+    def test_all_ts_files_export_valid_plugin_factory(self) -> None:
         """Every .ts file must export a function (or be explicitly allowlisted)."""
         assert PLUGIN_DIR.is_dir(), "Required .opencode/plugin directory is missing"
         ts_files = list(PLUGIN_DIR.glob("*.ts"))
@@ -138,7 +138,7 @@ class TestPluginDirectoryHygiene:
 class TestOpencodeConfig:
     """opencode.json must be valid per the published schema."""
 
-    def test_schema_present(self):
+    def test_schema_present(self) -> None:
         """$schema must point to the published config schema."""
         cfg_path = PROJECT_ROOT / "opencode.json"
         assert cfg_path.is_file(), "Required opencode.json is missing"
@@ -147,7 +147,7 @@ class TestOpencodeConfig:
             f"$schema is {cfg.get('$schema')}"
         )
 
-    def test_no_unknown_top_level_keys(self):
+    def test_no_unknown_top_level_keys(self) -> None:
         """Unknown keys are rejected with ConfigInvalidError by opencode."""
         KNOWN_KEYS = {
             "$schema", "username", "model", "small_model", "default_agent",
@@ -165,7 +165,7 @@ class TestOpencodeConfig:
             f"Unknown top-level keys: {unknown}. opencode WILL reject these."
         )
 
-    def test_all_registered_plugins_exist_on_disk(self):
+    def test_all_registered_plugins_exist_on_disk(self) -> None:
         """Every path in the plugin array must resolve to an existing file."""
         cfg_path = PROJECT_ROOT / "opencode.json"
         assert cfg_path.is_file(), "Required opencode.json is missing"
@@ -184,7 +184,7 @@ class TestOpencodeConfig:
             f"Registered plugins not found on disk: {missing}"
         )
 
-    def test_make_allow_before_star_deny(self):
+    def test_make_allow_before_star_deny(self) -> None:
         """Permission ordering: 'make *: allow' must come BEFORE '*: deny' (last-match-wins)."""
         cfg_path = PROJECT_ROOT / "opencode.json"
         assert cfg_path.is_file(), "Required opencode.json is missing"
@@ -225,7 +225,7 @@ class TestOpencodeConfig:
 class TestHookInvocation:
     """Plugin hooks must not crash when invoked with realistic inputs."""
 
-    def test_no_hook_invocation_crashes(self):
+    def test_no_hook_invocation_crashes(self) -> None:
         """No hook throws TypeError/ReferenceError on invocation."""
         data = _run_verifier()
         failures = data.get("failures", [])
@@ -235,7 +235,7 @@ class TestHookInvocation:
             + "\n".join(f"  [{f['test']}] {f['message']}" for f in hook_failures)
         )
 
-    def test_tool_execute_before_hooks_return_valid_shape(self):
+    def test_tool_execute_before_hooks_return_valid_shape(self) -> None:
         """tool.execute.before hooks return undefined (pass) or {permissionDecision: ...}."""
         data = _run_verifier()
         failures = data.get("failures", [])
@@ -248,7 +248,7 @@ class TestHookInvocation:
 class TestNodeV26Compatibility:
     """All plugin code must be parseable by Node v26 --experimental-strip-types."""
 
-    def test_no_try_inside_catch(self):
+    def test_no_try_inside_catch(self) -> None:
         """try {} inside catch {} is a parse error under --experimental-strip-types."""
         import re
         try_in_catch = re.compile(r'\bcatch\s*(?:\([^)]*\))?\s*\{[^}]*\btry\b', re.DOTALL)
@@ -264,7 +264,7 @@ class TestNodeV26Compatibility:
             f"try-inside-catch (Node v26 parse error) in: {violations}"
         )
 
-    def test_no_type_annotated_catch(self):
+    def test_no_type_annotated_catch(self) -> None:
         """catch (e: TypeError) may fail under --experimental-strip-types."""
         import re
         typed_catch = re.compile(r'\bcatch\s*\(\s*\w+\s*:\s*(?!any\b|unknown\b)\w+')
@@ -282,10 +282,10 @@ class TestNodeV26Compatibility:
 
 
 class TestSubagentGuard:
-    """Every enforcement plugin must guard against firing inside subagents."""
+    """Enforcement plugins must preserve their delegated-context contract."""
 
-    def test_all_enforcement_plugins_have_subagent_guard(self):
-        """OPENCODE_SUBAGENT (or isSubagent/GLUDD_SUBAGENT) check present."""
+    def test_all_enforcement_plugins_have_subagent_guard(self) -> None:
+        """Require isolation except for dispatch-only recursion enforcement."""
         assert PLUGIN_DIR.is_dir(), "Required .opencode/plugin directory is missing"
         missing = []
         for f in sorted(PLUGIN_DIR.glob("*.ts")):
@@ -293,6 +293,15 @@ class TestSubagentGuard:
             if f.name.startswith("_") or f.name == "hot_reload.ts":
                 continue
             content = f.read_text()
+            if f.name == "enforce-depth.ts":
+                assert "OPENCODE_DEPTH" in content
+                assert "isDispatchTool" in content
+                executable_content = "\n".join(
+                    line for line in content.splitlines() if not line.strip().startswith("//")
+                )
+                assert "OPENCODE_SUBAGENT" not in executable_content
+                assert "isSubagent()" not in executable_content
+                continue
             if "OPENCODE_SUBAGENT" not in content and "isSubagent" not in content:
                 missing.append(f.name)
         assert len(missing) == 0, (
@@ -304,7 +313,7 @@ class TestSubagentGuard:
 class TestLibraryIntegrity:
     """Shared library files must be importable."""
 
-    def test_lib_files_are_importable(self):
+    def test_lib_files_are_importable(self) -> None:
         """shared.ts, hot_reload.ts must resolve without errors."""
         data = _run_verifier()
         failures = data.get("failures", [])
@@ -317,7 +326,7 @@ class TestLibraryIntegrity:
 class TestAutoDiscoveredSafety:
     """Auto-discovered plugin files must be valid plugins or explicitly allowlisted."""
 
-    def test_all_auto_discovered_ts_files_are_valid_plugins(self):
+    def test_all_auto_discovered_ts_files_are_valid_plugins(self) -> None:
         """Every .ts file not in opencode.json plugin array must still export a valid plugin."""
         data = _run_verifier()
         failures = data.get("failures", [])
@@ -327,7 +336,7 @@ class TestAutoDiscoveredSafety:
             + "\n".join(f"  [{f['test']}] {f['message']}" for f in auto_failures)
         )
 
-    def test_hot_reload_ts_is_safe(self):
+    def test_hot_reload_ts_is_safe(self) -> None:
         """hot_reload.ts is auto-discovered but must be a valid plugin."""
         hot_path = PLUGIN_DIR / "hot_reload.ts"
         if not hot_path.exists():
