@@ -664,7 +664,7 @@
     },
     {
       "path": "src/general_ludd/cloud/game_e2e.py",
-      "line": 422,
+      "line": 427,
       "column": 15,
       "kind": "process",
       "owner": "GameRunner.run_headless",
@@ -675,7 +675,7 @@
     },
     {
       "path": "src/general_ludd/cloud/game_e2e.py",
-      "line": 746,
+      "line": 753,
       "column": 17,
       "kind": "temp-artifact",
       "owner": "AzureGameE2E.run_full_test",
