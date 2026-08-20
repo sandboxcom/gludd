@@ -29,6 +29,8 @@ def summarize_log(path: Path) -> dict[str, Any]:
     events = _events(path)
     unfinished: dict[tuple[str, str], dict[str, str]] = {}
     failures: list[dict[str, Any]] = []
+    failure_nodeids: list[str] = []
+    seen_failure_nodeids: set[str] = set()
     last_by_worker: dict[str, str] = {}
     memory_by_worker: dict[str, dict[str, Any]] = {}
     largest_rss_increases: list[dict[str, Any]] = []
@@ -85,6 +87,9 @@ def summarize_log(path: Path) -> dict[str, Any]:
                     "longrepr": event.get("longrepr"),
                 }
             )
+            if isinstance(nodeid, str) and nodeid not in seen_failure_nodeids:
+                seen_failure_nodeids.add(nodeid)
+                failure_nodeids.append(nodeid)
 
     for memory in memory_by_worker.values():
         memory.pop("_previous_rss_kb", None)
@@ -97,16 +102,41 @@ def summarize_log(path: Path) -> dict[str, Any]:
         "finished": finished,
         "unfinished": sorted(unfinished.values(), key=lambda value: (value["worker"], value["nodeid"])),
         "last_by_worker": dict(sorted(last_by_worker.items())),
+        "failure_report_count": len(failures),
+        "failure_nodeid_count": len(failure_nodeids),
+        "failure_nodeids": failure_nodeids,
         "failures": failures[:50],
         "memory_by_worker": dict(sorted(memory_by_worker.items())),
         "largest_rss_increases": largest_rss_increases[:25],
     }
 
 
+def compact_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    """Return complete failure/crash evidence without verbose tracebacks."""
+    keys = (
+        "path",
+        "events",
+        "started",
+        "finished",
+        "failure_report_count",
+        "failure_nodeid_count",
+        "failure_nodeids",
+        "unfinished",
+        "last_by_worker",
+        "memory_by_worker",
+        "largest_rss_increases",
+    )
+    return {key: summary[key] for key in keys}
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    path = Path(args[0]) if args else Path(DEFAULT_TRACE_LOG)
-    print(json.dumps(summarize_log(path), indent=2, sort_keys=True))
+    verbose = "--verbose" in args
+    positional = [arg for arg in args if arg != "--verbose"]
+    path = Path(positional[0]) if positional else Path(DEFAULT_TRACE_LOG)
+    summary = summarize_log(path)
+    output = summary if verbose else compact_summary(summary)
+    print(json.dumps(output, indent=2, sort_keys=True))
     return 0
 
 
