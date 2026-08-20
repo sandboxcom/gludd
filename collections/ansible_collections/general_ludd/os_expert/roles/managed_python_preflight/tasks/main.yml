@@ -71,7 +71,7 @@
 - name: Publish the verified private Python runtime contract
   ansible.builtin.set_fact:
     _os_expert_python_runtime:
-      contract: "{{ os_expert_python_preflight_contract }}"
+      contract: "{{ os_expert_python_preflight_contract | default('') }}"
       executable: "{{ _os_expert_python_candidate }}"
       identity: "{{ _os_expert_python_probe.stdout | from_json }}"
   changed_when: false

@@ -31,3 +31,6 @@ model_profile: ""
 
 # Message handoff: recipient role/agent to notify when new violations exceed threshold
 handoff_recipient: ""
+
+# Immutable managed-host runtime identity; empty digest fails preflight closed.
+gludd_managed_python_lock_sha256: ""

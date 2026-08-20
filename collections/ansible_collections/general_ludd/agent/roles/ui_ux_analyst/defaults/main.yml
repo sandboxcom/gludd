@@ -23,3 +23,7 @@ psk: ""
 # Destructive ops guard
 enable_git_push: false
 apply_changes: false
+
+# Explicit core-runtime artifacts used only when real CLI capture is enabled.
+gludd_managed_python_lock_sha256: ""
+gludd_cli_executable: ""

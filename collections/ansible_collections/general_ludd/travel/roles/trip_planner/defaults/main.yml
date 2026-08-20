@@ -7,3 +7,11 @@ trip_start_date: ""
 trip_end_date: ""
 trip_budget: ""
 trip_travelers: 1
+
+# Backward-compatible task inputs. Required values remain empty and fail the
+# role's validation until a caller supplies them.
+origin: "{{ trip_origin }}"
+destinations: "{{ [trip_destination] if trip_destination | length > 0 else [] }}"
+start_date: "{{ trip_start_date }}"
+end_date: "{{ trip_end_date }}"
+artifact_dir: "/tmp/gludd-trip-planner"

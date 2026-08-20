@@ -1,0 +1,5 @@
+---
+# Required immutable-runtime inputs default empty so the preflight fails closed.
+managed_python_preflight_interpreter: ""
+managed_python_preflight_lock_sha256: ""
+managed_python_preflight_previous_interpreter: ""

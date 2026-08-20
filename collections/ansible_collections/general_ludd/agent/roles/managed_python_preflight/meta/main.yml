@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  role_name: managed_python_preflight
+  author: Agentic Harness Agent
+  description: >-
+    Verify a content-addressed managed-host Python interpreter and its retained
+    rollback runtime before publishing immutable execution facts.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+dependencies: []

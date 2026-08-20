@@ -4,3 +4,4 @@
 service_catalog_path: ".gludd/service_catalog.yml"
 retirement_log_path: ".gludd/retired_services.log"
 reason: "vanished from SearX discovery"
+service_name: ""
