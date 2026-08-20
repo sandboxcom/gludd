@@ -25,13 +25,6 @@ from pathlib import Path
 from typing import Any
 
 
-def _ensure_path() -> None:
-    repo_root = Path(__file__).resolve().parent.parent.parent.parent.parent.parent.parent
-    src_dir = str(repo_root / "src")
-    if src_dir not in sys.path:
-        sys.path.insert(0, src_dir)
-
-
 class _FunctionInfo:
     __slots__ = ("calls", "is_public", "line_end", "line_start", "name")
 
@@ -138,7 +131,7 @@ class _CodePathAnalyzerAST:
     def _handle_class(self, node: ast.ClassDef) -> None:
         methods: list[_FunctionInfo] = []
         for child in ast.iter_child_nodes(node):
-            if isinstance(child, ast.FunctionDef) or isinstance(child, ast.AsyncFunctionDef):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 calls = _extract_calls(child)
                 m = _FunctionInfo(
                     name=child.name,
@@ -229,35 +222,6 @@ def _call_name(node: ast.expr) -> str:
     return ""
 
 
-def _try_code_path_analyzer(file_path: str) -> dict[str, Any] | None:
-    try:
-        from general_ludd.agents.test_generation.code_path_analyzer import CodePathAnalyzer
-        analyzer = CodePathAnalyzer()
-        result = analyzer.analyze(file_path)
-        return {
-            "name": result.name,
-            "functions": [
-                {"name": f.name, "line_start": f.line_start, "line_end": f.line_end, "is_public": f.is_public}
-                for f in result.functions
-            ],
-            "classes": [
-                {
-                    "name": c.name,
-                    "line_start": c.line_start,
-                    "line_end": c.line_end,
-                    "is_public": c.is_public,
-                    "methods": [
-                        {"name": m.name, "line_start": m.line_start, "line_end": m.line_end, "is_public": m.is_public}
-                        for m in c.methods
-                    ],
-                }
-                for c in result.classes
-            ],
-        }
-    except Exception:
-        return None
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Analyze Python source file for E2E test generation"
@@ -275,11 +239,6 @@ def main() -> None:
 
     source_text = Path(source_path).read_text(encoding="utf-8")
 
-    tree_sitter_symbols = None
-    if not args.ast_only:
-        _ensure_path()
-        tree_sitter_symbols = _try_code_path_analyzer(source_path)
-
     ast_analyzer = _CodePathAnalyzerAST()
     try:
         ast_analyzer.analyze(source_text)
@@ -289,7 +248,7 @@ def main() -> None:
 
     ast_output = ast_analyzer.to_dict()
 
-    symbol_data = tree_sitter_symbols or {
+    symbol_data = {
         "name": source_path,
         "functions": ast_output.get("functions", []),
         "classes": ast_output.get("classes", []),
@@ -305,7 +264,7 @@ def main() -> None:
         "testable_path_count": len(ast_output.get("testable_paths", [])),
         "function_count": len(symbol_data.get("functions", [])),
         "class_count": len(symbol_data.get("classes", [])),
-        "parser": "tree_sitter" if tree_sitter_symbols else "ast",
+        "parser": "ast",
         "status": "completed",
     }
 

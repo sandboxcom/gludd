@@ -28,28 +28,19 @@
 
 - name: Run fingerprint classification
   block:
-    - name: Classify fingerprint via forensics module_utils
-      ansible.builtin.script:
-        cmd: |
-          import json, sys
-          sys.path.insert(0, "{{ playbook_dir }}/../../..")
-          from ansible_collections.general_ludd.forensics.plugins.module_utils import classify_fingerprint
-
-          data = json.loads('''{{ fingerprint_data | to_json }}''')
-          result = classify_fingerprint(data)
-          print(json.dumps(result))
-        executable: python3
+    - name: Classify fingerprint via packaged forensics module
+      general_ludd.forensics.forensic_analysis:
+        operation: fingerprint
+        data: "{{ fingerprint_data }}"
       register: fingerprint_output
-      failed_when: false
-      changed_when: false
       when: fingerprint_enabled | bool
 
     - name: Parse fingerprint result
       ansible.builtin.set_fact:
-        fingerprint_result_raw: "{{ fingerprint_output.stdout | from_json }}"
+        fingerprint_result_raw: "{{ fingerprint_output.result }}"
       when:
         - fingerprint_enabled | bool
-        - fingerprint_output.rc == 0
+        - fingerprint_output.result is defined
 
     - name: Register fingerprint verdict
       ansible.builtin.set_fact:
@@ -75,7 +66,7 @@
         content: |
           {{ {'role': 'fingerprint_analyst', 'status': 'failed',
               'fingerprint_type': fingerprint_type,
-              'error': fingerprint_output.stderr | default('unknown error')} | to_nice_json }}
+              'error': fingerprint_output.msg | default('unknown error')} | to_nice_json }}
         dest: "{{ fingerprint_output_dir }}/fingerprint_verdict.json"
         mode: "0644"
       failed_when: false

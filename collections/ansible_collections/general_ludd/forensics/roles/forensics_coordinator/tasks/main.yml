@@ -28,32 +28,18 @@
   when: forensics_enabled | bool
 
 - name: Initialize chain of custody
-  ansible.builtin.script:
-    cmd: |
-      import json, sys
-      sys.path.insert(0, "{{ playbook_dir }}/../../..")
-      from ansible_collections.general_ludd.forensics.plugins.module_utils import (
-          chain_of_custody as coc,
-      )
-
-      chain = coc.create_chain_of_custody("{{ forensics_case_id }}")
-      print(json.dumps({
-          "case_id": chain.case_id,
-          "created_at": chain.created_at,
-          "status": "initialized",
-      }))
-    executable: python3
+  general_ludd.forensics.forensic_analysis:
+    operation: chain_of_custody
+    case_id: "{{ forensics_case_id }}"
   register: coc_init_result
-  failed_when: false
-  changed_when: false
   when: forensics_enabled | bool
 
 - name: Register chain of custody fact
   ansible.builtin.set_fact:
-    forensics_coc: "{{ coc_init_result.stdout | from_json }}"
+    forensics_coc: "{{ coc_init_result.result }}"
   when:
     - forensics_enabled | bool
-    - coc_init_result.rc == 0
+    - coc_init_result.result is defined
 
 - name: Run fingerprint analyst
   ansible.builtin.include_role:

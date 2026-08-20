@@ -13,5 +13,6 @@ research_categories:
 research_time_range: "year"
 max_search_results: 10
 confidence_threshold: 0.4
+validate_scenarios_mock: false
 
 enable_git_push: false
