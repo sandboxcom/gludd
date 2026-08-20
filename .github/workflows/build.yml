@@ -1110,9 +1110,24 @@ jobs:
           smoke_root="/tmp/gludd-macos-package-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           mount_point="$smoke_root/gludd-macos-dmg-smoke"
           mkdir -p "$smoke_root/tar" "$mount_point"
+          mounted=0
           cleanup_macos_smoke() {
-            hdiutil detach "$mount_point" -force >/dev/null 2>&1 || true
-            rm -rf "$smoke_root"
+            primary_status=$?
+            cleanup_failed=0
+            if [ "$mounted" -eq 1 ]; then
+              if ! hdiutil detach "$mount_point" -force >/dev/null 2>&1; then
+                echo "::error::macOS smoke cleanup could not detach $mount_point"
+                cleanup_failed=1
+              fi
+            fi
+            if ! rm -rf "$smoke_root"; then
+              echo "::error::macOS smoke cleanup could not remove $smoke_root"
+              cleanup_failed=1
+            fi
+            if [ "$primary_status" -ne 0 ]; then
+              return "$primary_status"
+            fi
+            return "$cleanup_failed"
           }
           trap cleanup_macos_smoke EXIT
 
@@ -1123,13 +1138,16 @@ jobs:
           "$tar_bin" version
           "$tar_bin" --help >/dev/null
 
-          hdiutil attach -nobrowse -readonly -mountpoint "$mount_point"             "dist/gludd-${VERSION}-macos-arm64.dmg"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount_point" \
+            "dist/gludd-${VERSION}-macos-arm64.dmg"
+          mounted=1
           dmg_bin=$(find "$mount_point" -type f -name gludd -print -quit)
           test -n "$dmg_bin"
           chmod +x "$dmg_bin"
           "$dmg_bin" version
           "$dmg_bin" --help >/dev/null
           hdiutil detach "$mount_point"
+          mounted=0
           mkdir -p "$mount_point"
 
           cat > "dist/gludd-smoke-macos-${VERSION}.json" <<JSON
@@ -1493,12 +1511,25 @@ jobs:
           container_name="gludd-container-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           image_tag=$(printf '%s\n' '${{ steps.meta.outputs.tags }}' | head -n 1)
           test -n "$image_tag"
+          container_started=0
           cleanup_container() {
-            docker rm -f "$container_name" >/dev/null 2>&1 || true
+            primary_status=$?
+            cleanup_failed=0
+            if [ "$container_started" -eq 1 ]; then
+              if ! docker rm -f "$container_name" >/dev/null 2>&1; then
+                echo "::error::container smoke cleanup could not remove $container_name"
+                cleanup_failed=1
+              fi
+            fi
+            if [ "$primary_status" -ne 0 ]; then
+              return "$primary_status"
+            fi
+            return "$cleanup_failed"
           }
           trap cleanup_container EXIT
           docker run -d --name "$container_name" \
             -e GLUDD_ALLOW_NO_AUTH=1 -p 127.0.0.1::8000 "$image_tag"
+          container_started=1
           port=$(docker port "$container_name" 8000/tcp | head -n 1 | awk -F: '{print $NF}')
           test -n "$port"
           ready=0

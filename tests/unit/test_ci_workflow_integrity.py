@@ -202,6 +202,7 @@ class TestReleaseJobStructure:
             "coverage",
             "molecule",
             "container",
+            "ansible-ee",
             "game-building",
             *PLATFORM_JOBS,
         }
