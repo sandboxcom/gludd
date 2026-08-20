@@ -582,6 +582,18 @@
     mode: "0644"
   when: _log_chunks | default([]) | length > 0
 
+- name: Publish legacy chain-of-thought compatibility artifact
+  ansible.builtin.copy:
+    src: "{{ log_analyzer_cot_log }}"
+    dest: "{{ log_analyzer_legacy_cot_log }}"
+    remote_src: true
+    mode: "0644"
+  when:
+    - log_analyzer_cot_enabled | bool
+    - log_analyzer_publish_legacy_cot_alias | bool
+    - log_analyzer_legacy_cot_log != log_analyzer_cot_log
+    - not ansible_check_mode
+
 - name: Report log analysis completion
   ansible.builtin.debug:
     msg: >-

@@ -8,7 +8,8 @@ feeds them to model-driven analysis tasks: error clustering, anomaly detection,
 agent behavior analysis, performance regression, and root cause suggestion.
 
 Produces structured JSON + markdown reports and a separate chain-of-thought log
-(`log_analyzer_cot.log`). REPORT-ONLY: never mutates the repo.
+(`log_analysis_cot.log`). The legacy `log_analyzer_cot.log` name remains a
+byte-identical compatibility artifact. REPORT-ONLY: never mutates the repo.
 
 ## Quick Start
 
@@ -34,7 +35,9 @@ Produces structured JSON + markdown reports and a separate chain-of-thought log
 | `agent_log_glob` | `agent-*.log` | Globbing pattern for agent logs |
 | `gate_log_dir` | `.gate-logs` | CI/gate output log directory |
 | `log_analyzer_cot_enabled` | `true` | Write chain-of-thought to separate log |
-| `log_analyzer_cot_log` | (derived) | Path for chain-of-thought log |
+| `log_analyzer_cot_log` | (derived) | Canonical chain-of-thought artifact path |
+| `log_analyzer_publish_legacy_cot_alias` | `true` | Publish the legacy filename alongside the canonical artifact |
+| `log_analyzer_legacy_cot_log` | (derived) | Compatibility artifact path |
 | `openshift_log_dir` | `""` | OpenShift container log directory |
 | `systemd_service_name` | `gludd` | Systemd unit to query via journalctl |
 | `searx_log_path` | `/var/log/searx` | SearX query log location |
@@ -45,7 +48,8 @@ Produces structured JSON + markdown reports and a separate chain-of-thought log
 |---|---|---|
 | `log_analysis_report.json` | JSON | Structured findings with severity, frequency, first/last occurrence |
 | `log_analysis_report.md` | Markdown | Human-readable summary with error clusters, anomalies, behavior analysis |
-| `log_analyzer_cot.log` | Plain text | Raw chain-of-thought: every model call's system prompt, user prompt, and full response |
+| `log_analysis_cot.log` | Plain text | Canonical audit log: every model call's system prompt, user prompt, and full response |
+| `log_analyzer_cot.log` | Plain text | Byte-identical compatibility copy of `log_analysis_cot.log` |
 
 ### Finding Structure
 

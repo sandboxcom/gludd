@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -40,7 +41,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _run_role(log_glob: str, output_dir: str) -> dict:
+def _run_role(log_glob: str, output_dir: str) -> dict[str, Any]:
     adapter = AnsibleRunnerAdapter()
     pb = Path(__file__).resolve().parent.parent.parent / "playbooks" / _PLAYBOOK_NAME
     if _PLAYBOOK_NAME not in adapter.list_playbooks():
@@ -185,6 +186,9 @@ class TestCOTLogging:
         assert result.get("rc", 1) == 0
         cot = out_dir / "log_analysis_cot.log"
         assert cot.exists(), f"COT log missing; got: {sorted(out_dir.iterdir())}"
+        legacy_cot = out_dir / "log_analyzer_cot.log"
+        assert legacy_cot.exists(), "legacy COT artifact must remain available"
+        assert legacy_cot.read_bytes() == cot.read_bytes()
 
 
 class TestReportOutput:
@@ -292,8 +296,9 @@ class TestPythonModuleIntegration:
         out.mkdir()
         result = analyze(str(tmp_path), "*.log", str(out), error_threshold=0.0, min_cluster_size=3)
         assert result["verdict"] == "anomalies_detected"
-        assert result["cluster_count"] >= 1
-        assert any(c["category"] == "db" for c in result["error_clusters"])
+        assert cast("int", result["cluster_count"]) >= 1
+        clusters = cast("list[dict[str, object]]", result["error_clusters"])
+        assert any(cluster["category"] == "db" for cluster in clusters)
 
     def test_cot_log_written_by_module(self, tmp_path: Path) -> None:
         (tmp_path / "app.log").write_text("ERROR [api] timeout\n")
