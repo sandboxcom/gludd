@@ -23,6 +23,7 @@ from general_ludd.security.sandboxes.state import SandboxState, safe_state_compo
 
 logger = logging.getLogger(__name__)
 
+
 def _build_dir(
     module_name: str | None = None,
     *,
@@ -58,21 +59,21 @@ def _file_path_prefix(cap: Capability) -> str | None:
 def _te_for(spec: PermissionSpec) -> str:
     agent = spec.agent_type.replace("-", "_")
     type_name = f"gludd_{agent}_t"
-    allow: list[str] = []
-    deny: list[str] = []
+    allow: set[str] = set()
+    deny: set[str] = set()
     for cap in spec.capabilities:
         if _is_file_family(cap):
             prefix = _file_path_prefix(cap)
             if prefix and str(prefix).endswith("/"):
-                allow.append(f"allow {type_name} usr_t:dir {{ read write }};")
-            allow.append(f"allow {type_name} usr_t:file {{ read write }};")
+                allow.add(f"allow {type_name} usr_t:dir {{ read write }};")
+            allow.add(f"allow {type_name} usr_t:file {{ read write }};")
         elif _is_net_family(cap):
-            allow.append(
+            allow.add(
                 f"allow {type_name} unreserved_port_t:tcp_socket name_connect;"
             )
     for _cap in spec.denied:
-        deny.append(f"dontaudit {type_name} **:** **;")
-    body = "\n".join(dict.fromkeys([*allow, *deny])) or "  # empty spec"
+        deny.add(f"dontaudit {type_name} **:** **;")
+    body = "\n".join(sorted(allow | deny)) or "  # empty spec"
     return (
         f"module gludd_{agent} 1.0;\n"
         "require {\n"
@@ -91,37 +92,42 @@ def _te_for(spec: PermissionSpec) -> str:
 def _fc_for(spec: PermissionSpec) -> str:
     agent = spec.agent_type.replace("-", "_")
     type_name = f"gludd_{agent}_t"
-    lines: list[str] = []
+    lines: set[str] = set()
     for cap in spec.capabilities:
         if _is_file_family(cap):
             prefix = _file_path_prefix(cap)
             if prefix:
-                lines.append(
+                lines.add(
                     f"{prefix}(/.*)? -- gen_context(system_u:object_r:{type_name},s0)"
                 )
     if not lines:
         state = SandboxState.discover(create=False)
         default_path = state.path("jail", safe_state_component(spec.agent_type))
-        lines.append(
+        lines.add(
             f"{default_path}(/.*)? -- "
             f"gen_context(system_u:object_r:{type_name},s0)"
         )
-    return "\n".join(lines) + "\n"
+    return "\n".join(sorted(lines)) + "\n"
 
 
 def render_te(spec: PermissionSpec) -> str:
+    """Render a deterministic SELinux type-enforcement policy for *spec*."""
     return _te_for(spec)
 
 
 def render_fc(spec: PermissionSpec) -> str:
+    """Render deterministic SELinux file-context rules for *spec*."""
     return _fc_for(spec)
 
 
 class SELinuxBackend:
+    """Compile, load, verify, and release a project-scoped SELinux policy."""
+
     name = "selinux"
 
     @staticmethod
     def available() -> bool:
+        """Return whether the host has enabled SELinux and required tools."""
         import shutil
         if shutil.which("checkmodule") is None:
             return False
@@ -139,6 +145,7 @@ class SELinuxBackend:
 
     @staticmethod
     def apply(spec: PermissionSpec, target: SandboxTarget) -> SandboxHandle:
+        """Compile and load *spec*, returning a fail-closed lifecycle handle."""
         del target
         agent = spec.agent_type.replace("-", "_")
         module_name = f"gludd_{agent}"
@@ -203,6 +210,7 @@ class SELinuxBackend:
 
     @staticmethod
     def verify(spec: PermissionSpec, handle: SandboxHandle) -> list[Finding]:
+        """Report whether the loaded module and its file contexts are present."""
         module_name = handle.token
         findings: list[Finding] = []
         try:
@@ -247,6 +255,7 @@ class SELinuxBackend:
 
     @staticmethod
     def release(handle: SandboxHandle) -> None:
+        """Unload an applied module and clean its confined build state."""
         if handle.applied:
             try:
                 subprocess.run(

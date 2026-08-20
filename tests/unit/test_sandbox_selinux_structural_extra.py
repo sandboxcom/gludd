@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 from general_ludd.security.sandboxes import Capability, PermissionSpec, SandboxHandle, SandboxTarget
 from general_ludd.security.sandboxes.linux_selinux import (
     SELinuxBackend,
@@ -12,6 +14,7 @@ from general_ludd.security.sandboxes.linux_selinux import (
     render_fc,
     render_te,
 )
+from general_ludd.security.sandboxes.state import SandboxState
 
 
 def _make_cap(resource="file:/tmp/gludd/", actions=None):
@@ -82,8 +85,17 @@ class TestTeFor:
             _make_cap("file:/tmp/b/", {"read"}),
         ])
         te = _te_for(spec)
-        assert te.count("allow gludd_test_agent_t usr_t:dir") == 2
-        assert te.count("allow gludd_test_agent_t usr_t:file") == 2
+        assert te.count("allow gludd_test_agent_t usr_t:dir") == 1
+        assert te.count("allow gludd_test_agent_t usr_t:file") == 1
+
+    def test_te_for_semantic_rule_order_is_deterministic(self):
+        file_cap = _make_cap("file:/tmp/a/", {"read"})
+        net_cap = _make_cap("net:egress:api.example.com:443", {"connect"})
+
+        file_first = _te_for(_make_spec(capabilities=[file_cap, net_cap]))
+        net_first = _te_for(_make_spec(capabilities=[net_cap, file_cap]))
+
+        assert file_first == net_first
 
 
 class TestFcFor:
@@ -96,6 +108,16 @@ class TestFcFor:
         spec = _make_spec(capabilities=[_make_cap("file:/tmp/test/", {"read"})])
         fc = _fc_for(spec)
         assert "gludd_test_agent_t" in fc
+
+    def test_fc_for_deduplicates_equivalent_file_caps(self):
+        spec = _make_spec(capabilities=[
+            _make_cap("file:/tmp/test/", {"read"}),
+            _make_cap("file:/tmp/test/", {"write"}),
+        ])
+
+        fc = _fc_for(spec)
+
+        assert fc.count("/tmp/test/(/.*)?") == 1
 
     def test_fc_for_with_net_capability_skips(self):
         cap = _make_cap("net:egress", {"connect"})
@@ -127,6 +149,32 @@ class TestBackend:
     def test_available_returns_bool(self):
         assert isinstance(SELinuxBackend.available(), bool)
 
+    def test_available_fails_closed_when_any_tool_is_missing(self):
+        with patch(
+            "shutil.which",
+            side_effect=["/bin/checkmodule", None],
+        ):
+            assert SELinuxBackend.available() is False
+        with patch(
+            "shutil.which",
+            side_effect=["/bin/checkmodule", "/bin/semodule_package", None],
+        ):
+            assert SELinuxBackend.available() is False
+
+    def test_available_uses_guarded_selinux_binding(self):
+        binding = MagicMock()
+        binding.is_selinux_enabled.return_value = 1
+        with (
+            patch("shutil.which", return_value="/bin/tool"),
+            patch("importlib.import_module", return_value=binding),
+        ):
+            assert SELinuxBackend.available() is True
+        with (
+            patch("shutil.which", return_value="/bin/tool"),
+            patch("importlib.import_module", side_effect=ImportError("selinux")),
+        ):
+            assert SELinuxBackend.available() is False
+
     def test_apply_returns_handle(self):
         spec = _make_spec()
         target = SandboxTarget()
@@ -140,6 +188,54 @@ class TestBackend:
         findings = SELinuxBackend.verify(spec, handle)
         assert isinstance(findings, list)
 
+    def test_verify_fails_closed_on_command_error_or_missing_module(self):
+        spec = _make_spec()
+        handle = SandboxHandle(backend="selinux", token="test", applied=True)
+
+        with patch("subprocess.run", side_effect=OSError("semodule failed")):
+            command_error = SELinuxBackend.verify(spec, handle)
+        with patch(
+            "subprocess.run",
+            return_value=MagicMock(stdout=b"unrelated_module\n"),
+        ):
+            missing_module = SELinuxBackend.verify(spec, handle)
+
+        assert [finding.severity for finding in command_error] == ["fail"]
+        assert [finding.severity for finding in missing_module] == ["fail"]
+
+    def test_verify_reports_missing_file_context(self):
+        spec = _make_spec()
+        handle = SandboxHandle(backend="selinux", token="test", applied=True)
+        with patch(
+            "subprocess.run",
+            side_effect=[
+                MagicMock(stdout=b"test\n"),
+                MagicMock(stdout=b"unrelated_context\n"),
+            ],
+        ):
+            findings = SELinuxBackend.verify(spec, handle)
+
+        assert [finding.severity for finding in findings] == ["ok", "warn"]
+
     def test_release_noop_not_applied(self):
         handle = SandboxHandle(backend="selinux", token="test", applied=False)
         SELinuxBackend.release(handle)
+
+    def test_release_contains_command_and_state_cleanup_errors(self):
+        applied = SandboxHandle(backend="selinux", token="test", applied=True)
+        with patch("subprocess.run", side_effect=OSError("remove failed")):
+            SELinuxBackend.release(applied)
+
+        state = object.__new__(SandboxState)
+        with_state = SandboxHandle(
+            backend="selinux",
+            token="test",
+            applied=False,
+            extra={"state": state, "state_path": "/confined/test"},
+        )
+        with patch.object(
+            SandboxState,
+            "cleanup_path",
+            side_effect=OSError("cleanup failed"),
+        ):
+            SELinuxBackend.release(with_state)

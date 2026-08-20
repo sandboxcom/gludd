@@ -102,6 +102,7 @@ class OrnithSandbox:
     """
 
     def __init__(self) -> None:
+        """Allocate a project-confined working directory."""
         self._state: SecureState = project_state()
         self.temp_dir = self._state.temporary_directory(
             "ornith",
@@ -110,11 +111,13 @@ class OrnithSandbox:
         self._cleaned = False
 
     def cleanup(self) -> None:
+        """Remove the working directory once, if it still exists."""
         if not self._cleaned and self.temp_dir.exists():
             self._state.cleanup_path(self.temp_dir)
             self._cleaned = True
 
     def __enter__(self) -> OrnithSandbox:
+        """Return this active sandbox to a context-manager caller."""
         return self
 
     def __exit__(
@@ -123,6 +126,7 @@ class OrnithSandbox:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
+        """Clean up the sandbox when its context exits."""
         self.cleanup()
 
 
@@ -151,6 +155,13 @@ def _sandbox_preexec_fn(
         apply_limits(mem_mb, cpu_s)
     except Exception:
         pass
+
+
+def _timeout_output(value: str | bytes | None) -> str:
+    """Normalize partial timeout output despite subprocess text-mode behavior."""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "replace")
+    return value or ""
 
 
 def ornith_sandboxed_run(
@@ -195,8 +206,8 @@ def ornith_sandboxed_run(
             }
         except subprocess.TimeoutExpired as exc:
             return {
-                "stdout": exc.stdout or "" if isinstance(exc.stdout, str) else "",
-                "stderr": exc.stderr or "" if isinstance(exc.stderr, str) else "",
+                "stdout": _timeout_output(exc.stdout),
+                "stderr": _timeout_output(exc.stderr),
                 "returncode": -1,
             }
         except FileNotFoundError:
