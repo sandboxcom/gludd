@@ -7,15 +7,34 @@ by any existing tests.
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from general_ludd.infra.compute import ComputeProvider, GPUType
 from general_ludd.infra.model_deploy_check import Finding
 from general_ludd.routers.compute import _finding_to_dict, _get_health_checker, register
+from general_ludd.security.permissions import Capability, PermissionSpec, PermissionSubject
+
+
+def _inject_destroy_capability(app: FastAPI) -> None:
+    """Attach the narrow capability required by the guarded destroy route."""
+    spec = PermissionSpec(
+        agent_type="compute-router-test",
+        capabilities=[Capability(resource="admin:compute", actions=["destroy"])],
+        subject=PermissionSubject.HUMAN,
+    )
+
+    class _InjectAuthSpec(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next: Any) -> Any:
+            request.state.auth_spec = spec
+            return await call_next(request)
+
+    app.add_middleware(_InjectAuthSpec)
 
 # ============================================================================
 # _finding_to_dict
@@ -157,7 +176,7 @@ class TestGetHealthChecker:
 
 class TestGPUType:
     def test_valid_gpu_types(self) -> None:
-        for name in ["A100", "H100", "A10G", "T4", "V100"]:
+        for name in ["a100_40", "a100_80", "h100", "a10g", "t4"]:
             g = GPUType(name)
             assert g.value == name
 
@@ -313,7 +332,7 @@ class TestDeployValidation:
         app = FastAPI()
         register(app, {})
         client = TestClient(app)
-        response = client.post("/admin/compute/deploy", json={"gpu_type": "A100"})
+        response = client.post("/admin/compute/deploy", json={"gpu_type": "a100_80"})
         assert response.status_code == 422
 
     def test_invalid_gpu_type_returns_422(self) -> None:
@@ -337,7 +356,7 @@ class TestDeployValidation:
         client = TestClient(app)
         response = client.post(
             "/admin/compute/deploy",
-            json={"gpu_type": "A100", "model_name": "llama", "provider": "bad_provider"},
+            json={"gpu_type": "a100_80", "model_name": "llama", "provider": "bad_provider"},
         )
         assert response.status_code == 422
         assert "Unknown provider" in str(response.json()["detail"])
@@ -352,18 +371,13 @@ class TestDestroyEndpoint:
     def test_unknown_instance_id_returns_404(self) -> None:
         app = FastAPI()
         register(app, {})
+        _inject_destroy_capability(app)
 
         mock_mgr = MagicMock()
         mock_mgr.get_deployment_shared = AsyncMock(return_value=None)
         app.state._deployment_manager = mock_mgr
 
-        with (
-            patch.object(app.state, "_deployment_manager", mock_mgr),
-            patch(
-                "general_ludd.routers.compute.Depends",
-                lambda **kw: lambda: None,  # skip capability check
-            ),
-        ):
+        with patch.object(app.state, "_deployment_manager", mock_mgr):
             client = TestClient(app)
             response = client.delete("/admin/compute/destroy/unknown-instance")
             assert response.status_code == 404
@@ -372,6 +386,7 @@ class TestDestroyEndpoint:
     def test_destroy_succeeds(self) -> None:
         app = FastAPI()
         register(app, {})
+        _inject_destroy_capability(app)
         app.state._compute_deployments = {"inst-1": object()}
 
         mock_mgr = MagicMock()
@@ -379,33 +394,26 @@ class TestDestroyEndpoint:
         mock_mgr.destroy = AsyncMock(return_value=None)
         app.state._deployment_manager = mock_mgr
 
-        with patch(
-            "general_ludd.routers.compute.Depends",
-            lambda **kw: lambda: None,
-        ):
-            client = TestClient(app)
-            response = client.delete("/admin/compute/destroy/inst-1")
-            assert response.status_code == 200
-            assert response.json() == {"destroyed": "inst-1"}
-            assert "inst-1" not in app.state._compute_deployments
+        client = TestClient(app)
+        response = client.delete("/admin/compute/destroy/inst-1")
+        assert response.status_code == 200
+        assert response.json() == {"destroyed": "inst-1"}
+        assert "inst-1" not in app.state._compute_deployments
 
     def test_destroy_raises_500_on_error(self) -> None:
         app = FastAPI()
         register(app, {})
+        _inject_destroy_capability(app)
 
         mock_mgr = MagicMock()
         mock_mgr.get_deployment_shared = AsyncMock(return_value=MagicMock())
         mock_mgr.destroy = AsyncMock(side_effect=RuntimeError("terraform error"))
         app.state._deployment_manager = mock_mgr
 
-        with patch(
-            "general_ludd.routers.compute.Depends",
-            lambda **kw: lambda: None,
-        ):
-            client = TestClient(app)
-            response = client.delete("/admin/compute/destroy/inst-1")
-            assert response.status_code == 500
-            assert "compute destroy failed" in response.json()["detail"]
+        client = TestClient(app)
+        response = client.delete("/admin/compute/destroy/inst-1")
+        assert response.status_code == 500
+        assert "compute destroy failed" in response.json()["detail"]
 
 
 # ============================================================================
@@ -417,13 +425,12 @@ class TestDeploymentManagerCaching:
     def test_second_call_reuses_cached_manager(self) -> None:
         app = FastAPI()
         register(app, {})
+        _inject_destroy_capability(app)
         mgr1 = MagicMock()
+        mgr1.get_deployment_shared = AsyncMock(return_value=None)
         app.state._deployment_manager = mgr1
 
-        with patch("general_ludd.routers.compute.DeploymentManager") as mock_cls, patch(
-            "general_ludd.routers.compute.Depends",
-            lambda **kw: lambda: None,
-        ):
+        with patch("general_ludd.routers.compute.DeploymentManager") as mock_cls:
             client = TestClient(app)
             client.delete("/admin/compute/destroy/inst-1")
             mock_cls.assert_not_called()
@@ -431,6 +438,7 @@ class TestDeploymentManagerCaching:
     def test_first_call_creates_manager(self) -> None:
         app = FastAPI()
         register(app, {})
+        _inject_destroy_capability(app)
 
         mock_mgr_instance = MagicMock()
         mock_mgr_instance.get_deployment_shared = AsyncMock(return_value=MagicMock())
@@ -439,10 +447,7 @@ class TestDeploymentManagerCaching:
         with patch(
             "general_ludd.routers.compute.DeploymentManager",
             return_value=mock_mgr_instance,
-        ) as mock_cls, patch(
-            "general_ludd.routers.compute.Depends",
-            lambda **kw: lambda: None,
-        ):
+        ) as mock_cls:
             app.state._deployment_manager = None
             client = TestClient(app)
             client.delete("/admin/compute/destroy/inst-1")
@@ -568,7 +573,7 @@ class TestDeployProviderAutoDiscovery:
                             status="running",
                             ip_address="10.0.0.1",
                             port=8000,
-                            gpu_type=GPUType.A100,
+                            gpu_type=GPUType.A100_80,
                             endpoint_url="http://10.0.0.1:8000",
                         )
                     )
@@ -578,7 +583,7 @@ class TestDeployProviderAutoDiscovery:
                     client = TestClient(app)
                     response = client.post(
                         "/admin/compute/deploy",
-                        json={"gpu_type": "A100", "model_name": "llama"},
+                        json={"gpu_type": "a100_80", "model_name": "llama"},
                     )
                     assert response.status_code == 200
                     data = response.json()
@@ -609,7 +614,7 @@ class TestDeployProviderAutoDiscovery:
                         status="running",
                         ip_address="10.0.0.2",
                         port=8000,
-                        gpu_type=GPUType.A100,
+                        gpu_type=GPUType.A100_80,
                         endpoint_url="http://10.0.0.2:8000",
                     )
                 )
@@ -619,7 +624,7 @@ class TestDeployProviderAutoDiscovery:
                 client = TestClient(app)
                 response = client.post(
                     "/admin/compute/deploy",
-                    json={"gpu_type": "A100", "model_name": "llama"},
+                    json={"gpu_type": "a100_80", "model_name": "llama"},
                 )
                 assert response.status_code == 200
                 assert response.json()["provider"] == "aws"
@@ -657,7 +662,7 @@ class TestDeployPrecheckBlock:
             client = TestClient(app)
             response = client.post(
                 "/admin/compute/deploy",
-                json={"gpu_type": "A100", "model_name": "llama", "provider": "aws"},
+                json={"gpu_type": "a100_80", "model_name": "llama", "provider": "aws"},
             )
             assert response.status_code == 422
             detail = response.json()["detail"]
@@ -688,7 +693,7 @@ class TestDeployPrecheckBlock:
                         status="running",
                         ip_address="10.0.0.3",
                         port=8000,
-                        gpu_type=GPUType.A100,
+                        gpu_type=GPUType.A100_80,
                         endpoint_url="http://10.0.0.3:8000",
                     )
                 )
@@ -699,7 +704,7 @@ class TestDeployPrecheckBlock:
                 response = client.post(
                     "/admin/compute/deploy",
                     json={
-                        "gpu_type": "A100",
+                        "gpu_type": "a100_80",
                         "model_name": "llama",
                         "provider": "aws",
                         "force": True,
@@ -746,7 +751,7 @@ class TestDeployFailureHealthRecording:
                 client = TestClient(app)
                 response = client.post(
                     "/admin/compute/deploy",
-                    json={"gpu_type": "A100", "model_name": "llama", "provider": "aws"},
+                    json={"gpu_type": "a100_80", "model_name": "llama", "provider": "aws"},
                 )
                 assert response.status_code == 500
                 assert "compute deploy failed" in response.json()["detail"]["error"]
@@ -769,7 +774,7 @@ class TestDeployFailureHealthRecording:
                 client = TestClient(app)
                 response = client.post(
                     "/admin/compute/deploy",
-                    json={"gpu_type": "A100", "model_name": "llama", "provider": "aws"},
+                    json={"gpu_type": "a100_80", "model_name": "llama", "provider": "aws"},
                 )
                 assert response.status_code == 500
 

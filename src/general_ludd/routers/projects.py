@@ -1,3 +1,5 @@
+"""Validated project administration and skill-assignment routes."""
+
 from __future__ import annotations
 
 import asyncio
@@ -20,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 class AddProjectRequest(BaseModel):
+    """Project creation payload."""
+
     name: str
     weight: float
     description: str = ""
@@ -29,23 +33,33 @@ class AddProjectRequest(BaseModel):
 
 
 class SetWeightRequest(BaseModel):
+    """Single-project scheduler weight update."""
+
     weight: float
 
 
 class RebalanceRequest(BaseModel):
+    """Bounded scheduler-weight rebalance payload."""
+
     weights: dict[str, float]
 
 
 class ProjectSkillRequest(BaseModel):
+    """Project skill-assignment payload."""
+
     project_id: str
     skill_name: str
 
 
 class DispatchModeRequest(BaseModel):
+    """Project dispatch-mode update payload."""
+
     mode: str = "active"
 
 
 class TuiLogRequest(BaseModel):
+    """Bounded TUI log ingestion payload."""
+
     entries: list[dict[str, object]] = Field(default_factory=list)
 
 
@@ -62,6 +76,7 @@ def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | Non
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register project administration routes on ``app``."""
 
     @app.post("/admin/projects")
     async def admin_add_project(req: AddProjectRequest) -> dict[str, object]:
@@ -193,10 +208,20 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     }
                     for p in active
                 ]
-        summary = ext["projects"].get_summary()
-        if isinstance(summary, dict):
-            summary["db_projects"] = db_projects
-        return cast("dict[str, object]", summary)
+        projects = ext.get("projects")
+        if projects is None:
+            logger.error("project manager unavailable while listing projects")
+            raise HTTPException(status_code=500, detail="project manager unavailable")
+        summary = projects.get_summary()
+        if not isinstance(summary, dict):
+            logger.error(
+                "project manager returned invalid summary type: %s",
+                type(summary).__name__,
+            )
+            raise HTTPException(status_code=500, detail="invalid project summary")
+        response = cast(dict[str, object], dict(summary))
+        response["db_projects"] = db_projects
+        return response
 
     @app.post("/admin/projects/skills")
     async def admin_project_skills(req: ProjectSkillRequest) -> dict[str, object]:

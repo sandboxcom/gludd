@@ -76,6 +76,49 @@ def _get_controller(app: FastAPI) -> PauseController | None:
     return getattr(app.state, "_pause_controller", None)
 
 
+def _pause_entity_response(
+    record: Any,
+    *,
+    kind: PauseKind,
+    quiesce_status: str,
+    quiesce_errors: list[str],
+) -> dict[str, object]:
+    """Serialize a pause record without inventing quiescence metadata."""
+    response: dict[str, object] = {
+        "paused": True,
+        "kind": kind,
+        "target_id": record.target_id,
+        "paused_at": record.paused_at,
+        "reason": record.reason,
+    }
+    if quiesce_status != "none":
+        response["quiesce_status"] = quiesce_status
+        response["quiesce_errors"] = quiesce_errors
+    return response
+
+
+def _resume_entity_response(
+    record: Any,
+    *,
+    kind: PauseKind,
+    rehydrated_count: int,
+    rehydrate_status: str,
+    rehydrate_errors: list[str],
+) -> dict[str, object]:
+    """Serialize resume metadata only when a rehydration path ran."""
+    response: dict[str, object] = {
+        "resumed": True,
+        "kind": kind,
+        "target_id": record.target_id,
+        "paused_at": record.paused_at,
+    }
+    if rehydrate_status != "none":
+        response["rehydrated_count"] = rehydrated_count
+        response["rehydrate_status"] = rehydrate_status
+        response["rehydrate_errors"] = rehydrate_errors
+    return response
+
+
 async def _quiesce_entity_for_pause(
     app: FastAPI,
     controller: PauseController,
@@ -175,15 +218,12 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 quiesce_status=quiesce_status,
                 quiesce_errors=quiesce_errors,
             )
-        return {
-            "paused": True,
-            "kind": "task",
-            "target_id": record.target_id,
-            "paused_at": record.paused_at,
-            "reason": record.reason,
-            "quiesce_status": quiesce_status,
-            "quiesce_errors": quiesce_errors,
-        }
+        return _pause_entity_response(
+            record,
+            kind="task",
+            quiesce_status=quiesce_status,
+            quiesce_errors=quiesce_errors,
+        )
 
     @app.post("/api/tasks/{task_id}/resume")
     async def api_resume_task(task_id: str, _req: ResumeEntityRequest | None = None) -> dict[str, object]:
@@ -200,15 +240,13 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             task_id,
             has_handles=bool(record.agent_handles),
         )
-        return {
-            "resumed": True,
-            "kind": "task",
-            "target_id": record.target_id,
-            "paused_at": record.paused_at,
-            "rehydrated_count": rehydrated_count,
-            "rehydrate_status": rehydrate_status,
-            "rehydrate_errors": rehydrate_errors,
-        }
+        return _resume_entity_response(
+            record,
+            kind="task",
+            rehydrated_count=rehydrated_count,
+            rehydrate_status=rehydrate_status,
+            rehydrate_errors=rehydrate_errors,
+        )
 
     # --- Agent pause/resume ---
 
@@ -231,15 +269,12 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 quiesce_status=quiesce_status,
                 quiesce_errors=quiesce_errors,
             )
-        return {
-            "paused": True,
-            "kind": "agent",
-            "target_id": record.target_id,
-            "paused_at": record.paused_at,
-            "reason": record.reason,
-            "quiesce_status": quiesce_status,
-            "quiesce_errors": quiesce_errors,
-        }
+        return _pause_entity_response(
+            record,
+            kind="agent",
+            quiesce_status=quiesce_status,
+            quiesce_errors=quiesce_errors,
+        )
 
     @app.post("/api/agents/{agent_id}/resume")
     async def api_resume_agent(agent_id: str, _req: ResumeEntityRequest | None = None) -> dict[str, object]:
@@ -256,15 +291,13 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             agent_id,
             has_handles=bool(record.agent_handles),
         )
-        return {
-            "resumed": True,
-            "kind": "agent",
-            "target_id": record.target_id,
-            "paused_at": record.paused_at,
-            "rehydrated_count": rehydrated_count,
-            "rehydrate_status": rehydrate_status,
-            "rehydrate_errors": rehydrate_errors,
-        }
+        return _resume_entity_response(
+            record,
+            kind="agent",
+            rehydrated_count=rehydrated_count,
+            rehydrate_status=rehydrate_status,
+            rehydrate_errors=rehydrate_errors,
+        )
 
     # --- Infra pause/resume ---
 

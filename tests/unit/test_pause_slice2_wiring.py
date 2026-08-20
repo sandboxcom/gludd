@@ -26,6 +26,7 @@ def test_call_model_raises_model_paused_error_when_profile_paused(tmp_path):
         model_profile_id="paused-model",
         provider="openai",
         model_name="gpt-4",
+        api_metered=False,
         enabled=True,
     )
     pc.pause("model", "paused-model", reason="testing")
@@ -56,6 +57,7 @@ def test_call_model_proceeds_after_resume(tmp_path):
         model_profile_id="resumed-model",
         provider="openai",
         model_name="gpt-4",
+        api_metered=False,
         enabled=True,
     )
     pc.pause("model", "resumed-model", reason="testing")
@@ -86,6 +88,7 @@ def test_try_call_model_propagates_model_paused_error(tmp_path):
         model_profile_id="try-call-paused",
         provider="openai",
         model_name="gpt-4",
+        api_metered=False,
         enabled=True,
     )
     pc.pause("model", "try-call-paused", reason="testing")

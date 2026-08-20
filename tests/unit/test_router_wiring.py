@@ -38,6 +38,7 @@ class TestCallModelByRole:
             enabled=True,
             provider="openai",
             model_name="gpt-4",
+            api_metered=False,
             run_budget_usd=100.0,
         )
         weak_profile = ModelProfile(
@@ -45,6 +46,7 @@ class TestCallModelByRole:
             enabled=True,
             provider="openai",
             model_name="gpt-3.5-turbo",
+            api_metered=False,
             run_budget_usd=100.0,
         )
 
@@ -113,6 +115,7 @@ class TestCallModelByPattern:
                 enabled=True,
                 provider="openai",
                 model_name="gpt-4",
+                api_metered=False,
                 run_budget_usd=100.0,
             ),
             ModelProfile(
@@ -120,6 +123,7 @@ class TestCallModelByPattern:
                 enabled=True,
                 provider="openai",
                 model_name="gpt-3.5-turbo",
+                api_metered=False,
                 run_budget_usd=100.0,
             ),
             ModelProfile(
@@ -127,6 +131,7 @@ class TestCallModelByPattern:
                 enabled=True,
                 provider="openai",
                 model_name="gpt-4o-mini",
+                api_metered=False,
                 run_budget_usd=100.0,
             ),
         ]
