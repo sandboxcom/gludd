@@ -71,6 +71,8 @@ class _BoundedReader(threading.Thread):
 
 @dataclass
 class MakeResult:
+    """Outcome of one bounded ``make`` subprocess invocation."""
+
     target: str
     exit_code: int | None
     success: bool
@@ -84,11 +86,14 @@ class MakeResult:
 
 
 class MakeRunner:
+    """Execute ``make`` targets with bounded output, time, and environment."""
+
     def __init__(
         self,
         cwd: str | Path | None = None,
         default_timeout_s: int = _DEFAULT_TIMEOUT_S,
     ) -> None:
+        """Initialize a runner rooted at ``cwd`` with a bounded default timeout."""
         self._cwd = Path(cwd).resolve() if cwd else Path.cwd()
         self._default_timeout_s = default_timeout_s
 
@@ -168,6 +173,7 @@ class MakeRunner:
         stream: bool = False,
         stream_callback: Callable[[str], None] | None = None,
     ) -> MakeResult:
+        """Run one target synchronously and return its bounded structured result."""
         extra_args = self._sanitize_args(extra_args or [])
         cmd = ["make", target, *extra_args]
         timeout = timeout_s if timeout_s is not None else self._default_timeout_s
@@ -203,45 +209,58 @@ class MakeRunner:
                 error=f"spawn failed: {exc}",
             )
 
-        if stream and stream_callback:
-            return self._run_stream(proc, cmd, target, start, timeout, stream_callback)
-
-        out_reader = _BoundedReader(proc.stdout, _TAIL_CHARS)
-        err_reader = _BoundedReader(proc.stderr, _TAIL_CHARS)
-        out_reader.start()
-        err_reader.start()
-
-        timed_out = False
         try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            self._kill_group(proc)
-            with contextlib.suppress(subprocess.TimeoutExpired):
-                proc.wait(timeout=10)
+            if stream and stream_callback:
+                return self._run_stream(
+                    proc,
+                    cmd,
+                    target,
+                    start,
+                    timeout,
+                    stream_callback,
+                )
 
-        out_reader.join(timeout=10)
-        err_reader.join(timeout=10)
+            out_reader = _BoundedReader(proc.stdout, _TAIL_CHARS)
+            err_reader = _BoundedReader(proc.stderr, _TAIL_CHARS)
+            out_reader.start()
+            err_reader.start()
 
-        exit_code = proc.returncode
-        duration = time.monotonic() - start
-        oom_killed = (not timed_out) and exit_code in (-9, 137)
-        success = (not timed_out) and not oom_killed and exit_code == 0
-        stdout_tail = out_reader.text
-        stderr_tail = err_reader.text
-        phases = self._extract_phases(stdout_tail)
+            timed_out = False
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                self._kill_group(proc)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    proc.wait(timeout=10)
 
-        return MakeResult(
-            target=target,
-            exit_code=exit_code,
-            success=success,
-            duration_s=duration,
-            stdout_tail=stdout_tail,
-            stderr_tail=stderr_tail,
-            timed_out=timed_out,
-            oom_killed=oom_killed,
-            phases=phases,
-        )
+            out_reader.join(timeout=10)
+            err_reader.join(timeout=10)
+
+            exit_code = proc.returncode
+            duration = time.monotonic() - start
+            oom_killed = (not timed_out) and exit_code in (-9, 137)
+            success = (not timed_out) and not oom_killed and exit_code == 0
+            stdout_tail = out_reader.text
+            stderr_tail = err_reader.text
+            phases = self._extract_phases(stdout_tail)
+
+            return MakeResult(
+                target=target,
+                exit_code=exit_code,
+                success=success,
+                duration_s=duration,
+                stdout_tail=stdout_tail,
+                stderr_tail=stderr_tail,
+                timed_out=timed_out,
+                oom_killed=oom_killed,
+                phases=phases,
+            )
+        finally:
+            for pipe in (proc.stdout, proc.stderr):
+                if pipe is not None:
+                    with contextlib.suppress(OSError):
+                        pipe.close()
 
     def _run_stream(
         self,
@@ -301,20 +320,25 @@ class MakeRunner:
         *,
         timeout_s: int | None = None,
     ) -> MakeResult:
+        """Run the test target, optionally restricted to one test file."""
         if testfile:
             return self.run("test", extra_args=[f"TESTFILE={testfile}"], timeout_s=timeout_s)
         return self.run("test", timeout_s=timeout_s)
 
     def run_gate(self, *, timeout_s: int | None = None) -> MakeResult:
+        """Run the project gate with its release-safe default timeout."""
         return self.run("gate", timeout_s=timeout_s or 3600)
 
     def run_lint(self, *, timeout_s: int | None = None) -> MakeResult:
+        """Run the project lint target."""
         return self.run("lint", timeout_s=timeout_s or 180)
 
     def run_typecheck(self, *, timeout_s: int | None = None) -> MakeResult:
+        """Run the project type-check target."""
         return self.run("typecheck", timeout_s=timeout_s or 300)
 
     def run_specific(self, testfile: str, *, timeout_s: int | None = None) -> MakeResult:
+        """Run one explicit test node through the project test wrapper."""
         return self.run("test-specific", extra_args=[f"TESTFILE={testfile}"], timeout_s=timeout_s)
 
     @staticmethod
