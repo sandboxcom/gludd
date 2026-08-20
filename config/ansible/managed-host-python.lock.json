@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "release": "0.1.0-beta.4",
+  "interpreter_variable": "ansible_python_interpreter",
+  "ambient_interpreters_allowed": false,
+  "environment_path_template": "/opt/gludd/role-envs/{lock_sha256}/bin/python",
+  "requirements": [],
+  "activation": "new-play-only",
+  "rollback": "restore the prior inventory interpreter and retain both immutable environments"
+}
+

@@ -10,6 +10,8 @@ from general_ludd.ansible.isolation import (
     ProcessIsolationConfig,
 )
 
+PINNED_EE_IMAGE = "registry.example/gludd-ee:test@sha256:" + "a" * 64
+
 
 class TestProcessIsolationConfig:
     def test_defaults_disabled(self):
@@ -43,6 +45,7 @@ class TestProcessIsolationConfig:
     def test_to_runner_kwargs_enabled(self):
         cfg = ProcessIsolationConfig(
             enabled=True,
+            container_image=PINNED_EE_IMAGE,
             executable="docker",
             isolation_path="/tmp/iso",
             hide_paths=["/etc"],
@@ -60,6 +63,7 @@ class TestProcessIsolationConfig:
     def test_to_runner_kwargs_block_local_tools_adds_paths(self):
         cfg = ProcessIsolationConfig(
             enabled=True,
+            container_image=PINNED_EE_IMAGE,
             block_local_tools=["bash", "docker"],
         )
         kwargs = cfg.to_runner_kwargs()
@@ -70,6 +74,7 @@ class TestProcessIsolationConfig:
     def test_to_runner_kwargs_block_file_write_adds_default(self):
         cfg = ProcessIsolationConfig(
             enabled=True,
+            container_image=PINNED_EE_IMAGE,
             block_local_tools=["file_write"],
         )
         kwargs = cfg.to_runner_kwargs()
@@ -80,6 +85,7 @@ class TestProcessIsolationConfig:
     def test_to_runner_kwargs_no_duplicate_hide_paths(self):
         cfg = ProcessIsolationConfig(
             enabled=True,
+            container_image=PINNED_EE_IMAGE,
             hide_paths=["/usr/bin/bash"],
             block_local_tools=["bash"],
         )
@@ -89,6 +95,7 @@ class TestProcessIsolationConfig:
     def test_to_core_runner_kwargs(self):
         cfg = ProcessIsolationConfig(
             enabled=True,
+            container_image=PINNED_EE_IMAGE,
             hide_paths=["/etc"],
             show_paths=["/home"],
             ro_paths=["/usr"],
@@ -102,6 +109,7 @@ class TestProcessIsolationConfig:
     def test_to_core_runner_kwargs_block_tools(self):
         cfg = ProcessIsolationConfig(
             enabled=True,
+            container_image=PINNED_EE_IMAGE,
             block_local_tools=["bash", "file_write"],
         )
         kwargs = cfg.to_core_runner_kwargs()
@@ -152,32 +160,48 @@ class TestIsModuleBlocked:
         assert cfg.is_module_blocked("ansible.builtin.shell") is False
 
     def test_no_blocked_tools_never_blocks(self):
-        cfg = ProcessIsolationConfig(enabled=True, block_local_tools=[])
+        cfg = ProcessIsolationConfig(
+            enabled=True, container_image=PINNED_EE_IMAGE, block_local_tools=[]
+        )
         assert cfg.is_module_blocked("ansible.builtin.shell") is False
 
     def test_blocks_shell_module(self):
-        cfg = ProcessIsolationConfig(enabled=True, block_local_tools=["bash"])
+        cfg = ProcessIsolationConfig(
+            enabled=True, container_image=PINNED_EE_IMAGE, block_local_tools=["bash"]
+        )
         assert cfg.is_module_blocked("ansible.builtin.shell") is True
 
     def test_blocks_legacy_shell_module(self):
-        cfg = ProcessIsolationConfig(enabled=True, block_local_tools=["bash"])
+        cfg = ProcessIsolationConfig(
+            enabled=True, container_image=PINNED_EE_IMAGE, block_local_tools=["bash"]
+        )
         assert cfg.is_module_blocked("ansible.legacy.command") is True
 
     def test_blocks_write_module(self):
-        cfg = ProcessIsolationConfig(enabled=True, block_local_tools=["file_write"])
+        cfg = ProcessIsolationConfig(
+            enabled=True, container_image=PINNED_EE_IMAGE, block_local_tools=["file_write"]
+        )
         assert cfg.is_module_blocked("ansible.builtin.copy") is True
         assert cfg.is_module_blocked("ansible.builtin.template") is True
 
     def test_bash_block_does_not_block_write_modules(self):
-        cfg = ProcessIsolationConfig(enabled=True, block_local_tools=["bash"])
+        cfg = ProcessIsolationConfig(
+            enabled=True, container_image=PINNED_EE_IMAGE, block_local_tools=["bash"]
+        )
         assert cfg.is_module_blocked("ansible.builtin.copy") is False
 
     def test_file_write_block_does_not_block_shell(self):
-        cfg = ProcessIsolationConfig(enabled=True, block_local_tools=["file_write"])
+        cfg = ProcessIsolationConfig(
+            enabled=True, container_image=PINNED_EE_IMAGE, block_local_tools=["file_write"]
+        )
         assert cfg.is_module_blocked("ansible.builtin.shell") is False
 
     def test_unknown_module_not_blocked(self):
-        cfg = ProcessIsolationConfig(enabled=True, block_local_tools=["bash", "file_write"])
+        cfg = ProcessIsolationConfig(
+            enabled=True,
+            container_image=PINNED_EE_IMAGE,
+            block_local_tools=["bash", "file_write"],
+        )
         assert cfg.is_module_blocked("ansible.builtin.ping") is False
 
 

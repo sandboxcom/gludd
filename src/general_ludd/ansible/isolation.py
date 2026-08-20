@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+_DIGEST_PINNED_IMAGE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:+-]*@sha256:[0-9a-f]{64}$")
 
 
 def _podman_socket_paths() -> list[str]:
@@ -23,6 +26,7 @@ def _podman_socket_paths() -> list[str]:
 
 
 def detect_container_runtime() -> str | None:
+    """Return the preferred available OCI runtime executable, if any."""
     podman = shutil.which("podman")
     if podman:
         return podman
@@ -72,8 +76,12 @@ _WRITE_MODULES = {
 
 
 class ProcessIsolationConfig(BaseModel):
+    """Define fail-closed controller execution and local-tool isolation."""
+
     enabled: bool = False
     executable: str = "podman"
+    container_image: str | None = None
+    test_only_in_process: bool = False
     isolation_path: str | None = None
     hide_paths: list[str] = Field(default_factory=list)
     show_paths: list[str] = Field(default_factory=list)
@@ -89,13 +97,35 @@ class ProcessIsolationConfig(BaseModel):
             raise ValueError("executable must not be empty")
         return v
 
+    @field_validator("container_image", mode="before")
+    @classmethod
+    def _strip_image(cls, value: str | None) -> str | None:
+        if isinstance(value, str):
+            value = value.strip()
+        return value or None
+
+    @model_validator(mode="after")
+    def _require_digest_pinned_execution_environment(self) -> ProcessIsolationConfig:
+        if self.enabled and self.test_only_in_process:
+            raise ValueError("test-only in-process mode cannot enable process isolation")
+        if self.enabled and (
+            self.container_image is None
+            or _DIGEST_PINNED_IMAGE.fullmatch(self.container_image) is None
+        ):
+            raise ValueError(
+                "enabled process isolation requires a digest-pinned execution "
+                "environment image (registry/name@sha256:<64 lowercase hex>)"
+            )
+        return self
+
     def to_runner_kwargs(self) -> dict[str, Any]:
+        """Translate this boundary into supported ansible-runner arguments."""
         resolved_hide: list[str] = list(self.hide_paths)
         for tool in self.block_local_tools:
             for p in self.resolve_tool_paths(tool):
                 if p not in resolved_hide:
                     resolved_hide.append(p)
-        return {
+        kwargs: dict[str, Any] = {
             "process_isolation": self.enabled,
             "process_isolation_executable": self.executable,
             "process_isolation_path": self.isolation_path,
@@ -103,8 +133,12 @@ class ProcessIsolationConfig(BaseModel):
             "process_isolation_show_paths": list(self.show_paths),
             "process_isolation_ro_paths": list(self.ro_paths),
         }
+        if self.enabled:
+            kwargs["container_image"] = self.container_image
+        return kwargs
 
     def to_core_runner_kwargs(self) -> dict[str, Any]:
+        """Translate path restrictions for the in-process test controller."""
         resolved_hide: list[str] = list(self.hide_paths)
         for tool in self.block_local_tools:
             for p in self.resolve_tool_paths(tool):
@@ -118,6 +152,7 @@ class ProcessIsolationConfig(BaseModel):
         }
 
     def resolve_tool_paths(self, tool_name: str) -> list[str]:
+        """Resolve a logical local capability to paths hidden from the EE."""
         if tool_name in _TOOL_PATH_MAP:
             paths = list(_TOOL_PATH_MAP[tool_name])
             if tool_name == "python":
@@ -133,6 +168,7 @@ class ProcessIsolationConfig(BaseModel):
         return []
 
     def is_module_blocked(self, module_name: str) -> bool:
+        """Return whether a module violates configured local-tool policy."""
         if not self.enabled or not self.block_local_tools:
             return False
         return bool(
@@ -144,6 +180,7 @@ class ProcessIsolationConfig(BaseModel):
         )
 
     def auto_detect_runtime(self) -> ProcessIsolationConfig:
+        """Return a copy selecting Podman first and Docker as fallback."""
         runtime = detect_container_runtime()
         if runtime:
             return self.model_copy(update={"executable": runtime})

@@ -190,6 +190,12 @@ help:
 	@echo "  init                  Set up project (dirs + deps)"
 	@echo "  sync                  Sync uv dependencies"
 	@echo "  sync-llama-cpp        Sync locked local-inference extra (SYNC_LLAMA_CPP_VALIDATE_ONLY=0|1)"
+	@echo "  validate-ansible-runtime-boundary  Validate split core/controller/managed-host artifacts"
+	@echo "  build-ansible-execution-environment  Build the locked controller EE (ANSIBLE_EE_*)"
+	@echo "  verify-ansible-execution-environment Verify one digest-addressed controller EE (ANSIBLE_EE_*)"
+	@echo "  check-collection-python-boundary Enforce exact/strict-zero collection migration inventory"
+	@echo "  update-ansible-runtime-lock Refresh deterministic EE input hashes"
+	@echo "  update-collection-python-boundary-inventory Refresh exact legacy migration inventory"
 	@echo "  deps-audit            Fail-closed Python dependency truth audit"
 	@echo "  node-deps-sync        Install locked Node deps (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)"
 	@echo "  node-deps-relock      Regenerate Node lock (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)"
@@ -656,6 +662,35 @@ SYNC_LLAMA_CPP_VALIDATE_ONLY ?= 0
 sync-llama-cpp:
 	@case "$(SYNC_LLAMA_CPP_VALIDATE_ONLY)" in 0|1) ;; *) echo "SYNC_LLAMA_CPP_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
 	@$(UV) sync --locked --extra local-inference $(if $(filter 1,$(SYNC_LLAMA_CPP_VALIDATE_ONLY)),--dry-run,)
+
+ANSIBLE_EE_VALIDATE_ONLY ?= 1
+ANSIBLE_EE_RUNTIME ?= podman
+ANSIBLE_EE_IMAGE ?= gludd-ansible-ee:0.1.0-beta.4
+ANSIBLE_EE_CONTEXT ?= /tmp/gludd-ansible-ee-context
+COLLECTION_PYTHON_BOUNDARY_ROOT ?= collections/ansible_collections
+COLLECTION_PYTHON_BOUNDARY_INVENTORY ?= config/ansible/collection-python-boundary-inventory.json
+COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO ?= 0
+
+validate-ansible-runtime-boundary:
+	@$(UV) run python scripts/ansible_runtime_artifacts.py validate
+
+update-ansible-runtime-lock:
+	@$(UV) run python scripts/ansible_runtime_artifacts.py write-lock
+
+build-ansible-execution-environment:
+	@case "$(ANSIBLE_EE_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_EE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@$(UV) run python scripts/ansible_runtime_artifacts.py build --runtime "$(ANSIBLE_EE_RUNTIME)" --image "$(ANSIBLE_EE_IMAGE)" --context "$(ANSIBLE_EE_CONTEXT)" $(if $(filter 1,$(ANSIBLE_EE_VALIDATE_ONLY)),--validate-only,)
+
+verify-ansible-execution-environment:
+	@case "$(ANSIBLE_EE_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_EE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@$(UV) run python scripts/ansible_runtime_artifacts.py verify --runtime "$(ANSIBLE_EE_RUNTIME)" --image "$(ANSIBLE_EE_IMAGE)" $(if $(filter 1,$(ANSIBLE_EE_VALIDATE_ONLY)),--validate-only,)
+
+check-collection-python-boundary:
+	@case "$(COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO)" in 0|1) ;; *) echo "COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO must be 0 or 1"; exit 2;; esac
+	@$(UV) run python scripts/check_collection_python_boundary.py --collections-root "$(COLLECTION_PYTHON_BOUNDARY_ROOT)" --inventory "$(COLLECTION_PYTHON_BOUNDARY_INVENTORY)" $(if $(filter 1,$(COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO)),--strict-zero,)
+
+update-collection-python-boundary-inventory:
+	@$(UV) run python scripts/check_collection_python_boundary.py --collections-root "$(COLLECTION_PYTHON_BOUNDARY_ROOT)" --inventory "$(COLLECTION_PYTHON_BOUNDARY_INVENTORY)" --write-inventory
 
 sync-models:
 	@$(PYTHON) scripts/sync_local_models.py

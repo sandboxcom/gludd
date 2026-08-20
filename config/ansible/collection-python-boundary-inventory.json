@@ -1,0 +1,1284 @@
+{
+  "schema_version": 1,
+  "policy": "exact-path-line-rule-and-source-line-sha256",
+  "findings": [
+    {
+      "path": "general_ludd/agent/plugins/module_utils/capability_router.py",
+      "line": 35,
+      "rule": "sys-path-mutation",
+      "text_hash": "6854f07f26207321172282922c682e8b480c1695e1077d56061dc914c162e237"
+    },
+    {
+      "path": "general_ludd/agent/plugins/module_utils/capability_router.py",
+      "line": 79,
+      "rule": "core-import",
+      "text_hash": "2931f8094c3c16ab5529b662f1f8eb1f8d0530888c929cdefefa568b330dbc82"
+    },
+    {
+      "path": "general_ludd/agent/plugins/module_utils/capability_router.py",
+      "line": 80,
+      "rule": "core-import",
+      "text_hash": "b5c111acc898e0b5c23a8caba4d91acb92b1262fef908db30fdf3b0a277f5593"
+    },
+    {
+      "path": "general_ludd/agent/plugins/module_utils/embeddings.py",
+      "line": 35,
+      "rule": "core-import",
+      "text_hash": "88c2eb5bd7bae4fdc605b9fde49b57eab0e255855c61e711c4b23f373ff02d44"
+    },
+    {
+      "path": "general_ludd/agent/plugins/module_utils/model_client.py",
+      "line": 44,
+      "rule": "sys-path-mutation",
+      "text_hash": "6854f07f26207321172282922c682e8b480c1695e1077d56061dc914c162e237"
+    },
+    {
+      "path": "general_ludd/agent/plugins/module_utils/model_client.py",
+      "line": 46,
+      "rule": "core-import",
+      "text_hash": "a2e6971413ea312597b0a5007cad841e2317c740fa5f1e9493f6ad70ab39e3f5"
+    },
+    {
+      "path": "general_ludd/agent/plugins/module_utils/model_client.py",
+      "line": 47,
+      "rule": "core-import",
+      "text_hash": "c64733c12c72a2c7fde75df9a982c17b98953faefd3244380d4e846583ff3e5c"
+    },
+    {
+      "path": "general_ludd/agent/plugins/module_utils/model_client.py",
+      "line": 48,
+      "rule": "core-import",
+      "text_hash": "94893d7b6a39e6a80fdd7b781ba8d81e0d3267c4d8b1f70b85509d308739dda8"
+    },
+    {
+      "path": "general_ludd/agent/plugins/module_utils/model_client.py",
+      "line": 136,
+      "rule": "core-import",
+      "text_hash": "fce1b16eeab803a412185be0509bcb5ce7ec16875a928c8baaba8e077a6447ab"
+    },
+    {
+      "path": "general_ludd/agent/plugins/module_utils/rag.py",
+      "line": 31,
+      "rule": "core-import",
+      "text_hash": "19bde925d821849ff03fa522488502e44dc58826d43997088f8fd496dfb0a790"
+    },
+    {
+      "path": "general_ludd/agent/plugins/module_utils/rag.py",
+      "line": 305,
+      "rule": "core-import",
+      "text_hash": "3e04ee1fe26e6a0354d1c95329ab7a0610d70d5094647bd97cb3430d1f442128"
+    },
+    {
+      "path": "general_ludd/agent/plugins/module_utils/searxng.py",
+      "line": 35,
+      "rule": "core-import",
+      "text_hash": "034f9ea4178755085c20724a2d470cb6297f0ba674cf895596eb8c0352099aaa"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_abtest.py",
+      "line": 95,
+      "rule": "core-import",
+      "text_hash": "1dfb635f46ed5715882cdf6a274f0bdb332cbdc4b3bba8963fe9c626e984ebcd"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_abtest.py",
+      "line": 96,
+      "rule": "core-import",
+      "text_hash": "120bbbca264bdb31aed239381af701e97e6da1a524d263d891c9bb7224652908"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_accounting.py",
+      "line": 81,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_agent_run.py",
+      "line": 130,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_agent_run.py",
+      "line": 167,
+      "rule": "core-import",
+      "text_hash": "7ef963169af23b12260341c7b8a4033983f8139e53d57032c81fb76171421a3d"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_agent_run.py",
+      "line": 168,
+      "rule": "core-import",
+      "text_hash": "084c776c5521ff4e659c82fce703b985438f2e6775bb8f3fa0a335d75d501182"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_agent_run.py",
+      "line": 169,
+      "rule": "core-import",
+      "text_hash": "6a0f4ffc511a919477ebb5fe9d3e42bb72da6a591ace46bb06a8169990d99fd4"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_agent_run.py",
+      "line": 223,
+      "rule": "core-import",
+      "text_hash": "693a53fed4781dcd22eab7a1edae158298cadaeec2276febbe425f5428844436"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_db.py",
+      "line": 137,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_dispatch.py",
+      "line": 100,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_embed.py",
+      "line": 187,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_environment.py",
+      "line": 100,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_facts.py",
+      "line": 72,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_features.py",
+      "line": 105,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_git.py",
+      "line": 212,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_git.py",
+      "line": 324,
+      "rule": "core-import",
+      "text_hash": "dff72d122151735cf60c65ee1649b4e095aa4bcb0cf6d5fe646a10142e9a4be7"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_git.py",
+      "line": 389,
+      "rule": "core-import",
+      "text_hash": "8e617a22fb554c70d695b6e96638d31bd5e0d15fd5f0f335ad6f7a973f349e45"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_git.py",
+      "line": 430,
+      "rule": "core-import",
+      "text_hash": "57d4725113662701be54e42f92ebae60c7122cb842ec537757a7615b964cb70b"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_git.py",
+      "line": 440,
+      "rule": "core-import",
+      "text_hash": "aed5fe6f736b5124bfdcb6d9b4e326bba39b41838c44acf3c136b2b9b54b3150"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_git.py",
+      "line": 458,
+      "rule": "core-import",
+      "text_hash": "f2c0bb3df8f16d672816931da45a2a1f1ead0c3e95ad952330c89e6bf365340e"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_human_todo.py",
+      "line": 142,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_introspect.py",
+      "line": 70,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_langchain_generate.py",
+      "line": 111,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_langgraph_decision.py",
+      "line": 114,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_langgraph_workflow.py",
+      "line": 116,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_make.py",
+      "line": 138,
+      "rule": "core-import",
+      "text_hash": "9847d19a219797fa3ce48b90c08536a380fdd996de494e44b780ce047a23edef"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_mcp_tool.py",
+      "line": 89,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_message.py",
+      "line": 134,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_metrics.py",
+      "line": 86,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_model_call.py",
+      "line": 89,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_observe.py",
+      "line": 120,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_observe.py",
+      "line": 222,
+      "rule": "core-import",
+      "text_hash": "f59630189e292046344a7e7e7392666243cc2107d0c3fb7a45d4d9a14f19800e"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_ornith.py",
+      "line": 132,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_osquery.py",
+      "line": 108,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_osquery.py",
+      "line": 180,
+      "rule": "core-import",
+      "text_hash": "b928a54521574221bb95b9c588bb5ac6fe519eb74c573e98e56185262033a9d2"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_ping.py",
+      "line": 68,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_proc_monitor.py",
+      "line": 101,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_process.py",
+      "line": 141,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_push_guard.py",
+      "line": 162,
+      "rule": "sys-path-mutation",
+      "text_hash": "f4bbea74a918f2623b2f328ce5f1aa0ebb765bdb460698b4fcf2c2531468c699"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_push_guard.py",
+      "line": 175,
+      "rule": "sys-path-mutation",
+      "text_hash": "5ff200958a863e63184f358ba6f8f6db54512b37a229501333269a0c39591a40"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_rag.py",
+      "line": 123,
+      "rule": "sys-path-mutation",
+      "text_hash": "e332f465f9a734db763f515010a25edb7894382ff652dc21dc2709e8bd2218ec"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_reload.py",
+      "line": 119,
+      "rule": "core-import",
+      "text_hash": "6ff03a09ca813019e319ffe635e52d82146d1cd4acd5080c45c4d28a1c2e9637"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_schedule.py",
+      "line": 100,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_skill.py",
+      "line": 76,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_skill.py",
+      "line": 99,
+      "rule": "core-import",
+      "text_hash": "68d163e2a3eda65858d5278fa0a02b06496c978d905c9acbf8c287a2ec50b407"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_skill.py",
+      "line": 100,
+      "rule": "core-import",
+      "text_hash": "a870230318411ad9027685e396d2095791aa2ebadf7f86663eb6afff2fbb1049"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_slurm_deploy.py",
+      "line": 167,
+      "rule": "core-import",
+      "text_hash": "0a0bc2d03df43432736b1ffa36f549ed2fa8f419b667b196b1e9245948993188"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_spend.py",
+      "line": 86,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_stream.py",
+      "line": 319,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_traces.py",
+      "line": 93,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_worktree.py",
+      "line": 82,
+      "rule": "sys-path-mutation",
+      "text_hash": "7178952b9a1868553cf15f4ef93a985d8a738a05869b4c68ac4dfc97878078ba"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/gludd_worktree.py",
+      "line": 135,
+      "rule": "core-import",
+      "text_hash": "5e95aa29fc73f9500b3b5d4bc22217a31d90513f6d1ac1ef9eeb0a6e6ada1988"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/infra_deploy.py",
+      "line": 174,
+      "rule": "core-import",
+      "text_hash": "7d7367be60f5914f24a94b21d81f8ea0c0cee71cc8398fae0e87e8417ecd2621"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/infra_deploy.py",
+      "line": 180,
+      "rule": "core-import",
+      "text_hash": "259c6d664922ce2476d0bb7d8417613e4f7b830eb95bca65a452930699e35066"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/infra_deploy.py",
+      "line": 216,
+      "rule": "core-import",
+      "text_hash": "9efe3786a6a184592ee8ac2349153ed3b4c8cdcbea632e640ef37dc3a5b51c98"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/infra_deploy.py",
+      "line": 222,
+      "rule": "core-import",
+      "text_hash": "2e79d57275bb775f27d7017491e5ac47fa6505159115a44fb3dbe677421c80dd"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/infra_destroy.py",
+      "line": 90,
+      "rule": "core-import",
+      "text_hash": "7d7367be60f5914f24a94b21d81f8ea0c0cee71cc8398fae0e87e8417ecd2621"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/infra_destroy.py",
+      "line": 96,
+      "rule": "core-import",
+      "text_hash": "259c6d664922ce2476d0bb7d8417613e4f7b830eb95bca65a452930699e35066"
+    },
+    {
+      "path": "general_ludd/agent/plugins/modules/infra_destroy.py",
+      "line": 130,
+      "rule": "core-import",
+      "text_hash": "2e79d57275bb775f27d7017491e5ac47fa6505159115a44fb3dbe677421c80dd"
+    },
+    {
+      "path": "general_ludd/agent/roles/agent_floor_check/tasks/main.yml",
+      "line": 91,
+      "rule": "ambient-python",
+      "text_hash": "b71aff637b63b804aa5793d5ab74fc077262bfafec85b12a63f9076f61cf0866"
+    },
+    {
+      "path": "general_ludd/agent/roles/backlog_guard_audit/tasks/main.yml",
+      "line": 17,
+      "rule": "ambient-python",
+      "text_hash": "da339690ae9d4d88d9f251dfd54dc16636afe2b8a725dec0d32b05fffe5f925b"
+    },
+    {
+      "path": "general_ludd/agent/roles/ci_annotations_poll/tasks/main.yml",
+      "line": 16,
+      "rule": "ambient-python",
+      "text_hash": "51aecce8dea507da0cadb3cb4bc136ab4f05723e44d60093e8362005a7e9de1a"
+    },
+    {
+      "path": "general_ludd/agent/roles/feature_evidence_audit/tasks/main.yml",
+      "line": 16,
+      "rule": "ambient-python",
+      "text_hash": "dbc3aec47a0792fe4379a6d65426a241329ed86efd2cebcd4f905210f6eac3d3"
+    },
+    {
+      "path": "general_ludd/agent/roles/generate_status_table/tasks/main.yml",
+      "line": 17,
+      "rule": "ambient-python",
+      "text_hash": "579542f778fd0826302916142eab5aeeb5fc242d4e2aaa864b0b3f3309c3e7b1"
+    },
+    {
+      "path": "general_ludd/agent/roles/generate_status_table/tasks/main.yml",
+      "line": 31,
+      "rule": "ambient-python",
+      "text_hash": "579542f778fd0826302916142eab5aeeb5fc242d4e2aaa864b0b3f3309c3e7b1"
+    },
+    {
+      "path": "general_ludd/agent/roles/generate_status_table/tasks/main.yml",
+      "line": 45,
+      "rule": "ambient-python",
+      "text_hash": "579542f778fd0826302916142eab5aeeb5fc242d4e2aaa864b0b3f3309c3e7b1"
+    },
+    {
+      "path": "general_ludd/agent/roles/model_benchmark/tasks/main.yml",
+      "line": 25,
+      "rule": "ambient-python",
+      "text_hash": "381f9bfc69d49d39040a7d5fc3197ce385019a2ba2de649622f841a8c658ed37"
+    },
+    {
+      "path": "general_ludd/agent/roles/model_quantize/tasks/main.yml",
+      "line": 69,
+      "rule": "ambient-python",
+      "text_hash": "248c3fb5b6e811daf9de3b1fb0865b629d9e6cce0db260464b4f66b8c290572e"
+    },
+    {
+      "path": "general_ludd/agent/roles/model_serve/tasks/main.yml",
+      "line": 50,
+      "rule": "ambient-python",
+      "text_hash": "ad45b10c61ccb462414766e33c1145840736eb1f582610ad926b0c4341a449d2"
+    },
+    {
+      "path": "general_ludd/agent/roles/model_serve/tasks/main.yml",
+      "line": 76,
+      "rule": "ambient-python",
+      "text_hash": "b720c87dbcc6387efc0311a6fd8b1e6e1c13fa7b915bb383ef5f9d28009a8aef"
+    },
+    {
+      "path": "general_ludd/agent/roles/multitasking_backlog_check/tasks/main.yml",
+      "line": 16,
+      "rule": "ambient-python",
+      "text_hash": "e6b827ef49113bbc9d6d05fd970555d039b82e3be624b2977ce638875d12c4a5"
+    },
+    {
+      "path": "general_ludd/agent/roles/multitasking_backlog_check/tasks/main.yml",
+      "line": 27,
+      "rule": "ambient-python",
+      "text_hash": "aa91fd8ba71b88a89af63eb5c492abc49598200467a38ce54951e94c405c8f97"
+    },
+    {
+      "path": "general_ludd/agent/roles/multitasking_backlog_check/tasks/main.yml",
+      "line": 38,
+      "rule": "ambient-python",
+      "text_hash": "c2a6f98896709f3242ffa8ed5063412f6cb7ace6b329f7fe1e7cc39beddd5860"
+    },
+    {
+      "path": "general_ludd/agent/roles/scan_conflict_markers/tasks/main.yml",
+      "line": 20,
+      "rule": "ambient-python",
+      "text_hash": "a5b2542ea041cebe678f5a19bab0a97fed397e3cc857a6d8b8f77ae4bbe941fd"
+    },
+    {
+      "path": "general_ludd/agent/roles/service_login/tasks/main.yml",
+      "line": 53,
+      "rule": "ambient-python",
+      "text_hash": "8ed649b1b2719289c43fc01c97cbeb73609d23fa77964de111f8a4678ba7f2c3"
+    },
+    {
+      "path": "general_ludd/agent/roles/test_matrix/tasks/main.yml",
+      "line": 74,
+      "rule": "ambient-python",
+      "text_hash": "9f8d7a097663f00228ffaf8c7c23286717f16c2c1dd45e8def07ab79cd2d9ed4"
+    },
+    {
+      "path": "general_ludd/agent/roles/token_window_monitor/tasks/main.yml",
+      "line": 24,
+      "rule": "ambient-python",
+      "text_hash": "abc6250522a3d80110106adfc3aa02820b87f1e50c65b2ed04626b6735f7df23"
+    },
+    {
+      "path": "general_ludd/agent/roles/token_window_monitor/tasks/main.yml",
+      "line": 33,
+      "rule": "ambient-python",
+      "text_hash": "5ed8745fb78ec51d171b9881f47a19de6e59f9a59f461204e0a667dac84fd09e"
+    },
+    {
+      "path": "general_ludd/agent/roles/token_window_monitor/tasks/main.yml",
+      "line": 42,
+      "rule": "ambient-python",
+      "text_hash": "28a3728648736781fcef33c341d08c09bcfca0153e490fcdc33eecb91a36e348"
+    },
+    {
+      "path": "general_ludd/agent/roles/token_window_monitor/tasks/main.yml",
+      "line": 51,
+      "rule": "ambient-python",
+      "text_hash": "261a7cb8d8d3b157f933d6d6b001b177649350da2c048d1d19464a7d4897494b"
+    },
+    {
+      "path": "general_ludd/agent/roles/type_safety_audit/tasks/main.yml",
+      "line": 62,
+      "rule": "ambient-python",
+      "text_hash": "35a370f841b098eb1f49000b9914c15e4a95c623d7b3bc743d188d4d61436874"
+    },
+    {
+      "path": "general_ludd/agent/roles/type_safety_audit/tasks/main.yml",
+      "line": 73,
+      "rule": "ambient-python",
+      "text_hash": "35a370f841b098eb1f49000b9914c15e4a95c623d7b3bc743d188d4d61436874"
+    },
+    {
+      "path": "general_ludd/agent/roles/ui_ux_analyst/tasks/main.yml",
+      "line": 31,
+      "rule": "ambient-python",
+      "text_hash": "4c047c536a3e8d85511c0d3691546474f5e891208bb301f90885f2b1cb1d294f"
+    },
+    {
+      "path": "general_ludd/azure/plugins/module_utils/azure.py",
+      "line": 21,
+      "rule": "core-import",
+      "text_hash": "5eb175c929d4fd786f223f3c099cb09e6e4c4e3acf77d973103025e16f1424d2"
+    },
+    {
+      "path": "general_ludd/binary_re/roles/deobfuscate/files/deobfuscate.py",
+      "line": 17,
+      "rule": "sys-path-mutation",
+      "text_hash": "33317b629b9ac7326293e3cf0ed848dd7a810799a4910fe6dbb394058994223f"
+    },
+    {
+      "path": "general_ludd/binary_re/roles/fuzz_target/files/fuzz_target.py",
+      "line": 20,
+      "rule": "sys-path-mutation",
+      "text_hash": "33317b629b9ac7326293e3cf0ed848dd7a810799a4910fe6dbb394058994223f"
+    },
+    {
+      "path": "general_ludd/binary_re/roles/prompt_injection_scan/files/scan.py",
+      "line": 33,
+      "rule": "sys-path-mutation",
+      "text_hash": "4a8771d8f9c8d3f1402ad6ae5f26c3b9d688336b8604622e59c17b1751b3300a"
+    },
+    {
+      "path": "general_ludd/binary_re/roles/prompt_injection_scan/files/scan.py",
+      "line": 36,
+      "rule": "sys-path-mutation",
+      "text_hash": "39fe8e5120fab26622a56fe590a46abb03c6275d82cef7de0044d72c76dfc7bd"
+    },
+    {
+      "path": "general_ludd/chat/plugins/modules/chat_export.py",
+      "line": 26,
+      "rule": "core-import",
+      "text_hash": "79bab99c11a324fd86d5c3abc3de03851dc27d01e942c21f423e1d35b8d6f27b"
+    },
+    {
+      "path": "general_ludd/chemistry/plugins/module_utils/chemistry_dispatch.py",
+      "line": 19,
+      "rule": "core-import",
+      "text_hash": "fa28453935961fd5c8ef0db15ae7e8656fb9e2c4f84927ad7f86ebf58030c260"
+    },
+    {
+      "path": "general_ludd/e2e_test_gen/roles/analyze_code_paths/files/analyze_code_paths.py",
+      "line": 32,
+      "rule": "sys-path-mutation",
+      "text_hash": "44b9151ba7d5f8c6850bed69c7c249b154ea64ee0a7efc618fa4df32de7b51fc"
+    },
+    {
+      "path": "general_ludd/e2e_test_gen/roles/analyze_code_paths/files/analyze_code_paths.py",
+      "line": 234,
+      "rule": "core-import",
+      "text_hash": "dce75f3cd68c44bafa685bcc444ed501cdf543cafb071417e7a3127df318a4a6"
+    },
+    {
+      "path": "general_ludd/e2e_test_gen/roles/analyze_code_paths/tasks/main.yml",
+      "line": 38,
+      "rule": "ambient-python",
+      "text_hash": "3c15bce611d658335a3ef2f3fe0a9aa7546a8f5c849e7117fcfc1b5b8e32f128"
+    },
+    {
+      "path": "general_ludd/e2e_test_gen/roles/analyze_code_paths/tasks/main.yml",
+      "line": 55,
+      "rule": "ambient-python",
+      "text_hash": "3c15bce611d658335a3ef2f3fe0a9aa7546a8f5c849e7117fcfc1b5b8e32f128"
+    },
+    {
+      "path": "general_ludd/e2e_test_gen/roles/analyze_code_paths/tasks/main.yml",
+      "line": 68,
+      "rule": "ambient-python",
+      "text_hash": "f427f89f1b2694953998e9ee28b6836a3326308008716b42ad210f28625bc825"
+    },
+    {
+      "path": "general_ludd/e2e_test_gen/roles/generate_scenarios/files/generate_scenarios.py",
+      "line": 24,
+      "rule": "sys-path-mutation",
+      "text_hash": "44b9151ba7d5f8c6850bed69c7c249b154ea64ee0a7efc618fa4df32de7b51fc"
+    },
+    {
+      "path": "general_ludd/e2e_test_gen/roles/generate_scenarios/files/generate_scenarios.py",
+      "line": 45,
+      "rule": "core-import",
+      "text_hash": "dce75f3cd68c44bafa685bcc444ed501cdf543cafb071417e7a3127df318a4a6"
+    },
+    {
+      "path": "general_ludd/e2e_test_gen/roles/generate_scenarios/files/generate_scenarios.py",
+      "line": 50,
+      "rule": "core-import",
+      "text_hash": "b447bd5a0f238bf3d79eaa4519505c57265c7fdcb170c191ec7cb027825b2cf0"
+    },
+    {
+      "path": "general_ludd/e2e_test_gen/roles/generate_scenarios/files/generate_scenarios.py",
+      "line": 92,
+      "rule": "core-import",
+      "text_hash": "037d054fb1e2a41e0c64dd4a865a0dc6d7234b9308f56d24f5645a0991233347"
+    },
+    {
+      "path": "general_ludd/e2e_test_gen/roles/generate_scenarios/tasks/main.yml",
+      "line": 71,
+      "rule": "ambient-python",
+      "text_hash": "fd8381a9df6926f6dbd6c37cddaa4cf24cdad1cbaae1914229bab96856828716"
+    },
+    {
+      "path": "general_ludd/e2e_test_gen/roles/validate_scenarios/tasks/main.yml",
+      "line": 41,
+      "rule": "ambient-python",
+      "text_hash": "a55cbdfd204772dcc93f76861fa121418099c2b632d6f80a27c8cbf59d50f67d"
+    },
+    {
+      "path": "general_ludd/e2e_test_gen/roles/verify_coverage/tasks/main.yml",
+      "line": 46,
+      "rule": "ambient-python",
+      "text_hash": "eb5bc95f5a57636dfee5d750cc5c0238e09e5f8f0f87df816f47265743ea59aa"
+    },
+    {
+      "path": "general_ludd/e2e_test_gen/roles/write_e2e_tests/tasks/main.yml",
+      "line": 41,
+      "rule": "ambient-python",
+      "text_hash": "2d975a47e3d152200b3e1559cda386e7076bef82ee3301d9c206161f0879b4bd"
+    },
+    {
+      "path": "general_ludd/forensics/roles/dna_analyst/tasks/main.yml",
+      "line": 48,
+      "rule": "ambient-python",
+      "text_hash": "ecbf9dd06d2999d2145f55f371c01e2cc93d7f97f8b8a3352b1c9ecdae442eac"
+    },
+    {
+      "path": "general_ludd/forensics/roles/fingerprint_analyst/tasks/main.yml",
+      "line": 41,
+      "rule": "ambient-python",
+      "text_hash": "ecbf9dd06d2999d2145f55f371c01e2cc93d7f97f8b8a3352b1c9ecdae442eac"
+    },
+    {
+      "path": "general_ludd/forensics/roles/forensics_coordinator/tasks/main.yml",
+      "line": 45,
+      "rule": "ambient-python",
+      "text_hash": "ecbf9dd06d2999d2145f55f371c01e2cc93d7f97f8b8a3352b1c9ecdae442eac"
+    },
+    {
+      "path": "general_ludd/forensics/roles/photo_forensics_analyst/tasks/main.yml",
+      "line": 62,
+      "rule": "ambient-python",
+      "text_hash": "ecbf9dd06d2999d2145f55f371c01e2cc93d7f97f8b8a3352b1c9ecdae442eac"
+    },
+    {
+      "path": "general_ludd/forensics/roles/trace_evidence_examiner/tasks/main.yml",
+      "line": 57,
+      "rule": "ambient-python",
+      "text_hash": "ecbf9dd06d2999d2145f55f371c01e2cc93d7f97f8b8a3352b1c9ecdae442eac"
+    },
+    {
+      "path": "general_ludd/formal/roles/tla_trace_interpret/tasks/main.yml",
+      "line": 67,
+      "rule": "ambient-python",
+      "text_hash": "91e3503bf9948b2d89281a22561e5994f49c367e3504c8a6bd9175f55e006639"
+    },
+    {
+      "path": "general_ludd/language/plugins/module_utils/core.py",
+      "line": 28,
+      "rule": "sys-path-mutation",
+      "text_hash": "6854f07f26207321172282922c682e8b480c1695e1077d56061dc914c162e237"
+    },
+    {
+      "path": "general_ludd/language/plugins/module_utils/core.py",
+      "line": 30,
+      "rule": "core-import",
+      "text_hash": "796795e829778651d33a5937e475279f278b07a46a17a62948aaa46ef9824330"
+    },
+    {
+      "path": "general_ludd/language/plugins/module_utils/core.py",
+      "line": 39,
+      "rule": "core-import",
+      "text_hash": "749be393ea9e3d7f81d4a40a0dd7c8340c74ed8260953bf1c1f8c4a36fbe8ff0"
+    },
+    {
+      "path": "general_ludd/language/plugins/module_utils/core.py",
+      "line": 45,
+      "rule": "core-import",
+      "text_hash": "cf7cc280c3f9bd53f68453bc66a93f582dd7da1175e6219238ba20db34a7a376"
+    },
+    {
+      "path": "general_ludd/language/plugins/module_utils/core.py",
+      "line": 46,
+      "rule": "core-import",
+      "text_hash": "c68f1a074a14bc6909b4b0664b0979a0ea702e5c804c575bf583bcbd4e7cfabd"
+    },
+    {
+      "path": "general_ludd/language/plugins/module_utils/core.py",
+      "line": 58,
+      "rule": "core-import",
+      "text_hash": "689d3049c93339eb45bf1f121b54fb84d99af2cf0a622d78d355e63aa73a2e90"
+    },
+    {
+      "path": "general_ludd/language/plugins/module_utils/core.py",
+      "line": 68,
+      "rule": "core-import",
+      "text_hash": "7afbb5f99318829b7c12ebb654b7c189f91f5e85398f147670447543e476477b"
+    },
+    {
+      "path": "general_ludd/language/plugins/module_utils/core.py",
+      "line": 75,
+      "rule": "core-import",
+      "text_hash": "dce6f7d4fe0ce5f0d2df547234f2f46e8e9b8c1099b82e5fb4215b3f408594b2"
+    },
+    {
+      "path": "general_ludd/language/plugins/module_utils/core.py",
+      "line": 86,
+      "rule": "core-import",
+      "text_hash": "502f6647f11fcbd88147ae61ee6c68df50d6725a657144ac661a9766b715c49a"
+    },
+    {
+      "path": "general_ludd/language/plugins/module_utils/core.py",
+      "line": 103,
+      "rule": "core-import",
+      "text_hash": "35b38bd8f9721b6e96138afa55768d40f5c6b28b118686efda3b95ef28d989e0"
+    },
+    {
+      "path": "general_ludd/language/plugins/module_utils/core.py",
+      "line": 104,
+      "rule": "core-import",
+      "text_hash": "762e69b20285a05329cdf60844fd064b7cdc5c7beed38d00c6707553de6e748f"
+    },
+    {
+      "path": "general_ludd/language/plugins/module_utils/core.py",
+      "line": 105,
+      "rule": "core-import",
+      "text_hash": "1c7fb61f78e84fe02d22d09de4c57f04deacfa8fae020af1262519cb8ce185e5"
+    },
+    {
+      "path": "general_ludd/language/plugins/module_utils/model_client.py",
+      "line": 80,
+      "rule": "core-import",
+      "text_hash": "138545c46807105adf53363fa34f489445881a0c8239bc3ae25e687b8422b41f"
+    },
+    {
+      "path": "general_ludd/language/plugins/module_utils/model_client.py",
+      "line": 154,
+      "rule": "core-import",
+      "text_hash": "ecd3c6ea0fa6ca0217988dfced42d36cb69aa1e09c97f03487780f989f33f8b6"
+    },
+    {
+      "path": "general_ludd/language/roles/bom_detect/files/bom_detect.py",
+      "line": 20,
+      "rule": "sys-path-mutation",
+      "text_hash": "29925326e57de59244df722b2188c95233bb3d54a355a89f4ac9afd93418786e"
+    },
+    {
+      "path": "general_ludd/language/roles/bom_detect/files/bom_detect.py",
+      "line": 32,
+      "rule": "core-import",
+      "text_hash": "2ba9f6195fc4b874881aae6525c02342cc06cd18d8d71c984a777b498dbd38f3"
+    },
+    {
+      "path": "general_ludd/language/roles/encoding_detect/files/encoding_detect.py",
+      "line": 20,
+      "rule": "sys-path-mutation",
+      "text_hash": "29925326e57de59244df722b2188c95233bb3d54a355a89f4ac9afd93418786e"
+    },
+    {
+      "path": "general_ludd/language/roles/encoding_detect/files/encoding_detect.py",
+      "line": 25,
+      "rule": "core-import",
+      "text_hash": "2ba9f6195fc4b874881aae6525c02342cc06cd18d8d71c984a777b498dbd38f3"
+    },
+    {
+      "path": "general_ludd/language/roles/homoglyph_scan/files/homoglyph_scan.py",
+      "line": 23,
+      "rule": "sys-path-mutation",
+      "text_hash": "29925326e57de59244df722b2188c95233bb3d54a355a89f4ac9afd93418786e"
+    },
+    {
+      "path": "general_ludd/language/roles/homoglyph_scan/files/homoglyph_scan.py",
+      "line": 35,
+      "rule": "core-import",
+      "text_hash": "7ed8c318733cd9937068a08a1b1a43594a7a9f6ec96abd0946376d2e0b1911c6"
+    },
+    {
+      "path": "general_ludd/language/roles/language_detect/files/language_detect.py",
+      "line": 26,
+      "rule": "sys-path-mutation",
+      "text_hash": "6854f07f26207321172282922c682e8b480c1695e1077d56061dc914c162e237"
+    },
+    {
+      "path": "general_ludd/language/roles/language_detect/files/language_detect.py",
+      "line": 35,
+      "rule": "core-import",
+      "text_hash": "cf7cc280c3f9bd53f68453bc66a93f582dd7da1175e6219238ba20db34a7a376"
+    },
+    {
+      "path": "general_ludd/language/roles/locale_format/files/locale_format.py",
+      "line": 29,
+      "rule": "sys-path-mutation",
+      "text_hash": "29925326e57de59244df722b2188c95233bb3d54a355a89f4ac9afd93418786e"
+    },
+    {
+      "path": "general_ludd/language/roles/locale_format/files/locale_format.py",
+      "line": 74,
+      "rule": "core-import",
+      "text_hash": "69f00dbaf75df9cdb5fe28ef6175a2c379463a6b6c1d9ebb546645e26fcd3d7b"
+    },
+    {
+      "path": "general_ludd/language/roles/phonetic_transcribe/files/phonetic_transcribe.py",
+      "line": 23,
+      "rule": "sys-path-mutation",
+      "text_hash": "29925326e57de59244df722b2188c95233bb3d54a355a89f4ac9afd93418786e"
+    },
+    {
+      "path": "general_ludd/language/roles/phonetic_transcribe/files/phonetic_transcribe.py",
+      "line": 28,
+      "rule": "core-import",
+      "text_hash": "8efa5e7bb0d13364dc14efa35294ae5be35a5273a97345fef0f60d9898c88750"
+    },
+    {
+      "path": "general_ludd/language/roles/translate/files/translate.py",
+      "line": 26,
+      "rule": "sys-path-mutation",
+      "text_hash": "6854f07f26207321172282922c682e8b480c1695e1077d56061dc914c162e237"
+    },
+    {
+      "path": "general_ludd/language/roles/translate/files/translate.py",
+      "line": 37,
+      "rule": "core-import",
+      "text_hash": "35b38bd8f9721b6e96138afa55768d40f5c6b28b118686efda3b95ef28d989e0"
+    },
+    {
+      "path": "general_ludd/language/roles/transliterate/files/transliterate.py",
+      "line": 26,
+      "rule": "sys-path-mutation",
+      "text_hash": "6854f07f26207321172282922c682e8b480c1695e1077d56061dc914c162e237"
+    },
+    {
+      "path": "general_ludd/language/roles/transliterate/files/transliterate.py",
+      "line": 37,
+      "rule": "core-import",
+      "text_hash": "8b05d19709a96868abc1c24ee71dc1ae883b0a7f0a3cc97f37ccc26af14b9f69"
+    },
+    {
+      "path": "general_ludd/language/roles/unicode_analyze/files/unicode_analyze.py",
+      "line": 22,
+      "rule": "sys-path-mutation",
+      "text_hash": "29925326e57de59244df722b2188c95233bb3d54a355a89f4ac9afd93418786e"
+    },
+    {
+      "path": "general_ludd/language/roles/unicode_analyze/files/unicode_analyze.py",
+      "line": 27,
+      "rule": "core-import",
+      "text_hash": "ffda6d4c0e9726ba840be02a2a7d8489c3e936461ec8b33da9c2c746edb4d8d7"
+    },
+    {
+      "path": "general_ludd/operations/roles/log_analyzer/files/analyze_logs.py",
+      "line": 9,
+      "rule": "core-import",
+      "text_hash": "4389aa6d942564ed3ce2f4be962b3b84a56e4e430ed6ecd5fb908ee94e2602af"
+    },
+    {
+      "path": "general_ludd/operations/roles/log_analyzer/tasks/main.yml",
+      "line": 66,
+      "rule": "ambient-python",
+      "text_hash": "da7ea71d90f70340f3a6ea4db2c797577f6c59a6ae56eabab9878bfb8122636f"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/android_diagnose/tasks/main.yml",
+      "line": 3,
+      "rule": "ambient-python",
+      "text_hash": "402cacb64883e3bdc7504790e94a7be1633483e896407b7ef513ecbd66b2e805"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/android_diagnose/tasks/main.yml",
+      "line": 19,
+      "rule": "ambient-python",
+      "text_hash": "9fd3288d983668d175e9f02c91a6e4e516c7175903e76207b7261cba8547333f"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/android_diagnose/tasks/main.yml",
+      "line": 32,
+      "rule": "ambient-python",
+      "text_hash": "d3dd87774c29fbe880da4d8697ff527b4b334bf77fba0eb31de1e1c4ae34c0bc"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/android_diagnose/tasks/main.yml",
+      "line": 51,
+      "rule": "ambient-python",
+      "text_hash": "75c02991f69fcf8d3dac4c9ee158217fec5622a6f817f40ead8a87b79e53c23a"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/android_security/tasks/main.yml",
+      "line": 4,
+      "rule": "ambient-python",
+      "text_hash": "38e057ea0881b97b610e1b734b2a0dff2ca2c343fd78f65c757da6c869120c55"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/android_security/tasks/main.yml",
+      "line": 19,
+      "rule": "ambient-python",
+      "text_hash": "28a3513a195b943761bcef4919ea3365960a8d1efc0f12432060b61fc3da13a5"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/android_security/tasks/main.yml",
+      "line": 30,
+      "rule": "ambient-python",
+      "text_hash": "05c0fd166a838102815f961138936c5db72fbab3c3ca1e9acd160000d4d986b7"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/android_security/tasks/main.yml",
+      "line": 48,
+      "rule": "ambient-python",
+      "text_hash": "ba3c39db4e174d480b8ab51ad741abb9e6fa9a340fc53d18d16b8f89a5f77e4d"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/ios_diagnose/tasks/main.yml",
+      "line": 4,
+      "rule": "ambient-python",
+      "text_hash": "2d670c6fd374095b10d7a800fab413e35a32d1a1e79928d0191444ca2827456f"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/ios_diagnose/tasks/main.yml",
+      "line": 19,
+      "rule": "ambient-python",
+      "text_hash": "f3f7dcc71dd3773a544b6ce4288422a1f9ffb509c1e22563035f22c357c5082d"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/ios_diagnose/tasks/main.yml",
+      "line": 32,
+      "rule": "ambient-python",
+      "text_hash": "a65841c17e603ee1ce12f77de8d46247081c6bebfd37627a02cf443a6dd59069"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/ios_security/tasks/main.yml",
+      "line": 4,
+      "rule": "ambient-python",
+      "text_hash": "4b9bca57c9f217caf942db843bb5a6235b8d50330d244d72bd470dae3409533b"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/ios_security/tasks/main.yml",
+      "line": 19,
+      "rule": "ambient-python",
+      "text_hash": "28a3513a195b943761bcef4919ea3365960a8d1efc0f12432060b61fc3da13a5"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/ios_security/tasks/main.yml",
+      "line": 30,
+      "rule": "ambient-python",
+      "text_hash": "b950b46c88ea64f65e0928f69752c76e94509e548715246035d3e54b4432ef06"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/ios_security/tasks/main.yml",
+      "line": 48,
+      "rule": "ambient-python",
+      "text_hash": "ba3c39db4e174d480b8ab51ad741abb9e6fa9a340fc53d18d16b8f89a5f77e4d"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/linux_automation/tasks/main.yml",
+      "line": 13,
+      "rule": "ambient-python",
+      "text_hash": "d11cd1b1050880ef8e1e369c0c0b52cb349b7b67c047320a6c2d45a8eda1aece"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/linux_automation/tasks/main.yml",
+      "line": 26,
+      "rule": "ambient-python",
+      "text_hash": "0e650000f742c8f2c6e2cf16300dfafb859a183f519a0d2190bffd0edb898736"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/linux_diagnose/tasks/main.yml",
+      "line": 4,
+      "rule": "ambient-python",
+      "text_hash": "c8745dd16f2e72878d3e5e5c6387de654ef2460898a7378e71a727bc5b54c15a"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/linux_diagnose/tasks/main.yml",
+      "line": 24,
+      "rule": "ambient-python",
+      "text_hash": "9d11b5d7ad884a651391156224d49c55dfd1423b8294993c4a3a2a28e63f6b2c"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/linux_diagnose/tasks/main.yml",
+      "line": 37,
+      "rule": "ambient-python",
+      "text_hash": "a92db13dc8773f521a37cbba1b9ca5c3ae873169c91a12a6d06c16b69fe7b1ed"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/linux_kernel/tasks/main.yml",
+      "line": 13,
+      "rule": "ambient-python",
+      "text_hash": "d11cd1b1050880ef8e1e369c0c0b52cb349b7b67c047320a6c2d45a8eda1aece"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/linux_kernel/tasks/main.yml",
+      "line": 26,
+      "rule": "ambient-python",
+      "text_hash": "94e520d3b9cfc2facb517f685bb35f53c67fe9e829891cca466eebc46d1edd6e"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/macos_automation/tasks/main.yml",
+      "line": 14,
+      "rule": "ambient-python",
+      "text_hash": "d11cd1b1050880ef8e1e369c0c0b52cb349b7b67c047320a6c2d45a8eda1aece"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/macos_automation/tasks/main.yml",
+      "line": 27,
+      "rule": "ambient-python",
+      "text_hash": "bae8b1a68a0d99cd3d053f160ea7b1db5f7a777f5266c3519bd22b90574352e6"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/macos_diagnose/tasks/main.yml",
+      "line": 4,
+      "rule": "ambient-python",
+      "text_hash": "0a903f3ee463a334e69411e84dfd460a9a68383ae683190a229e3d05f1b31240"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/macos_diagnose/tasks/main.yml",
+      "line": 14,
+      "rule": "ambient-python",
+      "text_hash": "9d11b5d7ad884a651391156224d49c55dfd1423b8294993c4a3a2a28e63f6b2c"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/macos_diagnose/tasks/main.yml",
+      "line": 27,
+      "rule": "ambient-python",
+      "text_hash": "52b0ad6ea2b676b89503e4531efd4e9f4a9927774a17f047f1f9c00c481515ed"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/macos_security/tasks/main.yml",
+      "line": 12,
+      "rule": "ambient-python",
+      "text_hash": "d11cd1b1050880ef8e1e369c0c0b52cb349b7b67c047320a6c2d45a8eda1aece"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/macos_security/tasks/main.yml",
+      "line": 25,
+      "rule": "ambient-python",
+      "text_hash": "9d97e34393af63620636c0c08d60a6524db1c0d4026b9a4e66a165883fced809"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/windows_automation/tasks/main.yml",
+      "line": 328,
+      "rule": "ambient-python",
+      "text_hash": "38d53e6fa1b43acdb057e38f2dde384d06f1e636c6f6602a381ed8a6a2ef7b30"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/windows_automation/tasks/main.yml",
+      "line": 331,
+      "rule": "ambient-python",
+      "text_hash": "4a3c6b8ef5f363ffb48e36474a815c754c06ebf4efa7461118cedf489fd589b8"
+    },
+    {
+      "path": "general_ludd/os_expert/roles/windows_automation/tasks/main.yml",
+      "line": 346,
+      "rule": "ambient-python",
+      "text_hash": "267d27bc3c4e1b0ad7ad9d7c3a419667b861590ce380258e58fd0bb7b84a9687"
+    },
+    {
+      "path": "general_ludd/physics/roles/latex_expert/tasks/main.yml",
+      "line": 40,
+      "rule": "ambient-python",
+      "text_hash": "ecbf9dd06d2999d2145f55f371c01e2cc93d7f97f8b8a3352b1c9ecdae442eac"
+    },
+    {
+      "path": "general_ludd/physics/roles/math_modeler/tasks/main.yml",
+      "line": 42,
+      "rule": "ambient-python",
+      "text_hash": "ecbf9dd06d2999d2145f55f371c01e2cc93d7f97f8b8a3352b1c9ecdae442eac"
+    },
+    {
+      "path": "general_ludd/physics/roles/organic_synthesist/tasks/main.yml",
+      "line": 41,
+      "rule": "ambient-python",
+      "text_hash": "ecbf9dd06d2999d2145f55f371c01e2cc93d7f97f8b8a3352b1c9ecdae442eac"
+    },
+    {
+      "path": "general_ludd/physics/roles/paper_reviewer/tasks/main.yml",
+      "line": 82,
+      "rule": "ambient-python",
+      "text_hash": "ecbf9dd06d2999d2145f55f371c01e2cc93d7f97f8b8a3352b1c9ecdae442eac"
+    },
+    {
+      "path": "general_ludd/physics/roles/particle_experiment_analyst/tasks/main.yml",
+      "line": 41,
+      "rule": "ambient-python",
+      "text_hash": "ecbf9dd06d2999d2145f55f371c01e2cc93d7f97f8b8a3352b1c9ecdae442eac"
+    },
+    {
+      "path": "general_ludd/physics/roles/quantum_computer/tasks/main.yml",
+      "line": 40,
+      "rule": "ambient-python",
+      "text_hash": "ecbf9dd06d2999d2145f55f371c01e2cc93d7f97f8b8a3352b1c9ecdae442eac"
+    },
+    {
+      "path": "general_ludd/physics/roles/spectroscopy_analyst/tasks/main.yml",
+      "line": 46,
+      "rule": "ambient-python",
+      "text_hash": "ecbf9dd06d2999d2145f55f371c01e2cc93d7f97f8b8a3352b1c9ecdae442eac"
+    },
+    {
+      "path": "general_ludd/physics/roles/thermodynamics_engineer/tasks/main.yml",
+      "line": 43,
+      "rule": "ambient-python",
+      "text_hash": "ecbf9dd06d2999d2145f55f371c01e2cc93d7f97f8b8a3352b1c9ecdae442eac"
+    },
+    {
+      "path": "general_ludd/radio/roles/exam_quiz/files/exam_quiz.py",
+      "line": 27,
+      "rule": "sys-path-mutation",
+      "text_hash": "7b197e3d99f54978642ea39159e528e5fcfd1e19522a8f857ed0ae9087871f90"
+    },
+    {
+      "path": "general_ludd/radio/roles/link_budget/files/link_budget.py",
+      "line": 37,
+      "rule": "sys-path-mutation",
+      "text_hash": "7b197e3d99f54978642ea39159e528e5fcfd1e19522a8f857ed0ae9087871f90"
+    },
+    {
+      "path": "general_ludd/radio/roles/propagation_model/files/propagation_model.py",
+      "line": 27,
+      "rule": "sys-path-mutation",
+      "text_hash": "7b197e3d99f54978642ea39159e528e5fcfd1e19522a8f857ed0ae9087871f90"
+    },
+    {
+      "path": "general_ludd/radio/roles/regulation_lookup/files/regulation_lookup.py",
+      "line": 27,
+      "rule": "sys-path-mutation",
+      "text_hash": "7b197e3d99f54978642ea39159e528e5fcfd1e19522a8f857ed0ae9087871f90"
+    },
+    {
+      "path": "general_ludd/radio/roles/signal_identify/files/signal_identify.py",
+      "line": 26,
+      "rule": "sys-path-mutation",
+      "text_hash": "4fe937d815b207a637fbabb0f2389d48ddb1ea50edec99773da9278c89d473e8"
+    },
+    {
+      "path": "general_ludd/security/roles/audit_framework/tasks/audit_parse.yml",
+      "line": 64,
+      "rule": "ambient-python",
+      "text_hash": "4ab55ef3eb44addda8ac0383eb116ab2b01599cfc6ce2ae3085c8d91e908dc9f"
+    },
+    {
+      "path": "general_ludd/security/roles/audit_framework/tasks/audit_parse.yml",
+      "line": 66,
+      "rule": "ambient-python",
+      "text_hash": "6a67715375ac25da5ca0f5cf3ae0a08bd0e04d301516dfdb5e72b7cf520a5f25"
+    },
+    {
+      "path": "general_ludd/security/roles/audit_framework/tasks/audit_parse.yml",
+      "line": 72,
+      "rule": "ambient-python",
+      "text_hash": "2c048b71f60cca029d881208210bedb2947ee22752f49157317948a5164af639"
+    },
+    {
+      "path": "general_ludd/security/roles/audit_framework/tasks/audit_parse.yml",
+      "line": 74,
+      "rule": "ambient-python",
+      "text_hash": "cb763ce6cd82b34f6f241a6b1d07495ac76e3a9a508a947f22a928e2e9cde1e0"
+    },
+    {
+      "path": "general_ludd/web_server/roles/cgi_wsgi/tasks/main.yml",
+      "line": 90,
+      "rule": "ambient-python",
+      "text_hash": "69a0e81f432bf7342c5c336ce7236f6293d16f7eb0063910e4becf0237598548"
+    },
+    {
+      "path": "general_ludd/web_server/roles/cgi_wsgi/tasks/main.yml",
+      "line": 97,
+      "rule": "ambient-python",
+      "text_hash": "052bcbab763938e81b954680ea3d3f60f58871c19ce9b4dcd02e4b60e7deafe7"
+    },
+    {
+      "path": "general_ludd/web_server/roles/logging_middleware/tasks/main.yml",
+      "line": 21,
+      "rule": "ambient-python",
+      "text_hash": "ad9fced443d760954b5949eb62438971349822f0e0b259e01b8c37596183a25d"
+    },
+    {
+      "path": "general_ludd/web_server/roles/logging_middleware/tasks/main.yml",
+      "line": 28,
+      "rule": "ambient-python",
+      "text_hash": "1c94723d27d34363552f29632c7d453b1003e13ac790b04604e8499ff736adea"
+    },
+    {
+      "path": "general_ludd/web_server/roles/logging_middleware/tasks/main.yml",
+      "line": 37,
+      "rule": "ambient-python",
+      "text_hash": "2dd3ec230f5e3e4025459d9062b9c96cc04fec91f0a01bb13e6041606c42b452"
+    },
+    {
+      "path": "general_ludd/web_server/roles/logging_middleware/tasks/main.yml",
+      "line": 71,
+      "rule": "ambient-python",
+      "text_hash": "46311471eb4011000d69882b5de98539ab430c8a2d24f1cf6cd7d3919098db8c"
+    },
+    {
+      "path": "general_ludd/web_server/roles/ssl_config/tasks/main.yml",
+      "line": 69,
+      "rule": "ambient-python",
+      "text_hash": "4a5a832efaf07c4e0c97d551f529e992e2f355509c91b758eb2620b2ba5ca0f0"
+    },
+    {
+      "path": "general_ludd/web_server/roles/ssl_config/tasks/main.yml",
+      "line": 80,
+      "rule": "ambient-python",
+      "text_hash": "500e0e2dcb97c228c6ab371337d8d8e69e9a4f9405a5aa3889601832ac4dec26"
+    },
+    {
+      "path": "general_ludd/web_server/roles/ssl_config/tasks/main.yml",
+      "line": 89,
+      "rule": "ambient-python",
+      "text_hash": "cf3e7130e0aeec58cbee0f4440db347d03988901c589462a6025aa8df1960a02"
+    }
+  ]
+}

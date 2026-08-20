@@ -684,7 +684,11 @@ class TestRunPlaybookIsolationPath:
     def test_isolation_enabled_delegates_to_runner_backend(self):
         from general_ludd.ansible.isolation import ProcessIsolationConfig
 
-        iso = ProcessIsolationConfig(enabled=True, executable="podman")
+        iso = ProcessIsolationConfig(
+            enabled=True,
+            executable="podman",
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
+        )
         runner = CoreAnsibleRunner(process_isolation=iso)
         mock_result = AnsibleResult(status="successful", rc=0)
         with patch.object(runner, "_execute_with_runner", return_value=mock_result) as mock_runner:
@@ -697,7 +701,11 @@ class TestRunPlaybookIsolationPath:
     def test_isolation_enabled_no_ansible_runner_package(self):
         from general_ludd.ansible.isolation import ProcessIsolationConfig
 
-        iso = ProcessIsolationConfig(enabled=True, executable="podman")
+        iso = ProcessIsolationConfig(
+            enabled=True,
+            executable="podman",
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
+        )
         runner = CoreAnsibleRunner(process_isolation=iso)
         result = runner.run_playbook("/tmp/playbook.yml")
         assert result.status == "failed"
