@@ -961,11 +961,44 @@ jobs:
       - name: Build RPM package
         run: |
           echo "=== CI PHASE: package-rpm-linux ==="
-          sudo apt-get update -qq && sudo apt-get install -y -qq rpm
+          sudo apt-get update -qq && sudo apt-get install -y -qq rpm cpio
           make rpm-package || {
             echo "::error::RPM PACKAGE FAILED — .rpm build for linux-x86_64 failed. Run 'make rpm-package' locally for details."
             exit 1
           }
+      - name: Smoke packaged Linux artifacts
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: smoke-packages-linux ==="
+          smoke_root="/tmp/gludd-linux-package-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$smoke_root/gludd-linux-tar-smoke" "$smoke_root/deb" "$smoke_root/rpm"
+          trap 'rm -rf "$smoke_root"' EXIT
+
+          tar -xzf "dist/gludd-${VERSION}-linux-x86_64.tar.gz" -C "$smoke_root/gludd-linux-tar-smoke"
+          tar_bin=$(find "$smoke_root/gludd-linux-tar-smoke" -type f -name gludd -print -quit)
+          test -n "$tar_bin"
+          chmod +x "$tar_bin"
+          "$tar_bin" version
+          "$tar_bin" --help >/dev/null
+
+          dpkg-deb -x "dist/gludd_${VERSION}_amd64.deb" "$smoke_root/deb"
+          deb_bin=$(find "$smoke_root/deb" -type f -name gludd -print -quit)
+          test -n "$deb_bin"
+          chmod +x "$deb_bin"
+          "$deb_bin" version
+
+          rpm2cpio "dist/gludd-${VERSION}-1.x86_64.rpm" | (
+            cd "$smoke_root/rpm"
+            cpio -idm --quiet
+          )
+          rpm_bin=$(find "$smoke_root/rpm" -type f -name gludd -print -quit)
+          test -n "$rpm_bin"
+          chmod +x "$rpm_bin"
+          "$rpm_bin" version
+
+          cat > "dist/gludd-smoke-linux-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","checks":{"linux_tar":"passed","linux_deb":"passed","linux_rpm":"passed"}}
+          JSON
       - name: CI Summary
         if: always()
         run: |
@@ -993,6 +1026,7 @@ jobs:
             dist/gludd_${{ env.VERSION }}_amd64.deb.sha256
             dist/gludd-${{ env.VERSION }}-1.x86_64.rpm
             dist/gludd-${{ env.VERSION }}-1.x86_64.rpm.sha256
+            dist/gludd-smoke-linux-${{ env.VERSION }}.json
   macos:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
     runs-on: macos-latest
@@ -1069,6 +1103,38 @@ jobs:
           }
           rm -rf dist/dmg-staging
           shasum -a 256 "dist/gludd-${VERSION}-macos-arm64.dmg" > "dist/gludd-${VERSION}-macos-arm64.dmg.sha256"
+      - name: Smoke packaged macOS artifacts
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: smoke-packages-macos ==="
+          smoke_root="/tmp/gludd-macos-package-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mount_point="$smoke_root/gludd-macos-dmg-smoke"
+          mkdir -p "$smoke_root/tar" "$mount_point"
+          cleanup_macos_smoke() {
+            hdiutil detach "$mount_point" -force >/dev/null 2>&1 || true
+            rm -rf "$smoke_root"
+          }
+          trap cleanup_macos_smoke EXIT
+
+          tar -xzf "dist/gludd-${VERSION}-macos-arm64.tar.gz" -C "$smoke_root/tar"
+          tar_bin=$(find "$smoke_root/tar" -type f -name gludd -print -quit)
+          test -n "$tar_bin"
+          chmod +x "$tar_bin"
+          "$tar_bin" version
+          "$tar_bin" --help >/dev/null
+
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount_point"             "dist/gludd-${VERSION}-macos-arm64.dmg"
+          dmg_bin=$(find "$mount_point" -type f -name gludd -print -quit)
+          test -n "$dmg_bin"
+          chmod +x "$dmg_bin"
+          "$dmg_bin" version
+          "$dmg_bin" --help >/dev/null
+          hdiutil detach "$mount_point"
+          mkdir -p "$mount_point"
+
+          cat > "dist/gludd-smoke-macos-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","checks":{"macos_tar":"passed","macos_dmg":"passed"}}
+          JSON
       - name: CI Summary
         if: always()
         run: |
@@ -1092,6 +1158,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-macos-arm64.tar.gz.sha256
             dist/gludd-${{ env.VERSION }}-macos-arm64.dmg
             dist/gludd-${{ env.VERSION }}-macos-arm64.dmg.sha256
+            dist/gludd-smoke-macos-${{ env.VERSION }}.json
 
   windows:
     needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
@@ -1201,6 +1268,43 @@ jobs:
           }
           $installerHash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
           "$installerHash  $(Split-Path -Leaf $installerPath)" | Set-Content -LiteralPath "$installerPath.sha256" -Encoding ascii
+      - name: Smoke packaged Windows artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "=== CI PHASE: smoke-packages-windows ==="
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "gludd-windows-package-smoke-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $zipRoot = Join-Path $smokeRoot "zip"
+          $installDir = Join-Path $smokeRoot "gludd-windows-nsis-smoke"
+          New-Item -ItemType Directory -Force -Path $zipRoot | Out-Null
+          try {
+            Expand-Archive -LiteralPath "dist/gludd-$env:VERSION-windows-x86_64.zip" -DestinationPath $zipRoot
+            $zipBinary = Get-ChildItem -Path $zipRoot -Filter gludd.exe -Recurse | Select-Object -First 1
+            if ($null -eq $zipBinary) { throw "zip does not contain gludd.exe" }
+            & $zipBinary.FullName version
+            if ($LASTEXITCODE -ne 0) { throw "zip gludd.exe version smoke failed" }
+            & $zipBinary.FullName --help | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "zip gludd.exe help smoke failed" }
+
+            $installer = "dist/gludd-$env:VERSION-setup-x86_64.exe"
+            $install = Start-Process -FilePath $installer -ArgumentList @("/S", "/D=$installDir") -Wait -PassThru
+            if ($install.ExitCode -ne 0) { throw "NSIS silent install failed: $($install.ExitCode)" }
+            $installedBinary = Join-Path $installDir "gludd.exe"
+            if (-not (Test-Path -LiteralPath $installedBinary)) { throw "NSIS did not install gludd.exe" }
+            & $installedBinary version
+            if ($LASTEXITCODE -ne 0) { throw "installed gludd.exe version smoke failed" }
+            $uninstaller = Join-Path $installDir "uninstall.exe"
+            $uninstall = Start-Process -FilePath $uninstaller -ArgumentList "/S" -Wait -PassThru
+            if ($uninstall.ExitCode -ne 0) { throw "NSIS silent uninstall failed: $($uninstall.ExitCode)" }
+
+            @{
+              version = $env:VERSION
+              checks = @{ windows_zip = "passed"; windows_nsis = "passed" }
+            } | ConvertTo-Json -Depth 3 | Set-Content "dist/gludd-smoke-windows-$env:VERSION.json" -Encoding utf8
+          }
+          finally {
+            Remove-Item -Path $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
       - name: CI Summary
         if: always()
         shell: pwsh
@@ -1224,6 +1328,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-windows-x86_64.zip.sha256
             dist/gludd-${{env.VERSION}}-setup-x86_64.exe
             dist/gludd-${{env.VERSION}}-setup-x86_64.exe.sha256
+            dist/gludd-smoke-windows-${{ env.VERSION }}.json
 
   termux:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
@@ -1286,6 +1391,22 @@ jobs:
             exit 1
           }
           sha256sum "../gludd-${VERSION}-linux-aarch64.tar.gz" > "../gludd-${VERSION}-linux-aarch64.tar.gz.sha256"
+      - name: Smoke packaged Linux aarch64 artifact
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: smoke-package-linux-aarch64 ==="
+          smoke_root="/tmp/gludd-linux-aarch64-tar-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$smoke_root"
+          trap 'rm -rf "$smoke_root"' EXIT
+          tar -xzf "dist/gludd-${VERSION}-linux-aarch64.tar.gz" -C "$smoke_root"
+          binary=$(find "$smoke_root" -type f -name gludd -print -quit)
+          test -n "$binary"
+          chmod +x "$binary"
+          "$binary" version
+          "$binary" --help >/dev/null
+          cat > "dist/gludd-smoke-linux-aarch64-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","checks":{"linux_aarch64_tar":"passed"}}
+          JSON
       - name: CI Summary
         if: always()
         run: |
@@ -1306,6 +1427,7 @@ jobs:
           path: |
             dist/gludd-${{ env.VERSION }}-linux-aarch64.tar.gz
             dist/gludd-${{ env.VERSION }}-linux-aarch64.tar.gz.sha256
+            dist/gludd-smoke-linux-aarch64-${{ env.VERSION }}.json
 
   # Container image -> GHCR (so the repo's Packages section is populated). Builds
   # on every triggering event (validating the Dockerfile) but only PUSHES on tag
@@ -1350,7 +1472,7 @@ jobs:
             type=sha
             type=ref,event=branch
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')) }}
-      - name: Build and push image
+      - name: Build container image
         id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2 (node24)
         with:
@@ -1358,11 +1480,76 @@ jobs:
           file: ./Dockerfile
           build-args: |
             VERSION=${{ env.VERSION }}
-          push: ${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') }}
+          push: false
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Smoke container health endpoint
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: smoke-container-health ==="
+          container_name="gludd-container-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          image_tag=$(printf '%s\n' '${{ steps.meta.outputs.tags }}' | head -n 1)
+          test -n "$image_tag"
+          cleanup_container() {
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup_container EXIT
+          docker run -d --name "$container_name" \
+            -e GLUDD_ALLOW_NO_AUTH=1 -p 127.0.0.1::8000 "$image_tag"
+          port=$(docker port "$container_name" 8000/tcp | head -n 1 | awk -F: '{print $NF}')
+          test -n "$port"
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error "http://127.0.0.1:${port}/healthz" >/dev/null; then
+              ready=1
+              break
+            fi
+            echo "container health attempt ${attempt}/30"
+            sleep 1
+          done
+          test "$ready" -eq 1
+          cat > "gludd-smoke-container-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","checks":{"container":"passed"}}
+          JSON
+      - name: Publish verified container image
+        if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master')
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: container-publish ==="
+          printf '%s\n' '${{ steps.meta.outputs.tags }}' |
+            while IFS= read -r image_tag; do
+              test -n "$image_tag" || continue
+              echo "pushing verified image tag: $image_tag"
+              docker push "$image_tag"
+            done
+      - name: Write container digest metadata
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: container-digest-metadata ==="
+          image_tag=$(printf '%s\n' '${{ steps.meta.outputs.tags }}' | head -n 1)
+          test -n "$image_tag"
+          if [[ "${GITHUB_REF}" == refs/tags/v* || "${GITHUB_REF}" == refs/heads/master ]]; then
+            image_ref=$(docker image inspect --format='{{index .RepoDigests 0}}' "$image_tag")
+          else
+            image_id=$(docker image inspect --format='{{.Id}}' "$image_tag")
+            image_name=${image_tag%:*}
+            image_ref="${image_name}@${image_id}"
+          fi
+          echo "$image_ref" | grep -Eq '@sha256:[0-9a-f]{64}$'
+          cat > "gludd-container-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","image":"${image_ref}"}
+          JSON
+      - name: Upload container release metadata
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: gludd-container-metadata
+          if-no-files-found: error
+          path: |
+            gludd-container-${{ env.VERSION }}.json
+            gludd-smoke-container-${{ env.VERSION }}.json
       - name: CI Summary
         if: always()
         run: |
@@ -1375,6 +1562,106 @@ jobs:
           echo "  Push enabled      : \${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') }}"
           echo "  Cache             : type=gha (mode=max)"
           echo "============================================="
+
+  ansible-ee:
+    needs: [version, gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      EE_TAG: ghcr.io/${{ github.repository }}/ansible-ee:${{ needs.version.outputs.version }}
+      EE_CONTEXT: /tmp/gludd-ansible-ee-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+        with:
+          ref: ${{ github.sha }}
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Inject version
+        run: |
+          sed -i "s/__version__ = \".*\"/__version__ = \"${VERSION}\"/" src/general_ludd/__init__.py
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" pyproject.toml
+      - name: Install locked build dependencies
+        run: |
+          echo "=== CI PHASE: ansible-ee-install ==="
+          uv sync
+      - name: Validate canonical Ansible runtime boundary
+        run: |
+          echo "=== CI PHASE: ansible-ee-boundary ==="
+          make validate-ansible-runtime-boundary
+      - name: Build locked Ansible collection artifacts
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: ansible-ee-collections ==="
+          mkdir -p dist/collections
+          for collection in agent language networking; do
+            echo "building general_ludd.${collection}"
+            uv run ansible-galaxy collection build               "collections/ansible_collections/general_ludd/${collection}"               --output-path dist/collections --force
+          done
+          test -s dist/collections/general_ludd-agent-0.2.0.tar.gz
+          test -s dist/collections/general_ludd-language-0.1.0.tar.gz
+          test -s dist/collections/general_ludd-networking-0.2.0.tar.gz
+      - name: Build Ansible execution environment
+        run: |
+          echo "=== CI PHASE: ansible-ee-build ==="
+          make build-ansible-execution-environment             ANSIBLE_EE_VALIDATE_ONLY=0             ANSIBLE_EE_RUNTIME=docker             ANSIBLE_EE_IMAGE="${EE_TAG}"             ANSIBLE_EE_CONTEXT="${EE_CONTEXT}"
+      - name: Smoke Ansible execution environment
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: ansible-ee-smoke ==="
+          docker run --rm --network=none "${EE_TAG}"             python3 -c "import ansible, ansible_runner; print('ANSIBLE_EE_SMOKE_PASS')"
+      - name: Log in to GHCR
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0 (node24)
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push tagged execution environment
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: ansible-ee-push ==="
+          docker push "${EE_TAG}"
+      - name: Stage execution-environment release metadata
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: ansible-ee-stage ==="
+          mkdir -p dist/ee-release
+          cp config/ansible/execution-environment.yml dist/ee-release/ansible-ee-execution-environment.yml
+          cp config/ansible/requirements.yml dist/ee-release/ansible-ee-requirements.yml
+          cp config/ansible/requirements.txt dist/ee-release/ansible-ee-requirements.txt
+          cp config/ansible/bindep.txt dist/ee-release/ansible-ee-bindep.txt
+          cp config/ansible/runtime-lock.json dist/ee-release/ansible-ee-runtime-lock.json
+          cp config/ansible/managed-host-python.lock.json dist/ee-release/ansible-managed-host-python.lock.json
+          cp config/ansible/collection-python-boundary-inventory.json             dist/ee-release/ansible-collection-python-boundary-inventory.json
+          cp dist/collections/*.tar.gz dist/ee-release/
+
+          image_id=$(docker image inspect --format='{{.Id}}' "${EE_TAG}")
+          image_ref="ghcr.io/${{ github.repository }}/ansible-ee@${image_id}"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            image_ref=$(docker image inspect --format='{{index .RepoDigests 0}}' "${EE_TAG}")
+          fi
+          echo "$image_ref" | grep -Eq '@sha256:[0-9a-f]{64}$'
+          cat > "dist/ee-release/gludd-ee-image-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","image":"${image_ref}"}
+          JSON
+          cat > "dist/ee-release/gludd-smoke-ansible-ee-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","checks":{"ansible_ee":"passed","collections":"passed"}}
+          JSON
+          cat > "dist/ee-release/gludd-collections-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","artifacts":["general_ludd-agent-0.2.0.tar.gz","general_ludd-language-0.1.0.tar.gz","general_ludd-networking-0.2.0.tar.gz"]}
+          JSON
+      - name: Upload execution-environment artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: gludd-ansible-ee
+          if-no-files-found: error
+          path: |
+            dist/ee-release/*
 
   # Manual-dispatch-only E2E job for the local-provider tests
   # (tests/e2e/providers/). NEVER runs on push or PR — the whole point of the
@@ -1447,7 +1734,7 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   release:
-    needs: [version, gate, test-shard, coverage, molecule, linux, macos, windows, termux, container, game-building]
+    needs: [version, gate, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: startsWith(github.ref, 'refs/tags/v')
@@ -1481,6 +1768,31 @@ jobs:
             echo "::error::RELEASE SBOM FAILED — CycloneDX SBOM generation failed. Run 'make sbom' locally for details."
             exit 1
           }
+      - name: Build and smoke Python distributions
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: release-python-distributions ==="
+          mkdir -p dist/python
+          uv build --wheel --sdist --out-dir dist/python
+          wheel=$(find dist/python -maxdepth 1 -name '*.whl' -print -quit)
+          sdist=$(find dist/python -maxdepth 1 -name '*.tar.gz' -print -quit)
+          test -n "$wheel"
+          test -n "$sdist"
+
+          wheel_env="/tmp/gludd-wheel-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          sdist_env="/tmp/gludd-sdist-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'rm -rf "$wheel_env" "$sdist_env"' EXIT
+          uv venv "$wheel_env"
+          uv pip install --python "$wheel_env/bin/python" "$wheel"
+          "$wheel_env/bin/gludd" version
+          "$wheel_env/bin/gludd" --help >/dev/null
+          uv venv "$sdist_env"
+          uv pip install --python "$sdist_env/bin/python" "$sdist"
+          "$sdist_env/bin/gludd" version
+          "$sdist_env/bin/gludd" --help >/dev/null
+          cat > "dist/gludd-smoke-python-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","checks":{"wheel":"passed","sdist":"passed"}}
+          JSON
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1 (node24)
         with:
           path: artifacts
@@ -1491,17 +1803,44 @@ jobs:
           echo "=== CI PHASE: release-stage-assets ==="
           mkdir -p release-assets
           cp -v artifacts/* release-assets/
+          cp -v dist/python/* release-assets/
+          cp -v "dist/gludd-smoke-python-${VERSION}.json" release-assets/
           cp -v dist/sbom.json release-assets/sbom.json
           cp -v dist/install.sh release-assets/install.sh
           cp -v LICENSE release-assets/LICENSE
           cp -v THIRD_PARTY_LICENSES.md release-assets/THIRD_PARTY_LICENSES.md
           echo "--- staged release assets ---"
           ls -la release-assets/
-      - name: Verify staged assets (pre-publish gate)
-        # ALL 12 artifact categories are REQUIRED — no exceptions.
-        # User mandate (2026-07-24): "i want all of the artifacts i asked
-        # for with NO exceptions." Optional categories weaken the gate and
-        # allowed incomplete releases through. Fix builds, not lower the bar.
+      - name: Smoke install script and release metadata
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: release-installer-metadata-smoke ==="
+          uv run python -c "import json, pathlib; data=json.loads(pathlib.Path('release-assets/sbom.json').read_text()); assert data.get('bomFormat') == 'CycloneDX'; assert isinstance(data.get('components'), list)"
+
+          smoke_root="/tmp/gludd-install-script-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          install_root="$smoke_root/install"
+          mkdir -p "$smoke_root/archive" "$install_root"
+          trap 'rm -rf "$smoke_root"' EXIT
+          tar -xzf "release-assets/gludd-${VERSION}-linux-x86_64.tar.gz" -C "$smoke_root/archive"
+          binary=$(find "$smoke_root/archive" -type f -name gludd -print -quit)
+          test -n "$binary"
+          binary_dir=$(dirname "$binary")
+          cp release-assets/install.sh "$binary_dir/install.sh"
+          chmod +x "$binary_dir/install.sh"
+          "$binary_dir/install.sh" "$install_root"
+          "$install_root/gludd" version
+          "$install_root/gludd" --help >/dev/null
+          cat > "release-assets/gludd-smoke-release-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","checks":{"sbom":"passed","install_script":"passed"}}
+          JSON
+      - name: Write release provenance manifest
+        run: |
+          echo "=== CI PHASE: release-manifest ==="
+          uv run python scripts/verify_release_asset_matrix.py write-manifest release-assets "${VERSION}" --source-sha "${GITHUB_SHA}"
+      - name: Verify core native asset baseline (fast-fail)
+        # This early presence check gives concise failures for the core native
+        # formats. The later verifier is authoritative for all 28 categories,
+        # archive contents, smoke attestations, checksums, and metadata.
         run: |
           echo "=== CI PHASE: release-pre-publish-gate ==="
           set -e
@@ -1539,18 +1878,26 @@ jobs:
           check_required 'LICENSE'             'LICENSE'
           check_required 'THIRD_PARTY*'        'THIRD_PARTY_LICENSES'
           echo
-          echo "PRE-PUBLISH GATE: $missing required missing"
+          echo "CORE ASSET BASELINE: $missing pattern(s) missing"
           if [ "$missing" -gt 0 ]; then
-            echo "FAIL — $missing required asset category(ies) missing. ALL 12 categories are required."
+            echo "FAIL -- $missing core native asset pattern(s) missing."
             exit 1
           fi
-          echo "PRE-PUBLISH GATE: PASS — all 12 asset categories present."
+          echo "CORE ASSET BASELINE: PASS -- full functional matrix follows."
       - name: Generate SHA256SUMS aggregate
         run: |
           echo "=== CI PHASE: release-sha256sums ==="
           cd release-assets
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
+      - name: Verify complete functional artifact matrix
+        run: |
+          echo "=== CI PHASE: release-functional-matrix ==="
+          uv run python scripts/verify_release_asset_matrix.py verify \
+            release-assets "${VERSION}" --repository-root . || {
+            echo "::error::RELEASE FUNCTIONAL MATRIX FAILED"
+            exit 1
+          }
       - name: Inspect existing release
         # action-gh-release updates the release for an existing tag. Inspect it
         # for audit visibility; a stale DRAFT left from a prior aborted run is
@@ -1596,10 +1943,9 @@ jobs:
           generate_release_notes: true
       - name: Verify release completeness (blocking)
         # Single source of truth for "the release actually shipped": the same
-        # scripts/verify_release_completeness.py used locally checks every
-        # artifact category (4 platform binaries, .deb/.rpm/.dmg/.exe,
-        # checksums, SBOM, licenses), the >=12 asset floor, the prerelease
-        # flag vs tag shape, version-stamped names, and zero-size assets.
+        # scripts/verify_release_completeness.py used locally checks all 28
+        # beta4 categories, the >=30 asset floor, prerelease/tag consistency,
+        # version-stamped names, and zero-size assets.
         # Replaces the old inline `assets | length >= 6` check, whose threshold
         # had drifted from the verifier's and which counted names only —
         # 6 .sha256 files and no binaries would have passed. v0.1.0-beta.1
