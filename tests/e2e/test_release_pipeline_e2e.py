@@ -66,13 +66,13 @@ def _makefile_prerequisites(makefile_text: str, target: str) -> list[str]:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_release_cut_target_exists():
+def test_release_cut_target_exists() -> None:
     """make release-cut is declared in the Makefile."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     assert _find_make_target(makefile, "release-cut"), "release-cut target not found in Makefile"
 
 
-def test_release_cut_requires_tag_argument():
+def test_release_cut_requires_tag_argument() -> None:
     """release-cut refuses to run without a TAG argument."""
     # Dry-run: the target should exit non-zero when TAG is empty.
     # We can't run the actual release-cut, but we verify the guard exists.
@@ -83,7 +83,7 @@ def test_release_cut_requires_tag_argument():
     assert '[ -n "$(TAG)" ]' in recipe, "release-cut missing TAG check"
 
 
-def test_release_cut_steps_ordered():
+def test_release_cut_steps_ordered() -> None:
     """release-cut invokes its sub-steps in the correct order."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     m = re.search(r"^release-cut:\s*$(.+?)(?=^release-deploy|\Z)", makefile, re.MULTILINE | re.DOTALL)
@@ -111,7 +111,7 @@ def test_release_cut_steps_ordered():
         )
 
 
-def test_release_cut_all_dependency_targets_exist():
+def test_release_cut_all_dependency_targets_exist() -> None:
     """Every target referenced by release-cut is declared in the Makefile."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     deps = [
@@ -127,7 +127,7 @@ def test_release_cut_all_dependency_targets_exist():
         assert _find_make_target(makefile, dep), f"release-cut dependency '{dep}' not declared"
 
 
-def test_release_deploy_target_exists():
+def test_release_deploy_target_exists() -> None:
     """make release-deploy is declared in the Makefile."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     assert _find_make_target(makefile, "release-deploy"), "release-deploy target not found"
@@ -138,7 +138,7 @@ def test_release_deploy_target_exists():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_verify_release_completeness_script_exists():
+def test_verify_release_completeness_script_exists() -> None:
     """The verify_release_completeness.py script loads cleanly."""
     script_path = ROOT / "scripts" / "verify_release_completeness.py"
     assert script_path.is_file(), "verify_release_completeness.py not found"
@@ -150,18 +150,18 @@ def test_verify_release_completeness_script_exists():
     assert mod is not None
 
 
-def test_expected_categories_count_is_twelve():
-    """Exactly 12 artifact categories are expected — no more, no less."""
+def test_expected_categories_count_is_twenty_eight() -> None:
+    """Exactly 28 beta4 artifact categories are required, with none optional."""
     script_path = ROOT / "scripts" / "verify_release_completeness.py"
     spec = importlib.util.spec_from_file_location("vrce2e_cat", script_path)
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    assert len(mod.EXPECTED_CATEGORIES) == 12
+    assert len(mod.EXPECTED_CATEGORIES) == 28
     assert len(mod.OPTIONAL_CATEGORIES) == 0
 
 
-def test_verify_completeness_category_checks():
+def test_verify_completeness_category_checks() -> None:
     """Each EXPECTED_CATEGORIES check function works with realistic asset names."""
     script_path = ROOT / "scripts" / "verify_release_completeness.py"
     spec = importlib.util.spec_from_file_location("vrce2e_chk", script_path)
@@ -174,27 +174,46 @@ def test_verify_completeness_category_checks():
         assert not check_fn(names), f"Category '{label}' falsely matched empty set"
 
     full_assets = {
-        "gludd-linux-x86_64-v0.1.0-beta.3.tar.gz",
-        "gludd-linux-aarch64-v0.1.0-beta.3.tar.gz",
-        "gludd-macos-arm64-v0.1.0-beta.3.tar.gz",
-        "gludd-windows-x86_64-v0.1.0-beta.3.tar.gz",
-        "gludd_0.1.0-beta.3_amd64.deb",
-        "gludd-0.1.0-beta.3-1.x86_64.rpm",
-        "gludd-0.1.0-beta.3-arm64.dmg",
-        "gludd-installer-0.1.0-beta.3-x86_64.exe",
-        "gludd-0.1.0-beta.3-checksums.sha256",
-        "gludd-0.1.0-beta.3.spdx.json",
+        "gludd-linux-x86_64-v0.1.0-beta.4.tar.gz",
+        "gludd-linux-aarch64-v0.1.0-beta.4.tar.gz",
+        "gludd-macos-arm64-v0.1.0-beta.4.tar.gz",
+        "gludd-windows-x86_64-v0.1.0-beta.4.tar.gz",
+        "gludd_0.1.0-beta.4_amd64.deb",
+        "gludd-0.1.0-beta.4-1.x86_64.rpm",
+        "gludd-0.1.0-beta.4-arm64.dmg",
+        "gludd-installer-0.1.0-beta.4-x86_64.exe",
+        "gludd-0.1.0-beta.4-checksums.sha256",
+        "gludd-0.1.0-beta.4.spdx.json",
         "LICENSE",
         "THIRD_PARTY_LICENSES.md",
+        "general_ludd_agent-0.1.0b4-py3-none-any.whl",
+        "general_ludd_agent-0.1.0-beta.4.tar.gz",
+        "general_ludd-agent-0.2.0.tar.gz",
+        "general_ludd-language-0.1.0.tar.gz",
+        "general_ludd-networking-0.2.0.tar.gz",
+        "gludd-collections-v0.1.0-beta.4.json",
+        "ansible-ee-execution-environment.yml",
+        "ansible-ee-requirements.yml",
+        "ansible-ee-requirements.txt",
+        "ansible-ee-bindep.txt",
+        "ansible-ee-runtime-lock.json",
+        "ansible-managed-host-python.lock.json",
+        "ansible-collection-python-boundary-inventory.json",
+        "gludd-ee-image-v0.1.0-beta.4.json",
+        "gludd-container-v0.1.0-beta.4.json",
+        "install.sh",
+        "gludd-smoke-linux-x86_64-v0.1.0-beta.4.json",
+        "gludd-release-manifest-v0.1.0-beta.4.json",
     }
-    missing = 0
-    for _label, check_fn in mod.EXPECTED_CATEGORIES.items():
-        if not check_fn(full_assets):
-            missing += 1
-    assert missing == 0, f"{missing} categories did NOT match the full asset set"
+    missing = [
+        label
+        for label, check_fn in mod.EXPECTED_CATEGORIES.items()
+        if not check_fn(full_assets)
+    ]
+    assert not missing, f"Categories did not match the full beta4 asset set: {missing}"
 
 
-def test_prerelease_detection():
+def test_prerelease_detection() -> None:
     """Prerelease tags (alpha/beta/rc) are correctly detected."""
     script_path = ROOT / "scripts" / "verify_release_completeness.py"
     spec = importlib.util.spec_from_file_location("vrce2e_pre", script_path)
@@ -210,7 +229,7 @@ def test_prerelease_detection():
     assert not mod.expected_prerelease("v2.3.4")
 
 
-def test_version_from_tag():
+def test_version_from_tag() -> None:
     """Tag 'v0.1.0-beta.3' → '0.1.0-beta.3'."""
     script_path = ROOT / "scripts" / "verify_release_completeness.py"
     spec = importlib.util.spec_from_file_location("vrce2e_ver", script_path)
@@ -223,7 +242,7 @@ def test_version_from_tag():
     assert mod.version_from_tag("v1.0.0") == "1.0.0"
 
 
-def test_verify_release_completeness_make_target():
+def test_verify_release_completeness_make_target() -> None:
     """make verify-release-completeness exists and requires TAG."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     assert _find_make_target(makefile, "verify-release-completeness")
@@ -234,7 +253,7 @@ def test_verify_release_completeness_make_target():
     assert "TAG" in recipe, "verify-release-completeness should require TAG"
 
 
-def test_verify_release_completeness_error_on_missing_tag():
+def test_verify_release_completeness_error_on_missing_tag() -> None:
     """Running verify-release-completeness without TAG exits non-zero."""
     result = _run_make("verify-release-completeness")
     assert result.returncode != 0, "Expected non-zero exit when TAG is missing"
@@ -245,7 +264,7 @@ def test_verify_release_completeness_error_on_missing_tag():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_pyproject_version_matches_init():
+def test_pyproject_version_matches_init() -> None:
     """pyproject.toml [project] version == src/general_ludd/__init__.py __version__."""
     import tomllib
 
@@ -264,7 +283,7 @@ def test_pyproject_version_matches_init():
     )
 
 
-def test_version_consistency_script_passes():
+def test_version_consistency_script_passes() -> None:
     """scripts/check_version_consistency.py exits 0 when versions match."""
     result = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "check_version_consistency.py")],
@@ -279,7 +298,7 @@ def test_version_consistency_script_passes():
     assert "OK:" in result.stdout
 
 
-def test_readme_status_line_present():
+def test_readme_status_line_present() -> None:
     """README.md contains a 'Status as of' line."""
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     m = re.search(r"[Ss]tatus\s+as\s+of\s+(v?[\w.\-]+)", readme)
@@ -288,7 +307,7 @@ def test_readme_status_line_present():
     assert readme_version, "README status version is empty"
 
 
-def test_check_readme_status_script_exists():
+def test_check_readme_status_script_exists() -> None:
     """check_readme_status_current.py loads and has expected functions."""
     script_path = ROOT / "scripts" / "check_readme_status_current.py"
     spec = importlib.util.spec_from_file_location("crsce2e", script_path)
@@ -304,7 +323,7 @@ def test_check_readme_status_script_exists():
     assert mod._normalize("0.1.0") == "0.1.0"
 
 
-def test_check_readme_status_current_with_tag(tmp_path: Path):
+def test_check_readme_status_current_with_tag(tmp_path: Path) -> None:
     """check_readme_status_current.py matches README version against a given tag."""
     script_path = ROOT / "scripts" / "check_readme_status_current.py"
     spec = importlib.util.spec_from_file_location("crsce2e_tag", script_path)
@@ -327,7 +346,7 @@ def test_check_readme_status_current_with_tag(tmp_path: Path):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_expected_artifact_naming_patterns():
+def test_expected_artifact_naming_patterns() -> None:
     """Each EXPECTED_CATEGORIES label maps to a recognizable naming pattern."""
     script_path = ROOT / "scripts" / "verify_release_completeness.py"
     spec = importlib.util.spec_from_file_location("vrce2e_nm", script_path)
@@ -354,12 +373,14 @@ _ASSET_PATTERN_TESTS = [
 
 
 @pytest.mark.parametrize(("arch_label", "pattern", "asset"), _ASSET_PATTERN_TESTS)
-def test_platform_asset_pattern(arch_label: str, pattern: re.Pattern[str], asset: str):
+def test_platform_asset_pattern(
+    arch_label: str, pattern: re.Pattern[str], asset: str
+) -> None:
     """Each platform binary category regex matches its expected asset name."""
     assert pattern.search(asset), f"{arch_label} pattern must match '{asset}'"
 
 
-def test_version_stamped_asset_naming():
+def test_version_stamped_asset_naming() -> None:
     """Artifact names should embed the version (without leading 'v')."""
     script_path = ROOT / "scripts" / "verify_release_completeness.py"
     spec = importlib.util.spec_from_file_location("vrce2e_vs", script_path)
@@ -373,7 +394,7 @@ def test_version_stamped_asset_naming():
     assert any(version in n for n in names), "Assets should embed version in name"
 
 
-def test_expected_package_asset_patterns():
+def test_expected_package_asset_patterns() -> None:
     """Package artifacts (.deb, .rpm, .dmg, .exe installer) each have a recognizer."""
     deb_re = re.compile(r"\.deb$", re.IGNORECASE)
     rpm_re = re.compile(r"\.rpm$", re.IGNORECASE)
@@ -387,7 +408,7 @@ def test_expected_package_asset_patterns():
     assert not deb_re.search("gludd_0.1.0_amd64.deb.txt")
 
 
-def test_metadata_asset_patterns():
+def test_metadata_asset_patterns() -> None:
     """Checksums, SBOM, LICENSE, THIRD_PARTY_LICENSES each have recognizers."""
     checksum_re = re.compile(r"(checksums?|SHA256SUMS|sha256)|\.sha256(\.txt)?", re.IGNORECASE)
     sbom_re = re.compile(r"sbom|spdx|cyclonedx|\.cdx\.|\.spdx\.", re.IGNORECASE)
@@ -403,13 +424,13 @@ def test_metadata_asset_patterns():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_gate_lite_target_exists():
+def test_gate_lite_target_exists() -> None:
     """make gate-lite is declared in the Makefile."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     assert _find_make_target(makefile, "gate-lite"), "gate-lite target not found"
 
 
-def test_gate_lite_prerequisites_are_valid_targets():
+def test_gate_lite_prerequisites_are_valid_targets() -> None:
     """Every prerequisite of gate-lite is itself a declared Makefile target."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     prereqs = _makefile_prerequisites(makefile, "gate-lite")
@@ -418,7 +439,7 @@ def test_gate_lite_prerequisites_are_valid_targets():
         assert _find_make_target(makefile, prereq), f"gate-lite prerequisite '{prereq}' not declared as target"
 
 
-def test_gate_lite_has_required_phases():
+def test_gate_lite_has_required_phases() -> None:
     """gate-lite runs lint, dead-code, typecheck, collect, smoke, and unit tests."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     m = re.search(r"^gate-lite:[^\n]*\n(.*?)(?=^ps-pytest:|\Z)", makefile, re.MULTILINE | re.DOTALL)
@@ -430,7 +451,7 @@ def test_gate_lite_has_required_phases():
         assert phase in recipe, f"gate-lite missing phase: {phase}"
 
 
-def test_check_readme_status_make_target():
+def test_check_readme_status_make_target() -> None:
     """make check-readme-status is declared and invokes the script."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     assert _find_make_target(makefile, "check-readme-status")
@@ -445,7 +466,7 @@ def test_check_readme_status_make_target():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_enforce_tdd_plugin_has_init_handling():
+def test_enforce_tdd_plugin_has_init_handling() -> None:
     """enforce-tdd.ts has isInitInEmptyDir logic for __init__.py in empty dirs."""
     plugin_path = ROOT / ".opencode" / "plugin" / "enforce-tdd.ts"
     if not plugin_path.is_file():
@@ -456,7 +477,7 @@ def test_enforce_tdd_plugin_has_init_handling():
     assert "__pycache__" in source, "enforce-tdd.ts should allowlist __pycache__"
 
 
-def test_enforce_tdd_plugin_denies_init_py_in_nonempty_dir():
+def test_enforce_tdd_plugin_denies_init_py_in_nonempty_dir() -> None:
     """enforce-tdd denies __init__.py edits when the parent dir has other .py files.
     This reflects current plugin behavior — __init__.py is only auto-allowed
     in empty directories (isInitInEmptyDir). Adding __init__.py to the
@@ -474,7 +495,7 @@ def test_enforce_tdd_plugin_denies_init_py_in_nonempty_dir():
     )
 
 
-def test_enforce_tdd_plugin_blocks_src_without_test():
+def test_enforce_tdd_plugin_blocks_src_without_test() -> None:
     """enforce-tdd plugin returns deny for src/* without a test file on disk."""
     plugin_path = ROOT / ".opencode" / "plugin" / "enforce-tdd.ts"
     if not plugin_path.is_file() or shutil.which("node") is None:
@@ -540,7 +561,7 @@ def _run_tdd_check(
         Path(tmp_path).unlink(missing_ok=True)
 
 
-def test_enforce_tdd_allowlist_in_check_script():
+def test_enforce_tdd_allowlist_in_check_script() -> None:
     """scripts/check_tdd_compliance.py also allowlists __init__.py for version bumps."""
     script_path = ROOT / "scripts" / "check_tdd_compliance.py"
     if not script_path.is_file():
@@ -549,7 +570,7 @@ def test_enforce_tdd_allowlist_in_check_script():
     assert "__init__" in text, "check_tdd_compliance.py should reference __init__.py in allowlist logic"
 
 
-def test_enforce_tdd_does_not_block_type_stubs():
+def test_enforce_tdd_does_not_block_type_stubs() -> None:
     """Type stub files (*.pyi) pass through the TDD editor gate."""
     plugin_path = ROOT / ".opencode" / "plugin" / "enforce-tdd.ts"
     if not plugin_path.is_file() or shutil.which("node") is None:
@@ -563,7 +584,7 @@ def test_enforce_tdd_does_not_block_type_stubs():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_verify_release_artifact_script_exists():
+def test_verify_release_artifact_script_exists() -> None:
     """verify_release_artifact.py exists and is loadable."""
     script_path = ROOT / "scripts" / "verify_release_artifact.py"
     if not script_path.is_file():
@@ -572,7 +593,7 @@ def test_verify_release_artifact_script_exists():
     assert spec and spec.loader
 
 
-def test_verify_release_artifact_make_target():
+def test_verify_release_artifact_make_target() -> None:
     """make verify-release-artifact is declared and requires TAG."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     assert _find_make_target(makefile, "verify-release-artifact")
@@ -586,7 +607,7 @@ def test_verify_release_artifact_make_target():
     assert "TAG" in recipe
 
 
-def test_releasor_operations_make_targets():
+def test_releasor_operations_make_targets() -> None:
     """release-recut and release-create targets are declared."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     for target in ("release-recut", "release-create", "release-delete", "release-view"):

@@ -26,7 +26,7 @@ from collections.abc import Callable
 FALLBACK_REPO = "sandboxcom/gludd"
 
 # ---------------------------------------------------------------------------
-# ALL 12 artifact categories are REQUIRED — no exceptions.
+# ALL 28 artifact categories are REQUIRED — no exceptions.
 #
 # User mandate (2026-07-24, TASKS CP.11/RL.4): "i want all of the artifacts
 # i asked for with NO exceptions." There is NO optional/exception list. If a
