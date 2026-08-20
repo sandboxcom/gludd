@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.models import Base
+from general_ludd.ornith import sandbox as ornith_sandbox
 from general_ludd.ornith.training_data import (
     TrainingDataCollector,
     TrainingExample,
@@ -269,8 +270,9 @@ class TestTrainingDataCollector:
         assert statuses == {"succeeded", "reverted"}
 
     async def test_export_finetuning_dataset_skips_pending(
-        self, collector: TrainingDataCollector, tmp_path
+        self, collector: TrainingDataCollector, tmp_path, monkeypatch
     ):
+        monkeypatch.setattr(ornith_sandbox, "_ALLOWED_EXPORT_ROOTS", [str(tmp_path)])
         r1 = await collector.capture(
             instruction="good",
             response="# good patch",
@@ -297,8 +299,9 @@ class TestTrainingDataCollector:
         assert obj["reward"] == 1.0
 
     async def test_export_finetuning_dataset_only_positive(
-        self, collector: TrainingDataCollector, tmp_path
+        self, collector: TrainingDataCollector, tmp_path, monkeypatch
     ):
+        monkeypatch.setattr(ornith_sandbox, "_ALLOWED_EXPORT_ROOTS", [str(tmp_path)])
         r1 = await collector.capture(
             instruction="good",
             response="# p1",
@@ -323,8 +326,9 @@ class TestTrainingDataCollector:
         assert _json.loads(lines[0])["reward"] == 1.0
 
     async def test_export_rollout_log_includes_all_statuses(
-        self, collector: TrainingDataCollector, tmp_path
+        self, collector: TrainingDataCollector, tmp_path, monkeypatch
     ):
+        monkeypatch.setattr(ornith_sandbox, "_ALLOWED_EXPORT_ROOTS", [str(tmp_path)])
         r1 = await collector.capture(
             instruction="good", response="# p1", scaffold_kind="patch", agent_id="a"
         )

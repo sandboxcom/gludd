@@ -253,6 +253,29 @@ def _run_opa_test() -> subprocess.CompletedProcess[str]:
     )
 
 
+def _opa_pass_markers(output: str) -> set[str]:
+    """Extract passed rule names from both supported OPA verbose formats."""
+    markers: set[str] = set()
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if line.startswith("PASS: data."):
+            markers.add(line.removeprefix("PASS: ").split()[0])
+        elif line.startswith("data.") and ": PASS" in line:
+            markers.add(line.split(": PASS", maxsplit=1)[0])
+    return markers
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        ("PASS: data.example.test_rule\n", "data.example.test_rule"),
+        ("data.example.test_rule: PASS (1.2ms)\n", "data.example.test_rule"),
+    ],
+)
+def test_opa_pass_markers_supports_verbose_formats(output: str, expected: str) -> None:
+    assert _opa_pass_markers(output) == {expected}
+
+
 def test_opa_all_policies_pass() -> None:
     """opa test config/opa/ must exit 0 with all tests passing."""
     if not _opa_available():
@@ -268,6 +291,7 @@ def test_opa_config_policy_tests_pass() -> None:
     if not _opa_available():
         pytest.skip("opa not installed")
     proc = _run_opa_test()
+    passed = _opa_pass_markers(proc.stdout)
     for marker in [
         "data.hottentot.config.test_guardrail_layers_valid",
         "data.hottentot.config.test_tdd_enforced",
@@ -275,7 +299,7 @@ def test_opa_config_policy_tests_pass() -> None:
         "data.hottentot.config.test_command_patterns_valid",
         "data.hottentot.config.test_stop_conditions_valid",
     ]:
-        assert f"PASS: {marker}" in proc.stdout, (
+        assert marker in passed, (
             f"Expected PASS for {marker} not in:\n{proc.stdout}"
         )
 
@@ -285,6 +309,7 @@ def test_opa_terraform_policy_tests_pass() -> None:
     if not _opa_available():
         pytest.skip("opa not installed")
     proc = _run_opa_test()
+    passed = _opa_pass_markers(proc.stdout)
     terraform_tests = [
         "data.terraform_test.test_deny_untagged_resource",
         "data.terraform_test.test_allow_tagged_resource",
@@ -299,7 +324,7 @@ def test_opa_terraform_policy_tests_pass() -> None:
         "data.terraform_test.test_allow_iam_scoped_policy",
     ]
     for marker in terraform_tests:
-        assert f"PASS: {marker}" in proc.stdout, (
+        assert marker in passed, (
             f"Expected PASS for {marker} not in:\n{proc.stdout}"
         )
 
@@ -315,9 +340,14 @@ def test_opa_iam_policy_tests_pass() -> None:
         "data.iam_test.test_deny_wildcard_rds",
         "data.iam_test.test_deny_mfa_missing_for_create_user",
         "data.iam_test.test_allow_create_user_with_mfa",
+        "data.iam_test.test_azure_scope_is_required",
+        "data.iam_test.test_azure_scoped_assignment_is_valid",
+        "data.iam_test.test_azure_data_plane_denied",
+        "data.iam_test.test_azure_custom_role_valid",
     ]
+    passed = _opa_pass_markers(proc.stdout)
     for marker in iam_tests:
-        assert f"PASS: {marker}" in proc.stdout, (
+        assert marker in passed, (
             f"Expected PASS for {marker} not in:\n{proc.stdout}"
         )
 
@@ -327,8 +357,7 @@ def test_opa_total_pass_count() -> None:
     if not _opa_available():
         pytest.skip("opa not installed")
     proc = _run_opa_test()
-    # Count PASS lines in output
-    pass_lines = [line for line in proc.stdout.splitlines() if line.startswith("PASS:")]
-    assert len(pass_lines) >= 21, (
-        f"Expected >=21 PASS lines, got {len(pass_lines)}:\n{proc.stdout}"
+    passed = _opa_pass_markers(proc.stdout)
+    assert len(passed) >= 21, (
+        f"Expected >=21 passed rules, got {len(passed)}:\n{proc.stdout}"
     )

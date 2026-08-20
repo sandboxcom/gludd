@@ -26,9 +26,17 @@ StepCompensation = Callable[[], None]
 class SagaStore(Protocol):
     """Pluggable persistence for saga execution state."""
 
-    def save(self, saga_id: str, state: dict[str, Any]) -> None: ...
-    def load(self, saga_id: str) -> dict[str, Any] | None: ...
-    def delete(self, saga_id: str) -> None: ...
+    def save(self, saga_id: str, state: dict[str, Any]) -> None:
+        """Persist the latest state for a saga identifier."""
+        ...
+
+    def load(self, saga_id: str) -> dict[str, Any] | None:
+        """Load persisted state for a saga identifier, if present."""
+        ...
+
+    def delete(self, saga_id: str) -> None:
+        """Delete persisted state for a saga identifier."""
+        ...
 
 
 # ---------------------------------------------------------------------------
@@ -38,6 +46,8 @@ class SagaStore(Protocol):
 
 @dataclasses.dataclass
 class StepResult:
+    """Record the observable outcome of one saga step."""
+
     step_index: int
     step_name: str
     success: bool
@@ -46,6 +56,8 @@ class StepResult:
 
 
 class SagaState(enum.Enum):
+    """Enumerate durable saga lifecycle states."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPENSATING = "compensating"
@@ -57,6 +69,8 @@ class SagaState(enum.Enum):
 
 @dataclasses.dataclass
 class SagaStep:
+    """Describe a forward saga action and its optional compensation."""
+
     name: str
     action: StepAction
     compensation: StepCompensation | None = None
@@ -67,6 +81,8 @@ class SagaStep:
 
 @dataclasses.dataclass
 class SagaConfig:
+    """Configure retry, persistence, and compensation behavior."""
+
     max_retries: int = 3
     retry_backoff_multiplier: float = 2.0
     persist_on_each_step: bool = True
@@ -83,7 +99,10 @@ class SagaError(Exception):
 
 
 class SagaStepFailure(SagaError):
+    """Report a forward step that exhausted its retries."""
+
     def __init__(self, step_index: int, step_name: str, original: Exception) -> None:
+        """Initialize failure context for a forward step."""
         self.step_index = step_index
         self.step_name = step_name
         self.original = original
@@ -91,7 +110,10 @@ class SagaStepFailure(SagaError):
 
 
 class SagaCompensationFailure(SagaError):
+    """Report a compensation that could not complete."""
+
     def __init__(self, step_index: int, step_name: str, original: Exception) -> None:
+        """Initialize failure context for a compensating step."""
         self.step_index = step_index
         self.step_name = step_name
         self.original = original
@@ -99,7 +121,10 @@ class SagaCompensationFailure(SagaError):
 
 
 class SagaTimeout(SagaError):
+    """Report a saga step that exceeded its execution budget."""
+
     def __init__(self, step_index: int, step_name: str, timeout: float) -> None:
+        """Initialize timeout context for a saga step."""
         self.step_index = step_index
         self.step_name = step_name
         self.timeout = timeout
@@ -112,6 +137,8 @@ class SagaTimeout(SagaError):
 
 
 class SagaOrchestrator:
+    """Execute saga steps with retries, compensation, and durable state."""
+
     def __init__(
         self,
         saga_id: str,
@@ -120,6 +147,7 @@ class SagaOrchestrator:
         config: SagaConfig | None = None,
         store: SagaStore | None = None,
     ) -> None:
+        """Initialize an orchestrator for a uniquely identified saga."""
         self.saga_id = saga_id
         self._steps = list(steps)
         self._config = config or SagaConfig()
@@ -135,18 +163,22 @@ class SagaOrchestrator:
 
     @property
     def state(self) -> SagaState:
+        """Return the current saga lifecycle state."""
         return self._state
 
     @property
     def results(self) -> list[StepResult]:
+        """Return a defensive copy of recorded step outcomes."""
         return list(self._results)
 
     @property
     def step_count(self) -> int:
+        """Return the number of configured forward steps."""
         return len(self._steps)
 
     @property
     def elapsed_seconds(self) -> float:
+        """Return elapsed execution time using a monotonic clock."""
         if self._started_at is None:
             return 0.0
         end = self._completed_at or time.monotonic()
@@ -155,6 +187,7 @@ class SagaOrchestrator:
     # ---- public API ---------------------------------------------------------
 
     def run(self) -> list[StepResult]:
+        """Run or safely resume the saga and return recorded outcomes."""
         with self._lock:
             if self._state != SagaState.PENDING:
                 raise SagaError(f"Saga {self.saga_id!r} already started (state={self._state.value})")
@@ -162,6 +195,8 @@ class SagaOrchestrator:
             self._started_at = time.monotonic()
 
         self._restore()
+        if self._state in (SagaState.COMPLETED, SagaState.COMPENSATED):
+            return list(self._results)
         forward_idx = len(self._results)
 
         try:
@@ -175,6 +210,7 @@ class SagaOrchestrator:
                 if not result.success:
                     self._compensate(idx)
                     self._completed_at = time.monotonic()
+                    self._persist()
                     return list(self._results)
 
             self._set_state(SagaState.COMPLETED)
@@ -182,6 +218,22 @@ class SagaOrchestrator:
             self._persist()
             return list(self._results)
 
+        except SagaTimeout as exc:
+            self._results.append(
+                StepResult(
+                    step_index=exc.step_index,
+                    step_name=exc.step_name,
+                    success=False,
+                    error=str(exc),
+                )
+            )
+            self._compensate(
+                exc.step_index,
+                terminal_state=SagaState.TIMED_OUT,
+            )
+            self._completed_at = time.monotonic()
+            self._persist()
+            return list(self._results)
         except Exception as exc:
             self._set_state(SagaState.FAILED)
             self._completed_at = time.monotonic()
@@ -193,6 +245,7 @@ class SagaOrchestrator:
                     error=str(exc),
                 )
             )
+            self._persist()
             return list(self._results)
 
     # ---- internal -----------------------------------------------------------
@@ -253,7 +306,12 @@ class SagaOrchestrator:
             error=last_error,
         )
 
-    def _compensate(self, failed_idx: int) -> None:
+    def _compensate(
+        self,
+        failed_idx: int,
+        *,
+        terminal_state: SagaState = SagaState.COMPENSATED,
+    ) -> None:
         self._set_state(SagaState.COMPENSATING)
         for idx in range(failed_idx - 1, -1, -1):
             step = self._steps[idx]
@@ -279,7 +337,7 @@ class SagaOrchestrator:
                     raise exc_holder
             except Exception:
                 pass
-        self._set_state(SagaState.COMPENSATED)
+        self._set_state(terminal_state)
 
     def _set_state(self, new_state: SagaState) -> None:
         self._state = new_state
@@ -304,6 +362,11 @@ class SagaOrchestrator:
         data = self._store.load(self.saga_id)
         if data is None:
             return
+        stored_results = data.get("results", [])
+        if isinstance(stored_results, list):
+            for result_data in stored_results:
+                if isinstance(result_data, dict):
+                    self._results.append(StepResult(**result_data))
         stored_state = data.get("state")
         if stored_state == SagaState.COMPLETED.value:
             self._state = SagaState.COMPLETED
@@ -311,9 +374,6 @@ class SagaOrchestrator:
         elif stored_state == SagaState.COMPENSATED.value:
             self._state = SagaState.COMPENSATED
             self._completed_at = data.get("completed_at")
-        elif stored_state in (SagaState.RUNNING.value, SagaState.FAILED.value):
-            for rdict in data.get("results", []):
-                self._results.append(StepResult(**rdict))
 
 
 # ---------------------------------------------------------------------------
@@ -322,7 +382,10 @@ class SagaOrchestrator:
 
 
 class SagaBuilder:
+    """Build a configured saga orchestrator through a fluent API."""
+
     def __init__(self) -> None:
+        """Initialize an empty builder with safe default configuration."""
         self._steps: list[SagaStep] = []
         self._config = SagaConfig()
         self._store: SagaStore | None = None
@@ -337,6 +400,7 @@ class SagaBuilder:
         retry_count: int = 0,
         retry_delay_seconds: float = 0.1,
     ) -> SagaBuilder:
+        """Append a configured forward step and optional compensation."""
         self._steps.append(
             SagaStep(
                 name=name,
@@ -350,24 +414,30 @@ class SagaBuilder:
         return self
 
     def with_max_retries(self, n: int) -> SagaBuilder:
+        """Set the maximum forward-action retry count."""
         self._config.max_retries = n
         return self
 
     def with_retry_backoff(self, multiplier: float) -> SagaBuilder:
+        """Set the exponential retry backoff multiplier."""
         self._config.retry_backoff_multiplier = multiplier
         return self
 
     def with_persistence(self, store: SagaStore) -> SagaBuilder:
+        """Attach a durable state store to the saga."""
         self._store = store
         return self
 
     def without_step_persistence(self) -> SagaBuilder:
+        """Persist only terminal state instead of every successful step."""
         self._config.persist_on_each_step = False
         return self
 
     def with_compensation_timeout(self, seconds: float) -> SagaBuilder:
+        """Set the execution budget for each compensation."""
         self._config.compensation_timeout_seconds = seconds
         return self
 
     def build(self, saga_id: str) -> SagaOrchestrator:
+        """Build an orchestrator for the supplied saga identifier."""
         return SagaOrchestrator(saga_id, self._steps, config=self._config, store=self._store)

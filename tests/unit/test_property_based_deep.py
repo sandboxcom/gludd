@@ -555,12 +555,13 @@ class TestServiceCatalogSaveLoadRoundtrip:
     @settings(max_examples=50, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_catalog_save_load_roundtrip(self, items: list[DiscoveredService], tmp_path: Any) -> None:
         cat_path = tmp_path / "catalog.json"
+        cat_path.unlink(missing_ok=True)
         cat = ServiceCatalog(path=str(cat_path))
         for s in items:
             cat.add(s)
         cat.save()
         reloaded = ServiceCatalog(path=str(cat_path))
-        assert len(reloaded.services) == len(items)
+        assert len(reloaded.services) == len({service.name for service in items})
         for s in items:
             assert s.name in reloaded.services
 
@@ -577,6 +578,7 @@ class TestServiceCatalogSaveLoadRoundtrip:
     @settings(max_examples=50, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_catalog_yaml_roundtrip(self, items: list[DiscoveredService], tmp_path: Any) -> None:
         cat_path = tmp_path / "catalog.yml"
+        cat_path.unlink(missing_ok=True)
         cat = ServiceCatalog(path=str(cat_path))
         for s in items:
             cat.add(s)
