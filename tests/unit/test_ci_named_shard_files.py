@@ -249,6 +249,80 @@ def test_owned_pytest_runner_fails_closed_on_worker_death(
     assert "WORKER-DEATH" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        "[gw2] node down: Not properly terminated",
+        "worker gw2 crashed and worker restarting disabled",
+        "maximum crashed workers reached: 0",
+        "===== xdist: maximum crashed workers reached: 0 =====",
+    ],
+)
+def test_xdist_worker_death_parser_accepts_complete_control_lines(line: str) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    assert module._is_xdist_worker_death_line(line) is True
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "tests/unit/test_adaptive_test.py::test_is_oom_exit_output_markers"
+        "[[gw2] node down: Not properly terminated]",
+        "payload=[gw2] node down: Not properly terminated",
+        "stdout says worker gw2 crashed and worker restarting disabled",
+        "assert 'maximum crashed workers reached: 0' in output",
+    ],
+)
+def test_xdist_worker_death_parser_rejects_test_ids_payload_and_stdout(
+    line: str,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    assert module._is_xdist_worker_death_line(line) is False
+
+
+def test_owned_pytest_runner_ignores_marker_inside_parameterized_node_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    class FinishedProcess:
+        pid = 42423
+        returncode = 0
+        stdout = io.StringIO(
+            "tests/unit/test_adaptive_test.py::test_is_oom_exit_output_markers"
+            "[[gw2] node down: Not properly terminated] PASSED\n"
+        )
+
+        def poll(self) -> int:
+            return self.returncode
+
+        def wait(self, timeout: float | None = None) -> int:
+            return self.returncode
+
+    process = FinishedProcess()
+    terminated: list[object] = []
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *_args, **_kwargs: process)
+    monkeypatch.setattr(
+        module,
+        "_terminate_owned_process",
+        lambda owned, **_kwargs: terminated.append(owned),
+    )
+    monkeypatch.setattr(module, "_owned_process_group_alive", lambda _process: False)
+
+    rc = module._run_owned_pytest(
+        ["pytest"],
+        env={},
+        label="unit-3:batch-node-id",
+        heartbeat_seconds=1.0,
+        no_progress_seconds=5.0,
+    )
+
+    assert rc == 0
+    assert terminated == []
+
+
 def test_owned_cleanup_escalates_term_to_kill(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -272,6 +346,83 @@ def test_owned_cleanup_escalates_term_to_kill(
     module._terminate_owned_process(RetainedProcess(), grace_seconds=0.0)
 
     assert signals == [signal.SIGTERM, signal.SIGKILL]
+
+
+@pytest.mark.parametrize("error_type", [ProcessLookupError, PermissionError])
+def test_owned_cleanup_is_idempotent_when_group_is_gone_or_inaccessible(
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[OSError],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    class ExitedProcess:
+        pid = 42424
+        returncode = 0
+        wait_calls = 0
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.wait_calls += 1
+            return self.returncode
+
+    process = ExitedProcess()
+
+    def missing_group(_pid: int, _signum: signal.Signals | int) -> None:
+        raise error_type
+
+    monkeypatch.setattr(module.os, "killpg", missing_group)
+
+    module._terminate_owned_process(process, grace_seconds=0.0)
+    module._terminate_owned_process(process, grace_seconds=0.0)
+
+    assert process.wait_calls == 2
+
+
+def test_owned_cleanup_does_not_signal_an_already_exited_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    class ExitedProcess:
+        pid = 42425
+
+        @staticmethod
+        def wait(timeout: float | None = None) -> int:
+            return 0
+
+    signals: list[signal.Signals] = []
+    monkeypatch.setattr(module, "_owned_process_group_alive", lambda _process: False)
+    monkeypatch.setattr(
+        module,
+        "_signal_owned_process_group",
+        lambda _process, signum: signals.append(signum),
+    )
+
+    module._terminate_owned_process(ExitedProcess(), grace_seconds=0.0)
+    module._terminate_owned_process(ExitedProcess(), grace_seconds=0.0)
+
+    assert signals == []
+
+
+def test_owned_cleanup_contains_permission_race_during_signal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    class Process:
+        pid = 42426
+
+        @staticmethod
+        def wait(timeout: float | None = None) -> int:
+            return 0
+
+    monkeypatch.setattr(module, "_owned_process_group_alive", lambda _process: True)
+
+    def inaccessible(_process: object, _signum: signal.Signals) -> None:
+        raise PermissionError
+
+    monkeypatch.setattr(module, "_signal_owned_process_group", inaccessible)
+
+    module._terminate_owned_process(Process(), grace_seconds=0.0)
 
 
 def test_serial_runner_uses_unique_batches_and_stops_after_worker_death(

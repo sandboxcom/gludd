@@ -16,7 +16,6 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable
-from contextlib import suppress
 from pathlib import Path
 from types import FrameType
 from typing import TYPE_CHECKING, Any, TextIO
@@ -44,15 +43,36 @@ DEFAULT_HEARTBEAT_SECONDS = 30.0
 DEFAULT_NO_PROGRESS_SECONDS = 10.0 * 60.0
 WORKER_DEATH_EXIT_CODE = 70
 NO_PROGRESS_EXIT_CODE = 124
-WORKER_DEATH_LINE = re.compile(
-    r"(?:\[gw\d+\]\s+node down:|not properly terminated|"
-    r"worker restarting disabled|maximum crashed workers reached)",
+ANSI_ESCAPE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+XDIST_NODE_DOWN_LINE = re.compile(
+    r"^\[gw\d+\]\s+node down:\s+\S.*$",
+    re.IGNORECASE,
+)
+XDIST_FATAL_SUMMARY_LINE = re.compile(
+    r"^(?:worker gw\d+ crashed and worker restarting disabled|"
+    r"maximum crashed workers reached:\s*\d+)$",
+    re.IGNORECASE,
+)
+XDIST_TERMINAL_SUMMARY_LINE = re.compile(
+    r"^=+\s+xdist:\s+(?P<message>.+?)\s+=+$",
     re.IGNORECASE,
 )
 
 
 def _quote(command: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in command)
+
+
+def _is_xdist_worker_death_line(line: str) -> bool:
+    """Accept only complete xdist controller diagnostics, never payload text."""
+    normalized = ANSI_ESCAPE.sub("", line).strip()
+    terminal_summary = XDIST_TERMINAL_SUMMARY_LINE.fullmatch(normalized)
+    if terminal_summary is not None:
+        normalized = terminal_summary.group("message").strip()
+    return bool(
+        XDIST_NODE_DOWN_LINE.fullmatch(normalized)
+        or XDIST_FATAL_SUMMARY_LINE.fullmatch(normalized)
+    )
 
 
 def _run_command(command: list[str], *, env: dict[str, str] | None = None) -> int:
@@ -159,10 +179,19 @@ def _owned_process_group_alive(process: subprocess.Popen[str]) -> bool:
         return process.poll() is None
     try:
         os.killpg(process.pid, 0)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
         return False
-    except PermissionError:
-        return True
+    return True
+
+
+def _try_signal_owned_process_group(
+    process: subprocess.Popen[str], signum: signal.Signals
+) -> bool:
+    """Contain normal process-group disappearance or access races."""
+    try:
+        _signal_owned_process_group(process, signum)
+    except (ProcessLookupError, PermissionError):
+        return False
     return True
 
 
@@ -170,17 +199,18 @@ def _terminate_owned_process(
     process: subprocess.Popen[str], *, grace_seconds: float = 5.0
 ) -> None:
     """Terminate the owned group, then kill survivors after a bounded grace."""
-    with suppress(ProcessLookupError):
-        _signal_owned_process_group(process, signal.SIGTERM)
+    if _owned_process_group_alive(process):
+        _try_signal_owned_process_group(process, signal.SIGTERM)
 
     deadline = time.monotonic() + max(0.0, grace_seconds)
     while _owned_process_group_alive(process) and time.monotonic() < deadline:
         time.sleep(0.05)
     if _owned_process_group_alive(process):
-        with suppress(ProcessLookupError):
-            _signal_owned_process_group(process, signal.SIGKILL)
-    with suppress(subprocess.TimeoutExpired):
+        _try_signal_owned_process_group(process, signal.SIGKILL)
+    try:
         process.wait(timeout=max(1.0, grace_seconds))
+    except subprocess.TimeoutExpired:
+        return
 
 
 def _read_process_output(stream: TextIO, events: queue.Queue[str | None]) -> None:
@@ -257,7 +287,7 @@ def _run_owned_pytest(
                 sys.stdout.write(line)
                 sys.stdout.flush()
                 last_output = time.monotonic()
-                if forced_returncode is None and WORKER_DEATH_LINE.search(line):
+                if forced_returncode is None and _is_xdist_worker_death_line(line):
                     forced_returncode = WORKER_DEATH_EXIT_CODE
                     print(
                         f"WORKER-DEATH label={label} rc={WORKER_DEATH_EXIT_CODE}; "

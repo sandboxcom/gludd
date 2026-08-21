@@ -104,6 +104,24 @@ records an execnet receiver blocked after a worker disappears; and
 [issue 1323, opened 2026-04-18](https://github.com/pytest-dev/pytest-xdist/issues/1323)
 records a crashed-worker restart hanging `loadgroup` scheduling.
 
+A 2026-08-20 follow-up exposed why the diagnostic must also be parsed rather
+than searched as raw text. Pytest printed the parameterized node ID
+`test_is_oom_exit_output_markers[[gw2] node down: Not properly terminated]`;
+the embedded fixture value looked like a crash marker and incorrectly stopped
+the healthy batch. The runner now accepts only complete xdist controller lines
+after removing terminal control escapes. Test IDs, assertion payloads, and
+ordinary stdout containing the same words remain data.
+
+That grammar comes from xdist itself. `TerminalDistReporter` emits node-down
+events as `[gateway-id] node down: error`, while `DSession` emits the two
+restart-limit summaries as complete lines:
+[xdist controller source](https://github.com/pytest-dev/pytest-xdist/blob/master/src/xdist/dsession.py).
+The long-lived practitioner report
+[xdist issue 61, opened 2016-05-28](https://github.com/pytest-dev/pytest-xdist/issues/61)
+shows the same standalone node-down line in a real hang. Matching those
+boundaries, instead of a phrase anywhere in output, preserves real crash
+detection without treating user-controlled output as controller state.
+
 ## Security and Resource Boundaries
 
 The status command uses a fixed system interpreter and existing fixed-argument
@@ -125,6 +143,13 @@ and removes each batch workspace after coverage is preserved. External model
 processes and unrelated test sessions are outside that group and remain
 untouched. The fixed file bound prevents cumulative collection growth while the
 strictly serial schedule keeps peak worker count at one.
+
+Process-group cleanup is idempotent across normal exit races. The owner first
+checks that its group remains signalable, treats `ProcessLookupError` and
+`PermissionError` as a completed or inaccessible ownership boundary, and then
+uses bounded `TERM` followed by `KILL` only while that verified group remains
+live. Repeated cleanup calls reap the root process but do not signal an exited
+group or widen scope to unrelated PIDs.
 
 ## Zero-Downtime Delivery and Rollback
 
