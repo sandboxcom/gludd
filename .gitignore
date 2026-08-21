@@ -42,6 +42,7 @@ dist/*.json
 build/
 *.egg-info/
 .gate-failed
+.gate-status
 .gate-lite-status
 .gate-lite-failed
 .gate-background.pid

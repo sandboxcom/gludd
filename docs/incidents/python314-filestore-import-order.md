@@ -1,6 +1,6 @@
 # Python 3.14 filestore import-order incident
 
-**Date:** 2026-08-20  
+**Date:** 2026-08-20
 **Status:** Resolved in the `0.1.0-beta.4` compatibility line
 
 ## Impact and reproduction

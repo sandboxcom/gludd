@@ -76,4 +76,3 @@ The beta4 verification boundary includes:
 - isolated hot-module subprocesses;
 - `make check-depth-limit`, `make test-hook-runtime`, Node compatibility, and
   focused branch coverage at or above the repository 85/75 thresholds.
-

@@ -34,6 +34,9 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Generator
+from pathlib import Path
+from typing import BinaryIO
 
 import httpx
 import pytest
@@ -65,7 +68,7 @@ pytestmark = [
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
-        return s.getsockname()[1]
+        return int(s.getsockname()[1])
 
 
 def _stderr_tail(path: str, limit: int = 4000) -> str:
@@ -76,7 +79,7 @@ def _stderr_tail(path: str, limit: int = 4000) -> str:
         return "(stderr not captured)"
 
 
-def _kill_process_group(proc: subprocess.Popen) -> None:
+def _kill_process_group(proc: subprocess.Popen[bytes]) -> None:
     with contextlib.suppress(ProcessLookupError):
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
     with contextlib.suppress(subprocess.TimeoutExpired):
@@ -84,33 +87,29 @@ def _kill_process_group(proc: subprocess.Popen) -> None:
 
 
 @pytest.fixture(scope="session")
-def live_model_path() -> str:
+def live_model_path() -> Generator[str, None, None]:
     """Download the small GGUF once for the whole session."""
     session_dir = tempfile.mkdtemp(prefix="gludd-live-caps-")
-    previous_hf_home = os.environ.get("HF_HOME")
-    os.environ["HF_HOME"] = str(os.path.join(session_dir, "hf_home"))
-    try:
-        downloader = ModelDownloader(cache_dir=str(session_dir))
-        downloaded = downloader.download_gguf(model_id=_MODEL_REPO, filename=_MODEL_FILE)
-        if not os.path.isfile(downloaded.local_path):
-            pytest.fail(f"Download produced no file at {downloaded.local_path}")
-        if os.path.getsize(downloaded.local_path) == 0:
-            pytest.fail(f"Downloaded GGUF is empty: {downloaded.local_path}")
-        yield downloaded.local_path
-    finally:
-        if previous_hf_home is None:
-            os.environ.pop("HF_HOME", None)
-        else:
-            os.environ["HF_HOME"] = previous_hf_home
-        shutil.rmtree(session_dir, ignore_errors=True)
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setenv("HF_HOME", str(os.path.join(session_dir, "hf_home")))
+        try:
+            downloader = ModelDownloader(cache_dir=str(session_dir))
+            downloaded = downloader.download_gguf(model_id=_MODEL_REPO, filename=_MODEL_FILE)
+            if not os.path.isfile(downloaded.local_path):
+                pytest.fail(f"Download produced no file at {downloaded.local_path}")
+            if os.path.getsize(downloaded.local_path) == 0:
+                pytest.fail(f"Downloaded GGUF is empty: {downloaded.local_path}")
+            yield downloaded.local_path
+        finally:
+            shutil.rmtree(session_dir, ignore_errors=True)
 
 
 def _start_server(
     model_path: str,
     extra_args: list[str],
-    stderr_file,
-    stderr_path,
-) -> tuple[subprocess.Popen, str, str]:
+    stderr_file: BinaryIO,
+    stderr_path: Path,
+) -> tuple[subprocess.Popen[bytes], str, str]:
     """Launch llama_cpp.server on a free port and poll /health until ready.
 
     The caller owns *stderr_file* (context-managed) and keeps it open for the
@@ -158,7 +157,7 @@ def _start_server(
     raise AssertionError("unreachable")
 
 
-def _stop_server(proc: subprocess.Popen, stderr_path: str) -> None:
+def _stop_server(proc: subprocess.Popen[bytes], stderr_path: str) -> None:
     with contextlib.suppress(ProcessLookupError):
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
     try:
@@ -282,7 +281,7 @@ def _print_matrix(model_path: str, matrix: dict[str, str], details: dict[str, st
 
 
 @pytest.mark.timeout(480)
-def test_small_model_capability_matrix(live_model_path: str, tmp_path) -> None:
+def test_small_model_capability_matrix(live_model_path: str, tmp_path: Path) -> None:
     """Probe all four capability surfaces and assert the capability matrix."""
     started = time.monotonic()
     matrix: dict[str, str] = {}

@@ -1,7 +1,7 @@
 # Beta4 Protocol and Numeric OSS Decision
 
-**Status:** Accepted for `v0.1.0-beta4` implementation gating  
-**Decision date:** 2026-08-20  
+**Status:** Accepted for `v0.1.0-beta4` implementation gating
+**Decision date:** 2026-08-20
 **Scope:** Noise, PROXY protocol v2 TLVs, chat JSON, and budget arithmetic
 
 ## Context

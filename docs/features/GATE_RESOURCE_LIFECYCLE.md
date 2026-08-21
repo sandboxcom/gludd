@@ -122,6 +122,43 @@ shows the same standalone node-down line in a real hang. Matching those
 boundaries, instead of a phrase anywhere in output, preserves real crash
 detection without treating user-controlled output as controller state.
 
+### Hermetic gate validation state
+
+On 2026-08-20, a definitive gate started from a clean checkout but finished
+with five Markdown files and `.gate-status` modified. The writer was a pytest
+node that called the repository-wide documentation and package-initializer
+fixers with their CLI defaults. The gate therefore passed only after one test
+silently formatted inputs that later tests inspected.
+
+Fixer CLIs retain their explicit repository-wide behavior for the corresponding
+`make fix-*-drift` commands. Tests scope their module roots with pytest's
+automatically restored monkeypatch fixture and exercise the implementations only
+under `tmp_path`.
+Regression sentinels prove that the real source and documentation trees remain
+byte-identical. Existing mechanical drift was applied once as an intentional
+source change rather than left for pytest to conceal.
+
+`.gate-status` is durable operational evidence, not source. It remains available
+to status and commit checks after a gate, but is ignored and untracked so an
+observability update cannot dirty Git. Live-model tests likewise route `HF_HOME`
+through pytest's function-scoped monkeypatch fixture or an explicit
+session-scoped `MonkeyPatch.context()`. Restoration therefore runs even when
+download, server startup, assertions, or teardown fail. The
+`check-test-env-writes` guard rejects new bare test-environment assignments.
+
+Evidence was reviewed on 2026-08-20. Pytest documents that
+[`tmp_path` is unique to each test function](https://docs.pytest.org/en/stable/how-to/tmp_path.html)
+and that xdist places worker data under a per-run temporary root. Its
+[`monkeypatch` guidance](https://docs.pytest.org/en/stable/how-to/monkeypatch.html)
+guarantees fixture changes are undone after the requesting test or fixture and
+provides a context manager for narrower lifetimes. Practitioner reports expose
+the remaining boundaries: [pytest issue 11790, opened 2024-01-08](https://github.com/pytest-dev/pytest/issues/11790)
+records collisions between concurrent invocations without unique base paths;
+[issue 11789, opened 2024-01-08](https://github.com/pytest-dev/pytest/issues/11789)
+records surprise that temporary directories are retained; and the long-running
+[monkeypatch scope discussion opened 2018-12-25](https://github.com/pytest-dev/pytest/issues/4576)
+highlights why restoration lifetime must be explicit.
+
 ## Security and Resource Boundaries
 
 The status command uses a fixed system interpreter and existing fixed-argument
@@ -143,6 +180,13 @@ and removes each batch workspace after coverage is preserved. External model
 processes and unrelated test sessions are outside that group and remain
 untouched. The fixed file bound prevents cumulative collection growth while the
 strictly serial schedule keeps peak worker count at one.
+
+Hermetic fixer tests create no source-tree lock or shared mutable workspace and
+can run concurrently across xdist workers. Each invocation owns only its pytest
+temporary root. Ignoring `.gate-status` changes Git classification, not status
+visibility or writer ownership; the gate remains the sole producer of the
+observable artifact. Environment restoration is scoped to the owning test, so
+parallel live-model collectors cannot inherit a completed peer's cache root.
 
 Process-group cleanup is idempotent across normal exit races. The owner first
 checks that its group remains signalable, treats `ProcessLookupError` and
@@ -169,3 +213,10 @@ database, listener, or artifact format, so rollout is zero-downtime. Rollback is
 a single runner/test/documentation revert after any active new runner exits.
 Rolling back restores the known unbounded-collection and retained-child risk;
 do not mix old and new wrappers in one shard workspace.
+
+The hermetic-write change is also gate-only and requires no service restart or
+data migration. New and old gates may overlap because their pytest roots are
+namespaced, but only the newer gate guarantees a clean checkout afterward.
+Rollback must restore the tracked status snapshot and repository-global test
+writes together; doing so reintroduces source mutation and is not operationally
+safe while another gate is inspecting the same checkout.

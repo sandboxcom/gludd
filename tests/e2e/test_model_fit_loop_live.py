@@ -21,12 +21,13 @@ import socket
 import subprocess
 import sys
 import time
+from collections.abc import AsyncGenerator
+from pathlib import Path
 
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.models import Base
@@ -57,7 +58,7 @@ pytestmark = pytest.mark.skipif(
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
-        return s.getsockname()[1]
+        return int(s.getsockname()[1])
 
 
 def _stderr_tail(path: str, limit: int = 4000) -> str:
@@ -68,7 +69,7 @@ def _stderr_tail(path: str, limit: int = 4000) -> str:
         return "(stderr not captured)"
 
 
-def _kill_process_group(proc: subprocess.Popen) -> None:
+def _kill_process_group(proc: subprocess.Popen[bytes]) -> None:
     with contextlib.suppress(ProcessLookupError):
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
     with contextlib.suppress(subprocess.TimeoutExpired):
@@ -92,7 +93,7 @@ def _score_completion(text: str) -> tuple[bool, float]:
 
 
 @pytest_asyncio.fixture
-async def repo_session() -> AsyncSession:
+async def repo_session() -> AsyncGenerator[AsyncSession, None]:
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         echo=False,
@@ -101,7 +102,7 @@ async def repo_session() -> AsyncSession:
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as s:
         yield s
     async with engine.begin() as conn:
@@ -130,7 +131,11 @@ async def _record(
 
 
 @pytest.mark.timeout(480)
-async def test_live_generate_score_record_reassess(tmp_path, repo_session: AsyncSession) -> None:
+async def test_live_generate_score_record_reassess(
+    tmp_path: Path,
+    repo_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Serve the small model, score its real output, and prove the weight DB
     reassessment moves the next task's pick toward the better-scored model."""
     assert repo_session is not None
@@ -138,12 +143,12 @@ async def test_live_generate_score_record_reassess(tmp_path, repo_session: Async
     router = ModelPerformanceRouter(perf_repo=repo, config={"min_calls": 1})
     task_type = "local_factoid"
     stderr_path = tmp_path / "llama-server.stderr"
-    proc: subprocess.Popen | None = None
-    previous_hf_home = os.environ.get("HF_HOME")
+    proc: subprocess.Popen[bytes] | None = None
 
-    os.environ["HF_HOME"] = str(tmp_path / "hf_home")
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "hf_home"))
     try:
-        downloaded = ModelDownloader.download_gguf(_MODEL_REPO, _MODEL_FILE, tmp_path / "models")
+        downloader = ModelDownloader(cache_dir=str(tmp_path / "models"))
+        downloaded = downloader.download_gguf(model_id=_MODEL_REPO, filename=_MODEL_FILE)
         port = _find_free_port()
         base_url = f"http://127.0.0.1:{port}"
 
@@ -234,7 +239,3 @@ async def test_live_generate_score_record_reassess(tmp_path, repo_session: Async
     finally:
         if proc is not None and proc.poll() is None:
             _kill_process_group(proc)
-        if previous_hf_home is None:
-            os.environ.pop("HF_HOME", None)
-        else:
-            os.environ["HF_HOME"] = previous_hf_home

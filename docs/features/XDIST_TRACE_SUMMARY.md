@@ -97,4 +97,3 @@ bounded diagnostics but do not establish the root cause of Gludd's worker exit.
   2023-02-12, describes CI output becoming impractical for a suite with more
   than 100,000 tests. Failures-only output and opt-in memory collections address
   the same operational need without discarding the underlying JSONL evidence.
-

@@ -100,4 +100,3 @@ symlink rejection, allocation rollback, timeout partial output, environment and
 resource overrides, cleanup confinement, and canonical SELinux TE/FC rules.
 Tests inject rollback and timeout failures without depending on a live SELinux
 host or an unbounded subprocess.
-

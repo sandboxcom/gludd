@@ -25,6 +25,7 @@ import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -51,7 +52,7 @@ pytestmark = pytest.mark.skipif(
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
-        return s.getsockname()[1]
+        return int(s.getsockname()[1])
 
 
 def _stderr_tail(path: str, limit: int = 4000) -> str:
@@ -62,7 +63,7 @@ def _stderr_tail(path: str, limit: int = 4000) -> str:
         return "(stderr not captured)"
 
 
-def _kill_process_group(proc: subprocess.Popen) -> None:
+def _kill_process_group(proc: subprocess.Popen[bytes]) -> None:
     with contextlib.suppress(ProcessLookupError):
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
     with contextlib.suppress(subprocess.TimeoutExpired):
@@ -70,13 +71,12 @@ def _kill_process_group(proc: subprocess.Popen) -> None:
 
 
 @pytest.mark.timeout(480)
-def test_download_serve_generate_shutdown(tmp_path) -> None:
+def test_download_serve_generate_shutdown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Download the small GGUF, serve it, generate text, shut down cleanly."""
     stderr_path = tmp_path / "llama-server.stderr"
-    proc: subprocess.Popen | None = None
-    previous_hf_home = os.environ.get("HF_HOME")
+    proc: subprocess.Popen[bytes] | None = None
 
-    os.environ["HF_HOME"] = str(tmp_path / "hf_home")
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "hf_home"))
     try:
         downloader = ModelDownloader(cache_dir=str(tmp_path))
         downloaded = downloader.download_gguf(model_id=_MODEL_REPO, filename=_MODEL_FILE)
@@ -160,7 +160,3 @@ def test_download_serve_generate_shutdown(tmp_path) -> None:
     finally:
         if proc is not None and proc.poll() is None:
             _kill_process_group(proc)
-        if previous_hf_home is None:
-            os.environ.pop("HF_HOME", None)
-        else:
-            os.environ["HF_HOME"] = previous_hf_home
