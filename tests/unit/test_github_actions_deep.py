@@ -15,6 +15,11 @@ import yaml
 
 WORKFLOW_DIR = pathlib.Path(__file__).parent.parent.parent / ".github" / "workflows"
 ACTIONS_DIR = pathlib.Path(__file__).parent.parent.parent / ".github" / "actions"
+MOLECULE_NODE24_ACTIONS = {
+    "actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd",
+    "actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405",
+    "astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39",
+}
 
 VALID_EVENTS: frozenset[str] = frozenset(
     {
@@ -223,39 +228,23 @@ class TestActionRefsPinnedToSha:
                 unpinned.append(f"  {job}/{step}: {raw}")
         assert not unpinned, "pages.yml has action refs NOT pinned to a commit SHA:\n" + "\n".join(unpinned)
 
-    def test_molecule_yml_flags_unpinned_refs(self):
-        """molecule.yml currently uses @v4/@v5 — this test documents the gap.
-
-        When fixed, move the assertions into test_molecule_yml_all_uses_are_sha_pinned below.
-        """
+    def test_molecule_yml_uses_pinned_node24_actions(self) -> None:
+        """Molecule must not rely on GHE's deprecated-Node forced fallback."""
         data = _load_yaml(WORKFLOW_DIR / "molecule.yml")
-        unpinned: list[str] = []
-        pinned: list[str] = []
-        for _job, _step, raw in _extract_uses_refs(data):
-            if SHA_REF_RE.search(raw):
-                pinned.append(raw)
-            else:
-                unpinned.append(raw)
-        assert len(unpinned) == 3, f"Expected 3 unpinned refs in molecule.yml, got {len(unpinned)}"
-        for ref in unpinned:
-            assert FLOATING_TAG_RE.search(ref), (
-                f"molecule.yml ref '{ref}' is neither SHA-pinned nor a floating version tag"
-            )
+        refs = {raw for _job, _step, raw in _extract_uses_refs(data)}
 
-    def test_all_workflows_flags_unpinned_refs_in_molecule_yml(self):
-        """Cross-workflow check: only molecule.yml has unpinned refs (known gap)."""
+        assert refs == MOLECULE_NODE24_ACTIONS
+        assert all(SHA_REF_RE.search(ref) for ref in refs)
+
+    def test_all_workflows_use_sha_pinned_actions(self) -> None:
+        """Every third-party workflow action is immutable."""
         failures: list[str] = []
         for path in _discover_workflow_paths():
             data = _load_yaml(path)
             for job, step, raw in _extract_uses_refs(data):
                 if not SHA_REF_RE.search(raw):
                     failures.append(f"  {path.name}: {job}/{step}: {raw}")
-        molecule_count = sum(1 for f in failures if "molecule.yml" in f)
-        other = [f for f in failures if "molecule.yml" not in f]
-        assert not other, "Non-molecule workflows have unpinned action refs:\n" + "\n".join(other)
-        assert molecule_count == 3, (
-            f"Expected 3 unpinned refs in molecule.yml only, got {molecule_count} across all workflows"
-        )
+        assert not failures, "Workflows have unpinned action refs:\n" + "\n".join(failures)
 
     def test_build_yml_shas_are_valid_hex(self):
         data = _load_yaml(WORKFLOW_DIR / "build.yml")
