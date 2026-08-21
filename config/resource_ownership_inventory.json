@@ -1291,7 +1291,7 @@
     },
     {
       "path": "src/general_ludd/infra/deployment_events.py",
-      "line": 80,
+      "line": 92,
       "column": 25,
       "kind": "async-task",
       "owner": "PostgresWakeupListener.start",
