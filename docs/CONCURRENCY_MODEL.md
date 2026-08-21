@@ -76,6 +76,46 @@ share a repo on disk, using two layers.
   to the in-process lock alone (the common in-daemon race is still serialized)
   rather than failing to import.
 
+### Linked-worktree metadata and deployment boundary
+
+In a linked worktree, `.git` is a text `gitdir:` pointer rather than a
+directory. The pointed-to private Git directory can in turn contain a
+`commondir` path relative to that directory. Gludd reads those two bounded
+metadata files directly and places `gludd-git.lock` in the resolved common Git
+directory. It does not launch `git rev-parse` while entering the lock: doing so
+would mix lock discovery with the caller's actual Git subprocess seam and made
+mocked or failed commands observable as extra application operations.
+
+Evidence reviewed on 2026-08-21:
+
+- Git's [repository-layout documentation](https://git-scm.com/docs/gitrepository-layout)
+  defines both the `.git` gitfile and `commondir`; relative `commondir` values
+  are resolved from `$GIT_DIR`.
+- Git's [worktree documentation](https://git-scm.com/docs/git-worktree)
+  confirms that linked worktrees use a private `$GIT_DIR` while
+  `$GIT_COMMON_DIR` points to the main repository metadata shared by every
+  worktree.
+- A long-running practitioner thread on
+  [multiple Git working directories](https://stackoverflow.com/questions/6270193/how-can-i-have-multiple-working-directories-with-git)
+  dates to 2011 and documents the shared common-directory model as native
+  worktree support evolved. A 2025 practitioner question on
+  [locating the common `.git` directory](https://stackoverflow.com/questions/79872739/get-path-to-git-directory-including-from-a-worktree)
+  independently describes reading `commondir` and resolving it relative to the
+  private Git directory.
+
+Zero-downtime and resource contract:
+
+- Old and new Gludd processes converge on the same common-directory lock inode,
+  so a rolling deployment needs no repository migration or daemon outage.
+- Each metadata file is capped at 4 KiB and read once; discovery launches no
+  child process, opens no persistent descriptor, and writes no worktree-root
+  artifact.
+- Missing, malformed, oversized, or non-UTF-8 metadata fails back to the
+  existing in-process lock without inventing a cross-process lock path.
+- Rollback is code-only: restore the previous resolver. No schema, lock file, or
+  repository metadata must be rewritten, and the kernel continues to own
+  release of any already-open `flock` descriptor.
+
 ### Acquisition order & API
 
 `git_repo_lock` acquires the **in-process RLock first**, then the file lock, so

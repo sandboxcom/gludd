@@ -130,8 +130,72 @@ class TestGitDir:
                 f.write("gitdir: /elsewhere\n")
             assert locking._git_dir(tmpdir) is None
 
+    def test_rejects_malformed_gitfile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, ".git").write_text("not-a-gitfile\n", encoding="utf-8")
+            assert locking._git_dir(tmpdir) is None
+
+    def test_gitfile_read_error_falls_back_without_a_cross_process_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, ".git").write_text("gitdir: metadata\n", encoding="utf-8")
+            with patch("builtins.open", side_effect=OSError("unavailable")):
+                assert locking._git_dir(tmpdir) is None
+
+    def test_bounded_path_helpers_reject_missing_empty_and_oversized_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assert locking._resolve_git_path("", relative_to=tmpdir) is None
+            assert locking._resolve_git_path("x" * 5000, relative_to=tmpdir) is None
+            assert locking._read_git_path(
+                os.path.join(tmpdir, "missing"),
+                relative_to=tmpdir,
+            ) is None
+
 
 class TestGitDirWorktree:
+    def test_resolves_worktree_metadata_without_spawning_git(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            common_dir = Path(tmpdir, "main", ".git")
+            worktree_git_dir = common_dir / "worktrees" / "linked"
+            worktree_git_dir.mkdir(parents=True)
+            worktree = Path(tmpdir, "linked")
+            worktree.mkdir()
+            (worktree / ".git").write_text(
+                f"gitdir: {worktree_git_dir}\n",
+                encoding="utf-8",
+            )
+            (worktree_git_dir / "commondir").write_text("../..\n", encoding="utf-8")
+
+            with patch(
+                "subprocess.run",
+                side_effect=AssertionError("worktree lock discovery must not spawn git"),
+            ):
+                assert locking._git_dir(str(worktree)) == str(common_dir)
+
+    def test_resolves_relative_gitfile_without_commondir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            private_dir = Path(tmpdir, "metadata")
+            private_dir.mkdir()
+            worktree = Path(tmpdir, "checkout")
+            worktree.mkdir()
+            (worktree / ".git").write_text(
+                "gitdir: ../metadata\n",
+                encoding="utf-8",
+            )
+
+            assert locking._git_dir(str(worktree)) == str(private_dir)
+
+    def test_rejects_oversized_gitfile_without_creating_a_lock_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            worktree = Path(tmpdir, "checkout")
+            worktree.mkdir()
+            (worktree / ".git").write_text(
+                "gitdir: " + ("x" * 5000),
+                encoding="utf-8",
+            )
+
+            assert locking._git_dir(str(worktree)) is None
+            assert not (worktree / locking._LOCK_FILENAME).exists()
+
     def test_resolves_worktree_to_common_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             main_repo = os.path.join(tmpdir, "main")
