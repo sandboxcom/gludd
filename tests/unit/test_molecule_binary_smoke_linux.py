@@ -31,7 +31,7 @@ import json
 import os
 import re
 import tomllib
-from typing import Any, cast
+from typing import TypeAlias, TypeGuard
 
 import yaml
 
@@ -42,6 +42,9 @@ _PYPROJECT = os.path.join(_ROOT, "pyproject.toml")
 _MAKE_TARGET_CONTRACT = os.path.join(_ROOT, "config", "make_target_contract.json")
 _LIMA_LIFECYCLE_DOC = os.path.join(_ROOT, "docs", "features", "LIMA_DOCKER_LIFECYCLE.md")
 
+YamlScalar: TypeAlias = str | int | float | bool | None
+YamlValue: TypeAlias = YamlScalar | list["YamlValue"] | dict[str, "YamlValue"]
+
 
 def _load(rel: str) -> str:
     path = os.path.join(_SCENARIO_DIR, rel)
@@ -50,8 +53,102 @@ def _load(rel: str) -> str:
         return fh.read()
 
 
-def _load_yaml(rel: str) -> object:
-    return yaml.safe_load(_load(rel))
+def _is_object_list(value: object) -> TypeGuard[list[object]]:
+    return isinstance(value, list)
+
+
+def _is_str_object_dict(value: object) -> TypeGuard[dict[str, object]]:
+    return isinstance(value, dict) and all(isinstance(key, str) for key in value)
+
+
+def _validated_yaml(value: object, context: str) -> YamlValue:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if _is_object_list(value):
+        return [
+            _validated_yaml(item, f"{context}[{index}]")
+            for index, item in enumerate(value)
+        ]
+    if _is_str_object_dict(value):
+        return {
+            key: _validated_yaml(item, f"{context}.{key}")
+            for key, item in value.items()
+        }
+    raise AssertionError(f"{context} contains unsupported YAML value {value!r}")
+
+
+def _load_yaml(rel: str) -> YamlValue:
+    raw: object = yaml.safe_load(_load(rel))
+    return _validated_yaml(raw, rel)
+
+
+def _require_mapping(value: YamlValue, context: str) -> dict[str, YamlValue]:
+    assert isinstance(value, dict), f"{context} must be a mapping"
+    return value
+
+
+def _require_sequence(value: YamlValue, context: str) -> list[YamlValue]:
+    assert isinstance(value, list), f"{context} must be a sequence"
+    return value
+
+
+def _require_string(value: YamlValue, context: str) -> str:
+    assert isinstance(value, str), f"{context} must be a string"
+    return value
+
+
+def _load_yaml_mapping(rel: str) -> dict[str, YamlValue]:
+    return _require_mapping(_load_yaml(rel), rel)
+
+
+def _load_yaml_sequence(rel: str) -> list[YamlValue]:
+    return _require_sequence(_load_yaml(rel), rel)
+
+
+def _mapping_key(
+    mapping: dict[str, YamlValue], key: str, context: str
+) -> dict[str, YamlValue]:
+    return _require_mapping(mapping.get(key), f"{context}.{key}")
+
+
+def _sequence_key(
+    mapping: dict[str, YamlValue], key: str, context: str
+) -> list[YamlValue]:
+    return _require_sequence(mapping.get(key), f"{context}.{key}")
+
+
+def _string_key(mapping: dict[str, YamlValue], key: str, context: str) -> str:
+    return _require_string(mapping.get(key), f"{context}.{key}")
+
+
+def _mapping_sequence_key(
+    mapping: dict[str, YamlValue], key: str, context: str
+) -> list[dict[str, YamlValue]]:
+    return [
+        _require_mapping(value, f"{context}.{key}[{index}]")
+        for index, value in enumerate(_sequence_key(mapping, key, context))
+    ]
+
+
+def _play(rel: str, index: int) -> dict[str, YamlValue]:
+    plays = _load_yaml_sequence(rel)
+    assert index < len(plays), f"{rel} missing play at index {index}"
+    return _require_mapping(plays[index], f"{rel}[{index}]")
+
+
+def _task_map(rel: str) -> dict[str, dict[str, YamlValue]]:
+    tasks: dict[str, dict[str, YamlValue]] = {}
+    for index, value in enumerate(_load_yaml_sequence(rel)):
+        task = _require_mapping(value, f"{rel}[{index}]")
+        name = _require_string(task.get("name"), f"{rel}[{index}].name")
+        tasks[name] = task
+    return tasks
+
+
+def _play_tasks(rel: str, play_index: int) -> list[dict[str, YamlValue]]:
+    return _mapping_sequence_key(
+        _play(rel, play_index), "tasks", f"{rel}[{play_index}]"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -60,46 +157,47 @@ def _load_yaml(rel: str) -> object:
 
 
 class TestScenarioShape:
-    def test_scenario_directory_exists(self):
+    def test_scenario_directory_exists(self) -> None:
         assert os.path.isdir(_SCENARIO_DIR), "binary_smoke_linux scenario missing"
 
-    def test_molecule_yml_present(self):
+    def test_molecule_yml_present(self) -> None:
         assert os.path.isfile(os.path.join(_SCENARIO_DIR, "molecule.yml"))
 
-    def test_converge_yml_present(self):
+    def test_converge_yml_present(self) -> None:
         assert os.path.isfile(os.path.join(_SCENARIO_DIR, "default", "converge.yml"))
 
-    def test_verify_yml_present(self):
+    def test_verify_yml_present(self) -> None:
         assert os.path.isfile(os.path.join(_SCENARIO_DIR, "default", "verify.yml"))
 
-    def test_prepare_yml_present(self):
+    def test_prepare_yml_present(self) -> None:
         assert os.path.isfile(os.path.join(_SCENARIO_DIR, "default", "prepare.yml"))
 
-    def test_cleanup_yml_present(self):
+    def test_cleanup_yml_present(self) -> None:
         assert os.path.isfile(os.path.join(_SCENARIO_DIR, "default", "cleanup.yml"))
 
-    def test_dependency_manifests_are_complete(self):
-        requirements = _load_yaml("requirements.yml")
-        collections = _load_yaml("collections.yml")
+    def test_dependency_manifests_are_complete(self) -> None:
+        requirements = _load_yaml_mapping("requirements.yml")
+        collections = _load_yaml_mapping("collections.yml")
 
         assert requirements == {"roles": []}
-        assert isinstance(collections, dict)
         names = {
-            dependency["name"]
-            for dependency in collections.get("collections", [])
+            _string_key(dependency, "name", "collections.yml.collections")
+            for dependency in _mapping_sequence_key(
+                collections, "collections", "collections.yml"
+            )
         }
         assert names == {"ansible.posix", "community.docker"}
 
-    def test_molecule_uses_container_driver(self):
-        data = _load_yaml("molecule.yml")
-        assert isinstance(data, dict)
-        driver = data.get("driver", {})
-        assert driver.get("name") in {"docker", "podman"}, (
+    def test_molecule_uses_container_driver(self) -> None:
+        data = _load_yaml_mapping("molecule.yml")
+        driver = _mapping_key(data, "driver", "molecule.yml")
+        driver_name = _string_key(driver, "name", "molecule.yml.driver")
+        assert driver_name in {"docker", "podman"}, (
             "scenario must use a container driver (docker/podman) so the "
-            f"binary is exercised on Linux; got driver={driver.get('name')!r}"
+            f"binary is exercised on Linux; got driver={driver_name!r}"
         )
 
-    def test_docker_driver_dependency_is_declared(self):
+    def test_docker_driver_dependency_is_declared(self) -> None:
         with open(_PYPROJECT, "rb") as fh:
             project = tomllib.load(fh)
 
@@ -113,7 +211,7 @@ class TestScenarioShape:
                 for dependency in dependencies
             ), "molecule Docker scenarios require molecule-plugins[docker]"
 
-    def test_make_target_routes_docker_sdk_to_podman_socket(self):
+    def test_make_target_routes_docker_sdk_to_podman_socket(self) -> None:
         with open(_MAKEFILE) as fh:
             makefile = fh.read()
 
@@ -210,7 +308,7 @@ class TestScenarioShape:
         assert "ZDD" in lifecycle_doc
         assert "rollback" in lifecycle_doc.lower()
 
-    def test_legacy_default_machine_cleanup_is_bounded_and_opt_in(self):
+    def test_legacy_default_machine_cleanup_is_bounded_and_opt_in(self) -> None:
         with open(_MAKEFILE) as fh:
             makefile = fh.read()
 
@@ -225,7 +323,7 @@ class TestScenarioShape:
         assert 'podman machine rm -f "$(PODMAN_LEGACY_MACHINE)"' in makefile
         assert "PODMAN_LEGACY_DELETE_HEARTBEAT" in makefile
 
-    def test_molecule_clean_removes_only_generated_dependency_namespaces(self):
+    def test_molecule_clean_removes_only_generated_dependency_namespaces(self) -> None:
         with open(_MAKEFILE) as fh:
             makefile = fh.read()
 
@@ -238,7 +336,7 @@ class TestScenarioShape:
         assert "collections/ansible_collections/community" in section
         assert "general_ludd" not in section
 
-    def test_molecule_test_uses_canonical_source_without_copying(self):
+    def test_molecule_test_uses_canonical_source_without_copying(self) -> None:
         with open(_MAKEFILE) as fh:
             makefile = fh.read()
 
@@ -249,43 +347,51 @@ class TestScenarioShape:
         assert 'rm -rf "$$RUNTIME_SCENARIO"' not in section
         assert 'cp "molecule/playbooks/$(SCENARIO)/molecule.yml"' not in section
 
-    def test_molecule_declares_ubuntu_platform(self):
-        data = _load_yaml("molecule.yml")
-        platforms = data.get("platforms", [])
-        assert isinstance(platforms, list) and platforms, "platforms list is empty"
-        names = [str(p.get("image", "")) for p in platforms]
+    def test_molecule_declares_ubuntu_platform(self) -> None:
+        data = _load_yaml_mapping("molecule.yml")
+        platforms = _mapping_sequence_key(data, "platforms", "molecule.yml")
+        assert platforms, "platforms list is empty"
+        names = [
+            _string_key(platform, "image", "molecule.yml.platforms")
+            for platform in platforms
+        ]
         assert any("ubuntu" in n for n in names), (
             "scenario must target an ubuntu image to exercise the Linux build; "
             f"got images={names}"
         )
 
-    def test_molecule_uses_prebuilt_image_and_bootstraps_python(self):
-        data = _load_yaml("molecule.yml")
-        platforms = data.get("platforms", [])
+    def test_molecule_uses_prebuilt_image_and_bootstraps_python(self) -> None:
+        data = _load_yaml_mapping("molecule.yml")
+        platforms = _mapping_sequence_key(data, "platforms", "molecule.yml")
         assert platforms[0].get("pre_build_image") is True
 
-        converge = _load_yaml("default/converge.yml")
-        bootstrap = converge[0]
+        bootstrap = _play("default/converge.yml", 0)
         assert bootstrap.get("gather_facts") is False
         serialized = yaml.safe_dump(bootstrap)
         assert "ansible.builtin.raw" in serialized
         assert "apt-get install -y python3" in serialized
-        assert converge[1].get("become") is False
+        assert _play("default/converge.yml", 1).get("become") is False
 
-    def test_molecule_uses_ansible_provisioner_and_verifier(self):
-        data = _load_yaml("molecule.yml")
-        assert data.get("provisioner", {}).get("name") == "ansible"
-        assert data.get("verifier", {}).get("name") == "ansible"
+    def test_molecule_uses_ansible_provisioner_and_verifier(self) -> None:
+        data = _load_yaml_mapping("molecule.yml")
+        provisioner = _mapping_key(data, "provisioner", "molecule.yml")
+        verifier = _mapping_key(data, "verifier", "molecule.yml")
+        assert provisioner.get("name") == "ansible"
+        assert verifier.get("name") == "ansible"
 
-    def test_molecule_wires_default_playbooks(self):
-        data = _load_yaml("molecule.yml")
-        playbooks = data.get("provisioner", {}).get("playbooks", {})
+    def test_molecule_wires_default_playbooks(self) -> None:
+        data = _load_yaml_mapping("molecule.yml")
+        provisioner = _mapping_key(data, "provisioner", "molecule.yml")
+        playbooks = _mapping_key(
+            provisioner, "playbooks", "molecule.yml.provisioner"
+        )
         for key in ("cleanup", "prepare", "converge", "verify"):
             assert key in playbooks, (
                 f"provisioner.playbooks missing '{key}' reference"
             )
 
-        sequence = data.get("scenario", {}).get("test_sequence", [])
+        scenario = _mapping_key(data, "scenario", "molecule.yml")
+        sequence = _sequence_key(scenario, "test_sequence", "molecule.yml.scenario")
         assert sequence[:3] == ["dependency", "cleanup", "destroy"]
 
 
@@ -295,43 +401,43 @@ class TestScenarioShape:
 
 
 class TestConvergeCoverage:
-    def test_converge_installs_minimal_deps(self):
+    def test_converge_installs_minimal_deps(self) -> None:
         out = _load("default/converge.yml")
         assert "ca-certificates" in out and "curl" in out, (
             "converge must install ca-certificates + curl for the health poll"
         )
 
-    def test_converge_copies_the_built_binary(self):
+    def test_converge_copies_the_built_binary(self) -> None:
         out = _load("default/converge.yml")
         assert "dist/gludd" in out, "converge must copy the built binary (dist/gludd)"
         assert "chmod" in out.lower() or "mode: \"0755\"" in out or "mode: '0755'" in out, (
             "converge must make the binary executable"
         )
 
-    def test_converge_runs_version_subcommand(self):
+    def test_converge_runs_version_subcommand(self) -> None:
         out = _load("default/converge.yml")
         assert re.search(r"gludd[^\\\n]* version\b", out) or " version" in out, (
             "converge must run 'gludd version' (no --version flag exists)"
         )
 
-    def test_converge_runs_help_flag(self):
+    def test_converge_runs_help_flag(self) -> None:
         out = _load("default/converge.yml")
         assert "--help" in out, "converge must run 'gludd --help'"
 
-    def test_converge_runs_project_paths(self):
+    def test_converge_runs_project_paths(self) -> None:
         out = _load("default/converge.yml")
         assert "project paths" in out, (
             "converge must run 'gludd project paths' to exercise bundled-path resolution"
         )
 
-    def test_converge_starts_daemon_backgrounded(self):
+    def test_converge_starts_daemon_backgrounded(self) -> None:
         out = _load("default/converge.yml")
         assert "daemon" in out, "converge must start the gludd daemon"
         assert "nohup" in out or "&" in out or "async" in out, (
             "daemon must be started in the background (nohup/&/async)"
         )
 
-    def test_converge_polls_health_endpoint(self):
+    def test_converge_polls_health_endpoint(self) -> None:
         out = _load("default/converge.yml")
         assert "healthz" in out, (
             "converge must poll /healthz (the canonical daemon health endpoint)"
@@ -339,57 +445,96 @@ class TestConvergeCoverage:
         assert "30" in out, "health poll must allow up to ~30s"
 
     def test_converge_requires_canonical_healthy_status(self) -> None:
-        converge = _load_yaml("default/converge.yml")
-        tasks = converge[1]["tasks"]
-        health = next(task for task in tasks if "/healthz" in task["name"])
+        tasks = _play_tasks("default/converge.yml", 1)
+        health = next(
+            task
+            for task in tasks
+            if "/healthz"
+            in _string_key(task, "name", "default/converge.yml[1].tasks")
+        )
 
-        assert "!= 'healthy'" in health["failed_when"], (
+        failed_when = _string_key(
+            health, "failed_when", "default/converge.yml health task"
+        )
+        assert "!= 'healthy'" in failed_when, (
             "the daemon's stable /healthz contract uses status='healthy'; "
             "the smoke scenario must reject degraded responses without "
             "expecting the unrelated literal 'ok'"
         )
 
-    def test_converge_submits_job_via_daemon_api(self):
+    def test_converge_submits_job_via_daemon_api(self) -> None:
         out = _load("default/converge.yml")
         assert "/api/todos" in out, (
             "converge must submit a trivial job via POST /api/todos (the job-"
             "submission API; there is no /api/playbook/run endpoint)"
         )
 
-    def test_converge_authenticates_job_submission(self):
-        converge = _load_yaml("default/converge.yml")
-        daemon_play = converge[1]
-        daemon_psk = daemon_play["vars"].get("daemon_psk")
+    def test_converge_authenticates_job_submission(self) -> None:
+        daemon_play = _play("default/converge.yml", 1)
+        daemon_vars = _mapping_key(
+            daemon_play, "vars", "default/converge.yml[1]"
+        )
+        daemon_psk = daemon_vars.get("daemon_psk")
         assert daemon_psk, "the smoke daemon must exercise fail-closed PSK auth"
 
-        tasks = daemon_play["tasks"]
-        start = next(task for task in tasks if task["name"].startswith("Start the"))
-        submit = next(task for task in tasks if task["name"].startswith("Submit a"))
-        assert start["environment"]["GLUDD_AUTH_PSK"] == "{{ daemon_psk }}"
-        assert submit["ansible.builtin.uri"]["headers"]["Authorization"] == (
+        tasks = _mapping_sequence_key(
+            daemon_play, "tasks", "default/converge.yml[1]"
+        )
+        start = next(
+            task
+            for task in tasks
+            if _string_key(task, "name", "default/converge.yml[1].tasks").startswith(
+                "Start the"
+            )
+        )
+        submit = next(
+            task
+            for task in tasks
+            if _string_key(task, "name", "default/converge.yml[1].tasks").startswith(
+                "Submit a"
+            )
+        )
+        environment = _mapping_key(
+            start, "environment", "default/converge.yml start task"
+        )
+        uri = _mapping_key(
+            submit, "ansible.builtin.uri", "default/converge.yml submit task"
+        )
+        headers = _mapping_key(
+            uri, "headers", "default/converge.yml submit task URI"
+        )
+        assert environment["GLUDD_AUTH_PSK"] == "{{ daemon_psk }}"
+        assert headers["Authorization"] == (
             "Bearer {{ daemon_psk }}"
         )
 
-    def test_converge_covers_invalid_flag_error_path(self):
+    def test_converge_covers_invalid_flag_error_path(self) -> None:
         out = _load("default/converge.yml")
         assert "--invalid-flag" in out, (
             "converge must run 'gludd --invalid-flag' to verify a clean argparse error"
         )
 
-    def test_converge_covers_occupied_port_error_path(self):
+    def test_converge_covers_occupied_port_error_path(self) -> None:
         out = _load("default/converge.yml")
         # Second daemon invocation against the already-bound port.
         assert out.count("daemon") >= 2, (
             "converge must start a second daemon on the occupied port"
         )
 
-    def test_converge_persists_remote_port_clash_output(self):
-        converge = _load_yaml("default/converge.yml")
-        tasks = converge[1]["tasks"]
+    def test_converge_persists_remote_port_clash_output(self) -> None:
+        tasks = _play_tasks("default/converge.yml", 1)
         persist = next(
-            task for task in tasks if task["name"] == "Persist port-clash result"
+            task
+            for task in tasks
+            if _string_key(task, "name", "default/converge.yml[1].tasks")
+            == "Persist port-clash result"
         )
-        content = persist["ansible.builtin.copy"]["content"]
+        copy = _mapping_key(
+            persist, "ansible.builtin.copy", "default/converge.yml persist task"
+        )
+        content = _string_key(
+            copy, "content", "default/converge.yml persist task copy"
+        )
         assert "lookup(" not in content
         assert "{{ port_clash.stdout }}" in content
 
@@ -408,40 +553,39 @@ class TestConvergeCoverage:
 
 
 class TestVerifyAssertions:
-    def test_verify_does_not_require_sudo_in_root_container(self):
-        verify = _load_yaml("default/verify.yml")
-        assert verify[0].get("become") is False
+    def test_verify_does_not_require_sudo_in_root_container(self) -> None:
+        assert _play("default/verify.yml", 0).get("become") is False
 
-    def test_verify_asserts_semver(self):
+    def test_verify_asserts_semver(self) -> None:
         out = _load("default/verify.yml")
         assert "regex" in out.lower() or re.search(r"\\d\+", out), (
             "verify must assert 'version' output is a SemVer (\\d+\\.\\d+\\.\\d+)"
         )
 
-    def test_verify_asserts_subcommands_listed(self):
+    def test_verify_asserts_subcommands_listed(self) -> None:
         out = _load("default/verify.yml")
         for sub in ("daemon", "project"):
             assert sub in out, f"verify must assert --help lists the '{sub}' subcommand"
 
-    def test_verify_asserts_daemon_health_200(self):
+    def test_verify_asserts_daemon_health_200(self) -> None:
         out = _load("default/verify.yml")
         assert "healthz" in out and "200" in out, (
             "verify must assert the daemon /healthz endpoint returns HTTP 200"
         )
 
-    def test_verify_asserts_no_traceback(self):
+    def test_verify_asserts_no_traceback(self) -> None:
         out = _load("default/verify.yml")
         assert "Traceback" in out, (
             "verify must assert no Python traceback appears in any output"
         )
 
-    def test_verify_asserts_no_module_not_found(self):
+    def test_verify_asserts_no_module_not_found(self) -> None:
         out = _load("default/verify.yml")
         assert "ModuleNotFoundError" in out, (
             "verify must assert no ModuleNotFoundError (binary bundling regression)"
         )
 
-    def test_verify_asserts_no_missing_base_yaml(self):
+    def test_verify_asserts_no_missing_base_yaml(self) -> None:
         out = _load("default/verify.yml")
         assert "Missing base YAML definition file" in out, (
             "verify must assert the 'Missing base YAML definition file' error is absent"
@@ -467,8 +611,7 @@ class TestVerifyAssertions:
 
     def test_teardown_rechecks_liveness_after_proc_identity_reads(self) -> None:
         """A PID exit between ``ps`` and ``/proc`` must not look foreign."""
-        stop = cast(list[dict[str, Any]], _load_yaml("default/stop_daemon.yml"))
-        tasks = {task["name"]: task for task in stop}
+        tasks = _task_map("default/stop_daemon.yml")
         names = list(tasks)
 
         initial_ps = "Inspect only the PID named by the packaged daemon"
@@ -486,11 +629,14 @@ class TestVerifyAssertions:
         self,
     ) -> None:
         """Live mismatches remain fail-closed and identify the changed field."""
-        stop = cast(list[dict[str, Any]], _load_yaml("default/stop_daemon.yml"))
-        tasks = {task["name"]: task for task in stop}
+        tasks = _task_map("default/stop_daemon.yml")
 
         establish = tasks["Establish exact packaged daemon ownership"]
-        facts = establish["ansible.builtin.set_fact"]
+        facts = _mapping_key(
+            establish,
+            "ansible.builtin.set_fact",
+            "default/stop_daemon.yml establish task",
+        )
         assert {
             "_binary_daemon_pid_live",
             "_binary_daemon_start_ticks_match",
@@ -499,8 +645,21 @@ class TestVerifyAssertions:
         } <= facts.keys()
 
         refusal = tasks["Refuse to signal a reused or foreign PID"]
-        assert "_binary_daemon_pid_live" in refusal["ansible.builtin.assert"]["that"][0]
-        fail_msg = refusal["ansible.builtin.assert"]["fail_msg"]
+        assertion = _mapping_key(
+            refusal,
+            "ansible.builtin.assert",
+            "default/stop_daemon.yml refusal task",
+        )
+        conditions = _sequence_key(
+            assertion, "that", "default/stop_daemon.yml refusal assertion"
+        )
+        condition = _require_string(
+            conditions[0], "default/stop_daemon.yml refusal assertion condition"
+        )
+        assert "_binary_daemon_pid_live" in condition
+        fail_msg = _string_key(
+            assertion, "fail_msg", "default/stop_daemon.yml refusal assertion"
+        )
         for field in (
             "pid_live",
             "expected_start_ticks",
@@ -511,42 +670,60 @@ class TestVerifyAssertions:
             assert field in fail_msg
 
         stop_owned = tasks["Stop only the proven packaged daemon"]
-        assert "_binary_daemon_owned | bool" in stop_owned["when"]
+        stop_conditions = _sequence_key(
+            stop_owned, "when", "default/stop_daemon.yml stop task"
+        )
+        assert "_binary_daemon_owned | bool" in stop_conditions
 
     def test_teardown_waits_for_release_when_daemon_exits_during_inspection(
         self,
     ) -> None:
         """Success, failure, and cancellation all prove endpoint/PID release."""
-        stop = cast(list[dict[str, Any]], _load_yaml("default/stop_daemon.yml"))
-        tasks = {task["name"]: task for task in stop}
+        tasks = _task_map("default/stop_daemon.yml")
         release_guard = "not _binary_daemon_pid_live | bool or _binary_daemon_owned | bool"
 
         endpoint = tasks["Prove the packaged daemon endpoint is closed"]
         pid_record = tasks["Prove the daemon wrapper released its PID record"]
-        assert release_guard in endpoint["when"]
-        assert release_guard in pid_record["when"]
-        assert endpoint["ansible.builtin.wait_for"]["state"] == "stopped"
-        assert pid_record["ansible.builtin.wait_for"]["state"] == "absent"
+        endpoint_conditions = _sequence_key(
+            endpoint, "when", "default/stop_daemon.yml endpoint task"
+        )
+        pid_record_conditions = _sequence_key(
+            pid_record, "when", "default/stop_daemon.yml PID-record task"
+        )
+        assert release_guard in endpoint_conditions
+        assert release_guard in pid_record_conditions
+        endpoint_wait = _mapping_key(
+            endpoint,
+            "ansible.builtin.wait_for",
+            "default/stop_daemon.yml endpoint task",
+        )
+        pid_record_wait = _mapping_key(
+            pid_record,
+            "ansible.builtin.wait_for",
+            "default/stop_daemon.yml PID-record task",
+        )
+        assert endpoint_wait["state"] == "stopped"
+        assert pid_record_wait["state"] == "absent"
 
-    def test_verify_assertes_no_import_errors(self):
+    def test_verify_assertes_no_import_errors(self) -> None:
         out = _load("default/verify.yml")
         assert "ImportError" in out or "ModuleNotFoundError" in out, (
             "verify must assert no import errors"
         )
 
-    def test_verify_asserts_job_processed(self):
+    def test_verify_asserts_job_processed(self) -> None:
         out = _load("default/verify.yml")
         assert "/api/todos" in out or "todo_id" in out, (
             "verify must assert the daemon accepted the submitted job"
         )
 
-    def test_verify_asserts_invalid_flag_exits_nonzero(self):
+    def test_verify_asserts_invalid_flag_exits_nonzero(self) -> None:
         out = _load("default/verify.yml")
         assert "bad" in out.lower() or "invalid" in out.lower(), (
             "verify must assert the invalid-flag invocation exited non-zero"
         )
 
-    def test_verify_uses_ansible_compatible_nonzero_regexes(self):
+    def test_verify_uses_ansible_compatible_nonzero_regexes(self) -> None:
         out = _load("default/verify.yml")
 
         assert "regex_search('rc=[1-9][0-9]*')" in out
@@ -554,7 +731,7 @@ class TestVerifyAssertions:
         assert "regex_search('rc=([0-9]+)'," not in out
         assert "regex_search('EXIT_RC=([0-9]+)'," not in out
 
-    def test_verify_asserts_port_clash_handled_gracefully(self):
+    def test_verify_asserts_port_clash_handled_gracefully(self) -> None:
         out = _load("default/verify.yml")
         assert "port" in out.lower() or "clash" in out.lower(), (
             "verify must assert the occupied-port daemon failed gracefully"
@@ -567,7 +744,7 @@ class TestVerifyAssertions:
 
 
 class TestPrepare:
-    def test_make_target_builds_a_real_linux_binary_before_molecule(self):
+    def test_make_target_builds_a_real_linux_binary_before_molecule(self) -> None:
         out = _load("default/prepare.yml")
         assert "dist/linux/gludd" in out
         assert "ansible.builtin.command" not in out
