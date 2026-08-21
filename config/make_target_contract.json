@@ -579,6 +579,16 @@
       "behavior": "make lima-docker-start LIMA_INSTANCE=gludd-docker LIMA_DOCKER_CONFIG=/tmp/gludd-lima-docker-config LIMA_DOCKER_START_TIMEOUT_SECS=180 LIMA_DOCKER_VALIDATE_ONLY=1"
     },
     {
+      "name": "lima-docker-stop",
+      "make_variables": [
+        "LIMA_INSTANCE",
+        "LIMA_DOCKER_STOP_KILL_AFTER_SECS",
+        "LIMA_DOCKER_STOP_TIMEOUT_SECS",
+        "LIMA_DOCKER_VALIDATE_ONLY"
+      ],
+      "behavior": "make lima-docker-stop LIMA_INSTANCE=gludd-docker LIMA_DOCKER_STOP_KILL_AFTER_SECS=10 LIMA_DOCKER_STOP_TIMEOUT_SECS=200 LIMA_DOCKER_VALIDATE_ONLY=1"
+    },
+    {
       "name": "lima-docker-status",
       "make_variables": [
         "LIMA_INSTANCE",

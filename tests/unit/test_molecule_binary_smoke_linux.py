@@ -39,6 +39,7 @@ _SCENARIO_DIR = os.path.join(_ROOT, "molecule", "playbooks", "binary_smoke_linux
 _MAKEFILE = os.path.join(_ROOT, "Makefile")
 _PYPROJECT = os.path.join(_ROOT, "pyproject.toml")
 _MAKE_TARGET_CONTRACT = os.path.join(_ROOT, "config", "make_target_contract.json")
+_LIMA_LIFECYCLE_DOC = os.path.join(_ROOT, "docs", "features", "LIMA_DOCKER_LIFECYCLE.md")
 
 
 def _load(rel: str) -> str:
@@ -162,6 +163,51 @@ class TestScenarioShape:
             "LIMA_DOCKER_VALIDATE_ONLY",
         ]
         assert target["behavior"].endswith("LIMA_DOCKER_VALIDATE_ONLY=1")
+
+    def test_lima_docker_stop_is_bounded_idempotent_and_non_destructive(self) -> None:
+        with open(_MAKEFILE) as fh:
+            makefile = fh.read()
+
+        assert "LIMA_DOCKER_STOP_TIMEOUT_SECS ?= 200" in makefile
+        assert "LIMA_DOCKER_STOP_KILL_AFTER_SECS ?= 10" in makefile
+        assert "lima-docker-stop:" in makefile
+        stop_recipe = makefile.split("lima-docker-stop:", 1)[1].split(
+            "\nlima-docker-status:", 1
+        )[0]
+        assert '*[!A-Za-z0-9._-]*|.|..)' in stop_recipe
+        assert "gludd-*)" in stop_recipe
+        assert 'record=$$(limactl list "$(LIMA_INSTANCE)"' in stop_recipe
+        assert "LIMA_DOCKER_STOP_ALREADY_STOPPED" in stop_recipe
+        assert "LIMA_DOCKER_STOP_BEGIN" in stop_recipe
+        assert 'command -v gtimeout' in stop_recipe
+        assert 'command -v timeout' in stop_recipe
+        assert '--foreground --signal=TERM --kill-after="$(LIMA_DOCKER_STOP_KILL_AFTER_SECS)s"' in stop_recipe
+        assert 'limactl --tty=false stop "$(LIMA_INSTANCE)"' in stop_recipe
+        assert "LIMA_DOCKER_STOP_READY" in stop_recipe
+        assert "--force" not in stop_recipe
+        assert "limactl delete" not in stop_recipe
+        assert "docker rm" not in stop_recipe
+
+        with open(_MAKE_TARGET_CONTRACT) as fh:
+            contract = json.load(fh)
+        target = next(
+            entry for entry in contract["targets"] if entry["name"] == "lima-docker-stop"
+        )
+        assert target["make_variables"] == [
+            "LIMA_INSTANCE",
+            "LIMA_DOCKER_STOP_KILL_AFTER_SECS",
+            "LIMA_DOCKER_STOP_TIMEOUT_SECS",
+            "LIMA_DOCKER_VALIDATE_ONLY",
+        ]
+        assert target["behavior"].endswith("LIMA_DOCKER_VALIDATE_ONLY=1")
+
+        with open(_LIMA_LIFECYCLE_DOC) as fh:
+            lifecycle_doc = fh.read()
+        assert "2026-08-20" in lifecycle_doc
+        assert "https://lima-vm.io/docs/reference/limactl_stop/" in lifecycle_doc
+        assert "https://github.com/lima-vm/lima/discussions/1666" in lifecycle_doc
+        assert "ZDD" in lifecycle_doc
+        assert "rollback" in lifecycle_doc.lower()
 
     def test_legacy_default_machine_cleanup_is_bounded_and_opt_in(self):
         with open(_MAKEFILE) as fh:

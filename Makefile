@@ -446,6 +446,7 @@ help:
 	@echo "  build-executable      Build standalone executable (pyinstaller)"
 	@echo "  audit-linux-pyinstaller-warnings  Validate/replay the Linux PyInstaller warning policy"
 	@echo "  lima-docker-start     Start an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_START_TIMEOUT_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
+	@echo "  lima-docker-stop      Gracefully stop an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_STOP_TIMEOUT_SECS, LIMA_DOCKER_STOP_KILL_AFTER_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-status    Inspect the namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-pull      Pull one image into namespaced Lima Docker (LIMA_INSTANCE, LIMA_IMAGE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  podman-legacy-default-delete  Remove only a stopped legacy default VM (PODMAN_LEGACY_MACHINE, PODMAN_LEGACY_DELETE_TIMEOUT_SECS, PODMAN_LEGACY_DELETE_VALIDATE_ONLY)"
@@ -6738,6 +6739,8 @@ LIMA_IMAGE ?= ubuntu:24.04
 LIMA_DOCKER_CONFIG ?= /tmp/gludd-lima-docker-config
 LIMA_DOCKER_VALIDATE_ONLY ?= 0
 LIMA_DOCKER_START_TIMEOUT_SECS ?= 180
+LIMA_DOCKER_STOP_TIMEOUT_SECS ?= 200
+LIMA_DOCKER_STOP_KILL_AFTER_SECS ?= 10
 PODMAN_MACHINE ?= gludd
 VDISK ?= 20
 PODMAN_LEGACY_MACHINE ?= podman-machine-default
@@ -6767,6 +6770,51 @@ lima-docker-start: ## Start only an existing namespaced Lima Docker VM and prove
 	chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
 	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker info --format 'server={{.ServerVersion}} containers={{.Containers}} images={{.Images}}'; \
 	echo "LIMA_DOCKER_START_READY instance=$(LIMA_INSTANCE) socket=$$socket"
+
+lima-docker-stop: ## Gracefully stop only an existing Gludd-namespaced Lima VM
+	@case "$(LIMA_DOCKER_VALIDATE_ONLY)" in 0|1) ;; *) echo "LIMA_DOCKER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@[ "$(LIMA_DOCKER_STOP_TIMEOUT_SECS)" -ge 1 ] 2>/dev/null || { echo "LIMA_DOCKER_STOP_TIMEOUT_SECS must be a positive integer"; exit 2; }
+	@[ "$(LIMA_DOCKER_STOP_KILL_AFTER_SECS)" -ge 1 ] 2>/dev/null || { echo "LIMA_DOCKER_STOP_KILL_AFTER_SECS must be a positive integer"; exit 2; }
+	@case "$(LIMA_INSTANCE)" in \
+		""|*[!A-Za-z0-9._-]*|.|..) echo "Refusing invalid Lima instance name: $(LIMA_INSTANCE)"; exit 2;; \
+		gludd-*) ;; \
+		*) echo "Refusing non-Gludd Lima instance: $(LIMA_INSTANCE)"; exit 2;; \
+	esac; \
+	if [ "$(LIMA_DOCKER_VALIDATE_ONLY)" = "1" ]; then \
+		echo "LIMA_DOCKER_STOP_VALID instance=$(LIMA_INSTANCE) timeout_secs=$(LIMA_DOCKER_STOP_TIMEOUT_SECS) kill_after_secs=$(LIMA_DOCKER_STOP_KILL_AFTER_SECS)"; \
+		exit 0; \
+	fi; \
+	record=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Name}}|{{.Status}}' 2>/dev/null || true); \
+	name=$${record%%|*}; \
+	status=$${record#*|}; \
+	if [ "$$name" != "$(LIMA_INSTANCE)" ] || [ "$$record" = "$$status" ]; then \
+		echo "Refusing to stop missing Lima instance: $(LIMA_INSTANCE)"; \
+		exit 1; \
+	fi; \
+	case "$$status" in \
+		Stopped) echo "LIMA_DOCKER_STOP_ALREADY_STOPPED instance=$(LIMA_INSTANCE)"; exit 0;; \
+		Running) ;; \
+		*) echo "Refusing graceful stop for Lima instance $(LIMA_INSTANCE) in status $$status"; exit 1;; \
+	esac; \
+	timeout_bin=$$(command -v gtimeout || command -v timeout || true); \
+	if [ -z "$$timeout_bin" ]; then \
+		echo "GNU timeout is required for bounded Lima shutdown (install coreutils)"; \
+		exit 1; \
+	fi; \
+	echo "LIMA_DOCKER_STOP_BEGIN instance=$(LIMA_INSTANCE) timeout_secs=$(LIMA_DOCKER_STOP_TIMEOUT_SECS)"; \
+	stop_rc=0; \
+	"$$timeout_bin" --foreground --signal=TERM --kill-after="$(LIMA_DOCKER_STOP_KILL_AFTER_SECS)s" "$(LIMA_DOCKER_STOP_TIMEOUT_SECS)s" \
+		limactl --tty=false stop "$(LIMA_INSTANCE)" || stop_rc=$$?; \
+	if [ "$$stop_rc" -ne 0 ]; then \
+		echo "Lima Docker shutdown failed or exceeded its bound: rc=$$stop_rc instance=$(LIMA_INSTANCE)"; \
+		exit "$$stop_rc"; \
+	fi; \
+	after=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Name}}|{{.Status}}' 2>/dev/null || true); \
+	if [ "$$after" != "$(LIMA_INSTANCE)|Stopped" ]; then \
+		echo "Lima Docker shutdown was not proven: instance=$(LIMA_INSTANCE) observed=$$after"; \
+		exit 1; \
+	fi; \
+	echo "LIMA_DOCKER_STOP_READY instance=$(LIMA_INSTANCE) status=Stopped"
 
 lima-docker-status: ## Show bounded Docker engine, container, and image state for the namespaced Lima VM
 	@case "$(LIMA_DOCKER_VALIDATE_ONLY)" in 0|1) ;; *) echo "LIMA_DOCKER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
