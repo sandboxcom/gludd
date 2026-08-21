@@ -20,7 +20,10 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Protocol, cast
 from uuid import uuid4
+
+import pytest
 
 # The script's basetemp is `mktemp -d /tmp/gludd-gate-XXXXXX` → basename is
 # "gludd-gate-" followed by ONLY alphanumerics. Test artifacts (workdirs, lock
@@ -34,6 +37,22 @@ ROOT = Path(__file__).parent.parent.parent
 SCRIPT = ROOT / "scripts" / "run_gate.sh"
 
 DEFAULT_LOCK_FILE = "/tmp/gludd-gate.lock"
+
+
+class _GateWorkerModule(Protocol):
+    """Typed surface loaded from the standalone worker-count script."""
+
+    def compute_worker_count(
+        self,
+        *,
+        cpu_count: int,
+        available_ram_gb: float,
+        per_worker_gb: float,
+    ) -> int:
+        """Return the bounded worker count."""
+
+    def main(self) -> None:
+        """Print the selected worker count."""
 
 
 def _run_gate(
@@ -57,6 +76,8 @@ def _run_gate(
         **os.environ,
         "PYTEST_CMD": 'python3 -c "import sys; sys.exit(0)"',
         "GATE_LOCK_FILE": unique_lock,
+        "GATE_STATUS_FILE": str(workdir / ".gate-status"),
+        "GATE_FAILED_FILE": str(workdir / ".gate-failed"),
     }
     if env_overrides:
         env.update(env_overrides)
@@ -136,6 +157,27 @@ class TestRunGateScript:
             ".gate-failed must be created when pytest exits non-zero"
         )
 
+    def test_stub_gate_does_not_inherit_parent_status_paths(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A nested gate test must not mutate its live parent gate's markers."""
+        parent_status = tmp_path / "parent-status"
+        parent_failed = tmp_path / "parent-failed"
+        parent_status.write_text("RUNNING parent\n")
+        monkeypatch.setenv("GATE_STATUS_FILE", str(parent_status))
+        monkeypatch.setenv("GATE_FAILED_FILE", str(parent_failed))
+        workdir = tmp_path / "nested"
+        workdir.mkdir()
+
+        result = _run_gate(cwd=workdir)
+
+        assert result.returncode == 0, result.stderr
+        assert "PASS 0" in (workdir / ".gate-status").read_text()
+        assert parent_status.read_text() == "RUNNING parent\n"
+        assert not parent_failed.exists()
+
     def test_unique_basetemp_not_fixed_path(self) -> None:
         """run_gate.sh must use mktemp-based basetemp, not the old fixed path."""
         script_text = SCRIPT.read_text()
@@ -178,7 +220,7 @@ class TestRunGateScript:
         # Use a unique lock file for this test so it doesn't race with other tests.
         unique_lock = tempfile.mktemp(prefix="gludd-gate-conctest-lock-", dir="/tmp")
         lock_path = Path(unique_lock)
-        holder_proc: subprocess.Popen | None = None
+        holder_proc: subprocess.Popen[str] | None = None
 
         try:
             # Mirror the script's GNU-flock probe: flock --nonblock /dev/null true
@@ -427,6 +469,8 @@ class TestRunGateScript:
             **os.environ,
             "PYTEST_CMD": 'python3 -c "import sys; sys.exit(0)"',
             "GATE_LOCK_FILE": tempfile.mktemp(prefix="gludd-gate-main-lock-", dir="/tmp"),
+            "GATE_STATUS_FILE": str(workdir / ".gate-status"),
+            "GATE_FAILED_FILE": str(workdir / ".gate-failed"),
         }
         env.pop("CLAUDE_AGENT_ID", None)
         env.pop("GLUDD_SUBAGENT", None)
@@ -465,7 +509,7 @@ class TestGateWorkerCount:
         workers    = min(cpu_based, mem_based)
     """
 
-    def _import_module(self):
+    def _import_module(self) -> _GateWorkerModule:
         """Import gate_worker_count without installing it as a package."""
         import importlib.util
         import pathlib
@@ -475,8 +519,8 @@ class TestGateWorkerCount:
         )
         assert spec is not None and spec.loader is not None
         mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)  # type: ignore[union-attr]
-        return mod
+        spec.loader.exec_module(mod)
+        return cast("_GateWorkerModule", mod)
 
     def test_script_exists(self) -> None:
         script = Path(__file__).parent.parent.parent / "scripts" / "gate_worker_count.py"
@@ -523,7 +567,10 @@ class TestGateWorkerCount:
         with _pytest.raises(ValueError):
             mod.compute_worker_count(cpu_count=4, available_ram_gb=8.0, per_worker_gb=0)
 
-    def test_gludd_xdist_env_override_bypasses_formula(self, monkeypatch) -> None:
+    def test_gludd_xdist_env_override_bypasses_formula(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """When GLUDD_XDIST_WORKERS is set, main() must print it verbatim and skip formula."""
         import contextlib
         import io
@@ -535,7 +582,10 @@ class TestGateWorkerCount:
             mod.main()
         assert buf.getvalue().strip() == "7", f"Expected '7', got {buf.getvalue().strip()!r}"
 
-    def test_main_returns_positive_int_by_default(self, monkeypatch) -> None:
+    def test_main_returns_positive_int_by_default(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """main() without any env overrides must print a positive integer."""
         import contextlib
         import io

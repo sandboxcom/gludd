@@ -146,6 +146,16 @@ session-scoped `MonkeyPatch.context()`. Restoration therefore runs even when
 download, server startup, assertions, or teardown fail. The
 `check-test-env-writes` guard rejects new bare test-environment assignments.
 
+On 2026-08-21, the definitive gate exposed a second status-ownership boundary:
+the `run_gate.sh` unit harness inherited the live parent gate's
+`GATE_STATUS_FILE` and `GATE_FAILED_FILE`. Its passing and failing stub gates
+therefore published into the parent artifact while their own temporary status
+files stayed empty. Every nested invocation now injects status and failure paths
+inside its owned pytest work directory, and a regression proves the parent
+markers remain byte-identical. This uses the same pytest `tmp_path` and
+`monkeypatch` lifetime guarantees cited below; no production gate cleanup or
+retry is added.
+
 Evidence was reviewed on 2026-08-20. Pytest documents that
 [`tmp_path` is unique to each test function](https://docs.pytest.org/en/stable/how-to/tmp_path.html)
 and that xdist places worker data under a per-run temporary root. Its
