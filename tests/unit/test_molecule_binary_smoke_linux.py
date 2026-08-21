@@ -337,6 +337,17 @@ class TestConvergeCoverage:
         )
         assert "30" in out, "health poll must allow up to ~30s"
 
+    def test_converge_requires_canonical_healthy_status(self) -> None:
+        converge = _load_yaml("default/converge.yml")
+        tasks = converge[1]["tasks"]
+        health = next(task for task in tasks if "/healthz" in task["name"])
+
+        assert "!= 'healthy'" in health["failed_when"], (
+            "the daemon's stable /healthz contract uses status='healthy'; "
+            "the smoke scenario must reject degraded responses without "
+            "expecting the unrelated literal 'ok'"
+        )
+
     def test_converge_submits_job_via_daemon_api(self):
         out = _load("default/converge.yml")
         assert "/api/todos" in out, (

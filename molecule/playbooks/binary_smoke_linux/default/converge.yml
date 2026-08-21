@@ -182,7 +182,7 @@
       changed_when: false
       failed_when: >-
         health_wait.status != 200
-        or health_wait.json.status | default('') != 'ok'
+        or health_wait.json.status | default('') != 'healthy'
 
     - name: Persist endpoint and process ownership for verify
       ansible.builtin.copy:
