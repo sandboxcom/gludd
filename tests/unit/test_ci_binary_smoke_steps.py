@@ -11,7 +11,9 @@ on ``version`` / ``--help`` must never reach the release artifact stage.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -21,7 +23,7 @@ BUILD_YML = REPO_ROOT / ".github" / "workflows" / "build.yml"
 
 
 @pytest.fixture(scope="module")
-def build_workflow() -> dict:
+def build_workflow() -> dict[str, Any]:
     """Load .github/workflows/build.yml with yaml.safe_load."""
     assert BUILD_YML.is_file(), f"build.yml missing at {BUILD_YML}"
     with BUILD_YML.open("r", encoding="utf-8") as fh:
@@ -31,7 +33,7 @@ def build_workflow() -> dict:
     return data
 
 
-def _job(workflow: dict, name: str) -> dict:
+def _job(workflow: dict[str, Any], name: str) -> dict[str, Any]:
     job = workflow.get("jobs", {}).get(name)
     assert isinstance(job, dict), (
         f"build.yml job '{name}' missing — required for post-build smoke test"
@@ -39,11 +41,15 @@ def _job(workflow: dict, name: str) -> dict:
     return job
 
 
-def _steps(workflow: dict, name: str) -> list[dict]:
+def _steps(workflow: dict[str, Any], name: str) -> list[dict[str, Any]]:
     return _job(workflow, name).get("steps", []) or []
 
 
-def _step_index(workflow: dict, job_name: str, predicate) -> int:
+def _step_index(
+    workflow: dict[str, Any],
+    job_name: str,
+    predicate: Callable[[str, str], bool],
+) -> int:
     """Return the index of the first step matching predicate(name, run)."""
     for idx, step in enumerate(_steps(workflow, job_name)):
         step_name = step.get("name") or ""
@@ -53,7 +59,7 @@ def _step_index(workflow: dict, job_name: str, predicate) -> int:
     return -1
 
 
-def _step_uses_uses(step: dict) -> str:
+def _step_uses_uses(step: dict[str, Any]) -> str:
     """Return the action referenced by an actions/... step, else empty."""
     uses = step.get("uses") or ""
     return uses.split("@", 1)[0] if uses else ""
@@ -70,7 +76,9 @@ class TestSmokeTestStepPerPlatform:
     @pytest.mark.parametrize(
         "job_name", ["linux", "macos", "windows"], ids=lambda n: f"job:{n}"
     )
-    def test_smoke_test_step_exists(self, build_workflow: dict, job_name: str) -> None:
+    def test_smoke_test_step_exists(
+        self, build_workflow: dict[str, Any], job_name: str
+    ) -> None:
         steps = _steps(build_workflow, job_name)
         assert steps, f"build.yml job '{job_name}' has no steps"
 
@@ -88,7 +96,7 @@ class TestSmokeTestStepPerPlatform:
         "job_name", ["linux", "macos", "windows"], ids=lambda n: f"job:{n}"
     )
     def test_smoke_step_runs_binary(
-        self, build_workflow: dict, job_name: str
+        self, build_workflow: dict[str, Any], job_name: str
     ) -> None:
         combined = "\n".join(
             (s.get("run") or "") for s in _steps(build_workflow, job_name)
@@ -113,7 +121,7 @@ class TestSmokeTestOrdering:
         "job_name", ["linux", "macos", "windows"], ids=lambda n: f"job:{n}"
     )
     def test_smoke_after_build_before_upload(
-        self, build_workflow: dict, job_name: str
+        self, build_workflow: dict[str, Any], job_name: str
     ) -> None:
         build_idx = _step_index(
             build_workflow,
@@ -166,7 +174,7 @@ class TestSmokeTestCrashDetection:
         "job_name", ["linux", "macos", "windows"], ids=lambda n: f"job:{n}"
     )
     def test_smoke_step_detects_crash_signatures(
-        self, build_workflow: dict, job_name: str
+        self, build_workflow: dict[str, Any], job_name: str
     ) -> None:
         smoke_steps = [
             s for s in _steps(build_workflow, job_name)
@@ -194,7 +202,7 @@ class TestSmokeTestCrashDetection:
 class TestLinuxDaemonSmokeTest:
     """The linux build job must additionally smoke-test daemon startup."""
 
-    def test_daemon_smoke_step_exists(self, build_workflow: dict) -> None:
+    def test_daemon_smoke_step_exists(self, build_workflow: dict[str, Any]) -> None:
         steps = _steps(build_workflow, "linux")
         daemon_steps = [
             s for s in steps
@@ -206,7 +214,7 @@ class TestLinuxDaemonSmokeTest:
             "the daemon must be verified to boot on the platform that can run it"
         )
 
-    def test_daemon_smoke_healthcheck(self, build_workflow: dict) -> None:
+    def test_daemon_smoke_healthcheck(self, build_workflow: dict[str, Any]) -> None:
         combined = "\n".join(
             (s.get("run") or "")
             for s in _steps(build_workflow, "linux")
@@ -224,7 +232,7 @@ class TestLinuxDaemonSmokeTest:
         )
 
     def test_daemon_smoke_uses_current_blocking_cli_contract(
-        self, build_workflow: dict
+        self, build_workflow: dict[str, Any]
     ) -> None:
         """The daemon command itself is the server; there is no ``start`` verb."""
         combined = "\n".join(
@@ -239,7 +247,7 @@ class TestLinuxDaemonSmokeTest:
         assert "/healthz" in combined
 
     def test_daemon_smoke_fails_immediately_when_server_exits(
-        self, build_workflow: dict
+        self, build_workflow: dict[str, Any]
     ) -> None:
         """A dead binary is surfaced with its exit status, not a blind timeout."""
         combined = "\n".join(
@@ -253,7 +261,7 @@ class TestLinuxDaemonSmokeTest:
         assert 'wait "$DAEMON_PID"' in combined
         assert "daemon exited before becoming healthy" in combined.lower()
 
-    def test_daemon_smoke_before_upload(self, build_workflow: dict) -> None:
+    def test_daemon_smoke_before_upload(self, build_workflow: dict[str, Any]) -> None:
         daemon_idx = _step_index(
             build_workflow,
             "linux",
