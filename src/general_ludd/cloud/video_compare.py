@@ -178,6 +178,7 @@ def download_youtube_video(
         output_path: Directory or file path for the downloaded video.
         clip_start_seconds: First source second to retain.
         clip_duration_seconds: Optional bounded duration; omitted only for legacy callers.
+        metadata_sink: Optional receiver for sanitized selected-stream metadata.
         progress_sink: Optional receiver for sanitized yt-dlp progress fields.
 
     Returns:
@@ -835,13 +836,16 @@ def motion_correlation(sig_a: list[float], sig_b: list[float]) -> float:
         sig_b: Second motion signature.
 
     Returns:
-        Correlation coefficient in [-1, 1].
+        Correlation coefficient in [-1, 1], or ``0.0`` when either signature
+        is too short, constant, or contains a non-finite value.
     """
     if len(sig_a) < 2 or len(sig_b) < 2:
         return 0.0
     min_len = min(len(sig_a), len(sig_b))
     values_a = np.asarray(sig_a[:min_len], dtype=np.float64)
     values_b = np.asarray(sig_b[:min_len], dtype=np.float64)
+    if not np.all(np.isfinite(values_a)) or not np.all(np.isfinite(values_b)):
+        return 0.0
     if np.ptp(values_a) == 0 or np.ptp(values_b) == 0:
         return 0.0
     correlation = float(np.corrcoef(values_a, values_b)[0, 1])

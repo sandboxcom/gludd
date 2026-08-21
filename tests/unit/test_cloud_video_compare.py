@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -567,13 +568,244 @@ class TestMotionCorrelationDeep:
         a = [1.0, 2.0, float("nan"), 4.0, 5.0]
         b = [1.0, 2.0, 3.0, 4.0, 5.0]
         corr = motion_correlation(a, b)
-        assert isinstance(corr, float)
+        assert corr == 0.0
 
     def test_infinite_value(self):
         a = [1.0, 2.0, float("inf")]
         b = [1.0, 2.0, 3.0]
         corr = motion_correlation(a, b)
-        assert isinstance(corr, float)
+        assert corr == 0.0
+
+
+class TestReferenceResourceBoundaries:
+    def test_acquisition_and_validation_close_the_atomic_cache_contract(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import general_ludd.cloud.video_compare as video_compare
+
+        spec = ReferenceVideoSpec(
+            game_name="fixture",
+            source_url="https://example.invalid/video",
+            video_id="fixture-id",
+            sample_frame_count=2,
+        )
+        frames = [_make_frame(value=10), _make_frame(value=20)]
+        cache_path = tmp_path / spec.cache_filename
+        provenance_path = tmp_path / spec.provenance_filename
+        events: list[tuple[str, dict[str, object]]] = []
+
+        def download(
+            _url: str,
+            output_path: str | Path,
+            **kwargs: object,
+        ) -> str:
+            path = Path(output_path)
+            path.write_bytes(b"bounded fixture")
+            metadata_sink = kwargs["metadata_sink"]
+            progress_sink = kwargs["progress_sink"]
+            assert callable(metadata_sink)
+            assert callable(progress_sink)
+            metadata_sink({"format_id": "fixture"})
+            progress_sink({"status": "downloading"})
+            return str(path)
+
+        monkeypatch.setattr(video_compare, "download_youtube_video", download)
+        monkeypatch.setattr(video_compare, "extract_frames", lambda *args, **kwargs: frames)
+        monkeypatch.setattr(video_compare, "_ffmpeg_version", lambda: "ffmpeg fixture")
+        monkeypatch.setattr(video_compare, "_video_duration_seconds", lambda _path: 12.0)
+        monkeypatch.setattr(video_compare, "_yt_dlp_version", lambda: "yt-dlp fixture")
+
+        acquired = video_compare._acquire_reference(
+            spec,
+            cache_path,
+            provenance_path,
+            lambda name, payload: events.append((name, dict(payload))),
+        )
+        verified = video_compare._validate_cached_reference(
+            spec,
+            cache_path,
+            provenance_path,
+        )
+
+        assert acquired.cache_status == "downloaded"
+        assert verified.cache_status == "verified"
+        assert verified.object_sha256 == acquired.object_sha256
+        assert events == [
+            (
+                "reference_acquisition_progress",
+                {"game_name": "fixture", "status": "downloading"},
+            )
+        ]
+        assert not list(tmp_path.glob("*.tmp"))
+
+        payload = json.loads(provenance_path.read_text(encoding="utf-8"))
+
+        def assert_invalid(overrides: dict[str, object], message: str) -> None:
+            provenance_path.write_text(
+                json.dumps({**payload, **overrides}),
+                encoding="utf-8",
+            )
+            with pytest.raises(RuntimeError, match=message):
+                video_compare._validate_cached_reference(
+                    spec,
+                    cache_path,
+                    provenance_path,
+                )
+
+        assert_invalid({"clip_actual_duration_seconds": True}, "duration")
+        assert_invalid({"object_size_bytes": -1}, "object size")
+        assert_invalid({"object_sha256": "wrong"}, "object digest")
+        assert_invalid({"decoded_frames_sha256": "wrong"}, "frame digest")
+        assert_invalid({"decoded_frame_count": -1}, "frame count")
+
+        provenance_path.write_text(json.dumps(payload), encoding="utf-8")
+        monkeypatch.setitem(video_compare.REFERENCE_VIDEO_SPECS, spec.game_name, spec)
+        ready_events: list[str] = []
+        cached = video_compare.preflight_reference_videos(
+            (spec.game_name,),
+            tmp_path,
+            event_reporter=lambda name, _payload: ready_events.append(name),
+        )
+        assert cached[spec.game_name].cache_status == "verified"
+        assert ready_events == ["reference_check_started", "reference_ready"]
+
+        with pytest.raises(RuntimeError, match="no approved reference manifest"):
+            video_compare.preflight_reference_videos(
+                ("unknown",),
+                tmp_path,
+                event_reporter=lambda name, _payload: ready_events.append(name),
+            )
+
+    def test_media_version_probes_are_bounded_and_parsed(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import general_ludd.cloud.video_compare as video_compare
+
+        completed = MagicMock(returncode=0, stdout="tool 1.0\nmore\n")
+        monkeypatch.setattr(video_compare.shutil, "which", lambda _name: "/usr/bin/tool")
+        monkeypatch.setattr(video_compare.subprocess, "run", lambda *args, **kwargs: completed)
+
+        assert video_compare._ffmpeg_version() == "tool 1.0"
+        completed.stdout = "12.5\n"
+        assert video_compare._video_duration_seconds(tmp_path / "clip.mp4") == 12.5
+
+    def test_media_probe_and_decode_failures_are_fail_closed(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import general_ludd.cloud.video_compare as video_compare
+
+        monkeypatch.setattr(video_compare.shutil, "which", lambda _name: None)
+        with pytest.raises(RuntimeError, match="ffmpeg is required"):
+            video_compare._ffmpeg_version()
+        with pytest.raises(RuntimeError, match="ffprobe is required"):
+            video_compare._video_duration_seconds(tmp_path / "clip.mp4")
+
+        completed = MagicMock(returncode=1, stdout="")
+        monkeypatch.setattr(video_compare.shutil, "which", lambda _name: "/usr/bin/tool")
+        monkeypatch.setattr(video_compare.subprocess, "run", lambda *args, **kwargs: completed)
+        with pytest.raises(RuntimeError, match="ffmpeg version probe"):
+            video_compare._ffmpeg_version()
+        completed.returncode = 0
+        completed.stdout = "not-a-duration"
+        with pytest.raises(RuntimeError, match="invalid reference duration"):
+            video_compare._video_duration_seconds(tmp_path / "clip.mp4")
+
+        spec = ReferenceVideoSpec("fixture", "https://example.invalid", "fixture")
+        monkeypatch.setattr(video_compare, "extract_frames", lambda *args, **kwargs: [])
+        with pytest.raises(RuntimeError, match="zero frames"):
+            video_compare._decode_reference_frames(spec, tmp_path / "clip.mp4")
+        frames = [_make_frame(shape=(8, 8, 3)), _make_frame(shape=(9, 8, 3))]
+        monkeypatch.setattr(video_compare, "extract_frames", lambda *args, **kwargs: frames)
+        with pytest.raises(RuntimeError, match="dimensions changed"):
+            video_compare._decode_reference_frames(spec, tmp_path / "clip.mp4")
+
+    def test_download_adapter_handles_missing_ranges_and_selected_fallback(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import general_ludd.cloud.video_compare as video_compare
+
+        monkeypatch.setattr(
+            video_compare,
+            "yt_dlp",
+            SimpleNamespace(utils=object(), YoutubeDL=MagicMock()),
+        )
+        with pytest.raises(RuntimeError, match="download_range_func"):
+            video_compare.download_youtube_video(
+                "https://example.invalid",
+                tmp_path,
+                clip_duration_seconds=1.0,
+            )
+
+        candidate = tmp_path / "fallback.webm"
+        candidate.write_bytes(b"fixture")
+
+        class FakeYoutubeDL:
+            def __init__(self, _options: dict[str, object]) -> None:
+                pass
+
+            def __enter__(self) -> FakeYoutubeDL:
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                pass
+
+            def extract_info(self, _url: str, *, download: bool) -> dict[str, object]:
+                assert download is True
+                return {"requested_downloads": [object()]}
+
+        monkeypatch.setattr(
+            video_compare,
+            "yt_dlp",
+            SimpleNamespace(YoutubeDL=FakeYoutubeDL),
+        )
+        assert video_compare.download_youtube_video(
+            "https://example.invalid",
+            tmp_path,
+        ) == str(candidate)
+
+    def test_extract_frames_owns_capture_on_zero_fps(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import general_ludd.cloud.video_compare as video_compare
+
+        frame = _make_frame(shape=(8, 8, 3))
+        capture = MagicMock()
+        capture.isOpened.return_value = True
+        capture.get.side_effect = [0.0, 1.0]
+        capture.read.return_value = (True, frame)
+        module = MagicMock(
+            CAP_PROP_FPS=1,
+            CAP_PROP_FRAME_COUNT=2,
+            CAP_PROP_POS_FRAMES=3,
+            COLOR_BGR2RGB=4,
+        )
+        module.VideoCapture.return_value = capture
+        module.cvtColor.return_value = frame
+        monkeypatch.setattr(video_compare, "cv2", module)
+
+        assert video_compare.extract_frames(tmp_path / "clip.mp4", num_frames=1) == [frame]
+        capture.release.assert_called_once_with()
+
+    def test_ssim_non_finite_backend_result_falls_back_without_warning(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import general_ludd.cloud.video_compare as video_compare
+
+        monkeypatch.setattr(video_compare, "structural_similarity", lambda *args, **kwargs: float("nan"))
+        frame_a = _make_frame(shape=(16, 16, 3), value=20)
+        frame_b = _make_frame(shape=(16, 16, 3), value=40)
+
+        result = video_compare.compute_ssim(frame_a, frame_b)
+
+        assert np.isfinite(result)
+        assert 0.0 <= result <= 1.0
+
+        monkeypatch.setattr(video_compare, "structural_similarity", lambda *args, **kwargs: 0.9)
+        high_error = video_compare.compute_ssim(
+            _make_frame(shape=(16, 16, 3), value=0),
+            _make_frame(shape=(16, 16, 3), value=255),
+        )
+        assert 0.0 <= high_error < 0.9
 
 
 class TestGlobalSSIMDeep:

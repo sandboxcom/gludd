@@ -422,6 +422,18 @@ class TestLocalAgentMemoryTTL:
 
 
 class TestLocalAgentMemoryKeyGen:
+    def test_key_generation_and_close_do_not_open_cache(
+        self, tmp_cache_dir: str
+    ) -> None:
+        from general_ludd.memory.local import LocalAgentMemory
+
+        with patch("general_ludd.memory.local.open_safe_diskcache") as open_cache:
+            mem = LocalAgentMemory(cache_dir=tmp_cache_dir)
+            assert mem._data_key("agent", "key", "namespace")
+            mem.close()
+
+        open_cache.assert_not_called()
+
     def test_data_key_deterministic(self):
         from general_ludd.memory.local import LocalAgentMemory
 
