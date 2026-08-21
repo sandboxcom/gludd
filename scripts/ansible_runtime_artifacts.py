@@ -28,6 +28,38 @@ INPUTS = {
     "definition": DEFINITION,
 }
 IMAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:+-]*@sha256:[0-9a-f]{64}$")
+COLLECTION_ARTIFACTS = (
+    (
+        ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent",
+        ROOT / "dist" / "collections" / "general_ludd-agent-0.2.0.tar.gz",
+    ),
+    (
+        ROOT / "collections" / "ansible_collections" / "general_ludd" / "language",
+        ROOT / "dist" / "collections" / "general_ludd-language-0.1.0.tar.gz",
+    ),
+    (
+        ROOT / "collections" / "ansible_collections" / "general_ludd" / "networking",
+        ROOT / "dist" / "collections" / "general_ludd-networking-0.2.0.tar.gz",
+    ),
+)
+EXPECTED_DEPENDENCIES: dict[str, object] = {
+    "galaxy": "requirements.yml",
+    "python": "requirements.txt",
+    "system": "bindep.txt",
+    "ansible_core": {"package_pip": "ansible-core==2.19.12"},
+    "ansible_runner": {"package_pip": "ansible-runner==2.4.3"},
+    "python_interpreter": {
+        "package_system": "python3.11",
+        "python_path": "/usr/bin/python3.11",
+    },
+}
+EXPECTED_BUILD_FILES = [
+    {
+        "src": f"../../dist/collections/{artifact.name}",
+        "dest": "collections",
+    }
+    for _source, artifact in COLLECTION_ARTIFACTS
+]
 
 
 def _sha256(path: Path) -> str:
@@ -47,9 +79,28 @@ def expected_input_hashes() -> dict[str, str]:
     return {name: _sha256(path) for name, path in INPUTS.items()}
 
 
+def _base_image_from_definition(definition: object) -> str:
+    """Return the configured EE base image or an empty value for bad shapes."""
+    if not isinstance(definition, dict):
+        return ""
+    images = definition.get("images")
+    if not isinstance(images, dict):
+        return ""
+    base_image = images.get("base_image")
+    if not isinstance(base_image, dict):
+        return ""
+    name = base_image.get("name")
+    return name if isinstance(name, str) else ""
+
+
 def write_lock() -> None:
-    """Refresh only deterministic input hashes in the tracked runtime lock."""
+    """Refresh the immutable base identity and deterministic input hashes."""
+    definition = yaml.safe_load(DEFINITION.read_text(encoding="utf-8"))
+    base_image = _base_image_from_definition(definition)
+    if IMAGE_RE.fullmatch(base_image) is None:
+        raise ValueError("execution environment base image must be digest-pinned")
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
+    lock["base_image"] = base_image
     lock["inputs"] = expected_input_hashes()
     LOCK.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
 
@@ -81,18 +132,15 @@ def validate_files() -> list[str]:
             errors.append(f"missing optional controller dependency: {required}")
 
     definition: dict[str, Any] = yaml.safe_load(DEFINITION.read_text(encoding="utf-8"))
-    base_image = str(definition.get("images", {}).get("base_image", {}).get("name", ""))
+    base_image = _base_image_from_definition(definition)
     if IMAGE_RE.fullmatch(base_image) is None:
         errors.append("execution environment base image is not digest-pinned")
-    expected_dependencies = {
-        "galaxy": "requirements.yml",
-        "python": "requirements.txt",
-        "system": "bindep.txt",
-    }
     if definition.get("version") != 3:
         errors.append("execution environment definition must use schema version 3")
-    if definition.get("dependencies") != expected_dependencies:
-        errors.append("execution environment dependencies must name the three locked inputs")
+    if definition.get("dependencies") != EXPECTED_DEPENDENCIES:
+        errors.append("execution environment dependencies must name the locked inputs and controller interpreter")
+    if definition.get("additional_build_files") != EXPECTED_BUILD_FILES:
+        errors.append("execution environment must stage the exact locked collection artifacts")
 
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     if lock.get("schema_version") != 1 or lock.get("release") != "0.1.0-beta.4":
@@ -117,6 +165,34 @@ def _require_image(image: str) -> None:
         raise ValueError("execution-environment image must be digest-pinned as name@sha256:<64 lowercase hex>")
 
 
+def _build_collection_artifacts() -> int:
+    """Build and verify the exact Galaxy artifacts consumed by the EE."""
+    if shutil.which("ansible-galaxy") is None:
+        print("ansible-galaxy is unavailable; sync the controller dependencies", file=sys.stderr)
+        return 2
+    for source, artifact in COLLECTION_ARTIFACTS:
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        command = [
+            "ansible-galaxy",
+            "collection",
+            "build",
+            str(source),
+            "--output-path",
+            str(artifact.parent),
+            "--force",
+        ]
+        print(f"ANSIBLE_COLLECTION_BUILD_START source={_display_path(source)}", flush=True)
+        result = subprocess.run(command, cwd=ROOT, check=False)
+        if result.returncode != 0:
+            print(f"ANSIBLE_COLLECTION_BUILD_END rc={result.returncode}", flush=True)
+            return result.returncode
+        if not artifact.is_file() or artifact.stat().st_size == 0:
+            print(f"collection artifact missing or empty: {artifact}", file=sys.stderr)
+            return 1
+        print(f"ANSIBLE_COLLECTION_BUILD_END rc=0 artifact={_display_path(artifact)}", flush=True)
+    return 0
+
+
 def build_environment(runtime: str, image: str, context: Path, validate_only: bool) -> int:
     """Build through ansible-builder after fail-closed input validation."""
     errors = validate_files()
@@ -133,6 +209,9 @@ def build_environment(runtime: str, image: str, context: Path, validate_only: bo
     if shutil.which(runtime) is None:
         print(f"container runtime is unavailable: {runtime}", file=sys.stderr)
         return 2
+    collection_status = _build_collection_artifacts()
+    if collection_status != 0:
+        return collection_status
     context.mkdir(parents=True, exist_ok=True)
     command = [
         "ansible-builder",

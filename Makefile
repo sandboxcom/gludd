@@ -683,6 +683,8 @@ ANSIBLE_EE_VALIDATE_ONLY ?= 1
 ANSIBLE_EE_RUNTIME ?= podman
 ANSIBLE_EE_IMAGE ?= gludd-ansible-ee:0.1.0-beta.4
 ANSIBLE_EE_CONTEXT ?= /tmp/gludd-ansible-ee-context
+ANSIBLE_EE_DOCKER_CONFIG ?=
+ANSIBLE_EE_DOCKER_HOST ?=
 COLLECTION_PYTHON_BOUNDARY_ROOT ?= collections/ansible_collections
 COLLECTION_PYTHON_BOUNDARY_INVENTORY ?= config/ansible/collection-python-boundary-inventory.json
 COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO ?= 0
@@ -699,7 +701,7 @@ update-ansible-runtime-lock:
 
 build-ansible-execution-environment:
 	@case "$(ANSIBLE_EE_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_EE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@$(UV) run python scripts/ansible_runtime_artifacts.py build --runtime "$(ANSIBLE_EE_RUNTIME)" --image "$(ANSIBLE_EE_IMAGE)" --context "$(ANSIBLE_EE_CONTEXT)" $(if $(filter 1,$(ANSIBLE_EE_VALIDATE_ONLY)),--validate-only,)
+	@$(if $(strip $(ANSIBLE_EE_DOCKER_CONFIG)),DOCKER_CONFIG="$(ANSIBLE_EE_DOCKER_CONFIG)") $(if $(strip $(ANSIBLE_EE_DOCKER_HOST)),DOCKER_HOST="$(ANSIBLE_EE_DOCKER_HOST)") $(UV) run python scripts/ansible_runtime_artifacts.py build --runtime "$(ANSIBLE_EE_RUNTIME)" --image "$(ANSIBLE_EE_IMAGE)" --context "$(ANSIBLE_EE_CONTEXT)" $(if $(filter 1,$(ANSIBLE_EE_VALIDATE_ONLY)),--validate-only,)
 
 verify-ansible-execution-environment:
 	@case "$(ANSIBLE_EE_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_EE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac

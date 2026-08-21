@@ -83,7 +83,7 @@ def test_validate_reports_definition_lock_and_managed_host_drift(
     errors = artifacts.validate_files()
     assert "execution environment base image is not digest-pinned" in errors
     assert "execution environment definition must use schema version 3" in errors
-    assert "execution environment dependencies must name the three locked inputs" in errors
+    assert "execution environment dependencies must name the locked inputs and controller interpreter" in errors
     assert "runtime lock schema/release mismatch" in errors
     assert "runtime lock base image differs from execution environment definition" in errors
     assert "runtime lock input hashes are stale; run make update-ansible-runtime-lock" in errors
@@ -98,15 +98,43 @@ def test_expected_hashes_are_named_and_content_addressed() -> None:
     assert all(value.startswith("sha256:") and len(value) == 71 for value in hashes.values())
 
 
-def test_write_lock_refreshes_only_input_hashes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_write_lock_refreshes_input_hashes_and_base_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     lock = tmp_path / "runtime-lock.json"
-    lock.write_text('{"schema_version": 1, "release": "0.1.0-beta.4", "inputs": {}}\n', encoding="utf-8")
+    definition = tmp_path / "execution-environment.yml"
+    image = "registry.example/ee@sha256:" + "d" * 64
+    lock.write_text(
+        '{"schema_version": 1, "release": "0.1.0-beta.4", '
+        '"base_image": "registry.example/old@sha256:' + "a" * 64 + '", "inputs": {}}\n',
+        encoding="utf-8",
+    )
+    definition.write_text(
+        yaml.safe_dump({"images": {"base_image": {"name": image}}}),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(artifacts, "LOCK", lock)
+    monkeypatch.setattr(artifacts, "DEFINITION", definition)
     monkeypatch.setattr(artifacts, "expected_input_hashes", lambda: {"definition": "sha256:" + "c" * 64})
     artifacts.write_lock()
     data = json.loads(lock.read_text(encoding="utf-8"))
     assert data["schema_version"] == 1
+    assert data["base_image"] == image
     assert data["inputs"] == {"definition": "sha256:" + "c" * 64}
+
+
+def test_write_lock_rejects_mutable_or_missing_base_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock = tmp_path / "runtime-lock.json"
+    definition = tmp_path / "execution-environment.yml"
+    lock.write_text('{"schema_version": 1, "inputs": {}}\n', encoding="utf-8")
+    definition.write_text("images:\n  base_image:\n    name: example/ee:latest\n", encoding="utf-8")
+    monkeypatch.setattr(artifacts, "LOCK", lock)
+    monkeypatch.setattr(artifacts, "DEFINITION", definition)
+
+    with pytest.raises(ValueError, match="digest-pinned"):
+        artifacts.write_lock()
 
 
 def test_dependency_name_parser_handles_markers_extras_and_bounds() -> None:
@@ -154,18 +182,45 @@ def test_build_streams_ansible_builder_with_bounded_context(tmp_path: Path, monk
     calls: list[tuple[list[str], Path | None]] = []
     monkeypatch.setattr(artifacts, "validate_files", lambda: [])
     monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    collection_artifacts = tuple(
+        (tmp_path / f"source-{index}", tmp_path / "dist" / f"collection-{index}.tar.gz")
+        for index in range(3)
+    )
+    monkeypatch.setattr(artifacts, "COLLECTION_ARTIFACTS", collection_artifacts)
 
     def fake_run(command: list[str], *, cwd: Path | None = None, check: bool = False) -> SimpleNamespace:
         assert check is False
         calls.append((command, cwd))
+        if command[:3] == ["ansible-galaxy", "collection", "build"]:
+            index = len(calls) - 1
+            collection_artifacts[index][1].write_bytes(b"collection")
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     context = tmp_path / "gludd-ee"
     assert artifacts.build_environment("podman", "gludd-ee:beta4", context, False) == 0
-    assert calls[0][0][:2] == ["ansible-builder", "build"]
-    assert calls[0][1] == artifacts.ROOT
+    assert [call[0][:3] for call in calls[:3]] == [
+        ["ansible-galaxy", "collection", "build"],
+        ["ansible-galaxy", "collection", "build"],
+        ["ansible-galaxy", "collection", "build"],
+    ]
+    assert calls[3][0][:2] == ["ansible-builder", "build"]
+    assert calls[3][1] == artifacts.ROOT
     assert context.is_dir()
+
+
+def test_build_fails_closed_when_collection_artifact_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "dist" / "collection.tar.gz"
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(artifacts, "COLLECTION_ARTIFACTS", ((source, output),))
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=0))
+
+    assert artifacts.build_environment("podman", "gludd-ee:beta4", tmp_path / "context", False) == 1
+    assert f"collection artifact missing or empty: {output}" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("image", ["latest", "repo@sha256:short", "repo@sha256:" + "G" * 64])

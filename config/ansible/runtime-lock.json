@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "release": "0.1.0-beta.4",
-  "base_image": "docker.io/library/python:3.11.13-slim@sha256:9bffe4353b925a1656688797ebc68f9c525e79b1d377a764d232182a519eeec4",
+  "base_image": "quay.io/centos/centos:stream9@sha256:64e5a212e4f2e7b706dbd822968914bb8def7de0a7fdfd3bf248241f8758101c",
   "inputs": {
-    "galaxy": "sha256:16315b7209ab0bdff6622a601da2c209186bbeb0bd679c1d4aba3e58aa8ca7b2",
-    "python": "sha256:65e16c8811d94c7bd079ef744ae83c682c0eff21524b971e1ab93d32d305b71f",
+    "galaxy": "sha256:44ca656fb795b05f59a627acfcae5fc10c6fb150c2ba66822a1d5408db672449",
+    "python": "sha256:bd37e115cde6af95ceaf3a279f24b4408851b6882af34785b6ee4f1c5d1dfb01",
     "system": "sha256:bd2f7809110dfbc37ddf512c267671ea9905129b889fd7815bc27332272fe422",
-    "definition": "sha256:b962aa4666a3e4ddce4831f5424798dcb341212afdd5bf4d8e8dc6fd4a26d56e"
+    "definition": "sha256:8b655d91a16df5b66f44725240039755924fd0cba4724be3de51d201fcf01073"
   },
   "promotion": "build-and-warm-beside-active-then-switch-new-jobs",
   "rollback": "switch-new-jobs-to-previous-digest-and-drain-in-flight-jobs",

@@ -19,9 +19,9 @@ from general_ludd.ansible.isolation import ProcessIsolationConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 SHA256_IMAGE = "registry.example/gludd-ee:beta4@sha256:" + "a" * 64
-PYTHON_31113_SLIM_INDEX = (
-    "docker.io/library/python:3.11.13-slim@sha256:"
-    "9bffe4353b925a1656688797ebc68f9c525e79b1d377a764d232182a519eeec4"
+CENTOS_STREAM9_INDEX = (
+    "quay.io/centos/centos:stream9@sha256:"
+    "64e5a212e4f2e7b706dbd822968914bb8def7de0a7fdfd3bf248241f8758101c"
 )
 
 
@@ -94,15 +94,47 @@ def test_execution_environment_definition_uses_locked_inputs() -> None:
         "galaxy": "requirements.yml",
         "python": "requirements.txt",
         "system": "bindep.txt",
+        "ansible_core": {"package_pip": "ansible-core==2.19.12"},
+        "ansible_runner": {"package_pip": "ansible-runner==2.4.3"},
+        "python_interpreter": {
+            "package_system": "python3.11",
+            "python_path": "/usr/bin/python3.11",
+        },
     }
+    generic_requirements = (ROOT / "config/ansible/requirements.txt").read_text(encoding="utf-8")
+    assert "ansible-core" not in generic_requirements
+    assert "ansible-runner" not in generic_requirements
+    assert ee["additional_build_files"] == [
+        {
+            "src": f"../../dist/collections/general_ludd-{name}-{version}.tar.gz",
+            "dest": "collections",
+        }
+        for name, version in (("agent", "0.2.0"), ("language", "0.1.0"), ("networking", "0.2.0"))
+    ]
+    assert ee["options"]["package_manager_path"] == "/usr/bin/dnf"
 
 
-def test_execution_environment_uses_published_beta4_base_index() -> None:
-    """The EE must reference Docker Hub's published multi-platform index."""
+def test_execution_environment_uses_supported_published_beta4_base_index() -> None:
+    """The EE must use a digest-pinned RPM base supported by Ansible Builder."""
     ee = yaml.safe_load((ROOT / "config/ansible/execution-environment.yml").read_text(encoding="utf-8"))
     lock = json.loads((ROOT / "config/ansible/runtime-lock.json").read_text(encoding="utf-8"))
-    assert ee["images"]["base_image"]["name"] == PYTHON_31113_SLIM_INDEX
-    assert lock["base_image"] == PYTHON_31113_SLIM_INDEX
+    assert ee["images"]["base_image"]["name"] == CENTOS_STREAM9_INDEX
+    assert lock["base_image"] == CENTOS_STREAM9_INDEX
+
+
+def test_ee_build_target_forwards_namespaced_docker_config() -> None:
+    """A real EE build must be able to use the project-owned Lima engine."""
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    contract = json.loads((ROOT / "config/make_target_contract.json").read_text(encoding="utf-8"))
+    target = next(item for item in contract["targets"] if item["name"] == "build-ansible-execution-environment")
+    assert "ANSIBLE_EE_DOCKER_CONFIG ?=" in makefile
+    assert "ANSIBLE_EE_DOCKER_HOST ?=" in makefile
+    assert 'DOCKER_CONFIG="$(ANSIBLE_EE_DOCKER_CONFIG)"' in makefile
+    assert 'DOCKER_HOST="$(ANSIBLE_EE_DOCKER_HOST)"' in makefile
+    assert "ANSIBLE_EE_DOCKER_CONFIG" in target["make_variables"]
+    assert "ANSIBLE_EE_DOCKER_HOST" in target["make_variables"]
+    assert "ANSIBLE_EE_DOCKER_CONFIG=/tmp/gludd-docker-config" in target["behavior"]
+    assert "ANSIBLE_EE_DOCKER_HOST=unix:///tmp/gludd-docker.sock" in target["behavior"]
 
 
 def test_runtime_manifests_are_versioned_and_content_addressed() -> None:

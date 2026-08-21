@@ -644,8 +644,8 @@
     },
     {
       "name": "build-ansible-execution-environment",
-      "make_variables": ["ANSIBLE_EE_VALIDATE_ONLY", "ANSIBLE_EE_RUNTIME", "ANSIBLE_EE_IMAGE", "ANSIBLE_EE_CONTEXT"],
-      "behavior": "make build-ansible-execution-environment ANSIBLE_EE_VALIDATE_ONLY=1 ANSIBLE_EE_RUNTIME=podman ANSIBLE_EE_IMAGE=gludd-ansible-ee:0.1.0-beta.4 ANSIBLE_EE_CONTEXT=/tmp/gludd-ansible-ee-contract"
+      "make_variables": ["ANSIBLE_EE_VALIDATE_ONLY", "ANSIBLE_EE_RUNTIME", "ANSIBLE_EE_IMAGE", "ANSIBLE_EE_CONTEXT", "ANSIBLE_EE_DOCKER_CONFIG", "ANSIBLE_EE_DOCKER_HOST"],
+      "behavior": "make build-ansible-execution-environment ANSIBLE_EE_VALIDATE_ONLY=1 ANSIBLE_EE_RUNTIME=docker ANSIBLE_EE_IMAGE=gludd-ansible-ee:0.1.0-beta.4 ANSIBLE_EE_CONTEXT=/tmp/gludd-ansible-ee-contract ANSIBLE_EE_DOCKER_CONFIG=/tmp/gludd-docker-config ANSIBLE_EE_DOCKER_HOST=unix:///tmp/gludd-docker.sock"
     },
     {
       "name": "verify-ansible-execution-environment",

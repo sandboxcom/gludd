@@ -1,3 +1,3 @@
-ansible-core==2.19.12 ; python_version == "3.11.*"
-ansible-runner==2.4.3
-
+# Additional controller Python dependencies belong here. Ansible Core and
+# Runner are pinned once in execution-environment.yml because Ansible Builder
+# must install them before its Galaxy validation phase.
