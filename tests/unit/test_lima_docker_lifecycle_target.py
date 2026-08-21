@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -14,7 +15,14 @@ def _write_executable(path: Path, content: str) -> None:
     path.chmod(0o755)
 
 
-def _run_stop(tmp_path: Path, state: str) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+def _run_stop(
+    tmp_path: Path,
+    state: str,
+    *,
+    stop_mode: str = "complete",
+    timeout_secs: int = 9,
+    kill_after_secs: int = 3,
+) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     state_file = tmp_path / "state"
@@ -32,30 +40,29 @@ if [ "$1" = "list" ]; then
     printf '%s|%s\n' "$2" "$(cat "$LIMA_FAKE_STATE")"
 elif [ "$1" = "--tty=false" ] && [ "$2" = "stop" ]; then
     printf '%s\n' "$*" >> "$LIMA_FAKE_CALLS"
-    printf 'Stopped' > "$LIMA_FAKE_STATE"
+    if [ "$LIMA_FAKE_STOP_MODE" = "complete" ]; then
+        printf 'Stopped' > "$LIMA_FAKE_STATE"
+    else
+        trap 'printf "TERM\n" >> "$LIMA_FAKE_CALLS"' TERM
+        while :; do sleep 1; done
+    fi
 else
     exit 64
 fi
 """,
     )
-    _write_executable(
-        fake_bin / "gtimeout",
-        """#!/bin/sh
-set -eu
-printf '%s\n' "$*" >> "$LIMA_FAKE_CALLS"
-while [ "$#" -gt 0 ] && [ "$1" != "limactl" ]; do
-    shift
-done
-exec "$@"
-""",
-    )
 
     env = os.environ.copy()
+    uv = shutil.which("uv")
+    assert uv is not None
     env.update(
         {
             "LIMA_FAKE_CALLS": str(calls_file),
             "LIMA_FAKE_STATE": str(state_file),
-            "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
+            "LIMA_FAKE_STOP_MODE": stop_mode,
+            "PATH": os.pathsep.join(
+                (str(fake_bin), str(Path(uv).parent), "/usr/bin", "/bin")
+            ),
         }
     )
     result = subprocess.run(
@@ -64,8 +71,8 @@ exec "$@"
             "--no-print-directory",
             "lima-docker-stop",
             "LIMA_INSTANCE=gludd-test",
-            "LIMA_DOCKER_STOP_KILL_AFTER_SECS=3",
-            "LIMA_DOCKER_STOP_TIMEOUT_SECS=9",
+            f"LIMA_DOCKER_STOP_KILL_AFTER_SECS={kill_after_secs}",
+            f"LIMA_DOCKER_STOP_TIMEOUT_SECS={timeout_secs}",
             "LIMA_DOCKER_VALIDATE_ONLY=0",
         ],
         cwd=_ROOT,
@@ -73,6 +80,7 @@ exec "$@"
         capture_output=True,
         text=True,
         check=False,
+        timeout=15,
     )
     return result, state_file, calls_file
 
@@ -94,10 +102,28 @@ def test_running_instance_stops_through_bounded_graceful_command(tmp_path: Path)
     assert "LIMA_DOCKER_STOP_READY instance=gludd-test status=Stopped" in result.stdout
     assert state_file.read_text() == "Stopped"
     calls = calls_file.read_text()
-    assert "--foreground --signal=TERM --kill-after=3s 9s" in calls
-    assert "limactl --tty=false stop gludd-test" in calls
+    assert "--tty=false stop gludd-test" in calls
     assert "--force" not in calls
     assert "delete" not in calls
+
+
+def test_hung_shutdown_receives_bounded_term_then_kill(tmp_path: Path) -> None:
+    result, state_file, calls_file = _run_stop(
+        tmp_path,
+        "Running",
+        stop_mode="hang",
+        timeout_secs=1,
+        kill_after_secs=1,
+    )
+
+    assert result.returncode != 0
+    assert "LIMA_DOCKER_STOP_TIMEOUT instance=gludd-test timeout_secs=1 signal=TERM" in result.stdout
+    assert "LIMA_DOCKER_STOP_KILL instance=gludd-test kill_after_secs=1 signal=KILL" in result.stdout
+    assert "Lima Docker shutdown failed or exceeded its bound: rc=124" in result.stdout
+    assert state_file.read_text() == "Running"
+    calls = calls_file.read_text()
+    assert "--tty=false stop gludd-test" in calls
+    assert "TERM" in calls
 
 
 def test_missing_instance_fails_without_invoking_shutdown(tmp_path: Path) -> None:

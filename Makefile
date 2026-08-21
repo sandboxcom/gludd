@@ -6796,15 +6796,41 @@ lima-docker-stop: ## Gracefully stop only an existing Gludd-namespaced Lima VM
 		Running) ;; \
 		*) echo "Refusing graceful stop for Lima instance $(LIMA_INSTANCE) in status $$status"; exit 1;; \
 	esac; \
-	timeout_bin=$$(command -v gtimeout || command -v timeout || true); \
-	if [ -z "$$timeout_bin" ]; then \
-		echo "GNU timeout is required for bounded Lima shutdown (install coreutils)"; \
-		exit 1; \
-	fi; \
 	echo "LIMA_DOCKER_STOP_BEGIN instance=$(LIMA_INSTANCE) timeout_secs=$(LIMA_DOCKER_STOP_TIMEOUT_SECS)"; \
+	limactl --tty=false stop "$(LIMA_INSTANCE)" & \
+	stop_pid=$$!; \
+	terminate_owned_stop() { \
+		kill -TERM "$$stop_pid" 2>/dev/null || true; \
+		grace_elapsed=0; \
+		while kill -0 "$$stop_pid" 2>/dev/null && [ "$$grace_elapsed" -lt "$(LIMA_DOCKER_STOP_KILL_AFTER_SECS)" ]; do \
+			sleep 1; \
+			grace_elapsed=$$((grace_elapsed + 1)); \
+		done; \
+		if kill -0 "$$stop_pid" 2>/dev/null; then \
+			echo "LIMA_DOCKER_STOP_KILL instance=$(LIMA_INSTANCE) kill_after_secs=$(LIMA_DOCKER_STOP_KILL_AFTER_SECS) signal=KILL"; \
+			kill -KILL "$$stop_pid" 2>/dev/null || true; \
+		fi; \
+		wait "$$stop_pid" 2>/dev/null || true; \
+	}; \
+	trap 'terminate_owned_stop; exit 130' HUP INT TERM; \
 	stop_rc=0; \
-	"$$timeout_bin" --foreground --signal=TERM --kill-after="$(LIMA_DOCKER_STOP_KILL_AFTER_SECS)s" "$(LIMA_DOCKER_STOP_TIMEOUT_SECS)s" \
-		limactl --tty=false stop "$(LIMA_INSTANCE)" || stop_rc=$$?; \
+	elapsed=0; \
+	timed_out=0; \
+	while kill -0 "$$stop_pid" 2>/dev/null; do \
+		if [ "$$elapsed" -ge "$(LIMA_DOCKER_STOP_TIMEOUT_SECS)" ]; then \
+			echo "LIMA_DOCKER_STOP_TIMEOUT instance=$(LIMA_INSTANCE) timeout_secs=$(LIMA_DOCKER_STOP_TIMEOUT_SECS) signal=TERM"; \
+			terminate_owned_stop; \
+			stop_rc=124; \
+			timed_out=1; \
+			break; \
+		fi; \
+		sleep 1; \
+		elapsed=$$((elapsed + 1)); \
+	done; \
+	if [ "$$timed_out" -eq 0 ]; then \
+		wait "$$stop_pid" || stop_rc=$$?; \
+	fi; \
+	trap - HUP INT TERM; \
 	if [ "$$stop_rc" -ne 0 ]; then \
 		echo "Lima Docker shutdown failed or exceeded its bound: rc=$$stop_rc instance=$(LIMA_INSTANCE)"; \
 		exit "$$stop_rc"; \

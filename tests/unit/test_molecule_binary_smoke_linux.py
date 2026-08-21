@@ -278,10 +278,15 @@ class TestScenarioShape:
         assert 'record=$$(limactl list "$(LIMA_INSTANCE)"' in stop_recipe
         assert "LIMA_DOCKER_STOP_ALREADY_STOPPED" in stop_recipe
         assert "LIMA_DOCKER_STOP_BEGIN" in stop_recipe
-        assert 'command -v gtimeout' in stop_recipe
-        assert 'command -v timeout' in stop_recipe
-        assert '--foreground --signal=TERM --kill-after="$(LIMA_DOCKER_STOP_KILL_AFTER_SECS)s"' in stop_recipe
         assert 'limactl --tty=false stop "$(LIMA_INSTANCE)"' in stop_recipe
+        assert 'kill -0 "$$stop_pid"' in stop_recipe
+        assert 'kill -TERM "$$stop_pid"' in stop_recipe
+        assert 'kill -KILL "$$stop_pid"' in stop_recipe
+        assert 'wait "$$stop_pid"' in stop_recipe
+        assert "LIMA_DOCKER_STOP_TIMEOUT" in stop_recipe
+        assert "LIMA_DOCKER_STOP_KILL" in stop_recipe
+        assert "command -v gtimeout" not in stop_recipe
+        assert "command -v timeout" not in stop_recipe
         assert "LIMA_DOCKER_STOP_READY" in stop_recipe
         assert "--force" not in stop_recipe
         assert "limactl delete" not in stop_recipe
