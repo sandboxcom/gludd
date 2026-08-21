@@ -160,7 +160,12 @@ def _resolve_git_path(value: str, *, relative_to: str) -> str | None:
     candidate = lines[0]
     if not os.path.isabs(candidate):
         candidate = os.path.join(relative_to, candidate)
-    resolved = os.path.realpath(candidate)
+    # Preserve the caller's absolute path spelling here (notably macOS
+    # ``/tmp`` versus ``/private/tmp``).  The lock registry canonicalizes the
+    # result through ``_normalize`` before comparing repository identities, so
+    # symlink aliases still converge on one mutex without making this metadata
+    # helper return a surprising path spelling.
+    resolved = os.path.abspath(candidate)
     return resolved if os.path.isdir(resolved) else None
 
 
