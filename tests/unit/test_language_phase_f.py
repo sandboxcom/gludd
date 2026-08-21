@@ -19,6 +19,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -124,7 +125,9 @@ def _service_payload(role: str, args: list[str]) -> dict[str, object]:
     raise ValueError(f"unsupported service role: {role}")
 
 
-def _run_role_script(role: str, args: list[str], timeout: int = 15) -> dict[str, object]:
+def _run_role_script(
+    role: str, args: list[str], timeout: int = 15
+) -> dict[str, Any]:
     """Exercise the authoritative service or a managed-host-only parser."""
     if role in SERVICE_ROLES:
         return dict(execute_language_operation(role, _service_payload(role, args)))
@@ -146,7 +149,9 @@ def _run_role_script(role: str, args: list[str], timeout: int = 15) -> dict[str,
     output = proc.stdout.strip()
     if not output:
         pytest.fail(f"{role} script produced no stdout output")
-    return json.loads(output)
+    loaded = json.loads(output)
+    assert isinstance(loaded, dict)
+    return loaded
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -479,7 +484,13 @@ class TestMoleculeScenarioStructure:
         with open(self.MOLECULE_DIR / "default" / "converge.yml") as f:
             data = yaml.safe_load(f)
         assert isinstance(data, list)
-        assert len(data) >= 8
+        assert len(data) == 1
+        converge_play = data[0]
+        assert isinstance(converge_play, dict)
+        assert converge_play.get("force_handlers") is True
+        tasks = converge_play.get("tasks")
+        assert isinstance(tasks, list)
+        assert len(tasks) >= len(ALL_ROLES)
 
     def test_verify_valid_yaml(self) -> None:
         with open(self.MOLECULE_DIR / "default" / "verify.yml") as f:

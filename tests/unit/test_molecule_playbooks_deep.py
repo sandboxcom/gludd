@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -61,13 +62,15 @@ def _collect_playbook_paths(scenario: str) -> dict[str, Path | None]:
     return paths
 
 
-def _load_yaml(path: Path):
+def _load_yaml(path: Path) -> Any:
     with open(path) as f:
         return yaml.safe_load(f)
 
 
-def _find_var_refs(value, parent_keys=()):
-    refs = set()
+def _find_var_refs(
+    value: Any, parent_keys: tuple[str, ...] = ()
+) -> set[str]:
+    refs: set[str] = set()
     if isinstance(value, str):
         for m in _VAR_REF_RE.finditer(value):
             refs.add(m.group(1))
@@ -104,7 +107,7 @@ KNOWN_BUILTINS = frozenset(
 
 class TestMoleculeYamlParse:
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_molecule_yml_parses(self, scenario: str):
+    def test_molecule_yml_parses(self, scenario: str) -> None:
         paths = _collect_playbook_paths(scenario)
         path = paths["molecule.yml"]
         assert path is not None, f"[{scenario}] molecule.yml missing"
@@ -113,7 +116,7 @@ class TestMoleculeYamlParse:
         assert isinstance(data, dict), f"[{scenario}] molecule.yml is not a mapping"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_converge_yml_parses(self, scenario: str):
+    def test_converge_yml_parses(self, scenario: str) -> None:
         if scenario in SCENARIOS_WITHOUT_CONVERGE:
             pytest.skip(f"no converge.yml for {scenario}")
         paths = _collect_playbook_paths(scenario)
@@ -126,7 +129,7 @@ class TestMoleculeYamlParse:
             assert isinstance(play, dict), f"[{scenario}] converge.yml play {idx} is not a mapping"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_prepare_yml_parses(self, scenario: str):
+    def test_prepare_yml_parses(self, scenario: str) -> None:
         if scenario in SCENARIOS_WITHOUT_PREPARE:
             pytest.skip(f"no prepare.yml for {scenario}")
         paths = _collect_playbook_paths(scenario)
@@ -139,7 +142,7 @@ class TestMoleculeYamlParse:
             assert isinstance(play, dict), f"[{scenario}] prepare.yml play {idx} is not a mapping"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_verify_yml_parses(self, scenario: str):
+    def test_verify_yml_parses(self, scenario: str) -> None:
         if scenario in SCENARIOS_WITHOUT_VERIFY:
             pytest.skip(f"no verify.yml for {scenario}")
         paths = _collect_playbook_paths(scenario)
@@ -159,7 +162,7 @@ class TestMoleculeYamlParse:
 
 class TestMoleculeRequiredFields:
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_molecule_yml_has_driver(self, scenario: str):
+    def test_molecule_yml_has_driver(self, scenario: str) -> None:
         if scenario == "default":
             pytest.skip("canonical default scenario has no driver")
         paths = _collect_playbook_paths(scenario)
@@ -169,7 +172,7 @@ class TestMoleculeRequiredFields:
         assert "driver" in data, f"[{scenario}] molecule.yml missing 'driver'"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_molecule_yml_has_provisioner(self, scenario: str):
+    def test_molecule_yml_has_provisioner(self, scenario: str) -> None:
         if scenario == "default":
             pytest.skip("canonical default scenario has no provisioner")
         paths = _collect_playbook_paths(scenario)
@@ -179,7 +182,7 @@ class TestMoleculeRequiredFields:
         assert "provisioner" in data, f"[{scenario}] molecule.yml missing 'provisioner'"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_molecule_yml_has_scenario_key(self, scenario: str):
+    def test_molecule_yml_has_scenario_key(self, scenario: str) -> None:
         if scenario in SCENARIOS_WITHOUT_SCENARIO_KEY:
             pytest.skip(f"molecule.yml for {scenario} has no scenario key")
         paths = _collect_playbook_paths(scenario)
@@ -189,7 +192,7 @@ class TestMoleculeRequiredFields:
         assert "scenario" in data, f"[{scenario}] molecule.yml missing 'scenario'"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_converge_has_name(self, scenario: str):
+    def test_converge_has_name(self, scenario: str) -> None:
         if scenario in SCENARIOS_WITHOUT_CONVERGE:
             pytest.skip(f"no converge.yml for {scenario}")
         paths = _collect_playbook_paths(scenario)
@@ -202,7 +205,7 @@ class TestMoleculeRequiredFields:
             assert "name" in play, f"[{scenario}] converge.yml play {idx} missing 'name'"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_playbooks_have_hosts_or_import(self, scenario: str):
+    def test_playbooks_have_hosts_or_import(self, scenario: str) -> None:
         paths = _collect_playbook_paths(scenario)
         for filename in ["converge.yml", "prepare.yml", "verify.yml"]:
             if filename == "converge.yml" and scenario in SCENARIOS_WITHOUT_CONVERGE:
@@ -223,7 +226,7 @@ class TestMoleculeRequiredFields:
                 )
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_playbooks_with_hosts_have_tasks(self, scenario: str):
+    def test_playbooks_with_hosts_have_tasks(self, scenario: str) -> None:
         paths = _collect_playbook_paths(scenario)
         for filename in ["converge.yml", "prepare.yml", "verify.yml"]:
             if filename == "converge.yml" and scenario in SCENARIOS_WITHOUT_CONVERGE:
@@ -249,7 +252,7 @@ class TestMoleculeRequiredFields:
 
 
 class TestMoleculeTaskOrdering:
-    def test_prepare_before_converge_in_molecule_yml(self):
+    def test_prepare_before_converge_in_molecule_yml(self) -> None:
         for scenario in MOLECULE_SCENARIOS:
             paths = _collect_playbook_paths(scenario)
             path = paths["molecule.yml"]
@@ -266,7 +269,7 @@ class TestMoleculeTaskOrdering:
             except ValueError:
                 pass
 
-    def test_converge_before_verify_in_molecule_yml(self):
+    def test_converge_before_verify_in_molecule_yml(self) -> None:
         for scenario in MOLECULE_SCENARIOS:
             paths = _collect_playbook_paths(scenario)
             path = paths["molecule.yml"]
@@ -283,7 +286,7 @@ class TestMoleculeTaskOrdering:
             except ValueError:
                 pass
 
-    def test_scenario_has_syntax_if_sequence_defined(self):
+    def test_scenario_has_syntax_if_sequence_defined(self) -> None:
         missing_syntax: list[str] = []
         for scenario in MOLECULE_SCENARIOS:
             if scenario in SCENARIOS_WITHOUT_SCENARIO_KEY:
@@ -311,7 +314,7 @@ class TestMoleculeTaskOrdering:
 
 class TestMoleculeVariableReferences:
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_converge_vars_not_raw_lookups(self, scenario: str):
+    def test_converge_vars_not_raw_lookups(self, scenario: str) -> None:
         if scenario in SCENARIOS_WITHOUT_CONVERGE:
             pytest.skip(f"no converge.yml for {scenario}")
         paths = _collect_playbook_paths(scenario)
@@ -327,7 +330,7 @@ class TestMoleculeVariableReferences:
             defined |= KNOWN_BUILTINS
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_no_double_brace_in_play_name(self, scenario: str):
+    def test_no_double_brace_in_play_name(self, scenario: str) -> None:
         paths = _collect_playbook_paths(scenario)
         for filename in ["converge.yml", "prepare.yml", "verify.yml"]:
             if filename == "converge.yml" and scenario in SCENARIOS_WITHOUT_CONVERGE:
@@ -347,7 +350,9 @@ class TestMoleculeVariableReferences:
                 )
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_vars_with_mustache_refs_have_default_filters(self, scenario: str):
+    def test_vars_with_mustache_refs_have_default_filters(
+        self, scenario: str
+    ) -> None:
         paths = _collect_playbook_paths(scenario)
         for filename in ["converge.yml", "prepare.yml", "verify.yml"]:
             if filename == "converge.yml" and scenario in SCENARIOS_WITHOUT_CONVERGE:
@@ -375,7 +380,7 @@ class TestMoleculeVariableReferences:
                                 continue
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_converge_tasks_not_empty(self, scenario: str):
+    def test_converge_tasks_not_empty(self, scenario: str) -> None:
         if scenario in SCENARIOS_WITHOUT_CONVERGE:
             pytest.skip(f"no converge.yml for {scenario}")
         paths = _collect_playbook_paths(scenario)
@@ -398,7 +403,9 @@ class TestMoleculeVariableReferences:
 
 class TestMoleculeRoleDependencies:
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_converge_includes_a_role_or_module(self, scenario: str):
+    def test_converge_includes_a_role_or_module(
+        self, scenario: str
+    ) -> None:
         if scenario in SCENARIOS_WITHOUT_CONVERGE:
             pytest.skip(f"no converge.yml for {scenario}")
         if scenario == "noop":
@@ -421,7 +428,7 @@ class TestMoleculeRoleDependencies:
                         has_include = True
         assert has_include, f"[{scenario}] converge.yml has no include_role or FQCN module call"
 
-    def test_molecule_yml_playbooks_registered(self):
+    def test_molecule_yml_playbooks_registered(self) -> None:
         for scenario in MOLECULE_SCENARIOS:
             if scenario in SCENARIOS_WITHOUT_CONVERGE:
                 continue
@@ -438,7 +445,9 @@ class TestMoleculeRoleDependencies:
             assert "converge" in playbooks, f"[{scenario}] molecule.yml missing playbooks.converge"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_molecule_yml_driver_name_is_valid(self, scenario: str):
+    def test_molecule_yml_driver_name_is_valid(
+        self, scenario: str
+    ) -> None:
         if scenario == "default":
             pytest.skip("canonical default scenario has no driver")
         paths = _collect_playbook_paths(scenario)
@@ -455,7 +464,7 @@ class TestMoleculeRoleDependencies:
         )
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_verifier_name_is_ansible(self, scenario: str):
+    def test_verifier_name_is_ansible(self, scenario: str) -> None:
         if scenario == "default":
             pytest.skip("canonical default scenario has no verifier")
         paths = _collect_playbook_paths(scenario)
@@ -468,7 +477,9 @@ class TestMoleculeRoleDependencies:
             assert verifier.get("name", "") == "ansible", f"[{scenario}] molecule.yml verifier.name must be 'ansible'"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_converge_include_role_has_name(self, scenario: str):
+    def test_converge_include_role_has_name(
+        self, scenario: str
+    ) -> None:
         if scenario in SCENARIOS_WITHOUT_CONVERGE:
             pytest.skip(f"no converge.yml for {scenario}")
         paths = _collect_playbook_paths(scenario)
@@ -495,7 +506,7 @@ class TestMoleculeRoleDependencies:
 
 
 class TestMoleculeStructuralCoherence:
-    def test_every_scenario_has_molecule_yml(self):
+    def test_every_scenario_has_molecule_yml(self) -> None:
         missing = []
         for scenario in MOLECULE_SCENARIOS:
             paths = _collect_playbook_paths(scenario)
@@ -503,7 +514,7 @@ class TestMoleculeStructuralCoherence:
                 missing.append(f"{scenario}/molecule.yml")
         assert not missing, f"Missing molecule.yml: {missing}"
 
-    def test_required_files_exist_for_active_scenarios(self):
+    def test_required_files_exist_for_active_scenarios(self) -> None:
         missing = []
         for scenario in MOLECULE_SCENARIOS:
             paths = _collect_playbook_paths(scenario)
@@ -523,7 +534,9 @@ class TestMoleculeStructuralCoherence:
         assert not missing, f"Missing files: {missing}"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_molecule_yml_is_valid_mapping(self, scenario: str):
+    def test_molecule_yml_is_valid_mapping(
+        self, scenario: str
+    ) -> None:
         paths = _collect_playbook_paths(scenario)
         path = paths["molecule.yml"]
         if path is None:
@@ -531,7 +544,7 @@ class TestMoleculeStructuralCoherence:
         loaded = _load_yaml(path)
         assert isinstance(loaded, dict), f"[{scenario}] molecule.yml not a mapping"
 
-    def test_no_empty_playbooks(self):
+    def test_no_empty_playbooks(self) -> None:
         for scenario in MOLECULE_SCENARIOS:
             paths = _collect_playbook_paths(scenario)
             for filename in ["converge.yml", "prepare.yml", "verify.yml"]:
@@ -551,7 +564,9 @@ class TestMoleculeStructuralCoherence:
                     assert play is not None, f"[{scenario}] {filename} play {idx} is null"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_scenario_name_matches_directory(self, scenario: str):
+    def test_scenario_name_matches_directory(
+        self, scenario: str
+    ) -> None:
         paths = _collect_playbook_paths(scenario)
         path = paths["molecule.yml"]
         if path is None:
@@ -564,7 +579,7 @@ class TestMoleculeStructuralCoherence:
             )
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_platforms_is_a_list(self, scenario: str):
+    def test_platforms_is_a_list(self, scenario: str) -> None:
         paths = _collect_playbook_paths(scenario)
         path = paths["molecule.yml"]
         if path is None:
@@ -573,7 +588,7 @@ class TestMoleculeStructuralCoherence:
         platforms = data.get("platforms", [])
         assert isinstance(platforms, list), f"[{scenario}] molecule.yml platforms is not a list"
 
-    def test_all_playbooks_have_document_start(self):
+    def test_all_playbooks_have_document_start(self) -> None:
         for scenario in MOLECULE_SCENARIOS:
             paths = _collect_playbook_paths(scenario)
             for filename in PLAYBOOK_FILES:
@@ -591,7 +606,9 @@ class TestMoleculeStructuralCoherence:
                 assert first_line == "---", f"[{scenario}] {filename} missing YAML document start '---'"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_playbook_filenames_consistent(self, scenario: str):
+    def test_playbook_filenames_consistent(
+        self, scenario: str
+    ) -> None:
         paths = _collect_playbook_paths(scenario)
         path = paths["molecule.yml"]
         if path is None:
@@ -604,12 +621,21 @@ class TestMoleculeStructuralCoherence:
         if isinstance(playbooks, dict):
             for key, rel_path in playbooks.items():
                 local_path = f"default/{key}.yml"
-                shared_path = f"${{MOLECULE_PROJECT_DIRECTORY}}/molecule/shared/{key}.yml"
-                assert rel_path in {local_path, shared_path}, (
-                    f"[{scenario}] molecule.yml playbooks.{key} = {rel_path}, expected {local_path} or {shared_path}"
+                shared_prefix = "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/"
+                shared_filenames = {f"{key}.yml"}
+                if key in {"cleanup", "destroy"}:
+                    shared_filenames.add(f"mock_daemon_{key}.yml")
+                shared_paths = {
+                    f"{shared_prefix}{filename}" for filename in shared_filenames
+                }
+                allowed_paths = {local_path, *shared_paths}
+                assert rel_path in allowed_paths, (
+                    f"[{scenario}] molecule.yml playbooks.{key} = {rel_path}, "
+                    f"expected one of {sorted(allowed_paths)}"
                 )
-                if rel_path == shared_path:
-                    canonical_shared = PROJECT_ROOT / "molecule" / "shared" / f"{key}.yml"
+                if rel_path in shared_paths:
+                    shared_filename = rel_path.removeprefix(shared_prefix)
+                    canonical_shared = PROJECT_ROOT / "molecule" / "shared" / shared_filename
                     assert canonical_shared.is_file(), (
                         f"[{scenario}] shared playbook does not exist: {canonical_shared}"
                     )
