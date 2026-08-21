@@ -31,6 +31,7 @@ import json
 import os
 import re
 import tomllib
+from typing import Any, cast
 
 import yaml
 
@@ -463,6 +464,69 @@ class TestVerifyAssertions:
         assert "/proc/{{ _binary_daemon_pid_record.pid | string }}/stat" in out
         assert "__gludd_bundled_gunicorn__" not in out
         assert "'--bind'" not in out
+
+    def test_teardown_rechecks_liveness_after_proc_identity_reads(self) -> None:
+        """A PID exit between ``ps`` and ``/proc`` must not look foreign."""
+        stop = cast(list[dict[str, Any]], _load_yaml("default/stop_daemon.yml"))
+        tasks = {task["name"]: task for task in stop}
+        names = list(tasks)
+
+        initial_ps = "Inspect only the PID named by the packaged daemon"
+        executable = "Inspect the pinned packaged daemon executable identity"
+        final_ps = "Recheck the PID after packaged daemon identity inspection"
+        establish = "Establish exact packaged daemon ownership"
+        assert names.index(initial_ps) < names.index(executable)
+        assert names.index(executable) < names.index(final_ps)
+        assert names.index(final_ps) < names.index(establish)
+
+        final_check = tasks[final_ps]
+        assert final_check["failed_when"] == "_binary_daemon_final_ps.rc not in [0, 1]"
+
+    def test_teardown_reports_each_identity_invariant_without_signalling_foreign_pid(
+        self,
+    ) -> None:
+        """Live mismatches remain fail-closed and identify the changed field."""
+        stop = cast(list[dict[str, Any]], _load_yaml("default/stop_daemon.yml"))
+        tasks = {task["name"]: task for task in stop}
+
+        establish = tasks["Establish exact packaged daemon ownership"]
+        facts = establish["ansible.builtin.set_fact"]
+        assert {
+            "_binary_daemon_pid_live",
+            "_binary_daemon_start_ticks_match",
+            "_binary_daemon_executable_matches",
+            "_binary_daemon_owned",
+        } <= facts.keys()
+
+        refusal = tasks["Refuse to signal a reused or foreign PID"]
+        assert "_binary_daemon_pid_live" in refusal["ansible.builtin.assert"]["that"][0]
+        fail_msg = refusal["ansible.builtin.assert"]["fail_msg"]
+        for field in (
+            "pid_live",
+            "expected_start_ticks",
+            "observed_start_ticks",
+            "expected_executable",
+            "observed_executable",
+        ):
+            assert field in fail_msg
+
+        stop_owned = tasks["Stop only the proven packaged daemon"]
+        assert "_binary_daemon_owned | bool" in stop_owned["when"]
+
+    def test_teardown_waits_for_release_when_daemon_exits_during_inspection(
+        self,
+    ) -> None:
+        """Success, failure, and cancellation all prove endpoint/PID release."""
+        stop = cast(list[dict[str, Any]], _load_yaml("default/stop_daemon.yml"))
+        tasks = {task["name"]: task for task in stop}
+        release_guard = "not _binary_daemon_pid_live | bool or _binary_daemon_owned | bool"
+
+        endpoint = tasks["Prove the packaged daemon endpoint is closed"]
+        pid_record = tasks["Prove the daemon wrapper released its PID record"]
+        assert release_guard in endpoint["when"]
+        assert release_guard in pid_record["when"]
+        assert endpoint["ansible.builtin.wait_for"]["state"] == "stopped"
+        assert pid_record["ansible.builtin.wait_for"]["state"] == "absent"
 
     def test_verify_assertes_no_import_errors(self):
         out = _load("default/verify.yml")

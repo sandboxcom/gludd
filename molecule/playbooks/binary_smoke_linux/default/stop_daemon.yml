@@ -66,6 +66,19 @@
     - _binary_daemon_pidfile.stat.exists
     - _binary_daemon_ps.rc == 0
 
+- name: Recheck the PID after packaged daemon identity inspection
+  ansible.builtin.command:
+    argv:
+      - /bin/ps
+      - -p
+      - "{{ _binary_daemon_pid_record.pid | string }}"
+      - -o
+      - stat=
+  register: _binary_daemon_final_ps
+  changed_when: false
+  failed_when: _binary_daemon_final_ps.rc not in [0, 1]
+  when: _binary_daemon_pidfile.stat.exists
+
 - name: Decode the current packaged daemon start identity
   ansible.builtin.set_fact:
     _binary_daemon_current_start_ticks: >-
@@ -82,9 +95,29 @@
 
 - name: Establish exact packaged daemon ownership
   ansible.builtin.set_fact:
+    _binary_daemon_pid_live: >-
+      {{
+        _binary_daemon_final_ps.rc == 0
+        and 'Z' not in (_binary_daemon_final_ps.stdout | trim)
+      }}
+    _binary_daemon_start_ticks_match: >-
+      {{
+        (_binary_daemon_stat.rc | default(1)) == 0
+        and (_binary_daemon_current_start_ticks | default('') | string)
+          == (binary_daemon_manifest.process_start_ticks | string)
+      }}
+    _binary_daemon_executable_matches: >-
+      {{
+        (_binary_daemon_executable.rc | default(1)) == 0
+        and (_binary_daemon_executable.stdout | default('') | trim)
+          == binary_daemon_manifest.executable
+        and binary_daemon_manifest.executable == gludd_bin
+      }}
     _binary_daemon_owned: >-
       {{
-        _binary_daemon_ps.rc == 0
+        _binary_daemon_final_ps.rc == 0
+        and 'Z' not in (_binary_daemon_final_ps.stdout | trim)
+        and (_binary_daemon_stat.rc | default(1)) == 0
         and (_binary_daemon_current_start_ticks | default('') | string)
           == (binary_daemon_manifest.process_start_ticks | string)
         and (_binary_daemon_executable.rc | default(1)) == 0
@@ -97,8 +130,14 @@
 - name: Refuse to signal a reused or foreign PID
   ansible.builtin.assert:
     that:
-      - _binary_daemon_ps.rc != 0 or _binary_daemon_owned | bool
-    fail_msg: "binary smoke daemon PID was reused by a foreign process"
+      - not _binary_daemon_pid_live | bool or _binary_daemon_owned | bool
+    fail_msg: >-
+      binary smoke daemon PID was reused by a foreign process:
+      pid_live={{ _binary_daemon_pid_live | bool }},
+      expected_start_ticks={{ binary_daemon_manifest.process_start_ticks }},
+      observed_start_ticks={{ _binary_daemon_current_start_ticks | default('unavailable') }},
+      expected_executable={{ binary_daemon_manifest.executable }},
+      observed_executable={{ _binary_daemon_executable.stdout | default('unavailable') | trim }}
   when: _binary_daemon_pidfile.stat.exists
 
 - name: Stop only the proven packaged daemon
@@ -120,7 +159,7 @@
     timeout: 15
   when:
     - _binary_daemon_pidfile.stat.exists
-    - _binary_daemon_owned | bool
+    - not _binary_daemon_pid_live | bool or _binary_daemon_owned | bool
 
 - name: Prove the daemon wrapper released its PID record
   ansible.builtin.wait_for:
@@ -129,7 +168,7 @@
     timeout: 15
   when:
     - _binary_daemon_pidfile.stat.exists
-    - _binary_daemon_owned | bool
+    - not _binary_daemon_pid_live | bool or _binary_daemon_owned | bool
 
 - name: Remove the completed Ansible async record
   ansible.builtin.async_status:

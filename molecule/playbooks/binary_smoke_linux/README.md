@@ -62,3 +62,28 @@ Run the scenario through its namespaced project entry point:
 ```text
 make molecule-test SCENARIO=binary_smoke_linux
 ```
+
+## Process-identity teardown evidence (2026-08-21)
+
+The one-file daemon teardown treats a PID as owned only while three observations
+agree: the PID is still live and non-zombie, Linux `/proc/<pid>/stat` field 22
+matches the pinned process start ticks, and `/proc/<pid>/exe` still resolves to
+the installed Gludd executable.  It repeats the liveness observation after the
+two `/proc` reads.  A daemon that exits during those reads is therefore handled
+as already stopped, while a live PID with changed start ticks or executable is
+still rejected without receiving a signal.  The assertion reports each
+expected and observed field so a future ordering failure identifies the exact
+invariant instead of collapsing every mismatch into one boolean.
+
+This follows the Linux interfaces documented by
+[`proc_pid_stat(5)`](https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html)
+and
+[`proc_pid_exe(5)`](https://man7.org/linux/man-pages/man5/proc_pid_exe.5.html).
+It also covers the long-lived practitioner failure class in
+[PyInstaller issue #2379](https://github.com/pyinstaller/pyinstaller/issues/2379),
+where terminating a one-file process exposed incomplete temporary-resource
+cleanup.  Gludd's rollback path sends `SIGTERM` only after the immutable
+identity matches, waits for both the loopback endpoint and PID record to be
+released, and leaves a live foreign process untouched.  Those bounded waits
+preserve ZDD for the host and prevent an orphaned daemon or stale PID record
+from consuming ports, processes, or temporary storage across repeated runs.
