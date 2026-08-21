@@ -381,6 +381,28 @@ offline artifact installation, and executable/wheel parity.
 
 ## Practitioner evidence and design rationale
 
+### 2026-08-20 EE base-index incident
+
+The beta4 EE pinned the real `python:3.11.13-slim` tag to a digest that Docker
+Hub no longer served, so the release build failed before Ansible Builder could
+construct its context. Docker Hub's artifact record identifies the surviving
+multi-platform index as
+`sha256:9bffe4353b925a1656688797ebc68f9c525e79b1d377a764d232182a519eeec4`;
+both the EE definition and its runtime lock now name that exact index. A
+[December 14, 2024 Docker Official Image incident](https://github.com/docker-library/docker/issues/520)
+shows the same long-lived practitioner failure mode: otherwise unchanged CI
+jobs suddenly received `manifest unknown`, and operators temporarily selected
+a known published version. Gludd therefore tests the beta4 tag and published
+index as one release contract instead of accepting any syntactically valid
+digest.
+
+The repair is zero-downtime: build and smoke the corrected EE beside the active
+digest, promote only new jobs after validation, and let in-flight jobs drain.
+Rollback selects the previous known-good EE; it never rewrites an image in
+place. The build remains single-owner and single-concurrency, uses the existing
+namespaced finite-lifetime context, and keeps the previous image until the new
+index passes its offline smoke.
+
 - In an [Ansible Project thread from January 23,
   2018](https://groups.google.com/g/ansible-project/c/QFku2jXEGug), a user
   expected `ansible_python_interpreter` to make `pip` use the matching virtual

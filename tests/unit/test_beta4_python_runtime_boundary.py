@@ -19,6 +19,10 @@ from general_ludd.ansible.isolation import ProcessIsolationConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 SHA256_IMAGE = "registry.example/gludd-ee:beta4@sha256:" + "a" * 64
+PYTHON_31113_SLIM_INDEX = (
+    "docker.io/library/python:3.11.13-slim@sha256:"
+    "9bffe4353b925a1656688797ebc68f9c525e79b1d377a764d232182a519eeec4"
+)
 
 
 def _project() -> dict[str, Any]:
@@ -91,6 +95,14 @@ def test_execution_environment_definition_uses_locked_inputs() -> None:
         "python": "requirements.txt",
         "system": "bindep.txt",
     }
+
+
+def test_execution_environment_uses_published_beta4_base_index() -> None:
+    """The EE must reference Docker Hub's published multi-platform index."""
+    ee = yaml.safe_load((ROOT / "config/ansible/execution-environment.yml").read_text(encoding="utf-8"))
+    lock = json.loads((ROOT / "config/ansible/runtime-lock.json").read_text(encoding="utf-8"))
+    assert ee["images"]["base_image"]["name"] == PYTHON_31113_SLIM_INDEX
+    assert lock["base_image"] == PYTHON_31113_SLIM_INDEX
 
 
 def test_runtime_manifests_are_versioned_and_content_addressed() -> None:

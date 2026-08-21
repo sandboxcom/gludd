@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "release": "0.1.0-beta.4",
-  "base_image": "docker.io/library/python:3.11.13-slim@sha256:a9981becc57482c8bcc84aa6cbf5cbdfad0e421351e32a097b70d709ed9ec44d",
+  "base_image": "docker.io/library/python:3.11.13-slim@sha256:9bffe4353b925a1656688797ebc68f9c525e79b1d377a764d232182a519eeec4",
   "inputs": {
     "galaxy": "sha256:16315b7209ab0bdff6622a601da2c209186bbeb0bd679c1d4aba3e58aa8ca7b2",
     "python": "sha256:65e16c8811d94c7bd079ef744ae83c682c0eff21524b971e1ab93d32d305b71f",
     "system": "sha256:bd2f7809110dfbc37ddf512c267671ea9905129b889fd7815bc27332272fe422",
-    "definition": "sha256:8f4fdb35752d71029fbc1832c7ae31b52249ad2f62e373afffbeda0621f928be"
+    "definition": "sha256:b962aa4666a3e4ddce4831f5424798dcb341212afdd5bf4d8e8dc6fd4a26d56e"
   },
   "promotion": "build-and-warm-beside-active-then-switch-new-jobs",
   "rollback": "switch-new-jobs-to-previous-digest-and-drain-in-flight-jobs",

@@ -2,7 +2,7 @@
 version: 3
 images:
   base_image:
-    name: docker.io/library/python:3.11.13-slim@sha256:a9981becc57482c8bcc84aa6cbf5cbdfad0e421351e32a097b70d709ed9ec44d
+    name: docker.io/library/python:3.11.13-slim@sha256:9bffe4353b925a1656688797ebc68f9c525e79b1d377a764d232182a519eeec4
 dependencies:
   galaxy: requirements.yml
   python: requirements.txt
@@ -10,4 +10,3 @@ dependencies:
 options:
   package_manager_path: /usr/bin/apt-get
   user: root
-
