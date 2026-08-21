@@ -27,6 +27,7 @@ pins the CI molecule job's matrix shape).
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import tomllib
@@ -37,6 +38,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 _SCENARIO_DIR = os.path.join(_ROOT, "molecule", "playbooks", "binary_smoke_linux")
 _MAKEFILE = os.path.join(_ROOT, "Makefile")
 _PYPROJECT = os.path.join(_ROOT, "pyproject.toml")
+_MAKE_TARGET_CONTRACT = os.path.join(_ROOT, "config", "make_target_contract.json")
 
 
 def _load(rel: str) -> str:
@@ -134,6 +136,32 @@ class TestScenarioShape:
         assert "LIMA_DOCKER_CONFIG ?= /tmp/gludd-lima-docker-config" in makefile
         assert 'DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)"' in makefile
         assert 'docker pull "$(LIMA_IMAGE)"' in makefile
+
+    def test_lima_docker_start_is_bounded_namespaced_and_contracted(self) -> None:
+        with open(_MAKEFILE) as fh:
+            makefile = fh.read()
+
+        assert "LIMA_DOCKER_START_TIMEOUT_SECS ?= 180" in makefile
+        assert "lima-docker-start:" in makefile
+        assert 'instance=$$(limactl list "$(LIMA_INSTANCE)"' in makefile
+        assert 'if [ "$$instance" != "$(LIMA_INSTANCE)" ]; then' in makefile
+        assert 'limactl start --timeout "$(LIMA_DOCKER_START_TIMEOUT_SECS)s" "$(LIMA_INSTANCE)"' in makefile
+        assert 'DOCKER_HOST="unix://$$socket" docker info' in makefile
+        assert "LIMA_DOCKER_START_READY" in makefile
+        assert "limactl delete" not in makefile
+
+        with open(_MAKE_TARGET_CONTRACT) as fh:
+            contract = json.load(fh)
+        target = next(
+            entry for entry in contract["targets"] if entry["name"] == "lima-docker-start"
+        )
+        assert target["make_variables"] == [
+            "LIMA_INSTANCE",
+            "LIMA_DOCKER_CONFIG",
+            "LIMA_DOCKER_START_TIMEOUT_SECS",
+            "LIMA_DOCKER_VALIDATE_ONLY",
+        ]
+        assert target["behavior"].endswith("LIMA_DOCKER_VALIDATE_ONLY=1")
 
     def test_legacy_default_machine_cleanup_is_bounded_and_opt_in(self):
         with open(_MAKEFILE) as fh:

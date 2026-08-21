@@ -445,6 +445,7 @@ help:
 	@echo "  dist                  Build distribution tarball"
 	@echo "  build-executable      Build standalone executable (pyinstaller)"
 	@echo "  audit-linux-pyinstaller-warnings  Validate/replay the Linux PyInstaller warning policy"
+	@echo "  lima-docker-start     Start an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_START_TIMEOUT_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-status    Inspect the namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-pull      Pull one image into namespaced Lima Docker (LIMA_INSTANCE, LIMA_IMAGE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  podman-legacy-default-delete  Remove only a stopped legacy default VM (PODMAN_LEGACY_MACHINE, PODMAN_LEGACY_DELETE_TIMEOUT_SECS, PODMAN_LEGACY_DELETE_VALIDATE_ONLY)"
@@ -6736,11 +6737,36 @@ LIMA_INSTANCE ?= gludd-docker
 LIMA_IMAGE ?= ubuntu:24.04
 LIMA_DOCKER_CONFIG ?= /tmp/gludd-lima-docker-config
 LIMA_DOCKER_VALIDATE_ONLY ?= 0
+LIMA_DOCKER_START_TIMEOUT_SECS ?= 180
 PODMAN_MACHINE ?= gludd
 VDISK ?= 20
 PODMAN_LEGACY_MACHINE ?= podman-machine-default
 PODMAN_LEGACY_DELETE_VALIDATE_ONLY ?= 1
 PODMAN_LEGACY_DELETE_TIMEOUT_SECS ?= 120
+
+lima-docker-start: ## Start only an existing namespaced Lima Docker VM and prove engine readiness
+	@case "$(LIMA_DOCKER_VALIDATE_ONLY)" in 0|1) ;; *) echo "LIMA_DOCKER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@[ "$(LIMA_DOCKER_START_TIMEOUT_SECS)" -ge 1 ] 2>/dev/null || { echo "LIMA_DOCKER_START_TIMEOUT_SECS must be a positive integer"; exit 2; }
+	@if [ "$(LIMA_DOCKER_VALIDATE_ONLY)" = "1" ]; then \
+		echo "LIMA_DOCKER_START_VALID instance=$(LIMA_INSTANCE) config=$(LIMA_DOCKER_CONFIG) timeout_secs=$(LIMA_DOCKER_START_TIMEOUT_SECS)"; \
+		exit 0; \
+	fi; \
+	instance=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Name}}' 2>/dev/null || true); \
+	if [ "$$instance" != "$(LIMA_INSTANCE)" ]; then \
+		echo "Refusing to create an unprovisioned Lima instance: $(LIMA_INSTANCE)"; \
+		exit 1; \
+	fi; \
+	echo "Starting existing Lima Docker VM $(LIMA_INSTANCE) (timeout $(LIMA_DOCKER_START_TIMEOUT_SECS)s)"; \
+	limactl start --timeout "$(LIMA_DOCKER_START_TIMEOUT_SECS)s" "$(LIMA_INSTANCE)"; \
+	socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+	if [ -z "$$socket" ] || [ ! -S "$$socket" ]; then \
+		echo "Lima Docker socket unavailable after startup for $(LIMA_INSTANCE): $$socket"; \
+		exit 1; \
+	fi; \
+	mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
+	chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker info --format 'server={{.ServerVersion}} containers={{.Containers}} images={{.Images}}'; \
+	echo "LIMA_DOCKER_START_READY instance=$(LIMA_INSTANCE) socket=$$socket"
 
 lima-docker-status: ## Show bounded Docker engine, container, and image state for the namespaced Lima VM
 	@case "$(LIMA_DOCKER_VALIDATE_ONLY)" in 0|1) ;; *) echo "LIMA_DOCKER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
