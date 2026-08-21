@@ -293,7 +293,13 @@ def test_binary_smoke_owns_ephemeral_daemon_through_verify() -> None:
     assert "http://127.0.0.1:8000" not in verify
 
     stop = (scenario_root / "default" / "stop_daemon.yml").read_text()
-    assert "--bind" in stop
+    assert "process_start_ticks" in stop
+    assert "binary_daemon_manifest.executable" in stop
+    assert "_binary_daemon_current_start_ticks" in stop
+    assert "_binary_daemon_executable_matches" in stop
+    assert "/proc/{{ _binary_daemon_pid_record.pid | string }}/stat" in stop
+    assert "/proc/{{ _binary_daemon_pid_record.pid | string }}/exe" in stop
+    assert "Refuse to signal a reused or foreign PID" in stop
     assert "_binary_daemon_owned" in stop
     assert "ansible.builtin.wait_for" in stop
     assert "ansible.builtin.async_status" in stop

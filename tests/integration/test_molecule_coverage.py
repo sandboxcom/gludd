@@ -288,12 +288,15 @@ class TestGluddObserveScenario:
         for required in (molecule, prepare, converge, verify, cleanup):
             assert required.is_file(), f"gludd_observe scenario file missing: {required}"
 
-        prepare_text = prepare.read_text()
+        molecule_text = molecule.read_text()
         converge_text = converge.read_text()
         verify_text = verify.read_text()
         daemon_text = MOCK_DAEMON.read_text()
 
-        assert "mock_daemon/server.py" in prepare_text
+        assert "mock_daemon_start.yml" in converge_text
+        assert "mock_daemon_stop.yml" in converge_text
+        assert "mock_daemon_cleanup.yml" in molecule_text
+        assert "mock_daemon_destroy.yml" in molecule_text
         assert "general_ludd.agent.gludd_observe" in converge_text
         for operation in (
             "query_sources",
