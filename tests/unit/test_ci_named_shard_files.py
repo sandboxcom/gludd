@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import signal
 import sys
 from pathlib import Path
-from types import ModuleType
+from typing import Any
 
 import pytest
 import yaml
@@ -23,7 +25,7 @@ EXPECTED_SHARDS = (
 )
 
 
-def _load_script(name: str) -> ModuleType:
+def _load_script(name: str) -> Any:
     sys.path.insert(0, str(SCRIPTS))
     try:
         spec = importlib.util.spec_from_file_location(f"gludd_{name}", SCRIPTS / f"{name}.py")
@@ -126,7 +128,9 @@ def test_serial_gate_runner_is_fresh_process_and_coverage_complete() -> None:
     source = runner.read_text(encoding="utf-8")
 
     for token in (
-        "adaptive_test.py",
+        "MAX_FILES_PER_BATCH",
+        "--max-worker-restart=0",
+        "start_new_session=True",
         "COVERAGE_FILE",
         "coverage combine",
         "--cov=general_ludd",
@@ -145,7 +149,7 @@ def test_run_gate_delegates_to_serial_named_shards() -> None:
     assert "run_ci_shards_serial.py" in source
 
 
-def test_serial_pytest_command_uses_adaptive_runner_and_isolated_basetemp(
+def test_serial_pytest_command_uses_one_fail_closed_worker_and_isolated_basetemp(
     tmp_path: Path,
 ) -> None:
     module = _load_script("run_ci_shards_serial")
@@ -158,8 +162,11 @@ def test_serial_pytest_command_uses_adaptive_runner_and_isolated_basetemp(
     )
 
     assert command[0] == sys.executable
-    assert command[1].endswith("scripts/adaptive_test.py")
+    assert command[1:3] == ["-m", "pytest"]
     assert "tests/unit/test_alpha.py" in command
+    assert command[command.index("-n") + 1] == "1"
+    assert command[command.index("--maxprocesses") + 1] == "1"
+    assert "--max-worker-restart=0" in command
     assert "--cov=general_ludd" in command
     assert (
         "--cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils"
@@ -168,6 +175,146 @@ def test_serial_pytest_command_uses_adaptive_runner_and_isolated_basetemp(
     assert f"--cov-config={module.ROOT / 'pyproject.toml'}" in command
     assert f"--cov-config={module.ROOT / '.coveragerc-greenlet'}" in greenlet_command
     assert f"--basetemp={tmp_path / 'pytest'}" in command
+
+
+def test_serial_partition_expands_directories_deduplicates_and_bounds_batches(
+    tmp_path: Path,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    suite = tmp_path / "tests" / "suite"
+    nested = suite / "nested"
+    nested.mkdir(parents=True)
+    for relative in ("test_a.py", "test_b.py", "nested/test_c.py", "nested/sample_test.py"):
+        path = suite / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("def test_ok(): pass\n", encoding="utf-8")
+
+    batches = module._partition_test_paths(
+        ["tests/suite", "tests/suite/test_b.py", "tests/test_z.py"],
+        max_files=2,
+        root=tmp_path,
+    )
+
+    assert batches == [
+        ["tests/suite/nested/sample_test.py", "tests/suite/nested/test_c.py"],
+        ["tests/suite/test_a.py", "tests/suite/test_b.py"],
+        ["tests/test_z.py"],
+    ]
+    assert all(1 <= len(batch) <= 2 for batch in batches)
+
+
+def test_owned_pytest_runner_fails_closed_on_worker_death(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    class FinishedProcess:
+        pid = 42420
+        returncode = 0
+        stdout = io.StringIO("[gw0] node down: Not properly terminated\n")
+
+        def poll(self) -> int:
+            return self.returncode
+
+        def wait(self, timeout: float | None = None) -> int:
+            return self.returncode
+
+    process = FinishedProcess()
+    popen_kwargs: dict[str, object] = {}
+
+    def fake_popen(_command: list[str], **kwargs: object) -> object:
+        popen_kwargs.update(kwargs)
+        return process
+
+    terminated: list[object] = []
+    monkeypatch.setattr(module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        module,
+        "_terminate_owned_process",
+        lambda owned, **_kwargs: terminated.append(owned),
+    )
+
+    rc = module._run_owned_pytest(
+        ["pytest"],
+        env={},
+        label="unit-3:batch-1",
+        heartbeat_seconds=1.0,
+        no_progress_seconds=5.0,
+    )
+
+    assert rc == module.WORKER_DEATH_EXIT_CODE
+    assert terminated == [process]
+    assert popen_kwargs["start_new_session"] is True
+    assert "WORKER-DEATH" in capsys.readouterr().out
+
+
+def test_owned_cleanup_escalates_term_to_kill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    class RetainedProcess:
+        pid = 42421
+
+        @staticmethod
+        def wait(timeout: float | None = None) -> int:
+            return 0
+
+    signals: list[signal.Signals] = []
+    monkeypatch.setattr(module, "_owned_process_group_alive", lambda _process: True)
+    monkeypatch.setattr(
+        module,
+        "_signal_owned_process_group",
+        lambda _process, signum: signals.append(signum),
+    )
+
+    module._terminate_owned_process(RetainedProcess(), grace_seconds=0.0)
+
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
+
+
+def test_serial_runner_uses_unique_batches_and_stops_after_worker_death(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    workspace = tmp_path / "unit-3-workspace"
+    batch_runs: list[tuple[str, str]] = []
+
+    def fake_run_owned(
+        command: list[str],
+        *,
+        env: dict[str, str],
+        label: str,
+        **_kwargs: object,
+    ) -> int:
+        if "tests/unit/test_all_plugins_runtime.py" in command:
+            return 0
+        basetemp = next(arg for arg in command if arg.startswith("--basetemp="))
+        batch_runs.append((basetemp, env["GLUDD_SHARD_STATE_DIR"]))
+        return 0 if len(batch_runs) == 1 else module.WORKER_DEATH_EXIT_CODE
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", lambda **_kwargs: str(workspace))
+    monkeypatch.setattr(
+        module,
+        "expand_shard",
+        lambda _shard: [f"tests/unit/test_{index}.py" for index in range(5)],
+    )
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_run_owned_pytest", fake_run_owned)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_aggregate_coverage", lambda: 0)
+
+    result = module.run(["unit-3"], [], max_files_per_batch=2)
+
+    assert result == module.WORKER_DEATH_EXIT_CODE
+    assert len(batch_runs) == 2, "worker death must not retry or launch later batches"
+    assert len({basetemp for basetemp, _state in batch_runs}) == 2
+    assert len({state for _basetemp, state in batch_runs}) == 2
 
 
 def test_serial_runner_uses_a_fresh_non_coverage_process_for_isolated_tests() -> None:
@@ -187,7 +334,7 @@ def test_serial_runner_uses_a_fresh_non_coverage_process_for_isolated_tests() ->
 
 def test_serial_runner_continues_after_a_failed_shard(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load_script("run_ci_shards_serial")
     module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
@@ -203,9 +350,14 @@ def test_serial_runner_continues_after_a_failed_shard(
         path.mkdir()
         return str(path)
 
-    def fake_run(command: list[str], *, env=None) -> int:
+    def fake_run(
+        command: list[str], *, env: dict[str, str] | None = None
+    ) -> int:
+        return 0
+
+    def fake_run_owned(command: list[str], **_kwargs: object) -> int:
         joined = " ".join(command)
-        if "adaptive_test.py" not in joined:
+        if "tests/unit/test_all_plugins_runtime.py" in command:
             return 0
         shard = "unit-1a1" if "unit-1a1.py" in joined else "unit-1a2"
         launched.append(shard)
@@ -219,6 +371,7 @@ def test_serial_runner_continues_after_a_failed_shard(
         lambda shard, basetemp: {"COVERAGE_FILE": str(basetemp / ".coverage")},
     )
     monkeypatch.setattr(module, "_run_command", fake_run)
+    monkeypatch.setattr(module, "_run_owned_pytest", fake_run_owned)
     monkeypatch.setattr(module, "_save_shard_coverage", lambda *args: True)
     monkeypatch.setattr(module, "_aggregate_coverage", lambda: 0)
 
@@ -230,7 +383,7 @@ def test_serial_runner_continues_after_a_failed_shard(
 
 def test_serial_runner_records_isolated_failure_and_continues_shards(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load_script("run_ci_shards_serial")
     module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
@@ -238,15 +391,21 @@ def test_serial_runner_records_isolated_failure_and_continues_shards(
     module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
     shard_launched = False
 
-    def fake_run(command: list[str], *, env=None) -> int:
+    def fake_run(
+        command: list[str], *, env: dict[str, str] | None = None
+    ) -> int:
+        return 0
+
+    def fake_run_owned(command: list[str], **_kwargs: object) -> int:
         nonlocal shard_launched
         if "tests/unit/test_all_plugins_runtime.py" in command:
             return 7
-        if "adaptive_test.py" in " ".join(command):
+        if "-m" in command and "pytest" in command:
             shard_launched = True
         return 0
 
     monkeypatch.setattr(module, "_run_command", fake_run)
+    monkeypatch.setattr(module, "_run_owned_pytest", fake_run_owned)
     monkeypatch.setattr(module, "expand_shard", lambda shard: [f"tests/{shard}.py"])
     monkeypatch.setattr(
         module,
@@ -264,7 +423,7 @@ def test_serial_runner_records_isolated_failure_and_continues_shards(
 
 def test_serial_runner_fails_closed_when_coverage_erase_fails(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load_script("run_ci_shards_serial")
     module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
@@ -283,3 +442,154 @@ def test_serial_runner_fails_closed_when_coverage_erase_fails(
 
     assert result == 2
     assert expanded is False
+
+
+def test_owned_pytest_runner_times_out_silent_worker_and_emits_heartbeat(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    class SilentProcess:
+        pid = 42422
+        returncode: int | None = None
+        stdout = io.StringIO("")
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def wait(self, timeout: float | None = None) -> int:
+            assert self.returncode is not None
+            return self.returncode
+
+    process = SilentProcess()
+
+    def terminate(owned: SilentProcess, **_kwargs: object) -> None:
+        assert owned is process
+        owned.returncode = -signal.SIGTERM
+
+    clock = iter((0.0, 2.0))
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *_args, **_kwargs: process)
+    monkeypatch.setattr(module.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(module, "_terminate_owned_process", terminate)
+    monkeypatch.setattr(module, "_owned_process_group_alive", lambda _process: False)
+
+    rc = module._run_owned_pytest(
+        ["pytest"],
+        env={},
+        label="unit-3:batch-quiet",
+        heartbeat_seconds=1.0,
+        no_progress_seconds=1.0,
+    )
+
+    output = capsys.readouterr().out
+    assert rc == module.NO_PROGRESS_EXIT_CODE
+    assert "SHARD-HEARTBEAT" in output
+    assert "SHARD-NO-PROGRESS" in output
+
+
+def test_shard_coverage_fragment_and_aggregate_preserve_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "fragments"
+    module.COVERAGE_SHARDS.mkdir()
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "audit.json"
+    batchtemp = tmp_path / "batch"
+    batchtemp.mkdir()
+    coverage_file = batchtemp / ".coverage"
+    coverage_file.write_bytes(b"coverage-data")
+    env = {"COVERAGE_FILE": str(coverage_file)}
+
+    assert module._save_shard_coverage("unit-3", 2, batchtemp, env) is True
+    assert (module.COVERAGE_SHARDS / ".coverage.unit-3.batch-002").read_bytes() == (
+        b"coverage-data"
+    )
+
+    commands: list[list[str]] = []
+
+    def run_command(
+        command: list[str], *, env: dict[str, str] | None = None
+    ) -> int:
+        commands.append(command)
+        return 3 if "xml" in command else 0
+
+    monkeypatch.setattr(module, "_run_command", run_command)
+
+    assert module._aggregate_coverage() == 3
+    assert len(commands) == 5
+    assert "--max-worker-restart=0" not in " ".join(
+        argument for command in commands for argument in command
+    )
+    assert any("--threshold=75" in command for command in commands)
+
+
+def test_missing_shard_coverage_attempts_combine_then_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "fragments"
+    module.COVERAGE_SHARDS.mkdir()
+    batchtemp = tmp_path / "batch"
+    batchtemp.mkdir()
+    commands: list[list[str]] = []
+
+    def run_command(command: list[str], **_kwargs: object) -> int:
+        commands.append(command)
+        return 0
+
+    monkeypatch.setattr(module, "_run_command", run_command)
+
+    assert (
+        module._save_shard_coverage(
+            "unit-3",
+            1,
+            batchtemp,
+            {"COVERAGE_FILE": str(batchtemp / ".coverage")},
+        )
+        is False
+    )
+    assert commands == [
+        [sys.executable, "-m", "coverage", "combine", str(batchtemp)]
+    ]
+
+
+def test_serial_runner_cli_forwards_explicit_resource_bounds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    received: dict[str, object] = {}
+
+    def run(
+        shards: list[str],
+        pytest_args: list[str],
+        **kwargs: object,
+    ) -> int:
+        received.update(shards=shards, pytest_args=pytest_args, **kwargs)
+        return 9
+
+    monkeypatch.setattr(module, "run", run)
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-2,unit-3",
+            "--pytest-args=-q -W error",
+            "--max-files-per-batch=17",
+            "--heartbeat-seconds=4",
+            "--no-progress-seconds=23",
+        ],
+    )
+
+    assert module.main() == 9
+    assert received == {
+        "shards": ["unit-2", "unit-3"],
+        "pytest_args": ["-q", "-W", "error"],
+        "max_files_per_batch": 17,
+        "heartbeat_seconds": 4.0,
+        "no_progress_seconds": 23.0,
+    }

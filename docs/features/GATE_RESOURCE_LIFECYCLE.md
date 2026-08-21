@@ -74,6 +74,36 @@ pytest-xdist has separately bounded worker crash restarts since 2019 to avoid
 infinite crash loops:
 [pytest-xdist changelog](https://github.com/pytest-dev/pytest-xdist/blob/master/CHANGELOG.rst).
 
+### Bounded serial shard workers
+
+On 2026-08-20, `unit-3` exposed a second boundary: a nominally serial xdist run
+still made `gw0` collect all 38,099 selected tests. At 64%, the worker reported
+`node down: Not properly terminated` during a session-start atomic write and
+left a child behind, so the wrapper waited indefinitely even though the exact
+test passed alone.
+
+The named-shard runner now expands directory selectors deterministically and
+subdivides them into batches of at most 64 files before starting pytest. Each
+batch uses one worker, `--max-worker-restart=0`, a unique base temporary
+directory, and unique plugin-state and coverage namespaces. The runner streams
+all output plus periodic heartbeats. A worker-death diagnostic fails the shard
+closed, stops later batches, and tears down only the process group it created
+with bounded `TERM` then `KILL`; it never retries or adds workers.
+
+This matches pytest-xdist's documented architecture: every worker performs a
+full collection, even when only one worker is requested. Its supported crash
+control is `--max-worker-restart`, including zero to disable replacement:
+[xdist architecture](https://pytest-xdist.readthedocs.io/en/stable/how-it-works.html),
+[xdist crash handling](https://pytest-xdist.readthedocs.io/en/stable/crash.html),
+and [xdist distribution options](https://pytest-xdist.readthedocs.io/en/stable/distribution.html).
+Long-lived practitioner reports reinforce the fail-closed ownership boundary:
+[issue 1278, opened 2025-11-18](https://github.com/pytest-dev/pytest-xdist/issues/1278)
+records a nonzero worker exit not reliably failing the run;
+[issue 1313, opened 2026-03-24](https://github.com/pytest-dev/pytest-xdist/issues/1313)
+records an execnet receiver blocked after a worker disappears; and
+[issue 1323, opened 2026-04-18](https://github.com/pytest-dev/pytest-xdist/issues/1323)
+records a crashed-worker restart hanging `loadgroup` scheduling.
+
 ## Security and Resource Boundaries
 
 The status command uses a fixed system interpreter and existing fixed-argument
@@ -89,6 +119,13 @@ per runner persists an atomic, PID-namespaced progress record. The 30-second
 heartbeat, 15-minute default quiet deadline, and one-hour maximum keep both
 silence and resource tenure bounded without multiplying workers.
 
+The serial shard runner applies the same ownership rule per batch. It creates a
+new process session, signals only that process group, joins its output reader,
+and removes each batch workspace after coverage is preserved. External model
+processes and unrelated test sessions are outside that group and remain
+untouched. The fixed file bound prevents cumulative collection growth while the
+strictly serial schedule keeps peak worker count at one.
+
 ## Zero-Downtime Delivery and Rollback
 
 The change has no daemon, migration, network listener, or service restart. It is
@@ -101,3 +138,9 @@ contract together. Tracked distribution templates remain source-controlled
 throughout. If the adaptive change is reverted, terminate any runner started by
 the new version before starting an old one; never run two wrappers against the
 same shard or disable the resource/no-progress limits to mask a regression.
+
+The bounded-batch change is also gate-only: it changes no deployed process,
+database, listener, or artifact format, so rollout is zero-downtime. Rollback is
+a single runner/test/documentation revert after any active new runner exits.
+Rolling back restores the known unbounded-collection and retained-child risk;
+do not mix old and new wrappers in one shard workspace.

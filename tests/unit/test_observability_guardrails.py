@@ -50,8 +50,8 @@ class TestNoUnseenEvents:
         We verify:
           1. The Makefile gate recipe calls run_gate.sh (delegation wired).
           2. run_gate.sh delegates to the serial named-shard runner.
-          3. Every shard uses the adaptive pytest runner.
-          3. run_gate.sh pipes through tee (output is never a silent black box).
+          3. Every shard streams owned-process heartbeats and worker-death state.
+          4. run_gate.sh pipes through tee (output is never a silent black box).
         """
         gate_body = _recipe("gate")
         assert "run_gate.sh" in gate_body, (
@@ -61,9 +61,16 @@ class TestNoUnseenEvents:
         assert "run_ci_shards_serial.py" in run_gate_text, (
             "scripts/run_gate.sh must delegate to the complete named-shard runner"
         )
-        assert "adaptive_test.py" in SERIAL_SHARD_RUNNER.read_text(), (
-            "every named shard must retain adaptive worker sizing and OOM retry"
-        )
+        serial_runner = SERIAL_SHARD_RUNNER.read_text()
+        for marker in (
+            "SHARD-HEARTBEAT",
+            "WORKER-DEATH",
+            "start_new_session=True",
+            "--max-worker-restart=0",
+        ):
+            assert marker in serial_runner, (
+                f"serial named shards must retain observable owned cleanup: {marker}"
+            )
         assert "tee" in run_gate_text, (
             "scripts/run_gate.sh MUST pipe its output through tee so a "
             "backgrounded gate is never a silent black box "
