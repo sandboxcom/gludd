@@ -914,9 +914,10 @@ jobs:
         # promptly on success, timeout, or failure.
         run: |
           set -e
-          ./dist/gludd daemon start &
+          ./dist/gludd daemon --host 127.0.0.1 --port 8000 &
           DAEMON_PID=$!
           cleanup_daemon() {
+            primary_status=$?
             if kill -0 "$DAEMON_PID" 2>/dev/null; then
               kill "$DAEMON_PID"
               if wait "$DAEMON_PID" 2>/dev/null; then
@@ -925,17 +926,30 @@ jobs:
                 echo "Daemon terminated after smoke test."
               fi
             fi
+            return "$primary_status"
           }
           trap cleanup_daemon EXIT
           ready=0
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            if curl -sf http://127.0.0.1:8000/health >/dev/null; then
+            if curl -sf http://127.0.0.1:8000/healthz >/dev/null; then
               ready=1
               break
             fi
+            if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
+              set +e
+              wait "$DAEMON_PID"
+              daemon_status=$?
+              set -e
+              if [ "$daemon_status" -eq 0 ]; then daemon_status=1; fi
+              echo "::error::daemon exited before becoming healthy (rc=$daemon_status)"
+              exit "$daemon_status"
+            fi
             sleep 1
           done
-          test "$ready" -eq 1
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::daemon did not become healthy after 10 attempts"
+            exit 1
+          fi
       - name: Package tarball
         run: |
           echo "=== CI PHASE: package-tarball-linux ==="

@@ -223,6 +223,36 @@ class TestLinuxDaemonSmokeTest:
             "linux daemon smoke test must hit a /health endpoint to verify boot"
         )
 
+    def test_daemon_smoke_uses_current_blocking_cli_contract(
+        self, build_workflow: dict
+    ) -> None:
+        """The daemon command itself is the server; there is no ``start`` verb."""
+        combined = "\n".join(
+            (s.get("run") or "")
+            for s in _steps(build_workflow, "linux")
+            if "daemon" in (s.get("name") or "").lower()
+            and "smoke" in (s.get("name") or "").lower()
+        )
+
+        assert "./dist/gludd daemon start" not in combined
+        assert re.search(r"\./dist/gludd daemon\s+--host\s+127\.0\.0\.1", combined)
+        assert "/healthz" in combined
+
+    def test_daemon_smoke_fails_immediately_when_server_exits(
+        self, build_workflow: dict
+    ) -> None:
+        """A dead binary is surfaced with its exit status, not a blind timeout."""
+        combined = "\n".join(
+            (s.get("run") or "")
+            for s in _steps(build_workflow, "linux")
+            if "daemon" in (s.get("name") or "").lower()
+            and "smoke" in (s.get("name") or "").lower()
+        )
+
+        assert 'kill -0 "$DAEMON_PID"' in combined
+        assert 'wait "$DAEMON_PID"' in combined
+        assert "daemon exited before becoming healthy" in combined.lower()
+
     def test_daemon_smoke_before_upload(self, build_workflow: dict) -> None:
         daemon_idx = _step_index(
             build_workflow,
