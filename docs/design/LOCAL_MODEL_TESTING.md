@@ -108,6 +108,27 @@ classes at the tool and network boundaries, not a single Gludd release:
   ([openai-python #464](https://github.com/openai/openai-python/issues/464)). A missing
   optional OpenAI package may use the deterministic local fallback, but configured
   authentication or pricing-data errors are surfaced rather than silently downgraded.
+- **OIDC cache concurrency.** Reviewed 2026-08-21. Python's current
+  [`RLock` documentation](https://docs.python.org/3/library/threading.html#rlock-objects)
+  recommends context-managed re-entrant locking and specifies that another thread blocks
+  until the owning thread releases the lock. A long-running practitioner thread opened in
+  2008 documents duplicate cache construction despite the GIL and recommends locking the
+  complete cache lookup/create/store transaction
+  ([Stack Overflow #213455](https://stackoverflow.com/questions/213455/python-threadsafe-object-cache));
+  a separate 2014 thread explains why the GIL does not make multi-instruction logic free of
+  races
+  ([Stack Overflow #23855138](https://stackoverflow.com/questions/23855138/can-you-race-condition-in-python-while-there-is-a-gil)).
+  `HfOidcAuth` therefore owns one instance-local `RLock` across cache inspection, bounded
+  provider acquisition, publication, refresh, invalidation, and validity checks. Concurrent
+  misses produce one acquisition, and an invalidation that overlaps acquisition returns only
+  after it has cleared the acquired token. Re-entrancy is required because `refresh()` calls
+  the ordinary `get_token()` path while retaining the same lifecycle boundary.
+
+  The lock is intentionally instance-local: an OIDC refresh cannot pause unrelated models,
+  endpoints, or tenants, preserving zero-downtime service for already healthy paths.
+  Rollback is code-only and never restores, persists, or logs token material. Each auth object
+  adds one in-memory lock and creates no thread, process, descriptor, or temporary artifact;
+  serializing cache misses reduces duplicate provider network work instead of adding it.
 
 Dependency check (`_deps_reason()` in `test_model_matrix_pipeline.py`):
 - `llama-cpp-python` must be importable

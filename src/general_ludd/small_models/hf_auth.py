@@ -1,9 +1,12 @@
+"""Provide linearizable OIDC token acquisition for Hugging Face access."""
+
 from __future__ import annotations
 
 import base64
 import json
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -21,21 +24,26 @@ _DEFAULT_TTL_SEC = 3600
 
 @dataclass
 class OidcToken:
+    """Represent one acquired OIDC token and its expiry metadata."""
+
     token: str
     expires_at: float
     provider: str
     acquired_at: float = 0.0
 
     def __post_init__(self) -> None:
+        """Record the acquisition time when the provider did not supply one."""
         if self.acquired_at == 0.0:
             self.acquired_at = time.time()
 
     @property
     def is_expired(self) -> bool:
+        """Return whether the token is within the refresh safety window."""
         return time.time() >= (self.expires_at - _OIDC_BUFFER_SEC)
 
     @property
     def remaining_seconds(self) -> float:
+        """Return the token's non-negative remaining lifetime in seconds."""
         return max(0.0, self.expires_at - time.time())
 
 
@@ -53,37 +61,46 @@ class HfOidcAuth:
         client_id: str | None = None,
         token_ttl: float = _DEFAULT_TTL_SEC,
     ) -> None:
+        """Configure the provider and initialize the instance-local cache lock."""
         self.provider = provider or os.environ.get("HF_OIDC_PROVIDER", "")
         self.endpoint = endpoint or os.environ.get("HF_OIDC_ENDPOINT", "")
         self.client_id = client_id or os.environ.get("HF_OIDC_CLIENT_ID", "")
         self.token_ttl = token_ttl
         self._cached: OidcToken | None = None
+        self._cache_lock = threading.RLock()
 
     def get_token(self) -> str | None:
         """Return a valid token, refreshing via OIDC if needed."""
-        if self._cached is not None and not self._cached.is_expired:
-            return self._cached.token
+        with self._cache_lock:
+            if self._cached is not None and not self._cached.is_expired:
+                return self._cached.token
 
-        new_token = self._acquire()
-        if new_token is not None:
-            return new_token.token
+            new_token = self._acquire()
+            if new_token is not None:
+                return new_token.token
 
-        if self._cached is not None and self._cached.remaining_seconds > 0:
-            logger.warning(
-                "OIDC refresh failed; returning stale token (%.0fs remaining).", self._cached.remaining_seconds
-            )
-            return self._cached.token
-        return None
+            if self._cached is not None and self._cached.remaining_seconds > 0:
+                logger.warning(
+                    "OIDC refresh failed; returning stale token (%.0fs remaining).", self._cached.remaining_seconds
+                )
+                return self._cached.token
+            return None
 
     def refresh(self) -> str | None:
-        self._cached = None
-        return self.get_token()
+        """Invalidate and reacquire the cached token as one locked transaction."""
+        with self._cache_lock:
+            self._cached = None
+            return self.get_token()
 
     def invalidate(self) -> None:
-        self._cached = None
+        """Invalidate the cached token after any in-flight acquisition completes."""
+        with self._cache_lock:
+            self._cached = None
 
     def has_valid_token(self) -> bool:
-        return self._cached is not None and not self._cached.is_expired
+        """Return whether this instance currently owns a non-expired token."""
+        with self._cache_lock:
+            return self._cached is not None and not self._cached.is_expired
 
     def _acquire(self) -> OidcToken | None:
         provider = self.provider
