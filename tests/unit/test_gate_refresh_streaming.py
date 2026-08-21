@@ -40,7 +40,7 @@ def test_stream_command_forwards_a_nodeid_before_the_child_exits(
         "exec(\"while not marker.exists():\\n time.sleep(0.01)\"); "
         "print('session complete', flush=True)"
     )
-    process = subprocess.Popen(
+    with subprocess.Popen(
         [
             sys.executable,
             str(STREAM_RUNNER),
@@ -54,23 +54,24 @@ def test_stream_command_forwards_a_nodeid_before_the_child_exits(
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-    )
-    assert process.stdout is not None
-    observed = threading.Event()
-    first_line: list[bytes] = []
+    ) as process:
+        assert process.stdout is not None
+        stdout = process.stdout
+        observed = threading.Event()
+        first_line: list[bytes] = []
 
-    def read_first_line() -> None:
-        first_line.append(process.stdout.readline())
-        observed.set()
+        def read_first_line() -> None:
+            first_line.append(stdout.readline())
+            observed.set()
 
-    reader = threading.Thread(target=read_first_line, daemon=True)
-    reader.start()
-    streamed_while_running = observed.wait(timeout=2)
-    marker.touch()
-    returncode = process.wait(timeout=5)
-    reader.join(timeout=1)
-    remaining_stdout = process.stdout.read()
-    stderr = process.stderr.read() if process.stderr is not None else b""
+        reader = threading.Thread(target=read_first_line, daemon=True)
+        reader.start()
+        streamed_while_running = observed.wait(timeout=2)
+        marker.touch()
+        returncode = process.wait(timeout=5)
+        reader.join(timeout=1)
+        remaining_stdout = stdout.read()
+        stderr = process.stderr.read() if process.stderr is not None else b""
 
     assert streamed_while_running, "first node ID was buffered until pytest exited"
     assert first_line == [b"tests/unit/test_demo.py::test_live PASSED\n"]

@@ -439,8 +439,19 @@ class GameRunner:
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
+        finally:
+            self._processes.remove(proc)
+            self._close_process_pipes(proc)
 
         return frames
+
+    @staticmethod
+    def _close_process_pipes(proc: subprocess.Popen[Any]) -> None:
+        """Close parent-owned subprocess pipes after the child is reaped."""
+        for stream in (getattr(proc, "stdout", None), getattr(proc, "stderr", None)):
+            if stream is not None:
+                with contextlib.suppress(OSError):
+                    stream.close()
 
     def run_headless_inline(
         self,
@@ -561,11 +572,13 @@ class GameRunner:
 
     def cleanup(self) -> None:
         """Kill any lingering game processes."""
-        for proc in self._processes:
+        for proc in tuple(self._processes):
+            self._processes.remove(proc)
             with contextlib.suppress(OSError):
                 proc.kill()
+            with contextlib.suppress(OSError):
                 proc.wait()
-        self._processes.clear()
+            self._close_process_pipes(proc)
 
     def __del__(self) -> None:
         """Best-effort reap any subprocesses still owned during finalization."""

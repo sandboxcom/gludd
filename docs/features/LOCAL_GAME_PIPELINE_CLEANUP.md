@@ -57,6 +57,16 @@ explicitly classifies NaN and both infinities as non-finite, while
 defines finite correlation coefficients in the inclusive `[-1, 1]` interval.
 These upstream references were reviewed on 2026-08-20.
 
+CPython's maintained
+[`Popen` context-manager contract](https://github.com/python/cpython/blob/main/Doc/library/subprocess.rst)
+closes standard file descriptors and waits for the child on exit. A practitioner
+report opened on 2024-01-18 documents how delayed finalization can otherwise
+[retain subprocess pipes and orphan a child](https://github.com/python/cpython/issues/114177).
+These references were reviewed on 2026-08-20. Gludd therefore releases a
+completed game child from its ownership list and closes its parent-side stdout
+and stderr pipes immediately after wait; finalization is only an idempotent
+fallback for a genuinely live owned child.
+
 ## ZDD and rollback
 
 The dependency pin changes installation resolution before runtime traffic. The
@@ -75,6 +85,12 @@ workers can overlap during a zero-downtime rollout; the only behavior change is
 that non-finite signatures deterministically produce `0.0` without a warning.
 Rollback requires no drain, schema action, cache purge, or artifact cleanup.
 
+The subprocess change is also wire-format and state neutral. Deploying workers
+may overlap because each runner owns only children it created. Rollback needs no
+drain or migration, but operators should confirm no namespaced game child is
+live before replacing a worker; the old implementation may defer pipe release
+until garbage collection.
+
 ## Observability and verification
 
 The role emits explicit cleanup-started and cleanup-completed messages. Missing
@@ -83,3 +99,6 @@ termination remains a distinct task result. Focused tests pin missing-file
 tolerance, terminal kill and removal, the direct Pillow floor in both extras,
 and the network-free reference-preflight contract.
 Motion tests pin NaN and infinity to the neutral score under warnings-as-errors.
+Lifecycle tests pin success, timeout, repeated cleanup, and delayed garbage
+collection under warnings-as-errors, including closure of both parent-owned
+subprocess pipes.

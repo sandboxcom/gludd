@@ -686,7 +686,7 @@
     },
     {
       "path": "src/general_ludd/cloud/game_e2e.py",
-      "line": 753,
+      "line": 766,
       "column": 17,
       "kind": "temp-artifact",
       "owner": "AzureGameE2E.run_full_test",
