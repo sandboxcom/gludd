@@ -4,42 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import signal
-import sys
-from importlib.machinery import ModuleSpec
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from general_ludd.infra import local_inference
 from general_ludd.infra.local_inference import (
     LocalInferenceManager,
     LocalServerConfig,
     _readiness_path,
     _validate_host,
 )
-
-
-class TestRuntimeAvailabilityProbe:
-    """Optional-runtime discovery must not acquire import-time resources."""
-
-    def test_discovers_runtime_without_importing_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Availability checks must leave ``llama_cpp`` uninitialized and unowned."""
-        monkeypatch.delitem(sys.modules, "llama_cpp", raising=False)
-        available_spec = ModuleSpec("llama_cpp", loader=None)
-
-        with patch("importlib.util.find_spec", return_value=available_spec) as find_spec:
-            assert local_inference.local_inference_runtime_available() is True
-
-        find_spec.assert_called_once_with("llama_cpp")
-        assert "llama_cpp" not in sys.modules
-
-    def test_reports_missing_runtime_without_importing_it(self) -> None:
-        """A missing optional runtime remains a normal, side-effect-free result."""
-        with patch("importlib.util.find_spec", return_value=None) as find_spec:
-            assert local_inference.local_inference_runtime_available() is False
-
-        find_spec.assert_called_once_with("llama_cpp")
-
 
 # ---------------------------------------------------------------------------
 # Fix 2: _validate_host loopback-only enforcement
@@ -48,31 +22,31 @@ class TestRuntimeAvailabilityProbe:
 class TestValidateHostLoopbackOnly:
     """_validate_host must reject non-loopback hosts by default."""
 
-    def test_rejects_all_interfaces_ipv4(self):
+    def test_rejects_all_interfaces_ipv4(self) -> None:
         with pytest.raises(ValueError, match="not a loopback"):
             _validate_host("0.0.0.0")
 
-    def test_rejects_all_interfaces_ipv6(self):
+    def test_rejects_all_interfaces_ipv6(self) -> None:
         # "::" is not a valid DNS label per _HOST_RE, so it hits the regex check
         # first. Either way it must not pass.
         with pytest.raises(ValueError):
             _validate_host("::")
 
-    def test_rejects_arbitrary_hostname(self):
+    def test_rejects_arbitrary_hostname(self) -> None:
         with pytest.raises(ValueError, match="not a loopback"):
             _validate_host("my-cluster-node")
 
-    def test_rejects_private_ip(self):
+    def test_rejects_private_ip(self) -> None:
         with pytest.raises(ValueError, match="not a loopback"):
             _validate_host("192.168.1.10")
 
-    def test_accepts_localhost(self):
+    def test_accepts_localhost(self) -> None:
         assert _validate_host("localhost") == "localhost"
 
-    def test_accepts_127_0_0_1(self):
+    def test_accepts_127_0_0_1(self) -> None:
         assert _validate_host("127.0.0.1") == "127.0.0.1"
 
-    def test_accepts_ipv6_loopback(self):
+    def test_accepts_ipv6_loopback(self) -> None:
         # "::1" contains a colon so _HOST_RE will reject it; loopback hosts that
         # don't match the DNS regex need special-casing.  Verify current behaviour:
         # either accepted (if code was updated) or raises a clean ValueError.
@@ -83,12 +57,12 @@ class TestValidateHostLoopbackOnly:
         except ValueError:
             pass  # also acceptable for now
 
-    def test_allow_nonloopback_flag_passes_through(self):
+    def test_allow_nonloopback_flag_passes_through(self) -> None:
         # With allow_nonloopback=True a non-loopback host must be accepted.
         result = _validate_host("0.0.0.0", allow_nonloopback=True)
         assert result == "0.0.0.0"
 
-    def test_allow_nonloopback_accepts_cluster_node(self):
+    def test_allow_nonloopback_accepts_cluster_node(self) -> None:
         result = _validate_host("compute01", allow_nonloopback=True)
         assert result == "compute01"
 
@@ -101,7 +75,7 @@ class TestStopServerKillpg:
     """stop_server must send SIGTERM (and SIGKILL on timeout) to the process GROUP."""
 
     @pytest.mark.asyncio
-    async def test_stop_uses_killpg_sigterm(self):
+    async def test_stop_uses_killpg_sigterm(self) -> None:
         mgr = LocalInferenceManager()
         cfg = LocalServerConfig(engine="vllm", model_name="test-model")
         server = mgr.create_server(cfg)
@@ -125,7 +99,7 @@ class TestStopServerKillpg:
         assert server.pid is None
 
     @pytest.mark.asyncio
-    async def test_stop_sends_sigkill_on_timeout(self):
+    async def test_stop_sends_sigkill_on_timeout(self) -> None:
         mgr = LocalInferenceManager()
         cfg = LocalServerConfig(engine="vllm", model_name="test-model")
         server = mgr.create_server(cfg)
@@ -146,7 +120,7 @@ class TestStopServerKillpg:
         mock_killpg.assert_any_call(8888, signal.SIGKILL)
 
     @pytest.mark.asyncio
-    async def test_stop_guards_process_lookup_error_on_sigterm(self):
+    async def test_stop_guards_process_lookup_error_on_sigterm(self) -> None:
         """If the process group is already gone, ProcessLookupError must not propagate."""
         mgr = LocalInferenceManager()
         cfg = LocalServerConfig(engine="vllm", model_name="test-model")
@@ -176,12 +150,12 @@ class TestStopServerKillpg:
 class TestReadinessProbe:
     """start_server must poll the engine endpoint and surface early process death."""
 
-    def test_readiness_paths_match_engine_contract(self):
+    def test_readiness_paths_match_engine_contract(self) -> None:
         assert _readiness_path("llamacpp") == "/v1/models"
         assert _readiness_path("vllm") == "/health"
 
     @pytest.mark.asyncio
-    async def test_process_exits_immediately_raises_and_sets_error(self):
+    async def test_process_exits_immediately_raises_and_sets_error(self) -> None:
         """A process that exits (returncode set) before /health 200 → RuntimeError."""
         mgr = LocalInferenceManager()
         # Short timeout so the test is fast; the process-exit path is checked
@@ -212,7 +186,7 @@ class TestReadinessProbe:
         assert "exited" in terminal.error
 
     @pytest.mark.asyncio
-    async def test_startup_timeout_zero_skips_probe(self):
+    async def test_startup_timeout_zero_skips_probe(self) -> None:
         """startup_timeout=0 means skip the health probe entirely."""
         mgr = LocalInferenceManager()
         cfg = LocalServerConfig(
@@ -235,7 +209,7 @@ class TestReadinessProbe:
         assert server.status == "running"
 
     @pytest.mark.asyncio
-    async def test_health_200_sets_running(self):
+    async def test_health_200_sets_running(self) -> None:
         """When /health returns 200, status transitions to 'running'."""
         mgr = LocalInferenceManager()
         cfg = LocalServerConfig(
@@ -269,7 +243,7 @@ class TestReadinessProbe:
         client_cls.assert_called_once_with(timeout=5.0, trust_env=False)
 
     @pytest.mark.asyncio
-    async def test_start_new_session_passed_to_subprocess(self):
+    async def test_start_new_session_passed_to_subprocess(self) -> None:
         """asyncio.create_subprocess_exec must be called with start_new_session=True."""
         mgr = LocalInferenceManager()
         cfg = LocalServerConfig(
@@ -296,7 +270,7 @@ class TestReadinessProbe:
         )
 
     @pytest.mark.asyncio
-    async def test_stderr_uses_file_redirection_for_server_lifetime(self):
+    async def test_stderr_uses_file_redirection_for_server_lifetime(self) -> None:
         """A long-running server must never block on an undrained stderr pipe."""
         mgr = LocalInferenceManager()
         server = mgr.create_server(

@@ -27,12 +27,21 @@ import socket
 import tempfile
 import time
 from pathlib import Path
+from typing import TypedDict
 
 import pytest
 
-from general_ludd.infra.local_inference import local_inference_runtime_available
 
-_MULTI_PIPELINE_MODELS = {
+class _PipelineModel(TypedDict):
+    """Static configuration for one role-specific local model."""
+
+    name: str
+    repo: str
+    filename: str
+    context_size: int
+
+
+_MULTI_PIPELINE_MODELS: dict[str, _PipelineModel] = {
     "planner": {
         "name": "SmolLM2-360M",
         "repo": "bartowski/SmolLM2-360M-Instruct-GGUF",
@@ -68,7 +77,7 @@ _SNAKE_DESCRIPTION = (
 
 
 def _has_llama_cpp() -> bool:
-    return local_inference_runtime_available()
+    return importlib.util.find_spec("llama_cpp") is not None
 
 
 def _has_huggingface_hub() -> bool:
@@ -140,7 +149,7 @@ if _REASON is not None:
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
-        return s.getsockname()[1]
+        return int(s.getsockname()[1])
 
 
 def _find_cached_gguf(cache_dir: str, filename: str) -> str | None:

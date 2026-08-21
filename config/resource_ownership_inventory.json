@@ -1302,7 +1302,7 @@
     },
     {
       "path": "src/general_ludd/infra/local_inference.py",
-      "line": 395,
+      "line": 384,
       "column": 13,
       "kind": "temp-artifact",
       "owner": "LocalInferenceManager._start_via_subprocess",
@@ -1313,7 +1313,7 @@
     },
     {
       "path": "src/general_ludd/infra/local_inference.py",
-      "line": 479,
+      "line": 468,
       "column": 27,
       "kind": "client",
       "owner": "LocalInferenceManager._wait_for_ready",

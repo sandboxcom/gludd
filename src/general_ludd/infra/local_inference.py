@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import importlib.util
 import inspect
 import logging
 import os
@@ -68,16 +67,6 @@ def _validate_model(model: str) -> str:
 
 # Hosts that are safe to bind to without network exposure.
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
-
-
-def local_inference_runtime_available() -> bool:
-    """Return whether ``llama_cpp`` is discoverable without importing it.
-
-    Availability checks must not initialize an optional native runtime: imports
-    may allocate process-lifetime file descriptors, threads, or accelerator
-    state that the caller never intended to own.
-    """
-    return importlib.util.find_spec("llama_cpp") is not None
 
 
 def _readiness_path(engine: str) -> str:
