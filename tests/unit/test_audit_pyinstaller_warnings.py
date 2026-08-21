@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ from scripts import audit_pyinstaller_warnings as warning_audit
 
 _ROOT = Path(__file__).resolve().parents[2]
 _MAKEFILE = _ROOT / "Makefile"
+_MOLECULE_WORKFLOW = _ROOT / ".github" / "workflows" / "molecule.yml"
 _SCRIPT = _ROOT / "scripts" / "audit_pyinstaller_warnings.py"
 _LINUX_POLICY = _ROOT / "config" / "pyinstaller-warning-allowlist-linux.json"
 _CONNECTOR_REGISTRY = _ROOT / "src" / "general_ludd" / "connectors" / "registry.py"
@@ -145,6 +147,19 @@ def test_makefile_exposes_replayable_linux_warning_audit() -> None:
     assert "\naudit-linux-pyinstaller-warnings:" in makefile
     assert '--warnings "$(PYINSTALLER_WARNING_FILE_LINUX)"' in makefile
     assert makefile.count('--architecture "$$architecture"') == 3
+
+
+def test_molecule_binary_smoke_uses_release_builder_python_minor() -> None:
+    """The hosted artifact smoke must analyze the same locked Python graph."""
+    makefile = _MAKEFILE.read_text(encoding="utf-8")
+    workflow = _MOLECULE_WORKFLOW.read_text(encoding="utf-8")
+
+    builder = re.search(r"LINUX_BINARY_IMAGE \?=.*python(?P<minor>\d+\.\d+)-", makefile)
+    hosted = re.search(r'python-version: "(?P<minor>\d+\.\d+)"', workflow)
+    assert builder is not None
+    assert hosted is not None
+    assert hosted.group("minor") == builder.group("minor")
+    assert "uv sync --frozen" in workflow
 
 
 def test_linux_policy_pins_hosted_and_container_architectures() -> None:
