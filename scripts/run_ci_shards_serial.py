@@ -33,7 +33,6 @@ DEFAULT_SHARDS = tuple(SHARDS)
 COVERAGE_SHARDS = ROOT / ".coverage-shards-local"
 COVERAGE_JSON = ROOT / "coverage.json"
 COVERAGE_AUDIT = ROOT / ".gate-logs" / "coverage-local.json"
-DEFAULT_COVERAGE_CONFIG = ROOT / "pyproject.toml"
 GREENLET_COVERAGE_CONFIG = ROOT / ".coveragerc-greenlet"
 GOVERNANCE_MODULE_UTILS = (
     "collections/ansible_collections/general_ludd/governance/plugins/module_utils"
@@ -86,9 +85,10 @@ def _pytest_command(
     basetemp: Path,
     pytest_args: list[str],
 ) -> list[str]:
-    coverage_config = (
-        GREENLET_COVERAGE_CONFIG if shard == "unit-3" else DEFAULT_COVERAGE_CONFIG
-    )
+    # Coverage.py refuses to combine statement-only and branch-aware data.
+    # Every batch therefore uses the same branch-aware concurrency config,
+    # including shards that do not themselves import greenlet-backed code.
+    coverage_config = GREENLET_COVERAGE_CONFIG
     return [
         sys.executable,
         "-m",

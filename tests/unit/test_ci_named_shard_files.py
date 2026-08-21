@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 import yaml
+from coverage import Coverage
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
@@ -172,8 +173,10 @@ def test_serial_pytest_command_uses_one_fail_closed_worker_and_isolated_basetemp
         "--cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils"
         in command
     )
-    assert f"--cov-config={module.ROOT / 'pyproject.toml'}" in command
-    assert f"--cov-config={module.ROOT / '.coveragerc-greenlet'}" in greenlet_command
+    coverage_config = module.ROOT / ".coveragerc-greenlet"
+    assert f"--cov-config={coverage_config}" in command
+    assert f"--cov-config={coverage_config}" in greenlet_command
+    assert Coverage(config_file=str(coverage_config)).get_option("run:branch") is True
     assert f"--basetemp={tmp_path / 'pytest'}" in command
 
 

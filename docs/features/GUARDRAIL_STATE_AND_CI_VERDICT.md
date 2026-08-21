@@ -27,6 +27,9 @@ positional branch argument and the public `branch=` keyword.
   installed `RUNNING <epoch> <pid>` record and a complete terminal snapshot.
   Phase results accumulate in `.gate-status.next`; only after the epoch and
   terminal marker are present is that file renamed over `.gate-status`.
+- Every named CI shard now measures branch coverage through the same
+  greenlet/thread-aware configuration. This keeps all saved SQLite coverage
+  fragments schema-compatible before the bounded aggregate combine.
 
 ## Dated upstream and practitioner evidence
 
@@ -58,6 +61,14 @@ positional branch argument and the public `branch=` keyword.
   [atomic rename](https://github.com/python/cpython/blob/main/Lib/importlib/_bootstrap_external.py).
   Gludd mirrors that publication boundary with same-directory temporary files
   and `mv`, so readers cannot observe a half-written phase line.
+- Coverage.py's 2024-06-22 release notes explicitly document that combining
+  statement-only and branch-aware data is rejected, while its long-lived
+  [parallel measurement guidance](https://coverage.readthedocs.io/en/latest/subprocess.html)
+  requires concurrency options to live in configuration so subprocesses share
+  them. Reviewed 2026-08-20, the upstream
+  [coverage.py change history](https://github.com/coveragepy/coveragepy/blob/main/CHANGES.rst)
+  confirms this is a measurement-contract mismatch, not a combine error to
+  retry or ignore.
 
 ## ZDD, rollback, security, and resources
 
