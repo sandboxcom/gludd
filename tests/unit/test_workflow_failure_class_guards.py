@@ -443,13 +443,15 @@ def test_git_show_file_to_is_scoped_to_safe_restore_outputs() -> None:
     assert "Refusing unsafe OUT" in block
 
 
-def test_test_failures_preserves_pytest_exit_status_through_tee() -> None:
+def test_test_failures_is_a_bounded_read_only_cache_reporter() -> None:
     block = _target_block("test-failures")
-    assert "RC_FILE=$" + "$" + "(mktemp /tmp/gludd-test-failures-rc." in block
-    assert "echo $$? " + chr(62) + " \"$$RC_FILE\"" in block
-    assert "EXIT=$" + "$" + "(cat \"$$RC_FILE\")" in block
-    assert chr(124) + " tee /tmp/gludd-test-output.txt" in block
-    assert "EXIT=$$?" + chr(59) not in block
+    assert "scripts/report_pytest_failures.py" in block
+    assert "$(TEST_FAILURES_CACHE)" in block
+    assert "$(TEST_FAILURES_LIMIT)" in block
+    assert "python -m pytest" not in block
+    assert "pytest tests/" not in block
+    assert "$(_XD)" not in block
+    assert "tee" not in block
 
 
 def test_search_target_allows_scoped_tmp_gludd_logs_only() -> None:

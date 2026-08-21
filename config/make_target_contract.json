@@ -676,6 +676,11 @@
       "name": "wt-prune-safe",
       "make_variables": ["ACTIVE_WORKSTREAM_REGISTRY", "WT_PRUNE_VALIDATE_ONLY"],
       "behavior": "make wt-prune-safe ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json WT_PRUNE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "test-failures",
+      "make_variables": ["TEST_FAILURES_CACHE", "TEST_FAILURES_LIMIT"],
+      "behavior": "make test-failures TEST_FAILURES_CACHE=/tmp/gludd-no-prior-failures-contract.json TEST_FAILURES_LIMIT=5"
     }
   ]
 }

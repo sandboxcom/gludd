@@ -317,7 +317,7 @@ help:
 	@echo "  ci-shards-log-context Show local shard log context (LOG=.gate-logs/ci.log PATTERN=FAILED)"
 	@echo "  task                  Run CMD with timeout (CMD=make test-unit, GLUDD_TASK_TIMEOUT=300)"
 	@echo "  test-count            Count collected tests"
-	@echo "  test-failures         Show test failures"
+	@echo "  test-failures         Show bounded cached failures (TEST_FAILURES_CACHE, TEST_FAILURES_LIMIT)"
 	@echo   provider-smoke        Run gludd smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json
 	@echo "  mac-unified-memory-smoke  Local Apple unified-memory smoke (LIVE=1 BACKEND=mps ARGS=...)"
 	@echo "  gpu-hardware-smoke        Local AMD/NVIDIA GPU smoke (LIVE=1 BACKEND=cuda|rocm ARGS=...)"
@@ -1024,12 +1024,11 @@ test-count-e2e:
 	@find tests/e2e -name 'test_*.py' | wc -l | xargs echo "e2e test files:"
 	@find tests/e2e -name 'test_*.py' -exec grep -c 'def test_' {} + | awk -F: '{sum+=$$2} END {print "e2e test functions:", sum}'
 
+TEST_FAILURES_CACHE ?= .pytest_cache/v/cache/lastfailed
+TEST_FAILURES_LIMIT ?= 50
 test-failures:
-	@RC_FILE=$$(mktemp /tmp/gludd-test-failures-rc.XXXXXX); \
-	{ $(UV) run python -m pytest tests/ $(_XD) -q 2>&1; echo $$? > "$$RC_FILE"; } | tee /tmp/gludd-test-output.txt; \
-	EXIT=$$(cat "$$RC_FILE"); rm -f "$$RC_FILE"; \
-	grep -E "^(FAILED|ERROR)" /tmp/gludd-test-output.txt || true; \
-	exit $$EXIT
+	@exec $(PYTHON) scripts/report_pytest_failures.py \
+		--cache "$(TEST_FAILURES_CACHE)" --limit "$(TEST_FAILURES_LIMIT)"
 
 check-makefile-structure:
 	@$(UV) run python -m pytest tests/unit/test_makefile_syntax.py -q -n 0

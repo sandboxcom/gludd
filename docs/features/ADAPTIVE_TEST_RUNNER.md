@@ -32,6 +32,13 @@ streaming runner persists namespaced heartbeat progress. Exit codes remain
 unchanged. Xdist diagnostic matching is line-anchored and case-insensitive,
 covering current worker identifiers without accepting arbitrary prose.
 
+`make test-failures` is an inventory operation, not a test execution alias. It
+prints an immediate progress line, reads pytest's `cache/lastfailed` JSON without
+changing it, sorts the node IDs, and emits at most the explicit limit (50 by
+default, hard-capped at 200). A missing cache is an observable empty result;
+malformed, oversized, or schema-invalid cache data fails closed. The reporter
+starts no pytest or xdist worker, so it cannot leave a test process tree behind.
+
 ## Verification
 
 `tests/unit/test_adaptive_test.py` pins signal-code classification, exact
@@ -47,3 +54,13 @@ unique paths, caller overrides, and the Darwin AF_UNIX length boundary.
   documents distributed worker shutdown and teardown effects that can resemble
   crashes, supporting strict diagnostic classification instead of substring
   matching.
+- On 2026-08-20, pytest's upstream
+  [`cacheprovider.py`](https://github.com/pytest-dev/pytest/blob/main/src/_pytest/cacheprovider.py)
+  documented `cache/lastfailed` as the source of truth and warned that `--lf`
+  defaults to the full suite when no failures are cached. Reading that cache
+  directly avoids an accidental 106,000-test execution.
+- On 2026-08-20, the long-running pytest-xdist
+  [hang report #60](https://github.com/pytest-dev/pytest-xdist/issues/60)
+  remained evidence that parallel pytest shutdown can strand execution. The
+  inventory command therefore creates no xdist workers and has no owned child
+  service requiring compensating cleanup.
