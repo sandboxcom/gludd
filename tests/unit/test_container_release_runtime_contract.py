@@ -42,6 +42,20 @@ def test_release_container_routes_server_logs_to_owned_stdio() -> None:
     assert '"--capture-output"' in entrypoint
 
 
+def test_release_container_starts_from_its_owned_writable_state_root() -> None:
+    """Relative state such as ``.gludd`` must resolve below the owned volume."""
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    workdirs = [
+        line.split(maxsplit=1)[1]
+        for line in dockerfile.splitlines()
+        if line.startswith("WORKDIR ")
+    ]
+
+    assert workdirs[-1] == "${APP_HOME}"
+    assert "VOLUME [\"/var/lib/general-ludd\"]" in dockerfile
+    assert dockerfile.index("chown -R gludd:gludd ${APP_HOME}") < dockerfile.index("USER gludd")
+
+
 def test_container_smoke_fails_fast_and_prints_server_diagnostics() -> None:
     """A dead/unhealthy container is diagnosed before owned cleanup runs."""
     script = _container_smoke_script()

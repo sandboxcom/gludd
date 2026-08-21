@@ -121,6 +121,9 @@ LABEL org.opencontainers.image.title="general-ludd-agent" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.source="https://github.com/sandboxcom/gludd"
 
+# Runtime-relative state (including the git-history ``.gludd`` directory) must
+# resolve beneath the owned persistent volume, never beneath read-only /app.
+WORKDIR ${APP_HOME}
 USER gludd
 
 EXPOSE 8000
