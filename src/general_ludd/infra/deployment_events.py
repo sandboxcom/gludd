@@ -8,7 +8,7 @@ import json
 import logging
 import os
 from collections.abc import Awaitable, Callable
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -33,12 +33,21 @@ def _emit_wakeup_progress(message: str) -> None:
     print(message, flush=True)
 
 
+@runtime_checkable
 class WakeupListener(Protocol):
-    def start(self) -> None: ...
+    """Define the lifecycle required by Terraform wakeup listeners."""
 
-    def close(self) -> None: ...
+    def start(self) -> None:
+        """Start listening for wakeup notifications."""
+        ...
 
-    async def aclose(self) -> None: ...
+    def close(self) -> None:
+        """Request synchronous listener shutdown."""
+        ...
+
+    async def aclose(self) -> None:
+        """Await complete listener shutdown."""
+        ...
 
 
 class PostgresWakeupListener:
@@ -59,6 +68,7 @@ class PostgresWakeupListener:
         reconnect_min_seconds: float = 0.1,
         reconnect_max_seconds: float = 5.0,
     ) -> None:
+        """Initialize a namespaced PostgreSQL wakeup listener."""
         self._database_url = database_url.replace("postgresql+psycopg://", "postgresql://", 1)
         self._session_factory = session_factory
         self._wake = wake
@@ -72,9 +82,11 @@ class PostgresWakeupListener:
 
     @property
     def ready(self) -> bool:
+        """Return whether the PostgreSQL subscription is ready."""
         return self._ready.is_set()
 
     def start(self) -> None:
+        """Start the listener task if it is not already running."""
         if self._task is None or self._task.done():
             self._closed = False
             self._task = asyncio.create_task(
@@ -83,14 +95,17 @@ class PostgresWakeupListener:
             )
 
     async def wait_ready(self, timeout: float = 10.0) -> None:
+        """Wait up to ``timeout`` seconds for subscription readiness."""
         await asyncio.wait_for(self._ready.wait(), timeout=timeout)
 
     def close(self) -> None:
+        """Request listener shutdown without waiting for task completion."""
         self._closed = True
         if self._task is not None:
             self._task.cancel()
 
     async def aclose(self) -> None:
+        """Cancel and await the listener task, leaving no owned task behind."""
         self.close()
         if self._task is not None:
             with contextlib.suppress(asyncio.CancelledError):
@@ -163,6 +178,7 @@ class PostgresWakeupListener:
                 self.handle_notification(notification.payload)
 
     def handle_notification(self, payload: str) -> None:
+        """Wake local work for a new notification, deduplicating audit IDs."""
         try:
             audit_event_id = int(json.loads(payload)["audit_event_id"])
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
@@ -189,6 +205,7 @@ class PostgresWakeupListener:
         )
 
     async def catch_up(self) -> int:
+        """Wake local work for durable terminal events missed while offline."""
         async with self._session_factory() as session:
             result = await session.execute(
                 select(func.count(), func.max(AuditEventModel.id)).where(
@@ -234,6 +251,7 @@ class TerraformEventBridge:
         worker_id: str = "worker",
         listener: WakeupListener | None = None,
     ) -> None:
+        """Initialize the event bridge and its optional wakeup listener."""
         self._event_bus = event_bus
         self._session_factory = session_factory
         self._wake = wake
@@ -242,6 +260,7 @@ class TerraformEventBridge:
         self._subscription_id: str | None = None
 
     def start(self) -> None:
+        """Subscribe the bridge and start its listener exactly once."""
         if self._subscription_id is None:
             self._subscription_id = self._event_bus.subscribe(
                 EventType.CUSTOM,
@@ -251,6 +270,7 @@ class TerraformEventBridge:
                 self._listener.start()
 
     def close(self) -> None:
+        """Unsubscribe and request synchronous listener shutdown."""
         if self._subscription_id is not None:
             self._event_bus.unsubscribe(self._subscription_id)
             self._subscription_id = None
@@ -258,6 +278,7 @@ class TerraformEventBridge:
             self._listener.close()
 
     async def aclose(self) -> None:
+        """Unsubscribe and await complete listener shutdown."""
         if self._subscription_id is not None:
             self._event_bus.unsubscribe(self._subscription_id)
             self._subscription_id = None

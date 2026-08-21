@@ -30,6 +30,21 @@ merging stale `deployments.json` snapshots.
   engine. This preserves zero-downtime worker replacement and avoids orphaned
   listener connections.
 
+## Runtime listener boundary and zero-downtime rollout
+
+As of 2026-08-20, `WakeupListener` is explicitly `@runtime_checkable`. Health
+checks and composition roots can therefore verify the three lifecycle members
+(`start`, `close`, and `aclose`) on an injected listener without importing or
+subclassing the PostgreSQL implementation. The check is deliberately shallow:
+it proves member presence, not signatures, database reachability, identity, or
+authorization. Connection and durable-event validation remain authoritative.
+
+The decorator changes only protocol runtime metadata. It starts no task, opens
+no connection, and writes no state, so old and new workers can overlap during a
+rolling deployment. Rollback removes the decorator and its focused regression;
+listener startup, bounded cancellation, audit catch-up, and database schemas do
+not change in either direction.
+
 ## Upstream evidence and user reports
 
 PostgreSQL documents `NOTIFY` as inter-process communication and specifies that
@@ -59,6 +74,16 @@ Two long-lived user reports directly shaped the acceptance criteria:
   with the generator nor trusts notifications as durable data; it deduplicates
   and catches up from the audit table:
   [Psycopg issue #962](https://github.com/psycopg/psycopg/issues/962).
+
+Python's maintained typing documentation specifies that only protocols marked
+`@runtime_checkable` may participate in `isinstance`, and warns that the check
+validates member presence rather than method signatures. It also records the
+Python 3.12 switch to static attribute lookup and frozen protocol members:
+[CPython typing documentation](https://github.com/python/cpython/blob/main/Doc/library/typing.rst).
+The typing community's practitioner discussion opened on 2023-03-06 documents
+the descriptor side effects that motivated static lookup. `WakeupListener` has
+methods only, keeping this boundary narrow and side-effect-free:
+[python/typing issue #1363](https://github.com/python/typing/issues/1363).
 
 ## Live acceptance
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -16,7 +17,79 @@ from general_ludd.events import CustomEvent, EventBus
 from general_ludd.infra.deployment_events import (
     PostgresWakeupListener,
     TerraformEventBridge,
+    WakeupListener,
 )
+
+
+def test_wakeup_listener_protocol_supports_bounded_runtime_validation() -> None:
+    class CompleteListener:
+        def start(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+        async def aclose(self) -> None:
+            return None
+
+    class MissingAsyncClose:
+        def start(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    assert isinstance(CompleteListener(), WakeupListener)
+    assert not isinstance(MissingAsyncClose(), WakeupListener)
+
+
+@pytest.mark.asyncio
+async def test_listener_and_bridge_cleanup_are_idempotent_at_lifecycle_edges() -> None:
+    listener = PostgresWakeupListener(
+        database_url="postgresql+psycopg://unused/gludd",
+        session_factory=Mock(),
+        wake=Mock(),
+        worker_id="worker-not-started",
+    )
+
+    listener.close()
+    await listener.aclose()
+
+    assert listener._task is None
+    assert not listener.ready
+
+    class LifecycleListener:
+        def __init__(self) -> None:
+            self.started = 0
+            self.closed = 0
+            self.async_closed = 0
+
+        def start(self) -> None:
+            self.started += 1
+
+        def close(self) -> None:
+            self.closed += 1
+
+        async def aclose(self) -> None:
+            self.async_closed += 1
+
+    lifecycle = LifecycleListener()
+    bridge = TerraformEventBridge(
+        event_bus=EventBus(),
+        session_factory=Mock(),
+        listener=lifecycle,
+    )
+    bridge.close()
+    await bridge.aclose()
+    bridge.start()
+    bridge.start()
+    bridge.close()
+    bridge.close()
+    await bridge.aclose()
+
+    assert lifecycle.started == 1
+    assert lifecycle.closed == 3
+    assert lifecycle.async_closed == 2
 
 
 @pytest.mark.asyncio
@@ -145,7 +218,9 @@ async def test_bridge_starts_and_gracefully_closes_listener() -> None:
 
 
 @pytest.mark.asyncio
-async def test_listener_start_wait_and_close_cancel_background_task() -> None:
+async def test_listener_start_wait_and_close_cancel_background_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     engine = create_async_engine("sqlite+aiosqlite://")
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     listener = PostgresWakeupListener(
@@ -159,7 +234,7 @@ async def test_listener_start_wait_and_close_cancel_background_task() -> None:
         listener._ready.set()
         await asyncio.Event().wait()
 
-    listener._listen_once = AsyncMock(side_effect=block_until_cancelled)
+    monkeypatch.setattr(listener, "_listen_once", AsyncMock(side_effect=block_until_cancelled))
     listener.start()
     first_task = listener._task
     listener.start()
@@ -173,7 +248,9 @@ async def test_listener_start_wait_and_close_cancel_background_task() -> None:
 
 
 @pytest.mark.asyncio
-async def test_listener_retries_after_disconnect_before_close() -> None:
+async def test_listener_retries_after_disconnect_before_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     engine = create_async_engine("sqlite+aiosqlite://")
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     listener = PostgresWakeupListener(
@@ -184,19 +261,22 @@ async def test_listener_retries_after_disconnect_before_close() -> None:
         reconnect_min_seconds=0,
         reconnect_max_seconds=0,
     )
-    listener._listen_once = AsyncMock(side_effect=ConnectionError("forced disconnect"))
+    listen_once = AsyncMock(side_effect=ConnectionError("forced disconnect"))
+    monkeypatch.setattr(listener, "_listen_once", listen_once)
     listener.start()
     for _ in range(100):
-        if listener._listen_once.await_count >= 2:
+        if listen_once.await_count >= 2:
             break
         await asyncio.sleep(0)
-    assert listener._listen_once.await_count >= 2
+    assert listen_once.await_count >= 2
     await listener.aclose()
     await engine.dispose()
 
 
 @pytest.mark.asyncio
-async def test_listener_uses_dedicated_autocommit_connection(monkeypatch) -> None:
+async def test_listener_uses_dedicated_autocommit_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import psycopg
 
     engine = create_async_engine("sqlite+aiosqlite://")
@@ -213,28 +293,30 @@ async def test_listener_uses_dedicated_autocommit_connection(monkeypatch) -> Non
         def __init__(self) -> None:
             self.statements: list[str] = []
 
-        async def __aenter__(self):
+        async def __aenter__(self) -> FakeConnection:
             return self
 
-        async def __aexit__(self, *_args):
+        async def __aexit__(self, *_args: object) -> None:
             return None
 
         async def execute(self, statement: str) -> None:
             self.statements.append(statement)
 
-        async def notifies(self):
+        async def notifies(self) -> AsyncIterator[SimpleNamespace]:
             yield SimpleNamespace(payload='{"audit_event_id": 9}')
 
     connection = FakeConnection()
     connect = AsyncMock(return_value=connection)
     monkeypatch.setattr(psycopg.AsyncConnection, "connect", connect)
-    listener.catch_up = AsyncMock(return_value=0)
+    monkeypatch.setattr(listener, "catch_up", AsyncMock(return_value=0))
 
     await listener._listen_once()
 
     connect.assert_awaited_once()
-    assert connect.await_args.args[0] == "postgresql://user:secret@db/gludd"
-    assert connect.await_args.kwargs["autocommit"] is True
+    await_args = connect.await_args
+    assert await_args is not None
+    assert await_args.args[0] == "postgresql://user:secret@db/gludd"
+    assert await_args.kwargs["autocommit"] is True
     assert connection.statements == ["LISTEN gludd_terraform_ready"]
     wake.assert_called_once_with()
     await engine.dispose()
