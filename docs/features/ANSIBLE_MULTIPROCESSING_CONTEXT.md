@@ -1,6 +1,6 @@
 # Ansible Multiprocessing Context
 
-Status: implemented  
+Status: implemented
 Last reviewed: 2026-08-20
 
 ## Problem
