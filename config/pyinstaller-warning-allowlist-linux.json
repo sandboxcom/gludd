@@ -7,7 +7,10 @@
     "x86_64": "2c13f6587ccf3c51c1f8474df595895b028796abd584aedbfdc30b907cc02e59"
   },
   "reviewed_transitive_warning_sha256_alternates_by_architecture": {
-    "x86_64": ["eb32d56ca9b343b784aa7c65aaa39b58f0bba8aef6df795fe51f2c52c4342335"]
+    "x86_64": [
+      "346aa57c8d7ac18ead8c3ddc7d2de4f1660dca8051ae04ba79c13831b9ab5814",
+      "eb32d56ca9b343b784aa7c65aaa39b58f0bba8aef6df795fe51f2c52c4342335"
+    ]
   },
   "baseline_pinned_project_modules": [
     {

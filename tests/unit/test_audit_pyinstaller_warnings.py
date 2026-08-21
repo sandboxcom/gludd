@@ -155,11 +155,31 @@ def test_molecule_binary_smoke_uses_release_builder_python_minor() -> None:
     workflow = _MOLECULE_WORKFLOW.read_text(encoding="utf-8")
 
     builder = re.search(r"LINUX_BINARY_IMAGE \?=.*python(?P<minor>\d+\.\d+)-", makefile)
-    hosted = re.search(r'python-version: "(?P<minor>\d+\.\d+)"', workflow)
+    hosted = re.search(
+        r'python-version: "(?P<minor>\d+\.\d+)(?:\.\d+)?"',
+        workflow,
+    )
     assert builder is not None
     assert hosted is not None
     assert hosted.group("minor") == builder.group("minor")
     assert "uv sync --frozen" in workflow
+
+
+def test_molecule_binary_smoke_pins_hosted_python_patch() -> None:
+    """Hosted PyInstaller analysis must not float to a new patch graph."""
+    workflow = _MOLECULE_WORKFLOW.read_text(encoding="utf-8")
+
+    assert 'python-version: "3.12.14"' in workflow
+
+
+def test_linux_policy_reviews_current_ghe_x86_64_graph() -> None:
+    """The exact hosted Python 3.12.14 graph must remain fail-closed and pinned."""
+    policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
+
+    assert (
+        "346aa57c8d7ac18ead8c3ddc7d2de4f1660dca8051ae04ba79c13831b9ab5814"
+        in policy["reviewed_transitive_warning_sha256_alternates_by_architecture"]["x86_64"]
+    )
 
 
 def test_linux_policy_pins_hosted_and_container_architectures() -> None:
