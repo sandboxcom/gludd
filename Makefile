@@ -1510,47 +1510,47 @@ _gate-run-lock-acquire:
 .NOTPARALLEL: gate gate-refresh
 
 gate: _gate-run-lock-acquire _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-resource-ownership check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets check-no-prompt-prone-edit-tools validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
-	@rm -f .gate-failed
-	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
+	@rm -f .gate-failed .gate-status.next .gate-status.running
+	@printf "RUNNING %s %s\n" "$$(date +%s)" "$$PPID" > .gate-status.running && mv .gate-status.running .gate-status
+	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status.next
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
 	@# emits a timestamped stdout marker as it STARTS, so a running gate (even
 	@# backgrounded) is visibly advancing through phases — never a silent black box.
 	@echo "=== GATE PHASE: lint ==="
-	@printf "lint " >> .gate-status
+	@printf "lint " >> .gate-status.next
 	@if $(UV) run ruff check src tests --output-format concise > /dev/null 2>&1; then \
-		echo "PASS 0" >> .gate-status; \
+		echo "PASS 0" >> .gate-status.next; \
 	else \
-		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-status && touch .gate-failed; \
+		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-status.next && touch .gate-failed; \
 	fi
 	@echo "=== GATE PHASE: dead-code ==="
-	@printf "dead-code " >> .gate-status
-	@$(MAKE) --no-print-directory check-dead-code-quiet > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
+	@printf "dead-code " >> .gate-status.next
+	@$(MAKE) --no-print-directory check-dead-code-quiet > /dev/null 2>&1 && echo "PASS 0" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed)
 	@echo "=== GATE PHASE: env-writes ==="
-	@printf "env-writes " >> .gate-status
-	@$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
+	@printf "env-writes " >> .gate-status.next
+	@$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed)
 	@echo "=== GATE PHASE: hook-runtime ==="
-	@printf "hook-runtime " >> .gate-status
+	@printf "hook-runtime " >> .gate-status.next
 	@mkdir -p .gate-logs
-	@$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log)
+	@$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log)
 	@echo "=== GATE PHASE: opencode-e2e ==="
-	@printf "opencode-e2e " >> .gate-status
-	@$(MAKE) --no-print-directory test-opencode-e2e > .gate-logs/opencode-e2e.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/opencode-e2e.log)
+	@printf "opencode-e2e " >> .gate-status.next
+	@$(MAKE) --no-print-directory test-opencode-e2e > .gate-logs/opencode-e2e.log 2>&1 && echo "PASS" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed && tail -30 .gate-logs/opencode-e2e.log)
 	@echo "=== GATE PHASE: verify-enforcement ==="
-	@printf "verify-enforcement " >> .gate-status
-	@$(MAKE) --no-print-directory verify-enforcement > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
+	@printf "verify-enforcement " >> .gate-status.next
+	@$(MAKE) --no-print-directory verify-enforcement > /dev/null 2>&1 && echo "PASS" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed)
 	@echo "=== GATE PHASE: coverage-gaps ==="
-	@printf "coverage-gaps " >> .gate-status
-	@$(MAKE) --no-print-directory check-coverage-gaps > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
+	@printf "coverage-gaps " >> .gate-status.next
+	@$(MAKE) --no-print-directory check-coverage-gaps > /dev/null 2>&1 && echo "PASS" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed)
 	@echo "=== GATE PHASE: typecheck ==="
-	@printf "typecheck " >> .gate-status
+	@printf "typecheck " >> .gate-status.next
 	@TC_ERRS=$$($(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
 	TC_ERRS=$${TC_ERRS:-0}; \
-	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> .gate-status; else echo "FAIL $$TC_ERRS" >> .gate-status && touch .gate-failed; fi
+	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> .gate-status.next; else echo "FAIL $$TC_ERRS" >> .gate-status.next && touch .gate-failed; fi
 	@echo "=== GATE PHASE: collect ==="
-	@printf "collect " >> .gate-status
-	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed)
+	@printf "collect " >> .gate-status.next
+	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status.next || (echo "FAIL collection-errors" >> .gate-status.next && touch .gate-failed)
 	@echo "=== GATE PHASE: test ==="
-	@printf "test " >> .gate-status
 	@# Delegate to scripts/run_gate.sh which provides:
 	@#   (1) exclusive non-blocking flock on /tmp/gludd-gate.lock — a concurrent
 	@#       gate is REJECTED immediately rather than silently corrupting shared tmp;
@@ -1558,29 +1558,32 @@ gate: _gate-run-lock-acquire _dead-code-baseline-refresh _check-windows-tracked-
 	@#       the lock were bypassed two runs cannot collide on pytest's popen-gwN dirs;
 	@#   (3) EXIT/INT/TERM trap that removes the unique basetemp and releases the lock
 	@#       on any exit, preventing orphan-holds-lock / tmp-leak after a kill.
-	@# run_gate.sh writes "PASS 0" or "FAIL non-zero-exit" to .gate-status itself
+	@# run_gate.sh writes a complete test result to the private status snapshot
 	@# and touches .gate-failed on failure, so we only need to propagate its exit.
-	@bash scripts/run_gate.sh || { EXIT=$$?; \
-		grep -q '^test .*FAIL' .gate-status 2>/dev/null || echo "FAIL non-zero-exit $$EXIT" >> .gate-status; \
+	@GATE_STATUS_FILE=.gate-status.next GATE_FAILED_FILE=.gate-failed bash scripts/run_gate.sh || { EXIT=$$?; \
+		grep -q '^test .*FAIL' .gate-status.next 2>/dev/null || echo "test FAIL non-zero-exit $$EXIT" >> .gate-status.next; \
 		touch .gate-failed; \
 		echo "[gate] test phase exited $$EXIT; completing failure attestation"; \
 	}
 	@echo "=== GATE PHASE: smoke ==="
-	@printf "smoke " >> .gate-status
-	@$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-smoke.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && echo "[gate] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-smoke.log)
-	@echo "---" >> .gate-status
-	@echo "epoch $$(date +%s)" >> .gate-status
-	@cat .gate-status
+	@printf "smoke " >> .gate-status.next
+	@$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-smoke.log 2>&1 && echo "PASS" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed && echo "[gate] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-smoke.log)
+	@echo "---" >> .gate-status.next
+	@echo "epoch $$(date +%s)" >> .gate-status.next
 	@$(UV) run python scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID" || touch .gate-failed
 	@if [ -f .gate-failed ]; then \
 		rm -f .gate-failed; \
 		echo "=== GATE: FAILED ==="; \
-		echo "=== GATE: FAILED ===" >> .gate-status; \
+		echo "=== GATE: FAILED ===" >> .gate-status.next; \
+		mv .gate-status.next .gate-status; \
+		cat .gate-status; \
 		exit 1; \
 	else \
 		echo "=== GATE: PASSED ==="; \
-		echo "=== GATE: PASSED ===" >> .gate-status; \
-		$(UV) run python scripts/gate_status_attestation.py sign .gate-status; \
+		echo "=== GATE: PASSED ===" >> .gate-status.next; \
+		$(UV) run python scripts/gate_status_attestation.py sign .gate-status.next; \
+		mv .gate-status.next .gate-status; \
+		cat .gate-status; \
 	fi
 
 # gate-lite: LOCAL validation without the full xdist test phase that OOMs on
@@ -4904,73 +4907,78 @@ _gate-refresh-body:
 	@if [ ! -f .gate-status ]; then \
 		echo "ERROR: .gate-status missing — no prior gate to refresh. Run 'make gate' first."; exit 1; \
 	fi; \
-	rm -f .gate-failed; \
+	rm -f .gate-failed .gate-status.next .gate-status.running; \
 	OLD_TEST=$$(grep -m1 "^test " .gate-status 2>/dev/null || echo ""); \
 	OLD_SMOKE=$$(grep -m1 "^smoke " .gate-status 2>/dev/null || echo ""); \
-	echo "=== GATE-REFRESH $$(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status; \
+	printf "RUNNING %s %s\n" "$$(date +%s)" "$$PPID" > .gate-status.running; \
+	mv .gate-status.running .gate-status; \
+	STATUS_WORK=.gate-status.next; \
+	echo "=== GATE-REFRESH $$(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > "$$STATUS_WORK"; \
 	echo "=== GATE PHASE: lint ==="; \
-	printf "lint " >> .gate-status; \
+	printf "lint " >> "$$STATUS_WORK"; \
 	if $(UV) run ruff check src tests --output-format concise > /dev/null 2>&1; then \
-		echo "PASS 0" >> .gate-status; \
+		echo "PASS 0" >> "$$STATUS_WORK"; \
 	else \
-		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-status && touch .gate-failed; \
+		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> "$$STATUS_WORK" && touch .gate-failed; \
 	fi; \
 	mkdir -p .gate-logs; \
 	echo "=== GATE PHASE: verify-feature-claims ==="; \
-	printf "verify-feature-claims " >> .gate-status; \
-	$(MAKE) --no-print-directory verify-feature-claims > .gate-logs/verify-feature-claims.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/verify-feature-claims.log); \
+	printf "verify-feature-claims " >> "$$STATUS_WORK"; \
+	$(MAKE) --no-print-directory verify-feature-claims > .gate-logs/verify-feature-claims.log 2>&1 && echo "PASS" >> "$$STATUS_WORK" || (echo "FAIL" >> "$$STATUS_WORK" && touch .gate-failed && tail -30 .gate-logs/verify-feature-claims.log); \
 	echo "=== GATE PHASE: hot-reload ==="; \
-	printf "hot-reload " >> .gate-status; \
-	$(MAKE) --no-print-directory hot-reload-plugins > .gate-logs/hot-reload.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/hot-reload.log); \
+	printf "hot-reload " >> "$$STATUS_WORK"; \
+	$(MAKE) --no-print-directory hot-reload-plugins > .gate-logs/hot-reload.log 2>&1 && echo "PASS" >> "$$STATUS_WORK" || (echo "FAIL" >> "$$STATUS_WORK" && touch .gate-failed && tail -30 .gate-logs/hot-reload.log); \
 	echo "=== GATE PHASE: verify-hot-reload ==="; \
-	printf "verify-hot-reload " >> .gate-status; \
-	$(MAKE) --no-print-directory check-hot-reload-fresh > .gate-logs/verify-hot-reload.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/verify-hot-reload.log); \
+	printf "verify-hot-reload " >> "$$STATUS_WORK"; \
+	$(MAKE) --no-print-directory check-hot-reload-fresh > .gate-logs/verify-hot-reload.log 2>&1 && echo "PASS" >> "$$STATUS_WORK" || (echo "FAIL" >> "$$STATUS_WORK" && touch .gate-failed && tail -30 .gate-logs/verify-hot-reload.log); \
 	echo "=== GATE PHASE: restart-needed ==="; \
-	printf "restart-needed " >> .gate-status; \
-	$(MAKE) --no-print-directory check-plugin-restart-needed > .gate-logs/restart-needed.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/restart-needed.log); \
+	printf "restart-needed " >> "$$STATUS_WORK"; \
+	$(MAKE) --no-print-directory check-plugin-restart-needed > .gate-logs/restart-needed.log 2>&1 && echo "PASS" >> "$$STATUS_WORK" || (echo "FAIL" >> "$$STATUS_WORK" && touch .gate-failed && tail -30 .gate-logs/restart-needed.log); \
 	echo "=== GATE PHASE: check-status-table ==="; \
-	printf "check-status-table " >> .gate-status; \
-	$(MAKE) --no-print-directory check-status-table > .gate-logs/check-status-table.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/check-status-table.log); \
+	printf "check-status-table " >> "$$STATUS_WORK"; \
+	$(MAKE) --no-print-directory check-status-table > .gate-logs/check-status-table.log 2>&1 && echo "PASS" >> "$$STATUS_WORK" || (echo "FAIL" >> "$$STATUS_WORK" && touch .gate-failed && tail -30 .gate-logs/check-status-table.log); \
 	echo "=== GATE PHASE: env-writes ==="; \
-	printf "env-writes " >> .gate-status; \
-	$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed); \
+	printf "env-writes " >> "$$STATUS_WORK"; \
+	$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> "$$STATUS_WORK" || (echo "FAIL" >> "$$STATUS_WORK" && touch .gate-failed); \
 	echo "=== GATE PHASE: hook-runtime ==="; \
-	printf "hook-runtime " >> .gate-status; \
+	printf "hook-runtime " >> "$$STATUS_WORK"; \
 	mkdir -p .gate-logs; \
-	$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log); \
+	$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> "$$STATUS_WORK" || (echo "FAIL" >> "$$STATUS_WORK" && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log); \
 	echo "=== GATE PHASE: typecheck ==="; \
-	printf "typecheck " >> .gate-status; \
+	printf "typecheck " >> "$$STATUS_WORK"; \
 	TC_ERRS=$$($(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
 	TC_ERRS=$${TC_ERRS:-0}; \
-	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> .gate-status; else echo "FAIL $$TC_ERRS" >> .gate-status && touch .gate-failed; fi; \
+	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> "$$STATUS_WORK"; else echo "FAIL $$TC_ERRS" >> "$$STATUS_WORK" && touch .gate-failed; fi; \
 	echo "=== GATE PHASE: collect ==="; \
-	printf "collect " >> .gate-status; \
-	$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed); \
-	if [ -n "$$OLD_TEST" ] && echo "$$OLD_TEST" | grep -q "PASS"; then echo "$$OLD_TEST" >> .gate-status; else \
+	printf "collect " >> "$$STATUS_WORK"; \
+	$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> "$$STATUS_WORK" || (echo "FAIL collection-errors" >> "$$STATUS_WORK" && touch .gate-failed); \
+	if [ -n "$$OLD_TEST" ] && echo "$$OLD_TEST" | grep -q "PASS"; then echo "$$OLD_TEST" >> "$$STATUS_WORK"; else \
 		echo "=== GATE-REFRESH PHASE: test ==="; \
-		printf "test " >> .gate-status; \
 		if $(UV) run python scripts/stream_command.py --log .gate-logs/gate-refresh-test.log -- $(UV) run python -m pytest tests/unit/ -vv --no-header -n 2 --maxprocesses=2; then \
-			echo "PASS 0" >> .gate-status; \
+			echo "test PASS 0" >> "$$STATUS_WORK"; \
 		else \
-			echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed && echo "[gate-refresh] test FAILED — tail:" && tail -20 .gate-logs/gate-refresh-test.log; \
+			echo "test FAIL non-zero-exit" >> "$$STATUS_WORK" && touch .gate-failed && echo "[gate-refresh] test FAILED — tail:" && tail -20 .gate-logs/gate-refresh-test.log; \
 		fi; \
 	fi; \
-	if [ -n "$$OLD_SMOKE" ] && echo "$$OLD_SMOKE" | grep -q "PASS"; then echo "$$OLD_SMOKE" >> .gate-status; else \
+	if [ -n "$$OLD_SMOKE" ] && echo "$$OLD_SMOKE" | grep -q "PASS"; then echo "$$OLD_SMOKE" >> "$$STATUS_WORK"; else \
 		echo "=== GATE-REFRESH PHASE: smoke ==="; \
-		printf "smoke " >> .gate-status; \
-		$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-refresh-smoke.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && echo "[gate-refresh] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-refresh-smoke.log); \
+		printf "smoke " >> "$$STATUS_WORK"; \
+		$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-refresh-smoke.log 2>&1 && echo "PASS" >> "$$STATUS_WORK" || (echo "FAIL" >> "$$STATUS_WORK" && touch .gate-failed && echo "[gate-refresh] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-refresh-smoke.log); \
 	fi; \
-	echo "---" >> .gate-status; \
-	echo "epoch $$(date +%s)" >> .gate-status; \
-	cat .gate-status; \
+	echo "---" >> "$$STATUS_WORK"; \
+	echo "epoch $$(date +%s)" >> "$$STATUS_WORK"; \
 	if [ -f .gate-failed ]; then \
 		rm -f .gate-failed; \
 		echo "=== GATE-REFRESH: FAILED (fast phases) ==="; \
-		echo "=== GATE: FAILED ===" >> .gate-status; \
+		echo "=== GATE: FAILED ===" >> "$$STATUS_WORK"; \
+		mv "$$STATUS_WORK" .gate-status; \
+		cat .gate-status; \
 		exit 1; \
 	else \
 		echo "=== GATE-REFRESH: PASSED ==="; \
-		echo "=== GATE: PASSED ===" >> .gate-status; \
+		echo "=== GATE: PASSED ===" >> "$$STATUS_WORK"; \
+		mv "$$STATUS_WORK" .gate-status; \
+		cat .gate-status; \
 	fi
 
 _gate-fresh-check: check-gate-fresh

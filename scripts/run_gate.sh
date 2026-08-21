@@ -55,8 +55,8 @@ mkdir -p "${RESOURCE_DIR}"
 LOCK_FILE="${GATE_LOCK_FILE:-${RESOURCE_DIR}/gate.lock}"
 BASETEMP_PREFIX="${GATE_BASETEMP_PREFIX:-${RESOURCE_DIR}/gate}"
 mkdir -p "$(dirname -- "${LOCK_FILE}")" "$(dirname -- "${BASETEMP_PREFIX}")"
-STATUS_FILE=.gate-status
-FAILED_FILE=.gate-failed
+STATUS_FILE="${GATE_STATUS_FILE:-.gate-status}"
+FAILED_FILE="${GATE_FAILED_FILE:-.gate-failed}"
 
 # Unique per-run basetemp — created AFTER the lock is held (see below) so a
 # rejected second invocation never creates (nor has to clean up) a basetemp dir.
@@ -216,9 +216,9 @@ fi
 EXIT=$(cat "${RC_FILE}" 2>/dev/null || echo 1)
 
 if [ "${EXIT}" -eq 0 ]; then
-    echo "PASS 0" >> "${STATUS_FILE}"
+    echo "test PASS 0" >> "${STATUS_FILE}"
 else
-    echo "FAIL non-zero-exit" >> "${STATUS_FILE}"
+    echo "test FAIL non-zero-exit" >> "${STATUS_FILE}"
     touch "${FAILED_FILE}"
 fi
 

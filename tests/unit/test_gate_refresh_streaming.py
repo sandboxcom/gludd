@@ -24,8 +24,9 @@ def test_gate_refresh_streams_verbose_nodeids_to_a_durable_log() -> None:
     assert "--log .gate-logs/gate-refresh-test.log" in body
     assert "pytest tests/unit/ -vv --no-header" in body
     assert "> /tmp/gludd-gate-refresh-test.log" not in body
-    assert 'echo "PASS 0" >> .gate-status' in body
-    assert 'echo "FAIL non-zero-exit" >> .gate-status' in body
+    assert 'echo "test PASS 0" >> "$$STATUS_WORK"' in body
+    assert 'echo "test FAIL non-zero-exit" >> "$$STATUS_WORK"' in body
+    assert 'mv "$$STATUS_WORK" .gate-status' in body
 
 
 def test_stream_command_forwards_a_nodeid_before_the_child_exits(

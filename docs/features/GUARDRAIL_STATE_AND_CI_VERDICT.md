@@ -23,6 +23,10 @@ positional branch argument and the public `branch=` keyword.
   evidence block.
 - CI selection remains exact-SHA and fail-closed. Callers may pass the branch
   positionally or with `branch=`, but ambiguous dual arguments are rejected.
+- Gate and gate-refresh publication has two stable public states: an atomically
+  installed `RUNNING <epoch> <pid>` record and a complete terminal snapshot.
+  Phase results accumulate in `.gate-status.next`; only after the epoch and
+  terminal marker are present is that file renamed over `.gate-status`.
 
 ## Dated upstream and practitioner evidence
 
@@ -43,6 +47,17 @@ positional branch argument and the public `branch=` keyword.
   The CI verdict therefore treats missing, skipped, cancelled, or mismatched
   runs as non-green and supplies the detected branch to the documented
   [`gh run list --branch` filter](https://cli.github.com/manual/gh_run_list).
+- On 2024-01-08, pytest practitioners documented that concurrent invocations
+  can collide even when each uses `tmp_path` in
+  [pytest-dev/pytest#11790](https://github.com/pytest-dev/pytest/issues/11790).
+  The gate-status assertions therefore use per-test fixtures rather than the
+  repository's live, concurrently updated operational record.
+- Reviewed 2026-08-20, CPython's long-lived import cache writer documents and
+  implements the mature pattern of writing a temporary file and then using
+  `os.replace()` for an
+  [atomic rename](https://github.com/python/cpython/blob/main/Lib/importlib/_bootstrap_external.py).
+  Gludd mirrors that publication boundary with same-directory temporary files
+  and `mv`, so readers cannot observe a half-written phase line.
 
 ## ZDD, rollback, security, and resources
 
@@ -60,5 +75,9 @@ weakening either would reopen a security boundary.
 No background worker, network poller, or unbounded cache is added. Context
 fixtures are worktree-namespaced, gate parsing is linear in two small text
 files, and CI querying remains one bounded `gh` subprocess with a ten-second
-timeout. Focused verification uses warnings-as-errors tests, plugin runtime
-checks, scoped typing/linting, and per-file branch coverage.
+timeout. Gate publication adds at most two small same-directory files and one
+rename; interruption leaves the public state at `RUNNING`, never falsely green.
+Rollback is a single commit revert and needs no data migration because the
+terminal record format is unchanged. Focused verification uses
+warnings-as-errors tests, plugin runtime checks, scoped typing/linting, and
+per-file branch coverage.
