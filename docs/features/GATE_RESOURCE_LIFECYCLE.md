@@ -146,6 +146,15 @@ session-scoped `MonkeyPatch.context()`. Restoration therefore runs even when
 download, server startup, assertions, or teardown fail. The
 `check-test-env-writes` guard rejects new bare test-environment assignments.
 
+On 2026-08-21, the same replay exposed an older classification error:
+`.ansible/.lock` was listed in `.gitignore` but remained in Git's index. Ansible
+correctly removed its ephemeral lock at shutdown, leaving every otherwise-green
+run with a tracked deletion. The lock is now untracked, and the root-hygiene
+regression mechanically requires both `.ansible/.lock` and `.gate-status` to be
+ignored operational state rather than committed source. This changes no Ansible
+controller or managed-host runtime; each invocation may create and remove its
+own lock without a test harness restoring it afterward.
+
 On 2026-08-21, the definitive gate exposed a second status-ownership boundary:
 the `run_gate.sh` unit harness inherited the live parent gate's
 `GATE_STATUS_FILE` and `GATE_FAILED_FILE`. Its passing and failing stub gates
