@@ -263,3 +263,38 @@ def test_multi_model_pipeline_tracks_generic_coder_and_owned_cleanup() -> None:
     assert "{{ ansible_playbook_python }}" in runtime_playbooks
     assert "ignore_errors: true" not in runtime_playbooks
     assert "failed_when: false" in runtime_playbooks
+
+
+def test_binary_smoke_owns_ephemeral_daemon_through_verify() -> None:
+    """Pin the packaged daemon to one bounded container-owned lifecycle."""
+    scenario_root = PLAYBOOKS / "binary_smoke_linux"
+    molecule = yaml.safe_load((scenario_root / "molecule.yml").read_text())
+    sequence = molecule["scenario"]["test_sequence"]
+    assert sequence[:2] == ["dependency", "cleanup"]
+    assert sequence[-2:] == ["cleanup", "destroy"]
+
+    converge = (scenario_root / "default" / "converge.yml").read_text()
+    assert "daemon_port: 8000" not in converge
+    assert "nohup" not in converge
+    assert "retries:" not in converge
+    assert "delay:" not in converge
+    assert "sleep " not in converge
+    assert "ansible.builtin.shell" not in converge
+    assert "candidate.bind(('127.0.0.1', 0))" in converge
+    assert "--pid-file" in converge
+    assert "async: 910" in converge
+    assert "ansible.builtin.wait_for" in converge
+    assert "gludd-daemon-endpoint.json" in converge
+
+    verify = (scenario_root / "default" / "verify.yml").read_text()
+    assert "force_handlers: true" in verify
+    assert "gludd-daemon-endpoint.json" in verify
+    assert "stop_daemon.yml" in verify
+    assert "http://127.0.0.1:8000" not in verify
+
+    stop = (scenario_root / "default" / "stop_daemon.yml").read_text()
+    assert "--bind" in stop
+    assert "_binary_daemon_owned" in stop
+    assert "ansible.builtin.wait_for" in stop
+    assert "ansible.builtin.async_status" in stop
+    assert "failed_when: false" not in stop

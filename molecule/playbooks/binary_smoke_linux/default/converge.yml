@@ -33,10 +33,10 @@
   vars:
     gludd_bin: /usr/local/bin/gludd
     daemon_host: "127.0.0.1"
-    daemon_port: 8000
-    daemon_url: "http://127.0.0.1:8000"
-    daemon_log: /tmp/gludd-daemon.log
     daemon_psk: "binary-smoke-linux-test-psk"
+    daemon_pidfile: /tmp/gludd-binary-smoke-daemon.json
+    daemon_async_file: /tmp/gludd-binary-smoke-async-id
+    daemon_endpoint_file: /tmp/gludd-daemon-endpoint.json
     host_binary: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/dist/linux/gludd"
   tasks:
     - name: Install minimal runtime deps (ca-certificates, curl)
@@ -111,37 +111,90 @@
         dest: /tmp/gludd-bad-flag.txt
         mode: "0644"
 
-    # --- (7) daemon start + health poll ------------------------------------
-    - name: Start the gludd daemon in the background
-      ansible.builtin.shell:
-        cmd: "nohup {{ gludd_bin }} daemon --host {{ daemon_host }} --port {{ daemon_port }} > {{ daemon_log }} 2>&1 &"
+    # --- (7) bounded daemon lease + exact readiness ------------------------
+    - name: Allocate a private port in the container network namespace
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_facts.python.executable }}"
+          - -c
+          - >-
+            import socket;
+            candidate = socket.socket();
+            candidate.bind(('127.0.0.1', 0));
+            print(candidate.getsockname()[1]);
+            candidate.close()
+      register: allocated_daemon_port
+      changed_when: false
+
+    - name: Derive the private daemon endpoint
+      ansible.builtin.set_fact:
+        daemon_port: "{{ allocated_daemon_port.stdout | int }}"
+        daemon_url: "http://127.0.0.1:{{ allocated_daemon_port.stdout | int }}"
+
+    - name: Start the packaged daemon with a bounded lease
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/timeout
+          - --signal=TERM
+          - --kill-after=10s
+          - 900s
+          - "{{ gludd_bin }}"
+          - daemon
+          - --host
+          - "{{ daemon_host }}"
+          - --port
+          - "{{ daemon_port | string }}"
+          - --pid-file
+          - "{{ daemon_pidfile }}"
       environment:
         GLUDD_AUTH_PSK: "{{ daemon_psk }}"
       changed_when: true
+      async: 910
+      poll: 0
+      register: binary_daemon_job
 
-    - name: Poll /healthz up to 30s for HTTP 200
-      ansible.builtin.shell: |
-        code=000
-        for i in $(seq 1 30); do
-          code=$(curl -s -o /tmp/health-body.txt -w '%{http_code}' {{ daemon_url }}/healthz 2>/dev/null || echo 000)
-          if [ "$code" = "200" ]; then echo "HEALTHY"; exit 0; fi
-          sleep 1
-        done
-        echo "TIMEOUT last_code=$code"
-        echo "--- daemon log tail ---"
-        tail -n 40 {{ daemon_log }} 2>/dev/null || true
-        exit 1
-      args:
-        executable: /bin/bash
+    - name: Persist the exact async job identifier
+      ansible.builtin.copy:
+        content: "{{ binary_daemon_job.ansible_job_id }}\n"
+        dest: "{{ daemon_async_file }}"
+        mode: "0600"
+
+    - name: Wait for the daemon to publish its PID ownership record
+      ansible.builtin.wait_for:
+        path: "{{ daemon_pidfile }}"
+        state: present
+        timeout: 30
+
+    - name: Wait for the private loopback socket to accept connections
+      ansible.builtin.wait_for:
+        host: "{{ daemon_host }}"
+        port: "{{ daemon_port | int }}"
+        state: started
+        timeout: 30
+
+    - name: Require one exact /healthz response
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/healthz"
+        method: GET
+        status_code: 200
+        return_content: true
       register: health_wait
       changed_when: false
-      failed_when: "'HEALTHY' not in health_wait.stdout"
+      failed_when: >-
+        health_wait.status != 200
+        or health_wait.json.status | default('') != 'ok'
 
-    - name: Persist health result
+    - name: Persist endpoint and process ownership for verify
       ansible.builtin.copy:
-        content: "{{ health_wait.stdout }}"
-        dest: /tmp/gludd-health.txt
-        mode: "0644"
+        content: >-
+          {{ {
+            'async_job_id': binary_daemon_job.ansible_job_id,
+            'base_url': daemon_url,
+            'pid_file': daemon_pidfile,
+            'port': daemon_port | int
+          } | to_nice_json }}
+        dest: "{{ daemon_endpoint_file }}"
+        mode: "0600"
 
     # --- (8) job submission via the daemon API -----------------------------
     # There is no /api/playbook/run endpoint; jobs are submitted as todos and
@@ -162,9 +215,6 @@
         status_code: [200, 201]
         return_content: true
       register: job_submit
-      retries: 5
-      delay: 2
-      until: job_submit.status in [200, 201]
 
     - name: Persist job submission result
       ansible.builtin.copy:
@@ -176,14 +226,18 @@
     # A second daemon binding the SAME port must fail (non-zero) and do so
     # gracefully — no uncaught Python traceback.
     - name: Run a second daemon on the occupied port (expect graceful failure)
-      ansible.builtin.shell: |
-        set +e
-        {{ gludd_bin }} daemon --host {{ daemon_host }} --port {{ daemon_port }} > /tmp/gludd-port-clash.out 2>&1
-        clash_rc=$?
-        cat /tmp/gludd-port-clash.out
-        echo "EXIT_RC=$clash_rc"
-      args:
-        executable: /bin/bash
+      ansible.builtin.command:
+        argv:
+          - "{{ gludd_bin }}"
+          - daemon
+          - --host
+          - "{{ daemon_host }}"
+          - --port
+          - "{{ daemon_port | string }}"
+          - --pid-file
+          - /tmp/gludd-binary-smoke-clash.json
+      environment:
+        GLUDD_AUTH_PSK: "{{ daemon_psk }}"
       register: port_clash
       changed_when: false
       failed_when: false
@@ -191,7 +245,8 @@
     - name: Persist port-clash result
       ansible.builtin.copy:
         content: |
-          {{ port_clash.stdout }}
+          EXIT_RC={{ port_clash.rc }}
+          stdout={{ port_clash.stdout }}
           stderr={{ port_clash.stderr }}
         dest: /tmp/gludd-port-clash.txt
         mode: "0644"

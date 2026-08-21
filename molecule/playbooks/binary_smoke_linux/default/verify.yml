@@ -6,9 +6,51 @@
   hosts: all
   gather_facts: false
   become: false
+  force_handlers: true
   vars:
-    daemon_url: "http://127.0.0.1:8000"
+    gludd_bin: /usr/local/bin/gludd
+    daemon_host: "127.0.0.1"
+    daemon_psk: "binary-smoke-linux-test-psk"
+    daemon_pidfile: /tmp/gludd-binary-smoke-daemon.json
+    daemon_async_file: /tmp/gludd-binary-smoke-async-id
+    daemon_endpoint_file: /tmp/gludd-daemon-endpoint.json
+  handlers:
+    - name: Stop packaged binary daemon
+      ansible.builtin.include_tasks: >-
+        {{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/playbooks/binary_smoke_linux/default/stop_daemon.yml
   tasks:
+    - name: Load the packaged daemon endpoint manifest
+      ansible.builtin.slurp:
+        src: "{{ daemon_endpoint_file }}"
+      register: _binary_daemon_manifest_raw
+
+    - name: Decode the packaged daemon endpoint contract
+      ansible.builtin.set_fact:
+        binary_daemon_manifest: >-
+          {{ _binary_daemon_manifest_raw.content | b64decode | from_json }}
+
+    - name: Validate and expose the discovered endpoint
+      ansible.builtin.assert:
+        that:
+          - binary_daemon_manifest.base_url is match('^http://127[.]0[.]0[.]1:[1-9][0-9]*$')
+          - binary_daemon_manifest.port | int > 0
+          - binary_daemon_manifest.port | int < 65536
+          - binary_daemon_manifest.pid_file == daemon_pidfile
+          - binary_daemon_manifest.async_job_id | length > 0
+        fail_msg: "packaged daemon endpoint manifest is malformed"
+
+    - name: Set the verified endpoint for all smoke assertions
+      ansible.builtin.set_fact:
+        daemon_url: "{{ binary_daemon_manifest.base_url }}"
+        daemon_port: "{{ binary_daemon_manifest.port | int }}"
+
+    - name: Arm guaranteed packaged daemon teardown
+      ansible.builtin.command:
+        argv:
+          - /bin/true
+      changed_when: true
+      notify: Stop packaged binary daemon
+
     # ===================================================================
     # CLI outputs: version / help / project paths
     # ===================================================================
@@ -146,23 +188,20 @@
         success_msg: "port clash handled gracefully (non-zero or address-in-use, no traceback)"
 
     # ===================================================================
-    # Daemon log: no tracebacks surfaced during the whole run
+    # Daemon async record: process is live and no traceback surfaced
     # ===================================================================
-    - name: Load the daemon log
-      ansible.builtin.slurp:
-        src: /tmp/gludd-daemon.log
-      register: _daemon_log_raw
-      failed_when: false
+    - name: Inspect the still-running daemon async record
+      ansible.builtin.async_status:
+        jid: "{{ binary_daemon_manifest.async_job_id }}"
+        mode: status
+      register: binary_daemon_status
+      changed_when: false
+      failed_when: binary_daemon_status.finished | bool
 
-    - name: Parse the daemon log
-      ansible.builtin.set_fact:
-        daemon_log_text: "{{ _daemon_log_raw.content | b64decode }}"
-      when: _daemon_log_raw.content is defined
-
-    - name: Assert the daemon log shows no uncaught tracebacks
+    - name: Assert the daemon process has emitted no uncaught traceback
       ansible.builtin.assert:
         that:
-          - "'Traceback (most recent call last)' not in (daemon_log_text | default(''))"
-        fail_msg: "daemon log contained a traceback: {{ daemon_log_text | default('<no log>') }}"
-        success_msg: "daemon log is traceback-free"
-      when: _daemon_log_raw.content is defined
+          - "'Traceback (most recent call last)' not in (binary_daemon_status.stdout | default(''))"
+          - "'Traceback (most recent call last)' not in (binary_daemon_status.stderr | default(''))"
+        fail_msg: "packaged daemon async output contained a traceback"
+        success_msg: "packaged daemon async output is traceback-free"

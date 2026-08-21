@@ -1,0 +1,106 @@
+---
+- name: Inspect the packaged daemon PID record
+  ansible.builtin.stat:
+    path: "{{ daemon_pidfile }}"
+  register: _binary_daemon_pidfile
+
+- name: Load the packaged daemon PID record
+  ansible.builtin.slurp:
+    src: "{{ daemon_pidfile }}"
+  register: _binary_daemon_pid_raw
+  when: _binary_daemon_pidfile.stat.exists
+
+- name: Decode the packaged daemon ownership record
+  ansible.builtin.set_fact:
+    _binary_daemon_pid_record: >-
+      {{ _binary_daemon_pid_raw.content | b64decode | from_json }}
+  when: _binary_daemon_pidfile.stat.exists
+
+- name: Validate the packaged daemon ownership record
+  ansible.builtin.assert:
+    that:
+      - _binary_daemon_pid_record is mapping
+      - _binary_daemon_pid_record.pid | string is match('^[1-9][0-9]*$')
+      - _binary_daemon_pid_record.daemon_url == daemon_url
+    fail_msg: "binary smoke daemon PID record is malformed or belongs to another endpoint"
+  when: _binary_daemon_pidfile.stat.exists
+
+- name: Inspect only the PID named by the packaged daemon
+  ansible.builtin.command:
+    argv:
+      - /bin/ps
+      - -p
+      - "{{ _binary_daemon_pid_record.pid | string }}"
+      - -o
+      - command=
+  register: _binary_daemon_ps
+  changed_when: false
+  failed_when: _binary_daemon_ps.rc not in [0, 1]
+  when: _binary_daemon_pidfile.stat.exists
+
+- name: Establish exact packaged daemon ownership
+  ansible.builtin.set_fact:
+    _binary_daemon_owned: >-
+      {{
+        _binary_daemon_ps.rc == 0
+        and gludd_bin in _binary_daemon_ps.stdout
+        and '__gludd_bundled_gunicorn__' in _binary_daemon_ps.stdout
+        and '--bind' in _binary_daemon_ps.stdout
+        and (daemon_host ~ ':' ~ (daemon_port | string)) in _binary_daemon_ps.stdout
+      }}
+  when: _binary_daemon_pidfile.stat.exists
+
+- name: Refuse to signal a reused or foreign PID
+  ansible.builtin.assert:
+    that:
+      - _binary_daemon_ps.rc != 0 or _binary_daemon_owned | bool
+    fail_msg: "binary smoke daemon PID was reused by a foreign process"
+  when: _binary_daemon_pidfile.stat.exists
+
+- name: Stop only the proven packaged daemon
+  ansible.builtin.command:
+    argv:
+      - /bin/kill
+      - -TERM
+      - "{{ _binary_daemon_pid_record.pid | string }}"
+  changed_when: true
+  when:
+    - _binary_daemon_pidfile.stat.exists
+    - _binary_daemon_owned | bool
+
+- name: Prove the packaged daemon endpoint is closed
+  ansible.builtin.wait_for:
+    host: "{{ daemon_host }}"
+    port: "{{ daemon_port | int }}"
+    state: stopped
+    timeout: 15
+  when:
+    - _binary_daemon_pidfile.stat.exists
+    - _binary_daemon_owned | bool
+
+- name: Prove the daemon wrapper released its PID record
+  ansible.builtin.wait_for:
+    path: "{{ daemon_pidfile }}"
+    state: absent
+    timeout: 15
+  when:
+    - _binary_daemon_pidfile.stat.exists
+    - _binary_daemon_owned | bool
+
+- name: Remove the completed Ansible async record
+  ansible.builtin.async_status:
+    jid: "{{ binary_daemon_manifest.async_job_id }}"
+    mode: cleanup
+  changed_when: false
+  when: binary_daemon_manifest.async_job_id | default('') | length > 0
+
+- name: Remove only binary-smoke lifecycle files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ daemon_async_file }}"
+    - "{{ daemon_endpoint_file }}"
+    - /tmp/gludd-binary-smoke-clash.json
+  loop_control:
+    label: "{{ item }}"
