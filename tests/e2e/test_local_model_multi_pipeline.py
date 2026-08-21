@@ -30,6 +30,8 @@ from pathlib import Path
 
 import pytest
 
+from general_ludd.infra.local_inference import local_inference_runtime_available
+
 _MULTI_PIPELINE_MODELS = {
     "planner": {
         "name": "SmolLM2-360M",
@@ -66,12 +68,7 @@ _SNAKE_DESCRIPTION = (
 
 
 def _has_llama_cpp() -> bool:
-    try:
-        import llama_cpp  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
+    return local_inference_runtime_available()
 
 
 def _has_huggingface_hub() -> bool:

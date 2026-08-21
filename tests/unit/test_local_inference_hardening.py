@@ -4,16 +4,42 @@ from __future__ import annotations
 
 import asyncio
 import signal
+import sys
+from importlib.machinery import ModuleSpec
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from general_ludd.infra import local_inference
 from general_ludd.infra.local_inference import (
     LocalInferenceManager,
     LocalServerConfig,
     _readiness_path,
     _validate_host,
 )
+
+
+class TestRuntimeAvailabilityProbe:
+    """Optional-runtime discovery must not acquire import-time resources."""
+
+    def test_discovers_runtime_without_importing_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Availability checks must leave ``llama_cpp`` uninitialized and unowned."""
+        monkeypatch.delitem(sys.modules, "llama_cpp", raising=False)
+        available_spec = ModuleSpec("llama_cpp", loader=None)
+
+        with patch("importlib.util.find_spec", return_value=available_spec) as find_spec:
+            assert local_inference.local_inference_runtime_available() is True
+
+        find_spec.assert_called_once_with("llama_cpp")
+        assert "llama_cpp" not in sys.modules
+
+    def test_reports_missing_runtime_without_importing_it(self) -> None:
+        """A missing optional runtime remains a normal, side-effect-free result."""
+        with patch("importlib.util.find_spec", return_value=None) as find_spec:
+            assert local_inference.local_inference_runtime_available() is False
+
+        find_spec.assert_called_once_with("llama_cpp")
+
 
 # ---------------------------------------------------------------------------
 # Fix 2: _validate_host loopback-only enforcement

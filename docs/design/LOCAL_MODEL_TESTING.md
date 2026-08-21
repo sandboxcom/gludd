@@ -1,6 +1,6 @@
 # Local Model Testing & E2E Validation
 
-**Status:** beta4 validated (2026-08-20)
+**Status:** beta4 validated (2026-08-21)
 **Source:** `tests/e2e/test_ci_multi_model_pipeline.py`, `tests/e2e/test_model_matrix_pipeline.py`,
 `tests/e2e/_local_model_configs.py`, `src/general_ludd/local_model/_local_model_configs.py`
 
@@ -294,6 +294,19 @@ they do not imply that Gludd inherits every historical upstream bug:
   Hermetic and managed suites therefore ask the OS for a free port. Managed acceptance
   additionally proves that the real child is waited, its stderr artifact is removed, and
   no owned process remains, so parallel projects do not share a fixed endpoint.
+- **Side-effect-free optional-runtime discovery.** Reviewed 2026-08-21. The current
+  [llama-cpp-python null-stream helper](https://github.com/abetlen/llama-cpp-python/blob/main/llama_cpp/_utils.py)
+  allocates null streams at module import, and a user report opened on 2023-12-23 shows
+  those streams participating in an import/runtime failure
+  ([issue #1041](https://github.com/abetlen/llama-cpp-python/issues/1041)). Python's
+  [importlib guidance](https://docs.python.org/3/library/importlib.html#checking-if-a-module-can-be-imported)
+  prescribes `find_spec()` when availability must be checked without importing. Gludd
+  therefore probes the locked optional runtime by specification only; the managed child,
+  not test collection, owns runtime initialization. A skipped E2E run owns no child or
+  runtime file handles, so unrelated endpoints stay online during zero-downtime operation.
+  The probe retains no module, process, or descriptor state and performs one bounded
+  metadata lookup. Rollback is code-only, changes no model or cache state, and never
+  restarts or stops a managed or external endpoint.
 - **Bounded post-reap diagnostics.** A llama.cpp user reported on 2026-01-02 that
   `llama-server` printed model metadata and then exited without a useful error indication
   ([issue #18546](https://github.com/ggml-org/llama.cpp/issues/18546)); another report on
