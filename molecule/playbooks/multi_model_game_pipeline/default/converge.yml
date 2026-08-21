@@ -82,10 +82,10 @@
         that:
           - _src.content | b64decode is search('_CODER_SYSTEM_PROMPT')
           - _src.content | b64decode is search('self-contained')
-          - _src.content | b64decode is search('pygame for graphics')
-          - _src.content | b64decode is search('pygame\.init\(\)')
-          - _src.content | b64decode is search('pygame\.quit\(\)')
-        fail_msg: "CODER system prompt must require self-contained pygame code"
+          - _src.content | b64decode is search('Honor every explicit constraint')
+          - _src.content | b64decode is search('Implement every explicitly named class')
+          - _src.content | b64decode is search('Use ONLY the tech stack specified')
+        fail_msg: "CODER system prompt must require constraint-complete, stack-agnostic code"
 
     - name: "Assert CODER has fix mode with review feedback"
       ansible.builtin.assert:

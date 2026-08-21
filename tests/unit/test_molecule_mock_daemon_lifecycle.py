@@ -228,3 +228,38 @@ def test_language_scenario_owns_one_authenticated_daemon_session() -> None:
         role_vars = included_roles[role_name]["vars"]
         assert role_vars["daemon_url"] == "{{ mock_daemon_url }}"
         assert role_vars["psk"] == "{{ molecule_mock_daemon_psk }}"
+
+
+def test_multi_model_pipeline_tracks_generic_coder_and_owned_cleanup() -> None:
+    """Reject the retired pygame-only prompt contract and missing lifecycle stages."""
+    scenario_root = PLAYBOOKS / "multi_model_game_pipeline"
+    molecule = yaml.safe_load((scenario_root / "molecule.yml").read_text())
+    configured = molecule["provisioner"]["playbooks"]
+    sequence = molecule["scenario"]["test_sequence"]
+    assert configured["cleanup"] == "default/cleanup.yml"
+    assert configured["destroy"].endswith("/molecule/shared/destroy.yml")
+    assert sequence[:2] == ["cleanup", "destroy"]
+    assert sequence[-2:] == ["cleanup", "destroy"]
+
+    converge = (scenario_root / "default" / "converge.yml").read_text()
+    for retired_phrase in ("pygame for graphics", r"pygame\.init\(\)", r"pygame\.quit\(\)"):
+        assert retired_phrase not in converge
+    for current_phrase in (
+        "Honor every explicit constraint",
+        "Implement every explicitly named class",
+        "Use ONLY the tech stack specified",
+    ):
+        assert current_phrase in converge
+
+    cleanup = (scenario_root / "default" / "cleanup.yml").read_text()
+    assert "/tmp/gludd-multi-model-pipeline-molecule" in cleanup
+    assert "state: absent" in cleanup
+
+    runtime_playbooks = "\n".join(
+        (scenario_root / "default" / name).read_text()
+        for name in ("prepare.yml", "verify.yml")
+    )
+    assert "python3" not in runtime_playbooks
+    assert "{{ ansible_playbook_python }}" in runtime_playbooks
+    assert "ignore_errors: true" not in runtime_playbooks
+    assert "failed_when: false" in runtime_playbooks

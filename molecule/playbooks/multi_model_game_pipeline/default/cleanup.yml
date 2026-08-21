@@ -1,0 +1,10 @@
+---
+- name: Clean the multi-model pipeline's private artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Remove only the scenario-owned artifact directory
+      ansible.builtin.file:
+        path: "/tmp/gludd-multi-model-pipeline-molecule"
+        state: absent
