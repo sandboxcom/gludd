@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import textwrap
+import threading
+import warnings
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -670,6 +674,49 @@ class TestRunWithTimeout:
 
 
 class TestExecuteWithCore:
+    def test_multithreaded_execution_is_warning_free(self, tmp_path):
+        """A live peer thread must never share an Ansible fork boundary."""
+        from ansible.utils.multiprocessing import context as ansible_mp_context
+
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
+
+        pb = tmp_path / "threaded.yml"
+        pb.write_text(
+            "- hosts: localhost\n"
+            "  connection: local\n"
+            "  gather_facts: false\n"
+            "  tasks:\n"
+            "    - ansible.builtin.debug:\n"
+            "        msg: safe worker\n"
+        )
+        release = threading.Event()
+        background = threading.Thread(target=release.wait, daemon=True)
+        background.start()
+        original_start = ansible_mp_context.Process.start
+
+        def guarded_start(process):
+            if threading.active_count() > 1:
+                warnings.warn(
+                    "forking a multithreaded process is unsafe",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            return original_start(process)
+
+        try:
+            with (
+                patch.object(ansible_mp_context.Process, "start", guarded_start),
+                warnings.catch_warnings(),
+            ):
+                warnings.simplefilter("error", DeprecationWarning)
+                result = CoreAnsibleRunner()._execute_with_core(playbook_path=str(pb))
+        finally:
+            release.set()
+            background.join(timeout=2.0)
+
+        assert not background.is_alive()
+        assert result.status == "successful"
+
     def test_process_state_context_restores_import_and_ansible_globals(self):
         from ansible import context
         from ansible.utils.collection_loader import AnsibleCollectionConfig
@@ -713,28 +760,28 @@ class TestExecuteWithCore:
         assert result.rc == 0
 
     def test_inline_run_closes_ansible_connection_lock(self, tmp_path):
-        from ansible.executor.playbook_executor import PlaybookExecutor
-
         from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         pb = tmp_path / "simple.yml"
         pb.write_text("- hosts: localhost\n  connection: local\n  tasks: []\n")
-        executors = []
+        with tempfile.TemporaryFile() as connection_lock:
+            fake_executor = SimpleNamespace(
+                _tqm=SimpleNamespace(
+                    _callback_plugins=[],
+                    _connection_lockfile=connection_lock,
+                    _stats=SimpleNamespace(process_tally={}),
+                ),
+                run=lambda: 0,
+            )
 
-        def capture_executor(*args, **kwargs):
-            executor = PlaybookExecutor(*args, **kwargs)
-            executors.append(executor)
-            return executor
+            with patch(
+                "ansible.executor.playbook_executor.PlaybookExecutor",
+                return_value=fake_executor,
+            ):
+                result = CoreAnsibleRunner()._execute_with_core(playbook_path=str(pb))
 
-        with patch(
-            "ansible.executor.playbook_executor.PlaybookExecutor",
-            side_effect=capture_executor,
-        ):
-            result = CoreAnsibleRunner()._execute_with_core(playbook_path=str(pb))
-
-        assert result.status == "successful"
-        assert executors
-        assert executors[0]._tqm._connection_lockfile.closed
+            assert result.status == "successful"
+            assert connection_lock.closed
 
     def test_inline_run_with_failed_task(self, tmp_path):
         from general_ludd.ansible.core_runner import CoreAnsibleRunner
@@ -947,6 +994,7 @@ class TestTimeoutChildEntry:
             )
             _timeout_child_entry(runner, queue, {"playbook_path": "/t.yml"})
             queue.put.assert_called_once()
+            assert runner._inside_safe_process is False
 
     def test_child_posts_error_on_exception(self):
         from general_ludd.ansible.core_runner import CoreAnsibleRunner, _timeout_child_entry
@@ -958,6 +1006,7 @@ class TestTimeoutChildEntry:
             args = queue.put.call_args[0][0]
             assert args[0] == "err"
             assert "ValueError" in args[1]
+            assert runner._inside_safe_process is False
 
     def test_child_posts_error_on_systemexit(self):
         from general_ludd.ansible.core_runner import CoreAnsibleRunner, _timeout_child_entry
@@ -969,6 +1018,7 @@ class TestTimeoutChildEntry:
             args = queue.put.call_args[0][0]
             assert args[0] == "err"
             assert "SystemExit" in args[1]
+            assert runner._inside_safe_process is False
 
 
 # ── CoreAnsibleRunner _PLAYBOOK_ENV_ALLOWLIST ───────────────────────────────

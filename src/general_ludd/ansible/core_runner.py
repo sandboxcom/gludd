@@ -77,6 +77,23 @@ def _env_default_timeout() -> float:
     return val if val > 0 else _DEFAULT_PLAYBOOK_TIMEOUT
 
 
+def _native_playbook_executor_is_active() -> bool:
+    """Return whether the installed fork-based ansible-core executor is active.
+
+    Tests and embedders may inject a no-process executor for deterministic
+    inspection.  The native executor is the boundary that must run in Gludd's
+    single-threaded forkserver/spawn worker because ansible-core deliberately
+    uses a ``fork`` context for its task workers.
+    """
+    from ansible.executor.playbook_executor import PlaybookExecutor
+
+    return (
+        isinstance(PlaybookExecutor, type)
+        and PlaybookExecutor.__module__ == "ansible.executor.playbook_executor"
+        and PlaybookExecutor.__name__ == "PlaybookExecutor"
+    )
+
+
 @contextlib.contextmanager
 def _isolated_ansible_process_state(
     extra_env: dict[str, str] | None,
@@ -157,11 +174,16 @@ def _timeout_child_entry(
     # every Ansible task process it creates with one scoped signal.
     with contextlib.suppress(AttributeError, OSError):
         os.setsid()
+    previous_worker_state = runner._inside_safe_process
+    runner._inside_safe_process = True
     try:
-        result = runner._execute_with_core(**exec_kwargs)
-        queue.put(("ok", _json_safe(result.model_dump())))
-    except BaseException as exc:  # report SystemExit and executor failures too
-        queue.put(("err", f"{type(exc).__name__}: {exc}"))
+        try:
+            result = runner._execute_with_core(**exec_kwargs)
+            queue.put(("ok", _json_safe(result.model_dump())))
+        except BaseException as exc:  # report SystemExit and executor failures too
+            queue.put(("err", f"{type(exc).__name__}: {exc}"))
+    finally:
+        runner._inside_safe_process = previous_worker_state
 
 
 try:
@@ -342,6 +364,10 @@ class CoreAnsibleRunner:
         self._process_isolation = process_isolation
         self._private_data_dir = private_data_dir
         self._network_policy = network_policy
+        # True only inside Gludd's explicitly selected forkserver/spawn child.
+        # It prevents the native ansible-core dispatcher from nesting another
+        # safety worker before ansible starts its own fork-only task workers.
+        self._inside_safe_process = False
         # OpenShell P2 transfer: an optional seccomp BPF filter installed in the
         # timeout child (before os.setsid) to block container-escape syscalls
         # (mount/unshare/setns/pivot_root/...). None = no syscall filtering
@@ -436,12 +462,11 @@ class CoreAnsibleRunner:
         # worker forever. The network-exposed adapter (runner.py) ALWAYS passes
         # a finite timeout, so the exposed path is always bounded.
         #
-        # Bounding requires a child process, which (a) cannot share an in-process
-        # mock and (b) serializes the result across the process boundary. So an
-        # explicit timeout=None means "run inline, no bound" — preserving the
-        # in-process API (direct event/stat collection, mockable executor) for
-        # trusted callers and tests. A None timeout falls back to the env-driven
-        # default ONLY when one is configured, never to a silent child process.
+        # The native ansible-core backend always selects a forkserver/spawn
+        # safety worker before Ansible creates its fork-only task processes.
+        # Keeping this dispatch call also preserves the injectable no-process
+        # executor seam used by embedders. A configured timeout overrides the
+        # standard bounded-worker default.
         if timeout is None:
             env_to = os.environ.get("GLUDD_PLAYBOOK_TIMEOUT", "")
             if not env_to:
@@ -824,7 +849,32 @@ class CoreAnsibleRunner:
         become: bool = False,
         extra_env: dict[str, str] | None = None,
     ) -> AnsibleResult:
-        """Execute with every ansible-core process-global mutation bounded."""
+        """Execute native ansible-core behind a thread-safe process boundary."""
+        if not self._inside_safe_process and _native_playbook_executor_is_active():
+            # Only execution-owned, picklable state crosses the process
+            # boundary. A disabled isolation adapter or already-consumed
+            # network-policy object must not make an otherwise safe playbook
+            # unstartable (test doubles and live adapters may hold locks).
+            worker_runner = CoreAnsibleRunner(
+                module_paths=self._module_paths,
+                callback_plugins=self._callback_plugins,
+                private_data_dir=self._private_data_dir,
+                seccomp_filter=self._seccomp_filter,
+            )
+            return worker_runner._run_with_timeout(
+                timeout=_env_default_timeout(),
+                playbook_path=playbook_path,
+                inventory=inventory,
+                extravars=extravars,
+                verbosity=verbosity,
+                check=check,
+                tags=tags,
+                skip_tags=skip_tags,
+                connection=connection,
+                become=become,
+                extra_env=extra_env,
+            )
+
         with _isolated_ansible_process_state(extra_env):
             return self._execute_with_core_active_state(
                 playbook_path=playbook_path,
