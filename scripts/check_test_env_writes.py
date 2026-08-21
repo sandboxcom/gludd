@@ -19,6 +19,7 @@ from pathlib import Path
 # Deliberately does NOT match reads (os.environ.get / os.environ["X"] as rvalue),
 # pops (os.environ.pop), dels (del os.environ[...]), or monkeypatch.setenv.
 _BARE_WRITE_RE = re.compile(r'^[^#\n]*\b(?:_?os)\.environ\[\s*(?:\w+|\'[^\']*\'|"[^"]*")\s*\]\s*=(?!=)')
+MAX_REPORTED_VIOLATIONS = 50
 
 # conftest.py:404 — _restore_leaky_env_vars autouse fixture intentionally
 # restores env vars at teardown (not test setup).  monkeypatch.setenv cannot
@@ -51,8 +52,11 @@ def main(argv: list[str]) -> int:
                 all_violations.extend(scan_file(cf))
     if all_violations:
         print("BARE os.environ[...] = writes forbidden in tests/ (use monkeypatch.setenv):")
-        for v in all_violations:
+        for v in all_violations[:MAX_REPORTED_VIOLATIONS]:
             print(f"  {v}")
+        omitted = len(all_violations) - MAX_REPORTED_VIOLATIONS
+        if omitted > 0:
+            print(f"  ... {omitted} additional violation(s) omitted")
         print(f"\n{len(all_violations)} violation(s) found.")
         return 1
     print("OK: no bare os.environ writes in tests/")

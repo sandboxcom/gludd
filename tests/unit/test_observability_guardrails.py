@@ -85,6 +85,20 @@ class TestNoUnseenEvents:
                     f"gate must not pipe the full suite to /dev/null: {line.strip()!r}"
                 )
 
+    def test_env_write_gate_phases_stream_bounded_checker_output(self) -> None:
+        invocations = [
+            line
+            for line in MAKEFILE.read_text().splitlines()
+            if "$(MAKE) --no-print-directory check-test-env-writes" in line
+        ]
+
+        assert len(invocations) == 3
+        for line in invocations:
+            assert "/dev/null" not in line
+            assert "scripts/stream_command.py --log .gate-logs/" in line
+            assert "&& echo \"PASS\"" in line
+            assert "touch .gate-" in line
+
     def test_gate_emits_a_progress_marker_per_phase(self) -> None:
         """Each gate phase must print a stdout marker as it starts (heartbeat)."""
         body = _recipe("gate")

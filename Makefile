@@ -1528,7 +1528,8 @@ gate: _gate-run-lock-acquire _dead-code-baseline-refresh _check-windows-tracked-
 	@$(MAKE) --no-print-directory check-dead-code-quiet > /dev/null 2>&1 && echo "PASS 0" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed)
 	@echo "=== GATE PHASE: env-writes ==="
 	@printf "env-writes " >> .gate-status.next
-	@$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed)
+	@mkdir -p .gate-logs
+	@$(UV) run python scripts/stream_command.py --log .gate-logs/gate-env-writes.log -- $(MAKE) --no-print-directory check-test-env-writes && echo "PASS" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed)
 	@echo "=== GATE PHASE: hook-runtime ==="
 	@printf "hook-runtime " >> .gate-status.next
 	@mkdir -p .gate-logs
@@ -1628,7 +1629,8 @@ gate-lite: _dead-code-baseline-refresh check-opencode-integrity check-subagent-g
 	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-lite-status || (echo "FAIL collection-errors" >> .gate-lite-status && touch .gate-lite-failed)
 	@echo "=== GATE-LITE PHASE: env-writes ==="
 	@printf "env-writes " >> .gate-lite-status
-	@$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
+	@mkdir -p .gate-logs
+	@$(UV) run python scripts/stream_command.py --log .gate-logs/gate-lite-env-writes.log -- $(MAKE) --no-print-directory check-test-env-writes && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
 	@echo "=== GATE-LITE PHASE: hook-runtime ==="
 	@printf "hook-runtime " >> .gate-lite-status
 	@$(MAKE) --no-print-directory test-opencode-e2e > /dev/null 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
@@ -4939,7 +4941,7 @@ _gate-refresh-body:
 	$(MAKE) --no-print-directory check-status-table > .gate-logs/check-status-table.log 2>&1 && echo "PASS" >> "$$STATUS_WORK" || (echo "FAIL" >> "$$STATUS_WORK" && touch .gate-failed && tail -30 .gate-logs/check-status-table.log); \
 	echo "=== GATE PHASE: env-writes ==="; \
 	printf "env-writes " >> "$$STATUS_WORK"; \
-	$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> "$$STATUS_WORK" || (echo "FAIL" >> "$$STATUS_WORK" && touch .gate-failed); \
+	$(UV) run python scripts/stream_command.py --log .gate-logs/gate-refresh-env-writes.log -- $(MAKE) --no-print-directory check-test-env-writes && echo "PASS" >> "$$STATUS_WORK" || (echo "FAIL" >> "$$STATUS_WORK" && touch .gate-failed); \
 	echo "=== GATE PHASE: hook-runtime ==="; \
 	printf "hook-runtime " >> "$$STATUS_WORK"; \
 	mkdir -p .gate-logs; \
