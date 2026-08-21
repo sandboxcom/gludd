@@ -189,6 +189,22 @@ class LocalServerTerminalStatus:
     recorded_at: float
 
 
+async def _read_stderr_tail(stderr_path: str | None) -> str:
+    """Read a bounded stderr tail without blocking the event loop."""
+    if stderr_path is None:
+        return "(stderr not captured)"
+
+    def _read_file(path: str) -> bytes:
+        with open(path, "rb") as stderr_file:
+            return stderr_file.read()
+
+    try:
+        raw = await asyncio.to_thread(_read_file, stderr_path)
+        return raw.decode(errors="replace")[-4000:]
+    except OSError:
+        return "(could not read stderr)"
+
+
 class LocalInferenceManager:
     """Owns the local inference server lifecycle (create/start/stop/list)."""
 
@@ -443,25 +459,10 @@ class LocalInferenceManager:
         deadline = time.time() + server.config.startup_timeout
         poll_interval = 2.0
 
-        async def _read_stderr(stderr_path: str | None) -> str:
-            if stderr_path is None:
-                return "(stderr not captured)"
-            try:
-
-                def _read_file(path: str) -> bytes:
-                    with open(path, "rb") as f:
-                        return f.read()
-
-                loop = asyncio.get_running_loop()
-                raw = await loop.run_in_executor(None, _read_file, stderr_path)
-                return raw.decode(errors="replace")[-4000:]
-            except Exception:
-                return "(could not read stderr)"
-
         while time.time() < deadline:
             if server.process is not None and server.process.returncode is not None:
                 server.status = "error"
-                stderr_tail = await _read_stderr(server.stderr_path)
+                stderr_tail = await _read_stderr_tail(server.stderr_path)
                 logger.error(
                     "Server %s crashed (exit=%d). stderr tail:\n%s",
                     server.server_id,
@@ -487,7 +488,7 @@ class LocalInferenceManager:
         server.status = "error"
         stderr_tail = ""
         if server.stderr_path is not None:
-            stderr_tail = await _read_stderr(server.stderr_path)
+            stderr_tail = await _read_stderr_tail(server.stderr_path)
         msg = (
             f"Local inference server {server.server_id!r} did not become ready "
             f"within {server.config.startup_timeout}s (health URL: {health_url})."
