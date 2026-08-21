@@ -59,6 +59,13 @@ first complete tick; it never shares or replaces the active session.
   explain that an unclosed `sqlite3.Connection` now emits `ResourceWarning`.
   Gludd's lifecycle regression forces collection and treats that signal as a
   functional leak, rather than filtering the warning.
+- CPython's long-running
+  [sqlite adapter issue #90016](https://github.com/python/cpython/issues/90016)
+  and maintained [SQLite documentation](https://docs.python.org/3/library/sqlite3.html#default-adapters-and-converters-deprecated)
+  were reviewed on 2026-08-20. They document that implicit date and datetime
+  adapters are deprecated because applications need an explicit representation.
+  Raw SQLite fixture updates therefore bind UTC timestamps through SQLAlchemy's
+  timezone-aware `DateTime` type instead of invoking the process-global adapter.
 
 ## Migration planning and retention integrity
 
