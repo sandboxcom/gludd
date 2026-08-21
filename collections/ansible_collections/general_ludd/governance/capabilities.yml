@@ -1,0 +1,340 @@
+---
+model_capabilities:
+  - name: border_lookup
+    description: Border crossing point data, visa/waiver regimes, admission records, refusals, exit data lookup
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: high
+    aliases:
+      - border_info
+      - crossing_point
+  - name: crossing_info
+    description: Crossing regime information — visa-free, eTA, eVisa requirements and durations
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: medium
+    aliases:
+      - visa_info
+      - entry_requirements
+  - name: visa_regime
+    description: Visa regime lookup — bilateral waiver agreements, visa categories, extension rules
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: medium
+    aliases:
+      - visa_lookup
+      - visa_rules
+  - name: body_lookup
+    description: Governing body lookup — legislatures, executives, judiciaries, agencies, regulator directories, mandates
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: high
+    aliases:
+      - governing_body
+      - government_body
+  - name: mandate_lookup
+    description: Agency mandate and jurisdiction lookup — regulatory authority, enforcement power, territorial scope
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: medium
+    aliases:
+      - agency_mandate
+      - regulatory_scope
+  - name: tax_lookup
+    description: Tax system lookup — obligations, filings, withholding, jurisdictional rules, revenue authorities
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: high
+    aliases:
+      - tax_info
+      - tax_system
+  - name: tax_compliance
+    description: Tax compliance data — filing deadlines, penalty regimes, audit triggers, amnesty programs
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: medium
+    aliases:
+      - tax_filing
+      - tax_deadline
+  - name: currency_lookup
+    description: Currency information — legal tender, ISO 4217 codes, FX regimes, monetary authorities, CBDCs
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: high
+    aliases:
+      - currency_info
+      - money_lookup
+  - name: fx_regime
+    description: Foreign exchange regime lookup — floating/pegged/managed float, capital controls, sanctions currencies
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: medium
+    aliases:
+      - forex_lookup
+      - exchange_regime
+  - name: conflict_status
+    description: Current armed conflict status lookup — active, frozen, peacekeeping, peace enforcement operations
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: high
+    aliases:
+      - war_status
+      - active_conflict
+  - name: sanctions_lookup
+    description: Sanctions regime lookup — UN, US, EU, UK sanctions lists, embargoes, no-fly lists
+    roles: []
+    model_needs:
+      - search
+      - compliance
+    quality_class: high
+    aliases:
+      - sanctions_list
+      - embargo_check
+  - name: treaty_lookup
+    description: Treaty lookup — bilateral/multilateral agreements, ratification status, reservations, text access
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: high
+    aliases:
+      - treaty_info
+      - convention_lookup
+  - name: ratification_status
+    description: Treaty ratification status — signatory state, reservation tracking, entry-into-force dates
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: medium
+    aliases:
+      - treaty_status
+      - ratification_check
+  - name: service_lookup
+    description: Civic service lookup — IDs, registrations, social services, records offices, civil registries
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: high
+    aliases:
+      - civic_service
+      - government_service
+  - name: civil_registry
+    description: Civil registry lookup — birth, death, marriage records, name changes, nationality registration
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: medium
+    aliases:
+      - registry_lookup
+      - vital_records
+  - name: official_lookup
+    description: Decision-maker lookup — office-holders, succession, signing authority, mandate provenance
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: high
+    aliases:
+      - politician_lookup
+      - office_holder
+  - name: authority_chain
+    description: Authority chain lookup — delegation, sub-delegation, instrument hierarchy, signing limits
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: medium
+    aliases:
+      - delegation_chain
+      - signing_authority
+  - name: classification_lookup
+    description: Information classification lookup — markings, clearance levels, declassification schedules, caveats
+    roles: []
+    model_needs:
+      - search
+      - security
+    quality_class: high
+    aliases:
+      - classification_system
+      - security_classification
+  - name: clearance_check
+    description: Clearance level check — NATO/US/UK/EU cross-system classification map, equivalence check
+    roles: []
+    model_needs:
+      - search
+      - security
+    quality_class: medium
+    aliases:
+      - security_clearance
+      - clearance_equivalence
+  - name: postal_lookup
+    description: Postal system lookup — address normalization, postal codes, courier services, delivery options
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: high
+    aliases:
+      - postal_code
+      - address_lookup
+  - name: customs_declaration
+    description: Customs declaration lookup — forms, prohibited items, duty rates, clearance procedures
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: medium
+    aliases:
+      - import_export
+      - customs_lookup
+  - name: conscription_lookup
+    description: Military service lookup — conscription registers, service records, veteran status, reserve obligations
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: high
+    aliases:
+      - military_service
+      - draft_lookup
+  - name: veteran_status
+    description: Veteran status lookup — benefits, pension, healthcare access, discharge classification
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: medium
+    aliases:
+      - veteran_benefits
+      - service_records
+  - name: license_lookup
+    description: License and permit lookup — driving, professional, business, building permits, firearm licenses
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: high
+    aliases:
+      - permit_lookup
+      - license_info
+  - name: permit_check
+    description: Permit requirement check — export controls, import licenses, environmental permits, zoning
+    roles: []
+    model_needs:
+      - search
+      - compliance
+    quality_class: medium
+    aliases:
+      - export_control
+      - permit_requirement
+  - name: jurisdiction_lookup
+    description: Jurisdiction identifier lookup — ISO 3166-1/2, FIPS, GLEIF, hierarchy, sovereignty status
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: high
+    aliases:
+      - jurisdiction_code
+      - country_code
+  - name: classification_markings
+    description: Cross-system classification markings map — banner formats, portion markings, caveats, declassification
+    roles: []
+    model_needs:
+      - search
+      - security
+    quality_class: high
+    aliases:
+      - markings_lookup
+      - banner_format
+  - name: authority_registry
+    description: Issuing authority registry — mapping authorities to instrument types (passport, license, treaty, etc.)
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: high
+    aliases:
+      - issuing_authority
+      - authority_instrument
+  - name: contract_lookup
+    description: International governance contract lookup — treaties, bilateral agreements, multilateral conventions, MOUs, protocols, amendments
+    roles: []
+    model_needs:
+      - search
+      - reference
+    quality_class: high
+    aliases:
+      - treaty_contract
+      - convention_contract
+  - name: contract_search
+    description: Governance contract search — by party, type, status; multi-filter listing with cross-referencing
+    roles: []
+    model_needs:
+      - search
+      - analysis
+    quality_class: medium
+    aliases:
+      - find_contract
+      - search_treaty
+role_capabilities:
+  borders:
+    - border_lookup
+    - crossing_info
+    - visa_regime
+  governing_bodies:
+    - body_lookup
+    - mandate_lookup
+  tax_systems:
+    - tax_lookup
+    - tax_compliance
+  currencies:
+    - currency_lookup
+    - fx_regime
+  conflicts:
+    - conflict_status
+    - sanctions_lookup
+  treaties:
+    - treaty_lookup
+    - ratification_status
+  civic_services:
+    - service_lookup
+    - civil_registry
+  decision_makers:
+    - official_lookup
+    - authority_chain
+  info_classification:
+    - classification_lookup
+    - clearance_check
+  postal_delivery:
+    - postal_lookup
+    - customs_declaration
+  military_service:
+    - conscription_lookup
+    - veteran_status
+  licenses_permits:
+    - license_lookup
+    - permit_check

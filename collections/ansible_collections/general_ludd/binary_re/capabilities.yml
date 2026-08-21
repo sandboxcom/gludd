@@ -1,0 +1,155 @@
+---
+model_capabilities:
+  - name: ghidra_analyze
+    description: Static binary analysis via Ghidra headless (disassembly, decompilation, function signatures)
+    roles:
+      - ghidra_analyze
+    model_needs:
+      - analysis
+      - reverse_engineering
+    quality_class: high
+    aliases:
+      - ghidra
+      - static_analysis
+  - name: gdb_analyze
+    description: Dynamic binary analysis via GDB (breakpoints, stack traces, register dumps, scripted analysis)
+    roles:
+      - gdb_analyze
+    model_needs:
+      - debugging
+      - reverse_engineering
+    quality_class: high
+    aliases:
+      - debug_binary
+      - gdb_debug
+  - name: radare2_analyze
+    description: Binary analysis via radare2 (hex view, function listing, disassembly, strings, cross-references)
+    roles:
+      - radare2_analyze
+    model_needs:
+      - analysis
+      - reverse_engineering
+    quality_class: medium
+    aliases:
+      - r2
+      - radare2
+  - name: frida_instrument
+    description: Dynamic instrumentation via Frida (function interception, SSL pinning bypass, memory scanning, tracing)
+    roles:
+      - frida_instrument
+    model_needs:
+      - instrumentation
+      - reverse_engineering
+    quality_class: high
+    aliases:
+      - frida_hook
+      - dynamic_instrument
+  - name: deobfuscate
+    description: Binary deobfuscation (string deobfuscation, CFG flattening reversal, opaque predicate removal, packing detection)
+    roles:
+      - deobfuscate
+    model_needs:
+      - analysis
+      - pattern_matching
+    quality_class: high
+    aliases:
+      - deobfuscation
+      - unpack
+  - name: fuzz_target
+    description: Binary fuzzing (mutation-based, coverage-guided, crash triage)
+    roles:
+      - fuzz_target
+    model_needs:
+      - fuzzing
+      - security
+    quality_class: high
+    aliases:
+      - fuzzing
+      - afl_fuzz
+  - name: cyberchef_transform
+    description: Binary data transformation via CyberChef-like recipes (encoding, encryption, compression, hashing)
+    roles:
+      - cyberchef_transform
+    model_needs:
+      - transformation
+      - encoding
+    quality_class: medium
+    aliases:
+      - cyberchef
+      - data_transform
+  - name: prompt_injection_scan
+    description: Prompt injection and jailbreak detection in model inputs
+    roles:
+      - prompt_injection_scan
+    model_needs:
+      - security
+      - text_analysis
+    quality_class: high
+    aliases:
+      - injection_scan
+      - jailbreak_detect
+  - name: pe_analyze
+    description: PE/COFF binary format parsing (headers, sections, imports, exports, resources, Rich header)
+    roles: []
+    model_needs:
+      - parsing
+      - binary_format
+    quality_class: high
+    aliases:
+      - pe_parser
+      - pe_analysis
+  - name: elf_analyze
+    description: ELF binary format parsing (headers, sections, segments, symbols, dynamic entries, notes)
+    roles: []
+    model_needs:
+      - parsing
+      - binary_format
+    quality_class: high
+    aliases:
+      - elf_parser
+      - elf_analysis
+  - name: macho_analyze
+    description: Mach-O binary format parsing (headers, load commands, segments, sections, symbol tables)
+    roles: []
+    model_needs:
+      - parsing
+      - binary_format
+    quality_class: high
+    aliases:
+      - macho_parser
+      - macho_analysis
+  - name: disassembly
+    description: Multi-architecture disassembly (x86, x86_64, ARM, ARM64, MIPS, PowerPC) via Capstone
+    roles: []
+    model_needs:
+      - disassembly
+      - reverse_engineering
+    quality_class: high
+    aliases:
+      - disassemble
+      - capstone
+role_capabilities:
+  ghidra_analyze:
+    - static_analysis
+    - decompilation
+  gdb_analyze:
+    - debugging
+    - dynamic_analysis
+  radare2_analyze:
+    - hex_analysis
+    - structure_analysis
+  frida_instrument:
+    - dynamic_instrumentation
+    - runtime_hooking
+  deobfuscate:
+    - deobfuscation
+    - unpacking
+  fuzz_target:
+    - fuzzing
+    - crash_analysis
+  cyberchef_transform:
+    - data_transformation
+    - encoding
+  prompt_injection_scan:
+    - prompt_injection_detection
+    - jailbreak_detection

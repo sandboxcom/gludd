@@ -135,7 +135,7 @@ on extension keys outside its published schema. `capabilities.yml` takes
 precedence when both exist, so a project-local `.gludd/collections/` override
 can replace capabilities without editing the bundled manifest.
 
-#### 2026-08-20 language collection metadata incident
+#### 2026-08-20–21 collection capability metadata incidents
 
 The beta4 Galaxy build accepted the language collection but warned that
 `model_capabilities` and `role_capabilities` were unknown manifest keys. The
@@ -144,18 +144,34 @@ only those two named extension fields with standard Galaxy metadata. This is a
 fail-closed boundary: arbitrary extension-file fields cannot replace a
 collection's namespace, name, version, dependencies, or signing metadata.
 
+On August 21, 2026, the same real-build warning was reproduced in governance,
+travel, radio, sandbox, and binary-re. Those declarations were moved verbatim
+to the canonical sidecar. A repository-wide schema test now pins every
+`galaxy.yml` key to Ansible's [published collection metadata structure](https://docs.ansible.com/projects/ansible/latest/dev_guide/collections_galaxy_meta.html),
+and a real `ansible-galaxy collection build` test proves warning-free artifacts
+whose dependency map exactly matches the source manifest.
+
 The [April 4, 2022 Ansible collection publishing report](https://github.com/ansible/ansible/issues/77460)
 is durable practitioner evidence that Automation Hub validates collection
 metadata by its specified file and schema, even when a local collection build
 appears usable. Gludd consequently owns capability metadata in a distinct file
 instead of relying on a tolerant parser or suppressing the Galaxy warning.
+The [October 2, 2023 Galaxy dependency-resolution forum report](https://forum.ansible.com/t/resolving-dependencies-installing-collections/1277)
+also records a collection that built successfully but failed when consumers
+resolved its declared dependency. That long-lived practitioner case is why the
+regression inspects the built artifact's dependency map rather than treating a
+zero build exit code alone as sufficient evidence.
 
 The migration is ZDD-safe because the scanner retains legacy inline reads,
 prefers the sidecar atomically when present, and rebuilds the in-memory registry
 before it is swapped into a daemon. Rollback removes the sidecar and restores
 the inline fields; no running job or installed collection is mutated. Scans
 remain bounded to one small file per discovered collection and create no
-processes, clients, or temporary artifacts.
+processes, clients, or temporary artifacts. Release verification owns one
+bounded Galaxy subprocess and pytest-owned temporary output directory per
+collection; it performs no network access or service startup. Rollback restores
+the inline keys and removes each sidecar, while the retained legacy reader keeps
+the last-known contract routable throughout the change.
 
 **Field reference:**
 

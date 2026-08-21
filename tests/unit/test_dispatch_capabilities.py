@@ -246,6 +246,25 @@ def test_discover_loads_canonical_collection_capabilities(tmp_path: Path) -> Non
     assert meta.role_capabilities == {"translate": ["translation"]}
 
 
+def test_discover_preserves_legacy_inline_collection_capabilities(tmp_path: Path) -> None:
+    colls = tmp_path / "ansible_collections"
+    collection = colls / "general_ludd" / "legacy"
+    _write_galaxy_yml(collection, "legacy", ["legacy"])
+    galaxy_path = collection / "galaxy.yml"
+    galaxy = yaml.safe_load(galaxy_path.read_text(encoding="utf-8"))
+    galaxy["model_capabilities"] = [
+        {"name": "legacy_action", "roles": ["legacy_role"]}
+    ]
+    galaxy["role_capabilities"] = {"legacy_role": ["legacy_action"]}
+    galaxy_path.write_text(yaml.safe_dump(galaxy), encoding="utf-8")
+
+    meta = discover_capabilities(colls).collections["legacy"]
+    assert len(meta.model_capabilities) == 1
+    assert meta.model_capabilities[0]["name"] == "legacy_action"
+    assert meta.model_capabilities[0]["roles"] == ["legacy_role"]
+    assert meta.role_capabilities == {"legacy_role": ["legacy_action"]}
+
+
 @pytest.mark.parametrize("contents", ["not: [valid: yaml: }", "- unexpected-list"])
 def test_discover_rejects_invalid_capability_extensions(
     tmp_path: Path, contents: str
