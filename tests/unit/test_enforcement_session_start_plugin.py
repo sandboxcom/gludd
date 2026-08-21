@@ -996,7 +996,7 @@ class TestStateFileBehavioral:
             "dispatches": 0,
             "timeGateReset": False,
         }
-        json.dump(initial, state_file.open("w"))
+        state_file.write_text(json.dumps(initial))
         loaded = json.loads(state_file.read_text())
         assert loaded["dispatches"] == 0
         assert not loaded["readsDone"]

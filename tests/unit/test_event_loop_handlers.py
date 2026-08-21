@@ -65,6 +65,9 @@ class TestPhaseSelfImprove:
     @pytest.mark.asyncio
     async def test_self_improve_on_interval(self):
         h = _make_handlers(_self_improve_interval=5, _total_ticks=5)
+        fake_harness = MagicMock()
+        fake_harness.run_gap_analysis.return_value = []
+        fake_harness.generate_fix_todos.return_value = []
         with (
             patch.object(h, "_collect_recurring_failures", new=AsyncMock(return_value=[])),
             patch.object(h, "_persist_self_improve_todos", new=AsyncMock(return_value=0)),
@@ -72,9 +75,14 @@ class TestPhaseSelfImprove:
             patch.object(h, "_auto_consolidate_memory", new=AsyncMock()),
             patch.object(h, "_auto_cross_task_learn", new=AsyncMock()),
             patch.object(h, "_apply_self_improvements", new=AsyncMock()),
+            patch(
+                "general_ludd.event_loop.loop_handlers.SelfImprovementHarness",
+                return_value=fake_harness,
+            ),
         ):
             await h._phase_self_improve()
             assert h._tick_metrics["self_improve_gaps"] == 0
+        fake_harness.run_gap_analysis.assert_called_once_with([])
 
     @pytest.mark.asyncio
     async def test_self_improve_exception_sets_zero_gaps(self):

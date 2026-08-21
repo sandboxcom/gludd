@@ -198,6 +198,15 @@ pytest encountering a vendored Six meta-path importer during collection. The
 reports do not establish the same root cause; they are evidence that Six's
 importer is live process state rather than disposable test metadata.
 
+The warnings-as-errors replay also exposed two smaller owner defects in the
+same batch. One state-file test passed an inline `Path.open()` handle to
+`json.dump` and never closed it. Two self-improvement tests constructed the
+real harness around an `AsyncMock` model gateway, creating a coroutine that the
+synchronous analysis path could not await. The state fixture now uses the
+atomic `Path.write_text` shape it is meant to model, and the phase tests inject
+a complete synchronous harness double and assert its call. Neither repair adds
+garbage-collector cleanup, warning filters, retries, or production behavior.
+
 ## Security and Resource Boundaries
 
 The status command uses a fixed system interpreter and existing fixed-argument
