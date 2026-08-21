@@ -180,13 +180,24 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 159,
-      "column": 24,
+      "line": 213,
+      "column": 14,
+      "kind": "process",
+      "owner": "_run_owned_pytest",
+      "acquisition": "subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)",
+      "teardown": "ownership-transfer:_terminate_owned_process(process); ownership-transfer:persisted-detached-pid",
+      "source_hash": "b7bea4e6f5be0895f57fa86e8e4ae61918915f84f17c30c7bbdf9ded2b97c8f7",
+      "owned": true
+    },
+    {
+      "path": "scripts/run_ci_shards_serial.py",
+      "line": 425,
+      "column": 12,
       "kind": "temp-artifact",
       "owner": "run",
       "acquisition": "tempfile.mkdtemp(prefix=f'gludd-gate-{shard}-', dir='/tmp')",
-      "teardown": "shutil.rmtree(basetemp, ignore_errors=True)",
-      "source_hash": "3c0bca8ce98bb64ac42e5b8cdbcbc0d78348c780a6107d8f56bdf94144714721",
+      "teardown": "shutil.rmtree(workspace, ignore_errors=True)",
+      "source_hash": "90fe10a6c14e6175e499bf4895efdc9262be12629fcaa7ffb3de3d5e8f9034f4",
       "owned": true
     },
     {
