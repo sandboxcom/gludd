@@ -51,12 +51,14 @@ from general_ludd.cloud.video_compare import (
     compare_gameplay_to_reference,
     compute_ssim,
     download_youtube_video,
+    extract_frames,
     preflight_reference_videos,
+)
+from general_ludd.cloud.video_compare import (
+    cv2 as video_cv2,
 )
 
 _HAS_LANGCHAIN_OPENAI = importlib.util.find_spec("langchain_openai") is not None
-_HAS_YTDLP_E2E = importlib.util.find_spec("yt_dlp") is not None
-
 _AZURE_PROVISION_ENABLED = os.environ.get("AZURE_PROVISION_E2E") == "1"
 _AZURE_ENDPOINT_SET = bool(os.environ.get("AZURE_BASE_URL"))
 _AZURE_CONFIGURED = _AZURE_PROVISION_ENABLED or _AZURE_ENDPOINT_SET
@@ -574,17 +576,38 @@ class TestSSIMComputation:
 
 @pytest.mark.e2e
 class TestVideoDownload:
-    @pytest.mark.skipif(not _HAS_YTDLP_E2E, reason="yt-dlp not installed")
     def test_download_short_clip(self, tmp_path: Path) -> None:
-        reference = REFERENCE_VIDEO_SPECS["doom_e1m1_hallway"]
-        video_path = download_youtube_video(
-            reference.source_url,
-            str(tmp_path),
-            clip_start_seconds=reference.clip_start_seconds,
-            clip_duration_seconds=reference.clip_duration_seconds,
+        if os.environ.get("GAME_E2E_REFERENCE_NETWORK") == "1":
+            reference = REFERENCE_VIDEO_SPECS["doom_e1m1_hallway"]
+            video_path = download_youtube_video(
+                reference.source_url,
+                str(tmp_path),
+                clip_start_seconds=reference.clip_start_seconds,
+                clip_duration_seconds=reference.clip_duration_seconds,
+            )
+            assert os.path.exists(video_path), f"Downloaded video not found: {video_path}"
+            assert os.path.getsize(video_path) > 0, "Downloaded video is empty"
+            return
+
+        assert video_cv2 is not None, "OpenCV is required for game video E2E"
+        video_path = tmp_path / "hermetic-reference.avi"
+        writer = video_cv2.VideoWriter(
+            str(video_path),
+            video_cv2.VideoWriter_fourcc(*"MJPG"),
+            5.0,
+            (16, 16),
         )
-        assert os.path.exists(video_path), f"Downloaded video not found: {video_path}"
-        assert os.path.getsize(video_path) > 0, "Downloaded video is empty"
+        assert writer.isOpened(), "deterministic reference video writer did not open"
+        try:
+            for value in (0, 64, 128, 192, 255):
+                writer.write(np.full((16, 16, 3), value, dtype=np.uint8))
+        finally:
+            writer.release()
+
+        frames = extract_frames(video_path, num_frames=3, interval=0.2)
+        assert video_path.stat().st_size > 0
+        assert len(frames) == 3
+        assert all(frame.shape == (16, 16, 3) for frame in frames)
 
     def test_reference_urls_are_valid_youtube_links(self) -> None:
         for name, url in REFERENCE_VIDEOS.items():

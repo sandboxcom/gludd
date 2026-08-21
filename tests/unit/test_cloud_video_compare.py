@@ -461,6 +461,11 @@ class TestSSIMDeepEdgeCases:
         s = compute_ssim(a, b)
         assert 0.0 <= s < 0.1
 
+    def test_two_by_two_uses_stable_tiny_frame_metric(self):
+        a = np.zeros((2, 2, 3), dtype=np.uint8)
+        b = np.full((2, 2, 3), 255, dtype=np.uint8)
+        assert compute_ssim(a, b) < 0.1
+
     def test_4d_tensor_identical(self):
         a = np.full((2, 2, 2, 3), 128, dtype=np.uint8)
         b = np.full((2, 2, 2, 3), 128, dtype=np.uint8)

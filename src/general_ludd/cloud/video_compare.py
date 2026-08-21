@@ -766,13 +766,19 @@ def compute_ssim(frame_a: Frame, frame_b: Frame) -> float:
         pooling_factor = max(1, round(min(frame_a.shape[:2]) / 256))
         pooled_a = _average_pool_for_ssim(float_a, pooling_factor)
         pooled_b = _average_pool_for_ssim(float_b, pooling_factor)
+        spatial_extent = min(pooled_a.shape[:2])
+        if spatial_extent < 3:
+            return _global_ssim(pooled_a, pooled_b)
+        win_size = min(7, spatial_extent)
+        if win_size % 2 == 0:
+            win_size -= 1
         try:
             val: float = structural_similarity(
                 pooled_a,
                 pooled_b,
                 data_range=255.0,
                 channel_axis=2,
-                win_size=min(7, min(pooled_a.shape[0], pooled_a.shape[1]) or 7),
+                win_size=win_size,
             )
             result = float(val)
             if not np.isfinite(result):

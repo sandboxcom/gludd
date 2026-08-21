@@ -39,6 +39,10 @@ that floor directly.
   before covariance arithmetic. A NaN or infinity returns the neutral `0.0`
   score without entering NumPy's subtract/divide path or masking global
   floating-point warnings.
+- SSIM uses the stable global formula for spatial extents below three pixels and
+  an odd local window at larger extents. The default fidelity E2E generates and
+  closes a deterministic local clip; YouTube acquisition runs only when
+  `GAME_E2E_REFERENCE_NETWORK=1` is explicitly set.
 
 The long-running Pillow
 [decompression-bomb practitioner report](https://github.com/python-pillow/Pillow/issues/515)
@@ -67,6 +71,14 @@ completed game child from its ownership list and closes its parent-side stdout
 and stderr pipes immediately after wait; finalization is only an idempotent
 fallback for a genuinely live owned child.
 
+Scikit-image's long-lived
+[`structural_similarity` small-image report](https://github.com/scikit-image/scikit-image/issues/5366)
+documents that local SSIM windows are undefined for undersized images. Yt-dlp's
+maintained [known-issues thread](https://github.com/yt-dlp/yt-dlp/issues/3766)
+documents YouTube availability, authentication, throttling, and HTTP failures
+outside the caller's control. These sources were reviewed on 2026-08-20 and
+support a mathematical tiny-frame fallback plus hermetic CI media.
+
 ## ZDD and rollback
 
 The dependency pin changes installation resolution before runtime traffic. The
@@ -84,6 +96,11 @@ The motion-input check is stateless and wire-format neutral. Mixed old and new
 workers can overlap during a zero-downtime rollout; the only behavior change is
 that non-finite signatures deterministically produce `0.0` without a warning.
 Rollback requires no drain, schema action, cache purge, or artifact cleanup.
+
+The tiny-frame branch and hermetic fixture are deployment-neutral. Live
+acquisition remains available behind the existing explicit environment switch,
+so rollback needs no cache or schema migration; operators can re-enable the
+network path without restarting Gludd.
 
 The subprocess change is also wire-format and state neutral. Deploying workers
 may overlap because each runner owns only children it created. Rollback needs no
