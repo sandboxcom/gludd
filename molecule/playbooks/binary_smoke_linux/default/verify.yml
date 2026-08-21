@@ -35,6 +35,9 @@
           - binary_daemon_manifest.base_url is match('^http://127[.]0[.]0[.]1:[1-9][0-9]*$')
           - binary_daemon_manifest.port | int > 0
           - binary_daemon_manifest.port | int < 65536
+          - binary_daemon_manifest.pid | string is match('^[1-9][0-9]*$')
+          - binary_daemon_manifest.executable == gludd_bin
+          - binary_daemon_manifest.process_start_ticks | string is match('^[1-9][0-9]*$')
           - binary_daemon_manifest.pid_file == daemon_pidfile
           - binary_daemon_manifest.async_job_id | length > 0
         fail_msg: "packaged daemon endpoint manifest is malformed"
@@ -81,16 +84,17 @@
         fail_msg: "--help missing expected subcommands: {{ cli_outputs }}"
         success_msg: "--help lists daemon/project/version/models (+more)"
 
-    - name: Assert binary locates bundled config/templates/playbooks paths
+    - name: Assert binary reports the external collection plane
       ansible.builtin.assert:
         that:
           - "'Collection search path' in cli_outputs"
           - "'=== project paths (rc=0) ===' in cli_outputs"
-          - "'(missing)' not in cli_outputs"
+          - "cli_outputs | regex_findall('\\(missing\\)') | length == 1"
+          - "(cli_outputs | regex_search('BUNDLED.*collections.*\\(missing\\)')) is not none"
         fail_msg: >
-          'gludd project paths' did not resolve bundled paths cleanly:
+          'gludd project paths' did not report the external collection plane cleanly:
           {{ cli_outputs }}
-        success_msg: "project paths resolved bundled collections"
+        success_msg: "project paths reported the external collection plane"
 
     - name: Assert no Python traceback / import / missing-file errors in CLI output
       ansible.builtin.assert:

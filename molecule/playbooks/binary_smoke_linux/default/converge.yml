@@ -165,6 +165,52 @@
         state: present
         timeout: 30
 
+    - name: Load the packaged daemon PID ownership record
+      ansible.builtin.slurp:
+        src: "{{ daemon_pidfile }}"
+      register: daemon_pid_record_raw
+
+    - name: Decode the packaged daemon PID ownership record
+      ansible.builtin.set_fact:
+        daemon_pid_record: >-
+          {{ daemon_pid_record_raw.content | b64decode | from_json }}
+
+    - name: Capture the packaged daemon process start identity
+      ansible.builtin.command:
+        argv:
+          - /bin/cat
+          - "/proc/{{ daemon_pid_record.pid }}/stat"
+      register: daemon_process_stat
+      changed_when: false
+
+    - name: Capture the packaged daemon executable identity
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/readlink
+          - -f
+          - "/proc/{{ daemon_pid_record.pid }}/exe"
+      register: daemon_process_executable
+      changed_when: false
+
+    - name: Pin the packaged daemon process identity
+      ansible.builtin.set_fact:
+        daemon_process_start_ticks: >-
+          {{
+            (
+              daemon_process_stat.stdout
+              | regex_replace('^.*[)]\\s+', '')
+            ).split()[19]
+          }}
+
+    - name: Validate the packaged daemon process identity
+      ansible.builtin.assert:
+        that:
+          - daemon_pid_record.pid | string is match('^[1-9][0-9]*$')
+          - daemon_pid_record.daemon_url == daemon_url
+          - daemon_process_start_ticks | string is match('^[1-9][0-9]*$')
+          - daemon_process_executable.stdout | trim == gludd_bin
+        fail_msg: "packaged daemon process identity could not be pinned"
+
     - name: Wait for the private loopback socket to accept connections
       ansible.builtin.wait_for:
         host: "{{ daemon_host }}"
@@ -190,8 +236,11 @@
           {{ {
             'async_job_id': binary_daemon_job.ansible_job_id,
             'base_url': daemon_url,
+            'executable': daemon_process_executable.stdout | trim,
+            'pid': daemon_pid_record.pid | int,
             'pid_file': daemon_pidfile,
-            'port': daemon_port | int
+            'port': daemon_port | int,
+            'process_start_ticks': daemon_process_start_ticks
           } | to_nice_json }}
         dest: "{{ daemon_endpoint_file }}"
         mode: "0600"

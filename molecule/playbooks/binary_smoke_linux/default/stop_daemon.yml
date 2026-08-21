@@ -21,7 +21,10 @@
     that:
       - _binary_daemon_pid_record is mapping
       - _binary_daemon_pid_record.pid | string is match('^[1-9][0-9]*$')
+      - _binary_daemon_pid_record.pid | int == binary_daemon_manifest.pid | int
       - _binary_daemon_pid_record.daemon_url == daemon_url
+      - binary_daemon_manifest.executable == gludd_bin
+      - binary_daemon_manifest.process_start_ticks | string is match('^[1-9][0-9]*$')
     fail_msg: "binary smoke daemon PID record is malformed or belongs to another endpoint"
   when: _binary_daemon_pidfile.stat.exists
 
@@ -32,21 +35,62 @@
       - -p
       - "{{ _binary_daemon_pid_record.pid | string }}"
       - -o
-      - command=
+      - pid=
   register: _binary_daemon_ps
   changed_when: false
   failed_when: _binary_daemon_ps.rc not in [0, 1]
   when: _binary_daemon_pidfile.stat.exists
+
+- name: Inspect the pinned packaged daemon start identity
+  ansible.builtin.command:
+    argv:
+      - /bin/cat
+      - "/proc/{{ _binary_daemon_pid_record.pid | string }}/stat"
+  register: _binary_daemon_stat
+  changed_when: false
+  failed_when: _binary_daemon_stat.rc not in [0, 1]
+  when:
+    - _binary_daemon_pidfile.stat.exists
+    - _binary_daemon_ps.rc == 0
+
+- name: Inspect the pinned packaged daemon executable identity
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/readlink
+      - -f
+      - "/proc/{{ _binary_daemon_pid_record.pid | string }}/exe"
+  register: _binary_daemon_executable
+  changed_when: false
+  failed_when: _binary_daemon_executable.rc not in [0, 1]
+  when:
+    - _binary_daemon_pidfile.stat.exists
+    - _binary_daemon_ps.rc == 0
+
+- name: Decode the current packaged daemon start identity
+  ansible.builtin.set_fact:
+    _binary_daemon_current_start_ticks: >-
+      {{
+        (
+          _binary_daemon_stat.stdout
+          | regex_replace('^.*[)]\\s+', '')
+        ).split()[19]
+      }}
+  when:
+    - _binary_daemon_pidfile.stat.exists
+    - _binary_daemon_ps.rc == 0
+    - _binary_daemon_stat.rc == 0
 
 - name: Establish exact packaged daemon ownership
   ansible.builtin.set_fact:
     _binary_daemon_owned: >-
       {{
         _binary_daemon_ps.rc == 0
-        and gludd_bin in _binary_daemon_ps.stdout
-        and '__gludd_bundled_gunicorn__' in _binary_daemon_ps.stdout
-        and '--bind' in _binary_daemon_ps.stdout
-        and (daemon_host ~ ':' ~ (daemon_port | string)) in _binary_daemon_ps.stdout
+        and (_binary_daemon_current_start_ticks | default('') | string)
+          == (binary_daemon_manifest.process_start_ticks | string)
+        and (_binary_daemon_executable.rc | default(1)) == 0
+        and (_binary_daemon_executable.stdout | default('') | trim)
+          == binary_daemon_manifest.executable
+        and binary_daemon_manifest.executable == gludd_bin
       }}
   when: _binary_daemon_pidfile.stat.exists
 

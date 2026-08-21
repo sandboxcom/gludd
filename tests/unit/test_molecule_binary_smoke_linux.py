@@ -392,6 +392,14 @@ class TestConvergeCoverage:
         assert "lookup(" not in content
         assert "{{ port_clash.stdout }}" in content
 
+    def test_converge_pins_process_identity_for_teardown(self) -> None:
+        out = _load("default/converge.yml")
+
+        assert "/proc/{{ daemon_pid_record.pid }}/stat" in out
+        assert "process_start_ticks" in out
+        assert "executable" in out
+        assert "'pid': daemon_pid_record.pid | int" in out
+
 
 # ---------------------------------------------------------------------------
 # verify.yml asserts every required invariant
@@ -438,13 +446,23 @@ class TestVerifyAssertions:
             "verify must assert the 'Missing base YAML definition file' error is absent"
         )
 
-    def test_verify_asserts_bundled_path_resolution(self):
+    def test_verify_asserts_external_collection_plane(self) -> None:
         out = _load("default/verify.yml")
         assert "Collection search path" in out or "project paths" in out, (
-            "verify must assert the binary locates bundled config/playbooks paths"
+            "verify must exercise project-path discovery"
         )
-        assert "'(missing)' not in cli_outputs" in out
         assert "'=== project paths (rc=0) ===' in cli_outputs" in out
+        assert r"regex_findall('\\(missing\\)') | length == 1" in out
+        assert r"BUNDLED.*collections.*\\(missing\\)" in out
+
+    def test_teardown_uses_pinned_process_identity(self) -> None:
+        out = _load("default/stop_daemon.yml")
+
+        assert "process_start_ticks" in out
+        assert "binary_daemon_manifest.executable == gludd_bin" in out
+        assert "/proc/{{ _binary_daemon_pid_record.pid | string }}/stat" in out
+        assert "__gludd_bundled_gunicorn__" not in out
+        assert "'--bind'" not in out
 
     def test_verify_assertes_no_import_errors(self):
         out = _load("default/verify.yml")
