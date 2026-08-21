@@ -8,7 +8,14 @@
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8777', true) }}"
     skills_dir: "/tmp/gludd-mock-skills-{{ mock_port }}"
 
+  force_handlers: true
+  handlers:
+    - name: Stop scenario-owned mock daemon
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml"
   tasks:
+    - name: Acquire a private ready mock-daemon session
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_start.yml"
+
     - name: Render skill by name
       general_ludd.agent.gludd_skill:
         name: "mock-review"
@@ -16,6 +23,8 @@
         variables:
           language: "python"
           project_name: "gludd"
+        daemon_url: "{{ daemon_url }}"
+        psk: ""
       register: skill_by_name
 
     - name: Render skill by trigger
@@ -25,6 +34,8 @@
         variables:
           language: "python"
           project_name: "gludd"
+        daemon_url: "{{ daemon_url }}"
+        psk: ""
       register: skill_by_trigger
 
     - name: Persist results for verify

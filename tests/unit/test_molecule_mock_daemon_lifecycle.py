@@ -1,0 +1,184 @@
+"""Regression contract for CI run 32437385366 daemon ownership failures."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+PLAYBOOKS = ROOT / "molecule" / "playbooks"
+SHARED = ROOT / "molecule" / "shared"
+MOCK_SERVER = ROOT / "molecule" / "mock_daemon" / "server.py"
+
+# Every entry reached /healthz in prepare and then failed its first daemon call
+# in converge.  Keep the inventory exact to the 2026-08-21 GHE failure wave.
+DAEMON_LIFECYCLE_SCENARIOS = (
+    "ornith_self_improve",
+    "role_agent_task",
+    "role_implement_change",
+    "role_refactor_code",
+    "role_self_improve_ab_test",
+    "role_self_improve_ab_test_benign",
+    "role_self_improve_promote",
+    "role_self_improve_propose",
+    "test_gludd_abtest",
+    "test_gludd_git",
+    "test_gludd_make",
+    "test_gludd_observe",
+    "test_gludd_reload",
+    "test_gludd_skill",
+    "test_gludd_worktree",
+)
+
+
+def _config(scenario: str) -> dict[str, object]:
+    loaded = yaml.safe_load((PLAYBOOKS / scenario / "molecule.yml").read_text())
+    assert isinstance(loaded, dict)
+    return loaded
+
+
+def test_mock_server_publishes_bound_ephemeral_endpoint_atomically() -> None:
+    source = MOCK_SERVER.read_text()
+
+    assert 'parser.add_argument("--ready-file"' in source
+    assert 'parser.add_argument("--instance-id"' in source
+    assert '"--lease-seconds"' in source
+    assert "server.server_address" in source
+    assert "os.replace" in source
+    assert '"base_url"' in source
+    assert '"instance_id"' in source
+    assert "threading.Timer" in source
+
+
+def test_common_session_is_bounded_owned_and_has_no_poll_loops() -> None:
+    create = (SHARED / "create.yml").read_text()
+    start = (SHARED / "mock_daemon_start.yml").read_text()
+    stop = (SHARED / "mock_daemon_stop.yml").read_text()
+
+    assert "GLUDD_MOCK_PORT" not in create
+    assert "MOLECULE_SCENARIO_NAME" in create
+    assert "MOLECULE_EPHEMERAL_DIRECTORY" in start
+    assert "--port\n" in start and "- \"0\"" in start
+    assert "--ready-file" in start
+    assert "--instance-id" in start
+    assert "--lease-seconds" in start
+    assert "ansible.builtin.wait_for" in start
+    assert "ansible.builtin.uri" in start
+    assert "retries:" not in start
+    assert "delay:" not in start
+    assert "sleep " not in start
+    assert "ansible.builtin.shell" not in start
+
+    assert "expected_server_path" in stop
+    assert "--ready-file" in stop
+    assert "_gludd_mock_owned" in stop
+    assert "ansible.builtin.wait_for" in stop
+    assert "ansible.builtin.async_status" in stop
+    assert "failed_when: false" not in stop
+    assert "ansible.builtin.shell" not in stop
+
+
+def test_failed_daemon_scenarios_own_converge_lifetime_and_molecule_cleanup() -> None:
+    for scenario in DAEMON_LIFECYCLE_SCENARIOS:
+        root = PLAYBOOKS / scenario
+        config = _config(scenario)
+        provisioner = config["provisioner"]
+        assert isinstance(provisioner, dict)
+        playbooks = provisioner["playbooks"]
+        assert isinstance(playbooks, dict)
+        sequence_config = config["scenario"]
+        assert isinstance(sequence_config, dict)
+        sequence = sequence_config["test_sequence"]
+        assert isinstance(sequence, list)
+
+        assert playbooks["cleanup"] == (
+            "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/mock_daemon_cleanup.yml"
+        )
+        assert playbooks["destroy"] == (
+            "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/mock_daemon_destroy.yml"
+        )
+        assert "side_effect" not in playbooks, scenario
+        syntax_index = sequence.index("syntax")
+        assert sequence[syntax_index - 2 : syntax_index] == ["cleanup", "destroy"], scenario
+        assert sequence[-2:] == ["cleanup", "destroy"], scenario
+        assert "side_effect" not in sequence, scenario
+        assert "idempotence" not in sequence, scenario
+        assert "GLUDD_MOCK_PORT" not in yaml.safe_dump(config), scenario
+
+        prepare = (root / "default" / "prepare.yml").read_text()
+        converge = (root / "default" / "converge.yml").read_text()
+        verify = (root / "default" / "verify.yml").read_text()
+
+        assert "mock_daemon/server.py" not in prepare, scenario
+        assert "nohup" not in prepare, scenario
+        assert "retries:" not in prepare, scenario
+        assert "delay:" not in prepare, scenario
+        assert "force_handlers: true" in converge, scenario
+        assert "mock_daemon_start.yml" in converge, scenario
+        assert "mock_daemon_stop.yml" in converge, scenario
+        assert "nohup" not in converge, scenario
+        assert "kill $(cat" not in verify, scenario
+        for module, arguments in _daemon_calls(yaml.safe_load(converge)):
+            assert "daemon_url" in arguments, f"{scenario}: {module} omitted daemon_url"
+            assert "psk" in arguments, f"{scenario}: {module} omitted psk"
+
+
+def test_abtest_mock_route_preserves_fail_closed_verdicts() -> None:
+    source = MOCK_SERVER.read_text()
+
+    assert 'path == "/admin/abtest/run"' in source
+    assert "_abtest_response" in source
+    assert 'payload.get("candidate_root"' in source
+    assert '"crashed"' in source
+    assert '"promote"' in source
+
+
+def _daemon_calls(value: object) -> list[tuple[str, dict[str, object]]]:
+    calls: list[tuple[str, dict[str, object]]] = []
+    if isinstance(value, list):
+        for item in value:
+            calls.extend(_daemon_calls(item))
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if key in {
+                "general_ludd.agent.gludd_abtest",
+                "general_ludd.agent.gludd_git",
+                "general_ludd.agent.gludd_make",
+                "general_ludd.agent.gludd_reload",
+                "general_ludd.agent.gludd_skill",
+                "general_ludd.agent.gludd_worktree",
+            }:
+                assert isinstance(item, dict)
+                calls.append((key, item))
+            calls.extend(_daemon_calls(item))
+    return calls
+
+
+def test_affected_roles_forward_the_explicit_daemon_contract() -> None:
+    role_root = (
+        ROOT
+        / "collections"
+        / "ansible_collections"
+        / "general_ludd"
+        / "agent"
+        / "roles"
+    )
+    roles = (
+        "agent_task",
+        "implement_change",
+        "ornith_self_improve",
+        "refactor_code",
+        "self_improve_ab_test",
+        "self_improve_promote",
+        "self_improve_propose",
+    )
+    calls: list[tuple[str, dict[str, object]]] = []
+    for role in roles:
+        for task_file in sorted((role_root / role / "tasks").glob("*.yml")):
+            calls.extend(_daemon_calls(yaml.safe_load(task_file.read_text())))
+
+    assert calls
+    for module, arguments in calls:
+        assert "daemon_url" in arguments, f"{module} did not forward daemon_url"
+        assert "psk" in arguments, f"{module} did not forward psk"

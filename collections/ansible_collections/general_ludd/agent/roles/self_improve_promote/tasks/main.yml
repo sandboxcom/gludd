@@ -50,6 +50,8 @@
         health_url: "{{ health_url | default(omit, true) }}"
         health_timeout: "{{ health_timeout }}"
         result_path: "{{ promotion_result_path }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
       register: reload_result
       when: _sipp_verdict.promote | default(false) | bool
 

@@ -51,11 +51,15 @@
         branch: "{{ _at_branch }}"
         worktree_path: "{{ _at_path }}"
         state: present
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
 
     - name: Render skill body (if skill_name is set)
       general_ludd.agent.gludd_skill:
         name: "{{ skill_name }}"
         variables: "{{ skill_vars | default({}) }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
       register: skill_render
       when: skill_name | length > 0
 
@@ -94,6 +98,8 @@
         path: "{{ _at_path }}"
         op: commit
         message: "{{ commit_prefix }}: {{ todo_id }} — {{ work_type }} [agent_task]"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
       register: git_commit
 
     - name: Mark todo done
@@ -144,4 +150,6 @@
         branch: "{{ _at_branch }}"
         worktree_path: "{{ _at_path }}"
         state: absent
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
       failed_when: false

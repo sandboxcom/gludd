@@ -4,15 +4,14 @@
   connection: local
   gather_facts: false
   vars:
-    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') }}"
+    molecule_scenario_name: "{{ lookup('env', 'MOLECULE_SCENARIO_NAME') }}"
   tasks:
-    - name: Require a namespaced mock-daemon port
+    - name: Require a namespaced Molecule scenario
       ansible.builtin.assert:
         that:
-          - mock_port | length > 0
-          - mock_port | int > 1024
-          - mock_port | int < 65536
-        fail_msg: "GLUDD_MOCK_PORT must identify this Molecule scenario"
+          - molecule_scenario_name | length > 0
+          - molecule_scenario_name is match('^[A-Za-z0-9_-]+$')
+        fail_msg: "MOLECULE_SCENARIO_NAME must identify this Molecule run"
 
     - name: Verify the explicit localhost target
       ansible.builtin.ping:

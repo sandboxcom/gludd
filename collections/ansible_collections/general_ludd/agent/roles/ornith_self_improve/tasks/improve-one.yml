@@ -62,6 +62,8 @@
         path: "{{ repo_path }}"
         op: branch
         branch: "{{ pr_branch_prefix }}/{{ _osi_artifact_name }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
       register: _osi_branch_result
 
     - name: Apply the patch to the repo worktree
@@ -83,6 +85,8 @@
 
           Citations:
           {{ _osi_failures | map(attribute='pair_id') | join(', ') }}
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
       register: _osi_commit_result
 
     - name: Push the PR branch (opens PR via daemon sidecar)
@@ -90,6 +94,8 @@
         path: "{{ repo_path }}"
         op: push
         branch: "{{ pr_branch_prefix }}/{{ _osi_artifact_name }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
       register: _osi_push_result
 
     - name: Record the PR URL (best-effort from push result)

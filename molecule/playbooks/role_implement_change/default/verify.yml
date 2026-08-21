@@ -36,12 +36,6 @@
         success_msg: "implement_change ran end-to-end against mock daemon + real git"
 
     # ---- cleanup: stop daemon + remove throwaway repo/worktrees ----
-    - name: Stop mock daemon
-      ansible.builtin.shell:
-        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
-      changed_when: false
-      failed_when: false
-
     - name: Remove throwaway repo + worktrees
       ansible.builtin.file:
         path: "{{ item }}"

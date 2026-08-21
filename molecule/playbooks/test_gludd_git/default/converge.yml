@@ -8,7 +8,14 @@
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8779', true) }}"
     repo_path: "/tmp/gludd-git-repo-{{ mock_port }}"
 
+  force_handlers: true
+  handlers:
+    - name: Stop scenario-owned mock daemon
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml"
   tasks:
+    - name: Acquire a private ready mock-daemon session
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_start.yml"
+
     - name: Add a new file so there is something to commit
       ansible.builtin.copy:
         dest: "{{ repo_path }}/change.txt"
@@ -20,6 +27,8 @@
         path: "{{ repo_path }}"
         op: commit
         message: "molecule: test commit from gludd_git"
+        daemon_url: "{{ daemon_url }}"
+        psk: ""
       register: commit_result
 
     - name: Create a branch via gludd_git
@@ -27,6 +36,8 @@
         path: "{{ repo_path }}"
         op: branch
         branch: "molecule/test-branch"
+        daemon_url: "{{ daemon_url }}"
+        psk: ""
       register: branch_result
 
     - name: Persist results for verify

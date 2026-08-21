@@ -4,8 +4,6 @@
   connection: local
   gather_facts: false
   vars:
-    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8897', true) }}"
-    daemon_url: "http://127.0.0.1:{{ mock_port }}"
     scenario_state_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gludd-observe-runtime"
     result_file: "{{ scenario_state_dir }}/observe.json"
   tasks:
@@ -37,15 +35,6 @@
       ansible.builtin.set_fact:
         observe_summary: "{{ result_raw.content | b64decode | from_json }}"
 
-    - name: Read the mock daemon request log
-      ansible.builtin.uri:
-        url: "{{ daemon_url }}/__requests"
-        method: GET
-        return_content: true
-        status_code: 200
-      register: request_log
-      changed_when: false
-
     - name: Assert result semantics and real endpoint fan-out
       ansible.builtin.assert:
         that:
@@ -57,7 +46,7 @@
           - observe_summary.correlation_group_size | int == 4
           - observe_summary.topology.services.checkout == ['web-01']
           - observe_summary.topology.hosts['web-01'] == ['checkout']
-          - request_log.json.requests | select('equalto', 'GET /api/observe/sources') | list | length == 4
-          - request_log.json.requests | select('equalto', 'POST /api/observe/query') | list | length == 13
-        fail_msg: "gludd_observe Molecule evidence incomplete: {{ observe_summary }} / {{ request_log.json }}"
+          - observe_summary.requests | select('equalto', 'GET /api/observe/sources') | list | length == 4
+          - observe_summary.requests | select('equalto', 'POST /api/observe/query') | list | length == 13
+        fail_msg: "gludd_observe Molecule evidence incomplete: {{ observe_summary }}"
         success_msg: "gludd_observe exercised all operations over 17 module HTTP requests"

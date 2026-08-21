@@ -10,13 +10,22 @@
     worktree_path: "/tmp/gludd-worktree-wt-{{ mock_port }}"
     branch_name: "molecule/wt-test"
 
+  force_handlers: true
+  handlers:
+    - name: Stop scenario-owned mock daemon
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml"
   tasks:
+    - name: Acquire a private ready mock-daemon session
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_start.yml"
+
     - name: Create worktree (state=present)
       general_ludd.agent.gludd_worktree:
         repo_path: "{{ repo_path }}"
         branch: "{{ branch_name }}"
         worktree_path: "{{ worktree_path }}"
         state: present
+        daemon_url: "{{ daemon_url }}"
+        psk: ""
       register: present_result
 
     - name: Assert worktree directory now exists
@@ -30,6 +39,8 @@
         branch: "{{ branch_name }}"
         worktree_path: "{{ worktree_path }}"
         state: absent
+        daemon_url: "{{ daemon_url }}"
+        psk: ""
       register: absent_result
 
     - name: Persist results for verify

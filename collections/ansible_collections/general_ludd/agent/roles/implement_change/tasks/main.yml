@@ -59,6 +59,8 @@
         branch: "{{ _ic_branch }}"
         worktree_path: "{{ _ic_path }}"
         state: present
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
       when: repo_path | length > 0
 
     - name: Run model agent to generate and apply change
@@ -93,6 +95,8 @@
         path: "{{ _ic_path | default(repo_path) }}"
         op: commit
         message: "implement_change: {{ todo_id | default('change') }} — {{ change_description | truncate(72) }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
       register: git_commit
       when:
         - not ansible_check_mode
@@ -168,5 +172,7 @@
         branch: "{{ _ic_branch | default('') }}"
         worktree_path: "{{ _ic_path | default('') }}"
         state: absent
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
       failed_when: false
       when: repo_path | length > 0 and (_ic_path | default('')) | length > 0

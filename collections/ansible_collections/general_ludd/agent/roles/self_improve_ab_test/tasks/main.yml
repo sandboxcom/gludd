@@ -34,6 +34,8 @@
         timeout: "{{ ab_timeout }}"
         mem_limit_mb: "{{ ab_mem_limit_mb }}"
         verdict_path: "{{ ab_verdict_path }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
       register: ab
 
     - name: Surface the A/B verdict

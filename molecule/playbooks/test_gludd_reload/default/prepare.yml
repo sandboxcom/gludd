@@ -3,13 +3,10 @@
 # module by dotted name, os.replaces a candidate source over its __file__,
 # importlib.reloads it, then runs a health gate (a /readyz poll) and rolls back
 # on failure. Prepare:
-#   1. Starts the reusable mock daemon (serves the /readyz + /readyz-degraded
-#      health endpoints the two reload calls poll; also satisfies the
-#      module-scenario "must launch the mock daemon" coverage rule).
-#   2. Writes a throwaway, importable, file-backed leaf package onto PYTHONPATH
+#   1. Writes a throwaway, importable, file-backed leaf package onto PYTHONPATH
 #      (set in molecule.yml to /tmp/gludd-reload-8840) so HotReloader can import
 #      and hot-rotate it without touching any real general_ludd module.
-#   3. Writes a GOOD candidate (swaps cleanly) and a BROKEN candidate (still
+#   2. Writes a GOOD candidate (swaps cleanly) and a BROKEN candidate (still
 #      imports, but the degraded health gate will reject it -> rollback).
 - name: Prepare - mock daemon + importable throwaway leaf for gludd_reload
   hosts: localhost
@@ -24,31 +21,6 @@
     reload_base: "/tmp/gludd-reload-8840"
     pkg_dir: "/tmp/gludd-reload-8840/gludd_reload_leaf"
   tasks:
-    - name: Launch mock daemon (background, nohup)
-      ansible.builtin.shell:
-        cmd: >-
-          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
-          "{{ project_dir }}/molecule/mock_daemon/server.py"
-          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
-          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
-      changed_when: true
-
-    - name: Wait for mock daemon /healthz
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ mock_port }}/healthz"
-        method: GET
-        status_code: 200
-      register: health
-      until: health.status == 200
-      retries: 20
-      delay: 0.5
-
-    - name: Confirm the /readyz health gate is reachable
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ mock_port }}/readyz"
-        method: GET
-        status_code: 200
-
     - name: Remove any stale throwaway leaf tree + candidate sources
       ansible.builtin.file:
         path: "{{ reload_base }}"

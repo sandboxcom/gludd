@@ -10,23 +10,34 @@
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
     reload_base: "/tmp/gludd-reload-8840"
+  force_handlers: true
+  handlers:
+    - name: Stop scenario-owned mock daemon
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml"
   tasks:
+    - name: Acquire a private ready mock-daemon session
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_start.yml"
+
     - name: Hot-rotate the GOOD candidate (healthy /readyz gate -> promote)
       general_ludd.agent.gludd_reload:
         module_name: "gludd_reload_leaf.leaf"
         candidate_source_path: "{{ reload_base }}/candidate_good.py"
-        health_url: "http://127.0.0.1:{{ mock_port }}/readyz"
+        health_url: "{{ daemon_url }}/readyz"
         health_timeout: 5.0
         result_path: "{{ reload_base }}/promotion_good.json"
+        daemon_url: "{{ daemon_url }}"
+        psk: ""
       register: reload_good
 
     - name: Hot-rotate the BROKEN candidate (degraded gate -> rollback)
       general_ludd.agent.gludd_reload:
         module_name: "gludd_reload_leaf.leaf"
         candidate_source_path: "{{ reload_base }}/candidate_broken.py"
-        health_url: "http://127.0.0.1:{{ mock_port }}/readyz-degraded"
+        health_url: "{{ daemon_url }}/readyz-degraded"
         health_timeout: 5.0
         result_path: "{{ reload_base }}/promotion_broken.json"
+        daemon_url: "{{ daemon_url }}"
+        psk: ""
       register: reload_broken
 
     - name: Persist both reload results for verify

@@ -5,13 +5,22 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  force_handlers: true
+  handlers:
+    - name: Stop scenario-owned mock daemon
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml"
   tasks:
+    - name: Acquire a private ready mock-daemon session
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_start.yml"
+
     - name: Run make hello (should succeed)
       general_ludd.agent.gludd_make:
         target: hello
         cwd: /tmp
         env_extra:
           MAKEFILES: "/tmp/gludd-test-make-Makefile"
+        daemon_url: "{{ daemon_url }}"
+        psk: ""
       register: hello_result
 
     - name: Run make versions (should succeed)
@@ -20,6 +29,8 @@
         cwd: /tmp
         env_extra:
           MAKEFILES: "/tmp/gludd-test-make-Makefile"
+        daemon_url: "{{ daemon_url }}"
+        psk: ""
       register: versions_result
 
     - name: Run make bad (should fail)
@@ -28,6 +39,8 @@
         cwd: /tmp
         env_extra:
           MAKEFILES: "/tmp/gludd-test-make-Makefile"
+        daemon_url: "{{ daemon_url }}"
+        psk: ""
       register: bad_result
       failed_when: false
 

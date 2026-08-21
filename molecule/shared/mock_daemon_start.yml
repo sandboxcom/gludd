@@ -1,0 +1,111 @@
+---
+- name: Derive this Molecule run's private daemon identity
+  ansible.builtin.set_fact:
+    _gludd_mock_runtime_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gludd-mock-daemon"
+    _gludd_mock_instance_id: >-
+      {{ lookup('env', 'MOLECULE_SCENARIO_NAME') | default('gludd-molecule', true) }}
+    expected_server_path: >-
+      {{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/mock_daemon/server.py
+
+- name: Derive private daemon lifecycle files
+  ansible.builtin.set_fact:
+    _gludd_mock_pidfile: "{{ _gludd_mock_runtime_dir }}/daemon.pid"
+    _gludd_mock_ready_file: "{{ _gludd_mock_runtime_dir }}/ready.json"
+    _gludd_mock_async_file: "{{ _gludd_mock_runtime_dir }}/ansible-job-id"
+
+- name: Reconcile an interrupted run before acquiring this session
+  ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml"
+
+- name: Create the private daemon lifecycle directory
+  ansible.builtin.file:
+    path: "{{ _gludd_mock_runtime_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Launch the mock daemon on a kernel-assigned loopback port
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ expected_server_path }}"
+      - --host
+      - 127.0.0.1
+      - --port
+      - "0"
+      - --pidfile
+      - "{{ _gludd_mock_pidfile }}"
+      - --ready-file
+      - "{{ _gludd_mock_ready_file }}"
+      - --instance-id
+      - "{{ _gludd_mock_instance_id }}"
+      - --lease-seconds
+      - "900"
+  async: 910
+  poll: 0
+  register: _gludd_mock_job
+  changed_when: true
+  notify: Stop scenario-owned mock daemon
+
+- name: Persist the exact Ansible async job identifier
+  ansible.builtin.copy:
+    content: "{{ _gludd_mock_job.ansible_job_id }}\n"
+    dest: "{{ _gludd_mock_async_file }}"
+    mode: "0600"
+
+- name: Wait for the daemon to publish its atomic ready manifest
+  ansible.builtin.wait_for:
+    path: "{{ _gludd_mock_ready_file }}"
+    state: present
+    timeout: 15
+
+- name: Load the daemon ready manifest
+  ansible.builtin.slurp:
+    src: "{{ _gludd_mock_ready_file }}"
+  register: _gludd_mock_ready_raw
+
+- name: Decode the bound endpoint and ownership evidence
+  ansible.builtin.set_fact:
+    _gludd_mock_ready: "{{ _gludd_mock_ready_raw.content | b64decode | from_json }}"
+
+- name: Expose the discovered endpoint to scenario and role callers
+  ansible.builtin.set_fact:
+    daemon_url: "{{ _gludd_mock_ready.base_url }}"
+    mock_daemon_url: "{{ _gludd_mock_ready.base_url }}"
+    mock_daemon_port: "{{ _gludd_mock_ready.port | int }}"
+    _gludd_mock_pid: "{{ _gludd_mock_ready.pid | string }}"
+
+- name: Inspect the exact process named by the private manifest
+  ansible.builtin.command:
+    argv:
+      - /bin/ps
+      - -p
+      - "{{ _gludd_mock_pid }}"
+      - -o
+      - command=
+  register: _gludd_mock_process
+  changed_when: false
+
+- name: Prove endpoint and process ownership before the first request
+  ansible.builtin.assert:
+    that:
+      - _gludd_mock_ready.host == '127.0.0.1'
+      - _gludd_mock_ready.instance_id == _gludd_mock_instance_id
+      - _gludd_mock_pid is match('^[1-9][0-9]*$')
+      - mock_daemon_port | int > 0
+      - mock_daemon_port | int < 65536
+      - expected_server_path in _gludd_mock_process.stdout
+      - ('--port 0') in _gludd_mock_process.stdout
+      - ('--ready-file ' ~ _gludd_mock_ready_file) in _gludd_mock_process.stdout
+      - ('--instance-id ' ~ _gludd_mock_instance_id) in _gludd_mock_process.stdout
+    fail_msg: "mock daemon endpoint/process ownership validation failed"
+
+- name: Require exact daemon readiness before scenario work
+  ansible.builtin.uri:
+    url: "{{ daemon_url }}/healthz"
+    method: GET
+    status_code: 200
+    return_content: true
+  register: _gludd_mock_health
+  changed_when: false
+  failed_when: >-
+    _gludd_mock_health.status != 200
+    or _gludd_mock_health.json.status | default('') != 'ok'

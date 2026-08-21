@@ -8,7 +8,14 @@
     daemon_url: "http://127.0.0.1:{{ mock_port }}"
     scenario_state_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gludd-observe-runtime"
     result_file: "{{ scenario_state_dir }}/observe.json"
+  force_handlers: true
+  handlers:
+    - name: Stop scenario-owned mock daemon
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml"
   tasks:
+    - name: Acquire a private ready mock-daemon session
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_start.yml"
+
     - name: Reset the request log before this converge pass
       ansible.builtin.uri:
         url: "{{ daemon_url }}/__requests/reset"
@@ -93,6 +100,15 @@
           - topology_result.ansible_facts.gludd_observe.topology.hosts['web-01'] == ['checkout']
         fail_msg: "gludd_observe operation contract failed"
 
+    - name: Snapshot endpoint evidence before deterministic daemon teardown
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/__requests"
+        method: GET
+        return_content: true
+        status_code: 200
+      register: request_log
+      changed_when: false
+
     - name: Persist a deterministic result summary for verify
       ansible.builtin.copy:
         content: >-
@@ -103,7 +119,8 @@
             'timeline_error_source': timeline_result.ansible_facts.gludd_observe.errors[0].source,
             'source_count': timeline_result.ansible_facts.gludd_observe.records | map(attribute='source') | unique | list | length,
             'correlation_group_size': correlate_result.ansible_facts.gludd_observe.groups['incident-42'] | length,
-            'topology': topology_result.ansible_facts.gludd_observe.topology
+            'topology': topology_result.ansible_facts.gludd_observe.topology,
+            'requests': request_log.json.requests
           } | to_nice_json }}
         dest: "{{ result_file }}"
         mode: "0600"

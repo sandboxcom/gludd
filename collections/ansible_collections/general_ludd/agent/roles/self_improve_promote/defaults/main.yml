@@ -13,6 +13,8 @@ candidate_source_path: ""
 # rollback). Empty => treated as healthy.
 health_url: ""
 health_timeout: 5.0
+daemon_url: "http://localhost:8000"
+psk: ""
 
 # Artifact output.
 artifact_dir: "/tmp/gludd-self-improve-promote"

@@ -6,12 +6,19 @@
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8789', true) }}"
     mock_repo_path: "/tmp/gludd-mock-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8789', true) }}"
+  force_handlers: true
+  handlers:
+    - name: Stop scenario-owned mock daemon
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml"
   tasks:
+    - name: Acquire a private ready mock-daemon session
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_start.yml"
+
     - name: Invoke refactor_code
       ansible.builtin.include_role:
         name: general_ludd.agent.refactor_code
       vars:
-        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        daemon_url: "{{ mock_daemon_url }}"
         psk: ""
         refactor_target: "src/util.py"
         refactor_goal: "improve readability and remove inline comments"

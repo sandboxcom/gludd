@@ -54,6 +54,8 @@
         branch: "{{ _sip_branch }}"
         worktree_path: "{{ _sip_worktree }}"
         state: present
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
       register: worktree
       when: repo_path | length > 0
 

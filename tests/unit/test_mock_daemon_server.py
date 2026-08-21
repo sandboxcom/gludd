@@ -49,8 +49,8 @@ def _wait_for_server(url: str, timeout: float = 10.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            urllib.request.urlopen(f"{url}/healthz", timeout=1)
-            return
+            with urllib.request.urlopen(f"{url}/healthz", timeout=1):
+                return
         except Exception:
             time.sleep(0.05)
     raise TimeoutError(f"Mock daemon did not start within {timeout}s")
@@ -72,6 +72,175 @@ def _post(url: str, path: str, payload: dict | None = None) -> tuple[int, dict]:
         return resp.status, body
 
 
+class TestCollectionControlPlaneEndpoints:
+    """Daemon seams used by the migrated collection modules."""
+
+    @pytest.fixture(scope="class")
+    def url(self) -> Generator[str]:
+        port = _find_free_port()
+        proc = subprocess.Popen(
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        base = f"http://127.0.0.1:{port}"
+        _wait_for_server(base)
+        yield base
+        proc.send_signal(signal.SIGTERM)
+        proc.wait(timeout=5)
+
+    def test_git_route_owns_worktree_lifecycle(self, url: str, tmp_path: Path) -> None:
+        worktree = tmp_path / "candidate"
+        status, created = _post(
+            url,
+            "/admin/git/operation",
+            {
+                "op": "worktree_create",
+                "path": str(tmp_path / "repo"),
+                "branch": "feature/molecule",
+                "worktree_path": str(worktree),
+            },
+        )
+        assert status == 200
+        assert created["result"]["success"] is True
+        assert worktree.is_dir()
+
+        status, removed = _post(
+            url,
+            "/admin/git/operation",
+            {
+                "op": "worktree_remove",
+                "path": str(tmp_path / "repo"),
+                "worktree_path": str(worktree),
+            },
+        )
+        assert status == 200
+        assert removed["result"]["removed"] is True
+        assert not worktree.exists()
+
+    def test_git_route_returns_typed_commit_and_branch_results(self, url: str) -> None:
+        _, committed = _post(
+            url,
+            "/admin/git/operation",
+            {"op": "commit", "path": "/tmp/repo", "message": "molecule commit"},
+        )
+        _, branched = _post(
+            url,
+            "/admin/git/operation",
+            {"op": "branch", "path": "/tmp/repo", "branch": "molecule/test-branch"},
+        )
+        assert committed["changed"] is True
+        assert committed["result"]["sha"] == "0123456789abcdef"
+        assert committed["result"]["message"] == "molecule commit"
+        assert branched["result"]["branch"] == "molecule/test-branch"
+
+    @pytest.mark.parametrize(
+        ("target", "success", "exit_code", "needle"),
+        [
+            ("hello", True, 0, "hello from molecule test_gludd_make"),
+            ("versions", True, 0, "make version:"),
+            ("does-not-exist", False, 2, "No rule to make target"),
+        ],
+    )
+    def test_make_route_preserves_structured_result(
+        self, url: str, target: str, success: bool, exit_code: int, needle: str
+    ) -> None:
+        status, result = _post(url, "/admin/make", {"target": target})
+        assert status == 200
+        assert result["success"] is success
+        assert result["exit_code"] == exit_code
+        assert needle in (result["stdout_tail"] + result["stderr_tail"])
+
+    def test_skill_route_renders_required_variables(self, url: str) -> None:
+        status, result = _post(
+            url,
+            "/admin/skills/render",
+            {
+                "name": "mock-review",
+                "variables": {"language": "python", "project_name": "gludd"},
+            },
+        )
+        assert status == 200
+        assert result["skill_name"] == "mock-review"
+        assert "python" in result["rendered_body"]
+        assert "gludd" in result["rendered_body"]
+
+    def test_observe_facade_preserves_fanout_and_isolated_errors(self, url: str) -> None:
+        _post(url, "/__requests/reset")
+        operations = (
+            ("query_sources", ["logs", "metrics", "traces"]),
+            ("timeline", ["logs", "metrics", "traces", "events"]),
+            ("correlate_incident", ["logs", "metrics", "traces"]),
+            ("topology", ["logs", "metrics", "traces"]),
+        )
+        results: dict[str, dict] = {}
+        for operation, kinds in operations:
+            request_payload = {
+                "operation": operation,
+                "role": "molecule_observe_probe",
+                "kinds": kinds,
+                "seed": {
+                    "ts": 25.0,
+                    "source": "incident-seed",
+                    "kind": "events",
+                    "labels": {"trace_id": "incident-42"},
+                },
+                "start": 5.0,
+                "end": 35.0,
+            }
+            if operation == "correlate_incident":
+                request_payload["start"] = None
+                request_payload["end"] = None
+                request_payload["window_s"] = 20.0
+            status, response = _post(
+                url,
+                "/api/observe/facade",
+                request_payload,
+            )
+            assert status == 200
+            results[operation] = response["result"]
+
+        assert [record["ts"] for record in results["query_sources"]["records"]] == [
+            10.0,
+            20.0,
+            30.0,
+        ]
+        assert results["timeline"]["errors"] == [
+            {"source": "broken-events", "message": "query failed"}
+        ]
+        assert len(results["correlate_incident"]["groups"]["incident-42"]) == 4
+        assert results["topology"]["topology"]["services"]["checkout"] == ["web-01"]
+        _, requests = _get(url, "/__requests")
+        assert requests["requests"].count("GET /api/observe/sources") == 4
+        assert requests["requests"].count("POST /api/observe/query") == 13
+
+    @pytest.mark.parametrize("source_root", ["", "src"])
+    def test_reload_route_promotes_or_rolls_back_from_health_gate(
+        self, url: str, tmp_path: Path, source_root: str
+    ) -> None:
+        live = tmp_path / source_root / "demo" / "leaf.py"
+        live.parent.mkdir(parents=True)
+        live.write_text('VERSION = "v1"\n')
+        candidate = tmp_path / "candidate.py"
+        candidate.write_text('VERSION = "v2"\n')
+        payload = {
+            "module_name": "demo.leaf",
+            "candidate_source_path": str(candidate),
+            "health_url": f"{url}/readyz",
+        }
+        _, promoted = _post(url, "/admin/reload/code", payload)
+        assert promoted["success"] is True
+        assert promoted["rolled_back"] is False
+        assert '"v2"' in live.read_text()
+
+        candidate.write_text('VERSION = "broken"\n')
+        payload["health_url"] = f"{url}/readyz-degraded"
+        _, rolled_back = _post(url, "/admin/reload/code", payload)
+        assert rolled_back["success"] is False
+        assert rolled_back["rolled_back"] is True
+        assert '"v2"' in live.read_text()
+
+
 def _patch(url: str, path: str, payload: dict) -> tuple[int, dict]:
     data = json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json"}
@@ -86,8 +255,9 @@ def _request_raw(url: str, path: str, method: str = "GET", headers: dict | None 
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             return resp.status, resp.read()
-    except urllib.error.HTTPError as e:
-        return e.code, e.read()
+    except urllib.error.HTTPError as error:
+        with error:
+            return error.code, error.read()
 
 
 def _post_error(url: str, path: str, payload: dict | None = None) -> tuple[int, dict]:
@@ -98,9 +268,10 @@ def _post_error(url: str, path: str, payload: dict | None = None) -> tuple[int, 
         with urllib.request.urlopen(req, timeout=5) as resp:
             body = json.loads(resp.read().decode())
             return resp.status, body
-    except urllib.error.HTTPError as e:
-        body = json.loads(e.read().decode())
-        return e.code, body
+    except urllib.error.HTTPError as error:
+        with error:
+            body = json.loads(error.read().decode())
+            return error.code, body
 
 
 def _get_error(url: str, path: str) -> tuple[int, dict]:
@@ -109,9 +280,10 @@ def _get_error(url: str, path: str) -> tuple[int, dict]:
         with urllib.request.urlopen(req, timeout=5) as resp:
             body = json.loads(resp.read().decode())
             return resp.status, body
-    except urllib.error.HTTPError as e:
-        body = json.loads(e.read().decode())
-        return e.code, body
+    except urllib.error.HTTPError as error:
+        with error:
+            body = json.loads(error.read().decode())
+            return error.code, body
 
 
 class TestMockDaemonStartup:

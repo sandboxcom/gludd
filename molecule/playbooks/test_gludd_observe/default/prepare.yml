@@ -1,88 +1,13 @@
 ---
-- name: Prepare - start the reusable mock daemon for gludd_observe
+- name: Prepare private result state for gludd_observe
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
-    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
-    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8897', true) }}"
     scenario_state_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gludd-observe-runtime"
-    pidfile: "{{ scenario_state_dir }}/daemon.pid"
-    async_jid_file: "{{ scenario_state_dir }}/ansible-job-id"
-    expected_server_path: "{{ project_dir }}/molecule/mock_daemon/server.py"
   tasks:
-    - name: Remove state left by an interrupted run without broad process matching
-      ansible.builtin.include_tasks: stop_mock.yml
-
-    - name: Create a private state directory inside Molecule's ephemeral directory
+    - name: Create a private result directory inside Molecule state
       ansible.builtin.file:
         path: "{{ scenario_state_dir }}"
         state: directory
         mode: "0700"
-
-    - name: Launch the reusable mock daemon on loopback with an argument vector
-      ansible.builtin.command:
-        argv:
-          - "{{ ansible_playbook_python }}"
-          - "{{ expected_server_path }}"
-          - --port
-          - "{{ mock_port }}"
-          - --host
-          - 127.0.0.1
-          - --pidfile
-          - "{{ pidfile }}"
-      async: 3600
-      poll: 0
-      register: mock_daemon_job
-      changed_when: true
-
-    - name: Persist the private Ansible async job identifier for exact cleanup
-      ansible.builtin.copy:
-        content: "{{ mock_daemon_job.ansible_job_id }}\n"
-        dest: "{{ async_jid_file }}"
-        mode: "0600"
-
-    - name: Wait for the daemon to publish its private PID file
-      ansible.builtin.wait_for:
-        path: "{{ pidfile }}"
-        state: present
-        timeout: 10
-
-    - name: Read the daemon PID
-      ansible.builtin.slurp:
-        src: "{{ pidfile }}"
-      register: launched_pid_raw
-
-    - name: Decode the daemon PID
-      ansible.builtin.set_fact:
-        launched_pid: "{{ launched_pid_raw.content | b64decode | trim }}"
-
-    - name: Inspect the launched process without a shell
-      ansible.builtin.command:
-        argv:
-          - /bin/ps
-          - -p
-          - "{{ launched_pid }}"
-          - -o
-          - command=
-      register: launched_process
-      changed_when: false
-
-    - name: Prove the PID belongs to this exact scenario before using the daemon
-      ansible.builtin.assert:
-        that:
-          - launched_pid is match('^[1-9][0-9]*$')
-          - expected_server_path in launched_process.stdout
-          - ('--port ' ~ mock_port) in launched_process.stdout
-          - ('--pidfile ' ~ pidfile) in launched_process.stdout
-        fail_msg: "mock daemon PID ownership validation failed"
-
-    - name: Wait for the mock daemon health endpoint
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ mock_port }}/healthz"
-        method: GET
-        status_code: 200
-      register: health
-      until: health.status == 200
-      retries: 20
-      delay: 0.5
