@@ -11,6 +11,7 @@ import re
 import signal
 import tempfile
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -29,6 +30,9 @@ if TYPE_CHECKING:
     from general_ludd.ansible.runner import AnsibleRunnerAdapter
 
 logger = logging.getLogger(__name__)
+
+_TERMINAL_STATUS_LIMIT = 128
+_TERMINAL_ERROR_LIMIT = 4096
 
 # Characters that the shell treats specially. Any of these in a value that
 # is interpolated into an argv (or, worse, into the slurm ``--wrap`` shell
@@ -161,6 +165,19 @@ class LocalServer:
         return self.status == "running" and self.process is not None
 
 
+@dataclass(frozen=True, slots=True)
+class LocalServerTerminalStatus:
+    """Immutable diagnostic snapshot retained after owned resources are reaped."""
+
+    server_id: str
+    status: str
+    engine: str
+    endpoint_url: str
+    returncode: int | None
+    error: str
+    recorded_at: float
+
+
 class LocalInferenceManager:
     """Owns the local inference server lifecycle (create/start/stop/list)."""
 
@@ -171,9 +188,43 @@ class LocalInferenceManager:
     ) -> None:
         """Initialize the manager with an optional event bus and adapter."""
         self._servers: dict[str, LocalServer] = {}
+        self._terminal_statuses: OrderedDict[str, LocalServerTerminalStatus] = OrderedDict()
         self._event_bus = event_bus
         self._ansible_adapter = ansible_adapter
         self._next_id = 0
+
+    @staticmethod
+    def _returncode(process: Any | None) -> int | None:
+        """Return a concrete child exit code without retaining the process."""
+        value = getattr(process, "returncode", None)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        return None
+
+    def _record_terminal_status(
+        self,
+        server: LocalServer,
+        *,
+        status: str,
+        error: BaseException | str = "",
+        returncode: int | None = None,
+    ) -> LocalServerTerminalStatus:
+        """Store one bounded immutable snapshot, evicting the oldest record."""
+        error_text = str(error) or (type(error).__name__ if isinstance(error, BaseException) else "")
+        terminal = LocalServerTerminalStatus(
+            server_id=server.server_id,
+            status=status,
+            engine=server.config.engine,
+            endpoint_url=server.endpoint_url,
+            returncode=returncode,
+            error=error_text[-_TERMINAL_ERROR_LIMIT:],
+            recorded_at=time.time(),
+        )
+        self._terminal_statuses[server.server_id] = terminal
+        self._terminal_statuses.move_to_end(server.server_id)
+        while len(self._terminal_statuses) > _TERMINAL_STATUS_LIMIT:
+            self._terminal_statuses.popitem(last=False)
+        return terminal
 
     @property
     def ansible_adapter(self) -> AnsibleRunnerAdapter | None:
@@ -316,29 +367,34 @@ class LocalInferenceManager:
         logger.info("Starting local inference server %s: %s", server.server_id, " ".join(cmd))
         with tempfile.NamedTemporaryFile(mode="w+b", delete=False, prefix="gludd-llama-stderr-") as stderr_file:
             server.stderr_path = stderr_file.name
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.DEVNULL,
-                # Direct file redirection keeps diagnostics without a bounded
-                # PIPE that can fill and deadlock long-running inference after
-                # readiness polling has completed. The child owns a duplicate
-                # descriptor for its full lifetime.
-                stderr=stderr_file,
-                start_new_session=True,
-            )
-            server.process = process
-            server.started_at = time.time()
-            server.pid = process.pid
             try:
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    # Direct file redirection keeps diagnostics without a bounded
+                    # PIPE that can fill and deadlock long-running inference after
+                    # readiness polling has completed. The child owns a duplicate
+                    # descriptor for its full lifetime.
+                    stderr=stderr_file,
+                    start_new_session=True,
+                )
+                server.process = process
+                server.started_at = time.time()
+                server.pid = process.pid
                 await self._wait_for_ready(server)
-            except BaseException:
+            except BaseException as exc:
                 # The manager owns a subprocess as soon as creation succeeds.
                 # Readiness errors and cancellation must therefore traverse the
                 # same reaping and stderr-removal path as an explicit shutdown.
+                owned_process = server.process
                 await self.stop_server(server.server_id)
-                # Preserve the failed-start outcome for callers retaining the
-                # returned record, even though the owned resources are retired.
                 server.status = "error"
+                self._record_terminal_status(
+                    server,
+                    status="error",
+                    error=exc,
+                    returncode=self._returncode(owned_process),
+                )
                 raise
 
         server.status = "running"
@@ -538,6 +594,7 @@ class LocalInferenceManager:
             with contextlib.suppress(TimeoutError, ProcessLookupError):
                 await asyncio.wait_for(server.process.wait(), timeout=5.0)
 
+        returncode = self._returncode(server.process)
         server.status = "stopped"
         server.process = None
         server.pid = None
@@ -545,6 +602,11 @@ class LocalInferenceManager:
             with contextlib.suppress(OSError):
                 os.unlink(server.stderr_path)
             server.stderr_path = None
+        self._record_terminal_status(
+            server,
+            status="stopped",
+            returncode=returncode,
+        )
         logger.info("Stopped local inference server %s", server_id)
         # A stopped server is fully retired: drop the entry so a second
         # shutdown raises KeyError (route maps it to 404 — pinned contract).
@@ -565,6 +627,14 @@ class LocalInferenceManager:
     def get_server(self, server_id: str) -> LocalServer | None:
         """Return a registered server by id, or None."""
         return self._servers.get(server_id)
+
+    def get_terminal_status(self, server_id: str) -> LocalServerTerminalStatus | None:
+        """Return a retired server's immutable terminal snapshot, if retained."""
+        return self._terminal_statuses.get(server_id)
+
+    def list_terminal_statuses(self) -> tuple[LocalServerTerminalStatus, ...]:
+        """Return the bounded terminal history as an immutable oldest-first tuple."""
+        return tuple(self._terminal_statuses.values())
 
     def remove_server(self, server_id: str) -> None:
         """Remove a stopped server's record (raises while running)."""

@@ -95,6 +95,11 @@ def test_managed_mode_starts_real_llamacpp_and_reaps_it(
     assert owned_processes[0].returncode is not None
     assert managers[0].list_servers() == []
     assert stderr_paths and not stderr_paths[0].exists()
+    terminal = managers[0].get_terminal_status(servers[0].server_id)
+    assert terminal is not None
+    assert terminal.status == "stopped"
+    assert terminal.returncode == owned_processes[0].returncode
+    assert terminal.error == ""
 
 
 def test_managed_mode_reaps_real_llamacpp_startup_failure(
@@ -139,3 +144,9 @@ def test_managed_mode_reaps_real_llamacpp_startup_failure(
     assert owned_processes[0].returncode is not None
     assert managers[0].list_servers() == []
     assert stderr_paths and not stderr_paths[0].exists()
+    terminal = managers[0].get_terminal_status("local-0")
+    assert terminal is not None
+    assert terminal.status == "error"
+    assert terminal.returncode == owned_processes[0].returncode
+    assert "before becoming ready" in terminal.error
+    assert len(terminal.error) <= 4096

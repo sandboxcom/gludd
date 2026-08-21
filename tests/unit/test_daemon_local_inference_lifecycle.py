@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import socket
 import sys
 import time
 from collections.abc import AsyncIterator
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -22,6 +24,13 @@ from general_ludd.infra.local_inference import (
 )
 from general_ludd.routers import models as models_router
 from tests.unit.test_daemon import _lifespan_patches
+
+
+def _random_loopback_port() -> int:
+    """Reserve and release an ephemeral loopback port for a namespaced probe."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 async def _owned_sleeping_server(
@@ -179,3 +188,82 @@ async def test_failed_local_server_start_is_reaped_and_removes_stderr() -> None:
     assert server.pid is None
     assert server.stderr_path is None
     assert captured_stderr and not captured_stderr[0].exists()
+
+
+@pytest.mark.asyncio
+async def test_failed_start_retains_only_bounded_immutable_terminal_status() -> None:
+    """A reaped real child leaves diagnostics, never mutable ownership state."""
+    stderr_paths: list[Path] = []
+    owned_processes: list[object] = []
+
+    class RecordingManager(LocalInferenceManager):
+        async def stop_server(self, server_id: str) -> None:
+            candidate = self.get_server(server_id)
+            if candidate is not None and candidate.process is not None:
+                owned_processes.append(candidate.process)
+            if candidate is not None and candidate.stderr_path is not None:
+                stderr_paths.append(Path(candidate.stderr_path))
+            await super().stop_server(server_id)
+
+    manager = RecordingManager()
+    server = manager.create_server(
+        LocalServerConfig(
+            engine="llamacpp",
+            model_path=__file__,
+            host="127.0.0.1",
+            port=_random_loopback_port(),
+            startup_timeout=5,
+        )
+    )
+    command = [
+        sys.executable,
+        "-c",
+        "import sys; sys.stderr.write('prefix-' + 'x' * 5000 + '-tail'); raise SystemExit(23)",
+    ]
+
+    with (
+        patch.object(manager, "_build_command", return_value=command),
+        pytest.raises(RuntimeError, match="returncode=23"),
+    ):
+        await manager.start_server(server.server_id)
+
+    assert manager.get_server(server.server_id) is None
+    assert len(owned_processes) == 1
+    assert owned_processes[0].returncode == 23
+    assert stderr_paths and not stderr_paths[0].exists()
+
+    terminal = manager.get_terminal_status(server.server_id)
+    assert terminal is not None
+    assert terminal.status == "error"
+    assert terminal.returncode == 23
+    assert terminal.error.endswith("-tail")
+    assert len(terminal.error) <= 4096
+    assert not hasattr(terminal, "process")
+    assert not hasattr(terminal, "stderr_path")
+    with pytest.raises(FrozenInstanceError):
+        terminal.status = "running"
+
+
+@pytest.mark.asyncio
+async def test_terminal_status_history_is_bounded_and_snapshot_only() -> None:
+    """Retired status history cannot grow without bound or expose live records."""
+    manager = LocalInferenceManager()
+    for index in range(130):
+        server = manager.create_server(
+            LocalServerConfig(
+                engine="llamacpp",
+                model_path=__file__,
+                host="127.0.0.1",
+                port=20000 + index,
+            )
+        )
+        await manager.stop_server(server.server_id)
+
+    statuses = manager.list_terminal_statuses()
+    assert isinstance(statuses, tuple)
+    assert len(statuses) == 128
+    assert manager.get_terminal_status("local-0") is None
+    assert manager.get_terminal_status("local-1") is None
+    assert statuses[-1].server_id == "local-129"
+    assert statuses[-1].status == "stopped"
+    assert manager.list_servers() == []

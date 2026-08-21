@@ -256,6 +256,15 @@ Application shutdown follows the same ownership rule: the FastAPI lifespan calls
 External endpoints never enter that registry. To use an already-running model,
 select `external` mode with its loopback URL explicitly:
 
+After a managed server stops, live inventory never retains its process object,
+PID, or stderr path. Callers that need the outcome use the manager's immutable
+terminal-status snapshots instead. Each error keeps only its final 4,096
+characters and the manager retains at most 128 snapshots, so repeated crash loops
+cannot create unbounded memory or disk growth. A failed server is restarted by
+creating a new managed instance; rollback never resurrects or re-owns the dead
+process. This preserves zero-downtime operation for unrelated running endpoints
+while keeping the failed instance's exit code and diagnostic tail available.
+
 ```bash
 make test-e2e-games-local-model \
   LOCAL_MODEL_E2E_MODE=external \
@@ -285,6 +294,15 @@ they do not imply that Gludd inherits every historical upstream bug:
   Hermetic and managed suites therefore ask the OS for a free port. Managed acceptance
   additionally proves that the real child is waited, its stderr artifact is removed, and
   no owned process remains, so parallel projects do not share a fixed endpoint.
+- **Bounded post-reap diagnostics.** A llama.cpp user reported on 2026-01-02 that
+  `llama-server` printed model metadata and then exited without a useful error indication
+  ([issue #18546](https://github.com/ggml-org/llama.cpp/issues/18546)); another report on
+  2026-03-26 captured a multi-shard GGUF load error that ended in process exit
+  ([issue #21016](https://github.com/ggml-org/llama.cpp/issues/21016)). The upstream server
+  source also returns a non-zero status after model-loading failure
+  ([server.cpp](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/server.cpp)).
+  Reviewed 2026-08-20, this evidence supports retaining the bounded diagnostic tail and
+  concrete return code after cleanup, without retaining the process or its temporary log.
 - **Immutable revisions and a reusable offline cache.** Hugging Face users have tracked
   expensive unchanged-file downloads since 2023
   ([issue #1738](https://github.com/huggingface/huggingface_hub/issues/1738)), while a

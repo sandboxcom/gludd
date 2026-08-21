@@ -178,9 +178,12 @@ class TestReadinessProbe:
         ), pytest.raises(RuntimeError, match="exited"):
             await mgr.start_server("local-0")
 
-        server = mgr.get_server("local-0")
-        assert server is not None
-        assert server.status == "error"
+        assert mgr.get_server("local-0") is None
+        terminal = mgr.get_terminal_status("local-0")
+        assert terminal is not None
+        assert terminal.status == "error"
+        assert terminal.returncode == 1
+        assert "exited" in terminal.error
 
     @pytest.mark.asyncio
     async def test_startup_timeout_zero_skips_probe(self):
