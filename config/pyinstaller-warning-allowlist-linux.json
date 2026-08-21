@@ -3,7 +3,7 @@
   "platform": "linux",
   "pyinstaller_version": "6.20.0",
   "transitive_warning_sha256_by_architecture": {
-    "aarch64": "fe46fb237e7274fe5f8db70da336b212fac65c3aa6fc65e1e453241f3e0a3d50",
+    "aarch64": "fbfe1fa826751942260cf27b99aa32202ac603ab3730f7b7d2bda4b2d844c988",
     "x86_64": "2c13f6587ccf3c51c1f8474df595895b028796abd584aedbfdc30b907cc02e59"
   },
   "reviewed_transitive_warning_sha256_alternates_by_architecture": {
@@ -17,6 +17,88 @@
     }
   ],
   "allowed_missing_imports": [
+    {
+      "module": "ansible.executor",
+      "importer": "general_ludd.ansible.core_runner",
+      "flags": [
+        "delayed"
+      ],
+      "category": "controller-runtime-boundary",
+      "evidence": "https://docs.ansible.com/projects/builder/en/stable/"
+    },
+    {
+      "module": "ansible.inventory",
+      "importer": "general_ludd.ansible.core_runner",
+      "flags": [
+        "delayed"
+      ],
+      "category": "controller-runtime-boundary",
+      "evidence": "https://docs.ansible.com/projects/builder/en/stable/"
+    },
+    {
+      "module": "ansible.module_utils",
+      "importer": "general_ludd.ansible.core_runner",
+      "flags": [
+        "delayed"
+      ],
+      "category": "controller-runtime-boundary",
+      "evidence": "https://docs.ansible.com/projects/builder/en/stable/"
+    },
+    {
+      "module": "ansible.parsing",
+      "importer": "general_ludd.ansible.core_runner",
+      "flags": [
+        "optional"
+      ],
+      "category": "controller-runtime-boundary",
+      "evidence": "https://docs.ansible.com/projects/builder/en/stable/"
+    },
+    {
+      "module": "ansible.plugins",
+      "importer": "general_ludd.ansible.core_runner",
+      "flags": [
+        "delayed",
+        "optional"
+      ],
+      "category": "controller-runtime-boundary",
+      "evidence": "https://docs.ansible.com/projects/builder/en/stable/"
+    },
+    {
+      "module": "ansible.template",
+      "importer": "general_ludd.ansible.core_runner",
+      "flags": [
+        "optional"
+      ],
+      "category": "controller-runtime-boundary",
+      "evidence": "https://docs.ansible.com/projects/builder/en/stable/"
+    },
+    {
+      "module": "ansible.utils",
+      "importer": "general_ludd.ansible.core_runner",
+      "flags": [
+        "delayed"
+      ],
+      "category": "controller-runtime-boundary",
+      "evidence": "https://docs.ansible.com/projects/builder/en/stable/"
+    },
+    {
+      "module": "ansible.utils",
+      "importer": "general_ludd.ansible.unsafe",
+      "flags": [
+        "optional"
+      ],
+      "category": "controller-runtime-boundary",
+      "evidence": "https://docs.ansible.com/projects/builder/en/stable/"
+    },
+    {
+      "module": "ansible.vars",
+      "importer": "general_ludd.ansible.core_runner",
+      "flags": [
+        "delayed"
+      ],
+      "category": "controller-runtime-boundary",
+      "evidence": "https://docs.ansible.com/projects/builder/en/stable/"
+    },
     {
       "module": "azure.identity",
       "importer": "general_ludd.infra.azure_accelerator",

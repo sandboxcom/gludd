@@ -42,6 +42,16 @@ PyInstaller/Molecule acceptance path.
 - PyInstaller's warning file is retained and audited against an exact,
   version-pinned allowlist. Missing files, unknown syntax, stale entries, or
   actionable imports fail the build.
+- The frozen core excludes the complete `ansible` module tree. PyInstaller may
+  still report lazy Ansible imports from the core/EE adapter during analysis;
+  only nine exact module/importer/flag edges are classified as
+  `controller-runtime-boundary`, and each must remain below an active spec
+  exclusion. No Ansible hidden import or payload is added to the executable.
+- The aarch64 transitive warning graph is pinned to
+  `fbfe1fa826751942260cf27b99aa32202ac603ab3730f7b7d2bda4b2d844c988`.
+  This reviewed graph replaces the prior primary digest rather than becoming a
+  permissive alternate; every unrelated edge, flag, importer, or digest change
+  still fails closed.
 - The `binary_smoke_linux` Molecule scenario uses Ubuntu 24.04 through an
   explicitly installed Docker driver and boots Python before Ansible modules.
 - The smoke run exercises version/help/project-path resolution, authenticated
@@ -65,7 +75,11 @@ Artifact construction and smoke validation happen before promotion. A failed
 build, warning audit, package-update simulation, or Linux smoke test leaves the
 currently deployed release and tag untouched. The release workflow may promote
 only the already-validated artifact; cleanup is limited to project-namespaced
-runtime state.
+runtime state. The warning audit runs before the binary leaves its temporary
+container, so rollback discards the candidate and retained report without
+touching the active artifact. The Lima build is single-container and namespaced;
+classification adds no runtime import, process, or memory cost and keeps the
+smaller core artifact separate from the independently bounded controller EE.
 
 ## Verification requirements
 
@@ -81,6 +95,23 @@ runtime state.
 ## Practitioner evidence
 
 These contracts address long-lived reports from real users:
+
+- Reviewed 2026-08-20: PyInstaller's
+  [build-time warning guidance](https://pyinstaller.org/en/stable/when-things-go-wrong.html#build-time-messages)
+  says missing-module reports can represent conditional or platform-specific
+  imports and must be investigated rather than blindly bundled. The exact-edge
+  controller classification follows that guidance while retaining a closed
+  default for all other warnings.
+- Reviewed 2026-08-20: Ansible Builder's
+  [execution-environment documentation](https://docs.ansible.com/projects/builder/en/stable/)
+  defines EEs as portable control nodes containing selected `ansible-core`,
+  `ansible-runner`, collections, and Python/system dependencies. That upstream
+  ownership model supports keeping those modules out of Gludd's frozen core.
+- [PyInstaller practitioner issue #5891](https://github.com/pyinstaller/pyinstaller/issues/5891),
+  opened in 2021 and reviewed 2026-08-20, shows a successful build accompanied
+  by a large warning graph and user uncertainty about which missing modules are
+  actionable. It motivates retaining exact importer/flag evidence and an
+  architecture digest instead of suppressing warning classes wholesale.
 
 - [CPython issue #126353](https://github.com/python/cpython/issues/126353)
   records the Python 3.14 removal of implicit event-loop creation and community

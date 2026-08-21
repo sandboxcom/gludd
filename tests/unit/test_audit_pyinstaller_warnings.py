@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from scripts import audit_pyinstaller_warnings as warning_audit
 
 _ROOT = Path(__file__).resolve().parents[2]
 _MAKEFILE = _ROOT / "Makefile"
@@ -19,6 +20,17 @@ _CONNECTOR_REGISTRY = _ROOT / "src" / "general_ludd" / "connectors" / "registry.
 _PRICING_SOURCES = _ROOT / "src" / "general_ludd" / "pricing_intel" / "sources.py"
 _PYINSTALLER_VERSION = "6.20.0"
 _EMPTY_TRANSITIVE_DIGEST = hashlib.sha256(b"").hexdigest()
+_CONTROLLER_RUNTIME_EDGES = {
+    ("ansible.executor", "general_ludd.ansible.core_runner", ("delayed",)),
+    ("ansible.inventory", "general_ludd.ansible.core_runner", ("delayed",)),
+    ("ansible.module_utils", "general_ludd.ansible.core_runner", ("delayed",)),
+    ("ansible.parsing", "general_ludd.ansible.core_runner", ("optional",)),
+    ("ansible.plugins", "general_ludd.ansible.core_runner", ("delayed", "optional")),
+    ("ansible.template", "general_ludd.ansible.core_runner", ("optional",)),
+    ("ansible.utils", "general_ludd.ansible.core_runner", ("delayed",)),
+    ("ansible.utils", "general_ludd.ansible.unsafe", ("optional",)),
+    ("ansible.vars", "general_ludd.ansible.core_runner", ("delayed",)),
+}
 
 _WARNING_HEADER = """\
 This file lists modules PyInstaller was not able to find. This does not
@@ -140,9 +152,20 @@ def test_linux_policy_pins_hosted_and_container_architectures() -> None:
 
     assert policy["schema_version"] == 3
     assert policy["transitive_warning_sha256_by_architecture"] == {
-        "aarch64": ("fe46fb237e7274fe5f8db70da336b212fac65c3aa6fc65e1e453241f3e0a3d50"),
+        "aarch64": ("fbfe1fa826751942260cf27b99aa32202ac603ab3730f7b7d2bda4b2d844c988"),
         "x86_64": ("2c13f6587ccf3c51c1f8474df595895b028796abd584aedbfdc30b907cc02e59"),
     }
+
+
+def test_linux_policy_pins_exact_controller_runtime_boundary_edges() -> None:
+    policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
+
+    actual = {
+        (entry["module"], entry["importer"], tuple(entry["flags"]))
+        for entry in policy["allowed_missing_imports"]
+        if entry["category"] == "controller-runtime-boundary"
+    }
+    assert actual == _CONTROLLER_RUNTIME_EDGES
 
 
 def test_exact_reviewed_conditional_and_optional_edges_pass(tmp_path: Path) -> None:
@@ -250,6 +273,86 @@ def test_actionable_edge_cannot_be_allowlisted(
     assert "actionable import edge" in result.stderr
 
 
+def test_exact_controller_runtime_boundary_edge_passes_when_root_is_excluded(
+    tmp_path: Path,
+) -> None:
+    result = _run_audit(
+        tmp_path,
+        "missing module named ansible.executor - imported by "
+        "general_ludd.ansible.core_runner (delayed)\n",
+        allowed=[
+            _allow(
+                "ansible.executor",
+                "general_ludd.ansible.core_runner",
+                ["delayed"],
+                category="controller-runtime-boundary",
+                evidence="https://docs.ansible.com/projects/builder/en/stable/",
+            )
+        ],
+        spec_text='a = Analysis([], excludes=["ansible"])\n',
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "1 reviewed missing-import edges" in result.stdout
+
+
+def test_controller_runtime_boundary_requires_active_spec_exclude(
+    tmp_path: Path,
+) -> None:
+    result = _run_audit(
+        tmp_path,
+        "missing module named ansible.executor - imported by "
+        "general_ludd.ansible.core_runner (delayed)\n",
+        allowed=[
+            _allow(
+                "ansible.executor",
+                "general_ludd.ansible.core_runner",
+                ["delayed"],
+                category="controller-runtime-boundary",
+                evidence="https://docs.ansible.com/projects/builder/en/stable/",
+            )
+        ],
+    )
+
+    assert result.returncode == 1
+    assert "controller runtime edge is not covered by active Analysis.excludes" in result.stderr
+
+
+def test_controller_runtime_boundary_does_not_cover_unrelated_warning(
+    tmp_path: Path,
+) -> None:
+    warnings = (
+        "missing module named ansible.executor - imported by "
+        "general_ludd.ansible.core_runner (delayed)\n"
+        "missing module named required_package - imported by "
+        "general_ludd.cli (top-level)\n"
+    )
+    result = _run_audit(
+        tmp_path,
+        warnings,
+        allowed=[
+            _allow(
+                "ansible.executor",
+                "general_ludd.ansible.core_runner",
+                ["delayed"],
+                category="controller-runtime-boundary",
+                evidence="https://docs.ansible.com/projects/builder/en/stable/",
+            )
+        ],
+        spec_text='a = Analysis([], excludes=["ansible"])\n',
+    )
+
+    assert result.returncode == 1
+    assert "actionable import edge: missing required_package" in result.stderr
+    assert "unreviewed missing-import edge: missing required_package" in result.stderr
+
+
+def test_active_exclude_boundary_matches_only_complete_module_segments() -> None:
+    assert warning_audit._is_covered_by_active_exclude("ansible.executor", {"ansible"})
+    assert warning_audit._is_covered_by_active_exclude("ansible", {"ansible"})
+    assert not warning_audit._is_covered_by_active_exclude("ansiblex.executor", {"ansible"})
+
+
 def test_missing_warning_file_fails(tmp_path: Path) -> None:
     result = _run_audit(tmp_path, None)
 
@@ -265,6 +368,51 @@ def test_unknown_warning_syntax_fails(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "unrecognized warning-file line" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("warning", "message"),
+    [
+        (
+            "missing module named edge - imported by importer-without-flags\n",
+            "unrecognized importer syntax",
+        ),
+        (
+            "missing module named edge - imported by junk, general_ludd.cli (optional)\n",
+            "unrecognized importer syntax",
+        ),
+        (
+            "missing module named edge - imported by general_ludd.cli (optional, )\n",
+            "empty importer or flag",
+        ),
+        (
+            "missing module named edge - imported by general_ludd.cli (mystery)\n",
+            "unknown PyInstaller import flags",
+        ),
+        (
+            "missing module named edge - imported by general_ludd.cli (optional, optional)\n",
+            "duplicate import flags",
+        ),
+        (
+            "missing module named edge - imported by general_ludd.cli (optional), junk\n",
+            "unrecognized importer syntax",
+        ),
+        (
+            "missing module named edge - imported by general_ludd.cli (optional)\n"
+            "missing module named edge - imported by general_ludd.cli (optional)\n",
+            "duplicate missing-import edges",
+        ),
+    ],
+)
+def test_malformed_warning_edges_fail_closed(
+    tmp_path: Path,
+    warning: str,
+    message: str,
+) -> None:
+    result = _run_audit(tmp_path, warning)
+
+    assert result.returncode == 1
+    assert message in result.stderr
 
 
 def test_allowlist_requires_category_and_evidence(tmp_path: Path) -> None:
@@ -285,6 +433,54 @@ def test_allowlist_requires_category_and_evidence(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "non-empty category and evidence" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [
+        (
+            _allow(
+                "edge",
+                "general_ludd.cli",
+                ["optional"],
+                evidence="http://example.invalid/evidence",
+            ),
+            "evidence must be an https URL",
+        ),
+        (
+            _allow("edge", "general_ludd.cli", ["optional", "optional"]),
+            "duplicate flags",
+        ),
+        (
+            _allow("edge", "general_ludd.cli", ["mystery"]),
+            "unknown flags",
+        ),
+    ],
+)
+def test_malformed_allowlist_edge_fails_closed(
+    tmp_path: Path,
+    entry: dict[str, Any],
+    message: str,
+) -> None:
+    result = _run_audit(tmp_path, "", allowed=[entry])
+
+    assert result.returncode == 1
+    assert message in result.stderr
+
+
+def test_duplicate_allowlist_edge_fails_closed(tmp_path: Path) -> None:
+    edge = _allow("edge", "general_ludd.cli", ["optional"])
+    result = _run_audit(tmp_path, "", allowed=[edge, edge])
+
+    assert result.returncode == 1
+    assert "duplicate allowlist edges" in result.stderr
+
+
+def test_empty_runtime_architecture_fails_closed(tmp_path: Path) -> None:
+    result = _run_audit(tmp_path, "", architecture="")
+
+    assert result.returncode == 1
+    assert "architecture must be non-empty" in result.stderr
 
 
 def test_stale_allowlist_entry_fails(tmp_path: Path) -> None:
