@@ -1,7 +1,7 @@
 """Capability discovery backbone.
 
-Reads all collections' galaxy.yml and role metadata, extracts capability
-declarations, and builds a capability-to-collection/module registry.
+Reads standard Galaxy metadata, Gludd's separate capability contract, and role
+metadata, then builds a capability-to-collection/module registry.
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ class CollectionMeta:
 
     @staticmethod
     def from_galaxy(data: dict[str, Any]) -> CollectionMeta:
+        """Build collection metadata from a parsed Galaxy mapping."""
         tags_raw = data.get("tags", [])
         if not isinstance(tags_raw, list):
             tags_raw = []
@@ -78,6 +79,7 @@ class CollectionMeta:
         )
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize this collection's public capability metadata."""
         result: dict[str, object] = {
             "name": self.name,
             "namespace": self.namespace,
@@ -101,15 +103,18 @@ class CapabilityRegistry:
     tag_index: dict[str, frozenset[str]] = field(default_factory=dict)
 
     def add_collection(self, meta: CollectionMeta) -> None:
+        """Add a collection and index all of its declared tags."""
         self.collections[meta.name] = meta
         for tag in meta.tags:
             current = self.tag_index.get(tag, frozenset())
             self.tag_index[tag] = current | frozenset([meta.name])
 
     def lookup_by_tag(self, tag: str) -> frozenset[str]:
+        """Return collection names that declare the exact tag."""
         return self.tag_index.get(tag, frozenset())
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize the registry and its deterministic tag index."""
         return {
             "collections": {name: meta.to_dict() for name, meta in sorted(self.collections.items())},
             "tag_index": {tag: sorted(collections) for tag, collections in sorted(self.tag_index.items())},
@@ -117,6 +122,7 @@ class CapabilityRegistry:
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> CapabilityRegistry:
+        """Restore a registry from its serialized public representation."""
         reg = cls()
         collections_raw = data.get("collections", {})
         if isinstance(collections_raw, dict):
@@ -180,6 +186,7 @@ def _discover_roles(collection_dir: Path) -> list[dict[str, str]]:
 
 
 def discover_capabilities(colls_root: Path | None = None) -> CapabilityRegistry:
+    """Discover standard metadata, capability sidecars, and role metadata."""
     if colls_root is None:
         paths = resolve_collections_paths()
         ac_path: Path | None = None
@@ -218,6 +225,26 @@ def discover_capabilities(colls_root: Path | None = None) -> CapabilityRegistry:
             if not isinstance(data, dict):
                 errors += 1
                 continue
+            capabilities_yml = coll_dir / "capabilities.yml"
+            if capabilities_yml.is_file():
+                try:
+                    capability_data = yaml.safe_load(capabilities_yml.read_text()) or {}
+                except yaml.YAMLError:
+                    logger.debug("malformed capabilities.yml: %s", capabilities_yml)
+                    errors += 1
+                    capability_data = {}
+                if not isinstance(capability_data, dict):
+                    logger.debug("capabilities.yml must contain a mapping: %s", capabilities_yml)
+                    errors += 1
+                    capability_data = {}
+                data = {
+                    **data,
+                    **{
+                        key: capability_data[key]
+                        for key in ("model_capabilities", "role_capabilities")
+                        if key in capability_data
+                    },
+                }
             meta = CollectionMeta.from_galaxy(data)
             if not meta.name or not meta.namespace:
                 errors += 1

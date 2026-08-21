@@ -35,7 +35,7 @@ def _write_galaxy_yml(parent: Path, name: str, tags: list[str], description: str
 
 
 def _write_role_meta(parent: Path, description: str, role_name: str | None = None) -> None:
-    meta = {
+    meta: dict[str, Any] = {
         "galaxy_info": {
             "author": "Test",
             "description": description,
@@ -170,10 +170,16 @@ def test_registry_to_dict_roundtrip() -> None:
     assert isinstance(data, dict)
     assert "collections" in data
     assert "tag_index" in data
-    assert data["collections"]["a"]["name"] == "a"
-    assert data["collections"]["b"]["version"] == "0.2"
-    assert data["tag_index"]["tag1"] == ["a"]
-    assert data["tag_index"]["tag2"] == ["b"]
+    collections = data["collections"]
+    tag_index = data["tag_index"]
+    assert isinstance(collections, dict)
+    assert isinstance(collections["a"], dict)
+    assert isinstance(collections["b"], dict)
+    assert isinstance(tag_index, dict)
+    assert collections["a"]["name"] == "a"
+    assert collections["b"]["version"] == "0.2"
+    assert tag_index["tag1"] == ["a"]
+    assert tag_index["tag2"] == ["b"]
 
 
 def test_registry_from_dict_rebuilds_tag_index() -> None:
@@ -212,6 +218,47 @@ def test_discover_from_single_collection() -> None:
     assert "chemistry" in reg.collections
     assert reg.lookup_by_tag("chemistry") == frozenset(["chemistry"])
     assert reg.lookup_by_tag("reactions") == frozenset(["chemistry"])
+
+
+def test_discover_loads_canonical_collection_capabilities(tmp_path: Path) -> None:
+    colls = tmp_path / "ansible_collections"
+    collection = colls / "general_ludd" / "language"
+    _write_galaxy_yml(collection, "language", ["language", "translation"])
+    (collection / "capabilities.yml").write_text(
+        yaml.safe_dump(
+            {
+                "model_capabilities": [
+                    {
+                        "name": "translation",
+                        "description": "Translate text",
+                        "roles": ["translate"],
+                        "quality_class": "high",
+                    }
+                ],
+                "role_capabilities": {"translate": ["translation"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    meta = discover_capabilities(colls).collections["language"]
+    assert meta.model_capabilities[0]["name"] == "translation"
+    assert meta.role_capabilities == {"translate": ["translation"]}
+
+
+@pytest.mark.parametrize("contents", ["not: [valid: yaml: }", "- unexpected-list"])
+def test_discover_rejects_invalid_capability_extensions(
+    tmp_path: Path, contents: str
+) -> None:
+    colls = tmp_path / "ansible_collections"
+    collection = colls / "general_ludd" / "language"
+    _write_galaxy_yml(collection, "language", ["language"])
+    (collection / "capabilities.yml").write_text(contents, encoding="utf-8")
+
+    meta = discover_capabilities(colls).collections["language"]
+    assert meta.tags == frozenset({"language"})
+    assert meta.model_capabilities == []
+    assert meta.role_capabilities == {}
 
 
 def test_discover_from_multiple_collections() -> None:
@@ -369,6 +416,7 @@ def test_router_route_by_collection_missing() -> None:
     router = CapabilityRouter(reg)
     result = router.route_by_collection(collection="bogus", payload={})
     assert result.ok is False
+    assert result.error is not None
     assert "bogus" in result.error
 
 
@@ -438,7 +486,7 @@ def test_router_route_with_empty_capability_string() -> None:
 def test_router_route_with_none_payload_defaults_to_empty() -> None:
     reg = _make_sample_registry()
     router = CapabilityRouter(reg)
-    result = router.route(capability="agentic", payload=None)  # type: ignore[arg-type]
+    result = router.route(capability="agentic", payload=None)
     assert result.ok is True
     assert result.payload == {}
 
