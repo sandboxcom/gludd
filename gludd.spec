@@ -84,6 +84,10 @@ a = Analysis(
         'general_ludd.models.router',
         'general_ludd.db.models',
         'general_ludd.db.repository',
+        # SQLAlchemy resolves the sqlite+aiosqlite dialect from the configured
+        # database URL at runtime. PyInstaller cannot follow that entry-point
+        # lookup, so keep the core async driver explicit in the frozen graph.
+        'aiosqlite',
         'general_ludd.secrets.manager',
         'general_ludd.mcp.client',
         'general_ludd.mcp.transport',

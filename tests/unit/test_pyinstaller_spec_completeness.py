@@ -387,3 +387,22 @@ class TestCompatHiddenImports:
             "package is loaded via dynamic importlib.import_module calls "
             "(see src/general_ludd/__init__.py)."
         )
+
+
+class TestDynamicCoreRuntimeDrivers:
+    """Core drivers selected by URL schemes remain in the frozen artifact."""
+
+    def test_aiosqlite_driver_is_hiddenimport(self, spec_text: str) -> None:
+        """SQLAlchemy imports the configured async SQLite dialect dynamically."""
+        hidden = _hiddenimports_from_spec(spec_text)
+        assert "aiosqlite" in hidden, (
+            "gludd.spec must list 'aiosqlite' as a hiddenimport — SQLAlchemy "
+            "loads the sqlite+aiosqlite driver from the configured URL at "
+            "runtime, which PyInstaller's static graph does not discover. "
+            "Without it the frozen daemon starts but /healthz is degraded."
+        )
+
+    def test_controller_runtime_is_not_hiddenimported(self, spec_text: str) -> None:
+        """Fixing a core driver must not collapse the core/EE boundary."""
+        hidden = _hiddenimports_from_spec(spec_text)
+        assert not {name for name in hidden if name == "ansible" or name.startswith("ansible.")}
