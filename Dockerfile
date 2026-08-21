@@ -130,5 +130,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4).status==200 else 1)"
 
-# tini reaps the gunicorn subprocess the CLI spawns; gludd binds 0.0.0.0:8000.
-ENTRYPOINT ["tini", "--", "gludd", "daemon", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application server as the foreground service. Tini owns and reaps the
+# single Gunicorn tree, while startup exceptions and request/error logs remain
+# attached to container stdio for health-smoke and operator diagnostics.
+ENTRYPOINT ["tini", "--", "gunicorn", "general_ludd.daemon:create_daemon_app()", "--worker-class", "uvicorn_worker.UvicornWorker", "--workers", "1", "--bind", "0.0.0.0:8000", "--access-logfile", "-", "--error-logfile", "-", "--capture-output"]

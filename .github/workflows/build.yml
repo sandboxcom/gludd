@@ -1552,10 +1552,22 @@ jobs:
               ready=1
               break
             fi
+            container_running=$(docker inspect --format='{{.State.Running}}' "$container_name")
+            if [ "$container_running" != "true" ]; then
+              echo "::error::container exited before becoming healthy"
+              docker inspect --format='{{json .State}}' "$container_name"
+              docker logs "$container_name"
+              exit 1
+            fi
             echo "container health attempt ${attempt}/30"
             sleep 1
           done
-          test "$ready" -eq 1
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::container did not become healthy after 30 attempts"
+            docker inspect --format='{{json .State}}' "$container_name"
+            docker logs "$container_name"
+            exit 1
+          fi
           cat > "gludd-smoke-container-${VERSION}.json" <<JSON
           {"version":"${VERSION}","checks":{"container":"passed"}}
           JSON

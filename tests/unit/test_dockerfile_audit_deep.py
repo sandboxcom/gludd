@@ -45,7 +45,7 @@ def test_all_dockerfiles_exist():
 
 
 def test_expected_dockerfiles_present():
-    names = {df.parent.name if df.parent.name != "gludd" else "root" for df in DOCKERFILES}
+    names = {"root" if df.parent == REPO_ROOT else df.parent.name for df in DOCKERFILES}
     expected = {"root", "ollama", "vllm", "llamacpp"}
     missing = expected - names
     assert not missing, f"Expected Dockerfiles: {sorted(missing)}"
