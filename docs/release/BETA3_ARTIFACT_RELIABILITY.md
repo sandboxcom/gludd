@@ -41,6 +41,45 @@ together; changing only one recreates an unreviewed graph. Resource use remains
 bounded to the existing six hosted jobs, and the exact warning digest continues
 to fail closed.
 
+The same date's GHE Build and Release run `32448548722` exposed three independent
+packaging assumptions. The Windows ZIP step treated PowerShell's
+[`$LASTEXITCODE`](https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_automatic_variables#lastexitcode)
+as the status of `Compress-Archive`, even though that variable represents the
+last native program. The step now uses cmdlet-native terminating errors and an
+exact output-file assertion. The release container started its non-root process
+from `/app`, so relative application state resolved into an unwritable build
+directory; its final `WORKDIR` is now the owned `${APP_HOME}` while the foreground
+Gunicorn/Tini lifecycle and health smoke remain unchanged.
+
+The EE failure was a separate controller-runtime boundary issue. Current
+[Ansible Builder 3.x definition documentation](https://docs.ansible.com/projects/builder/en/latest/definition/)
+states that only RPM package managers are supported, documents the explicit
+`ansible_core`, `ansible_runner`, and `python_interpreter` keys, and defines
+`additional_build_files` as the mechanism for staging local inputs. Beta.4 now
+uses the published CentOS Stream 9 multi-platform index by immutable digest,
+installs Python 3.11 through `dnf`, declares Core and Runner once in the EE
+definition, builds the three exact Galaxy archives through one shared artifact
+tool, and stages those archives into the Builder context. A real namespaced Lima
+build completed before this contract was accepted; YAML validation alone is not
+release evidence.
+
+GHE also reported JavaScript-action runtime deprecations. Docker's
+[setup-buildx v4 release notes](https://github.com/docker/setup-buildx-action/releases/tag/v4.0.0)
+identify Node 24 and the required runner baseline. Practitioner report
+[actions/runner #4295](https://github.com/actions/runner/issues/4295), opened
+2026-03-12, shows that forcing old Node 20 actions to Node 24 can still emit a
+misleading end-of-job warning. The workflow therefore uses immutable SHAs from
+the current Node 24 Docker action lines instead of suppressing the warning.
+
+These repairs preserve ZDD: no running Gludd or Ansible job is mutated, each new
+image is built and health-checked beside any active digest, and publication
+remains downstream of all smokes. Rollback selects the prior container/EE digest
+and prior workflow commit, then drains the failed candidate. Local Docker work
+is restricted to the existing `gludd-docker` Lima VM, one EE build, three
+collection archives, and explicit `DOCKER_CONFIG`/`DOCKER_HOST` inputs; Gludd
+owns the build outputs, while the caller-owned Qwen process is outside this
+resource boundary.
+
 The release pipeline treats an absent, cancelled, superseded, malformed, or
 partially published result as failure. Only the exact tagged commit, a green
 required workflow, successful artifact downloads, and the repository's

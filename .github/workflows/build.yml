@@ -1270,10 +1270,14 @@ jobs:
           Copy-Item -r templates dist/release/templates
           Copy-Item -r playbooks dist/release/playbooks
           $zipPath = "dist/gludd-$env:VERSION-windows-x86_64.zip"
-          Compress-Archive -Path dist/release/* -DestinationPath $zipPath
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::ZIP PACKAGE FAILED — Compress-Archive failed for windows-x86_64."
-            exit 1
+          try {
+            Compress-Archive -Path dist/release/* -DestinationPath $zipPath -ErrorAction Stop
+          } catch {
+            Write-Host "::error::ZIP PACKAGE FAILED — $($_.Exception.Message)"
+            throw
+          }
+          if (-not (Test-Path -LiteralPath $zipPath -PathType Leaf)) {
+            throw "ZIP PACKAGE FAILED — archive was not created: $zipPath"
           }
           $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
           "$zipHash  $(Split-Path -Leaf $zipPath)" | Set-Content -LiteralPath "$zipPath.sha256" -Encoding ascii
@@ -1488,16 +1492,16 @@ jobs:
           sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3.12.0 (node24)
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0 (node24)
       - name: Log in to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0 (node24)
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0 (node24)
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Compute image tags and labels
         id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051  # v5.10.0 (node24)
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0 (node24)
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -1508,7 +1512,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')) }}
       - name: Build container image
         id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2 (node24)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0 (node24)
         with:
           context: .
           file: ./Dockerfile
@@ -1651,18 +1655,6 @@ jobs:
         run: |
           echo "=== CI PHASE: ansible-ee-boundary ==="
           make validate-ansible-runtime-boundary
-      - name: Build locked Ansible collection artifacts
-        run: |
-          set -euo pipefail
-          echo "=== CI PHASE: ansible-ee-collections ==="
-          mkdir -p dist/collections
-          for collection in agent language networking; do
-            echo "building general_ludd.${collection}"
-            uv run ansible-galaxy collection build               "collections/ansible_collections/general_ludd/${collection}"               --output-path dist/collections --force
-          done
-          test -s dist/collections/general_ludd-agent-0.2.0.tar.gz
-          test -s dist/collections/general_ludd-language-0.1.0.tar.gz
-          test -s dist/collections/general_ludd-networking-0.2.0.tar.gz
       - name: Build Ansible execution environment
         run: |
           echo "=== CI PHASE: ansible-ee-build ==="
@@ -1674,7 +1666,7 @@ jobs:
           docker run --rm --network=none "${EE_TAG}"             python3 -c "import ansible, ansible_runner; print('ANSIBLE_EE_SMOKE_PASS')"
       - name: Log in to GHCR
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0 (node24)
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0 (node24)
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

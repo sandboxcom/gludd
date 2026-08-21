@@ -2,9 +2,20 @@
 
 from pathlib import Path
 
+import yaml
+
 WORKFLOW = (
     Path(__file__).parents[2] / ".github" / "workflows" / "build.yml"
 ).read_text(encoding="utf-8")
+
+
+def _step_script(job: str, name: str) -> str:
+    workflow = yaml.safe_load(WORKFLOW)
+    return next(
+        str(step["run"])
+        for step in workflow["jobs"][job]["steps"]
+        if step.get("name") == name
+    )
 
 
 def test_linux_packages_are_extracted_and_executed_before_upload() -> None:
@@ -25,6 +36,16 @@ def test_windows_zip_and_nsis_installer_are_executed_before_upload() -> None:
     assert "Expand-Archive" in WORKFLOW
     assert "/S" in WORKFLOW
     assert "gludd-windows-nsis-smoke" in WORKFLOW
+
+
+def test_windows_zip_uses_powershell_error_semantics() -> None:
+    """A cmdlet must not inherit a stale native ``LASTEXITCODE`` value."""
+    script = _step_script("windows", "Package zip")
+
+    assert "Compress-Archive" in script
+    assert "-ErrorAction Stop" in script
+    assert "$LASTEXITCODE" not in script
+    assert "Test-Path -LiteralPath $zipPath -PathType Leaf" in script
 
 
 def test_aarch64_tar_is_extracted_and_executed_before_upload() -> None:
@@ -57,8 +78,8 @@ def test_execution_environment_is_built_smoked_and_digest_addressed() -> None:
 def test_python_and_collection_distributions_are_built_and_smoked() -> None:
     assert "Build and smoke Python distributions" in WORKFLOW
     assert "uv build --wheel --sdist" in WORKFLOW
-    assert "Build locked Ansible collection artifacts" in WORKFLOW
-    assert "ansible-galaxy collection build" in WORKFLOW
+    assert "build-ansible-execution-environment" in WORKFLOW
+    assert "ansible-galaxy collection build" not in WORKFLOW
 
 
 def test_canonical_runtime_boundary_inputs_are_release_assets() -> None:
