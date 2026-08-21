@@ -160,6 +160,14 @@ class TestBearerTokenEdgeCases:
     def test_bearer_with_trailing_newline(self) -> None:
         assert check_bearer_token("Bearer token\n", "token\n") is True
 
+    def test_bearer_payload_preserves_all_literal_characters(self) -> None:
+        """Bearer payload whitespace must not be normalized before comparison."""
+        presented = "Bearer padded secret \r\n"
+        expected = "padded secret \r\n"
+
+        assert check_bearer_token(presented, expected) is True
+        assert check_bearer_token(presented, "padded secret") is False
+
 
 class TestAdminTokenEdgeCases:
     """check_admin_token handles env fallback and edge inputs."""

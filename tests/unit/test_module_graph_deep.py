@@ -310,6 +310,7 @@ PRESENTATION_PACKAGES: frozenset[str] = frozenset(
         "general_ludd.cli_payment",
         "general_ludd.cli_perm",
         "general_ludd.cli_physics",
+        "general_ludd.cli_parser_cache",
         "general_ludd.cli_project_init",
         "general_ludd.cli_project_paths",
         "general_ludd.cli_remediation",

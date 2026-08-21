@@ -87,6 +87,7 @@ hand-authored entries for the core runtime variables.
 
 | Name | Purpose | Default | Required | Source |
 |---|---|---|---|---|
+| `GLUDD_ACTIVE_WORKSTREAM_REGISTRY` | Override the shared active-workstream registry path. See §1.1b. | `$TMPDIR/gludd-active-workstreams/<git-common-dir-hash>.json` | optional | `scripts/workstream_registry.py:28` |
 | `GLUDD_ADAPTIVE_HEARTBEAT_SECS` | Auto-indexed (see source) | — | optional | `scripts/adaptive_test.py:240` |
 | `GLUDD_ADAPTIVE_NO_PROGRESS_SECS` | Auto-indexed (see source) | — | optional | `scripts/adaptive_test.py:254` |
 | `GLUDD_ADAPTIVE_PROGRESS_FILE` | Auto-indexed (see source) | — | optional | `scripts/adaptive_test.py:268` |
@@ -346,6 +347,38 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_XDIST_TRACE_LOG` | Auto-indexed (see source) | — | optional | `scripts/run_xdist_trace.py:35` |
 | `GLUDD_XDIST_TRACE_TRUNCATE` | Auto-indexed (see source) | — | optional | `scripts/run_xdist_trace.py:36` |
 | `GLUDD_XDIST_WORKERS` | Auto-indexed (see source) | — | optional | `scripts/adaptive_test.py:117` |
+
+### 1.1b Active-workstream registry isolation
+
+`GLUDD_ACTIVE_WORKSTREAM_REGISTRY` selects the JSON registry used by worktree
+pruning to protect active logical work. Leave it unset for normal operation:
+the default hashes the repository's absolute Git common directory into a
+12-character namespace below `$TMPDIR/gludd-active-workstreams/`. Worktrees of
+one repository therefore share lifecycle state, while unrelated repositories
+do not collide. Use an absolute, project-namespaced override only when every
+worktree and cleanup runner is configured with the same path.
+
+The registry supports zero-downtime coordination through an adjacent exclusive
+lock and a same-directory temporary file followed by atomic replacement.
+Readers fail closed on unreadable JSON or an unsupported schema. A path change
+would split coordination state, so seed the new registry through the normal
+registration lifecycle, switch every consumer together, and only then resume
+pruning. Roll back by restoring the previous path; unset the variable only when
+the default registry already contains all active workstreams.
+
+Resource use is one compact JSON entry per registered branch plus one lock file;
+the registry starts no process and retains no logs. Explicit unregister removes
+completed entries. Keep the registry on a local filesystem that supports
+advisory locks and atomic rename, and never point multiple projects at the same
+override.
+
+Evidence reviewed 2026-08-20: Git's upstream
+[`git-worktree` documentation](https://git-scm.com/docs/git-worktree.html)
+documents the shared common directory, stable porcelain format, and locked
+worktree protection. A user report opened 2026-05-10 describes
+[agent sessions leaving locked, orphaned worktrees](https://github.com/anthropics/claude-code/issues/57765)
+after abnormal exit. That long-lived failure mode is why Gludd records logical
+lifecycle ownership explicitly instead of guessing it from a process ID.
 
 ### 1.2 Model-provider credentials
 

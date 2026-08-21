@@ -1125,10 +1125,10 @@ class TestSecurityAuthHelpers:
 
         assert check_bearer_token("Bearer wrong", "secret") is False
 
-    def test_check_bearer_token_extra_whitespace(self) -> None:
+    def test_check_bearer_token_rejects_extra_leading_whitespace(self) -> None:
         from general_ludd.security.auth import check_bearer_token
 
-        assert check_bearer_token("Bearer  secret  ", "secret") is True
+        assert check_bearer_token("Bearer  secret  ", "secret") is False
 
     def test_check_admin_token_empty(self) -> None:
         from general_ludd.security.auth import check_admin_token
