@@ -27,6 +27,7 @@ def test_e2e_runner_marks_nested_execution() -> None:
 def test_e2e_runner_has_per_test_timeout_and_cleanup() -> None:
     body = _target_body("test-e2e")
     assert "--timeout=" in body
+    assert 'rm -rf "$$FILE_BT"' in body
     assert 'rm -rf "$$BT"' in body
     assert "exit $$RC" in body
 
