@@ -203,8 +203,15 @@ def _terminate_owned_process(
         _try_signal_owned_process_group(process, signal.SIGTERM)
 
     deadline = time.monotonic() + max(0.0, grace_seconds)
+    descendant_exit_wait = threading.Event()
     while _owned_process_group_alive(process) and time.monotonic() < deadline:
-        time.sleep(0.05)
+        remaining = deadline - time.monotonic()
+        wait_seconds = min(0.05, max(0.0, remaining))
+        try:
+            process.wait(timeout=wait_seconds)
+        except subprocess.TimeoutExpired:
+            continue
+        descendant_exit_wait.wait(wait_seconds)
     if _owned_process_group_alive(process):
         _try_signal_owned_process_group(process, signal.SIGKILL)
     try:

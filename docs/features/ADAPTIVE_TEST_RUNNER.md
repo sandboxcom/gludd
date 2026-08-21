@@ -32,6 +32,11 @@ streaming runner persists namespaced heartbeat progress. Exit codes remain
 unchanged. Xdist diagnostic matching is line-anchored and case-insensitive,
 covering current worker identifiers without accepting arbitrary prose.
 
+Owned shard teardown gives the process group a bounded TERM grace period using
+the child process wait and a descendant-exit event wait. It never sleeps inside
+the ownership loop; the existing cleanup markers remain visible before any
+TERM-to-KILL escalation.
+
 `make test-failures` is an inventory operation, not a test execution alias. It
 prints an immediate progress line, reads pytest's `cache/lastfailed` JSON without
 changing it, sorts the node IDs, and emits at most the explicit limit (50 by
