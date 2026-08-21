@@ -96,6 +96,11 @@ SourceFactory = Any
 class ConnectorRegistry:
     """A name -> live connector map built from an operator config list."""
 
+    @staticmethod
+    def source_module_paths() -> tuple[str, ...]:
+        """Return the stable, operator-selectable connector module inventory."""
+        return tuple(sorted(_ALLOWED_CONNECTOR_MODULES))
+
     def __init__(self) -> None:
         """Create an empty, unsealed connector registry."""
         self._sources: dict[str, _SourceLike] = {}
@@ -205,7 +210,7 @@ class ConnectorRegistry:
         module = config.get("module")
         if isinstance(module, str) and module:
             mod_path = module if "." in module else f"{_CONNECTORS_PKG}.{module}"
-            _assert_allowed_module(mod_path)
+            _check_module_allowlist(mod_path, selector="module")
             mod = importlib.import_module(mod_path)
             class_name = config.get("class_name")
             if isinstance(class_name, str) and class_name:
@@ -336,6 +341,25 @@ def _family_for(name: str, config: dict[str, Any]) -> str:
 
 _MODULE_ALLOWLIST_PREFIX = _CONNECTORS_PKG  # "general_ludd.connectors"
 
+# Package helpers share the connector namespace but are not operator-selectable
+# Source implementations.  Keep this production-owned inventory as the single
+# source of truth for both config validation and contract tests: filesystem
+# presence alone is not proof that a module is a connector plugin.
+_CONNECTOR_INFRASTRUCTURE_MODULE_NAMES = frozenset(
+    {
+        "_errors",
+        "_protocols",
+        "_util",
+        "base",
+        "cursor_adapter",
+        "exc_sanitizer",
+        "ingest",
+        "ingest_formats",
+        "normalize",
+        "registry",
+    }
+)
+
 # Strict allowlist of every importable connector module path under
 # ``general_ludd.connectors``. Built once at import time by scanning the package
 # directory (``pkgutil.iter_modules``), so it auto-maintains as connectors are
@@ -347,6 +371,7 @@ _MODULE_ALLOWLIST_PREFIX = _CONNECTORS_PKG  # "general_ludd.connectors"
 _ALLOWED_CONNECTOR_MODULES: frozenset[str] = frozenset(
     f"{_CONNECTORS_PKG}.{name}"
     for _finder, name, _ispkg in pkgutil.iter_modules(_connectors_pkg.__path__)
+    if name not in _CONNECTOR_INFRASTRUCTURE_MODULE_NAMES
 )
 
 

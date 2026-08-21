@@ -11,14 +11,12 @@ Covers:
 
 from __future__ import annotations
 
-import pkgutil
 import time
 from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
 
-from general_ludd.connectors import __path__ as _connectors_pkg_path
 from general_ludd.connectors.base import (
     HealthResult,
     SourceRegistry,
@@ -29,40 +27,13 @@ from general_ludd.connectors.base import (
 )
 from general_ludd.connectors.registry import ConnectorRegistry
 
-_CONNECTORS_PKG = "general_ludd.connectors"
-
-# Modules that are infrastructure (not connector Source modules).
-_NON_SOURCE_MODULES = frozenset(
-    {
-        f"{_CONNECTORS_PKG}.{name}"
-        for name in (
-            "__init__",
-            "base",
-            "normalize",
-            "registry",
-            "ingest",
-            "ingest_formats",
-            "_util",
-            "_errors",
-            "_protocols",
-            "_util",
-            "exc_sanitizer",
-        )
-    }
-)
-
 
 # --------------------------------------------------------------------------- #
 # Discovery helpers
 # --------------------------------------------------------------------------- #
 def _connector_module_paths() -> list[str]:
-    """Return every importable connector submodule path (excl. infra)."""
-    paths: list[str] = []
-    for _finder, name, _ispkg in pkgutil.iter_modules(_connectors_pkg_path):
-        full = f"{_CONNECTORS_PKG}.{name}"
-        if full not in _NON_SOURCE_MODULES:
-            paths.append(full)
-    return paths
+    """Return the production allowlist of operator-selectable source modules."""
+    return list(ConnectorRegistry.source_module_paths())
 
 
 def _source_class_for(mod_path: str) -> type | None:

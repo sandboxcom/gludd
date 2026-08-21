@@ -3,6 +3,27 @@
 from collections.abc import Iterator
 
 from general_ludd.connectors.cursor_adapter import adapt_iterable_cursor
+from general_ludd.connectors.registry import ConnectorRegistry
+
+
+def test_cursor_adapter_is_not_operator_selectable_as_a_source() -> None:
+    """The shared adapter must not enter the connector Source allowlist."""
+    assert (
+        "general_ludd.connectors.cursor_adapter"
+        not in ConnectorRegistry.source_module_paths()
+    )
+
+
+def test_cursor_adapter_module_selector_fails_closed_before_import() -> None:
+    """Operator config cannot select an infrastructure helper as a Source."""
+    registry = ConnectorRegistry.from_config(
+        [{"name": "adapter", "kind": "metrics", "module": "cursor_adapter"}]
+    )
+
+    assert registry.list_sources() == []
+    errors = registry.errors()
+    assert [error["name"] for error in errors] == ["adapter"]
+    assert "not in the connector allowlist" in errors[0]["error"]
 
 
 class _Cursor:
