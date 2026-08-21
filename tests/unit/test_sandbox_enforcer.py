@@ -13,10 +13,14 @@ Covers the SandboxEnforcer with behavioral tests for:
 
 from __future__ import annotations
 
+import gc
 import os
 import socket
 import subprocess
+import tempfile
+import weakref
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -131,12 +135,28 @@ class TestPathConfinement:
         external.close()
         assert external_path.is_dir()
 
-    def test_failed_auto_jail_verification_rolls_back_directory(self, monkeypatch) -> None:
+    def test_auto_jail_owner_release_is_warning_free(self) -> None:
+        enforcer = SandboxEnforcer(SandboxConfig())
+        enforcer.verify_ready()
+        jail = Path(enforcer.jail_dir)
+        owner_ref = weakref.ref(enforcer)
+
+        del enforcer
+        gc.collect()
+
+        assert owner_ref() is None
+        assert not jail.exists()
+
+    def test_failed_auto_jail_verification_rolls_back_directory(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         enforcer = SandboxEnforcer(SandboxConfig())
         created: list[Path] = []
-        real_temporary_directory = __import__("tempfile").TemporaryDirectory
+        real_temporary_directory = tempfile.TemporaryDirectory
 
-        def temporary_directory(*args, **kwargs):
+        def temporary_directory(
+            *args: Any, **kwargs: Any
+        ) -> tempfile.TemporaryDirectory[str]:
             owner = real_temporary_directory(*args, **kwargs)
             created.append(Path(owner.name))
             return owner

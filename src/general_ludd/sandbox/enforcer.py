@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import weakref
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -68,6 +70,7 @@ class SandboxEnforcer:
         self._verified = False
         self._jail_path: Path | None = None
         self._jail_owner: tempfile.TemporaryDirectory[str] | None = None
+        self._jail_finalizer: Callable[[], None] | None = None
 
         limits = ProcessLimits(
             memory_mb=self._config.memory_mb,
@@ -103,8 +106,10 @@ class SandboxEnforcer:
         jail = self._config.jail_dir
         auto = not jail
         if auto:
-            self._jail_owner = tempfile.TemporaryDirectory(prefix="gludd-sandbox-")
-            jail = self._jail_owner.name
+            owner = tempfile.TemporaryDirectory(prefix="gludd-sandbox-")
+            self._jail_owner = owner
+            self._jail_finalizer = weakref.finalize(self, owner.cleanup)
+            jail = owner.name
             self._config.jail_dir = jail
 
         jail_path = Path(jail)
@@ -139,7 +144,12 @@ class SandboxEnforcer:
         """Remove an auto-created jail; externally supplied jails stay unowned."""
         owner = self._jail_owner
         if owner is not None:
-            owner.cleanup()
+            finalizer = self._jail_finalizer
+            if finalizer is not None:
+                finalizer()
+            else:
+                owner.cleanup()
+            self._jail_finalizer = None
             self._jail_owner = None
             self._config.jail_dir = ""
         self._jail_path = None

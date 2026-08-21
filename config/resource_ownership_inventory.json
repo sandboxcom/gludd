@@ -1302,7 +1302,7 @@
     },
     {
       "path": "src/general_ludd/infra/local_inference.py",
-      "line": 317,
+      "line": 368,
       "column": 13,
       "kind": "temp-artifact",
       "owner": "LocalInferenceManager._start_via_subprocess",
@@ -1313,7 +1313,7 @@
     },
     {
       "path": "src/general_ludd/infra/local_inference.py",
-      "line": 411,
+      "line": 467,
       "column": 27,
       "kind": "client",
       "owner": "LocalInferenceManager._wait_for_ready",
@@ -1764,8 +1764,8 @@
     },
     {
       "path": "src/general_ludd/sandbox/enforcer.py",
-      "line": 106,
-      "column": 31,
+      "line": 109,
+      "column": 20,
       "kind": "temp-artifact",
       "owner": "SandboxEnforcer.verify_ready",
       "acquisition": "tempfile.TemporaryDirectory(prefix='gludd-sandbox-')",
