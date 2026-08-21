@@ -171,6 +171,28 @@ class TestGitDirWorktree:
             ):
                 assert locking._git_dir(str(worktree)) == str(common_dir)
 
+    @pytest.mark.skipif(os.name == "nt", reason="directory symlink aliases require POSIX semantics")
+    def test_preserves_checkout_alias_when_git_metadata_uses_physical_path(self) -> None:
+        """Return the caller's path spelling even when Git records a real path."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            physical_root = Path(tmpdir, "physical")
+            common_dir = physical_root / "main" / ".git"
+            private_dir = common_dir / "worktrees" / "linked"
+            private_dir.mkdir(parents=True)
+            worktree = physical_root / "linked"
+            worktree.mkdir()
+            (worktree / ".git").write_text(
+                f"gitdir: {private_dir}\n",
+                encoding="utf-8",
+            )
+            (private_dir / "commondir").write_text("../..\n", encoding="utf-8")
+            alias_root = Path(tmpdir, "alias")
+            alias_root.symlink_to(physical_root, target_is_directory=True)
+
+            resolved = locking._git_dir(str(alias_root / "linked"))
+
+            assert resolved == str(alias_root / "main" / ".git")
+
     def test_resolves_relative_gitfile_without_commondir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             private_dir = Path(tmpdir, "metadata")

@@ -169,6 +169,35 @@ def _resolve_git_path(value: str, *, relative_to: str) -> str | None:
     return resolved if os.path.isdir(resolved) else None
 
 
+def _restore_anchor_spelling(path: str, *, anchor: str) -> str:
+    """Express ``path`` through the nearest lexical alias used by ``anchor``.
+
+    Git records physical paths in linked-worktree metadata on some platforms
+    (for example ``/private/tmp`` on macOS), while callers may enter the same
+    checkout through a stable lexical alias (``/tmp``).  Walk the anchor's
+    ancestors until one physically contains the resolved metadata path, then
+    rebuild the suffix from that lexical ancestor.  Repository identity still
+    converges through :func:`_normalize` before lock lookup.
+    """
+    resolved = os.path.abspath(path)
+    lexical_ancestor = os.path.abspath(anchor)
+    while True:
+        try:
+            physical_ancestor = os.path.realpath(lexical_ancestor)
+            contains_path = os.path.commonpath((resolved, physical_ancestor)) == physical_ancestor
+        except (OSError, ValueError):
+            contains_path = False
+        if contains_path:
+            suffix = os.path.relpath(resolved, physical_ancestor)
+            if suffix == os.curdir:
+                return lexical_ancestor
+            return os.path.join(lexical_ancestor, suffix)
+        parent = os.path.dirname(lexical_ancestor)
+        if parent == lexical_ancestor:
+            return resolved
+        lexical_ancestor = parent
+
+
 def _read_git_path(path: str, *, relative_to: str) -> str | None:
     """Read and resolve one bounded Git metadata path file."""
     try:
@@ -219,8 +248,11 @@ def _git_dir(repo_path: str) -> str | None:
             return None
         common_path = os.path.join(private_dir, "commondir")
         if not os.path.exists(common_path):
-            return private_dir
-        return _read_git_path(common_path, relative_to=private_dir)
+            return _restore_anchor_spelling(private_dir, anchor=repo_path)
+        common_dir = _read_git_path(common_path, relative_to=private_dir)
+        if common_dir is None:
+            return None
+        return _restore_anchor_spelling(common_dir, anchor=repo_path)
     return None
 
 
