@@ -165,6 +165,56 @@ class TestCollectionControlPlaneEndpoints:
         assert "python" in result["rendered_body"]
         assert "gludd" in result["rendered_body"]
 
+    @pytest.mark.parametrize(
+        ("operation", "required"),
+        [
+            ("bom_detect", {"bom_detected", "encoding"}),
+            ("encoding_detect", {"detected_encoding", "confidence_level"}),
+            ("homoglyph_scan", {"input_length", "total_findings"}),
+            ("language_detect", {"language", "confidence"}),
+            ("locale_format", {"locale", "formatted_value", "is_rtl"}),
+            ("phonetic_transcribe", {"method", "words"}),
+            ("translate", {"translated_text", "target_language"}),
+            ("transliterate", {"transliterated_text", "target_script"}),
+            ("unicode_analyze", {"input_length", "codepoints", "normalization"}),
+        ],
+    )
+    def test_language_route_returns_operation_schema(
+        self, url: str, operation: str, required: set[str]
+    ) -> None:
+        status, response = _post(
+            url,
+            "/api/language/execute",
+            {"operation": operation, "payload": {"input_text": "Hello"}},
+        )
+        assert status == 200
+        assert required <= response["result"].keys()
+
+    def test_language_route_fails_closed_for_unknown_operation(self, url: str) -> None:
+        status, response = _post_error(
+            url,
+            "/api/language/execute",
+            {"operation": "not_registered", "payload": {}},
+        )
+        assert status == 422
+        assert response == {"detail": "unsupported language operation: not_registered"}
+
+    def test_language_action_crosses_the_installed_collection_boundary(self, url: str) -> None:
+        from ansible_collections.general_ludd.language.plugins.action.language_operation import (
+            execute_action,
+        )
+
+        result = execute_action(
+            {
+                "operation": "bom_detect",
+                "payload": {"input_bytes": "efbbbf48656c6c6f"},
+                "daemon_url": url,
+                "psk": "molecule-language-psk",
+            }
+        )
+        assert result["failed"] is False
+        assert result["result"]["bom_detected"] is True
+
     def test_observe_facade_preserves_fanout_and_isolated_errors(self, url: str) -> None:
         _post(url, "/__requests/reset")
         operations = (

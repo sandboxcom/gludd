@@ -31,6 +31,18 @@ DAEMON_LIFECYCLE_SCENARIOS = (
     "test_gludd_worktree",
 )
 
+LANGUAGE_DAEMON_ROLES = {
+    "bom_detect",
+    "encoding_detect",
+    "homoglyph_scan",
+    "language_detect",
+    "locale_format",
+    "phonetic_transcribe",
+    "translate",
+    "transliterate",
+    "unicode_analyze",
+}
+
 
 def _config(scenario: str) -> dict[str, object]:
     loaded = yaml.safe_load((PLAYBOOKS / scenario / "molecule.yml").read_text())
@@ -182,3 +194,37 @@ def test_affected_roles_forward_the_explicit_daemon_contract() -> None:
     for module, arguments in calls:
         assert "daemon_url" in arguments, f"{module} did not forward daemon_url"
         assert "psk" in arguments, f"{module} did not forward psk"
+
+
+def test_language_scenario_owns_one_authenticated_daemon_session() -> None:
+    """Keep all language roles on one discovered endpoint and cleanup lease."""
+    scenario_root = PLAYBOOKS / "language"
+    molecule = yaml.safe_load((scenario_root / "molecule.yml").read_text())
+    configured = molecule["provisioner"]["playbooks"]
+    controller_env = molecule["provisioner"]["env"]
+    sequence = molecule["scenario"]["test_sequence"]
+    assert controller_env["NO_PROXY"] == "127.0.0.1,localhost"
+    assert controller_env["no_proxy"] == "127.0.0.1,localhost"
+    assert configured["cleanup"].endswith("/molecule/shared/mock_daemon_cleanup.yml")
+    assert configured["destroy"].endswith("/molecule/shared/mock_daemon_destroy.yml")
+    assert sequence[:2] == ["cleanup", "destroy"]
+    assert sequence[-2:] == ["cleanup", "destroy"]
+
+    plays = list(yaml.safe_load_all((scenario_root / "default" / "converge.yml").read_text()))
+    assert len(plays) == 1
+    play = plays[0][0]
+    first_task = play["tasks"][0]
+    assert first_task["ansible.builtin.include_tasks"].endswith("/mock_daemon_start.yml")
+    handler = play["handlers"][0]
+    assert handler["ansible.builtin.include_tasks"].endswith("/mock_daemon_stop.yml")
+    assert play["force_handlers"] is True
+
+    included_roles = {
+        task["ansible.builtin.include_role"]["name"].rsplit(".", 1)[-1]: task
+        for task in play["tasks"]
+        if "ansible.builtin.include_role" in task
+    }
+    for role_name in LANGUAGE_DAEMON_ROLES:
+        role_vars = included_roles[role_name]["vars"]
+        assert role_vars["daemon_url"] == "{{ mock_daemon_url }}"
+        assert role_vars["psk"] == "{{ molecule_mock_daemon_psk }}"

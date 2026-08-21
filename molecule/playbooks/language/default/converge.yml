@@ -1,22 +1,31 @@
 ---
-- name: Converge - bom_detect
+- name: Converge - language collection
   hosts: localhost
   connection: local
   gather_facts: false
+  force_handlers: true
+  vars:
+    molecule_mock_daemon_psk: "molecule-language-psk"
+    language_artifact_root: "/tmp/gludd-molecule-language"
+  handlers:
+    - name: Stop scenario-owned mock daemon
+      ansible.builtin.include_tasks: >-
+        {{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml
   tasks:
+    - name: Start scenario-owned mock daemon
+      ansible.builtin.include_tasks: >-
+        {{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_start.yml
+
     - name: Invoke bom_detect
       ansible.builtin.include_role:
         name: general_ludd.language.bom_detect
       vars:
         input_bytes: "efbbbf48656c6c6f"
         strip_bom: true
-        artifact_dir: "/tmp/gludd-molecule-language/bom-detect"
+        artifact_dir: "{{ language_artifact_root }}/bom-detect"
+        daemon_url: "{{ mock_daemon_url }}"
+        psk: "{{ molecule_mock_daemon_psk }}"
 
-- name: Converge - encoding_detect
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  tasks:
     - name: Invoke encoding_detect
       ansible.builtin.include_role:
         name: general_ludd.language.encoding_detect
@@ -24,13 +33,10 @@
         input_bytes: "48656c6c6f"
         target_encoding: "utf-16"
         detect_mojibake: true
-        artifact_dir: "/tmp/gludd-molecule-language/encoding-detect"
+        artifact_dir: "{{ language_artifact_root }}/encoding-detect"
+        daemon_url: "{{ mock_daemon_url }}"
+        psk: "{{ molecule_mock_daemon_psk }}"
 
-- name: Converge - font_analyze
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  tasks:
     - name: Invoke font_analyze
       ansible.builtin.include_role:
         name: general_ludd.language.font_analyze
@@ -42,13 +48,8 @@
         check_variable: false
         check_monospace: false
         check_web_font: false
-        artifact_dir: "/tmp/gludd-molecule-language/font-analyze"
+        artifact_dir: "{{ language_artifact_root }}/font-analyze"
 
-- name: Converge - homoglyph_scan
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  tasks:
     - name: Invoke homoglyph_scan
       ansible.builtin.include_role:
         name: general_ludd.language.homoglyph_scan
@@ -58,105 +59,33 @@
         check_invisible: true
         check_bidi: true
         check_mixed_script: true
-        artifact_dir: "/tmp/gludd-molecule-language/homoglyph-scan"
+        artifact_dir: "{{ language_artifact_root }}/homoglyph-scan"
+        daemon_url: "{{ mock_daemon_url }}"
+        psk: "{{ molecule_mock_daemon_psk }}"
 
-- name: Converge - i18n_extract
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  tasks:
     - name: Create i18n source directory
       ansible.builtin.file:
-        path: "/tmp/gludd-molecule-language/i18n-source"
+        path: "{{ language_artifact_root }}/i18n-source"
         state: directory
         mode: "0755"
 
     - name: Write sample source file with gettext calls
       ansible.builtin.copy:
-        dest: "/tmp/gludd-molecule-language/i18n-source/main.py"
+        dest: "{{ language_artifact_root }}/i18n-source/main.py"
         content: |
           _("Hello World")
           _("Welcome")
           ngettext("item", "items", 5)
         mode: "0644"
 
-    - name: Write i18n extract Python script
-      ansible.builtin.copy:
-        dest: "/tmp/gludd-molecule-language/i18n-script.py"
-        content: |
-          import json, sys, os, re, glob as glob_mod
-          source_dir = "/tmp/gludd-molecule-language/i18n-source"
-          output_dir = "/tmp/gludd-molecule-language/i18n-output"
-          artifact_dir = "/tmp/gludd-molecule-language/i18n-extract"
-          pot_file = "molecule.pot"
-          patterns = ["*.py", "*.js"]
-          result = {"string_count": 0, "files_scanned": 0, "pot_path": "", "strings": []}
-          if not source_dir or not os.path.isdir(source_dir):
-              result["error"] = f"Source directory not found: {source_dir}"
-          else:
-              gettext_re = re.compile(r'(?:_|gettext|ngettext|pgettext)\s*\(\s*[\"\'](.+?)[\"\']', re.DOTALL)
-              strings = []
-              for pattern in patterns:
-                  for fpath in glob_mod.glob(os.path.join(source_dir, "**", pattern), recursive=True):
-                      result["files_scanned"] += 1
-                      try:
-                          with open(fpath, "r", encoding="utf-8", errors="replace") as f:
-                              content = f.read()
-                          found = gettext_re.findall(content)
-                          for s in found:
-                              strings.append({"file": fpath, "string": s})
-                          result["string_count"] += len(found)
-                      except Exception:
-                          pass
-              result["strings"] = strings[:500]
-              pot_path = os.path.join(output_dir, pot_file)
-              with open(pot_path, "w", encoding="utf-8") as f:
-                  f.write("# Generated by molecule test\n")
-                  f.write("#, fuzzy\n")
-                  f.write('msgid ""\nmsgstr ""\n')
-                  f.write('"Content-Type: text/plain; charset=UTF-8\\n"\n\n')
-                  seen = set()
-                  for entry in strings:
-                      if entry["string"] not in seen:
-                          seen.add(entry["string"])
-                          f.write(f'#: {entry["file"]}\n')
-                          escaped = entry["string"].replace('"', '\\"')
-                          f.write(f'msgid "{escaped}"\nmsgstr ""\n\n')
-              result["pot_path"] = pot_path
-          report_path = os.path.join(artifact_dir, "extraction_report.json")
-          os.makedirs(artifact_dir, exist_ok=True)
-          os.makedirs(output_dir, exist_ok=True)
-          with open(report_path, "w") as f:
-              json.dump(result, f, indent=2, ensure_ascii=False)
-          print(f"Report: {report_path}")
-          print(f"Strings extracted: {result['string_count']}")
-          print(f"Files scanned: {result['files_scanned']}")
-          print(f"POT file: {result.get('pot_path', '')}")
-        mode: "0755"
-
     - name: Invoke i18n_extract
       ansible.builtin.include_role:
         name: general_ludd.language.i18n_extract
       vars:
-        source_dir: "/tmp/gludd-molecule-language/i18n-source"
-        output_dir: "/tmp/gludd-molecule-language/i18n-output"
-        artifact_dir: "/tmp/gludd-molecule-language/i18n-extract"
+        source_dir: "{{ language_artifact_root }}/i18n-source"
+        output_dir: "{{ language_artifact_root }}/i18n-output"
+        artifact_dir: "{{ language_artifact_root }}/i18n-extract"
 
-    - name: Run i18n extract script
-      ansible.builtin.command:
-        cmd: python3 /tmp/gludd-molecule-language/i18n-script.py
-      register: i18n_result
-      changed_when: false
-
-    - name: Print i18n extraction summary
-      ansible.builtin.debug:
-        msg: "{{ i18n_result.stdout_lines }}"
-
-- name: Converge - locale_format
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  tasks:
     - name: Invoke locale_format
       ansible.builtin.include_role:
         name: general_ludd.language.locale_format
@@ -164,13 +93,10 @@
         locale: "de-DE"
         value: "1234.56"
         value_type: "number"
-        artifact_dir: "/tmp/gludd-molecule-language/locale-format"
+        artifact_dir: "{{ language_artifact_root }}/locale-format"
+        daemon_url: "{{ mock_daemon_url }}"
+        psk: "{{ molecule_mock_daemon_psk }}"
 
-- name: Converge - phonetic_transcribe
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  tasks:
     - name: Invoke phonetic_transcribe
       ansible.builtin.include_role:
         name: general_ludd.language.phonetic_transcribe
@@ -178,13 +104,10 @@
         input_text: "HELLO WORLD"
         method: "arpabet"
         cmu_dict_lookup: true
-        artifact_dir: "/tmp/gludd-molecule-language/phonetic-transcribe"
+        artifact_dir: "{{ language_artifact_root }}/phonetic-transcribe"
+        daemon_url: "{{ mock_daemon_url }}"
+        psk: "{{ molecule_mock_daemon_psk }}"
 
-- name: Converge - unicode_analyze
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  tasks:
     - name: Invoke unicode_analyze
       ansible.builtin.include_role:
         name: general_ludd.language.unicode_analyze
@@ -196,25 +119,19 @@
         include_surrogates: true
         include_utf_encodings: true
         include_version_info: false
-        artifact_dir: "/tmp/gludd-molecule-language/unicode-analyze"
+        artifact_dir: "{{ language_artifact_root }}/unicode-analyze"
+        daemon_url: "{{ mock_daemon_url }}"
+        psk: "{{ molecule_mock_daemon_psk }}"
 
-- name: Converge - language_detect
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  tasks:
     - name: Invoke language_detect
       ansible.builtin.include_role:
         name: general_ludd.language.language_detect
       vars:
         input_text: "Hello world"
-        artifact_dir: "/tmp/gludd-molecule-language/language-detect"
+        artifact_dir: "{{ language_artifact_root }}/language-detect"
+        daemon_url: "{{ mock_daemon_url }}"
+        psk: "{{ molecule_mock_daemon_psk }}"
 
-- name: Converge - translate
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  tasks:
     - name: Invoke translate
       ansible.builtin.include_role:
         name: general_ludd.language.translate
@@ -222,13 +139,10 @@
         input_text: "Hello"
         source_language: "auto"
         target_language: "fr"
-        artifact_dir: "/tmp/gludd-molecule-language/translate"
+        artifact_dir: "{{ language_artifact_root }}/translate"
+        daemon_url: "{{ mock_daemon_url }}"
+        psk: "{{ molecule_mock_daemon_psk }}"
 
-- name: Converge - transliterate
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  tasks:
     - name: Invoke transliterate
       ansible.builtin.include_role:
         name: general_ludd.language.transliterate
@@ -236,4 +150,6 @@
         input_text: "Hello"
         target_script: "Latin"
         scheme: ""
-        artifact_dir: "/tmp/gludd-molecule-language/transliterate"
+        artifact_dir: "{{ language_artifact_root }}/transliterate"
+        daemon_url: "{{ mock_daemon_url }}"
+        psk: "{{ molecule_mock_daemon_psk }}"

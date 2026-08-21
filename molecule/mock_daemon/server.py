@@ -48,6 +48,7 @@ shape matches what each module parses:
   POST /admin/skills/render           -> 200 rendered skill artifact       (gludd_skill)
   POST /admin/reload/code             -> 200 atomic reload/rollback result (gludd_reload)
   POST /api/observe/facade            -> 200 fan-out/timeline/correlation   (gludd_observe)
+  POST /api/language/execute           -> 200 bounded language result        (language_operation)
   GET  /admin/ornith/pairs            -> 200 {"pairs":[...],"count":N}
                                               (gludd_ornith rejected pairs)
   GET  /process-audit                  -> 200 guardrail_health/plugin_footprint/.. (gludd_audit)
@@ -1088,6 +1089,69 @@ def _skill_response(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _language_operation_response(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return the deterministic daemon-owned schema for one language operation."""
+    operation = str(payload.get("operation") or "")
+    operation_payload = payload.get("payload")
+    if not isinstance(operation_payload, dict):
+        raise TypeError("language operation payload must be a dictionary")
+    input_text = str(operation_payload.get("input_text") or "")
+    responses: dict[str, dict[str, Any]] = {
+        "bom_detect": {
+            "bom_detected": True,
+            "encoding": "utf-8-sig",
+            "bom_name": "UTF-8",
+        },
+        "encoding_detect": {
+            "detected_encoding": "ascii",
+            "confidence": 1.0,
+            "confidence_level": "trusted",
+        },
+        "homoglyph_scan": {
+            "input_length": len(input_text),
+            "total_findings": 0,
+            "findings": [],
+        },
+        "language_detect": {
+            "language": "en",
+            "confidence": 0.99,
+        },
+        "locale_format": {
+            "locale": str(operation_payload.get("locale") or "en-US"),
+            "formatted_value": "1.234,56",
+            "is_rtl": False,
+            "first_day_of_week": 1,
+        },
+        "phonetic_transcribe": {
+            "method": str(operation_payload.get("method") or "arpabet"),
+            "words": [{"word": "HELLO", "phonemes": ["HH", "AH0", "L", "OW1"]}],
+        },
+        "translate": {
+            "translated_text": "Bonjour",
+            "source_language": str(operation_payload.get("source_language") or "auto"),
+            "target_language": str(operation_payload.get("target_language") or "fr"),
+        },
+        "transliterate": {
+            "transliterated_text": input_text,
+            "target_script": str(operation_payload.get("target_script") or "Latin"),
+            "scheme": str(operation_payload.get("scheme") or "default"),
+        },
+        "unicode_analyze": {
+            "input_length": len(input_text),
+            "codepoints": [f"U+{ord(character):04X}" for character in input_text],
+            "normalization": {
+                "NFC": input_text,
+                "NFD": input_text,
+                "NFKC": input_text,
+                "NFKD": input_text,
+            },
+        },
+    }
+    if operation not in responses:
+        raise ValueError(f"unsupported language operation: {operation}")
+    return responses[operation]
+
+
 def _observe_facade_response(payload: dict[str, Any]) -> dict[str, Any]:
     """Emulate daemon-side registered-source fan-out for the facade module."""
     operation = str(payload.get("operation", ""))
@@ -1605,6 +1669,11 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, _make_response(payload))
         elif path == "/admin/skills/render":
             self._send_json(200, _skill_response(payload))
+        elif path == "/api/language/execute":
+            try:
+                self._send_json(200, {"result": _language_operation_response(payload)})
+            except (TypeError, ValueError) as exc:
+                self._send_json(422, {"detail": str(exc)})
         elif path == "/admin/reload/code":
             try:
                 self._send_json(200, _reload_response(payload))
