@@ -44,7 +44,9 @@ elif [ "$1" = "--tty=false" ] && [ "$2" = "stop" ]; then
         printf 'Stopped' > "$LIMA_FAKE_STATE"
     else
         trap 'printf "TERM\n" >> "$LIMA_FAKE_CALLS"' TERM
-        while :; do sleep 1; done
+        # Stay in this owned process so POSIX trap delivery is deterministic;
+        # a child `sleep` can defer the shell trap until after the KILL bound.
+        while :; do :; done
     fi
 else
     exit 64
