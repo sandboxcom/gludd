@@ -34,6 +34,42 @@ does not remain in the unmerged-branch ledger.
   stale results. The local equivalent binds the result to HEAD plus the exact
   file tree and rejects evidence older than 30 minutes.
 
+## Pagination incident and compatibility evidence
+
+Evidence reviewed on 2026-08-20:
+
+- The [Git 2.51 release notes](https://github.com/git/git/blob/master/Documentation/RelNotes/2.51.0.adoc)
+  identify `for-each-ref --start-after` as a new pagination capability. The
+  [2.42 manual](https://git-scm.com/docs/git-for-each-ref/2.42.0.html) predates
+  that option, so the inventory retains its bounded legacy scan rather than
+  assuming every practitioner host has upgraded.
+- The [upstream Git mailing-list review](https://www.spinics.net/lists/git/msg505878.html)
+  explicitly works through 100-ref page markers. Later review still corrected
+  the option's marker terminology, demonstrating that this young interface was
+  refined after initial review. Gludd therefore verifies monotonic output at
+  its own boundary instead of trusting backend cursor behavior implicitly.
+- The current [Git `for-each-ref` manual](https://git-scm.com/docs/git-for-each-ref/2.52.0.html)
+  defines the marker as excluded and warns that refs may change between page
+  requests. Gludd accepts and removes only an exact repeated boundary marker,
+  fails closed on any ref below it, deduplicates across pages, and never treats
+  a repeated marker as proof that enumeration is exhausted.
+
+The 2026-08-20 incident had two independent symptoms: an inclusive boundary
+from a supported pagination backend made page five appear stationary, and the
+eventual exhaustive result contained 641 heads but semantic inspection had an
+unrelated 256-head cap. One authoritative 10,000-ref ceiling now bounds both
+enumeration and distinct-head inspection. It neither truncates branches nor
+silently omits semantic evidence; exceeding that ceiling remains an explicit
+failure.
+
+This is a read-only, zero-downtime change. Each page and semantic head retains
+observable progress, page size remains at most 100, Git calls retain their
+10-second timeout, commit inspection remains bounded to 500 commits, and path
+and output caps are unchanged. No process, database, service, or ref is created
+or mutated. Rollback is a single code-and-test revert with no data migration;
+operators may run the prior version concurrently because both versions only
+read repository state.
+
 ## Versioned gate-attestation contract
 
 A successful full `make gate` appends five version-1 fields only after smoke and

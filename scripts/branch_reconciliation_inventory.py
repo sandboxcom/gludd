@@ -16,7 +16,10 @@ MAX_LIMIT = 100
 COMMIT_SCAN_LIMIT = 500
 LOCAL_REF_SCAN_LIMIT = 10_000
 GIT_TIMEOUT_SECONDS = 10
-SEMANTIC_HEAD_LIMIT = 256
+# Semantic inspection is exhaustive over the same already-bounded ref snapshot.
+# A smaller independent cap could fail after all refs were safely classified,
+# or tempt callers to truncate heads. Keep one authoritative resource ceiling.
+SEMANTIC_HEAD_LIMIT = LOCAL_REF_SCAN_LIMIT
 SEMANTIC_PATH_LIMIT = 100
 SEMANTIC_SUBJECT_CHAR_LIMIT = 200
 SEMANTIC_PATH_CHAR_LIMIT = 240
@@ -382,8 +385,13 @@ def _bounded_branches(
             result.stdout,
             allow_namespace_boundary=after is not None,
         )
-    if after is not None and any(ref <= after for ref, _head in entries):
-        raise InventoryError("pagination cursor did not advance")
+    if after is not None:
+        if any(ref < after for ref, _head in entries):
+            raise InventoryError("pagination cursor moved backwards")
+        # Some supported Git releases/backends return the boundary ref itself
+        # even for --start-after. It was classified on the preceding page, so
+        # drop only that exact duplicate while retaining every unseen ref.
+        entries = [entry for entry in entries if entry[0] != after]
     candidates = [
         entry for entry in entries if entry[0] != target_ref
     ]

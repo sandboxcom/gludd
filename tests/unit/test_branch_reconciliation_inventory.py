@@ -32,6 +32,8 @@ class FakeGit:
         target_valid: bool = True,
         cursor_valid: bool = True,
         start_after_supported: bool = True,
+        inclusive_start_after: bool = False,
+        regressive_start_after: bool = False,
         subjects: dict[str, str] | None = None,
         changed_paths: dict[str, Sequence[str]] | None = None,
         malformed_path_heads: frozenset[str] = frozenset(),
@@ -43,6 +45,8 @@ class FakeGit:
         self.target_valid = target_valid
         self.cursor_valid = cursor_valid
         self.start_after_supported = start_after_supported
+        self.inclusive_start_after = inclusive_start_after
+        self.regressive_start_after = regressive_start_after
         self.subjects = subjects or {}
         self.changed_paths = changed_paths or {}
         self.malformed_path_heads = malformed_path_heads
@@ -80,7 +84,12 @@ class FakeGit:
                 "",
             )
             if start_after:
-                entries = [entry for entry in entries if entry[0] > start_after]
+                if self.regressive_start_after:
+                    entries = list(entries)
+                elif self.inclusive_start_after:
+                    entries = [entry for entry in entries if entry[0] >= start_after]
+                else:
+                    entries = [entry for entry in entries if entry[0] > start_after]
             count_option = next(
                 option for option in args if option.startswith("--count=")
             )
@@ -253,6 +262,68 @@ def test_cursor_pages_are_strictly_greater_without_duplicates_or_gaps() -> None:
     assert "--start-after=refs/heads/feature/b" in second_enumeration
     assert not any(option.startswith("--sort=") for option in second_enumeration)
     assert "refs/heads" not in second_enumeration
+
+
+def test_exhaustive_summary_handles_inclusive_cursor_without_duplicates() -> None:
+    refs = [
+        (f"refs/heads/feature/{name}", head)
+        for name, head in zip("abcd", PAGE_HEADS, strict=True)
+    ]
+    fake = FakeGit(
+        refs=refs,
+        ancestors=frozenset(PAGE_HEADS),
+        inclusive_start_after=True,
+    )
+
+    result = inventory.collect_summary("development", 2, run=fake)
+
+    assert result["pages"] == 2
+    assert [ref for group in result["groups"] for ref in group["refs"]] == [
+        f"refs/heads/feature/{name}" for name in "abcd"
+    ]
+    assert result["counts"]["returned"] == 4
+
+
+def test_inclusive_cursor_exhausts_after_the_last_unseen_ref() -> None:
+    fake = FakeGit(
+        refs=[
+            (f"refs/heads/feature/{name}", PAGE_HEADS[index])
+            for index, name in enumerate("abc")
+        ],
+        ancestors=frozenset(PAGE_HEADS),
+        inclusive_start_after=True,
+    )
+
+    first = inventory.collect_inventory("development", 2, after="", run=fake)
+    second = inventory.collect_inventory(
+        "development",
+        2,
+        after=first["next_cursor"] or "",
+        run=fake,
+    )
+
+    assert [branch["name"] for branch in second["branches"]] == ["feature/c"]
+    assert second["truncated"] is False
+    assert second["next_cursor"] is None
+
+
+def test_cursor_backend_regression_fails_closed() -> None:
+    fake = FakeGit(
+        refs=[
+            (f"refs/heads/feature/{name}", PAGE_HEADS[index])
+            for index, name in enumerate("abc")
+        ],
+        ancestors=frozenset(PAGE_HEADS),
+        regressive_start_after=True,
+    )
+
+    with pytest.raises(inventory.InventoryError, match="cursor moved backwards"):
+        inventory.collect_inventory(
+            "development",
+            2,
+            after="refs/heads/feature/b",
+            run=fake,
+        )
 
 
 def test_absent_cursor_is_a_strict_lexicographic_boundary() -> None:
@@ -834,6 +905,27 @@ def test_head_semantics_fail_closed_above_head_bound_before_semantic_git(
     assert rc == 2
     assert "semantic head bound" in json.loads(capsys.readouterr().out)["error"]
     assert not any(call[1] in {"show", "diff-tree"} for call in fake.calls)
+
+
+def test_head_semantics_cover_more_than_legacy_256_head_cap() -> None:
+    heads = [f"{index + 1:040x}" for index in range(257)]
+    groups: list[inventory.SummaryGroup] = [
+        {
+            "branch_count": 1,
+            "classification": "unique",
+            "head": head,
+            "lifecycle": "current",
+            "names": [f"feature/{index}"],
+            "patch_equivalent_commits": 0,
+            "refs": [f"refs/heads/feature/{index}"],
+            "unique_commits": 1,
+        }
+        for index, head in enumerate(heads)
+    ]
+
+    summaries = inventory.collect_head_summaries(groups, run=FakeGit())
+
+    assert [summary["head"] for summary in summaries] == heads
 
 
 def test_head_semantics_reject_nonterminal_and_counts_only_modes(
