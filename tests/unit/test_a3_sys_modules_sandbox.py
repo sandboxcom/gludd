@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+from types import ModuleType
 from typing import Any, cast
 
 import tests.conftest as ct
 
 
-def test_fixture_exists_in_conftest():
+class _RetainedImportFinder:
+    """Stand-in for a package-owned finder such as ``six.moves``."""
+
+    __module__ = "gludd_test_retained_importer"
+
+
+def test_fixture_exists_in_conftest() -> None:
     assert hasattr(ct, "_sandbox_sys_modules_and_path")
     assert hasattr(ct, "_snapshot_sys_modules_and_path")
     assert hasattr(ct, "_restore_sys_modules_and_path")
@@ -21,32 +29,32 @@ def test_fixture_exists_in_conftest():
         assert kwargs.get("autouse") is True
 
 
-def test_denylisted_module_removed_after_test():
+def test_denylisted_module_removed_after_test() -> None:
     """Inject a denylist-prefixed module; snapshot + restore; verify evicted."""
     assert "live_pkg_test_fake_a3" not in sys.modules
 
     snap_modules, snap_path = ct._snapshot_sys_modules_and_path()
-    sys.modules["live_pkg_test_fake_a3"] = "fake_stub"
+    sys.modules["live_pkg_test_fake_a3"] = cast(Any, "fake_stub")
     assert "live_pkg_test_fake_a3" in sys.modules
     ct._restore_sys_modules_and_path(snap_modules, snap_path)
 
     assert "live_pkg_test_fake_a3" not in sys.modules
 
 
-def test_denylist_exact_name_removed():
+def test_denylist_exact_name_removed() -> None:
     """Exact denylist names (capability_policy, fs_write_policy) are also evicted."""
     sys.modules.pop("capability_policy", None)
     assert "capability_policy" not in sys.modules
 
     snap_modules, snap_path = ct._snapshot_sys_modules_and_path()
-    sys.modules["capability_policy"] = "fake_policy"
+    sys.modules["capability_policy"] = cast(Any, "fake_policy")
     assert "capability_policy" in sys.modules
     ct._restore_sys_modules_and_path(snap_modules, snap_path)
 
     assert "capability_policy" not in sys.modules
 
 
-def test_standard_module_preserved():
+def test_standard_module_preserved() -> None:
     """A legitimate import (general_ludd.routing_roles) survives sandbox teardown."""
     import general_ludd.routing_roles
 
@@ -61,7 +69,7 @@ def test_standard_module_preserved():
     assert "general_ludd.routing_roles" in sys.modules
 
 
-def test_sys_path_restored():
+def test_sys_path_restored() -> None:
     """sys.path modifications are reverted to the snapshot."""
     snap_modules, snap_path = ct._snapshot_sys_modules_and_path()
 
@@ -73,7 +81,7 @@ def test_sys_path_restored():
     assert "/fake/injected/path" not in sys.path
 
 
-def test_full_import_state_restored():
+def test_full_import_state_restored() -> None:
     """Loader hooks, importer cache, and argv are restored as one boundary."""
     snapshot = ct._snapshot_import_state()
     fake_finder = cast(Any, object())
@@ -94,7 +102,27 @@ def test_full_import_state_restored():
     assert sys.argv == list(snapshot.argv)
 
 
-def test_isolated_path_loader_does_not_cache_short_alias(tmp_path):
+def test_retained_module_keeps_its_package_owned_meta_path_finder() -> None:
+    """A cached package and its importer must remain a consistent pair."""
+    module_name = _RetainedImportFinder.__module__
+    assert module_name not in sys.modules
+    snapshot = ct._snapshot_import_state()
+    module = ModuleType(module_name)
+    finder = cast(Any, _RetainedImportFinder())
+    sys.modules[module_name] = module
+    sys.meta_path.append(finder)
+
+    try:
+        ct._restore_import_state(snapshot)
+        assert sys.modules[module_name] is module
+        assert finder in sys.meta_path
+    finally:
+        if finder in sys.meta_path:
+            sys.meta_path.remove(finder)
+        sys.modules.pop(module_name, None)
+
+
+def test_isolated_path_loader_does_not_cache_short_alias(tmp_path: Path) -> None:
     """Path-loaded compatibility CLIs never survive under a global alias."""
     module_path = tmp_path / "compatibility_cli.py"
     module_path.write_text("VALUE = 42\n")
@@ -103,29 +131,29 @@ def test_isolated_path_loader_does_not_cache_short_alias(tmp_path):
 
     module = ct._load_path_module_isolated(alias, module_path)
 
-    assert module.VALUE == 42
+    assert cast(Any, module).VALUE == 42
     assert alias not in sys.modules
 
 
-def test_replaced_module_restored():
+def test_replaced_module_restored() -> None:
     """If an existing module object is replaced, fixture restores it from snapshot."""
     snap_modules, snap_path = ct._snapshot_sys_modules_and_path()
     original = sys.modules["general_ludd.routing_roles"]
     assert original is not None
 
-    sys.modules["general_ludd.routing_roles"] = "replaced_stub"
+    sys.modules["general_ludd.routing_roles"] = cast(Any, "replaced_stub")
     ct._restore_sys_modules_and_path(snap_modules, snap_path)
 
     assert sys.modules["general_ludd.routing_roles"] is original
 
 
-def test_non_denylisted_new_module_preserved():
+def test_non_denylisted_new_module_preserved() -> None:
     """New modules that don't match the denylist are left alone by the sandbox."""
     key = "some_legit_test_module_a3"
     assert key not in sys.modules
 
     snap_modules, snap_path = ct._snapshot_sys_modules_and_path()
-    sys.modules[key] = "legitimate_stub"
+    sys.modules[key] = cast(Any, "legitimate_stub")
     ct._restore_sys_modules_and_path(snap_modules, snap_path)
 
     assert key in sys.modules

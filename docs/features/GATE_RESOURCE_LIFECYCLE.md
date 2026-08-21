@@ -169,6 +169,35 @@ records surprise that temporary directories are retained; and the long-running
 [monkeypatch scope discussion opened 2018-12-25](https://github.com/pytest-dev/pytest/issues/4576)
 highlights why restoration lifetime must be explicit.
 
+### Retained module/importer pairs
+
+On 2026-08-21, the 1-worker `unit-1b` gate batch passed every cron test in
+isolation but failed all five after the preceding files. The import-state
+sandbox retained ordinary modules first imported by a test while restoring
+`sys.meta_path` to its earlier snapshot. That split left `six` cached but
+discarded the `_SixMetaPathImporter` that implements `six.moves`; the later
+`croniter` → `dateutil` import therefore failed with `No module named
+'six.moves'`.
+
+The sandbox now treats a retained package and a meta-path finder owned by that
+newly retained package as one resource. It still restores the original finder
+list and removes arbitrary test-injected finders. A focused regression creates
+that acquisition pair mechanically, and the exact 64-file gate batch passes
+1,931 tests with three intentional skips under warnings-as-errors. Rollback is
+the single sandbox helper change; no scheduler fallback, import retry, or global
+pre-import was added.
+
+This boundary follows the actual upstream mechanism: the maintained
+[`six` source](https://github.com/benjaminp/six/blob/main/six.py) creates a
+`_SixMetaPathImporter`, registers `moves` beneath it, and installs it in
+`sys.meta_path`. Practitioner reports show why the pair must stay coherent:
+[python-dateutil issue 1430](https://github.com/dateutil/dateutil/issues/1430)
+records the same missing-`six.moves` runtime shape on a newer Python, while
+[pytest issue 12179](https://github.com/pytest-dev/pytest/issues/12179) records
+pytest encountering a vendored Six meta-path importer during collection. The
+reports do not establish the same root cause; they are evidence that Six's
+importer is live process state rather than disposable test metadata.
+
 ## Security and Resource Boundaries
 
 The status command uses a fixed system interpreter and existing fixed-argument
