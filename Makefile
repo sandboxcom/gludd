@@ -53,7 +53,7 @@ endif
 export TERM
 # SSH deploy keys are credentials and must live outside the repository.
 # Override with `make ... SSH_KEY=/path/to/key` for another external key.
-SSH_KEY ?= $(HOME)/.ssh/sandboxcom_github_rsa
+SSH_KEY ?= $(HOME)/.ssh/sandboxcom_gludd_rsa
 
 _MULTIWORD_VALUE_GOALS := \
     copy-file feature-done feature-start git-add git-branch git-checkout git-cherry-pick-list \

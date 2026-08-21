@@ -157,14 +157,14 @@ class TestGitDirWorktree:
                 capture_output=True,
             )
             subprocess.run(
-                ["git", "commit", "-m", "init"],
+                ["git", "-c", "commit.gpgSign=false", "commit", "-m", "init"],
                 cwd=main_repo,
                 check=True,
                 capture_output=True,
             )
             wt_path = os.path.join(tmpdir, "wt")
             subprocess.run(
-                ["git", "worktree", "add", wt_path],
+                ["git", "worktree", "add", "--detach", wt_path],
                 cwd=main_repo,
                 check=True,
                 capture_output=True,
