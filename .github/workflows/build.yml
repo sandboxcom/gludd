@@ -1226,8 +1226,9 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "=== CI PHASE: build-windows-x86_64 ==="
-          uv sync --python 3.12
-          uv run --python 3.12 pyinstaller gludd.spec --clean --noconfirm
+          uv sync --frozen --python 3.12
+          uv run --frozen --python 3.12 python -W error scripts/smoke_sphincs_backend.py
+          uv run --frozen --python 3.12 pyinstaller gludd.spec --clean --noconfirm
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::error::WINDOWS BUILD FAILED — pyinstaller failed for windows-x86_64. Check gludd.spec."
             exit 1
@@ -1346,6 +1347,7 @@ jobs:
           Write-Host "============================================="
           Write-Host "  Platform          : windows-x86_64 (windows-2022)"
           Write-Host "  Build executable  : check step 'Build executable' above"
+          Write-Host "  SPHINCS backend   : check step 'Build executable' above"
           Write-Host "  Smoke test        : check step 'Smoke test binary' above"
           Write-Host "  Package zip       : check step 'Package zip' above"
           Write-Host "  NSIS installer    : check step 'Build NSIS installer' above"

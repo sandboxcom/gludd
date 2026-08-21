@@ -69,6 +69,13 @@ a = Analysis(
         'general_ludd.compat',
         'general_ludd.compat.annotated_types',
         'general_ludd.cli',
+        # The SPHINCS+ adapter and pqcrypto's CFFI/native backend are loaded
+        # across module boundaries that PyInstaller cannot infer reliably on
+        # every platform. Keep the public wrapper and its native implementation
+        # explicit so a frozen Windows executable never ships a latent backend.
+        'general_ludd.algorithms.sphincs_plus',
+        'pqcrypto.sign.sphincs_shake_256s_simple',
+        'pqcrypto._sign.sphincs_shake_256s_simple',
         'general_ludd.daemon',
         'general_ludd.worker.app',
         'general_ludd.event_loop.loop',

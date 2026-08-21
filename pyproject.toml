@@ -59,7 +59,6 @@ dependencies = [
     "shamir>=17.12.0",
     "croniter>=2.0.0",
     "srptools>=1.0.0",
-    "pyspx>=0.1.0",
     "PyWavelets>=1.4",
 ]
 
@@ -250,7 +249,7 @@ follow_imports = "skip"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["pygments", "pygments.*", "ansible.*", "ansible_collections.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "xmlsec", "lxml", "lxml.etree", "pyVim.*", "pyVmomi", "openai", "lm_eval", "argon2", "blake3", "shamir", "srptools", "srptools.*", "pyspx", "pyspx.*", "scipy.*", "pywt"]
+module = ["pygments", "pygments.*", "ansible.*", "ansible_collections.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "xmlsec", "lxml", "lxml.etree", "pyVim.*", "pyVmomi", "openai", "lm_eval", "argon2", "blake3", "shamir", "srptools", "srptools.*", "pqcrypto", "pqcrypto.*", "scipy.*", "pywt"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -361,7 +360,6 @@ DEP002 = [
     "opentelemetry-proto",
     "opentelemetry-sdk",
     "pillow",
-    "pqcrypto",
     "torch",
     "uvicorn-worker",
     "vllm",
