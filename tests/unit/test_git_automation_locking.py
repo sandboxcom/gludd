@@ -174,7 +174,7 @@ class TestGitDirWorktree:
     @pytest.mark.skipif(os.name == "nt", reason="directory symlink aliases require POSIX semantics")
     def test_preserves_checkout_alias_when_git_metadata_uses_physical_path(self) -> None:
         """Return the caller's path spelling even when Git records a real path."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(dir=Path(os.sep) / "tmp") as tmpdir:
             physical_root = Path(tmpdir, "physical")
             common_dir = physical_root / "main" / ".git"
             private_dir = common_dir / "worktrees" / "linked"

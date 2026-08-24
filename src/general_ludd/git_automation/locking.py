@@ -180,15 +180,19 @@ def _restore_anchor_spelling(path: str, *, anchor: str) -> str:
     converges through :func:`_normalize` before lock lookup.
     """
     resolved = os.path.abspath(path)
+    try:
+        physical_path = os.path.realpath(resolved)
+    except OSError:
+        physical_path = resolved
     lexical_ancestor = os.path.abspath(anchor)
     while True:
         try:
             physical_ancestor = os.path.realpath(lexical_ancestor)
-            contains_path = os.path.commonpath((resolved, physical_ancestor)) == physical_ancestor
+            contains_path = os.path.commonpath((physical_path, physical_ancestor)) == physical_ancestor
         except (OSError, ValueError):
             contains_path = False
         if contains_path:
-            suffix = os.path.relpath(resolved, physical_ancestor)
+            suffix = os.path.relpath(physical_path, physical_ancestor)
             if suffix == os.curdir:
                 return lexical_ancestor
             return os.path.join(lexical_ancestor, suffix)
