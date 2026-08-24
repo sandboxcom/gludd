@@ -289,11 +289,11 @@ def test_available_timeout_degrades_to_false(adapter: SlurmAdapter) -> None:
         assert adapter.available() is False
 
 
-def test_list_jobs_timeout_degrades_to_empty(adapter: SlurmAdapter) -> None:
-    # list_jobs() already degrades to [] on FileNotFoundError; a timed-out
-    # ``squeue`` degrades the same way instead of hanging/raising.
+def test_list_jobs_timeout_raises_connection_error(adapter: SlurmAdapter) -> None:
+    # A timed-out scheduler query is not evidence that no jobs exist. Preserve
+    # the fail-closed distinction between an empty queue and an unavailable one.
     with mock.patch(
         "general_ludd.infra.slurm.subprocess.run",
         side_effect=_timeout_exc("squeue"),
-    ):
-        assert adapter.list_jobs() == []
+    ), pytest.raises(SlurmConnectionError):
+        adapter.list_jobs()

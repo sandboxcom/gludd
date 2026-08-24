@@ -1,6 +1,6 @@
 # Feature: Expert-System Interoperability
 
-Status: READY-TO-IMPLEMENT (2026-08-14)
+**Status:** READY-TO-IMPLEMENT (2026-08-14)
 
 **Feature ID:** EXPERT-INTEROP-v1
 **Target compatibility:** Gludd `0.1.x`; expert card, task, event, artifact, and

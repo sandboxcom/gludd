@@ -1,6 +1,6 @@
 # Feature: Chemistry Expert Collection and Validated Laboratory/Compute Workflows
 
-Status: READY-TO-IMPLEMENT (2026-08-14)
+**Status:** READY-TO-IMPLEMENT (2026-08-14)
 
 **Feature ID:** CHEM-EXPERT-v1
 **Target compatibility:** Gludd `0.1.x`; chemistry entity/request/result schema
