@@ -231,14 +231,14 @@ class TestHealthCheckerCRUD:
     @pytest.mark.asyncio
     async def test_add_get_list(self):
         checker = HealthChecker()
-        hc = HealthCheck(name="db", check_fn=asyncio.sleep(0, result=True))
+        hc = HealthCheck(name="db", check_fn=lambda: asyncio.sleep(0, result=True))
         checker.add_check(hc)
         assert checker.list_checks() == ["db"]
         assert checker.get_check("db") is hc
 
     def test_remove_existing(self):
         checker = HealthChecker()
-        hc = HealthCheck(name="x", check_fn=asyncio.sleep(0, result=True))
+        hc = HealthCheck(name="x", check_fn=lambda: asyncio.sleep(0, result=True))
         checker.add_check(hc)
         assert checker.remove_check("x") is True
         assert checker.list_checks() == []
