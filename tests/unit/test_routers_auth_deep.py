@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -710,10 +711,30 @@ class TestPermSpecGetDeep:
         # ../etc is URL-decoded by starlette, FastAPI fails to match the path
         assert resp.status_code == 404
 
-    def test_very_long_agent_type_name(self, client: TestClient) -> None:
+    def test_very_long_agent_type_name(
+        self,
+        client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        real_exists = Path.exists
+
+        def _portable_exists(path: Path) -> bool:
+            assert len(path.name.encode()) <= 255, "route attempted a non-portable filesystem lookup"
+            return real_exists(path)
+
+        monkeypatch.setattr(Path, "exists", _portable_exists)
         long_name = "a" * 500
         resp = client.get(f"/admin/perm/spec/{long_name}")
         assert resp.status_code == 200
+
+    def test_very_long_agent_type_cannot_be_persisted(self, auth_client: TestClient) -> None:
+        long_name = "a" * 500
+        response = auth_client.put(
+            f"/admin/perm/spec/{long_name}",
+            json={"spec_yaml": _valid_perm_spec_yaml(long_name)},
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error": "agent_type cannot be represented by a portable filename"}
 
     def test_empty_agent_type_matches_list_endpoint(self, client: TestClient) -> None:
         """GET /admin/perm/spec/ resolves to the list endpoint because

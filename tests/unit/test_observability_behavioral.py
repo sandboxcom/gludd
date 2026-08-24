@@ -23,9 +23,6 @@ ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 OPENCODE_JSON = ROOT / "opencode.json"
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
-GATE_STATUS = ROOT / ".gate-status"
-
-
 @pytest.fixture
 def completed_gate_status(tmp_path: Path) -> Path:
     """Return an immutable terminal snapshot, isolated from a concurrently running gate."""
@@ -225,8 +222,8 @@ class TestGateStatusFile:
         assert int(pid_text) > 0
         return None
 
-    def test_gate_status_exists(self) -> None:
-        assert GATE_STATUS.exists(), ".gate-status missing — run 'make gate' or 'make gate-refresh'"
+    def test_gate_status_exists(self, completed_gate_status: Path) -> None:
+        assert completed_gate_status.exists(), "isolated gate-status snapshot was not published"
 
     def test_gate_status_has_header_with_timestamp(self, completed_gate_status: Path) -> None:
         """Per G09: gate writes a header with UTC timestamp."""

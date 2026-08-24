@@ -204,6 +204,35 @@ timer samples. Gludd's lightweight smoke keeps its ratio guard but applies a
 unchanged. This removes scheduler-noise failures without weakening the actual
 startup-performance contract.
 
+The Python 3.11 hosted lane also reports the origin of ``str | None`` as
+``types.UnionType``, while Python 3.14 aliases that runtime form with
+``typing.Union``. CPython's current
+[typing reference](https://github.com/python/cpython/blob/main/Doc/library/typing.rst)
+explicitly requires compatibility checks to admit either origin. The immutable
+NamedTuple audit now follows that cross-version contract instead of treating the
+3.11 representation as a mutable container.
+
+A clean hosted checkout correctly lacks the untracked ``.gate-status`` runtime
+snapshot that may remain after a local gate. The observability tests therefore
+parse an isolated, test-owned snapshot and separately verify the Makefile's
+atomic publisher; they never require prior local activity. This is the inverse
+of the persistent-worktree failure reported by practitioners in
+[actions/checkout issue #1475](https://github.com/actions/checkout/issues/1475):
+test correctness cannot depend on either retained or pre-generated checkout
+state.
+
+Finally, a 500-character permission subject reached a filesystem lookup on
+macOS but raised ``ENAMETOOLONG`` on the Linux runner. A related cross-platform
+practitioner report in CPython issue
+[#122353](https://github.com/python/cpython/issues/122353) records different
+errors when oversized path inputs reach platform filesystem APIs. Gludd now
+validates the UTF-8 filename component against the portable 255-byte boundary
+before I/O. Read-only lookup still returns the in-memory default spec, while a
+write fails closed with a stable 400 response and creates no partial file. The
+same hosted replay corrected a contradictory cleanup assertion: dead SQLAlchemy
+engine identities are weakly owned, collected, and removed rather than retained
+in the process-global idempotence set.
+
 This failure mode has a longer practitioner history. astral-sh/uv issue
 [#12751](https://github.com/astral-sh/uv/issues/12751), opened 2025-04-07,
 reports failures when multiple parallel tasks invoke syncing `uv run`
