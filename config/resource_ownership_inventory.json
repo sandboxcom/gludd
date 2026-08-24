@@ -126,12 +126,12 @@
     {
       "path": "scripts/e2e_log_capture.py",
       "line": 139,
-      "column": 30,
+      "column": 21,
       "kind": "process",
       "owner": "capture",
       "acquisition": "subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env={**os.environ, **(env or {})})",
-      "teardown": "bounded-process-owner:_tee_with_timeout(stream_proc, f, timeout_seconds)",
-      "source_hash": "0ffe265d538081b3bc8a2368ca19cc163c601b6b6dd6cf98932281c8660944dd",
+      "teardown": "context-manager-exit",
+      "source_hash": "83a2d7cf4b4a64149c5532de5eba16240adf0ae4689bc713827726189f6396fa",
       "owned": true
     },
     {
@@ -693,6 +693,17 @@
       "acquisition": "tempfile.TemporaryDirectory()",
       "teardown": "context-manager-exit",
       "source_hash": "3b9b1f2623d8df5e186c9afba02782980107aec2ed5b190b340b72298b580e4f",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/cloud/model_sources.py",
+      "line": 348,
+      "column": 13,
+      "kind": "temp-artifact",
+      "owner": "_download_from_direct_url",
+      "acquisition": "tempfile.NamedTemporaryFile(dir=dest.parent, prefix=f'.{dest.name}.', suffix='.part', delete=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "e42422d9db4050eec7585dc9e172cab3150fe7f5a8d505c99b91365dbe802253",
       "owned": true
     },
     {

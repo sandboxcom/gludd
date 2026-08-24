@@ -255,6 +255,20 @@ recreated. Gludd prepares dependencies once before a shard and treats the venv
 as immutable for the shard lifetime. Synchronization remains an explicit setup
 phase; nested checks are read-only consumers.
 
+Hosted Unit 1b then surfaced an owned-pipe defect that local collection order
+had not made visible: the streaming E2E logger killed and waited for its child
+but retained the `stdout=PIPE` file object until garbage collection. CPython's
+[subprocess reference](https://github.com/python/cpython/blob/main/Doc/library/subprocess.rst)
+states that a `Popen` context manager closes standard file descriptors and waits
+for the process on exit. Practitioner investigation in CPython issue
+[#114177](https://github.com/python/cpython/issues/114177) documents that
+subprocess pipe descriptors can otherwise remain orphaned until interpreter
+shutdown and surface only as finalizer `ResourceWarning`s. Gludd now keeps its
+existing bounded kill/wait and live-output thread, while the `Popen` context
+owns final descriptor closure on success and timeout. The regression asserts
+the real child pipe is closed, so no test-only cleanup compensates for the
+application helper.
+
 ## Verification and resources
 
 The focused matrix runs one deterministic authentication/readiness test in both
