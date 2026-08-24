@@ -187,6 +187,17 @@ streams downloads into an owned same-directory temporary file, fsyncs it, and
 atomically replaces the destination. Failure removes the temporary file and
 leaves the prior model untouched.
 
+The same replay found a timing-test false positive at sub-millisecond scale:
+one 0.4 ms config reload exceeded 2.5 times a 0.2 ms sample average while still
+sitting orders of magnitude below the package's real import budget. The
+pytest-benchmark maintainers explain in issue
+[#186](https://github.com/ionelmc/pytest-benchmark/issues/186) that calibrated
+microbenchmarks require rounds and iterations rather than a handful of raw
+timer samples. Gludd's lightweight smoke keeps its ratio guard but applies a
+1 ms absolute jitter floor; the independent 20--100 ms package ceilings remain
+unchanged. This removes scheduler-noise failures without weakening the actual
+startup-performance contract.
+
 This failure mode has a longer practitioner history. astral-sh/uv issue
 [#12751](https://github.com/astral-sh/uv/issues/12751), opened 2025-04-07,
 reports failures when multiple parallel tasks invoke syncing `uv run`
