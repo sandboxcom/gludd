@@ -233,6 +233,18 @@ same hosted replay corrected a contradictory cleanup assertion: dead SQLAlchemy
 engine identities are weakly owned, collected, and removed rather than retained
 in the process-global idempotence set.
 
+Unit 3b then exposed an ordering defect in the sliding-window median. The
+outgoing value was marked and pruned before its effective heap membership was
+charged, so the balance could be updated against a different heap top. CPython's
+[heapq reference](https://github.com/python/cpython/blob/main/Doc/library/heapq.rst)
+defines the running-median invariant as two balanced heaps and separately
+describes lazy removal of marked entries. A practitioner report in
+[sortedcontainers issue #83](https://github.com/grantjenks/python-sortedcontainers/issues/83)
+shows the broader failure mode: removal becomes incorrect when lookup and
+ordering assumptions diverge. Gludd now charges the outgoing value to its
+current partition before either heap is pruned, removes exhausted tombstones,
+and checks every randomized emitted window against ``statistics.median``.
+
 This failure mode has a longer practitioner history. astral-sh/uv issue
 [#12751](https://github.com/astral-sh/uv/issues/12751), opened 2025-04-07,
 reports failures when multiple parallel tasks invoke syncing `uv run`
