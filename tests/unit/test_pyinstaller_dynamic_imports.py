@@ -12,10 +12,12 @@ def test_safe_diskcache_serializer_is_bundled() -> None:
     assert "'msgpack'," in spec
 
 
-def test_project_collections_are_bundled() -> None:
+def test_project_collections_are_externalized_from_frozen_core() -> None:
     spec = (_ROOT / "gludd.spec").read_text()
 
-    assert "('collections', 'collections')" in spec
+    assert "('collections', 'collections')" not in spec
+    assert (_ROOT / "config/ansible/execution-environment.yml").is_file()
+    assert (_ROOT / "config/ansible/requirements.yml").is_file()
 
 
 def test_frozen_daemon_runtime_is_bundled() -> None:
