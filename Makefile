@@ -949,7 +949,7 @@ test-ci-shard: _ci-replica-clean-tree
 	@BT="/tmp/gludd-ci-shard-$(SHARD)-$${ID:-$$$$}"; rm -rf "$$BT"; \
 	TESTFILES="$$( $(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)" --shell )"; \
 	if [ -z "$$TESTFILES" ]; then echo ERROR: unknown-or-empty ci shard; rm -rf "$$BT"; exit 2; fi; echo "=== ci shard $(SHARD): local replica ==="; \
-	$(UV) run python -m pytest $$TESTFILES $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; \
+	$(UV) run python -m pytest $$TESTFILES $(_XD) -v -W error $(PYTEST_ARGS) --basetemp="$$BT"; \
 	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
 
 test-ci-shard-summary: _ci-replica-clean-tree
@@ -965,7 +965,7 @@ test-ci-shard-slice: _ci-replica-clean-tree
 	@BT="/tmp/gludd-ci-shard-slice-$(SHARD)-$${ID:-$$$$}"; rm -rf "$$BT"; \
 	TESTFILES="$$($(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)" $(if $(FROM),--from "$(FROM)") $(if $(AFTER),--after "$(AFTER)") $(if $(TO),--to "$(TO)") $(if $(BEFORE),--before "$(BEFORE)") --shell)"; \
 	if [ -z "$$TESTFILES" ]; then echo ERROR: unknown-or-empty ci shard slice; rm -rf "$$BT"; exit 2; fi; echo "=== ci shard $(SHARD): local slice ==="; \
-	$(UV) run python -m pytest $$TESTFILES $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; \
+	$(UV) run python -m pytest $$TESTFILES $(_XD) -v -W error $(PYTEST_ARGS) --basetemp="$$BT"; \
 	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
 
 test-ci-shard-kill-unit-4:

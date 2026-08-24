@@ -164,6 +164,14 @@ prepared environment without checking or updating it. Both nested targets now
 use that boundary, and the mock-daemon tests no longer fall back to an ambient
 interpreter or skip when their owned interpreter disappears.
 
+Named shards now also apply `-W error` in both the hosted adaptive runner and
+the local `test-ci-shard`/`test-ci-shard-slice` replicas. A warning therefore
+has the same fail-closed meaning in both lanes. This immediately found two
+health-check tests that constructed coroutine objects during registration
+instead of providing the documented callable; those tests now retain callable
+ownership until execution and leave no unawaited coroutine for garbage
+collection.
+
 This failure mode has a longer practitioner history. astral-sh/uv issue
 [#12751](https://github.com/astral-sh/uv/issues/12751), opened 2025-04-07,
 reports failures when multiple parallel tasks invoke syncing `uv run`

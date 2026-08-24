@@ -585,6 +585,7 @@ jobs:
               --cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils \
               --cov-report= \
               --cov-fail-under=0 \
+              -W error \
               -v
             rc=$?
             set -e
