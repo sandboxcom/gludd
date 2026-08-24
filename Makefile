@@ -4497,10 +4497,11 @@ ci-remote-head-guard:
 	REMOTE="$(REMOTE)"; if [ -z "$$REMOTE" ]; then REMOTE=sandboxcom; fi; \
 	GIT_SSH_COMMAND="ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new" $(PYTHON) scripts/ci_remote_head_guard.py --ref "$$REF" --remote "$$REMOTE"
 
-# Fresh dispatch of the Build and Release workflow on the current branch after exact-HEAD guard.
-ci-trigger: ci-remote-head-guard _require-gh
-	@REF="$(REF)"; if [ -z "$$REF" ]; then REF=$$(git branch --show-current); fi; \
-	gh workflow run "Build and Release" -R sandboxcom/gludd --ref "$$REF" 2>&1 || echo "ci-trigger-failed"
+# Compatibility entrypoint: every dispatch uses the idempotent exact-SHA signal.
+# Keeping this alias safe prevents branch-only dispatches from bypassing run
+# discovery, durable dispatch ownership, or full-head confirmation.
+ci-trigger: ci-trigger-committed-head
+	@echo "ci-trigger: exact-SHA dispatch confirmed"
 
 # List currently in-progress/queued runs for the Build and Release workflow —
 # so we know whether a new run is already active on a SHA before re-triggering.

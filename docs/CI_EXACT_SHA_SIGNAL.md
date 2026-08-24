@@ -62,6 +62,11 @@ To signal an already-pushed current branch directly:
 make ci-trigger-committed-head REF=release/beta3-candidate
 ```
 
+The historical `make ci-trigger` name is a compatibility alias to the same
+exact-SHA implementation. It no longer performs an independent branch-only
+`gh workflow run`, so operators and automation cannot accidentally bypass run
+discovery, durable dispatch ownership, or full-SHA confirmation.
+
 The documented behavioral smoke is deterministic and network-free:
 
 ```text
