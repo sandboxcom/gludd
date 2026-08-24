@@ -122,6 +122,36 @@ local checks pass. This ordering keeps rollback code-only, exposes platform and
 runner differences early, and prevents a long uncommitted local sweep from
 delaying the CI feedback that the release depends on.
 
+## Hosted runner boundary evidence
+
+The first exact-SHA hosted run under this contract exposed three boundaries that
+the macOS development host could not exercise. Docker's bridge translated the
+loopback-published health request to the bridge gateway address, the Ansible EE
+smoke invoked ambient `python3` instead of the definition's managed interpreter,
+and one oversized unit shard plus a healthy Molecule shard reached their step or
+job ceilings while still making progress.
+
+Docker's current
+[port-publishing documentation](https://docs.docker.com/engine/network/port-publishing/)
+describes the default bridge's NAT and masquerading behavior. The smoke now
+discovers that runner's bridge gateway and admits only its exact IPv4 `/32`, in
+addition to loopback. It never admits `0.0.0.0/0`, and the application default
+remains loopback-only. The
+[Ansible Builder definition reference](https://ansible.readthedocs.io/_/downloads/builder/en/latest/pdf/)
+defines `python_interpreter.python_path` as the interpreter selected for an
+execution environment; the smoke therefore invokes the configured
+`/usr/bin/python3.11` directly rather than relying on container `PATH`.
+
+GitHub Community discussion
+[#26679](https://github.com/orgs/community/discussions/26679), opened
+2019-12-04 with follow-up reports through 2024, records practitioners finding
+that explicit job and step timeouts terminate otherwise live work. Discussion
+[#66522](https://github.com/orgs/community/discussions/66522), opened
+2023-09-08, similarly documents hosted jobs receiving shutdown signals after
+runner-image or scheduling changes. Gludd keeps finite ceilings, partitions the
+oversized `unit-3` range into disjoint lanes, and budgets Molecule for two
+bounded attempts plus teardown and artifact publication.
+
 ## Verification and resources
 
 The focused matrix runs one deterministic authentication/readiness test in both
