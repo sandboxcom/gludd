@@ -26,6 +26,16 @@ SecureState = SandboxState
 SecureStateError = SandboxStateError
 
 
+def _canonical_platform_temp_path(candidate: Path) -> Path:
+    """Map only the OS-owned ``/tmp`` alias to its physical temp root."""
+    platform_temp = Path(os.sep) / "tmp"
+    if candidate != platform_temp and not candidate.is_relative_to(platform_temp):
+        return candidate
+    canonical_temp = platform_temp.resolve(strict=True)
+    relative = candidate.relative_to(platform_temp)
+    return canonical_temp.joinpath(*relative.parts)
+
+
 def project_state(
     *,
     project_root: str | Path | None = None,
@@ -50,11 +60,9 @@ def secure_directory(path: str | Path) -> Path:
     # macOS exposes the trusted system temp root through a platform symlink.
     # Canonicalize only that OS-owned alias for backwards compatibility; all
     # caller-created symlink components still fail closed in _secure_directory.
-    platform_temp = Path(os.sep) / "tmp"
-    if candidate == platform_temp or candidate.is_relative_to(platform_temp):
-        canonical_temp = platform_temp.resolve(strict=True)
-        relative = candidate.relative_to(platform_temp)
-        _secure_directory(canonical_temp.joinpath(*relative.parts))
+    canonical = _canonical_platform_temp_path(candidate)
+    if canonical != candidate:
+        _secure_directory(canonical)
         return candidate
     return _secure_directory(candidate)
 
@@ -66,9 +74,10 @@ def secure_write_text(
     encoding: str = "utf-8",
 ) -> Path:
     """Write one state file without following symlinks and force mode ``0600``."""
-    target = Path(path)
-    if not target.is_absolute():
+    requested_target = Path(path)
+    if not requested_target.is_absolute():
         raise SecureStateError("secure state file must use an absolute path")
+    target = _canonical_platform_temp_path(requested_target)
     _secure_directory(target.parent)
     _reject_symlink_components(target)
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
@@ -93,7 +102,7 @@ def secure_write_text(
     finally:
         if fd >= 0:
             os.close(fd)
-    return target
+    return requested_target
 
 
 def trusted_owned_file(path: str | Path) -> bool:

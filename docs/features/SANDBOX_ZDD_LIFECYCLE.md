@@ -1,7 +1,7 @@
 # Sandbox ZDD Lifecycle and SELinux Emission
 
 Status: implemented for the beta4 sandbox hardening pass. Last reviewed:
-2026-08-20.
+2026-08-24.
 
 ## Safety Contract
 
@@ -11,7 +11,10 @@ failure cannot authorize recursive deletion outside that namespace.
 
 The host-state lifecycle is:
 
-1. Resolve an existing project root and a canonical, absolute state base.
+1. Resolve an existing project root and a canonical, absolute state base. On
+   macOS, the OS-owned `/tmp` alias is mapped to its physical temp root before
+   directory validation and file creation; caller-created symlinks below that
+   root remain forbidden.
 2. Reject `..`, caller-created symlink components, wrong ownership, and modes
    broader than `0700` before accepting the namespace.
 3. Create the base and deterministic project namespace with owner-only modes.
@@ -92,6 +95,13 @@ present in Gludd.
   removes a directory between checks. Gludd's allocation rollback therefore
   uses owner checks plus non-recursive `rmdir`; any changed or non-empty path is
   preserved rather than guessed safe.
+- GitLab Runner issue
+  [#31003](https://gitlab.com/gitlab-org/gitlab-runner/-/issues/31003),
+  reviewed 2026-08-24, is a practitioner report of the long-lived macOS
+  `/tmp` versus `/private/tmp` identity mismatch breaking otherwise valid
+  cache paths. Gludd canonicalizes only that trusted platform alias at the
+  secure-write boundary and then reapplies owner, containment, no-follow, and
+  mode checks to the physical path.
 
 ## Regression Evidence
 
@@ -99,4 +109,6 @@ Focused tests pin zero-PID translation, deterministic state names, configured
 symlink rejection, allocation rollback, timeout partial output, environment and
 resource overrides, cleanup confinement, and canonical SELinux TE/FC rules.
 Tests inject rollback and timeout failures without depending on a live SELinux
-host or an unbounded subprocess.
+host or an unbounded subprocess. The beta4 gate-only regression also writes an
+owner-only `0600` file through macOS's trusted `/tmp` alias and proves that an
+ordinary caller-created symlink is still rejected without mutation.
