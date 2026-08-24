@@ -152,6 +152,12 @@ runner-image or scheduling changes. Gludd keeps finite ceilings, partitions the
 oversized `unit-3` range into disjoint lanes, and budgets Molecule for two
 bounded attempts plus teardown and artifact publication.
 
+The hosted split is also the canonical local split. The named-shard expander
+uses the same `unit-3a` (`n`--`r`) and `unit-3b` (`s`--`z` plus secrets)
+patterns as the workflow, and an exhaustive contract proves that every unit
+test file has exactly one execution lane. The retired monolithic `unit-3` name
+fails closed instead of silently selecting a different local test surface.
+
 The same run also exposed an environment-ownership race inside `unit-2`.
 `test_guardrails` launched the `healthcheck` and `ansible-syntax` Make targets
 from an already-running pytest shard. Those targets used ordinary `uv run`,

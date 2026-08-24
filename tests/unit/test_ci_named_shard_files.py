@@ -21,7 +21,8 @@ EXPECTED_SHARDS = (
     "unit-1b",
     "unit-1d",
     "unit-2",
-    "unit-3",
+    "unit-3a",
+    "unit-3b",
     "other",
 )
 
@@ -39,7 +40,7 @@ def _load_script(name: str) -> Any:
         sys.path.remove(str(SCRIPTS))
 
 
-def test_local_shard_names_match_beta3_ci_matrix() -> None:
+def test_local_shard_names_match_beta4_ci_matrix() -> None:
     module = _load_script("ci_named_shard_files")
 
     assert tuple(module.SHARDS) == EXPECTED_SHARDS
@@ -123,6 +124,44 @@ def test_shard_slice_fails_closed_for_unknown_boundary() -> None:
         module.slice_paths(["a.py"], from_path="missing.py")
 
 
+def test_named_shard_expansion_fails_closed_for_unknown_shard() -> None:
+    module = _load_script("ci_named_shard_files")
+
+    with pytest.raises(SystemExit, match="valid shards"):
+        module.expand_shard("retired-unit-3")
+
+
+def test_named_shard_cli_supports_plain_and_shell_output(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("ci_named_shard_files")
+    monkeypatch.setattr(module, "expand_shard", lambda _shard: ["tests/unit/a file.py"])
+
+    monkeypatch.setattr(sys, "argv", ["ci_named_shard_files.py", "--shard", "unit-3a"])
+    assert module.main() == 0
+    assert capsys.readouterr().out == "tests/unit/a file.py\n"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["ci_named_shard_files.py", "--shard", "unit-3a", "--shell"],
+    )
+    assert module.main() == 0
+    assert capsys.readouterr().out == "'tests/unit/a file.py'\n"
+
+
+def test_named_shard_cli_fails_closed_when_expansion_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("ci_named_shard_files")
+    monkeypatch.setattr(module, "expand_shard", lambda _shard: [])
+    monkeypatch.setattr(sys, "argv", ["ci_named_shard_files.py", "--shard", "unit-3a"])
+
+    with pytest.raises(SystemExit, match="empty slice"):
+        module.main()
+
+
 def test_serial_gate_runner_is_fresh_process_and_coverage_complete() -> None:
     runner = SCRIPTS / "run_ci_shards_serial.py"
     assert runner.is_file()
@@ -159,7 +198,7 @@ def test_serial_pytest_command_uses_one_fail_closed_worker_and_isolated_basetemp
         "unit-2", ["tests/unit/test_alpha.py"], tmp_path, ["-q"]
     )
     greenlet_command = module._pytest_command(
-        "unit-3", ["tests/unit/test_zeta.py"], tmp_path, ["-q"]
+        "unit-3b", ["tests/unit/test_zeta.py"], tmp_path, ["-q"]
     )
 
     assert command[0] == sys.executable
