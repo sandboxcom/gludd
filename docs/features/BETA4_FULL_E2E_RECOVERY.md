@@ -269,6 +269,27 @@ owns final descriptor closure on success and timeout. The regression asserts
 the real child pipe is closed, so no test-only cleanup compensates for the
 application helper.
 
+The hosted `other` shard exposed the same ownership error at the async database
+boundary: all HITL assertions passed, but fifteen short-lived SQLite engines and
+their HTTP clients survived until interpreter finalization. SQLAlchemy's
+[engine disposal reference](https://github.com/sqlalchemy/sqlalchemy/blob/main/doc/build/core/connections.rst)
+explicitly lists test suites with ad-hoc engines as a case for deterministic
+`dispose()` and warns against relying on garbage collection. Aiosqlite's
+[connection finalizer](https://github.com/omnilib/aiosqlite/blob/main/aiosqlite/core.py)
+likewise emits `ResourceWarning` when a live connection is deleted before
+`close()` and directs callers to async context ownership. In the practitioner
+discussion
+[#10457](https://github.com/sqlalchemy/sqlalchemy/discussions/10457), users
+reported hundreds of aborted async connections; the maintainer clarified on
+2024-02-15 that connections must be explicitly closed inside the active event
+loop before garbage collection. Discussion
+[#10857](https://github.com/sqlalchemy/sqlalchemy/discussions/10857) records the
+same fixture-level `await engine.dispose()` pattern for pytest. Reviewed on
+2026-08-24, this evidence supports one async fixture that creates the engine in
+the test's loop, owns the client with `async with`, and disposes the engine in a
+`finally` block. There is no post-test collector, retry, sleep, or external
+cleanup task to hide a missing owner.
+
 ## Verification and resources
 
 The focused matrix runs one deterministic authentication/readiness test in both
