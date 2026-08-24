@@ -123,12 +123,12 @@ def test_static_dh_shared_secret_equality():
 
 
 def test_static_dh_different_keys_different_secrets():
-    alice = generate_keypair(_TEST_GROUP)
-    bob = generate_keypair(_TEST_GROUP)
-    charlie = generate_keypair(_TEST_GROUP)
+    alice_private = 5
+    bob_public = pow(_TEST_GROUP.g, 7, _TEST_GROUP.p)
+    charlie_public = pow(_TEST_GROUP.g, 11, _TEST_GROUP.p)
 
-    ab = compute_shared_secret(alice.private, bob.public, _TEST_GROUP.p)
-    ac = compute_shared_secret(alice.private, charlie.public, _TEST_GROUP.p)
+    ab = compute_shared_secret(alice_private, bob_public, _TEST_GROUP.p)
+    ac = compute_shared_secret(alice_private, charlie_public, _TEST_GROUP.p)
 
     assert ab != ac
 

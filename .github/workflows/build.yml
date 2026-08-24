@@ -1778,7 +1778,7 @@ jobs:
       - name: Run game-building tests
         if: steps.check-key.outputs.skipped == 'false'
         run: |
-          uv sync
+          uv sync --frozen --extra game-e2e
           make test-games
         env:
           GLUDD_AUTH_PSK: ""

@@ -16,7 +16,7 @@ def _target_body(name: str) -> str:
 def test_e2e_runner_uses_unique_basetemp() -> None:
     body = _target_body("test-e2e")
     assert 'BT="/tmp/gludd-e2e-' in body
-    assert '--basetemp=$$FILE_BT' in body
+    assert '--basetemp=\\"$$FILE_BT\\"' in body
 
 
 def test_e2e_runner_marks_nested_execution() -> None:
@@ -118,7 +118,7 @@ def test_e2e_runner_isolates_artifacts_per_file() -> None:
     body = _target_body("test-e2e")
     assert "FILE_BT" in body
     assert "FILE_LOG" in body
-    assert "--basetemp=$$FILE_BT" in body
+    assert '--basetemp=\\"$$FILE_BT\\"' in body
     assert "LOG=\"$$FILE_LOG\"" in body
 
 

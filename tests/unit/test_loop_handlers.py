@@ -30,7 +30,7 @@ def handlers():
         _todo_repo=None,
         _active_session=None,
         _model_gateway=AsyncMock(),
-        _session_factory=AsyncMock(),
+        _session_factory=None,
         _memory_repo=None,
         _config_snapshot={},
         _service_discovery=None,

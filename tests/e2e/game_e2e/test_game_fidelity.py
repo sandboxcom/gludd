@@ -577,19 +577,22 @@ class TestSSIMComputation:
 @pytest.mark.e2e
 class TestVideoDownload:
     def test_download_short_clip(self, tmp_path: Path) -> None:
+        if video_cv2 is None:
+            pytest.skip("install the locked game-e2e extra for OpenCV media tests")
         if os.environ.get("GAME_E2E_REFERENCE_NETWORK") == "1":
             reference = REFERENCE_VIDEO_SPECS["doom_e1m1_hallway"]
-            video_path = download_youtube_video(
+            network_video_path = download_youtube_video(
                 reference.source_url,
                 str(tmp_path),
                 clip_start_seconds=reference.clip_start_seconds,
                 clip_duration_seconds=reference.clip_duration_seconds,
             )
-            assert os.path.exists(video_path), f"Downloaded video not found: {video_path}"
-            assert os.path.getsize(video_path) > 0, "Downloaded video is empty"
+            assert os.path.exists(network_video_path), (
+                f"Downloaded video not found: {network_video_path}"
+            )
+            assert os.path.getsize(network_video_path) > 0, "Downloaded video is empty"
             return
 
-        assert video_cv2 is not None, "OpenCV is required for game video E2E"
         video_path = tmp_path / "hermetic-reference.avi"
         writer = video_cv2.VideoWriter(
             str(video_path),

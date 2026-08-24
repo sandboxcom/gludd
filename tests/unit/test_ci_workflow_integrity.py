@@ -163,6 +163,19 @@ class TestCoverageJobStructure:
         assert "timeout-minutes" in coverage
 
 
+class TestGameBuildingJobStructure:
+    def test_game_building_installs_locked_media_extra_before_tests(self) -> None:
+        wf = _load_workflow()
+        steps = wf["jobs"]["game-building"]["steps"]
+        commands = [str(step.get("run", "")) for step in steps if isinstance(step, dict)]
+        command = next(command for command in commands if "make test-games" in command)
+
+        assert "uv sync --frozen --extra game-e2e" in command
+        assert command.index("uv sync --frozen --extra game-e2e") < command.index(
+            "make test-games"
+        )
+
+
 class TestPlatformBuildJobStructure:
     PLATFORM_JOBS: tuple[str, ...] = ("linux", "macos", "windows", "termux")
 

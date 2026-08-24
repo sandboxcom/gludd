@@ -73,6 +73,55 @@ within one xdist controller. Together they support per-invocation state roots
 instead of assuming an xdist group coordinates independently launched pytest
 processes.
 
+## Committed-head gate follow-up
+
+A later committed-head gate exposed four portability assumptions: token-bucket
+tests measured scheduler time, a tiny Diffie-Hellman test group assumed random
+samples were unique, the base dependency set tried to run an OpenCV media test,
+and a nested E2E command did not quote its private basetemp. The same run found
+a stale hard-coded deploy-key name and an unused async database double that
+leaked an unawaited coroutine warning.
+
+Uv issue
+[#14645](https://github.com/astral-sh/uv/issues/14645), opened 2025-07-16,
+records a CI user finding that an optional dependency is absent unless the
+corresponding `--extra` is explicitly supplied to `uv sync`. The opencv-python
+project tells server and CI users to select exactly one headless wheel, while
+issue [#677](https://github.com/opencv/opencv-python/issues/677), open since
+2022-06-10, records conflicts caused by installing overlapping OpenCV variants.
+Gludd therefore keeps OpenCV out of the core runtime and installs the locked
+`game-e2e` extra only in the dedicated GHE job.
+
+Rate-limit arithmetic now uses an injected monotonic clock in tests, so host
+scheduler timing is outside the acceptance boundary. The game job performs a
+frozen optional-extra sync before running its media suite; base-runtime gates
+skip only the media node when OpenCV is absent. Every E2E file retains an
+independently quoted basetemp below its owned run root.
+
+This changes only tests, their dedicated CI environment, and ephemeral runner
+state. A running Gludd deployment is neither restarted nor migrated. Rollback
+is a code/workflow revert, with no database, model, tag, or release-asset
+mutation. The CI runner owns and removes its basetemp through the existing
+bounded teardown path.
+
+## Dual-track committed-head release contract
+
+Beta4 validation is not a local-first, hosted-later sequence. Each complete
+change is committed and pushed to its feature branch as soon as its focused
+checks and collection gate pass. GHA/GHE must then report a run for that exact
+commit SHA while the full local committed-head gate runs concurrently. A local
+result from an uncommitted tree cannot substitute for hosted evidence, and a
+hosted result for an earlier SHA cannot validate later local edits.
+
+Every repair discovered by either lane is a separate focused, tested commit and
+is pushed immediately so both lanes reconverge on the new SHA. Promotion from
+the feature branch to `development`, from `development` to `master`, and the
+`v0.1.0-beta.4` tag each require local and hosted green results for the same
+immutable commit. A failed or absent hosted run blocks promotion even when all
+local checks pass. This ordering keeps rollback code-only, exposes platform and
+runner differences early, and prevents a long uncommitted local sweep from
+delaying the CI feedback that the release depends on.
+
 ## Verification and resources
 
 The focused matrix runs one deterministic authentication/readiness test in both

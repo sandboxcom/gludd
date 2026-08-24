@@ -39,9 +39,12 @@ class TestGitTagRm:
         assert "GIT_SSH_COMMAND" in recipe, (
             "git-tag-rm must use GIT_SSH_COMMAND for sandboxcom remote ops"
         )
-        assert "sandboxcom_github_rsa" in recipe, (
-            "git-tag-rm must use the sandboxcom_github_rsa key"
+        assert "$(SSH_KEY)" in recipe, (
+            "git-tag-rm must use the configurable sandboxcom SSH key"
         )
+
+    def test_default_key_is_the_project_specific_deploy_key(self) -> None:
+        assert "SSH_KEY ?= $(HOME)/.ssh/sandboxcom_gludd_rsa" in MAKEFILE.read_text()
 
     def test_deletes_remote_tag(self):
         recipe = _recipe("git-tag-rm")
@@ -80,8 +83,8 @@ class TestReleaseRecut:
         assert "GIT_SSH_COMMAND" in recipe, (
             "release-recut must use GIT_SSH_COMMAND for sandboxcom remote ops"
         )
-        assert "sandboxcom_github_rsa" in recipe, (
-            "release-recut must use the sandboxcom_github_rsa key"
+        assert "$(SSH_KEY)" in recipe, (
+            "release-recut must use the configurable sandboxcom SSH key"
         )
 
     def test_requires_TAG_argument(self):
