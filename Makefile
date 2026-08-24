@@ -7582,7 +7582,7 @@ gate-lite-kill:
 gate-cleanup:
 	@$(MAKE) gate-kill
 	@$(MAKE) gate-lite-kill
-	@rm -f .gate-background.pid .gate-lite-background.pid
+	@rm -f .gate-background.pid .gate-lite-background.pid .gate-status.next .gate-status.running
 	@echo "[gate-cleanup] removing gate and gate-lite logs older than 24h..."
 	@find .gate-logs -name "gate-*.log" -mtime +0 2>/dev/null -delete
 	@find .gate-logs -name "gate-lite-*.log" -mtime +0 2>/dev/null -delete
