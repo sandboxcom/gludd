@@ -172,6 +172,21 @@ instead of providing the documented callable; those tests now retain callable
 ownership until execution and leave no unawaited coroutine for garbage
 collection.
 
+The first warning-strict local replay then exposed a second ownership boundary:
+`urllib.error.HTTPError` is both an exception and a file-like response. A
+successful `urlopen` call can enter a context manager, but a raised HTTP error
+must be closed from the exception path itself. CPython's
+[HTTPError implementation](https://github.com/python/cpython/blob/main/Lib/urllib/error.py)
+documents that dual role, and its own
+[urllib regression tests](https://github.com/python/cpython/blob/main/Lib/test/test_urllib.py)
+explicitly close caught HTTP errors. A 2025 practitioner report in CPython issue
+[#132210](https://github.com/python/cpython/issues/132210) shows the same easy
+failure mode in real exporter code: the error body is consumed through `e.fp`
+after `urlopen` raises. Gludd now closes both successful and error responses,
+streams downloads into an owned same-directory temporary file, fsyncs it, and
+atomically replaces the destination. Failure removes the temporary file and
+leaves the prior model untouched.
+
 This failure mode has a longer practitioner history. astral-sh/uv issue
 [#12751](https://github.com/astral-sh/uv/issues/12751), opened 2025-04-07,
 reports failures when multiple parallel tasks invoke syncing `uv run`
