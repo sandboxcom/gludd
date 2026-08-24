@@ -120,11 +120,6 @@ class TestMakefileTargets:
             cwd=str(ROOT),
             timeout=300,
         )
-        if "not a valid Python environment" in result.stderr:
-            pytest.skip(
-                "CI shard subshell lacks a uv-validated venv; ansible-syntax "
-                "is exercised separately by the CI molecule job"
-            )
         output = f"{result.stdout}\n{result.stderr}"
         assert result.returncode == 0, f"make ansible-syntax failed:\n{output}"
         assert "[WARNING]" not in output, f"make ansible-syntax emitted warnings:\n{output}"

@@ -2393,12 +2393,12 @@ test-install:
 	@BATS_TEST_DIRNAME="$$(pwd)/tests/install" bats --print-output-on-failure tests/install/install.bats
 
 healthcheck:
-	@$(UV) run python -c "from general_ludd.worker.app import create_app; app = create_app(); print('Worker app factory OK')"
-	@$(UV) run python -c "from general_ludd.event_loop.loop import EventLoop; print('Event loop import OK')"
-	@$(UV) run python -c "from general_ludd.commands.make import MakeRunner; print('MakeRunner import OK')"
+	@$(UV) run --no-sync python -c "from general_ludd.worker.app import create_app; app = create_app(); print('Worker app factory OK')"
+	@$(UV) run --no-sync python -c "from general_ludd.event_loop.loop import EventLoop; print('Event loop import OK')"
+	@$(UV) run --no-sync python -c "from general_ludd.commands.make import MakeRunner; print('MakeRunner import OK')"
 
 ansible-syntax:
-	@for f in playbooks/*.yml; do echo "Checking $$f..."; $(UV) run ansible-playbook -i localhost, --syntax-check "$$f" || exit 1; done
+	@for f in playbooks/*.yml; do echo "Checking $$f..."; $(UV) run --no-sync ansible-playbook -i localhost, --syntax-check "$$f" || exit 1; done
 
 ansible-lint-playbooks:
 	@$(UV) run ansible-lint playbooks/roles || true

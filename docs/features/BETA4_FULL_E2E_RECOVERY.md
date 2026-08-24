@@ -152,6 +152,28 @@ runner-image or scheduling changes. Gludd keeps finite ceilings, partitions the
 oversized `unit-3` range into disjoint lanes, and budgets Molecule for two
 bounded attempts plus teardown and artifact publication.
 
+The same run also exposed an environment-ownership race inside `unit-2`.
+`test_guardrails` launched the `healthcheck` and `ansible-syntax` Make targets
+from an already-running pytest shard. Those targets used ordinary `uv run`,
+which is documented to lock and synchronize the project environment before
+launch. A nested sync could therefore replace `.venv` while sibling xdist
+workers were still importing packages or spawning `sys.executable`. The
+[uv synchronization guide](https://docs.astral.sh/uv/concepts/projects/sync/)
+documents `uv run --no-sync` as the supported way to consume an already
+prepared environment without checking or updating it. Both nested targets now
+use that boundary, and the mock-daemon tests no longer fall back to an ambient
+interpreter or skip when their owned interpreter disappears.
+
+This failure mode has a longer practitioner history. astral-sh/uv issue
+[#12751](https://github.com/astral-sh/uv/issues/12751), opened 2025-04-07,
+reports failures when multiple parallel tasks invoke syncing `uv run`
+operations, while issue
+[#11454](https://github.com/astral-sh/uv/issues/11454), opened 2025-02-12,
+records repeated `pytest` spawn failures when a virtual environment is moved or
+recreated. Gludd prepares dependencies once before a shard and treats the venv
+as immutable for the shard lifetime. Synchronization remains an explicit setup
+phase; nested checks are read-only consumers.
+
 ## Verification and resources
 
 The focused matrix runs one deterministic authentication/readiness test in both
