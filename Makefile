@@ -165,7 +165,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime e2e-setup-test-project test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
-ci-view ci-rerun ci-trigger ci-active ci-job-log ci-job-failure-context ci-shards-log-context \
+ci-view ci-rerun ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
 log-agent-result disk-guard disk-check check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
@@ -490,6 +490,7 @@ help:
 	@echo "  --- CI ---"
 	@echo "  ci-kill-zombie          cancel a CI run via gh run cancel"
 	@echo "  ci-job-failure-context  bounded authenticated failure context (RUN, JOB, PATTERN)"
+	@echo "  ci-artifact-download    atomically download one exact run-bound GHA artifact (RUN, ARTIFACT, CI_ARTIFACT_OUTPUT_ROOT, CI_ARTIFACT_HEARTBEAT_SECS, CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)"
 	@echo "  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1"
 	@echo "  ci-await BRANCH=<b> [TIMEOUT=<s>]  Poll CI for branch until terminal (green/red/timeout)"
 	@echo "  ci-verdict-safe        Cooldown-enforced CI check (prefer over bare ci-verdict)"
@@ -4486,7 +4487,7 @@ typecheck-scope: ## Run strict mypy on explicit FILES without unrelated override
 	@MYPYPATH=src:scripts $(UV) run mypy --explicit-package-bases --no-incremental --no-warn-unused-configs $(FILES)
 # Ansible/YAML lint (#36), fail-on-error (no `|| true`).
 yaml-lint:
-	@ANSIBLE_COLLECTIONS_PATH="$(CURDIR)/collections" $(UV) run ansible-lint playbooks collections/ansible_collections/general_ludd/agent/roles
+	@ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1 PYTHONWARNINGS=error ANSIBLE_COLLECTIONS_PATH="$(CURDIR)/collections" $(UV) run ansible-lint playbooks collections/ansible_collections/general_ludd/agent/roles
 
 ci-log:
 	@if [ -n "$(RUN)" ]; then \
@@ -4529,6 +4530,32 @@ ci-job-failure-context:
 	RC=$$?; if [ $$RC -ne 0 ]; then echo "ci-job-failure-context: log fetch failed rc=$$RC"; exit $$RC; fi; \
 	if ! grep -F -q -- "$(PATTERN)" "$$LOG"; then echo "ci-job-failure-context: pattern not found: $(PATTERN)"; exit 1; fi; \
 	$(PYTHON) scripts/ci_shards_log_context.py --log "$$LOG" --pattern "$(PATTERN)" --before "$(or $(BEFORE),10)" --after "$(or $(AFTER),30)" --max-matches 1
+
+CI_ARTIFACT_OUTPUT_ROOT ?= .gate-logs/ci-artifacts
+CI_ARTIFACT_HEARTBEAT_SECS ?= 10
+CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY ?= 0
+ci-artifact-download:
+	@case "$(RUN)" in ''|*[!0-9]*) echo "RUN must be a numeric GitHub Actions run ID"; exit 2 ;; esac
+	@case "$(ARTIFACT)" in ''|*[!A-Za-z0-9._-]*) echo "Refusing unsafe ARTIFACT: $(ARTIFACT)"; exit 2 ;; esac
+	@case "$(CI_ARTIFACT_OUTPUT_ROOT)" in .gate-logs/ci-artifacts|.gate-logs/ci-artifacts/*) ;; *) echo "Refusing unsafe CI_ARTIFACT_OUTPUT_ROOT: $(CI_ARTIFACT_OUTPUT_ROOT)"; exit 2 ;; esac
+	@case "$(CI_ARTIFACT_HEARTBEAT_SECS)" in ''|*[!0-9]*|0) echo "CI_ARTIFACT_HEARTBEAT_SECS must be a positive integer"; exit 2 ;; esac
+	@case "$(CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@if [ "$(CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)" = "1" ]; then echo "CI-ARTIFACT-DOWNLOAD VALIDATED run=$(RUN) artifact=$(ARTIFACT) output=$(CI_ARTIFACT_OUTPUT_ROOT) heartbeat=$(CI_ARTIFACT_HEARTBEAT_SECS)s"; exit 0; fi; \
+	ROOT="$(CI_ARTIFACT_OUTPUT_ROOT)/run-$(RUN)"; DEST="$$ROOT/$(ARTIFACT)"; \
+	mkdir -p "$$ROOT"; \
+	if [ -e "$$DEST" ]; then echo "Refusing to overwrite existing artifact destination: $$DEST"; exit 1; fi; \
+	COUNT=$$(gh api repos/sandboxcom/gludd/actions/runs/$(RUN)/artifacts --jq '[.artifacts[] | select(.name == "$(ARTIFACT)" and (.expired | not))] | length'); \
+	if [ "$$COUNT" != "1" ]; then echo "Expected exactly one live artifact named $(ARTIFACT) in run $(RUN), found $$COUNT"; exit 1; fi; \
+	TMP=$$(mktemp -d "$$ROOT/.download-$(ARTIFACT).XXXXXX"); DOWNLOAD_PID=""; \
+	cleanup() { RC=$$?; trap - EXIT INT TERM; if [ -n "$$DOWNLOAD_PID" ] && kill -0 "$$DOWNLOAD_PID" 2>/dev/null; then kill -TERM "$$DOWNLOAD_PID"; wait "$$DOWNLOAD_PID"; fi; if [ -n "$$TMP" ]; then rm -rf "$$TMP"; fi; exit $$RC; }; \
+	trap cleanup EXIT INT TERM; \
+	echo "artifact-download start run=$(RUN) artifact=$(ARTIFACT)"; \
+	gh run download "$(RUN)" -R sandboxcom/gludd -n "$(ARTIFACT)" -D "$$TMP" & DOWNLOAD_PID=$$!; \
+	while kill -0 "$$DOWNLOAD_PID" 2>/dev/null; do echo "artifact-download heartbeat run=$(RUN) artifact=$(ARTIFACT)"; sleep "$(CI_ARTIFACT_HEARTBEAT_SECS)"; done; \
+	wait "$$DOWNLOAD_PID"; DOWNLOAD_STATUS=$$?; DOWNLOAD_PID=""; \
+	if [ "$$DOWNLOAD_STATUS" -ne 0 ]; then echo "artifact download failed rc=$$DOWNLOAD_STATUS"; exit "$$DOWNLOAD_STATUS"; fi; \
+	mv "$$TMP" "$$DEST"; TMP=""; \
+	echo "CI-ARTIFACT-DOWNLOAD COMPLETE run=$(RUN) artifact=$(ARTIFACT) path=$$DEST"
 
 # Just the FAILED/ERROR test ids + summary lines from a run's failed-step logs
 # (ci-faillog tails raw logs; this filters the signal). Usage: make ci-failed-tests RUN=<id>

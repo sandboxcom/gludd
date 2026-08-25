@@ -180,7 +180,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 133,
+      "line": 145,
       "column": 33,
       "kind": "temp-artifact",
       "owner": "_write_terminal_attestation",
@@ -191,7 +191,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 236,
+      "line": 251,
       "column": 16,
       "kind": "temp-artifact",
       "owner": "_owned_socket_safe_tmpdir",
@@ -202,7 +202,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 415,
+      "line": 478,
       "column": 14,
       "kind": "process",
       "owner": "_run_owned_pytest",
@@ -213,7 +213,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 656,
+      "line": 801,
       "column": 12,
       "kind": "temp-artifact",
       "owner": "run",
@@ -235,7 +235,7 @@
     },
     {
       "path": "scripts/run_game_gen_local.py",
-      "line": 162,
+      "line": 113,
       "column": 23,
       "kind": "client",
       "owner": "main.run_pipeline",
@@ -510,7 +510,7 @@
     },
     {
       "path": "scripts/verify_dual_track_ci.py",
-      "line": 251,
+      "line": 291,
       "column": 17,
       "kind": "temp-artifact",
       "owner": "main",
@@ -1269,7 +1269,7 @@
     },
     {
       "path": "src/general_ludd/execution/engine.py",
-      "line": 598,
+      "line": 601,
       "column": 41,
       "kind": "async-task",
       "owner": "ExecutionEngine.defer_commit",
@@ -1280,7 +1280,7 @@
     },
     {
       "path": "src/general_ludd/execution/engine.py",
-      "line": 814,
+      "line": 817,
       "column": 23,
       "kind": "async-task",
       "owner": "ExecutionEngine.execute_async",
@@ -1291,7 +1291,7 @@
     },
     {
       "path": "src/general_ludd/execution/engine.py",
-      "line": 1020,
+      "line": 1050,
       "column": 17,
       "kind": "temp-artifact",
       "owner": "ExecutionEngine._apply_unified_diff",
@@ -1786,7 +1786,7 @@
     },
     {
       "path": "src/general_ludd/sandbox/backends/process_backend.py",
-      "line": 113,
+      "line": 162,
       "column": 19,
       "kind": "process",
       "owner": "ProcessBackend.execute",

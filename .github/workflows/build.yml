@@ -728,8 +728,15 @@ jobs:
               echo "::group::$(basename "$f") (last 100 lines)"
               tail -n 100 "$f"
               echo "::endgroup::"
-            done
+           done
           fi
+      - name: Verify Linux PyInstaller warning graph artifact
+        # upload-artifact's if-no-files-found applies to the path set as a
+        # whole, so the always-present Molecule logs cannot prove this second
+        # diagnostic exists. Shard 1 owns binary_smoke_linux and must retain
+        # the raw graph independently before upload.
+        if: always() && matrix.shard == 1
+        run: test -s dist/linux/warn-gludd.txt
       - name: Upload molecule logs (shard ${{ matrix.shard }}/4)
         # Primary fix for the observability gap: the full per-scenario logs
         # (not just the tail above) are uploaded so a failure can be diagnosed
@@ -739,7 +746,9 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: molecule-logs-shard-${{ matrix.shard }}
-          path: /tmp/gludd-molecule-*.log
+          path: |
+            /tmp/gludd-molecule-*.log
+            dist/linux/warn-gludd.txt
           if-no-files-found: error
           retention-days: 7
 

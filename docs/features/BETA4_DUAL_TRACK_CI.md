@@ -335,6 +335,32 @@ dot-only traversal segments, and excessive encoding, then applies the existing
 realpath/commonpath jail. Benign portable paths retain the same workspace owner
 and are resolved only after canonicalization.
 
+Candidate `c06ff4144a6333f882964fbbb6018d231f83fe72` then reached sixteen
+successful hosted jobs before run `32894848924`, job `97956809609`, failed the
+Linux binary smoke. The build itself completed, but the normalized x86_64
+PyInstaller warning graph moved from the reviewed digest `2c13f658...` to the
+unknown digest `837c969e...`. The local peer was cancelled during `unit-1b`
+batch 22, returned status 130, removed its owned batch root, and started no later
+batch or shard. The unknown graph is not approved by digest alone. Audit failure
+now emits a bounded first-50 normalized edge set and the Molecule failure
+artifact retains the complete raw `warn-gludd.txt` for review.
+
+The same incident exposed an operator tooling gap. The repository could list
+run artifacts but could not retrieve one without bypassing the Make-only
+boundary, and `gh run download` provides no durable transfer progress. The
+run-bound `ci-artifact-download` target verifies exactly one live named artifact,
+confines it beneath `.gate-logs/ci-artifacts/run-<id>`, downloads into an owned
+same-directory temporary root with heartbeats, forwards cancellation to the
+child, and atomically publishes only after success. Existing destinations are
+never overwritten.
+
+The cleanup replay moved the local environment to Python 3.14 and exposed an
+ansible-lint schema-refresh `ResourceWarning` while the lint itself returned
+success. The release lint now uses ansible-lint's documented schema-update skip
+and promotes every Python warning to an error. This keeps the full local
+collection and syntax checks while removing the network/cache owner from the
+lint path; it is not a warning filter or a reduced rule profile.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -424,6 +450,15 @@ coverage data remains an optional companion rather than the artifact's existence
 condition. Rollback removes only this immutable diagnostic-file contract and does
 not affect the tested service or any running candidate.
 
+Molecule shard 1 separately verifies that the raw Linux PyInstaller warning file
+is non-empty before upload. This explicit check is necessary because
+`if-no-files-found: error` applies to the path set as a whole: an always-present
+Molecule log must not mask a missing second diagnostic. Download temporaries are
+removed on success, failure, or signal; the immutable retrieved artifact remains
+operator-owned evidence until the candidate is replaced. Removing the diagnostic
+step or download target is a zero-downtime rollback, but no warning digest may be
+changed without a new raw graph and exact-SHA hosted replay.
+
 Feature work may continue on another branch while a candidate is tested, but the
 candidate SHA, workflow definition, and evidence set remain immutable. A failed
 candidate is abandoned and a new commit starts both lanes again. This gives
@@ -495,6 +530,34 @@ Reviewed 2026-08-25:
   reviewed 2026-08-25, records multiple years of `safe_join` Windows hardening,
   including empty-root containment and device-name fixes. This supports Gludd's
   fail-closed cross-platform validation before OS path resolution.
+- [PyInstaller “When Things Go Wrong” documentation](https://pyinstaller.org/en/stable/when-things-go-wrong.html),
+  reviewed 2026-08-25, defines `warn-<name>.txt` as the complete missing-module
+  analysis record and `xref-<name>.html` as the import graph. Gludd therefore
+  retains the raw warning file instead of treating a digest-only message as
+  sufficient review evidence.
+- [actions/upload-artifact issue 457](https://github.com/actions/upload-artifact/issues/457),
+  opened 2023-11-28 and still reported against v4 in 2025, records the
+  practitioner-visible gap where `if-no-files-found: error` succeeds when one of
+  several requested paths exists. Gludd verifies its mandatory warning file in a
+  separate step before the multi-path upload.
+- [GitHub CLI issue 8536](https://github.com/cli/cli/issues/8536), opened
+  2024-01-07 and reviewed 2026-08-25, records the long-lived request for visible
+  `gh run download` progress. The Make boundary adds a project heartbeat without
+  replacing the mature GitHub CLI transfer.
+- [GitHub CLI issue 12437](https://github.com/cli/cli/issues/12437), opened
+  2026-01-07 and reviewed 2026-08-25, reports that rerun attempts can make an
+  artifact name resolve to older evidence. The download target first binds one
+  live artifact name to the explicit immutable run ID and refuses ambiguity.
+- [Ansible Lint usage documentation](https://docs.ansible.com/projects/lint/usage/),
+  reviewed 2026-08-25, documents schema-refresh control and defines offline
+  execution as the supported hermetic boundary. Gludd uses the narrower
+  documented schema-update skip because collection dependencies are already
+  locked and remain part of the production-profile lint.
+- [ansible-lint issue 5086](https://github.com/ansible/ansible-lint/issues/5086),
+  opened 2026-06-05 and reviewed 2026-08-25, records Python 3.14 practitioner
+  evidence that ansible-lint still creates and uses cache directories despite
+  configured ownership paths. The release lint therefore removes schema-network
+  cache acquisition entirely and treats any remaining resource warning as fatal.
 - [pytest-xdist distribution documentation](https://pytest-xdist.readthedocs.io/en/latest/distribution.html),
   reviewed 2026-08-25, defines explicit worker counts and zero as the supported
   way to disable crashed-worker restarts. The local producer inherits the

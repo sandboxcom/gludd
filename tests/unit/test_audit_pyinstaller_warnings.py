@@ -642,6 +642,27 @@ def test_transitive_warning_graph_requires_exact_normalized_digest(
 
     assert result.returncode == 1
     assert "transitive warning digest mismatch" in result.stderr
+    assert "transitive warning graph: total=1 shown=1 limit=50" in result.stderr
+    assert (
+        "transitive warning edge: missing optional_backend <- "
+        "dependency.compat (optional)"
+    ) in result.stderr
+
+
+def test_transitive_warning_mismatch_diagnostics_are_bounded(tmp_path: Path) -> None:
+    warning = "".join(
+        f"missing module named optional_{index:02d} - "
+        f"imported by dependency_{index:02d}.compat (optional)\n"
+        for index in range(51)
+    )
+
+    result = _run_audit(tmp_path, warning)
+
+    assert result.returncode == 1
+    assert "transitive warning graph: total=51 shown=50 limit=50" in result.stderr
+    assert "transitive warning graph omitted=1" in result.stderr
+    assert "transitive warning edge: missing optional_49" in result.stderr
+    assert "transitive warning edge: missing optional_50" not in result.stderr
 
 
 def test_exact_transitive_warning_graph_digest_passes(tmp_path: Path) -> None:
