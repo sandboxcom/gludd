@@ -194,6 +194,16 @@ requiring an uncut tag. A GitHub tag-triggered run, or an explicit local
 tag and requires it to be the newest semantic-version tag. This preserves the
 post-publication invariant without making pre-publication validation impossible.
 
+Replacement candidate `f71a84dced1febed7c40fb8e5027d92194dee102` passed the
+repaired batch 36, then batch 37 exposed a second AF_UNIX path-budget defect.
+The runner already assigned every batch a compact, owned `TMPDIR`, but pytest's
+`--basetemp` still pointed into the much longer durable evidence workspace.
+Firecracker's real Unix-socket tests consequently exceeded Darwin's `sun_path`
+limit only under the complete runner. Hosted run `32853679064` was cancelled.
+Pytest's ephemeral tree now shares the compact per-batch root, while coverage and
+attestations remain in the durable external evidence workspace. The runner still
+removes both resources through their respective owners on every terminal path.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start

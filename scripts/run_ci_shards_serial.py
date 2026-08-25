@@ -645,11 +645,11 @@ def run(
                 env["COVERAGE_FILE"] = str(batchtemp / ".coverage")
                 print(
                     f"SHARD-BATCH shard={shard} batch={batch_index}/{len(batches)} "
-                    f"files={len(files)} basetemp={batchtemp / 'pytest'}",
+                    f"files={len(files)} basetemp={owned_tmpdir / 'pytest'}",
                     flush=True,
                 )
                 rc = _run_owned_pytest(
-                    _pytest_command(shard, files, batchtemp, pytest_args),
+                    _pytest_command(shard, files, owned_tmpdir, pytest_args),
                     env=env,
                     label=f"{shard}:batch-{batch_index:03d}",
                     heartbeat_seconds=heartbeat_seconds,

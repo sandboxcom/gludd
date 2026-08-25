@@ -771,6 +771,7 @@ def test_serial_runner_uses_unique_batches_and_stops_after_worker_death(
     module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
     workspace = tmp_path / "unit-3-workspace"
     batch_runs: list[tuple[str, str]] = []
+    compact_index = 0
 
     def fake_run_owned(
         command: list[str],
@@ -785,7 +786,17 @@ def test_serial_runner_uses_unique_batches_and_stops_after_worker_death(
         batch_runs.append((basetemp, env["GLUDD_SHARD_STATE_DIR"]))
         return 0 if len(batch_runs) == 1 else module.WORKER_DEATH_EXIT_CODE
 
-    monkeypatch.setattr(module.tempfile, "mkdtemp", lambda **_kwargs: str(workspace))
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        nonlocal compact_index
+        if prefix.startswith("gludd-gate-"):
+            path = workspace
+        else:
+            compact_index += 1
+            path = tmp_path / f"compact-{compact_index}"
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
     monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: None)
     monkeypatch.setattr(
         module,
@@ -803,6 +814,52 @@ def test_serial_runner_uses_unique_batches_and_stops_after_worker_death(
     assert len(batch_runs) == 2, "worker death must not retry or launch later batches"
     assert len({basetemp for basetemp, _state in batch_runs}) == 2
     assert len({state for _basetemp, state in batch_runs}) == 2
+
+
+def test_serial_runner_places_pytest_basetemp_under_compact_socket_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep tmp_path-created AF_UNIX endpoints below platform path limits."""
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    workspace = tmp_path / "intentionally-long-evidence-workspace-name"
+    compact = tmp_path / "c"
+    captured: dict[str, str] = {}
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        path = compact if prefix.startswith("gludd-ci-") else workspace
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    def fake_run_owned(
+        command: list[str],
+        *,
+        env: dict[str, str],
+        **_kwargs: object,
+    ) -> int:
+        if "tests/unit/test_all_plugins_runtime.py" not in command:
+            captured["basetemp"] = next(
+                argument.removeprefix("--basetemp=")
+                for argument in command
+                if argument.startswith("--basetemp=")
+            )
+            captured["tmpdir"] = env["TMPDIR"]
+        return 0
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: None)
+    monkeypatch.setattr(module, "expand_shard", lambda _shard: ["tests/unit/test_vm.py"])
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_run_owned_pytest", fake_run_owned)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_aggregate_coverage", lambda: 0)
+
+    assert module.run(["unit-3b"], [], run_isolated=False) == 0
+    assert captured["tmpdir"] == str(compact)
+    assert Path(captured["basetemp"]).is_relative_to(compact)
 
 
 def test_serial_runner_uses_a_fresh_non_coverage_process_for_isolated_tests() -> None:
