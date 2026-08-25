@@ -9,8 +9,18 @@ Covers:
 
 from __future__ import annotations
 
+import os
+import resource
+import signal
 import subprocess
+import sys
+from collections.abc import Callable, Iterator
+from pathlib import Path
+from types import SimpleNamespace
+from typing import NoReturn, cast
 from unittest import mock
+
+import pytest
 
 from general_ludd.sandbox.contracts import (
     IsolationLevel,
@@ -76,14 +86,284 @@ class TestProcessBackendExecute:
         assert result.was_killed is True
         assert result.returncode != 0
 
-    def test_respects_workdir(self, tmp_path) -> None:
+    def test_hosted_user_tasks_are_added_before_applying_process_budget(self) -> None:
+        from general_ludd.sandbox.backends.process_backend import _nproc_soft_limit
+
+        assert _nproc_soft_limit(
+            requested_processes=50,
+            existing_user_tasks=75,
+            hard_limit=-1,
+        ) == 125
+        assert _nproc_soft_limit(
+            requested_processes=50,
+            existing_user_tasks=75,
+            hard_limit=100,
+        ) == 100
+
+    def test_timeout_kills_owned_process_group(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from general_ludd.sandbox.backends import process_backend as module
+
+        class FakeProcess:
+            pid = 4242
+            returncode = -signal.SIGKILL
+
+            def __init__(self) -> None:
+                self.communications = 0
+
+            def communicate(self, *, timeout: float) -> tuple[str, str]:
+                self.communications += 1
+                if self.communications == 1:
+                    raise subprocess.TimeoutExpired("command", timeout)
+                return "", ""
+
+            def kill(self) -> None:
+                raise AssertionError("owned POSIX groups must not kill only the shell")
+
+        process = FakeProcess()
+        popen_kwargs: dict[str, object] = {}
+        killed: list[tuple[int, int]] = []
+
+        def fake_popen(_command: str, **kwargs: object) -> FakeProcess:
+            popen_kwargs.update(kwargs)
+            return process
+
+        monkeypatch.setattr(subprocess, "Popen", fake_popen)
+        monkeypatch.setattr(os, "killpg", lambda pgid, sig: killed.append((pgid, sig)))
+
+        result = module.ProcessBackend(SandboxConfig(timeout=1)).execute("sleep 10")
+
+        assert popen_kwargs["start_new_session"] is True
+        assert killed == [(process.pid, signal.SIGKILL)]
+        assert result.was_killed is True
+
+    def test_linux_user_task_count_tracks_real_uid_threads(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from general_ludd.sandbox.backends import process_backend as module
+
+        class Entry:
+            def __init__(
+                self, name: str, path: str, uid: int, *, vanished: bool = False
+            ) -> None:
+                self.name = name
+                self.path = path
+                self.uid = uid
+                self.vanished = vanished
+
+            def stat(self, *, follow_symlinks: bool) -> SimpleNamespace:
+                assert follow_symlinks is False
+                if self.vanished:
+                    raise FileNotFoundError(self.path)
+                return SimpleNamespace(st_uid=self.uid)
+
+        class Scan:
+            def __init__(self, entries: list[Entry]) -> None:
+                self.entries = entries
+
+            def __enter__(self) -> Iterator[Entry]:
+                return iter(self.entries)
+
+            def __exit__(
+                self, _exc_type: object, _exc: object, _traceback: object
+            ) -> None:
+                return None
+
+        processes = [
+            Entry("self", "/proc/self", 1000),
+            Entry("101", "/proc/101", 1000),
+            Entry("102", "/proc/102", 2000),
+            Entry("103", "/proc/103", 1000, vanished=True),
+        ]
+        tasks = [
+            Entry("101", "/proc/101/task/101", 1000),
+            Entry("104", "/proc/101/task/104", 1000),
+            Entry("fd", "/proc/101/task/fd", 1000),
+        ]
+
+        def fake_scandir(path: str) -> Scan:
+            if path == "/proc":
+                return Scan(processes)
+            assert path == "/proc/101/task"
+            return Scan(tasks)
+
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(os, "getuid", lambda: 1000)
+        monkeypatch.setattr(os, "scandir", fake_scandir)
+
+        assert module._linux_user_task_count() == 2
+
+    def test_linux_user_task_count_fails_closed_when_proc_is_unavailable(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from general_ludd.sandbox.backends import process_backend as module
+
+        def inaccessible(_path: str) -> NoReturn:
+            raise PermissionError("/proc")
+
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(os, "scandir", inaccessible)
+
+        assert module._linux_user_task_count() == 0
+
+    def test_preexec_applies_translated_resource_limits(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from general_ludd.sandbox.backends import process_backend as module
+
+        applied: list[tuple[int, tuple[int, int]]] = []
+
+        class FakeProcess:
+            pid = 22
+            returncode = 0
+
+            def communicate(self, *, timeout: float) -> tuple[str, str]:
+                return "", ""
+
+        def fake_popen(_command: str, **kwargs: object) -> FakeProcess:
+            cast(Callable[[], None], kwargs["preexec_fn"])()
+            return FakeProcess()
+
+        monkeypatch.setattr(module, "_linux_user_task_count", lambda: 75)
+        monkeypatch.setattr(resource, "getrlimit", lambda _kind: (500, 500))
+        monkeypatch.setattr(
+            resource,
+            "setrlimit",
+            lambda kind, limits: applied.append((kind, limits)),
+        )
+        monkeypatch.setattr(subprocess, "Popen", fake_popen)
+        monkeypatch.setattr(
+            resource,
+            "getrusage",
+            lambda _kind: SimpleNamespace(ru_utime=0.0, ru_stime=0.0, ru_maxrss=0),
+        )
+
+        module.ProcessBackend(
+            SandboxConfig(memory_mb=1, cpu_seconds=2, max_processes=3)
+        ).execute("true")
+
+        assert (resource.RLIMIT_AS, (1024 * 1024, 1024 * 1024)) in applied
+        assert (resource.RLIMIT_CPU, (2, 2)) in applied
+        assert (resource.RLIMIT_NPROC, (78, 500)) in applied
+
+    def test_missing_shell_returns_command_not_found(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from general_ludd.sandbox.backends import process_backend as module
+
+        def missing(*_args: object, **_kwargs: object) -> NoReturn:
+            raise FileNotFoundError
+
+        monkeypatch.setattr(subprocess, "Popen", missing)
+
+        result = module.ProcessBackend(SandboxConfig()).execute("missing arg")
+
+        assert result.returncode == 127
+        assert result.stderr == "command not found: missing"
+        assert result.was_killed is False
+
+    def test_windows_timeout_kills_direct_child(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from general_ludd.sandbox.backends import process_backend as module
+
+        class FakeProcess:
+            pid = 33
+            returncode = -1
+
+            def __init__(self) -> None:
+                self.calls = 0
+                self.killed = False
+
+            def communicate(self, *, timeout: float) -> tuple[str, str]:
+                self.calls += 1
+                if self.calls == 1:
+                    raise subprocess.TimeoutExpired("command", timeout)
+                return "", ""
+
+            def kill(self) -> None:
+                self.killed = True
+
+        process = FakeProcess()
+        popen_kwargs: dict[str, object] = {}
+
+        def fake_popen(_command: str, **kwargs: object) -> FakeProcess:
+            popen_kwargs.update(kwargs)
+            return process
+
+        monkeypatch.setattr(os, "name", "nt")
+        monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+        result = module.ProcessBackend(SandboxConfig(timeout=1)).execute("wait")
+
+        assert popen_kwargs["start_new_session"] is False
+        assert process.killed is True
+        assert result.was_killed is True
+
+    def test_repeated_timeout_returns_bounded_empty_result(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from general_ludd.sandbox.backends import process_backend as module
+
+        class FakeProcess:
+            pid = 44
+            returncode = None
+
+            def communicate(self, *, timeout: float) -> tuple[str, str]:
+                raise subprocess.TimeoutExpired("command", timeout)
+
+        monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: FakeProcess())
+        monkeypatch.setattr(os, "killpg", lambda _pgid, _sig: None)
+        monkeypatch.setattr(
+            resource,
+            "getrusage",
+            mock.Mock(side_effect=OSError("usage unavailable")),
+        )
+
+        result = module.ProcessBackend(SandboxConfig(timeout=1)).execute("wait")
+
+        assert result.returncode == -1
+        assert result.stdout == ""
+        assert result.stderr == ""
+        assert result.cpu_time_ms == 0
+        assert result.memory_used_bytes == 0
+
+    def test_output_budget_trims_longer_stream_first(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from general_ludd.sandbox.backends import process_backend as module
+
+        class FakeProcess:
+            pid = 55
+            returncode = 0
+
+            def communicate(self, *, timeout: float) -> tuple[str, str]:
+                return "x" * 80, "e" * 10
+
+        monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: FakeProcess())
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(
+            resource,
+            "getrusage",
+            lambda _kind: SimpleNamespace(ru_utime=0.0, ru_stime=0.0, ru_maxrss=2),
+        )
+
+        result = module.ProcessBackend(SandboxConfig(max_output_bytes=50)).execute("emit")
+
+        assert len(result.stdout) == 40
+        assert len(result.stderr) == 10
+        assert result.memory_used_bytes == 2048
+
+    def test_respects_workdir(self, tmp_path: Path) -> None:
         from general_ludd.sandbox.backends.process_backend import ProcessBackend
 
         backend = ProcessBackend(SandboxConfig(timeout=10))
         result = backend.execute("pwd", workdir=str(tmp_path))
         assert tmp_path.name in result.stdout or str(tmp_path) in result.stdout
 
-    def test_respects_env(self, tmp_path) -> None:
+    def test_respects_env(self, tmp_path: Path) -> None:
         from general_ludd.sandbox.backends.process_backend import ProcessBackend
 
         backend = ProcessBackend(SandboxConfig(timeout=10))
