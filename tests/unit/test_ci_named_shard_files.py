@@ -514,6 +514,82 @@ def test_serial_runner_uses_owned_socket_safe_tmpdir(
     assert not owned.exists()
 
 
+def test_owned_tmpdir_cleanup_defers_sigint_until_after_removal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    owned = module._owned_socket_safe_tmpdir("unit-3b-batch-024")
+    handlers: dict[signal.Signals, object] = {}
+
+    def fake_getsignal(signum: signal.Signals) -> object:
+        return handlers.get(signum, signal.SIG_DFL)
+
+    def fake_signal(signum: signal.Signals, handler: object) -> object:
+        previous = handlers.get(signum, signal.SIG_DFL)
+        handlers[signum] = handler
+        return previous
+
+    def interrupting_rmtree(path: Path, **_kwargs: object) -> None:
+        Path(path).rmdir()
+        handler = handlers.get(signal.SIGINT)
+        assert callable(handler), "cleanup must install a cancellation deferral handler"
+        handler(signal.SIGINT, None)
+
+    monkeypatch.setattr(module.signal, "getsignal", fake_getsignal)
+    monkeypatch.setattr(module.signal, "signal", fake_signal)
+    monkeypatch.setattr(module.shutil, "rmtree", interrupting_rmtree)
+
+    assert module._cleanup_owned_tmpdir(owned) == 128 + signal.SIGINT
+    assert not owned.exists()
+
+
+def test_owned_tmpdir_cleanup_is_idempotent() -> None:
+    module = _load_script("run_ci_shards_serial")
+    owned = module._owned_socket_safe_tmpdir("unit-3b-batch-024-repeat")
+
+    assert module._cleanup_owned_tmpdir(owned) == 0
+    assert module._cleanup_owned_tmpdir(owned) == 0
+
+
+def test_serial_runner_propagates_deferred_cleanup_signal_as_rc(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    workspace = tmp_path / "workspace"
+    compact = tmp_path / "compact"
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        del dir
+        path = workspace if prefix.startswith("gludd-gate-") else compact
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(module, "expand_shard", lambda _shard: ["tests/unit/test_a.py"])
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_run_owned_pytest", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(
+        module,
+        "_cleanup_owned_tmpdir",
+        lambda _path: 128 + signal.SIGINT,
+    )
+
+    assert (
+        module.run(
+            ["unit-3b"],
+            [],
+            run_isolated=False,
+            aggregate_coverage=False,
+        )
+        == 128 + signal.SIGINT
+    )
+
+
 def test_serial_runner_reserves_xdist_and_test_name_socket_budget(
     tmp_path: Path,
 ) -> None:

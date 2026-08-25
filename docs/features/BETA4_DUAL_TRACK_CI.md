@@ -292,6 +292,14 @@ and compares them with the local all-shard attestation. Both `release-dry-run` a
 `release-cut` invoke this target. The verifier rejects missing, duplicate,
 malformed, dirty, failed, wrong-lane, or wrong-SHA evidence.
 
+`make ci-run-summary RUN=<numeric-id>` provides the operator view for a single
+immutable hosted run. It asks `gh run view` for that exact database ID and a fixed
+JSON field set, verifies the returned ID and full head SHA, and exits successfully
+only when the run and every job are terminal and successful. Empty jobs, pending
+work, malformed responses, mismatched identity, and GitHub API errors remain
+visible and fail closed. `CI_RUN_SUMMARY_VALIDATE_ONLY=1` validates arguments and
+the Make contract without network access or mutable state.
+
 ## Zero-downtime development
 
 Candidate validation does not mutate the running Gludd service or the external
@@ -300,6 +308,15 @@ returned by `scripts/resource_arbiter.py`; each shard gets an additional unique
 batch namespace. The runner removes only the workspaces and coverage fragments it
 owns. It does not stop externally owned services, including a user-started model
 server.
+
+Compact socket-safe temporary roots have an explicit cancellation boundary. While
+an owned root is being removed, the runner defers `SIGINT` and `SIGTERM`, restores
+the prior handlers immediately afterward, and converts the first deferred signal
+to the conventional `128 + signal` return code. A repeated cleanup observes an
+already-absent root as success, while ownership mismatches and filesystem errors
+still fail closed. This keeps Ctrl-C bounded through child TERM-to-KILL and owner
+cleanup without leaking resources or replacing the terminal shard result with a
+cleanup traceback.
 
 Feature work may continue on another branch while a candidate is tested, but the
 candidate SHA, workflow definition, and evidence set remain immutable. A failed
@@ -325,6 +342,12 @@ Reviewed 2026-08-25:
 
 - [GitHub documentation: rerunning workflows and jobs](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs?tool=cli)
   confirms reruns use the original commit and ref.
+- [GitHub CLI `gh run view` manual](https://cli.github.com/manual/gh_run_view)
+  documents explicit run-ID selection and the structured run/job fields used by
+  the immutable summary rather than human-oriented output scraping.
+- [GitHub REST workflow-run documentation](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run)
+  defines the run-ID resource boundary used to reject a response for any other
+  execution.
 - [GitHub Community discussion 27083](https://github.com/orgs/community/discussions/27083)
   documents the practical consequence that a rerun uses the workflow from the
   original SHA rather than a later fix.
@@ -343,6 +366,16 @@ Reviewed 2026-08-25:
   documents controller hangs after a worker dies with retained pipes.
 - [pytest-xdist issue 1278](https://github.com/pytest-dev/pytest-xdist/issues/1278)
   documents missed nonzero worker exits, supporting fail-closed controller parsing.
+- [pytest-xdist issue 60](https://github.com/pytest-dev/pytest-xdist/issues/60)
+  preserves the long-lived practitioner report of Ctrl-C interrupting xdist worker
+  teardown, supporting a runner-owned cancellation boundary around final cleanup.
+- [pytest issue 1120](https://github.com/pytest-dev/pytest/issues/1120) records
+  practitioner disk exhaustion from accumulated pytest temporary directories,
+  supporting deterministic removal rather than leaving interrupted roots behind.
+- [Python 3.14 `shutil.rmtree` documentation](https://docs.python.org/3/library/shutil.html#shutil.rmtree)
+  defines top-level absence and non-`OSError` interruption behavior; Gludd handles
+  absence idempotently and defers cancellation explicitly instead of suppressing
+  arbitrary filesystem failures.
 - [CPython issue 93852](https://github.com/python/cpython/issues/93852) records
   the long-lived practitioner failure where nested temporary paths exceed the
   107-byte Linux AF_UNIX limit.
