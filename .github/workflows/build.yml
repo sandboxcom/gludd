@@ -516,7 +516,7 @@ jobs:
           uv run python scripts/run_ci_shards_serial.py \
             --shards "${{ matrix.shard }}" \
             --pytest-args="-W error" \
-            --max-files-per-batch 64 \
+            --max-files-per-batch 16 \
             --skip-isolated \
             --skip-aggregate \
             --coverage-output ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}" \

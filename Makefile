@@ -951,7 +951,7 @@ test-ci-shard: _ci-replica-clean-tree
 	GLUDD_CANDIDATE_SHA="$$(git rev-parse HEAD)" $(UV) run python scripts/run_ci_shards_serial.py \
 		--shards "$(SHARD)" \
 		--pytest-args="-W error $(PYTEST_ARGS)" \
-		--max-files-per-batch "$(or $(MAX_FILES_PER_BATCH),64)" \
+		--max-files-per-batch "$(or $(MAX_FILES_PER_BATCH),16)" \
 		--skip-isolated \
 		--skip-aggregate \
 		--coverage-output "$$RESOURCE_ROOT/ci-shards/.coverage.$(SHARD)" \

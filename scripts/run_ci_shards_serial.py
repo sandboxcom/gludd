@@ -152,7 +152,7 @@ GREENLET_COVERAGE_CONFIG = ROOT / ".coveragerc-greenlet"
 GOVERNANCE_MODULE_UTILS = (
     "collections/ansible_collections/general_ludd/governance/plugins/module_utils"
 )
-MAX_FILES_PER_BATCH = 64
+MAX_FILES_PER_BATCH = 16
 DEFAULT_HEARTBEAT_SECONDS = 30.0
 DEFAULT_NO_PROGRESS_SECONDS = 10.0 * 60.0
 WORKER_DEATH_EXIT_CODE = 70

@@ -40,11 +40,13 @@ The following evidence is invalid:
 - coverage without the corresponding terminal shard attestation; or
 - a locally compensated cleanup that hides an application-owned resource leak.
 
-Every bounded shard batch uses one worker, disables worker restarts, has a unique
-base temporary directory, emits heartbeats, and terminates its owned process group
-with bounded TERM-to-KILL cleanup. Molecule shards execute each assigned scenario
-once and preserve their individual logs; a completed scenario is never replayed
-as a substitute for fixing a failed one.
+Every bounded shard batch contains at most 16 files, uses one worker, disables
+worker restarts, has a unique base temporary directory, emits heartbeats, and
+terminates its owned process group with bounded TERM-to-KILL cleanup. The 16-file
+process lifetime prevents cumulative native-library and multiprocessing state
+from crossing hundreds of unrelated files. Molecule shards execute each assigned
+scenario once and preserve their individual logs; a completed scenario is never
+replayed as a substitute for fixing a failed one.
 
 `make require-dual-track-green SHA=<full-sha>` is the release precondition. It
 first requires a successful GitHub workflow for that exact SHA, downloads only

@@ -208,6 +208,22 @@ def test_local_and_hosted_named_shards_use_one_bounded_runner() -> None:
     assert "--skip-aggregate" in hosted_recipe
 
 
+def test_local_and_hosted_shard_batches_share_safe_file_bound() -> None:
+    """Hosted workers must not retain a 64-file process lifetime."""
+    module = _load_script("run_ci_shards_serial")
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(
+        encoding="utf-8"
+    )
+    local_recipe = makefile.split("test-ci-shard:", 1)[1].split(
+        "test-ci-shard-summary:", 1
+    )[0]
+
+    assert module.MAX_FILES_PER_BATCH == 16
+    assert '$(or $(MAX_FILES_PER_BATCH),16)' in local_recipe
+    assert "--max-files-per-batch 16" in workflow
+
+
 def test_serial_runner_resource_paths_live_under_external_resource_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
