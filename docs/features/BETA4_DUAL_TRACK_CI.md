@@ -274,6 +274,20 @@ Successful hosted attestations bind the final artifact name, byte count, SHA-256
 and Python major/minor; absent, malformed, symlinked, empty, or wrong-interpreter
 evidence fails closed.
 
+The integrated candidate at `e4bf63b16b0fd3dda87245cb1346cd652ccbf039`
+then exposed the missing local producer. The verifier required one local terminal
+attestation covering all eight canonical shards at
+`resource_root/ci-shards/attestation.json`, but the only public local target forced
+one shard and wrote `<shard>-attestation.json`. Operators therefore could not
+produce the evidence that the release precondition consumed. The new
+`make test-ci-dual-track-local` target delegates once to the existing serial
+runner, omits a shard override so its canonical registry remains authoritative,
+runs isolated tests plus aggregate coverage, and publishes the expected terminal
+artifact. Its validate-only mode resolves the same one-worker, 16-file batches
+and prints the complete plan without inspecting release identity, running pytest,
+or writing evidence; an empty pytest selector is consequently safe for contract
+checks.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -306,6 +320,14 @@ and compares them with the local all-shard attestation. Both `release-dry-run` a
 `release-cut` invoke this target. The verifier rejects missing, duplicate,
 malformed, dirty, failed, wrong-lane, or wrong-SHA evidence.
 
+`make test-ci-dual-track-local` is the canonical local producer for that
+precondition. `test-ci-shard` remains a focused diagnostic and its per-shard
+attestation is not release evidence. The producer takes no shard list: the
+runner's `DEFAULT_SHARDS` registry, bounded batch planner, single xdist worker,
+heartbeats, cleanup, aggregate coverage, and terminal writer are the sole source
+of execution truth. `DUAL_TRACK_LOCAL_VALIDATE_ONLY=1` is the read-only Make
+contract and never creates a successful attestation.
+
 `make ci-run-summary RUN=<numeric-id>` provides the operator view for a single
 immutable hosted run. It asks `gh run view` for that exact database ID and a fixed
 JSON field set, verifies the returned ID and full head SHA, and exits successfully
@@ -330,6 +352,12 @@ The original fragments are retained for diagnosis, and the terminal attestation
 is published only after the aggregate has been validated and hashed. This is a
 zero-downtime evidence change: it does not restart or mutate Gludd, its database,
 or an externally owned model service.
+
+The canonical local producer uses the same project-scoped resource root and
+per-batch owner cleanup. It does not start or stop Gludd or the external model.
+Validate-only mode creates no batch workspace, process, coverage fragment, or
+attestation, so operators can inspect the exact plan while a deployed service
+continues serving traffic.
 
 Compact socket-safe temporary roots have an explicit cancellation boundary. While
 an owned root is being removed, the runner defers `SIGINT` and `SIGTERM`, restores
@@ -373,10 +401,24 @@ reinterpreted. No running service is rolled back. Retain the original fragments
 and diagnostic log until the replacement candidate is terminal so recovery can
 distinguish missing collection from failed transfer.
 
+Rollback removes the public producer, its read-only validation flag, and contract
+entry together. Existing signed evidence is retained, but no replacement release
+candidate may proceed until an equivalent canonical all-shard producer is
+restored; composing eight focused shard artifacts is not a valid fallback.
+
 ## Upstream and practitioner evidence
 
 Reviewed 2026-08-25:
 
+- [pytest-xdist distribution documentation](https://pytest-xdist.readthedocs.io/en/latest/distribution.html),
+  reviewed 2026-08-25, defines explicit worker counts and zero as the supported
+  way to disable crashed-worker restarts. The local producer inherits the
+  runner's fixed one-worker/zero-restart policy instead of duplicating it in Make.
+- [pytest-xdist issue 18](https://github.com/pytest-dev/pytest-xdist/issues/18),
+  opened 2015-12-02 and reviewed 2026-08-25, preserves long-lived practitioner
+  evidence that distributing tests can recreate fixtures on multiple workers.
+  Gludd bounds cumulative state with fresh batches while keeping each batch on
+  exactly one owned worker.
 - [Coverage.py combine documentation](https://coverage.readthedocs.io/en/latest/commands/cmd_combine.html)
   defines discovery as the configured data-file basename plus a dotted suffix,
   documents cross-Python aggregation, and recommends path remapping or relative
