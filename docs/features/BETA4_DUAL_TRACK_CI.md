@@ -23,6 +23,9 @@ not. It also exposed concurrent terminal-attestation writers sharing one fixed
 temporary filename. The runner now uses a compact project-labelled temp root
 for multiprocessing sockets and a unique, fsynced same-directory temporary file
 for every atomic attestation publish. Both resources are cleaned by their owner.
+The first bounded local replay then stopped on an omitted pygame LGPL notice;
+the shipped third-party notice and license audit now explicitly cover every
+reviewed LGPL allowlist entry instead of treating the allowlist as documentation.
 
 ## The rule
 
@@ -109,6 +112,11 @@ Reviewed 2026-08-25:
 - [GitHub Actions runner issue 3760](https://github.com/actions/runner/issues/3760)
   reports cross-runner state and ownership failures when runtime directories are
   shared, supporting Gludd's per-project, per-batch namespaces.
+- [pygame license clarification issue 3521](https://github.com/pygame/pygame/issues/3521)
+  records practitioner concern about ambiguous LGPL version notation, supporting
+  a version-pinned upstream license link in the shipped notice.
+- [pygame 2.6.1 license text](https://github.com/pygame/pygame/blob/2.6.1/docs/LGPL.txt)
+  is the authoritative license artifact for the exact locked release.
 - [Git worktree documentation](https://git-scm.com/docs/git-worktree) describes
   locked worktree ownership and pruning behavior used to preserve active candidate
   state.
