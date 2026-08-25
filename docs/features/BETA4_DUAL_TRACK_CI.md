@@ -182,6 +182,18 @@ layout while retaining Gludd's explicit-timestamp API. The ULID fixture is now
 exactly 26 characters and reaches the intended illegal-character branch. The
 focused file passes 31 tests with warnings as errors at 93% branch coverage.
 
+Candidate `96f617335db06ce71c42bf61b2ef62fc1c37bc40` then passed local
+batches 1 through 35, including the repaired UUIDv7 batch, while hosted run
+`32851257635` exercised the same commit. Batch 36 exposed a circular release
+contract: ordinary branch validation required the not-yet-created beta4 tag,
+even though tags are deliberately created only after the candidate is green.
+The hosted run was cancelled immediately. Branch candidates now validate the
+already-canonical version, changelog, README, and release-note inputs without
+requiring an uncut tag. A GitHub tag-triggered run, or an explicit local
+`GLUDD_REQUIRE_RELEASE_TAG=1` verification, still requires the exact current
+tag and requires it to be the newest semantic-version tag. This preserves the
+post-publication invariant without making pre-publication validation impossible.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -252,6 +264,12 @@ Reviewed 2026-08-25:
 - [GitHub Community discussion 17854](https://github.com/orgs/community/discussions/17854)
   reports artifact replacement and visibility surprises across reruns, supporting
   immutable, SHA-bound terminal evidence instead of artifact-name trust alone.
+- [GitHub Actions variables reference](https://docs.github.com/en/actions/reference/workflows-and-actions/variables)
+  defines `GITHUB_REF_TYPE` as exactly `branch` or `tag`, providing the hosted
+  boundary between an uncut branch candidate and post-tag verification.
+- [GitHub Community discussion 7118](https://github.com/orgs/community/discussions/7118)
+  records practitioner demand for the safe order used here: commit the version,
+  build and test it, and only then create or publish the release tag.
 - [pytest-xdist issue 1323](https://github.com/pytest-dev/pytest-xdist/issues/1323)
   documents hangs and completed-work requeue behavior after worker restart.
 - [pytest-xdist issue 1313](https://github.com/pytest-dev/pytest-xdist/issues/1313)
