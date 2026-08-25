@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 from unittest import mock
 
+import pytest
 import yaml
 
 from general_ludd.config.loader import (
@@ -518,7 +519,9 @@ class TestConfigLayerResolve:
 
 
 class TestLoadAgentConfigDefaultPath:
-    def test_default_path_relative_to_cwd(self, tmp_path: Path, monkeypatch) -> None:
+    def test_default_path_relative_to_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         d = tmp_path / ".general-ludd"
         d.mkdir()
         (d / "agent_config.yml").write_text("session_notes: default_path_test\n")
@@ -526,7 +529,9 @@ class TestLoadAgentConfigDefaultPath:
         cfg = load_agent_config()
         assert cfg.session_notes == "default_path_test"
 
-    def test_default_path_missing_returns_default_config(self, tmp_path: Path, monkeypatch) -> None:
+    def test_default_path_missing_returns_default_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.chdir(tmp_path)
         cfg = load_agent_config()
         assert isinstance(cfg, AgentConfig)
@@ -537,7 +542,9 @@ class TestLoadAgentConfigDefaultPath:
 
 
 class TestSaveAgentConfigDefaultPath:
-    def test_default_path_saves(self, tmp_path: Path, monkeypatch) -> None:
+    def test_default_path_saves(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.chdir(tmp_path)
         cfg = AgentConfig(session_notes="saved_via_default")
         save_agent_config(cfg)
@@ -551,6 +558,28 @@ class TestSaveAgentConfigDefaultPath:
 
 
 class TestLoadAgentConfigPermissions:
+    def test_permission_error_while_checking_path_falls_back_to_default(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / ".general-ludd" / "agent_config.yml"
+
+        with mock.patch.object(Path, "exists", side_effect=PermissionError("denied")):
+            cfg = load_agent_config(path)
+
+        assert cfg == AgentConfig()
+
+    def test_permission_error_while_opening_file_falls_back_to_default(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / ".general-ludd" / "agent_config.yml"
+        path.parent.mkdir()
+        path.write_text("session_notes: must_not_load\n")
+
+        with mock.patch("builtins.open", side_effect=PermissionError("denied")):
+            cfg = load_agent_config(path)
+
+        assert cfg == AgentConfig()
+
     def test_unreadable_directory_falls_back_to_default(self, tmp_path: Path) -> None:
         d = tmp_path / ".general-ludd"
         d.mkdir()

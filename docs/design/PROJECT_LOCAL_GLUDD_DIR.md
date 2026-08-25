@@ -129,6 +129,41 @@ state. The merge allocates one detached user graph plus copied project replaceme
 does no I/O, and starts no processes; CPU and peak memory remain linear in the
 already-loaded configuration size.
 
+## Agent-config permission boundary
+
+Implemented and verified on 2026-08-25. The project-local
+`.general-ludd/agent_config.yml` reader treats a `PermissionError` while checking or
+opening the file as an unavailable optional layer and returns a fresh default
+`AgentConfig`. It never consumes content that the running identity cannot read.
+The exception boundary is deliberately narrow: malformed YAML, non-mapping data,
+and schema-validation errors still fail visibly, and path traversal and symlink
+semantics are unchanged.
+
+Upstream and practitioner evidence reviewed on 2026-08-25:
+
+- Python's [upstream `pathlib` documentation](https://docs.python.org/3.14/library/pathlib.html#querying-file-type-and-status)
+  records that Python 3.14 changed `Path.exists()` to return `False` for every OS
+  error; earlier supported interpreters can still raise selected `OSError`
+  subclasses. The loader handles `PermissionError` explicitly so Python 3.11 and
+  newer runtimes share the same fail-closed application contract.
+- A [Python.org practitioner discussion from 2024-03-31](https://discuss.python.org/t/handle-not-executable-directories-for-os-listdir/49978)
+  demonstrates that directory search permissions can make existence and listing
+  results disagree. Participants also call out the race between an existence check
+  and a later open, so the regression covers both operations rather than assuming
+  the check authorizes the read.
+- Python's [upstream issue 35692, opened 2019-01-09](https://bugs.python.org/issue35692)
+  includes a concrete `Path.exists()` `PermissionError` and the maintainers'
+  distinction between inaccessible paths and absent paths. Gludd preserves that
+  distinction internally but applies its documented optional-layer policy at the
+  config boundary.
+
+This is ZDD-safe because a denied optional layer produces a complete default object
+without mutating any active configuration, persistent state, or file permissions.
+Rollback is a code-only revert; there is no schema, data, wire, or deployment
+migration. Restoring access makes the next bounded load consume the file normally.
+Each attempt performs at most one metadata check and one open, adds no retry or
+directory walk, allocates only the default model on denial, and starts no process.
+
 ## Risks / decisions
 1. **Merge semantics** for `general-ludd.yml` — deep-merge with project-wins, but
    list fields (rules/queues) need a documented merge rule (replace vs append).
