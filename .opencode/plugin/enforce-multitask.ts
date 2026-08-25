@@ -598,6 +598,7 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
         : "THIN WAVE BLOCKED"
       const _lines = [
         _blockKind + " - only " + String(_observedDispatches) + " dispatch(es) in this message.",
+        "MUST DISPATCH suitable independent work before completing this response.",
         "The configured minimum requires " + String(_tef) + " per wave.",
         "Dispatch only suitable independent work; never create agents merely to fill a quota.",
         "Your text has been blanked.",

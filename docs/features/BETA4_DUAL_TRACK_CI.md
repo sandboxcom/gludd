@@ -142,6 +142,16 @@ The focused runtime slice passes 344 tests at 93% aggregate branch coverage;
 each of the three changed production files is at least 90%. No harness cleanup
 or daemon startup compensates for these application-owned fixes.
 
+Replacement candidate `5758f849c205076db07ea4a169a27aa24b14a79d`
+proved the invalidation rule again while hosted run `32843128782` was active.
+Local batches 1 through 29 passed, including the repaired 414-test boundary,
+before batch 30 found that the multitask enforcement plugin had lost its
+operator-facing `MUST DISPATCH` marker. The hosted run was cancelled
+immediately. The marker is part of the fail-closed observability contract: an
+operator must be able to distinguish a mandatory dispatch denial from advisory
+guidance. The owning plugin now restores that marker, and both structural and
+runtime hook suites validate the behavior before a new candidate is created.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
