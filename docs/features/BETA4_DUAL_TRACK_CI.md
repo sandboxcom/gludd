@@ -288,6 +288,16 @@ and prints the complete plan without inspecting release identity, running pytest
 or writing evidence; an empty pytest selector is consequently safe for contract
 checks.
 
+Candidate `cf9fcd3d7154e2a03cf3012db74ca92b51dde796` exposed a peer-lane
+cancellation defect after hosted run `32886106353` failed. Cancelling the local
+producer interrupted its active child and cleaned that batch, but the parent
+runner then advanced into the next shard; repeated interrupts were required to
+stop the complete plan. A child return code of `128 + SIGINT` or
+`128 + SIGTERM` now cancels the entire canonical plan, prevents later shards and
+coverage aggregation from starting, preserves bounded owner cleanup, and returns
+the signal-derived status. This keeps candidate invalidation atomic across both
+lanes instead of treating cancellation as a per-batch failure.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -458,6 +468,11 @@ Reviewed 2026-08-25:
   documents hangs and completed-work requeue behavior after worker restart.
 - [pytest-xdist issue 1313](https://github.com/pytest-dev/pytest-xdist/issues/1313)
   documents controller hangs after a worker dies with retained pipes.
+- [pytest-xdist issue 868](https://github.com/pytest-dev/pytest-xdist/issues/868),
+  opened 2022-02-16 and reviewed 2026-08-25, records practitioner evidence that
+  stop conditions can still allow another test to start. Gludd therefore binds a
+  signal-derived child result to the entire serial plan rather than only the
+  current bounded batch.
 - [pytest-xdist issue 1278](https://github.com/pytest-dev/pytest-xdist/issues/1278)
   documents missed nonzero worker exits, supporting fail-closed controller parsing.
 - [pytest-xdist issue 60](https://github.com/pytest-dev/pytest-xdist/issues/60)

@@ -37,6 +37,9 @@ else:
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 DEFAULT_SHARDS = tuple(SHARDS)
+_CANCELLATION_RETURN_CODES = frozenset(
+    {128 + int(signal.SIGINT), 128 + int(signal.SIGTERM)}
+)
 
 
 @dataclass(frozen=True)
@@ -97,6 +100,11 @@ def _identity_is_release_eligible(identity: dict[str, object]) -> bool:
         and identity.get("clean")
         and identity.get("exact_sha")
     )
+
+
+def _is_cancellation_returncode(returncode: int) -> bool:
+    """Return whether a child result represents operator cancellation."""
+    return returncode in _CANCELLATION_RETURN_CODES
 
 
 def _utc_now() -> str:
@@ -762,6 +770,7 @@ def run(
         return erase_rc
 
     failures: dict[str, int] = {}
+    cancellation_rc = 0
     if run_isolated:
         isolated_rc = _run_owned_pytest(
             _isolated_pytest_command(pytest_args),
@@ -836,6 +845,8 @@ def run(
                         flush=True,
                     )
                     shard_failed = True
+                    if _is_cancellation_returncode(rc):
+                        cancellation_rc = rc
                     break
                 print(
                     f"SHARD-BATCH-PASS shard={shard} batch={batch_index} rc=0",
@@ -856,8 +867,19 @@ def run(
                 f"SHARD-CLEANUP-SIGNAL shard={shard} rc={cleanup_rc}",
                 flush=True,
             )
+            if _is_cancellation_returncode(cleanup_rc):
+                cancellation_rc = cleanup_rc
+        if cancellation_rc:
+            print(
+                f"SERIAL-SHARD-CANCELLED shard={shard} rc={cancellation_rc}; "
+                "later-shards=not-started",
+                flush=True,
+            )
+            break
 
-    if coverage_output is not None:
+    if cancellation_rc:
+        coverage_rc = 0
+    elif coverage_output is not None:
         coverage_rc = _combine_coverage_output(coverage_output)
     elif aggregate_coverage:
         coverage_rc = _aggregate_coverage()
