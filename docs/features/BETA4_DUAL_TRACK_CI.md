@@ -119,6 +119,17 @@ project resource namespace and removes that directory on success, failure, or
 signal. Validation therefore cannot contact or depend on a Gludd daemon, and no
 test harness starts one as compensation.
 
+Replacement candidate `016ee5c97493f161d5709ab266015af8b70fd785` then passed
+local batches 1 through 27, including 1,071 tests in the repaired Terraform
+batch, while hosted run `32838352396` remained active. Batch 28 found eight stale
+contract fixtures: the provider-cache test still expected the historical
+`hashicorp/vsphere` namespace and an unused QEMU provider, a datetime test still
+expected Python to reject ISO 8601 colonized offsets, and six timeout tests built
+enabled metered OpenAI profiles without prices. The hosted run was cancelled as
+soon as the local lane failed. The tests now follow the canonical provider graph,
+Python's documented `%z` behavior, and Gludd's fail-closed nonzero metered-price
+contract; the complete batch-28 slice passes 404 tests with warnings as errors.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -223,6 +234,16 @@ Reviewed 2026-08-25:
   records practitioner impact from the provider's move to the `vmware` namespace;
   the canonical stack contract must not regress to the historical `hashicorp`
   source merely to satisfy a stale structural assertion.
+- [CPython issue 31800](https://bugs.python.org/issue31800) records the original
+  practitioner request to accept colonized UTC offsets with `%z`; Python 3.7
+  implemented that behavior, so a modern compatibility test must not retain the
+  pre-3.7 failure expectation.
+- [Stack Overflow discussion 30999230](https://stackoverflow.com/questions/30999230/how-to-parse-timezone-with-colon)
+  preserves the long-lived user impact and the version-dependent workaround that
+  motivated native colonized-offset parsing.
+- [Python datetime documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes)
+  is the authoritative contract: `%z` accepts colon separators in
+  `datetime.strptime()` beginning with Python 3.7.
 - [OpenCode plugin documentation](https://opencode.ai/docs/plugins/) documents
   the supported plugin-loading contract used by the singular manifest entry and
   the runtime hook acceptance test.
