@@ -3244,6 +3244,19 @@ def test_anti_essay_runtime_hook_invocation() -> None:
     assert result is None or isinstance(result, dict)
 
 
+def test_anti_essay_blocks_explanation_status_phrase_with_pending_work() -> None:
+    """A pending-work explanation phrase is replaced by the enforcement notice."""
+    code = _factory_plugin_code(
+        "enforce-anti-essay.ts",
+        "experimental.text.complete",
+        "await plugin['experimental.text.complete']({}, {text: 'Let me explain the current status'})",
+    )
+    result = _run_ts(code)
+    assert isinstance(result, dict)
+    assert "ANTI-ESSAY GUARD" in str(result.get("text", ""))
+    assert "Let me explain" not in str(result.get("text", ""))
+
+
 # ---------------------------------------------------------------------------
 # enforce-audit.ts  —  real text-complete hook invocation
 # ---------------------------------------------------------------------------

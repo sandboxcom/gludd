@@ -31,7 +31,14 @@ an `ApplyTier.CODE` instance created before a module reload did not satisfy an
 identity comparison against the recreated enum class and lost its exclusive
 source-mutation resource. The scheduler boundary now compares the stable enum
 wire value, preserving serialization across reloads without retaining old
-module objects.
+module objects. Batch 17 then exposed drift in two older enforcement-spec tests:
+they assumed the obsolete plural `plugins` manifest key, duplicated a raw
+subagent environment check instead of the shared guard, and assigned explanation
+blocking to the stop plugin instead of the registered anti-essay plugin. The
+tests now assert the canonical singular manifest key and shared guard. The
+anti-essay runtime also treats `let me explain` as a status-summary phrase, with
+an actual hook invocation proving that pending-work output is replaced rather
+than relying only on a source-text assertion.
 
 ## The rule
 
@@ -133,3 +140,6 @@ Reviewed 2026-08-25:
   records a current practitioner report of the same reload identity failure.
 - [CPython issue 74730](https://github.com/python/cpython/issues/74730) preserves
   the long-lived 2017 report and reproducer for enum equality across reloads.
+- [OpenCode plugin documentation](https://opencode.ai/docs/plugins/) documents
+  the supported plugin-loading contract used by the singular manifest entry and
+  the runtime hook acceptance test.
