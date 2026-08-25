@@ -308,6 +308,20 @@ checkouts now fetch complete history, and the workflow supplies only the
 runner-temporary `gludd-resources` container root. The existing arbiter remains
 the single owner of project namespace construction on both platforms.
 
+Replacement candidate `500f415354848f7013bf54794516c4d9ce56d098` proved the
+paired rule again. Hosted run `32889131313`, job `97938327981`, timed out in
+`test_broadcast_and_register_concurrent_no_dict_mutation_error` after a test
+thread restored the module-global `httpx.post` while another thread was still
+broadcasting to synthetic worker addresses. That second thread consequently
+performed real DNS attempts for test-only hosts. The local peer stopped with
+status 130, cleaned its active batch, and did not start later batches or shards.
+`WorkerBroadcaster` now binds one POST transport per instance under its existing
+registry lock and reuses that stable callable for reload and model-sync paths.
+The default remains HTTPX, and the security boundary still enforces HTTPS,
+send-time SSRF validation, no redirects, certificate verification, the bounded
+timeout, and PSK headers. Tests inject the instance seam rather than mutating a
+shared transport during concurrent work.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -441,6 +455,19 @@ Reviewed 2026-08-25:
   opened 2020-03-27 and reviewed 2026-08-25, preserves the long-lived
   `Needed a single revision` failure and explains why explicit depth zero is
   required for history-sensitive automation.
+- [HTTPX discussion 1633](https://github.com/encode/httpx/discussions/1633),
+  opened 2021-05-10 and reviewed 2026-08-25, records maintainer and practitioner
+  guidance that a synchronous client is designed to be shared across threads,
+  while lifecycle changes such as closing or replacing a client during another
+  thread's request are a distinct unsafe boundary. Gludd therefore stabilizes
+  the transport dependency for an instance instead of swapping a module global.
+- [pytest issue 13768](https://github.com/pytest-dev/pytest/issues/13768), opened
+  2025-09-30 and reviewed 2026-08-25, explicitly calls out fixtures such as
+  `monkeypatch` as not feasibly thread-safe. The hosted failure is the concrete
+  manifestation: fixture restoration and a live executor overlapped.
+- [HTTPX transport documentation](https://www.python-httpx.org/advanced/transports/),
+  reviewed 2026-08-25, defines explicit transport injection as the supported
+  boundary for deterministic request behavior and testing.
 - [pytest-xdist distribution documentation](https://pytest-xdist.readthedocs.io/en/latest/distribution.html),
   reviewed 2026-08-25, defines explicit worker counts and zero as the supported
   way to disable crashed-worker restarts. The local producer inherits the

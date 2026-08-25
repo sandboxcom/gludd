@@ -6,6 +6,7 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import httpx
@@ -57,11 +58,16 @@ class WorkerBroadcaster:
         self,
         stale_threshold_seconds: float = 300.0,
         allowlist: set[str] | None = None,
+        post: Callable[..., httpx.Response] | None = None,
     ) -> None:
-        """Initialize the registry with a staleness threshold and allowlist."""
+        """Initialize the registry, policy, and instance-owned HTTP transport."""
         self._workers: dict[str, WorkerInfo] = {}
         self._lock = threading.Lock()
         self._stale_threshold = stale_threshold_seconds
+        # Bind once per broadcaster so concurrent callers cannot replace or
+        # restore a mutable module-global HTTP function underneath one another.
+        # Lazy binding preserves the existing patch-before-first-call seam.
+        self._post: Callable[..., httpx.Response] | None = post
         # Defense-in-depth worker-identity allowlist (task #18). When configured,
         # the daemon only broadcasts a reload / model-sync — and, critically, the
         # PSK Bearer header — to workers whose ``worker_id`` OR ``address`` appears
@@ -128,6 +134,27 @@ class WorkerBroadcaster:
         with self._lock:
             return list(self._workers.values())
 
+    def _post_request(
+        self,
+        url: str,
+        *,
+        payload: dict[str, object],
+        headers: dict[str, str],
+    ) -> httpx.Response:
+        """Send through the broadcaster's stable, lazily bound transport."""
+        with self._lock:
+            if self._post is None:
+                self._post = httpx.post
+            post = self._post
+        return post(
+            url,
+            json=payload,
+            headers=headers,
+            timeout=10.0,
+            follow_redirects=False,
+            verify=True,
+        )
+
     def list_workers(self) -> list[WorkerInfo]:
         """Return a snapshot of all registered workers."""
         with self._lock:
@@ -190,18 +217,10 @@ class WorkerBroadcaster:
                 results.append(BroadcastResult(worker_id=w.worker_id, success=False, error="unsafe address"))
                 continue
             try:
-                resp = httpx.post(
+                resp = self._post_request(
                     f"{w.address}/admin/reload",
-                    json={"scope": scope_value},
+                    payload={"scope": scope_value},
                     headers=headers,
-                    timeout=10.0,
-                    # Defense in depth (task #37): make the SSRF-via-redirect and
-                    # TLS guarantees independent of httpx defaults. follow_redirects
-                    # =False prevents an SSRF-validated URL from being redirected to
-                    # an internal host (leaking the PSK) AFTER the check; verify=True
-                    # enforces TLS certificate verification.
-                    follow_redirects=False,
-                    verify=True,
                 )
                 if resp.status_code == 200:
                     results.append(BroadcastResult(worker_id=w.worker_id, success=True))
@@ -258,18 +277,10 @@ class WorkerBroadcaster:
                 results.append(BroadcastResult(worker_id=w.worker_id, success=False, error="unsafe address"))
                 continue
             try:
-                resp = httpx.post(
+                resp = self._post_request(
                     f"{w.address}/admin/models/sync",
-                    json={"action": action, "model_id": model_id, "profile": profile},
+                    payload={"action": action, "model_id": model_id, "profile": profile},
                     headers=headers,
-                    timeout=10.0,
-                    # Defense in depth (task #37): make the SSRF-via-redirect and
-                    # TLS guarantees independent of httpx defaults. follow_redirects
-                    # =False prevents an SSRF-validated URL from being redirected to
-                    # an internal host (leaking the PSK) AFTER the check; verify=True
-                    # enforces TLS certificate verification.
-                    follow_redirects=False,
-                    verify=True,
                 )
                 if resp.status_code == 200:
                     results.append(BroadcastResult(worker_id=w.worker_id, success=True))

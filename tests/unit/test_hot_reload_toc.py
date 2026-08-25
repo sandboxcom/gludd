@@ -18,17 +18,48 @@ import uuid
 from pathlib import Path
 from typing import Any, cast
 
+import httpx
 import pytest
 
 from general_ludd.reload.hot_reloader import HotReloader
-from general_ludd.reload.worker_broadcast import WorkerBroadcaster, WorkerInfo
+from general_ludd.reload.worker_broadcast import (
+    BroadcastResult,
+    WorkerBroadcaster,
+    WorkerInfo,
+)
 
 # ---------------------------------------------------------------------------
 # WorkerBroadcaster concurrency guard
 # ---------------------------------------------------------------------------
 
 
-def test_broadcast_and_register_concurrent_no_dict_mutation_error(monkeypatch) -> None:
+def test_broadcast_owns_transport_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A broadcaster must not observe concurrent module-global HTTP mutations."""
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
+    calls: list[str] = []
+
+    def _owned_post(url: str, **_kwargs: object) -> httpx.Response:
+        calls.append(url)
+        return httpx.Response(200)
+
+    broadcaster = WorkerBroadcaster(post=_owned_post)
+    broadcaster.register(WorkerInfo(worker_id="owned", address="https://owned.example"))
+
+    def _ambient_post(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("module-global HTTP transport was used")
+
+    monkeypatch.setattr("general_ludd.reload.worker_broadcast.httpx.post", _ambient_post)
+
+    results = broadcaster.broadcast_reload("ALL")
+
+    assert len(results) == 1
+    assert results[0].success is True
+    assert calls == ["https://owned.example/admin/reload"]
+
+
+def test_broadcast_and_register_concurrent_no_dict_mutation_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Concurrent register() + broadcast_reload() must not raise RuntimeError
     from dict-mutation-during-iteration. The _workers dict must be guarded by a
     lock so iterating/snapshotting and mutating are serialized."""
@@ -76,7 +107,9 @@ def test_broadcast_and_register_concurrent_no_dict_mutation_error(monkeypatch) -
     # lock would have raised RuntimeError: dictionary changed size during iteration.
 
 
-def test_concurrent_cleanup_and_broadcast_no_crash(monkeypatch) -> None:
+def test_concurrent_cleanup_and_broadcast_no_crash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Concurrent cleanup_stale() + broadcast_reload() must not crash on dict
     mutation during iteration."""
     monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
@@ -335,7 +368,9 @@ def test_reload_resolves_symlinked_live_path(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_register_without_psk_still_allowed_but_warns(caplog) -> None:
+def test_register_without_psk_still_allowed_but_warns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """When no PSK is configured, register() still accepts workers but logs a
     warning — the broadcast itself will lack an auth header, so the worker
     will 401 on the actual POST. This preserves the back-compat contract
@@ -352,14 +387,16 @@ def test_register_without_psk_still_allowed_but_warns(caplog) -> None:
     assert len(b.list_workers()) == 1, "Worker should still be registered when PSK is unset"
 
 
-def test_broadcast_results_are_thread_safe_snapshot(monkeypatch) -> None:
+def test_broadcast_results_are_thread_safe_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """broadcast_reload() results list must be independent of concurrent
     mutations — each invocation gets its own snapshot of the worker set."""
     monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="w1", address="https://worker-1.internal:8001"))
 
-    results_collected: list[list[object]] = []
+    results_collected: list[list[BroadcastResult]] = []
 
     def _broadcast_and_collect() -> None:
         import httpx as _httpx_mod
@@ -390,7 +427,7 @@ def test_broadcast_results_are_thread_safe_snapshot(monkeypatch) -> None:
     # No RuntimeError from dict mutation → passes
 
 
-def test_register_and_unregister_are_atomic(monkeypatch) -> None:
+def test_register_and_unregister_are_atomic() -> None:
     """Concurrent register+unregister of the same worker_id must not leave the
     dict in an inconsistent state — either the worker is present or absent,
     never halfway-registered."""
