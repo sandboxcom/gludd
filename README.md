@@ -165,7 +165,7 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
-| A.1-A.9 — CI fixes, push, release v0.1.0-beta.3 ready, shard matrix (6 shards), coverage threshold | Complete | **PASS** *(file-refs only)*: CI shard matrix (6 shards), fail_under 85, CI GREEN for v0.1.0-beta.3 |
+| A.1-A.9 — CI fixes, push, release v0.1.0-beta.3 ready, shard matrix (6 shards), test-quality threshold | ✓ 100% | **PASS** *(file-refs only)*: CI shard matrix (6 shards), fail_under 85, CI GREEN for v0.1.0-beta.3 |
 
 ### Session 53 — Documentation & Release Polish
 

@@ -49,6 +49,23 @@ guard and guarded push as explicit goals in one Make process. Structural tests
 also follow the current singular plugin manifest, implementation directory, TDD
 mapping, and distinct `GATE`/`GATE-LITE` progress marker contracts.
 
+The exact-SHA replacement then proved that candidate invalidation must continue
+past the first repaired boundary. Local batch 21 found a backend-specific HSM
+exception leaking through its public facade, an in-progress gate snapshot being
+compared as terminal evidence, missing session markers, and an ambiguous README
+completion percentage. Candidate `e640d07daa473faf552108062919faebb7ae6c56`
+and hosted run `32827145131` were abandoned rather than reused after those owner
+repairs.
+
+Candidate `f3403750c184558a2fcb31715756f9da5a472ffa` passed the repaired local
+batches 18 and 21, then local batch 22 exposed stale security-test assumptions
+about SQLAlchemy bound parameters, Jinja autoescape callbacks/entities, Unicode
+confusables, and the streak handoff grace window. In parallel, hosted run
+`32828457339` found a Linux/GitHub-only source-of-truth mismatch: README had been
+edited without updating `docs/features.yml`, so hosted feature-claim generation
+failed closed. The manifest now owns the unambiguous title, README is regenerated,
+and feature verification uses an explicit local Ansible inventory without warning.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start

@@ -36,14 +36,14 @@ def _read_plugin_src() -> str:
 class TestMainthreadStreakStateShape:
     """The MainthreadStreakState interface MUST include a pid field."""
 
-    def test_interface_includes_pid_field(self):
+    def test_interface_includes_pid_field(self) -> None:
         src = _read_plugin_src()
         assert "interface MainthreadStreakState" in src
         assert "pid: number" in src, (
             "MainthreadStreakState must include 'pid: number' field for PID isolation"
         )
 
-    def test_interface_has_three_fields(self):
+    def test_interface_has_three_fields(self) -> None:
         src = _read_plugin_src()
         match = src[src.index("interface MainthreadStreakState"):]
         brace_end = match.index("}") + 1
@@ -60,38 +60,38 @@ class TestMainthreadStreakStateShape:
 class TestReadStreakPidCheck:
     """readStreak() MUST verify stored PID matches process.pid."""
 
-    def test_read_streak_has_pid_check(self):
+    def test_read_streak_has_pid_check(self) -> None:
         src = _read_plugin_src()
         assert "process.pid" in src, "plugin must reference process.pid"
 
-    def test_stored_pid_not_zero_condition(self):
+    def test_stored_pid_not_zero_condition(self) -> None:
         src = _read_plugin_src()
         assert "storedPid !== 0" in src, (
             "must skip PID check when storedPid is 0 (legacy data without pid field)"
         )
 
-    def test_pid_mismatch_resets_count(self):
+    def test_pid_mismatch_resets_count(self) -> None:
         src = _read_plugin_src()
-        assert "storedPid !== process.pid" in src, (
-            "must detect PID mismatch"
+        read_streak = src[
+            src.index("function readStreak"):src.index("function writeStreak")
+        ]
+        assert "storedPid !== process.pid" in read_streak, "must detect PID mismatch"
+        assert "recencyMs = 5000" in read_streak, (
+            "a just-written cross-process handoff must retain the streak briefly"
         )
-        # Verify the reset to 0 happens on mismatch
-        match = src[src.index("if (storedPid !== 0 && storedPid !== process.pid)"):]
-        end = match.index("return")
-        # The next few lines should contain the reset return
-        reset_snippet = match[:end + 30]
-        assert "count: 0" in reset_snippet or "count:0" in reset_snippet.replace(" ", ""), (
-            "count must be reset to 0 on PID mismatch"
+        assert "return { count, ts, pid: process.pid }" in read_streak
+        assert "return { count: 0, ts, pid: process.pid }" in read_streak, (
+            "a stale PID mismatch must reset the count to zero"
         )
 
-    def test_stored_pid_zero_skips_check(self):
+    def test_stored_pid_zero_skips_check(self) -> None:
         """When storedPid is 0 (legacy/no pid), should NOT reset count."""
         src = _read_plugin_src()
         assert "storedPid !== 0" in src, (
             "legacy data without pid field must not trigger reset"
         )
 
-    def test_read_returns_default_pid(self):
+    def test_read_returns_default_pid(self) -> None:
         """On parse failure or legacy data, pid defaults to current process.pid."""
         src = _read_plugin_src()
         assert "pid: process.pid" in src, (
@@ -102,13 +102,13 @@ class TestReadStreakPidCheck:
 class TestWriteStreakPidPreservation:
     """writeStreak() MUST always write the current process PID."""
 
-    def test_write_streak_includes_pid(self):
+    def test_write_streak_includes_pid(self) -> None:
         src = _read_plugin_src()
         assert "pid: process.pid" in src, (
             "writeStreak must write process.pid into the merged state"
         )
 
-    def test_write_streak_merged_object_has_pid(self):
+    def test_write_streak_merged_object_has_pid(self) -> None:
         src = _read_plugin_src()
         match = src[src.index("function writeStreak"):src.index("function writeStreak") + 300]
         assert "pid:" in match, "merged state object must include pid field"
@@ -128,7 +128,7 @@ class TestStreakPidIsolationBehavioral:
     reported by the Node script itself, not os.getpid().
     """
 
-    def test_state_file_includes_pid_field(self):
+    def test_state_file_includes_pid_field(self) -> None:
         """After writeStreak, the JSON on disk contains the pid field."""
         import subprocess
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -188,7 +188,7 @@ class TestStreakPidIsolationBehavioral:
             with contextlib.suppress(FileNotFoundError):
                 os.unlink(streak_path + ".tmp")
 
-    def test_mismatched_pid_resets_count_to_zero(self):
+    def test_mismatched_pid_resets_count_to_zero(self) -> None:
         """When stored PID does not match process.pid, count resets to 0."""
         import subprocess
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -238,7 +238,7 @@ class TestStreakPidIsolationBehavioral:
         finally:
             os.unlink(streak_path)
 
-    def test_same_pid_preserves_count(self):
+    def test_same_pid_preserves_count(self) -> None:
         """When stored PID matches process.pid, count is preserved.
 
         We seed the state file from WITHIN the Node script so the stored pid
@@ -296,7 +296,7 @@ class TestStreakPidIsolationBehavioral:
         finally:
             os.unlink(streak_path)
 
-    def test_legacy_no_pid_field_skips_check(self):
+    def test_legacy_no_pid_field_skips_check(self) -> None:
         """When state file has no pid field (storedPid=0 after parseInt), count is preserved."""
         import subprocess
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -346,7 +346,7 @@ class TestStreakPidIsolationBehavioral:
         finally:
             os.unlink(streak_path)
 
-    def test_write_streak_increments_and_preserves_pid(self):
+    def test_write_streak_increments_and_preserves_pid(self) -> None:
         """writeStreak increments count and always writes the current process pid."""
         import subprocess
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:

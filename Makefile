@@ -6478,7 +6478,7 @@ check-types-baseline:
 
 verify-feature-claims:
 	@echo "=== verify-feature-claims: fast evidence verification (file-existence for test: refs) ==="
-	@$(UV) run ansible-playbook playbooks/verify_feature_claims.yml
+	@$(UV) run ansible-playbook -i localhost, -c local playbooks/verify_feature_claims.yml
 
 file-executable:
 	@if [ -f "$(FILE)" ]; then chmod +x "$(FILE)"; else echo "ERROR: FILE '$(FILE)' not found"; exit 1; fi

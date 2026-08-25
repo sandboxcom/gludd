@@ -2,8 +2,8 @@
 
 ## Current Gate Status
 <!-- gate:begin -->
-- Candidate `e640d07daa473faf552108062919faebb7ae6c56` invalidated by the exact local unit-3b shard; replacement candidate pending.
-- Hosted run `32827145131` is not authoritative for the invalidated candidate.
+- Candidates `e640d07daa473faf552108062919faebb7ae6c56` and `f3403750c184558a2fcb31715756f9da5a472ffa` were invalidated by exact local or hosted failures.
+- Hosted runs `32827145131` and `32828457339` are not authoritative for the replacement candidate.
 <!-- gate:end -->
 
 ---
