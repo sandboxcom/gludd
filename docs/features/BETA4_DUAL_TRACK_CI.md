@@ -235,6 +235,19 @@ available under `cls.__module__`. The helper now uses a unique registered name,
 so it neither depends on another test's import order nor changes production
 dataclass behavior.
 
+Candidate `9c9a4fcc31f8776ef9762fc8fd0588bc03f6f35a` passed local batches 1
+through 38 while hosted run `32862553727` exercised the same immutable SHA.
+Batch 39 then exposed four wavelet defects and seventeen stale or missing
+watchdog/enforcement contracts, so the hosted run was cancelled immediately.
+The wavelet owner now composes PyWavelets' supported single-level periodization
+operations and constructs synthesis columns through `idwt`, eliminating the
+hand-maintained phase offset and warning suppression. Tests now express the
+quadrature-mirror filter relation, idempotent watchdog generation, and
+load-adjusted wave width rather than obsolete behavior. The multitask plugin's
+result-arrival refill reminder is restored with a real runtime test and a bounded,
+validated interval override. No candidate evidence from batches 1 through 38 is
+reused for the replacement SHA.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -388,3 +401,16 @@ Reviewed 2026-08-25:
 - [CPython issue 102461](https://github.com/python/cpython/issues/102461)
   preserves the multi-year practitioner and maintainer discussion that led to
   UUIDv7 support in the standard library.
+- [PyWavelets signal-extension documentation](https://pywavelets.readthedocs.io/en/latest/ref/signal-extension-modes.html)
+  defines periodization as the smallest-coefficient boundary mode and requires
+  the inverse transform to use the same mode for reconstruction.
+- [PyWavelets multilevel implementation](https://github.com/PyWavelets/pywt/blob/main/pywt/_multilevel.py)
+  documents that levels above `dwt_max_level` warn because every coefficient has
+  boundary effects; Gludd composes supported single-level transforms instead of
+  hiding that warning.
+- [PyWavelets issue 306](https://github.com/PyWavelets/pywt/issues/306) records
+  the long-lived practitioner confusion around “maximum useful level” and the
+  distinction between invertibility and coefficients unaffected by boundaries.
+- [PyWavelets issue 472](https://github.com/PyWavelets/pywt/issues/472) records
+  practitioner evidence that periodization preserves the inverse/adjoint
+  properties expected by matrix-based reconstruction.

@@ -60,6 +60,10 @@ function incrementDispatchCountFile(): void {
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
 const DIVERSITY_ENFORCE = process.env.GLUDD_MULTITASK_DIVERSITY_ENFORCE !== "0"
+const RESULT_ARRIVAL_REFRESH_INTERVAL_MS = (() => {
+  const configured = parseInt(process.env.GLUDD_REFRESH_INTERVAL_MS || "30000", 10)
+  return Number.isFinite(configured) && configured > 0 ? configured : 30000
+})()
 const HAS_CONFIGURED_MIN_DISPATCHES =
   process.env.GLUDD_MIN_DISPATCHES !== undefined ||
   process.env.GLUDD_MULTITASK_MIN_DISPATCHES !== undefined
@@ -629,6 +633,19 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
       return output
     }
     const warnings: string[] = []
+    if (
+      hasResultMarker &&
+      _state.lastDispatchTs > 0 &&
+      _state.estimatedInFlight < 5 &&
+      Date.now() - _state.lastDispatchTs > RESULT_ARRIVAL_REFRESH_INTERVAL_MS
+    ) {
+      warnings.push(
+        "FLOOR LOW: only " + String(_state.estimatedInFlight) +
+        " estimated subagent(s) remain after " +
+        String(Math.round((Date.now() - _state.lastDispatchTs) / 1000)) +
+        " seconds. Dispatch replacements now."
+      )
+    }
     if (_state.underFloorCount >= 3) {
       warnings.push([
         "DISPATCH FLOOR VIOLATION: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(REQUIRED_DISPATCHES) + " dispatches.",
