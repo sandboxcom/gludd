@@ -66,6 +66,18 @@ edited without updating `docs/features.yml`, so hosted feature-claim generation
 failed closed. The manifest now owns the unambiguous title, README is regenerated,
 and feature verification uses an explicit local Ansible inventory without warning.
 
+The next exact candidate,
+`46df20c76d1f66d11e36d863668d1e5616981f1b`, proved that the paired loop must
+continue beyond a repaired batch. Local batches 1 through 23 were green,
+including the former batch-22 boundary, before batch 24 found eight cross-plugin
+contract failures. Hosted run `32830158475` was cancelled immediately because
+its SHA was already invalid. The owner repair moves subagent isolation ahead of
+all other checks in the directives and task-tracking hooks, retains depth as the
+single dispatch-only delegated-context exception, honors an explicit
+`OPENCODE_SUBAGENT=0` over the marker fallback, and removes a stale nag baseline.
+This is the intended invalidation behavior: neither a long green prefix nor an
+active hosted run makes a failed SHA reusable.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start

@@ -63,8 +63,8 @@ const DIVERSITY_ENFORCE = process.env.GLUDD_MULTITASK_DIVERSITY_ENFORCE !== "0"
 const HAS_CONFIGURED_MIN_DISPATCHES =
   process.env.GLUDD_MIN_DISPATCHES !== undefined ||
   process.env.GLUDD_MULTITASK_MIN_DISPATCHES !== undefined
-// MIN_DISPATCHES is resolved by multitask_config.ts with a recommended
-// default of 10. A mandatory minimum is active only when an environment
+// MIN_DISPATCHES is resolved by multitask_config.ts with a recommendation
+// of 10. A mandatory minimum is active only when an environment
 // variable explicitly opts in; ten remains the hard ceiling, and zero disables.
 const REQUIRED_DISPATCHES = HAS_CONFIGURED_MIN_DISPATCHES
   ? Math.max(0, Math.min(MAX_DISPATCHES, Number.isFinite(MIN_DISPATCHES) ? MIN_DISPATCHES : 0))

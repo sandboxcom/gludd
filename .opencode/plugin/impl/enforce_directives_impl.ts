@@ -299,8 +299,8 @@ function isDispatchTool(tool: string): boolean {
 
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: any, _output: any) => {
-    if (!ENABLED) return
     if (isSubagent()) return
+    if (!ENABLED) return
     try {
       const tool = input?.tool ?? input?.tool_name ?? ""
 
@@ -421,8 +421,8 @@ const defaultImpl: HotModule = {
 export default (({}) => {
   return {
     "tool.execute.before": async (input: unknown, _output: unknown) => {
-      if (!ENABLED) return
       if (isSubagent()) return
+      if (!ENABLED) return
       reportAlive("enforce-directives")
       writeHeartbeat("enforce-directives")
       const impl = loadHotModule("directives", defaultImpl)
