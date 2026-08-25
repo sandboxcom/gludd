@@ -552,30 +552,35 @@ jobs:
       - name: Collect failure diagnostics (shard ${{ matrix.shard }})
         if: failure() && steps.test-run.outcome == 'failure'
         run: |
-          echo "::group::Failure diagnostics — shard ${{ matrix.shard }}"
-          echo "--- Disk usage ---"
-          df -h
-          echo "--- Memory ---"
-          if command -v free >/dev/null 2>&1; then free -h; else echo "(free unavailable)"; fi
-          echo "--- Runner OOM kills (last 50 lines) ---"
-          dmesg 2>/dev/null | grep -i -E 'oom|out of memory|killed process' | tail -50 || echo "(dmesg unavailable)"
-          echo "--- Top processes by memory ---"
-          ps aux --sort=-%mem 2>/dev/null | head -30 || ps aux | head -30
-          echo "--- Core dumps ---"
-          ls -la /var/lib/systemd/coredump/ 2>/dev/null || echo "(no coredump dir)"
-          echo "--- /tmp usage ---"
-          du -sh /tmp
-          echo "--- Workspace test artifacts ---"
-          find . -name '*.coverage*' -ls
-          echo "--- Last 100 lines of pytest output ---"
-          find /tmp -name '.pytest_cache' -type d 2>/dev/null | head -1 | xargs -I{} find {} -name '*.log' 2>/dev/null | head -1 | xargs tail -100 2>/dev/null || echo "(no pytest cache log)"
-          echo "::endgroup::"
+          DIAG_PATH="failure-diagnostics-${{ matrix.shard }}-${{ matrix.python-version }}.log"
+          {
+            echo "::group::Failure diagnostics — shard ${{ matrix.shard }}"
+            echo "--- Disk usage ---"
+            df -h || echo "(disk usage unavailable)"
+            echo "--- Memory ---"
+            if command -v free >/dev/null 2>&1; then free -h; else echo "(free unavailable)"; fi
+            echo "--- Runner OOM kills (last 50 lines) ---"
+            dmesg 2>/dev/null | grep -i -E 'oom|out of memory|killed process' | tail -50 || echo "(dmesg unavailable)"
+            echo "--- Top processes by memory ---"
+            ps aux --sort=-%mem 2>/dev/null | head -30 || ps aux | head -30
+            echo "--- Core dumps ---"
+            ls -la /var/lib/systemd/coredump/ 2>/dev/null || echo "(no coredump dir)"
+            echo "--- /tmp usage ---"
+            du -sh /tmp 2>&1 || echo "(tmp usage incomplete)"
+            echo "--- Workspace test artifacts ---"
+            find . -name '.coverage*' -ls || echo "(coverage inventory unavailable)"
+            echo "--- Last 100 lines of pytest output ---"
+            find /tmp -name '.pytest_cache' -type d 2>/dev/null | head -1 | xargs -I{} find {} -name '*.log' 2>/dev/null | head -1 | xargs tail -100 2>/dev/null || echo "(no pytest cache log)"
+            echo "::endgroup::"
+          } 2>&1 | tee "$DIAG_PATH"
+          test -s "$DIAG_PATH"
       - name: Upload failure diagnostics (shard ${{ matrix.shard }})
         if: always() && failure() && steps.test-run.outcome == 'failure'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: failure-diag-${{ matrix.shard }}-${{ matrix.python-version }}-${{ github.run_id }}
           path: |
+            failure-diagnostics-${{ matrix.shard }}-${{ matrix.python-version }}.log
             /tmp/gludd-*.log
             .coverage*
           if-no-files-found: error

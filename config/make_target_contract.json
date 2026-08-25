@@ -7,6 +7,11 @@
       "behavior": "make test-specific TESTFILE=tests/unit/test_make_target_contract.py::test_make_target_contract_is_valid PYTEST_ARGS=-q"
     },
     {
+      "name": "test-specific-pyver",
+      "make_variables": ["TESTFILE", "PYTHON_VERSION", "PYTEST_ARGS"],
+      "behavior": "make test-specific-pyver TESTFILE=tests/unit/test_ci_hosted_failure_tooling.py PYTHON_VERSION=3.11 PYTEST_ARGS=-q"
+    },
+    {
       "name": "test-files",
       "make_variables": ["TESTFILES", "PYTEST_ARGS"],
       "behavior": "make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS=-q"
@@ -19,6 +24,18 @@
         "CI_RUN_SUMMARY_VALIDATE_ONLY"
       ],
       "behavior": "make ci-run-summary RUN=123 CI_RUN_SUMMARY_REPO=sandboxcom/gludd CI_RUN_SUMMARY_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-job-failure-context",
+      "make_variables": [
+        "RUN",
+        "JOB",
+        "PATTERN",
+        "BEFORE",
+        "AFTER",
+        "CI_JOB_CONTEXT_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-job-failure-context RUN=1 JOB=1 PATTERN=FAILED BEFORE=2 AFTER=4 CI_JOB_CONTEXT_VALIDATE_ONLY=1"
     },
     {
       "name": "test-e2e",

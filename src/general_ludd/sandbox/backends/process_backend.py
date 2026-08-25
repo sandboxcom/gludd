@@ -5,11 +5,50 @@ from __future__ import annotations
 import contextlib
 import os
 import resource
+import signal
 import subprocess
 import sys
 from typing import Any
 
 from general_ludd.sandbox.contracts import SandboxConfig, SandboxResult
+
+
+def _linux_user_task_count() -> int:
+    """Return the current real-UID task count used by Linux ``RLIMIT_NPROC``."""
+    if not sys.platform.startswith("linux") or not hasattr(os, "getuid"):
+        return 0
+    real_uid = os.getuid()
+    count = 0
+    try:
+        with os.scandir("/proc") as processes:
+            for process in processes:
+                if not process.name.isdecimal():
+                    continue
+                try:
+                    if process.stat(follow_symlinks=False).st_uid != real_uid:
+                        continue
+                    with os.scandir(f"{process.path}/task") as tasks:
+                        count += sum(task.name.isdecimal() for task in tasks)
+                except OSError:
+                    # Processes can exit while /proc is traversed. Their tasks no
+                    # longer count toward the limit, so absence is safe to ignore.
+                    continue
+    except OSError:
+        return 0
+    return count
+
+
+def _nproc_soft_limit(
+    *,
+    requested_processes: int,
+    existing_user_tasks: int,
+    hard_limit: int,
+) -> int:
+    """Translate a sandbox-local process budget to the UID-global rlimit."""
+    desired = max(existing_user_tasks, 0) + max(requested_processes, 1)
+    if hard_limit >= 0:
+        return min(desired, hard_limit)
+    return desired
 
 
 class ProcessBackend:
@@ -24,9 +63,11 @@ class ProcessBackend:
     name: str = "process"
 
     def __init__(self, config: SandboxConfig) -> None:
+        """Initialize the backend with its sandbox resource policy."""
         self.config = config
 
     def available(self) -> bool:
+        """Return whether local subprocess execution is available."""
         return True
 
     def execute(
@@ -37,10 +78,20 @@ class ProcessBackend:
         env: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> SandboxResult:
+        """Execute a command within the configured local resource limits."""
         limits = self.config.to_resource_limits()
         memory_bytes = limits.memory_bytes
         cpu_seconds = self.config.cpu_seconds
         pids_limit = limits.pids_limit
+        nproc_soft_limit: int | None = None
+        nproc_hard_limit: int | None = None
+        if pids_limit is not None and pids_limit > 0:
+            _current_soft, nproc_hard_limit = resource.getrlimit(resource.RLIMIT_NPROC)
+            nproc_soft_limit = _nproc_soft_limit(
+                requested_processes=pids_limit,
+                existing_user_tasks=_linux_user_task_count(),
+                hard_limit=nproc_hard_limit,
+            )
 
         def _preexec() -> None:
             if memory_bytes is not None and memory_bytes > 0:
@@ -49,9 +100,12 @@ class ProcessBackend:
             if cpu_seconds is not None and cpu_seconds > 0:
                 with contextlib.suppress(ValueError, OSError):
                     resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
-            if pids_limit is not None and pids_limit > 0:
+            if nproc_soft_limit is not None and nproc_hard_limit is not None:
                 with contextlib.suppress(ValueError, OSError):
-                    resource.setrlimit(resource.RLIMIT_NPROC, (pids_limit, pids_limit))
+                    resource.setrlimit(
+                        resource.RLIMIT_NPROC,
+                        (nproc_soft_limit, nproc_hard_limit),
+                    )
 
         merged_env = {**os.environ, **(env or {})}
 
@@ -65,6 +119,7 @@ class ProcessBackend:
                 shell=True,
                 preexec_fn=_preexec,
                 env=merged_env,
+                start_new_session=os.name == "posix",
             )
         except FileNotFoundError:
             return SandboxResult(
@@ -78,7 +133,11 @@ class ProcessBackend:
             stdout, stderr = proc.communicate(timeout=self.config.timeout)
             was_killed = False
         except subprocess.TimeoutExpired:
-            proc.kill()
+            if os.name == "posix":
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
             try:
                 stdout, stderr = proc.communicate(timeout=10)
             except subprocess.TimeoutExpired:
@@ -128,4 +187,5 @@ class ProcessBackend:
         )
 
     def cleanup(self) -> None:
+        """Return after confirming ``execute`` completed owned-process cleanup."""
         pass

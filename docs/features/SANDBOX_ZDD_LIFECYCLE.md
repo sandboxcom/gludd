@@ -1,7 +1,7 @@
 # Sandbox ZDD Lifecycle and SELinux Emission
 
 Status: implemented for the beta4 sandbox hardening pass. Last reviewed:
-2026-08-24.
+2026-08-25.
 
 ## Safety Contract
 
@@ -56,6 +56,22 @@ The PID value `0` is a boundary sentinel rather than a literal container limit:
   into an accidentally unbounded process-backend policy.
 - Positive values remain unchanged across both representations.
 
+On Linux, `RLIMIT_NPROC` is a real-UID-wide thread limit rather than a
+subprocess-local counter. Before forking, the process backend therefore samples
+the existing `/proc/<pid>/task` population for its real UID and adds the
+sandbox's positive process budget, capped by the inherited hard limit. This
+prevents a busy hosted runner from making the sandbox shell fail with `EAGAIN`
+before the requested command starts while retaining the requested additional
+task ceiling. Non-Linux hosts keep the direct positive budget.
+
+Every POSIX command also starts in its own session. A timeout sends `SIGKILL` to
+that owned process group and then performs the bounded pipe drain; it never kills
+only the intermediate `shell=True` process and leaves descendants holding pipes
+or resources. Windows retains the direct child-kill path. No service is restarted
+during this repair, so zero-downtime callers see only corrected per-execution
+resource accounting. Rollback is the prior single-child/absolute-limit behavior;
+it requires no state or artifact migration.
+
 ## Canonical SELinux Output
 
 Type-enforcement and file-context lines are modeled as semantic sets, then
@@ -102,6 +118,20 @@ present in Gludd.
   cache paths. Gludd canonicalizes only that trusted platform alias at the
   secure-write boundary and then reapplies owner, containment, no-follow, and
   mode checks to the physical path.
+- The Linux
+  [`getrlimit(2)` manual](https://man7.org/linux/man-pages/man2/getrlimit.2.html),
+  reviewed 2026-08-25, specifies that `RLIMIT_NPROC` counts all threads for the
+  real user ID and makes `fork(2)` fail with `EAGAIN` at the soft limit. This is
+  the hosted-runner boundary the UID-task headroom calculation preserves.
+- CPython issue
+  [#70721](https://github.com/python/cpython/issues/70721), opened 2016-03-10
+  and reviewed 2026-08-25, records the long-lived practitioner failure where a
+  timeout kills only the `shell=True` wrapper and leaks the command holding its
+  pipes. Gludd uses the documented separate-session/process-group pattern.
+- pytest-timeout issue
+  [#159](https://github.com/pytest-dev/pytest-timeout/issues/159), opened
+  2023-12-13 and reviewed 2026-08-25, reports the same retained-subprocess
+  failure in CI, including runners that hang after the test owner is killed.
 
 ## Regression Evidence
 

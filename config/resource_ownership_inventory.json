@@ -1786,13 +1786,13 @@
     },
     {
       "path": "src/general_ludd/sandbox/backends/process_backend.py",
-      "line": 59,
+      "line": 113,
       "column": 19,
       "kind": "process",
       "owner": "ProcessBackend.execute",
-      "acquisition": "subprocess.Popen(command, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True, preexec_fn=_preexec, env=merged_env)",
-      "teardown": "ownership-transfer:return SandboxResult(returncode=returncode, stdout=stdout, stderr=stderr, pid=proc.pid or 0, was_killed=was_killed, cpu_time_ms=cpu_time_ms, memory_used_bytes=memory_used_bytes)",
-      "source_hash": "c1c14a29d06c1003ea32ddb079ee191edf2ba68213f8315f7357bbd9be4ef692",
+      "acquisition": "subprocess.Popen(command, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True, preexec_fn=_preexec, env=merged_env, start_new_session=os.name == 'posix')",
+      "teardown": "ownership-transfer:os.killpg(proc.pid, signal.SIGKILL); ownership-transfer:return SandboxResult(returncode=returncode, stdout=stdout, stderr=stderr, pid=proc.pid or 0, was_killed=was_killed, cpu_time_ms=cpu_time_ms, memory_used_bytes=memory_used_bytes)",
+      "source_hash": "f5621c55be31bf5a09c894bbad4e6609d00d922d67da27bd2853ece2c5cdba6f",
       "owned": true
     },
     {
