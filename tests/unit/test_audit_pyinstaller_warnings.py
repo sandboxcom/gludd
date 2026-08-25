@@ -144,8 +144,10 @@ def test_makefile_exposes_replayable_linux_warning_audit() -> None:
     makefile = _MAKEFILE.read_text(encoding="utf-8")
 
     assert "PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt" in makefile
+    assert "PYINSTALLER_WARNING_ARCHITECTURE_LINUX ?=" in makefile
     assert "\naudit-linux-pyinstaller-warnings:" in makefile
     assert '--warnings "$(PYINSTALLER_WARNING_FILE_LINUX)"' in makefile
+    assert 'architecture="$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)"' in makefile
     assert makefile.count('--architecture "$$architecture"') == 3
 
 
@@ -175,11 +177,10 @@ def test_molecule_binary_smoke_pins_hosted_python_patch() -> None:
 def test_linux_policy_reviews_current_ghe_x86_64_graph() -> None:
     """The exact hosted Python 3.12.14 graph must remain fail-closed and pinned."""
     policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
+    alternates = policy["reviewed_transitive_warning_sha256_alternates_by_architecture"]["x86_64"]
 
-    assert (
-        "346aa57c8d7ac18ead8c3ddc7d2de4f1660dca8051ae04ba79c13831b9ab5814"
-        in policy["reviewed_transitive_warning_sha256_alternates_by_architecture"]["x86_64"]
-    )
+    assert "346aa57c8d7ac18ead8c3ddc7d2de4f1660dca8051ae04ba79c13831b9ab5814" in alternates
+    assert "837c969e07af0acbc4812ec9e417ef42eb941a9184d9aa1731c402c3df1d11ad" in alternates
 
 
 def test_linux_policy_pins_hosted_and_container_architectures() -> None:

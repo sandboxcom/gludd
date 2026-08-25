@@ -5723,6 +5723,7 @@ LINUX_APT_UTILS_VERSION ?= 2.6.1
 PYINSTALLER_WARNING_ALLOWLIST_LINUX ?= config/pyinstaller-warning-allowlist-linux.json
 PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt
 PYINSTALLER_VERSION_LINUX ?= 6.20.0
+PYINSTALLER_WARNING_ARCHITECTURE_LINUX ?=
 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY ?= 0
 
 .PHONY: audit-linux-pyinstaller-warnings
@@ -5731,7 +5732,8 @@ audit-linux-pyinstaller-warnings: ## Re-audit a retained Linux PyInstaller warni
 	@if [ "$(PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)" = "1" ]; then \
 		echo "audit-linux-pyinstaller-warnings: validated $(PYINSTALLER_WARNING_FILE_LINUX)"; \
 	else \
-		architecture="$$(uname -m)"; \
+		architecture="$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)"; \
+		if [ -z "$$architecture" ]; then architecture="$$(uname -m)"; fi; \
 		$(UV) run python scripts/audit_pyinstaller_warnings.py \
 			--warnings "$(PYINSTALLER_WARNING_FILE_LINUX)" \
 			--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \

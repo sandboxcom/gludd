@@ -90,9 +90,10 @@
         "PYINSTALLER_WARNING_FILE_LINUX",
         "PYINSTALLER_WARNING_ALLOWLIST_LINUX",
         "PYINSTALLER_VERSION_LINUX",
+        "PYINSTALLER_WARNING_ARCHITECTURE_LINUX",
         "PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY"
       ],
-      "behavior": "make audit-linux-pyinstaller-warnings PYINSTALLER_WARNING_FILE_LINUX=dist/linux/warn-gludd.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
+      "behavior": "make audit-linux-pyinstaller-warnings PYINSTALLER_WARNING_FILE_LINUX=dist/linux/warn-gludd.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
     },
     {
       "name": "molecule-test",

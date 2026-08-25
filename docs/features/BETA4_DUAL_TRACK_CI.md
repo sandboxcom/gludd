@@ -345,6 +345,16 @@ batch or shard. The unknown graph is not approved by digest alone. Audit failure
 now emits a bounded first-50 normalized edge set and the Molecule failure
 artifact retains the complete raw `warn-gludd.txt` for review.
 
+Candidate `60c85252c968d973fa17c708b7c135a5127ad1fa` and hosted run
+`32899884121`, job `97972670602`, independently reproduced the same
+`837c969e...` graph. The retrieved raw artifact contains 1,265 normalized
+third-party/transitive edges; the complete fail-closed audit reported no new
+actionable Gludd-owned edge before rejecting only the unknown digest. That
+second exact-SHA reproduction is the review evidence for admitting the digest
+as an x86_64 alternate. Its local peer independently failed on the missing
+`GLUDD_CANDIDATE_SHA` configuration-reference contract, cancelled shard
+`unit-1b` with status 130, reaped its worker, and started no later shard.
+
 The same incident exposed an operator tooling gap. The repository could list
 run artifacts but could not retrieve one without bypassing the Make-only
 boundary, and `gh run download` provides no durable transfer progress. The
