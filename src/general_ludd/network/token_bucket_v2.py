@@ -1,5 +1,4 @@
-"""Token bucket v2 rate limiter with multi-bucket, hierarchical groups,
-burst allowance, and smooth sub-second refill.
+"""Provide multi-bucket rate limiting with smooth refill and burst allowance.
 
 Core types:
   BucketConfig   — capacity, rate, burst multiplier, parent reference
@@ -30,6 +29,8 @@ def _monotonic_now() -> float:
 
 @dataclass
 class BucketConfig:
+    """Configure one bucket's capacity, refill rate, and burst ceiling."""
+
     capacity: float
     rate: float
     burst_multiplier: float = 1.0
@@ -37,6 +38,7 @@ class BucketConfig:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Reject nonsensical capacity, rate, and burst settings."""
         if self.capacity <= 0:
             raise ValueError("capacity must be > 0")
         if self.rate < 0:
@@ -47,10 +49,13 @@ class BucketConfig:
 
 @dataclass
 class BucketState:
+    """Hold the mutable token count and last refill timestamp."""
+
     tokens: float
     last_refill: float = field(default_factory=_monotonic_now)
 
     def __deepcopy__(self, memo: Any) -> BucketState:
+        """Return an independent state snapshot."""
         return BucketState(copy.deepcopy(self.tokens, memo), self.last_refill)
 
 
@@ -65,6 +70,7 @@ class Bucket:
         *,
         clock: Callable[[], float] = _monotonic_now,
     ) -> None:
+        """Initialize a named bucket with an injectable monotonic clock."""
         self.name = name
         self.config = config
         self._clock = clock
@@ -75,24 +81,29 @@ class Bucket:
 
     @property
     def tokens(self) -> float:
+        """Return the current token count under the bucket lock."""
         with self._lock:
             return self._state.tokens
 
     @property
     def last_refill(self) -> float:
+        """Return the last successful refill timestamp."""
         with self._lock:
             return self._state.last_refill
 
     @property
     def capacity(self) -> float:
+        """Return the configured steady-state capacity."""
         return self.config.capacity
 
     @property
     def rate(self) -> float:
+        """Return the configured tokens-per-second refill rate."""
         return self.config.rate
 
     @property
     def effective_capacity(self) -> float:
+        """Return the burst-adjusted maximum token count."""
         return self.config.capacity * self.config.burst_multiplier
 
     # -- core operations ------------------------------------------------------
@@ -153,27 +164,34 @@ class BucketGroup:
     """
 
     def __init__(self, name: str, buckets: Iterable[Bucket], *, overflow: bool = False) -> None:
+        """Initialize an ordered group with overflow or atomic AND semantics."""
         self.name = name
         self._buckets: list[Bucket] = list(buckets)
         self._overflow = overflow
 
     def __iter__(self) -> Iterator[Bucket]:
+        """Iterate over buckets in admission order."""
         return iter(self._buckets)
 
     def __len__(self) -> int:
+        """Return the number of buckets in the group."""
         return len(self._buckets)
 
     def __getitem__(self, index: int) -> Bucket:
+        """Return a bucket by ordered index."""
         return self._buckets[index]
 
     @property
     def overflow(self) -> bool:
+        """Return whether the first sufficient bucket alone is charged."""
         return self._overflow
 
     def add(self, bucket: Bucket) -> None:
+        """Append a bucket to the admission order."""
         self._buckets.append(bucket)
 
     def consume(self, tokens: float, *, auto_refill: bool = True) -> bool:
+        """Consume tokens according to the group's configured semantics."""
         if self._overflow:
             return self._consume_overflow(tokens, auto_refill=auto_refill)
         return self._consume_all(tokens, auto_refill=auto_refill)
@@ -203,10 +221,12 @@ class BucketGroup:
                 b._state.last_refill = s.last_refill
 
     def refill_all(self) -> None:
+        """Refill every bucket from its own clock."""
         for b in self._buckets:
             b.refill()
 
     def reset_all(self) -> None:
+        """Reset every bucket to its steady-state capacity."""
         for b in self._buckets:
             b.reset()
 
@@ -223,6 +243,7 @@ class LimiterV2:
     default_group: str | None = None
 
     def register(self, name: str, config: BucketConfig) -> Bucket:
+        """Create and register a uniquely named bucket."""
         if name in self.buckets:
             raise KeyError(f"bucket {name!r} already registered")
         b = Bucket(name, config)
@@ -230,25 +251,33 @@ class LimiterV2:
         return b
 
     def create_group(self, name: str, bucket_names: Iterable[str], *, overflow: bool = False) -> BucketGroup:
+        """Create a named group from existing buckets."""
         group = BucketGroup(name, [self.buckets[n] for n in bucket_names], overflow=overflow)
         self.groups[name] = group
         return group
 
     def allow(self, tokens: float, *, group: str | None = None, auto_refill: bool = True) -> bool:
+        """Atomically admit a request through a group or every bucket."""
         g = self._resolve_group(group)
         if g is not None:
             return g.consume(tokens, auto_refill=auto_refill)
-        return all(b.consume(tokens, auto_refill=auto_refill) for b in self.buckets.values())
+        return BucketGroup("__all__", self.buckets.values()).consume(
+            tokens,
+            auto_refill=auto_refill,
+        )
 
     def refill_all(self) -> None:
+        """Refill every registered bucket."""
         for b in self.buckets.values():
             b.refill()
 
     def reset_all(self) -> None:
+        """Reset every registered bucket."""
         for b in self.buckets.values():
             b.reset()
 
     def snapshot(self) -> dict[str, BucketState]:
+        """Return independent snapshots keyed by bucket name."""
         return {name: b.snapshot() for name, b in self.buckets.items()}
 
     def _resolve_group(self, group: str | None) -> BucketGroup | None:

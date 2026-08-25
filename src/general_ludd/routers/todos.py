@@ -1,3 +1,5 @@
+"""Register bounded todo and daemon-status HTTP routes."""
+
 from __future__ import annotations
 
 import collections
@@ -10,6 +12,7 @@ from typing import cast
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd import __version__
@@ -36,6 +39,8 @@ def _deserialize_json_list(raw: str | None) -> list[str]:
 
 
 class AddTodoRequest(BaseModel):
+    """Validate an immediate todo creation request."""
+
     title: str = Field(min_length=1, max_length=512)
     description: str = Field(default="", max_length=4096)
     queue: str = Field(default="core", pattern=r"^[a-z0-9_\-]+$")
@@ -47,6 +52,8 @@ class AddTodoRequest(BaseModel):
 
 
 class AddScheduledTodoRequest(BaseModel):
+    """Validate a one-shot or recurring todo creation request."""
+
     title: str = Field(min_length=1, max_length=512)
     description: str = Field(default="", max_length=4096)
     queue: str = Field(default="core", pattern=r"^[a-z0-9_\-]+$")
@@ -64,6 +71,8 @@ class AddScheduledTodoRequest(BaseModel):
 
 
 class LogLevelRequest(BaseModel):
+    """Validate a runtime log-level update request."""
+
     level: str
 
 
@@ -140,10 +149,20 @@ _PRIORITY_MAP: dict[str, int] = {"low": 0, "medium": 1, "high": 2, "critical": 3
 # drops the oldest entries once the cap is hit.
 _MAX_INMEMORY_TODOS = 1000
 
-_TODO_RATE_LIMITER = SlidingWindowRateLimiter(max_requests=30, window_seconds=60.0)
+_TODO_MAX_REQUESTS = 30
+_TODO_WINDOW_SECONDS = 60.0
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Attach todo routes and their application-owned mutable resources."""
+    rate_limiter = getattr(app.state, "_todo_rate_limiter", None)
+    if rate_limiter is None:
+        rate_limiter = SlidingWindowRateLimiter(
+            max_requests=_TODO_MAX_REQUESTS,
+            window_seconds=_TODO_WINDOW_SECONDS,
+        )
+        app.state._todo_rate_limiter = rate_limiter
+
     # Keep the factory's plain list untouched until degraded-mode writes need
     # it. `_todos()` below performs the bounded conversion lazily on first use.
     def _todos() -> collections.deque[dict[str, object]]:
@@ -161,7 +180,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/api/todos", status_code=201)
     async def api_add_todo(req: AddTodoRequest) -> dict[str, object]:
-        if not _TODO_RATE_LIMITER.allow():
+        if not rate_limiter.allow():
             raise HTTPException(
                 status_code=429,
                 detail="Rate limit exceeded — max 30 todos per minute",
@@ -198,11 +217,14 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "definition_of_done": req.definition_of_done,
         }
         if factory is not None:
-            async with factory() as session:
-                repo = TodoRepository(session)
-                result = await repo.create(todo_data=todo)
-                await session.commit()
-                return _todo_to_dict(result)
+            try:
+                async with factory() as session:
+                    repo = TodoRepository(session)
+                    result = await repo.create(todo_data=todo)
+                    await session.commit()
+                    return _todo_to_dict(result)
+            except (OSError, SQLAlchemyError) as exc:
+                logger.warning("Todo database unavailable; using bounded fallback: %s", exc)
         _todos().append(todo)
         return todo
 
@@ -225,15 +247,22 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             return []
         factory = _get_session_factory(app)
         if factory is not None:
-            async with factory() as session:
-                repo = TodoRepository.scoped(session, project_id) if project_id is not None else TodoRepository(session)
-                todos = await repo.list_all(
-                    queue=queue,
-                    status=status,
-                    limit=_limit,
-                    offset=_offset,
-                )
-                return [_todo_to_dict(t) for t in todos][:limit]
+            try:
+                async with factory() as session:
+                    repo = (
+                        TodoRepository.scoped(session, project_id)
+                        if project_id is not None
+                        else TodoRepository(session)
+                    )
+                    todos = await repo.list_all(
+                        queue=queue,
+                        status=status,
+                        limit=_limit,
+                        offset=_offset,
+                    )
+                    return [_todo_to_dict(t) for t in todos][:limit]
+            except (OSError, SQLAlchemyError) as exc:
+                logger.warning("Todo database unavailable; reading bounded fallback: %s", exc)
         results = list(_todos())
         if queue is not None:
             results = [t for t in results if t.get("queue") == queue]
@@ -251,7 +280,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         recurring. At least one of the two must be supplied.  ``next_run_at``
         is computed automatically from ``cron`` when provided.
         """
-        if not _TODO_RATE_LIMITER.allow():
+        if not rate_limiter.allow():
             raise HTTPException(
                 status_code=429,
                 detail="Rate limit exceeded — max 30 todos per minute",
