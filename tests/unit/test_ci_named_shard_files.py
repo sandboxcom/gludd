@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import io
 import json
 import re
+import shutil
 import signal
 import sys
 import threading
@@ -15,7 +17,7 @@ from typing import Any
 
 import pytest
 import yaml
-from coverage import Coverage
+from coverage import Coverage, CoverageData
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
@@ -1170,6 +1172,151 @@ def test_shard_coverage_fragment_and_aggregate_preserve_failure(
     assert any("--threshold=75" in command for command in commands)
 
 
+def test_hosted_coverage_transfer_survives_workspace_and_python_suffix(
+    tmp_path: Path,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "durable" / "coverage-fragments"
+    module.COVERAGE_SHARDS.mkdir(parents=True)
+    workspace = tmp_path / "ephemeral" / "batch-006"
+    workspace.mkdir(parents=True)
+    batch_coverage = workspace / ".coverage"
+    source = str(ROOT / "src" / "general_ludd" / "__init__.py")
+    data = CoverageData(basename=str(batch_coverage))
+    data.add_lines({source: {1, 2}})
+    data.write()
+
+    assert module._save_shard_coverage(
+        "unit-1a2",
+        6,
+        workspace,
+        {"COVERAGE_FILE": str(batch_coverage)},
+    )
+    shutil.rmtree(workspace.parent)
+    destination = tmp_path / "checkout" / ".coverage.unit-1a2-3.11"
+
+    assert module._combine_coverage_output(destination) == 0
+
+    combined = CoverageData(basename=str(destination))
+    combined.read()
+    assert source in combined.measured_files()
+    fragment = module.COVERAGE_SHARDS / ".coverage.unit-1a2.batch-006"
+    assert fragment.is_file()
+    assert not list(module.COVERAGE_SHARDS.glob(f"{destination.name}.fragment-*"))
+
+
+@pytest.mark.parametrize("create_directory", [False, True])
+def test_coverage_output_fails_before_combine_when_no_fragments_exist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    create_directory: bool,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-fragments"
+    if create_directory:
+        module.COVERAGE_SHARDS.mkdir()
+    commands: list[list[str]] = []
+
+    def record_command(command: list[str], **_kwargs: object) -> int:
+        commands.append(command)
+        return 0
+
+    monkeypatch.setattr(module, "_run_command", record_command)
+
+    assert module._combine_coverage_output(tmp_path / ".coverage.unit-1a2-3.11") == 1
+    assert commands == []
+    assert "SHARD-COVERAGE-FRAGMENTS-MISSING" in capsys.readouterr().out
+
+
+def test_coverage_transfer_mismatch_removes_owned_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-fragments"
+    module.COVERAGE_SHARDS.mkdir()
+    fragment = module.COVERAGE_SHARDS / ".coverage.unit-1a2.batch-006"
+    fragment.write_bytes(b"valid fragment")
+
+    def truncated_copy(_source: Path, destination: Path) -> None:
+        destination.write_bytes(b"")
+
+    monkeypatch.setattr(module.shutil, "copy2", truncated_copy)
+
+    assert module._combine_coverage_output(tmp_path / ".coverage.unit-1a2-3.11") == 1
+    assert not list(module.COVERAGE_SHARDS.glob(".coverage.unit-1a2-3.11.fragment-*"))
+
+
+def test_coverage_output_evidence_is_hash_bound_and_python_specific(
+    tmp_path: Path,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    destination = tmp_path / ".coverage.unit-1a2-3.11"
+    destination.write_bytes(b"durable-coverage")
+
+    evidence = module._coverage_output_evidence(destination)
+
+    assert evidence == {
+        "artifact": destination.name,
+        "bytes": len(b"durable-coverage"),
+        "sha256": hashlib.sha256(b"durable-coverage").hexdigest(),
+        "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+    }
+
+
+def test_cli_binds_hosted_coverage_output_into_terminal_attestation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    destination = tmp_path / ".coverage.unit-1a2-3.11"
+    attestation = tmp_path / "unit-1a2-attestation.json"
+    resource_paths = module.ResourcePaths(
+        root=tmp_path / "resources",
+        coverage_shards=tmp_path / "resources" / "coverage-fragments",
+        coverage_json=tmp_path / "resources" / "coverage.json",
+        coverage_audit=tmp_path / "resources" / "coverage-audit.json",
+        attestation=tmp_path / "resources" / "default-attestation.json",
+    )
+
+    def run(*_args: object, **_kwargs: object) -> int:
+        destination.write_bytes(b"hosted-coverage")
+        return 0
+
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setattr(module, "_resource_paths", lambda: resource_paths)
+    monkeypatch.setattr(module, "run", run)
+    monkeypatch.setattr(
+        module,
+        "_repository_identity",
+        lambda **_kwargs: {
+            "head_sha": "abc123",
+            "expected_sha": "abc123",
+            "branch": "feature",
+            "clean": True,
+            "exact_sha": True,
+            "queries_ok": True,
+        },
+    )
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-1a2",
+            "--skip-isolated",
+            "--skip-aggregate",
+            f"--coverage-output={destination}",
+            f"--attestation-output={attestation}",
+        ],
+    )
+
+    assert module.main() == 0
+    payload = json.loads(attestation.read_text(encoding="utf-8"))
+    assert payload["coverage"] == module._coverage_output_evidence(destination)
+
+
 def test_missing_shard_coverage_attempts_combine_then_fails_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1267,6 +1414,7 @@ def test_serial_runner_cli_forwards_hosted_single_shard_mode(
         **kwargs: object,
     ) -> int:
         received.update(shards=shards, pytest_args=pytest_args, **kwargs)
+        coverage_output.write_bytes(b"hosted coverage")
         return 0
 
     monkeypatch.setattr(module, "run", run)
