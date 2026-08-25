@@ -51,6 +51,55 @@ def _nproc_soft_limit(
     return desired
 
 
+def _verified_child_process_group(proc: subprocess.Popen[str]) -> int | None:
+    """Return the child's isolated process group, never the caller's group."""
+    pid = proc.pid
+    if os.name != "posix" or pid is None or pid <= 0:
+        return None
+    try:
+        child_pgid = os.getpgid(pid)
+        child_sid = os.getsid(pid)
+        caller_pgid = os.getpgrp()
+        caller_sid = os.getsid(0)
+    except OSError:
+        return None
+    if child_pgid != pid or child_sid != pid:
+        return None
+    if child_pgid == caller_pgid or child_sid == caller_sid:
+        return None
+    return child_pgid
+
+
+def _terminate_owned_process(proc: subprocess.Popen[str]) -> None:
+    """Idempotently terminate only the process or verified group this owner spawned."""
+    if proc.returncode is not None:
+        return
+    if proc.__dict__.get("_gludd_termination_requested", False) is True:
+        return
+    proc.__dict__["_gludd_termination_requested"] = True
+
+    child_pgid = _verified_child_process_group(proc)
+    if child_pgid is not None:
+        try:
+            os.killpg(child_pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        return
+
+    try:
+        proc.kill()
+    except ProcessLookupError:
+        return
+
+
+def _reap_owned_process(proc: subprocess.Popen[str]) -> tuple[str, str]:
+    """Bound the post-termination wait while reaping the direct child."""
+    try:
+        return proc.communicate(timeout=10)
+    except subprocess.TimeoutExpired:
+        return "", ""
+
+
 class ProcessBackend:
     """Execute commands as local subprocesses with resource limits.
 
@@ -133,17 +182,19 @@ class ProcessBackend:
             stdout, stderr = proc.communicate(timeout=self.config.timeout)
             was_killed = False
         except subprocess.TimeoutExpired:
-            if os.name == "posix":
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(proc.pid, signal.SIGKILL)
-            else:
-                proc.kill()
-            try:
-                stdout, stderr = proc.communicate(timeout=10)
-            except subprocess.TimeoutExpired:
-                stdout = ""
-                stderr = ""
+            _terminate_owned_process(proc)
+            stdout, stderr = _reap_owned_process(proc)
             was_killed = True
+        except BaseException as cancellation:
+            try:
+                _terminate_owned_process(proc)
+                _reap_owned_process(proc)
+            except Exception as cleanup_error:
+                cancellation.add_note(
+                    f"owned process cleanup failed: {type(cleanup_error).__name__}: "
+                    f"{cleanup_error}"
+                )
+            raise
 
         stdout = stdout or ""
         stderr = stderr or ""

@@ -64,13 +64,19 @@ prevents a busy hosted runner from making the sandbox shell fail with `EAGAIN`
 before the requested command starts while retaining the requested additional
 task ceiling. Non-Linux hosts keep the direct positive budget.
 
-Every POSIX command also starts in its own session. A timeout sends `SIGKILL` to
-that owned process group and then performs the bounded pipe drain; it never kills
-only the intermediate `shell=True` process and leaves descendants holding pipes
-or resources. Windows retains the direct child-kill path. No service is restarted
-during this repair, so zero-downtime callers see only corrected per-execution
-resource accounting. Rollback is the prior single-child/absolute-limit behavior;
-it requires no state or artifact migration.
+Every POSIX command also starts in its own session. Before a timeout or
+cancellation sends `SIGKILL` to a group, the owner verifies that the child PID is
+positive, is both the session and process-group leader, and differs from the
+caller's session and group. An ambiguous, already-exited, or non-isolated child
+can therefore never turn `killpg(0, ...)` or a reused caller group into a shard
+self-kill; a live ambiguous child receives only a direct-child kill. The
+termination claim is recorded on the owned `Popen` instance, making repeated
+success, failure, timeout, and cancellation cleanup idempotent. The owner then
+performs the bounded pipe drain so descendants cannot retain pipes or resources.
+Windows retains the direct child-kill path. No service is restarted during this
+repair, so zero-downtime callers see only corrected per-execution resource
+accounting. Rollback is the prior unverified group-kill behavior; it requires no
+state or artifact migration but reintroduces caller-group termination risk.
 
 ## Canonical SELinux Output
 
@@ -132,12 +138,21 @@ present in Gludd.
   [#159](https://github.com/pytest-dev/pytest-timeout/issues/159), opened
   2023-12-13 and reviewed 2026-08-25, reports the same retained-subprocess
   failure in CI, including runners that hang after the test owner is killed.
+- CPython issue
+  [#49365](https://github.com/python/cpython/issues/49365), opened 2009-01-31
+  and reviewed 2026-08-25, records the long-lived practitioner warning that
+  process-group signaling is dangerous when the caller is itself the group
+  leader. Gludd therefore verifies both child group/session identity and caller
+  separation immediately before signaling, rather than trusting a PID-shaped
+  value captured by a test double or stale process record.
 
 ## Regression Evidence
 
 Focused tests pin zero-PID translation, deterministic state names, configured
-symlink rejection, allocation rollback, timeout partial output, environment and
-resource overrides, cleanup confinement, and canonical SELinux TE/FC rules.
+symlink rejection, allocation rollback, timeout partial output, caller-group
+confinement, cancellation reaping, idempotent completed-process cleanup,
+environment and resource overrides, cleanup confinement, and canonical SELinux
+TE/FC rules.
 Tests inject rollback and timeout failures without depending on a live SELinux
 host or an unbounded subprocess. The beta4 gate-only regression also writes an
 owner-only `0600` file through macOS's trusted `/tmp` alias and proves that an

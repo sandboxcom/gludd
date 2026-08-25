@@ -235,7 +235,7 @@
     },
     {
       "path": "scripts/run_game_gen_local.py",
-      "line": 113,
+      "line": 162,
       "column": 23,
       "kind": "client",
       "owner": "main.run_pipeline",
@@ -1791,8 +1791,8 @@
       "kind": "process",
       "owner": "ProcessBackend.execute",
       "acquisition": "subprocess.Popen(command, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True, preexec_fn=_preexec, env=merged_env, start_new_session=os.name == 'posix')",
-      "teardown": "ownership-transfer:os.killpg(proc.pid, signal.SIGKILL); ownership-transfer:return SandboxResult(returncode=returncode, stdout=stdout, stderr=stderr, pid=proc.pid or 0, was_killed=was_killed, cpu_time_ms=cpu_time_ms, memory_used_bytes=memory_used_bytes)",
-      "source_hash": "f5621c55be31bf5a09c894bbad4e6609d00d922d67da27bd2853ece2c5cdba6f",
+      "teardown": "ownership-transfer:_reap_owned_process(proc); ownership-transfer:_terminate_owned_process(proc); ownership-transfer:return SandboxResult(returncode=returncode, stdout=stdout, stderr=stderr, pid=proc.pid or 0, was_killed=was_killed, cpu_time_ms=cpu_time_ms, memory_used_bytes=memory_used_bytes)",
+      "source_hash": "b348fac18f9ebae85152d0810dab72546c18abd82ab97f352a6ac2e09c889526",
       "owned": true
     },
     {
