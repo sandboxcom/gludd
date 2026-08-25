@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import calendar
 import datetime as dt
+import sys
 import time
+import warnings
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
@@ -97,10 +99,13 @@ class TestNaiveDatetimeSafety:
         assert d.tzinfo is UTC
 
     def test_datetime_utcnow_is_deprecated(self) -> None:
-        """Python 3.12+ — datetime.utcnow() produces naive datetimes."""
-        with pytest.deprecated_call():
+        """utcnow stays naive; CPython emits its deprecation from 3.12 onward."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
             d = datetime.utcnow()
         assert d.tzinfo is None, "datetime.utcnow() is naive — use datetime.now(UTC)"
+        emitted = any(issubclass(item.category, DeprecationWarning) for item in caught)
+        assert emitted is (sys.version_info >= (3, 12))
 
     def test_replace_tzinfo_does_not_convert(self) -> None:
         """replace(tzinfo=...) shifts the clock representation; use astimezone."""

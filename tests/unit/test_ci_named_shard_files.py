@@ -508,7 +508,7 @@ def test_serial_runner_uses_owned_socket_safe_tmpdir(
     try:
         forkserver_socket = owned / "pymp-12345678" / "listener-12345678"
         assert owned.is_dir()
-        assert re.fullmatch(r"g[0-9a-f]{4}-[a-z0-9_]+", owned.name)
+        assert re.fullmatch(r"gludd-[0-9a-f]{4}-[a-z0-9_]+", owned.name)
         assert len(str(forkserver_socket).encode()) < 108
     finally:
         module._cleanup_owned_tmpdir(owned)
@@ -971,7 +971,11 @@ def test_serial_runner_places_pytest_basetemp_under_compact_socket_root(
     captured: dict[str, str] = {}
 
     def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
-        path = compact if re.fullmatch(r"g[0-9a-f]{4}-", prefix) else workspace
+        path = (
+            compact
+            if re.fullmatch(r"gludd-[0-9a-f]{4}-", prefix)
+            else workspace
+        )
         path.mkdir(parents=True, exist_ok=True)
         return str(path)
 

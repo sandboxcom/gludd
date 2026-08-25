@@ -248,7 +248,7 @@ def _owned_socket_safe_tmpdir(label: str) -> Path:
     digest = hashlib.sha256(label.encode("utf-8")).hexdigest()[:4]
     system_tmp = Path("/tmp") if os.name == "posix" else Path(tempfile.gettempdir())
     system_tmp.mkdir(parents=True, exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix=f"g{digest}-", dir=system_tmp))
+    return Path(tempfile.mkdtemp(prefix=f"gludd-{digest}-", dir=system_tmp))
 
 
 def _cleanup_owned_tmpdir(path: Path) -> int:
@@ -256,7 +256,7 @@ def _cleanup_owned_tmpdir(path: Path) -> int:
     expected_parent = Path("/tmp") if os.name == "posix" else Path(tempfile.gettempdir())
     resolved = path.resolve()
     if resolved.parent != expected_parent.resolve() or re.fullmatch(
-        r"g[0-9a-f]{4}-[a-z0-9_]+", resolved.name
+        r"gludd-[0-9a-f]{4}-[a-z0-9_]+", resolved.name
     ) is None:
         raise ValueError(f"refusing to remove unowned shard temp root: {resolved}")
 
@@ -897,6 +897,7 @@ def run(
 
 
 def main() -> int:
+    """Parse command-line options and execute the bounded shard plan."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--shards",

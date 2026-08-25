@@ -390,6 +390,21 @@ durable marker; a merely delayed run still cannot be duplicated. This behavior
 matches the long-lived practitioner reports about missing and duplicate
 workflow signals cited below while retaining one immutable candidate SHA.
 
+Candidate `a8969daba137e11c8a217826509e4811bad0fcbf` reached eighteen
+successful hosted jobs before run `32905890724` exposed two Python 3.11-only
+contract failures. Job `97990926998` inherited the shard runner's compact
+`/tmp/g…` pytest base and then correctly had that non-project namespace refused
+by the `search` target. The compact root now begins with `gludd-` while retaining
+the four-character digest and AF_UNIX path budget; teardown still accepts only
+the exact generated grammar. Job `97990927020` assumed that
+`datetime.utcnow()` emits a deprecation warning on Python 3.11 even though the
+deprecation begins in Python 3.12. The test now proves the naive result on every
+supported interpreter and requires the warning only from 3.12 onward. The local
+peer independently found a stale release-cut assertion for the older
+`require-ci-green` guard; the structural contract now requires the stronger
+exact-SHA `require-dual-track-green` prerequisite already used by production.
+Both peers were cancelled and the candidate invalidated before repair.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -596,6 +611,23 @@ Reviewed 2026-08-25:
   evidence that distributing tests can recreate fixtures on multiple workers.
   Gludd bounds cumulative state with fresh batches while keeping each batch on
   exactly one owned worker.
+- [pytest temporary-path documentation](https://github.com/pytest-dev/pytest/blob/main/doc/en/how-to/tmp_path.rst),
+  reviewed 2026-08-25, states that an explicit `--basetemp` owns the complete
+  `tmp_path` tree and is cleared without retention. Gludd therefore gives the
+  base one exact project namespace and removes it through the shard owner.
+- [pytest discussion 12283](https://github.com/pytest-dev/pytest/discussions/12283),
+  opened 2024-05-03 and reviewed 2026-08-25, records practitioner reports of
+  multi-gigabyte retained pytest trees and the recommendation to use explicit
+  retention policy. Gludd instead uses per-batch owner cleanup with no retained
+  passing workspace.
+- [Python 3.12 datetime deprecations](https://docs.python.org/3/whatsnew/3.12.html),
+  reviewed 2026-08-25, identifies `datetime.utcnow()` as deprecated beginning in
+  Python 3.12 and recommends `datetime.now(UTC)`.
+- [Python.org core-development discussion 26221](https://discuss.python.org/t/deprecating-utcnow-and-utcfromtimestamp/26221),
+  opened 2023-04-26 and reviewed 2026-08-25, preserves the long-lived
+  practitioner compatibility debate around naive UTC data. Gludd's application
+  contract remains aware UTC; its compatibility test distinguishes 3.11 from the
+  3.12 warning boundary rather than treating debate as runtime behavior.
 - [Coverage.py combine documentation](https://coverage.readthedocs.io/en/latest/commands/cmd_combine.html)
   defines discovery as the configured data-file basename plus a dotted suffix,
   documents cross-Python aggregation, and recommends path remapping or relative

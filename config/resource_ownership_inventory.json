@@ -195,9 +195,9 @@
       "column": 16,
       "kind": "temp-artifact",
       "owner": "_owned_socket_safe_tmpdir",
-      "acquisition": "tempfile.mkdtemp(prefix=f'g{digest}-', dir=system_tmp)",
+      "acquisition": "tempfile.mkdtemp(prefix=f'gludd-{digest}-', dir=system_tmp)",
       "teardown": "ownership-transfer:return",
-      "source_hash": "c1232dcac59228e72f3cf0b83940fdcb93ce98b9de14cdad32c5065c398d28bd",
+      "source_hash": "1fcc14d3472ff3d48d91503d3e670af7bdac18dba3652c547c4945e04294c63f",
       "owned": true
     },
     {
