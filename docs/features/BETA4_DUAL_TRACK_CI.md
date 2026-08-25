@@ -248,6 +248,19 @@ result-arrival refill reminder is restored with a real runtime test and a bounde
 validated interval override. No candidate evidence from batches 1 through 38 is
 reused for the replacement SHA.
 
+Candidate `1f1af024ff9c0d9ada0a827f32d40a8de76913e1` then passed local
+batches 1 through 39 while hosted run `32865912548` exercised the same
+immutable SHA. Batch 40 exposed nine WebMCP self-description failures, so the
+hosted run was cancelled immediately and the candidate invalidated. The owner
+repair synchronizes the exact daemon public-path allowlist, documents the
+public OpenAPI and human-todo endpoints, preserves method-aware authentication
+for same-path GET/POST pairs, and supplies the missing POST and facts response
+schemas. The test contract now calls the daemon's authoritative
+`is_public_path(method, path)` predicate instead of incorrectly treating a path
+as public for every HTTP method. The repaired live and structural WebMCP surface
+passes 212 tests with warnings as errors and the changed production module has
+100% branch coverage.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
