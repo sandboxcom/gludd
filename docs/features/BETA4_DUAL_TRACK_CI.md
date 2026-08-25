@@ -98,6 +98,27 @@ The scanner now preserves plugin-relative paths, nonterminal ledger rows are
 unchecked, and completed historical rows name their durable source or test
 evidence. The guards remain strict.
 
+Candidate `84e7c25a6381dcb1fe9bd00cd6c5e571df62e63e` passed local batches 1
+through 26 while hosted run `32835393330` was active, then batch 27 exposed
+Terraform/API drift that neither earlier local subsets nor a still-running hosted
+lane could overrule. Azure stack metadata omitted descriptions and mirrored
+outputs, a structural test still named the pre-namespace-migration vSphere
+provider and misread valid multiline HCL, and the state router did not own empty
+lock IDs, empty UNLOCK bodies, or URL-encoded workspace paths. The candidate was
+invalidated and its hosted run cancelled immediately. The owner repair restores
+the canonical `vmware/vsphere` contract, validates the Container App stack with a
+real state-free Terraform E2E, and makes JSON/body/path handling explicit and
+fail closed. This is the dual-track rule in practice: a green 26-batch prefix is
+progress evidence, never release evidence.
+
+The same repair pass exposed a local-validator lifecycle bug: Terraform's
+`-backend=false` init mode still reused metadata from a prior `.terraform`
+directory.
+`tf-init-local` now gives every invocation a unique data directory beneath the
+project resource namespace and removes that directory on success, failure, or
+signal. Validation therefore cannot contact or depend on a Gludd daemon, and no
+test harness starts one as compensation.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -198,6 +219,10 @@ Reviewed 2026-08-25:
   records a current practitioner report of the same reload identity failure.
 - [CPython issue 74730](https://github.com/python/cpython/issues/74730) preserves
   the long-lived 2017 report and reproducer for enum equality across reloads.
+- [HashiCorp vSphere provider namespace migration](https://github.com/hashicorp/terraform-provider-vsphere/issues/1400)
+  records practitioner impact from the provider's move to the `vmware` namespace;
+  the canonical stack contract must not regress to the historical `hashicorp`
+  source merely to satisfy a stale structural assertion.
 - [OpenCode plugin documentation](https://opencode.ai/docs/plugins/) documents
   the supported plugin-loading contract used by the singular manifest entry and
   the runtime hook acceptance test.
