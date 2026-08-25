@@ -87,11 +87,11 @@ class TestDaubechies4Coefficients:
         for c in low:
             assert any(math.isclose(c, v) for v in literature), f"unexpected coefficient {c}"
 
-    def test_high_derived_from_low(self):
+    def test_high_derived_from_low(self) -> None:
         low, high = _daubechies4_decomposition_coeffs()
         assert len(high) == 4
-        for a, b in zip(low, high, strict=False):
-            assert math.isclose(a, b) or math.isclose(a, -b) or math.isclose(abs(a), abs(b))
+        expected = [(-1.0) ** (index + 1) * value for index, value in enumerate(reversed(low))]
+        _assert_allclose(high, expected)
 
     def test_vanish_moment_one(self):
         """D4 has 2 vanishing moments: sum c_k = sqrt(2), sum (-1)^k * k * c_k = 0."""
@@ -358,6 +358,10 @@ class TestWaveletSynthesisMatrix:
     def test_synthesis_matrix_invalid_length(self):
         with pytest.raises(ValueError, match="power of 2"):
             wavelet_synthesis_matrix("haar", 3)
+
+    def test_synthesis_matrix_empty_length(self) -> None:
+        with pytest.raises(ValueError, match="power of 2"):
+            wavelet_synthesis_matrix("haar", 0)
 
 
 # ── Basic property tests ───────────────────────────────────────────────
