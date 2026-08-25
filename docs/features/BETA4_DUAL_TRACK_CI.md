@@ -152,6 +152,15 @@ operator must be able to distinguish a mandatory dispatch denial from advisory
 guidance. The owning plugin now restores that marker, and both structural and
 runtime hook suites validate the behavior before a new candidate is created.
 
+Candidate `012faf7a6d9e627006bb046b3ef42d8b4afb6e8c` passed the repaired
+batch 30, then batch 31 found a TUI parity guard tied to the obsolete
+`if current_view == ...` implementation syntax. The application already
+rendered every required view through the canonical `match current_view`
+dispatch, so changing production back to chained conditionals would have hidden
+the test defect. Hosted run `32844962204` was cancelled. The guard now parses
+the function AST and requires every literal view case to call its exact table
+builder; the focused TUI surface passes 114 tests with warnings as errors.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -279,3 +288,7 @@ Reviewed 2026-08-25:
 - [OpenCode plugin documentation](https://opencode.ai/docs/plugins/) documents
   the supported plugin-loading contract used by the singular manifest entry and
   the runtime hook acceptance test.
+- [Python structural pattern matching documentation](https://docs.python.org/3/reference/compound_stmts.html#the-match-statement)
+  defines the literal `match`/`case` dispatch used by the TUI renderer; contract
+  tests inspect that syntax tree instead of requiring an obsolete conditional
+  spelling.
