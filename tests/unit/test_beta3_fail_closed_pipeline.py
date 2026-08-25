@@ -90,14 +90,16 @@ def test_release_waits_for_every_test_and_artifact_producer() -> None:
 def test_test_shards_reject_empty_selection_and_missing_coverage() -> None:
     shard = _job("test-shard")
     runs = _run_blocks(shard)
-    assert "selected no files after exclusions" in runs
-    assert "exit 1" in runs
-    assert "RC -eq 5" not in runs
-    assert (
-        "--cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils"
-        in runs
+    assert "scripts/run_ci_shards_serial.py" in runs
+    runner = (ROOT / "scripts" / "run_ci_shards_serial.py").read_text(
+        encoding="utf-8"
     )
-    assert 'test -s "$COVERAGE_FILE"' in runs
+    assert "SHARD-EMPTY" in runner
+    assert "SHARD-COVERAGE-MISSING" in runner
+    assert "failures[shard] = 2" in runner
+    assert "RC -eq 5" not in runner
+    assert "GOVERNANCE_MODULE_UTILS" in runner
+    assert "coverage_file.stat().st_size == 0" in runner
     uploads = _upload_steps(shard)
     assert uploads
     assert all(

@@ -250,10 +250,11 @@ class TestAA012ReleaseCiGreenGuard:
         release_index = content.find("release-cut:")
         assert release_index >= 0, "AA012: supported release-cut target missing"
         release_block = content[release_index : release_index + 800]
-        ci_index = release_block.find("require-ci-green")
+        ci_index = release_block.find("require-dual-track-green")
         tag_index = release_block.find("git-tag-push")
         assert 0 <= ci_index < tag_index, (
-            "AA012: release-cut must require green CI before pushing its tag"
+            "AA012: release-cut must require exact-SHA local and hosted CI "
+            "before pushing its tag"
         )
 
 

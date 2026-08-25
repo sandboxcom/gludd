@@ -256,9 +256,11 @@ def test_repository_identity_fails_closed_on_dirty_or_wrong_sha(
 
 def test_terminal_attestation_is_atomic_and_contains_exact_identity(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load_script("run_ci_shards_serial")
     destination = tmp_path / "attestations" / "unit-2.json"
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     identity = {
         "head_sha": "abc123",
         "expected_sha": "abc123",

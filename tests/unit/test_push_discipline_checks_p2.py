@@ -369,7 +369,9 @@ class TestP29ReleasePromoteCiGreenArtifact:
             pytest.skip("P29: release-cut target not found in Makefile")
         end = text.find("\n\n", start)
         block = text[start:end] if start >= 0 else ""
-        assert "require-ci-green" in block, "P29: release-cut does not gate on require-ci-green"
+        assert "require-dual-track-green" in block, (
+            "P29: release-cut does not gate on exact-SHA local and hosted CI"
+        )
 
     def test_release_cut_verifies_artifact(self):
         text = makefile_text()
