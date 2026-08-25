@@ -292,6 +292,14 @@ and compares them with the local all-shard attestation. Both `release-dry-run` a
 `release-cut` invoke this target. The verifier rejects missing, duplicate,
 malformed, dirty, failed, wrong-lane, or wrong-SHA evidence.
 
+`make ci-run-summary RUN=<numeric-id>` provides the operator view for a single
+immutable hosted run. It asks `gh run view` for that exact database ID and a fixed
+JSON field set, verifies the returned ID and full head SHA, and exits successfully
+only when the run and every job are terminal and successful. Empty jobs, pending
+work, malformed responses, mismatched identity, and GitHub API errors remain
+visible and fail closed. `CI_RUN_SUMMARY_VALIDATE_ONLY=1` validates arguments and
+the Make contract without network access or mutable state.
+
 ## Zero-downtime development
 
 Candidate validation does not mutate the running Gludd service or the external
@@ -334,6 +342,12 @@ Reviewed 2026-08-25:
 
 - [GitHub documentation: rerunning workflows and jobs](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs?tool=cli)
   confirms reruns use the original commit and ref.
+- [GitHub CLI `gh run view` manual](https://cli.github.com/manual/gh_run_view)
+  documents explicit run-ID selection and the structured run/job fields used by
+  the immutable summary rather than human-oriented output scraping.
+- [GitHub REST workflow-run documentation](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run)
+  defines the run-ID resource boundary used to reject a response for any other
+  execution.
 - [GitHub Community discussion 27083](https://github.com/orgs/community/discussions/27083)
   documents the practical consequence that a rerun uses the workflow from the
   original SHA rather than a later fix.

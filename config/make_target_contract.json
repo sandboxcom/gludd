@@ -12,6 +12,15 @@
       "behavior": "make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS=-q"
     },
     {
+      "name": "ci-run-summary",
+      "make_variables": [
+        "RUN",
+        "CI_RUN_SUMMARY_REPO",
+        "CI_RUN_SUMMARY_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-run-summary RUN=123 CI_RUN_SUMMARY_REPO=sandboxcom/gludd CI_RUN_SUMMARY_VALIDATE_ONLY=1"
+    },
+    {
       "name": "test-e2e",
       "make_variables": [
         "E2E_TEST_TIMEOUT",

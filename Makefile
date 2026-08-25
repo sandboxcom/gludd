@@ -487,7 +487,7 @@ help:
 	@echo ""
 	@echo "  --- CI ---"
 	@echo "  ci-kill-zombie          cancel a CI run via gh run cancel"
-	@echo "  ci-run-summary          show CI run job statuses as concise table from gh run view JSON"
+	@echo "  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1"
 	@echo "  ci-await BRANCH=<b> [TIMEOUT=<s>]  Poll CI for branch until terminal (green/red/timeout)"
 	@echo "  ci-verdict-safe        Cooldown-enforced CI check (prefer over bare ci-verdict)"
 	@echo "  ci-dashboard           One-shot compact CI run listing"
@@ -3805,6 +3805,17 @@ ci-poll-sha:
 # Usage: make ci-dashboard [LIMIT=10] [BRANCH=development]
 ci-dashboard: _require-gh
 	@$(PYTHON) scripts/ci_dashboard.py --limit $(or $(LIMIT),5) $(if $(BRANCH),--branch $(BRANCH),)
+
+# ci-run-summary: fetch one immutable numeric workflow-run identity and print a
+# concise, terminal-only summary. Validation mode is network-free for contracts.
+# Usage: make ci-run-summary RUN=<id> [CI_RUN_SUMMARY_REPO=owner/repo]
+#        [CI_RUN_SUMMARY_VALIDATE_ONLY=0|1]
+CI_RUN_SUMMARY_REPO ?= sandboxcom/gludd
+CI_RUN_SUMMARY_VALIDATE_ONLY ?= 0
+ci-run-summary:
+	@[ -n "$(RUN)" ] || { echo "Usage: make ci-run-summary RUN=<id> [CI_RUN_SUMMARY_REPO=owner/repo] [CI_RUN_SUMMARY_VALIDATE_ONLY=0|1]"; exit 2; }
+	@case "$(CI_RUN_SUMMARY_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_RUN_SUMMARY_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@$(PYTHON) scripts/ci_run_summary.py --run "$(RUN)" --repo "$(CI_RUN_SUMMARY_REPO)" $(if $(filter 1,$(CI_RUN_SUMMARY_VALIDATE_ONLY)),--validate-only,)
 
 # Consolidated, read-only state report for pre-claim verification. Prints the
 # working tree (CLEAN/DIRTY), HEAD identity + branch, remote sync state
