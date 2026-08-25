@@ -270,6 +270,55 @@ def _partition_test_paths(
     ]
 
 
+def _plan_shards(
+    shards: list[str],
+    *,
+    max_files_per_batch: int,
+) -> list[tuple[str, list[list[str]]]]:
+    """Resolve canonical shard ownership into deterministic bounded batches."""
+    if max_files_per_batch < 1:
+        raise ValueError("max_files_per_batch must be positive")
+    return [
+        (
+            shard,
+            _partition_test_paths(
+                expand_shard(shard),
+                max_files=max_files_per_batch,
+            ),
+        )
+        for shard in shards
+    ]
+
+
+def _validate_only_plan(
+    shards: list[str],
+    pytest_args: list[str],
+    *,
+    max_files_per_batch: int,
+    attestation_output: Path | None,
+) -> int:
+    """Print the side-effect-free canonical execution plan for Make contracts."""
+    plans = _plan_shards(shards, max_files_per_batch=max_files_per_batch)
+    empty = [shard for shard, batches in plans if not batches]
+    if empty:
+        print(
+            f"SERIAL-SHARD-VALIDATE-FAIL empty={','.join(empty)}",
+            flush=True,
+        )
+        return 2
+    destination = attestation_output or _resource_paths().attestation
+    print(
+        f"SERIAL-SHARD-VALIDATE shards={','.join(shards)} "
+        f"files={sum(len(batch) for _, batches in plans for batch in batches)} "
+        f"batches={sum(len(batches) for _, batches in plans)} worker=1 "
+        f"max_files_per_batch={max_files_per_batch} "
+        f"pytest_args={shlex.join(pytest_args) or '<none>'} "
+        f"attestation={destination}",
+        flush=True,
+    )
+    return 0
+
+
 def _signal_owned_process_group(
     process: subprocess.Popen[str], signum: signal.Signals
 ) -> None:
@@ -712,8 +761,21 @@ def main() -> int:
         type=Path,
         help="also publish the terminal exact-SHA attestation at this path",
     )
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="print the bounded canonical plan without executing tests or writing evidence",
+    )
     args = parser.parse_args()
     shards = _parse_shards(args.shards)
+    pytest_args = shlex.split(args.pytest_args)
+    if args.validate_only:
+        return _validate_only_plan(
+            shards,
+            pytest_args,
+            max_files_per_batch=args.max_files_per_batch,
+            attestation_output=args.attestation_output,
+        )
     started_at = _utc_now()
     identity = _repository_identity(
         expected_sha=os.environ.get("GLUDD_CANDIDATE_SHA")
@@ -723,7 +785,7 @@ def main() -> int:
         try:
             returncode = run(
                 shards,
-                shlex.split(args.pytest_args),
+                pytest_args,
                 max_files_per_batch=args.max_files_per_batch,
                 heartbeat_seconds=args.heartbeat_seconds,
                 no_progress_seconds=args.no_progress_seconds,
