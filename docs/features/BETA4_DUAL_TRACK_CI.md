@@ -301,6 +301,15 @@ batch namespace. The runner removes only the workspaces and coverage fragments i
 owns. It does not stop externally owned services, including a user-started model
 server.
 
+Compact socket-safe temporary roots have an explicit cancellation boundary. While
+an owned root is being removed, the runner defers `SIGINT` and `SIGTERM`, restores
+the prior handlers immediately afterward, and converts the first deferred signal
+to the conventional `128 + signal` return code. A repeated cleanup observes an
+already-absent root as success, while ownership mismatches and filesystem errors
+still fail closed. This keeps Ctrl-C bounded through child TERM-to-KILL and owner
+cleanup without leaking resources or replacing the terminal shard result with a
+cleanup traceback.
+
 Feature work may continue on another branch while a candidate is tested, but the
 candidate SHA, workflow definition, and evidence set remain immutable. A failed
 candidate is abandoned and a new commit starts both lanes again. This gives
@@ -343,6 +352,16 @@ Reviewed 2026-08-25:
   documents controller hangs after a worker dies with retained pipes.
 - [pytest-xdist issue 1278](https://github.com/pytest-dev/pytest-xdist/issues/1278)
   documents missed nonzero worker exits, supporting fail-closed controller parsing.
+- [pytest-xdist issue 60](https://github.com/pytest-dev/pytest-xdist/issues/60)
+  preserves the long-lived practitioner report of Ctrl-C interrupting xdist worker
+  teardown, supporting a runner-owned cancellation boundary around final cleanup.
+- [pytest issue 1120](https://github.com/pytest-dev/pytest/issues/1120) records
+  practitioner disk exhaustion from accumulated pytest temporary directories,
+  supporting deterministic removal rather than leaving interrupted roots behind.
+- [Python 3.14 `shutil.rmtree` documentation](https://docs.python.org/3/library/shutil.html#shutil.rmtree)
+  defines top-level absence and non-`OSError` interruption behavior; Gludd handles
+  absence idempotently and defers cancellation explicitly instead of suppressing
+  arbitrary filesystem failures.
 - [CPython issue 93852](https://github.com/python/cpython/issues/93852) records
   the long-lived practitioner failure where nested temporary paths exceed the
   107-byte Linux AF_UNIX limit.

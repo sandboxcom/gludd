@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -236,15 +237,44 @@ def _owned_socket_safe_tmpdir(label: str) -> Path:
     return Path(tempfile.mkdtemp(prefix=f"g{digest}-", dir=system_tmp))
 
 
-def _cleanup_owned_tmpdir(path: Path) -> None:
-    """Remove only a compact temp root created by this runner."""
+def _cleanup_owned_tmpdir(path: Path) -> int:
+    """Remove one owned root and return a deferred cancellation status."""
     expected_parent = Path("/tmp") if os.name == "posix" else Path(tempfile.gettempdir())
     resolved = path.resolve()
     if resolved.parent != expected_parent.resolve() or re.fullmatch(
         r"g[0-9a-f]{4}-[a-z0-9_]+", resolved.name
     ) is None:
         raise ValueError(f"refusing to remove unowned shard temp root: {resolved}")
-    shutil.rmtree(resolved, ignore_errors=True)
+
+    deferred_signals: list[int] = []
+    previous_handlers: dict[
+        signal.Signals,
+        signal.Handlers | int | Callable[[int, FrameType | None], Any] | None,
+    ] = {}
+
+    def defer(signum: int, _frame: FrameType | None) -> None:
+        deferred_signals.append(signum)
+
+    if threading.current_thread() is threading.main_thread():
+        for watched_signal in (signal.SIGINT, signal.SIGTERM):
+            previous_handlers[watched_signal] = signal.getsignal(watched_signal)
+            signal.signal(watched_signal, defer)
+    try:
+        with contextlib.suppress(FileNotFoundError):
+            shutil.rmtree(resolved)
+    finally:
+        for watched_signal, previous_handler in previous_handlers.items():
+            signal.signal(watched_signal, previous_handler)
+
+    if deferred_signals:
+        returncode = 128 + deferred_signals[0]
+        print(
+            f"OWNED-TMPDIR-CLEANUP-SIGNAL path={resolved} "
+            f"signal={deferred_signals[0]} rc={returncode}",
+            flush=True,
+        )
+        return returncode
+    return 0
 
 
 def _isolated_pytest_command(pytest_args: list[str]) -> list[str]:
@@ -626,6 +656,7 @@ def run(
             tempfile.mkdtemp(prefix=f"gludd-gate-{shard}-", dir=workspace_parent)
         )
         owned_tmpdirs: list[Path] = []
+        cleanup_rc = 0
         try:
             print(
                 f"=== GATE TEST SHARD {index}/{len(shards)}: {shard} "
@@ -678,8 +709,17 @@ def run(
                 print(f"SHARD-PASS shard={shard} rc=0", flush=True)
         finally:
             for owned_tmpdir in owned_tmpdirs:
-                _cleanup_owned_tmpdir(owned_tmpdir)
+                cleanup_rc = max(
+                    cleanup_rc,
+                    _cleanup_owned_tmpdir(owned_tmpdir) or 0,
+                )
             shutil.rmtree(workspace, ignore_errors=True)
+        if cleanup_rc:
+            failures[shard] = max(failures.get(shard, 0), cleanup_rc)
+            print(
+                f"SHARD-CLEANUP-SIGNAL shard={shard} rc={cleanup_rc}",
+                flush=True,
+            )
 
     if coverage_output is not None:
         coverage_rc = _combine_coverage_output(coverage_output)
