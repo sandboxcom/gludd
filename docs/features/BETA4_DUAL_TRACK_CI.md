@@ -37,6 +37,13 @@ with bounded TERM-to-KILL cleanup. Molecule shards execute each assigned scenari
 once and preserve their individual logs; a completed scenario is never replayed
 as a substitute for fixing a failed one.
 
+`make require-dual-track-green SHA=<full-sha>` is the release precondition. It
+first requires a successful GitHub workflow for that exact SHA, downloads only
+that run's `coverage-*` artifacts, validates all eight hosted shard attestations,
+and compares them with the local all-shard attestation. Both `release-dry-run` and
+`release-cut` invoke this target. The verifier rejects missing, duplicate,
+malformed, dirty, failed, wrong-lane, or wrong-SHA evidence.
+
 ## Zero-downtime development
 
 Candidate validation does not mutate the running Gludd service or the external
@@ -85,4 +92,3 @@ Reviewed 2026-08-25:
 - [Git worktree documentation](https://git-scm.com/docs/git-worktree) describes
   locked worktree ownership and pruning behavior used to preserve active candidate
   state.
-

@@ -431,6 +431,7 @@ help:
 	@echo "  --- Release ---"
 	@echo "  release-list          List all GitHub releases"
 	@echo "  release-branch-new    Cut a release/* branch from a CI-green base (NAME, BASE, RELEASE_BRANCH_VALIDATE_ONLY)"
+	@echo "  require-dual-track-green Require exact-SHA local + hosted CI attestations (SHA, DUAL_TRACK_CI_VALIDATE_ONLY)"
 	@echo "  release-view TAG=..   Show a published GitHub Release + its assets"
 	@echo "  release-create TAG=.. CI-green-gated DRAFT release (single binary; complete via CI)"
 	@echo "  release-upload-assets TAG=.. FILES='..'  Add assets to an existing release (repair path)"
@@ -3879,6 +3880,18 @@ verify-release-completeness:
 require-ci-green:
 	@$(UV) run python scripts/require_ci_green.py $(SHA)
 
+# Release precondition that requires the local full-shard attestation and all
+# eight GitHub-hosted shard attestations to match one exact successful SHA.
+require-dual-track-green:
+	@SHA_TO_VERIFY="$(SHA)"; \
+	if [ -z "$$SHA_TO_VERIFY" ]; then SHA_TO_VERIFY="$$(git rev-parse HEAD)"; fi; \
+	if [ "$(DUAL_TRACK_CI_VALIDATE_ONLY)" = "1" ]; then \
+		$(UV) run python scripts/verify_dual_track_ci.py --sha "$$SHA_TO_VERIFY" --validate-only; \
+	else \
+		$(MAKE) --no-print-directory require-ci-green SHA="$$SHA_TO_VERIFY"; \
+		$(UV) run python scripts/verify_dual_track_ci.py --sha "$$SHA_TO_VERIFY"; \
+	fi
+
 # Cut a release branch only from an existing CI-green base.  Validation mode
 # exercises all local checks without contacting GitHub or changing refs.
 release-branch-new:
@@ -3956,6 +3969,7 @@ _tag-immutability-guard:
 	@$(UV) run python scripts/check_tag_immutability.py $(TAG)
 
 _release-dry-run-guard:
+	@$(MAKE) --no-print-directory require-dual-track-green SHA=$$(git rev-parse HEAD)
 	@$(UV) run python scripts/check_runbook_currency.py $(TAG)
 	@$(UV) run python scripts/check_changelog_accuracy.py $(TAG)
 	@$(UV) run python scripts/check_version_bump_atomicity.py $(TAG)
@@ -4033,7 +4047,7 @@ release-dry-run: _release-dry-run-guard
 # Usage: make release-cut TAG=v0.1.0-alpha.1 MSG='release notes'
 release-cut:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-cut TAG=v0.1.0-alpha.1 [MSG='...']"; exit 1; }
-	@$(MAKE) -s require-ci-green
+	@$(MAKE) -s require-dual-track-green SHA=$$(git rev-parse HEAD)
 	@$(MAKE) -s check-readme-status TAG=$(TAG)
 	@$(MAKE) -s git-push-sandboxcom
 	@$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"

@@ -127,6 +127,37 @@ async def run() -> None:
     assert findings[0].teardown == "TaskGroup.__aexit__"
 
 
+def test_class_task_registry_drain_follows_tuple_snapshot_alias(tmp_path: Path) -> None:
+    findings = _scan(
+        tmp_path,
+        """\
+import asyncio
+from typing import Any
+
+class Owner:
+    def __init__(self) -> None:
+        self.tasks: set[asyncio.Task[Any]] = set()
+
+    def start(self) -> None:
+        task = asyncio.create_task(do_work())
+        self.tasks.add(task)
+
+    async def shutdown(self) -> None:
+        snapshot = tuple(self.tasks)
+        done, pending = await asyncio.wait(snapshot, timeout=1.0)
+        await asyncio.gather(*done, return_exceptions=True)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        self.tasks.clear()
+""",
+    )
+
+    assert len(findings) == 1
+    assert findings[0].owned is True
+    assert "asyncio.wait(snapshot" in findings[0].teardown
+
+
 @pytest.mark.parametrize(
     "source",
     [

@@ -256,6 +256,7 @@ def _target_aliases(target: str, search_scope: ast.AST) -> set[str]:
                 "_secure_directory",
                 "cls",
                 "str",
+                "tuple",
             }
             flows_from_alias = isinstance(value, (ast.Attribute, ast.BinOp, ast.Name)) or wrapper_call
             flows_from_alias = value is not None and flows_from_alias and any(
@@ -280,27 +281,33 @@ def _container_cleanup(
     search_scope: ast.AST,
 ) -> list[str]:
     evidence: list[str] = []
+    aliases = _target_aliases(target, search_scope)
     for node in ast.walk(search_scope):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             if isinstance(node, ast.Call) and kind == "async-task":
                 final = _dotted_name(node.func).rsplit(".", 1)[-1].lower()
                 if ("drain" in final or "cancel" in final) and any(
-                    _contains_target(argument, target) for argument in node.args
+                    any(_contains_target(argument, alias) for alias in aliases)
+                    for argument in node.args
                 ):
                     evidence.append(ast.unparse(node))
             continue
         if kind == "async-task":
             final = node.func.attr.lower()
             if final in {"gather", "wait"} and any(
-                _contains_target(argument, target) for argument in node.args
+                any(_contains_target(argument, alias) for alias in aliases)
+                for argument in node.args
             ):
                 evidence.append(f"{ast.unparse(node)}")
             elif ("drain" in final or "cancel" in final) and any(
-                _contains_target(argument, target) for argument in node.args
+                any(_contains_target(argument, alias) for alias in aliases)
+                for argument in node.args
             ):
                 evidence.append(ast.unparse(node))
     for node in ast.walk(search_scope):
-        if not isinstance(node, (ast.For, ast.AsyncFor)) or not _contains_target(node.iter, target):
+        if not isinstance(node, (ast.For, ast.AsyncFor)) or not any(
+            _contains_target(node.iter, alias) for alias in aliases
+        ):
             continue
         alias = ast.unparse(node.target)
         for child in ast.walk(node):

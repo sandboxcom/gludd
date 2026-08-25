@@ -277,12 +277,38 @@ def test_terminal_attestation_is_atomic_and_contains_exact_identity(
     )
 
     payload = json.loads(destination.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
+    assert payload["lane"] == "local"
     assert payload["identity"] == identity
     assert payload["shards"] == ["unit-2"]
     assert payload["status"] == "pass"
     assert payload["returncode"] == 0
     assert not destination.with_suffix(".json.tmp").exists()
+
+
+def test_terminal_attestation_identifies_hosted_lane(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    destination = tmp_path / "hosted.json"
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+
+    module._write_terminal_attestation(
+        destination,
+        identity={
+            "head_sha": "abc123",
+            "expected_sha": "abc123",
+            "clean": True,
+            "exact_sha": True,
+        },
+        shards=["unit-2"],
+        returncode=0,
+        started_at="2026-08-25T00:00:00Z",
+        completed_at="2026-08-25T00:01:00Z",
+    )
+
+    assert json.loads(destination.read_text(encoding="utf-8"))["lane"] == "hosted"
 
 
 def test_cli_publishes_failed_attestation_when_runner_raises(

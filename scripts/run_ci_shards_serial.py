@@ -114,7 +114,10 @@ def _write_terminal_attestation(
     """Atomically publish terminal exact-SHA shard evidence."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "lane": "hosted"
+        if os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+        else "local",
         "identity": identity,
         "shards": shards,
         "status": "pass" if returncode == 0 else "fail",
