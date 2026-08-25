@@ -1,9 +1,11 @@
 output "instance_id" {
-  value = module.vllm_server.instance_id
+  description = "Azure resource ID of the Container App inference service."
+  value       = module.vllm_server.instance_id
 }
 
 output "base_url" {
-  value = module.vllm_server.base_url
+  description = "OpenAI-compatible vLLM endpoint."
+  value       = module.vllm_server.base_url
 }
 
 output "instance_ip" {
@@ -17,11 +19,13 @@ output "endpoint_url" {
 }
 
 output "resource_group_name" {
-  value = module.vllm_server.resource_group_name
+  description = "Single Terraform-owned cleanup boundary."
+  value       = module.vllm_server.resource_group_name
 }
 
 output "workload_profile_type" {
-  value = module.vllm_server.workload_profile_type
+  description = "Azure Container Apps GPU workload profile used by the service."
+  value       = module.vllm_server.workload_profile_type
 }
 
 output "watchdog_user_data" {
