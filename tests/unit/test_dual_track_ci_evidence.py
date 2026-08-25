@@ -34,7 +34,7 @@ def _load_script() -> ModuleType:
 
 
 def _attestation(*, sha: str, lane: str, shards: list[str]) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "schema_version": 2,
         "lane": lane,
         "identity": {
@@ -53,6 +53,14 @@ def _attestation(*, sha: str, lane: str, shards: list[str]) -> dict[str, object]
         "runner": "scripts/run_ci_shards_serial.py",
         "python": "3.11.13",
     }
+    if lane == "hosted":
+        payload["coverage"] = {
+            "artifact": f".coverage.{shards[0]}-3.11",
+            "bytes": 1024,
+            "sha256": "c" * 64,
+            "python": "3.11",
+        }
+    return payload
 
 
 def _write(path: Path, payload: dict[str, object]) -> Path:
@@ -170,6 +178,40 @@ def test_attestation_validation_rejects_duplicate_and_unknown_shards(
 
     assert any("contains duplicates" in error for error in errors)
     assert any("unknown shards" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "coverage",
+    [
+        None,
+        {},
+        {
+            "artifact": "../.coverage.unit-2-3.11",
+            "bytes": 0,
+            "sha256": "not-a-digest",
+            "python": "3.14",
+        },
+    ],
+)
+def test_hosted_attestation_requires_valid_bound_coverage(
+    tmp_path: Path,
+    coverage: object,
+) -> None:
+    module = _load_script()
+    payload = _attestation(sha="a" * 40, lane="hosted", shards=["unit-2"])
+    if coverage is None:
+        payload.pop("coverage")
+    else:
+        payload["coverage"] = coverage
+
+    _shards, errors = module._validate_attestation(
+        tmp_path / "hosted.json",
+        payload,
+        sha="a" * 40,
+        lane="hosted",
+    )
+
+    assert any("coverage evidence" in error for error in errors)
 
 
 def test_evidence_reader_rejects_missing_and_non_object_json(tmp_path: Path) -> None:

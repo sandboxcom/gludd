@@ -112,6 +112,7 @@ def _write_terminal_attestation(
     started_at: str,
     completed_at: str,
     error: str | None = None,
+    coverage: dict[str, object] | None = None,
 ) -> None:
     """Atomically publish terminal exact-SHA shard evidence."""
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -131,6 +132,8 @@ def _write_terminal_attestation(
     }
     if error is not None:
         payload["error"] = error
+    if coverage is not None:
+        payload["coverage"] = coverage
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
     )
@@ -172,6 +175,9 @@ XDIST_FATAL_SUMMARY_LINE = re.compile(
 XDIST_TERMINAL_SUMMARY_LINE = re.compile(
     r"^=+\s+xdist:\s+(?P<message>.+?)\s+=+$",
     re.IGNORECASE,
+)
+COVERAGE_FRAGMENT_NAME = re.compile(
+    r"^\.coverage\.[A-Za-z0-9_-]+\.batch-\d{3}$"
 )
 
 
@@ -581,25 +587,106 @@ def _aggregate_coverage() -> int:
 
 def _combine_coverage_output(destination: Path) -> int:
     """Combine bounded batch fragments into one uploadable shard data file."""
+    if not destination.is_absolute():
+        destination = ROOT / destination
+    if COVERAGE_SHARDS.is_symlink() or not COVERAGE_SHARDS.is_dir():
+        print(
+            f"SHARD-COVERAGE-FRAGMENTS-MISSING path={COVERAGE_SHARDS}",
+            flush=True,
+        )
+        return 1
+    fragments = sorted(
+        path
+        for path in COVERAGE_SHARDS.iterdir()
+        if COVERAGE_FRAGMENT_NAME.fullmatch(path.name)
+    )
+    if not fragments:
+        print(
+            f"SHARD-COVERAGE-FRAGMENTS-MISSING path={COVERAGE_SHARDS}",
+            flush=True,
+        )
+        return 1
+    for fragment in fragments:
+        if fragment.is_symlink() or not fragment.is_file() or fragment.stat().st_size == 0:
+            print(f"SHARD-COVERAGE-FRAGMENT-INVALID path={fragment}", flush=True)
+            return 1
+
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.unlink(missing_ok=True)
-    env = os.environ.copy()
-    env["COVERAGE_FILE"] = str(destination)
-    rc = _run_command(
-        [
-            sys.executable,
-            "-m",
-            "coverage",
-            "combine",
-            "--keep",
-            str(COVERAGE_SHARDS),
-        ],
-        env=env,
-    )
-    if rc == 0 and (not destination.is_file() or destination.stat().st_size == 0):
-        print(f"SHARD-COVERAGE-OUTPUT-MISSING path={destination}", flush=True)
-        return 1
-    return rc
+    staged: list[Path] = []
+    try:
+        for index, fragment in enumerate(fragments, start=1):
+            alias = COVERAGE_SHARDS / f"{destination.name}.fragment-{index:03d}"
+            alias.unlink(missing_ok=True)
+            staged.append(alias)
+            shutil.copy2(fragment, alias)
+            source_size = fragment.stat().st_size
+            if alias.stat().st_size != source_size:
+                print(
+                    f"SHARD-COVERAGE-TRANSFER-MISMATCH source={fragment} "
+                    f"destination={alias}",
+                    flush=True,
+                )
+                return 1
+            print(
+                f"SHARD-COVERAGE-TRANSFER source={fragment.name} "
+                f"destination={alias.name} bytes={source_size}",
+                flush=True,
+            )
+        rc = _run_command(
+            [
+                sys.executable,
+                "-m",
+                "coverage",
+                "combine",
+                "--keep",
+                f"--data-file={destination}",
+                str(COVERAGE_SHARDS),
+            ]
+        )
+        if rc:
+            print(
+                f"SHARD-COVERAGE-COMBINE-FAIL fragments={len(fragments)} rc={rc}",
+                flush=True,
+            )
+            return rc
+        if (
+            destination.is_symlink()
+            or not destination.is_file()
+            or destination.stat().st_size == 0
+        ):
+            print(f"SHARD-COVERAGE-OUTPUT-MISSING path={destination}", flush=True)
+            return 1
+        evidence = _coverage_output_evidence(destination)
+        print(
+            f"SHARD-COVERAGE-OUTPUT path={destination} "
+            f"fragments={len(fragments)} bytes={evidence['bytes']} "
+            f"sha256={evidence['sha256']}",
+            flush=True,
+        )
+        return 0
+    finally:
+        for alias in staged:
+            alias.unlink(missing_ok=True)
+
+
+def _coverage_output_evidence(destination: Path) -> dict[str, object]:
+    """Return portable, hash-bound evidence for one durable coverage artifact."""
+    if not destination.is_absolute():
+        destination = ROOT / destination
+    if (
+        destination.is_symlink()
+        or not destination.is_file()
+        or destination.stat().st_size == 0
+    ):
+        raise ValueError(f"coverage output is missing or invalid: {destination}")
+    digest = hashlib.sha256(destination.read_bytes()).hexdigest()
+    return {
+        "artifact": destination.name,
+        "bytes": destination.stat().st_size,
+        "sha256": digest,
+        "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+    }
 
 
 def run(
@@ -812,6 +899,14 @@ def main() -> int:
         returncode = 2
         error = "repository identity is not release eligible"
         print(f"SHARD-IDENTITY-REJECTED identity={identity}", flush=True)
+    coverage_evidence: dict[str, object] | None = None
+    if returncode == 0 and args.coverage_output is not None:
+        try:
+            coverage_evidence = _coverage_output_evidence(args.coverage_output)
+        except (OSError, ValueError) as exc:
+            returncode = RUNNER_EXCEPTION_EXIT_CODE
+            error = f"{type(exc).__name__}: {exc}"
+            print(f"SHARD-COVERAGE-ATTESTATION-FAIL error={error}", flush=True)
     destinations = {_resource_paths().attestation}
     if args.attestation_output is not None:
         destinations.add(args.attestation_output)
@@ -824,6 +919,7 @@ def main() -> int:
             started_at=started_at,
             completed_at=_utc_now(),
             error=error,
+            coverage=coverage_evidence,
         )
     return returncode
 

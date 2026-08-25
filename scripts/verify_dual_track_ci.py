@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import tempfile
 from collections import Counter
@@ -22,6 +23,8 @@ else:
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = "sandboxcom/gludd"
 WORKFLOW_NAME = "Build and Release"
+COVERAGE_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+COVERAGE_PYTHON = re.compile(r"^\d+\.\d+$")
 
 
 def _read_attestation(path: Path) -> tuple[dict[str, Any] | None, list[str]]:
@@ -33,6 +36,41 @@ def _read_attestation(path: Path) -> tuple[dict[str, Any] | None, list[str]]:
     if not isinstance(payload, dict):
         return None, [f"{path}: attestation root is not an object"]
     return payload, []
+
+
+def _validate_hosted_coverage(
+    path: Path,
+    payload: dict[str, Any],
+) -> list[str]:
+    """Return fail-closed errors for one hosted coverage artifact binding."""
+    coverage = payload.get("coverage")
+    if not isinstance(coverage, dict):
+        return [f"{path}: coverage evidence is missing or malformed"]
+    artifact = coverage.get("artifact")
+    byte_count = coverage.get("bytes")
+    digest = coverage.get("sha256")
+    python_version = coverage.get("python")
+    artifact_valid = (
+        isinstance(artifact, str)
+        and artifact.startswith(".coverage.")
+        and "/" not in artifact
+        and "\\" not in artifact
+    )
+    bytes_valid = (
+        isinstance(byte_count, int)
+        and not isinstance(byte_count, bool)
+        and byte_count > 0
+    )
+    digest_valid = isinstance(digest, str) and COVERAGE_DIGEST.fullmatch(digest)
+    python_valid = (
+        isinstance(python_version, str)
+        and COVERAGE_PYTHON.fullmatch(python_version)
+        and isinstance(payload.get("python"), str)
+        and str(payload["python"]).startswith(f"{python_version}.")
+    )
+    if not all((artifact_valid, bytes_valid, digest_valid, python_valid)):
+        return [f"{path}: coverage evidence is missing or malformed"]
+    return []
 
 
 def _validate_attestation(
@@ -55,6 +93,8 @@ def _validate_attestation(
         errors.append(f"{path}: was not produced by the canonical shard runner")
     if not payload.get("started_at") or not payload.get("completed_at"):
         errors.append(f"{path}: is missing terminal timestamps")
+    if lane == "hosted":
+        errors.extend(_validate_hosted_coverage(path, payload))
 
     identity = payload.get("identity")
     if not isinstance(identity, dict):

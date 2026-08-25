@@ -261,6 +261,19 @@ as public for every HTTP method. The repaired live and structural WebMCP surface
 passes 212 tests with warnings as errors and the changed production module has
 100% branch coverage.
 
+Candidate `fc71b3222056749532a71fc9bcd7f5212d7f8ed4` exposed an artifact-
+ownership defect after hosted run `32882197592`, job `97916977435`, passed all
+450 unit-1a2 tests. Batch 6 durably saved an 815,104-byte
+`.coverage.unit-1a2.batch-006` fragment, but the job asked coverage.py to combine
+into `.coverage.unit-1a2-3.11`. Coverage.py discovers only dotted suffixes of the
+configured output basename, so the valid fragment was invisible and aggregation
+failed with “No data to combine.” The owner now inventories non-empty regular
+fragments, copies each to a bounded alias with the exact aggregate basename,
+streams source/destination/size evidence, and always removes those aliases.
+Successful hosted attestations bind the final artifact name, byte count, SHA-256,
+and Python major/minor; absent, malformed, symlinked, empty, or wrong-interpreter
+evidence fails closed.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -274,7 +287,8 @@ The following evidence is invalid:
 - an attestation produced from a dirty checkout;
 - a queued, cancelled, skipped, timed-out, or incomplete run;
 - a successful retry that used changed workflow code from another commit;
-- coverage without the corresponding terminal shard attestation; or
+- coverage without the corresponding terminal shard attestation;
+- hosted coverage whose artifact, size, digest, or Python identity is unbound; or
 - a locally compensated cleanup that hides an application-owned resource leak.
 
 Every bounded shard batch contains at most 16 files, uses one worker, disables
@@ -308,6 +322,14 @@ returned by `scripts/resource_arbiter.py`; each shard gets an additional unique
 batch namespace. The runner removes only the workspaces and coverage fragments it
 owns. It does not stop externally owned services, including a user-started model
 server.
+
+Coverage transfer is also owner-bounded. The durable fragment directory remains
+outside each ephemeral pytest workspace; aggregate-prefix aliases exist only for
+the combine call and are removed in `finally` on success, failure, or cancellation.
+The original fragments are retained for diagnosis, and the terminal attestation
+is published only after the aggregate has been validated and hashed. This is a
+zero-downtime evidence change: it does not restart or mutate Gludd, its database,
+or an externally owned model service.
 
 Compact socket-safe temporary roots have an explicit cancellation boundary. While
 an owned root is being removed, the runner defers `SIGINT` and `SIGTERM`, restores
@@ -345,10 +367,31 @@ restarting it. This avoids xdist cases where completed work is requeued or the
 controller waits indefinitely on a dead worker. Coverage remains gated at 85%
 aggregate and at least 75% per measured file.
 
+Rollback removes the prefix-transfer and hosted coverage-attestation fields as
+one unit, then starts a new immutable candidate; existing evidence must not be
+reinterpreted. No running service is rolled back. Retain the original fragments
+and diagnostic log until the replacement candidate is terminal so recovery can
+distinguish missing collection from failed transfer.
+
 ## Upstream and practitioner evidence
 
 Reviewed 2026-08-25:
 
+- [Coverage.py combine documentation](https://coverage.readthedocs.io/en/latest/commands/cmd_combine.html)
+  defines discovery as the configured data-file basename plus a dotted suffix,
+  documents cross-Python aggregation, and recommends path remapping or relative
+  files when collection and reporting locations differ.
+- [Coverage.py API documentation](https://coverage.readthedocs.io/en/latest/api_coverage.html)
+  specifies strict combination as the mature fail-closed mechanism when no
+  similarly named input exists.
+- [coverage.py issue 1752](https://github.com/nedbat/coveragepy/issues/1752),
+  opened 2024-02-22 and reviewed 2026-08-25, records practitioner CI evidence that
+  platform/path drift can duplicate or omit runs during cross-environment combine.
+- [coverage.py issue 1837](https://github.com/coveragepy/coveragepy/issues/1837),
+  opened in 2024 and reviewed 2026-08-25, records the long-lived distinction
+  between ephemeral runtime paths and stable reporting paths. Gludd therefore
+  transfers the owned data artifact and preserves its stable source identity
+  instead of depending on a pytest workspace lifetime.
 - [GitHub documentation: rerunning workflows and jobs](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs?tool=cli)
   confirms reruns use the original commit and ref.
 - [GitHub CLI `gh run view` manual](https://cli.github.com/manual/gh_run_view)
