@@ -709,6 +709,11 @@
       "behavior": "make release-branch-new NAME=release/contract-validation BASE=development RELEASE_BRANCH_VALIDATE_ONLY=1"
     },
     {
+      "name": "test-ci-dual-track-local",
+      "make_variables": ["DUAL_TRACK_LOCAL_VALIDATE_ONLY", "PYTEST_ARGS", "MAX_FILES_PER_BATCH"],
+      "behavior": "make test-ci-dual-track-local DUAL_TRACK_LOCAL_VALIDATE_ONLY=1 PYTEST_ARGS='-k __gludd_contract_empty__' MAX_FILES_PER_BATCH=16"
+    },
+    {
       "name": "require-dual-track-green",
       "make_variables": ["SHA", "DUAL_TRACK_CI_VALIDATE_ONLY"],
       "behavior": "make require-dual-track-green SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa DUAL_TRACK_CI_VALIDATE_ONLY=1"

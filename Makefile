@@ -108,7 +108,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-specific test-specific-pyver test-files test-count test-integration test-e2e \
+        init sync relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck _precommit-mypy setup-dirs setup-venv clean healthcheck \
@@ -283,6 +283,7 @@ help:
 	@echo "  security              Full security: sast + sbom + Python/Node dependency audits"
 	@echo "  test-unit             Unit tests only"
 	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
+	@echo "  test-ci-dual-track-local  Canonical local all-shard evidence (DUAL_TRACK_LOCAL_VALIDATE_ONLY, PYTEST_ARGS, MAX_FILES_PER_BATCH)"
 	@echo "  test-integration      Integration tests"
 	@echo "  integration-health   Run the observable integration gate with isolated temp paths"
 	@echo "  test-e2e              End-to-end tests"
@@ -952,6 +953,13 @@ _ci-replica-clean-tree:
 	echo "BLOCKED: CI-like shard validation requires a clean worktree."; \
 	echo "Commit completed work or create a clean worktree at the pushed HEAD."; \
 	exit 1
+
+test-ci-dual-track-local: $(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),,_ci-replica-clean-tree)
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	GLUDD_CANDIDATE_SHA="$$(git rev-parse HEAD)" $(UV) run python scripts/run_ci_shards_serial.py \
+		--pytest-args="-W error $(PYTEST_ARGS)" \
+		--max-files-per-batch "$(or $(MAX_FILES_PER_BATCH),16)" $(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),--validate-only,) \
+		--attestation-output "$$RESOURCE_ROOT/ci-shards/attestation.json"
 
 test-ci-shard: _ci-replica-clean-tree
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard SHARD=unit-2"; exit 1; fi
