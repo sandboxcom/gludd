@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
 import signal
 import sys
 from pathlib import Path
@@ -181,6 +182,198 @@ def test_serial_gate_runner_is_fresh_process_and_coverage_complete() -> None:
         "--threshold=75",
     ):
         assert token in source
+
+
+def test_local_and_hosted_named_shards_use_one_bounded_runner() -> None:
+    """GHA and local release evidence must execute the same shard owner."""
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(
+        encoding="utf-8"
+    )
+    local_recipe = makefile.split("test-ci-shard:", 1)[1].split(
+        "test-ci-shard-summary:", 1
+    )[0]
+    hosted_recipe = workflow.split(
+        "- name: Test (shard ${{ matrix.shard }}", 1
+    )[1].split("- name: Collect failure diagnostics", 1)[0]
+
+    assert "scripts/run_ci_shards_serial.py" in local_recipe
+    assert "scripts/run_ci_shards_serial.py" in hosted_recipe
+    assert "scripts/adaptive_test.py" not in hosted_recipe
+    assert "retry_test" not in hosted_recipe
+    assert "--max-files-per-batch" in hosted_recipe
+    assert "--skip-isolated" in hosted_recipe
+    assert "--skip-aggregate" in hosted_recipe
+
+
+def test_serial_runner_resource_paths_live_under_external_resource_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Coverage and attestation state must not mutate the tested checkout."""
+    module = _load_script("run_ci_shards_serial")
+    resource_root = tmp_path / "resources"
+    monkeypatch.setenv("GLUDD_RESOURCE_ROOT", str(resource_root))
+
+    paths = module._resource_paths()
+
+    expected_parent = module.project_resource_root(module.ROOT)
+    assert paths.root == expected_parent / "ci-shards"
+    assert paths.root.is_relative_to(resource_root)
+    assert paths.coverage_shards.parent == paths.root
+    assert paths.coverage_json.parent == paths.root
+    assert paths.coverage_audit.parent == paths.root
+    assert paths.attestation.parent == paths.root
+    assert not str(paths.root).startswith(str(module.ROOT))
+
+
+def test_repository_identity_fails_closed_on_dirty_or_wrong_sha(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    def completed(stdout: str, returncode: int = 0) -> object:
+        return type("Completed", (), {"stdout": stdout, "returncode": returncode})()
+
+    responses = iter(
+        [
+            completed("abc123\n"),
+            completed("feature\n"),
+            completed(" M tracked.py\n"),
+        ]
+    )
+    monkeypatch.setattr(module.subprocess, "run", lambda *_args, **_kwargs: next(responses))
+
+    identity = module._repository_identity(expected_sha="def456")
+
+    assert identity["head_sha"] == "abc123"
+    assert identity["expected_sha"] == "def456"
+    assert identity["branch"] == "feature"
+    assert identity["clean"] is False
+    assert identity["exact_sha"] is False
+    assert module._identity_is_release_eligible(identity) is False
+
+
+def test_terminal_attestation_is_atomic_and_contains_exact_identity(
+    tmp_path: Path,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    destination = tmp_path / "attestations" / "unit-2.json"
+    identity = {
+        "head_sha": "abc123",
+        "expected_sha": "abc123",
+        "branch": "feature",
+        "clean": True,
+        "exact_sha": True,
+    }
+
+    module._write_terminal_attestation(
+        destination,
+        identity=identity,
+        shards=["unit-2"],
+        returncode=0,
+        started_at="2026-08-25T00:00:00Z",
+        completed_at="2026-08-25T00:01:00Z",
+    )
+
+    payload = json.loads(destination.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 1
+    assert payload["identity"] == identity
+    assert payload["shards"] == ["unit-2"]
+    assert payload["status"] == "pass"
+    assert payload["returncode"] == 0
+    assert not destination.with_suffix(".json.tmp").exists()
+
+
+def test_cli_publishes_failed_attestation_when_runner_raises(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    destination = tmp_path / "failure.json"
+    monkeypatch.setattr(
+        module,
+        "_repository_identity",
+        lambda **_kwargs: {
+            "head_sha": "abc123",
+            "expected_sha": "abc123",
+            "branch": "feature",
+            "clean": True,
+            "exact_sha": True,
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-2",
+            f"--attestation-output={destination}",
+        ],
+    )
+
+    assert module.main() == module.RUNNER_EXCEPTION_EXIT_CODE
+    payload = json.loads(destination.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    assert payload["error"] == "RuntimeError: boom"
+
+
+def test_cli_rejects_non_release_eligible_identity_before_running(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    destination = tmp_path / "identity-failure.json"
+    resource_paths = module.ResourcePaths(
+        root=tmp_path,
+        coverage_shards=tmp_path / "coverage-fragments",
+        coverage_json=tmp_path / "coverage.json",
+        coverage_audit=tmp_path / "coverage-audit.json",
+        attestation=tmp_path / "default-attestation.json",
+    )
+    monkeypatch.setattr(module, "_resource_paths", lambda: resource_paths)
+    monkeypatch.setattr(
+        module,
+        "_repository_identity",
+        lambda **_kwargs: {
+            "head_sha": "abc123",
+            "expected_sha": "def456",
+            "branch": "feature",
+            "clean": False,
+            "exact_sha": False,
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("ineligible checkout must not run"),
+    )
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-2",
+            f"--attestation-output={destination}",
+        ],
+    )
+
+    assert module.main() == 2
+    payload = json.loads(destination.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    assert payload["error"] == "repository identity is not release eligible"
+
+
+def test_serial_runner_rejects_nonpositive_batch_size() -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    with pytest.raises(ValueError, match="max_files_per_batch must be positive"):
+        module.run(["unit-2"], [], max_files_per_batch=0)
 
 
 def test_run_gate_delegates_to_serial_named_shards() -> None:
@@ -766,6 +959,17 @@ def test_serial_runner_cli_forwards_explicit_resource_bounds(
 
     monkeypatch.setattr(module, "run", run)
     monkeypatch.setattr(
+        module,
+        "_repository_identity",
+        lambda **_kwargs: {
+            "head_sha": "abc123",
+            "expected_sha": "abc123",
+            "branch": "feature",
+            "clean": True,
+            "exact_sha": True,
+        },
+    )
+    monkeypatch.setattr(
         module.sys,
         "argv",
         [
@@ -785,4 +989,54 @@ def test_serial_runner_cli_forwards_explicit_resource_bounds(
         "max_files_per_batch": 17,
         "heartbeat_seconds": 4.0,
         "no_progress_seconds": 23.0,
+        "run_isolated": True,
+        "aggregate_coverage": True,
+        "coverage_output": None,
     }
+
+
+def test_serial_runner_cli_forwards_hosted_single_shard_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    received: dict[str, object] = {}
+    coverage_output = tmp_path / ".coverage.unit-2-3.11"
+
+    def run(
+        shards: list[str],
+        pytest_args: list[str],
+        **kwargs: object,
+    ) -> int:
+        received.update(shards=shards, pytest_args=pytest_args, **kwargs)
+        return 0
+
+    monkeypatch.setattr(module, "run", run)
+    monkeypatch.setattr(
+        module,
+        "_repository_identity",
+        lambda **_kwargs: {
+            "head_sha": "abc123",
+            "expected_sha": "abc123",
+            "branch": "feature",
+            "clean": True,
+            "exact_sha": True,
+        },
+    )
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-2",
+            "--pytest-args=-W error",
+            "--skip-isolated",
+            "--skip-aggregate",
+            f"--coverage-output={coverage_output}",
+        ],
+    )
+
+    assert module.main() == 0
+    assert received["run_isolated"] is False
+    assert received["aggregate_coverage"] is False
+    assert received["coverage_output"] == coverage_output

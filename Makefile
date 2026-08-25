@@ -946,11 +946,15 @@ _ci-replica-clean-tree:
 
 test-ci-shard: _ci-replica-clean-tree
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard SHARD=unit-2"; exit 1; fi
-	@BT="/tmp/gludd-ci-shard-$(SHARD)-$${ID:-$$$$}"; rm -rf "$$BT"; \
-	TESTFILES="$$( $(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)" --shell )"; \
-	if [ -z "$$TESTFILES" ]; then echo ERROR: unknown-or-empty ci shard; rm -rf "$$BT"; exit 2; fi; echo "=== ci shard $(SHARD): local replica ==="; \
-	$(UV) run python -m pytest $$TESTFILES $(_XD) -v -W error $(PYTEST_ARGS) --basetemp="$$BT"; \
-	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	GLUDD_CANDIDATE_SHA="$$(git rev-parse HEAD)" $(UV) run python scripts/run_ci_shards_serial.py \
+		--shards "$(SHARD)" \
+		--pytest-args="-W error $(PYTEST_ARGS)" \
+		--max-files-per-batch "$(or $(MAX_FILES_PER_BATCH),64)" \
+		--skip-isolated \
+		--skip-aggregate \
+		--coverage-output "$$RESOURCE_ROOT/ci-shards/.coverage.$(SHARD)" \
+		--attestation-output "$$RESOURCE_ROOT/ci-shards/$(SHARD)-attestation.json"
 
 test-ci-shard-summary: _ci-replica-clean-tree
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard-summary SHARD=unit-2"; exit 1; fi

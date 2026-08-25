@@ -511,125 +511,17 @@ jobs:
       - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         id: test-run
         timeout-minutes: 40
-        # Expand $TESTPATHS with bash so wildcard patterns like test_[a-e]*.py
-        # are resolved by the shell before pytest sees them.  When the glob
-        # matches nothing (e.g. a new shard boundary) pytest exits 5 (no tests
-        # collected); we treat that as a pass so adding new letters never
-        # hard-blocks CI — the empty shard is just a no-op.
-        #
-        # EVERY shard collects coverage data (.coverage SQLite file) so the
-        # `coverage` job downstream can merge them into a single canonical
-        # coverage.xml.  --cov-report= suppresses per-shard terminal/xml output
-        # (noise across 12 shard legs); the merged report is produced by the
-        # `coverage` job.  Coverage gate is enforced by the `coverage` job
-        # downstream via pyproject.toml fail_under=70.
-        #
-        # RETRY: flaky tests get up to 2 retries with exponential backoff
-        # (10s → 20s). Only retries on non-zero exit codes (test failures,
-        # worker crashes, runner OOM). Exit code 5 (no tests collected) is not
-        # retried — an empty shard is always a pass.
         run: |
-          retry_test() {
-            local max_attempts=2
-            local delay=10
-            local attempt=1
-            local rc=0
-            while [ $attempt -le $max_attempts ]; do
-              echo "::group::Test attempt ${attempt}/${max_attempts} (shard ${{ matrix.shard }})"
-              set +e
-              "_run_tests" "$@"
-              rc=$?
-              set -e
-              echo "::endgroup::"
-              if [ $rc -eq 0 ]; then
-                echo "Test passed on attempt ${attempt}"
-                return 0
-              fi
-              if [ $rc -eq 5 ]; then
-                echo "::error::No tests collected (exit 5) for required shard"
-                return $rc
-              fi
-              if [ $attempt -lt $max_attempts ]; then
-                echo "::warning::Test attempt ${attempt} failed (exit ${rc}), retrying in ${delay}s..."
-                sleep $delay
-                delay=$((delay * 2))
-              fi
-              attempt=$((attempt + 1))
-            done
-            echo "::error::All ${max_attempts} test attempts failed (last exit: ${rc})"
-            return $rc
-          }
-          _run_tests() {
-            echo "=== CI PHASE: test-shard-${{ matrix.shard }} ==="
-            TESTPATHS="${{ matrix.testpaths }}"
-            EXCLUDES="${{ matrix.exclude }}"
-            FILES=""
-            for f in $TESTPATHS; do
-              keep=1
-              for pat in $EXCLUDES; do
-                case "$f" in
-                  $pat) keep=0 ;;
-                esac
-              done
-              if [ "$keep" -eq 1 ]; then
-                FILES="$FILES $f"
-              fi
-            done
-            if [ -z "${FILES// /}" ]; then
-              echo "::error::Shard '${{ matrix.shard }}' selected no files after exclusions"
-              exit 1
-            fi
-            set +e
-            uv run python scripts/adaptive_test.py $FILES \
-              --cov=general_ludd \
-              --cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils \
-              --cov-report= \
-              --cov-fail-under=0 \
-              -W error \
-              -v
-            rc=$?
-            set -e
-            if [ $rc -ne 0 ]; then
-              return $rc
-            fi
-            # combine exits 1 when no parts exist ("No data to combine") —
-            # never let that fail the shard's TEST verdict; the aggregate
-            # coverage job gates completeness (EXPECTED_SHARD_COVERAGE_FILES).
-            # Explicit set +e/-e: the tag pipeline's fail-closed contract
-            # bans shell escape hatches (beta3 pipeline test).
-            set +e
-            uv run coverage combine
-            combine_rc=$?
-            set -e
-            if [ "$combine_rc" -ne 0 ]; then
-              echo "::warning::coverage combine found no parts (shard tests all passed); aggregate coverage job gates completeness"
-            fi
-            COVERAGE_FILE=".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
-            if [ -s .coverage ]; then
-              # pytest-cov wrote the default data file: promote it to the
-              # shard-scoped artifact name the upload step expects.
-              cp .coverage "$COVERAGE_FILE"
-              test -s "$COVERAGE_FILE"
-            elif [ -s "$COVERAGE_FILE" ]; then
-              # combine already merged the shard-scoped parts (COVERAGE_FILE
-              # env) into the artifact path directly.
-              test -s "$COVERAGE_FILE"
-            else
-              # pytest-cov can lose its atexit write under an abrupt
-              # wrapper exit even when every test passed (round-14
-              # unit-1a1: 3662/3662 then 'No data to combine').
-              echo "::warning::shard coverage data missing; aggregate coverage job will flag it"
-            fi
-            # Upload guarantee: the upload-artifact step fails the whole
-            # shard job when NO file matches its path (if-no-files-found:
-            # error — required by the beta3 fail-closed contract). This
-            # marker exists in every outcome so a lost coverage file can
-            # never fail an otherwise-green shard; the aggregate coverage
-            # job gates completeness by counting only real .coverage.* files.
-            echo "${{ matrix.shard }}" > coverage-shard-marker.txt
-            return 0
-          }
-          retry_test
+          echo "=== CI PHASE: test-shard-${{ matrix.shard }} ==="
+          uv run python scripts/run_ci_shards_serial.py \
+            --shards "${{ matrix.shard }}" \
+            --pytest-args="-W error" \
+            --max-files-per-batch 64 \
+            --skip-isolated \
+            --skip-aggregate \
+            --coverage-output ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}" \
+            --attestation-output "ci-shard-attestation.json"
+          echo "${{ matrix.shard }}" > coverage-shard-marker.txt
         env:
           # Shard-scoped coverage data file: parallel shards share this
           # workspace cwd, and coverage's default data/part files would
@@ -647,6 +539,7 @@ jobs:
           # RAM + cores) is deterministic and self-documenting even if that
           # default ever changes. This is what un-throttles the isolated shards.
           CI: "true"
+          GLUDD_RESOURCE_ROOT: "${{ runner.temp }}/gludd-${{ github.sha }}-${{ matrix.shard }}-${{ matrix.python-version }}"
           # Per-xdist-worker RLIMIT_AS backstop (conftest.py pytest_configure).
           # RLIMIT_AS caps VIRTUAL address space, which for this dependency set
           # (eager tree_sitter C-ext, OpenSSL via cryptography, psycopg binary,
@@ -694,13 +587,12 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: coverage-${{ matrix.shard }}-${{ matrix.python-version }}
-          # The marker file always exists (written in every shard outcome),
-          # so a lost pytest-cov atexit write cannot trip if-no-files-found:
-          # error on an otherwise-green shard. The aggregate job only copies
-          # real .coverage.* files — the marker is ignored by its find glob.
+          # The atomic terminal attestation exists on pass or failure. The
+          # aggregate job still gates the exact real .coverage.* file count.
           path: |
             .coverage.${{ matrix.shard }}-${{ matrix.python-version }}
             coverage-shard-marker.txt
+            ci-shard-attestation.json
           if-no-files-found: error
           retention-days: 7
 
@@ -775,8 +667,8 @@ jobs:
   molecule:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
     runs-on: ubuntu-latest
-    # Each shard owns two bounded attempts plus cleanup/log publication.  The
-    # former 15m job ceiling killed a healthy first attempt mid-scenario.
+    # Each shard owns one bounded pass plus cleanup/log publication. Re-running
+    # a whole shard duplicated completed scenarios and exhausted this ceiling.
     timeout-minutes: 45
     # Molecule validates release-bound Ansible content and is therefore blocking.
     strategy:
@@ -799,43 +691,15 @@ jobs:
         # serves llama.cpp, generates with up to max_attempts=3 (retry +
         # corrective prompt), and verifies via the acceptance engine — the
         # previous 12-minute cap expired mid-scenario (2026-08-16 round 9).
-        timeout-minutes: 20
+        timeout-minutes: 40
         # The `default` (localhost) driver needs no container, so this runs on
         # plain GH runners. Each scenario starts its own stdlib mock daemon via
         # prepare.yml — nothing external is required. Scenarios are sorted and
         # split into 4 contiguous groups by molecule-test-shard.
-        # RETRY: molecule scenarios can be timing-sensitive in CI; 2 attempts
-        # with 15s → 30s backoff catches transient failures.
         run: |
-          retry_molecule() {
-            local max_attempts=2
-            local delay=15
-            local attempt=1
-            local rc=0
-            while [ $attempt -le $max_attempts ]; do
-              echo "::group::Molecule attempt ${attempt}/${max_attempts} (shard ${{ matrix.shard }}/4)"
-              set +e
-              echo "=== CI PHASE: molecule-shard-${{ matrix.shard }} ==="
-              uv sync
-              make molecule-test-shard SHARD=${{ matrix.shard }}/4
-              rc=$?
-              set -e
-              echo "::endgroup::"
-              if [ $rc -eq 0 ]; then
-                echo "Molecule shard ${{ matrix.shard }}/4 passed on attempt ${attempt}"
-                return 0
-              fi
-              if [ $attempt -lt $max_attempts ]; then
-                echo "::warning::Molecule attempt ${attempt} failed (exit ${rc}), retrying in ${delay}s..."
-                sleep $delay
-                delay=$((delay * 2))
-              fi
-              attempt=$((attempt + 1))
-            done
-            echo "::error::MOLECULE SHARD ${{ matrix.shard }}/4 FAILED after ${max_attempts} attempts — check molecule logs above for details."
-            return $rc
-          }
-          retry_molecule
+          echo "=== CI PHASE: molecule-shard-${{ matrix.shard }} ==="
+          uv sync
+          make molecule-test-shard SHARD=${{ matrix.shard }}/4
         env:
           GLUDD_AUTH_PSK: ""
       - name: Tail molecule logs (quick triage)
