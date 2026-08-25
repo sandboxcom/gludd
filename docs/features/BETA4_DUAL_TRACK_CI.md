@@ -171,6 +171,17 @@ clock while retaining `time.monotonic` as its production default. The tests use
 an exact 80 ms interval, leave all anomaly thresholds unchanged, and pass 45
 tests with warnings as errors at 98% branch coverage.
 
+Candidate `b63528a3dfe63ed9c65ed55c88aa50582df6caec` passed local batches 1
+through 33 while hosted run `32848939596` exercised the same commit. Batch
+34 found that UUIDv7 values used independent random suffixes and therefore
+were not ordered within one millisecond. It also found a ULID invalid-character
+fixture whose 23-character length correctly failed before character validation.
+The hosted run was cancelled immediately. UUIDv7 now uses RFC 9562 Method 1's
+42-bit counter followed by a 32-bit random tail, matching the mature CPython
+layout while retaining Gludd's explicit-timestamp API. The ULID fixture is now
+exactly 26 characters and reaches the intended illegal-character branch. The
+focused file passes 31 tests with warnings as errors at 93% branch coverage.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -309,3 +320,12 @@ Reviewed 2026-08-25:
   records a practitioner report of invalid duration results from the wrong clock
   source and the resulting move to a monotonic performance clock. Gludd also
   makes that clock injectable so threshold tests do not depend on scheduler load.
+- [RFC 9562 section 6.2](https://www.rfc-editor.org/rfc/rfc9562.html#section-6.2)
+  specifies a counter immediately after the timestamp for ordered UUIDv7 batch
+  generation within one millisecond.
+- [CPython's UUIDv7 implementation](https://github.com/python/cpython/blob/main/Lib/uuid.py)
+  is the mature implementation reference for the 42-bit counter and 32-bit
+  random-tail layout adopted by Gludd.
+- [CPython issue 102461](https://github.com/python/cpython/issues/102461)
+  preserves the multi-year practitioner and maintainer discussion that led to
+  UUIDv7 support in the standard library.
