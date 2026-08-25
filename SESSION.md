@@ -1,9 +1,9 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.4 prepared; release-cut blocked on CI green. Session 85: HEAD `16a8478f` on `development`. Round 18 verdicts: molecule 31993898325 FAILED only binary_smoke_linux (transitive warning digest drift — re-pinned `58837b45`, baseline `07172af0`); build 31993898379 FAILED on the same class + the beta3 escape-hatch literal in a comment (fixed `c8c6442e`). Round 19 staged (3 commits) — 2 more commits needed for the normal batch-push (force-push rate-guard exhausted). Next: round-19 push → CI green → `make development-merge-to-master` → `make release-cut TAG='v0.1.0-beta.4'`.
+## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.4 candidate repair is dual tracked; release-cut remains blocked until local and hosted terminal attestations are green for one exact SHA. The latest candidate `5d4ddc7fa338c416ffc8ab46d1a4386455d0d79b` was invalidated by local unit-3b batch 26 and hosted run `32833535093` was cancelled. Next: commit the batch-26 owner repairs, start both lanes on the replacement SHA, then run `make require-dual-track-green SHA=<full-sha>` before promotion.
 
 ## Current Gate Status
 <!-- gate:begin -->
-- Candidates `e640d07daa473faf552108062919faebb7ae6c56`, `f3403750c184558a2fcb31715756f9da5a472ffa`, `46df20c76d1f66d11e36d863668d1e5616981f1b`, and `fc57c087f3c51c398d034231fb56faaa156ef834` were invalidated by exact local or hosted failures.
-- Hosted runs `32827145131`, `32828457339`, `32830158475`, and `32832065106` are cancelled or otherwise non-authoritative for the replacement candidate.
+- Candidates `e640d07daa473faf552108062919faebb7ae6c56`, `f3403750c184558a2fcb31715756f9da5a472ffa`, `46df20c76d1f66d11e36d863668d1e5616981f1b`, `fc57c087f3c51c398d034231fb56faaa156ef834`, and `5d4ddc7fa338c416ffc8ab46d1a4386455d0d79b` were invalidated by exact local or hosted failures.
+- Hosted runs `32827145131`, `32828457339`, `32830158475`, `32832065106`, and `32833535093` are cancelled or otherwise non-authoritative for the replacement candidate.
 <!-- gate:end -->
 
 ---

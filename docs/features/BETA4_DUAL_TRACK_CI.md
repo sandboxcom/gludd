@@ -86,6 +86,18 @@ repository-wide marker audit. This demonstrates that candidate invalidation is
 recursive: fixing the prior boundary only earns the right to discover the next
 one on a new immutable SHA.
 
+Candidate `5d4ddc7fa338c416ffc8ab46d1a4386455d0d79b` then passed that exact
+batch-25 boundary before batch 26 found two independent ledger-ownership defects.
+One structural guard flattened implementation paths to basenames after the
+directives implementation moved under `impl/`, so it opened a nonexistent
+top-level file instead of auditing the discovered source. The other defect was
+real ledger drift: historical rows were checked while still describing
+nonterminal work, and completed rows lacked the file or Make evidence now
+required by the completion contract. Hosted run `32833535093` was cancelled.
+The scanner now preserves plugin-relative paths, nonterminal ledger rows are
+unchecked, and completed historical rows name their durable source or test
+evidence. The guards remain strict.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
