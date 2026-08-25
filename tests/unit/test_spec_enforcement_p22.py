@@ -64,7 +64,7 @@ class TestP22PushGuardNotCircumventable:
         "ci-push",
     ]
 
-    def test_every_push_target_has_push_rate_guard(self):
+    def test_every_push_target_has_push_rate_guard(self) -> None:
         content = MAKEFILE.read_text()
         graph = _build_dependency_graph(content)
         missing = []
@@ -78,16 +78,23 @@ class TestP22PushGuardNotCircumventable:
                 missing.append(f"'{target}' missing _push-rate-guard (direct prereqs: {sorted(direct)})")
         assert not missing, "P22 VIOLATION — push targets without _push-rate-guard:\n" + "\n".join(missing)
 
-    def test_force_push_still_goes_through_guard(self):
+    def test_force_push_still_goes_through_guard(self) -> None:
         content = MAKEFILE.read_text()
         graph = _build_dependency_graph(content)
         if "force-push" in graph:
             deps = _transitive_prereqs(graph, "force-push")
-            assert "_push-rate-guard" in deps or "git-push-sandboxcom" in deps, (
+            target_start = content.find("\nforce-push:")
+            target_end = content.find("\n\n", target_start)
+            recipe = content[target_start : target_end if target_end != -1 else len(content)]
+            assert (
+                "_push-rate-guard" in deps
+                or "git-push-sandboxcom" in deps
+                or ("_push-rate-guard" in recipe and "git-push-sandboxcom" in recipe)
+            ), (
                 "P22: force-push must delegate to a guarded push target"
             )
 
-    def test_master_force_push_uses_push_rate_guard(self):
+    def test_master_force_push_uses_push_rate_guard(self) -> None:
         content = MAKEFILE.read_text()
         graph = _build_dependency_graph(content)
         if "master-force-push" in graph:

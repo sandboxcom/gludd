@@ -3497,7 +3497,7 @@ _push-rate-guard:
 	fi
 
 force-push:
-	@GLUDD_FORCE_PUSH=1 $(MAKE) git-push-sandboxcom
+	@GLUDD_FORCE_PUSH=1 $(MAKE) --no-print-directory _push-rate-guard git-push-sandboxcom
 
 master-force-push:
 	@GLUDD_FORCE_PUSH=1 $(MAKE) --no-print-directory _push-rate-guard
@@ -5451,7 +5451,7 @@ agent-merge-dev:
 development-push: check-clean-tree ci-busy-check _push-rate-guard
 	@$(MAKE) ci-busy-check BRANCH=development
 	@$(MAKE) require-sandboxcom-ssh-key
-	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom development
+	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom development
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
 	@echo "Development branch pushed and verified"
 

@@ -15,11 +15,11 @@ ROOT = Path(__file__).parent.parent.parent
 class TestS25StopPluginNoSystemTransform:
     """S25 — stop plugin must not use system.transform to modify prompts."""
 
-    def test_stop_plugin_registration(self):
+    def test_stop_plugin_registration(self) -> None:
         opencode_json = ROOT / "opencode.json"
         assert opencode_json.exists(), "S25: opencode.json must exist"
         config = json.loads(opencode_json.read_text())
-        plugins = config.get("plugins", []) if isinstance(config, dict) else config
+        plugins = config.get("plugin", []) if isinstance(config, dict) else config
 
         # enforce-stop.ts should not register experimental.chat.system.transform
         for plugin in plugins:
@@ -31,22 +31,22 @@ class TestS25StopPluginNoSystemTransform:
                     pass  # Present but may be benign — verify further
                 break
 
-    def test_enforce_stop_plugin_exists(self):
+    def test_enforce_stop_plugin_exists(self) -> None:
         plugin_path = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
         assert plugin_path.exists(), "S25: enforce-stop.ts plugin must exist"
 
-    def test_enforce_stop_impl_exists(self):
-        impl_path = ROOT / ".opencode" / "plugin" / "enforce_stop_impl.ts"
+    def test_enforce_stop_impl_exists(self) -> None:
+        impl_path = ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
         assert impl_path.exists(), "S25: enforce_stop_impl.ts must exist"
 
-    def test_system_transform_not_registered_in_stop_plugin(self):
+    def test_system_transform_not_registered_in_stop_plugin(self) -> None:
         """The stop plugin should use text.complete / session.idle / tool.execute.before
         hooks — not system.transform (which writes into the system prompt)."""
         opencode_json = ROOT / "opencode.json"
         if not opencode_json.exists():
             return
         config = json.loads(opencode_json.read_text())
-        plugins = config.get("plugins", []) if isinstance(config, dict) else config
+        plugins = config.get("plugin", []) if isinstance(config, dict) else config
 
         for plugin in plugins:
             plugin_entry = plugin if isinstance(plugin, dict) else {"path": plugin}

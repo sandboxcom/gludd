@@ -40,6 +40,15 @@ anti-essay runtime also treats `let me explain` as a status-summary phrase, with
 an actual hook invocation proving that pending-work output is replaced rather
 than relying only on a source-text assertion.
 
+Batch 18 exposed a second orchestration-specific contract gap while the hosted
+run for the earlier candidate was still active: the normal development push
+suppressed repository hooks, and the force-push wrapper made its mandatory
+CI-in-flight guard visible only through an implicit recursive dependency. The
+normal path now preserves hooks, and the force path invokes the rate/active-run
+guard and guarded push as explicit goals in one Make process. Structural tests
+also follow the current singular plugin manifest, implementation directory, TDD
+mapping, and distinct `GATE`/`GATE-LITE` progress marker contracts.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
