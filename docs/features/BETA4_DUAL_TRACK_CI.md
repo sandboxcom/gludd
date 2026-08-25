@@ -161,6 +161,16 @@ the test defect. Hosted run `32844962204` was cancelled. The guard now parses
 the function AST and requires every literal view case to call its exact table
 builder; the focused TUI surface passes 114 tests with warnings as errors.
 
+Candidate `6a6bf83b82a1d8d14c130e3080afc01ade9e7e6e` passed local batches 1
+through 27 while hosted run `32846967040` exercised the same commit. Batch
+28 then exposed a scheduler-dependent duration test: a real 50 ms sleep sat
+exactly on the anomaly floor after subtracting a 1 ms baseline, so host load
+could move the result across the boundary. The hosted run was cancelled and
+the candidate invalidated. `DurationTracker` now accepts an injected monotonic
+clock while retaining `time.monotonic` as its production default. The tests use
+an exact 80 ms interval, leave all anomaly thresholds unchanged, and pass 45
+tests with warnings as errors at 98% branch coverage.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -292,3 +302,10 @@ Reviewed 2026-08-25:
   defines the literal `match`/`case` dispatch used by the TUI renderer; contract
   tests inspect that syntax tree instead of requiring an obsolete conditional
   spelling.
+- [Python `time.monotonic` documentation](https://docs.python.org/3/library/time.html#time.monotonic)
+  defines the production clock as one that cannot move backwards and is not
+  affected by system-clock updates.
+- [pytest issue 13384](https://github.com/pytest-dev/pytest/issues/13384)
+  records a practitioner report of invalid duration results from the wrong clock
+  source and the resulting move to a monotonic performance clock. Gludd also
+  makes that clock injectable so threshold tests do not depend on scheduler load.
