@@ -26,6 +26,12 @@ for every atomic attestation publish. Both resources are cleaned by their owner.
 The first bounded local replay then stopped on an omitted pygame LGPL notice;
 the shipped third-party notice and license audit now explicitly cover every
 reviewed LGPL allowlist entry instead of treating the allowlist as documentation.
+After that correction, batch 11 exposed a long-lived-process import boundary:
+an `ApplyTier.CODE` instance created before a module reload did not satisfy an
+identity comparison against the recreated enum class and lost its exclusive
+source-mutation resource. The scheduler boundary now compares the stable enum
+wire value, preserving serialization across reloads without retaining old
+module objects.
 
 ## The rule
 
@@ -120,3 +126,10 @@ Reviewed 2026-08-25:
 - [Git worktree documentation](https://git-scm.com/docs/git-worktree) describes
   locked worktree ownership and pruning behavior used to preserve active candidate
   state.
+- [Python Enum HOWTO](https://docs.python.org/3/howto/enum.html#comparisons)
+  warns that reloading a module recreates its enum classes and members, so old
+  and new members may no longer compare identical or equal.
+- [Python.org discussion 105716](https://discuss.python.org/t/how-to-deal-with-enum-reload-problem/105716)
+  records a current practitioner report of the same reload identity failure.
+- [CPython issue 74730](https://github.com/python/cpython/issues/74730) preserves
+  the long-lived 2017 report and reproducer for enum equality across reloads.
