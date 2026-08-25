@@ -9,6 +9,7 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import resource
 import signal
@@ -107,7 +108,7 @@ class TestProcessBackendExecute:
 
         class FakeProcess:
             pid = 4242
-            returncode = -signal.SIGKILL
+            returncode: int | None = None
 
             def __init__(self) -> None:
                 self.communications = 0
@@ -129,14 +130,155 @@ class TestProcessBackendExecute:
             popen_kwargs.update(kwargs)
             return process
 
+        def kill_group(pgid: int, sig: int) -> None:
+            killed.append((pgid, sig))
+            process.returncode = -sig
+
         monkeypatch.setattr(subprocess, "Popen", fake_popen)
-        monkeypatch.setattr(os, "killpg", lambda pgid, sig: killed.append((pgid, sig)))
+        monkeypatch.setattr(os, "getpgid", lambda pid: pid)
+        monkeypatch.setattr(os, "getsid", lambda pid: process.pid if pid else 101)
+        monkeypatch.setattr(os, "getpgrp", lambda: 101)
+        monkeypatch.setattr(os, "killpg", kill_group)
 
         result = module.ProcessBackend(SandboxConfig(timeout=1)).execute("sleep 10")
 
         assert popen_kwargs["start_new_session"] is True
         assert killed == [(process.pid, signal.SIGKILL)]
         assert result.was_killed is True
+
+    def test_timeout_never_signals_an_ambiguous_caller_group(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from general_ludd.sandbox.backends import process_backend as module
+
+        class FakeProcess:
+            pid = 0
+            returncode: int | None = None
+
+            def __init__(self) -> None:
+                self.communications = 0
+                self.direct_kills = 0
+
+            def communicate(self, *, timeout: float) -> tuple[str, str]:
+                self.communications += 1
+                if self.communications == 1:
+                    raise subprocess.TimeoutExpired("command", timeout)
+                return "", ""
+
+            def kill(self) -> None:
+                self.direct_kills += 1
+                self.returncode = -signal.SIGKILL
+
+        process = FakeProcess()
+        kill_group = mock.Mock()
+        monkeypatch.setattr(
+            subprocess, "Popen", lambda *_args, **_kwargs: process
+        )
+        monkeypatch.setattr(os, "killpg", kill_group)
+
+        result = module.ProcessBackend(SandboxConfig(timeout=1)).execute("wait")
+
+        kill_group.assert_not_called()
+        assert process.direct_kills == 1
+        assert result.was_killed is True
+
+    def test_timeout_requires_a_confined_child_session_and_group(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from general_ludd.sandbox.backends import process_backend as module
+
+        class FakeProcess:
+            pid = 4242
+            returncode: int | None = None
+
+            def __init__(self) -> None:
+                self.communications = 0
+                self.direct_kills = 0
+
+            def communicate(self, *, timeout: float) -> tuple[str, str]:
+                self.communications += 1
+                if self.communications == 1:
+                    raise subprocess.TimeoutExpired("command", timeout)
+                return "", ""
+
+            def kill(self) -> None:
+                self.direct_kills += 1
+                self.returncode = -signal.SIGKILL
+
+        process = FakeProcess()
+        kill_group = mock.Mock()
+        monkeypatch.setattr(
+            subprocess, "Popen", lambda *_args, **_kwargs: process
+        )
+        monkeypatch.setattr(os, "getpgid", lambda _pid: 202)
+        monkeypatch.setattr(os, "getsid", lambda _pid: 202)
+        monkeypatch.setattr(os, "getpgrp", lambda: 202)
+        monkeypatch.setattr(os, "killpg", kill_group)
+
+        module.ProcessBackend(SandboxConfig(timeout=1)).execute("wait")
+
+        kill_group.assert_not_called()
+        assert process.direct_kills == 1
+
+    @pytest.mark.parametrize("returncode", [0, 2, -signal.SIGKILL])
+    def test_completed_process_termination_is_idempotent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        returncode: int,
+    ) -> None:
+        from general_ludd.sandbox.backends import process_backend as module
+
+        process = mock.Mock(pid=4242, returncode=returncode)
+        kill_group = mock.Mock()
+        monkeypatch.setattr(os, "killpg", kill_group)
+
+        module._terminate_owned_process(cast(subprocess.Popen[str], process))
+        module._terminate_owned_process(cast(subprocess.Popen[str], process))
+
+        kill_group.assert_not_called()
+        process.kill.assert_not_called()
+
+    def test_cancellation_terminates_and_reaps_verified_child_group(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from general_ludd.sandbox.backends import process_backend as module
+
+        class FakeProcess:
+            pid = 4242
+            returncode: int | None = None
+
+            def __init__(self) -> None:
+                self.communications = 0
+
+            def communicate(self, *, timeout: float) -> tuple[str, str]:
+                self.communications += 1
+                if self.communications == 1:
+                    raise asyncio.CancelledError
+                return "", ""
+
+            def kill(self) -> None:
+                raise AssertionError("verified child group must be terminated as a group")
+
+        process = FakeProcess()
+        killed: list[tuple[int, int]] = []
+
+        def kill_group(pgid: int, sig: int) -> None:
+            killed.append((pgid, sig))
+            process.returncode = -sig
+
+        monkeypatch.setattr(
+            subprocess, "Popen", lambda *_args, **_kwargs: process
+        )
+        monkeypatch.setattr(os, "getpgid", lambda pid: pid)
+        monkeypatch.setattr(os, "getsid", lambda pid: process.pid if pid else 101)
+        monkeypatch.setattr(os, "getpgrp", lambda: 101)
+        monkeypatch.setattr(os, "killpg", kill_group)
+
+        with pytest.raises(asyncio.CancelledError):
+            module.ProcessBackend(SandboxConfig(timeout=1)).execute("wait")
+
+        assert killed == [(process.pid, signal.SIGKILL)]
+        assert process.communications == 2
 
     def test_linux_user_task_count_tracks_real_uid_threads(
         self, monkeypatch: pytest.MonkeyPatch
@@ -271,7 +413,7 @@ class TestProcessBackendExecute:
 
         class FakeProcess:
             pid = 33
-            returncode = -1
+            returncode: int | None = None
 
             def __init__(self) -> None:
                 self.calls = 0
@@ -309,10 +451,16 @@ class TestProcessBackendExecute:
 
         class FakeProcess:
             pid = 44
-            returncode = None
+
+            def __init__(self) -> None:
+                self.returncode: int | None = None
+                self.killed = False
 
             def communicate(self, *, timeout: float) -> tuple[str, str]:
                 raise subprocess.TimeoutExpired("command", timeout)
+
+            def kill(self) -> None:
+                self.killed = True
 
         monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: FakeProcess())
         monkeypatch.setattr(os, "killpg", lambda _pgid, _sig: None)
