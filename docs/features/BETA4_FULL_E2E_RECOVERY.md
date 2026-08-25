@@ -323,6 +323,23 @@ before any generation, initialization, or validation. Structural reads remain
 against tracked source, while every mutable command uses the copied root; no
 ignore rule, retry, or after-the-fact checkout scrub hides a write.
 
+The first exact-SHA push then proved the generated ownership inventory also
+needed an explicit scanner contract: its 64-character SHA-256 evidence fields
+were correctly classified as high-entropy hex, blocking all 185 records.
+Practitioners in detect-secrets issue
+[#280](https://github.com/Yelp/detect-secrets/issues/280) describe the same
+maintenance failure for generated integrity hashes that change on every lock
+refresh, and issue
+[#870](https://github.com/Yelp/detect-secrets/issues/870) records cross-platform
+pipeline false positives for frequently-changing hashes and registry paths.
+The upstream
+[filter documentation](https://github.com/Yelp/detect-secrets/blob/master/docs/filters.md)
+defines `regex.should_exclude_file` as the implementation of exact file
+exclusions. Reviewed on 2026-08-24, Gludd therefore excludes only the anchored
+`config/resource_ownership_inventory.json` path. A regression proves the regex
+does not match a sibling inventory, and the full secret scan remains green;
+source files represented by the inventory continue to be scanned normally.
+
 ## Verification and resources
 
 The focused matrix runs one deterministic authentication/readiness test in both
