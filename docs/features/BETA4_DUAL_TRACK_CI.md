@@ -318,6 +318,15 @@ still fail closed. This keeps Ctrl-C bounded through child TERM-to-KILL and owne
 cleanup without leaking resources or replacing the terminal shard result with a
 cleanup traceback.
 
+Hosted shard failure collection always writes one non-hidden, shard-and-Python
+named diagnostic log while streaming the same bounded host evidence to the job.
+Each probe reports its own unavailable state without aborting later probes, and
+the step verifies that the log is non-empty before upload. This guarantees a
+downloadable artifact even when pytest and coverage produced no files; hidden
+coverage data remains an optional companion rather than the artifact's existence
+condition. Rollback removes only this immutable diagnostic-file contract and does
+not affect the tested service or any running candidate.
+
 Feature work may continue on another branch while a candidate is tested, but the
 candidate SHA, workflow definition, and evidence set remain immutable. A failed
 candidate is abandoned and a new commit starts both lanes again. This gives
@@ -385,6 +394,12 @@ Reviewed 2026-08-25:
 - [GitHub Actions runner issue 3760](https://github.com/actions/runner/issues/3760)
   reports cross-runner state and ownership failures when runtime directories are
   shared, supporting Gludd's per-project, per-batch namespaces.
+- [GitHub's `upload-artifact` documentation](https://github.com/actions/upload-artifact#uploading-hidden-files),
+  reviewed 2026-08-25, specifies that dotfiles are excluded by default and that
+  `if-no-files-found: error` fails when no eligible path exists.
+- [`upload-artifact` issue 602](https://github.com/actions/upload-artifact/issues/602),
+  reviewed 2026-08-25, records practitioner impact from the hidden-file default;
+  Gludd therefore materializes an explicit non-hidden diagnostic log.
 - [pygame license clarification issue 3521](https://github.com/pygame/pygame/issues/3521)
   records practitioner concern about ambiguous LGPL version notation, supporting
   a version-pinned upstream license link in the shipped notice.
