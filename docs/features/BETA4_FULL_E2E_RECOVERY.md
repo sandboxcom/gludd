@@ -290,6 +290,20 @@ the test's loop, owns the client with `async with`, and disposes the engine in a
 `finally` block. There is no post-test collector, retry, sleep, or external
 cleanup task to hide a missing owner.
 
+The exact-SHA hosted/local replay then exposed a second async-database case in
+the self-update audit sink. The synchronous apply ladder schedules persistence
+on the request loop; shutdown previously cancelled the task immediately and a
+cancelled commit could return a still-live driver connection to finalization.
+The sink now has an application-scoped task registry, waits a bounded five
+seconds for durable writes to finish, and cancels only the remainder before the
+engine is disposed. This also removes the module-global registry that allowed
+one daemon instance to drain another instance's work. The regression holds
+every created `aiosqlite.Connection` strongly and proves each driver's backing
+connection is closed after the protected request lifespan. The same 2024
+SQLAlchemy practitioner discussions above support finishing explicit async
+cleanup in the owning event loop; no garbage-collection hook or post-test
+reaper is used.
+
 ## Verification and resources
 
 The focused matrix runs one deterministic authentication/readiness test in both

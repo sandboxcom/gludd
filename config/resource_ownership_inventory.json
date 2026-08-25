@@ -1093,18 +1093,18 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 1100,
+      "line": 1108,
       "column": 15,
       "kind": "async-task",
       "owner": "_build_self_update_audit_sink._sink",
       "acquisition": "running_loop.create_task(_persist(record))",
-      "teardown": "ownership-transfer:_SELF_UPDATE_AUDIT_TASKS; cancel_and_drain_tasks(_SELF_UPDATE_AUDIT_TASKS, registry=_SELF_UPDATE_AUDIT_TASKS)",
-      "source_hash": "4525cdafbe89cdcea07342282b698934241a6fcdf0474831ee83d46fb2bae3c5",
+      "teardown": "ownership-transfer:track_owned_task(task, owned_tasks)",
+      "source_hash": "9805bed5e38dc6d6a87b01b02a30fbfd90c220d909d0218808d634c8c7871cf7",
       "owned": true
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 1157,
+      "line": 1164,
       "column": 15,
       "kind": "client",
       "owner": "_warm_start_local_models",
@@ -1115,7 +1115,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 1245,
+      "line": 1252,
       "column": 18,
       "kind": "service",
       "owner": "_lifespan",
@@ -1126,7 +1126,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 2361,
+      "line": 2372,
       "column": 15,
       "kind": "async-task",
       "owner": "_lifespan",
@@ -1137,7 +1137,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 2613,
+      "line": 2624,
       "column": 36,
       "kind": "async-task",
       "owner": "_lifespan",
@@ -1148,7 +1148,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 2710,
+      "line": 2721,
       "column": 39,
       "kind": "async-task",
       "owner": "_lifespan",

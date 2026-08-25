@@ -10,7 +10,7 @@ import os
 import sys
 import threading
 import time
-from collections.abc import AsyncIterator, Callable, Iterator, MutableMapping
+from collections.abc import AsyncIterator, Callable, Iterator, MutableMapping, MutableSet
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -1027,24 +1027,29 @@ def build_event_loop_mcp_dispatcher(
     )
 
 
-# Tracks fire-and-forget self-update audit writes so the GC never reaps a task
-# mid-flight (asyncio only holds a weakref to tasks). Mirrors the pattern used
-# for the event-loop tick task.
-_SELF_UPDATE_AUDIT_TASKS: set[asyncio.Task[Any]] = set()
-
-
-async def _drain_self_update_audit_tasks() -> None:
-    """Cancel and await audit writes owned by the daemon module."""
+async def _drain_self_update_audit_tasks(
+    tasks: MutableSet[asyncio.Task[Any]],
+    *,
+    timeout_seconds: float = 5.0,
+) -> None:
+    """Finish app-owned audit writes, cancelling only after a bounded wait."""
     from general_ludd.util.async_lifecycle import cancel_and_drain_tasks
 
-    await cancel_and_drain_tasks(
-        _SELF_UPDATE_AUDIT_TASKS,
-        registry=_SELF_UPDATE_AUDIT_TASKS,
-    )
+    snapshot = tuple(tasks)
+    if not snapshot:
+        return
+    done, pending = await asyncio.wait(snapshot, timeout=timeout_seconds)
+    if done:
+        await asyncio.gather(*done, return_exceptions=True)
+        for task in done:
+            tasks.discard(task)
+    if pending:
+        await cancel_and_drain_tasks(pending, registry=tasks)
 
 
 def _build_self_update_audit_sink(
     session_factory: Any,
+    task_registry: MutableSet[asyncio.Task[Any]] | None = None,
 ) -> Callable[[Any], None]:
     """Build a sync ``AuditSink`` that persists self-update ``AuditRecord``s.
 
@@ -1065,6 +1070,7 @@ def _build_self_update_audit_sink(
     ``event_type`` strings like ``"return_reviewed"``, so ``"self_update_*"``
     follows that precedent rather than extending the ``AuditEventType`` enum).
     """
+    owned_tasks = task_registry if task_registry is not None else set()
 
     async def _persist(record: Any) -> None:
         import json as _json
@@ -1087,6 +1093,8 @@ def _build_self_update_audit_sink(
             )
 
     def _sink(record: Any) -> None:
+        from general_ludd.util.async_lifecycle import track_owned_task
+
         try:
             running_loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -1098,8 +1106,7 @@ def _build_self_update_audit_sink(
             )
             return
         task = running_loop.create_task(_persist(record))
-        _SELF_UPDATE_AUDIT_TASKS.add(task)
-        task.add_done_callback(_SELF_UPDATE_AUDIT_TASKS.discard)
+        track_owned_task(task, owned_tasks)
 
     return _sink
 
@@ -1296,7 +1303,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # the /admin/self-update/plan router can pass it through to apply_plan.
         # Built once here (after session_factory exists) so every request reuses
         # the same sink; the sink opens its own short-lived session per record.
-        app.state._self_update_audit_sink = _build_self_update_audit_sink(session_factory)
+        app.state._self_update_audit_tasks = set()
+        app.state._self_update_audit_sink = _build_self_update_audit_sink(
+            session_factory,
+            app.state._self_update_audit_tasks,
+        )
 
         if is_sqlite_url(str(engine.url)):
             try:
@@ -2734,7 +2745,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         _lifespan_failure = exc
 
     # ── Off-peak scheduler shutdown ──────────────────────────────────────
-    await _drain_self_update_audit_tasks()
+    await _drain_self_update_audit_tasks(
+        getattr(app.state, "_self_update_audit_tasks", set())
+    )
     _op_stop = getattr(app.state, "_off_peak_stop", None)
     _op_task = getattr(app.state, "_off_peak_task", None)
     if _op_stop is not None:

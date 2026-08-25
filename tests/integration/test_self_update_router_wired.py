@@ -22,9 +22,12 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 import time
+from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import aiosqlite
 import pytest
 from fastapi.testclient import TestClient
 
@@ -39,7 +42,7 @@ from general_ludd.self_update.model import (
 
 
 @pytest.fixture(autouse=True)
-def _reset_daemon_state() -> None:
+def _reset_daemon_state() -> Iterator[None]:
     original_state = daemon_mod._daemon_state
 
     def reset_current_state() -> None:
@@ -57,7 +60,7 @@ def _reset_daemon_state() -> None:
         daemon_mod._daemon_state = None
 
 
-def _make_db_config(tmp_path: pytest.Path) -> tuple[str, str]:
+def _make_db_config(tmp_path: Path) -> tuple[str, str]:
     """Write a config dir whose ``general-ludd.yml`` points at a temp SQLite DB.
 
     Returns ``(config_dir, db_path)``.
@@ -128,7 +131,7 @@ def _wait_for_audit_row(db_path: str, timeout: float = 3.0) -> int:
 class TestSelfUpdateRouterWired:
     """Verify the /admin/self-update/* endpoints are wired through the daemon."""
 
-    def test_plan_config_tier_applied_writes_audit_row(self, tmp_path: pytest.Path) -> None:
+    def test_plan_config_tier_applied_writes_audit_row(self, tmp_path: Path) -> None:
         """Config-tier request: outcome ``applied`` + audit row persisted.
 
         A simple ``"set the spend limit to 50"`` routes via the real classifier
@@ -165,7 +168,7 @@ class TestSelfUpdateRouterWired:
                     "applied config-tier plan, but audit_events has none"
                 )
 
-    def test_plan_protected_path_is_refused(self, tmp_path: pytest.Path) -> None:
+    def test_plan_protected_path_is_refused(self, tmp_path: Path) -> None:
         """A protected-path plan: outcome ``refused`` (fail-closed guard).
 
         The real classifier never routes to a protected guard file from keyword
@@ -207,8 +210,60 @@ class TestSelfUpdateRouterWired:
                 data = resp.json()
                 assert data["outcome"] == "refused"
 
+    def test_protected_plan_closes_every_driver_connection(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Self-update requests leave no SQLite owner after app shutdown."""
+        created_connections: list[Any] = []
+        original_connect = aiosqlite.connect
+
+        def tracked_connect(*args: Any, **kwargs: Any) -> Any:
+            connection = original_connect(*args, **kwargs)
+            created_connections.append(connection)
+            return connection
+
+        monkeypatch.setattr(aiosqlite, "connect", tracked_connect)
+        config_dir, _db_path = _make_db_config(tmp_path)
+        protected_plan = SelfUpdatePlan(
+            subsystem=Subsystem.CONFIG,
+            change_kind=ChangeKind.VALUE_EDIT,
+            target_files=("src/general_ludd/security/capability_lattice.py",),
+            apply_tier=ApplyTier.CONFIG,
+            requires_approval=False,
+            rationale="routes to a protected guard file",
+            confidence=0.5,
+        )
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "general_ludd.routers.self_update.classify",
+                return_value=protected_plan,
+            ),
+        ):
+            app = create_daemon_app(tick_interval=300.0, config_dir=config_dir)
+            with TestClient(app) as client:
+                response = client.post(
+                    "/admin/self-update/plan",
+                    json={
+                        "raw_text": "edit the capability lattice",
+                        "requested_by": "operator",
+                    },
+                )
+                assert response.status_code == 200
+
+        assert created_connections
+        assert all(
+            connection._connection is None
+            for connection in created_connections
+        )
+
     def test_enqueue_persists_todo_with_self_update_queue(
-        self, tmp_path: pytest.Path
+        self, tmp_path: Path
     ) -> None:
         """Enqueue endpoint persists a todo with ``queue="self_update"``.
 
@@ -255,7 +310,7 @@ class TestSelfUpdateRouterWired:
                 assert "self-update" in row[1]
 
     def test_missing_psk_returns_401(
-        self, tmp_path: pytest.Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A request without a valid PSK Bearer token is rejected with 401.
 

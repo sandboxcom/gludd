@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from general_ludd.util.async_lifecycle import cancel_and_drain_tasks
+from general_ludd.util.async_lifecycle import cancel_and_drain_tasks, track_owned_task
 
 
 @pytest.mark.asyncio
@@ -48,3 +48,22 @@ async def test_empty_snapshot_preserves_unrelated_registry_entry() -> None:
     await cancel_and_drain_tasks((), registry=registry)
 
     assert registry == {task}
+
+
+@pytest.mark.asyncio
+async def test_track_owned_task_unregisters_only_after_completion() -> None:
+    release = asyncio.Event()
+
+    async def worker() -> None:
+        await release.wait()
+
+    task = asyncio.create_task(worker())
+    registry: set[asyncio.Task[None]] = set()
+
+    track_owned_task(task, registry)
+
+    assert registry == {task}
+    release.set()
+    await task
+    await asyncio.sleep(0)
+    assert registry == set()
