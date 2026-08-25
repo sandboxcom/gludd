@@ -106,27 +106,22 @@ class TestGetInprocessLockConcurrency:
 
 
 class TestGitDirDeepEdgeCases:
-    def test_rev_parse_timeout_returns_none(self) -> None:
+    def test_git_pointer_read_error_returns_none(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             git_file = os.path.join(tmpdir, ".git")
             with open(git_file, "w") as f:
                 f.write("gitdir: /nonexistent\n")
 
-            with patch.object(
-                locking.subprocess,
-                "run",
-                side_effect=subprocess.TimeoutExpired(cmd=["git"], timeout=1.0),
-            ):
+            with patch("builtins.open", side_effect=OSError("metadata unavailable")):
                 assert locking._git_dir(tmpdir) is None
 
-    def test_rev_parse_oserror_returns_none(self) -> None:
+    def test_non_utf8_git_pointer_returns_none(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             git_file = os.path.join(tmpdir, ".git")
-            with open(git_file, "w") as f:
-                f.write("gitdir: /nonexistent\n")
+            with open(git_file, "wb") as f:
+                f.write(b"gitdir: \xff\n")
 
-            with patch.object(locking.subprocess, "run", side_effect=OSError("exec not found")):
-                assert locking._git_dir(tmpdir) is None
+            assert locking._git_dir(tmpdir) is None
 
     def test_rev_parse_returns_relative_common_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -182,22 +177,17 @@ class TestGitDirDeepEdgeCases:
 
     def test_git_dir_returns_none_when_common_dir_not_a_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
+            private_dir = os.path.join(tmpdir, "private")
+            os.mkdir(private_dir)
             git_file = os.path.join(tmpdir, ".git")
             with open(git_file, "w") as f:
-                f.write("gitdir: /nonexistent\n")
+                f.write(f"gitdir: {private_dir}\n")
+            common_file = os.path.join(tmpdir, "not-a-directory")
+            Path(common_file).write_text("content", encoding="utf-8")
+            Path(private_dir, "commondir").write_text("../not-a-directory\n", encoding="utf-8")
 
-            with patch.object(
-                locking.subprocess,
-                "run",
-                return_value=subprocess.CompletedProcess(
-                    args=["git"],
-                    returncode=0,
-                    stdout="/tmp/some-file\n",
-                    stderr="",
-                ),
-            ):
-                result = locking._git_dir(tmpdir)
-                assert result is None
+            result = locking._git_dir(tmpdir)
+            assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -423,11 +413,10 @@ class TestFileLockBoundary:
             git_dir = os.path.join(tmpdir, ".git")
             os.mkdir(git_dir)
 
-            eagain_errors = [
+            eagain_errors: list[OSError] = [
                 OSError(errno.EAGAIN, "try again"),
                 OSError(errno.EAGAIN, "try again"),
                 OSError(errno.EAGAIN, "try again"),
-                None,
             ]
             call_count: list[int] = []
 
@@ -437,7 +426,7 @@ class TestFileLockBoundary:
                 call_count.append(1)
                 if len(call_count) <= 3:
                     raise eagain_errors[len(call_count) - 1]
-                return real_flock(fd, op)
+                real_flock(fd, op)
 
             key = "eagain-test"
             locking._file_lock_depth.pop(key, None)

@@ -146,6 +146,25 @@ session-scoped `MonkeyPatch.context()`. Restoration therefore runs even when
 download, server startup, assertions, or teardown fail. The
 `check-test-env-writes` guard rejects new bare test-environment assignments.
 
+On 2026-08-21, the same replay exposed an older classification error:
+`.ansible/.lock` was listed in `.gitignore` but remained in Git's index. Ansible
+correctly removed its ephemeral lock at shutdown, leaving every otherwise-green
+run with a tracked deletion. The lock is now untracked, and the root-hygiene
+regression mechanically requires both `.ansible/.lock` and `.gate-status` to be
+ignored operational state rather than committed source. This changes no Ansible
+controller or managed-host runtime; each invocation may create and remove its
+own lock without a test harness restoring it afterward.
+
+On 2026-08-21, the definitive gate exposed a second status-ownership boundary:
+the `run_gate.sh` unit harness inherited the live parent gate's
+`GATE_STATUS_FILE` and `GATE_FAILED_FILE`. Its passing and failing stub gates
+therefore published into the parent artifact while their own temporary status
+files stayed empty. Every nested invocation now injects status and failure paths
+inside its owned pytest work directory, and a regression proves the parent
+markers remain byte-identical. This uses the same pytest `tmp_path` and
+`monkeypatch` lifetime guarantees cited below; no production gate cleanup or
+retry is added.
+
 Evidence was reviewed on 2026-08-20. Pytest documents that
 [`tmp_path` is unique to each test function](https://docs.pytest.org/en/stable/how-to/tmp_path.html)
 and that xdist places worker data under a per-run temporary root. Its
@@ -158,6 +177,44 @@ records collisions between concurrent invocations without unique base paths;
 records surprise that temporary directories are retained; and the long-running
 [monkeypatch scope discussion opened 2018-12-25](https://github.com/pytest-dev/pytest/issues/4576)
 highlights why restoration lifetime must be explicit.
+
+### Retained module/importer pairs
+
+On 2026-08-21, the 1-worker `unit-1b` gate batch passed every cron test in
+isolation but failed all five after the preceding files. The import-state
+sandbox retained ordinary modules first imported by a test while restoring
+`sys.meta_path` to its earlier snapshot. That split left `six` cached but
+discarded the `_SixMetaPathImporter` that implements `six.moves`; the later
+`croniter` → `dateutil` import therefore failed with `No module named
+'six.moves'`.
+
+The sandbox now treats a retained package and a meta-path finder owned by that
+newly retained package as one resource. It still restores the original finder
+list and removes arbitrary test-injected finders. A focused regression creates
+that acquisition pair mechanically, and the exact 64-file gate batch passes
+1,931 tests with three intentional skips under warnings-as-errors. Rollback is
+the single sandbox helper change; no scheduler fallback, import retry, or global
+pre-import was added.
+
+This boundary follows the actual upstream mechanism: the maintained
+[`six` source](https://github.com/benjaminp/six/blob/main/six.py) creates a
+`_SixMetaPathImporter`, registers `moves` beneath it, and installs it in
+`sys.meta_path`. Practitioner reports show why the pair must stay coherent:
+[python-dateutil issue 1430](https://github.com/dateutil/dateutil/issues/1430)
+records the same missing-`six.moves` runtime shape on a newer Python, while
+[pytest issue 12179](https://github.com/pytest-dev/pytest/issues/12179) records
+pytest encountering a vendored Six meta-path importer during collection. The
+reports do not establish the same root cause; they are evidence that Six's
+importer is live process state rather than disposable test metadata.
+
+The warnings-as-errors replay also exposed two smaller owner defects in the
+same batch. One state-file test passed an inline `Path.open()` handle to
+`json.dump` and never closed it. Two self-improvement tests constructed the
+real harness around an `AsyncMock` model gateway, creating a coroutine that the
+synchronous analysis path could not await. The state fixture now uses the
+atomic `Path.write_text` shape it is meant to model, and the phase tests inject
+a complete synchronous harness double and assert its call. Neither repair adds
+garbage-collector cleanup, warning filters, retries, or production behavior.
 
 ## Security and Resource Boundaries
 

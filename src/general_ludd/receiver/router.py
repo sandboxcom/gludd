@@ -117,15 +117,22 @@ DEFAULT_RATE_BURST = 100.0
 class _TokenBucket:
     """A simple monotonic token-bucket rate limiter, one per ingest token."""
 
-    def __init__(self, rate_per_sec: float, burst: float) -> None:
+    def __init__(
+        self,
+        rate_per_sec: float,
+        burst: float,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._rate = rate_per_sec
         self._burst = burst
         self._tokens = burst
-        self._last = time.monotonic()
+        self._clock = clock
+        self._last = self._clock()
         self._lock = threading.Lock()
 
     def allow(self) -> bool:
-        now = time.monotonic()
+        now = self._clock()
         with self._lock:
             elapsed = now - self._last
             self._last = now

@@ -72,11 +72,13 @@ def test_batch_push_blocks_single_commit_threshold_override() -> None:
         assert "COMMIT_THRESHOLD=1 to override" not in block
 
 
-def test_ci_trigger_requires_exact_remote_head_guard() -> None:
+def test_ci_trigger_delegates_to_idempotent_exact_sha_signal() -> None:
+    line = _target_line("ci-trigger")
     block = _target_block("ci-trigger")
-    assert "ci-trigger: ci-remote-head-guard _require-gh" in block
-    assert "--ref master" not in block
-    assert "git branch --show-current" in block
+
+    assert line == "ci-trigger: ci-trigger-committed-head"
+    assert "gh workflow run" not in block
+    assert "ci-trigger-failed" not in block
 
 
 def test_push_workflow_runs_for_development_and_master_without_canceling_push_runs() -> None:

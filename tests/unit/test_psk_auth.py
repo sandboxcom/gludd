@@ -4,16 +4,18 @@ import contextlib
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 class TestPSKAuth:
-    def test_psk_env_var_activates_auth(self):
+    def test_psk_env_var_activates_auth(self) -> None:
         with patch.dict(os.environ, {"GLUDD_AUTH_PSK": "test-key-123"}):
             from general_ludd.daemon import create_daemon_app
 
             app = create_daemon_app()
             assert app.state._psk == "test-key-123"
 
-    def test_no_psk_env_var_disables_auth(self):
+    def test_no_psk_env_var_disables_auth(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("GLUDD_AUTH_PSK", None)
             from general_ludd.daemon import create_daemon_app
@@ -21,7 +23,7 @@ class TestPSKAuth:
             app = create_daemon_app()
             assert app.state._psk == ""
 
-    def test_healthz_is_public(self):
+    def test_healthz_is_public(self) -> None:
         with patch.dict(os.environ, {"GLUDD_AUTH_PSK": "secret"}):
             from fastapi.testclient import TestClient
 
@@ -34,7 +36,10 @@ class TestPSKAuth:
 
 
 class TestDaemonStartPSK:
-    def test_external_host_generates_psk(self, capsys):
+    def test_external_host_generates_psk(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         with patch("subprocess.Popen") as mock_popen:
             mock_popen.return_value = MagicMock(wait=MagicMock(return_value=0))
             with patch("general_ludd.daemon.create_daemon_app"):
@@ -47,6 +52,7 @@ class TestDaemonStartPSK:
                 args.config_dir = None
                 args.templates_dir = None
                 args.playbooks_dir = None
+                args.pid_file = None
                 from general_ludd.cli import _cmd_daemon
 
                 with contextlib.suppress(SystemExit):
@@ -54,7 +60,10 @@ class TestDaemonStartPSK:
                 captured = capsys.readouterr()
                 assert "PSK" in captured.out or "psk" in captured.out.lower()
 
-    def test_localhost_no_psk(self, capsys):
+    def test_localhost_no_psk(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         with patch("subprocess.Popen") as mock_popen:
             mock_popen.return_value = MagicMock(wait=MagicMock(return_value=0))
             with patch("general_ludd.daemon.create_daemon_app"):
@@ -67,6 +76,7 @@ class TestDaemonStartPSK:
                 args.config_dir = None
                 args.templates_dir = None
                 args.playbooks_dir = None
+                args.pid_file = None
                 from general_ludd.cli import _cmd_daemon
 
                 with contextlib.suppress(SystemExit):

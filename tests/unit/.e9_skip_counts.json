@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
   "reviewed_task": "S83.110",
-  "review_notes_2026-08-16": "+1 pytest.skip is the live TUI no-wait test's CI gate (opencode-live harness requires a local primary-agent session — unverifiable on CI). Prior +3 are the env-gated live-model e2e lanes; +1 is the uninitialized-submodule conftest guard",
+  "review_notes_2026-08-24": "+1 pytest.skip is the base-runtime game fidelity test's explicit OpenCV dependency boundary; the locked game-e2e GHE job installs that media extra and runs the test. Prior reviewed skips cover the live TUI no-wait CI gate, env-gated live-model lanes, and the uninitialized-submodule guard.",
   "scope": "tests/**/*.py excluding conftest and test_e9_skip_smell.py",
-  "pytest_skip_total": 351,
+  "pytest_skip_total": 352,
   "bare_mark_skip_total": 20,
   "xfail_total": 16
 }

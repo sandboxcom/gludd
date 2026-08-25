@@ -272,70 +272,107 @@ class TestExtractExpiry:
 
 
 class TestMultiThreadConcurrentAccess:
-    def test_concurrent_get_token_acquires_only_once(self):
+    def test_concurrent_get_token_acquires_only_once(self) -> None:
         acquire_count = [0]
         lock = threading.Lock()
-        barrier = threading.Barrier(8)
+        first_acquire = threading.Event()
+        all_acquires = threading.Event()
+        release_acquire = threading.Event()
 
-        def counting_acquire(*args, **kwargs):
-            barrier.wait()
+        def counting_acquire(*_args: object, **_kwargs: object) -> str:
             with lock:
                 acquire_count[0] += 1
-            time.sleep(0.05)
-            return OidcToken(token="shared_token", expires_at=time.time() + 3600, provider="aws")
+                first_acquire.set()
+                if acquire_count[0] == 8:
+                    all_acquires.set()
+            assert release_acquire.wait(timeout=2)
+            return "shared_token"
 
         auth = HfOidcAuth(provider="aws", token_ttl=3600)
         results: list[str | None] = []
 
-        def worker():
+        def worker() -> None:
             results.append(auth.get_token())
 
-        with patch.object(auth, "_acquire", side_effect=counting_acquire):
-            threads = [threading.Thread(target=worker) for _ in range(8)]
+        with patch("general_ludd.small_models.hf_auth.acquire_oidc_token", side_effect=counting_acquire):
+            threads = [threading.Thread(target=worker, name=f"oidc-reader-{index}") for index in range(8)]
             for t in threads:
                 t.start()
+            assert first_acquire.wait(timeout=2)
+            all_acquires.wait(timeout=0.1)
+            release_acquire.set()
             for t in threads:
-                t.join()
+                t.join(timeout=2)
 
         assert len(results) == 8
         assert all(r == "shared_token" for r in results)
+        assert acquire_count == [1]
 
-    def test_concurrent_invalidate_propagates_to_all_threads(self):
+    def test_concurrent_invalidate_propagates_to_all_threads(self) -> None:
         auth = HfOidcAuth(provider="env", token_ttl=3600)
         with patch.dict("os.environ", {"OIDC_TOKEN": "t1"}, clear=True):
             auth.get_token()
 
         invalidation_seen: list[str] = []
-        read_ready = threading.Event()
         invalidated = threading.Event()
 
-        def reader():
-            read_ready.wait()
+        def reader() -> None:
+            assert invalidated.wait(timeout=2)
             if auth.has_valid_token():
                 invalidation_seen.append("valid")
             else:
                 invalidation_seen.append("invalid")
 
-        def invalidator():
-            read_ready.wait()
+        def invalidator() -> None:
             auth.invalidate()
             invalidated.set()
 
-        threads = [threading.Thread(target=reader) for _ in range(4)]
-        threads.append(threading.Thread(target=invalidator))
+        threads = [threading.Thread(target=reader, name=f"oidc-observer-{index}") for index in range(4)]
+        threads.append(threading.Thread(target=invalidator, name="oidc-invalidator"))
         for t in threads:
             t.start()
 
-        time.sleep(0.02)
-        read_ready.set()
-        invalidated.wait(timeout=2)
+        assert invalidated.wait(timeout=2)
+        for t in threads:
+            t.join(timeout=2)
 
-        main = threading.current_thread()
-        for t in threading.enumerate():
-            if t is not main and t.is_alive():
-                t.join(timeout=1)
+        assert invalidation_seen == ["invalid"] * 4
 
-        assert "invalid" in invalidation_seen
+    def test_invalidate_waits_for_inflight_acquisition_and_wins(self) -> None:
+        auth = HfOidcAuth(provider="aws", token_ttl=3600)
+        acquisition_started = threading.Event()
+        release_acquisition = threading.Event()
+        invalidation_returned = threading.Event()
+        results: list[str | None] = []
+
+        def blocking_acquire(*_args: object, **_kwargs: object) -> str:
+            acquisition_started.set()
+            assert release_acquisition.wait(timeout=2)
+            return "inflight-token"
+
+        def getter() -> None:
+            results.append(auth.get_token())
+
+        def invalidator() -> None:
+            auth.invalidate()
+            invalidation_returned.set()
+
+        with patch("general_ludd.small_models.hf_auth.acquire_oidc_token", side_effect=blocking_acquire):
+            get_thread = threading.Thread(target=getter, name="oidc-inflight-get")
+            get_thread.start()
+            assert acquisition_started.wait(timeout=2)
+
+            invalidate_thread = threading.Thread(target=invalidator, name="oidc-inflight-invalidate")
+            invalidate_thread.start()
+            returned_before_release = invalidation_returned.wait(timeout=0.1)
+            release_acquisition.set()
+            get_thread.join(timeout=2)
+            invalidate_thread.join(timeout=2)
+
+        assert not returned_before_release
+        assert invalidation_returned.is_set()
+        assert results == ["inflight-token"]
+        assert auth._cached is None
 
     def test_refresh_during_concurrent_reads_provides_new_token(self):
         auth = HfOidcAuth(provider="env", token_ttl=3600)

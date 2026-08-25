@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
-import os
-import shutil
 import signal
 import socket
 import subprocess
@@ -27,16 +25,9 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 MOCK_DAEMON_SCRIPT = ROOT / "molecule" / "mock_daemon" / "server.py"
 
 
-# On CI runners `make ansible-syntax` (uv run) can recreate the project venv
-# mid-shard, leaving the running workers' sys.executable path stale. Resolve
-# a live interpreter at each spawn and skip the test if none exists.
 def _python() -> str:
-    if sys.executable and os.path.exists(sys.executable):
-        return sys.executable
-    found = shutil.which("python3")
-    if found and os.path.exists(found):
-        return found
-    pytest.skip("no live python interpreter available to spawn the mock daemon")
+    """Return the immutable interpreter owned by the current test process."""
+    return sys.executable
 
 
 def _find_free_port() -> int:

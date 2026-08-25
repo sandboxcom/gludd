@@ -607,19 +607,20 @@ class ExecutionEngine:
         task.add_done_callback(_on_commit_done)
 
     async def shutdown(self) -> None:
-        """Cancel and await all pending background tasks.
+        """Gracefully drain, then cancel and await background tasks.
 
         Must be called before the engine is discarded so no task
         silently leaks its exception or outlives the event loop.
         """
         if self._background_tasks:
-            for task in list(self._background_tasks):
-                if not task.done():
-                    task.cancel()
-            await asyncio.gather(
-                *self._background_tasks,
-                return_exceptions=True,
-            )
+            owned_tasks = tuple(self._background_tasks)
+            done, pending = await asyncio.wait(owned_tasks, timeout=1.0)
+            if done:
+                await asyncio.gather(*done, return_exceptions=True)
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
             self._background_tasks.clear()
 
     async def execute_async(self, job: JobSpec) -> TaskReturn:

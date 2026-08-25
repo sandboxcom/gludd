@@ -73,6 +73,273 @@ within one xdist controller. Together they support per-invocation state roots
 instead of assuming an xdist group coordinates independently launched pytest
 processes.
 
+## Committed-head gate follow-up
+
+A later committed-head gate exposed four portability assumptions: token-bucket
+tests measured scheduler time, a tiny Diffie-Hellman test group assumed random
+samples were unique, the base dependency set tried to run an OpenCV media test,
+and a nested E2E command did not quote its private basetemp. The same run found
+a stale hard-coded deploy-key name and an unused async database double that
+leaked an unawaited coroutine warning.
+
+Uv issue
+[#14645](https://github.com/astral-sh/uv/issues/14645), opened 2025-07-16,
+records a CI user finding that an optional dependency is absent unless the
+corresponding `--extra` is explicitly supplied to `uv sync`. The opencv-python
+project tells server and CI users to select exactly one headless wheel, while
+issue [#677](https://github.com/opencv/opencv-python/issues/677), open since
+2022-06-10, records conflicts caused by installing overlapping OpenCV variants.
+Gludd therefore keeps OpenCV out of the core runtime and installs the locked
+`game-e2e` extra only in the dedicated GHE job.
+
+Rate-limit arithmetic now uses an injected monotonic clock in tests, so host
+scheduler timing is outside the acceptance boundary. The game job performs a
+frozen optional-extra sync before running its media suite; base-runtime gates
+skip only the media node when OpenCV is absent. Every E2E file retains an
+independently quoted basetemp below its owned run root.
+
+This changes only tests, their dedicated CI environment, and ephemeral runner
+state. A running Gludd deployment is neither restarted nor migrated. Rollback
+is a code/workflow revert, with no database, model, tag, or release-asset
+mutation. The CI runner owns and removes its basetemp through the existing
+bounded teardown path.
+
+## Dual-track committed-head release contract
+
+Beta4 validation is not a local-first, hosted-later sequence. Each complete
+change is committed and pushed to its feature branch as soon as its focused
+checks and collection gate pass. GHA/GHE must then report a run for that exact
+commit SHA while the full local committed-head gate runs concurrently. A local
+result from an uncommitted tree cannot substitute for hosted evidence, and a
+hosted result for an earlier SHA cannot validate later local edits.
+
+Every repair discovered by either lane is a separate focused, tested commit and
+is pushed immediately so both lanes reconverge on the new SHA. Promotion from
+the feature branch to `development`, from `development` to `master`, and the
+`v0.1.0-beta.4` tag each require local and hosted green results for the same
+immutable commit. A failed or absent hosted run blocks promotion even when all
+local checks pass. This ordering keeps rollback code-only, exposes platform and
+runner differences early, and prevents a long uncommitted local sweep from
+delaying the CI feedback that the release depends on.
+
+## Hosted runner boundary evidence
+
+The first exact-SHA hosted run under this contract exposed three boundaries that
+the macOS development host could not exercise. Docker's bridge translated the
+loopback-published health request to the bridge gateway address, the Ansible EE
+smoke invoked ambient `python3` instead of the definition's managed interpreter,
+and one oversized unit shard plus a healthy Molecule shard reached their step or
+job ceilings while still making progress.
+
+Docker's current
+[port-publishing documentation](https://docs.docker.com/engine/network/port-publishing/)
+describes the default bridge's NAT and masquerading behavior. The smoke now
+discovers that runner's bridge gateway and admits only its exact IPv4 `/32`, in
+addition to loopback. It never admits `0.0.0.0/0`, and the application default
+remains loopback-only. The
+[Ansible Builder definition reference](https://ansible.readthedocs.io/_/downloads/builder/en/latest/pdf/)
+defines `python_interpreter.python_path` as the interpreter selected for an
+execution environment; the smoke therefore invokes the configured
+`/usr/bin/python3.11` directly rather than relying on container `PATH`.
+
+GitHub Community discussion
+[#26679](https://github.com/orgs/community/discussions/26679), opened
+2019-12-04 with follow-up reports through 2024, records practitioners finding
+that explicit job and step timeouts terminate otherwise live work. Discussion
+[#66522](https://github.com/orgs/community/discussions/66522), opened
+2023-09-08, similarly documents hosted jobs receiving shutdown signals after
+runner-image or scheduling changes. Gludd keeps finite ceilings, partitions the
+oversized `unit-3` range into disjoint lanes, and budgets Molecule for two
+bounded attempts plus teardown and artifact publication.
+
+The hosted split is also the canonical local split. The named-shard expander
+uses the same `unit-3a` (`n`--`r`) and `unit-3b` (`s`--`z` plus secrets)
+patterns as the workflow, and an exhaustive contract proves that every unit
+test file has exactly one execution lane. The retired monolithic `unit-3` name
+fails closed instead of silently selecting a different local test surface.
+
+The same run also exposed an environment-ownership race inside `unit-2`.
+`test_guardrails` launched the `healthcheck` and `ansible-syntax` Make targets
+from an already-running pytest shard. Those targets used ordinary `uv run`,
+which is documented to lock and synchronize the project environment before
+launch. A nested sync could therefore replace `.venv` while sibling xdist
+workers were still importing packages or spawning `sys.executable`. The
+[uv synchronization guide](https://docs.astral.sh/uv/concepts/projects/sync/)
+documents `uv run --no-sync` as the supported way to consume an already
+prepared environment without checking or updating it. Both nested targets now
+use that boundary, and the mock-daemon tests no longer fall back to an ambient
+interpreter or skip when their owned interpreter disappears.
+
+Named shards now also apply `-W error` in both the hosted adaptive runner and
+the local `test-ci-shard`/`test-ci-shard-slice` replicas. A warning therefore
+has the same fail-closed meaning in both lanes. This immediately found two
+health-check tests that constructed coroutine objects during registration
+instead of providing the documented callable; those tests now retain callable
+ownership until execution and leave no unawaited coroutine for garbage
+collection.
+
+The first warning-strict local replay then exposed a second ownership boundary:
+`urllib.error.HTTPError` is both an exception and a file-like response. A
+successful `urlopen` call can enter a context manager, but a raised HTTP error
+must be closed from the exception path itself. CPython's
+[HTTPError implementation](https://github.com/python/cpython/blob/main/Lib/urllib/error.py)
+documents that dual role, and its own
+[urllib regression tests](https://github.com/python/cpython/blob/main/Lib/test/test_urllib.py)
+explicitly close caught HTTP errors. A 2025 practitioner report in CPython issue
+[#132210](https://github.com/python/cpython/issues/132210) shows the same easy
+failure mode in real exporter code: the error body is consumed through `e.fp`
+after `urlopen` raises. Gludd now closes both successful and error responses,
+streams downloads into an owned same-directory temporary file, fsyncs it, and
+atomically replaces the destination. Failure removes the temporary file and
+leaves the prior model untouched.
+
+The same replay found a timing-test false positive at sub-millisecond scale:
+one 0.4 ms config reload exceeded 2.5 times a 0.2 ms sample average while still
+sitting orders of magnitude below the package's real import budget. The
+pytest-benchmark maintainers explain in issue
+[#186](https://github.com/ionelmc/pytest-benchmark/issues/186) that calibrated
+microbenchmarks require rounds and iterations rather than a handful of raw
+timer samples. Gludd's lightweight smoke keeps its ratio guard but applies a
+1 ms absolute jitter floor; the independent 20--100 ms package ceilings remain
+unchanged. This removes scheduler-noise failures without weakening the actual
+startup-performance contract.
+
+The Python 3.11 hosted lane also reports the origin of ``str | None`` as
+``types.UnionType``, while Python 3.14 aliases that runtime form with
+``typing.Union``. CPython's current
+[typing reference](https://github.com/python/cpython/blob/main/Doc/library/typing.rst)
+explicitly requires compatibility checks to admit either origin. The immutable
+NamedTuple audit now follows that cross-version contract instead of treating the
+3.11 representation as a mutable container.
+
+A clean hosted checkout correctly lacks the untracked ``.gate-status`` runtime
+snapshot that may remain after a local gate. The observability tests therefore
+parse an isolated, test-owned snapshot and separately verify the Makefile's
+atomic publisher; they never require prior local activity. This is the inverse
+of the persistent-worktree failure reported by practitioners in
+[actions/checkout issue #1475](https://github.com/actions/checkout/issues/1475):
+test correctness cannot depend on either retained or pre-generated checkout
+state.
+
+Finally, a 500-character permission subject reached a filesystem lookup on
+macOS but raised ``ENAMETOOLONG`` on the Linux runner. A related cross-platform
+practitioner report in CPython issue
+[#122353](https://github.com/python/cpython/issues/122353) records different
+errors when oversized path inputs reach platform filesystem APIs. Gludd now
+validates the UTF-8 filename component against the portable 255-byte boundary
+before I/O. Read-only lookup still returns the in-memory default spec, while a
+write fails closed with a stable 400 response and creates no partial file. The
+same hosted replay corrected a contradictory cleanup assertion: dead SQLAlchemy
+engine identities are weakly owned, collected, and removed rather than retained
+in the process-global idempotence set.
+
+Unit 3b then exposed an ordering defect in the sliding-window median. The
+outgoing value was marked and pruned before its effective heap membership was
+charged, so the balance could be updated against a different heap top. CPython's
+[heapq reference](https://github.com/python/cpython/blob/main/Doc/library/heapq.rst)
+defines the running-median invariant as two balanced heaps and separately
+describes lazy removal of marked entries. A practitioner report in
+[sortedcontainers issue #83](https://github.com/grantjenks/python-sortedcontainers/issues/83)
+shows the broader failure mode: removal becomes incorrect when lookup and
+ordering assumptions diverge. Gludd now charges the outgoing value to its
+current partition before either heap is pruned, removes exhausted tombstones,
+and checks every randomized emitted window against ``statistics.median``.
+
+This failure mode has a longer practitioner history. astral-sh/uv issue
+[#12751](https://github.com/astral-sh/uv/issues/12751), opened 2025-04-07,
+reports failures when multiple parallel tasks invoke syncing `uv run`
+operations, while issue
+[#11454](https://github.com/astral-sh/uv/issues/11454), opened 2025-02-12,
+records repeated `pytest` spawn failures when a virtual environment is moved or
+recreated. Gludd prepares dependencies once before a shard and treats the venv
+as immutable for the shard lifetime. Synchronization remains an explicit setup
+phase; nested checks are read-only consumers.
+
+Hosted Unit 1b then surfaced an owned-pipe defect that local collection order
+had not made visible: the streaming E2E logger killed and waited for its child
+but retained the `stdout=PIPE` file object until garbage collection. CPython's
+[subprocess reference](https://github.com/python/cpython/blob/main/Doc/library/subprocess.rst)
+states that a `Popen` context manager closes standard file descriptors and waits
+for the process on exit. Practitioner investigation in CPython issue
+[#114177](https://github.com/python/cpython/issues/114177) documents that
+subprocess pipe descriptors can otherwise remain orphaned until interpreter
+shutdown and surface only as finalizer `ResourceWarning`s. Gludd now keeps its
+existing bounded kill/wait and live-output thread, while the `Popen` context
+owns final descriptor closure on success and timeout. The regression asserts
+the real child pipe is closed, so no test-only cleanup compensates for the
+application helper.
+
+The hosted `other` shard exposed the same ownership error at the async database
+boundary: all HITL assertions passed, but fifteen short-lived SQLite engines and
+their HTTP clients survived until interpreter finalization. SQLAlchemy's
+[engine disposal reference](https://github.com/sqlalchemy/sqlalchemy/blob/main/doc/build/core/connections.rst)
+explicitly lists test suites with ad-hoc engines as a case for deterministic
+`dispose()` and warns against relying on garbage collection. Aiosqlite's
+[connection finalizer](https://github.com/omnilib/aiosqlite/blob/main/aiosqlite/core.py)
+likewise emits `ResourceWarning` when a live connection is deleted before
+`close()` and directs callers to async context ownership. In the practitioner
+discussion
+[#10457](https://github.com/sqlalchemy/sqlalchemy/discussions/10457), users
+reported hundreds of aborted async connections; the maintainer clarified on
+2024-02-15 that connections must be explicitly closed inside the active event
+loop before garbage collection. Discussion
+[#10857](https://github.com/sqlalchemy/sqlalchemy/discussions/10857) records the
+same fixture-level `await engine.dispose()` pattern for pytest. Reviewed on
+2026-08-24, this evidence supports one async fixture that creates the engine in
+the test's loop, owns the client with `async with`, and disposes the engine in a
+`finally` block. There is no post-test collector, retry, sleep, or external
+cleanup task to hide a missing owner.
+
+The exact-SHA hosted/local replay then exposed a second async-database case in
+the self-update audit sink. The synchronous apply ladder schedules persistence
+on the request loop; shutdown previously cancelled the task immediately and a
+cancelled commit could return a still-live driver connection to finalization.
+The sink now has an application-scoped task registry, waits a bounded five
+seconds for durable writes to finish, and cancels only the remainder before the
+engine is disposed. This also removes the module-global registry that allowed
+one daemon instance to drain another instance's work. The regression holds
+every created `aiosqlite.Connection` strongly and proves each driver's backing
+connection is closed after the protected request lifespan. The same 2024
+SQLAlchemy practitioner discussions above support finishing explicit async
+cleanup in the owning event loop; no garbage-collection hook or post-test
+reaper is used.
+
+The dual-track local replay also found that the Terraform E2E generated
+`terraform.auto.tfvars`, `.terraform`, and lock data in the source checkout.
+That was safe in one isolated hosted runner but allowed a simultaneous local
+unit shard to observe transient files and fail its import-side-effect guard.
+Terraform issue
+[#29950](https://github.com/hashicorp/terraform/issues/29950) demonstrates that
+working-directory state from one `init` changes later initialization behavior,
+and practitioner issue
+[#27241](https://github.com/hashicorp/terraform/issues/27241) records teams
+being blocked when `init` rewrites a lock file in a read-only working tree.
+HashiCorp's own
+[contributor guide](https://github.com/hashicorp/terraform/blob/main/.github/CONTRIBUTING.md)
+describes its unit suite as self-contained through local files and mocks.
+Reviewed on 2026-08-24, this evidence supports copying the complete Terraform
+root—stacks and their relative modules—into a pytest-owned session directory
+before any generation, initialization, or validation. Structural reads remain
+against tracked source, while every mutable command uses the copied root; no
+ignore rule, retry, or after-the-fact checkout scrub hides a write.
+
+The first exact-SHA push then proved the generated ownership inventory also
+needed an explicit scanner contract: its 64-character SHA-256 evidence fields
+were correctly classified as high-entropy hex, blocking all 185 records.
+Practitioners in detect-secrets issue
+[#280](https://github.com/Yelp/detect-secrets/issues/280) describe the same
+maintenance failure for generated integrity hashes that change on every lock
+refresh, and issue
+[#870](https://github.com/Yelp/detect-secrets/issues/870) records cross-platform
+pipeline false positives for frequently-changing hashes and registry paths.
+The upstream
+[filter documentation](https://github.com/Yelp/detect-secrets/blob/master/docs/filters.md)
+defines `regex.should_exclude_file` as the implementation of exact file
+exclusions. Reviewed on 2026-08-24, Gludd therefore excludes only the anchored
+`config/resource_ownership_inventory.json` path. A regression proves the regex
+does not match a sibling inventory, and the full secret scan remains green;
+source files represented by the inventory continue to be scanned normally.
+
 ## Verification and resources
 
 The focused matrix runs one deterministic authentication/readiness test in both

@@ -128,8 +128,34 @@ class TestTestShardStructure:
         shard = wf["jobs"]["test-shard"]
         include = shard.get("strategy", {}).get("matrix", {}).get("include", [])
         names = {entry["shard"] for entry in include}
-        expected = {"unit-1a1", "unit-1a2", "unit-1b", "unit-1d", "unit-2", "unit-3", "other"}
+        expected = {
+            "unit-1a1",
+            "unit-1a2",
+            "unit-1b",
+            "unit-1d",
+            "unit-2",
+            "unit-3a",
+            "unit-3b",
+            "other",
+        }
         assert names == expected, f"Expected shards {expected!r}, got {names!r}"
+
+    def test_oversized_unit_3_is_partitioned_without_overlap(self):
+        wf = _load_workflow()
+        include = wf["jobs"]["test-shard"]["strategy"]["matrix"]["include"]
+        entries = {entry["shard"]: entry for entry in include}
+
+        assert entries["unit-3a"]["testpaths"] == "tests/unit/test_[n-r]*.py"
+        assert entries["unit-3b"]["testpaths"] == (
+            "tests/unit/test_[s-z]*.py tests/unit/secrets/"
+        )
+
+    def test_each_unit_shard_has_a_bounded_hosted_step_budget(self):
+        wf = _load_workflow()
+        steps = wf["jobs"]["test-shard"]["steps"]
+        test_step = next(step for step in steps if str(step.get("name", "")).startswith("Test (shard"))
+
+        assert 30 <= test_step["timeout-minutes"] <= 45
 
     def test_every_shard_has_testpaths(self):
         wf = _load_workflow()
@@ -161,6 +187,19 @@ class TestCoverageJobStructure:
         wf = _load_workflow()
         coverage = wf["jobs"]["coverage"]
         assert "timeout-minutes" in coverage
+
+
+class TestGameBuildingJobStructure:
+    def test_game_building_installs_locked_media_extra_before_tests(self) -> None:
+        wf = _load_workflow()
+        steps = wf["jobs"]["game-building"]["steps"]
+        commands = [str(step.get("run", "")) for step in steps if isinstance(step, dict)]
+        command = next(command for command in commands if "make test-games" in command)
+
+        assert "uv sync --frozen --extra game-e2e" in command
+        assert command.index("uv sync --frozen --extra game-e2e") < command.index(
+            "make test-games"
+        )
 
 
 class TestPlatformBuildJobStructure:
@@ -317,6 +356,12 @@ class TestMoleculeJobStructure:
         wf = _load_workflow()
         molecule = wf["jobs"]["molecule"]
         assert "timeout-minutes" in molecule
+
+    def test_molecule_timeout_covers_two_bounded_attempts(self):
+        wf = _load_workflow()
+        timeout = wf["jobs"]["molecule"]["timeout-minutes"]
+
+        assert 30 <= timeout <= 45
 
     def test_molecule_matrix_has_4_shards(self):
         wf = _load_workflow()

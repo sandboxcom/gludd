@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import queue
 import re
@@ -16,23 +17,130 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from types import FrameType
 from typing import TYPE_CHECKING, Any, TextIO
 
 if TYPE_CHECKING:
     from scripts.ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
+    from scripts.resource_arbiter import resource_root as project_resource_root
     from scripts.run_ci_shards_parallel import _env_for_shard, _parse_shards
 else:
     from ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
+    from resource_arbiter import resource_root as project_resource_root
     from run_ci_shards_parallel import _env_for_shard, _parse_shards
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 DEFAULT_SHARDS = tuple(SHARDS)
-COVERAGE_SHARDS = ROOT / ".coverage-shards-local"
-COVERAGE_JSON = ROOT / "coverage.json"
-COVERAGE_AUDIT = ROOT / ".gate-logs" / "coverage-local.json"
+
+
+@dataclass(frozen=True)
+class ResourcePaths:
+    """External runtime paths owned by one local or hosted shard invocation."""
+
+    root: Path
+    coverage_shards: Path
+    coverage_json: Path
+    coverage_audit: Path
+    attestation: Path
+
+
+def _resource_paths() -> ResourcePaths:
+    """Resolve mutable shard evidence outside the tested checkout."""
+    root = project_resource_root(ROOT) / "ci-shards"
+    return ResourcePaths(
+        root=root,
+        coverage_shards=root / "coverage-fragments",
+        coverage_json=root / "coverage.json",
+        coverage_audit=root / "coverage-audit.json",
+        attestation=root / "attestation.json",
+    )
+
+
+def _git_output(*arguments: str) -> tuple[int, str]:
+    """Return one bounded Git query without mutating repository state."""
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed.returncode, completed.stdout.strip()
+
+
+def _repository_identity(*, expected_sha: str | None) -> dict[str, object]:
+    """Capture the exact commit and worktree state represented by this run."""
+    head_rc, head_sha = _git_output("rev-parse", "HEAD")
+    branch_rc, branch = _git_output("branch", "--show-current")
+    status_rc, status = _git_output("status", "--porcelain", "--untracked-files=all")
+    expected = expected_sha or head_sha
+    return {
+        "head_sha": head_sha,
+        "expected_sha": expected,
+        "branch": branch,
+        "clean": status_rc == 0 and not status,
+        "exact_sha": head_rc == 0 and bool(head_sha) and head_sha == expected,
+        "queries_ok": head_rc == branch_rc == status_rc == 0,
+    }
+
+
+def _identity_is_release_eligible(identity: dict[str, object]) -> bool:
+    """Return whether an attestation identifies one clean immutable commit."""
+    return bool(
+        identity.get("queries_ok", True)
+        and identity.get("clean")
+        and identity.get("exact_sha")
+    )
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _write_terminal_attestation(
+    destination: Path,
+    *,
+    identity: dict[str, object],
+    shards: list[str],
+    returncode: int,
+    started_at: str,
+    completed_at: str,
+    error: str | None = None,
+) -> None:
+    """Atomically publish terminal exact-SHA shard evidence."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": 2,
+        "lane": "hosted"
+        if os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+        else "local",
+        "identity": identity,
+        "shards": shards,
+        "status": "pass" if returncode == 0 else "fail",
+        "returncode": returncode,
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "runner": "scripts/run_ci_shards_serial.py",
+        "python": sys.version,
+    }
+    if error is not None:
+        payload["error"] = error
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, destination)
+
+
+_RESOURCE_PATHS = _resource_paths()
+COVERAGE_SHARDS = _RESOURCE_PATHS.coverage_shards
+COVERAGE_JSON = _RESOURCE_PATHS.coverage_json
+COVERAGE_AUDIT = _RESOURCE_PATHS.coverage_audit
 GREENLET_COVERAGE_CONFIG = ROOT / ".coveragerc-greenlet"
 GOVERNANCE_MODULE_UTILS = (
     "collections/ansible_collections/general_ludd/governance/plugins/module_utils"
@@ -42,6 +150,7 @@ DEFAULT_HEARTBEAT_SECONDS = 30.0
 DEFAULT_NO_PROGRESS_SECONDS = 10.0 * 60.0
 WORKER_DEATH_EXIT_CODE = 70
 NO_PROGRESS_EXIT_CODE = 124
+RUNNER_EXCEPTION_EXIT_CODE = 125
 ANSI_ESCAPE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 XDIST_NODE_DOWN_LINE = re.compile(
     r"^\[gw\d+\]\s+node down:\s+\S.*$",
@@ -414,6 +523,29 @@ def _aggregate_coverage() -> int:
     return result
 
 
+def _combine_coverage_output(destination: Path) -> int:
+    """Combine bounded batch fragments into one uploadable shard data file."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.unlink(missing_ok=True)
+    env = os.environ.copy()
+    env["COVERAGE_FILE"] = str(destination)
+    rc = _run_command(
+        [
+            sys.executable,
+            "-m",
+            "coverage",
+            "combine",
+            "--keep",
+            str(COVERAGE_SHARDS),
+        ],
+        env=env,
+    )
+    if rc == 0 and (not destination.is_file() or destination.stat().st_size == 0):
+        print(f"SHARD-COVERAGE-OUTPUT-MISSING path={destination}", flush=True)
+        return 1
+    return rc
+
+
 def run(
     shards: list[str],
     pytest_args: list[str],
@@ -421,6 +553,9 @@ def run(
     max_files_per_batch: int = MAX_FILES_PER_BATCH,
     heartbeat_seconds: float = DEFAULT_HEARTBEAT_SECONDS,
     no_progress_seconds: float = DEFAULT_NO_PROGRESS_SECONDS,
+    run_isolated: bool = True,
+    aggregate_coverage: bool = True,
+    coverage_output: Path | None = None,
 ) -> int:
     """Run bounded batches serially and aggregate their coverage fragments."""
     if max_files_per_batch < 1:
@@ -435,18 +570,19 @@ def run(
         return erase_rc
 
     failures: dict[str, int] = {}
-    isolated_rc = _run_owned_pytest(
-        _isolated_pytest_command(pytest_args),
-        env=os.environ.copy(),
-        label="isolated",
-        heartbeat_seconds=heartbeat_seconds,
-        no_progress_seconds=no_progress_seconds,
-    )
-    if isolated_rc:
-        failures["isolated"] = isolated_rc
-        print(f"ISOLATED-TESTS-FAIL rc={isolated_rc}", flush=True)
-    else:
-        print("ISOLATED-TESTS-PASS rc=0", flush=True)
+    if run_isolated:
+        isolated_rc = _run_owned_pytest(
+            _isolated_pytest_command(pytest_args),
+            env=os.environ.copy(),
+            label="isolated",
+            heartbeat_seconds=heartbeat_seconds,
+            no_progress_seconds=no_progress_seconds,
+        )
+        if isolated_rc:
+            failures["isolated"] = isolated_rc
+            print(f"ISOLATED-TESTS-FAIL rc={isolated_rc}", flush=True)
+        else:
+            print("ISOLATED-TESTS-PASS rc=0", flush=True)
 
     for index, shard in enumerate(shards, start=1):
         batches = _partition_test_paths(
@@ -458,8 +594,10 @@ def run(
             failures[shard] = 2
             continue
 
+        workspace_parent = _resource_paths().root / "workspaces"
+        workspace_parent.mkdir(parents=True, exist_ok=True)
         workspace = Path(
-            tempfile.mkdtemp(prefix=f"gludd-gate-{shard}-", dir="/tmp")
+            tempfile.mkdtemp(prefix=f"gludd-gate-{shard}-", dir=workspace_parent)
         )
         try:
             print(
@@ -511,7 +649,12 @@ def run(
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
 
-    coverage_rc = _aggregate_coverage()
+    if coverage_output is not None:
+        coverage_rc = _combine_coverage_output(coverage_output)
+    elif aggregate_coverage:
+        coverage_rc = _aggregate_coverage()
+    else:
+        coverage_rc = 0
     if coverage_rc:
         failures["coverage"] = coverage_rc
     print(
@@ -549,14 +692,68 @@ def main() -> int:
         default=DEFAULT_NO_PROGRESS_SECONDS,
         help="quiet-output deadline before owned TERM-to-KILL cleanup",
     )
-    args = parser.parse_args()
-    return run(
-        _parse_shards(args.shards),
-        shlex.split(args.pytest_args),
-        max_files_per_batch=args.max_files_per_batch,
-        heartbeat_seconds=args.heartbeat_seconds,
-        no_progress_seconds=args.no_progress_seconds,
+    parser.add_argument(
+        "--skip-isolated",
+        action="store_true",
+        help="skip the separately scheduled process-heavy test",
     )
+    parser.add_argument(
+        "--skip-aggregate",
+        action="store_true",
+        help="defer the 85/75 aggregate coverage gate to a downstream job",
+    )
+    parser.add_argument(
+        "--coverage-output",
+        type=Path,
+        help="combine this invocation's batch coverage into one data file",
+    )
+    parser.add_argument(
+        "--attestation-output",
+        type=Path,
+        help="also publish the terminal exact-SHA attestation at this path",
+    )
+    args = parser.parse_args()
+    shards = _parse_shards(args.shards)
+    started_at = _utc_now()
+    identity = _repository_identity(
+        expected_sha=os.environ.get("GLUDD_CANDIDATE_SHA")
+        or os.environ.get("GITHUB_SHA")
+    )
+    if _identity_is_release_eligible(identity):
+        try:
+            returncode = run(
+                shards,
+                shlex.split(args.pytest_args),
+                max_files_per_batch=args.max_files_per_batch,
+                heartbeat_seconds=args.heartbeat_seconds,
+                no_progress_seconds=args.no_progress_seconds,
+                run_isolated=not args.skip_isolated,
+                aggregate_coverage=not args.skip_aggregate,
+                coverage_output=args.coverage_output,
+            )
+            error = None
+        except Exception as exc:
+            returncode = RUNNER_EXCEPTION_EXIT_CODE
+            error = f"{type(exc).__name__}: {exc}"
+            print(f"SHARD-RUNNER-EXCEPTION error={error}", flush=True)
+    else:
+        returncode = 2
+        error = "repository identity is not release eligible"
+        print(f"SHARD-IDENTITY-REJECTED identity={identity}", flush=True)
+    destinations = {_resource_paths().attestation}
+    if args.attestation_output is not None:
+        destinations.add(args.attestation_output)
+    for destination in destinations:
+        _write_terminal_attestation(
+            destination,
+            identity=identity,
+            shards=shards,
+            returncode=returncode,
+            started_at=started_at,
+            completed_at=_utc_now(),
+            error=error,
+        )
+    return returncode
 
 
 if __name__ == "__main__":

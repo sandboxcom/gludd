@@ -41,6 +41,19 @@ together; changing only one recreates an unreviewed graph. Resource use remains
 bounded to the existing six hosted jobs, and the exact warning digest continues
 to fail closed.
 
+The follow-up GHE run `32456865314` on 2026-08-21 then exposed the remaining
+patch-level drift: `actions/setup-python` resolved the floating `3.12` request
+to Python 3.12.14. All project-owned, excluded-controller, and runtime warning
+edges passed the exact audit; only the normalized third-party graph changed to
+SHA-256 `346aa57c…b5814`. The hosted job now pins Python 3.12.14, and that exact
+non-project graph is recorded as a reviewed x86_64 alternate beside the
+digest-pinned Bookworm builder graph. Unknown graphs still fail closed, and a
+structural regression prevents the hosted patch version or reviewed digest from
+floating independently. The six-shard topology, application traffic, and
+external Ansible execution plane are unchanged, so deployment remains ZDD.
+Rollback restores the previous hosted patch plus policy in one commit; no live
+daemon, model server, or build container is retained by this workflow.
+
 The same date's GHE Build and Release run `32448548722` exposed three independent
 packaging assumptions. The Windows ZIP step treated PowerShell's
 [`$LASTEXITCODE`](https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_automatic_variables#lastexitcode)

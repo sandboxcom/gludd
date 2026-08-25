@@ -691,9 +691,22 @@ def _snapshot_import_state() -> _ImportStateSnapshot:
 
 
 def _restore_import_state(snapshot: _ImportStateSnapshot) -> None:
-    """Restore import hooks, caches, argv, and test-owned module replacements."""
+    """Restore test-owned state without orphaning retained package importers.
+
+    Some packages install a package-owned meta-path finder when first imported;
+    ``six.moves`` is one example.  The module sandbox intentionally retains
+    ordinary newly imported modules, so it must retain their finders as well or
+    leave an internally inconsistent import cache for the next test.
+    """
+    added_meta_path = tuple(finder for finder in sys.meta_path if finder not in snapshot.meta_path)
     _restore_sys_modules_and_path(snapshot.modules, list(snapshot.path))
-    sys.meta_path[:] = snapshot.meta_path
+    retained_module_names = set(sys.modules) - set(snapshot.modules)
+    retained_package_finders = tuple(
+        finder
+        for finder in added_meta_path
+        if type(finder).__module__ in retained_module_names
+    )
+    sys.meta_path[:] = (*snapshot.meta_path, *retained_package_finders)
     sys.path_hooks[:] = snapshot.path_hooks
     sys.path_importer_cache.clear()
     sys.path_importer_cache.update(snapshot.path_importer_cache)

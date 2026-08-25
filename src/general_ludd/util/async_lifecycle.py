@@ -7,6 +7,15 @@ from collections.abc import Iterable, MutableSet
 from typing import Any
 
 
+def track_owned_task(
+    task: asyncio.Task[Any],
+    registry: MutableSet[asyncio.Task[Any]],
+) -> None:
+    """Register an application-owned task until its terminal callback runs."""
+    registry.add(task)
+    task.add_done_callback(registry.discard)
+
+
 async def cancel_and_drain_tasks(
     tasks: Iterable[asyncio.Task[Any]],
     *,

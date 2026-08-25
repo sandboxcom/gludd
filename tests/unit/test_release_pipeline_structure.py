@@ -328,7 +328,8 @@ class TestShardMatrixCoverage:
     collected by exactly one shard. The current layout covers all 26 letters:
       unit-1a1: test_a[a-m]*    unit-1a2: test_a[n-z]* + test_a[0-9]*
       unit-1b:  test_[ce]*      unit-1d:  test_[bd]*
-      unit-2:   test_[f-m]*     unit-3:   test_[n-z]* + secrets/
+      unit-2:   test_[f-m]*     unit-3a:  test_[n-r]*
+      unit-3b:  test_[s-z]* + secrets/
       other:    integration/, e2e/, connector*, _e2e.py rerouted files
 
     A gap in the letter coverage means tests silently stop running — the
@@ -338,7 +339,7 @@ class TestShardMatrixCoverage:
 
     EXPECTED_SHARDS: typing.ClassVar[list[str]] = [
         "unit-1a1", "unit-1a2", "unit-1b", "unit-1d",
-        "unit-2", "unit-3", "other",
+        "unit-2", "unit-3a", "unit-3b", "other",
     ]
 
     def _matrix(self) -> dict:

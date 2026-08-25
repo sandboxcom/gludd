@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -124,6 +125,37 @@ async def run() -> None:
     assert len(findings) == 1
     assert findings[0].kind == "async-task"
     assert findings[0].teardown == "TaskGroup.__aexit__"
+
+
+def test_class_task_registry_drain_follows_tuple_snapshot_alias(tmp_path: Path) -> None:
+    findings = _scan(
+        tmp_path,
+        """\
+import asyncio
+from typing import Any
+
+class Owner:
+    def __init__(self) -> None:
+        self.tasks: set[asyncio.Task[Any]] = set()
+
+    def start(self) -> None:
+        task = asyncio.create_task(do_work())
+        self.tasks.add(task)
+
+    async def shutdown(self) -> None:
+        snapshot = tuple(self.tasks)
+        done, pending = await asyncio.wait(snapshot, timeout=1.0)
+        await asyncio.gather(*done, return_exceptions=True)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        self.tasks.clear()
+""",
+    )
+
+    assert len(findings) == 1
+    assert findings[0].owned is True
+    assert "asyncio.wait(snapshot" in findings[0].teardown
 
 
 @pytest.mark.parametrize(
@@ -415,7 +447,10 @@ def test_transfer_and_deferred_shutdown_patterns_are_owned(
     assert teardown in findings[0].teardown
 
 
-def test_inventory_write_and_cli_round_trip(tmp_path: Path, capsys) -> None:
+def test_inventory_write_and_cli_round_trip(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     source_dir = tmp_path / "src"
     source_dir.mkdir()
     source = source_dir / "owned.py"
@@ -455,7 +490,10 @@ def run() -> None:
     assert load_inventory(inventory)
 
 
-def test_cli_reports_inventory_drift_and_input_errors(tmp_path: Path, capsys) -> None:
+def test_cli_reports_inventory_drift_and_input_errors(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     source = tmp_path / "owned.py"
     source.write_text(
         "import tempfile\nwith tempfile.TemporaryDirectory() as path:\n    print(path)\n",
@@ -524,3 +562,22 @@ def test_inventory_loader_rejects_non_object_resource(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="resources must be objects"):
         load_inventory(path)
+
+
+def test_secrets_filter_excludes_only_generated_ownership_inventory() -> None:
+    baseline = json.loads(Path(".secrets.baseline").read_text(encoding="utf-8"))
+    patterns = [
+        pattern
+        for item in baseline["filters_used"]
+        if item["path"] == "detect_secrets.filters.regex.should_exclude_file"
+        for pattern in item["pattern"]
+    ]
+
+    assert any(
+        re.search(pattern, "config/resource_ownership_inventory.json")
+        for pattern in patterns
+    )
+    assert not any(
+        re.search(pattern, "config/unrelated_inventory.json")
+        for pattern in patterns
+    )

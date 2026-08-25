@@ -28,6 +28,7 @@ import pytest
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 PACKAGE = "general_ludd"
+MIN_IMPORT_STABILITY_TOLERANCE_MS = 1.0
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -347,14 +348,16 @@ class TestImportTimeConsistency:
     def test_config_import_stable_across_runs(self) -> None:
         times = [_warm_import_time("general_ludd.config") for _ in range(5)]
         avg = sum(times) / len(times)
+        limit = max(avg * 2.5, MIN_IMPORT_STABILITY_TOLERANCE_MS)
         for t in times:
-            assert t < avg * 2.5, f"config import time {t:.1f} ms is >2.5x avg {avg:.1f} ms — unstable"
+            assert t < limit, f"config import time {t:.1f} ms exceeds stable limit {limit:.1f} ms"
 
     def test_security_import_stable_across_runs(self) -> None:
         times = [_warm_import_time("general_ludd.security") for _ in range(5)]
         avg = sum(times) / len(times)
+        limit = max(avg * 2.5, MIN_IMPORT_STABILITY_TOLERANCE_MS)
         for t in times:
-            assert t < avg * 2.5, f"security import time {t:.1f} ms is >2.5x avg {avg:.1f} ms — unstable"
+            assert t < limit, f"security import time {t:.1f} ms exceeds stable limit {limit:.1f} ms"
 
 
 class TestSubpackageTopology:

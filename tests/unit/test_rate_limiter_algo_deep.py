@@ -34,6 +34,16 @@ class TestTokenBucketRefill:
         time.sleep(0.05)
         assert tb.allow() is True
 
+    def test_refill_uses_injected_monotonic_clock(self) -> None:
+        """Refill arithmetic must not depend on scheduler or wall-clock latency."""
+        now = [10.0]
+        tb = _TokenBucket(rate_per_sec=100.0, burst=1.0, clock=lambda: now[0])
+
+        assert tb.allow() is True
+        assert tb.allow() is False
+        now[0] += 1.0
+        assert tb.allow() is True
+
     def test_refill_never_exceeds_burst(self) -> None:
         tb = _TokenBucket(rate_per_sec=1000.0, burst=1.0)
         time.sleep(0.5)
@@ -48,13 +58,18 @@ class TestTokenBucketRefill:
         assert tb.allow() is True
 
     def test_refill_at_high_rate_precision(self) -> None:
-        tb = _TokenBucket(rate_per_sec=10000.0, burst=100.0)
+        now = [10.0]
+        tb = _TokenBucket(
+            rate_per_sec=10000.0,
+            burst=100.0,
+            clock=lambda: now[0],
+        )
         for _ in range(100):
             assert tb.allow() is True
         assert tb.allow() is False
-        time.sleep(0.005)
+        now[0] += 0.005
         allowed_after = sum(1 for _ in range(100) if tb.allow())
-        assert allowed_after >= 30
+        assert allowed_after == 50
 
     def test_refill_elapsed_zero_does_nothing(self) -> None:
         tb = _TokenBucket(rate_per_sec=50.0, burst=1.0)

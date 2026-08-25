@@ -376,8 +376,10 @@ class TestAllowlistPaths:
 # ---------------------------------------------------------------------------
 
 # Watchdog uses the `event` hook rather than `tool.execute.before`, so it doesn't
-# need a subagent guard -- its hooks fire at session lifecycle events, not tool calls.
-_SUBAGENT_GUARD_EXEMPT = frozenset({"watchdog.ts"})
+# need a subagent guard. Depth is the sole tool-hook exception: it must observe
+# delegated dispatches to enforce the recursion boundary. Dedicated depth and
+# framework-contract tests pin that exception to dispatch tools only.
+_SUBAGENT_GUARD_EXEMPT = frozenset({"enforce-depth.ts", "watchdog.ts"})
 
 
 class TestSubagentGuard:

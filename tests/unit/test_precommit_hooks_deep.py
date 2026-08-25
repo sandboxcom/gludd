@@ -9,7 +9,7 @@ from __future__ import annotations
 import importlib.util
 import re
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, NotRequired, TypedDict, cast
 
 import pytest
 import yaml
@@ -33,25 +33,55 @@ _VALID_STAGES = frozenset(
 )
 
 
-def _load_config() -> dict:
+class _HookConfig(TypedDict, total=False):
+    """Typed subset of one pre-commit hook used by these contracts."""
+
+    id: str
+    entry: str
+    stages: list[str]
+
+
+class _RepoConfig(TypedDict):
+    """Typed subset of one pre-commit repository definition."""
+
+    repo: str
+    hooks: list[_HookConfig]
+    rev: NotRequired[str]
+    default_stages: NotRequired[list[str]]
+
+
+class _PreCommitConfig(TypedDict):
+    """Top-level pre-commit configuration shape."""
+
+    repos: list[_RepoConfig]
+
+
+class _HookEntry(TypedDict):
+    """Repository and hook pair used by exhaustive assertions."""
+
+    repo: _RepoConfig
+    hook: _HookConfig
+
+
+def _load_config() -> _PreCommitConfig:
     with _CONFIG_PATH.open(encoding="utf-8") as fh:
-        return yaml.safe_load(fh)
+        return cast(_PreCommitConfig, yaml.safe_load(fh))
 
 
 @pytest.fixture(scope="module")
-def config() -> dict:
+def config() -> _PreCommitConfig:
     return _load_config()
 
 
-def _all_hooks(config: dict) -> list[dict]:
-    hooks: list[dict] = []
+def _all_hooks(config: _PreCommitConfig) -> list[_HookEntry]:
+    hooks: list[_HookEntry] = []
     for repo in config.get("repos", []):
         for hook in repo.get("hooks", []):
             hooks.append({"repo": repo, "hook": hook})
     return hooks
 
 
-def _repo_ids(config: dict) -> list[str]:
+def _repo_ids(config: _PreCommitConfig) -> list[str]:
     return [r["repo"] for r in config.get("repos", [])]
 
 
@@ -61,23 +91,23 @@ def _repo_ids(config: dict) -> list[str]:
 
 
 class TestPinnedVersions:
-    def test_remote_repos_have_tagged_rev(self, config: dict) -> None:
+    def test_remote_repos_have_tagged_rev(self, config: _PreCommitConfig) -> None:
         remote = [r for r in config["repos"] if r["repo"] != "local"]
         for repo in remote:
             rev = repo.get("rev", "")
             assert re.match(r"^v\d", rev), f"repo {repo['repo']!r} has unpinned rev={rev!r}"
 
-    def test_pre_commit_hooks_rev_pinned(self, config: dict) -> None:
+    def test_pre_commit_hooks_rev_pinned(self, config: _PreCommitConfig) -> None:
         for r in config["repos"]:
             if "pre-commit/pre-commit-hooks" in r["repo"]:
                 assert r["rev"] == "v5.0.0"
 
-    def test_detect_secrets_rev_pinned(self, config: dict) -> None:
+    def test_detect_secrets_rev_pinned(self, config: _PreCommitConfig) -> None:
         for r in config["repos"]:
             if "Yelp/detect-secrets" in r["repo"]:
                 assert r["rev"] == "v1.5.0"
 
-    def test_every_remote_repo_has_rev_key(self, config: dict) -> None:
+    def test_every_remote_repo_has_rev_key(self, config: _PreCommitConfig) -> None:
         for r in config["repos"]:
             if r["repo"] != "local":
                 assert "rev" in r, f"repo {r['repo']!r} missing 'rev' key"
@@ -92,6 +122,7 @@ class TestPinnedVersions:
 class TestLocalHookEntryPoints:
     LOCAL_ENTRIES: ClassVar[dict[str, str]] = {
         "scan-conflicts": "python scripts/scan_conflicts.py",
+        "workflow-yaml": "scripts/hooks/pre-commit-workflow-yaml",
         "ruff-lint": "uv run ruff check src tests",
         "mypy": "make _precommit-mypy",
         "check-tdd-compliance": "uv run python scripts/check_tdd_compliance.py",
@@ -106,7 +137,7 @@ class TestLocalHookEntryPoints:
         "check-disk": "scripts/check_disk_usage.py",
     }
 
-    def test_entry_points_match_expected(self, config: dict) -> None:
+    def test_entry_points_match_expected(self, config: _PreCommitConfig) -> None:
         local = [r for r in config["repos"] if r["repo"] == "local"]
         assert len(local) == 1, "expected exactly one local repo block"
         hooks = local[0]["hooks"]
@@ -136,13 +167,16 @@ class TestLocalHookEntryPoints:
             spec = importlib.util.spec_from_file_location(hid, str(path))
             if spec is None:
                 pytest.fail(f"hook {hid!r}: cannot load spec from {path}")
+            loader = spec.loader
+            if loader is None:
+                pytest.fail(f"hook {hid!r}: spec has no loader for {path}")
             mod = importlib.util.module_from_spec(spec)
             try:
-                spec.loader.exec_module(mod)  # type: ignore[union-attr]
+                loader.exec_module(mod)
             except Exception as exc:
                 pytest.fail(f"hook {hid!r}: script {path} raised {exc}")
 
-    def test_no_local_hook_has_rev(self, config: dict) -> None:
+    def test_no_local_hook_has_rev(self, config: _PreCommitConfig) -> None:
         local = [r for r in config["repos"] if r["repo"] == "local"]
         for repo in local:
             assert "rev" not in repo, "local repo must not have a 'rev' key"
@@ -156,20 +190,20 @@ class TestLocalHookEntryPoints:
 class TestHookStages:
     def test_default_stage_applies_to_hooks_without_explicit_stages(
         self,
-        config: dict,
+        config: _PreCommitConfig,
     ) -> None:
         for repo in config["repos"]:
             default = repo.get("default_stages", ["pre-commit"])
             for stage in default:
                 assert stage in _VALID_STAGES, f"repo {repo['repo']!r}: invalid default_stage {stage!r}"
 
-    def test_explicit_stages_are_valid(self, config: dict) -> None:
+    def test_explicit_stages_are_valid(self, config: _PreCommitConfig) -> None:
         for entry in _all_hooks(config):
             hook = entry["hook"]
             for stage in hook.get("stages", []):
                 assert stage in _VALID_STAGES, f"hook {hook['id']!r}: invalid stage {stage!r}"
 
-    def test_all_local_hooks_are_pre_commit_or_unspecified(self, config: dict) -> None:
+    def test_all_local_hooks_are_pre_commit_or_unspecified(self, config: _PreCommitConfig) -> None:
         local = [r for r in config["repos"] if r["repo"] == "local"]
         for repo in local:
             for hook in repo["hooks"]:
@@ -177,7 +211,7 @@ class TestHookStages:
                 for s in stages:
                     assert s == "pre-commit", f"local hook {hook['id']!r} has non-pre-commit stage {s!r}"
 
-    def test_no_merge_commit_stages_on_source_quality_hooks(self, config: dict) -> None:
+    def test_no_merge_commit_stages_on_source_quality_hooks(self, config: _PreCommitConfig) -> None:
         quality_ids = {"ruff-lint", "mypy", "check-tdd-compliance", "collect-check"}
         for entry in _all_hooks(config):
             hook = entry["hook"]
@@ -193,7 +227,7 @@ class TestHookStages:
 
 
 class TestNoDuplicateHookIds:
-    def test_no_duplicate_hook_ids_across_all_repos(self, config: dict) -> None:
+    def test_no_duplicate_hook_ids_across_all_repos(self, config: _PreCommitConfig) -> None:
         seen: dict[str, str] = {}
         for repo in config["repos"]:
             for hook in repo["hooks"]:
@@ -202,7 +236,7 @@ class TestNoDuplicateHookIds:
                     pytest.fail(f"duplicate hook id {hid!r} in repo {repo['repo']!r} and repo {seen[hid]!r}")
                 seen[hid] = repo["repo"]
 
-    def test_no_duplicate_hook_ids_within_same_repo(self, config: dict) -> None:
+    def test_no_duplicate_hook_ids_within_same_repo(self, config: _PreCommitConfig) -> None:
         for repo in config["repos"]:
             ids = [h["id"] for h in repo["hooks"]]
             assert len(ids) == len(set(ids)), f"repo {repo['repo']!r} has duplicate hook ids: {ids}"
@@ -219,6 +253,6 @@ class TestConfigStructure:
         cfg = _load_config()
         assert "repos" in cfg
 
-    def test_every_hook_has_id(self, config: dict) -> None:
+    def test_every_hook_has_id(self, config: _PreCommitConfig) -> None:
         for entry in _all_hooks(config):
             assert "id" in entry["hook"], f"hook missing 'id' in repo {entry['repo']['repo']!r}"

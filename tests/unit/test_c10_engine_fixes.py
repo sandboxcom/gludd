@@ -271,3 +271,28 @@ def test_background_tasks_drained_on_shutdown_noop_when_empty() -> None:
         assert len(engine._background_tasks) == 0
 
     asyncio.run(_run())
+
+
+def test_shutdown_gracefully_completes_ready_commit() -> None:
+    """Normal shutdown must not cancel a ready repository commit."""
+    completed = False
+
+    async def _run() -> None:
+        nonlocal completed
+        engine = ExecutionEngine(workspace_path="/tmp/test-c10-shutdown-ready")
+
+        async def _ready_commit(path: str, msg: str) -> str | None:
+            nonlocal completed
+            await asyncio.sleep(0)
+            completed = True
+            return "deadbeef"
+
+        with patch(
+            "general_ludd.execution.engine._git_commit_async",
+            side_effect=_ready_commit,
+        ):
+            engine.defer_commit("/tmp/test-c10-shutdown-ready", "ready commit")
+            await engine.shutdown()
+
+    asyncio.run(_run())
+    assert completed

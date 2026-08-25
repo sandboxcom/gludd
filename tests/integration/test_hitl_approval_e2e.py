@@ -19,11 +19,15 @@ Uses HumanGate with mock graph, plus minimal FastAPI app for router endpoints.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from general_ludd.execution.human_gate import HumanGate
 
@@ -34,8 +38,10 @@ HITL_CONFIG = {
     }
 }
 
+AppDb = tuple[async_sessionmaker[AsyncSession], AsyncClient]
 
-def _make_mock_graph(*return_values):
+
+def _make_mock_graph(*return_values: object) -> AsyncMock:
     """Build a mock graph whose ainvoke returns values in sequence."""
     mock = AsyncMock()
     mock.ainvoke = AsyncMock()
@@ -46,22 +52,12 @@ def _make_mock_graph(*return_values):
     return mock
 
 
-def _paused_gate(thread_id: str, decision_id: str, todo_id: str):
-    """Create a HumanGate with a pre-populated pending entry."""
-    gate = HumanGate(config=HITL_CONFIG)
-    gate._graph = _make_mock_graph({"decision": "approved"})
-    gate._pending[thread_id] = {"configurable": {"thread_id": thread_id}}
-    gate._decision_id = decision_id
-    gate._todo_id = todo_id
-    return gate
-
-
 def _make_hitl_app(gate: HumanGate) -> FastAPI:
     """Minimal FastAPI app with review router wired to a provided HumanGate."""
     from general_ludd.routers.review import register
 
     app = FastAPI()
-    daemon_state: dict = {"human_gate": gate}
+    daemon_state: dict[str, object] = {"human_gate": gate}
     register(app, daemon_state)
     return app
 
@@ -75,7 +71,7 @@ class TestHitlFullFlow:
     """Full dispatch → review → human approval → resume → complete."""
 
     @pytest.mark.asyncio
-    async def test_full_flow_approve_resumes_and_completes(self):
+    async def test_full_flow_approve_resumes_and_completes(self) -> None:
         """A low-confidence decision is paused, human approves, and the
         graph resumes with the decision 'approved'."""
         gate = HumanGate(config=HITL_CONFIG)
@@ -104,7 +100,7 @@ class TestHitlFullFlow:
         assert mock_graph.ainvoke.call_count >= 2
 
     @pytest.mark.asyncio
-    async def test_full_flow_denied_clears_pending(self):
+    async def test_full_flow_denied_clears_pending(self) -> None:
         """A denied decision clears the pending gate."""
         gate = HumanGate(config=HITL_CONFIG)
 
@@ -126,7 +122,7 @@ class TestHitlFullFlow:
         assert gate.pending_count == 0
 
     @pytest.mark.asyncio
-    async def test_full_flow_needs_more_work_requeues(self):
+    async def test_full_flow_needs_more_work_requeues(self) -> None:
         """needs_more_work decision clears the gate so work can be re-queued."""
         gate = HumanGate(config=HITL_CONFIG)
 
@@ -156,14 +152,14 @@ class TestHitlFullFlow:
 class TestHitlLowConfidencePending:
     """Low-confidence decisions go to pending review."""
 
-    def test_should_interrupt_below_threshold(self):
+    def test_should_interrupt_below_threshold(self) -> None:
         gate = HumanGate(config=HITL_CONFIG)
         assert gate.should_interrupt(0.55) is True
         assert gate.should_interrupt(0.1) is True
         assert gate.should_interrupt(0.0) is True
 
     @pytest.mark.asyncio
-    async def test_low_confidence_pauses_graph(self):
+    async def test_low_confidence_pauses_graph(self) -> None:
         """Confidence 0.55 (below 0.7 threshold) triggers gate pause."""
         gate = HumanGate(config=HITL_CONFIG)
 
@@ -181,12 +177,12 @@ class TestHitlLowConfidencePending:
         assert result == "approved"
         assert gate.pending_count == 1
 
-    def test_confidence_at_threshold_no_interrupt(self):
+    def test_confidence_at_threshold_no_interrupt(self) -> None:
         gate = HumanGate(config=HITL_CONFIG)
         assert gate.should_interrupt(0.7) is False
 
     @pytest.mark.asyncio
-    async def test_multiple_low_confidence_tracked_independently(self):
+    async def test_multiple_low_confidence_tracked_independently(self) -> None:
         gate = HumanGate(config=HITL_CONFIG)
 
         mock_graph = _make_mock_graph(
@@ -239,7 +235,7 @@ class TestHitlLowConfidencePending:
 class TestHitlApproveResumes:
     """POST /admin/review/approve/{thread_id} resumes the paused graph."""
 
-    def test_approve_endpoint_resumes_gate(self):
+    def test_approve_endpoint_resumes_gate(self) -> None:
         gate = HumanGate(config=HITL_CONFIG)
         gate._graph = _make_mock_graph(
             {"decision": "approved"},
@@ -264,7 +260,7 @@ class TestHitlApproveResumes:
         assert body["decision"] == "approved"
         assert gate.pending_count == 0
 
-    def test_approve_nonexistent_thread_404(self):
+    def test_approve_nonexistent_thread_404(self) -> None:
         gate = HumanGate(config=HITL_CONFIG)
         gate._graph = _make_mock_graph({"decision": "approved"})
 
@@ -279,11 +275,11 @@ class TestHitlApproveResumes:
         assert resp.status_code == 404, resp.text
         assert "nonexistent-thread" in resp.text
 
-    def test_approve_no_gate_503(self):
+    def test_approve_no_gate_503(self) -> None:
         app = FastAPI()
         from general_ludd.routers.review import register
 
-        daemon_state: dict = {"human_gate": None}
+        daemon_state: dict[str, object] = {"human_gate": None}
         register(app, daemon_state)
         client = TestClient(app)
 
@@ -294,7 +290,7 @@ class TestHitlApproveResumes:
 
         assert resp.status_code == 503, resp.text
 
-    def test_approve_denied_decision(self):
+    def test_approve_denied_decision(self) -> None:
         gate = HumanGate(config=HITL_CONFIG)
         gate._graph = _make_mock_graph(
             {"decision": "denied"},
@@ -317,7 +313,7 @@ class TestHitlApproveResumes:
         assert body["decision"] == "denied"
         assert gate.pending_count == 0
 
-    def test_approve_needs_more_work_decision(self):
+    def test_approve_needs_more_work_decision(self) -> None:
         gate = HumanGate(config=HITL_CONFIG)
         gate._graph = _make_mock_graph(
             {"decision": "needs_more_work"},
@@ -349,7 +345,7 @@ class TestHitlApproveResumes:
 class TestHitlPendingList:
     """GET /admin/review/pending lists currently paused review gates."""
 
-    def test_pending_empty(self):
+    def test_pending_empty(self) -> None:
         gate = HumanGate(config=HITL_CONFIG)
         gate._graph = MagicMock()
 
@@ -365,7 +361,7 @@ class TestHitlPendingList:
         assert body["available"] is True
         assert body["enabled"] is True
 
-    def test_pending_with_gates(self):
+    def test_pending_with_gates(self) -> None:
         gate = HumanGate(config=HITL_CONFIG)
         gate._graph = MagicMock()
         gate._pending["t1"] = {"configurable": {"thread_id": "t1"}}
@@ -383,7 +379,7 @@ class TestHitlPendingList:
         tids = {p["thread_id"] for p in body["pending"]}
         assert tids == {"t1", "t2"}
 
-    def test_pending_reflects_approved_removal(self):
+    def test_pending_reflects_approved_removal(self) -> None:
         gate = HumanGate(config=HITL_CONFIG)
         gate._graph = _make_mock_graph({"decision": "approved"})
         gate._pending["t-rem"] = {"configurable": {"thread_id": "t-rem"}}
@@ -402,11 +398,11 @@ class TestHitlPendingList:
         resp_post = client.get("/admin/review/pending")
         assert resp_post.json()["count"] == 0
 
-    def test_pending_no_gate_503(self):
+    def test_pending_no_gate_503(self) -> None:
         app = FastAPI()
         from general_ludd.routers.review import register
 
-        daemon_state: dict = {"human_gate": None}
+        daemon_state: dict[str, object] = {"human_gate": None}
         register(app, daemon_state)
         client = TestClient(app)
 
@@ -423,7 +419,7 @@ class TestHitlDenyRequeues:
     """Denied approvals re-queue work (via needs_more_work)."""
 
     @pytest.mark.asyncio
-    async def test_await_approval_returns_denied(self):
+    async def test_await_approval_returns_denied(self) -> None:
         """When graph returns 'denied', the caller gets 'denied' back."""
         gate = HumanGate(config=HITL_CONFIG)
 
@@ -441,7 +437,7 @@ class TestHitlDenyRequeues:
         assert decision == "denied"
 
     @pytest.mark.asyncio
-    async def test_needs_more_work_returns_for_requeue(self):
+    async def test_needs_more_work_returns_for_requeue(self) -> None:
         """Returns 'needs_more_work' so the event loop can re-queue."""
         gate = HumanGate(config=HITL_CONFIG)
 
@@ -459,7 +455,7 @@ class TestHitlDenyRequeues:
         assert decision == "needs_more_work"
 
     @pytest.mark.asyncio
-    async def test_cancel_clears_pending_without_resume(self):
+    async def test_cancel_clears_pending_without_resume(self) -> None:
         """Cancelling a gate removes it without triggering a resume."""
         gate = HumanGate(config=HITL_CONFIG)
         gate._pending["thread-cancel-1"] = {
@@ -481,14 +477,14 @@ class TestHitlDenyRequeues:
 class TestHitlHighConfidenceSkips:
     """High-confidence decisions skip the human gate entirely."""
 
-    def test_high_confidence_above_threshold_no_interrupt(self):
+    def test_high_confidence_above_threshold_no_interrupt(self) -> None:
         gate = HumanGate(config=HITL_CONFIG)
         assert gate.should_interrupt(0.85) is False
         assert gate.should_interrupt(0.95) is False
         assert gate.should_interrupt(1.0) is False
 
     @pytest.mark.asyncio
-    async def test_high_confidence_returns_none_no_pause(self):
+    async def test_high_confidence_returns_none_no_pause(self) -> None:
         """Confidence 0.95 (above threshold) returns None — no gate created."""
         gate = HumanGate(config=HITL_CONFIG)
 
@@ -508,7 +504,7 @@ class TestHitlHighConfidenceSkips:
         mock_graph.ainvoke.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_config_disabled_skips_even_low_confidence(self):
+    async def test_config_disabled_skips_even_low_confidence(self) -> None:
         """When HITL is disabled, even very low confidence skips."""
         gate = HumanGate(
             config={
@@ -535,7 +531,7 @@ class TestHitlHighConfidenceSkips:
         mock_graph.ainvoke.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_custom_confidence_threshold_respected(self):
+    async def test_custom_confidence_threshold_respected(self) -> None:
         """Custom threshold of 0.55 gates confidence 0.5 but not 0.6."""
         gate = HumanGate(
             config={
@@ -567,13 +563,13 @@ class TestHitlHighConfidenceSkips:
 
 
 class TestHitlEdgeCases:
-    def test_graph_not_available_returns_none(self):
+    def test_graph_not_available_returns_none(self) -> None:
         gate = HumanGate(config=HITL_CONFIG)
         gate._graph = None
         assert gate.available is False
 
     @pytest.mark.asyncio
-    async def test_graph_not_available_await_approval_returns_none(self):
+    async def test_graph_not_available_await_approval_returns_none(self) -> None:
         gate = HumanGate(config=HITL_CONFIG)
         gate._graph = None
 
@@ -583,7 +579,7 @@ class TestHitlEdgeCases:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_graph_error_returns_false_on_resume(self):
+    async def test_graph_error_returns_false_on_resume(self) -> None:
         gate = HumanGate(config=HITL_CONFIG)
         mock_graph = AsyncMock()
         mock_graph.ainvoke = AsyncMock(side_effect=RuntimeError("graph died"))
@@ -602,11 +598,9 @@ class TestHitlEdgeCases:
 class TestHitlHumanTodoRouterIntegration:
     """HumanTodo creation blocks parent agent todo and resolves on human action."""
 
-    @staticmethod
-    def _make_app_with_db():
-        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-        from sqlalchemy.pool import StaticPool
-
+    @pytest.fixture
+    async def app_db(self) -> AsyncIterator[AppDb]:
+        """Yield an isolated app while owning its HTTP client and DB engine."""
         from general_ludd.db.models import Base
 
         engine = create_async_engine(
@@ -615,8 +609,7 @@ class TestHitlHumanTodoRouterIntegration:
             poolclass=StaticPool,
             connect_args={"check_same_thread": False},
         )
-
-        async def _setup():
+        try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
             factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -638,24 +631,17 @@ class TestHitlHumanTodoRouterIntegration:
             reg_todos(app, _daemon_state)
             reg_ht(app, _daemon_state)
 
-            return app, factory
-
-        import asyncio
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(_setup())
-        else:
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(asyncio.run, _setup())
-                return future.result()
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                yield factory, client
+        finally:
+            await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_create_human_todo_with_parent_blocks_parent(self):
-        app, factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
+    async def test_create_human_todo_with_parent_blocks_parent(
+        self, app_db: AppDb
+    ) -> None:
+        factory, client = app_db
         from general_ludd.db.repository import TodoRepository
 
         async with factory() as session:
@@ -665,9 +651,6 @@ class TestHitlHumanTodoRouterIntegration:
             )
             parent_id = parent.todo_id
             await session.commit()
-
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
 
         resp = await client.post(
             "/api/human-todos",
@@ -687,13 +670,10 @@ class TestHitlHumanTodoRouterIntegration:
         assert body["status"] == "open"
 
     @pytest.mark.asyncio
-    async def test_create_human_todo_without_parent_succeeds(self):
-        app, _factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
-
+    async def test_create_human_todo_without_parent_succeeds(
+        self, app_db: AppDb
+    ) -> None:
+        _factory, client = app_db
         resp = await client.post(
             "/api/human-todos",
             json={
@@ -711,13 +691,10 @@ class TestHitlHumanTodoRouterIntegration:
         assert body["priority"] == "medium"
 
     @pytest.mark.asyncio
-    async def test_create_human_todo_invalid_category_rejected(self):
-        app, _factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
-
+    async def test_create_human_todo_invalid_category_rejected(
+        self, app_db: AppDb
+    ) -> None:
+        _factory, client = app_db
         resp = await client.post(
             "/api/human-todos",
             json={
@@ -730,13 +707,10 @@ class TestHitlHumanTodoRouterIntegration:
         assert resp.status_code == 422, resp.text
 
     @pytest.mark.asyncio
-    async def test_create_human_todo_invalid_priority_rejected(self):
-        app, _factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
-
+    async def test_create_human_todo_invalid_priority_rejected(
+        self, app_db: AppDb
+    ) -> None:
+        _factory, client = app_db
         resp = await client.post(
             "/api/human-todos",
             json={
@@ -750,10 +724,8 @@ class TestHitlHumanTodoRouterIntegration:
         assert resp.status_code == 422, resp.text
 
     @pytest.mark.asyncio
-    async def test_list_human_todos_returns_all(self):
-        app, factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
+    async def test_list_human_todos_returns_all(self, app_db: AppDb) -> None:
+        factory, client = app_db
         async with factory() as session:
             from general_ludd.db.repository import HumanTodoRepository
             repo = HumanTodoRepository(session)
@@ -767,19 +739,14 @@ class TestHitlHumanTodoRouterIntegration:
             )
             await session.commit()
 
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
-
         resp = await client.get("/api/human-todos")
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert len(body) == 2
 
     @pytest.mark.asyncio
-    async def test_get_single_human_todo(self):
-        app, factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
+    async def test_get_single_human_todo(self, app_db: AppDb) -> None:
+        factory, client = app_db
         async with factory() as session:
             from general_ludd.db.repository import HumanTodoRepository
             repo = HumanTodoRepository(session)
@@ -789,30 +756,20 @@ class TestHitlHumanTodoRouterIntegration:
             )
             ht_id = row.id
             await session.commit()
-
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
 
         resp = await client.get(f"/api/human-todos/{ht_id}")
         assert resp.status_code == 200, resp.text
         assert resp.json()["id"] == ht_id
 
     @pytest.mark.asyncio
-    async def test_get_nonexistent_human_todo_404(self):
-        app, _factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
-
+    async def test_get_nonexistent_human_todo_404(self, app_db: AppDb) -> None:
+        _factory, client = app_db
         resp = await client.get("/api/human-todos/nonexistent")
         assert resp.status_code == 404, resp.text
 
     @pytest.mark.asyncio
-    async def test_patch_mark_in_progress(self):
-        app, factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
+    async def test_patch_mark_in_progress(self, app_db: AppDb) -> None:
+        factory, client = app_db
         async with factory() as session:
             from general_ludd.db.repository import HumanTodoRepository
             repo = HumanTodoRepository(session)
@@ -822,9 +779,6 @@ class TestHitlHumanTodoRouterIntegration:
             )
             ht_id = row.id
             await session.commit()
-
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
 
         resp = await client.patch(
             f"/api/human-todos/{ht_id}",
@@ -834,10 +788,10 @@ class TestHitlHumanTodoRouterIntegration:
         assert resp.json()["status"] == "in_progress"
 
     @pytest.mark.asyncio
-    async def test_patch_mark_done_requires_resolver_and_resolution(self):
-        app, factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
+    async def test_patch_mark_done_requires_resolver_and_resolution(
+        self, app_db: AppDb
+    ) -> None:
+        factory, client = app_db
         async with factory() as session:
             from general_ludd.db.repository import HumanTodoRepository
             repo = HumanTodoRepository(session)
@@ -847,9 +801,6 @@ class TestHitlHumanTodoRouterIntegration:
             )
             ht_id = row.id
             await session.commit()
-
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
 
         resp = await client.patch(
             f"/api/human-todos/{ht_id}",
@@ -858,10 +809,8 @@ class TestHitlHumanTodoRouterIntegration:
         assert resp.status_code == 422, resp.text
 
     @pytest.mark.asyncio
-    async def test_patch_mark_done_full(self):
-        app, factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
+    async def test_patch_mark_done_full(self, app_db: AppDb) -> None:
+        factory, client = app_db
         async with factory() as session:
             from general_ludd.db.repository import HumanTodoRepository
             repo = HumanTodoRepository(session)
@@ -871,9 +820,6 @@ class TestHitlHumanTodoRouterIntegration:
             )
             ht_id = row.id
             await session.commit()
-
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
 
         resp = await client.patch(
             f"/api/human-todos/{ht_id}",
@@ -890,10 +836,8 @@ class TestHitlHumanTodoRouterIntegration:
         assert body["human_resolution"] == "Approved — looks good."
 
     @pytest.mark.asyncio
-    async def test_patch_dismissed(self):
-        app, factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
+    async def test_patch_dismissed(self, app_db: AppDb) -> None:
+        factory, client = app_db
         async with factory() as session:
             from general_ludd.db.repository import HumanTodoRepository
             repo = HumanTodoRepository(session)
@@ -903,9 +847,6 @@ class TestHitlHumanTodoRouterIntegration:
             )
             ht_id = row.id
             await session.commit()
-
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
 
         resp = await client.patch(
             f"/api/human-todos/{ht_id}",
@@ -919,10 +860,8 @@ class TestHitlHumanTodoRouterIntegration:
         assert resp.json()["status"] == "dismissed"
 
     @pytest.mark.asyncio
-    async def test_cannot_patch_terminal_todo(self):
-        app, factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
+    async def test_cannot_patch_terminal_todo(self, app_db: AppDb) -> None:
+        factory, client = app_db
         async with factory() as session:
             from general_ludd.db.repository import HumanTodoRepository
             repo = HumanTodoRepository(session)
@@ -934,9 +873,6 @@ class TestHitlHumanTodoRouterIntegration:
             ht_id = row.id
             await session.commit()
 
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
-
         resp = await client.patch(
             f"/api/human-todos/{ht_id}",
             json={"status": "in_progress"},
@@ -944,10 +880,8 @@ class TestHitlHumanTodoRouterIntegration:
         assert resp.status_code == 422, resp.text
 
     @pytest.mark.asyncio
-    async def test_delete_soft_deletes_open_todo(self):
-        app, factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
+    async def test_delete_soft_deletes_open_todo(self, app_db: AppDb) -> None:
+        factory, client = app_db
         async with factory() as session:
             from general_ludd.db.repository import HumanTodoRepository
             repo = HumanTodoRepository(session)
@@ -957,9 +891,6 @@ class TestHitlHumanTodoRouterIntegration:
             )
             ht_id = row.id
             await session.commit()
-
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
 
         resp = await client.delete(f"/api/human-todos/{ht_id}")
         assert resp.status_code == 200, resp.text
@@ -968,10 +899,8 @@ class TestHitlHumanTodoRouterIntegration:
         assert body["status"] == "deleted"
 
     @pytest.mark.asyncio
-    async def test_add_tag_to_human_todo(self):
-        app, factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
+    async def test_add_tag_to_human_todo(self, app_db: AppDb) -> None:
+        factory, client = app_db
         async with factory() as session:
             from general_ludd.db.repository import HumanTodoRepository
             repo = HumanTodoRepository(session)
@@ -981,9 +910,6 @@ class TestHitlHumanTodoRouterIntegration:
             )
             ht_id = row.id
             await session.commit()
-
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
 
         resp = await client.post(
             f"/api/human-todos/{ht_id}/tags",
@@ -994,10 +920,8 @@ class TestHitlHumanTodoRouterIntegration:
         assert "urgent" in body.get("tags", [])
 
     @pytest.mark.asyncio
-    async def test_feed_returns_recent(self):
-        app, factory = self._make_app_with_db()
-        from httpx import ASGITransport, AsyncClient
-
+    async def test_feed_returns_recent(self, app_db: AppDb) -> None:
+        factory, client = app_db
         async with factory() as session:
             from general_ludd.db.repository import HumanTodoRepository
             repo = HumanTodoRepository(session)
@@ -1007,47 +931,40 @@ class TestHitlHumanTodoRouterIntegration:
             )
             await session.commit()
 
-        transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
-
         resp = await client.get("/api/human-todos/feed")
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert len(body) >= 1
 
     @pytest.mark.asyncio
-    async def test_no_db_returns_empty_list(self):
+    async def test_no_db_returns_empty_list(self) -> None:
         app = FastAPI()
         app.state._session_factory = None
 
         from general_ludd.routers.human_todos import register as reg_ht
         reg_ht(app, {})
 
-        from httpx import ASGITransport, AsyncClient
         transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
-
-        resp = await client.get("/api/human-todos")
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/human-todos")
         assert resp.status_code == 200, resp.text
         assert resp.json() == []
 
     @pytest.mark.asyncio
-    async def test_no_db_create_returns_503(self):
+    async def test_no_db_create_returns_503(self) -> None:
         app = FastAPI()
         app.state._session_factory = None
 
         from general_ludd.routers.human_todos import register as reg_ht
         reg_ht(app, {})
 
-        from httpx import ASGITransport, AsyncClient
         transport = ASGITransport(app=app)
-        client = AsyncClient(transport=transport, base_url="http://test")
-
-        resp = await client.post(
-            "/api/human-todos",
-            json={
-                "agent_id": "a", "title": "t", "body": "b",
-                "category": "input_request",
-            },
-        )
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/human-todos",
+                json={
+                    "agent_id": "a", "title": "t", "body": "b",
+                    "category": "input_request",
+                },
+            )
         assert resp.status_code == 503, resp.text

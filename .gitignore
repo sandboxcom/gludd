@@ -43,6 +43,8 @@ build/
 *.egg-info/
 .gate-failed
 .gate-status
+.gate-status.next
+.gate-status.running
 .gate-lite-status
 .gate-lite-failed
 .gate-background.pid

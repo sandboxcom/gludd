@@ -68,11 +68,30 @@ def test_container_is_smoked_before_push_and_digest_metadata() -> None:
     assert "steps.build.outputs.digest" not in region
 
 
+def test_container_health_smoke_allows_only_the_exact_docker_bridge_gateway() -> None:
+    """The host probe must cross Docker's bridge without opening the daemon."""
+    script = _step_script("container", "Smoke container health endpoint")
+
+    assert "docker network inspect bridge" in script
+    assert '"%s/32"' in script
+    assert '"$bridge_gateway"' in script
+    assert "GLUDD_NETWORK__ALLOWED_CIDR" in script
+    assert "0.0.0.0/0" not in script
+
+
 def test_execution_environment_is_built_smoked_and_digest_addressed() -> None:
     assert "\n  ansible-ee:\n" in WORKFLOW
     assert "build-ansible-execution-environment" in WORKFLOW
     assert "ANSIBLE_EE_SMOKE_PASS" in WORKFLOW
     assert "gludd-ee-image-${VERSION}.json" in WORKFLOW
+
+
+def test_execution_environment_smoke_uses_the_managed_python() -> None:
+    """Ansible belongs to the EE interpreter, never ambient ``python3``."""
+    script = _step_script("ansible-ee", "Smoke Ansible execution environment")
+
+    assert "/usr/bin/python3.11 -c" in script
+    assert ' python3 -c "import ansible' not in script
 
 
 def test_python_and_collection_distributions_are_built_and_smoked() -> None:

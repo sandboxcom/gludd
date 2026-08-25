@@ -378,10 +378,9 @@ jobs:
     runs-on: ubuntu-latest
     # Every named shard is a release prerequisite. Failures and missing coverage
     # stay red instead of being reclassified as an informational result.
-    # unit-3 (test_[n-z]* + secrets/) is the fattest shard and runs ~18m — right
-    # at the old 20m limit, so a slightly slower runner CANCELS it (a timeout, not
-    # a test failure). 120m gives generous headroom for slow runners.
-    # Durable follow-up: rebalance shards so no single shard nears 30m.
+    # The old unit-3 (test_[n-z]* + secrets/) exceeded its 25m step budget on a
+    # hosted runner.  It is partitioned into disjoint unit-3a/unit-3b lanes so
+    # every lane retains enough bounded budget for one retry and cleanup.
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -390,7 +389,7 @@ jobs:
         # 3.12. Keep each named coverage shard on canonical Python 3.11 so
         # every test has one shard execution lane instead of a duplicate run.
         python-version: ["3.11"]
-        shard: [unit-1a1, unit-1a2, unit-1b, unit-1d, unit-2, unit-3, other]
+        shard: [unit-1a1, unit-1a2, unit-1b, unit-1d, unit-2, unit-3a, unit-3b, other]
         include:
           # Map each shard label to the pytest path(s) it owns.
           # Bash glob expansion inside `run:` handles the wildcard patterns.
@@ -447,12 +446,15 @@ jobs:
           - shard: unit-2
             testpaths: "tests/unit/test_[f-m]*.py"
             exclude: "*/test_*_e2e.py"
-          - shard: unit-3
-            testpaths: "tests/unit/test_[n-z]*.py tests/unit/secrets/"
+          - shard: unit-3a
+            testpaths: "tests/unit/test_[n-r]*.py"
             # Ejects test_project_isolation_e2e.py ('p') and
-            # test_tui_navigation_e2e.py ('t') to the 'other' shard. The
-            # tests/unit/secrets/ DIRECTORY token passes through the filter
-            # untouched (excludes only match tests/unit/*.py file tokens).
+            # other e2e-suffixed files to the 'other' shard.
+            exclude: "*/test_*_e2e.py"
+          - shard: unit-3b
+            testpaths: "tests/unit/test_[s-z]*.py tests/unit/secrets/"
+            # Ejects test_tui_navigation_e2e.py ('t') to the 'other' shard.
+            # The secrets/ directory token passes through the file-only filter.
             exclude: "*/test_*_e2e.py"
           - shard: other
             testpaths: "tests/integration/ tests/e2e/ tests/live/ tests/security/ tests/test_*.py tests/unit/test_connector*.py tests/unit/test_*_e2e.py tests/unit/auth/ tests/unit/sts/ tests/unit/test_e2e_test_generation/"
@@ -508,125 +510,18 @@ jobs:
           uv run python -m pytest ${{ matrix.isolated_testpaths }} -q -W error
       - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         id: test-run
-        timeout-minutes: 25
-        # Expand $TESTPATHS with bash so wildcard patterns like test_[a-e]*.py
-        # are resolved by the shell before pytest sees them.  When the glob
-        # matches nothing (e.g. a new shard boundary) pytest exits 5 (no tests
-        # collected); we treat that as a pass so adding new letters never
-        # hard-blocks CI — the empty shard is just a no-op.
-        #
-        # EVERY shard collects coverage data (.coverage SQLite file) so the
-        # `coverage` job downstream can merge them into a single canonical
-        # coverage.xml.  --cov-report= suppresses per-shard terminal/xml output
-        # (noise across 12 shard legs); the merged report is produced by the
-        # `coverage` job.  Coverage gate is enforced by the `coverage` job
-        # downstream via pyproject.toml fail_under=70.
-        #
-        # RETRY: flaky tests get up to 2 retries with exponential backoff
-        # (10s → 20s). Only retries on non-zero exit codes (test failures,
-        # worker crashes, runner OOM). Exit code 5 (no tests collected) is not
-        # retried — an empty shard is always a pass.
+        timeout-minutes: 40
         run: |
-          retry_test() {
-            local max_attempts=2
-            local delay=10
-            local attempt=1
-            local rc=0
-            while [ $attempt -le $max_attempts ]; do
-              echo "::group::Test attempt ${attempt}/${max_attempts} (shard ${{ matrix.shard }})"
-              set +e
-              "_run_tests" "$@"
-              rc=$?
-              set -e
-              echo "::endgroup::"
-              if [ $rc -eq 0 ]; then
-                echo "Test passed on attempt ${attempt}"
-                return 0
-              fi
-              if [ $rc -eq 5 ]; then
-                echo "::error::No tests collected (exit 5) for required shard"
-                return $rc
-              fi
-              if [ $attempt -lt $max_attempts ]; then
-                echo "::warning::Test attempt ${attempt} failed (exit ${rc}), retrying in ${delay}s..."
-                sleep $delay
-                delay=$((delay * 2))
-              fi
-              attempt=$((attempt + 1))
-            done
-            echo "::error::All ${max_attempts} test attempts failed (last exit: ${rc})"
-            return $rc
-          }
-          _run_tests() {
-            echo "=== CI PHASE: test-shard-${{ matrix.shard }} ==="
-            TESTPATHS="${{ matrix.testpaths }}"
-            EXCLUDES="${{ matrix.exclude }}"
-            FILES=""
-            for f in $TESTPATHS; do
-              keep=1
-              for pat in $EXCLUDES; do
-                case "$f" in
-                  $pat) keep=0 ;;
-                esac
-              done
-              if [ "$keep" -eq 1 ]; then
-                FILES="$FILES $f"
-              fi
-            done
-            if [ -z "${FILES// /}" ]; then
-              echo "::error::Shard '${{ matrix.shard }}' selected no files after exclusions"
-              exit 1
-            fi
-            set +e
-            uv run python scripts/adaptive_test.py $FILES \
-              --cov=general_ludd \
-              --cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils \
-              --cov-report= \
-              --cov-fail-under=0 \
-              -v
-            rc=$?
-            set -e
-            if [ $rc -ne 0 ]; then
-              return $rc
-            fi
-            # combine exits 1 when no parts exist ("No data to combine") —
-            # never let that fail the shard's TEST verdict; the aggregate
-            # coverage job gates completeness (EXPECTED_SHARD_COVERAGE_FILES).
-            # Explicit set +e/-e: the tag pipeline's fail-closed contract
-            # bans shell escape hatches (beta3 pipeline test).
-            set +e
-            uv run coverage combine
-            combine_rc=$?
-            set -e
-            if [ "$combine_rc" -ne 0 ]; then
-              echo "::warning::coverage combine found no parts (shard tests all passed); aggregate coverage job gates completeness"
-            fi
-            COVERAGE_FILE=".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
-            if [ -s .coverage ]; then
-              # pytest-cov wrote the default data file: promote it to the
-              # shard-scoped artifact name the upload step expects.
-              cp .coverage "$COVERAGE_FILE"
-              test -s "$COVERAGE_FILE"
-            elif [ -s "$COVERAGE_FILE" ]; then
-              # combine already merged the shard-scoped parts (COVERAGE_FILE
-              # env) into the artifact path directly.
-              test -s "$COVERAGE_FILE"
-            else
-              # pytest-cov can lose its atexit write under an abrupt
-              # wrapper exit even when every test passed (round-14
-              # unit-1a1: 3662/3662 then 'No data to combine').
-              echo "::warning::shard coverage data missing; aggregate coverage job will flag it"
-            fi
-            # Upload guarantee: the upload-artifact step fails the whole
-            # shard job when NO file matches its path (if-no-files-found:
-            # error — required by the beta3 fail-closed contract). This
-            # marker exists in every outcome so a lost coverage file can
-            # never fail an otherwise-green shard; the aggregate coverage
-            # job gates completeness by counting only real .coverage.* files.
-            echo "${{ matrix.shard }}" > coverage-shard-marker.txt
-            return 0
-          }
-          retry_test
+          echo "=== CI PHASE: test-shard-${{ matrix.shard }} ==="
+          uv run python scripts/run_ci_shards_serial.py \
+            --shards "${{ matrix.shard }}" \
+            --pytest-args="-W error" \
+            --max-files-per-batch 64 \
+            --skip-isolated \
+            --skip-aggregate \
+            --coverage-output ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}" \
+            --attestation-output "ci-shard-attestation.json"
+          echo "${{ matrix.shard }}" > coverage-shard-marker.txt
         env:
           # Shard-scoped coverage data file: parallel shards share this
           # workspace cwd, and coverage's default data/part files would
@@ -644,6 +539,7 @@ jobs:
           # RAM + cores) is deterministic and self-documenting even if that
           # default ever changes. This is what un-throttles the isolated shards.
           CI: "true"
+          GLUDD_RESOURCE_ROOT: "${{ runner.temp }}/gludd-${{ github.sha }}-${{ matrix.shard }}-${{ matrix.python-version }}"
           # Per-xdist-worker RLIMIT_AS backstop (conftest.py pytest_configure).
           # RLIMIT_AS caps VIRTUAL address space, which for this dependency set
           # (eager tree_sitter C-ext, OpenSSL via cryptography, psycopg binary,
@@ -691,13 +587,12 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: coverage-${{ matrix.shard }}-${{ matrix.python-version }}
-          # The marker file always exists (written in every shard outcome),
-          # so a lost pytest-cov atexit write cannot trip if-no-files-found:
-          # error on an otherwise-green shard. The aggregate job only copies
-          # real .coverage.* files — the marker is ignored by its find glob.
+          # The atomic terminal attestation exists on pass or failure. The
+          # aggregate job still gates the exact real .coverage.* file count.
           path: |
             .coverage.${{ matrix.shard }}-${{ matrix.python-version }}
             coverage-shard-marker.txt
+            ci-shard-attestation.json
           if-no-files-found: error
           retention-days: 7
 
@@ -736,7 +631,7 @@ jobs:
         # debugging the merged data file is possible from the artifact.
         run: |
           echo "=== CI PHASE: coverage-combine ==="
-          EXPECTED_SHARD_COVERAGE_FILES=7
+          EXPECTED_SHARD_COVERAGE_FILES=8
           mkdir -p .coverage-shards
           if [ ! -d coverage-data ]; then
             echo "::error::Coverage artifact directory is missing"
@@ -772,7 +667,9 @@ jobs:
   molecule:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Each shard owns one bounded pass plus cleanup/log publication. Re-running
+    # a whole shard duplicated completed scenarios and exhausted this ceiling.
+    timeout-minutes: 45
     # Molecule validates release-bound Ansible content and is therefore blocking.
     strategy:
       # Don't cancel the remaining shards when one fails — we want all 4
@@ -794,43 +691,15 @@ jobs:
         # serves llama.cpp, generates with up to max_attempts=3 (retry +
         # corrective prompt), and verifies via the acceptance engine — the
         # previous 12-minute cap expired mid-scenario (2026-08-16 round 9).
-        timeout-minutes: 20
+        timeout-minutes: 40
         # The `default` (localhost) driver needs no container, so this runs on
         # plain GH runners. Each scenario starts its own stdlib mock daemon via
         # prepare.yml — nothing external is required. Scenarios are sorted and
         # split into 4 contiguous groups by molecule-test-shard.
-        # RETRY: molecule scenarios can be timing-sensitive in CI; 2 attempts
-        # with 15s → 30s backoff catches transient failures.
         run: |
-          retry_molecule() {
-            local max_attempts=2
-            local delay=15
-            local attempt=1
-            local rc=0
-            while [ $attempt -le $max_attempts ]; do
-              echo "::group::Molecule attempt ${attempt}/${max_attempts} (shard ${{ matrix.shard }}/4)"
-              set +e
-              echo "=== CI PHASE: molecule-shard-${{ matrix.shard }} ==="
-              uv sync
-              make molecule-test-shard SHARD=${{ matrix.shard }}/4
-              rc=$?
-              set -e
-              echo "::endgroup::"
-              if [ $rc -eq 0 ]; then
-                echo "Molecule shard ${{ matrix.shard }}/4 passed on attempt ${attempt}"
-                return 0
-              fi
-              if [ $attempt -lt $max_attempts ]; then
-                echo "::warning::Molecule attempt ${attempt} failed (exit ${rc}), retrying in ${delay}s..."
-                sleep $delay
-                delay=$((delay * 2))
-              fi
-              attempt=$((attempt + 1))
-            done
-            echo "::error::MOLECULE SHARD ${{ matrix.shard }}/4 FAILED after ${max_attempts} attempts — check molecule logs above for details."
-            return $rc
-          }
-          retry_molecule
+          echo "=== CI PHASE: molecule-shard-${{ matrix.shard }} ==="
+          uv sync
+          make molecule-test-shard SHARD=${{ matrix.shard }}/4
         env:
           GLUDD_AUTH_PSK: ""
       - name: Tail molecule logs (quick triage)
@@ -1547,8 +1416,16 @@ jobs:
             return "$cleanup_failed"
           }
           trap cleanup_container EXIT
+          bridge_gateway=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
+          if ! printf '%s\n' "$bridge_gateway" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
+            echo "::error::could not resolve the Docker bridge IPv4 gateway"
+            exit 1
+          fi
+          allowed_cidrs=$(printf '["127.0.0.0/8","::1/128","%s/32"]' "$bridge_gateway")
           docker run -d --name "$container_name" \
-            -e GLUDD_ALLOW_NO_AUTH=1 -p 127.0.0.1::8000 "$image_tag"
+            -e GLUDD_ALLOW_NO_AUTH=1 \
+            -e GLUDD_NETWORK__ALLOWED_CIDR="$allowed_cidrs" \
+            -p 127.0.0.1::8000 "$image_tag"
           container_started=1
           port=$(docker port "$container_name" 8000/tcp | head -n 1 | awk -F: '{print $NF}')
           test -n "$port"
@@ -1663,7 +1540,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "=== CI PHASE: ansible-ee-smoke ==="
-          docker run --rm --network=none "${EE_TAG}"             python3 -c "import ansible, ansible_runner; print('ANSIBLE_EE_SMOKE_PASS')"
+          docker run --rm --network=none "${EE_TAG}"             /usr/bin/python3.11 -c "import ansible, ansible_runner; print('ANSIBLE_EE_SMOKE_PASS')"
       - name: Log in to GHCR
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0 (node24)
@@ -1778,7 +1655,7 @@ jobs:
       - name: Run game-building tests
         if: steps.check-key.outputs.skipped == 'false'
         run: |
-          uv sync
+          uv sync --frozen --extra game-e2e
           make test-games
         env:
           GLUDD_AUTH_PSK: ""

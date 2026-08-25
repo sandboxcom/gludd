@@ -120,13 +120,15 @@ def _completion(
     )
 
 
-def test_default_contracts_only_grant_bounded_non_authoritative_roles() -> None:
+def test_default_contracts_only_grant_bounded_roles() -> None:
     assert set(DEFAULT_TASK_CONTRACTS) == {
         "bounded_enumeration",
+        "coding",
         "context_compaction",
         "documentation_draft",
         "failure_classification",
         "format_normalization",
+        "game_logic",
         "schema_extraction",
     }
     granted_roles = {
@@ -134,12 +136,17 @@ def test_default_contracts_only_grant_bounded_non_authoritative_roles() -> None:
     }
     assert granted_roles == {
         TaskRole.COMPACTOR,
+        TaskRole.CODER,
         TaskRole.EDITOR,
         TaskRole.ENUMERATOR,
         TaskRole.REVIEWER,
     }
-    assert TaskRole.CODER not in granted_roles
     assert TaskRole.PLANNER not in granted_roles
+    assert all(
+        contract.allowed_impacts
+        == frozenset({TaskImpact.READ_SOURCE, TaskImpact.WRITE_ARTIFACT})
+        for contract in DEFAULT_TASK_CONTRACTS.values()
+    )
 
 
 @pytest.mark.parametrize("model_id", ["tiny-local-1b", "not-small-by-name"])

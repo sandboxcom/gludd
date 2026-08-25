@@ -431,6 +431,7 @@ help:
 	@echo "  --- Release ---"
 	@echo "  release-list          List all GitHub releases"
 	@echo "  release-branch-new    Cut a release/* branch from a CI-green base (NAME, BASE, RELEASE_BRANCH_VALIDATE_ONLY)"
+	@echo "  require-dual-track-green Require exact-SHA local + hosted CI attestations (SHA, DUAL_TRACK_CI_VALIDATE_ONLY)"
 	@echo "  release-view TAG=..   Show a published GitHub Release + its assets"
 	@echo "  release-create TAG=.. CI-green-gated DRAFT release (single binary; complete via CI)"
 	@echo "  release-upload-assets TAG=.. FILES='..'  Add assets to an existing release (repair path)"
@@ -946,11 +947,15 @@ _ci-replica-clean-tree:
 
 test-ci-shard: _ci-replica-clean-tree
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard SHARD=unit-2"; exit 1; fi
-	@BT="/tmp/gludd-ci-shard-$(SHARD)-$${ID:-$$$$}"; rm -rf "$$BT"; \
-	TESTFILES="$$( $(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)" --shell )"; \
-	if [ -z "$$TESTFILES" ]; then echo ERROR: unknown-or-empty ci shard; rm -rf "$$BT"; exit 2; fi; echo "=== ci shard $(SHARD): local replica ==="; \
-	$(UV) run python -m pytest $$TESTFILES $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; \
-	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	GLUDD_CANDIDATE_SHA="$$(git rev-parse HEAD)" $(UV) run python scripts/run_ci_shards_serial.py \
+		--shards "$(SHARD)" \
+		--pytest-args="-W error $(PYTEST_ARGS)" \
+		--max-files-per-batch "$(or $(MAX_FILES_PER_BATCH),64)" \
+		--skip-isolated \
+		--skip-aggregate \
+		--coverage-output "$$RESOURCE_ROOT/ci-shards/.coverage.$(SHARD)" \
+		--attestation-output "$$RESOURCE_ROOT/ci-shards/$(SHARD)-attestation.json"
 
 test-ci-shard-summary: _ci-replica-clean-tree
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard-summary SHARD=unit-2"; exit 1; fi
@@ -965,7 +970,7 @@ test-ci-shard-slice: _ci-replica-clean-tree
 	@BT="/tmp/gludd-ci-shard-slice-$(SHARD)-$${ID:-$$$$}"; rm -rf "$$BT"; \
 	TESTFILES="$$($(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)" $(if $(FROM),--from "$(FROM)") $(if $(AFTER),--after "$(AFTER)") $(if $(TO),--to "$(TO)") $(if $(BEFORE),--before "$(BEFORE)") --shell)"; \
 	if [ -z "$$TESTFILES" ]; then echo ERROR: unknown-or-empty ci shard slice; rm -rf "$$BT"; exit 2; fi; echo "=== ci shard $(SHARD): local slice ==="; \
-	$(UV) run python -m pytest $$TESTFILES $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; \
+	$(UV) run python -m pytest $$TESTFILES $(_XD) -v -W error $(PYTEST_ARGS) --basetemp="$$BT"; \
 	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
 
 test-ci-shard-kill-unit-4:
@@ -1919,7 +1924,7 @@ test-e2e:
 	if ! mkdir "$$LOCK" 2>/dev/null; then OWNER="$$(cat "$$LOCK/pid" 2>/dev/null || true)"; if [ -n "$$OWNER" ] && kill -0 "$$OWNER" 2>/dev/null; then echo "E2E_RUN_BUSY owner_pid=$$OWNER log=$$(cat "$$LOCK/log" 2>/dev/null || true)" >&2; exit 75; fi; echo "E2E_RUN_STALE owner_pid=$$OWNER; reclaiming"; rm -rf "$$LOCK"; mkdir "$$LOCK" || { echo "E2E_RUN_BUSY lock_reclaim_failed" >&2; exit 75; }; fi; \
 	printf "%s\n" "$$$$" > "$$LOCK/pid"; printf "%s\n" "$$LOG" > "$$LOCK/log"; $(PYTHON) scripts/e2e_supervisor.py ensure --state "$$STATE" --revision "$$REVISION" >/dev/null; $(PYTHON) scripts/e2e_supervisor.py heartbeat-loop --state "$$STATE" --interval "$(E2E_HEARTBEAT_SECS)" & HBPID=$$!; trap 'kill "$$HBPID" 2>/dev/null || true; wait "$$HBPID" 2>/dev/null || true; rm -rf "$$LOCK"; rm -rf "$$BT"' EXIT; trap 'exit 130' INT TERM; trap 'exit 129' HUP; mkdir -p "$$BT" "$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-logs-$$$$"; \
 	FILE_WORKERS="$(E2E_FILE_WORKERS)"; case "$$FILE_WORKERS" in ''|*[!0-9]*) echo "E2E_FILE_WORKERS must be a positive integer" >&2; exit 2;; esac; if [ "$$FILE_WORKERS" -lt 1 ] || [ "$$FILE_WORKERS" -gt 8 ]; then echo "E2E_FILE_WORKERS must be between 1 and 8" >&2; exit 2; fi; \
-	run_e2e_file() { test_file="$$1"; file_key="$$(printf '%s' "$$test_file" | shasum -a 256 | cut -c1-16)"; FILE_BT="$$BT/$$file_key"; FILE_LOG="$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-logs-$$$$/$$file_key.log"; mkdir -p "$$FILE_BT/state"; echo "=== E2E FILE: $$test_file key=$$file_key ==="; $(PYTHON) scripts/e2e_supervisor.py record --state "$$STATE" --file "$$test_file" --status RUNNING; $(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_STATE_ROOT=$$FILE_BT/state GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest $$test_file -n $(E2E_WORKERS) --dist loadgroup -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=$$FILE_BT" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_FILE_MAX_SECS)" LOG="$$FILE_LOG"; FILE_RC=$$?; if [ "$$FILE_RC" -eq 0 ]; then STATUS=PASS; elif [ "$$FILE_RC" -eq 5 ]; then STATUS=SKIP; else STATUS=FAIL; fi; $(PYTHON) scripts/e2e_supervisor.py record --state "$$STATE" --file "$$test_file" --status "$$STATUS"; chmod -R u+rwx "$$FILE_BT" 2>/dev/null || true; rm -rf "$$FILE_BT"; if [ "$$FILE_RC" -eq 5 ]; then return 0; fi; return "$$FILE_RC"; }; \
+	run_e2e_file() { test_file="$$1"; file_key="$$(printf '%s' "$$test_file" | shasum -a 256 | cut -c1-16)"; FILE_BT="$$BT/$$file_key"; FILE_LOG="$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-logs-$$$$/$$file_key.log"; mkdir -p "$$FILE_BT/state"; echo "=== E2E FILE: $$test_file key=$$file_key ==="; $(PYTHON) scripts/e2e_supervisor.py record --state "$$STATE" --file "$$test_file" --status RUNNING; $(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_STATE_ROOT=$$FILE_BT/state GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest $$test_file -n $(E2E_WORKERS) --dist loadgroup -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=\"$$FILE_BT\"" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_FILE_MAX_SECS)" LOG="$$FILE_LOG"; FILE_RC=$$?; if [ "$$FILE_RC" -eq 0 ]; then STATUS=PASS; elif [ "$$FILE_RC" -eq 5 ]; then STATUS=SKIP; else STATUS=FAIL; fi; $(PYTHON) scripts/e2e_supervisor.py record --state "$$STATE" --file "$$test_file" --status "$$STATUS"; chmod -R u+rwx "$$FILE_BT" 2>/dev/null || true; rm -rf "$$FILE_BT"; if [ "$$FILE_RC" -eq 5 ]; then return 0; fi; return "$$FILE_RC"; }; \
 	TEST_FILES="$$($(PYTHON) scripts/e2e_supervisor.py pending --state "$$STATE" --revision "$$REVISION" --root tests/e2e --glob "$(E2E_FILE_GLOB)" --shard "$$SHARD" --total "$$TOTAL")"; RC=0; active=0; PIDS=""; for test_file in $$TEST_FILES; do while [ "$$active" -ge "$$FILE_WORKERS" ]; do set -- $$PIDS; pid="$$1"; shift; PIDS="$$*"; wait "$$pid"; WAIT_RC=$$?; if [ "$$WAIT_RC" -ne 0 ] && [ "$$RC" -eq 0 ]; then RC="$$WAIT_RC"; fi; active=$$((active - 1)); done; run_e2e_file "$$test_file" & PIDS="$$PIDS $$!"; active=$$((active + 1)); done; for pid in $$PIDS; do wait "$$pid"; WAIT_RC=$$?; if [ "$$WAIT_RC" -ne 0 ] && [ "$$RC" -eq 0 ]; then RC="$$WAIT_RC"; fi; done; \
 	chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
 
@@ -2393,12 +2398,12 @@ test-install:
 	@BATS_TEST_DIRNAME="$$(pwd)/tests/install" bats --print-output-on-failure tests/install/install.bats
 
 healthcheck:
-	@$(UV) run python -c "from general_ludd.worker.app import create_app; app = create_app(); print('Worker app factory OK')"
-	@$(UV) run python -c "from general_ludd.event_loop.loop import EventLoop; print('Event loop import OK')"
-	@$(UV) run python -c "from general_ludd.commands.make import MakeRunner; print('MakeRunner import OK')"
+	@$(UV) run --no-sync python -c "from general_ludd.worker.app import create_app; app = create_app(); print('Worker app factory OK')"
+	@$(UV) run --no-sync python -c "from general_ludd.event_loop.loop import EventLoop; print('Event loop import OK')"
+	@$(UV) run --no-sync python -c "from general_ludd.commands.make import MakeRunner; print('MakeRunner import OK')"
 
 ansible-syntax:
-	@for f in playbooks/*.yml; do echo "Checking $$f..."; $(UV) run ansible-playbook -i localhost, --syntax-check "$$f" || exit 1; done
+	@for f in playbooks/*.yml; do echo "Checking $$f..."; $(UV) run --no-sync ansible-playbook -i localhost, --syntax-check "$$f" || exit 1; done
 
 ansible-lint-playbooks:
 	@$(UV) run ansible-lint playbooks/roles || true
@@ -3875,6 +3880,18 @@ verify-release-completeness:
 require-ci-green:
 	@$(UV) run python scripts/require_ci_green.py $(SHA)
 
+# Release precondition that requires the local full-shard attestation and all
+# eight GitHub-hosted shard attestations to match one exact successful SHA.
+require-dual-track-green:
+	@SHA_TO_VERIFY="$(SHA)"; \
+	if [ -z "$$SHA_TO_VERIFY" ]; then SHA_TO_VERIFY="$$(git rev-parse HEAD)"; fi; \
+	if [ "$(DUAL_TRACK_CI_VALIDATE_ONLY)" = "1" ]; then \
+		$(UV) run python scripts/verify_dual_track_ci.py --sha "$$SHA_TO_VERIFY" --validate-only; \
+	else \
+		$(MAKE) --no-print-directory require-ci-green SHA="$$SHA_TO_VERIFY"; \
+		$(UV) run python scripts/verify_dual_track_ci.py --sha "$$SHA_TO_VERIFY"; \
+	fi
+
 # Cut a release branch only from an existing CI-green base.  Validation mode
 # exercises all local checks without contacting GitHub or changing refs.
 release-branch-new:
@@ -3952,6 +3969,7 @@ _tag-immutability-guard:
 	@$(UV) run python scripts/check_tag_immutability.py $(TAG)
 
 _release-dry-run-guard:
+	@$(MAKE) --no-print-directory require-dual-track-green SHA=$$(git rev-parse HEAD)
 	@$(UV) run python scripts/check_runbook_currency.py $(TAG)
 	@$(UV) run python scripts/check_changelog_accuracy.py $(TAG)
 	@$(UV) run python scripts/check_version_bump_atomicity.py $(TAG)
@@ -4029,7 +4047,7 @@ release-dry-run: _release-dry-run-guard
 # Usage: make release-cut TAG=v0.1.0-alpha.1 MSG='release notes'
 release-cut:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-cut TAG=v0.1.0-alpha.1 [MSG='...']"; exit 1; }
-	@$(MAKE) -s require-ci-green
+	@$(MAKE) -s require-dual-track-green SHA=$$(git rev-parse HEAD)
 	@$(MAKE) -s check-readme-status TAG=$(TAG)
 	@$(MAKE) -s git-push-sandboxcom
 	@$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"
@@ -4497,10 +4515,11 @@ ci-remote-head-guard:
 	REMOTE="$(REMOTE)"; if [ -z "$$REMOTE" ]; then REMOTE=sandboxcom; fi; \
 	GIT_SSH_COMMAND="ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new" $(PYTHON) scripts/ci_remote_head_guard.py --ref "$$REF" --remote "$$REMOTE"
 
-# Fresh dispatch of the Build and Release workflow on the current branch after exact-HEAD guard.
-ci-trigger: ci-remote-head-guard _require-gh
-	@REF="$(REF)"; if [ -z "$$REF" ]; then REF=$$(git branch --show-current); fi; \
-	gh workflow run "Build and Release" -R sandboxcom/gludd --ref "$$REF" 2>&1 || echo "ci-trigger-failed"
+# Compatibility entrypoint: every dispatch uses the idempotent exact-SHA signal.
+# Keeping this alias safe prevents branch-only dispatches from bypassing run
+# discovery, durable dispatch ownership, or full-head confirmation.
+ci-trigger: ci-trigger-committed-head
+	@echo "ci-trigger: exact-SHA dispatch confirmed"
 
 # List currently in-progress/queued runs for the Build and Release workflow —
 # so we know whether a new run is already active on a SHA before re-triggering.
@@ -7582,7 +7601,7 @@ gate-lite-kill:
 gate-cleanup:
 	@$(MAKE) gate-kill
 	@$(MAKE) gate-lite-kill
-	@rm -f .gate-background.pid .gate-lite-background.pid
+	@rm -f .gate-background.pid .gate-lite-background.pid .gate-status.next .gate-status.running
 	@echo "[gate-cleanup] removing gate and gate-lite logs older than 24h..."
 	@find .gate-logs -name "gate-*.log" -mtime +0 2>/dev/null -delete
 	@find .gate-logs -name "gate-lite-*.log" -mtime +0 2>/dev/null -delete

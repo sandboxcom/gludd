@@ -131,23 +131,23 @@ class TestSlidingWindowMedian:
 
     def test_sliding_over_odd_window(self) -> None:
         sw = SlidingWindowMedian(3)
-        result = list(sw.process([1, 3, -1, 3, 5, 3, 6, 2]))
-        statistics.median([1, 3, -1, 3])
-        assert result == [None, None, 1.0, 3.0, 3.0, 5.0, 5.0, 3.0]
+        values = [1, 3, -1, 3, 5, 3, 6, 2]
+        result = list(sw.process(values))
+        expected = [
+            None if index < 2 else float(statistics.median(values[index - 2 : index + 1]))
+            for index in range(len(values))
+        ]
+        assert result == expected
 
     def test_sliding_over_even_window(self) -> None:
         sw = SlidingWindowMedian(4)
-        result = list(sw.process([1, 3, -1, 3, 5, 3, 6, 2]))
-        assert result == [
-            None,
-            None,
-            None,
-            statistics.median([1, 3, -1, 3]),
-            3.0,
-            statistics.median([3, -1, 3, 5]),
-            statistics.median([-1, 3, 5, 3]),
-            statistics.median([3, 5, 3, 6]),
+        values = [1, 3, -1, 3, 5, 3, 6, 2]
+        result = list(sw.process(values))
+        expected = [
+            None if index < 3 else float(statistics.median(values[index - 3 : index + 1]))
+            for index in range(len(values))
         ]
+        assert result == expected
 
     def test_stream_of_duplicates(self) -> None:
         sw = SlidingWindowMedian(3)
@@ -189,7 +189,7 @@ class TestSlidingWindowMedian:
 
     def test_size_property(self) -> None:
         sw = SlidingWindowMedian(5)
-        sw.process([1, 2, 3, 4, 5, 6, 7])
+        list(sw.process([1, 2, 3, 4, 5, 6, 7]))
         assert sw.size == 5
 
     def test_iterator_input(self) -> None:
@@ -222,7 +222,7 @@ class TestMultiStreamMedian:
     def test_single_stream_returns_medians(self) -> None:
         ms = MultiStreamMedian(3)
         result = ms.process(stream_a=[1, 3, 2, 5, 7])
-        assert result == {"stream_a": [None, None, 2.0, 3.0, 3.0]}
+        assert result == {"stream_a": [None, None, 2.0, 3.0, 5.0]}
 
     def test_two_streams_independent_windows(self) -> None:
         ms = MultiStreamMedian(3)
