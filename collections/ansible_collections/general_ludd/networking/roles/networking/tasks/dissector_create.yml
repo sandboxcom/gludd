@@ -46,8 +46,8 @@
           {%- endfor -%}
           {{ lines }}
 
-    - name: Copy Lua dissector template
-      ansible.builtin.copy:
+    - name: Generate Lua dissector from template
+      ansible.builtin.template:
         src: dissector_template.lua
         dest: "{{ _dc_output_file }}"
         mode: "0644"
