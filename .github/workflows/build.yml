@@ -462,6 +462,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       # Node 26 for `node --experimental-strip-types` (tests/unit/_hook_fixtures.py's
       # hook_plugin_env fixture, which runs scripts/hook_plugin_harness.mjs against
@@ -539,7 +540,7 @@ jobs:
           # RAM + cores) is deterministic and self-documenting even if that
           # default ever changes. This is what un-throttles the isolated shards.
           CI: "true"
-          GLUDD_RESOURCE_ROOT: "${{ runner.temp }}/gludd-${{ github.sha }}-${{ matrix.shard }}-${{ matrix.python-version }}"
+          GLUDD_RESOURCE_ROOT: "${{ runner.temp }}/gludd-resources"
           # Per-xdist-worker RLIMIT_AS backstop (conftest.py pytest_configure).
           # RLIMIT_AS caps VIRTUAL address space, which for this dependency set
           # (eager tree_sitter C-ext, OpenSSL via cryptography, psycopg binary,

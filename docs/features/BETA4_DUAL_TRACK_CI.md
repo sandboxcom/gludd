@@ -298,6 +298,16 @@ coverage aggregation from starting, preserves bounded owner cleanup, and returns
 the signal-derived status. This keeps candidate invalidation atomic across both
 lanes instead of treating cancellation as a per-batch failure.
 
+The same candidate's hosted jobs exposed two GitHub-only evidence assumptions.
+Run `32886106353`, job `97928481080`, could not validate the recorded
+`SESSION.md` head because the shard checkout retained only GitHub Checkout's
+default single commit. Job `97928481003` configured `GLUDD_RESOURCE_ROOT` as a
+project leaf even though the resource arbiter owns appending the project
+namespace, so hosted resource identity differed from local execution. Test-shard
+checkouts now fetch complete history, and the workflow supplies only the
+runner-temporary `gludd-resources` container root. The existing arbiter remains
+the single owner of project namespace construction on both platforms.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -420,6 +430,17 @@ restored; composing eight focused shard artifacts is not a valid fallback.
 
 Reviewed 2026-08-25:
 
+- [GitHub Checkout documentation](https://github.com/actions/checkout), reviewed
+  2026-08-25, states that only one commit is fetched by default and documents
+  `fetch-depth: 0` as the complete-history contract used by hosted session
+  evidence.
+- [GitHub Community discussion 25950](https://github.com/orgs/community/discussions/25950),
+  opened 2020-10-09 and reviewed 2026-08-25, records practitioner `bad object`
+  failures caused by the default shallow checkout and the complete-history fix.
+- [GitHub Community discussion 26818](https://github.com/orgs/community/discussions/26818),
+  opened 2020-03-27 and reviewed 2026-08-25, preserves the long-lived
+  `Needed a single revision` failure and explains why explicit depth zero is
+  required for history-sensitive automation.
 - [pytest-xdist distribution documentation](https://pytest-xdist.readthedocs.io/en/latest/distribution.html),
   reviewed 2026-08-25, defines explicit worker counts and zero as the supported
   way to disable crashed-worker restarts. The local producer inherits the
