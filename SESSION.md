@@ -1,5 +1,11 @@
 ## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.4 prepared; release-cut blocked on CI green. Session 85: HEAD `16a8478f` on `development`. Round 18 verdicts: molecule 31993898325 FAILED only binary_smoke_linux (transitive warning digest drift — re-pinned `58837b45`, baseline `07172af0`); build 31993898379 FAILED on the same class + the beta3 escape-hatch literal in a comment (fixed `c8c6442e`). Round 19 staged (3 commits) — 2 more commits needed for the normal batch-push (force-push rate-guard exhausted). Next: round-19 push → CI green → `make development-merge-to-master` → `make release-cut TAG='v0.1.0-beta.4'`.
 
+## Current Gate Status
+<!-- gate:begin -->
+- Candidate `e640d07daa473faf552108062919faebb7ae6c56` invalidated by the exact local unit-3b shard; replacement candidate pending.
+- Hosted run `32827145131` is not authoritative for the invalidated candidate.
+<!-- gate:end -->
+
 ---
 
 ## SESSION 85 — 2026-08-15 — HEAD `9bffc6290`: CI-fix waves complete and pushed, CI in flight, release-cut v0.1.0-beta.4 queued behind green CI
