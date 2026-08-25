@@ -204,6 +204,17 @@ Pytest's ephemeral tree now shares the compact per-batch root, while coverage an
 attestations remain in the durable external evidence workspace. The runner still
 removes both resources through their respective owners on every terminal path.
 
+Candidate `3cbf3ef4982007555e46a7d51ca2f3e409f7e6d5` proved that a generic
+multiprocessing socket check was still insufficient. Local batches 1 through 36
+passed while hosted run `32856380941` exercised the same commit, but batch 37
+measured a 114-byte resolved Firecracker socket path after pytest added
+`popen-gw0/<test-name>` beneath the compact root. Darwin permits only 104 bytes,
+so four real Unix-socket tests failed and the hosted run was cancelled. The
+runner now reserves the complete xdist, test-name, and endpoint suffix budget in
+its contract and uses a shorter project-and-digest-owned root. Cleanup remains
+restricted to the exact generated-name grammar; no test or external process
+performs compensating cleanup.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start

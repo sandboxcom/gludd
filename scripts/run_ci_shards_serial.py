@@ -230,19 +230,19 @@ def _pytest_command(
 
 def _owned_socket_safe_tmpdir(label: str) -> Path:
     """Create a compact owned temp root safe for POSIX AF_UNIX endpoints."""
-    digest = hashlib.sha256(label.encode("utf-8")).hexdigest()[:12]
+    digest = hashlib.sha256(label.encode("utf-8")).hexdigest()[:4]
     system_tmp = Path("/tmp") if os.name == "posix" else Path(tempfile.gettempdir())
     system_tmp.mkdir(parents=True, exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix=f"gludd-ci-{digest}-", dir=system_tmp))
+    return Path(tempfile.mkdtemp(prefix=f"g{digest}-", dir=system_tmp))
 
 
 def _cleanup_owned_tmpdir(path: Path) -> None:
     """Remove only a compact temp root created by this runner."""
     expected_parent = Path("/tmp") if os.name == "posix" else Path(tempfile.gettempdir())
     resolved = path.resolve()
-    if resolved.parent != expected_parent.resolve() or not resolved.name.startswith(
-        "gludd-ci-"
-    ):
+    if resolved.parent != expected_parent.resolve() or re.fullmatch(
+        r"g[0-9a-f]{4}-[a-z0-9_]+", resolved.name
+    ) is None:
         raise ValueError(f"refusing to remove unowned shard temp root: {resolved}")
     shutil.rmtree(resolved, ignore_errors=True)
 

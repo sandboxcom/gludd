@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import re
 import signal
 import sys
 import threading
@@ -505,12 +506,33 @@ def test_serial_runner_uses_owned_socket_safe_tmpdir(
     try:
         forkserver_socket = owned / "pymp-12345678" / "listener-12345678"
         assert owned.is_dir()
-        assert owned.name.startswith("gludd-ci-")
+        assert re.fullmatch(r"g[0-9a-f]{4}-[a-z0-9_]+", owned.name)
         assert len(str(forkserver_socket).encode()) < 108
     finally:
         module._cleanup_owned_tmpdir(owned)
 
     assert not owned.exists()
+
+
+def test_serial_runner_reserves_xdist_and_test_name_socket_budget(
+    tmp_path: Path,
+) -> None:
+    """The owned root must leave room for Darwin's 104-byte AF_UNIX limit."""
+    module = _load_script("run_ci_shards_serial")
+    hosted_label = str(tmp_path / ("hosted-checkout-depth-" * 12))
+
+    owned = module._owned_socket_safe_tmpdir(hosted_label)
+    try:
+        socket_path = (
+            owned.resolve()
+            / "pytest"
+            / "popen-gw0"
+            / "test_release_issues_ctrl_alt_del_via_api0"
+            / "fc-api.sock"
+        )
+        assert len(str(socket_path).encode()) < 104
+    finally:
+        module._cleanup_owned_tmpdir(owned)
 
 
 def test_serial_partition_expands_directories_deduplicates_and_bounds_batches(
@@ -830,7 +852,7 @@ def test_serial_runner_places_pytest_basetemp_under_compact_socket_root(
     captured: dict[str, str] = {}
 
     def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
-        path = compact if prefix.startswith("gludd-ci-") else workspace
+        path = compact if re.fullmatch(r"g[0-9a-f]{4}-", prefix) else workspace
         path.mkdir(parents=True, exist_ok=True)
         return str(path)
 
