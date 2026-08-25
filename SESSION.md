@@ -1,9 +1,9 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.4 candidate repair is dual tracked; release-cut remains blocked until local and hosted terminal attestations are green for one exact SHA. Candidate `016ee5c97493f161d5709ab266015af8b70fd785` passed local unit-3b batches 1–27, failed batch 28 on stale provider/datetime/metered-profile contracts, and hosted run `32838352396` was cancelled. Next: commit the batch-28 contract repairs, start both lanes on the replacement SHA, then run `make require-dual-track-green SHA=<full-sha>` before promotion.
+## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.4 candidate repair is dual tracked; release-cut remains blocked until local and hosted terminal attestations are green for one exact SHA. Candidate `ef437dd51b7f350d701d6bfacc43b92f348fc74b` passed local unit-3b batches 1–28, failed batch 29 on todo lifecycle/fallback, token-bucket atomicity, and parser-contract defects, and hosted run `32840654442` was cancelled immediately. Next: commit the batch-29 owner repairs, start both lanes on the replacement SHA, then run `make require-dual-track-green SHA=<full-sha>` before promotion.
 
 ## Current Gate Status
 <!-- gate:begin -->
-- Candidates `e640d07daa473faf552108062919faebb7ae6c56`, `f3403750c184558a2fcb31715756f9da5a472ffa`, `46df20c76d1f66d11e36d863668d1e5616981f1b`, `fc57c087f3c51c398d034231fb56faaa156ef834`, `5d4ddc7fa338c416ffc8ab46d1a4386455d0d79b`, `84e7c25a6381dcb1fe9bd00cd6c5e571df62e63e`, and `016ee5c97493f161d5709ab266015af8b70fd785` were invalidated by exact local or hosted failures.
-- Hosted runs `32827145131`, `32828457339`, `32830158475`, `32832065106`, `32833535093`, and `32835393330` are cancelled or otherwise non-authoritative for the replacement candidate.
+- Candidates `e640d07daa473faf552108062919faebb7ae6c56`, `f3403750c184558a2fcb31715756f9da5a472ffa`, `46df20c76d1f66d11e36d863668d1e5616981f1b`, `fc57c087f3c51c398d034231fb56faaa156ef834`, `5d4ddc7fa338c416ffc8ab46d1a4386455d0d79b`, `84e7c25a6381dcb1fe9bd00cd6c5e571df62e63e`, `016ee5c97493f161d5709ab266015af8b70fd785`, and `ef437dd51b7f350d701d6bfacc43b92f348fc74b` were invalidated by exact local or hosted failures.
+- Hosted runs `32827145131`, `32828457339`, `32830158475`, `32832065106`, `32833535093`, `32835393330`, `32838352396`, and `32840654442` are cancelled or otherwise non-authoritative for the replacement candidate.
 <!-- gate:end -->
 
 ---

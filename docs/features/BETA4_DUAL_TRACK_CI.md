@@ -130,6 +130,18 @@ soon as the local lane failed. The tests now follow the canonical provider graph
 Python's documented `%z` behavior, and Gludd's fail-closed nonzero metered-price
 contract; the complete batch-28 slice passes 404 tests with warnings as errors.
 
+Candidate `ef437dd51b7f350d701d6bfacc43b92f348fc74b` then ran locally while
+hosted run `32840654442` exercised the same immutable commit. Local batch 29
+found 14 failures, so the hosted run was cancelled immediately. The failures
+exposed a process-global todo limiter shared by independent application
+instances, missing bounded fallback when the todo database connection failed,
+non-atomic ungrouped token-bucket admission, a private parser error outside its
+documented `ValueError` contract, and several mathematically stale token-bucket
+assertions. The repaired 16-file batch passes 414 tests with warnings as errors.
+The focused runtime slice passes 344 tests at 93% aggregate branch coverage;
+each of the three changed production files is at least 90%. No harness cleanup
+or daemon startup compensates for these application-owned fixes.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -244,6 +256,16 @@ Reviewed 2026-08-25:
 - [Python datetime documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes)
   is the authoritative contract: `%z` accepts colon separators in
   `datetime.strptime()` beginning with Python 3.7.
+- [FastAPI discussion 3958](https://github.com/fastapi/fastapi/discussions/3958)
+  records the long-lived practitioner requirement that two FastAPI instances
+  own separate service state rather than sharing a module-global singleton.
+- [FastAPI discussion 8239](https://github.com/fastapi/fastapi/discussions/8239)
+  captures years of practitioner experience with app-scoped resources,
+  including test applications and reusable routers that cannot safely rely on
+  one global instance.
+- [Starlette lifespan discussion 2067](https://github.com/encode/starlette/discussions/2067)
+  documents teardown and thread-safety footguns in globally shared resources
+  and recommends context-managed, application-scoped ownership.
 - [OpenCode plugin documentation](https://opencode.ai/docs/plugins/) documents
   the supported plugin-loading contract used by the singular manifest entry and
   the runtime hook acceptance test.
