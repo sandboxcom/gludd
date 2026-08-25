@@ -47,7 +47,7 @@ jobs:
 """
 
 
-def _parse(text: str) -> dict[str, Any]:
+def _parse(text: str) -> dict[str | bool, Any]:
     data = yaml.safe_load(text)
     assert isinstance(data, dict)
     return data
@@ -71,6 +71,19 @@ _HARDCODED_SECRET_PATTERNS = [
     r"(?<!\\$)AWS_SECRET_ACCESS_KEY\s*:\s*['\"][^$\n]{8,}['\"]",
     r"PRIVATE[_-]?KEY\s*:\s*['\"]-----BEGIN",
 ]
+
+
+def _parentheses_balanced(expression: str) -> bool:
+    """Require every closing parenthesis to match an earlier opening one."""
+    depth = 0
+    for character in expression:
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
 
 
 # ---------------------------------------------------------------------------
@@ -164,24 +177,31 @@ class TestNoHardcodedSecrets:
         ],
     )
     def test_hardcoded_secret_detected(self, secret_line: str) -> None:
-        src = f"name: t\non: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    env:\n{secret_line}\n    steps: []\n"
+        indented_secret = "\n".join(
+            f"      {line}" for line in secret_line.splitlines()
+        )
+        src = (
+            "name: t\non: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n"
+            f"    env:\n{indented_secret}\n    steps: []\n"
+        )
         wf = _parse(src)
-        raw = yaml.dump(wf)
+        assert wf["jobs"]["a"]["env"]
+        raw = src
         for pat in _HARDCODED_SECRET_PATTERNS:
             if re.search(pat, raw, re.IGNORECASE):
                 return
         pytest.fail(f"hardcoded secret pattern not detected: {secret_line!r}")
 
     def test_secret_ref_is_not_a_secret(self) -> None:
-        wf = _parse(_VALID_WORKFLOW)
-        raw = yaml.dump(wf)
+        _parse(_VALID_WORKFLOW)
+        raw = _VALID_WORKFLOW
         for pat in _HARDCODED_SECRET_PATTERNS:
             assert not re.search(pat, raw, re.IGNORECASE), f"valid workflow falsely matched secret pattern {pat!r}"
 
     def test_empty_env_is_safe(self) -> None:
         src = "name: t\non: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    env: {}\n    steps: []\n"
-        wf = _parse(src)
-        raw = yaml.dump(wf)
+        _parse(src)
+        raw = src
         for pat in _HARDCODED_SECRET_PATTERNS:
             assert not re.search(pat, raw, re.IGNORECASE)
 
@@ -191,8 +211,8 @@ class TestNoHardcodedSecrets:
             "name: t\non: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n"
             "    env:\n      token: ${{ secrets.GITHUB_TOKEN }}\n    steps: []\n"
         )
-        wf = _parse(src)
-        raw = yaml.dump(wf)
+        _parse(src)
+        raw = src
         for pat in _HARDCODED_SECRET_PATTERNS:
             assert not re.search(pat, raw, re.IGNORECASE), f"secrets context ref falsely matched pattern {pat!r}"
 
@@ -308,9 +328,9 @@ class TestConditionals:
 
     @pytest.mark.parametrize("cond,balanced", _BALANCED_CONDITIONALS)
     def test_parens_balanced(self, cond: str, balanced: bool) -> None:
-        opens = cond.count("(")
-        closes = cond.count(")")
-        assert (opens == closes) == balanced, f"conditional {cond!r}: opens={opens}, closes={closes}"
+        assert _parentheses_balanced(cond) is balanced, (
+            f"conditional {cond!r}: expected balanced={balanced}"
+        )
 
     def test_conditionals_in_steps(self) -> None:
         src = (
@@ -338,9 +358,9 @@ class TestStructuralIntegrity:
     def test_workflow_has_on_trigger(self) -> None:
         wf = _parse(_VALID_WORKFLOW)
         # PyYAML normalizes bare `on` → True; check for either key.
-        has_on = "on" in wf or True in wf  # type: ignore[comparison-overlap]
+        has_on = "on" in wf or True in wf
         assert has_on, "workflow must declare an 'on' trigger"
-        on_val: object = wf.get("on") if "on" in wf else wf.get(True)  # type: ignore[arg-type]
+        on_val: object = wf.get("on") if "on" in wf else wf.get(True)
         assert isinstance(on_val, dict), "'on' must be a mapping"
 
     def test_workflow_has_jobs(self) -> None:
