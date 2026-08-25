@@ -392,6 +392,7 @@ def test_tmp_gludd_cleanup_targets_are_scoped_to_generated_dirs() -> None:
     shard_cleanup = _target_block("tmp-gludd-clean-ci-shards")
     venv_cleanup = _target_block("clean-worktree-venvs")
     cache_cleanup = _target_block("clean-worktree-caches")
+    venv_cleaner = (ROOT / "scripts" / "clean_worktree_venvs.py").read_text()
 
     assert phony_block.count("log-agent-result disk-guard") == 1
     assert "sort -h | tail -40" in usage_block
@@ -405,14 +406,20 @@ def test_tmp_gludd_cleanup_targets_are_scoped_to_generated_dirs() -> None:
     assert "/tmp/gludd-worktrees" not in shard_cleanup
     assert "/Users/shawnwilson/gludd" not in shard_cleanup
 
-    assert "/tmp/gludd-worktrees/*/.venv" in venv_cleanup
-    assert "/Users/shawnwilson/gludd/.claude/worktrees/agent-*/.venv" in venv_cleanup
-    assert "/tmp/gludd-worktrees/* " not in venv_cleanup
+    assert "$(SYSTEM_PYTHON) -m scripts.clean_worktree_venvs" in venv_cleanup
+    assert "rm -rf" not in venv_cleanup
+    assert 'Path("/tmp/gludd-worktrees")' in venv_cleaner
+    assert 'Path("/Users/shawnwilson/gludd/.claude/worktrees")' in venv_cleaner
+    assert "registered_worktree_paths" in venv_cleaner
+    assert "active_process_pids" in venv_cleaner
+    assert "invoking-worktree" in venv_cleaner
 
     assert "clean-worktree-caches: clean-worktree-venvs" in cache_cleanup
-    assert "/tmp/gludd-worktrees/*/.pytest_cache" in cache_cleanup
-    assert "/tmp/gludd-worktrees/*/.mypy_cache" in cache_cleanup
-    assert "/tmp/gludd-worktrees/*/.ruff_cache" in cache_cleanup
+    assert "/usr/bin/find /tmp/gludd-worktrees -type d" in cache_cleanup
+    assert "/usr/bin/find /Users/shawnwilson/gludd/.claude/worktrees -type d" in cache_cleanup
+    for cache_name in (".pytest_cache", ".mypy_cache", ".ruff_cache"):
+        assert f"-name {cache_name}" in cache_cleanup
+    assert "-prune -exec rm -rf {} +" in cache_cleanup
     assert "/tmp/gludd-worktrees/* " not in cache_cleanup
 
 
