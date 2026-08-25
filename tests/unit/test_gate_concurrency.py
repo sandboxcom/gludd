@@ -303,6 +303,8 @@ class TestRunGateScript:
             if holder_proc is not None:
                 holder_proc.terminate()
                 holder_proc.wait(timeout=5)
+                if holder_proc.stdout is not None:
+                    holder_proc.stdout.close()
             # Clean up our unique lock file.
             lock_path.unlink(missing_ok=True)
 
