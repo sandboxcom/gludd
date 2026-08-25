@@ -215,6 +215,26 @@ its contract and uses a shorter project-and-digest-owned root. Cleanup remains
 restricted to the exact generated-name grammar; no test or external process
 performs compensating cleanup.
 
+Replacement candidate `d43441adae3bf28a4655aac734151f2243d899db` passed the
+repaired Firecracker boundary, then batch 38 exposed two watchdog durability
+gaps while hosted run `32859009012` exercised the same SHA. A corrupt kill audit
+was logged but not recovered, and its direct rewrite could truncate prior audit
+evidence. The audit owner now recovers corrupt input as a new bounded list and
+publishes through a flushed, fsynced, same-directory temporary file plus atomic
+replacement; replacement failure preserves the prior file and removes the
+temporary artifact. The candidate was invalidated and its hosted run cancelled.
+
+The same batch exposed a Python 3.14 import-contract violation in a test helper:
+it executed a dataclass-bearing file without first registering the module under
+its spec name. Python's official
+[programmatic import recipe](https://docs.python.org/3/library/importlib.html#approximating-importlib-import-module)
+registers `sys.modules[name]` before `exec_module`. A 2025
+[CPython practitioner report](https://github.com/python/cpython/issues/140704)
+records the same `dataclasses` `NoneType.__dict__` failure when a module is not
+available under `cls.__module__`. The helper now uses a unique registered name,
+so it neither depends on another test's import order nor changes production
+dataclass behavior.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start

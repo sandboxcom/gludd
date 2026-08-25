@@ -366,6 +366,17 @@
       "owned": true
     },
     {
+      "path": "scripts/task_watchdog.py",
+      "line": 420,
+      "column": 17,
+      "kind": "temp-artifact",
+      "owner": "record_kill",
+      "acquisition": "tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=p.parent, prefix=f'.{p.name}.', suffix='.tmp', delete=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "c33fc23d7046279c8b872bbf0a73bfa0251138b430b3ac198337aacc6172cc6e",
+      "owned": true
+    },
+    {
       "path": "scripts/test_hook_runtime.py",
       "line": 157,
       "column": 9,

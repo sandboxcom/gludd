@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts.process_cleanup import ProcessInfo
 from scripts.task_watchdog import (
     find_hung_processes,
     find_stale_tasks,
@@ -149,6 +150,27 @@ class TestRecordKill:
 # ---------------------------------------------------------------------------
 
 class TestKillProcess:
+    def test_verified_process_tree_terminates_descendants_before_parent(self) -> None:
+        """An owned task tree is drained child-first for TERM and KILL."""
+        parent = ProcessInfo(9100, 1, 600.0, "pytest worker")
+        child = ProcessInfo(9101, 9100, 590.0, "python child")
+        table = {parent.pid: parent, child.pid: child}
+
+        with (
+            patch("scripts.task_watchdog.snapshot_processes", return_value=table),
+            patch("scripts.task_watchdog.os.kill") as mock_kill,
+            patch("scripts.task_watchdog.time.sleep"),
+        ):
+            assert kill_process(parent.pid, expected_command=parent.command) is True
+
+        calls = [(call.args[0], call.args[1]) for call in mock_kill.call_args_list]
+        assert calls == [
+            (child.pid, signal.SIGTERM),
+            (parent.pid, signal.SIGTERM),
+            (child.pid, signal.SIGKILL),
+            (parent.pid, signal.SIGKILL),
+        ]
+
     def test_sigterm_then_sigkill_called(self):
         """kill_process must try SIGTERM first, wait, then SIGKILL."""
         with patch("scripts.task_watchdog.os.kill") as mock_kill, \
