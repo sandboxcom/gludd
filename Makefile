@@ -8022,7 +8022,13 @@ tf-init-local: tf-cache-setup
 	@case "$(STACK)" in stacks/azure-vllm|stacks/azure-llamacpp) ;; *) echo "Usage: make tf-init-local STACK=stacks/azure-vllm|stacks/azure-llamacpp TF_INIT_LOCAL_VALIDATE_ONLY=0|1"; exit 2;; esac
 	@$(UV) run python scripts/clean_terraform_test_artifacts.py "$(TF_ROOT)/$(STACK)"
 	@if [ "$(TF_INIT_LOCAL_VALIDATE_ONLY)" = "1" ]; then echo "tf-init-local validate-only stack=$(STACK)"; exit 0; fi; \
-		cd "$(TF_ROOT)/$(STACK)" && TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" terraform init -backend=false
+		RESOURCE_ROOT="$$( $(UV) run python scripts/resource_arbiter.py root )"; \
+		TF_LOCAL_PARENT="$$RESOURCE_ROOT/terraform-init"; \
+		mkdir -p "$$TF_LOCAL_PARENT"; \
+		TF_LOCAL_DATA_DIR="$$(mktemp -d "$$TF_LOCAL_PARENT/$(subst /,-,$(STACK)).XXXXXX")"; \
+		cleanup_tf_local() { rm -rf "$$TF_LOCAL_DATA_DIR"; }; \
+		trap cleanup_tf_local EXIT INT TERM; \
+		cd "$(TF_ROOT)/$(STACK)" && TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" TF_DATA_DIR="$$TF_LOCAL_DATA_DIR" terraform init -backend=false
 
 # Validates a single stack against the shared cache.
 #   make tf-validate STACK=stacks/aws-vllm
