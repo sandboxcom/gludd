@@ -7,6 +7,8 @@ import io
 import json
 import signal
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -313,6 +315,42 @@ def test_terminal_attestation_identifies_hosted_lane(
     assert json.loads(destination.read_text(encoding="utf-8"))["lane"] == "hosted"
 
 
+def test_terminal_attestation_concurrent_publish_is_atomic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parallel local/hosted writers must never share a temporary pathname."""
+    module = _load_script("run_ci_shards_serial")
+    destination = tmp_path / "shared.json"
+    barrier = threading.Barrier(2)
+    real_replace = module.os.replace
+
+    def synchronized_replace(source: Path, target: Path) -> None:
+        barrier.wait(timeout=2.0)
+        real_replace(source, target)
+
+    monkeypatch.setattr(module.os, "replace", synchronized_replace)
+
+    def publish(returncode: int) -> None:
+        module._write_terminal_attestation(
+            destination,
+            identity={"head_sha": "abc123", "clean": True, "exact_sha": True},
+            shards=["unit-2"],
+            returncode=returncode,
+            started_at="2026-08-25T00:00:00Z",
+            completed_at="2026-08-25T00:01:00Z",
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(publish, returncode) for returncode in (0, 1)]
+        for future in futures:
+            future.result()
+
+    payload = json.loads(destination.read_text(encoding="utf-8"))
+    assert payload["returncode"] in {0, 1}
+    assert not list(tmp_path.glob("*.tmp"))
+
+
 def test_cli_publishes_failed_attestation_when_runner_raises(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -438,6 +476,25 @@ def test_serial_pytest_command_uses_one_fail_closed_worker_and_isolated_basetemp
     assert f"--cov-config={coverage_config}" in greenlet_command
     assert Coverage(config_file=str(coverage_config)).get_option("run:branch") is True
     assert f"--basetemp={tmp_path / 'pytest'}" in command
+
+
+def test_serial_runner_uses_owned_socket_safe_tmpdir(
+    tmp_path: Path,
+) -> None:
+    """Hosted checkout depth must not overflow multiprocessing AF_UNIX paths."""
+    module = _load_script("run_ci_shards_serial")
+    hosted_label = str(tmp_path / ("hosted-checkout-depth-" * 12))
+
+    owned = module._owned_socket_safe_tmpdir(hosted_label)
+    try:
+        forkserver_socket = owned / "pymp-12345678" / "listener-12345678"
+        assert owned.is_dir()
+        assert owned.name.startswith("gludd-ci-")
+        assert len(str(forkserver_socket).encode()) < 108
+    finally:
+        module._cleanup_owned_tmpdir(owned)
+
+    assert not owned.exists()
 
 
 def test_serial_partition_expands_directories_deduplicates_and_bounds_batches(
@@ -713,6 +770,7 @@ def test_serial_runner_uses_unique_batches_and_stops_after_worker_death(
         return 0 if len(batch_runs) == 1 else module.WORKER_DEATH_EXIT_CODE
 
     monkeypatch.setattr(module.tempfile, "mkdtemp", lambda **_kwargs: str(workspace))
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: None)
     monkeypatch.setattr(
         module,
         "expand_shard",
@@ -778,6 +836,7 @@ def test_serial_runner_continues_after_a_failed_shard(
         return 1 if shard == "unit-1a1" else 0
 
     monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: None)
     monkeypatch.setattr(module, "expand_shard", lambda shard: [f"tests/{shard}.py"])
     monkeypatch.setattr(
         module,

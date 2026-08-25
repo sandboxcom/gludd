@@ -15,6 +15,15 @@ The defect was procedural as well as technical: a local green result was allowed
 to influence release confidence before terminal hosted evidence existed for the
 same immutable commit.
 
+The next frozen candidate,
+`a7f037c59fd71082452249bb5f6ee9efa8f50739`, proved why both lanes remain
+mandatory. Hosted run `32816856494` found that the runner's nested `TMPDIR`
+could exceed Linux's AF_UNIX pathname limit, while the local macOS checkout did
+not. It also exposed concurrent terminal-attestation writers sharing one fixed
+temporary filename. The runner now uses a compact project-labelled temp root
+for multiprocessing sockets and a unique, fsynced same-directory temporary file
+for every atomic attestation publish. Both resources are cleaned by their owner.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -89,6 +98,15 @@ Reviewed 2026-08-25:
   documents controller hangs after a worker dies with retained pipes.
 - [pytest-xdist issue 1278](https://github.com/pytest-dev/pytest-xdist/issues/1278)
   documents missed nonzero worker exits, supporting fail-closed controller parsing.
+- [CPython issue 93852](https://github.com/python/cpython/issues/93852) records
+  the long-lived practitioner failure where nested temporary paths exceed the
+  107-byte Linux AF_UNIX limit.
+- [CPython multiprocessing temp-directory implementation](https://github.com/python/cpython/blob/main/Lib/multiprocessing/util.py)
+  documents the platform socket limits and the same short-system-temp fallback
+  Gludd applies explicitly for supported Python versions.
+- [GitHub Actions runner issue 3760](https://github.com/actions/runner/issues/3760)
+  reports cross-runner state and ownership failures when runtime directories are
+  shared, supporting Gludd's per-project, per-batch namespaces.
 - [Git worktree documentation](https://git-scm.com/docs/git-worktree) describes
   locked worktree ownership and pruning behavior used to preserve active candidate
   state.

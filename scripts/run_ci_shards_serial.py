@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import queue
@@ -129,12 +130,18 @@ def _write_terminal_attestation(
     }
     if error is not None:
         payload["error"] = error
-    temporary = destination.with_suffix(destination.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(payload, sort_keys=True, indent=2) + "\n",
-        encoding="utf-8",
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
     )
-    os.replace(temporary, destination)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, sort_keys=True, indent=2) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 _RESOURCE_PATHS = _resource_paths()
@@ -219,6 +226,25 @@ def _pytest_command(
         "--max-worker-restart=0",
         f"--basetemp={basetemp / 'pytest'}",
     ]
+
+
+def _owned_socket_safe_tmpdir(label: str) -> Path:
+    """Create a compact owned temp root safe for POSIX AF_UNIX endpoints."""
+    digest = hashlib.sha256(label.encode("utf-8")).hexdigest()[:12]
+    system_tmp = Path("/tmp") if os.name == "posix" else Path(tempfile.gettempdir())
+    system_tmp.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix=f"gludd-ci-{digest}-", dir=system_tmp))
+
+
+def _cleanup_owned_tmpdir(path: Path) -> None:
+    """Remove only a compact temp root created by this runner."""
+    expected_parent = Path("/tmp") if os.name == "posix" else Path(tempfile.gettempdir())
+    resolved = path.resolve()
+    if resolved.parent != expected_parent.resolve() or not resolved.name.startswith(
+        "gludd-ci-"
+    ):
+        raise ValueError(f"refusing to remove unowned shard temp root: {resolved}")
+    shutil.rmtree(resolved, ignore_errors=True)
 
 
 def _isolated_pytest_command(pytest_args: list[str]) -> list[str]:
@@ -599,6 +625,7 @@ def run(
         workspace = Path(
             tempfile.mkdtemp(prefix=f"gludd-gate-{shard}-", dir=workspace_parent)
         )
+        owned_tmpdirs: list[Path] = []
         try:
             print(
                 f"=== GATE TEST SHARD {index}/{len(shards)}: {shard} "
@@ -612,6 +639,9 @@ def run(
                 batchtemp.mkdir(parents=True)
                 batch_name = f"{shard}-batch-{batch_index:03d}"
                 env = _env_for_shard(batch_name, batchtemp)
+                owned_tmpdir = _owned_socket_safe_tmpdir(batch_name)
+                owned_tmpdirs.append(owned_tmpdir)
+                env["TMPDIR"] = str(owned_tmpdir)
                 env["COVERAGE_FILE"] = str(batchtemp / ".coverage")
                 print(
                     f"SHARD-BATCH shard={shard} batch={batch_index}/{len(batches)} "
@@ -647,6 +677,8 @@ def run(
             if not shard_failed:
                 print(f"SHARD-PASS shard={shard} rc=0", flush=True)
         finally:
+            for owned_tmpdir in owned_tmpdirs:
+                _cleanup_owned_tmpdir(owned_tmpdir)
             shutil.rmtree(workspace, ignore_errors=True)
 
     if coverage_output is not None:

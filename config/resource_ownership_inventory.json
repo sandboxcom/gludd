@@ -180,7 +180,29 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 359,
+      "line": 133,
+      "column": 33,
+      "kind": "temp-artifact",
+      "owner": "_write_terminal_attestation",
+      "acquisition": "tempfile.mkstemp(prefix=f'.{destination.name}.', suffix='.tmp', dir=destination.parent)",
+      "teardown": "temporary.unlink(missing_ok=True)",
+      "source_hash": "9e8d9bfbfb2a692e1223bbd45dd1d2b774bd614ec13aeb15a923b7a570a413d3",
+      "owned": true
+    },
+    {
+      "path": "scripts/run_ci_shards_serial.py",
+      "line": 236,
+      "column": 16,
+      "kind": "temp-artifact",
+      "owner": "_owned_socket_safe_tmpdir",
+      "acquisition": "tempfile.mkdtemp(prefix=f'gludd-ci-{digest}-', dir=system_tmp)",
+      "teardown": "ownership-transfer:return",
+      "source_hash": "791fa14e7bf4936cf65c77daa6a78bd95c70a0c92a8a9cfc87c68965da1c71a8",
+      "owned": true
+    },
+    {
+      "path": "scripts/run_ci_shards_serial.py",
+      "line": 385,
       "column": 14,
       "kind": "process",
       "owner": "_run_owned_pytest",
@@ -191,7 +213,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 600,
+      "line": 626,
       "column": 12,
       "kind": "temp-artifact",
       "owner": "run",
