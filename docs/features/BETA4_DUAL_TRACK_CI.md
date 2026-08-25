@@ -371,6 +371,25 @@ and promotes every Python warning to an error. This keeps the full local
 collection and syntax checks while removing the network/cache owner from the
 lint path; it is not a warning filter or a reduced rule profile.
 
+Candidate `9324889fc9049ea66643805710b3fc7d8830898c` then demonstrated two
+distinct retry boundaries. Local validation passed two complete shards while
+hosted run `32902659192` reached its platform fan-out. GitHub-hosted Termux and
+game-building runners in different Azure regions both failed during `Set up
+job`: GitHub's internal action-download hostname did not resolve after all three
+platform retries. Because no repository step ran, the immutable candidate was
+eligible for a paired infrastructure retry rather than a code change. Both
+peers were still cancelled immediately to preserve resource and evidence
+pairing.
+
+That retry exposed an orchestration defect: `ci-trigger-committed-head` treated
+the completed cancelled run as reusable and claimed dispatch success, leaving a
+new local producer without a live hosted peer. Exact-SHA signaling now reuses
+only active or successful runs. A completed non-success conclusion is explicit
+terminal evidence that authorizes one replacement dispatch and refreshes its
+durable marker; a merely delayed run still cannot be duplicated. This behavior
+matches the long-lived practitioner reports about missing and duplicate
+workflow signals cited below while retaining one immutable candidate SHA.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
