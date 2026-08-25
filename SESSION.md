@@ -2,8 +2,8 @@
 
 ## Current Gate Status
 <!-- gate:begin -->
-- Candidates `e640d07daa473faf552108062919faebb7ae6c56`, `f3403750c184558a2fcb31715756f9da5a472ffa`, and `46df20c76d1f66d11e36d863668d1e5616981f1b` were invalidated by exact local or hosted failures.
-- Hosted runs `32827145131`, `32828457339`, and cancelled run `32830158475` are not authoritative for the replacement candidate.
+- Candidates `e640d07daa473faf552108062919faebb7ae6c56`, `f3403750c184558a2fcb31715756f9da5a472ffa`, `46df20c76d1f66d11e36d863668d1e5616981f1b`, and `fc57c087f3c51c398d034231fb56faaa156ef834` were invalidated by exact local or hosted failures.
+- Hosted runs `32827145131`, `32828457339`, `32830158475`, and `32832065106` are cancelled or otherwise non-authoritative for the replacement candidate.
 <!-- gate:end -->
 
 ---

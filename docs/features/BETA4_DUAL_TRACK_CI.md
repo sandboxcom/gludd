@@ -78,6 +78,14 @@ single dispatch-only delegated-context exception, honors an explicit
 This is the intended invalidation behavior: neither a long green prefix nor an
 active hosted run makes a failed SHA reusable.
 
+Candidate `fc57c087f3c51c398d034231fb56faaa156ef834` passed the repaired batch
+24, then batch 25 found an E2E `xfail` whose explanatory reason did not cite its
+governing behavioral specification. Hosted run `32832065106` was cancelled, and
+the marker now references the existing no-wait spec rather than weakening the
+repository-wide marker audit. This demonstrates that candidate invalidation is
+recursive: fixing the prior boundary only earns the right to discover the next
+one on a new immutable SHA.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
