@@ -118,6 +118,29 @@ def _write_tfvars(stack_dir: Path) -> Path:
     return tfvars_path
 
 
+def _copy_terraform_tree(destination: Path) -> Path:
+    """Copy mutable Terraform inputs outside the checkout and return stacks."""
+    copied_root = destination / "terraform"
+    shutil.copytree(
+        STACKS_DIR.parent.resolve(),
+        copied_root,
+        ignore=shutil.ignore_patterns(
+            ".terraform",
+            ".terraform.lock.hcl",
+            "terraform.auto.tfvars",
+            "*.tfstate",
+            "*.tfstate.*",
+        ),
+    )
+    return copied_root / "stacks"
+
+
+@pytest.fixture(scope="session")
+def mutable_stacks_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Provide a worker-owned Terraform tree for all mutating E2E commands."""
+    return _copy_terraform_tree(tmp_path_factory.mktemp("terraform-e2e"))
+
+
 def _looks_numeric(val: str) -> bool:
     try:
         int(val)
@@ -220,14 +243,36 @@ class TestStackEnumeration:
 class TestTfvarsGeneration:
     """Structural checks on auto-generated tfvars (no binary needed)."""
 
+    def test_mutable_tree_isolated_from_checkout(self, tmp_path: Path) -> None:
+        copied_stacks = _copy_terraform_tree(tmp_path)
+
+        assert copied_stacks != STACKS_DIR.resolve()
+        assert (copied_stacks / "aws-vllm" / "main.tf").is_file()
+        assert (copied_stacks.parent / "modules" / "vllm-server" / "main.tf").is_file()
+
+    def test_generated_tfvars_stays_in_isolated_tree(self, tmp_path: Path) -> None:
+        source_tfvars = STACKS_DIR / "aws-vllm" / "terraform.auto.tfvars"
+        source_before = source_tfvars.read_bytes() if source_tfvars.exists() else None
+        copied_stacks = _copy_terraform_tree(tmp_path)
+
+        generated = _write_tfvars(copied_stacks / "aws-vllm")
+
+        assert generated.is_relative_to(tmp_path)
+        source_after = source_tfvars.read_bytes() if source_tfvars.exists() else None
+        assert source_after == source_before
+
     @pytest.mark.parametrize("stack", ALL_STACK_NAMES)
     def test_parse_variables_returns_non_empty(self, stack: str) -> None:
         vars_dict = _parse_variables(STACKS_DIR / stack)
         assert len(vars_dict) >= 1, f"{stack} has 0 parseable variables"
 
     @pytest.mark.parametrize("stack", ALL_STACK_NAMES)
-    def test_generated_tfvars_does_not_error(self, stack: str) -> None:
-        _write_tfvars(STACKS_DIR / stack)
+    def test_generated_tfvars_does_not_error(
+        self,
+        mutable_stacks_dir: Path,
+        stack: str,
+    ) -> None:
+        _write_tfvars(mutable_stacks_dir / stack)
 
     def test_model_var_has_synthetic_default_when_required(self) -> None:
         vars_aws_vllm = _parse_variables(STACKS_DIR / "aws-vllm")
@@ -242,7 +287,7 @@ class TestTfvarsGeneration:
 
 @pytest.mark.skipif(_infra_binary() is None, reason="terraform/tofu not on PATH")
 class TestAllStacksInitValidate:
-    """Run init + validate on all 18 stacks in-place.
+    """Run init + validate on isolated copies of all 18 stacks.
 
     Auto.tfvars provides synthetic values for required variables.
     Stacks whose init fails (network, credentials, unsupported provider)
@@ -268,8 +313,13 @@ class TestAllStacksInitValidate:
             tfvars.unlink(missing_ok=True)
 
     @pytest.mark.parametrize("stack", ALL_STACK_NAMES)
-    def test_init_succeeds(self, infra_binary: str, stack: str) -> None:
-        stack_dir = STACKS_DIR / stack
+    def test_init_succeeds(
+        self,
+        infra_binary: str,
+        mutable_stacks_dir: Path,
+        stack: str,
+    ) -> None:
+        stack_dir = mutable_stacks_dir / stack
         try:
             _write_tfvars(stack_dir)
         except Exception:
@@ -299,8 +349,13 @@ class TestAllStacksInitValidate:
             self._clean_tfvars(stack_dir)
 
     @pytest.mark.parametrize("stack", ALL_STACK_NAMES)
-    def test_validate_succeeds(self, infra_binary: str, stack: str) -> None:
-        stack_dir = STACKS_DIR / stack
+    def test_validate_succeeds(
+        self,
+        infra_binary: str,
+        mutable_stacks_dir: Path,
+        stack: str,
+    ) -> None:
+        stack_dir = mutable_stacks_dir / stack
         _write_tfvars(stack_dir)
 
         if not (stack_dir / ".terraform").exists():
@@ -333,20 +388,14 @@ class TestAllStacksInitValidate:
         finally:
             self._clean_tfvars(stack_dir)
 
-    def test_no_apply_run_any_stack(self) -> None:
+    def test_no_apply_run_any_stack(self, mutable_stacks_dir: Path) -> None:
         tfstate_counts = sum(
             1 for s in ALL_STACK_NAMES
-            if (STACKS_DIR / s / "terraform.tfstate").exists()
+            if (mutable_stacks_dir / s / "terraform.tfstate").exists()
         )
         assert tfstate_counts == 0, (
             "terraform.tfstate found — apply was run on one or more stacks"
         )
-
-    def teardown_method(self) -> None:
-        for s in ALL_STACK_NAMES:
-            self._clean_dot_terraform(STACKS_DIR / s)
-            self._clean_tfvars(STACKS_DIR / s)
-
 
 # ---------------------------------------------------------------------------
 # DeploymentManager.plan() — async tests

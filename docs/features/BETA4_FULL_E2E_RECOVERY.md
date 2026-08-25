@@ -304,6 +304,25 @@ SQLAlchemy practitioner discussions above support finishing explicit async
 cleanup in the owning event loop; no garbage-collection hook or post-test
 reaper is used.
 
+The dual-track local replay also found that the Terraform E2E generated
+`terraform.auto.tfvars`, `.terraform`, and lock data in the source checkout.
+That was safe in one isolated hosted runner but allowed a simultaneous local
+unit shard to observe transient files and fail its import-side-effect guard.
+Terraform issue
+[#29950](https://github.com/hashicorp/terraform/issues/29950) demonstrates that
+working-directory state from one `init` changes later initialization behavior,
+and practitioner issue
+[#27241](https://github.com/hashicorp/terraform/issues/27241) records teams
+being blocked when `init` rewrites a lock file in a read-only working tree.
+HashiCorp's own
+[contributor guide](https://github.com/hashicorp/terraform/blob/main/.github/CONTRIBUTING.md)
+describes its unit suite as self-contained through local files and mocks.
+Reviewed on 2026-08-24, this evidence supports copying the complete Terraform
+root—stacks and their relative modules—into a pytest-owned session directory
+before any generation, initialization, or validation. Structural reads remain
+against tracked source, while every mutable command uses the copied root; no
+ignore rule, retry, or after-the-fact checkout scrub hides a write.
+
 ## Verification and resources
 
 The focused matrix runs one deterministic authentication/readiness test in both
