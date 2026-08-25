@@ -10,7 +10,9 @@ import os
 import re
 import subprocess
 import uuid
+from pathlib import PureWindowsPath
 from typing import Any, cast
+from urllib.parse import unquote
 
 from general_ludd.agents.behavior import AgentBehavior, BehaviorRenderer
 from general_ludd.controllers.spend_limiter import SpendLimiter
@@ -27,6 +29,7 @@ from general_ludd.security.state import project_state, secure_directory
 logger = logging.getLogger(__name__)
 
 _UNKNOWN_MODEL_COST_PER_1K = 0.01
+_MAX_PATH_DECODE_ROUNDS = 4
 
 # Jinja2 SSTI patterns — must never appear in user-supplied variable values
 _JINJA2_EXPR = re.compile(r"\{\{.*?\}\}", re.DOTALL)
@@ -918,10 +921,37 @@ class ExecutionEngine:
         When a sandbox enforcer is active and verified, the resolved path is
         additionally confined to the sandbox jail directory (fail-closed).
         """
+        canonical_path = file_path
+        for _ in range(_MAX_PATH_DECODE_ROUNDS):
+            decoded_path = unquote(canonical_path, errors="strict")
+            if decoded_path == canonical_path:
+                break
+            canonical_path = decoded_path
+        else:
+            if unquote(canonical_path, errors="strict") != canonical_path:
+                raise ValueError(
+                    f"refusing path that escapes the workspace: {file_path!r} "
+                    "(excessive percent encoding)"
+                )
+
+        canonical_path = canonical_path.replace("\\", "/")
+        windows_path = PureWindowsPath(canonical_path)
+        segments = canonical_path.split("/")
+        if (
+            "\x00" in canonical_path
+            or canonical_path.startswith("/")
+            or bool(windows_path.drive)
+            or any(len(segment) >= 2 and set(segment) == {"."} for segment in segments)
+        ):
+            raise ValueError(
+                f"refusing path that escapes the workspace: {file_path!r} "
+                f"(canonical path {canonical_path!r})"
+            )
+
         base = os.path.realpath(self.workspace_path)
         # join() makes an absolute file_path REPLACE base — exactly the escape we
         # must catch — so the containment check below (not join alone) is the gate.
-        full = os.path.realpath(os.path.join(base, file_path))
+        full = os.path.realpath(os.path.join(base, canonical_path))
         try:
             common = os.path.commonpath([base, full])
         except ValueError:

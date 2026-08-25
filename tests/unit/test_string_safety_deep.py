@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import textwrap
 import unicodedata
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -302,11 +303,36 @@ class TestPathTraversal:
             "./../../../etc/shadow",
             "....//....//etc/passwd",
             "..%2f..%2f..%2fetc/passwd",
+            "%252e%252e%255cWindows%255cSystem32",
+            "C:\\Windows\\System32",
+            "//server/share/secret",
+            "%252525252fetc/passwd",
+            "%00hidden",
         ],
     )
-    def test_execution_engine_rejects_traversal_payloads(self, payload: str) -> None:
-        full = os.path.realpath(os.path.join("/tmp/workspace", payload))
-        assert not full.startswith("/tmp/workspace/")
+    def test_execution_engine_rejects_traversal_payloads(
+        self,
+        payload: str,
+        tmp_path: Path,
+    ) -> None:
+        from general_ludd.execution.engine import ExecutionEngine
+
+        engine = ExecutionEngine(workspace_path=str(tmp_path))
+
+        with pytest.raises(ValueError, match="escapes the workspace"):
+            engine._resolve_in_workspace(payload)
+
+    def test_execution_engine_canonicalizes_benign_portable_path(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        from general_ludd.execution.engine import ExecutionEngine
+
+        engine = ExecutionEngine(workspace_path=str(tmp_path))
+
+        resolved = Path(engine._resolve_in_workspace("docs/My%20File.md"))
+
+        assert resolved.relative_to(tmp_path) == Path("docs/My File.md")
 
     def test_path_join_preserves_absolute_override(self) -> None:
         joined = os.path.join("/tmp/workspace", "/etc/passwd")

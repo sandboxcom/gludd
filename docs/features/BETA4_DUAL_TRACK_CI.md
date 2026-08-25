@@ -322,6 +322,19 @@ send-time SSRF validation, no redirects, certificate verification, the bounded
 timeout, and PSK headers. Tests inject the instance seam rather than mutating a
 shared transport during concurrent work.
 
+Candidate `96283dbd571c47774b1eddf74fde3975a9c146d2` then exposed a
+cross-platform confinement gap in hosted run `32891975584`, job
+`97947440679`. Linux preserved Windows backslashes, dot-only segments, and
+percent-encoded separators as literal filename characters, so three adversarial
+paths remained lexically below the workspace even though another platform or
+downstream decoder could reinterpret them as traversal. The paired local lane
+was cancelled during `unit-1b` batch 22, reaped its worker, and started no later
+batches or shards. `ExecutionEngine` now repeatedly percent-decodes within a
+small fixed bound, normalizes Windows separators, rejects drive/UNC roots, NUL,
+dot-only traversal segments, and excessive encoding, then applies the existing
+realpath/commonpath jail. Benign portable paths retain the same workspace owner
+and are resolved only after canonicalization.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -468,6 +481,20 @@ Reviewed 2026-08-25:
 - [HTTPX transport documentation](https://www.python-httpx.org/advanced/transports/),
   reviewed 2026-08-25, defines explicit transport injection as the supported
   boundary for deterministic request behavior and testing.
+- [OWASP Path Traversal](https://owasp.org/www-community/attacks/Path_Traversal),
+  reviewed 2026-08-25, enumerates forward-slash, backslash, percent-encoded, and
+  double-encoded traversal variants and notes that Windows accepts both separator
+  forms. Gludd canonicalizes every model-supplied workspace path before its jail
+  decision rather than trusting host-specific `realpath` parsing alone.
+- [Flask issue 2546](https://github.com/pallets/flask/issues/2546), opened
+  2018-01-11 and reviewed 2026-08-25, preserves long-lived practitioner reports
+  that safe path handling differed between slash and backslash forms on Windows.
+  The execution engine therefore applies one portable separator contract on all
+  hosts.
+- [Werkzeug changelog](https://github.com/pallets/werkzeug/blob/main/CHANGES.rst),
+  reviewed 2026-08-25, records multiple years of `safe_join` Windows hardening,
+  including empty-root containment and device-name fixes. This supports Gludd's
+  fail-closed cross-platform validation before OS path resolution.
 - [pytest-xdist distribution documentation](https://pytest-xdist.readthedocs.io/en/latest/distribution.html),
   reviewed 2026-08-25, defines explicit worker counts and zero as the supported
   way to disable crashed-worker restarts. The local producer inherits the
