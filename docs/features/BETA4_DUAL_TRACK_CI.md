@@ -447,6 +447,24 @@ rule, daemon resource, or external service changes. The zero-downtime boundary
 is unchanged because existing callers default to `time.time`, while new and
 in-flight schedulers remain process-local.
 
+Candidate `c73db71802ee39aaf92e15a20328043742d62da8` verified the
+optional-media boundary after eighteen hosted jobs passed. Hosted run
+`32929544501`, job `98060008995`, ran `unit-3b` on the base Python 3.11
+environment where `yt-dlp` is intentionally absent. Four video-reference tests
+failed because invalid clip bounds loaded the optional adapter before validating
+their inputs, while an injected acquisition adapter was followed by a second,
+hidden `yt-dlp` version lookup. The remaining hosted jobs and the local peer were
+cancelled immediately. The adapter now validates bounds before dependency
+resolution and publishes its version through the existing sanitized metadata
+seam; injected adapters record `unknown` instead of causing an unrelated import.
+The exact Python 3.11 file and its adjacent deep surface then passed 32/32 and
+139/139 applicable tests respectively, with seven dependency-gated skips; the
+changed production file has 94% branch coverage. This
+keeps zero-downtime behavior intact: cache objects and provenance sidecars are
+still atomically promoted only after validation, no network call occurs for
+invalid inputs, and rollback is confined to the adapter ordering and one
+provenance field source. No service, worker, or persistent process is added.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start

@@ -188,6 +188,11 @@ def download_youtube_video(
         ImportError: If yt-dlp is not installed.
         RuntimeError: If download fails.
     """
+    if clip_start_seconds < 0:
+        raise ValueError("clip_start_seconds must be non-negative")
+    if clip_duration_seconds is not None and clip_duration_seconds <= 0:
+        raise ValueError("clip_duration_seconds must be positive")
+
     ytdlp_module = _ensure_yt_dlp()
     out = Path(output_path)
     if out.suffix:
@@ -230,11 +235,7 @@ def download_youtube_video(
             )
 
         ydl_opts["progress_hooks"] = [report_progress]
-    if clip_start_seconds < 0:
-        raise ValueError("clip_start_seconds must be non-negative")
     if clip_duration_seconds is not None:
-        if clip_duration_seconds <= 0:
-            raise ValueError("clip_duration_seconds must be positive")
         clip_end_seconds = clip_start_seconds + clip_duration_seconds
         utils_module = getattr(ytdlp_module, "utils", None)
         download_range_func = getattr(utils_module, "download_range_func", None)
@@ -277,6 +278,7 @@ def download_youtube_video(
                         "channel": info.get("channel", "unknown"),
                         "channel_id": info.get("channel_id", "unknown"),
                         "license": info.get("license", "unknown"),
+                        "yt_dlp_version": _yt_dlp_version(),
                     }
                 )
             video_path = str(out_dir_path / f"{out_template}.mp4")
@@ -494,6 +496,7 @@ def _acquire_reference(
         object_sha256 = _sha256_file(downloaded_path)
         decoded_frames_sha256 = _sha256_frames(frames)
         first_shape = tuple(frames[0].shape)
+        yt_dlp_version = str(metadata.pop("yt_dlp_version", "unknown"))
         payload: dict[str, object] = {
             "schema_version": 1,
             "approval_version": spec.approval_version,
@@ -514,7 +517,7 @@ def _acquire_reference(
             "decoded_height": first_shape[0],
             "decoded_width": first_shape[1],
             "decoded_channels": first_shape[2] if len(first_shape) > 2 else 1,
-            "yt_dlp_version": _yt_dlp_version(),
+            "yt_dlp_version": yt_dlp_version,
             "ffmpeg_version": ffmpeg_version,
             "opencv_version": str(getattr(cv2, "__version__", "unknown")),
             **metadata,
