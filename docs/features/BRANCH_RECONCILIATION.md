@@ -60,6 +60,14 @@ ceiling. A repository above that ceiling fails closed instead of silently
 skipping a late cursor. The fallback therefore preserves deterministic paging on
 the host's mature Git feature set while keeping traversal bounded.
 
+The 2026-08-26 beta4 reconciliation found a second backend boundary after more
+than 400 local refs: the page ending at `refs/heads/fix/dogfood...` succeeded,
+but the next `--start-after` response included a lexicographically earlier
+hyphenated ref. The inventory now treats any backwards result as an unreliable
+cursor implementation and reuses the same bounded, explicitly sorted local-head
+scan. It still rejects malformed or unordered evidence and still refuses a
+repository above the 10,000-ref ceiling; no unbounded compatibility retry exists.
+
 ## Exhaustive deduplicated summary
 
 `make branch-reconciliation-summary RECONCILE_TARGET=development
@@ -171,6 +179,17 @@ recommends combining `for-each-ref` with merge and patch-identity primitives for
 scriptable branch reporting. Those long-lived reports motivate separating
 topological ancestry from patch equivalence instead of treating every
 non-ancestor branch as unique work.
+
+The official
+[`git-for-each-ref` manual](https://git-scm.com/docs/git-for-each-ref/2.52.0.html),
+reviewed 2026-08-26, defines `--start-after` as a lexicographic boundary and also
+states that it cannot be combined with sorting or a ref pattern. GitLab's
+long-lived practitioner request
+[#584](https://gitlab.com/gitlab-org/git/-/issues/584), reviewed 2026-08-26,
+requests pattern support precisely because callers otherwise receive every ref
+namespace. Those constraints justify validating every returned cursor page and
+falling back to one bounded `refs/heads` sort when the backend violates its own
+ordering contract, instead of accepting incomplete release evidence.
 
 The still-open GitHub CLI practitioner request
 [#8536](https://github.com/cli/cli/issues/8536), opened in January 2024, records

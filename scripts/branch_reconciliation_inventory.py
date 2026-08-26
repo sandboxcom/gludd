@@ -327,6 +327,35 @@ def _parse_branch_entries(
     return entries
 
 
+def _bounded_sorted_local_scan(
+    after: str,
+    *,
+    run: RunFn,
+    cwd: str | None,
+) -> list[tuple[str, str]]:
+    """Return local refs after a cursor from one bounded explicit sort."""
+    output = _checked_stdout(
+        [
+            "git",
+            "for-each-ref",
+            f"--count={LOCAL_REF_SCAN_LIMIT + 1}",
+            "--sort=refname",
+            "--format=%(refname)%09%(objectname)",
+            "refs/heads",
+        ],
+        run=run,
+        cwd=cwd,
+        label="bounded legacy branch enumeration failed",
+    )
+    scanned_entries = _parse_branch_entries(
+        output,
+        allow_namespace_boundary=False,
+    )
+    if len(scanned_entries) > LOCAL_REF_SCAN_LIMIT:
+        raise InventoryError("local branch scan exceeded pagination bound")
+    return [entry for entry in scanned_entries if entry[0] > after]
+
+
 def _bounded_branches(
     target_ref: str,
     limit: int,
@@ -354,27 +383,12 @@ def _bounded_branches(
         and "start-after" in result.stderr
     )
     if unsupported_start_after:
-        output = _checked_stdout(
-            [
-                "git",
-                "for-each-ref",
-                f"--count={LOCAL_REF_SCAN_LIMIT + 1}",
-                "--sort=refname",
-                "--format=%(refname)%09%(objectname)",
-                "refs/heads",
-            ],
+        assert after is not None
+        entries = _bounded_sorted_local_scan(
+            after,
             run=run,
             cwd=cwd,
-            label="bounded legacy branch enumeration failed",
         )
-        scanned_entries = _parse_branch_entries(
-            output,
-            allow_namespace_boundary=False,
-        )
-        if len(scanned_entries) > LOCAL_REF_SCAN_LIMIT:
-            raise InventoryError("local branch scan exceeded pagination bound")
-        assert after is not None
-        entries = [entry for entry in scanned_entries if entry[0] > after]
     else:
         if result.returncode != 0:
             detail = (
@@ -387,7 +401,11 @@ def _bounded_branches(
         )
     if after is not None:
         if any(ref < after for ref, _head in entries):
-            raise InventoryError("pagination cursor moved backwards")
+            entries = _bounded_sorted_local_scan(
+                after,
+                run=run,
+                cwd=cwd,
+            )
         # Some supported Git releases/backends return the boundary ref itself
         # even for --start-after. It was classified on the preceding page, so
         # drop only that exact duplicate while retaining every unseen ref.
