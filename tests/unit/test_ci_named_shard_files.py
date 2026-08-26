@@ -312,6 +312,40 @@ def test_terminal_attestation_is_atomic_and_contains_exact_identity(
     assert not destination.with_suffix(".json.tmp").exists()
 
 
+def test_terminal_attestation_uses_precomputed_pairing_without_rescan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    destination = tmp_path / "attestation.json"
+    pairing = {
+        "shard_plans": {"unit-2": {"paths": ["tests/unit/a.py"]}},
+        "execution_policy": {"pytest_args": ["-W", "error"]},
+        "execution_policy_sha256": "policy-digest",
+    }
+    monkeypatch.setattr(
+        module,
+        "_attestation_pairing",
+        lambda *_args, **_kwargs: pytest.fail(
+            "terminal publication must not rescan the tested checkout"
+        ),
+    )
+
+    module._write_terminal_attestation(
+        destination,
+        identity={"head_sha": "abc123", "clean": True, "exact_sha": True},
+        shards=["unit-2"],
+        returncode=0,
+        started_at="2026-08-26T00:00:00Z",
+        completed_at="2026-08-26T00:01:00Z",
+        pairing=pairing,
+    )
+
+    payload = json.loads(destination.read_text(encoding="utf-8"))
+    assert payload["shard_plans"] == pairing["shard_plans"]
+    assert payload["execution_policy_sha256"] == "policy-digest"
+
+
 def test_terminal_attestation_identifies_hosted_lane(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -409,6 +443,107 @@ def test_cli_publishes_failed_attestation_when_runner_raises(
     payload = json.loads(destination.read_text(encoding="utf-8"))
     assert payload["status"] == "fail"
     assert payload["error"] == "RuntimeError: boom"
+
+
+@pytest.mark.parametrize(
+    ("initial_returncode", "expected_returncodes"),
+    [
+        (128 + signal.SIGINT, [128 + signal.SIGINT, 128 + signal.SIGINT]),
+        (
+            0,
+            [
+                0,
+                0,
+                128 + signal.SIGINT,
+                128 + signal.SIGINT,
+            ],
+        ),
+    ],
+)
+def test_cli_defers_repeated_cancellation_through_terminal_attestation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    initial_returncode: int,
+    expected_returncodes: list[int],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    explicit = tmp_path / "explicit.json"
+    default = tmp_path / "default.json"
+    resource_paths = module.ResourcePaths(
+        root=tmp_path,
+        coverage_shards=tmp_path / "coverage-fragments",
+        coverage_json=tmp_path / "coverage.json",
+        coverage_audit=tmp_path / "coverage-audit.json",
+        attestation=default,
+    )
+    handlers: dict[signal.Signals, object] = {}
+    writes: list[tuple[Path, int, dict[str, object]]] = []
+    pairing = {
+        "shard_plans": {"unit-2": {"paths": ["tests/unit/a.py"]}},
+        "execution_policy": {"pytest_args": ["-W", "error"]},
+        "execution_policy_sha256": "policy-digest",
+    }
+
+    def fake_getsignal(signum: signal.Signals) -> object:
+        return handlers.get(signum, signal.SIG_DFL)
+
+    def fake_signal(signum: signal.Signals, handler: object) -> object:
+        previous = handlers.get(signum, signal.SIG_DFL)
+        handlers[signum] = handler
+        return previous
+
+    def publish(destination: Path, **kwargs: object) -> None:
+        if not writes:
+            handler = handlers.get(signal.SIGINT)
+            assert callable(handler), "terminal publication must defer cancellation"
+            handler(signal.SIGINT, None)
+        returncode = kwargs["returncode"]
+        seen_pairing = kwargs["pairing"]
+        assert isinstance(returncode, int)
+        assert isinstance(seen_pairing, dict)
+        writes.append(
+            (
+                destination,
+                returncode,
+                seen_pairing,
+            )
+        )
+
+    monkeypatch.setattr(module.signal, "getsignal", fake_getsignal)
+    monkeypatch.setattr(module.signal, "signal", fake_signal)
+    monkeypatch.setattr(module, "_resource_paths", lambda: resource_paths)
+    monkeypatch.setattr(module, "_attestation_pairing", lambda *_args, **_kwargs: pairing)
+    monkeypatch.setattr(module, "_write_terminal_attestation", publish)
+    monkeypatch.setattr(module, "run", lambda *_args, **_kwargs: initial_returncode)
+    monkeypatch.setattr(
+        module,
+        "_repository_identity",
+        lambda **_kwargs: {
+            "head_sha": "abc123",
+            "expected_sha": "abc123",
+            "branch": "feature",
+            "clean": True,
+            "exact_sha": True,
+            "queries_ok": True,
+        },
+    )
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-2",
+            f"--attestation-output={explicit}",
+        ],
+    )
+
+    assert module.main() == 128 + signal.SIGINT
+    assert {destination for destination, _rc, _pairing in writes} == {
+        default,
+        explicit,
+    }
+    assert [rc for _destination, rc, _pairing in writes] == expected_returncodes
+    assert all(seen == pairing for _destination, _rc, seen in writes)
 
 
 def test_cli_rejects_non_release_eligible_identity_before_running(

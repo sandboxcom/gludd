@@ -180,7 +180,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 145,
+      "line": 181,
       "column": 33,
       "kind": "temp-artifact",
       "owner": "_write_terminal_attestation",
@@ -191,7 +191,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 251,
+      "line": 287,
       "column": 16,
       "kind": "temp-artifact",
       "owner": "_owned_socket_safe_tmpdir",
@@ -202,7 +202,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 478,
+      "line": 550,
       "column": 14,
       "kind": "process",
       "owner": "_run_owned_pytest",
@@ -213,7 +213,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 801,
+      "line": 873,
       "column": 12,
       "kind": "temp-artifact",
       "owner": "run",
@@ -510,7 +510,7 @@
     },
     {
       "path": "scripts/verify_dual_track_ci.py",
-      "line": 291,
+      "line": 380,
       "column": 17,
       "kind": "temp-artifact",
       "owner": "main",
@@ -1175,8 +1175,8 @@
       "kind": "async-task",
       "owner": "_lifespan",
       "acquisition": "asyncio.create_task(event_loop.run_forever(interval=tick_interval))",
-      "teardown": "await agent.research(query=task.prompt); await model_gateway.call_model_with_retry(profile_id, [{'role': 'user', 'content': task.prompt}], **call_kwargs); await task; task.cancel()",
-      "source_hash": "f67e5119dea8f4556b3a40fcd2215e4a5ee463d6c335a4db5b943791e7ca5562",
+      "teardown": "await agent.research(query=task.prompt); await model_gateway.call_model_with_retry(profile_id, [{'role': 'user', 'content': task.prompt}], **call_kwargs); await quiesce_task_before_drain(task, request_stop=_el.stop, drain=_el.shutdown, timeout_seconds=5.0); ownership-transfer:quiesce_task_before_drain(task, request_stop=_el.stop, drain=_el.shutdown, timeout_seconds=5.0); quiesce_task_before_drain(task, request_stop=_el.stop, drain=_el.shutdown, timeout_seconds=5.0)",
+      "source_hash": "33f071e78a37f5b14e20702701613eb75f4077dfc36393c9cf1adbb7da4107ce",
       "owned": true
     },
     {

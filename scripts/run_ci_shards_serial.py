@@ -18,7 +18,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -147,12 +147,17 @@ def _write_terminal_attestation(
     error: str | None = None,
     coverage: dict[str, object] | None = None,
     pytest_args: list[str] | None = None,
+    pairing: dict[str, object] | None = None,
 ) -> None:
     """Atomically publish terminal exact-SHA shard evidence."""
     destination.parent.mkdir(parents=True, exist_ok=True)
-    pairing = _attestation_pairing(
-        shards,
-        pytest_args=list(RELEASE_PYTEST_ARGS) if pytest_args is None else pytest_args,
+    pairing_payload = (
+        _attestation_pairing(
+            shards,
+            pytest_args=list(RELEASE_PYTEST_ARGS) if pytest_args is None else pytest_args,
+        )
+        if pairing is None
+        else pairing
     )
     payload = {
         "schema_version": ATTESTATION_SCHEMA_VERSION,
@@ -167,7 +172,7 @@ def _write_terminal_attestation(
         "completed_at": completed_at,
         "runner": "scripts/run_ci_shards_serial.py",
         "python": sys.version,
-        **pairing,
+        **pairing_payload,
     }
     if error is not None:
         payload["error"] = error
@@ -291,6 +296,26 @@ def _cleanup_owned_tmpdir(path: Path) -> int:
     ) is None:
         raise ValueError(f"refusing to remove unowned shard temp root: {resolved}")
 
+    with (
+        _defer_termination_signals() as deferred_signals,
+        contextlib.suppress(FileNotFoundError),
+    ):
+        shutil.rmtree(resolved)
+
+    if deferred_signals:
+        returncode = 128 + deferred_signals[0]
+        print(
+            f"OWNED-TMPDIR-CLEANUP-SIGNAL path={resolved} "
+            f"signal={deferred_signals[0]} rc={returncode}",
+            flush=True,
+        )
+        return returncode
+    return 0
+
+
+@contextlib.contextmanager
+def _defer_termination_signals() -> Iterator[list[int]]:
+    """Defer SIGINT/SIGTERM through one bounded owner-finalization phase."""
     deferred_signals: list[int] = []
     previous_handlers: dict[
         signal.Signals,
@@ -305,21 +330,10 @@ def _cleanup_owned_tmpdir(path: Path) -> int:
             previous_handlers[watched_signal] = signal.getsignal(watched_signal)
             signal.signal(watched_signal, defer)
     try:
-        with contextlib.suppress(FileNotFoundError):
-            shutil.rmtree(resolved)
+        yield deferred_signals
     finally:
         for watched_signal, previous_handler in previous_handlers.items():
             signal.signal(watched_signal, previous_handler)
-
-    if deferred_signals:
-        returncode = 128 + deferred_signals[0]
-        print(
-            f"OWNED-TMPDIR-CLEANUP-SIGNAL path={resolved} "
-            f"signal={deferred_signals[0]} rc={returncode}",
-            flush=True,
-        )
-        return returncode
-    return 0
 
 
 def _isolated_pytest_command(pytest_args: list[str]) -> list[str]:
@@ -1016,6 +1030,7 @@ def main() -> int:
             max_files_per_batch=args.max_files_per_batch,
             attestation_output=args.attestation_output,
         )
+    pairing = _attestation_pairing(shards, pytest_args=pytest_args)
     started_at = _utc_now()
     identity = _repository_identity(
         expected_sha=os.environ.get("GLUDD_CANDIDATE_SHA")
@@ -1053,17 +1068,35 @@ def main() -> int:
     destinations = {_resource_paths().attestation}
     if args.attestation_output is not None:
         destinations.add(args.attestation_output)
-    for destination in destinations:
-        _write_terminal_attestation(
-            destination,
-            identity=identity,
-            shards=shards,
-            returncode=returncode,
-            started_at=started_at,
-            completed_at=_utc_now(),
-            error=error,
-            coverage=coverage_evidence,
-            pytest_args=pytest_args,
+
+    def publish_terminal() -> None:
+        for destination in destinations:
+            _write_terminal_attestation(
+                destination,
+                identity=identity,
+                shards=shards,
+                returncode=returncode,
+                started_at=started_at,
+                completed_at=_utc_now(),
+                error=error,
+                coverage=coverage_evidence,
+                pytest_args=pytest_args,
+                pairing=pairing,
+            )
+
+    with _defer_termination_signals() as deferred_signals:
+        publish_terminal()
+    if deferred_signals:
+        signal_returncode = 128 + deferred_signals[0]
+        if not _is_cancellation_returncode(returncode):
+            returncode = signal_returncode
+            error = f"signal {deferred_signals[0]} received during terminal attestation"
+            with _defer_termination_signals():
+                publish_terminal()
+        print(
+            f"TERMINAL-ATTESTATION-SIGNAL signal={deferred_signals[0]} "
+            f"rc={returncode}",
+            flush=True,
         )
     return returncode
 

@@ -931,7 +931,19 @@ Reviewed 2026-08-25:
   2024-06-19 and reviewed 2026-08-26, records practitioner evidence that ordinary
   filesystem system calls can be particularly slow on networked storage. Gludd
   retains its durable manifest fsync and removes the test's 100-millisecond
-  storage-performance assumption instead.
+storage-performance assumption instead.
+
+Cancelling that same paired candidate exposed a second owner boundary after all
+pytest children and temporary roots had already been reaped: terminal evidence
+re-expanded every shard from the checkout, and a repeated interrupt during that
+long scan escaped as `KeyboardInterrupt`. The runner now snapshots the canonical
+shard plans before execution, reuses that immutable pairing during publication,
+and defers SIGINT/SIGTERM through the bounded atomic write. A signal received in
+that phase remains observable as `128 + signal`; if it changes an otherwise
+successful result, terminal evidence is rewritten with the cancellation status.
+No signal is ignored, no child survives, and no cleanup task exists outside the
+runner owner. Rollback is the isolated runner/test commit; zero-downtime behavior
+remains candidate invalidation before tag creation.
 - [Python `time.localtime` documentation](https://docs.python.org/3/library/time.html#time.localtime),
   reviewed 2026-08-26, defines a timestamp-free call as using the current time
   and returning local-time fields. Off-peak policy therefore requires one
