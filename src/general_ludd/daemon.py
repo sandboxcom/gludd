@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import inspect
 import logging
 import os
 import sys
@@ -157,6 +156,7 @@ from general_ludd.sts.rotator import (
 from general_ludd.sts.rotator import (
     TokenRotator as _dc_TokenRotator,
 )
+from general_ludd.util.async_lifecycle import quiesce_task_before_drain
 from general_ludd.writer import WriterProcess
 
 _DEAD_CODE_REFS: list[object] = [
@@ -2840,16 +2840,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             _shutdown_failures.append(exc)
     if _el is not None:
         try:
-            _el.stop()
-            _shutdown_result = _el.shutdown()
-            if inspect.isawaitable(_shutdown_result):
-                await _shutdown_result
+            await quiesce_task_before_drain(
+                task,
+                request_stop=_el.stop,
+                drain=_el.shutdown,
+                timeout_seconds=5.0,
+            )
         except Exception:
             logger.warning("event_loop shutdown failed")
-    if task is not None:
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
     preflight_task_ref = getattr(app.state, "_preflight_task", None)
     if preflight_task_ref is not None:
         preflight_task_ref.cancel()
