@@ -1345,3 +1345,22 @@ and pre-existing configuration remains caller-owned. Rollback is the isolated
 analyzer/test/documentation commit. ZDD continues to reject the untagged
 candidate until a new immutable local/hosted pair validates the same plan and
 policy.
+
+### AI and ML safety branches
+
+The hosted artifact's next seven files cover accelerator planning, adapter
+training, model distillation, bounded reasoning, immutable registries, speech,
+and vision. Canonical negative-path tests now exercise resource budgets,
+checkpoint and resume state, stop dispositions, retention and safety gates,
+registry mutation ownership, voice consent and audio retention, and grounded
+image provenance. The measured surface passes 243 tests at 97 percent aggregate
+coverage; every production file is between 95 and 99 percent with separate line
+and branch measurement.
+
+The tests allocate no accelerator, model process, speech service, image
+service, registry daemon, or network client. They validate the typed owner
+boundaries in process, while pytest owns the coverage and temporary artifacts.
+No release cleanup task, retry, coverage exclusion, or warning suppression was
+added. Rollback is the isolated tests/documentation commit, and ZDD remains
+fail-closed candidate invalidation before the next exact-SHA local and hosted
+lanes start.
