@@ -851,6 +851,37 @@ service. This is ZDD for the application plane. Rollback reverts the workflow an
 its structural lifecycle regression together and invalidates the candidate; it may
 not restore the unforced success path or reinterpret run `32982779016` as passing.
 
+## Coverage audit database ownership
+
+The 2026-08-26 committed `unit-3a` replay exposed an application-owned cleanup
+gap after batch 21 was repaired: batch 27 stopped at the repository hygiene
+guard because `.coverage.audit.<pid>` remained after an earlier coverage-audit
+failure. The audit command created that database in the checkout, but did not
+unlink it on success, shard failure, report failure, or timeout.
+
+The coverage-audit owner now unlinks its PID-namespaced database in one
+`finally` boundary. At startup it also recovers databases whose numeric owner
+PID no longer exists and legacy databases that predate PID ownership. A live
+PID or a PID whose liveness cannot be inspected is preserved fail closed. This
+recovery runs in the application owner, not in a later test or release harness.
+The durable JSON progress and terminal audit report remain outside this
+ephemeral database lifecycle.
+
+Coverage.py documents `Coverage.erase()` as deleting collected data and its
+API supports explicit data-file selection; practitioners have also reported
+parallel and interrupted runs leaving surprising data files when lifecycle
+ownership is implicit. Gludd therefore binds one data file to one audit PID and
+tests success, failure, timeout, dead-owner recovery, live-owner preservation,
+and permission-ambiguous preservation.
+
+- [Coverage.py API documentation](https://coverage.readthedocs.io/en/latest/api_coverage.html)
+- [Coverage.py parallel data documentation](https://coverage.readthedocs.io/en/latest/commands/cmd_combine.html)
+- [coverage.py issue 1752](https://github.com/nedbat/coveragepy/issues/1752)
+
+ZDD is unchanged: no running service or candidate deployment is mutated.
+Rollback reverts the owner/test/documentation commit; retained JSON evidence is
+not deleted, and a possible live database is never reclaimed speculatively.
+
 ## Rollback and recovery
 
 No tag or release is created until dual-track verification succeeds. On failure,

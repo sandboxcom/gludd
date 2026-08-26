@@ -435,6 +435,22 @@ def _coverage_environment() -> dict[str, str]:
     return env
 
 
+def _recover_stale_coverage_databases(root: Path) -> None:
+    """Remove dead or legacy audit databases while preserving possible owners."""
+    prefix = ".coverage.audit."
+    for path in root.glob(f"{prefix}*"):
+        owner = path.name.removeprefix(prefix)
+        if not owner.isdecimal():
+            path.unlink(missing_ok=True)
+            continue
+        try:
+            os.kill(int(owner), 0)
+        except ProcessLookupError:
+            path.unlink(missing_ok=True)
+        except PermissionError:
+            continue
+
+
 def run_pytest_coverage(
     source: str,
     json_out_path: str,
@@ -476,6 +492,7 @@ def run_pytest_coverage(
     )
     coverage_file = root / f".coverage.audit.{os.getpid()}"
     env["COVERAGE_FILE"] = str(coverage_file)
+    _recover_stale_coverage_databases(root)
     coverage_file.unlink(missing_ok=True)
     try:
         results = shard_results if shard_results is not None else []
@@ -676,6 +693,8 @@ def run_pytest_coverage(
             file=sys.stderr,
         )
         return 124
+    finally:
+        coverage_file.unlink(missing_ok=True)
 
 
 def main() -> None:

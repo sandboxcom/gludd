@@ -7,6 +7,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 ROOT = Path(__file__).parents[2]
 AUDIT_SCRIPT = ROOT / "scripts" / "audit_coverage.py"
 
@@ -80,6 +82,71 @@ def test_failed_shard_is_persisted_and_stops_following_files(monkeypatch: Any) -
         "returncode": 23,
     }]
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected_returncode"),
+    [("success", 0), ("failure", 23), ("timeout", 124)],
+)
+def test_coverage_database_is_owner_cleaned_on_every_terminal_path(
+    monkeypatch: Any,
+    tmp_path: Path,
+    outcome: str,
+    expected_returncode: int,
+) -> None:
+    """The audit owner removes its database after success, failure, or timeout."""
+    module = _load_audit_module(f"audit_coverage_cleanup_{outcome}")
+    _stub_e2e_files(monkeypatch, module, ["test_owned.py"])
+    coverage_file = ROOT / f".coverage.audit.{module.os.getpid()}"
+
+    def fake_run(args: list[str], **kwargs: object) -> Any:
+        coverage_file.write_bytes(b"owned coverage data")
+        if outcome == "timeout":
+            raise module.subprocess.TimeoutExpired(args, 3)
+        return type(
+            "Result",
+            (),
+            {"returncode": 23 if outcome == "failure" else 0},
+        )()
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    shards: list[dict[str, object]] = []
+    assert module.run_pytest_coverage(
+        "src/general_ludd",
+        str(tmp_path / "coverage.json"),
+        shards,
+        str(tmp_path / "progress.json"),
+    ) == expected_returncode
+    assert not coverage_file.exists()
+
+
+def test_stale_coverage_recovery_preserves_live_or_uninspectable_owners(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    """Recovery removes dead/legacy data without touching possible live owners."""
+    module = _load_audit_module("audit_coverage_stale_recovery")
+    dead = tmp_path / ".coverage.audit.900001"
+    live = tmp_path / ".coverage.audit.900002"
+    uninspectable = tmp_path / ".coverage.audit.900003"
+    legacy = tmp_path / ".coverage.audit.hosted-chemistry"
+    for path in (dead, live, uninspectable, legacy):
+        path.write_bytes(b"coverage")
+
+    def fake_kill(pid: int, signal_number: int) -> None:
+        assert signal_number == 0
+        if pid == 900001:
+            raise ProcessLookupError
+        if pid == 900003:
+            raise PermissionError
+
+    monkeypatch.setattr(module.os, "kill", fake_kill)
+    module._recover_stale_coverage_databases(tmp_path)
+
+    assert not dead.exists()
+    assert not legacy.exists()
+    assert live.exists()
+    assert uninspectable.exists()
 
 
 def test_failure_report_never_claims_completion(
