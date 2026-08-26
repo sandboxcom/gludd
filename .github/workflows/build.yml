@@ -379,8 +379,9 @@ jobs:
     # Every named shard is a release prerequisite. Failures and missing coverage
     # stay red instead of being reclassified as an informational result.
     # The old unit-3 (test_[n-z]* + secrets/) exceeded its 25m step budget on a
-    # hosted runner.  It is partitioned into disjoint unit-3a/unit-3b lanes so
-    # every lane retains enough bounded budget for one retry and cleanup.
+    # hosted runner. It is partitioned into disjoint unit-3a/unit-3b lanes.
+    # The test step retains 90m for the long unit-2/other lanes while the 120m
+    # job ceiling reserves 30m for owner cleanup, diagnostics, and artifacts.
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -451,7 +452,7 @@ jobs:
           uv run python -m pytest ${{ matrix.isolated_testpaths }} -q -W error
       - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         id: test-run
-        timeout-minutes: 40
+        timeout-minutes: 90
         run: |
           echo "=== CI PHASE: test-shard-${{ matrix.shard }} ==="
           uv run python scripts/run_ci_shards_serial.py \

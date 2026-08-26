@@ -944,6 +944,36 @@ successful result, terminal evidence is rewritten with the cancellation status.
 No signal is ignored, no child survives, and no cleanup task exists outside the
 runner owner. Rollback is the isolated runner/test commit; zero-downtime behavior
 remains candidate invalidation before tag creation.
+
+Hosted run `32950480801` on 2026-08-26 exposed a separate outer-lifecycle
+boundary on exact candidate `a66ae3acb`: `unit-2` and `other` were still
+emitting passing tests when the workflow's 40-minute test-step deadline killed
+their process trees. The subsequent missing coverage and attestation files were
+effects of that forced termination, not independent test failures. The hosted
+test step now has 90 minutes inside the existing 120-minute job ceiling, leaving
+a mechanically pinned 30-minute reserve for owner cleanup, diagnostics, and
+artifact publication. Test selection, single-worker execution, warnings-as-
+errors, coverage policy, and fail-closed missing-artifact behavior are unchanged.
+ZDD remains pre-release candidate invalidation: a timed-out lane can never be
+promoted, and rollback is the workflow/test/documentation commit before a new
+exact-SHA pair is started.
+
+- [GitHub Actions workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idstepstimeout-minutes),
+  reviewed 2026-08-26, defines a step timeout as the point where GitHub kills
+  the process and distinguishes it from the enclosing job timeout. Gludd keeps
+  the step deadline below the job deadline so cleanup and evidence publication
+  retain an explicit resource budget.
+- [GitHub Community discussion 38004](https://github.com/orgs/community/discussions/38004),
+  opened 2022-11-01 and reviewed 2026-08-26, records practitioner experience
+  that a `timeout-minutes` expiry is reported as failure because the application
+  did not finish. Gludd therefore never reclassifies expiry as success or uploads
+  placeholder evidence.
+- [GitHub Community discussion 10690](https://github.com/orgs/community/discussions/10690),
+  opened 2022-01-28 and reviewed 2026-08-26, records the long-lived request for
+  centrally managed step/job timeouts and the operational drift caused by
+  repeating them. The regression reads the canonical workflow structurally and
+  pins the relationship between the one shard step and its enclosing job.
+
 - [Python `time.localtime` documentation](https://docs.python.org/3/library/time.html#time.localtime),
   reviewed 2026-08-26, defines a timestamp-free call as using the current time
   and returning local-time fields. Off-peak policy therefore requires one

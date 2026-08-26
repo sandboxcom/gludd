@@ -207,6 +207,16 @@ def test_local_and_hosted_named_shards_use_one_bounded_runner() -> None:
     assert "--skip-aggregate" in hosted_recipe
 
 
+def test_hosted_shard_step_budget_covers_long_shards_and_cleanup() -> None:
+    """Hosted execution must finish before the job's cleanup reserve begins."""
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "build.yml").read_text())
+    job = workflow["jobs"]["test-shard"]
+    test_step = next(step for step in job["steps"] if step.get("id") == "test-run")
+
+    assert test_step["timeout-minutes"] >= 90
+    assert test_step["timeout-minutes"] <= job["timeout-minutes"] - 15
+
+
 def test_local_and_hosted_shard_batches_share_safe_file_bound() -> None:
     """Hosted workers must not retain a 64-file process lifetime."""
     module = _load_script("run_ci_shards_serial")
