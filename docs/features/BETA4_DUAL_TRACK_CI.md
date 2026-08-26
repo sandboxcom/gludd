@@ -1454,6 +1454,14 @@ changed from CPython 3.11.14 to CPython 3.14.0 while the long-lived owner proces
 still reported its original runtime. Recording only that owner process would
 have produced misleading evidence for later batches.
 
+The run-bound coverage planner now reads either coverage.py JSON or the
+Cobertura XML that the hosted aggregate actually publishes. XML condition
+coverage is converted into exact source-to-destination branch arcs, filtered to
+`src/general_ludd`, sorted by the lower of line and branch coverage, and bounded
+by the caller's explicit limit. It reads only the external artifact namespace
+and writes nothing to the checkout. Missing artifacts remain a hard error, so
+the planner cannot manufacture a remediation list from stale local coverage.
+
 The canonical runner now binds Python major/minor and implementation into the
 paired execution-policy digest. It also probes the exact resolved executable,
 implementation, and patch version before and after every batch. Any probe

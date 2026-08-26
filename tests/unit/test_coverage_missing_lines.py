@@ -58,6 +58,58 @@ def test_summarize_classes_reports_only_files_below_threshold(
     assert gaps[0].missing_lines == (2, 3)
 
 
+def test_summarize_classes_reports_branch_only_gaps(tmp_path: Path) -> None:
+    """Cobertura condition evidence must retain branch destinations."""
+    report = tmp_path / "coverage.xml"
+    report.write_text(
+        """\
+<coverage><packages><package><classes>
+<class filename="src/general_ludd/branch_gap.py"><lines>
+<line number="10" hits="1" branch="true"
+ condition-coverage="50% (1/2)" missing-branches="12"/>
+<line number="11" hits="1"/>
+</lines></class>
+</classes></package></packages></coverage>
+""",
+        encoding="utf-8",
+    )
+
+    gaps = summarize_classes(report, threshold=75.0)
+
+    assert len(gaps) == 1
+    assert gaps[0].filename == "src/general_ludd/branch_gap.py"
+    assert gaps[0].percentage == 100.0
+    assert gaps[0].branch_percentage == 50.0
+    assert gaps[0].covered_branches == 1
+    assert gaps[0].total_branches == 2
+    assert gaps[0].missing_branches == ((10, 12),)
+
+
+def test_summarize_classes_filters_xml_to_requested_source(tmp_path: Path) -> None:
+    report = tmp_path / "coverage.xml"
+    report.write_text(
+        """\
+<coverage><packages><package><classes>
+<class filename="src/general_ludd/inside.py"><lines>
+<line number="1" hits="0"/>
+</lines></class>
+<class filename="collections/outside.py"><lines>
+<line number="1" hits="0"/>
+</lines></class>
+</classes></package></packages></coverage>
+""",
+        encoding="utf-8",
+    )
+
+    gaps = summarize_classes(
+        report,
+        threshold=75.0,
+        source=Path("src/general_ludd"),
+    )
+
+    assert [gap.filename for gap in gaps] == ["inside.py"]
+
+
 def test_summarize_json_prioritizes_both_floors_and_filters_source(
     tmp_path: Path,
 ) -> None:
@@ -179,7 +231,7 @@ def test_main_defaults_to_xml_and_rejects_invalid_limits(
     Path("coverage.xml").write_text(
         """\
 <coverage><packages><package><classes>
-<class filename="src/example/low.py"><lines>
+<class filename="src/general_ludd/low.py"><lines>
 <line number="1" hits="1"/><line number="2" hits="0"/>
 </lines></class>
 </classes></package></packages></coverage>
@@ -194,3 +246,41 @@ def test_main_defaults_to_xml_and_rejects_invalid_limits(
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 2
+
+
+def test_main_prints_bounded_xml_branch_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    report = tmp_path / "coverage.xml"
+    report.write_text(
+        """\
+<coverage><packages><package><classes>
+<class filename="src/general_ludd/branch_gap.py"><lines>
+<line number="10" hits="1" branch="true"
+ condition-coverage="50% (1/2)" missing-branches="12"/>
+<line number="11" hits="1"/>
+</lines></class>
+</classes></package></packages></coverage>
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "coverage_missing_lines.py",
+            "--xml",
+            str(report),
+            "--threshold",
+            "75",
+            "--limit",
+            "1",
+        ],
+    )
+
+    assert main() == 0
+    output = capsys.readouterr().out
+    assert "files_below=1 displayed=1" in output
+    assert "branches=50.0% 1/2 missing-arcs=10->12" in output

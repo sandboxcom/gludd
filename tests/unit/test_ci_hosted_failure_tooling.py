@@ -156,6 +156,8 @@ def test_ci_coverage_gap_plan_is_external_bounded_and_contract_registered() -> N
     assert "scripts/resource_arbiter.py root" in block
     assert "scripts/coverage_missing_lines.py" in block
     assert "coverage-data.json" in block
+    assert "coverage.xml" in block
+    assert "COVERAGE-GAP-INPUT" in block
     assert "CI_COVERAGE_GAP_LIMIT" in block
     assert "CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY" in block
     assert ".gate-logs" not in block

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,16 +45,26 @@ def compress_ranges(lines: list[int] | tuple[int, ...]) -> str:
     return ",".join(ranges)
 
 
-def summarize_classes(xml_path: Path, threshold: float) -> list[CoverageGap]:
-    """Return every covered class whose executable-line percentage is too low."""
+def summarize_classes(
+    xml_path: Path,
+    threshold: float,
+    source: Path | None = None,
+) -> list[CoverageGap]:
+    """Return every Cobertura class below either line or branch threshold."""
 
     root = ET.parse(xml_path).getroot()
     gaps: list[CoverageGap] = []
+    source_root = source.resolve() if source is not None else None
     for class_node in root.findall(".//class"):
         filename = class_node.attrib.get("filename", "")
         line_nodes = class_node.findall("./lines/line")
         if not filename or not line_nodes:
             continue
+        if source_root is not None:
+            try:
+                filename = str(Path(filename).resolve().relative_to(source_root))
+            except ValueError:
+                continue
         line_hits = {
             int(node.attrib["number"]): int(node.attrib.get("hits", "0"))
             for node in line_nodes
@@ -61,7 +72,28 @@ def summarize_classes(xml_path: Path, threshold: float) -> list[CoverageGap]:
         total = len(line_hits)
         covered = sum(hits > 0 for hits in line_hits.values())
         percentage = round(100.0 * covered / total, 1)
-        if percentage >= threshold:
+        covered_branches = 0
+        total_branches = 0
+        missing_branches: list[tuple[int, int]] = []
+        for node in line_nodes:
+            condition = node.attrib.get("condition-coverage", "")
+            match = re.fullmatch(r"\d+(?:\.\d+)?% \((\d+)/(\d+)\)", condition)
+            if match is None:
+                continue
+            branch_covered, branch_total = map(int, match.groups())
+            covered_branches += branch_covered
+            total_branches += branch_total
+            source_line = int(node.attrib["number"])
+            for destination in re.findall(
+                r"\d+", node.attrib.get("missing-branches", "")
+            ):
+                missing_branches.append((source_line, int(destination)))
+        branch_percentage = (
+            round(100.0 * covered_branches / total_branches, 1)
+            if total_branches
+            else 100.0
+        )
+        if percentage >= threshold and branch_percentage >= threshold:
             continue
         missing = tuple(line for line, hits in sorted(line_hits.items()) if hits == 0)
         gaps.append(
@@ -71,9 +103,19 @@ def summarize_classes(xml_path: Path, threshold: float) -> list[CoverageGap]:
                 covered_lines=covered,
                 total_lines=total,
                 missing_lines=missing,
+                branch_percentage=branch_percentage,
+                covered_branches=covered_branches,
+                total_branches=total_branches,
+                missing_branches=tuple(sorted(missing_branches)),
             )
         )
-    return sorted(gaps, key=lambda gap: (gap.percentage, gap.filename))
+    return sorted(
+        gaps,
+        key=lambda gap: (
+            min(gap.percentage, gap.branch_percentage),
+            gap.filename,
+        ),
+    )
 
 
 def summarize_json(
@@ -164,7 +206,7 @@ def main() -> int:
     gaps = (
         summarize_json(input_path, args.threshold, args.source)
         if args.json is not None
-        else summarize_classes(input_path, args.threshold)
+        else summarize_classes(input_path, args.threshold, args.source)
     )
     displayed = gaps[: args.limit] if args.limit else gaps
     print(

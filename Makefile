@@ -4607,9 +4607,11 @@ ci-coverage-gap-plan:
 	@case "$(CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
 	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
 	DATA="$$RESOURCE_ROOT/ci-artifacts/run-$(CI_COVERAGE_RUN)/$(CI_COVERAGE_ARTIFACT)/coverage-data.json"; \
-	if [ "$(CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY)" = "1" ]; then echo "CI-COVERAGE-GAP-PLAN VALIDATED run=$(CI_COVERAGE_RUN) artifact=$(CI_COVERAGE_ARTIFACT) source=$(CI_COVERAGE_SOURCE) threshold=$(CI_COVERAGE_PER_FILE_MIN) limit=$(CI_COVERAGE_GAP_LIMIT) input=$$DATA"; exit 0; fi; \
-	if [ ! -f "$$DATA" ]; then echo "Hosted raw coverage report is missing: $$DATA"; exit 2; fi; \
-	$(PYTHON) scripts/coverage_missing_lines.py --json "$$DATA" --threshold "$(CI_COVERAGE_PER_FILE_MIN)" --source "$(CI_COVERAGE_SOURCE)" --limit "$(CI_COVERAGE_GAP_LIMIT)"
+	XML="$$RESOURCE_ROOT/ci-artifacts/run-$(CI_COVERAGE_RUN)/$(CI_COVERAGE_ARTIFACT)/coverage.xml"; \
+	if [ "$(CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY)" = "1" ]; then echo "CI-COVERAGE-GAP-PLAN VALIDATED run=$(CI_COVERAGE_RUN) artifact=$(CI_COVERAGE_ARTIFACT) source=$(CI_COVERAGE_SOURCE) threshold=$(CI_COVERAGE_PER_FILE_MIN) limit=$(CI_COVERAGE_GAP_LIMIT) input=$$DATA-or-$$XML"; exit 0; fi; \
+	if [ -f "$$DATA" ]; then INPUT="$$DATA"; MODE="--json"; elif [ -f "$$XML" ]; then INPUT="$$XML"; MODE="--xml"; else echo "Hosted coverage report is missing: $$DATA or $$XML"; exit 2; fi; \
+	echo "COVERAGE-GAP-INPUT mode=$$MODE path=$$INPUT"; \
+	$(PYTHON) scripts/coverage_missing_lines.py $$MODE "$$INPUT" --threshold "$(CI_COVERAGE_PER_FILE_MIN)" --source "$(CI_COVERAGE_SOURCE)" --limit "$(CI_COVERAGE_GAP_LIMIT)"
 
 # Just the FAILED/ERROR test ids + summary lines from a run's failed-step logs
 # (ci-faillog tails raw logs; this filters the signal). Usage: make ci-failed-tests RUN=<id>
