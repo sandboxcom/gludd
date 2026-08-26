@@ -213,7 +213,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 892,
+      "line": 912,
       "column": 12,
       "kind": "temp-artifact",
       "owner": "run",

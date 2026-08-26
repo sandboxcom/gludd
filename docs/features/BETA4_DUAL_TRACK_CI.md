@@ -1268,6 +1268,23 @@ under-attributed in combined coverage. Chemistry tests now use installed
 the real validation, rollback, safety, and resource branches. No source is
 excluded and no partial-branch pragma or threshold reduction is used.
 
+Candidate `d28ae16cc4e1df95cee19ed89d0b3aa7fe8fd01c` proved the same import
+boundary must also govern the repository's coverage-gap checker. Hosted run
+`33009531821` failed `unit-1b`; the paired local producer stopped on the same
+immutable SHA because the checker regression still required chemistry's removed
+private `_ANALYTICAL_PATH` file-loader fixture. The contract now asks the real
+checker to map `analytical.py` to the installed-package chemistry suite, and the
+exact node passes on both Python 3.11 and the local Python runtime. Production
+chemistry and checker behavior are unchanged.
+
+The producer stopped fail-closed at the first invalid batch, published no green
+attestation, and started no daemon or model process. Pytest retained ownership
+of its temporary batch resources, so no release cleanup task or application
+lifecycle compensation was added. Rollback is the single test/documentation
+commit; ZDD remains rejection of the untagged SHA before a new paired local and
+hosted candidate starts. The coverage.py and pytest-cov upstream/practitioner
+evidence below remains the governing import-measurement contract.
+
 The zero-downtime rule is candidate invalidation: a green test matrix with red
 coverage is never tagged or released. Rollback is the isolated test and
 documentation commit. Resources remain bounded to the existing one-worker

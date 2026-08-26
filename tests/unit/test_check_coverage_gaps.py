@@ -107,23 +107,14 @@ def test_named_candidate_importing_another_module_remains_no_import(
     assert _status(project)["status"] == "NO_IMPORT"
 
 
-def test_repository_chemistry_file_loader_is_mapped(
+def test_repository_chemistry_installed_import_is_mapped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Pin the file-loader form used by the real chemistry acceptance suites."""
+    """Pin the installed-package import used by chemistry acceptance suites."""
     root = Path(__file__).resolve().parents[2]
     monkeypatch.setattr(checker, "PROJECT_ROOT", root)
     monkeypatch.setattr(checker, "SRC_DIR", root / "src" / "general_ludd")
     monkeypatch.setattr(checker, "TESTS_DIR", root / "tests" / "unit")
-    source_modules = checker._source_module_paths()
-    test_tree = checker._parse_python(root / "tests" / "unit" / "test_chemistry_analytical.py")
-    assert test_tree is not None
-    assignments = checker._assigned_expressions(test_tree)
-    parts = checker._static_path_parts(assignments["_ANALYTICAL_PATH"], assignments)
-    assert parts[-4:] == ["src", "general_ludd", "chemistry", "analytical.py"], parts
-    loaded = checker._file_loaded_modules(test_tree, source_modules)
-    assert "general_ludd.chemistry.analytical" in loaded, loaded
-
     result = checker._check_module(
         root / "src" / "general_ludd" / "chemistry" / "analytical.py"
     )
