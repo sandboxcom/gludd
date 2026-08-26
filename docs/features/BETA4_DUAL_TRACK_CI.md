@@ -637,6 +637,45 @@ candidate SHA, workflow definition, and evidence set remain immutable. A failed
 candidate is abandoned and a new commit starts both lanes again. This gives
 development continuity without weakening release evidence.
 
+## Hosted coverage dotfile artifact contract
+
+Candidate `99562640dc0e582b8e369651c5dece65b1f28882` proved a
+hosted-only producer defect: all eight test shards passed and uploaded their
+marker and attestation, but the coverage consumer found zero `.coverage.*`
+databases. The databases were named explicitly in the artifact path, yet the
+upload action excluded them because they are dotfiles.
+
+GitHub's upload-artifact documentation says hidden files are ignored by
+default and require `include-hidden-files: true`. The upstream announcement
+records that this became the default for security, and practitioners report
+that even an explicitly named dotfile is omitted without the opt-in. One user
+spent roughly a day and twelve long workflow retries discovering the behavior,
+which is why Gludd pins it mechanically rather than relying on operator memory.
+
+- [upload-artifact hidden-file documentation](https://github.com/actions/upload-artifact#uploading-hidden-files)
+- [upstream hidden-file default announcement](https://github.com/actions/upload-artifact/issues/602)
+- [practitioner report: explicitly named hidden files](https://github.com/actions/upload-artifact/issues/614)
+- [practitioner report: missing diagnostics and repeated retries](https://github.com/actions/upload-artifact/issues/737)
+
+The shard upload now opts in only for its explicit three-file path set. A
+workflow regression requires the opt-in, while the downstream combine step
+continues to fail closed unless at least six shard databases exist. ZDD means
+the bad candidate is discarded, both local and hosted lanes stop, and no merge,
+tag, or release can reuse its partial evidence. Rollback removes the opt-in and
+its regression together; that intentionally restores a red coverage consumer
+and therefore cannot silently publish a release.
+
+The current Node 24 `download-artifact` action also emits a `Buffer()`
+deprecation warning. The project is already pinned to the latest v8.0.1 action;
+the active upstream report reproduces the warning on both operating systems and
+states that it is separate from artifact transfer correctness. Gludd does not
+suppress it: the warning remains observable until an upstream action release
+removes the deprecated call, at which point the immutable action pin must be
+updated and rerun through both lanes.
+
+- [download-artifact v8 Buffer warning report](https://github.com/actions/upload-artifact/issues/811)
+- [actions/toolkit artifact release notes](https://github.com/actions/toolkit/blob/main/packages/artifact/RELEASES.md)
+
 ## Rollback and recovery
 
 No tag or release is created until dual-track verification succeeds. On failure,

@@ -217,6 +217,19 @@ def test_hosted_shard_step_budget_covers_long_shards_and_cleanup() -> None:
     assert test_step["timeout-minutes"] <= job["timeout-minutes"] - 15
 
 
+def test_hosted_coverage_artifact_includes_hidden_coverage_database() -> None:
+    """The shard artifact must contain the dot-prefixed coverage database."""
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "build.yml").read_text())
+    steps = workflow["jobs"]["test-shard"]["steps"]
+    upload = next(
+        step
+        for step in steps
+        if str(step.get("name", "")).startswith("Upload coverage data")
+    )
+
+    assert upload["with"]["include-hidden-files"] is True
+
+
 def test_local_and_hosted_shard_batches_share_safe_file_bound() -> None:
     """Hosted workers must not retain a 64-file process lifetime."""
     module = _load_script("run_ci_shards_serial")

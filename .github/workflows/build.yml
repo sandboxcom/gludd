@@ -540,6 +540,9 @@ jobs:
             .coverage.${{ matrix.shard }}-${{ matrix.python-version }}
             coverage-shard-marker.txt
             ci-shard-attestation.json
+          # Coverage databases are dotfiles; upload-artifact excludes hidden
+          # files by default even when an explicit path names them.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 
