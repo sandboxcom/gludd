@@ -653,13 +653,33 @@ def _save_shard_coverage(
     env: dict[str, str],
 ) -> bool:
     coverage_file = Path(env["COVERAGE_FILE"])
-    if not coverage_file.is_file():
-        # pytest-cov under xdist can leave parallel data. `coverage combine`
-        # canonicalizes it into the shard-specific COVERAGE_FILE.
-        _run_command(
-            [sys.executable, "-m", "coverage", "combine", str(basetemp)],
+    worker_fragments = sorted(basetemp.glob(f"{coverage_file.name}.*"))
+    if worker_fragments or not coverage_file.is_file():
+        # With xdist and ``parallel = True``, pytest-cov can write both a
+        # controller data file and suffixed worker files. The controller file
+        # existing does not mean the worker data has been combined. Append
+        # every owned fragment before publishing the batch artifact.
+        combine_rc = _run_command(
+            [
+                sys.executable,
+                "-m",
+                "coverage",
+                "combine",
+                "--append",
+                "--keep",
+                f"--data-file={coverage_file}",
+                str(basetemp),
+            ],
             env=env,
         )
+        if combine_rc:
+            print(
+                f"SHARD-COVERAGE-COMBINE-FAIL shard={shard} "
+                f"batch={batch_index} fragments={len(worker_fragments)} "
+                f"rc={combine_rc}",
+                flush=True,
+            )
+            return False
     if not coverage_file.is_file() or coverage_file.stat().st_size == 0:
         print(
             f"SHARD-COVERAGE-MISSING shard={shard} batch={batch_index}",

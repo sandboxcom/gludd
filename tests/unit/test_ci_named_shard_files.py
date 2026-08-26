@@ -1424,6 +1424,37 @@ def test_shard_coverage_fragment_and_aggregate_preserve_failure(
     assert any("--threshold=75" in command for command in commands)
 
 
+def test_save_shard_coverage_unions_controller_and_worker_data(
+    tmp_path: Path,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "durable" / "coverage-fragments"
+    module.COVERAGE_SHARDS.mkdir(parents=True)
+    batchtemp = tmp_path / "batch"
+    batchtemp.mkdir()
+    coverage_file = batchtemp / ".coverage"
+    source = str(ROOT / "src" / "general_ludd" / "__init__.py")
+
+    controller = CoverageData(basename=str(coverage_file))
+    controller.add_lines({source: {1}})
+    controller.write()
+    worker = CoverageData(basename=str(batchtemp / ".coverage.worker"))
+    worker.add_lines({source: {2}})
+    worker.write()
+
+    assert module._save_shard_coverage(
+        "unit-1b",
+        6,
+        batchtemp,
+        {"COVERAGE_FILE": str(coverage_file)},
+    )
+
+    destination = module.COVERAGE_SHARDS / ".coverage.unit-1b.batch-006"
+    combined = CoverageData(basename=str(destination))
+    combined.read()
+    assert set(combined.lines(source) or ()) == {1, 2}
+
+
 def test_hosted_coverage_transfer_survives_workspace_and_python_suffix(
     tmp_path: Path,
 ) -> None:
@@ -1596,7 +1627,16 @@ def test_missing_shard_coverage_attempts_combine_then_fails_closed(
         is False
     )
     assert commands == [
-        [sys.executable, "-m", "coverage", "combine", str(batchtemp)]
+        [
+            sys.executable,
+            "-m",
+            "coverage",
+            "combine",
+            "--append",
+            "--keep",
+            f"--data-file={batchtemp / '.coverage'}",
+            str(batchtemp),
+        ]
     ]
 
 

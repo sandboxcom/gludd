@@ -782,6 +782,45 @@ router, daemon, approval, release, and process-ownership surfaces. This ordering
 diagnostic only: every source file must still reach both floors before a new
 candidate can start.
 
+## Xdist batch-fragment ownership
+
+The first enforced concurrent candidate,
+`98660c6d41a14d03d248523c4d72d5a68d0afcd0`, started the canonical local lane
+and GitHub run `32974962502` together. Every hosted test, packaging, container,
+execution-environment, and Molecule job passed. The hosted coverage consumer alone
+failed. Gludd invalidated the candidate and terminated only its owned local runner
+tree; the external model process remained untouched.
+
+The retained raw databases initially appeared to show 110 genuine source gaps.
+A same-checkout focused replay disproved that interpretation for the three worst
+files: 445 chemistry tests measured `core.py` at 92% and both
+`electrochemistry.py` and `process.py` at 100%. The hosted log also proved that
+batch 6 ran 508 tests and saved a coverage file. The defect was the batch handoff:
+with xdist and `parallel = True`, pytest-cov left an existing controller data file
+plus dotted worker data files. Gludd treated existence of the controller file as
+proof that combination was complete and published it without the worker evidence.
+
+Coverage.py documents that parallel mode creates distinct dotted data files, that
+`coverage combine` reads those files, and that `--append` is required to retain an
+existing base data file while accumulating more results. The long-lived pytest-cov
+xdist report 232 describes the same observable symptom: the distributed report
+contains only code seen by the controller while the non-xdist report is complete.
+The runner now always appends owned worker fragments into the controller file before
+publishing a batch. A nonzero combine status fails the batch closed; no threshold,
+source scope, or test expectation is weakened.
+
+- [Coverage.py combine contract](https://coverage.readthedocs.io/en/latest/commands/cmd_combine.html)
+- [Coverage.py parallel configuration](https://coverage.readthedocs.io/en/latest/config.html#run-parallel)
+- [pytest-cov xdist controller-only practitioner report](https://github.com/pytest-dev/pytest-cov/issues/232)
+- [pytest-cov xdist support contract](https://github.com/pytest-dev/pytest-cov)
+
+The zero-downtime boundary is evidence-only. Each batch owns its controller and
+worker coverage files beneath the project resource namespace, combines them before
+workspace cleanup, copies one immutable result, and retains no process after the
+batch exits. Rollback reverts the union logic and its regression together and
+invalidates the candidate; it cannot reinterpret the incomplete hosted artifact as
+passing release evidence.
+
 ## Rollback and recovery
 
 No tag or release is created until dual-track verification succeeds. On failure,
