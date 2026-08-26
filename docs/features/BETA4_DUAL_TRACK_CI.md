@@ -1310,3 +1310,20 @@ This is owner-side cleanup, not a release workaround. No hosted retry, cleanup
 job, coverage exclusion, or partial-branch pragma was added. Rollback is the
 single algorithms commit; zero-downtime behavior is still rejection of the
 untagged candidate until a new exact SHA passes both local and hosted lanes.
+
+### Agent recovery and research boundaries
+
+The next exact hosted group covers dispatch checkpointing and research. Ten
+canonical tests exercise durable-key regeneration, hostile checkpoint names,
+invalid and legacy snapshot envelopes, corrupt spool offsets, no-bus resume
+observability, the real SearX client type boundary, URL and low-quality-domain
+filtering, bounded result caps, page-fetch success and failure, and confidence
+band reporting. The focused surface passes 151 tests at 97 percent aggregate;
+dispatch checkpointing is 100 percent and researcher is 96 percent.
+
+No test starts a daemon or external search service, and no cleanup task
+compensates for the application. Temporary keys, snapshots, and sidecars remain
+inside pytest-owned roots; page/search failures are handled by the existing
+owner contracts. Rollback is the isolated test/documentation commit, while ZDD
+continues to mean invalidating the untagged candidate before another exact-SHA
+local/hosted pair is launched.
