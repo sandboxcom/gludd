@@ -405,6 +405,16 @@ peer independently found a stale release-cut assertion for the older
 exact-SHA `require-dual-track-green` prerequisite already used by production.
 Both peers were cancelled and the candidate invalidated before repair.
 
+The first clean-SHA gate on follow-up commit `c1df1c5c55ee86f2344c447ef5239425b5b94737`
+then exposed four further contract drifts after 406 neighboring router tests
+passed. The Make audit treated the comma-bearing tail of a nested
+`$(if $(filter ...))` expansion as a literal prerequisite, two release tests
+still expected the weaker hosted-only guard, and router registration expected
+`{stack_name}` instead of FastAPI's deployed `{stack_name:path}` converter.
+The gate was cancelled immediately at that first red boundary. The audit now
+consumes balanced nested Make expansions, while the release and router tests
+pin the deployed interfaces without changing production behavior.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
