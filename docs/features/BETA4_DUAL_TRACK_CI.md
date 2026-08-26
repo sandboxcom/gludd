@@ -415,6 +415,20 @@ The gate was cancelled immediately at that first red boundary. The audit now
 consumes balanced nested Make expansions, while the release and router tests
 pin the deployed interfaces without changing production behavior.
 
+Candidate `c9657db8c194ca5da2e32ef13c7003b6407d5e32` demonstrated the
+hosted-runner timing boundary directly. Local Python 3.11 and the complete
+macOS prefix passed, while hosted run `32925158696`, job `98047439833`, failed
+`unit-1a2` because time spent *inside* the floor plugin's dispatch hook was
+counted as time between tool calls. Reading a larger pending-work ledger and
+publishing dispatch preflight evidence crossed the deliberately short test
+boundary on hosted Linux, so the next edit was misclassified as a new message
+with an undersized dispatch wave. The runner had ample disk and memory; this was
+not load shedding or an orphaned process. The hook now records its boundary
+timestamp in `finally`, after owner work completes. A no-sleep regression makes
+dispatch bookkeeping nontrivial and proves that the immediately following call
+remains in the same message. When hosted failed, the local peer and every
+remaining hosted job were cancelled before a replacement candidate was formed.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -703,6 +717,16 @@ Reviewed 2026-08-25:
 - [GitHub Actions runner issue 3760](https://github.com/actions/runner/issues/3760)
   reports cross-runner state and ownership failures when runtime directories are
   shared, supporting Gludd's per-project, per-batch namespaces.
+- [GitHub Actions runner issue 1031](https://github.com/actions/runner/issues/1031),
+  opened 2021-03-30 and reviewed 2026-08-25, preserves a practitioner reproducer
+  where work completing in under a second locally takes seconds or minutes for
+  the hosted runner to process. Gludd therefore does not infer message boundaries
+  from time consumed by its own synchronous hook work.
+- [Node.js issue 21822](https://github.com/nodejs/node/issues/21822), opened
+  2018-07-25 and reviewed 2026-08-25, records long-lived practitioner evidence
+  that event-loop contention makes wall-clock timer delivery drift. The plugin
+  uses elapsed time only between completed hook calls, never as a proxy for the
+  duration of the hook itself.
 - [GitHub's `upload-artifact` documentation](https://github.com/actions/upload-artifact#uploading-hidden-files),
   reviewed 2026-08-25, specifies that dotfiles are excluded by default and that
   `if-no-files-found: error` fails when no eligible path exists.
