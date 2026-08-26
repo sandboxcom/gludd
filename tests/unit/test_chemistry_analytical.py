@@ -10,32 +10,15 @@ LOD/LOQ, precision, recovery, outlier policy, extrapolation flagging) and
 CHEM-AT-019 (every reported value carries a validation status; only
 ``validated`` supports execution-facing artifacts).
 
-Modules are loaded by file path (mirroring ``test_chemistry_thermo.py``) so
-the suite is robust to ``sys.path`` variations inside worktrees.
+Modules are imported through their installed package paths so coverage and
+runtime import behavior match the application boundary.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import math
-import os
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-_ANALYTICAL_PATH = os.path.join(_PROJECT_ROOT, "src", "general_ludd", "chemistry", "analytical.py")
-_VALIDATION_PATH = os.path.join(_PROJECT_ROOT, "src", "general_ludd", "chemistry", "validation.py")
-
-
-def _load_module(path: str, name: str):
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None and spec.loader is not None, f"{name} spec failed"
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-analytical = _load_module(_ANALYTICAL_PATH, "chemistry_analytical_under_test")
-validation = _load_module(_VALIDATION_PATH, "chemistry_validation_under_test")
-
+from general_ludd.chemistry import analytical, validation
 
 # ---------------------------------------------------------------------------
 # CHEM-015 CalibrationCurve — linear regression

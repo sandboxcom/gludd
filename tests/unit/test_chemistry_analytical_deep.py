@@ -9,28 +9,11 @@ envelopes, and blind-spot spec invariants.
 
 from __future__ import annotations
 
-import importlib.util
 import math
-import os
-import sys
 
 import pytest
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-_ANALYTICAL_PATH = os.path.join(_PROJECT_ROOT, "src", "general_ludd", "chemistry", "analytical.py")
-
-
-def _load_module(path: str, name: str):
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None and spec.loader is not None, f"{name} spec failed"
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-analytical = _load_module(_ANALYTICAL_PATH, "chemistry_analytical_deep_ut")
-
+from general_ludd.chemistry import analytical
 
 # ---------------------------------------------------------------------------
 # CalibrationCurve — construction / fit error paths

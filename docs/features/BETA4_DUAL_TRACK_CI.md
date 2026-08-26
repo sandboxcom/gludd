@@ -1255,3 +1255,40 @@ exact-SHA pair is started.
 - [PyWavelets issue 472](https://github.com/PyWavelets/pywt/issues/472) records
   practitioner evidence that periodization preserves the inverse/adjoint
   properties expected by matrix-based reconstruction.
+
+## Canonical import coverage boundary
+
+Hosted run `33000301777` on 2026-08-26 passed every test shard but correctly
+failed its terminal coverage audit: 111 production files missed the 75 percent
+per-file branch floor. The first remediation group exposed chemistry tests that
+executed source through ad-hoc `spec_from_file_location` module identities.
+Those tests could pass while canonical package execution remained absent or
+under-attributed in combined coverage. Chemistry tests now use installed
+`general_ludd.chemistry` imports, and additional owner-focused cases exercise
+the real validation, rollback, safety, and resource branches. No source is
+excluded and no partial-branch pragma or threshold reduction is used.
+
+The zero-downtime rule is candidate invalidation: a green test matrix with red
+coverage is never tagged or released. Rollback is the isolated test and
+documentation commit. Resources remain bounded to the existing one-worker
+local shard runner and the eight exact-run hosted artifacts; the invalid local
+candidate was interrupted through its owner, which reaped the active worker and
+removed its namespaced temporary root before remediation began.
+
+- [coverage.py branch documentation](https://coverage.readthedocs.io/en/latest/branch.html),
+  reviewed 2026-08-26, defines a branch opportunity as each possible
+  source-to-destination transition. This is why passing statements alone cannot
+  satisfy Gludd's per-file branch contract.
+- [coverage.py change history](https://github.com/coveragepy/coveragepy/blob/main/CHANGES.rst),
+  reviewed 2026-08-26, records issue 1232, where source packages imported before
+  measurement could be partially measured. Gludd avoids ambiguous test-only
+  module identities by exercising the same installed import path as production.
+- [pytest-cov issue 578](https://github.com/pytest-dev/pytest-cov/issues/578),
+  opened 2023-01-27 and reviewed 2026-08-26, preserves practitioner evidence
+  that executed multiprocessing work can appear uncovered without an explicit
+  process-measurement boundary. The beta4 shard configuration retains
+  coverage.py's subprocess patch and combines exact-run fragments fail-closed.
+- [pytest-cov 7 change history](https://github.com/pytest-dev/pytest-cov/blob/master/CHANGELOG.rst),
+  reviewed 2026-08-26, documents the migration from the implicit `.pth`
+  subprocess hook to coverage.py's explicit `patch = subprocess` mechanism used
+  by the canonical local and hosted lanes.

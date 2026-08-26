@@ -264,3 +264,13 @@ class TestRouterEdgeCases:
         p = ChemistryPolicy()
         r = ChemistryRouter(p)
         assert r._policy is p
+
+    def test_missing_workflow_mapping_fails_closed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delitem(TASK_WORKFLOW, TaskKind.identity)
+        route = ChemistryRouter(ChemistryPolicy()).route(_make_request(TaskKind.identity))
+        assert route == WorkflowRoute(
+            request_id="req-1",
+            workflow="",
+            risk_tier="low",
+            requires_hazard_review=False,
+        )

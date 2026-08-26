@@ -8,34 +8,17 @@ Covers CHEM-016 (electrochemistry) and CHEM-017 (process/scale-up) from
 * ProcessScaleUp: heat_transfer_check, mixing_assessment, runaway_risk,
   separation_feasibility. Lab-scale procedures MUST NOT linearly scale.
 
-Modules are loaded by file path (mirroring ``test_chemistry_reactions.py``) so
-the suite is robust to ``sys.path`` variations inside worktrees.
+Modules are imported through their installed package paths so coverage and
+runtime import behavior match the application boundary.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import math
-import os
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-_CORE_PATH = os.path.join(_PROJECT_ROOT, "src", "general_ludd", "chemistry", "core.py")
-_ELEC_PATH = os.path.join(_PROJECT_ROOT, "src", "general_ludd", "chemistry", "electrochemistry.py")
-_PROC_PATH = os.path.join(_PROJECT_ROOT, "src", "general_ludd", "chemistry", "process.py")
+import pytest
 
-
-def _load_module(path: str, name: str):
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None and spec.loader is not None, f"{name} spec failed"
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-core = _load_module(_CORE_PATH, "chemistry_core_d")
-electrochemistry = _load_module(_ELEC_PATH, "chemistry_electrochem_under_test")
-process = _load_module(_PROC_PATH, "chemistry_process_under_test")
-
+from general_ludd.chemistry import electrochemistry, process
 
 # ---------------------------------------------------------------------------
 # CHEM-016 electrochemistry — nernst_equation
@@ -78,6 +61,15 @@ class TestNernstEquation:
             pass
         else:
             raise AssertionError("expected ValueError for T<=0")
+
+    def test_rejects_nonpositive_reaction_quotient(self):
+        with pytest.raises(ValueError, match="reaction quotient"):
+            electrochemistry.nernst_equation(
+                standard_potential_v=0.5,
+                electron_count=1,
+                q=0.0,
+                temperature_k=298.15,
+            )
 
 
 class TestCellPotential:
@@ -129,6 +121,25 @@ class TestElectrolysisEnergy:
         )
         assert result["uncertainty"] > 0
 
+    def test_zero_terms_have_zero_uncertainty(self):
+        result = electrochemistry.electrolysis_energy(
+            cell_voltage_v=0.0,
+            current_a=0.0,
+            duration_s=0.0,
+            voltage_uncertainty_v=1.0,
+            current_uncertainty_a=1.0,
+            duration_uncertainty_s=1.0,
+        )
+        assert result["uncertainty"] == 0.0
+
+    def test_rejects_negative_duration(self):
+        with pytest.raises(ValueError, match="duration_s"):
+            electrochemistry.electrolysis_energy(
+                cell_voltage_v=2.0,
+                current_a=1.0,
+                duration_s=-1.0,
+            )
+
 
 # ---------------------------------------------------------------------------
 # CHEM-016 electrochemistry — corrosion_rate + cycling + impedance basics
@@ -155,6 +166,25 @@ class TestCorrosionRate:
         else:
             raise AssertionError("expected ValueError for valence=0")
 
+    @pytest.mark.parametrize(
+        ("kwargs", "message"),
+        [
+            ({"density_kg_m3": 0.0}, "density"),
+            ({"current_density_a_m2": -1.0}, "current_density"),
+            ({"molar_mass_g_mol": 0.0}, "molar_mass"),
+        ],
+    )
+    def test_rejects_nonphysical_inputs(self, kwargs, message):
+        inputs = {
+            "current_density_a_m2": 1.0,
+            "molar_mass_g_mol": 55.845,
+            "valence": 2,
+            "density_kg_m3": 7874.0,
+        }
+        inputs.update(kwargs)
+        with pytest.raises(ValueError, match=message):
+            electrochemistry.corrosion_rate(**inputs)
+
 
 class TestCyclingDegradation:
     def test_flags_degradation_when_capacity_fade_exceeds_threshold(self):
@@ -170,6 +200,21 @@ class TestCyclingDegradation:
         )
         assert result["degraded"] is False
 
+    def test_capacity_gain_is_clamped_to_zero_fade(self):
+        result = electrochemistry.cycling_degradation(cycles=[90.0, 100.0])
+        assert result["fade_pct"] == 0.0
+
+    def test_rejects_too_few_points(self):
+        with pytest.raises(ValueError, match="at least two"):
+            electrochemistry.cycling_degradation(cycles=[100.0])
+
+    def test_rejects_nonpositive_threshold(self):
+        with pytest.raises(ValueError, match="threshold"):
+            electrochemistry.cycling_degradation(
+                cycles=[100.0, 90.0],
+                capacity_fade_threshold_pct=0.0,
+            )
+
 
 class TestImpedanceBasics:
     def test_warburg_and_charge_transfer(self):
@@ -177,6 +222,26 @@ class TestImpedanceBasics:
         result = electrochemistry.impedance_basic(r_ohm=2.0, r_ct=50.0, frequency_hz=0.0)
         assert result["magnitude_ohm"] >= 50.0
         assert result["unit"] == "ohm"
+
+    def test_capacitive_branch(self):
+        result = electrochemistry.impedance_basic(
+            r_ohm=2.0,
+            r_ct=50.0,
+            frequency_hz=1000.0,
+            cdl_f=1e-3,
+        )
+        assert 2.0 <= result["magnitude_ohm"] < 52.0
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"r_ohm": -1.0, "r_ct": 1.0, "frequency_hz": 1.0},
+            {"r_ohm": 1.0, "r_ct": 1.0, "frequency_hz": -1.0},
+        ],
+    )
+    def test_rejects_nonphysical_inputs(self, kwargs):
+        with pytest.raises(ValueError):
+            electrochemistry.impedance_basic(**kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +266,17 @@ class TestProcessScaleUpHeatTransfer:
             pass
         else:
             raise AssertionError("expected ValueError for lab_volume_l=0")
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"lab_volume_l": 1.0, "plant_volume_l": 0.0, "lab_surface_area_m2": 0.1},
+            {"lab_volume_l": 1.0, "plant_volume_l": 10.0, "lab_surface_area_m2": 0.0},
+        ],
+    )
+    def test_heat_transfer_rejects_other_nonpositive_inputs(self, kwargs):
+        with pytest.raises(ValueError):
+            process.ProcessScaleUp().heat_transfer_check(**kwargs)
 
 
 class TestProcessScaleUpMixing:
@@ -229,6 +305,46 @@ class TestProcessScaleUpMixing:
         else:
             raise AssertionError("expected ValueError for zero viscosity")
 
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {
+                "impeller_diameter_m": 0.0,
+                "rotational_speed_rpm": 1.0,
+                "fluid_density_kg_m3": 1.0,
+                "fluid_viscosity_pa_s": 1.0,
+            },
+            {
+                "impeller_diameter_m": 1.0,
+                "rotational_speed_rpm": -1.0,
+                "fluid_density_kg_m3": 1.0,
+                "fluid_viscosity_pa_s": 1.0,
+            },
+            {
+                "impeller_diameter_m": 1.0,
+                "rotational_speed_rpm": 1.0,
+                "fluid_density_kg_m3": 0.0,
+                "fluid_viscosity_pa_s": 1.0,
+            },
+        ],
+    )
+    def test_rejects_other_nonphysical_inputs(self, kwargs):
+        with pytest.raises(ValueError):
+            process.ProcessScaleUp().mixing_assessment(**kwargs)
+
+    @pytest.mark.parametrize(
+        ("rpm", "expected"),
+        [(0.1, "laminar"), (60.0, "transitional")],
+    )
+    def test_lower_reynolds_regimes(self, rpm, expected):
+        result = process.ProcessScaleUp().mixing_assessment(
+            impeller_diameter_m=0.1,
+            rotational_speed_rpm=rpm,
+            fluid_density_kg_m3=1000.0,
+            fluid_viscosity_pa_s=1.0,
+        )
+        assert result["regime"] == expected
+
 
 class TestProcessScaleUpRunawayRisk:
     def test_high_exotherm_flags_runaway_risk(self):
@@ -253,6 +369,44 @@ class TestProcessScaleUpRunawayRisk:
         )
         assert result["runaway_risk"] == "low"
 
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {
+                "reaction_enthalpy_kj_mol": -1.0,
+                "adiabatic_temp_rise_k": 1.0,
+                "heat_removal_capacity_kw": 1.0,
+                "process_temp_k": 0.0,
+            },
+            {
+                "reaction_enthalpy_kj_mol": -1.0,
+                "adiabatic_temp_rise_k": 1.0,
+                "heat_removal_capacity_kw": -1.0,
+                "process_temp_k": 298.15,
+            },
+        ],
+    )
+    def test_rejects_nonphysical_inputs(self, kwargs):
+        with pytest.raises(ValueError):
+            process.ProcessScaleUp().runaway_risk(**kwargs)
+
+    @pytest.mark.parametrize(
+        ("rise", "enthalpy", "cooling", "expected"),
+        [
+            (25.0, -100.0, 1.0, "moderate"),
+            (25.0, -100.0, 0.0, "high"),
+            (250.0, -400.0, 1.0, "severe"),
+        ],
+    )
+    def test_remaining_risk_tiers(self, rise, enthalpy, cooling, expected):
+        result = process.ProcessScaleUp().runaway_risk(
+            reaction_enthalpy_kj_mol=enthalpy,
+            adiabatic_temp_rise_k=rise,
+            heat_removal_capacity_kw=cooling,
+            process_temp_k=298.15,
+        )
+        assert result["runaway_risk"] == expected
+
 
 class TestProcessScaleUpSeparationFeasibility:
     def test_distillation_feasible_for_volatile_gap(self):
@@ -276,6 +430,32 @@ class TestProcessScaleUpSeparationFeasibility:
         )
         assert result["feasible"] is False
         assert any("relative_volatility" in lim or "low" in lim or "azeotrope" in lim for lim in result["limitations"])
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"relative_volatility": None, "feed_composition": 0.5, "product_purity": 0.9},
+            {"relative_volatility": 2.0, "feed_composition": 0.0, "product_purity": 0.9},
+            {"relative_volatility": 2.0, "feed_composition": 0.5, "product_purity": 1.0},
+        ],
+    )
+    def test_distillation_rejects_incomplete_inputs(self, kwargs):
+        with pytest.raises(ValueError):
+            process.ProcessScaleUp().separation_feasibility(method="distillation", **kwargs)
+
+    def test_low_volatility_high_purity_is_infeasible(self):
+        result = process.ProcessScaleUp().separation_feasibility(
+            method="distillation",
+            relative_volatility=1.2,
+            feed_composition=0.5,
+            product_purity=0.995,
+        )
+        assert result["feasible"] is False
+
+    def test_unmodeled_method_is_explicitly_limited(self):
+        result = process.ProcessScaleUp().separation_feasibility(method="membrane")
+        assert result["feasible"] is True
+        assert any("method_not_characterized" in item for item in result["limitations"])
 
 
 class TestProcessScaleUpLinearFlag:
