@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import signal
 import stat
-import time
 from pathlib import Path
 from unittest import mock
 
@@ -101,9 +100,10 @@ class TestSizeAgeBounding:
             root.check_bounds()
 
     def test_max_age_expiry(self, tmp_path: Path) -> None:
-        root = TempRoot.create(prefix="test-", parent=tmp_path, max_age_seconds=0.1)
-        time.sleep(0.15)
-        assert is_temp_root_expired(root, max_age_seconds=0.1)
+        with mock.patch("general_ludd.security.temp_cleanup.time.time", return_value=1_000.0):
+            root = TempRoot.create(prefix="test-", parent=tmp_path, max_age_seconds=0.1)
+        with mock.patch("general_ludd.security.temp_cleanup.time.time", return_value=1_000.11):
+            assert is_temp_root_expired(root, max_age_seconds=0.1)
 
     def test_fresh_root_not_expired(self, tmp_path: Path) -> None:
         root = TempRoot.create(prefix="test-", parent=tmp_path, max_age_seconds=3600)
@@ -156,10 +156,12 @@ class TestScopedCleanup:
         root2.cleanup()
 
     def test_cleanup_all_removes_only_expired(self, tmp_path: Path) -> None:
-        TempRoot.create(prefix="old-", parent=tmp_path, max_age_seconds=0.001)
-        time.sleep(0.15)
-        fresh = TempRoot.create(prefix="fresh-", parent=tmp_path, max_age_seconds=3600)
-        cleaned = cleanup_all_temp_roots(manifest_root=tmp_path, max_age_seconds=0.1)
+        with mock.patch("general_ludd.security.temp_cleanup.time.time", return_value=1_000.0):
+            TempRoot.create(prefix="old-", parent=tmp_path, max_age_seconds=0.001)
+        with mock.patch("general_ludd.security.temp_cleanup.time.time", return_value=1_001.0):
+            fresh = TempRoot.create(prefix="fresh-", parent=tmp_path, max_age_seconds=3600)
+        with mock.patch("general_ludd.security.temp_cleanup.time.time", return_value=1_001.05):
+            cleaned = cleanup_all_temp_roots(manifest_root=tmp_path, max_age_seconds=0.1)
         assert any("old-" in c for c in cleaned)
         assert fresh.root.exists()
         fresh.cleanup()

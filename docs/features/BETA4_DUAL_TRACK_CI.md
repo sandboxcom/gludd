@@ -27,6 +27,18 @@ cleanup task, retry, or copied matrix field. Rollback is the single contract
 commit; zero-downtime behavior is candidate invalidation before any tag or
 deployment, and the runner owns all interrupted child and temporary resources.
 
+Candidate `75975e86c7da6bf29993b8da715b249d3ad9011b` and hosted run
+`32948517640` then exposed a scheduler-dependent temporary-root test. The test
+gave a newly created root only 100 milliseconds of wall-clock life even though
+creation deliberately flushes and fsyncs its ownership manifest before return.
+Hosted storage latency consumed that interval, so the production reaper
+correctly classified the root as expired while the same test passed on the local
+filesystem. The regression now gives old, fresh, and observation events exact
+wall-clock values and removes the real sleep. Production expiry, durable
+manifests, and fail-closed cleanup are unchanged. The paired local and hosted
+lanes were cancelled as soon as the immutable candidate failed; rollback is the
+single test-contract commit, and no retry or compensating cleanup task exists.
+
 Run `32931575307` at commit
 `9ef2488da54cc2da1c2778f750270e6e72ddb8d5` exposed the inverse ordering
 hazard: three test-created in-memory SQLite engines discarded their ownership
@@ -910,6 +922,16 @@ Reviewed 2026-08-25:
   records a practitioner report of invalid duration results from the wrong clock
   source and the resulting move to a monotonic performance clock. Gludd also
   makes that clock injectable so threshold tests do not depend on scheduler load.
+- [pytest flaky-test guidance](https://docs.pytest.org/en/stable/explanation/flaky.html),
+  reviewed 2026-08-26, identifies uncontrolled system state, parallel execution,
+  and overly strict timing assertions as common CI flake sources. The temp-root
+  regression now controls its wall clock directly rather than inferring age from
+  scheduler and storage latency.
+- [CPython issue 120754](https://github.com/python/cpython/issues/120754), opened
+  2024-06-19 and reviewed 2026-08-26, records practitioner evidence that ordinary
+  filesystem system calls can be particularly slow on networked storage. Gludd
+  retains its durable manifest fsync and removes the test's 100-millisecond
+  storage-performance assumption instead.
 - [Python `time.localtime` documentation](https://docs.python.org/3/library/time.html#time.localtime),
   reviewed 2026-08-26, defines a timestamp-free call as using the current time
   and returning local-time fields. Off-peak policy therefore requires one
