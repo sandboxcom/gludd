@@ -1,7 +1,8 @@
 """Verify the unit-1a → unit-1a1 + unit-1a2 shard split is balanced.
 
-The `test-shard` matrix in `.github/workflows/build.yml` splits the old
-`unit-1a` shard (which ran 28-57 min in CI) into two halves:
+The canonical registry in `scripts/ci_named_shard_files.py` splits the old
+`unit-1a` shard (which ran 28-57 min in CI) into two halves, while the
+workflow matrix carries only their names:
 
     unit-1a1  → tests/unit/test_a[a-m]*.py
     unit-1a2  → tests/unit/test_a[n-z]*.py  +  tests/unit/test_a[0-9]*.py
@@ -42,30 +43,12 @@ def _sorted_a_files() -> list[str]:
     return files
 
 
-def _matrix_shard_paths() -> dict[str, str]:
-    """Parse the shard label → testpaths map from build.yml.
-
-    Returns a {shard_label: testpaths_string} dict so the test can assert
-    the workflow actually defines unit-1a1 and unit-1a2 (not just that the
-    files exist). Catches a regression where the shard is renamed but the
-    matrix leg is forgotten.
-    """
+def _workflow_shards() -> list[str]:
+    """Parse the shard-name axis delegated by the hosted workflow."""
     text = WORKFLOW.read_text()
-    pairs: dict[str, str] = {}
-    # Match `- shard: <name>` ... (optional `# comment` lines) ... `testpaths: "<paths>"`.
-    # The `[\s\S]*?` allows YAML comments between the shard label and its
-    # testpaths key (the unit-1a2 entry has an explanatory inline comment).
-    pattern = re.compile(
-        r'- shard:\s*(\S+)\s*\n([\s\S]*?)testpaths:\s*"([^"]+)"'
-    )
-    for m in pattern.finditer(text):
-        # Skip entries where the intervening text contains another `- shard:`
-        # (would mean the non-greedy match crossed into a different entry).
-        if "- shard:" in m.group(2):
-            continue
-        pairs[m.group(1)] = m.group(3)
-    assert pairs, "no shard matrix entries parsed from build.yml"
-    return pairs
+    list_line = re.search(r"^\s*shard:\s*\[([^\]]+)\]", text, re.MULTILINE)
+    assert list_line, "matrix `shard:` list not found in build.yml"
+    return [label.strip() for label in list_line.group(1).split(",")]
 
 
 def _matches_1a1(name: str) -> bool:
@@ -101,45 +84,44 @@ class TestShardSplitBalance:
     """The unit-1a1 / unit-1a2 split must be balanced and declared in CI."""
 
     def test_workflow_declares_both_shards(self) -> None:
-        """Both unit-1a1 and unit-1a2 must appear in the matrix `include`."""
-        pairs = _matrix_shard_paths()
-        assert "unit-1a1" in pairs, (
-            f"unit-1a1 missing from build.yml shard matrix; have: {sorted(pairs)}"
+        """Both unit-1a1 and unit-1a2 must appear in the matrix name axis."""
+        labels = _workflow_shards()
+        assert "unit-1a1" in labels, (
+            f"unit-1a1 missing from build.yml shard matrix; have: {sorted(labels)}"
         )
-        assert "unit-1a2" in pairs, (
-            f"unit-1a2 missing from build.yml shard matrix; have: {sorted(pairs)}"
+        assert "unit-1a2" in labels, (
+            f"unit-1a2 missing from build.yml shard matrix; have: {sorted(labels)}"
         )
         # The old monolithic shard must be gone — its presence would cause
         # double-execution of the entire test_a*.py range.
-        assert "unit-1a" not in pairs, (
+        assert "unit-1a" not in labels, (
             "unit-1a still present in build.yml; should be replaced by "
             "unit-1a1 + unit-1a2"
         )
 
     def test_workflow_uses_expected_glob_boundaries(self) -> None:
-        """The testpaths globs must use the agreed [a-m] / [n-z]+[0-9] split."""
-        pairs = _matrix_shard_paths()
-        assert pairs["unit-1a1"] == "tests/unit/test_a[a-m]*.py", (
-            f"unit-1a1 testpaths changed: {pairs['unit-1a1']!r}"
+        """Canonical globs must use the agreed [a-m] / [n-z]+[0-9] split."""
+        from scripts.ci_named_shard_files import SHARDS
+
+        first_patterns, _first_excludes = SHARDS["unit-1a1"]
+        second_patterns, _second_excludes = SHARDS["unit-1a2"]
+        assert first_patterns == ("tests/unit/test_a[a-m]*.py",), (
+            f"unit-1a1 testpaths changed: {first_patterns!r}"
         )
         # unit-1a2 owns BOTH the n-z letter range AND the 0-9 digit prefix
         # range (the latter catches test_a03_*, test_a3_*, test_a6_* which
         # neither letter range matches).
-        assert "tests/unit/test_a[n-z]*.py" in pairs["unit-1a2"], (
-            f"unit-1a2 missing test_a[n-z]*.py: {pairs['unit-1a2']!r}"
+        assert "tests/unit/test_a[n-z]*.py" in second_patterns, (
+            f"unit-1a2 missing test_a[n-z]*.py: {second_patterns!r}"
         )
-        assert "tests/unit/test_a[0-9]*.py" in pairs["unit-1a2"], (
+        assert "tests/unit/test_a[0-9]*.py" in second_patterns, (
             f"unit-1a2 missing test_a[0-9]*.py (digit catch-all): "
-            f"{pairs['unit-1a2']!r}"
+            f"{second_patterns!r}"
         )
 
     def test_old_unit_1a_removed_from_matrix_list(self) -> None:
         """The matrix `shard:` list line must not contain the old label."""
-        text = WORKFLOW.read_text()
-        # The shard list appears as `shard: [unit-1a1, unit-1a2, ...]`.
-        list_line = re.search(r"^\s*shard:\s*\[([^\]]+)\]", text, re.MULTILINE)
-        assert list_line, "matrix `shard:` list not found in build.yml"
-        labels = [s.strip() for s in list_line.group(1).split(",")]
+        labels = _workflow_shards()
         assert "unit-1a" not in labels, (
             f"unit-1a still in shard list: {labels}"
         )

@@ -15,6 +15,18 @@ The defect was procedural as well as technical: a local green result was allowed
 to influence release confidence before terminal hosted evidence existed for the
 same immutable commit.
 
+Candidate `0b5a685a02f100e6ed292d25dca64d940ad41b77` and hosted run
+`32946737866` then exposed one remaining duplicate shard-plan reader. The
+workflow and canonical runner already shared one registry, but
+`test_shard_split_balance.py` still reconstructed paths from the workflow's
+isolated-test `matrix.include` entry and mistook that exception for the complete
+plan. Hosted `unit-3b` failed two exact assertions; the paired local run and every
+remaining hosted job were cancelled immediately. The contract now validates
+workflow membership separately from canonical registry paths. It does not add a
+cleanup task, retry, or copied matrix field. Rollback is the single contract
+commit; zero-downtime behavior is candidate invalidation before any tag or
+deployment, and the runner owns all interrupted child and temporary resources.
+
 Run `32931575307` at commit
 `9ef2488da54cc2da1c2778f750270e6e72ddb8d5` exposed the inverse ordering
 hazard: three test-created in-memory SQLite engines discarded their ownership
