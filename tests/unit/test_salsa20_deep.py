@@ -77,13 +77,35 @@ class TestStreamEncrypt:
         assert ct == b""
 
     def test_encrypt_single_byte(self) -> None:
-        key = secrets.token_bytes(32)
-        nonce = secrets.token_bytes(8)
+        key = b"\x00" * 32
+        nonce = b"\x00" * 8
         pt = b"A"
         ct = stream_encrypt(pt, key, nonce)
         assert len(ct) == 1
-        assert ct != pt
         assert stream_decrypt(ct, key, nonce) == pt
+
+    def test_zero_keystream_byte_may_preserve_plaintext(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class ZeroKeystreamCipher:
+            def encrypt(self, plaintext: bytes) -> bytes:
+                return plaintext
+
+        def new_zero_keystream_cipher(*, key: bytes, nonce: bytes) -> ZeroKeystreamCipher:
+            assert len(key) == 32
+            assert len(nonce) == 8
+            return ZeroKeystreamCipher()
+
+        monkeypatch.setattr(
+            "general_ludd.algorithms.salsa20._PyCryptodomeSalsa20.new",
+            new_zero_keystream_cipher,
+        )
+        plaintext = b"A"
+        ciphertext = stream_encrypt(plaintext, b"\x00" * 32, b"\x00" * 8)
+
+        assert ciphertext == plaintext
+        assert stream_decrypt(ciphertext, b"\x00" * 32, b"\x00" * 8) == plaintext
 
     def test_encrypt_long_message(self) -> None:
         key = secrets.token_bytes(32)
