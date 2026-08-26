@@ -1327,3 +1327,21 @@ inside pytest-owned roots; page/search failures are handled by the existing
 owner contracts. Rollback is the isolated test/documentation commit, while ZDD
 continues to mean invalidating the untagged candidate before another exact-SHA
 local/hosted pair is launched.
+
+### Generated-test symbol ownership
+
+The generated-test slice now pins parser absence, decorated and nested
+definitions, malformed tree-sitter nodes, class-owned methods, and caller-owned
+``conftest.py`` preservation. The TDD boundary exposed a real ownership defect:
+class methods were also reported as module-level functions. The analyzer now
+recurses through blocks and bodies without re-walking a class as a module. The
+focused surface passes 53 tests with 100 percent line and branch coverage for
+both measured production files.
+
+Tree-sitter remains an optional controller capability. Its absence is cached,
+observable, and fail-soft; no parser process, daemon, network call, or cleanup
+task is introduced. Generated files stay inside pytest-owned temporary roots,
+and pre-existing configuration remains caller-owned. Rollback is the isolated
+analyzer/test/documentation commit. ZDD continues to reject the untagged
+candidate until a new immutable local/hosted pair validates the same plan and
+policy.
