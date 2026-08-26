@@ -1346,6 +1346,28 @@ analyzer/test/documentation commit. ZDD continues to reject the untagged
 candidate until a new immutable local/hosted pair validates the same plan and
 policy.
 
+### Control-plane decision and session branches
+
+The hosted coverage artifact exposed three control-plane files whose local
+behavior suites were green but whose branch evidence was incomplete. The
+beta4 slice now exercises approval persistence and status mapping, browser
+credential storage and OAuth failure paths, and daemon-chat streaming and
+interactive shutdown paths. The focused replay passes 591 tests with two
+dependency-gated skips at 93% aggregate coverage; each measured file clears
+the separate 75% line and branch floors.
+
+The approval replay also reproduced a Python 3.14 runtime defect: synchronous
+decision lookup depended on an implicit event loop, so completed approvals
+could silently remain pending. The owner now creates a bounded event loop only
+when no loop is already running, never blocks an active loop, and treats
+repository-construction or lookup failures as pending. This preserves ZDD:
+no approval is inferred during migration or failure, and rollback is the
+single approval-gate commit without changing stored todo data. Browser callback
+servers and HTTP clients retain their owner-side shutdown; tests add no cleanup
+task that compensates for application lifecycle behavior. The upstream and
+practitioner sources recorded earlier in this document remain the basis for the
+dual-track, exact-SHA, fail-closed policy.
+
 ### AI and ML safety branches
 
 The hosted artifact's next seven files cover accelerator planning, adapter

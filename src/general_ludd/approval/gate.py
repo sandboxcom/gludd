@@ -1,3 +1,5 @@
+"""Fail-closed human approval requests backed by the todo repository."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -10,6 +12,8 @@ if TYPE_CHECKING:
 
 
 class ApprovalDecision(Enum):
+    """Terminal or pending state of a human approval decision."""
+
     APPROVED = "approved"
     DENIED = "denied"
     PENDING = "pending"
@@ -17,6 +21,8 @@ class ApprovalDecision(Enum):
 
 @dataclass
 class ApprovalRequest:
+    """Description of an action that requires explicit human approval."""
+
     resource_id: str = ""
     action: str = ""
     requester: str = ""
@@ -27,6 +33,7 @@ class ApprovalRequest:
     by: str | None = None
 
     def __post_init__(self) -> None:
+        """Populate canonical fields from compatibility aliases."""
         if not self.resource_id and self.target:
             self.resource_id = self.target
         if not self.requester and self.by:
@@ -35,6 +42,8 @@ class ApprovalRequest:
 
 @dataclass
 class ApprovalResponse:
+    """Approval request paired with its current decision and review data."""
+
     request: ApprovalRequest
     decision: ApprovalDecision = ApprovalDecision.PENDING
     reviewer: str = ""
@@ -65,18 +74,20 @@ class ApprovalGate:
         self,
         repo_factory: Callable[[], HumanTodoRepository | None] | None = None,
     ) -> None:
+        """Create a gate using an optional repository factory."""
         self._repo_factory = repo_factory
         self._pending_requests: dict[str, ApprovalRequest] = {}
 
     def request_approval(self, request: ApprovalRequest) -> ApprovalResponse:
+        """Persist a human todo when available and always return fail-closed."""
         if self._repo_factory is None:
-            return ApprovalResponse(request=request)
-        repo = self._repo_factory()
-        if repo is None:
             return ApprovalResponse(request=request)
         try:
             import asyncio
 
+            repo = self._repo_factory()
+            if repo is None:
+                return ApprovalResponse(request=request)
             human_todo_id = _next_human_todo_id()
             self._pending_requests[human_todo_id] = request
             task = asyncio.ensure_future(
@@ -109,16 +120,18 @@ class ApprovalGate:
         """
         if self._repo_factory is None:
             return ApprovalDecision.PENDING
-        repo = self._repo_factory()
-        if repo is None:
-            return ApprovalDecision.PENDING
         try:
             import asyncio
 
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
+            repo = self._repo_factory()
+            if repo is None:
                 return ApprovalDecision.PENDING
-            row = loop.run_until_complete(repo.get(human_todo_id))
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                row = asyncio.run(repo.get(human_todo_id))
+            else:
+                return ApprovalDecision.PENDING
             if row is None:
                 return ApprovalDecision.PENDING
             status = getattr(row, "status", "open")
