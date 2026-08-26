@@ -15,6 +15,19 @@ The defect was procedural as well as technical: a local green result was allowed
 to influence release confidence before terminal hosted evidence existed for the
 same immutable commit.
 
+Run `32931575307` at commit
+`9ef2488da54cc2da1c2778f750270e6e72ddb8d5` exposed the inverse ordering
+hazard: three test-created in-memory SQLite engines discarded their ownership
+handle, then their `aiosqlite` connections were garbage-collected during a later
+daemon lifecycle test on hosted Python 3.11. The daemon had already disposed its
+own engine correctly. The test database acquisition boundary now yields its
+session factory from one async owner scope and disposes that exact engine in a
+`finally` block. The complete 16-file hosted batch is the regression boundary,
+so a delayed warning cannot be hidden by an isolated passing test. There is no
+release-time cleanup task or garbage-collection fallback: acquisition and
+teardown remain paired, cleanup failure remains observable, and rollback is the
+single test-support commit.
+
 The next frozen candidate,
 `a7f037c59fd71082452249bb5f6ee9efa8f50739`, proved why both lanes remain
 mandatory. Hosted run `32816856494` found that the runner's nested `TMPDIR`
@@ -613,6 +626,20 @@ Reviewed 2026-08-25:
   while lifecycle changes such as closing or replacing a client during another
   thread's request are a distinct unsafe boundary. Gludd therefore stabilizes
   the transport dependency for an instance instead of swapping a module global.
+- [SQLAlchemy issue 13039](https://github.com/sqlalchemy/sqlalchemy/issues/13039),
+  opened 2025-12-17 and reviewed 2026-08-26, records practitioner evidence that
+  abandoned `aiosqlite` connections can retain worker resources and leave the
+  underlying database in an unknown state. This supports explicit owner disposal
+  rather than relying on interpreter exit or garbage collection.
+- [SQLAlchemy discussion 10457](https://github.com/sqlalchemy/sqlalchemy/discussions/10457),
+  opened 2023-10-11 and reviewed 2026-08-26, records maintainers explaining that
+  graceful async-driver cleanup requires connections to be closed inside the
+  active event loop and the engine to be explicitly disposed. The E2E helper
+  therefore keeps teardown in the same async scope as acquisition.
+- [aiosqlite connection implementation](https://github.com/omnilib/aiosqlite/blob/main/aiosqlite/core.py),
+  reviewed 2026-08-26, emits a `ResourceWarning` when a live connection reaches
+  finalization and directs callers to an async context or explicit `close()`.
+  The beta4 gate treats that warning as a resource-ownership failure.
 - [pytest issue 13768](https://github.com/pytest-dev/pytest/issues/13768), opened
   2025-09-30 and reviewed 2026-08-25, explicitly calls out fixtures such as
   `monkeypatch` as not feasibly thread-safe. The hosted failure is the concrete
