@@ -1346,6 +1346,26 @@ analyzer/test/documentation commit. ZDD continues to reject the untagged
 candidate until a new immutable local/hosted pair validates the same plan and
 policy.
 
+### Git and release control-plane branches
+
+The hosted aggregate showed that Git history dispatch, release orchestration,
+and duplicate-target enforcement were behaviorally green but split away from
+the tests that exercised their branch surfaces. The beta4 regression file now
+drives every allowlisted Git operation, validation and unsupported-result
+boundary, non-interactive `git` and `gh` failure, CI conclusion, README version
+check, release repository failure, and duplicate-target CLI outcome. The
+focused replay passes 147 tests at 95% aggregate coverage; the three measured
+files report 93%, 94%, and 97%, with both line and branch coverage above 75%.
+
+These tests do not push, tag, delete, or contact GitHub. All transports are
+injected at the application boundary, malformed input remains fail-closed, and
+the existing ZDD ordering remains unchanged: exact-SHA CI evidence precedes
+branch/tag publication, while failed publication never advances release state.
+Rollback removes only the regression commit; no Git refs or release artifacts
+are mutated. The upstream GitHub Actions and coverage.py practitioner evidence
+recorded earlier in this document continues to govern the exact-SHA pairing and
+coverage-artifact policy.
+
 ### Control-plane decision and session branches
 
 The hosted coverage artifact exposed three control-plane files whose local
