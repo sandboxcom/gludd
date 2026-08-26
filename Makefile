@@ -165,7 +165,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime e2e-setup-test-project test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
-ci-view ci-rerun ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-shards-log-context \
+ci-view ci-rerun ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-coverage-artifact-audit ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
 log-agent-result disk-guard disk-check check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
@@ -491,6 +491,7 @@ help:
 	@echo "  ci-kill-zombie          cancel a CI run via gh run cancel"
 	@echo "  ci-job-failure-context  bounded authenticated failure context (RUN, JOB, PATTERN)"
 	@echo "  ci-artifact-download    atomically download one exact run-bound GHA artifact (RUN, ARTIFACT, CI_ARTIFACT_OUTPUT_ROOT, CI_ARTIFACT_HEARTBEAT_SECS, CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)"
+	@echo "  ci-coverage-artifact-audit audit one externally stored hosted Cobertura report (CI_COVERAGE_*)"
 	@echo "  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1"
 	@echo "  ci-await BRANCH=<b> [TIMEOUT=<s>]  Poll CI for branch until terminal (green/red/timeout)"
 	@echo "  ci-verdict-safe        Cooldown-enforced CI check (prefer over bare ci-verdict)"
@@ -4558,6 +4559,42 @@ ci-artifact-download:
 	if [ "$$DOWNLOAD_STATUS" -ne 0 ]; then echo "artifact download failed rc=$$DOWNLOAD_STATUS"; exit "$$DOWNLOAD_STATUS"; fi; \
 	mv "$$TMP" "$$DEST"; TMP=""; \
 	echo "CI-ARTIFACT-DOWNLOAD COMPLETE run=$(RUN) artifact=$(ARTIFACT) path=$$DEST"
+
+CI_COVERAGE_RUN ?=
+CI_COVERAGE_ARTIFACT ?= coverage-merged
+CI_COVERAGE_INPUT ?= xml
+CI_COVERAGE_SOURCE ?= src/general_ludd
+CI_COVERAGE_AGGREGATE_MIN ?= 85
+CI_COVERAGE_PER_FILE_MIN ?= 75
+CI_COVERAGE_AUDIT_VALIDATE_ONLY ?= 0
+CI_COVERAGE_HEARTBEAT_SECS ?= 10
+ci-coverage-artifact-audit:
+	@case "$(CI_COVERAGE_RUN)" in ''|*[!0-9]*) echo "CI_COVERAGE_RUN must be a numeric GitHub Actions run ID"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_ARTIFACT)" in ''|*[!A-Za-z0-9._-]*) echo "Refusing unsafe CI_COVERAGE_ARTIFACT: $(CI_COVERAGE_ARTIFACT)"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_INPUT)" in xml|data) ;; *) echo "CI_COVERAGE_INPUT must be xml or data"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_AUDIT_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_COVERAGE_AUDIT_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_HEARTBEAT_SECS)" in ''|*[!0-9]*|0) echo "CI_COVERAGE_HEARTBEAT_SECS must be a positive integer"; exit 2 ;; esac
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	RUN_ROOT="$$RESOURCE_ROOT/ci-artifacts/run-$(CI_COVERAGE_RUN)"; ARTIFACT_DIR="$$RUN_ROOT/$(CI_COVERAGE_ARTIFACT)"; \
+	XML="$$ARTIFACT_DIR/coverage.xml"; REPORT="$$ARTIFACT_DIR/coverage-audit.json"; \
+	if [ "$(CI_COVERAGE_AUDIT_VALIDATE_ONLY)" = "1" ]; then echo "CI-COVERAGE-ARTIFACT-AUDIT VALIDATED run=$(CI_COVERAGE_RUN) artifact=$(CI_COVERAGE_ARTIFACT) input=$(CI_COVERAGE_INPUT) output=$$REPORT"; exit 0; fi; \
+	if [ "$(CI_COVERAGE_INPUT)" = "xml" ]; then \
+		if [ ! -f "$$XML" ]; then echo "Hosted coverage artifact is missing: $$XML"; exit 2; fi; \
+		$(PYTHON) scripts/audit_coverage.py --xml-file="$$XML" --json-out="$$REPORT" --threshold="$(CI_COVERAGE_AGGREGATE_MIN)" --per-file-threshold="$(CI_COVERAGE_PER_FILE_MIN)" --source="$(CI_COVERAGE_SOURCE)"; \
+	else \
+		TMP=$$(mktemp -d "$$RUN_ROOT/.coverage-audit.XXXXXX"); JSON_PID=""; \
+		cleanup() { RC=$$?; trap - EXIT INT TERM; if [ -n "$$JSON_PID" ] && kill -0 "$$JSON_PID" 2>/dev/null; then kill -TERM "$$JSON_PID"; wait "$$JSON_PID"; fi; rm -rf "$$TMP"; exit $$RC; }; trap cleanup EXIT INT TERM; \
+		set --; \
+		for NAME in coverage-other-3.11 coverage-unit-1a1-3.11 coverage-unit-1a2-3.11 coverage-unit-1b-3.11 coverage-unit-1d-3.11 coverage-unit-2-3.11 coverage-unit-3a-3.11 coverage-unit-3b-3.11; do \
+			DIR="$$RUN_ROOT/$$NAME"; if [ ! -d "$$DIR" ]; then echo "Hosted coverage shard artifact is missing: $$DIR"; exit 2; fi; set -- "$$@" "$$DIR"; \
+		done; \
+		$(UV) run coverage combine --rcfile=config/coverage_ci_artifacts.ini --keep --data-file="$$TMP/.coverage" "$$@"; COMBINE_RC=$$?; if [ "$$COMBINE_RC" -ne 0 ]; then exit "$$COMBINE_RC"; fi; \
+		$(UV) run coverage json --rcfile=config/coverage_ci_artifacts.ini --data-file="$$TMP/.coverage" --show-contexts -o "$$TMP/coverage.json" & JSON_PID=$$!; \
+		while kill -0 "$$JSON_PID" 2>/dev/null; do echo "coverage-data heartbeat run=$(CI_COVERAGE_RUN)"; sleep "$(CI_COVERAGE_HEARTBEAT_SECS)"; done; \
+		wait "$$JSON_PID"; JSON_RC=$$?; JSON_PID=""; if [ "$$JSON_RC" -ne 0 ]; then exit "$$JSON_RC"; fi; \
+		$(PYTHON) scripts/audit_coverage.py --json-file="$$TMP/coverage.json" --json-out="$$REPORT" --threshold="$(CI_COVERAGE_AGGREGATE_MIN)" --per-file-threshold="$(CI_COVERAGE_PER_FILE_MIN)" --source="$(CI_COVERAGE_SOURCE)"; AUDIT_RC=$$?; \
+		mv "$$TMP/coverage.json" "$$ARTIFACT_DIR/coverage-data.json"; exit "$$AUDIT_RC"; \
+	fi
 
 # Just the FAILED/ERROR test ids + summary lines from a run's failed-step logs
 # (ci-faillog tails raw logs; this filters the signal). Usage: make ci-failed-tests RUN=<id>

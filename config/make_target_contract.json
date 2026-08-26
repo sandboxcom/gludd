@@ -49,6 +49,20 @@
       "behavior": "make ci-artifact-download RUN=1 ARTIFACT=diagnostics CI_ARTIFACT_OUTPUT_ROOT=RESOURCE_ROOT CI_ARTIFACT_HEARTBEAT_SECS=1 CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY=1"
     },
     {
+      "name": "ci-coverage-artifact-audit",
+      "make_variables": [
+        "CI_COVERAGE_RUN",
+        "CI_COVERAGE_ARTIFACT",
+        "CI_COVERAGE_INPUT",
+        "CI_COVERAGE_SOURCE",
+        "CI_COVERAGE_AGGREGATE_MIN",
+        "CI_COVERAGE_PER_FILE_MIN",
+        "CI_COVERAGE_AUDIT_VALIDATE_ONLY",
+        "CI_COVERAGE_HEARTBEAT_SECS"
+      ],
+      "behavior": "make ci-coverage-artifact-audit CI_COVERAGE_RUN=1 CI_COVERAGE_ARTIFACT=coverage-merged CI_COVERAGE_INPUT=xml CI_COVERAGE_SOURCE=src/general_ludd CI_COVERAGE_AGGREGATE_MIN=85 CI_COVERAGE_PER_FILE_MIN=75 CI_COVERAGE_AUDIT_VALIDATE_ONLY=1 CI_COVERAGE_HEARTBEAT_SECS=1"
+    },
+    {
       "name": "test-e2e",
       "make_variables": [
         "E2E_TEST_TIMEOUT",

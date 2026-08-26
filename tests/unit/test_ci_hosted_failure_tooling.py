@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from configparser import ConfigParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -83,6 +84,69 @@ def test_ci_artifact_download_rejects_checkout_output_even_in_validate_only() ->
     assert "Refusing unsafe CI_ARTIFACT_OUTPUT_ROOT" in result.stdout
 
 
+def test_ci_coverage_artifact_audit_reads_only_the_resource_namespace() -> None:
+    """Downloaded hosted coverage must be auditable without re-entering source."""
+    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    block = _target_block(source, "ci-coverage-artifact-audit")
+
+    assert "scripts/resource_arbiter.py root" in block
+    assert 'coverage.xml' in block
+    assert "scripts/audit_coverage.py" in block
+    assert "--xml-file=" in block
+    assert "CI_COVERAGE_RUN" in block
+    assert "CI_COVERAGE_ARTIFACT" in block
+    assert "CI_COVERAGE_INPUT" in block
+    assert "CI_COVERAGE_SOURCE" in block
+    assert "CI_COVERAGE_AGGREGATE_MIN" in block
+    assert "CI_COVERAGE_PER_FILE_MIN" in block
+    assert "CI_COVERAGE_AUDIT_VALIDATE_ONLY" in block
+    assert "CI_COVERAGE_HEARTBEAT_SECS" in block
+    assert "coverage combine" in block
+    assert "coverage json" in block
+    assert "--rcfile=config/coverage_ci_artifacts.ini" in block
+    assert "coverage-data heartbeat" in block
+    for artifact in (
+        "coverage-other-3.11",
+        "coverage-unit-1a1-3.11",
+        "coverage-unit-1a2-3.11",
+        "coverage-unit-1b-3.11",
+        "coverage-unit-1d-3.11",
+        "coverage-unit-2-3.11",
+        "coverage-unit-3a-3.11",
+        "coverage-unit-3b-3.11",
+    ):
+        assert artifact in block
+    assert ".gate-logs/ci-artifacts" not in block
+    assert "|| true" not in block
+
+
+def test_ci_coverage_path_map_rehomes_hosted_sources_without_omitting_them() -> None:
+    """Hosted data must map onto local source rather than suppress missing files."""
+    parser = ConfigParser()
+    path = ROOT / "config" / "coverage_ci_artifacts.ini"
+    assert parser.read(path) == [str(path)]
+
+    source_paths = parser["paths"]["source"].splitlines()
+    collection_paths = parser["paths"]["collections"].splitlines()
+    assert "src/general_ludd" in source_paths
+    assert "/home/runner/work/gludd/gludd/src/general_ludd" in source_paths
+    assert "collections/ansible_collections" in collection_paths
+    assert "/home/runner/work/gludd/gludd/collections/ansible_collections" in collection_paths
+    assert "omit" not in parser["report"]
+
+
+def test_ci_tooling_coverage_profile_measures_the_changed_auditor() -> None:
+    """Focused coverage must measure CI tooling, not the application-only tree."""
+    parser = ConfigParser()
+    path = ROOT / "config" / "coverage_ci_tooling.ini"
+    assert parser.read(path) == [str(path)]
+
+    included = parser["run"]["include"].splitlines()
+    assert "*/scripts/audit_coverage.py" in included
+    assert parser["run"].getboolean("branch") is True
+    assert parser["report"].getboolean("show_missing") is True
+
+
 def test_python_version_replay_runs_only_the_requested_node() -> None:
     source = (ROOT / "Makefile").read_text(encoding="utf-8")
     block = _target_block(source, "test-specific-pyver")
@@ -129,6 +193,27 @@ def test_new_ci_targets_have_safe_behavioral_contracts() -> None:
             "CI_ARTIFACT_OUTPUT_ROOT=RESOURCE_ROOT "
             "CI_ARTIFACT_HEARTBEAT_SECS=1 "
             "CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY=1"
+        ),
+    }
+    assert contracts["ci-coverage-artifact-audit"] == {
+        "name": "ci-coverage-artifact-audit",
+        "make_variables": [
+            "CI_COVERAGE_RUN",
+            "CI_COVERAGE_ARTIFACT",
+            "CI_COVERAGE_INPUT",
+            "CI_COVERAGE_SOURCE",
+            "CI_COVERAGE_AGGREGATE_MIN",
+            "CI_COVERAGE_PER_FILE_MIN",
+            "CI_COVERAGE_AUDIT_VALIDATE_ONLY",
+            "CI_COVERAGE_HEARTBEAT_SECS",
+        ],
+        "behavior": (
+            "make ci-coverage-artifact-audit CI_COVERAGE_RUN=1 "
+            "CI_COVERAGE_ARTIFACT=coverage-merged "
+            "CI_COVERAGE_INPUT=xml "
+            "CI_COVERAGE_SOURCE=src/general_ludd "
+            "CI_COVERAGE_AGGREGATE_MIN=85 CI_COVERAGE_PER_FILE_MIN=75 "
+            "CI_COVERAGE_AUDIT_VALIDATE_ONLY=1 CI_COVERAGE_HEARTBEAT_SECS=1"
         ),
     }
     assert contracts["test-specific-pyver"] == {

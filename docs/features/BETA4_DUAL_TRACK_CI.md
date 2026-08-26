@@ -740,6 +740,39 @@ signal cleanup are unchanged. This is ZDD for the tested application: diagnostic
 downloads neither alter its checkout nor stop its services. Rollback removes the
 target change and contract together, but restores the detectable workspace race.
 
+## Hosted raw-coverage reconstruction
+
+Hosted run `32962870788` exposed two materially different reporting boundaries.
+Its merged Cobertura document contained 111 in-scope files below the independent
+75% line and branch floors after four collection files were correctly excluded.
+Combining the eight original shard databases retained richer branch information
+and reported 110 in-scope files below those floors. The raw databases are the
+authoritative release evidence; XML remains a portable diagnostic view and may not
+replace or override raw-data failure evidence.
+
+Coverage.py documents `coverage combine` as the supported operation for merging
+parallel data and documents `[paths]` as the mechanism for reconciling equivalent
+source roots across machines. Gludd therefore requires exactly the eight hosted
+shard artifacts and maps the hosted checkout root to the current checkout before
+creating JSON. It does not rewrite source files, omit low-coverage files, or weaken
+thresholds. The first path in every mapping exists locally, as required by the
+Coverage.py configuration contract.
+
+- [coverage.py combine documentation](https://coverage.readthedocs.io/en/latest/commands/cmd_combine.html)
+- [coverage.py path configuration](https://coverage.readthedocs.io/en/7.13.4/config.html#paths)
+- [coverage.py change history](https://github.com/coveragepy/coveragepy/blob/main/CHANGES.rst)
+- [practitioner report: coverage paths differ between developers](https://www.reddit.com/r/learnpython/comments/mybsu0)
+- [practitioner report: rebuilding a report from retained data](https://www.reddit.com/r/learnpython/comments/szj8yq)
+
+All downloads, combined data, JSON, and audit reports live beneath the exact
+project/run resource namespace outside the checkout. Combination and JSON export
+emit bounded heartbeats; interruption terminates the owned child, removes only the
+temporary combine directory, and retains immutable downloaded evidence. This is
+ZDD because neither the tested checkout nor a running Gludd service is mutated.
+Rollback removes the audit target, contract, configuration, and tests together,
+then invalidates the candidate; it cannot reinterpret the retained raw databases
+as passing evidence.
+
 ## Rollback and recovery
 
 No tag or release is created until dual-track verification succeeds. On failure,
