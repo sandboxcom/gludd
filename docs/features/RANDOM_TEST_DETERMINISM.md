@@ -10,16 +10,26 @@ SciPy's one-sample Kolmogorov-Smirnov and Pearson chi-square goodness-of-fit
 implementations at the original 5% significance level. They do not loosen a
 threshold, retry a rejection, or skip a result.
 
-The `secrets` production API remains backed by the operating system's secure
-entropy. Its uniform-choice test replaces only the bound `SystemRandom` index
-source for the lifetime of that test, then pytest restores it. Token and byte
-invariant tests continue to exercise the real secure source.
+The `secrets` and `os.urandom` production APIs remain backed by the operating
+system's secure entropy. Their distribution tests replace only the bound
+`SystemRandom` index source or `os.urandom` byte source for the lifetime of that
+test, then pytest restores it. Token and byte invariant tests continue to
+exercise the real secure source.
 
 Local RED evidence on 2026-08-20 reproduced the normal KS rejection on bounded
 serial attempt 9 (`D=0.0166`, critical value `0.0136`) and the `secrets.choice`
 chi-square rejection on attempt 14 (`22.21`, critical value `16.90`). Both are
 valid false rejections for tests using a 5% significance level against a new
 unrecorded random sample on every run.
+
+On 2026-08-26, the canonical eight-shard release lane exposed the remaining
+missed instance: `unit-3a` batch 21 stopped after the
+`test_os_urandom_byte_distribution_chi_squared` node rejected a fresh sample,
+while its 608 sibling tests passed. An immediate full ordered replay had already
+shown why an unrecorded sample is inadequate evidence: an earlier run stopped
+on a different non-reproducible statistical rejection. The repaired byte test
+now uses a test-scoped fixed stream and SciPy's unchanged Pearson chi-square
+calculation at `alpha=0.05`; it does not retry or loosen the gate.
 
 ## Upstream and user evidence
 
@@ -44,6 +54,11 @@ unrecorded random sample on every run.
   accessed 2026-08-20, specifies operating-system secure randomness. Therefore
   the deterministic source is injected only inside the test and never exposed
   by application code.
+- CPython's
+  [`os.urandom` documentation](https://docs.python.org/3/library/os.html#os.urandom),
+  accessed 2026-08-26, defines the production cryptographic byte source. Gludd
+  leaves that source unchanged outside the pytest monkeypatch lifetime and
+  retains direct secure-source invariant coverage.
 
 ## Stability evidence
 

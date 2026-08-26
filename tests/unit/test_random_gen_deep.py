@@ -24,6 +24,7 @@ N_SAMPLES = 10_000
 ALPHA = 0.05
 NORMAL_KS_SEED = 0x5EED
 SECRETS_CHOICE_SEED = 0xC0FFEE
+OS_URANDOM_TEST_SEED = 0xA11CE
 
 
 def _chi_squared_statistic(observed: list[int], expected: list[float]) -> float:
@@ -61,6 +62,16 @@ def _controlled_secrets_choice_counts(
     monkeypatch.setattr(system_random, "_randbelow", rng.randrange)
     counts = Counter(secrets.choice(population) for _ in range(N_SAMPLES))
     return tuple(counts[value] for value in population)
+
+
+def _controlled_urandom_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[int, ...]:
+    """Exercise ``os.urandom`` with a reproducible test-scoped byte source."""
+    rng = random.Random(OS_URANDOM_TEST_SEED)
+    monkeypatch.setattr(os, "urandom", rng.randbytes)
+    counts = Counter(os.urandom(N_SAMPLES))
+    return tuple(counts[value] for value in range(256))
 
 
 # ---------------------------------------------------------------------------
@@ -192,15 +203,15 @@ class TestSeedReproducibility:
 
 
 class TestEntropyEstimation:
-    def test_os_urandom_byte_distribution_chi_squared(self) -> None:
-        n = N_SAMPLES
-        raw = os.urandom(n)
-        counts: Counter[int] = Counter(raw)
-        expected_per_bin = n / 256.0
-        observed = [counts.get(i, 0) for i in range(256)]
-        chi2 = _chi_squared_statistic(observed, [expected_per_bin] * 256)
-        critical = _chi2_critical_value(255)
-        assert chi2 < critical, f"chi2={chi2:.2f} >= critical={critical:.2f}"
+    def test_os_urandom_byte_distribution_chi_squared(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        observed = _controlled_urandom_counts(monkeypatch)
+        result = stats.chisquare(observed)
+        assert result.pvalue > ALPHA, (
+            f"chi2={float(result.statistic):.2f}, p={float(result.pvalue):.4f}"
+        )
 
     def test_secrets_token_bytes_all_non_empty_and_varying(self) -> None:
         tokens = [secrets.token_bytes(16) for _ in range(100)]
@@ -231,6 +242,7 @@ class TestEntropyEstimation:
     ) -> None:
         normal_before = _normal_ks_result()
         choice_before = _controlled_secrets_choice_counts(monkeypatch)
+        urandom_before = _controlled_urandom_counts(monkeypatch)
 
         random.seed(8675309)
         for _ in range(1000):
@@ -238,6 +250,7 @@ class TestEntropyEstimation:
 
         assert _normal_ks_result() == normal_before
         assert _controlled_secrets_choice_counts(monkeypatch) == choice_before
+        assert _controlled_urandom_counts(monkeypatch) == urandom_before
 
 
 # ---------------------------------------------------------------------------
