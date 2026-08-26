@@ -199,9 +199,6 @@ COVERAGE_SHARDS = _RESOURCE_PATHS.coverage_shards
 COVERAGE_JSON = _RESOURCE_PATHS.coverage_json
 COVERAGE_AUDIT = _RESOURCE_PATHS.coverage_audit
 GREENLET_COVERAGE_CONFIG = ROOT / ".coveragerc-greenlet"
-GOVERNANCE_MODULE_UTILS = (
-    "collections/ansible_collections/general_ludd/governance/plugins/module_utils"
-)
 MAX_FILES_PER_BATCH = 16
 DEFAULT_HEARTBEAT_SECONDS = 30.0
 DEFAULT_NO_PROGRESS_SECONDS = 10.0 * 60.0
@@ -321,8 +318,7 @@ def _pytest_command(
         "-m",
         "pytest",
         *files,
-        "--cov=general_ludd",
-        f"--cov={GOVERNANCE_MODULE_UTILS}",
+        "--cov",
         f"--cov-config={coverage_config}",
         "--cov-report=",
         "--cov-fail-under=0",

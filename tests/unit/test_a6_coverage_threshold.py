@@ -52,7 +52,9 @@ class TestBuildYmlNoFailUnderZeroWorkaround:
             "the shared local/hosted runner must defer the threshold for each "
             "partial batch; aggregate coverage enforces fail_under=85"
         )
-        assert "--cov=general_ludd" in runner
+        assert '"--cov"' in runner
+        assert "--cov=general_ludd" not in runner
+        assert "src/general_ludd" in Path(".coveragerc-greenlet").read_text()
         assert "_aggregate_coverage" in runner
 
     def test_coverage_report_step_no_longer_nongating(self) -> None:

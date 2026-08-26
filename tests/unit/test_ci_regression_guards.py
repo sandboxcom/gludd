@@ -320,9 +320,9 @@ def test_test_shard_collects_coverage_on_every_shard() -> None:
     CI incident: coverage was only collected on the ``unit-1`` / Python 3.11
     shard (all other 7 shards used ``--no-cov``), so the published coverage
     report represented ~¼ of the suite and systematically understated real
-    coverage.  Each shard must run pytest with ``--cov=general_ludd`` (no
-    shard may pass ``--no-cov``) so the downstream ``coverage`` job has data
-    from every shard to merge.
+    coverage. Each shard must run pytest with ``--cov`` and a filesystem-bound
+    source configuration (no shard may pass ``--no-cov``) so pre-imported
+    modules and the downstream aggregate are both measured.
     """
     wf = _load_build_workflow()
     shard = wf["jobs"].get("test-shard")
@@ -339,7 +339,10 @@ def test_test_shard_collects_coverage_on_every_shard() -> None:
     runner = (ROOT / "scripts" / "run_ci_shards_serial.py").read_text(
         encoding="utf-8"
     )
-    assert '"--cov=general_ludd"' in runner
+    assert '"--cov"' in runner
+    assert "--cov=general_ludd" not in runner
+    coverage_config = (ROOT / ".coveragerc-greenlet").read_text(encoding="utf-8")
+    assert "src/general_ludd" in coverage_config
     assert '"--cov-report="' in runner
     assert '"--cov-fail-under=0"' in runner
     assert "--no-cov" not in runner

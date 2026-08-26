@@ -98,7 +98,12 @@ def test_test_shards_reject_empty_selection_and_missing_coverage() -> None:
     assert "SHARD-COVERAGE-MISSING" in runner
     assert "failures[shard] = 2" in runner
     assert "RC -eq 5" not in runner
-    assert "GOVERNANCE_MODULE_UTILS" in runner
+    coverage_config = (ROOT / ".coveragerc-greenlet").read_text(encoding="utf-8")
+    assert "src/general_ludd" in coverage_config
+    assert (
+        "collections/ansible_collections/general_ludd/governance/plugins/module_utils"
+        in coverage_config
+    )
     assert "coverage_file.stat().st_size == 0" in runner
     uploads = _upload_steps(shard)
     assert uploads
@@ -114,6 +119,13 @@ def test_coverage_requires_all_shards_and_both_thresholds() -> None:
     matrix = _job("test-shard")["strategy"]["matrix"]
     expected_files = len(matrix["python-version"]) * len(matrix["shard"])
     assert f"EXPECTED_SHARD_COVERAGE_FILES={expected_files}" in runs
+    assert (
+        'if [ "$ACTUAL_SHARD_COVERAGE_FILES" -ne '
+        '"$EXPECTED_SHARD_COVERAGE_FILES" ]; then' in runs
+    )
+    assert "Expected exactly $EXPECTED_SHARD_COVERAGE_FILES shard coverage files" in runs
+    assert "Expected at least 6 shard coverage files" not in runs
+    assert "one shard's data lost after a green run" not in runs
     assert "coverage report --skip-covered --fail-under=85" in runs
     assert "coverage json -o coverage.json" in runs
     assert "audit_coverage.py" in runs

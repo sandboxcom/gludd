@@ -173,7 +173,7 @@ def test_serial_gate_runner_is_fresh_process_and_coverage_complete() -> None:
         "start_new_session=True",
         "COVERAGE_FILE",
         "coverage combine",
-        "--cov=general_ludd",
+        '"--cov"',
         "--cov-fail-under=0",
         "coverage report",
         "--fail-under=85",
@@ -646,15 +646,18 @@ def test_serial_pytest_command_uses_one_fail_closed_worker_and_isolated_basetemp
     assert command[command.index("-n") + 1] == "1"
     assert command[command.index("--maxprocesses") + 1] == "1"
     assert "--max-worker-restart=0" in command
-    assert "--cov=general_ludd" in command
-    assert (
-        "--cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils"
-        in command
-    )
+    assert "--cov" in command
+    assert "--cov=general_ludd" not in command
+    assert not any(item.startswith("--cov=") for item in command)
     coverage_config = module.ROOT / ".coveragerc-greenlet"
     assert f"--cov-config={coverage_config}" in command
     assert f"--cov-config={coverage_config}" in greenlet_command
-    assert Coverage(config_file=str(coverage_config)).get_option("run:branch") is True
+    coverage = Coverage(config_file=str(coverage_config))
+    assert coverage.get_option("run:branch") is True
+    assert coverage.get_option("run:source") == [
+        "src/general_ludd",
+        "collections/ansible_collections/general_ludd/governance/plugins/module_utils",
+    ]
     assert f"--basetemp={tmp_path / 'pytest'}" in command
 
 

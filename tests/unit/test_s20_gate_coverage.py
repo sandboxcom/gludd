@@ -19,8 +19,8 @@ class TestRunGateIncludesCoverageFlags:
 
     def test_run_gate_sh_includes_cov_flag(self) -> None:
         content = RUNNER.read_text()
-        assert "--cov=general_ludd" in content, (
-            "serial shard runner missing --cov=general_ludd flag"
+        assert '"--cov"' in content, (
+            "serial shard runner missing source-configured --cov flag"
         )
         assert "--show-missing" in content, (
             "serial shard runner must show missing lines in aggregate coverage"
@@ -29,7 +29,7 @@ class TestRunGateIncludesCoverageFlags:
     def test_coverage_comes_before_basetemp(self) -> None:
         """Coverage flags must precede --basetemp so pytest sees them."""
         content = RUNNER.read_text()
-        assert content.index("--cov=general_ludd") < content.index("--basetemp="), (
+        assert content.index('"--cov"') < content.index("--basetemp="), (
             "--cov must precede --basetemp in the shard pytest command"
         )
 

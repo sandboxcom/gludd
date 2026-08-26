@@ -50,6 +50,14 @@ S86.16 active coverage-mapper paths: `tests/unit/test_check_coverage_gaps.py`
 and `scripts/coverage_missing_lines.py`.
 S86.18 active interpreter-evidence path: `scripts/run_ci_shards_serial.py` and
 `tests/unit/test_ci_named_shard_files.py`.
+S86.16 active coverage-source path: `.coveragerc-greenlet`,
+`.github/workflows/build.yml`, `scripts/run_ci_shards_serial.py`, the focused
+coverage contract tests, `config/coverage_beta4_chemistry.ini`, and
+`docs/features/BETA4_DUAL_TRACK_CI.md`; candidate
+`a94df0c10adf56bb8fd4236b10012b54b9894a65` / hosted run `33012278432`
+proved all eight raw shards present while a pre-imported chemistry module was
+reported at 0%, then the filesystem-bound focused xdist replay measured it at
+88%. The next paired exact-SHA run remains pending.
 
 ## Session 83 — beta4 branch reconciliation and release (2026-08-12)
 

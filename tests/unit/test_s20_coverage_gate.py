@@ -20,8 +20,8 @@ class TestRunGateIncludesCoverageFlags:
 
     def test_run_gate_sh_includes_cov_flag(self) -> None:
         content = RUNNER.read_text()
-        assert "--cov=general_ludd" in content, (
-            "serial shard runner missing --cov=general_ludd flag"
+        assert '"--cov"' in content, (
+            "serial shard runner missing source-configured --cov flag"
         )
 
     def test_run_gate_sh_includes_cov_report_flags(self) -> None:
@@ -42,7 +42,7 @@ class TestRunGateIncludesCoverageFlags:
 
     def test_cov_fail_under_comes_before_basetemp(self) -> None:
         content = RUNNER.read_text()
-        assert content.index("--cov=general_ludd") < content.index("--basetemp="), (
+        assert content.index('"--cov"') < content.index("--basetemp="), (
             "--cov must precede --basetemp in each shard command"
         )
 

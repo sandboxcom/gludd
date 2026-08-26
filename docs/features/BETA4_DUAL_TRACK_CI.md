@@ -821,6 +821,38 @@ batch exits. Rollback reverts the union logic and its regression together and
 invalidates the candidate; it cannot reinterpret the incomplete hosted artifact as
 passing release evidence.
 
+## Pre-imported module measurement
+
+Candidate `a94df0c10adf56bb8fd4236b10012b54b9894a65` and hosted run
+`33012278432` isolated a second coverage-evidence defect after the fragment owner
+was repaired. All eight raw shard databases existed, unit-1b passed all 35 direct
+`test_chemistry_core.py` cases, and a no-xdist focused run measured
+`chemistry/core.py` at 88%. The raw hosted reconstruction nevertheless reported
+that file at 0%. Replaying the hosted pytest-cov command produced coverage.py's
+`module-not-measured` warning: the dotted `--cov=general_ludd` source was imported
+before measurement and its already-loaded chemistry module was not traced.
+
+Coverage.py explicitly says `module-not-measured` means the requested module was
+imported before coverage started. Pytest-cov has carried fixes for the same
+"module already imported" class and, since version 2.0, documents bare `--cov` as
+the way to use sources from the coverage configuration. Practitioner issue 232
+records the matching xdist symptom: distributed coverage contains only the subset
+seen by the controller while the non-xdist report is complete.
+
+- [Coverage.py measurement warnings](https://coverage.readthedocs.io/en/7.15.4/messages.html)
+- [pytest-cov change history](https://github.com/pytest-dev/pytest-cov/blob/master/CHANGELOG.rst)
+- [pytest-cov xdist incomplete-measurement report](https://github.com/pytest-dev/pytest-cov/issues/232)
+
+The canonical runner now passes bare `--cov`; `.coveragerc-greenlet` binds both
+production trees by filesystem path. This avoids importing application packages to
+resolve the measurement boundary while preserving the governance module-utils
+plane and reporting unexecuted files. The coverage consumer also requires exactly
+eight shard databases: incomplete evidence is an error, never a warning. The ZDD
+boundary remains evidence-only—no service, database, or candidate checkout is
+mutated. Rollback reverts the runner, source configuration, workflow assertion,
+and tests as one unit and invalidates the candidate; it cannot bless the known
+incomplete report.
+
 ## macOS DMG teardown ownership
 
 Replacement candidate `bca04764fac5a9f25878f69cb6110388b90fa0c4` exposed a
