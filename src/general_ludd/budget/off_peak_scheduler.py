@@ -36,6 +36,7 @@ class OffPeakTicket:
 
     @property
     def is_ready(self) -> bool:
+        """Return whether the ticket's runnable wall-clock time has arrived."""
         return time.time() >= self.runnable_after
 
 
@@ -51,6 +52,7 @@ class SavingsTracker:
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def record(self, savings: float) -> None:
+        """Record one finite, nonnegative deferred-task saving."""
         if not math.isfinite(savings) or savings < 0:
             return
         with self._lock:
@@ -59,15 +61,18 @@ class SavingsTracker:
 
     @property
     def total_deferred(self) -> int:
+        """Return the number of accepted savings records."""
         with self._lock:
             return self._total_deferred
 
     @property
     def total_savings(self) -> float:
+        """Return the accumulated accepted savings amount."""
         with self._lock:
             return self._total_savings
 
     def snapshot(self) -> dict[str, object]:
+        """Return an atomic copy of the lifetime savings counters."""
         with self._lock:
             return {
                 "total_deferred": self._total_deferred,
@@ -100,6 +105,8 @@ class OffPeakScheduler:
                            run deferred tasks.
         ticket_ttl:        Seconds after ``deadline`` that a ticket is pruned
                            (default 3600).
+        clock:             Injectable wall clock for one coherent scheduling
+                           decision. Defaults to ``time.time``.
     """
 
     def __init__(
@@ -113,7 +120,9 @@ class OffPeakScheduler:
         min_savings_ratio: float = 0.20,
         executor: Callable[[dict[str, Any]], Awaitable[Any]] | None = None,
         ticket_ttl: float = 3600.0,
+        clock: Callable[[], float] | None = None,
     ) -> None:
+        """Initialize policy, executor, and wall-clock dependencies."""
         _validate_hour(off_peak_start, "off_peak_start")
         _validate_hour(off_peak_end, "off_peak_end")
         if cost_multiplier_peak < 1.0:
@@ -131,6 +140,7 @@ class OffPeakScheduler:
         self._min_ratio = min_savings_ratio
         self._executor = executor
         self._ticket_ttl = ticket_ttl
+        self._clock = clock or time.time
 
         self._tickets: dict[str, OffPeakTicket] = {}
         self._lock = threading.Lock()
@@ -139,21 +149,24 @@ class OffPeakScheduler:
 
     @property
     def savings(self) -> SavingsTracker:
+        """Return the scheduler's lifetime savings tracker."""
         return self._savings
 
     @property
     def pending_count(self) -> int:
+        """Return the number of deferred tickets still owned by the scheduler."""
         with self._lock:
             return len(self._tickets)
 
     def _is_off_peak(self, t: float | None = None) -> bool:
-        hr = time.localtime(t).tm_hour
+        now = self._clock() if t is None else t
+        hr = time.localtime(now).tm_hour
         if self._off_start <= self._off_end:
             return self._off_start <= hr < self._off_end
         return hr >= self._off_start or hr < self._off_end
 
     def _next_off_peak(self, t: float | None = None) -> float:
-        now = t if t is not None else time.time()
+        now = self._clock() if t is None else t
         lt = time.localtime(now)
         today_start = now - lt.tm_hour * 3600 - lt.tm_min * 60 - lt.tm_sec
         off_peak_start_today = today_start + self._off_start * 3600
@@ -188,6 +201,7 @@ class OffPeakScheduler:
             An ``OffPeakTicket`` if the task was deferred, or ``None`` if the
             savings are too small or off-peak is already active.
         """
+        now_wall = self._clock()
         peak = estimated_cost_now
         if peak is None:
             peak = self._cost_tracker.model_spend() if self._cost_tracker else 0.0
@@ -202,7 +216,7 @@ class OffPeakScheduler:
         savings = peak - off
         ratio = 0.0 if peak <= 0 or savings <= 0 else savings / peak
 
-        if self._is_off_peak():
+        if self._is_off_peak(now_wall):
             return None
 
         if ratio < self._min_ratio:
@@ -210,7 +224,6 @@ class OffPeakScheduler:
 
         self._task_counter += 1
         tid = f"off-peak-{self._task_counter:06d}"
-        now_wall = time.time()
 
         ticket = OffPeakTicket(
             task_id=tid,
@@ -231,7 +244,7 @@ class OffPeakScheduler:
 
     def get_ready_tasks(self) -> list[OffPeakTicket]:
         """Return all tickets whose off-peak window has arrived."""
-        now = time.time()
+        now = self._clock()
         with self._lock:
             ready: list[OffPeakTicket] = [
                 t for t in self._tickets.values() if now >= t.runnable_after and now <= t.deadline + self._ticket_ttl
@@ -263,7 +276,7 @@ class OffPeakScheduler:
         return results
 
     def _prune_expired(self) -> int:
-        now = time.time()
+        now = self._clock()
         pruned = 0
         with self._lock:
             expired = [tid for tid, t in self._tickets.items() if now > t.deadline + self._ticket_ttl]
@@ -286,6 +299,7 @@ class OffPeakScheduler:
             await asyncio.sleep(poll_interval)
 
     def get_status(self) -> dict[str, object]:
+        """Return an atomic scheduler status snapshot."""
         with self._lock:
             return {
                 "pending_count": len(self._tickets),

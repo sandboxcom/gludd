@@ -423,11 +423,29 @@ counted as time between tool calls. Reading a larger pending-work ledger and
 publishing dispatch preflight evidence crossed the deliberately short test
 boundary on hosted Linux, so the next edit was misclassified as a new message
 with an undersized dispatch wave. The runner had ample disk and memory; this was
-not load shedding or an orphaned process. The hook now records its boundary
-timestamp in `finally`, after owner work completes. A no-sleep regression makes
+not load shedding or an orphaned process. The first repair moved completion
+timestamp publication into `finally`; rebuilding the generated hot module then
+showed that pre-hook owner work could still cross the boundary before the entry
+timestamp was sampled. The final hook captures true entry time in its default
+argument and publishes completion time in `finally`. A no-sleep regression makes
 dispatch bookkeeping nontrivial and proves that the immediately following call
 remains in the same message. When hosted failed, the local peer and every
 remaining hosted job were cancelled before a replacement candidate was formed.
+
+Candidate `aeb8000b3e47f8747ae58faef4f6e7a01b5ba6bd` then proved that
+dual tracking must also bind application clocks. Hosted run `32926849125`
+completed eighteen jobs successfully before job `98052237385` reached the
+00:00-06:00 off-peak window on its UTC Linux host. Two scheduler tests expected
+deferral while production correctly observed that off-peak was already active,
+so both returned `None`. The local peer was cancelled immediately and every
+remaining hosted job was cancelled before repair. `OffPeakScheduler` now owns an
+injectable wall clock and samples it once for the off-peak decision, ticket
+timestamp, and next-window calculation. Tests supply a stable local noon rather
+than depending on the runner's time zone or wall-clock hour. Rollback is one
+constructor parameter and three call sites; no persisted ticket schema, pricing
+rule, daemon resource, or external service changes. The zero-downtime boundary
+is unchanged because existing callers default to `time.time`, while new and
+in-flight schedulers remain process-local.
 
 ## The rule
 
@@ -786,6 +804,20 @@ Reviewed 2026-08-25:
   records a practitioner report of invalid duration results from the wrong clock
   source and the resulting move to a monotonic performance clock. Gludd also
   makes that clock injectable so threshold tests do not depend on scheduler load.
+- [Python `time.localtime` documentation](https://docs.python.org/3/library/time.html#time.localtime),
+  reviewed 2026-08-26, defines a timestamp-free call as using the current time
+  and returning local-time fields. Off-peak policy therefore requires one
+  explicit wall-clock sample, not ambient calls whose result varies by runner.
+- [Freezegun issue 176](https://github.com/spulec/freezegun/issues/176), opened
+  2017-03-22 and reviewed 2026-08-26, preserves practitioner reports where
+  fixture construction escapes a frozen interval and time-zone offsets change
+  the result. Gludd evaluated that mature test tool but uses constructor-level
+  clock injection so the application decision itself is coherent without a
+  process-wide time monkeypatch or another runtime dependency.
+- [Freezegun's documented time-zone behavior](https://github.com/spulec/freezegun#timezones)
+  demonstrates that local and UTC dates can differ under an explicit offset.
+  The regression therefore fixes a local hour intentionally rather than assuming
+  the GitHub runner and developer machine share a zone.
 - [RFC 9562 section 6.2](https://www.rfc-editor.org/rfc/rfc9562.html#section-6.2)
   specifies a counter immediately after the timestamp for ordered UUIDv7 batch
   generation within one millisecond.
