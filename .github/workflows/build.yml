@@ -391,73 +391,13 @@ jobs:
         python-version: ["3.11"]
         shard: [unit-1a1, unit-1a2, unit-1b, unit-1d, unit-2, unit-3a, unit-3b, other]
         include:
-          # Map each shard label to the pytest path(s) it owns.
-          # Bash glob expansion inside `run:` handles the wildcard patterns.
-          #
-          # unit-1 was split (2026-07-08) into unit-1a (test_[a-bd]*.py) +
-          # unit-1b (test_[ce]*.py) after CI run 28923533095 hit the 30m
-          # timeout on both 3.11 + 3.12 (the a-e range was ~235 files / ~63k
-          # lines, ~30m — 3x the 10-12m baseline). unit-1a itself KEPT hitting
-          # the 30m timeout on both pythons in later runs (29055665462,
-          # 29053789829, 29051813598) because the a-bd split point was sized
-          # by file/line count, not measured runtime. It is split again
-          # (2026-07-09) into unit-1a (test_a*.py) + unit-1d (test_[bd]*.py)
-          # so neither new shard carries more than ~60% of the old unit-1a
-          # load. unit-1b (test_[ce]*.py) is unaffected and unchanged.
-          #
-          # Every letter-range shard below ALSO excludes test_*_e2e.py so
-          # e2e-suffixed files are collected exactly once, by the 'other'
-          # shard, regardless of which letter they start with — see the
-          # 'other' entry. Without this, e.g. tests/unit/test_data_flow_e2e.py
-          # (starts with 'd', in unit-1d's range) would run BOTH in its letter
-          # shard AND in 'other'.
-          #
-          # `exclude` is a space-separated list of shell glob patterns filtered
-          # OUT of the shard's expanded file list by the run step below,
-          # BEFORE pytest is invoked. It must be a shell-level filter, NOT
-          # pytest --ignore-glob: bash expands $TESTPATHS into explicit
-          # filenames, and pytest registers explicitly-named files as initial
-          # args, which unconditionally BYPASS pytest_ignore_collect /
-          # --ignore-glob (those hooks only apply while pytest itself walks
-          # directories — see _pytest/main.py). An --ignore-glob here is dead
-          # code that silently double-runs the "ejected" files.
+          # scripts/ci_named_shard_files.py is the single source of truth for
+          # every shard's paths and exclusions.  Keeping duplicate testpaths or
+          # exclude data here lets hosted and local release plans drift even
+          # when their shard labels match.  The only workflow-local addition is
+          # the isolated fresh-process suite owned by unit-1a1.
           - shard: unit-1a1
-            testpaths: "tests/unit/test_a[a-m]*.py"
-            exclude: "*/test_*_e2e.py */test_all_plugins_runtime.py"
             isolated_testpaths: "tests/unit/test_all_plugins_runtime.py"
-          - shard: unit-1a2
-            # test_a[0-9]*.py: digit-prefixed files (a03, a3, a6...) belong to
-            # neither [a-m] nor [n-z]; routed here (smaller half) for balance.
-            testpaths: "tests/unit/test_a[n-z]*.py tests/unit/test_a[0-9]*.py"
-            exclude: "*/test_*_e2e.py"
-          - shard: unit-1d
-            testpaths: "tests/unit/test_[bd]*.py"
-            # Ejects test_data_flow_e2e.py ('d') to the 'other' shard.
-            exclude: "*/test_*_e2e.py"
-          - shard: unit-1b
-            testpaths: "tests/unit/test_[ce]*.py"
-            # The ~88 test_connector*.py suites (start with 'c', so they land
-            # in unit-1b's range) are moved to the fast 'other' shard below to
-            # keep unit-1b slim. Exclude them HERE so they don't also run in
-            # unit-1b. Also eject mislabeled e2e tests (test_*_e2e.py) that
-            # start with 'e' or 'c' (e.g. test_cross_project_borrowing_e2e.py)
-            # — they belong in the 'other' shard.
-            exclude: "*/test_connector*.py */test_*_e2e.py"
-          - shard: unit-2
-            testpaths: "tests/unit/test_[f-m]*.py"
-            exclude: "*/test_*_e2e.py"
-          - shard: unit-3a
-            testpaths: "tests/unit/test_[n-r]*.py"
-            # Ejects test_project_isolation_e2e.py ('p') and
-            # other e2e-suffixed files to the 'other' shard.
-            exclude: "*/test_*_e2e.py"
-          - shard: unit-3b
-            testpaths: "tests/unit/test_[s-z]*.py tests/unit/secrets/"
-            # Ejects test_tui_navigation_e2e.py ('t') to the 'other' shard.
-            # The secrets/ directory token passes through the file-only filter.
-            exclude: "*/test_*_e2e.py"
-          - shard: other
-            testpaths: "tests/integration/ tests/e2e/ tests/live/ tests/security/ tests/test_*.py tests/unit/test_connector*.py tests/unit/test_*_e2e.py tests/unit/auth/ tests/unit/sts/ tests/unit/test_e2e_test_generation/"
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:

@@ -52,20 +52,14 @@ def test_local_shard_names_match_beta4_ci_matrix() -> None:
     assert tuple(module.SHARDS) == EXPECTED_SHARDS
 
 
-def test_local_shard_patterns_match_workflow_matrix() -> None:
+def test_workflow_matrix_delegates_shard_plans_to_canonical_registry() -> None:
     module = _load_script("ci_named_shard_files")
     workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "build.yml").read_text())
     include = workflow["jobs"]["test-shard"]["strategy"]["matrix"]["include"]
-    workflow_shards = {
-        item["shard"]: (
-            tuple(item["testpaths"].split()),
-            tuple(item.get("exclude", "").split()),
-        )
-        for item in include
-        if "testpaths" in item
-    }
+    workflow_shards = workflow["jobs"]["test-shard"]["strategy"]["matrix"]["shard"]
 
-    assert workflow_shards == module.SHARDS
+    assert tuple(workflow_shards) == tuple(module.SHARDS)
+    assert all("testpaths" not in item and "exclude" not in item for item in include)
 
 
 def test_local_unit_1a1_excludes_isolated_node_runtime_suite() -> None:
@@ -206,6 +200,8 @@ def test_local_and_hosted_named_shards_use_one_bounded_runner() -> None:
     assert "scripts/run_ci_shards_serial.py" in hosted_recipe
     assert "scripts/adaptive_test.py" not in hosted_recipe
     assert "retry_test" not in hosted_recipe
+    assert "${{ matrix.testpaths }}" not in hosted_recipe
+    assert "${{ matrix.exclude }}" not in hosted_recipe
     assert "--max-files-per-batch" in hosted_recipe
     assert "--skip-isolated" in hosted_recipe
     assert "--skip-aggregate" in hosted_recipe

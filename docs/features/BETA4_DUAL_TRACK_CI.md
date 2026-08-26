@@ -478,6 +478,26 @@ still atomically promoted only after validation, no network call occurs for
 invalid inputs, and rollback is confined to the adapter ordering and one
 provenance field source. No service, worker, or persistent process is added.
 
+Candidate `0519c8d2a8d612692a5efb836b29f54e80681306` paired local canonical
+shards with hosted run `32941994870`. Every platform build, both Python gates,
+all four Molecule partitions, and six hosted shards passed before job
+`98096044834` failed the `other` shard. The failure was a structural ownership
+regression: workflow YAML still duplicated every shard's `testpaths` and
+`exclude` values, while the hosted and local execution step had already moved
+to `scripts/ci_named_shard_files.py`. The copied matrix fields were inert, and
+an older security assertion still required the removed shell filter. Both lanes
+were cancelled immediately. The workflow now carries shard labels only, the
+Python registry exclusively owns expansion and exclusion, and structural tests
+fail if workflow-local plan data or the old adaptive runner returns. Rollback is
+one workflow/test/docs commit; no daemon, external service, persistent state, or
+test-harness cleanup is added. GitHub Community discussion
+[141795](https://github.com/orgs/community/discussions/141795) records a
+practitioner encountering similarly non-obvious `matrix.include` behavior, and
+discussion [26284](https://github.com/orgs/community/discussions/26284) records
+the long-lived user concern that repeated matrices are error-prone when one copy
+changes. Gludd therefore keeps only workflow-specific isolated-suite metadata
+in `include` and binds the actual plan through schema-3 attestation digests.
+
 ## The rule
 
 One clean commit is frozen as the candidate. Local and GitHub-hosted tests start
@@ -624,6 +644,14 @@ This is control-plane rollback only: it does not stop, restart, or mutate a
 running Gludd service, database, or externally owned model process.
 
 ## Upstream and practitioner evidence
+
+- [GitHub Community discussion 141795](https://github.com/orgs/community/discussions/141795),
+  opened 2024-10-17 and reviewed 2026-08-26, documents practitioner confusion
+  when `matrix.include` fields do not attach to combinations as expected.
+- [GitHub Community discussion 26284](https://github.com/orgs/community/discussions/26284)
+  records the long-lived user report that repeating the same matrix across jobs
+  is error-prone when entries are added or removed. Gludd avoids the analogous
+  workflow/runner split by keeping shard paths and exclusions in one registry.
 
 Reviewed 2026-08-25:
 
