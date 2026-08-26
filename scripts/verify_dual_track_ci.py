@@ -16,15 +16,30 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from scripts.ci_named_shard_files import SHARDS
     from scripts.resource_arbiter import resource_root
+    from scripts.run_ci_shards_serial import (
+        ATTESTATION_SCHEMA_VERSION,
+        RELEASE_PYTEST_ARGS,
+        canonical_json_sha256,
+        execution_policy,
+    )
 else:
     from ci_named_shard_files import SHARDS
     from resource_arbiter import resource_root
+    from run_ci_shards_serial import (
+        ATTESTATION_SCHEMA_VERSION,
+        RELEASE_PYTEST_ARGS,
+        canonical_json_sha256,
+        execution_policy,
+    )
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = "sandboxcom/gludd"
 WORKFLOW_NAME = "Build and Release"
 COVERAGE_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 COVERAGE_PYTHON = re.compile(r"^\d+\.\d+$")
+EXPECTED_EXECUTION_POLICY = execution_policy(list(RELEASE_PYTEST_ARGS))
+EXPECTED_EXECUTION_POLICY_SHA256 = canonical_json_sha256(EXPECTED_EXECUTION_POLICY)
+PairingFingerprint = tuple[str, str]
 
 
 def _read_attestation(path: Path) -> tuple[dict[str, Any] | None, list[str]]:
@@ -79,10 +94,10 @@ def _validate_attestation(
     *,
     sha: str,
     lane: str,
-) -> tuple[set[str], list[str]]:
+) -> tuple[set[str], dict[str, PairingFingerprint], list[str]]:
     """Return covered shards and every fail-closed contract violation."""
     errors: list[str] = []
-    if payload.get("schema_version") != 2:
+    if payload.get("schema_version") != ATTESTATION_SCHEMA_VERSION:
         errors.append(f"{path}: unsupported attestation schema")
     actual_lane = payload.get("lane")
     if actual_lane != lane:
@@ -112,14 +127,84 @@ def _validate_attestation(
         isinstance(item, str) and item for item in raw_shards
     ):
         errors.append(f"{path}: shard coverage is missing or malformed")
-        return set(), errors
+        return set(), {}, errors
     shards = set(raw_shards)
     if len(shards) != len(raw_shards):
         errors.append(f"{path}: shard coverage contains duplicates")
     unknown = shards - set(SHARDS)
     if unknown:
         errors.append(f"{path}: unknown shards: {sorted(unknown)}")
-    return shards, errors
+    pairings, pairing_errors = _validate_pairing_fields(path, payload, shards)
+    errors.extend(pairing_errors)
+    return shards, pairings, errors
+
+
+def _validate_pairing_fields(
+    path: Path,
+    payload: dict[str, Any],
+    shards: set[str],
+) -> tuple[dict[str, PairingFingerprint], list[str]]:
+    """Validate internally consistent, release-strength shard pairing fields."""
+    errors: list[str] = []
+    pairings: dict[str, PairingFingerprint] = {}
+
+    raw_policy = payload.get("execution_policy")
+    raw_policy_digest = payload.get("execution_policy_sha256")
+    policy_digest: str | None = None
+    if not isinstance(raw_policy, dict):
+        errors.append(f"{path}: execution policy is missing or malformed")
+    else:
+        computed_policy_digest = canonical_json_sha256(raw_policy)
+        if raw_policy_digest != computed_policy_digest:
+            errors.append(f"{path}: execution policy digest is invalid")
+        elif not isinstance(raw_policy_digest, str):
+            errors.append(f"{path}: execution policy digest is malformed")
+        else:
+            policy_digest = raw_policy_digest
+        if (
+            raw_policy != EXPECTED_EXECUTION_POLICY
+            or raw_policy_digest != EXPECTED_EXECUTION_POLICY_SHA256
+        ):
+            errors.append(f"{path}: does not use the release execution policy")
+
+    raw_plans = payload.get("shard_plans")
+    if not isinstance(raw_plans, dict):
+        errors.append(f"{path}: shard plans are missing or malformed")
+        return pairings, errors
+    plan_shards = set(raw_plans)
+    if plan_shards != shards:
+        errors.append(
+            f"{path}: shard plans do not match attested shards: "
+            f"missing={sorted(shards - plan_shards)} "
+            f"extra={sorted(plan_shards - shards)}"
+        )
+
+    for shard in sorted(shards & plan_shards):
+        plan = raw_plans[shard]
+        if not isinstance(plan, dict):
+            errors.append(f"{path}: shard plan {shard!r} is malformed")
+            continue
+        paths = plan.get("paths")
+        path_count = plan.get("path_count")
+        plan_digest = plan.get("sha256")
+        if (
+            not isinstance(paths, list)
+            or not paths
+            or not all(isinstance(item, str) and item for item in paths)
+            or len(set(paths)) != len(paths)
+            or type(path_count) is not int
+            or path_count != len(paths)
+            or not isinstance(plan_digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", plan_digest) is None
+        ):
+            errors.append(f"{path}: shard plan {shard!r} is malformed")
+            continue
+        if canonical_json_sha256(paths) != plan_digest:
+            errors.append(f"{path}: shard plan {shard!r} digest is invalid")
+            continue
+        if policy_digest is not None:
+            pairings[shard] = (plan_digest, policy_digest)
+    return pairings, errors
 
 
 def verify_dual_track_evidence(
@@ -132,8 +217,9 @@ def verify_dual_track_evidence(
     required = set(SHARDS)
     local_payload, local_errors = _read_attestation(local_attestation)
     errors.extend(local_errors)
+    local_pairings: dict[str, PairingFingerprint] = {}
     if local_payload is not None:
-        local_shards, validation_errors = _validate_attestation(
+        local_shards, local_pairings, validation_errors = _validate_attestation(
             local_attestation,
             local_payload,
             sha=sha,
@@ -153,7 +239,7 @@ def verify_dual_track_evidence(
         errors.extend(read_errors)
         if payload is None:
             continue
-        shards, validation_errors = _validate_attestation(
+        shards, hosted_pairings, validation_errors = _validate_attestation(
             path,
             payload,
             sha=sha,
@@ -162,6 +248,9 @@ def verify_dual_track_evidence(
         errors.extend(validation_errors)
         if len(shards) != 1:
             errors.append(f"{path}: hosted attestation must cover exactly one shard")
+        for shard, fingerprint in hosted_pairings.items():
+            if local_pairings.get(shard) != fingerprint:
+                errors.append(f"{path}: paired plan mismatch for shard {shard!r}")
         hosted_counts.update(shards)
     missing = required - set(hosted_counts)
     if missing:

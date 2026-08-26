@@ -1,6 +1,6 @@
 # Beta 4 Dual-Track CI Evidence
 
-Status: implemented for the `v0.1.0-beta.4` candidate pipeline on 2026-08-25.
+Status: implemented for the `v0.1.0-beta.4` candidate pipeline on 2026-08-26.
 
 ## Incident
 
@@ -518,6 +518,18 @@ heartbeats, cleanup, aggregate coverage, and terminal writer are the sole source
 of execution truth. `DUAL_TRACK_LOCAL_VALIDATE_ONLY=1` is the read-only Make
 contract and never creates a successful attestation.
 
+Schema 3 makes that comparison semantic instead of trusting matching lane names.
+Every terminal attestation records, for each shard, its deterministic ordered
+test paths, path count, and SHA-256 of the canonical JSON path list. It also
+records and hashes the release execution policy: warnings are errors, xdist and
+process limits are one, worker restarts are disabled, distribution is
+`loadgroup`, and branch-aware greenlet coverage is enabled. The verifier
+independently recomputes every digest, requires that exact policy, and pairs each
+hosted shard fingerprint with the same shard in the local all-shard attestation.
+Legacy schemas, internally inconsistent digests, extra or missing plans, a
+weakened policy shared by both lanes, and two valid but different plans all fail
+closed. A green status and matching commit SHA alone can never advance beta 4.
+
 `make ci-run-summary RUN=<numeric-id>` provides the operator view for a single
 immutable hosted run. It asks `gh run view` for that exact database ID and a fixed
 JSON field set, verifies the returned ID and full head SHA, and exits successfully
@@ -604,6 +616,12 @@ Rollback removes the public producer, its read-only validation flag, and contrac
 entry together. Existing signed evidence is retained, but no replacement release
 candidate may proceed until an equivalent canonical all-shard producer is
 restored; composing eight focused shard artifacts is not a valid fallback.
+
+The schema-3 plan and execution-policy fields are one release contract. Rollback
+must remove their producer, verifier, and tests together and invalidate the
+candidate; schema-2 evidence is retained only for diagnosis and is never promoted.
+This is control-plane rollback only: it does not stop, restart, or mutate a
+running Gludd service, database, or externally owned model process.
 
 ## Upstream and practitioner evidence
 
@@ -750,6 +768,9 @@ Reviewed 2026-08-25:
 - [GitHub Community discussion 7118](https://github.com/orgs/community/discussions/7118)
   records practitioner demand for the safe order used here: commit the version,
   build and test it, and only then create or publish the release tag.
+  Schema 3 additionally validates the downloaded contents and pairs each hosted
+  test-plan digest to its local counterpart instead of treating the artifact name
+  or green conclusion as proof of equivalent work.
 - [pytest-xdist issue 1323](https://github.com/pytest-dev/pytest-xdist/issues/1323)
   documents hangs and completed-work requeue behavior after worker restart.
 - [pytest-xdist issue 1313](https://github.com/pytest-dev/pytest-xdist/issues/1313)

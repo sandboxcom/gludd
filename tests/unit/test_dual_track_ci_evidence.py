@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -24,6 +25,37 @@ SHARDS = {
     "other",
 }
 
+RELEASE_POLICY = {
+    "schema_version": 1,
+    "pytest_args": ["-W", "error"],
+    "xdist_workers": 1,
+    "max_processes": 1,
+    "distribution": "loadgroup",
+    "max_worker_restart": 0,
+    "coverage_config": ".coveragerc-greenlet",
+}
+
+
+def _digest(payload: object) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _pairing_fields(shards: list[str]) -> dict[str, object]:
+    plans: dict[str, object] = {}
+    for shard in shards:
+        paths = [f"tests/{shard}/test_contract.py"]
+        plans[shard] = {
+            "paths": paths,
+            "path_count": len(paths),
+            "sha256": _digest(paths),
+        }
+    return {
+        "shard_plans": plans,
+        "execution_policy": RELEASE_POLICY.copy(),
+        "execution_policy_sha256": _digest(RELEASE_POLICY),
+    }
+
 
 def _load_script() -> ModuleType:
     spec = importlib.util.spec_from_file_location("gludd_verify_dual_track_ci", SCRIPT)
@@ -35,7 +67,7 @@ def _load_script() -> ModuleType:
 
 def _attestation(*, sha: str, lane: str, shards: list[str]) -> dict[str, object]:
     payload: dict[str, object] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "lane": lane,
         "identity": {
             "head_sha": sha,
@@ -52,6 +84,7 @@ def _attestation(*, sha: str, lane: str, shards: list[str]) -> dict[str, object]
         "completed_at": "2026-08-25T00:01:00Z",
         "runner": "scripts/run_ci_shards_serial.py",
         "python": "3.11.13",
+        **_pairing_fields(shards),
     }
     if lane == "hosted":
         payload["coverage"] = {
@@ -85,6 +118,104 @@ def test_dual_track_evidence_accepts_complete_exact_sha_matrix(tmp_path: Path) -
     ]
 
     assert module.verify_dual_track_evidence(local, hosted, sha) == []
+
+
+def test_dual_track_evidence_rejects_mismatched_paired_shard_plan(
+    tmp_path: Path,
+) -> None:
+    module = _load_script()
+    sha = "a" * 40
+    local = _write(
+        tmp_path / "local.json",
+        _attestation(sha=sha, lane="local", shards=sorted(SHARDS)),
+    )
+    hosted_payloads = {
+        shard: _attestation(sha=sha, lane="hosted", shards=[shard])
+        for shard in SHARDS
+    }
+    plans = cast(dict[str, Any], hosted_payloads["other"]["shard_plans"])
+    plan = cast(dict[str, Any], plans["other"])
+    plan["paths"] = ["tests/other/test_different_contract.py"]
+    plan["sha256"] = _digest(plan["paths"])
+    hosted = [
+        _write(tmp_path / shard / "ci-shard-attestation.json", payload)
+        for shard, payload in hosted_payloads.items()
+    ]
+
+    errors = module.verify_dual_track_evidence(local, hosted, sha)
+
+    assert any("paired plan mismatch for shard 'other'" in error for error in errors)
+
+
+def test_dual_track_evidence_rejects_matching_but_weakened_policy(
+    tmp_path: Path,
+) -> None:
+    module = _load_script()
+    sha = "b" * 40
+    local_payload = _attestation(sha=sha, lane="local", shards=sorted(SHARDS))
+    hosted_payloads = {
+        shard: _attestation(sha=sha, lane="hosted", shards=[shard])
+        for shard in SHARDS
+    }
+    weakened = {**RELEASE_POLICY, "pytest_args": []}
+    for payload in [local_payload, *hosted_payloads.values()]:
+        payload["execution_policy"] = weakened
+        payload["execution_policy_sha256"] = _digest(weakened)
+    local = _write(tmp_path / "local.json", local_payload)
+    hosted = [
+        _write(tmp_path / shard / "ci-shard-attestation.json", payload)
+        for shard, payload in hosted_payloads.items()
+    ]
+
+    errors = module.verify_dual_track_evidence(local, hosted, sha)
+
+    assert any("release execution policy" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("legacy-schema", "unsupported attestation schema"),
+        ("missing-policy", "execution policy is missing or malformed"),
+        ("invalid-policy-digest", "execution policy digest is invalid"),
+        ("missing-plans", "shard plans are missing or malformed"),
+        ("plan-key-mismatch", "shard plans do not match attested shards"),
+        ("malformed-plan", "shard plan 'other' is malformed"),
+        ("invalid-plan-digest", "shard plan 'other' digest is invalid"),
+    ],
+)
+def test_attestation_pairing_contract_fails_closed(
+    tmp_path: Path,
+    mutation: str,
+    message: str,
+) -> None:
+    module = _load_script()
+    payload = _attestation(sha="a" * 40, lane="hosted", shards=["other"])
+    plans = cast(dict[str, Any], payload["shard_plans"])
+    plan = cast(dict[str, Any], plans["other"])
+    if mutation == "legacy-schema":
+        payload["schema_version"] = 2
+    elif mutation == "missing-policy":
+        payload.pop("execution_policy")
+    elif mutation == "invalid-policy-digest":
+        payload["execution_policy_sha256"] = "0" * 64
+    elif mutation == "missing-plans":
+        payload.pop("shard_plans")
+    elif mutation == "plan-key-mismatch":
+        plans["unit-2"] = plans.pop("other")
+    elif mutation == "malformed-plan":
+        plan["paths"] = []
+    else:
+        plan["sha256"] = "0" * 64
+
+    _shards, _pairings, errors = module._validate_attestation(
+        tmp_path / f"{mutation}.json",
+        payload,
+        sha="a" * 40,
+        lane="hosted",
+    )
+
+    assert any(message in error for error in errors)
 
 
 @pytest.mark.parametrize(
@@ -148,7 +279,7 @@ def test_attestation_validation_reports_malformed_contract_fields(tmp_path: Path
         "completed_at": "",
     }
 
-    shards, errors = module._validate_attestation(
+    shards, pairings, errors = module._validate_attestation(
         tmp_path / "bad.json",
         payload,
         sha="a" * 40,
@@ -156,6 +287,7 @@ def test_attestation_validation_reports_malformed_contract_fields(tmp_path: Path
     )
 
     assert shards == set()
+    assert pairings == {}
     assert len(errors) == 5
 
 
@@ -169,7 +301,7 @@ def test_attestation_validation_rejects_duplicate_and_unknown_shards(
         shards=["unit-2", "unit-2", "not-a-shard"],
     )
 
-    _shards, errors = module._validate_attestation(
+    _shards, _pairings, errors = module._validate_attestation(
         tmp_path / "bad-shards.json",
         payload,
         sha="a" * 40,
@@ -204,7 +336,7 @@ def test_hosted_attestation_requires_valid_bound_coverage(
     else:
         payload["coverage"] = coverage
 
-    _shards, errors = module._validate_attestation(
+    _shards, _pairings, errors = module._validate_attestation(
         tmp_path / "hosted.json",
         payload,
         sha="a" * 40,

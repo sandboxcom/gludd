@@ -40,6 +40,31 @@ DEFAULT_SHARDS = tuple(SHARDS)
 _CANCELLATION_RETURN_CODES = frozenset(
     {128 + int(signal.SIGINT), 128 + int(signal.SIGTERM)}
 )
+ATTESTATION_SCHEMA_VERSION = 3
+RELEASE_PYTEST_ARGS = ("-W", "error")
+
+
+def canonical_json_sha256(payload: object) -> str:
+    """Return a stable SHA-256 digest for JSON-compatible evidence."""
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def execution_policy(pytest_args: list[str]) -> dict[str, object]:
+    """Describe the semantic pytest policy shared by local and hosted lanes."""
+    return {
+        "schema_version": 1,
+        "pytest_args": list(pytest_args),
+        "xdist_workers": 1,
+        "max_processes": 1,
+        "distribution": "loadgroup",
+        "max_worker_restart": 0,
+        "coverage_config": ".coveragerc-greenlet",
+    }
 
 
 @dataclass(frozen=True)
@@ -121,11 +146,16 @@ def _write_terminal_attestation(
     completed_at: str,
     error: str | None = None,
     coverage: dict[str, object] | None = None,
+    pytest_args: list[str] | None = None,
 ) -> None:
     """Atomically publish terminal exact-SHA shard evidence."""
     destination.parent.mkdir(parents=True, exist_ok=True)
+    pairing = _attestation_pairing(
+        shards,
+        pytest_args=list(RELEASE_PYTEST_ARGS) if pytest_args is None else pytest_args,
+    )
     payload = {
-        "schema_version": 2,
+        "schema_version": ATTESTATION_SCHEMA_VERSION,
         "lane": "hosted"
         if os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
         else "local",
@@ -137,6 +167,7 @@ def _write_terminal_attestation(
         "completed_at": completed_at,
         "runner": "scripts/run_ci_shards_serial.py",
         "python": sys.version,
+        **pairing,
     }
     if error is not None:
         payload["error"] = error
@@ -303,16 +334,8 @@ def _isolated_pytest_command(pytest_args: list[str]) -> list[str]:
     ]
 
 
-def _partition_test_paths(
-    paths: list[str],
-    *,
-    max_files: int,
-    root: Path = ROOT,
-) -> list[list[str]]:
-    """Expand directory arguments and return deterministic bounded file batches."""
-    if max_files < 1:
-        raise ValueError("max_files must be positive")
-
+def _expand_test_paths(paths: list[str], *, root: Path = ROOT) -> list[str]:
+    """Expand directory arguments into deterministic unique test-file paths."""
     expanded: list[str] = []
     seen: set[str] = set()
     for value in paths:
@@ -333,11 +356,46 @@ def _partition_test_paths(
                 continue
             seen.add(selected_path)
             expanded.append(selected_path)
+    return expanded
 
+
+def _partition_test_paths(
+    paths: list[str],
+    *,
+    max_files: int,
+    root: Path = ROOT,
+) -> list[list[str]]:
+    """Expand directory arguments and return deterministic bounded file batches."""
+    if max_files < 1:
+        raise ValueError("max_files must be positive")
+
+    expanded = _expand_test_paths(paths, root=root)
     return [
         expanded[index : index + max_files]
         for index in range(0, len(expanded), max_files)
     ]
+
+
+def _attestation_pairing(
+    shards: list[str],
+    *,
+    pytest_args: list[str],
+) -> dict[str, object]:
+    """Build canonical per-shard plans and their shared semantic policy."""
+    plans: dict[str, object] = {}
+    for shard in shards:
+        paths = _expand_test_paths(expand_shard(shard))
+        plans[shard] = {
+            "paths": paths,
+            "path_count": len(paths),
+            "sha256": canonical_json_sha256(paths),
+        }
+    policy = execution_policy(pytest_args)
+    return {
+        "shard_plans": plans,
+        "execution_policy": policy,
+        "execution_policy_sha256": canonical_json_sha256(policy),
+    }
 
 
 def _plan_shards(
@@ -1005,6 +1063,7 @@ def main() -> int:
             completed_at=_utc_now(),
             error=error,
             coverage=coverage_evidence,
+            pytest_args=pytest_args,
         )
     return returncode
 
