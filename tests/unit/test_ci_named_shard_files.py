@@ -277,12 +277,19 @@ def test_terminal_attestation_is_atomic_and_contains_exact_identity(
     )
 
     payload = json.loads(destination.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == 2
+    assert payload["schema_version"] == 3
     assert payload["lane"] == "local"
     assert payload["identity"] == identity
     assert payload["shards"] == ["unit-2"]
     assert payload["status"] == "pass"
     assert payload["returncode"] == 0
+    plan = payload["shard_plans"]["unit-2"]
+    assert plan["path_count"] == len(plan["paths"])
+    assert plan["sha256"] == module.canonical_json_sha256(plan["paths"])
+    assert payload["execution_policy"]["pytest_args"] == ["-W", "error"]
+    assert payload["execution_policy_sha256"] == module.canonical_json_sha256(
+        payload["execution_policy"]
+    )
     assert not destination.with_suffix(".json.tmp").exists()
 
 
@@ -1000,7 +1007,7 @@ def test_serial_runner_cli_forwards_explicit_resource_bounds(
         "argv",
         [
             "run_ci_shards_serial.py",
-            "--shards=unit-2,unit-3",
+            "--shards=unit-2,unit-3a",
             "--pytest-args=-q -W error",
             "--max-files-per-batch=17",
             "--heartbeat-seconds=4",
@@ -1010,7 +1017,7 @@ def test_serial_runner_cli_forwards_explicit_resource_bounds(
 
     assert module.main() == 9
     assert received == {
-        "shards": ["unit-2", "unit-3"],
+        "shards": ["unit-2", "unit-3a"],
         "pytest_args": ["-q", "-W", "error"],
         "max_files_per_batch": 17,
         "heartbeat_seconds": 4.0,
