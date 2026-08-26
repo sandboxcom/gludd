@@ -1292,3 +1292,21 @@ removed its namespaced temporary root before remediation began.
   reviewed 2026-08-26, documents the migration from the implicit `.pth`
   subprocess hook to coverage.py's explicit `patch = subprocess` mechanism used
   by the canonical local and hosted lanes.
+
+### Algorithm branch ownership
+
+The second remediation group covers the six algorithm files named by the same
+hosted audit. Canonical branch tests now exercise malformed elliptic-curve
+points, bounded OPRF failure, deep persistent/transient trie transitions,
+finger-tree shape guards and wrappers, sweep-line neighbor exposure, and Qhull's
+degenerate fallbacks. The measured slice passes 252 tests at 94 percent
+aggregate coverage, with every file above both the 75 percent line and branch
+floors. It also removed three unreachable implementations: an unused polygon
+sweep triangulator, two unused finger-tree node deconstructors, and impossible
+post-pop zero-count branches. Public behavior and the stricter coverage policy
+remain unchanged.
+
+This is owner-side cleanup, not a release workaround. No hosted retry, cleanup
+job, coverage exclusion, or partial-branch pragma was added. Rollback is the
+single algorithms commit; zero-downtime behavior is still rejection of the
+untagged candidate until a new exact SHA passes both local and hosted lanes.
