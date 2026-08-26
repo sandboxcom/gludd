@@ -821,6 +821,36 @@ batch exits. Rollback reverts the union logic and its regression together and
 invalidates the candidate; it cannot reinterpret the incomplete hosted artifact as
 passing release evidence.
 
+## macOS DMG teardown ownership
+
+Replacement candidate `bca04764fac5a9f25878f69cb6110388b90fa0c4` exposed a
+hosted-only lifecycle failure in GitHub run `32982779016`. Both the tar and mounted
+DMG binaries completed `version` and `--help`, but the normal-path unforced
+`hdiutil detach` returned exit 16 because Disk Arbitration still considered the
+mounted image busy. The EXIT owner already used `detach -force` and successfully
+removed the mount, proving that the application artifact was healthy and the
+workflow's two teardown paths had drifted.
+
+The `hdiutil` contract documents `detach ... -force` as the option that ignores open
+files on mounted volumes and documents `EBUSY` when exclusive access cannot be
+obtained. Practitioner reports show the same intermittent resource-busy behavior on
+GitHub-hosted macOS runners, including builds that work locally and fail in hosted
+automation. Gludd now uses the same fail-closed force-detach operation on both the
+success and EXIT paths. A detach failure still fails the job; there is no retry,
+sleep, ignored status, or weakened artifact smoke.
+
+- [hdiutil detach and EBUSY reference](https://ss64.com/mac/hdiutil.html)
+- [GitHub Actions resource-busy practitioner report](https://github.com/create-dmg/create-dmg/issues/190)
+- [long-lived hdiutil detach failure report](https://github.com/electron-userland/electron-builder/issues/7137)
+- [CMake community report for hosted macOS file-I/O races](https://discourse.cmake.org/t/macos-hdiutil-packaging-on-github-actions-can-fail-if-prepackage-scripts-are-used/14990)
+
+The smoke owns one run-attempt-namespaced root, mount point, attached image, and
+trap. It detaches before removing the root and publishes an attestation only after
+successful teardown, so candidate failure does not interrupt any running Gludd
+service. This is ZDD for the application plane. Rollback reverts the workflow and
+its structural lifecycle regression together and invalidates the candidate; it may
+not restore the unforced success path or reinterpret run `32982779016` as passing.
+
 ## Rollback and recovery
 
 No tag or release is created until dual-track verification succeeds. On failure,

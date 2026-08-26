@@ -988,7 +988,7 @@ jobs:
           chmod +x "$dmg_bin"
           "$dmg_bin" version
           "$dmg_bin" --help >/dev/null
-          hdiutil detach "$mount_point"
+          hdiutil detach "$mount_point" -force
           mounted=0
           mkdir -p "$mount_point"
 
