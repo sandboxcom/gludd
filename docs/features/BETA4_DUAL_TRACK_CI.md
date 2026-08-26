@@ -1441,3 +1441,46 @@ No release cleanup task, retry, coverage exclusion, or warning suppression was
 added. Rollback is the isolated tests/documentation commit, and ZDD remains
 fail-closed candidate invalidation before the next exact-SHA local and hosted
 lanes start.
+
+### Interpreter identity and terminal hosted coverage
+
+Candidate `a94df0c10adf56bb8fd4236b10012b54b9894a65` and hosted run
+`33012278432` made two independent release blockers observable. All 23 hosted
+execution jobs passed, including every named Python 3.11 shard, but the terminal
+coverage job rejected 79 production files below the separate 75 percent line or
+branch floor. The release job therefore remained skipped. The paired local
+producer passed through unit-2, then its mutable `.venv/bin/python3` launch path
+changed from CPython 3.11.14 to CPython 3.14.0 while the long-lived owner process
+still reported its original runtime. Recording only that owner process would
+have produced misleading evidence for later batches.
+
+The canonical runner now binds Python major/minor and implementation into the
+paired execution-policy digest. It also probes the exact resolved executable,
+implementation, and patch version before and after every batch. Any probe
+failure or identity change stops the plan with an observable interpreter-drift
+result before another batch can start. This is owner-side fail-closed behavior,
+not a test retry or cleanup task. The batch process and temporary root still use
+the existing bounded TERM-to-KILL and idempotent cleanup paths.
+
+ZDD remains candidate invalidation: no tag, branch promotion, artifact publish,
+or deployment can consume the failed SHA. Rollback removes the isolated runner,
+tests, task evidence, and this section. The added resource cost is one bounded
+five-second child interpreter identity probe at each batch boundary; it uses the
+same executable path the next pytest process would use, opens no network or
+daemon resource, and leaves no persistent artifact.
+
+- [uv command reference](https://docs.astral.sh/uv/reference/cli/), reviewed
+  2026-08-26, defines `uv sync` as management of the project `.venv` and notes
+  that `--python` participates in interpreter discovery.
+- [uv project environment documentation](https://docs.astral.sh/uv/concepts/projects/config/),
+  reviewed 2026-08-26, defines `.venv` as the default mutable project
+  environment and provides `UV_PROJECT_ENVIRONMENT` for an alternate isolated
+  path.
+- [uv issue 15603](https://github.com/astral-sh/uv/issues/15603), opened
+  2025-08-31 and reviewed 2026-08-26, preserves practitioner and maintainer
+  reports that sync can recreate an active environment when Python requests
+  differ; maintainers describe project environments as automatically managed
+  and ephemeral.
+- [uv issue 17283](https://github.com/astral-sh/uv/issues/17283), opened
+  2026-01-02 and reviewed 2026-08-26, records a long-lived user report of a
+  shared environment switching from Python 3.12 to 3.14 during project commands.

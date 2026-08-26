@@ -1738,3 +1738,78 @@ def test_serial_runner_cli_forwards_hosted_single_shard_mode(
     assert received["run_isolated"] is False
     assert received["aggregate_coverage"] is False
     assert received["coverage_output"] == coverage_output
+
+
+def test_release_execution_policy_binds_python_runtime() -> None:
+    """Local and hosted evidence must identify the same Python runtime family."""
+    module = _load_script("run_ci_shards_serial")
+
+    policy = module.execution_policy(["-W", "error"])
+
+    assert policy["python_version"] == (
+        f"{sys.version_info.major}.{sys.version_info.minor}"
+    )
+    assert policy["python_implementation"] == sys.implementation.name
+
+
+def test_serial_runner_fails_closed_after_batch_mutates_interpreter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A shared-venv mutation must stop the exact-SHA lane before another batch."""
+    module = _load_script("run_ci_shards_serial")
+    resources = module.ResourcePaths(
+        root=tmp_path / "resources",
+        coverage_shards=tmp_path / "resources" / "coverage-fragments",
+        coverage_json=tmp_path / "resources" / "coverage.json",
+        coverage_audit=tmp_path / "resources" / "coverage-audit.json",
+        attestation=tmp_path / "resources" / "attestation.json",
+    )
+    expected = {
+        "implementation": "cpython",
+        "version": "3.11.14",
+        "executable": "/opt/python/3.11/bin/python3.11",
+    }
+    changed = {
+        "implementation": "cpython",
+        "version": "3.14.0",
+        "executable": "/opt/python/3.14/bin/python3.14",
+    }
+    identities = iter((expected, expected, changed))
+    executed: list[str] = []
+
+    def run_owned(*_args: object, label: str, **_kwargs: object) -> int:
+        executed.append(label)
+        return 0
+
+    monkeypatch.setattr(module, "_resource_paths", lambda: resources)
+    monkeypatch.setattr(module, "COVERAGE_SHARDS", resources.coverage_shards)
+    monkeypatch.setattr(module, "expand_shard", lambda _shard: ["a.py", "b.py"])
+    monkeypatch.setattr(
+        module,
+        "_interpreter_identity",
+        lambda: next(identities),
+    )
+    monkeypatch.setattr(
+        module,
+        "_run_owned_pytest",
+        run_owned,
+    )
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: 0)
+
+    result = module.run(
+        ["unit-1a1"],
+        [],
+        max_files_per_batch=1,
+        run_isolated=False,
+        aggregate_coverage=False,
+    )
+
+    assert result == module.INTERPRETER_DRIFT_EXIT_CODE
+    assert executed == ["unit-1a1:batch-001"]
+    output = capsys.readouterr().out
+    assert "SHARD-INTERPRETER-DRIFT" in output
+    assert "3.11.14" in output
+    assert "3.14.0" in output

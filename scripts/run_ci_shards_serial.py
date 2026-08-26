@@ -58,6 +58,8 @@ def execution_policy(pytest_args: list[str]) -> dict[str, object]:
     """Describe the semantic pytest policy shared by local and hosted lanes."""
     return {
         "schema_version": 1,
+        "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "python_implementation": sys.implementation.name,
         "pytest_args": list(pytest_args),
         "xdist_workers": 1,
         "max_processes": 1,
@@ -206,6 +208,7 @@ DEFAULT_NO_PROGRESS_SECONDS = 10.0 * 60.0
 WORKER_DEATH_EXIT_CODE = 70
 NO_PROGRESS_EXIT_CODE = 124
 RUNNER_EXCEPTION_EXIT_CODE = 125
+INTERPRETER_DRIFT_EXIT_CODE = 78
 ANSI_ESCAPE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 XDIST_NODE_DOWN_LINE = re.compile(
     r"^\[gw\d+\]\s+node down:\s+\S.*$",
@@ -227,6 +230,63 @@ COVERAGE_FRAGMENT_NAME = re.compile(
 
 def _quote(command: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in command)
+
+
+def _interpreter_identity() -> dict[str, str]:
+    """Return the executable identity that a newly launched batch will use."""
+    probe = (
+        "import json, pathlib, sys; "
+        "print(json.dumps({"
+        "'implementation': sys.implementation.name, "
+        "'version': '.'.join(map(str, sys.version_info[:3])), "
+        "'executable': str(pathlib.Path(sys.executable).resolve(strict=True))"
+        "}, sort_keys=True))"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-I", "-c", probe],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "probe failed").strip()
+        raise RuntimeError(f"interpreter identity probe failed: {detail}")
+    payload = json.loads(completed.stdout)
+    if not isinstance(payload, dict) or set(payload) != {
+        "implementation",
+        "version",
+        "executable",
+    } or not all(isinstance(value, str) and value for value in payload.values()):
+        raise RuntimeError("interpreter identity probe returned malformed evidence")
+    return payload
+
+
+def _interpreter_is_unchanged(
+    expected: dict[str, str],
+    *,
+    context: str,
+) -> bool:
+    """Fail closed when the shared interpreter path changes during a run."""
+    try:
+        observed = _interpreter_identity()
+    except (OSError, RuntimeError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        print(
+            f"SHARD-INTERPRETER-PROBE-FAIL context={context} error={exc}",
+            flush=True,
+        )
+        return False
+    if observed == expected:
+        return True
+    print(
+        "SHARD-INTERPRETER-DRIFT "
+        f"context={context} "
+        f"expected={json.dumps(expected, sort_keys=True)} "
+        f"observed={json.dumps(observed, sort_keys=True)}",
+        flush=True,
+    )
+    return False
 
 
 def _is_xdist_worker_death_line(line: str) -> bool:
@@ -852,6 +912,7 @@ def run(
     """Run bounded batches serially and aggregate their coverage fragments."""
     if max_files_per_batch < 1:
         raise ValueError("max_files_per_batch must be positive")
+    expected_interpreter = _interpreter_identity()
     shutil.rmtree(COVERAGE_SHARDS, ignore_errors=True)
     COVERAGE_SHARDS.mkdir(parents=True)
     COVERAGE_AUDIT.parent.mkdir(parents=True, exist_ok=True)
@@ -935,6 +996,13 @@ def run(
                     f"files={len(files)} basetemp={owned_tmpdir / 'pytest'}",
                     flush=True,
                 )
+                if not _interpreter_is_unchanged(
+                    expected_interpreter,
+                    context=f"{shard}:batch-{batch_index:03d}:before",
+                ):
+                    failures[shard] = INTERPRETER_DRIFT_EXIT_CODE
+                    shard_failed = True
+                    break
                 rc = _run_owned_pytest(
                     _pytest_command(shard, files, owned_tmpdir, pytest_args),
                     env=env,
@@ -942,6 +1010,11 @@ def run(
                     heartbeat_seconds=heartbeat_seconds,
                     no_progress_seconds=no_progress_seconds,
                 )
+                if not _interpreter_is_unchanged(
+                    expected_interpreter,
+                    context=f"{shard}:batch-{batch_index:03d}:after",
+                ):
+                    rc = INTERPRETER_DRIFT_EXIT_CODE
                 coverage_saved = _save_shard_coverage(
                     shard,
                     batch_index,

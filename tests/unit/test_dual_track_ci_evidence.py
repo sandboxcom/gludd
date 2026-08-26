@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, cast
@@ -27,6 +28,8 @@ SHARDS = {
 
 RELEASE_POLICY = {
     "schema_version": 1,
+    "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
+    "python_implementation": sys.implementation.name,
     "pytest_args": ["-W", "error"],
     "xdist_workers": 1,
     "max_processes": 1,
@@ -83,15 +86,18 @@ def _attestation(*, sha: str, lane: str, shards: list[str]) -> dict[str, object]
         "started_at": "2026-08-25T00:00:00Z",
         "completed_at": "2026-08-25T00:01:00Z",
         "runner": "scripts/run_ci_shards_serial.py",
-        "python": "3.11.13",
+        "python": sys.version,
         **_pairing_fields(shards),
     }
     if lane == "hosted":
         payload["coverage"] = {
-            "artifact": f".coverage.{shards[0]}-3.11",
+            "artifact": (
+                f".coverage.{shards[0]}-"
+                f"{sys.version_info.major}.{sys.version_info.minor}"
+            ),
             "bytes": 1024,
             "sha256": "c" * 64,
-            "python": "3.11",
+            "python": f"{sys.version_info.major}.{sys.version_info.minor}",
         }
     return payload
 
