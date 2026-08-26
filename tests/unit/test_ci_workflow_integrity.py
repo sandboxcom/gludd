@@ -155,10 +155,12 @@ class TestTestShardStructure:
 
     def test_each_unit_shard_has_a_bounded_hosted_step_budget(self) -> None:
         wf = _load_workflow()
+        job = wf["jobs"]["test-shard"]
         steps = wf["jobs"]["test-shard"]["steps"]
         test_step = next(step for step in steps if str(step.get("name", "")).startswith("Test (shard"))
 
-        assert 30 <= test_step["timeout-minutes"] <= 45
+        assert test_step["timeout-minutes"] >= 90
+        assert test_step["timeout-minutes"] <= job["timeout-minutes"] - 15
 
     def test_workflow_does_not_duplicate_canonical_testpaths(self) -> None:
         wf = _load_workflow()
