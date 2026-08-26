@@ -4531,17 +4531,19 @@ ci-job-failure-context:
 	if ! grep -F -q -- "$(PATTERN)" "$$LOG"; then echo "ci-job-failure-context: pattern not found: $(PATTERN)"; exit 1; fi; \
 	$(PYTHON) scripts/ci_shards_log_context.py --log "$$LOG" --pattern "$(PATTERN)" --before "$(or $(BEFORE),10)" --after "$(or $(AFTER),30)" --max-matches 1
 
-CI_ARTIFACT_OUTPUT_ROOT ?= .gate-logs/ci-artifacts
+CI_ARTIFACT_OUTPUT_ROOT ?= RESOURCE_ROOT
 CI_ARTIFACT_HEARTBEAT_SECS ?= 10
 CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY ?= 0
 ci-artifact-download:
 	@case "$(RUN)" in ''|*[!0-9]*) echo "RUN must be a numeric GitHub Actions run ID"; exit 2 ;; esac
 	@case "$(ARTIFACT)" in ''|*[!A-Za-z0-9._-]*) echo "Refusing unsafe ARTIFACT: $(ARTIFACT)"; exit 2 ;; esac
-	@case "$(CI_ARTIFACT_OUTPUT_ROOT)" in .gate-logs/ci-artifacts|.gate-logs/ci-artifacts/*) ;; *) echo "Refusing unsafe CI_ARTIFACT_OUTPUT_ROOT: $(CI_ARTIFACT_OUTPUT_ROOT)"; exit 2 ;; esac
 	@case "$(CI_ARTIFACT_HEARTBEAT_SECS)" in ''|*[!0-9]*|0) echo "CI_ARTIFACT_HEARTBEAT_SECS must be a positive integer"; exit 2 ;; esac
 	@case "$(CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
-	@if [ "$(CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)" = "1" ]; then echo "CI-ARTIFACT-DOWNLOAD VALIDATED run=$(RUN) artifact=$(ARTIFACT) output=$(CI_ARTIFACT_OUTPUT_ROOT) heartbeat=$(CI_ARTIFACT_HEARTBEAT_SECS)s"; exit 0; fi; \
-	ROOT="$(CI_ARTIFACT_OUTPUT_ROOT)/run-$(RUN)"; DEST="$$ROOT/$(ARTIFACT)"; \
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	if [ "$(CI_ARTIFACT_OUTPUT_ROOT)" = "RESOURCE_ROOT" ]; then OUTPUT_ROOT="$$RESOURCE_ROOT/ci-artifacts"; else OUTPUT_ROOT="$(CI_ARTIFACT_OUTPUT_ROOT)"; fi; \
+	case "$$OUTPUT_ROOT" in "$$RESOURCE_ROOT"/ci-artifacts|"$$RESOURCE_ROOT"/ci-artifacts/*) ;; *) echo "Refusing unsafe CI_ARTIFACT_OUTPUT_ROOT: $$OUTPUT_ROOT"; exit 2 ;; esac; \
+	if [ "$(CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)" = "1" ]; then echo "CI-ARTIFACT-DOWNLOAD VALIDATED run=$(RUN) artifact=$(ARTIFACT) output=$$OUTPUT_ROOT heartbeat=$(CI_ARTIFACT_HEARTBEAT_SECS)s"; exit 0; fi; \
+	ROOT="$$OUTPUT_ROOT/run-$(RUN)"; DEST="$$ROOT/$(ARTIFACT)"; \
 	mkdir -p "$$ROOT"; \
 	if [ -e "$$DEST" ]; then echo "Refusing to overwrite existing artifact destination: $$DEST"; exit 1; fi; \
 	COUNT=$$(gh api repos/sandboxcom/gludd/actions/runs/$(RUN)/artifacts --jq '[.artifacts[] | select(.name == "$(ARTIFACT)" and (.expired | not))] | length'); \

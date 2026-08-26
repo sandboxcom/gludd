@@ -46,7 +46,7 @@
         "CI_ARTIFACT_HEARTBEAT_SECS",
         "CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY"
       ],
-      "behavior": "make ci-artifact-download RUN=1 ARTIFACT=diagnostics CI_ARTIFACT_OUTPUT_ROOT=.gate-logs/ci-artifacts CI_ARTIFACT_HEARTBEAT_SECS=1 CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY=1"
+      "behavior": "make ci-artifact-download RUN=1 ARTIFACT=diagnostics CI_ARTIFACT_OUTPUT_ROOT=RESOURCE_ROOT CI_ARTIFACT_HEARTBEAT_SECS=1 CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY=1"
     },
     {
       "name": "test-e2e",

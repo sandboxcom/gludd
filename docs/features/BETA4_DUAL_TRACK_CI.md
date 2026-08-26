@@ -710,6 +710,36 @@ failure, and creates no tag or deployment. Rollback is one commit per contract;
 rolling back source filtering intentionally restores the false-positive files,
 while rolling back fail-fast restores wasted work but cannot make a release green.
 
+## Diagnostic artifact workspace isolation
+
+The clean `unit-2` replay at `dba16899a124d4bf7c9d7f078db3422c1d7495b7`
+exposed a controller-caused failure rather than an application defect. While the
+immutable shard was running, the operator downloaded hosted `coverage.xml` into
+`.gate-logs/ci-artifacts` inside the checkout. The game acceptance test correctly
+observed that new path during its repository snapshot and rejected the candidate.
+The downloaded artifact was reproducible and removed; no test expectation or
+application side-effect detector was weakened.
+
+Pytest's temporary-directory documentation warns that an explicit base directory
+is cleared and must be dedicated to that run. Practitioner issue 11790 records
+that even pytest's default test directory can collide across independent
+concurrent invocations. GitHub runner issue 4357 shows the same ownership class at
+the hosted layer: overlapping workers sharing one temporary root can delete or
+replace each other's active files. These reports support isolating diagnostics at
+acquisition, not adding test retries or ignore patterns.
+
+- [pytest temporary-directory ownership documentation](https://github.com/pytest-dev/pytest/blob/main/doc/en/how-to/tmp_path.rst)
+- [practitioner report: concurrent pytest temp-path collision](https://github.com/pytest-dev/pytest/issues/11790)
+- [hosted runner shared-temp cleanup race](https://github.com/actions/runner/issues/4357)
+
+`ci-artifact-download` now resolves its output beneath the project-namespaced
+external resource root. Callers may name the symbolic `RESOURCE_ROOT` or an exact
+descendant of that project's `ci-artifacts` directory; checkout paths and other
+projects' roots fail closed. Atomic same-root publication, bounded heartbeat, and
+signal cleanup are unchanged. This is ZDD for the tested application: diagnostic
+downloads neither alter its checkout nor stop its services. Rollback removes the
+target change and contract together, but restores the detectable workspace race.
+
 ## Rollback and recovery
 
 No tag or release is created until dual-track verification succeeds. On failure,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -43,7 +44,9 @@ def test_ci_artifact_download_is_run_bound_confined_and_atomic() -> None:
     assert "gh api repos/sandboxcom/gludd/actions/runs/$(RUN)/artifacts" in block
     assert 'gh run download "$(RUN)" -R sandboxcom/gludd' in block
     assert '-n "$(ARTIFACT)"' in block
-    assert 'CI_ARTIFACT_OUTPUT_ROOT ?= .gate-logs/ci-artifacts' in source
+    assert "CI_ARTIFACT_OUTPUT_ROOT ?= RESOURCE_ROOT" in source
+    assert "scripts/resource_arbiter.py root" in block
+    assert 'OUTPUT_ROOT="$$RESOURCE_ROOT/ci-artifacts"' in block
     assert "CI_ARTIFACT_HEARTBEAT_SECS ?= 10" in source
     assert "mktemp -d" in block
     assert "trap" in block
@@ -53,8 +56,31 @@ def test_ci_artifact_download_is_run_bound_confined_and_atomic() -> None:
     assert 'mv "$$TMP" "$$DEST"' in block
     assert "Refusing unsafe ARTIFACT" in block
     assert "Refusing unsafe CI_ARTIFACT_OUTPUT_ROOT" in block
+    assert ".gate-logs/ci-artifacts" not in block
     assert "|| true" not in block
     assert "ignore_errors" not in block
+
+
+def test_ci_artifact_download_rejects_checkout_output_even_in_validate_only() -> None:
+    """Diagnostics must never share the source checkout with an active test run."""
+    result = subprocess.run(
+        [
+            "make",
+            "ci-artifact-download",
+            "RUN=1",
+            "ARTIFACT=diagnostics",
+            "CI_ARTIFACT_OUTPUT_ROOT=.gate-logs/ci-artifacts",
+            "CI_ARTIFACT_HEARTBEAT_SECS=1",
+            "CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY=1",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "Refusing unsafe CI_ARTIFACT_OUTPUT_ROOT" in result.stdout
 
 
 def test_python_version_replay_runs_only_the_requested_node() -> None:
@@ -100,7 +126,7 @@ def test_new_ci_targets_have_safe_behavioral_contracts() -> None:
         ],
         "behavior": (
             "make ci-artifact-download RUN=1 ARTIFACT=diagnostics "
-            "CI_ARTIFACT_OUTPUT_ROOT=.gate-logs/ci-artifacts "
+            "CI_ARTIFACT_OUTPUT_ROOT=RESOURCE_ROOT "
             "CI_ARTIFACT_HEARTBEAT_SECS=1 "
             "CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY=1"
         ),
