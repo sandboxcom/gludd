@@ -410,7 +410,7 @@ function _buildFloorBreachBlock(streakCount: number, effectiveMax: number, comma
 // DEFAULT IMPLEMENTATION (tool.execute.before only — self-contained)
 // ============================================================================
 const defaultImpl: HotModule = {
-  "tool.execute.before": async (input: any, output: any) => {
+  "tool.execute.before": async (input: any, output: any,t=Date.now()) => {
     if (isSubagent()) return
     reportAlive("enforce-floor")
     writeHeartbeat("enforce-floor")
@@ -421,7 +421,7 @@ const defaultImpl: HotModule = {
     try {
       if (!FLOOR_ENFORCE) return
       const tool = (input?.tool ?? "") as string
-      const now = Date.now()
+      const now = t
       if (isDisengaged()) {
         _streakCount = 0
         _readStreak = 0

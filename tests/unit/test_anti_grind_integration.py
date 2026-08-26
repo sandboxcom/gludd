@@ -113,11 +113,16 @@ try {{
 
     const calls = {json.dumps(calls)};
     const results = [];
+    const messages = [];
+    const durations = [];
     for (const c of calls) {{
+        const startedAt = Date.now();
         const r = await hook(c.input || {{}}, c.output || {{}});
+        durations.push(Date.now() - startedAt);
         results.push(r ? r.permissionDecision : null);
+        messages.push(r ? r.message : null);
     }}
-    process.stdout.write(JSON.stringify({{ results }}));
+    process.stdout.write(JSON.stringify({{ results, messages, durations }}));
 }} catch (e) {{
     console.error("GRIND_TEST_ERROR " + (e && e.stack ? e.stack : String(e)));
     process.exit(1);
@@ -299,10 +304,11 @@ class TestAntiGrindRuntime:
                 {"tool": "task", "input": {"tool": "task"}, "output": {}},
                 {"tool": "edit", "input": {"tool": "edit"}, "output": {}},
             ],
-            extra_env={"GLUDD_MESSAGE_BOUNDARY_MS": "1"},
-            pending_items=10_000,
+            extra_env={"GLUDD_MESSAGE_BOUNDARY_MS": "20"},
+            pending_items=100_000,
         )
-        assert result["results"] == [None, None, None]
+        assert result["durations"][1] > 20, result
+        assert result["results"] == [None, None, None], result
 
     def test_read_only_tools_do_not_increment_streak(self, tmp_path: Path) -> None:
         """Read-only tools (read/grep/glob) do NOT trigger the floor breach."""
