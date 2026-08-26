@@ -143,8 +143,45 @@ def test_ci_tooling_coverage_profile_measures_the_changed_auditor() -> None:
 
     included = parser["run"]["include"].splitlines()
     assert "*/scripts/audit_coverage.py" in included
+    assert "*/scripts/coverage_missing_lines.py" in included
     assert parser["run"].getboolean("branch") is True
     assert parser["report"].getboolean("show_missing") is True
+
+
+def test_ci_coverage_gap_plan_is_external_bounded_and_contract_registered() -> None:
+    """Coverage remediation must read exact-run evidence without workspace writes."""
+    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    block = _target_block(source, "ci-coverage-gap-plan")
+
+    assert "scripts/resource_arbiter.py root" in block
+    assert "scripts/coverage_missing_lines.py" in block
+    assert "coverage-data.json" in block
+    assert "CI_COVERAGE_GAP_LIMIT" in block
+    assert "CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY" in block
+    assert ".gate-logs" not in block
+    assert "|| true" not in block
+
+    payload = json.loads(
+        (ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8")
+    )
+    contracts = {item["name"]: item for item in payload["targets"]}
+    assert contracts["ci-coverage-gap-plan"] == {
+        "name": "ci-coverage-gap-plan",
+        "make_variables": [
+            "CI_COVERAGE_RUN",
+            "CI_COVERAGE_ARTIFACT",
+            "CI_COVERAGE_SOURCE",
+            "CI_COVERAGE_PER_FILE_MIN",
+            "CI_COVERAGE_GAP_LIMIT",
+            "CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY",
+        ],
+        "behavior": (
+            "make ci-coverage-gap-plan CI_COVERAGE_RUN=1 "
+            "CI_COVERAGE_ARTIFACT=coverage-merged "
+            "CI_COVERAGE_SOURCE=src/general_ludd CI_COVERAGE_PER_FILE_MIN=75 "
+            "CI_COVERAGE_GAP_LIMIT=20 CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY=1"
+        ),
+    }
 
 
 def test_python_version_replay_runs_only_the_requested_node() -> None:

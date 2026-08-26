@@ -773,6 +773,15 @@ Rollback removes the audit target, contract, configuration, and tests together,
 then invalidates the candidate; it cannot reinterpret the retained raw databases
 as passing evidence.
 
+`ci-coverage-gap-plan` reuses the retained coverage.py JSON and the existing
+missing-line reporter. It orders failures by the worse of line or branch coverage,
+prints a caller-bounded number of exact missing lines and arcs, and never writes to
+the checkout. Run `32962870788` produces 110 source gaps; the first remediation
+batch starts with the zero-covered chemistry core and the lowest chemistry,
+router, daemon, approval, release, and process-ownership surfaces. This ordering is
+diagnostic only: every source file must still reach both floors before a new
+candidate can start.
+
 ## Rollback and recovery
 
 No tag or release is created until dual-track verification succeeds. On failure,

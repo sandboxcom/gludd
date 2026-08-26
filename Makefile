@@ -165,7 +165,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime e2e-setup-test-project test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
-ci-view ci-rerun ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-coverage-artifact-audit ci-shards-log-context \
+ci-view ci-rerun ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
 log-agent-result disk-guard disk-check check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
@@ -492,6 +492,7 @@ help:
 	@echo "  ci-job-failure-context  bounded authenticated failure context (RUN, JOB, PATTERN)"
 	@echo "  ci-artifact-download    atomically download one exact run-bound GHA artifact (RUN, ARTIFACT, CI_ARTIFACT_OUTPUT_ROOT, CI_ARTIFACT_HEARTBEAT_SECS, CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)"
 	@echo "  ci-coverage-artifact-audit audit one externally stored hosted Cobertura report (CI_COVERAGE_*)"
+	@echo "  ci-coverage-gap-plan       print a bounded exact-run line/branch remediation plan (CI_COVERAGE_*)"
 	@echo "  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1"
 	@echo "  ci-await BRANCH=<b> [TIMEOUT=<s>]  Poll CI for branch until terminal (green/red/timeout)"
 	@echo "  ci-verdict-safe        Cooldown-enforced CI check (prefer over bare ci-verdict)"
@@ -4595,6 +4596,20 @@ ci-coverage-artifact-audit:
 		$(PYTHON) scripts/audit_coverage.py --json-file="$$TMP/coverage.json" --json-out="$$REPORT" --threshold="$(CI_COVERAGE_AGGREGATE_MIN)" --per-file-threshold="$(CI_COVERAGE_PER_FILE_MIN)" --source="$(CI_COVERAGE_SOURCE)"; AUDIT_RC=$$?; \
 		mv "$$TMP/coverage.json" "$$ARTIFACT_DIR/coverage-data.json"; exit "$$AUDIT_RC"; \
 	fi
+
+CI_COVERAGE_GAP_LIMIT ?= 20
+CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY ?= 0
+ci-coverage-gap-plan:
+	@case "$(CI_COVERAGE_RUN)" in ''|*[!0-9]*) echo "CI_COVERAGE_RUN must be a numeric GitHub Actions run ID"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_ARTIFACT)" in ''|*[!A-Za-z0-9._-]*) echo "Refusing unsafe CI_COVERAGE_ARTIFACT: $(CI_COVERAGE_ARTIFACT)"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_SOURCE)" in src/general_ludd) ;; *) echo "CI_COVERAGE_SOURCE must be src/general_ludd"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_GAP_LIMIT)" in ''|*[!0-9]*|0) echo "CI_COVERAGE_GAP_LIMIT must be a positive integer"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	DATA="$$RESOURCE_ROOT/ci-artifacts/run-$(CI_COVERAGE_RUN)/$(CI_COVERAGE_ARTIFACT)/coverage-data.json"; \
+	if [ "$(CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY)" = "1" ]; then echo "CI-COVERAGE-GAP-PLAN VALIDATED run=$(CI_COVERAGE_RUN) artifact=$(CI_COVERAGE_ARTIFACT) source=$(CI_COVERAGE_SOURCE) threshold=$(CI_COVERAGE_PER_FILE_MIN) limit=$(CI_COVERAGE_GAP_LIMIT) input=$$DATA"; exit 0; fi; \
+	if [ ! -f "$$DATA" ]; then echo "Hosted raw coverage report is missing: $$DATA"; exit 2; fi; \
+	$(PYTHON) scripts/coverage_missing_lines.py --json "$$DATA" --threshold "$(CI_COVERAGE_PER_FILE_MIN)" --source "$(CI_COVERAGE_SOURCE)" --limit "$(CI_COVERAGE_GAP_LIMIT)"
 
 # Just the FAILED/ERROR test ids + summary lines from a run's failed-step logs
 # (ci-faillog tails raw logs; this filters the signal). Usage: make ci-failed-tests RUN=<id>
