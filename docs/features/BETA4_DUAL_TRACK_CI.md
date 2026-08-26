@@ -1346,6 +1346,24 @@ analyzer/test/documentation commit. ZDD continues to reject the untagged
 candidate until a new immutable local/hosted pair validates the same plan and
 policy.
 
+### Hosted issue-source safety branches
+
+The hosted artifact also separated ClickUp, Monday.com, Bitbucket, and Linear
+adapter branches from their existing behavior suites. The added contracts cover
+literal-host SSRF classifications, non-dictionary and invalid response bodies,
+missing credentials and repository identifiers, normalization fallbacks,
+GraphQL errors, and client reuse versus client ownership. The combined replay
+passes 106 tests at 94% aggregate coverage; each adapter is between 94% and 96%
+and clears the separate 75% line and branch thresholds.
+
+All network activity is injected, clients opened by an adapter remain scoped to
+that adapter, and no harness finalizer compensates for production ownership.
+Invalid hosts and malformed responses fail closed before state write-back. ZDD
+is preserved because the change adds evidence only: no connector configuration,
+credentials, issue state, or remote comments are changed, and rollback removes
+only the regression commit. The earlier upstream SSRF, GitHub Actions, and
+coverage.py practitioner references remain applicable to this hosted-only gap.
+
 ### Git and release control-plane branches
 
 The hosted aggregate showed that Git history dispatch, release orchestration,
