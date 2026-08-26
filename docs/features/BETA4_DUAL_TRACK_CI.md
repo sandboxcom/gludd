@@ -1524,3 +1524,41 @@ daemon resource, and leaves no persistent artifact.
 - [uv issue 17283](https://github.com/astral-sh/uv/issues/17283), opened
   2026-01-02 and reviewed 2026-08-26, records a long-lived user report of a
   shared environment switching from Python 3.12 to 3.14 during project commands.
+
+### Generated-game budget ownership
+
+Candidate `a25ca77f6996d2fa955d676b0eb57942e7c44398` passed 19 hosted
+jobs without a failure while the paired macOS/Python 3.14 lane rejected a
+minimal generated game in `unit-2`. The rejection claimed that module import
+exceeded the five-second game budget. The game itself was not slow: the CLI's
+in-process path armed `SIGALRM` before recursively snapshotting the entire
+checkout, so repository size and coverage-fragment churn were charged to
+untrusted generated code.
+
+The CLI now uses the existing subprocess acceptance boundary. The child starts
+with the generated file's directory as its working directory, preserves the
+explicit module-name contract, writes its verdict through the existing owned
+temporary file, and remains subject to the bounded subprocess timeout. The
+filesystem comparison therefore covers the only directory the generated game
+may mutate without making repository traversal part of its runtime budget.
+Static forbidden-call checks, child timeout, verdict validation, and idempotent
+temporary-verdict cleanup remain fail closed.
+
+This is ZDD by candidate invalidation: the discrepant SHA is not promoted,
+tagged, published, or deployed. Local and hosted lanes must restart on the new
+exact commit and produce matching plan/policy attestations. Rollback is the
+single acceptance/test/documentation commit. The resource boundary is one
+short-lived Python child per accepted file, one same-directory audit scope, and
+one owned temporary verdict file; no daemon, port, retry task, cleanup job,
+warning suppression, or coverage exclusion is added.
+
+- [Python `subprocess.run` documentation](https://docs.python.org/3/library/subprocess.html#subprocess.run),
+  reviewed 2026-08-26, defines the child timeout and working-directory contract
+  used by the acceptance boundary.
+- [pytest-timeout signal documentation](https://github.com/pytest-dev/pytest-timeout#signal),
+  reviewed 2026-08-26, warns that `SIGALRM`-based timeouts can interfere with
+  code under test that also uses the signal, supporting process isolation.
+- [pytest-cov issue 608](https://github.com/pytest-dev/pytest-cov/issues/608),
+  opened 2023-09-02 and reviewed 2026-08-26, preserves practitioner evidence
+  that subprocess execution and coverage instrumentation have materially
+  different behavior from the parent test process.

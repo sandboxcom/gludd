@@ -111,8 +111,7 @@ def _fs_snapshot(root: Path) -> dict[str, tuple[float, int]]:
     return snapshot
 
 
-def _run(source: str) -> dict[str, object]:
-    module_name = "generated_game"
+def _run(source: str, module_name: str) -> dict[str, object]:
     namespace: dict[str, object] = {"__name__": module_name, "__builtins__": __builtins__}
     stdout = io.StringIO()
     stderr = io.StringIO()
@@ -195,16 +194,16 @@ def _run(source: str) -> dict[str, object]:
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
+    if len(sys.argv) != 4:
         return 2
-    source_path, verdict_path = sys.argv[1], sys.argv[2]
+    source_path, verdict_path, module_name = sys.argv[1], sys.argv[2], sys.argv[3]
     try:
         with open(source_path, "r", encoding="utf-8") as handle:
             source = handle.read()
     except OSError as exc:
         payload: dict[str, object] = {"failure": f"cannot read file: {exc}", "class_name": None, "output": ""}
     else:
-        payload = _run(source)
+        payload = _run(source, module_name)
     try:
         with open(verdict_path, "w", encoding="utf-8") as handle:
             json.dump(payload, handle)
@@ -526,7 +525,11 @@ def check_file(
     return check_source(source, module_name=module_name or file_path.stem, timeout=timeout)
 
 
-def _subprocess_probe(file_path: Path, timeout: float) -> tuple[str | None, str | None, str]:
+def _subprocess_probe(
+    file_path: Path,
+    timeout: float,
+    module_name: str = DEFAULT_MODULE_NAME,
+) -> tuple[str | None, str | None, str]:
     """Execute the module in a child process under a hard wall-clock budget.
 
     Returns ``(failure_reason, game_class_name, output_snippet)``. The child
@@ -539,11 +542,12 @@ def _subprocess_probe(file_path: Path, timeout: float) -> tuple[str | None, str 
     try:
         try:
             completed = subprocess.run(
-                [sys.executable, "-c", _RUNTIME_PROBE_SCRIPT, str(file_path), verdict_name],
+                [sys.executable, "-c", _RUNTIME_PROBE_SCRIPT, str(file_path), verdict_name, module_name],
                 capture_output=True,
                 text=True,
                 timeout=timeout,
                 check=False,
+                cwd=file_path.parent,
             )
         except subprocess.TimeoutExpired:
             return f"generated module exceeded the {timeout:g}s runtime budget", None, ""
@@ -574,7 +578,11 @@ def _subprocess_probe(file_path: Path, timeout: float) -> tuple[str | None, str 
             verdict_path.unlink()
 
 
-def accept_generated_code(path: str, timeout_seconds: float = 10.0) -> AcceptanceResult:
+def accept_generated_code(
+    path: str,
+    timeout_seconds: float = 10.0,
+    module_name: str | None = None,
+) -> AcceptanceResult:
     """Accept or reject a generated ``.py`` file on disk.
 
     Static checks (parse, forbidden imports/calls, class contract, junk) run
@@ -635,7 +643,11 @@ def accept_generated_code(path: str, timeout_seconds: float = 10.0) -> Acceptanc
     if reasons:
         return _verdict(False, reasons, class_name)
 
-    failure, runtime_class, snippet = _subprocess_probe(file_path, timeout_seconds)
+    failure, runtime_class, snippet = _subprocess_probe(
+        file_path,
+        timeout_seconds,
+        module_name=module_name or file_path.stem,
+    )
     if failure is not None:
         reasons.append(failure)
     if snippet:
@@ -673,7 +685,11 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point: prints the verdict; returns 0 on accept, 1 on reject."""
     args = _build_parser().parse_args(argv)
-    result = check_file(args.file, module_name=args.module_name, timeout=args.timeout)
+    result = accept_generated_code(
+        args.file,
+        timeout_seconds=args.timeout,
+        module_name=args.module_name,
+    )
     if result.accepted:
         print(f"ACCEPT {result.game_class_name} ({result.elapsed_seconds:.2f}s)")
         return 0

@@ -58,6 +58,16 @@ coverage contract tests, `config/coverage_beta4_chemistry.ini`, and
 proved all eight raw shards present while a pre-imported chemistry module was
 reported at 0%, then the filesystem-bound focused xdist replay measured it at
 88%. The next paired exact-SHA run remains pending.
+S86.16 active generated-game budget path: `src/general_ludd/game_gen/acceptance.py`,
+`tests/unit/test_game_gen_acceptance.py`,
+`config/coverage_game_gen_acceptance.ini`, and
+`docs/features/BETA4_DUAL_TRACK_CI.md`; candidate
+`a25ca77f6996d2fa955d676b0eb57942e7c44398` reached 19 hosted passes but
+the paired local Python 3.14 `unit-2` lane rejected a minimal game because the
+in-process watchdog charged repository/coverage scanning to the game budget.
+The isolated subprocess boundary is now 42/42 GREEN, the exact failed batch is
+453 passed/2 intentional pygame skips, changed-file coverage is 92%, and the
+next paired exact-SHA run remains pending.
 
 ## Session 83 — beta4 branch reconciliation and release (2026-08-12)
 
