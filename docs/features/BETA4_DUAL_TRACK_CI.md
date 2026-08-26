@@ -676,6 +676,40 @@ updated and rerun through both lanes.
 - [download-artifact v8 Buffer warning report](https://github.com/actions/upload-artifact/issues/811)
 - [actions/toolkit artifact release notes](https://github.com/actions/toolkit/blob/main/packages/artifact/RELEASES.md)
 
+## Paired-lane fail-fast and coverage source boundary
+
+Candidate `41a6d38e50a381ac077e433b6394592c77df716a` and hosted run
+`32962870788` verified the hidden-file repair: all eight hosted shards uploaded
+and the consumer combined all eight coverage databases. The pair still failed.
+Locally, `unit-2` returned nonzero but the serial producer started `unit-3b` and
+later shards; on GitHub, the coverage audit correctly enforced independent 75%
+line and branch floors but graded four measured collection files outside its
+declared `src/general_ludd` source tree along with 111 genuine source gaps.
+
+Pytest documents `-x` as the immediate stop contract. A long-lived practitioner
+request specifically calls out the hosted-time cost of continuing after failure,
+and xdist issue 868 records that process-level `--maxfail` behavior has cleanup
+edge cases. Gludd therefore owns fail-fast at the serial shard boundary after the
+failed child's cleanup, rather than delegating cross-process policy to xdist.
+
+- [pytest practitioner request for hosted fail-fast behavior](https://github.com/pytest-dev/pytest/issues/9515)
+- [xdist maxfail cleanup report](https://github.com/pytest-dev/pytest-xdist/issues/868)
+
+Coverage.py defines `source` as the file trees eligible for measurement and its
+JSON reporting interface provides explicit include/omit selection. Gludd's audit
+now applies that source boundary before accumulating either aggregate counters or
+per-file results. Files within the source tree still must independently meet both
+floors; filtering cannot turn a genuine low-coverage source file green.
+
+- [coverage.py source contract](https://github.com/coveragepy/coveragepy/blob/main/coverage/control.py)
+- [coverage.py JSON include/omit contract](https://github.com/coveragepy/coveragepy/blob/main/doc/python-coverage.1.txt)
+
+The zero-downtime response is candidate invalidation: after either lane fails,
+the producer stops later shards, completes only owner cleanup, emits the terminal
+failure, and creates no tag or deployment. Rollback is one commit per contract;
+rolling back source filtering intentionally restores the false-positive files,
+while rolling back fail-fast restores wasted work but cannot make a release green.
+
 ## Rollback and recovery
 
 No tag or release is created until dual-track verification succeeds. On failure,

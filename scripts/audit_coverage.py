@@ -42,6 +42,8 @@ def parse_coverage_json(
 
     raw_files = data.get("files", {})
     for fpath, finfo in raw_files.items():
+        if not _path_within_source(fpath, source_path):
+            continue
         summary = finfo.get("summary", {})
         num_stmts = summary.get("num_statements", 0)
         covered = summary.get("covered_lines", summary.get("num_lines_covered", 0))
@@ -153,6 +155,15 @@ def _relative_path(fpath: str, source_path: str) -> str:
         return str(abs_fpath.relative_to(src_path.parent))
     except ValueError:
         return fpath
+
+
+def _path_within_source(fpath: str, source_path: str) -> bool:
+    """Return whether a measured path belongs to the requested source tree."""
+    try:
+        Path(fpath).resolve().relative_to(Path(source_path).resolve())
+    except ValueError:
+        return False
+    return True
 
 
 COVERAGE_AUDIT_TIMEOUT_SECONDS = int(os.environ.get("GLUDD_COVERAGE_AUDIT_TIMEOUT_SECONDS", "1800"))

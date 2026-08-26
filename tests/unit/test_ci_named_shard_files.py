@@ -794,6 +794,52 @@ def test_serial_runner_stops_the_whole_plan_after_one_interrupted_batch(
     assert started == ["unit-1b:batch-001"]
 
 
+def test_serial_runner_stops_the_whole_plan_after_one_failed_shard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    workspaces = tmp_path / "workspaces"
+    compact_roots = tmp_path / "compact-roots"
+    started: list[str] = []
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        del dir
+        parent = workspaces if prefix.startswith("gludd-gate-") else compact_roots
+        path = parent / prefix
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    def failed_run(*_args: object, label: str, **_kwargs: object) -> int:
+        started.append(label)
+        return 3
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(module, "expand_shard", lambda shard: [f"tests/unit/test_{shard}.py"])
+    monkeypatch.setattr(module, "_run_owned_pytest", failed_run)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: 0)
+
+    assert (
+        module.run(
+            ["unit-2", "unit-3b"],
+            [],
+            run_isolated=False,
+            aggregate_coverage=False,
+        )
+        == 3
+    )
+    assert started == ["unit-2:batch-001"]
+    assert (
+        "SERIAL-SHARD-FAILED shard=unit-2 rc=3; later-shards=not-started"
+        in capsys.readouterr().out
+    )
+
+
 def test_serial_runner_reserves_xdist_and_test_name_socket_budget(
     tmp_path: Path,
 ) -> None:
@@ -1183,7 +1229,7 @@ def test_serial_runner_uses_a_fresh_non_coverage_process_for_isolated_tests() ->
     assert all(not argument.startswith("--cov") for argument in command)
 
 
-def test_serial_runner_continues_after_a_failed_shard(
+def test_serial_runner_does_not_continue_after_a_failed_shard(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1230,10 +1276,10 @@ def test_serial_runner_continues_after_a_failed_shard(
     result = module.run(["unit-1a1", "unit-1a2"], [])
 
     assert result == 1
-    assert launched == ["unit-1a1", "unit-1a2"]
+    assert launched == ["unit-1a1"]
 
 
-def test_serial_runner_records_isolated_failure_and_continues_shards(
+def test_serial_runner_records_isolated_failure_and_stops_before_shards(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1270,7 +1316,7 @@ def test_serial_runner_records_isolated_failure_and_continues_shards(
     result = module.run(["unit-1a1"], [])
 
     assert result == 7
-    assert shard_launched is True
+    assert shard_launched is False
 
 
 def test_serial_runner_fails_closed_when_coverage_erase_fails(

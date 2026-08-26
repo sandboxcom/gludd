@@ -857,6 +857,20 @@ def run(
         else:
             print("ISOLATED-TESTS-PASS rc=0", flush=True)
 
+    if failures:
+        print(
+            f"SERIAL-ISOLATED-FAILED rc={failures['isolated']}; "
+            "later-shards=not-started",
+            flush=True,
+        )
+        print(
+            f"SERIAL-SHARD-SUMMARY total={len(shards)} "
+            f"failed={len(failures)} failures={failures}",
+            flush=True,
+        )
+        shutil.rmtree(COVERAGE_SHARDS, ignore_errors=True)
+        return max(failures.values())
+
     for index, shard in enumerate(shards, start=1):
         batches = _partition_test_paths(
             expand_shard(shard),
@@ -865,7 +879,12 @@ def run(
         if not batches:
             print(f"SHARD-EMPTY shard={shard}", flush=True)
             failures[shard] = 2
-            continue
+            print(
+                f"SERIAL-SHARD-FAILED shard={shard} rc=2; "
+                "later-shards=not-started",
+                flush=True,
+            )
+            break
 
         workspace_parent = _resource_paths().root / "workspaces"
         workspace_parent.mkdir(parents=True, exist_ok=True)
@@ -948,8 +967,15 @@ def run(
                 flush=True,
             )
             break
+        if shard in failures:
+            print(
+                f"SERIAL-SHARD-FAILED shard={shard} rc={failures[shard]}; "
+                "later-shards=not-started",
+                flush=True,
+            )
+            break
 
-    if cancellation_rc:
+    if failures:
         coverage_rc = 0
     elif coverage_output is not None:
         coverage_rc = _combine_coverage_output(coverage_output)
