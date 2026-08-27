@@ -27,7 +27,11 @@ from general_ludd.onboard.aws import (
     ALLOWED_ACTIONS,
     DENIED_ACTIONS,
     AWSOnboardProvider,
+    _accepts_dry_run,
     _build_boto3_client,
+    _client_error_code,
+    _probe_is_authorized,
+    load_policy_document,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -104,20 +108,27 @@ class _ClientErrorFallback(Exception):
     fallback path, not a class definition — so there is no ``no-redef``.
     """
 
-    def __init__(self, error_response: dict, operation_name: str) -> None:
+    def __init__(
+        self,
+        error_response: dict[str, dict[str, str]],
+        operation_name: str,
+    ) -> None:
         super().__init__(error_response.get("Error", {}).get("Message", ""))
         self.response = error_response
         self.operation_name = operation_name
 
 
+class _ResponseError(RuntimeError):
+    def __init__(self, response: object) -> None:
+        super().__init__("malformed")
+        self.response = response
+
+
 def _fake_client_error(code: str, message: str = "probe") -> Exception:
     """Build a botocore-shaped ClientError for tests (without importing botocore)."""
-    try:
-        # types-botocore not installed; import-not-found is expected here.
-        from botocore.exceptions import ClientError
-    except ImportError:
-        ClientError = cast(Any, _ClientErrorFallback)  # botocore not installed
-    return ClientError({"Error": {"Code": code, "Message": message}}, "DryRun")
+    return _ClientErrorFallback(
+        {"Error": {"Code": code, "Message": message}}, "DryRun"
+    )
 
 
 @pytest.fixture()
@@ -161,7 +172,7 @@ class TestValidateToken:
             _fake_client_error("UnauthorizedOperation", "not authorized"),  # second: missing
         ]
 
-        def _factory(service: str, region: str):
+        def _factory(service: str, region: str) -> MagicMock:
             if service == "sts":
                 return fake_sts_client
             if service == "ec2":
@@ -215,7 +226,7 @@ class TestValidateToken:
     def test_boto3_unavailable_returns_ok_false(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        def _raise(service: str, region: str):
+        def _raise(service: str, region: str) -> object:
             raise ImportError("boto3 unavailable")
 
         monkeypatch.setattr("general_ludd.onboard.aws._build_boto3_client", _raise)
@@ -227,22 +238,68 @@ class TestValidateToken:
         assert "boto3" in details["detail"].lower()
 
 
+class TestPermissionProbeHelpers:
+    def test_dry_run_operation_is_authorized(self) -> None:
+        def _method(**_kwargs: object) -> None:
+            raise _fake_client_error("DryRunOperation")
+
+        assert _probe_is_authorized(_method) is True
+
+    def test_unknown_client_error_fails_closed(self) -> None:
+        def _method(**_kwargs: object) -> None:
+            raise _fake_client_error("Throttled")
+
+        assert _probe_is_authorized(_method) is False
+
+    def test_uninspectable_callable_has_no_dry_run_contract(self) -> None:
+        assert _accepts_dry_run(object()) is False
+
+    @pytest.mark.parametrize(
+        "response",
+        [None, {"Error": "not-a-map"}, {"Error": {"Code": 403}}],
+    )
+    def test_malformed_client_error_code_is_rejected(self, response: object) -> None:
+        assert _client_error_code(_ResponseError(response)) is None
+
+
+class TestLoadPolicyDocument:
+    def test_missing_module_returns_none(self, tmp_path: Path) -> None:
+        assert load_policy_document(tmp_path) is None
+
+    def test_module_without_jsonencode_policy_returns_none(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "main.tf").write_text('resource "aws_iam_policy" "empty" {}')
+
+        assert load_policy_document(tmp_path) is None
+
+    def test_hcl_policy_subset_is_normalized(self, tmp_path: Path) -> None:
+        (tmp_path / "main.tf").write_text(
+            'policy = jsonencode({ Version = "2012-10-17", Statement = [], })'
+        )
+
+        assert load_policy_document(tmp_path) == {
+            "Version": "2012-10-17",
+            "Statement": [],
+        }
+
+
 # ---------------------------------------------------------------------------
 # IAM policy document (Terraform module) — least-privilege static checks
 # ---------------------------------------------------------------------------
 
 
-def _load_policy() -> dict:
+def _load_policy() -> dict[str, Any]:
     """Load the IAM policy JSON shipped with the module.
 
     The policy document lives in ``policy.json`` (pure JSON, not HCL) so it
     is statically machine-auditable without parsing Terraform. main.tf reads
     the same file at apply time and substitutes the operator role ARN.
     """
-    return json.loads(POLICY_JSON.read_text())
+    return cast(dict[str, Any], json.loads(POLICY_JSON.read_text()))
 
 
-def _all_actions(policy: dict) -> set[str]:
+def _all_actions(policy: dict[str, Any]) -> set[str]:
     actions: set[str] = set()
     for stmt in policy.get("Statement", []):
         a = stmt.get("Action", [])
