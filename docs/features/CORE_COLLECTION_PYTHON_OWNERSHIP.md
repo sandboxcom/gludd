@@ -93,6 +93,15 @@ third transient DDL race. A deterministic failing-first regression and the real
 four-engine test pass on Python 3.14 and an isolated Python 3.11.14 environment;
 unrelated `OperationalError` values still fail startup immediately.
 
+The subsequent local release gate exposed a static-evidence integration gap:
+`module_snapshot_types.py` was exercised through the public
+`module_snapshot.ModuleSnapshot` re-export, but the coverage-gap index resolved
+re-exports only from package `__init__.py` files. The mapper now follows explicit
+imports and aliases from regular source modules as well. A failing-first fixture
+pins that behavior, while prose mentions and unrelated imports still do not count
+as coverage. This keeps the test inventory exact without adding a production
+allowlist or duplicating the stable type test.
+
 ## Upstream and practitioner evidence
 
 Reviewed 2026-08-27:
@@ -179,3 +188,9 @@ the prior core wheel; the database file remains compatible and needs no data
 operation. Each attempt owns its SQLAlchemy transaction context, which closes
 before the bounded delay, so no connection, cursor, task, or descriptor survives
 an attempt or cancellation.
+
+The coverage-mapper repair is build-time only and has no application deployment
+or resource lifecycle. It parses repository files read-only, retains no open file
+handles, and exits before runtime packaging. Rollback restores the previous
+checker, but would also restore the false-negative release gate for ordinary
+module re-exports; no application process, schema, or artifact format changes.
