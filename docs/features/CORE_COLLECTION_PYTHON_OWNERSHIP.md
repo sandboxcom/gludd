@@ -82,6 +82,17 @@ and restores the original shallow namespace, rebinds the parent package, and
 keeps the `ModuleSnapshot` record in a stable type module. The exact hosted order
 and an end-to-end source rollback both prove the pre-reload identities survive.
 
+Exact-SHA run `33048791238` passed both Python gates, every platform build, the
+controller EE, provider E2E, game building, and 17 of 23 executable jobs before
+the Python 3.11 `unit-1d` shard exposed SQLite result code 17 during four-engine
+concurrent schema startup. One connection committed DDL while another was
+introspecting `agent_tokens`, invalidating the prepared `PRAGMA table_info`
+statement. `ensure_tables()` already bounded retries for the two other expected
+SQLite startup races; it now treats only `database schema has changed` as the
+third transient DDL race. A deterministic failing-first regression and the real
+four-engine test pass on Python 3.14 and an isolated Python 3.11.14 environment;
+unrelated `OperationalError` values still fail startup immediately.
+
 ## Upstream and practitioner evidence
 
 Reviewed 2026-08-27:
@@ -111,6 +122,14 @@ Reviewed 2026-08-27:
   [programming FAQ](https://docs.python.org/3/faq/programming.html#when-i-edit-an-imported-module-and-reimport-it-the-changes-don-t-show-up).
   The stable type module and namespace restoration avoid requiring every live
   consumer to rebind imported class names atomically.
+- [SQLite result-code documentation](https://www.sqlite.org/rescode.html#schema)
+  defines `SQLITE_SCHEMA` as a prepared statement invalidated by another
+  connection's schema change and documents SQLite's own bounded reprepare loop.
+- In the long-lived
+  [SQLite user-forum schema-change thread](https://sqlite.org/forum/forumpost/1df053250d),
+  practitioners reproduced result code 17 across concurrent connections and
+  SQLite maintainers explained that the statement is safe to prepare and execute
+  again, but may still surface after SQLite exhausts its internal retry bound.
 
 ## Zero-downtime deployment, rollback, and resources
 
@@ -150,3 +169,13 @@ visible in `sys.modules`. Rollback of this repair is the prior core wheel; no
 persistent state is written. The snapshot owns shallow Python references only—no
 process, task, client, descriptor, socket, or temporary artifact—and releases
 them when the snapshot becomes unreachable.
+
+The SQLite startup repair is ZDD and fail closed. It changes no schema and does
+not restart a running daemon; it only repeats the existing idempotent
+`MetaData.create_all(checkfirst=True)` pass when SQLite explicitly reports one of
+three concurrent-DDL race results, within the existing 20-attempt bound and busy
+timeout. Other database errors propagate on their first occurrence. Rollback is
+the prior core wheel; the database file remains compatible and needs no data
+operation. Each attempt owns its SQLAlchemy transaction context, which closes
+before the bounded delay, so no connection, cursor, task, or descriptor survives
+an attempt or cancellation.

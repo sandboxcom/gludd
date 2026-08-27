@@ -280,7 +280,7 @@ async def ensure_tables(engine: AsyncEngine) -> None:
         # query before each CREATE. Separate Gunicorn/test processes can both
         # observe a missing table and race on the DDL. SQLite has no portable
         # CREATE TABLE IF NOT EXISTS hook at SQLAlchemy's metadata level, so
-        # retry the idempotent metadata pass after only the two expected race
+        # retry the idempotent metadata pass after only the expected DDL race
         # errors. Any other OperationalError still fails startup immediately.
         for attempt in range(20):
             try:
@@ -290,7 +290,14 @@ async def ensure_tables(engine: AsyncEngine) -> None:
                 return
             except OperationalError as error:
                 message = str(error).lower()
-                retryable = "already exists" in message or "database is locked" in message
+                retryable = any(
+                    transient in message
+                    for transient in (
+                        "already exists",
+                        "database is locked",
+                        "database schema has changed",
+                    )
+                )
                 if not retryable or attempt == 19:
                     raise
                 await asyncio.sleep(0.01 * (attempt + 1))
