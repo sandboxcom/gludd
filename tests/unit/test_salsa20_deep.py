@@ -9,8 +9,7 @@ import hashlib
 import secrets
 
 import pytest
-
-from general_ludd.algorithms.salsa20 import (
+from ansible_collections.general_ludd.security.plugins.module_utils.salsa20 import (
     Salsa20Error,
     hsalsa20,
     salsa20_block,
@@ -98,7 +97,7 @@ class TestStreamEncrypt:
             return ZeroKeystreamCipher()
 
         monkeypatch.setattr(
-            "general_ludd.algorithms.salsa20._PyCryptodomeSalsa20.new",
+            "ansible_collections.general_ludd.security.plugins.module_utils.salsa20._PyCryptodomeSalsa20.new",
             new_zero_keystream_cipher,
         )
         plaintext = b"A"

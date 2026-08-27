@@ -1,4 +1,4 @@
-"""SRP-6a (Secure Remote Password) protocol implementation via srptools library.
+"""Security-collection SRP-6a adapter using srptools.
 
 Uses RFC 5054 2048-bit safe-prime group and SHA-256.
 Public API preserved; crypto delegated to srptools.

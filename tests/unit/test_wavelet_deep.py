@@ -8,8 +8,7 @@ from __future__ import annotations
 import math
 
 import pytest
-
-from general_ludd.algorithms.wavelet import (
+from ansible_collections.general_ludd.physics.plugins.module_utils.wavelet import (
     _convolve_stride,
     _daubechies4_decomposition_coeffs,
     _haar_decomposition_coeffs,

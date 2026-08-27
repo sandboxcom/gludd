@@ -1,3 +1,5 @@
+"""Physics-collection interpolation adapters using SciPy."""
+
 from __future__ import annotations
 
 import numpy as np

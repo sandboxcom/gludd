@@ -1,4 +1,4 @@
-"""Linear programming algorithms wrapping scipy.optimize.linprog (HiGHS solver)."""
+"""Physics-collection linear programming adapter using SciPy HiGHS."""
 
 from __future__ import annotations
 

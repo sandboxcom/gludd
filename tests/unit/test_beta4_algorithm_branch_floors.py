@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Any, cast
 
 import pytest
+from ansible_collections.general_ludd.physics.plugins.module_utils import convex_hull
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from general_ludd.algorithms import convex_hull, finger_tree, line_intersect, oprf, persistent_vector
+from general_ludd.algorithms import finger_tree, line_intersect, oprf, persistent_vector
 
 
 def test_convex_hull_handles_vertical_and_identical_collinear_points() -> None:

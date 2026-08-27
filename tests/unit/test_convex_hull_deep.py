@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import math
 
-from general_ludd.algorithms.convex_hull import (
+from ansible_collections.general_ludd.physics.plugins.module_utils.convex_hull import (
     chans_algorithm,
     graham_scan,
     jarvis_march,
@@ -111,6 +111,14 @@ class TestGrahamScan:
     def test_collinear(self) -> None:
         hull = graham_scan(COLLINEAR)
         assert len(hull) == 2
+
+    def test_vertical_collinear_uses_y_extrema(self) -> None:
+        points = [(2.0, 4.0), (2.0, -1.0), (2.0, 2.0)]
+        assert _hull_set(graham_scan(points)) == {(2.0, -1.0), (2.0, 4.0)}
+
+    def test_duplicate_points_collapse_to_one_vertex(self) -> None:
+        points = [(3.0, 4.0), (3.0, 4.0), (3.0, 4.0)]
+        assert graham_scan(points) == [(3.0, 4.0)]
 
     def test_point_inside(self) -> None:
         pts = [*SQUARE, (0.5, 0.5)]

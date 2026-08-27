@@ -1,4 +1,4 @@
-"""Shamir secret sharing over finite fields.
+"""Security-collection Shamir secret-sharing adapter.
 
 Wraps the ``shamir`` PyPI package for core GF(prime) arithmetic.
 Splits a secret into n shares such that any k (threshold) shares recover it,

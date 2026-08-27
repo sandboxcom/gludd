@@ -9,8 +9,7 @@ from __future__ import annotations
 import math
 
 import pytest
-
-from general_ludd.algorithms.entropy import (
+from ansible_collections.general_ludd.physics.plugins.module_utils.entropy import (
     build_joint_from_counts,
     conditional_entropy,
     cross_entropy,

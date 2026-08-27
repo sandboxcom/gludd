@@ -1,4 +1,4 @@
-"""K-means clustering backed by scipy.cluster.vq: Lloyd's algorithm, k-means++ initialization,
+"""Physics-collection K-means adapter backed by SciPy.
 elbow method, and silhouette score.
 """
 
@@ -7,11 +7,14 @@ from __future__ import annotations
 import random
 
 import numpy as np
+from numpy.typing import NDArray
 from scipy.cluster.vq import kmeans as _scipy_kmeans
 from scipy.cluster.vq import vq as _scipy_vq
 
+FloatArray = NDArray[np.float64]
 
-def _kmeans_pp_init(points: np.ndarray, k: int, rng: random.Random | None = None) -> np.ndarray:
+
+def _kmeans_pp_init(points: FloatArray, k: int, rng: random.Random | None = None) -> FloatArray:
     if rng is None:
         rng = random.Random()
     centroids = [points[rng.randint(0, len(points) - 1)].copy()]
@@ -34,7 +37,7 @@ def _kmeans_pp_init(points: np.ndarray, k: int, rng: random.Random | None = None
                 chosen = p
                 break
         centroids.append(chosen.copy())
-    return np.array(centroids)
+    return np.asarray(centroids, dtype=np.float64)
 
 
 def kmeans_plusplus(points: list[list[float]], k: int, seed: int | None = None) -> list[list[float]]:
@@ -44,7 +47,7 @@ def kmeans_plusplus(points: list[list[float]], k: int, seed: int | None = None) 
     if k > len(pts):
         raise ValueError("k cannot exceed number of points")
     rng = random.Random(seed)
-    return _kmeans_pp_init(pts, k, rng).tolist()
+    return [[float(value) for value in row] for row in _kmeans_pp_init(pts, k, rng)]
 
 
 def lloyd(

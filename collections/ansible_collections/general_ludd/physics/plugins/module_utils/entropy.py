@@ -1,4 +1,4 @@
-"""Shannon entropy, joint, conditional, mutual information, KL divergence, cross-entropy.
+"""Physics-collection information-theoretic entropy metrics.
 
 Uses scipy.stats.entropy for base Shannon-entropy computation. All functions
 operate on probability dictionaries mapping outcome -> probability.  Logarithms

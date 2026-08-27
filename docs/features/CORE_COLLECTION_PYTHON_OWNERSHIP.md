@@ -26,13 +26,20 @@ The mechanical import audit on 2026-08-27 produced these dispositions:
 | Scapy | `networking` extra and networking collection | Already outside base core |
 | llama.cpp / CUDA | local and CUDA inference extras | Already outside base core |
 | pygame / OpenCV / image comparison | game E2E extra | Already outside base core |
-| NumPy / SciPy / PyWavelets algorithm adapters | formal collection | Migrate from base core |
-| SRP / Shamir / Salsa20 adapters | security collection | Migrate from base core |
+| NumPy / SciPy / PyWavelets algorithm adapters | physics collection | Migrated from base core |
+| SRP / Shamir / Salsa20 adapters | security collection | Migrated from base core |
 | `cryptography` | core auth, updater, encryption, and TLS trust paths | Retain in core |
 | Argon2 / bcrypt | core password authentication | Retain in core |
 | psutil | core process ownership and daemon lifecycle | Retain in core |
 | hvac | core secret-manager control plane | Retain in core |
 | PQCrypto SPHINCS+ | frozen release signature smoke | Retain in core for beta.4 |
+
+The physics, radio, forensics, and security collections now declare their
+controller-side Python dependencies through `meta/execution-environment.yml` and
+`meta/ee-requirements.txt`. The core wheel no longer declares NumPy, SciPy,
+PyWavelets, PyCryptodome, Shamir, or srptools. The development dependency group
+retains them solely to execute collection tests, and the game E2E extra declares
+its own NumPy requirement.
 
 ## Upstream and practitioner evidence
 
@@ -58,13 +65,15 @@ Reviewed 2026-08-27:
 ## Zero-downtime deployment, rollback, and resources
 
 The change is additive at the collection artifact boundary and subtractive in the
-core wheel. Build the security collection and controller EE before switching any
-consumer to the new FQCN, verify DER round trips, then deploy the collection and
-core wheel together. Existing managed-host OpenSSL execution is unchanged, so no
-certificate or service restart is required.
+core wheel. Build the physics, radio, forensics, and security collections and their
+controller EE before switching consumers to the new FQCNs. Verify ASN.1 DER round
+trips and every numerical/security adapter before deploying the collections and
+core wheel together. Existing managed-host OpenSSL execution is unchanged, and
+the game E2E runtime remains isolated behind its explicit extra, so no certificate
+or service restart is required.
 
-Rollback reinstalls the prior core wheel and prior security collection together;
-there is no data migration. ASN.1 parsing is read-only except for caller-owned
-output artifacts. The module utility opens no network connection, subprocess,
-thread, task, or persistent file handle, so teardown has no hidden resource owner.
-
+Rollback reinstalls the prior core wheel and the prior collection artifacts
+together; there is no data migration. ASN.1 parsing and the migrated adapters are
+read-only except for caller-owned output values and artifacts. They open no network
+connection, subprocess, thread, task, or persistent file handle, so teardown has
+no hidden resource owner.

@@ -1,4 +1,4 @@
-"""Salsa20 / XSalsa20 stream cipher — backed by PyCryptodome.
+"""Security-collection Salsa20 adapter backed by PyCryptodome.
 
 Stream encrypt/decrypt and block generation delegate to
 ``Crypto.Cipher.Salsa20`` from the MAINTAINED PyCryptodome distribution

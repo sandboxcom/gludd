@@ -1,4 +1,4 @@
-"""Discrete wavelet transform using PyWavelets (pywt).
+"""Physics-collection discrete wavelet transforms using PyWavelets.
 
 Haar and Daubechies D4 wavelets with single- and multi-level
 decomposition and reconstruction.  All transforms require input
@@ -9,16 +9,17 @@ from __future__ import annotations
 
 import numpy as np
 import pywt
+from numpy.typing import NDArray
+
+FloatArray = NDArray[np.float64]
 
 
-def _to_signal(data: list[float]) -> np.ndarray:
+def _to_signal(data: list[float]) -> FloatArray:
     return np.array(data, dtype=np.float64)
 
 
-def _from_signal(arr: np.ndarray | list) -> list[float]:
-    if hasattr(arr, "tolist"):
-        return arr.tolist()
-    return list(arr)
+def _from_signal(arr: FloatArray | list[float]) -> list[float]:
+    return [float(value) for value in np.asarray(arr, dtype=np.float64).ravel()]
 
 
 def _check_power_of_two(n: int, label: str = "Signal length") -> None:
@@ -115,9 +116,11 @@ def dwt_cascade(signal: list[float], levels: int, wavelet: str = "haar") -> list
         raise ValueError(f"Signal length {n} too small for {levels} levels (need >= {1 << levels})")
     w = _resolve_wavelet(wavelet)
     approximation = _to_signal(signal)
-    details: list[np.ndarray] = []
+    details: list[FloatArray] = []
     for _ in range(levels):
-        approximation, detail = pywt.dwt(approximation, w, mode="periodization")
+        raw_approximation, raw_detail = pywt.dwt(approximation, w, mode="periodization")
+        approximation = np.asarray(raw_approximation, dtype=np.float64)
+        detail = np.asarray(raw_detail, dtype=np.float64)
         details.append(detail)
     return [_from_signal(approximation), *(_from_signal(detail) for detail in reversed(details))]
 
@@ -127,8 +130,8 @@ def idwt_cascade(coeffs: list[list[float]], wavelet: str = "haar") -> list[float
     if len(coeffs) < 2:
         raise ValueError(f"Need at least 2 coefficient bands, got {len(coeffs)}")
     w = _resolve_wavelet(wavelet)
-    arrs: list[np.ndarray] = [_to_signal(c) for c in coeffs]
-    result: np.ndarray = pywt.waverec(arrs, w, mode="periodization")
+    arrs: list[FloatArray] = [_to_signal(c) for c in coeffs]
+    result = np.asarray(pywt.waverec(arrs, w, mode="periodization"), dtype=np.float64)
     return _from_signal(result)
 
 
@@ -153,4 +156,5 @@ def wavelet_synthesis_matrix(wavelet: str, length: int) -> list[list[float]]:
     zeros = np.zeros_like(basis)
     approximation_columns = pywt.idwt(basis, zeros, w, mode="periodization", axis=-1).T
     detail_columns = pywt.idwt(zeros, basis, w, mode="periodization", axis=-1).T
-    return np.concatenate((approximation_columns, detail_columns), axis=1).tolist()
+    matrix = np.concatenate((approximation_columns, detail_columns), axis=1)
+    return [[float(value) for value in row] for row in matrix]

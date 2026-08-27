@@ -1,4 +1,4 @@
-"""FFT algorithms backed by ``numpy.fft``.
+"""Physics-collection FFT adapters backed by ``numpy.fft``.
 
 All functions delegate to numpy's battle-tested FFT implementation.
 """

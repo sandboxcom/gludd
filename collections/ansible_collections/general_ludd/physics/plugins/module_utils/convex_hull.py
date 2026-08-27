@@ -1,4 +1,4 @@
-"""Convex hull via scipy.spatial.ConvexHull.
+"""Physics-collection convex hull adapter via SciPy.
 
 Delegates to scipy's Qhull-based implementation. All functions accept
 a list of (x, y) points and return convex hull vertices in CCW order.
