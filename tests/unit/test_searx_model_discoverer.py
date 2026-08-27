@@ -15,7 +15,72 @@ def _make_result(name: str, desc: str = "") -> ModelSearchResult:
 
 
 class TestSearxModelDiscoverer:
-    def test_searx_returns_results_profiles_added(self):
+    def test_constructor_and_profile_metadata_branches(self) -> None:
+        gateway = MagicMock(spec=ModelGateway)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            discoverer = SearxModelDiscoverer(
+                gateway,
+                searx_url="http://127.0.0.1:8080",
+                cache_dir=tmpdir,
+                ttl_seconds=0,
+            )
+            rich = ModelSearchResult(
+                name="org__rich",
+                description="x" * 600,
+                params_count=7.0,
+            )
+            sparse = _make_result("org__sparse")
+
+            rich_kwargs = discoverer._result_to_profile_kwargs(rich)
+            sparse_kwargs = discoverer._result_to_profile_kwargs(sparse)
+
+        assert discoverer._profile_id("model") == "searx-model"
+        assert rich_kwargs["model_profile_id"] == "searx-org__rich"
+        assert len(str(rich_kwargs["description"])) == 500
+        assert rich_kwargs["cost_per_input_token"] == 0.0
+        assert "description" not in sparse_kwargs
+        assert "cost_per_input_token" not in sparse_kwargs
+
+    def test_add_profile_failure_is_bounded(self) -> None:
+        gateway = MagicMock(spec=ModelGateway)
+        gateway.add_profile.side_effect = RuntimeError("duplicate")
+        discoverer = SearxModelDiscoverer.__new__(SearxModelDiscoverer)
+        discoverer._gateway = gateway
+
+        assert discoverer._add_profile_from_result(_make_result("duplicate")) is False
+
+    def test_empty_search_rechecks_empty_cache(self) -> None:
+        gateway = MagicMock(spec=ModelGateway)
+        discoverer = SearxModelDiscoverer.__new__(SearxModelDiscoverer)
+        discoverer._gateway = gateway
+        discoverer._ttl = 0
+        discoverer._last_sync = 0.0
+        discoverer._searcher = MagicMock()
+        discoverer._searcher.search_models.return_value = []
+        discoverer._index = MagicMock()
+        discoverer._index.list_all.return_value = []
+        discoverer._index.size.return_value = 0
+
+        assert discoverer.sync_models(force=True) == 0
+        assert discoverer._index.list_all.call_count == 1
+
+    def test_discover_now_counts_only_successfully_added_profiles(self) -> None:
+        gateway = MagicMock(spec=ModelGateway)
+        gateway.add_profile.side_effect = [None, RuntimeError("duplicate")]
+        discoverer = SearxModelDiscoverer.__new__(SearxModelDiscoverer)
+        discoverer._gateway = gateway
+        discoverer._searcher = MagicMock()
+        discoverer._searcher.search_models.return_value = [
+            _make_result("first"),
+            _make_result("second"),
+        ]
+        discoverer._index = MagicMock()
+        discoverer._index.get.return_value = None
+
+        assert discoverer.discover_now("models") == 1
+        assert discoverer._index.put.call_count == 2
+
+    def test_searx_returns_results_profiles_added(self) -> None:
         gateway = MagicMock(spec=ModelGateway)
         mock_results = [_make_result("test-org__model-a"), _make_result("test-org__model-b")]
 
@@ -45,7 +110,7 @@ class TestSearxModelDiscoverer:
             cost_per_output_token=0.0,
         )
 
-    def test_searx_unreachable_falls_back_to_index(self):
+    def test_searx_unreachable_falls_back_to_index(self) -> None:
         gateway = MagicMock(spec=ModelGateway)
 
         discoverer = SearxModelDiscoverer.__new__(SearxModelDiscoverer)
@@ -73,7 +138,7 @@ class TestSearxModelDiscoverer:
             cost_per_output_token=0.0,
         )
 
-    def test_ttl_not_expired_skips_sync(self):
+    def test_ttl_not_expired_skips_sync(self) -> None:
         gateway = MagicMock(spec=ModelGateway)
 
         discoverer = SearxModelDiscoverer.__new__(SearxModelDiscoverer)
@@ -94,7 +159,7 @@ class TestSearxModelDiscoverer:
         assert added == 0
         gateway.add_profile.assert_not_called()
 
-    def test_force_bypasses_ttl(self):
+    def test_force_bypasses_ttl(self) -> None:
         gateway = MagicMock(spec=ModelGateway)
         mock_results = [_make_result("fresh-model")]
 
@@ -115,7 +180,7 @@ class TestSearxModelDiscoverer:
 
         assert added == 1
 
-    def test_discover_now_with_query(self):
+    def test_discover_now_with_query(self) -> None:
         gateway = MagicMock(spec=ModelGateway)
         mock_results = [_make_result("query-match-model")]
 
@@ -133,7 +198,7 @@ class TestSearxModelDiscoverer:
         assert added == 1
         gateway.add_profile.assert_called_once()
 
-    def test_discover_now_falls_back_to_index_on_error(self):
+    def test_discover_now_falls_back_to_index_on_error(self) -> None:
         gateway = MagicMock(spec=ModelGateway)
 
         discoverer = SearxModelDiscoverer.__new__(SearxModelDiscoverer)
@@ -150,7 +215,7 @@ class TestSearxModelDiscoverer:
 
         assert added == 1
 
-    def test_index_size_and_last_sync_tracking(self):
+    def test_index_size_and_last_sync_tracking(self) -> None:
         gateway = MagicMock(spec=ModelGateway)
 
         discoverer = SearxModelDiscoverer.__new__(SearxModelDiscoverer)
@@ -177,7 +242,7 @@ class TestSearxModelDiscoverer:
             assert discoverer.index_size == 2
             assert discoverer.last_sync_time > 0.0
 
-    def test_duplicate_results_deduplicated_by_index(self):
+    def test_duplicate_results_deduplicated_by_index(self) -> None:
         gateway = MagicMock(spec=ModelGateway)
         result_a = _make_result("model-a")
 
