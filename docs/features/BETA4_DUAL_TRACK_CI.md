@@ -1600,13 +1600,19 @@ separate explicit values. Structural tests pin the workflow, runner, and Make
 contracts so a future hosted lane cannot silently weaken one while keeping the
 other.
 
-The first two remediated groups cover 26 of the 78 exact hosted gaps. Their
-focused replays pass 326, 473, and 951 tests respectively. The measured groups
-report 93 and 95 percent aggregate line-and-branch coverage, with every
+The first four remediated groups cover 31 of the 78 exact hosted gaps. Their
+focused replays pass 326, 473, 951, and 259 tests respectively. The measured
+groups report between 92 and 95 percent aggregate line-and-branch coverage, with every
 production file independently above both 75 percent floors. Negative-path
 coverage includes connector transport failures, malformed response shapes,
 secret absence, SSRF rejection, timestamp coercion, empty query bounds, and
-normalization fallbacks. One test-first case found a real Opsgenie defect: epoch
+normalization fallbacks. The fourth group exercises gossip convergence,
+SearX model indexing, Redmine normalization, pipeline daemon adapters, and the
+macOS Seatbelt backend. A test-first case found that an otherwise valid JSON
+model-index cache with the wrong top-level shape raised during application
+startup; the index owner now ignores non-object and non-entry values without
+discarding valid entries or mutating the corrupt file. Another test-first case
+found a real Opsgenie defect: epoch
 microseconds and milliseconds were classified with thresholds too large for
 contemporary Unix timestamps and could raise an out-of-range year error. The
 owner now applies the documented microsecond/millisecond magnitude boundaries;
