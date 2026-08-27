@@ -129,7 +129,8 @@ def test_coverage_requires_all_shards_and_both_thresholds() -> None:
     assert "coverage report --skip-covered --fail-under=85" in runs
     assert "coverage json -o coverage.json" in runs
     assert "audit_coverage.py" in runs
-    assert "--threshold=75" in runs
+    assert "--threshold=85" in runs
+    assert "--per-file-threshold=75" in runs
     assert "No shard coverage data found" not in runs
     uploads = _upload_steps(coverage)
     assert uploads

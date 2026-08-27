@@ -178,9 +178,18 @@ def test_serial_gate_runner_is_fresh_process_and_coverage_complete() -> None:
         "coverage report",
         "--fail-under=85",
         "audit_coverage.py",
-        "--threshold=75",
+        "--threshold=85",
+        "--per-file-threshold=75",
     ):
         assert token in source
+
+
+def test_coverage_files_target_preserves_aggregate_and_per_file_floors() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    recipe = makefile.split("coverage-files:", 1)[1].split("gate-async:", 1)[0]
+
+    assert '--threshold="$(COVERAGE_AGGREGATE_MIN)"' in recipe
+    assert '--per-file-threshold="$(COVERAGE_PER_FILE_MIN)"' in recipe
 
 
 def test_local_and_hosted_named_shards_use_one_bounded_runner() -> None:
@@ -1424,7 +1433,8 @@ def test_shard_coverage_fragment_and_aggregate_preserve_failure(
     assert "--max-worker-restart=0" not in " ".join(
         argument for command in commands for argument in command
     )
-    assert any("--threshold=75" in command for command in commands)
+    assert any("--threshold=85" in command for command in commands)
+    assert any("--per-file-threshold=75" in command for command in commands)
 
 
 def test_save_shard_coverage_unions_controller_and_worker_data(

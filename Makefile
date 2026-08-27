@@ -936,7 +936,7 @@ coverage-files:
 		fi; \
 		if [ "$$RC" -eq 0 ]; then \
 			echo "=== COVERAGE FILES: verify every measured file >=$(COVERAGE_PER_FILE_MIN)% ==="; \
-			$(UV) run python scripts/audit_coverage.py --json-file="$(COVERAGE_REPORT)" --threshold="$(COVERAGE_PER_FILE_MIN)" --source=.; \
+			$(UV) run python scripts/audit_coverage.py --json-file="$(COVERAGE_REPORT)" --threshold="$(COVERAGE_AGGREGATE_MIN)" --per-file-threshold="$(COVERAGE_PER_FILE_MIN)" --source=.; \
 			RC=$$?; \
 		fi; \
 		rm -rf "$$BT"; \

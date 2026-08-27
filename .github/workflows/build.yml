@@ -597,7 +597,7 @@ jobs:
           uv run coverage xml
           uv run coverage json -o coverage.json
           uv run coverage report --skip-covered --fail-under=85
-          uv run python scripts/audit_coverage.py --json-file=coverage.json --threshold=75 --per-file-threshold=75 --source=src/general_ludd
+          uv run python scripts/audit_coverage.py --json-file=coverage.json --threshold=85 --per-file-threshold=75 --source=src/general_ludd
       - name: Upload merged coverage report
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
