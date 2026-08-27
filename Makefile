@@ -905,8 +905,14 @@ test-specific:
 test-specific-pyver:
 	@[ -n "$(TESTFILE)" ] && [ -n "$(PYTHON_VERSION)" ] || { echo "Usage: make test-specific-pyver TESTFILE=path::node PYTHON_VERSION=3.11 PYTEST_ARGS=-q"; exit 2; }
 	@case "$(PYTHON_VERSION)" in 3.11|3.12|3.13|3.14) ;; *) echo "Unsupported PYTHON_VERSION=$(PYTHON_VERSION)"; exit 2 ;; esac
-	@$(UV) sync --python "$(PYTHON_VERSION)"
-	@BT="/tmp/gludd-testpyver-$(PYTHON_VERSION)-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run --python "$(PYTHON_VERSION)" python -m pytest $(TESTFILE) -n 1 --dist loadgroup --max-worker-restart=0 -v -W error $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+		WORK="$$(mktemp -d "$$RESOURCE_ROOT/testpyver-$(PYTHON_VERSION)-XXXXXX")"; \
+		cleanup() { RC=$$?; trap - EXIT INT TERM; rm -rf "$$WORK"; exit $$RC; }; \
+		trap cleanup EXIT INT TERM; \
+		export UV_PROJECT_ENVIRONMENT="$$WORK/.venv"; \
+		$(UV) sync --python "$(PYTHON_VERSION)"; \
+		BT="$$WORK/pytest"; \
+		$(UV) run --python "$(PYTHON_VERSION)" python -m pytest $(TESTFILE) -n 1 --dist loadgroup --max-worker-restart=0 -v -W error $(PYTEST_ARGS) --basetemp="$$BT"
 
 test-files:
 	@if [ -z "$(TESTFILES)" ]; then echo "Usage: make test-files TESTFILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi

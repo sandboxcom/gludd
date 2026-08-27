@@ -190,6 +190,10 @@ def test_python_version_replay_runs_only_the_requested_node() -> None:
     source = (ROOT / "Makefile").read_text(encoding="utf-8")
     block = _target_block(source, "test-specific-pyver")
 
+    assert "scripts/resource_arbiter.py root" in block
+    assert "UV_PROJECT_ENVIRONMENT" in block
+    assert "mktemp -d" in block
+    assert "trap" in block
     assert '$(UV) sync --python "$(PYTHON_VERSION)"' in block
     assert '$(UV) run --python "$(PYTHON_VERSION)" python -m pytest $(TESTFILE)' in block
     assert "-W error" in block
