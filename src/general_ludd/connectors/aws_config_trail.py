@@ -199,7 +199,12 @@ class AwsConfigTrailSource:
     KIND = "infra"
     name = "aws_config_trail"
 
-    def __init__(self, config: Mapping[str, object], *, aws_client: _Client | None = None) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, object],
+        *,
+        aws_client: object | None = None,
+    ) -> None:
         """Build the source from connector config; an injected client wins over the boto3 factory."""
         self._config: dict[str, object] = dict(config)
         region_raw = config.get("region")
@@ -224,7 +229,8 @@ class AwsConfigTrailSource:
 
                 self._client_factory = _tuple_factory
             else:
-                self._client_factory = lambda _service: aws_client
+                concrete_client = cast(_Client, aws_client)
+                self._client_factory = lambda _service: concrete_client
         elif "client_factory" in config:
             factory_val = config["client_factory"]
             self._client_factory = cast(ClientFactory, factory_val) if callable(factory_val) else None
