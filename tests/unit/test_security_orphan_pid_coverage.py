@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import signal
 import subprocess
 from os import PathLike
@@ -187,7 +188,7 @@ def test_executable_uid_and_start_time_fallbacks(
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: next(responses))
     monkeypatch.setattr("general_ludd.security.orphan_pid.sys.platform", "linux")
 
-    assert orphan._read_exe_for_pid(1234) == "/usr/bin/python"
+    assert orphan._read_exe_for_pid(1234) == os.path.realpath("/usr/bin/python")
     assert orphan._read_uid_for_pid(1234) == 501
     assert orphan._read_start_time_for_pid(1234) is not None
 
@@ -296,7 +297,7 @@ def test_macos_executable_fallback_uses_absolute_ps_command(
         ]
     )
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: next(responses))
-    assert orphan._read_exe_for_pid(1234) == "/usr/bin/python"
+    assert orphan._read_exe_for_pid(1234) == os.path.realpath("/usr/bin/python")
 
 
 def test_executable_and_child_fallbacks_tolerate_missing_tools(

@@ -60,6 +60,17 @@ namespaced resource root and remove it on success, failure, or interruption.
 This permits Python 3.11 reproduction alongside the canonical local producer
 without changing the producer's interpreter or attestation.
 
+The next exact-SHA hosted run, GitHub Actions run `33039982588`, passed 21 of
+23 executable jobs, including every platform package, controller EE, Molecule
+shard, provider E2E, game build, and core gate. Its two Python 3.11 failures
+closed two further observation leaks. Protected Linux `/proc/<pid>/cwd` entries
+may raise `PermissionError`; stale-owner discovery now treats that single
+read-only observation as unavailable and tries its bounded `lsof` fallback.
+Executable fallback tests now compare canonical real paths, so a hosted
+`/usr/bin/python` symlink resolving to `/usr/bin/python3.12` cannot make a
+platform-specific fixture fail while production continues to bind the exact
+executable identity.
+
 ## Upstream and practitioner evidence
 
 Reviewed 2026-08-27:
@@ -104,3 +115,8 @@ setup and helper implementation; no daemon or managed host changes. Replay
 environments and pytest basetemps share one namespaced owner and are deleted by a
 single trap, including cancellation. A failed cleanup remains visible through the
 target exit status rather than being hidden by a persistent shared environment.
+Protected procfs and symlink-canonicalization fixes are read-only: they never
+signal a process or remove a lock. If neither procfs nor `lsof` can prove the
+owner cwd, discovery returns no ownership observation and therefore preserves the
+candidate process. Rollback restores the earlier observer without changing any
+daemon, lock-file schema, collection artifact, or managed host.
