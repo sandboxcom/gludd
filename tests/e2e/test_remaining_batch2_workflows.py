@@ -473,50 +473,50 @@ class TestSSLCompliance:
 
 class TestSSLASN1:
     def test_import(self):
-        from general_ludd.ssl.asn1 import parse_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import parse_der
 
         assert parse_der is not None
 
     def test_parse_simple_integer(self):
-        from general_ludd.ssl.asn1 import parse_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import parse_der
 
         result = parse_der(b"\x02\x01\x2a")
         assert result["type"] == "INTEGER"
         assert result["value"] == 42
 
     def test_parse_null(self):
-        from general_ludd.ssl.asn1 import parse_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import parse_der
 
         result = parse_der(b"\x05\x00")
         assert result["type"] == "NULL"
 
     def test_parse_oid(self):
-        from general_ludd.ssl.asn1 import parse_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import parse_der
 
         result = parse_der(b"\x06\x08\x2b\x06\x01\x05\x05\x07\x03\x01")
         assert result["type"] == "OID"
         assert "1.3.6" in result["value"]
 
     def test_encode_integer(self):
-        from general_ludd.ssl.asn1 import encode_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import encode_der
 
         encoded = encode_der({"type": "INTEGER", "value": 42})
         assert encoded == b"\x02\x01\x2a"
 
     def test_encode_null(self):
-        from general_ludd.ssl.asn1 import encode_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import encode_der
 
         encoded = encode_der({"type": "NULL", "value": None})
         assert encoded == b"\x05\x00"
 
     def test_encode_boolean(self):
-        from general_ludd.ssl.asn1 import encode_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import encode_der
 
         encoded = encode_der({"type": "BOOLEAN", "value": True})
         assert encoded == b"\x01\x01\xff"
 
     def test_encode_sequence(self):
-        from general_ludd.ssl.asn1 import encode_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import encode_der
 
         encoded = encode_der(
             {
@@ -527,7 +527,7 @@ class TestSSLASN1:
         assert encoded[0] == 0x30
 
     def test_encode_roundtrip_simple(self):
-        from general_ludd.ssl.asn1 import encode_der, parse_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import encode_der, parse_der
 
         original = {"type": "SEQUENCE", "children": [{"type": "INTEGER", "value": 100}]}
         der = encode_der(original)
@@ -536,26 +536,26 @@ class TestSSLASN1:
         assert decoded["children"][0]["value"] == 100
 
     def test_lookup_known_oid(self):
-        from general_ludd.ssl.asn1 import lookup_oid
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import lookup_oid
 
         info = lookup_oid("2.5.4.3")
         assert info["name"] == "commonName"
 
     def test_lookup_unknown_oid(self):
-        from general_ludd.ssl.asn1 import lookup_oid
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import lookup_oid
 
         info = lookup_oid("1.2.3.4.5.999")
         assert info["name"] == "unknown"
 
     def test_generate_oid(self):
-        from general_ludd.ssl.asn1 import generate_oid
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import generate_oid
 
         oid = generate_oid("1.2.3", "test description")
         assert oid.startswith("1.2.3.")
         assert len(oid.split(".")) == 5
 
     def test_encode_oid(self):
-        from general_ludd.ssl.asn1 import encode_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import encode_der
 
         encoded = encode_der({"type": "OID", "value": "2.5.4.3"})
         decoded = bytes([0x06, encoded[1], *encoded[2:]])

@@ -1,4 +1,4 @@
-"""Pure-Python ASN.1 DER parser and encoder.
+"""Security-collection ASN.1 DER parser and encoder.
 
 Handles Tag-Length-Value (TLV) encoding per ITU-T X.690.
 Supports common ASN.1 types used in X.509 certificates and PKIX.

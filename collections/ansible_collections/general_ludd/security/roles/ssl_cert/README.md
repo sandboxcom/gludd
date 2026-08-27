@@ -104,6 +104,11 @@ ssl_cert_parse_asn1: true
 ssl_cert_asn1_file: /path/to/cert.der
 ```
 
+Managed-host inspection uses `openssl asn1parse`. Collection plugins that need
+deterministic DER encoding, parsing, or OID lookup import the collection-owned
+`ansible_collections.general_ludd.security.plugins.module_utils.asn1` utility.
+Gludd core intentionally carries no duplicate ASN.1 implementation.
+
 ## Key defaults
 
 | Variable | Default | Description |
