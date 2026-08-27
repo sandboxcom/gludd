@@ -1600,8 +1600,8 @@ separate explicit values. Structural tests pin the workflow, runner, and Make
 contracts so a future hosted lane cannot silently weaken one while keeping the
 other.
 
-The first five remediated groups cover 34 of the 78 exact hosted gaps. Their
-focused replays pass 326, 473, 951, 259, and 72 tests respectively. The measured
+The first six remediated groups cover 35 of the 78 exact hosted gaps. Their
+focused replays pass 326, 473, 951, 259, 72, and 100 tests respectively. The measured
 groups report between 92 and 97 percent aggregate line-and-branch coverage, with every
 production file independently above both 75 percent floors. Negative-path
 coverage includes connector transport failures, malformed response shapes,
@@ -1625,6 +1625,14 @@ payloads, health error bodies, osquery runner and JSON failures, and Azure
 Boards literal-host and transport failures. No monitoring binary, Azure client,
 credential, daemon, or cleanup process is created: every external boundary is
 injected, and invalid data remains observable before any remote write.
+
+The sixth group closes regex safety analysis at 93 percent coverage. The
+test-first regex case exposed that a quantified
+non-capturing group nested inside another quantified group was not recognized
+as dangerous. The analyzer now recursively inspects the bounded inner group;
+escaped quantifiers and disjoint alternatives remain safe. No regex execution
+timeout, warning suppression, or cleanup job was added. ASN.1 is intentionally
+excluded from this core slice pending its collection-ownership migration.
 
 This remains ZDD by candidate invalidation. No successful job prefix, retry, or
 partial local attestation can make the failed SHA releasable. No daemon,
