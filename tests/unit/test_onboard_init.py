@@ -39,6 +39,10 @@ PROVIDERS = ("aws", "gcp", "azure")
 
 
 class TestGetProviderReturnsRealImplementation:
+    def test_unknown_provider_fails_closed(self) -> None:
+        with pytest.raises(ValueError, match="Unknown onboard provider 'missing'"):
+            get_provider("missing")
+
     def test_aws_wraps_real_impl(self) -> None:
         # AWSOnboardProvider wraps (composition, not inheritance — see
         # onboard/__init__.py docstring) the real aws.AWSOnboardProvider.

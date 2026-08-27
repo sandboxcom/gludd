@@ -39,6 +39,7 @@ class PidRecord:
     lease_seconds: float
 
     def __post_init__(self) -> None:
+        """Validate the immutable process-ownership record."""
         if self.pid <= 0:
             raise PidRecordError(f"pid must be positive, got {self.pid}")
         if not self.boot_id:
@@ -51,6 +52,7 @@ class PidRecord:
             raise PidRecordError(f"lease_seconds must be non-negative, got {self.lease_seconds}")
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the ownership record for durable storage."""
         return {
             "pid": self.pid,
             "start_time": self.start_time,
@@ -62,6 +64,7 @@ class PidRecord:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PidRecord:
+        """Construct an ownership record from its durable representation."""
         return cls(**{k: data[k] for k in ["pid", "start_time", "boot_id", "executable", "owner_uid", "lease_seconds"]})
 
 
@@ -380,7 +383,7 @@ def _boot_time_epoch() -> float:
             parts = result.stdout.strip().split()
             for part in parts:
                 if part.startswith("sec="):
-                    return float(part.split("=", 1)[1])
+                    return float(part.split("=", 1)[1].rstrip(",}"))
     except (OSError, ImportError):
         pass
     return 0.0

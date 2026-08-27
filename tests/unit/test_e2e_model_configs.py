@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+from general_ludd.local_model._local_model_configs import (
+    LocalModelConfig,
+    get_e2e_models,
+)
 from tests.e2e._local_model_configs import (
     _MODELS,
     LOCAL_GGUF_MODELS,
@@ -18,6 +22,39 @@ from tests.e2e._local_model_configs import (
 
 
 class TestModelRegistry:
+    def test_runtime_registry_filter_and_quant_detection(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("E2E_LOCAL_MODEL", "qwen-0.5b")
+        assert [model.name for model in get_e2e_models()] == ["qwen-0.5b"]
+
+        detected = LocalModelConfig(
+            name="detected",
+            repo="owner/model",
+            filename="model-Q6_K.gguf",
+            quant_level="",
+        )
+        assert detected.huggingface_url == "https://huggingface.co/owner/model"
+        assert detected.quant_level == "Q6_K"
+
+        unmatched = LocalModelConfig(
+            name="unmatched",
+            repo="",
+            filename="model.gguf",
+            quant_level="",
+        )
+        assert unmatched.huggingface_url == ""
+        assert unmatched.quant_level == ""
+
+    def test_runtime_registry_returns_copy_without_filter(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("E2E_LOCAL_MODEL", raising=False)
+        first = get_e2e_models()
+        second = get_e2e_models()
+        assert first == second
+        assert first is not second
+
     def test_model_count_at_least_20(self) -> None:
         assert model_count() >= 20
 
