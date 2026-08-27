@@ -14,6 +14,7 @@ from unittest import mock
 
 import pytest
 
+import general_ludd.security.temp_cleanup as temp_cleanup
 from general_ludd.security.temp_cleanup import (
     TempRoot,
     TempRootError,
@@ -44,6 +45,19 @@ def _mode(path: Path) -> int:
 
 
 class TestTempRootCreate:
+    def test_default_parent_uses_verified_system_temp_root(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        with mock.patch(
+            "general_ludd.security.temp_cleanup.tempfile.gettempdir",
+            return_value=str(tmp_path),
+        ):
+            root = TempRoot.create(prefix="default-parent-")
+
+        assert root.root.parent == tmp_path
+        root.cleanup()
+
     def test_creates_0700_root(self, tmp_path: Path) -> None:
         root = TempRoot.create(prefix="test-", parent=tmp_path)
         assert root.root.is_dir()
@@ -93,6 +107,13 @@ class TestTempRootCreate:
 
 
 class TestSizeAgeBounding:
+    def test_invalid_manifest_age_is_bounded(self, tmp_path: Path) -> None:
+        root = TempRoot.create(prefix="invalid-manifest-", parent=tmp_path)
+        root.manifest_path.write_text("{")
+
+        root._check_age()
+        root.cleanup()
+
     def test_max_bytes_enforced(self, tmp_path: Path) -> None:
         root = TempRoot.create(prefix="test-", parent=tmp_path, max_bytes=64)
         _touch(root.root / "work" / "a", "x" * 65)
@@ -104,6 +125,21 @@ class TestSizeAgeBounding:
             root = TempRoot.create(prefix="test-", parent=tmp_path, max_age_seconds=0.1)
         with mock.patch("general_ludd.security.temp_cleanup.time.time", return_value=1_000.11):
             assert is_temp_root_expired(root, max_age_seconds=0.1)
+
+    def test_check_bounds_rejects_expired_root(self, tmp_path: Path) -> None:
+        with mock.patch(
+            "general_ludd.security.temp_cleanup.time.time", return_value=1_000.0
+        ):
+            root = TempRoot.create(
+                prefix="expired-", parent=tmp_path, max_age_seconds=0.1
+            )
+        with (
+            mock.patch(
+                "general_ludd.security.temp_cleanup.time.time", return_value=1_001.0
+            ),
+            pytest.raises(TempRootError, match="exceeded max age"),
+        ):
+            root.check_bounds()
 
     def test_fresh_root_not_expired(self, tmp_path: Path) -> None:
         root = TempRoot.create(prefix="test-", parent=tmp_path, max_age_seconds=3600)
@@ -166,6 +202,15 @@ class TestScopedCleanup:
         assert fresh.root.exists()
         fresh.cleanup()
 
+    def test_cleanup_all_ignores_directory_without_manifest(
+        self, tmp_path: Path
+    ) -> None:
+        unowned = tmp_path / "unowned"
+        unowned.mkdir()
+
+        assert cleanup_all_temp_roots(manifest_root=tmp_path) == []
+        assert unowned.exists()
+
 
 # ---------------------------------------------------------------------------
 # Registration / global tracking
@@ -203,12 +248,32 @@ class TestSignalCleanup:
         TempRoot.install_signal_handlers()
         assert signal.getsignal(signal.SIGTERM) is TempRoot._signal_cleanup
 
+    def test_signal_handler_registration_failure_is_bounded(self) -> None:
+        temp_cleanup._signal_handlers_installed = False
+        with mock.patch(
+            "general_ludd.security.temp_cleanup.signal.signal",
+            side_effect=OSError("signal unavailable"),
+        ):
+            TempRoot.install_signal_handlers()
+
+        assert temp_cleanup._signal_handlers_installed is True
+
     def test_signal_cleanup_removes_registered_roots(self, tmp_path: Path) -> None:
         root = TempRoot.create(prefix="test-", parent=tmp_path)
         register_temp_root(root)
         with mock.patch("os.kill"):
             TempRoot._signal_cleanup(signal.SIGTERM, None)
         assert not root.root.exists()
+
+    def test_atexit_cleanup_drains_registry_after_cleanup_failure(self) -> None:
+        failed_root = mock.MagicMock()
+        failed_root.cleanup.side_effect = RuntimeError("cleanup failed")
+        temp_cleanup._registry["failed"] = failed_root
+
+        TempRoot._atexit_cleanup()
+
+        failed_root.cleanup.assert_called_once_with()
+        assert temp_cleanup._registry == {}
 
 
 # ---------------------------------------------------------------------------
