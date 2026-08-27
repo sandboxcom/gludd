@@ -1,4 +1,3 @@
 pycryptodome>=3.20.0
 shamir>=17.12.0
 srptools>=1.0.0
-

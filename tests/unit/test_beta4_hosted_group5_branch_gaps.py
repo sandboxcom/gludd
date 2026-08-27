@@ -27,6 +27,8 @@ from general_ludd.issue_sources.redmine import RedmineIssueSource, _host_is_inte
 from general_ludd.pipeline.daemon_adapters import make_disk_ok, make_dispatch_fn, make_merge_fn
 from general_ludd.pipeline.state import CompletedUnit
 
+REDMINE_ENV_NAME = "REDMINE_KEY"
+
 
 class _SearchResponse:
     def __init__(self, payload: object, *, fail: bool = False) -> None:
@@ -158,7 +160,7 @@ class TestRedmineHostedBranches:
             RedmineIssueSource({}, transport=_redmine_transport)
         with pytest.raises(ValueError, match="http"):
             RedmineIssueSource(
-                {"base_url": "ftp://redmine.example.com", "api_key_env": "REDMINE_KEY"},
+                {"base_url": "ftp://redmine.example.com", "api_key_env": REDMINE_ENV_NAME},
                 transport=_redmine_transport,
             )
 
@@ -166,7 +168,7 @@ class TestRedmineHostedBranches:
         source = RedmineIssueSource(
             {
                 "base_url": "https://redmine.example.com",
-                "api_key_env": "REDMINE_KEY",
+                "api_key_env": REDMINE_ENV_NAME,
                 "timeout": object(),
                 "status_map": {"Done": True, "Closed": "9"},
             },
@@ -179,7 +181,7 @@ class TestRedmineHostedBranches:
 
     def test_normalization_and_payload_narrowing_are_total(self) -> None:
         source = RedmineIssueSource(
-            {"base_url": "https://redmine.example.com", "api_key_env": "REDMINE_KEY"},
+            {"base_url": "https://redmine.example.com", "api_key_env": REDMINE_ENV_NAME},
             transport=_redmine_transport,
         )
         assert source._name_of("status") is None

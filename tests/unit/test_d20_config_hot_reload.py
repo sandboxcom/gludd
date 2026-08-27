@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from pathlib import Path
 
 import pytest
 
@@ -18,12 +18,16 @@ from general_ludd.security.config_compiler import (
     compile_config,
 )
 
+
+def _assert_generation_state(generation: ConfigGeneration, expected: ConfigGenerationState) -> None:
+    assert generation.state == expected
+
 # ── ConfigCompiler ──
 
 
 class TestConfigCompiler:
     def test_compile_valid_config(self) -> None:
-        result = compile_config(
+        result = ConfigCompiler().compile(
             {
                 "security": {
                     "schema_version": 1,
@@ -91,13 +95,13 @@ class TestConfigGenerationStateMachine:
     def test_generation_full_lifecycle(self) -> None:
         compiled = compile_config({"security": {"posture": "standard"}})
         gen = ConfigGeneration(compiled=compiled)
-        assert gen.state == ConfigGenerationState.DRAFT
+        _assert_generation_state(gen, ConfigGenerationState.DRAFT)
         gen.compile_canaries(success=True)
-        assert gen.state == ConfigGenerationState.COMPILED
+        _assert_generation_state(gen, ConfigGenerationState.COMPILED)
         gen.shadow_evaluate(success=True)
-        assert gen.state == ConfigGenerationState.SHADOW
+        _assert_generation_state(gen, ConfigGenerationState.SHADOW)
         gen.activate()
-        assert gen.state == ConfigGenerationState.ACTIVE
+        _assert_generation_state(gen, ConfigGenerationState.ACTIVE)
 
     def test_generation_shadow_failure_goes_rejected(self) -> None:
         compiled = compile_config({"security": {"posture": "standard"}})
@@ -206,13 +210,15 @@ class TestShadowEvaluation:
 
 
 class TestConfigCompilerFromFile:
-    def test_compile_from_dict_without_secrets(self, tmp_path: Any) -> None:
-        config = {"security": {"schema_version": 1, "posture": "standard"}}
+    def test_compile_from_dict_without_secrets(self, tmp_path: Path) -> None:
+        config: dict[str, object] = {"security": {"schema_version": 1, "posture": "standard"}}
         result = compile_config(config)
         assert result.posture == "standard"
         assert "GLUDD_AUTH_PSK" not in json.dumps(result.metadata())
 
     def test_compile_truncates_long_names(self) -> None:
-        config = {"security": {"schema_version": 1, "posture": "standard", "profile": "unt" + "r" * 500}}
+        config: dict[str, object] = {
+            "security": {"schema_version": 1, "posture": "standard", "profile": "unt" + "r" * 500}
+        }
         with pytest.raises(ConfigCompilerError):
             compile_config(config)
