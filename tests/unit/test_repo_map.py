@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import tempfile
+from typing import cast
+
+import pytest
 
 from general_ludd.planning.repo_map import CodeSymbol, RepoMap, RepoMapBuilder
 
@@ -44,6 +47,30 @@ class TestCodeSymbol:
                 line_end=1,
             )
             assert sym.kind == kind
+
+    @pytest.mark.parametrize(
+        "overrides",
+        (
+            {"name": "   "},
+            {"file_path": ""},
+            {"line_start": -1},
+            {"line_start": 4, "line_end": 3},
+        ),
+    )
+    def test_rejects_invalid_symbol_boundaries(self, overrides):
+        values = {
+            "name": "valid",
+            "kind": "function",
+            "file_path": "valid.py",
+            "line_start": 0,
+            "line_end": 0,
+        }
+        values.update(overrides)
+        with pytest.raises(ValueError):
+            CodeSymbol(**values)
+
+    def test_strip_validator_leaves_non_string_for_pydantic_type_rejection(self):
+        assert CodeSymbol._strip_and_require(cast(str, 7)) == 7
 
 
 class TestRepoMap:
@@ -222,6 +249,24 @@ class TestRepoMapBuilderParseFile:
         assert len(fn) == 1
         assert fn[0].kind == "function"
 
+    def test_parse_decorated_method_and_nested_statements(self):
+        builder = RepoMapBuilder(language="python")
+        code = (
+            "class Service:\n"
+            "    @staticmethod\n"
+            "    def run():\n"
+            "        return 1\n"
+            "\n"
+            "if True:\n"
+            "    def nested():\n"
+            "        return 2\n"
+        )
+
+        symbols = builder.parse_file("nested.py", code)
+
+        assert any(symbol.name == "run" and symbol.parent == "Service" for symbol in symbols)
+        assert any(symbol.name == "nested" and symbol.kind == "function" for symbol in symbols)
+
     def test_parse_imports(self):
         builder = RepoMapBuilder(language="python")
         code = "import os\nfrom sys import path\n"
@@ -285,6 +330,20 @@ class TestRepoMapBuilderRankSymbols:
         ranked = builder._rank_symbols(symbols, n=2)
         kinds = [s.kind for s in ranked]
         assert "class" in kinds
+
+    def test_rank_uses_frequency_span_and_unknown_kind_fallback(self):
+        builder = RepoMapBuilder(language="python")
+        symbols = [
+            CodeSymbol(name="same", kind="function", file_path="a.py", line_start=1, line_end=2),
+            CodeSymbol(name="same", kind="function", file_path="b.py", line_start=1, line_end=8),
+            CodeSymbol(name="other", kind="function", file_path="c.py", line_start=1, line_end=20),
+            CodeSymbol(name="mystery", kind="unknown", file_path="d.py", line_start=1, line_end=30),
+        ]
+
+        ranked = builder._rank_symbols(symbols, n=4)
+
+        assert [symbol.name for symbol in ranked[:2]] == ["same", "same"]
+        assert ranked[-1].kind == "unknown"
 
 
 class TestRepoMapBuilderDirectory:
