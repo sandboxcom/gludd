@@ -1600,9 +1600,9 @@ separate explicit values. Structural tests pin the workflow, runner, and Make
 contracts so a future hosted lane cannot silently weaken one while keeping the
 other.
 
-The first four remediated groups cover 31 of the 78 exact hosted gaps. Their
-focused replays pass 326, 473, 951, and 259 tests respectively. The measured
-groups report between 92 and 95 percent aggregate line-and-branch coverage, with every
+The first five remediated groups cover 34 of the 78 exact hosted gaps. Their
+focused replays pass 326, 473, 951, 259, and 72 tests respectively. The measured
+groups report between 92 and 97 percent aggregate line-and-branch coverage, with every
 production file independently above both 75 percent floors. Negative-path
 coverage includes connector transport failures, malformed response shapes,
 secret absence, SSRF rejection, timestamp coercion, empty query bounds, and
@@ -1617,6 +1617,14 @@ microseconds and milliseconds were classified with thresholds too large for
 contemporary Unix timestamps and could raise an out-of-range year error. The
 owner now applies the documented microsecond/millisecond magnitude boundaries;
 ISO and seconds behavior is unchanged.
+
+The fifth group closes the Nagios, osquery, and Azure Boards hosted gaps at 97
+percent aggregate coverage. It exercises the real default Nagios HTTP adapter
+through an injected `httpx` client, total state coercion, malformed service
+payloads, health error bodies, osquery runner and JSON failures, and Azure
+Boards literal-host and transport failures. No monitoring binary, Azure client,
+credential, daemon, or cleanup process is created: every external boundary is
+injected, and invalid data remains observable before any remote write.
 
 This remains ZDD by candidate invalidation. No successful job prefix, retry, or
 partial local attestation can make the failed SHA releasable. No daemon,
