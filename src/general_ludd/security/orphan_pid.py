@@ -75,6 +75,21 @@ class PidRecord:
 _BOOT_ID_CACHE: str | None = None
 
 
+def _path_exists(path: Path) -> bool:
+    """Observe path existence without requiring tests to patch ``Path`` globally."""
+    return path.exists()
+
+
+def _path_read_text(path: Path) -> str:
+    """Read an ownership path through a module-local observation seam."""
+    return path.read_text()
+
+
+def _stat_uid(path: str) -> int:
+    """Read a path owner without requiring tests to patch process-global ``os``."""
+    return os.stat(path).st_uid
+
+
 def compute_boot_id() -> str:
     """Return a stable identifier for the current system boot.
 
@@ -86,9 +101,9 @@ def compute_boot_id() -> str:
         return _BOOT_ID_CACHE
 
     boot_id_path = Path("/proc/sys/kernel/random/boot_id")
-    if boot_id_path.exists():
+    if _path_exists(boot_id_path):
         try:
-            _BOOT_ID_CACHE = boot_id_path.read_text().strip()
+            _BOOT_ID_CACHE = _path_read_text(boot_id_path).strip()
             return _BOOT_ID_CACHE
         except OSError:
             pass
@@ -235,7 +250,7 @@ def _read_boot_for_pid(pid: int) -> str:
 
 def _read_exe_for_pid(pid: int) -> str:
     proc_exe = Path(f"/proc/{pid}/exe")
-    if proc_exe.exists():
+    if _path_exists(proc_exe):
         return str(proc_exe.resolve())
 
     if sys.platform == "darwin":
@@ -292,8 +307,8 @@ def _read_exe_for_pid(pid: int) -> str:
 
 def _read_uid_for_pid(pid: int) -> int:
     proc_status = Path(f"/proc/{pid}/status")
-    if proc_status.exists():
-        text = proc_status.read_text()
+    if _path_exists(proc_status):
+        text = _path_read_text(proc_status)
         for line in text.splitlines():
             if line.startswith("Uid:"):
                 parts = line.split()
@@ -315,8 +330,7 @@ def _read_uid_for_pid(pid: int) -> int:
         pass
 
     try:
-        st = os.stat(f"/proc/{pid}")
-        return st.st_uid
+        return _stat_uid(f"/proc/{pid}")
     except OSError:
         pass
     return -1
@@ -324,9 +338,9 @@ def _read_uid_for_pid(pid: int) -> int:
 
 def _read_start_time_for_pid(pid: int) -> float | None:
     proc_stat = Path(f"/proc/{pid}/stat")
-    if proc_stat.exists():
+    if _path_exists(proc_stat):
         try:
-            text = proc_stat.read_text()
+            text = _path_read_text(proc_stat)
             fields = text.split()
             if len(fields) >= 22:
                 starttime_ticks = int(fields[21])
@@ -363,9 +377,9 @@ def _ticks_to_epoch(ticks: int) -> float:
 
 def _boot_time_epoch() -> float:
     proc_uptime = Path("/proc/uptime")
-    if proc_uptime.exists():
+    if _path_exists(proc_uptime):
         try:
-            uptime_str = proc_uptime.read_text().split()[0]
+            uptime_str = _path_read_text(proc_uptime).split()[0]
             uptime = float(uptime_str)
             return time.time() - uptime
         except (OSError, ValueError, IndexError):
@@ -400,10 +414,10 @@ def _send_signal_tree(pid: int, sig: int) -> None:
 
 def _child_pids(pid: int) -> list[int]:
     proc = Path("/proc")
-    if proc.exists():
+    if _path_exists(proc):
         children: list[int] = []
         stat_path = Path(f"/proc/{pid}/stat")
-        if not stat_path.exists():
+        if not _path_exists(stat_path):
             return children
         for entry in proc.iterdir():
             if not entry.is_dir():
@@ -412,7 +426,7 @@ def _child_pids(pid: int) -> list[int]:
                 continue
             child_stat = entry / "stat"
             try:
-                text = child_stat.read_text()
+                text = _path_read_text(child_stat)
                 fields = text.split()
                 if len(fields) >= 4 and int(fields[3]) == pid:
                     children.append(int(entry.name))

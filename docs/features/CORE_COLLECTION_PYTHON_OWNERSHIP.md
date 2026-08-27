@@ -41,6 +41,25 @@ PyWavelets, PyCryptodome, Shamir, or srptools. The development dependency group
 retains them solely to execute collection tests, and the game E2E extra declares
 its own NumPy requirement.
 
+## Hosted and local parity
+
+The first exact-SHA hosted run, GitHub Actions run `33036151138`, found two
+environment-specific boundaries that focused local tests did not expose. The
+Linux E2E shard did not have the source checkout's `collections/` directory on
+its Python namespace, and the Python 3.11 unit shard exposed tests that patched
+process-global `Path.exists` and `os.stat` while xdist was using those same
+objects. E2E setup now mirrors the Galaxy package root only for source tests;
+production retains FQCN imports with no core fallback. PID observation uses
+module-local path and ownership seams, so a test cannot corrupt pytest's process
+or filesystem observations.
+
+The explicit-Python replay target also previously replaced the checkout's shared
+`.venv`. The dual-track runner correctly detected the interpreter drift and
+failed closed. Replays now create `UV_PROJECT_ENVIRONMENT` beneath Gludd's
+namespaced resource root and remove it on success, failure, or interruption.
+This permits Python 3.11 reproduction alongside the canonical local producer
+without changing the producer's interpreter or attestation.
+
 ## Upstream and practitioner evidence
 
 Reviewed 2026-08-27:
@@ -77,3 +96,11 @@ together; there is no data migration. ASN.1 parsing and the migrated adapters ar
 read-only except for caller-owned output values and artifacts. They open no network
 connection, subprocess, thread, task, or persistent file handle, so teardown has
 no hidden resource owner.
+
+The hosted-parity follow-up is also zero-downtime: collection namespace setup is
+test-only, PID observation behavior is unchanged outside its local wrappers, and
+the replay virtual environment is ephemeral. Rollback restores the previous test
+setup and helper implementation; no daemon or managed host changes. Replay
+environments and pytest basetemps share one namespaced owner and are deleted by a
+single trap, including cancellation. A failed cleanup remains visible through the
+target exit status rather than being hidden by a persistent shared environment.

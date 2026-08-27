@@ -134,13 +134,17 @@ def test_compute_boot_id_linux_sysctl_and_fallback_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(orphan, "_BOOT_ID_CACHE", None)
-    monkeypatch.setattr(Path, "exists", lambda self: str(self).endswith("boot_id"))
-    monkeypatch.setattr(Path, "read_text", lambda self: " linux-boot \n")
+    monkeypatch.setattr(orphan, "_path_exists", lambda path: str(path).endswith("boot_id"))
+    monkeypatch.setattr(orphan, "_path_read_text", lambda _path: " linux-boot \n")
     assert orphan.compute_boot_id() == "linux-boot"
     assert orphan.compute_boot_id() == "linux-boot"
 
     monkeypatch.setattr(orphan, "_BOOT_ID_CACHE", None)
-    monkeypatch.setattr(Path, "read_text", lambda self: (_ for _ in ()).throw(OSError("denied")))
+    monkeypatch.setattr(
+        orphan,
+        "_path_read_text",
+        lambda _path: (_ for _ in ()).throw(OSError("denied")),
+    )
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -150,7 +154,7 @@ def test_compute_boot_id_linux_sysctl_and_fallback_paths(
     assert orphan.compute_boot_id() == "sysctl-boot"
 
     monkeypatch.setattr(orphan, "_BOOT_ID_CACHE", None)
-    monkeypatch.setattr(Path, "exists", lambda self: False)
+    monkeypatch.setattr(orphan, "_path_exists", lambda _path: False)
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -159,11 +163,20 @@ def test_compute_boot_id_linux_sysctl_and_fallback_paths(
     )
     assert orphan.compute_boot_id().startswith("fallback-")
 
+    monkeypatch.setattr(orphan, "_BOOT_ID_CACHE", None)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout=""),
+        raising=False,
+    )
+    assert orphan.compute_boot_id().startswith("fallback-")
+
 
 def test_executable_uid_and_start_time_fallbacks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(Path, "exists", lambda self: False)
+    monkeypatch.setattr(orphan, "_path_exists", lambda _path: False)
     responses = iter(
         [
             SimpleNamespace(returncode=0, stdout="n/usr/bin/python\n"),
@@ -182,7 +195,7 @@ def test_executable_uid_and_start_time_fallbacks(
 def test_uid_and_start_time_fail_closed_without_observation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(Path, "exists", lambda self: False)
+    monkeypatch.setattr(orphan, "_path_exists", lambda _path: False)
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -190,10 +203,28 @@ def test_uid_and_start_time_fail_closed_without_observation(
         raising=False,
     )
     monkeypatch.setattr(
-        "general_ludd.security.orphan_pid.os.stat",
+        orphan,
+        "_stat_uid",
         lambda _path: (_ for _ in ()).throw(OSError("gone")),
     )
     assert orphan._read_uid_for_pid(1234) == -1
+    assert orphan._read_start_time_for_pid(1234) is None
+
+
+def test_start_time_rejects_malformed_ps_observation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successful command with an unparseable timestamp remains fail closed."""
+    monkeypatch.setattr(orphan, "_path_exists", lambda _path: False)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="not-a-process-start-time\n",
+        ),
+    )
+
     assert orphan._read_start_time_for_pid(1234) is None
 
 
@@ -234,7 +265,7 @@ def test_proc_introspection_and_signal_tree(
 def test_boot_epoch_and_child_process_fallbacks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(Path, "exists", lambda self: False)
+    monkeypatch.setattr(orphan, "_path_exists", lambda _path: False)
     responses = iter(
         [
             SimpleNamespace(returncode=0, stdout="{ sec=1234, usec=0 }\n"),
@@ -255,7 +286,7 @@ def test_boot_epoch_and_child_process_fallbacks(
 def test_macos_executable_fallback_uses_absolute_ps_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(Path, "exists", lambda self: False)
+    monkeypatch.setattr(orphan, "_path_exists", lambda _path: False)
     monkeypatch.setattr("general_ludd.security.orphan_pid.sys.platform", "darwin")
     monkeypatch.setattr("ctypes.util.find_library", lambda _name: None)
     responses = iter(
@@ -271,7 +302,7 @@ def test_macos_executable_fallback_uses_absolute_ps_command(
 def test_executable_and_child_fallbacks_tolerate_missing_tools(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(Path, "exists", lambda self: False)
+    monkeypatch.setattr(orphan, "_path_exists", lambda _path: False)
     monkeypatch.setattr("general_ludd.security.orphan_pid.sys.platform", "linux")
     monkeypatch.setattr(
         subprocess,
@@ -311,7 +342,7 @@ def test_boot_time_prefers_linux_uptime_and_handles_malformed_values(
 def test_lsof_skips_non_paths_until_absolute_executable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(Path, "exists", lambda self: False)
+    monkeypatch.setattr(orphan, "_path_exists", lambda _path: False)
     monkeypatch.setattr("general_ludd.security.orphan_pid.sys.platform", "linux")
     monkeypatch.setattr(
         subprocess,
@@ -335,7 +366,7 @@ def test_macos_ps_rejects_unbound_executable_observations(
     monkeypatch: pytest.MonkeyPatch,
     ps_result: SimpleNamespace,
 ) -> None:
-    monkeypatch.setattr(Path, "exists", lambda self: False)
+    monkeypatch.setattr(orphan, "_path_exists", lambda _path: False)
     monkeypatch.setattr("general_ludd.security.orphan_pid.sys.platform", "darwin")
     monkeypatch.setattr("ctypes.util.find_library", lambda _name: None)
     responses = iter((SimpleNamespace(returncode=1, stdout=""), ps_result))
@@ -367,9 +398,6 @@ def test_proc_readers_skip_malformed_rows_before_fallback(
         "run",
         lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout=""),
     )
-    monkeypatch.setattr(
-        "general_ludd.security.orphan_pid.os.stat",
-        lambda _path: SimpleNamespace(st_uid=808),
-    )
+    monkeypatch.setattr(orphan, "_stat_uid", lambda _path: 808)
     assert orphan._read_uid_for_pid(1234) == 808
     assert orphan._read_start_time_for_pid(1234) is None
