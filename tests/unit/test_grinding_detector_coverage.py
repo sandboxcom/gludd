@@ -131,4 +131,3 @@ def test_report_write_failure_preserves_in_memory_evidence(
     report = instance.generate_remediation_report()
     assert report["grinding_episodes"] == []
     assert "Failed to write grinding report" in caplog.text
-
