@@ -1579,3 +1579,49 @@ warning suppression, or coverage exclusion is added.
   opened 2023-09-02 and reviewed 2026-08-26, preserves practitioner evidence
   that subprocess execution and coverage instrumentation have materially
   different behavior from the parent test process.
+
+### Exact hosted floor enforcement and connector branches
+
+Candidate `b8132738e65d8806215ba242e0245747d8836dd1` and hosted run
+`33025997411` passed all 23 execution jobs, then the terminal coverage job
+`98377370114` rejected 78 production files below the required per-file line or
+branch floor. The release job remained skipped. The paired local producer had
+passed shards 1 through 4 and unit-2 through batch 38, including the prior
+hosted-only timeout boundary, when the hosted terminal failure invalidated the
+SHA. Its owner received the interrupt, returned status 130, reaped its worker,
+and removed its namespaced temporary resources before remediation began.
+
+That run also exposed a policy-wiring defect. The workflow enforced 75 percent
+as both the aggregate and per-file threshold even though the project contract
+requires 85 percent aggregate and 75 percent for each file. The canonical
+runner and `coverage-files` target could reproduce the same weaker aggregate
+floor. All three producers now pass the aggregate and per-file thresholds as
+separate explicit values. Structural tests pin the workflow, runner, and Make
+contracts so a future hosted lane cannot silently weaken one while keeping the
+other.
+
+The first two remediated groups cover 26 of the 78 exact hosted gaps. Their
+focused replays pass 326, 473, and 951 tests respectively. The measured groups
+report 93 and 95 percent aggregate line-and-branch coverage, with every
+production file independently above both 75 percent floors. Negative-path
+coverage includes connector transport failures, malformed response shapes,
+secret absence, SSRF rejection, timestamp coercion, empty query bounds, and
+normalization fallbacks. One test-first case found a real Opsgenie defect: epoch
+microseconds and milliseconds were classified with thresholds too large for
+contemporary Unix timestamps and could raise an out-of-range year error. The
+owner now applies the documented microsecond/millisecond magnitude boundaries;
+ISO and seconds behavior is unchanged.
+
+This remains ZDD by candidate invalidation. No successful job prefix, retry, or
+partial local attestation can make the failed SHA releasable. No daemon,
+connector service, model process, or cleanup job is added by these tests; all
+transports are injected and pytest owns the temporary coverage artifacts.
+Rollback is split between the isolated policy commit and focused coverage
+commits, while the untagged candidate remains unavailable to publication or
+deployment until a replacement exact SHA passes both lanes.
+
+The governing mature-tool and practitioner evidence remains the coverage.py
+branch documentation and change history plus pytest-cov issues 578 and 608
+linked in the canonical import section above. Those reports document the
+long-lived subprocess and import-identity differences that make terminal hosted
+coverage evidence necessary even after an extensive local pass.
