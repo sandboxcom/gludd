@@ -71,6 +71,17 @@ Executable fallback tests now compare canonical real paths, so a hosted
 platform-specific fixture fail while production continues to bind the exact
 executable identity.
 
+Exact-SHA run `33043838717` then passed 22 of 23 executable jobs and isolated
+one Python 3.11 ordered-test failure in the self-update rollback boundary. The
+old rollback implementation called `importlib.reload()` on the snapshotted
+module. Reload reused the module object but re-executed its namespace, creating
+new dataclass identities; an endpoint could consequently produce a
+`SelfUpdateRequest` that had the same qualified name and fields as the request
+type held by a pre-reload consumer but failed `isinstance`. Rollback now captures
+and restores the original shallow namespace, rebinds the parent package, and
+keeps the `ModuleSnapshot` record in a stable type module. The exact hosted order
+and an end-to-end source rollback both prove the pre-reload identities survive.
+
 ## Upstream and practitioner evidence
 
 Reviewed 2026-08-27:
@@ -91,6 +102,15 @@ Reviewed 2026-08-27:
   [ansible/ansible-builder#364](https://github.com/ansible/ansible-builder/issues/364).
   Gludd therefore validates requirements and the resulting runtime in focused
   tests rather than trusting image assembly alone.
+- [Python's import reference](https://docs.python.org/3/reference/import.html)
+  documents that `importlib.reload()` reuses a module object and reinitializes
+  its contents by executing the module again; that behavior explains why a
+  module-object-only snapshot cannot preserve class identity.
+- CPython maintainers warn that reload is not fully reliable when consumers use
+  `from module import name` in the
+  [programming FAQ](https://docs.python.org/3/faq/programming.html#when-i-edit-an-imported-module-and-reimport-it-the-changes-don-t-show-up).
+  The stable type module and namespace restoration avoid requiring every live
+  consumer to rebind imported class names atomically.
 
 ## Zero-downtime deployment, rollback, and resources
 
@@ -120,3 +140,13 @@ signal a process or remove a lock. If neither procfs nor `lsof` can prove the
 owner cwd, discovery returns no ownership observation and therefore preserves the
 candidate process. Rollback restores the earlier observer without changing any
 daemon, lock-file schema, collection artifact, or managed host.
+
+The module-rollback repair is also ZDD: it changes only in-process recovery after
+a failed hot reload and needs no daemon restart, schema migration, or managed-host
+change. A successful forward reload is unchanged. If rollback is requested, the
+owner reinstalls the captured module object and namespace under the same lock,
+rebinds the parent package, and returns only after all requested modules are
+visible in `sys.modules`. Rollback of this repair is the prior core wheel; no
+persistent state is written. The snapshot owns shallow Python references only—no
+process, task, client, descriptor, socket, or temporary artifact—and releases
+them when the snapshot becomes unreachable.
