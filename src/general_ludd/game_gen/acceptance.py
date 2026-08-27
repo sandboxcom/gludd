@@ -29,20 +29,15 @@ from __future__ import annotations
 
 import argparse
 import ast
-import io
 import json
 import os
-import signal
 import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable
-from contextlib import redirect_stderr, redirect_stdout, suppress
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import FrameType
-from typing import NoReturn, cast
 
 DEFAULT_MODULE_NAME = "generated_game"
 DEFAULT_TIMEOUT_SECONDS = 5.0
@@ -150,44 +145,52 @@ def _run(source: str, module_name: str) -> dict[str, object]:
     except BaseException as exc:
         verdict["failure"] = f"instantiation raised {type(exc).__name__}: {exc}"
         return verdict
-    try:
-        instance.start()
-    except BaseException as exc:
-        verdict["failure"] = f"start() raised {type(exc).__name__}: {exc}"
+
+    def _call(method_name: str, *args: object) -> tuple[object | None, str | None]:
+        try:
+            method = getattr(instance, method_name)
+        except AttributeError:
+            return None, f"{method_name}() missing at runtime"
+        try:
+            return method(*args), None
+        except BaseException as exc:
+            return None, f"{method_name}() raised {type(exc).__name__}: {exc}"
+
+    _, failure = _call("start")
+    if failure is not None:
+        verdict["failure"] = failure
         return verdict
-    try:
-        score_value = instance.score()
-    except BaseException as exc:
-        verdict["failure"] = f"score() raised {type(exc).__name__}: {exc}"
+
+    score_value, failure = _call("score")
+    if failure is not None:
+        verdict["failure"] = failure
         return verdict
     if not isinstance(score_value, int) or isinstance(score_value, bool):
         verdict["failure"] = f"score() returned {type(score_value).__name__}, expected int"
         return verdict
-    try:
-        over_value = instance.is_game_over()
-    except BaseException as exc:
-        verdict["failure"] = f"is_game_over() raised {type(exc).__name__}: {exc}"
+
+    over_value, failure = _call("is_game_over")
+    if failure is not None:
+        verdict["failure"] = failure
         return verdict
     if not isinstance(over_value, bool):
         verdict["failure"] = f"is_game_over() returned {type(over_value).__name__}, expected bool"
         return verdict
     for _ in range(MAX_TICKS):
-        try:
-            over_value = instance.is_game_over()
-        except BaseException as exc:
-            verdict["failure"] = f"is_game_over() raised {type(exc).__name__}: {exc}"
+        over_value, failure = _call("is_game_over")
+        if failure is not None:
+            verdict["failure"] = failure
             return verdict
         if over_value is True:
             break
-        try:
-            instance.tick("right")
-        except BaseException as exc:
-            verdict["failure"] = f"tick() raised {type(exc).__name__}: {exc}"
+        _, failure = _call("tick", "right")
+        if failure is not None:
+            verdict["failure"] = failure
             return verdict
-    try:
-        instance.restart()
-    except BaseException as exc:
-        verdict["failure"] = f"restart() raised {type(exc).__name__}: {exc}"
+
+    _, failure = _call("restart")
+    if failure is not None:
+        verdict["failure"] = failure
         return verdict
     verdict["output"] = stdout.getvalue() + stderr.getvalue()
     return verdict
@@ -218,7 +221,7 @@ if __name__ == "__main__":
 
 
 class RuntimeBudgetExceeded(TimeoutError):
-    """Raised when generated code exceeds its hard runtime budget."""
+    """Compatibility error type for callers classifying budget failures."""
 
 
 @dataclass
@@ -281,164 +284,6 @@ def _class_contract(tree: ast.Module) -> tuple[str | None, str]:
     return game.name, ""
 
 
-def _output_snippet(stdout: io.StringIO, stderr: io.StringIO) -> str:
-    return stdout.getvalue() + stderr.getvalue()
-
-
-def _fs_snapshot(root: Path) -> dict[str, tuple[float, int]]:
-    """Return {relative path: (mtime, size)} for the CWD tree.
-
-    The acceptance probe rejects any change the generated module makes to
-    this snapshot — games must not touch the filesystem at import time.
-    """
-    snapshot: dict[str, tuple[float, int]] = {}
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in {".git", "__pycache__", ".venv"}]
-        for name in filenames:
-            path = Path(dirpath) / name
-            try:
-                stat = path.stat()
-                snapshot[str(path.relative_to(root))] = (stat.st_mtime, stat.st_size)
-            except OSError:
-                continue
-    return snapshot
-
-
-def _cleanup_new_files(root: Path, before: dict[str, tuple[float, int]]) -> None:
-    """Remove files the generated module created during import."""
-    after = _fs_snapshot(root)
-    for rel in set(after) - set(before):
-        with suppress(OSError):
-            (root / rel).unlink()
-
-
-def _runtime_probe(
-    source: str,
-    module_name: str,
-    timeout: float,
-) -> tuple[str | None, str | None, str]:
-    """Execute the module and exercise its game class under a hard budget.
-
-    Returns ``(failure_reason, game_class_name, output_snippet)``. A
-    non-None failure reason means the code must be rejected.
-    """
-    namespace: dict[str, object] = {"__name__": module_name, "__builtins__": __builtins__}
-    stdout = io.StringIO()
-    stderr = io.StringIO()
-    current_phase: list[str] = [f"module import ({module_name})"]
-
-    def _alarm_handler(_signum: int, _frame: FrameType | None) -> NoReturn:
-        raise RuntimeBudgetExceeded(f"{current_phase[0]} exceeded the {timeout:g}s runtime budget")
-
-    previous_handler = signal.signal(signal.SIGALRM, _alarm_handler)
-    timer_armed = False
-    previous_timer: tuple[float, float] = (0.0, 0.0)
-    try:
-        try:
-            previous_timer = signal.setitimer(signal.ITIMER_REAL, timeout)
-            timer_armed = True
-        except (ValueError, OSError):
-            return "runtime watchdog unavailable in this thread", None, ""
-        try:
-            try:
-                fs_before = _fs_snapshot(Path.cwd())
-                with redirect_stdout(stdout), redirect_stderr(stderr):
-                    exec(compile(source, f"<{module_name}>", "exec"), namespace)
-                fs_after = _fs_snapshot(Path.cwd())
-                created = sorted(set(fs_after) - set(fs_before))
-                modified = sorted(rel for rel in set(fs_after) & set(fs_before) if fs_after[rel] != fs_before[rel])
-                if created or modified:
-                    _cleanup_new_files(Path.cwd(), fs_before)
-                    return (
-                        f"import-time filesystem side effect detected: created={created} modified={modified}",
-                        None,
-                        _output_snippet(stdout, stderr),
-                    )
-            except (Exception, SystemExit, KeyboardInterrupt, GeneratorExit) as exc:
-                return (
-                    f"generated module raised {type(exc).__name__}: {exc}",
-                    None,
-                    _output_snippet(stdout, stderr),
-                )
-
-            game_class: type | None = None
-            for value in namespace.values():
-                if isinstance(value, type) and getattr(value, "__module__", None) == module_name:
-                    game_class = value
-                    break
-            if game_class is None:
-                return "no game class defined at runtime", None, _output_snippet(stdout, stderr)
-            class_name = game_class.__name__
-            factory = cast(Callable[[], object], game_class)
-
-            current_phase[0] = f"{class_name} instantiation"
-            try:
-                instance = factory()
-            except (Exception, SystemExit, KeyboardInterrupt, GeneratorExit) as exc:
-                return (
-                    f"instantiation raised {type(exc).__name__}: {exc}",
-                    class_name,
-                    _output_snippet(stdout, stderr),
-                )
-
-            def _call(method_name: str, *args: object) -> tuple[object | None, str | None]:
-                current_phase[0] = f"{class_name}.{method_name}()"
-                try:
-                    method = cast(Callable[..., object], getattr(instance, method_name))
-                except AttributeError:
-                    return None, f"{method_name}() missing at runtime"
-                try:
-                    return method(*args), None
-                except (Exception, SystemExit, KeyboardInterrupt, GeneratorExit) as exc:
-                    return None, f"{method_name}() raised {type(exc).__name__}: {exc}"
-
-            _, failure = _call("start")
-            if failure is not None:
-                return failure, class_name, _output_snippet(stdout, stderr)
-
-            score_value, failure = _call("score")
-            if failure is not None:
-                return failure, class_name, _output_snippet(stdout, stderr)
-            if not isinstance(score_value, int) or isinstance(score_value, bool):
-                return (
-                    f"score() returned {type(score_value).__name__}, expected int",
-                    class_name,
-                    _output_snippet(stdout, stderr),
-                )
-
-            over_value, failure = _call("is_game_over")
-            if failure is not None:
-                return failure, class_name, _output_snippet(stdout, stderr)
-            if not isinstance(over_value, bool):
-                return (
-                    f"is_game_over() returned {type(over_value).__name__}, expected bool",
-                    class_name,
-                    _output_snippet(stdout, stderr),
-                )
-
-            for _ in range(MAX_TICKS):
-                over_value, failure = _call("is_game_over")
-                if failure is not None:
-                    return failure, class_name, _output_snippet(stdout, stderr)
-                if over_value is True:
-                    break
-                _, failure = _call("tick", "right")
-                if failure is not None:
-                    return failure, class_name, _output_snippet(stdout, stderr)
-
-            _, failure = _call("restart")
-            if failure is not None:
-                return failure, class_name, _output_snippet(stdout, stderr)
-
-            return None, class_name, _output_snippet(stdout, stderr)
-        except RuntimeBudgetExceeded as exc:
-            return str(exc), None, _output_snippet(stdout, stderr)
-    finally:
-        if timer_armed:
-            signal.setitimer(signal.ITIMER_REAL, previous_timer[0], previous_timer[1])
-        signal.signal(signal.SIGALRM, previous_handler)
-
-
 def check_source(
     source: str,
     *,
@@ -485,7 +330,17 @@ def check_source(
     if reasons:
         return _verdict(False, reasons, class_name)
 
-    failure, runtime_class, snippet = _runtime_probe(source, module_name, timeout)
+    try:
+        with tempfile.TemporaryDirectory(prefix="gludd-accept-source-") as source_dir:
+            source_path = Path(source_dir) / "generated_game.py"
+            source_path.write_text(source, encoding="utf-8")
+            failure, runtime_class, snippet = _subprocess_probe(
+                source_path,
+                timeout,
+                module_name=module_name,
+            )
+    except OSError as exc:
+        failure, runtime_class, snippet = f"runtime probe staging failed: {exc}", None, ""
     if failure is not None:
         reasons.append(failure)
     if snippet:

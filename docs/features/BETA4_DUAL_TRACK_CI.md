@@ -1544,6 +1544,23 @@ may mutate without making repository traversal part of its runtime budget.
 Static forbidden-call checks, child timeout, verdict validation, and idempotent
 temporary-verdict cleanup remain fail closed.
 
+Replacement candidate `6bd86f3de7109d1867556cccd5dd90d76336a746` and hosted
+run `33022851420` reached 21 successful hosted jobs, while the paired local
+lane found the remaining direct `check_source` API still executing generated
+code under the caller's process-wide signal timer. Repository traversal consumed
+that shared budget late in the ordered batch, so the timer fired while the phase
+label named `restart()` and obscured the generated game's real restart exception.
+The hosted run was cancelled as soon as the local lane invalidated the SHA.
+
+`check_source` now stages source in an owned temporary directory and delegates
+to the same bounded child used by file and CLI acceptance. The obsolete
+in-process signal executor and repository-wide snapshot implementation are
+removed, not excluded from coverage. The child also preserves the established
+distinction between a dynamically missing method and a method that raises. The
+complete prior failure batch passes 475 tests with two dependency-gated skips;
+the focused source and file acceptance surface passes 43 tests at 91 percent
+branch coverage.
+
 This is ZDD by candidate invalidation: the discrepant SHA is not promoted,
 tagged, published, or deployed. Local and hosted lanes must restart on the new
 exact commit and produce matching plan/policy attestations. Rollback is the

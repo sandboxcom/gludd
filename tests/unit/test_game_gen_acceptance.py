@@ -8,7 +8,6 @@ lives in ``tests/unit/test_generated_code_acceptance.py``.
 from __future__ import annotations
 
 import json
-import signal
 import subprocess
 from pathlib import Path
 
@@ -153,6 +152,33 @@ def test_subprocess_probe_confines_side_effect_audit_to_generated_directory(
     assert observed_cwd == [tmp_path]
 
 
+def test_check_source_uses_the_isolated_subprocess_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The source API must not execute model-generated code in its caller."""
+    observed: list[tuple[str, float, str, Path]] = []
+
+    def _probe(
+        path: Path,
+        timeout: float,
+        module_name: str = acceptance.DEFAULT_MODULE_NAME,
+    ) -> tuple[str | None, str | None, str]:
+        observed.append((path.read_text(), timeout, module_name, path))
+        return "restart() raised RuntimeError: restart", "Game", ""
+
+    monkeypatch.setattr(acceptance, "_subprocess_probe", _probe)
+
+    assert not hasattr(acceptance, "_runtime_probe")
+    result = check_source(_runtime_game(), module_name="isolated_game", timeout=2.5)
+
+    assert result.accepted is False
+    assert result.reasons == ["restart() raised RuntimeError: restart"]
+    assert [(source, timeout, name) for source, timeout, name, _path in observed] == [
+        (_runtime_game(), 2.5, "isolated_game")
+    ]
+    assert not observed[0][3].exists()
+
+
 @pytest.mark.parametrize(
     ("overrides", "expected"),
     [
@@ -221,16 +247,18 @@ def test_check_source_rejects_import_time_filesystem_side_effect(
     assert not (tmp_path / "dropped.txt").exists()
 
 
-def test_check_source_fails_closed_when_watchdog_is_unavailable(
+def test_check_source_fails_closed_when_runtime_child_cannot_start(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _unavailable(_which: int, _seconds: float, _interval: float = 0.0) -> tuple[float, float]:
-        raise ValueError("not main thread")
+    """Child startup failure must be a rejection, never an in-process fallback."""
 
-    monkeypatch.setattr(signal, "setitimer", _unavailable)
+    def _unavailable(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise OSError("spawn denied")
+
+    monkeypatch.setattr(subprocess, "run", _unavailable)
     result = check_source(_runtime_game())
     assert result.accepted is False
-    assert result.reasons == ["runtime watchdog unavailable in this thread"]
+    assert result.reasons == ["runtime probe could not start: spawn denied"]
 
 
 def test_check_file_rejects_missing_and_non_utf8_inputs(tmp_path: Path) -> None:
