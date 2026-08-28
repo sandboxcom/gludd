@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
@@ -355,3 +356,150 @@ def test_query_handles_non_dict_spec() -> None:
 def test_query_handles_non_string_target() -> None:
     src, _ = _ns_src()
     assert src.query({"target": 42}) == []
+
+
+def test_file_helpers_cover_success_and_fail_closed_paths(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "linux-ns"
+    root.mkdir()
+    payload = root / "payload"
+    payload.write_text("value")
+    child = root / "child"
+    child.mkdir()
+    link = root / "link"
+    link.symlink_to(payload)
+
+    assert Connector._read_file(str(payload)) == "value"
+    assert Connector._read_file(str(root / "missing")) is None
+    assert Connector._list_dir(str(root)) == ["child", "link", "payload"]
+    assert Connector._list_dir(str(root / "missing")) == []
+    assert Connector._readlink(str(link)) == str(payload)
+    assert Connector._readlink(str(payload)) is None
+
+
+def test_proc_parsers_cover_records_and_malformed_lines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    src, _ = _ns_src()
+    files = {
+        "/proc/7/cgroup": "\nmalformed\n0::/slice\n2:cpu,memory:/legacy\n",
+        "/proc/7/status": "ignored\nName:\tworker\nCapEff:\t0000000000000003\n",
+        "/sys/fs/cgroup/slice/cgroup.controllers": "cpu memory\n",
+        "/sys/fs/cgroup/slice/cgroup.subtree_control": "+cpu\n",
+        "/sys/fs/cgroup/slice/cgroup.events": "populated 1\n",
+    }
+    monkeypatch.setattr(src, "_read_file", lambda path: files.get(path))
+
+    assert src._read_cgroup_info(7) == [
+        {"hierarchy": "0", "controllers": "", "cgroup_path": "/slice"},
+        {
+            "hierarchy": "2",
+            "controllers": "cpu,memory",
+            "cgroup_path": "/legacy",
+        },
+    ]
+    assert src._read_capabilities(7)["CapEff"]["names"] == [
+        "CAP_CHOWN",
+        "CAP_DAC_OVERRIDE",
+    ]
+    assert src._read_cgroup_v2(7) == [
+        {
+            "cgroup_path": "slice",
+            "controllers": ["cpu", "memory"],
+            "subtree_control": ["+cpu"],
+            "events": "populated 1",
+        }
+    ]
+
+
+def test_proc_parsers_fail_closed_when_files_or_v2_entry_are_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    src, _ = _ns_src()
+    monkeypatch.setattr(src, "_read_file", lambda _path: None)
+    assert src._read_cgroup_info("self") == []
+    assert src._read_capabilities("self") == {}
+    assert src._read_cgroup_v2("self") == []
+
+    monkeypatch.setattr(src, "_read_file", lambda _path: "2:cpu:/legacy\n")
+    assert src._read_cgroup_v2("self") == []
+
+
+def test_namespace_and_proc_targets_build_normalized_records(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    src, _ = _ns_src()
+    monkeypatch.setattr(
+        src,
+        "_read_ns_links",
+        lambda _pid: {"net": "net:[1]", "mnt": "mnt:[2]"},
+    )
+    monkeypatch.setattr(
+        src,
+        "_read_cgroup_info",
+        lambda _pid: [
+            {"hierarchy": "0", "controllers": "", "cgroup_path": "/slice"}
+        ],
+    )
+    monkeypatch.setattr(
+        src,
+        "_read_capabilities",
+        lambda _pid: {"CapEff": {"hex": "3", "names": ["CAP_CHOWN"]}},
+    )
+    monkeypatch.setattr(
+        src,
+        "_read_cgroup_v2",
+        lambda _pid: [
+            {
+                "cgroup_path": "slice",
+                "controllers": ["cpu"],
+                "subtree_control": [],
+                "events": "populated 1",
+            }
+        ],
+    )
+
+    assert [record["labels"]["ns_type"] for record in src.query({})] == [
+        "mnt",
+        "net",
+    ]
+    assert src.query({"target": "cgroups", "pid": 7})[0]["raw"][
+        "cgroup_path"
+    ] == "/slice"
+    assert src.query({"target": "capabilities", "pid": 7})[0]["labels"][
+        "cap_names"
+    ] == "CAP_CHOWN"
+    assert src.query({"target": "cgroup_v2", "pid": 7})[0]["labels"][
+        "controllers"
+    ] == "cpu"
+
+
+def test_empty_proc_targets_and_unexpected_reader_error_return_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    src, _ = _ns_src()
+    monkeypatch.setattr(src, "_read_ns_links", lambda _pid: {})
+    monkeypatch.setattr(src, "_read_capabilities", lambda _pid: {})
+    monkeypatch.setattr(src, "_read_cgroup_v2", lambda _pid: [])
+    assert src.query({"target": "namespaces"}) == []
+    assert src.query({"target": "capabilities"}) == []
+    assert src.query({"target": "cgroup_v2"}) == []
+
+    def fail(_pid: int | str) -> dict[str, str]:
+        raise OSError("proc raced with exit")
+
+    monkeypatch.setattr(src, "_read_ns_links", fail)
+    assert src.query({"target": "namespaces"}) == []
+
+
+def test_ns_list_accepts_top_level_list_and_skips_non_mapping_entries() -> None:
+    src, _ = _ns_src(stdout=json.dumps([None, {"type": "pid", "pid": 9}]))
+    records = src.query({"target": "ns_list"})
+    assert len(records) == 1
+    assert records[0]["labels"] == {"ns_type": "pid", "pid": "9"}
+
+
+def test_ns_list_rejects_non_list_namespace_payload() -> None:
+    src, _ = _ns_src(stdout=json.dumps({"namespaces": "invalid"}))
+    assert src.query({"target": "ns_list"}) == []
