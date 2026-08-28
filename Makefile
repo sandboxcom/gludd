@@ -964,6 +964,7 @@ _ci-replica-clean-tree:
 	exit 1
 
 test-ci-dual-track-local: $(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),,_ci-replica-clean-tree)
+	@$(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),:,$(MAKE) node-deps-sync NODE_DEPS_VALIDATE_ONLY=0 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false)
 	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
 	GLUDD_CANDIDATE_SHA="$$(git rev-parse HEAD)" $(UV) run python scripts/run_ci_shards_serial.py \
 		--pytest-args="-W error $(PYTEST_ARGS)" \

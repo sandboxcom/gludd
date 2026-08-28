@@ -48,6 +48,8 @@ def test_local_dual_track_target_delegates_canonical_bounded_run() -> None:
     block = _target_block("test-ci-dual-track-local", "test-ci-shard")
     runner = _load_runner()
 
+    assert "$(MAKE) node-deps-sync" in block
+    assert block.index("$(MAKE) node-deps-sync") < block.index("scripts/run_ci_shards_serial.py")
     assert "scripts/run_ci_shards_serial.py" in block
     assert "--shards" not in block
     assert "--skip-isolated" not in block

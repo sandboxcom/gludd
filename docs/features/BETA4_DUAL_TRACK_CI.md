@@ -562,6 +562,14 @@ heartbeats, cleanup, aggregate coverage, and terminal writer are the sole source
 of execution truth. `DUAL_TRACK_LOCAL_VALIDATE_ONLY=1` is the read-only Make
 contract and never creates a successful attestation.
 
+Executable mode also runs the repository's locked `node-deps-sync` contract
+before starting Python shards. This mirrors the hosted workflow's Node setup and
+prevents a clean worktree from reaching hot-module tests without `esbuild`.
+Validate-only mode deliberately skips installation, preserving its no-network,
+no-write planning contract. This boundary was pinned after the 2026-08-27 local
+exact-SHA run reached `unit-2` and failed five hot-module tests solely because
+the canonical local producer had not provisioned the lockfile-backed Node plane.
+
 Schema 3 makes that comparison semantic instead of trusting matching lane names.
 Every terminal attestation records, for each shard, its deterministic ordered
 test paths, path count, and SHA-256 of the canonical JSON path list. It also
