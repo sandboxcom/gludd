@@ -2017,24 +2017,13 @@
     },
     {
       "path": "src/general_ludd/tui/runner.py",
-      "line": 93,
+      "line": 86,
       "column": 16,
       "kind": "service",
       "owner": "run_tui",
       "acquisition": "LocalInferenceManager()",
       "teardown": "model_mgr.stop_all()",
       "source_hash": "89ab2b4306e85b70acad285dcd47c22b72c45b8038a05097580d1d09c5c20879",
-      "owned": true
-    },
-    {
-      "path": "src/general_ludd/tui/runner.py",
-      "line": 122,
-      "column": 26,
-      "kind": "process",
-      "owner": "run_tui.start_daemon",
-      "acquisition": "subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True, close_fds=True)",
-      "teardown": "ownership-transfer:persisted-detached-pid",
-      "source_hash": "1881f7c5acb8531618cf681565cbce108bd1c7dee0802b5d976177b70b84e72f",
       "owned": true
     },
     {
