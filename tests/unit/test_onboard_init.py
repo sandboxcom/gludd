@@ -40,6 +40,18 @@ PROVIDERS = ("aws", "gcp", "azure")
 
 
 class TestGetProviderReturnsRealImplementation:
+    def test_runtime_protocol_declarations_remain_explicit_sentinels(self) -> None:
+        """Execute the runtime-checkable Protocol's three declaration bodies."""
+        protocol_type: Any = OnboardProvider
+        receiver = object()
+
+        assert protocol_type.create_role_instructions(receiver) is None
+        assert protocol_type.token_acquisition_guide(receiver) is None
+        assert (
+            protocol_type.validate_token_and_role(receiver, "token", "role", "region")
+            is None
+        )
+
     def test_unknown_provider_fails_closed(self) -> None:
         with pytest.raises(ValueError, match="Unknown onboard provider 'missing'"):
             get_provider("missing")
