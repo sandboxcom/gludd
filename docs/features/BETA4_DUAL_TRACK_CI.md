@@ -1668,8 +1668,10 @@ The verifier's combined fingerprint diagnostic then mislabeled the policy-only
 drift as a plan mismatch for every shard.
 
 The canonical local target now selects CPython 3.11 explicitly and places its
-managed environment at the project-namespaced external resource path
-`ci-shards/python-3.11`; it never replaces the checkout's shared `.venv`.
+managed toolchain in the project-namespaced sibling resource path
+`<resource-root>-toolchain/ci-shards/python-3.11`; it never replaces the
+checkout's shared `.venv` and it is not inside the disposable test-resource
+tree.
 Both the local target and hosted workflow opt into a fail-closed
 `--require-release-policy` boundary before repository inspection, test launch,
 or attestation write. Diagnostic runner invocations remain flexible because
@@ -1681,9 +1683,9 @@ permit a dry run, tag, publication, or deployment because the paired evidence
 was invalid. A replacement immutable commit must produce both lanes again.
 Rollback removes the isolated runner/Make/workflow contract commit and this
 section; it does not change application data. The only added resource is one
-namespaced, reusable Python 3.11 project environment under Gludd's external
-resource root. No daemon, port, model process, retry, warning suppression, or
-cleanup task is introduced.
+namespaced, reusable Python 3.11 project environment beside Gludd's external
+test-resource root. No daemon, port, model process, retry, warning suppression,
+or cleanup task is introduced.
 
 - [uv command reference](https://docs.astral.sh/uv/reference/cli/), reviewed
   2026-08-28, defines `uv run --python` as the interpreter request for the run
@@ -1693,3 +1695,37 @@ cleanup task is introduced.
   `uv run` recreated an active environment with the system interpreter despite
   a different local pin. Gludd therefore uses an explicit interpreter request
   and an external namespaced `UV_PROJECT_ENVIRONMENT` for release evidence.
+
+### Nested project environment ownership incident (2026-08-28)
+
+The first exact local replay reached integration batch 20 before its next
+worker failed to import both `pytest` and `coverage`. The preceding dependency
+management E2E had correctly used a temporary manifest, but its nested `uv add`
+and `uv sync` inherited the release runner's absolute
+`UV_PROJECT_ENVIRONMENT`. The nested project therefore synchronized the
+runner's toolchain and removed packages that were extraneous to the temporary
+manifest.
+
+`DependencyManager` now binds every uv subprocess to the managed project's own
+resolved `.venv`. Ambient project-environment selection cannot cross that
+ownership boundary. The release runner additionally keeps its reusable Python
+3.11 toolchain in a namespaced sibling of the disposable test-resource root.
+This is ZDD: the failed immutable candidate remained unpublishable, the hosted
+lane stayed available, and no live daemon or external model was restarted.
+Rollback reverts the manager environment binding and sibling toolchain path;
+the project-owned `.venv` and runner toolchain are disposable cache resources,
+with no application-data migration.
+
+- [uv project environment documentation](https://docs.astral.sh/uv/concepts/projects/config/#project-environment-path),
+  reviewed 2026-08-28, says an absolute `UV_PROJECT_ENVIRONMENT` is used as-is
+  and warns that `uv sync` removes extraneous packages by default.
+- [uv issue 20060](https://github.com/astral-sh/uv/issues/20060), opened
+  2026-06-30 and reviewed 2026-08-28, describes a practitioner whose exported
+  project-environment variable propagates into child jobs and asks for a
+  command-scoped alternative. Gludd therefore supplies a project-owned value
+  on every child uv invocation rather than trusting ambient inheritance.
+- [uv issue 19540](https://github.com/astral-sh/uv/issues/19540), opened
+  2026-05-20 and reviewed 2026-08-28, records practitioner confusion about the
+  different `VIRTUAL_ENV` and `UV_PROJECT_ENVIRONMENT` command semantics. The
+  Gludd contract uses only the documented project variable for uv project
+  operations and pins it explicitly.

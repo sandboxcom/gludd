@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import shutil
 from dataclasses import dataclass
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,8 @@ def _validate_package_spec(spec: str) -> str:
 
 @dataclass
 class UpdateResult:
+    """Describe the outcome of one dependency update request."""
+
     package_name: str
     old_version: str
     new_version: str
@@ -64,6 +68,8 @@ class UpdateResult:
 
 @dataclass
 class SyncResult:
+    """Describe the outcome of synchronizing a project environment."""
+
     success: bool
     packages_synced: int
     tool_used: str
@@ -71,6 +77,8 @@ class SyncResult:
 
 @dataclass
 class OutdatedPackage:
+    """Describe one installed package with an available newer version."""
+
     name: str
     current_version: str
     latest_version: str
@@ -81,17 +89,26 @@ def _has_uv() -> bool:
 
 
 class DependencyManager:
+    """Manage dependencies inside one explicitly owned project environment."""
+
     def __init__(self, project_root: str | None = None) -> None:
+        """Initialize a manager rooted at ``project_root`` or the current tree."""
         self.project_root = project_root or "."
 
     async def _run(
         self, *args: str
     ) -> tuple[int, str, str]:
+        child_environment = os.environ.copy()
+        if args and Path(args[0]).name == "uv":
+            child_environment["UV_PROJECT_ENVIRONMENT"] = str(
+                Path(self.project_root).resolve() / ".venv"
+            )
         proc = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=self.project_root,
+            env=child_environment,
         )
         stdout_bytes, stderr_bytes = await proc.communicate()
         return (
@@ -105,6 +122,7 @@ class DependencyManager:
         package_name: str,
         version_constraint: str | None = None,
     ) -> UpdateResult:
+        """Update one validated package specification in the managed project."""
         spec = (
             f"{package_name}{version_constraint}"
             if version_constraint
@@ -171,6 +189,7 @@ class DependencyManager:
         )
 
     async def sync_environment(self) -> SyncResult:
+        """Synchronize dependencies into the managed project environment."""
         if _has_uv():
             return await self._sync_with_uv()
         return await self._sync_with_pip()
@@ -192,6 +211,7 @@ class DependencyManager:
         return SyncResult(success=True, packages_synced=0, tool_used="pip")
 
     async def check_for_updates(self) -> list[OutdatedPackage]:
+        """Return available package updates reported by the active tool."""
         if _has_uv():
             return await self._check_outdated_uv()
         return await self._check_outdated_pip()
@@ -247,6 +267,7 @@ class DependencyManager:
         ]
 
     async def generate_requirements(self) -> None:
+        """Generate a requirements snapshot using the available package tool."""
         if _has_uv():
             await self._run(
                 "uv", "pip", "freeze", ">", "requirements.txt"

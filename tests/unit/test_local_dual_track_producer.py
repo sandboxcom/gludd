@@ -54,7 +54,15 @@ def test_local_dual_track_target_delegates_canonical_bounded_run() -> None:
     assert "scripts/run_ci_shards_serial.py" in block
     assert "$(UV) run --python 3.11 python scripts/run_ci_shards_serial.py" in block
     assert "--require-release-policy" in block
-    assert 'UV_PROJECT_ENVIRONMENT="$$RESOURCE_ROOT/ci-shards/python-3.11"' in block
+    assert 'TOOLCHAIN_ROOT="$${RESOURCE_ROOT}-toolchain"' in block
+    assert (
+        'UV_PROJECT_ENVIRONMENT="$$TOOLCHAIN_ROOT/ci-shards/python-3.11"'
+        in block
+    )
+    assert (
+        'UV_PROJECT_ENVIRONMENT="$$RESOURCE_ROOT/ci-shards/python-3.11"'
+        not in block
+    )
     assert "--shards" not in block
     assert "--skip-isolated" not in block
     assert "--skip-aggregate" not in block
