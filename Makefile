@@ -411,7 +411,7 @@ help:
 	@echo "  git-tag-rm TAG=<t>           Delete tag locally and on sandboxcom"
 	@echo "  git-tag-delete TAG=<t>       Alias for git-tag-rm"
 	@echo "  git-tag-move TAG=<t> MSG='..'  Delete old tag + create new at HEAD + push"
-	@echo "  submodule-init        Initialize all git submodules (recursive)"
+	@echo "  submodule-init        Initialize submodules or validate configuration (SUBMODULE_INIT_VALIDATE_ONLY=0|1)"
 	@echo "  submodule-update      Update submodules to latest remote (--merge)"
 	@echo "  submodule-status      Show status of each submodule"
 	@echo "  submodule-pin REPO=.. TAG=..  Pin a submodule to a tag/commit"
@@ -5408,9 +5408,18 @@ git-cherry-pick-list:
 		git cherry-pick "$$SHA" || exit 1; \
 	done
 
+SUBMODULE_INIT_VALIDATE_ONLY ?= 0
+
 submodule-init:
+	@case "$(SUBMODULE_INIT_VALIDATE_ONLY)" in 0|1) ;; *) echo "ERROR: SUBMODULE_INIT_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
 	@if [ ! -f .gitmodules ]; then echo "No .gitmodules file"; exit 1; fi
-	@git submodule update --init --recursive
+	@if [ "$(SUBMODULE_INIT_VALIDATE_ONLY)" = "1" ]; then \
+		git config --file .gitmodules --get-regexp '^submodule\..*\.path$$' >/dev/null || { echo "ERROR: .gitmodules has no submodule paths"; exit 1; }; \
+		git config --file .gitmodules --get-regexp '^submodule\..*\.url$$' >/dev/null || { echo "ERROR: .gitmodules has no submodule URLs"; exit 1; }; \
+		echo "SUBMODULE_INIT_VALIDATED file=.gitmodules mode=network-free"; \
+	else \
+		git submodule update --init --recursive; \
+	fi
 
 submodule-update:
 	@if [ ! -f .gitmodules ]; then echo "No .gitmodules file"; exit 1; fi

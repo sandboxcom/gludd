@@ -633,6 +633,11 @@
       "behavior": "make git-patch-equivalence PATCH_UPSTREAM=development PATCH_HEAD=master PATCH_LIMIT=3"
     },
     {
+      "name": "submodule-init",
+      "make_variables": ["SUBMODULE_INIT_VALIDATE_ONLY"],
+      "behavior": "make submodule-init SUBMODULE_INIT_VALIDATE_ONLY=1"
+    },
+    {
       "name": "lima-docker-start",
       "make_variables": [
         "LIMA_INSTANCE",
