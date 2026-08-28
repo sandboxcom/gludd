@@ -178,6 +178,33 @@ def test_dual_track_evidence_rejects_matching_but_weakened_policy(
     assert any("release execution policy" in error for error in errors)
 
 
+def test_dual_track_evidence_distinguishes_policy_from_plan_mismatch(
+    tmp_path: Path,
+) -> None:
+    module = _load_script()
+    sha = "b" * 40
+    local = _write(
+        tmp_path / "local.json",
+        _attestation(sha=sha, lane="local", shards=sorted(SHARDS)),
+    )
+    hosted_payloads = {
+        shard: _attestation(sha=sha, lane="hosted", shards=[shard])
+        for shard in SHARDS
+    }
+    weakened = {**RELEASE_POLICY, "pytest_args": []}
+    hosted_payloads["other"]["execution_policy"] = weakened
+    hosted_payloads["other"]["execution_policy_sha256"] = _digest(weakened)
+    hosted = [
+        _write(tmp_path / shard / "ci-shard-attestation.json", payload)
+        for shard, payload in hosted_payloads.items()
+    ]
+
+    errors = module.verify_dual_track_evidence(local, hosted, sha)
+
+    assert any("paired policy mismatch for shard 'other'" in error for error in errors)
+    assert not any("paired plan mismatch for shard 'other'" in error for error in errors)
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [

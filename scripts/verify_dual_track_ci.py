@@ -249,8 +249,11 @@ def verify_dual_track_evidence(
         if len(shards) != 1:
             errors.append(f"{path}: hosted attestation must cover exactly one shard")
         for shard, fingerprint in hosted_pairings.items():
-            if local_pairings.get(shard) != fingerprint:
+            local_fingerprint = local_pairings.get(shard)
+            if local_fingerprint is None or local_fingerprint[0] != fingerprint[0]:
                 errors.append(f"{path}: paired plan mismatch for shard {shard!r}")
+            if local_fingerprint is None or local_fingerprint[1] != fingerprint[1]:
+                errors.append(f"{path}: paired policy mismatch for shard {shard!r}")
         hosted_counts.update(shards)
     missing = required - set(hosted_counts)
     if missing:

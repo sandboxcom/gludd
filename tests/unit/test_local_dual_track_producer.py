@@ -13,6 +13,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNNER = ROOT / "scripts" / "run_ci_shards_serial.py"
+WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 EXPECTED_SHARDS = (
     "unit-1a1",
     "unit-1a2",
@@ -51,6 +52,9 @@ def test_local_dual_track_target_delegates_canonical_bounded_run() -> None:
     assert "$(MAKE) node-deps-sync" in block
     assert block.index("$(MAKE) node-deps-sync") < block.index("scripts/run_ci_shards_serial.py")
     assert "scripts/run_ci_shards_serial.py" in block
+    assert "$(UV) run --python 3.11 python scripts/run_ci_shards_serial.py" in block
+    assert "--require-release-policy" in block
+    assert 'UV_PROJECT_ENVIRONMENT="$$RESOURCE_ROOT/ci-shards/python-3.11"' in block
     assert "--shards" not in block
     assert "--skip-isolated" not in block
     assert "--skip-aggregate" not in block
@@ -60,6 +64,41 @@ def test_local_dual_track_target_delegates_canonical_bounded_run() -> None:
     assert "DUAL_TRACK_LOCAL_VALIDATE_ONLY" in block
     assert "--validate-only" in block
     assert '"-n",\n        "1"' in inspect.getsource(runner._pytest_command)
+
+
+def test_real_attestation_rejects_non_release_pytest_policy(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runner = _load_runner()
+
+    def unexpected(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("invalid policy must fail before repository or test work")
+
+    monkeypatch.setattr(runner, "run", unexpected)
+    monkeypatch.setattr(runner, "_repository_identity", unexpected)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--require-release-policy",
+            "--pytest-args=-q -W error",
+        ],
+    )
+
+    assert runner.main() == 2
+    output = capsys.readouterr().out
+    assert "SERIAL-SHARD-POLICY-REJECTED" in output
+    assert "expected=-W error" in output
+    assert "observed=-q -W error" in output
+
+
+def test_hosted_producer_requires_release_policy() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "scripts/run_ci_shards_serial.py" in source
+    assert "--require-release-policy" in source
 
 
 def test_runner_validate_only_is_empty_selector_safe(

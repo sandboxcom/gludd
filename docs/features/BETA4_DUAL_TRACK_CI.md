@@ -1655,3 +1655,41 @@ branch documentation and change history plus pytest-cov issues 578 and 608
 linked in the canonical import section above. Those reports document the
 long-lived subprocess and import-identity differences that make terminal hosted
 coverage evidence necessary even after an extensive local pass.
+
+### Canonical local interpreter and release-policy ownership
+
+Candidate `202ee0c81c8b4c96c0649aec6fb9d459fbd59d9e` and hosted run
+`33203067758` passed all 24 executable GitHub jobs, while the exact-SHA
+dual-track verifier correctly rejected the pair. The hosted shard attestations
+bound CPython 3.11 and the canonical `-W error` policy. The local producer had
+used the checkout's CPython 3.14 environment and accepted a duplicate caller
+policy, `-q -W error`, even though its Make target already supplies `-W error`.
+The verifier's combined fingerprint diagnostic then mislabeled the policy-only
+drift as a plan mismatch for every shard.
+
+The canonical local target now selects CPython 3.11 explicitly and places its
+managed environment at the project-namespaced external resource path
+`ci-shards/python-3.11`; it never replaces the checkout's shared `.venv`.
+Both the local target and hosted workflow opt into a fail-closed
+`--require-release-policy` boundary before repository inspection, test launch,
+or attestation write. Diagnostic runner invocations remain flexible because
+they do not opt into that release-only boundary. The verifier reports plan and
+policy drift separately, preserving the exact cause.
+
+This is zero-downtime candidate invalidation: the green hosted run did not
+permit a dry run, tag, publication, or deployment because the paired evidence
+was invalid. A replacement immutable commit must produce both lanes again.
+Rollback removes the isolated runner/Make/workflow contract commit and this
+section; it does not change application data. The only added resource is one
+namespaced, reusable Python 3.11 project environment under Gludd's external
+resource root. No daemon, port, model process, retry, warning suppression, or
+cleanup task is introduced.
+
+- [uv command reference](https://docs.astral.sh/uv/reference/cli/), reviewed
+  2026-08-28, defines `uv run --python` as the interpreter request for the run
+  environment and documents that uv manages the project environment.
+- [uv issue 19563](https://github.com/astral-sh/uv/issues/19563), opened
+  2026-05-26 and reviewed 2026-08-28, records a practitioner report where
+  `uv run` recreated an active environment with the system interpreter despite
+  a different local pin. Gludd therefore uses an explicit interpreter request
+  and an external namespaced `UV_PROJECT_ENVIRONMENT` for release evidence.

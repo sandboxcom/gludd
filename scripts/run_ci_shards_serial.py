@@ -1136,6 +1136,11 @@ def main() -> int:
         action="store_true",
         help="print the bounded canonical plan without executing tests or writing evidence",
     )
+    parser.add_argument(
+        "--require-release-policy",
+        action="store_true",
+        help="reject noncanonical pytest policy before release-attestation work",
+    )
     args = parser.parse_args()
     shards = _parse_shards(args.shards)
     pytest_args = shlex.split(args.pytest_args)
@@ -1146,6 +1151,14 @@ def main() -> int:
             max_files_per_batch=args.max_files_per_batch,
             attestation_output=args.attestation_output,
         )
+    if args.require_release_policy and tuple(pytest_args) != RELEASE_PYTEST_ARGS:
+        print(
+            "SERIAL-SHARD-POLICY-REJECTED "
+            f"expected={shlex.join(RELEASE_PYTEST_ARGS)} "
+            f"observed={shlex.join(pytest_args) or '<none>'}",
+            flush=True,
+        )
+        return 2
     pairing = _attestation_pairing(shards, pytest_args=pytest_args)
     started_at = _utc_now()
     identity = _repository_identity(
