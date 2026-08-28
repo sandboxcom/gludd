@@ -109,8 +109,12 @@ def test_monday_no_redirect_handler_raises_on_302() -> None:
             newurl="https://internal.corp/secret",
         )
 
-    assert exc_info.value.code == 302
-    assert "redirect blocked" in str(exc_info.value.reason or exc_info.value.msg)
+    error = exc_info.value
+    try:
+        assert error.code == 302
+        assert "redirect blocked" in str(error.reason or error.msg)
+    finally:
+        error.close()
 
 
 def test_monday_default_transport_uses_no_redirect_opener() -> None:
