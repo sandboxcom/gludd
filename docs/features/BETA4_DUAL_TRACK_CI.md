@@ -1842,3 +1842,95 @@ possibility that a child waits on a jobserver it does not own.
   reviewed 2026-08-29, records the same operational shape: a non-recursive child
   receives jobserver arguments through `MAKEFLAGS` after Make closed the protocol
   descriptors it did not intend to delegate.
+
+### Release worktree, exact-SHA, and ETA evidence (2026-08-29)
+
+The final release decision has three independent identities: the filesystem that
+produced local evidence, the immutable commit tested in both lanes, and the
+hosted run attempt. A branch name, a green prefix, or an estimated completion
+time cannot substitute for any of them.
+
+| Signal | What it proves | What it cannot prove |
+|---|---|---|
+| Clean current and main worktrees plus the machine-readable worktree inventory | No tracked or untracked release input is hidden outside the candidate commit, and the release branch has one visible owner. | That any test passed or that a similarly named remote branch has the same SHA. |
+| Local attestation commit | The canonical local plan and policy completed for one immutable object. | Hosted completion, even when a branch still points to that object. |
+| Hosted job `head_sha`, run ID, and attempt | Which object and attempt produced each terminal GitHub result. | Equivalence to local evidence until the full SHA, plan, policy, and artifact digests match. |
+| Queue state, start/completion timestamps, and elapsed time | Observable current state and measured duration so far. | A supported ETA; the documented API exposes status and timestamps but no completion estimate. |
+
+Git deliberately refuses a second checkout when a branch is already used by a
+linked worktree. A missing path may also retain administrative state; a locked
+or dirty worktree cannot be removed normally. These safeguards prevent two
+indexes from moving the same ref independently. Gludd therefore treats an
+unexpected branch owner, lock, prunable registration, dirty current worktree, or
+dirty main worktree as a release blocker. It must not bypass the condition with
+`--ignore-other-worktrees`, double `--force`, direct `.git/worktrees` deletion,
+or broad pruning.
+
+The owner either finishes and commits its work, or cleanly unregisters and
+removes that exact worktree before a fresh release worktree is created from the
+candidate SHA. A stale missing-path record may be pruned only after the inventory
+proves it has no active owner and is not locked. This is a ZDD control: resolving
+checkout ownership changes no running service, while a dirty or ambiguous tree
+cannot create a tag, artifact, or deployment. Rollback is to abandon the
+untagged release worktree and retain the prior deployed artifact; evidence from
+the abandoned filesystem is never reused.
+
+The [official Git worktree documentation](https://git-scm.com/docs/git-worktree),
+reviewed 2026-08-29, defines the refusal for an already checked-out branch,
+machine-stable porcelain inventory, lock semantics, and pruning of missing
+worktrees. A practitioner question from
+[2017-01-09](https://stackoverflow.com/questions/41545293/branch-is-already-checked-out-at-other-location-in-git-worktrees),
+still updated through 2024 and reviewed 2026-08-29, records the long-lived
+`already checked out` blocker, stale metadata, forgotten rebases, and the advice
+to prune only a worktree that was actually removed. The age and continued
+updates show that this is an ownership invariant, not a transient Git defect.
+
+For the CI pair, equality is over the full 40-character commit object. GitHub's
+[`GITHUB_SHA` documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/variables)
+and [event table](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows),
+reviewed 2026-08-29, explicitly make SHA meaning event-dependent: a push or tag
+identifies the pushed object, while a pull-request run normally identifies its
+synthetic merge ref. The official
+[`actions/checkout` contract](https://github.com/actions/checkout/blob/main/README.md),
+reviewed the same day, accepts an explicit branch, tag, or SHA and documents the
+separate pull-request-head checkout.
+
+Accordingly, release evidence comes from the release push/tag candidate or an
+explicitly selected candidate SHA. The local attestation SHA, workflow/run
+`head_sha`, every hosted job `head_sha`, and checked-out `HEAD` must all equal it.
+A re-run is a distinct attempt and its artifacts cannot be mixed with an earlier
+attempt. GitHub Community question
+[#25191](https://github.com/orgs/community/discussions/25191), opened
+2020-03-19 and reviewed 2026-08-29, shows the persistent practitioner confusion
+caused by comparing a PR head to its generated merge SHA. This is why branch
+labels and abbreviated hashes are diagnostic only.
+
+CI time is bounded but not predictable. The
+[workflow-job REST schema](https://docs.github.com/en/rest/actions/workflow-jobs),
+reviewed 2026-08-29, exposes `head_sha`, status, conclusion, start, and completion
+timestamps but no ETA field; the absence of an ETA is an inference from that
+documented schema, not a GitHub service guarantee. GitHub's
+[Actions limits](https://docs.github.com/en/actions/reference/limits), reviewed
+the same day, permit a hosted job to execute for up to six hours and a
+self-hosted job to remain queued for 24 hours. Those ceilings are failure bounds,
+not expected durations.
+
+Gludd reports `queued`, `in_progress`, or terminal state, elapsed queue/runtime,
+last observed progress, run ID, attempt, and candidate SHA. It must say “ETA
+unknown” rather than extrapolate from prior batches or successful-job count.
+Bounded heartbeats and polling continue while the candidate remains valid. If
+either lane invalidates the SHA, the peer is cancelled and its owned process
+tree, temporary root, and incomplete artifacts are reaped before replacement;
+otherwise slowness alone does not authorize a retry, tag, or deployment.
+
+The [GitHub concurrency contract](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency),
+reviewed 2026-08-29, supports one running candidate and bounded pending work but
+warns that actual start ordering is not guaranteed. Community discussion
+[#160687](https://github.com/orgs/community/discussions/160687), opened
+2024-10-21 with a 2026-07-20 follow-up and reviewed 2026-08-29, records a
+six-hour provisioning stall and a dependent job queued for 24 hours. Gludd
+therefore allows at most one local producer and one hosted run for the active
+SHA, namespaces their evidence and temporary resources, and publishes only
+after both exact-SHA terminal attestations pass. Rollback cancels the untagged
+candidate and leaves the last deployed version serving traffic; no speculative
+ETA or partial green prefix changes live state.
