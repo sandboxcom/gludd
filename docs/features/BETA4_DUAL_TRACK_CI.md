@@ -1801,3 +1801,44 @@ single owned pytest process and the existing bounded cleanup path.
 - [pytest-cov xdist support contract](https://github.com/pytest-dev/pytest-cov),
   reviewed 2026-08-29, confirms that xdist is optional coverage integration,
   not a prerequisite for subprocess coverage collection.
+
+### Make jobserver inheritance incident (2026-08-29)
+
+The first clean-commit gate replay advanced past the former `unit-1d` hang and
+then exposed a second process-boundary defect in `unit-2:batch-030`. Two nested
+`make -n help` checks timed out while the same nodes passed outside the serial
+gate. The owned pytest child had inherited `MAKEFLAGS`, `MFLAGS`, `MAKELEVEL`,
+`MAKEOVERRIDES`, and `GNUMAKEFLAGS` from the enclosing top-level Make process.
+That made a Python-spawned Make process look like a recursive Make invocation
+even though it was not launched through the repository's `$(MAKE)` contract.
+
+Every owned pytest process now starts from a copy of its namespaced shard
+environment with those recursion-only variables removed. Ordinary Gludd,
+coverage, temporary-directory, and shard variables are preserved. Legitimate
+recursive recipes still use `$(MAKE)` in the Makefile and therefore receive the
+real parent jobserver directly; arbitrary test subprocesses cannot consume or
+wait on that parent's slots.
+
+This remains zero-downtime candidate invalidation: the timed-out gate published
+no passing terminal attestation and could not authorize a tag, artifact, or
+deployment. No retry, timeout increase, warning suppression, or test harness
+cleanup was added. Rollback restores the environment helper and its regression
+together and invalidates evidence from the changed runner. The resource effect
+is bounded to one copied environment per owned pytest process and removes the
+possibility that a child waits on a jobserver it does not own.
+
+- [GNU Make recursive-use documentation](https://www.gnu.org/software/make/manual/html_node/Recursion.html),
+  reviewed 2026-08-29, defines recursive Make as Make invoked by a Make recipe;
+  Gludd's Python test subprocess is not that relationship.
+- [GNU Make `MAKEFLAGS` and sub-Make documentation](https://www.gnu.org/software/make/manual/html_node/Options_002fRecursion.html),
+  reviewed 2026-08-29, explains that `MAKEFLAGS` communicates options and the
+  parallel jobserver to sub-Make processes, while `MFLAGS` is the historical
+  compatibility variable.
+- [GNU Make bug 62397](https://lists.gnu.org/archive/html/bug-make/2022-05/msg00000.html),
+  reviewed 2026-08-29, is a practitioner report showing that Make launched
+  through an indirect shell/function boundary can receive jobserver metadata
+  without valid recursive-jobserver ownership.
+- [Gentoo forum: slow Ninja when invoked incorrectly from Make](https://forums.gentoo.org/viewtopic-t-1110388-start-0.html),
+  reviewed 2026-08-29, records the same operational shape: a non-recursive child
+  receives jobserver arguments through `MAKEFLAGS` after Make closed the protocol
+  descriptors it did not intend to delegate.

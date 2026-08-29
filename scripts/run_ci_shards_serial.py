@@ -44,6 +44,13 @@ ATTESTATION_SCHEMA_VERSION = 3
 RELEASE_PYTEST_ARGS = ("-W", "error")
 RELEASE_PYTHON_VERSION = "3.11"
 RELEASE_PYTHON_IMPLEMENTATION = "cpython"
+MAKE_RECURSION_ENV_VARS = (
+    "MAKEFLAGS",
+    "MFLAGS",
+    "MAKELEVEL",
+    "MAKEOVERRIDES",
+    "GNUMAKEFLAGS",
+)
 
 
 def canonical_json_sha256(payload: object) -> str:
@@ -77,6 +84,14 @@ def release_execution_policy() -> dict[str, object]:
     policy["python_version"] = RELEASE_PYTHON_VERSION
     policy["python_implementation"] = RELEASE_PYTHON_IMPLEMENTATION
     return policy
+
+
+def _owned_test_environment(inherited: dict[str, str]) -> dict[str, str]:
+    """Detach owned pytest children from an enclosing Make jobserver."""
+    child = inherited.copy()
+    for name in MAKE_RECURSION_ENV_VARS:
+        child.pop(name, None)
+    return child
 
 
 @dataclass(frozen=True)
@@ -927,7 +942,7 @@ def run(
     if run_isolated:
         isolated_rc = _run_owned_pytest(
             _isolated_pytest_command(pytest_args),
-            env=os.environ.copy(),
+            env=_owned_test_environment(os.environ.copy()),
             label="isolated",
             heartbeat_seconds=heartbeat_seconds,
             no_progress_seconds=no_progress_seconds,
@@ -1005,7 +1020,7 @@ def run(
                     break
                 rc = _run_owned_pytest(
                     _pytest_command(shard, files, owned_tmpdir, pytest_args),
-                    env=env,
+                    env=_owned_test_environment(env),
                     label=f"{shard}:batch-{batch_index:03d}",
                     heartbeat_seconds=heartbeat_seconds,
                     no_progress_seconds=no_progress_seconds,

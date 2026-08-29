@@ -688,6 +688,23 @@ def test_serial_pytest_command_uses_one_fail_closed_worker_and_isolated_basetemp
     assert f"--basetemp={tmp_path / 'pytest'}" in command
 
 
+def test_serial_runner_strips_make_recursion_environment_from_owned_children() -> None:
+    module = _load_script("run_ci_shards_serial")
+    inherited = {
+        "MAKEFLAGS": "-j8 --jobserver-auth=3,4 --no-print-directory",
+        "MFLAGS": "-j8 --jobserver-auth=3,4",
+        "MAKELEVEL": "2",
+        "MAKEOVERRIDES": "PYTEST_ARGS=-q",
+        "GNUMAKEFLAGS": "--output-sync=target",
+        "GLUDD_SHARD_NAME": "unit-2:batch-030",
+    }
+
+    child = module._owned_test_environment(inherited)
+
+    assert child == {"GLUDD_SHARD_NAME": "unit-2:batch-030"}
+    assert "--jobserver-auth=3,4" in inherited["MAKEFLAGS"]
+
+
 def test_serial_runner_uses_owned_socket_safe_tmpdir(
     tmp_path: Path,
 ) -> None:
