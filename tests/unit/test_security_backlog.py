@@ -13,6 +13,10 @@ Replaces the old all-pass stub tests. This module now asserts:
 
 from __future__ import annotations
 
+import importlib
+
+import pytest
+
 import general_ludd.security.security_backlog as sb
 from general_ludd.security.security_backlog import (
     BACKLOG_ITEMS,
@@ -106,6 +110,30 @@ class TestBacklogItems:
 
 
 class TestRunBacklogChecks:
+    def test_checker_exception_is_reported_as_open(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            sb,
+            "BACKLOG_ITEMS",
+            {"D-X": {"title": "broken probe", "category": "audit"}},
+        )
+        monkeypatch.setattr(
+            sb,
+            "_BACKLOG_CHECKERS",
+            {"D-X": lambda: (_ for _ in ()).throw(RuntimeError("probe exploded"))},
+        )
+
+        result = sb.run_backlog_checks()
+
+        assert len(result) == 1
+        assert result[0].passed is False
+        assert result[0].detail == "probe exploded"
+        assert result[0].status == STATUS_OPEN
+
+    def test_unreadable_object_source_fails_closed(self) -> None:
+        assert sb._read_module_source(object()) == ""
+
     def test_returns_all_items(self) -> None:
         results = run_backlog_checks()
         assert len(results) == len(BACKLOG_ITEMS)
@@ -176,6 +204,100 @@ class TestD08ProbeRegressionDetection:
         passed, detail = sb._check_d08_ansible_extravars()
         assert passed is False
         assert "validate_extravars" in detail
+
+
+@pytest.mark.parametrize(
+    "item_id",
+    [
+        "D-07",
+        "D-08",
+        "D-09",
+        "D-10",
+        "D-14",
+        "D-15",
+        "D-17",
+        "D-18",
+        "D-20",
+        "D-22",
+        "D-23",
+        "D-24",
+        "D-25",
+        "D-26",
+        "D-27",
+        "D-28",
+        "D-29",
+        "D-30",
+    ],
+)
+def test_source_backed_probe_fails_closed_when_source_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    item_id: str,
+) -> None:
+    monkeypatch.setattr(sb, "_read_module_source", lambda _target: "")
+
+    passed, detail = sb._BACKLOG_CHECKERS[item_id]()
+
+    assert passed is False
+    assert detail.startswith("OPEN")
+
+
+@pytest.mark.parametrize(
+    ("item_id", "module_name", "symbol"),
+    [
+        ("D-13", "general_ludd.security.db_telemetry", "query_wal_metrics"),
+        ("D-13", "general_ludd.security.db_telemetry", "check_disk_pressure"),
+        ("D-13", "general_ludd.security.db_telemetry", "WalMetrics"),
+        ("D-13", "general_ludd.security.db_telemetry", "DiskPressureStatus"),
+        ("D-15", "general_ludd.secrets.openbao_scope", "validate_openbao_mount"),
+        ("D-16", "general_ludd.security.session_ttl", "SessionManager"),
+        ("D-16", "general_ludd.security.session_ttl", "SessionValidation"),
+        ("D-16", "general_ludd.security.session_ttl", "SessionRecord"),
+        ("D-17", "general_ludd.security.psk_rotation", "PSKIdentity"),
+        ("D-17", "general_ludd.security.psk_rotation", "PSKStore"),
+        ("D-17", "general_ludd.security.psk_rotation", "PSKRotator"),
+        ("D-17", "general_ludd.security.psk_rotation", "PSKRotationState"),
+        ("D-17", "general_ludd.security.psk_rotation", "create_psk_rotator"),
+        ("D-20", "general_ludd.security.config_compiler", "CompiledConfig"),
+        ("D-20", "general_ludd.security.config_compiler", "ConfigCompiler"),
+        ("D-20", "general_ludd.security.config_compiler", "ConfigGeneration"),
+        ("D-20", "general_ludd.security.config_compiler", "ConfigGenerationState"),
+        ("D-20", "general_ludd.security.config_compiler", "compile_config"),
+        ("D-21", "general_ludd.git_automation.worktree_lease", "write_worktree_lease"),
+        ("D-21", "general_ludd.git_automation.worktree_lease", "check_worktree_lease"),
+        ("D-21", "general_ludd.git_automation.worktree_lease", "release_worktree_lease"),
+        ("D-21", "general_ludd.git_automation.worktree_lease", "cleanup_expired_leases"),
+        ("D-22", "general_ludd.security.temp_cleanup", "TempRoot"),
+        ("D-22", "general_ludd.security.temp_cleanup", "TempRootError"),
+        ("D-22", "general_ludd.security.temp_cleanup", "cleanup_all_temp_roots"),
+        ("D-22", "general_ludd.security.temp_cleanup", "compute_age_seconds"),
+        ("D-22", "general_ludd.security.temp_cleanup", "is_temp_root_expired"),
+        ("D-23", "general_ludd.security.orphan_pid", "PidRecord"),
+        ("D-23", "general_ludd.security.orphan_pid", "PidRecordError"),
+        ("D-23", "general_ludd.security.orphan_pid", "compute_boot_id"),
+        ("D-23", "general_ludd.security.orphan_pid", "verify_pid_identity"),
+        ("D-23", "general_ludd.security.orphan_pid", "reap_orphan_tree"),
+        ("D-23", "general_ludd.security.orphan_pid", "is_reaper_safe"),
+        ("D-26", "general_ludd.security.vacuum_schedule", "VacuumScheduler"),
+        ("D-26", "general_ludd.security.vacuum_schedule", "VacuumResult"),
+        ("D-26", "general_ludd.security.vacuum_schedule", "DEFAULT_MIN_INTERVAL_SEC"),
+        ("D-30", "general_ludd.models.gateway", "_RequestPayloadBudget"),
+        ("D-30", "general_ludd.models.gateway", "DEFAULT_MAX_RESPONSE_BYTES"),
+        ("D-30", "general_ludd.models.gateway", "PayloadLimitError"),
+    ],
+)
+def test_symbol_backed_probe_fails_closed_when_contract_disappears(
+    monkeypatch: pytest.MonkeyPatch,
+    item_id: str,
+    module_name: str,
+    symbol: str,
+) -> None:
+    module = importlib.import_module(module_name)
+    monkeypatch.delattr(module, symbol)
+
+    passed, detail = sb._BACKLOG_CHECKERS[item_id]()
+
+    assert passed is False
+    assert symbol in detail
 
 
 class TestD14ProbeRegressionDetection:

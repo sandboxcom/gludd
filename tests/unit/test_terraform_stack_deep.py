@@ -29,7 +29,7 @@ PROVIDER_STACK_MAP: dict[str, str] = {
     "azure-container-app": "hashicorp/azurerm",
     "gcp": "hashicorp/google",
     "kubernetes": "hashicorp/kubernetes",
-    "vsphere": "hashicorp/vsphere",
+    "vsphere": "vmware/vsphere",
     "runpod": "runpod/runpod",
     "qemu": "dmacvicar/libvirt",
 }
@@ -181,6 +181,8 @@ class TestStackFileStructure:
                 continue
             if line.startswith("error_message "):
                 continue
+            if line.startswith('"') or line.startswith("],"):
+                continue
             if line in ("}", "{", "}"):
                 continue
             assert line.startswith("variable "), f"{stack_name}: variables.tf has non-variable content: {line!r}"
@@ -190,7 +192,12 @@ class TestStackFileStructure:
         content = _read_tf(stack_name, "outputs.tf")
         lines = [L.strip() for L in content.splitlines() if L.strip() and not L.strip().startswith("#")]
         for line in lines:
-            if line.startswith("output ") or line.startswith("description ") or line.startswith("value "):
+            if (
+                line.startswith("output ")
+                or line.startswith("description ")
+                or line.startswith("value ")
+                or line.startswith("sensitive ")
+            ):
                 continue
             if line.strip() in ("}", "{", "}"):
                 continue

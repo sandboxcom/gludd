@@ -117,14 +117,14 @@ def _checked(
     return result
 
 
-def _list_exact_run(
+def _list_exact_runs(
     *,
     repo: str,
     workflow: str,
     sha: str,
     run: RunFn,
     cwd: str | None,
-) -> WorkflowRun | None:
+) -> list[WorkflowRun]:
     result = _checked(
         [
             "gh",
@@ -151,11 +151,64 @@ def _list_exact_run(
         raise SignalError(f"exact-SHA run lookup returned invalid JSON: {exc}") from exc
     if not isinstance(payload, list):
         raise SignalError("exact-SHA run lookup returned a non-list JSON value")
+    exact_runs: list[WorkflowRun] = []
     for item in payload:
         candidate = WorkflowRun.from_payload(item, repo)
         if candidate is not None and candidate.head_sha == sha:
-            return candidate
-    return None
+            exact_runs.append(candidate)
+    return exact_runs
+
+
+def _run_is_reusable(candidate: WorkflowRun) -> bool:
+    return candidate.status != "completed" or candidate.conclusion == "success"
+
+
+def _list_exact_run(
+    *,
+    repo: str,
+    workflow: str,
+    sha: str,
+    run: RunFn,
+    cwd: str | None,
+) -> WorkflowRun | None:
+    return next(
+        (
+            candidate
+            for candidate in _list_exact_runs(
+                repo=repo,
+                workflow=workflow,
+                sha=sha,
+                run=run,
+                cwd=cwd,
+            )
+            if _run_is_reusable(candidate)
+        ),
+        None,
+    )
+
+
+def _list_terminal_unsuccessful_run(
+    *,
+    repo: str,
+    workflow: str,
+    sha: str,
+    run: RunFn,
+    cwd: str | None,
+) -> WorkflowRun | None:
+    return next(
+        (
+            candidate
+            for candidate in _list_exact_runs(
+                repo=repo,
+                workflow=workflow,
+                sha=sha,
+                run=run,
+                cwd=cwd,
+            )
+            if not _run_is_reusable(candidate)
+        ),
+        None,
+    )
 
 
 def _safe_component(value: str) -> str:
@@ -375,16 +428,29 @@ def signal_exact_sha(
             _print_result(result, progress)
             return result
 
+        terminal_run = _list_terminal_unsuccessful_run(
+            repo=repo,
+            workflow=workflow,
+            sha=sha,
+            run=run,
+            cwd=cwd,
+        )
         marker = _read_marker(marker_path)
         dispatched_now = False
         dispatch_url = ""
-        if marker is not None:
+        if marker is not None and terminal_run is None:
             dispatch_url = str(marker.get("dispatch_url") or "")
             progress(
                 f"GHA-SIGNAL-ALREADY-REQUESTED sha={sha} ref={signal_ref} "
                 f"url={dispatch_url or '<pending>'}"
             )
         else:
+            if terminal_run is not None:
+                progress(
+                    f"GHA-SIGNAL-RETRY sha={sha} ref={signal_ref} "
+                    f"prior_run={terminal_run.database_id} "
+                    f"conclusion={terminal_run.conclusion or '<missing>'}"
+                )
             progress(
                 f"GHA-SIGNAL-DISPATCH sha={sha} ref={signal_ref} "
                 f"workflow={workflow!r}"

@@ -8,10 +8,11 @@ consistent and honest.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import pytest
 
+from general_ludd.daemon import _PUBLIC_PATHS_FROZEN, is_public_path
 from general_ludd.routers.webmcp import (
     _ENDPOINTS,
     _ERROR_RESPONSES,
@@ -84,19 +85,30 @@ class TestPublicPathConsistency:
                 f"Public path {p!r} has no documented endpoint"
             )
 
-    def test_auth_false_endpoints_are_in_public_paths(self):
+    def test_auth_false_endpoints_are_in_public_paths(self) -> None:
         for ep in _ENDPOINTS:
             if ep["auth_required"] is False:
-                assert ep["path"] in _PUBLIC_PATHS, (
-                    f"{ep['method']} {ep['path']} has auth_required=False but is NOT in _PUBLIC_PATHS"
+                method = cast(str, ep["method"])
+                path = cast(str, ep["path"])
+                assert is_public_path(method, path), (
+                    f"{ep['method']} {ep['path']} has auth_required=False but "
+                    "the daemon's method-aware policy protects it"
                 )
 
-    def test_auth_true_endpoints_are_not_in_public_paths(self):
+    def test_auth_true_endpoints_are_not_in_public_paths(self) -> None:
         for ep in _ENDPOINTS:
             if ep["auth_required"] is True:
-                assert ep["path"] not in _PUBLIC_PATHS, (
-                    f"{ep['method']} {ep['path']} has auth_required=True but IS in _PUBLIC_PATHS — contradiction"
+                method = cast(str, ep["method"])
+                path = cast(str, ep["path"])
+                assert not is_public_path(method, path), (
+                    f"{ep['method']} {ep['path']} has auth_required=True but "
+                    "the daemon's method-aware policy exposes it"
                 )
+
+    def test_public_paths_match_daemon_exact_allowlist(self) -> None:
+        assert set(_PUBLIC_PATHS) == set(_PUBLIC_PATHS_FROZEN), (
+            "webmcp public_paths drifted from the daemon's exact allowlist"
+        )
 
     def test_webmcp_itself_is_public(self):
         assert "/api/webmcp" in _PUBLIC_PATHS, "/api/webmcp must be in public_paths — bootstrap deadlock prevention"

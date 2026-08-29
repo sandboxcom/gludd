@@ -138,10 +138,21 @@ class TestCompatibilityHelpers:
         with pytest.raises(RuntimeError, match="HTTP 503"):
             response.raise_for_status()
 
+    def test_callback_response_maps_non_integer_status_to_zero(self) -> None:
+        response = _CallbackResponse("invalid", {})
+
+        assert response.status_code == 0
+        response.raise_for_status()
+
     def test_transport_coercion_handles_none_and_invalid_values(self) -> None:
         assert _coerce_transport(None) is None
         with pytest.raises(TypeError, match="transport"):
             _coerce_transport(object())
+
+    def test_transport_coercion_preserves_protocol_transport(self) -> None:
+        transport = RecordingTransport(FakeResponse(200, {}))
+
+        assert _coerce_transport(transport) is transport
 
 
 class TestNormalization:
@@ -213,6 +224,20 @@ class TestNormalization:
         # no 'state' -> level_or_status falls back, does not crash
         assert bucket["level_or_status"] is not None
         assert bucket["labels"]["assetType"] == "storage.googleapis.com/Bucket"
+
+    def test_query_normalizes_assets_alias_and_filters_non_mapping_rows(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GCP_TEST_TOKEN", "tok-abc")
+        transport = RecordingTransport(
+            FakeResponse(200, {"assets": [None, {"name": "", "assetType": ""}]})
+        )
+
+        rows = make_source(transport).query({"query": "state:ACTIVE", "assetTypes": ["x"]})
+
+        assert len(rows) == 1
+        assert rows[0]["level_or_status"] == "UNKNOWN"
+        assert transport.calls[0]["params"]["query"] == "state:ACTIVE"
 
 
 class TestAuthAndTarget:

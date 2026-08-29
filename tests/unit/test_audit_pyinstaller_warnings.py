@@ -144,8 +144,10 @@ def test_makefile_exposes_replayable_linux_warning_audit() -> None:
     makefile = _MAKEFILE.read_text(encoding="utf-8")
 
     assert "PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt" in makefile
+    assert "PYINSTALLER_WARNING_ARCHITECTURE_LINUX ?=" in makefile
     assert "\naudit-linux-pyinstaller-warnings:" in makefile
     assert '--warnings "$(PYINSTALLER_WARNING_FILE_LINUX)"' in makefile
+    assert 'architecture="$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)"' in makefile
     assert makefile.count('--architecture "$$architecture"') == 3
 
 
@@ -175,11 +177,10 @@ def test_molecule_binary_smoke_pins_hosted_python_patch() -> None:
 def test_linux_policy_reviews_current_ghe_x86_64_graph() -> None:
     """The exact hosted Python 3.12.14 graph must remain fail-closed and pinned."""
     policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
+    alternates = policy["reviewed_transitive_warning_sha256_alternates_by_architecture"]["x86_64"]
 
-    assert (
-        "346aa57c8d7ac18ead8c3ddc7d2de4f1660dca8051ae04ba79c13831b9ab5814"
-        in policy["reviewed_transitive_warning_sha256_alternates_by_architecture"]["x86_64"]
-    )
+    assert "346aa57c8d7ac18ead8c3ddc7d2de4f1660dca8051ae04ba79c13831b9ab5814" in alternates
+    assert "837c969e07af0acbc4812ec9e417ef42eb941a9184d9aa1731c402c3df1d11ad" in alternates
 
 
 def test_linux_policy_pins_hosted_and_container_architectures() -> None:
@@ -642,6 +643,27 @@ def test_transitive_warning_graph_requires_exact_normalized_digest(
 
     assert result.returncode == 1
     assert "transitive warning digest mismatch" in result.stderr
+    assert "transitive warning graph: total=1 shown=1 limit=50" in result.stderr
+    assert (
+        "transitive warning edge: missing optional_backend <- "
+        "dependency.compat (optional)"
+    ) in result.stderr
+
+
+def test_transitive_warning_mismatch_diagnostics_are_bounded(tmp_path: Path) -> None:
+    warning = "".join(
+        f"missing module named optional_{index:02d} - "
+        f"imported by dependency_{index:02d}.compat (optional)\n"
+        for index in range(51)
+    )
+
+    result = _run_audit(tmp_path, warning)
+
+    assert result.returncode == 1
+    assert "transitive warning graph: total=51 shown=50 limit=50" in result.stderr
+    assert "transitive warning graph omitted=1" in result.stderr
+    assert "transitive warning edge: missing optional_49" in result.stderr
+    assert "transitive warning edge: missing optional_50" not in result.stderr
 
 
 def test_exact_transitive_warning_graph_digest_passes(tmp_path: Path) -> None:

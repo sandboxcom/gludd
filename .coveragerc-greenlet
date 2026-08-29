@@ -1,6 +1,9 @@
 [run]
 branch = True
 parallel = True
+source =
+    src/general_ludd
+    collections/ansible_collections/general_ludd/governance/plugins/module_utils
 concurrency =
     greenlet
     thread

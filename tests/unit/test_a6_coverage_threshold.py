@@ -44,13 +44,18 @@ class TestBuildYmlNoFailUnderZeroWorkaround:
             "see A.6 — workaround must be removed now that fail_under=85 is the target"
         )
 
-    def test_no_cov_fail_under_zero_on_pytest_shards(self) -> None:
-        content = Path(".github/workflows/build.yml").read_text()
-        assert "--cov-fail-under=0" in content, (
-            "test shards must disable per-shard fail_under because each shard "
-            "only covers a slice of the suite; the aggregate coverage job "
-            "enforces pyproject.toml fail_under=85 after combining shard data"
+    def test_shared_shard_runner_defers_threshold_to_aggregate(self) -> None:
+        workflow = Path(".github/workflows/build.yml").read_text()
+        runner = Path("scripts/run_ci_shards_serial.py").read_text()
+        assert "scripts/run_ci_shards_serial.py" in workflow
+        assert '"--cov-fail-under=0"' in runner, (
+            "the shared local/hosted runner must defer the threshold for each "
+            "partial batch; aggregate coverage enforces fail_under=85"
         )
+        assert '"--cov"' in runner
+        assert "--cov=general_ludd" not in runner
+        assert "src/general_ludd" in Path(".coveragerc-greenlet").read_text()
+        assert "_aggregate_coverage" in runner
 
     def test_coverage_report_step_no_longer_nongating(self) -> None:
         content = Path(".github/workflows/build.yml").read_text()

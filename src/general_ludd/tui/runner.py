@@ -4,13 +4,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 import inspect
 import os
 import select
-import subprocess
 import sys
-import time
 from types import SimpleNamespace
 from typing import Any
 
@@ -26,11 +23,8 @@ from general_ludd.tui.logger import TUILogger
 _DAEMON_HOST_DEFAULT = "127.0.0.1"
 _CASE_SENSITIVE_DISPATCH_KEYS = frozenset({"P", "R", "L", "H", "T", "D", "C"})
 
-# The runner spawns the daemon via h._build_daemon_start_cmd(host, port,
-# workers), whose host/port/workers come from CLI args / config and are thus
-# untrusted. A daemon launcher must validate them and fail closed before any
-# subprocess is created. The validator is shared with the keybindings spawn
-# site so both launchers enforce identical rules.
+# Preserve the public validator alias while keeping daemon process ownership in
+# the keybinding handler.  The runner only coordinates terminal lifecycle.
 validate_daemon_spawn_args = validate_gunicorn_spawn_args
 
 
@@ -50,7 +44,6 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
     from rich.live import Live
     from rich.panel import Panel
 
-    daemon_proc: subprocess.Popen[bytes] | None = None
     daemon_running = False
     current_view = "main"
     status_msg = "Press q to quit, s to start daemon"
@@ -95,90 +88,6 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
     model_mgr.create_server(LocalServerConfig(engine="vllm", model_name="meta-llama/Llama-3.2-1B", port=8000))
     model_registry = ModelRegistry()
     downloaded_models = model_registry.list_downloaded()
-
-    def start_daemon() -> None:
-        nonlocal daemon_proc, daemon_running, status_msg
-        if daemon_running or detect_daemon():
-            status_msg = "Daemon already running"
-            daemon_running = True
-            return
-        _host = getattr(args, "host", _DAEMON_HOST_DEFAULT)
-        _port = getattr(args, "port", 8000)
-        _workers = getattr(args, "workers", 1)
-        _log_level = getattr(args, "log_level", None)
-        # Fail closed on bad spawn args (out-of-range port, injection-y host,
-        # bad worker count / log-level) before any subprocess is created.
-        try:
-            validate_daemon_spawn_args(host=_host, port=_port, workers=_workers, log_level=_log_level)
-        except ValueError as exc:
-            status_msg = f"Start failed: invalid spawn args: {exc}"
-            return
-        try:
-            cmd = h._build_daemon_start_cmd(
-                host=_host,
-                port=_port,
-                workers=_workers,
-            )
-            daemon_proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                start_new_session=True,
-                close_fds=True,
-            )
-            alive = False
-            for _ in range(20):
-                time.sleep(0.25)
-                if daemon_proc.poll() is not None:
-                    stderr_out = daemon_proc.stderr.read().decode(errors="replace") if daemon_proc.stderr else ""
-                    status_msg = f"Daemon exited (rc={daemon_proc.returncode}): {stderr_out[:200]}"
-                    daemon_proc = None
-                    return
-                try:
-                    import httpx
-
-                    resp = httpx.get(f"{args.daemon_url}/healthz", timeout=1.0)
-                    if resp.status_code == 200:
-                        alive = True
-                        break
-                except Exception:
-                    pass
-            if not alive and daemon_proc.poll() is not None:
-                status_msg = "Daemon failed to start"
-                daemon_proc = None
-                return
-            h._get_daemon_pid_dir()
-            h._write_daemon_pid_file(h._DAEMON_PID_FILE, daemon_proc.pid, args.daemon_url)
-            daemon_running = True
-            status_msg = f"Daemon started PID={daemon_proc.pid}"
-        except Exception as exc:
-            status_msg = f"Start failed: {exc}"
-
-    def stop_daemon() -> None:
-        nonlocal daemon_proc, daemon_running, status_msg
-        if daemon_proc is not None:
-            daemon_proc.terminate()
-            try:
-                daemon_proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                daemon_proc.kill()
-            daemon_proc = None
-            daemon_running = False
-            with contextlib.suppress(OSError):
-                os.unlink(h._DAEMON_PID_FILE)
-            status_msg = "Daemon stopped"
-        elif h._is_daemon_pid_alive(h._DAEMON_PID_FILE):
-            if h._stop_daemon_via_pid_file(h._DAEMON_PID_FILE):
-                daemon_running = False
-                status_msg = "Daemon stopped via PID"
-            else:
-                status_msg = "Failed to stop daemon"
-        elif daemon_running:
-            daemon_running = False
-            status_msg = "Daemon status cleared (not running)"
-        else:
-            status_msg = "No daemon to stop"
 
     def build_controls_table() -> Any:
         import shutil as _shutil2
@@ -1130,6 +1039,14 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
                             tui_state["input_mode"] = None
                             tui_state["input_buffer"] = ""
                             status_msg = "Cancelled"
+                        elif current_view == "edit":
+                            old_view = current_view
+                            handle_key(info, ch)
+                            info = h._gather_offline_status()
+                            live.update(make_layout(info))
+                            if current_view != old_view:
+                                tui_logger.log_view_change(old_view, current_view)
+                            continue
                         elif current_view != "main":
                             old_view = current_view
                             current_view = "main"

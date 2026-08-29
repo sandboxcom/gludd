@@ -498,6 +498,60 @@ class TestBenchmarkRunnerDeep:
         runner = BenchmarkRunner(warmup=1, iterations=1, output="file")
         assert runner._output == "file"
 
+    def test_non_stdout_report_is_silent(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        runner = BenchmarkRunner(warmup=0, iterations=0, output="file")
+
+        runner.report()
+
+        assert capsys.readouterr().out == ""
+
+    def test_consensus_reviewer_all_verdict_paths(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        runner = BenchmarkRunner(warmup=0, iterations=1)
+
+        for reviewer_hash in (100, 210, 230):
+            monkeypatch.setattr(
+                "builtins.hash", lambda _value, value=reviewer_hash: value
+            )
+            runner._compare_consensus_engines()
+
+        assert [result.test_name for result in runner.results] == [
+            "consensus_engine_5_agents_3_rounds",
+        ] * 3
+
+    def test_agent_loop_records_missing_optional_langgraph(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setitem(
+            sys.modules, "general_ludd.execution.langgraph_agent", None
+        )
+        runner = BenchmarkRunner(warmup=0, iterations=1)
+
+        runner._compare_agent_loops()
+
+        assert runner.results[0].winner == "custom"
+        assert runner.results[0].notes == [
+            "langgraph not installed — LangGraphAgentLoop skipped"
+        ]
+
+    def test_consensus_records_missing_optional_langgraph(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setitem(
+            sys.modules, "general_ludd.review.langgraph_consensus", None
+        )
+        runner = BenchmarkRunner(warmup=0, iterations=1)
+
+        runner._compare_consensus_engines()
+
+        assert runner.results[0].winner == "custom"
+        assert runner.results[0].notes == [
+            "langgraph not installed — LangGraphConsensusEngine skipped"
+        ]
+
     def test_run_all_resets_results_each_call(self) -> None:
         runner = BenchmarkRunner(warmup=1, iterations=3)
         runner.run_all()

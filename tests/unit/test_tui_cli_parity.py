@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -51,7 +54,7 @@ class TestHealthView:
 
         t = _build_health_table({})
         assert t is not None
-        assert "Health" in t.title
+        assert "Health" in str(t.title)
 
     def test_build_health_table_with_data(self) -> None:
         from general_ludd.cli import _build_health_table
@@ -79,7 +82,7 @@ class TestSelftestView:
 
         t = _build_selftest_table({})
         assert t is not None
-        assert "Selftest" in t.title
+        assert "Selftest" in str(t.title)
 
     def test_build_selftest_table_with_results(self) -> None:
         from general_ludd.cli import _build_selftest_table
@@ -118,7 +121,7 @@ class TestVersionView:
         }
         t = _build_version_table(info)
         assert t is not None
-        assert "Version" in t.title
+        assert "Version" in str(t.title)
         assert t.row_count >= 1
 
 
@@ -139,7 +142,7 @@ class TestLogLevelView:
 
         t = _build_loglevel_table("info")
         assert t is not None
-        assert "Log Level" in t.title
+        assert "Log Level" in str(t.title)
 
     def test_loglevel_cycle_action(self) -> None:
         handler, state = _make_handler()
@@ -165,7 +168,7 @@ class TestDiscoveredModelsView:
 
         t = _build_discovered_table([])
         assert t is not None
-        assert "Discovered" in t.title
+        assert "Discovered" in str(t.title)
 
     def test_build_discovered_table_with_profiles(self) -> None:
         from general_ludd.cli import _build_discovered_table
@@ -203,7 +206,7 @@ class TestCodeIntelView:
 
         t = _build_code_table([])
         assert t is not None
-        assert "Code" in t.title
+        assert "Code" in str(t.title)
 
     def test_build_code_table_with_results(self) -> None:
         from general_ludd.cli import _build_code_table
@@ -321,13 +324,44 @@ class TestToggleViewsCompleteness:
             assert v in view_names, f"View '{v}' missing from _TOGGLE_VIEWS"
 
     def test_all_new_views_have_rendering(self) -> None:
-        import inspect
-
         from general_ludd.tui.runner import run_tui
 
-        src = inspect.getsource(run_tui)
-        for view_name in ("health", "selftest", "version", "log-level", "discovered", "code"):
-            assert f'current_view == "{view_name}"' in src, f"Missing rendering for view '{view_name}'"
+        expected = {
+            "health": "_build_health_table",
+            "selftest": "_build_selftest_table",
+            "version": "_build_version_table",
+            "log-level": "_build_loglevel_table",
+            "discovered": "_build_discovered_table",
+            "code": "_build_code_table",
+        }
+        tree = ast.parse(textwrap.dedent(inspect.getsource(run_tui)))
+        renderers: dict[str, set[str]] = {}
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Match)
+                and isinstance(node.subject, ast.Name)
+                and node.subject.id == "current_view"
+            ):
+                continue
+            for case in node.cases:
+                pattern = case.pattern
+                if not (
+                    isinstance(pattern, ast.MatchValue)
+                    and isinstance(pattern.value, ast.Constant)
+                    and isinstance(pattern.value.value, str)
+                ):
+                    continue
+                body = ast.Module(body=case.body, type_ignores=[])
+                renderers.setdefault(pattern.value.value, set()).update(
+                    child.func.attr
+                    for child in ast.walk(body)
+                    if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute)
+                )
+
+        for view_name, builder_name in expected.items():
+            assert builder_name in renderers.get(view_name, set()), (
+                f"Missing {builder_name} rendering for view '{view_name}'"
+            )
 
     def test_new_views_have_table_builders(self) -> None:
         from general_ludd import cli

@@ -42,6 +42,7 @@ def _run_payload(
     run_id: int = 4242,
     url: str = RUN_URL,
     status: str = "queued",
+    conclusion: str = "",
     event: str = "push",
 ) -> dict[str, object]:
     return {
@@ -49,7 +50,7 @@ def _run_payload(
         "headSha": sha,
         "url": url,
         "status": status,
-        "conclusion": "",
+        "conclusion": conclusion,
         "event": event,
     }
 
@@ -112,7 +113,7 @@ def _signal(
     *,
     discovery_polls: int = 1,
     confirm_polls: int = 1,
-):
+) -> signal_module.SignalResult:
     return signal_exact_sha(
         ref="release/beta3-candidate",
         remote="sandboxcom",
@@ -128,7 +129,9 @@ def _signal(
 
 
 def test_existing_exact_sha_run_returns_url_without_dispatch(tmp_path: Path) -> None:
-    runner = FakeRunner([[_run_payload()]])
+    runner = FakeRunner(
+        [[_run_payload(status="completed", conclusion="success")]]
+    )
 
     result = _signal(runner, tmp_path)
 
@@ -139,6 +142,96 @@ def test_existing_exact_sha_run_returns_url_without_dispatch(tmp_path: Path) -> 
     list_call = runner.gh_calls[0]
     assert "--commit" in list_call
     assert list_call[list_call.index("--commit") + 1] == SHA
+
+
+@pytest.mark.parametrize("conclusion", ["cancelled", "failure"])
+def test_terminal_unsuccessful_run_dispatches_replacement(
+    tmp_path: Path,
+    conclusion: str,
+) -> None:
+    replacement_url = "https://github.com/sandboxcom/gludd/actions/runs/4343"
+    runner = FakeRunner(
+        [
+            [
+                _run_payload(
+                    status="completed",
+                    conclusion=conclusion,
+                    event="workflow_dispatch",
+                )
+            ],
+            [
+                _run_payload(
+                    status="completed",
+                    conclusion=conclusion,
+                    event="workflow_dispatch",
+                )
+            ],
+            [
+                _run_payload(
+                    run_id=4343,
+                    url=replacement_url,
+                    event="workflow_dispatch",
+                )
+            ],
+        ]
+    )
+
+    result = _signal(runner, tmp_path)
+
+    assert result.dispatched is True
+    assert result.url == replacement_url
+    assert runner.dispatch_count == 1
+
+
+def test_terminal_unsuccessful_run_replaces_stale_dispatch_marker(
+    tmp_path: Path,
+) -> None:
+    marker_path, _lock_path = signal_module._state_paths(
+        tmp_path,
+        repo="sandboxcom/gludd",
+        workflow="Build and Release",
+        sha=SHA,
+    )
+    signal_module._write_marker(
+        marker_path,
+        sha=SHA,
+        ref="release/beta3-candidate",
+        repo="sandboxcom/gludd",
+        workflow="Build and Release",
+        dispatch_url=RUN_URL,
+    )
+    replacement_url = "https://github.com/sandboxcom/gludd/actions/runs/4344"
+    runner = FakeRunner(
+        [
+            [
+                _run_payload(
+                    status="completed",
+                    conclusion="cancelled",
+                    event="workflow_dispatch",
+                )
+            ],
+            [
+                _run_payload(
+                    status="completed",
+                    conclusion="cancelled",
+                    event="workflow_dispatch",
+                )
+            ],
+            [
+                _run_payload(
+                    run_id=4344,
+                    url=replacement_url,
+                    event="workflow_dispatch",
+                )
+            ],
+        ]
+    )
+
+    result = _signal(runner, tmp_path)
+
+    assert result.dispatched is True
+    assert result.url == replacement_url
+    assert runner.dispatch_count == 1
 
 
 def test_run_payload_parser_rejects_incomplete_data_and_builds_url_fallback() -> None:
@@ -238,7 +331,7 @@ def test_main_forwards_real_signal_configuration(
 ) -> None:
     captured: dict[str, object] = {}
 
-    def fake_signal(**kwargs: object):
+    def fake_signal(**kwargs: object) -> signal_module.SignalResult:
         captured.update(kwargs)
         return signal_module._example_result("release/beta3-candidate", "example/repo")
 
@@ -280,7 +373,7 @@ def test_main_reports_signal_error_without_dispatch_retry(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    def blocked(**_kwargs: object):
+    def blocked(**_kwargs: object) -> None:
         raise SignalError("remote moved")
 
     monkeypatch.setattr(signal_module, "signal_exact_sha", blocked)

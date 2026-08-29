@@ -47,6 +47,14 @@ Key runtime dependencies:
 - pqcrypto (Apache-2.0) — PQClean-backed post-quantum cryptography bindings
   ([upstream license and notice](https://github.com/backbone-hq/pqcrypto));
   the locked wheel provides the FIPS 203 ML-KEM-512/768/1024 boundary.
+- pygame 2.6.1 (LGPL-2.1) — optional game generation and fidelity runtime
+  ([upstream license](https://github.com/pygame/pygame/blob/2.6.1/docs/LGPL.txt),
+  [release](https://github.com/pygame/pygame/releases/tag/2.6.1)). Gludd imports
+  the unmodified wheel dynamically and does not modify or statically link pygame.
+- chardet (LGPL-2.1-or-later) — character-encoding detection.
+- psycopg and psycopg-binary (LGPL-3.0-only) — PostgreSQL driver and its binary
+  distribution. Gludd uses the unmodified packages through their public Python
+  interfaces.
 
 ## Collected Prompts
 

@@ -74,6 +74,7 @@ class DurationTracker:
         min_samples: int = _DEFAULT_MIN_SAMPLES,
         slow_factor: float = _DEFAULT_SLOW_FACTOR,
         abs_floor_s: float = _DEFAULT_ABS_FLOOR_S,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """Initialize bounded baseline tracking and anomaly thresholds."""
         if window <= 0:
@@ -86,6 +87,7 @@ class DurationTracker:
         self._min_samples = int(min_samples)
         self._slow_factor = float(slow_factor)
         self._abs_floor_s = float(abs_floor_s)
+        self._clock = clock
         # key -> rolling list of the most recent durations (bounded to _window).
         self._history: dict[str, list[float]] = {}
         self._lock = threading.Lock()
@@ -150,11 +152,11 @@ class DurationTracker:
         warning and calls ``on_anomaly`` (if given). Never suppresses the block's
         own exception — the duration is still recorded on the error path.
         """
-        start = time.monotonic()
+        start = self._clock()
         try:
             yield
         finally:
-            elapsed = time.monotonic() - start
+            elapsed = self._clock() - start
             verdict = self.is_anomalous(key, elapsed)
             self.record(key, elapsed)
             if verdict.anomalous:

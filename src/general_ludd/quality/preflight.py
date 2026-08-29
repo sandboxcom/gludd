@@ -280,6 +280,15 @@ def check_session_drift() -> dict[str, object]:
     end = session_text.find("<!-- gate:end -->")
     if begin == -1 or end == -1:
         return {"passed": False, "violations": ["SESSION.md missing gate markers"]}
+    terminal_markers = ("=== GATE: PASSED ===", "=== GATE: FAILED ===")
+    if gate_text.lstrip().startswith("=== GATE ") and not any(
+        marker in gate_text for marker in terminal_markers
+    ):
+        return {
+            "passed": True,
+            "violations": [],
+            "reason": "gate status incomplete",
+        }
     block = session_text[begin:end]
     violations: list[str] = []
     for line in gate_text.splitlines():
@@ -293,13 +302,6 @@ def check_session_drift() -> dict[str, object]:
         return {
             "passed": False,
             "violations": violations,
-        }
-    terminal_markers = ("=== GATE: PASSED ===", "=== GATE: FAILED ===")
-    if not any(marker in gate_text for marker in terminal_markers):
-        return {
-            "passed": True,
-            "violations": [],
-            "reason": "gate status incomplete",
         }
     return {
         "passed": True,

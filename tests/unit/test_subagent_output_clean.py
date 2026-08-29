@@ -11,8 +11,8 @@ Check (b): extract all injection/nag strings from `text.complete` hook bodies
 user-visible warnings), and verify none are missing from the KNOWN_NAG_STRINGS
 baseline — a new nag that is not in the baseline means the test needs updating.
 
-Check (c): E.13 — mechanically verify that specific nag texts (DELEGATE-FIRST,
-READ-GRINDING, MUST DISPATCH) appear only inside guarded hook handlers, so
+Check (c): E.13 — mechanically verify that specific nag texts (DELEGATE-FIRST
+and READ-GRINDING) appear only inside guarded hook handlers, so
 they can never be injected into subagent task_result or tool output.
 """
 import re
@@ -25,6 +25,7 @@ PLUGIN_DIRS = [
     PROJECT_ROOT / ".opencode" / "plugin" / "impl",
     PROJECT_ROOT / ".opencode" / "plugins",
 ]
+SUBAGENT_GUARD_EXCEPTIONS = frozenset({"enforce-depth.ts"})
 
 
 # ── Known nag strings injected by text.complete hooks ───────────────────────
@@ -36,8 +37,6 @@ KNOWN_NAG_STRINGS: list[str] = [
     "FALSE-DONE CLAIM BLOCKED",
     "DISPATCH A TOOL CALL",
     "QA RESPONSE SUMMARY BLOCKED",
-    # enforce-multitask.ts text.complete
-    "MUST DISPATCH",  # zero-streak enforcement
 ]
 
 
@@ -60,7 +59,6 @@ _SUBAGENT_GUARD_RE = re.compile(
 # ── Nag strings used in guard-integrity tests (E.13) ────────────────────────
 _NAG_DELEGATE_FIRST = "DELEGATE-FIRST"
 _NAG_READ_GRINDING = "READ-GRINDING"
-_NAG_MUST_DISPATCH = "MUST DISPATCH"
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -295,7 +293,7 @@ class TestSubagentOutputClean:
                 files.extend(sorted(d.glob("*.ts")))
         return files
 
-    def test_all_text_complete_hooks_have_subagent_guard(self):
+    def test_all_text_complete_hooks_have_subagent_guard(self) -> None:
         """Every text.complete hook must guard with OPENCODE_SUBAGENT."""
         plugin_files = self._collect_plugin_files()
         assert plugin_files, "No plugin .ts files found"
@@ -318,7 +316,7 @@ class TestSubagentOutputClean:
             f"OPENCODE_SUBAGENT guard:\n" + "\n".join(violations)
         )
 
-    def test_known_nag_strings_found_in_plugins(self):
+    def test_known_nag_strings_found_in_plugins(self) -> None:
         """Every known nag string must be present in at least one plugin
         and be inside a text.complete handler body."""
         plugin_files = self._collect_plugin_files()
@@ -355,7 +353,7 @@ class TestSubagentOutputClean:
             + "\n".join(missing)
         )
 
-    def test_no_unexpected_nags_in_text_complete_hooks(self):
+    def test_no_unexpected_nags_in_text_complete_hooks(self) -> None:
         """Detect nag-like strings in text.complete hooks that are NOT in
         the known list — means a new nag was added without updating this test."""
         plugin_files = self._collect_plugin_files()
@@ -389,7 +387,7 @@ class TestSubagentOutputClean:
             )
         )
 
-    def test_plugin_count_matches_expected(self):
+    def test_plugin_count_matches_expected(self) -> None:
         """Structural pin: number of text.complete hooks across all plugins."""
         plugin_files = self._collect_plugin_files()
         total_handlers = 0
@@ -403,10 +401,10 @@ class TestSubagentOutputClean:
             f"found {total_handlers}."
         )
 
-    def test_diagnostic_text_complete_hook_inventory(self):
+    def test_diagnostic_text_complete_hook_inventory(self) -> None:
         """Print full inventory of text.complete hooks and their guards."""
         plugin_files = self._collect_plugin_files()
-        inventory: list[dict] = []
+        inventory: list[dict[str, object]] = []
         for filepath in plugin_files:
             source = filepath.read_text()
             sections = _find_text_complete_sections(source)
@@ -425,7 +423,7 @@ class TestSubagentOutputClean:
                 })
 
         print("\n  Text.complete hook inventory:")
-        for entry in sorted(inventory, key=lambda e: e["file"]):
+        for entry in sorted(inventory, key=lambda e: str(e["file"])):
             guard = "PASS" if entry["has_guard"] else "FAIL"
             print(f"    {entry['file']}:{entry['line']} "
                   f"guard={guard} nag_strings={entry['nag_strings']}")
@@ -483,7 +481,7 @@ class TestSubagentOutputClean:
             "helper_fn": str(len(outside_hooks)),
         }
 
-    def test_delegate_first_nag_fully_guarded(self):
+    def test_delegate_first_nag_fully_guarded(self) -> None:
         """Every executable DELEGATE-FIRST occurrence is inside a guarded hook."""
         r = self._check_nag_in_guarded_hooks(
             _NAG_DELEGATE_FIRST, "DELEGATE-FIRST",
@@ -492,7 +490,7 @@ class TestSubagentOutputClean:
             "DELEGATE-FIRST not found in any plugin — regression?"
         )
 
-    def test_read_grinding_nag_fully_guarded(self):
+    def test_read_grinding_nag_fully_guarded(self) -> None:
         """Every executable READ-GRINDING occurrence is inside a guarded hook."""
         r = self._check_nag_in_guarded_hooks(
             _NAG_READ_GRINDING, "READ-GRINDING",
@@ -501,20 +499,11 @@ class TestSubagentOutputClean:
             "READ-GRINDING not found in any plugin — regression?"
         )
 
-    def test_must_dispatch_nag_fully_guarded(self):
-        """Every executable MUST DISPATCH occurrence is inside a guarded hook."""
-        r = self._check_nag_in_guarded_hooks(
-            _NAG_MUST_DISPATCH, "MUST DISPATCH",
-        )
-        assert int(r["guarded"]) > 0 or int(r["helper_fn"]) > 0, (
-            "MUST DISPATCH not found in any plugin — regression?"
-        )
-
-    def test_subagent_guard_precedes_all_nag_injections(self):
+    def test_subagent_guard_precedes_all_nag_injections(self) -> None:
         """In every hook handler that contains BOTH a guard and nag text,
         the guard line must appear before every nag line."""
         plugin_files = self._collect_plugin_files()
-        all_nags = [_NAG_DELEGATE_FIRST, _NAG_READ_GRINDING, _NAG_MUST_DISPATCH]
+        all_nags = [_NAG_DELEGATE_FIRST, _NAG_READ_GRINDING]
         violations: list[str] = []
         for filepath in plugin_files:
             source = filepath.read_text()
@@ -541,7 +530,7 @@ class TestSubagentOutputClean:
             + "\n".join(violations)
         )
 
-    def test_all_tool_execute_before_hooks_have_subagent_guard(self):
+    def test_all_tool_execute_before_hooks_have_subagent_guard(self) -> None:
         """Every tool.execute.before handler must guard with OPENCODE_SUBAGENT.
         This is the primary defense against nag text reaching subagent tool results."""
         plugin_files = self._collect_plugin_files()
@@ -550,6 +539,8 @@ class TestSubagentOutputClean:
         )
         violations: list[str] = []
         for filepath in plugin_files:
+            if filepath.name in SUBAGENT_GUARD_EXCEPTIONS:
+                continue
             source = filepath.read_text()
             for m in _TOOL_BEFORE_RE.finditer(source):
                 pos = m.start()
@@ -573,3 +564,10 @@ class TestSubagentOutputClean:
             f"{len(violations)} tool.execute.before handler(s) lack "
             f"OPENCODE_SUBAGENT guard:\n" + "\n".join(violations)
         )
+
+    def test_depth_is_the_only_tool_guard_exception(self) -> None:
+        """The delegated depth boundary is dispatch-only and uniquely exempt."""
+        assert frozenset({"enforce-depth.ts"}) == SUBAGENT_GUARD_EXCEPTIONS
+        source = (PROJECT_ROOT / ".opencode/plugin/enforce-depth.ts").read_text()
+        assert "if (!isDispatchTool(tool)) return" in source
+        assert 'lt === "task" || lt === "agent" || lt === "workflow"' in source

@@ -26,7 +26,7 @@ def _find_target_recipe(content: str, target: str) -> str:
 class TestM19ReleasePromoteFfOnly:
     """M19 — release-promote is ff-only merge into master."""
 
-    def test_release_promote_target_exists_or_is_documented(self):
+    def test_release_promote_target_exists_or_is_documented(self) -> None:
         content = MAKEFILE.read_text()
         target_names = set()
         for line in content.split("\n"):
@@ -38,7 +38,7 @@ class TestM19ReleasePromoteFfOnly:
         if not has_target:
             pass  # Target may be planned but not yet built
 
-    def test_check_green_branch_guard_documents_promote(self):
+    def test_check_green_branch_guard_documents_promote(self) -> None:
         guard_path = SCRIPTS_DIR / "check_green_branch_guard.py"
         if not guard_path.exists():
             return
@@ -48,7 +48,7 @@ class TestM19ReleasePromoteFfOnly:
             "M19: check_green_branch_guard.py must document ff-only merge"
         )
 
-    def test_ship_async_uses_ff_only(self):
+    def test_ship_async_uses_ff_only(self) -> None:
         content = MAKEFILE.read_text()
         recipe = _find_target_recipe(content, "ship-async")
         if not recipe:
@@ -60,7 +60,7 @@ class TestM19ReleasePromoteFfOnly:
                 "M19: ship_async.sh must enforce ff-only or fast-forward merge"
             )
 
-    def test_release_branch_new_checks_ci_green(self):
+    def test_release_branch_new_checks_ci_green(self) -> None:
         content = MAKEFILE.read_text()
         target_names = set()
         for line in content.split("\n"):

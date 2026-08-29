@@ -307,23 +307,31 @@ def test_inclusive_cursor_exhausts_after_the_last_unseen_ref() -> None:
     assert second["next_cursor"] is None
 
 
-def test_cursor_backend_regression_fails_closed() -> None:
+def test_cursor_backend_regression_uses_bounded_sorted_local_fallback() -> None:
     fake = FakeGit(
         refs=[
-            (f"refs/heads/feature/{name}", PAGE_HEADS[index])
-            for index, name in enumerate("abc")
+            ("refs/heads/fix-beta", PAGE_HEADS[0]),
+            ("refs/heads/fix/dogfood", PAGE_HEADS[1]),
+            ("refs/heads/fix/next", PAGE_HEADS[2]),
         ],
         ancestors=frozenset(PAGE_HEADS),
         regressive_start_after=True,
     )
 
-    with pytest.raises(inventory.InventoryError, match="cursor moved backwards"):
-        inventory.collect_inventory(
-            "development",
-            2,
-            after="refs/heads/feature/b",
-            run=fake,
-        )
+    result = inventory.collect_inventory(
+        "development",
+        2,
+        after="refs/heads/fix/dogfood",
+        run=fake,
+    )
+
+    assert [branch["ref"] for branch in result["branches"]] == [
+        "refs/heads/fix/next"
+    ]
+    enumerations = [call for call in fake.calls if call[1] == "for-each-ref"]
+    assert len(enumerations) == 2
+    assert "--sort=refname" in enumerations[1]
+    assert "refs/heads" in enumerations[1]
 
 
 def test_absent_cursor_is_a_strict_lexicographic_boundary() -> None:

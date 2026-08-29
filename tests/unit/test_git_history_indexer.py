@@ -3,6 +3,9 @@ from __future__ import annotations
 import sqlite3
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from general_ludd.history.git_indexer import (
     CommitRecord,
@@ -232,6 +235,21 @@ class TestGitHistoryIndexer:
         results = indexer.search(query="nonexistent")
         assert results == []
 
+    def test_search_commit_without_changed_paths_returns_empty_path_list(self, tmp_path: Path) -> None:
+        indexer = GitHistoryIndexer(tmp_path, tmp_path / "history.db")
+        conn = indexer._get_conn()
+        conn.execute(
+            "INSERT INTO commits(hash, author, date, message, insertions, deletions) VALUES(?,?,?,?,?,?)",
+            ("abc", "Ada", "2026-01-01", "metadata only", 0, 0),
+        )
+        conn.commit()
+        conn.close()
+
+        results = indexer.search(query="metadata")
+
+        assert len(results) == 1
+        assert results[0].matched_paths == []
+
     def test_index_non_git_repo_returns_zero_not_raises(self, tmp_path: Path) -> None:
         # Regression: a non-repo path has ZERO commits to index -- an empty
         # result, not a crash. Previously `git log` exited non-zero and
@@ -296,6 +314,41 @@ class TestGitHistoryIndexer:
         c1 = indexer.index()
         c2 = indexer.index()
         assert c1 == c2
+
+    def test_parse_git_log_handles_binary_rename_and_malformed_blocks(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        stdout = (
+            "__COMMIT__\nabc\nAda\n2026-01-01T00:00:00Z\nmessage\n"
+            "-\t2\tbinary.dat\n1\t-\tone.py\nold => new\n"
+            "__COMMIT__\nshort"
+        )
+        monkeypatch.setattr(
+            "general_ludd.history.git_indexer.subprocess.run",
+            lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout=stdout, stderr=""),
+        )
+
+        commits = list(GitHistoryIndexer(tmp_path, tmp_path / "history.db")._parse_git_log())
+
+        assert len(commits) == 1
+        assert commits[0].insertions == 1
+        assert commits[0].deletions == 2
+        assert [change.change_type for change in commits[0].files] == ["M", "M", "R"]
+
+    def test_parse_git_log_raises_for_non_benign_failure(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "general_ludd.history.git_indexer.subprocess.run",
+            lambda *_args, **_kwargs: SimpleNamespace(returncode=2, stdout="", stderr="permission denied"),
+        )
+
+        with pytest.raises(RuntimeError, match="permission denied"):
+            list(GitHistoryIndexer(tmp_path, tmp_path / "history.db")._parse_git_log())
 
     def test_module_level_search_history(self, tmp_path: Path) -> None:
         db_path = tmp_path / "index.db"

@@ -410,7 +410,7 @@ function _buildFloorBreachBlock(streakCount: number, effectiveMax: number, comma
 // DEFAULT IMPLEMENTATION (tool.execute.before only — self-contained)
 // ============================================================================
 const defaultImpl: HotModule = {
-  "tool.execute.before": async (input: any, output: any) => {
+  "tool.execute.before": async (input: any, output: any,t=Date.now()) => {
     if (isSubagent()) return
     reportAlive("enforce-floor")
     writeHeartbeat("enforce-floor")
@@ -421,7 +421,7 @@ const defaultImpl: HotModule = {
     try {
       if (!FLOOR_ENFORCE) return
       const tool = (input?.tool ?? "") as string
-      const now = Date.now()
+      const now = t
       if (isDisengaged()) {
         _streakCount = 0
         _readStreak = 0
@@ -442,7 +442,6 @@ const defaultImpl: HotModule = {
         _thisMessageDispatchCount = 0
         _thisMessageTotalCalls = 0
       }
-      _lastCallTs = now
       // ── Time-based result-processing phase detection ─────────────────
       const msSinceDispatch = now - _lastDispatchTs
       const inResultPhase = _dispatchCount > 0 && msSinceDispatch < POST_DISPATCH_GRACE_MS && msSinceDispatch > 2000
@@ -696,6 +695,11 @@ const defaultImpl: HotModule = {
       }
     } catch {
       return
+    } finally {
+      // Measure message boundaries from the completion of the previous hook.
+      // Dispatch preflight work can be non-trivial on hosted runners and must
+      // never be mistaken for time between assistant tool calls.
+      _lastCallTs = Date.now()
     }
   },
 }

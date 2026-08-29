@@ -379,8 +379,9 @@ jobs:
     # Every named shard is a release prerequisite. Failures and missing coverage
     # stay red instead of being reclassified as an informational result.
     # The old unit-3 (test_[n-z]* + secrets/) exceeded its 25m step budget on a
-    # hosted runner.  It is partitioned into disjoint unit-3a/unit-3b lanes so
-    # every lane retains enough bounded budget for one retry and cleanup.
+    # hosted runner. It is partitioned into disjoint unit-3a/unit-3b lanes.
+    # The test step retains 90m for the long unit-2/other lanes while the 120m
+    # job ceiling reserves 30m for owner cleanup, diagnostics, and artifacts.
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -391,77 +392,18 @@ jobs:
         python-version: ["3.11"]
         shard: [unit-1a1, unit-1a2, unit-1b, unit-1d, unit-2, unit-3a, unit-3b, other]
         include:
-          # Map each shard label to the pytest path(s) it owns.
-          # Bash glob expansion inside `run:` handles the wildcard patterns.
-          #
-          # unit-1 was split (2026-07-08) into unit-1a (test_[a-bd]*.py) +
-          # unit-1b (test_[ce]*.py) after CI run 28923533095 hit the 30m
-          # timeout on both 3.11 + 3.12 (the a-e range was ~235 files / ~63k
-          # lines, ~30m — 3x the 10-12m baseline). unit-1a itself KEPT hitting
-          # the 30m timeout on both pythons in later runs (29055665462,
-          # 29053789829, 29051813598) because the a-bd split point was sized
-          # by file/line count, not measured runtime. It is split again
-          # (2026-07-09) into unit-1a (test_a*.py) + unit-1d (test_[bd]*.py)
-          # so neither new shard carries more than ~60% of the old unit-1a
-          # load. unit-1b (test_[ce]*.py) is unaffected and unchanged.
-          #
-          # Every letter-range shard below ALSO excludes test_*_e2e.py so
-          # e2e-suffixed files are collected exactly once, by the 'other'
-          # shard, regardless of which letter they start with — see the
-          # 'other' entry. Without this, e.g. tests/unit/test_data_flow_e2e.py
-          # (starts with 'd', in unit-1d's range) would run BOTH in its letter
-          # shard AND in 'other'.
-          #
-          # `exclude` is a space-separated list of shell glob patterns filtered
-          # OUT of the shard's expanded file list by the run step below,
-          # BEFORE pytest is invoked. It must be a shell-level filter, NOT
-          # pytest --ignore-glob: bash expands $TESTPATHS into explicit
-          # filenames, and pytest registers explicitly-named files as initial
-          # args, which unconditionally BYPASS pytest_ignore_collect /
-          # --ignore-glob (those hooks only apply while pytest itself walks
-          # directories — see _pytest/main.py). An --ignore-glob here is dead
-          # code that silently double-runs the "ejected" files.
+          # scripts/ci_named_shard_files.py is the single source of truth for
+          # every shard's paths and exclusions.  Keeping duplicate testpaths or
+          # exclude data here lets hosted and local release plans drift even
+          # when their shard labels match.  The only workflow-local addition is
+          # the isolated fresh-process suite owned by unit-1a1.
           - shard: unit-1a1
-            testpaths: "tests/unit/test_a[a-m]*.py"
-            exclude: "*/test_*_e2e.py */test_all_plugins_runtime.py"
             isolated_testpaths: "tests/unit/test_all_plugins_runtime.py"
-          - shard: unit-1a2
-            # test_a[0-9]*.py: digit-prefixed files (a03, a3, a6...) belong to
-            # neither [a-m] nor [n-z]; routed here (smaller half) for balance.
-            testpaths: "tests/unit/test_a[n-z]*.py tests/unit/test_a[0-9]*.py"
-            exclude: "*/test_*_e2e.py"
-          - shard: unit-1d
-            testpaths: "tests/unit/test_[bd]*.py"
-            # Ejects test_data_flow_e2e.py ('d') to the 'other' shard.
-            exclude: "*/test_*_e2e.py"
-          - shard: unit-1b
-            testpaths: "tests/unit/test_[ce]*.py"
-            # The ~88 test_connector*.py suites (start with 'c', so they land
-            # in unit-1b's range) are moved to the fast 'other' shard below to
-            # keep unit-1b slim. Exclude them HERE so they don't also run in
-            # unit-1b. Also eject mislabeled e2e tests (test_*_e2e.py) that
-            # start with 'e' or 'c' (e.g. test_cross_project_borrowing_e2e.py)
-            # — they belong in the 'other' shard.
-            exclude: "*/test_connector*.py */test_*_e2e.py"
-          - shard: unit-2
-            testpaths: "tests/unit/test_[f-m]*.py"
-            exclude: "*/test_*_e2e.py"
-          - shard: unit-3a
-            testpaths: "tests/unit/test_[n-r]*.py"
-            # Ejects test_project_isolation_e2e.py ('p') and
-            # other e2e-suffixed files to the 'other' shard.
-            exclude: "*/test_*_e2e.py"
-          - shard: unit-3b
-            testpaths: "tests/unit/test_[s-z]*.py tests/unit/secrets/"
-            # Ejects test_tui_navigation_e2e.py ('t') to the 'other' shard.
-            # The secrets/ directory token passes through the file-only filter.
-            exclude: "*/test_*_e2e.py"
-          - shard: other
-            testpaths: "tests/integration/ tests/e2e/ tests/live/ tests/security/ tests/test_*.py tests/unit/test_connector*.py tests/unit/test_*_e2e.py tests/unit/auth/ tests/unit/sts/ tests/unit/test_e2e_test_generation/"
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       # Node 26 for `node --experimental-strip-types` (tests/unit/_hook_fixtures.py's
       # hook_plugin_env fixture, which runs scripts/hook_plugin_harness.mjs against
@@ -510,13 +452,14 @@ jobs:
           uv run python -m pytest ${{ matrix.isolated_testpaths }} -q -W error
       - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         id: test-run
-        timeout-minutes: 40
+        timeout-minutes: 90
         run: |
           echo "=== CI PHASE: test-shard-${{ matrix.shard }} ==="
           uv run python scripts/run_ci_shards_serial.py \
             --shards "${{ matrix.shard }}" \
             --pytest-args="-W error" \
-            --max-files-per-batch 64 \
+            --require-release-policy \
+            --max-files-per-batch 16 \
             --skip-isolated \
             --skip-aggregate \
             --coverage-output ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}" \
@@ -539,7 +482,7 @@ jobs:
           # RAM + cores) is deterministic and self-documenting even if that
           # default ever changes. This is what un-throttles the isolated shards.
           CI: "true"
-          GLUDD_RESOURCE_ROOT: "${{ runner.temp }}/gludd-${{ github.sha }}-${{ matrix.shard }}-${{ matrix.python-version }}"
+          GLUDD_RESOURCE_ROOT: "${{ runner.temp }}/gludd-resources"
           # Per-xdist-worker RLIMIT_AS backstop (conftest.py pytest_configure).
           # RLIMIT_AS caps VIRTUAL address space, which for this dependency set
           # (eager tree_sitter C-ext, OpenSSL via cryptography, psycopg binary,
@@ -552,30 +495,35 @@ jobs:
       - name: Collect failure diagnostics (shard ${{ matrix.shard }})
         if: failure() && steps.test-run.outcome == 'failure'
         run: |
-          echo "::group::Failure diagnostics — shard ${{ matrix.shard }}"
-          echo "--- Disk usage ---"
-          df -h
-          echo "--- Memory ---"
-          if command -v free >/dev/null 2>&1; then free -h; else echo "(free unavailable)"; fi
-          echo "--- Runner OOM kills (last 50 lines) ---"
-          dmesg 2>/dev/null | grep -i -E 'oom|out of memory|killed process' | tail -50 || echo "(dmesg unavailable)"
-          echo "--- Top processes by memory ---"
-          ps aux --sort=-%mem 2>/dev/null | head -30 || ps aux | head -30
-          echo "--- Core dumps ---"
-          ls -la /var/lib/systemd/coredump/ 2>/dev/null || echo "(no coredump dir)"
-          echo "--- /tmp usage ---"
-          du -sh /tmp
-          echo "--- Workspace test artifacts ---"
-          find . -name '*.coverage*' -ls
-          echo "--- Last 100 lines of pytest output ---"
-          find /tmp -name '.pytest_cache' -type d 2>/dev/null | head -1 | xargs -I{} find {} -name '*.log' 2>/dev/null | head -1 | xargs tail -100 2>/dev/null || echo "(no pytest cache log)"
-          echo "::endgroup::"
+          DIAG_PATH="failure-diagnostics-${{ matrix.shard }}-${{ matrix.python-version }}.log"
+          {
+            echo "::group::Failure diagnostics — shard ${{ matrix.shard }}"
+            echo "--- Disk usage ---"
+            df -h || echo "(disk usage unavailable)"
+            echo "--- Memory ---"
+            if command -v free >/dev/null 2>&1; then free -h; else echo "(free unavailable)"; fi
+            echo "--- Runner OOM kills (last 50 lines) ---"
+            dmesg 2>/dev/null | grep -i -E 'oom|out of memory|killed process' | tail -50 || echo "(dmesg unavailable)"
+            echo "--- Top processes by memory ---"
+            ps aux --sort=-%mem 2>/dev/null | head -30 || ps aux | head -30
+            echo "--- Core dumps ---"
+            ls -la /var/lib/systemd/coredump/ 2>/dev/null || echo "(no coredump dir)"
+            echo "--- /tmp usage ---"
+            du -sh /tmp 2>&1 || echo "(tmp usage incomplete)"
+            echo "--- Workspace test artifacts ---"
+            find . -name '.coverage*' -ls || echo "(coverage inventory unavailable)"
+            echo "--- Last 100 lines of pytest output ---"
+            find /tmp -name '.pytest_cache' -type d 2>/dev/null | head -1 | xargs -I{} find {} -name '*.log' 2>/dev/null | head -1 | xargs tail -100 2>/dev/null || echo "(no pytest cache log)"
+            echo "::endgroup::"
+          } 2>&1 | tee "$DIAG_PATH"
+          test -s "$DIAG_PATH"
       - name: Upload failure diagnostics (shard ${{ matrix.shard }})
         if: always() && failure() && steps.test-run.outcome == 'failure'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: failure-diag-${{ matrix.shard }}-${{ matrix.python-version }}-${{ github.run_id }}
           path: |
+            failure-diagnostics-${{ matrix.shard }}-${{ matrix.python-version }}.log
             /tmp/gludd-*.log
             .coverage*
           if-no-files-found: error
@@ -593,6 +541,9 @@ jobs:
             .coverage.${{ matrix.shard }}-${{ matrix.python-version }}
             coverage-shard-marker.txt
             ci-shard-attestation.json
+          # Coverage databases are dotfiles; upload-artifact excludes hidden
+          # files by default even when an explicit path names them.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 
@@ -639,22 +590,15 @@ jobs:
           fi
           find coverage-data -name '.coverage.*' -type f -exec cp {} .coverage-shards/ \;
           ACTUAL_SHARD_COVERAGE_FILES=$(find .coverage-shards -name '.coverage.*' -type f | wc -l | tr -d '[:space:]')
-          if [ "$ACTUAL_SHARD_COVERAGE_FILES" -lt 6 ]; then
-            echo "::error::Expected at least 6 shard coverage files, found $ACTUAL_SHARD_COVERAGE_FILES"
-            exit 1
-          fi
           if [ "$ACTUAL_SHARD_COVERAGE_FILES" -ne "$EXPECTED_SHARD_COVERAGE_FILES" ]; then
-            # A shard's pytest-cov atexit write can be lost even when every
-            # test passed (round-14/15); 6/7 shards still carry the full
-            # per-shard coverage signal — the -lt 6 gate above keeps the
-            # invariant meaningful.
-            echo "::warning::Found $ACTUAL_SHARD_COVERAGE_FILES/$EXPECTED_SHARD_COVERAGE_FILES shard coverage files (one shard's data lost after a green run)"
+            echo "::error::Expected exactly $EXPECTED_SHARD_COVERAGE_FILES shard coverage files, found $ACTUAL_SHARD_COVERAGE_FILES"
+            exit 1
           fi
           uv run coverage combine --keep .coverage-shards/.coverage.*
           uv run coverage xml
           uv run coverage json -o coverage.json
           uv run coverage report --skip-covered --fail-under=85
-          uv run python scripts/audit_coverage.py --json-file=coverage.json --threshold=75 --per-file-threshold=75 --source=src/general_ludd
+          uv run python scripts/audit_coverage.py --json-file=coverage.json --threshold=85 --per-file-threshold=75 --source=src/general_ludd
       - name: Upload merged coverage report
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
@@ -722,8 +666,15 @@ jobs:
               echo "::group::$(basename "$f") (last 100 lines)"
               tail -n 100 "$f"
               echo "::endgroup::"
-            done
+           done
           fi
+      - name: Verify Linux PyInstaller warning graph artifact
+        # upload-artifact's if-no-files-found applies to the path set as a
+        # whole, so the always-present Molecule logs cannot prove this second
+        # diagnostic exists. Shard 1 owns binary_smoke_linux and must retain
+        # the raw graph independently before upload.
+        if: always() && matrix.shard == 1
+        run: test -s dist/linux/warn-gludd.txt
       - name: Upload molecule logs (shard ${{ matrix.shard }}/4)
         # Primary fix for the observability gap: the full per-scenario logs
         # (not just the tail above) are uploaded so a failure can be diagnosed
@@ -733,7 +684,9 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: molecule-logs-shard-${{ matrix.shard }}
-          path: /tmp/gludd-molecule-*.log
+          path: |
+            /tmp/gludd-molecule-*.log
+            dist/linux/warn-gludd.txt
           if-no-files-found: error
           retention-days: 7
 
@@ -1029,7 +982,7 @@ jobs:
           chmod +x "$dmg_bin"
           "$dmg_bin" version
           "$dmg_bin" --help >/dev/null
-          hdiutil detach "$mount_point"
+          hdiutil detach "$mount_point" -force
           mounted=0
           mkdir -p "$mount_point"
 

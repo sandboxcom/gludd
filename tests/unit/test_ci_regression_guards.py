@@ -320,29 +320,33 @@ def test_test_shard_collects_coverage_on_every_shard() -> None:
     CI incident: coverage was only collected on the ``unit-1`` / Python 3.11
     shard (all other 7 shards used ``--no-cov``), so the published coverage
     report represented ~¼ of the suite and systematically understated real
-    coverage.  Each shard must run pytest with ``--cov=general_ludd`` (no
-    shard may pass ``--no-cov``) so the downstream ``coverage`` job has data
-    from every shard to merge.
+    coverage. Each shard must run pytest with ``--cov`` and a filesystem-bound
+    source configuration (no shard may pass ``--no-cov``) so pre-imported
+    modules and the downstream aggregate are both measured.
     """
     wf = _load_build_workflow()
     shard = wf["jobs"].get("test-shard")
     assert shard is not None, "CI regression: the 'test-shard' job vanished from build.yml."
-    steps = shard.get("steps", [])
-    test_steps = [s for s in steps if "Test" in str(s.get("name", "")) and "cov" in str(s.get("run", "")).lower()]
-    assert test_steps, (
-        "CI regression: no test-shard step runs pytest with --cov. Every shard "
-        "must emit .coverage data so the 'coverage' aggregation job can merge it."
+    runs = "\n".join(
+        str(step.get("run", ""))
+        for step in shard.get("steps", [])
+        if isinstance(step, dict)
     )
-    for step in test_steps:
-        run = str(step.get("run", ""))
-        assert "--cov=general_ludd" in run, (
-            f"CI regression: a test-shard step dropped --cov=general_ludd. Step {step.get('name')!r} run block: {run!r}"
-        )
-        assert "--no-cov" not in run, (
-            "CI regression: a test-shard step uses --no-cov, which silos its "
-            "coverage and defeats the aggregation job. Step "
-            f"{step.get('name')!r} must use --cov instead."
-        )
+    assert "scripts/run_ci_shards_serial.py" in runs, (
+        "CI regression: hosted shards no longer delegate to the canonical "
+        "local/hosted runner"
+    )
+    runner = (ROOT / "scripts" / "run_ci_shards_serial.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"--cov"' in runner
+    assert "--cov=general_ludd" not in runner
+    coverage_config = (ROOT / ".coveragerc-greenlet").read_text(encoding="utf-8")
+    assert "src/general_ludd" in coverage_config
+    assert '"--cov-report="' in runner
+    assert '"--cov-fail-under=0"' in runner
+    assert "--no-cov" not in runner
+    assert "_save_shard_coverage" in runner and "_aggregate_coverage" in runner
 
 
 def test_coverage_aggregation_job_exists() -> None:

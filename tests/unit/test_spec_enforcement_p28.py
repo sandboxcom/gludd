@@ -37,7 +37,7 @@ class TestP28PushNoShortcutCIInFlight:
         "batch-push",
     ]
 
-    def test_no_push_target_skips_push_rate_guard(self):
+    def test_no_push_target_skips_push_rate_guard(self) -> None:
         content = MAKEFILE.read_text()
         violations = []
         for target in self._ALL_PUSH_TARGETS:
@@ -52,7 +52,7 @@ class TestP28PushNoShortcutCIInFlight:
                 "P28 VIOLATION — push targets missing _push-rate-guard (CI-in-flight check):\n" + "\n".join(violations)
             )
 
-    def test_push_rate_guard_uses_ci_push_guard(self):
+    def test_push_rate_guard_uses_ci_push_guard(self) -> None:
         content = MAKEFILE.read_text()
         guard_recipe = _find_target_recipe(content, "_push-rate-guard")
         assert guard_recipe, "_push-rate-guard target must exist"
@@ -61,7 +61,7 @@ class TestP28PushNoShortcutCIInFlight:
         )
         assert "PUSH_BRANCH" in guard_recipe, "P28: _push-rate-guard must check branch-specific CI state"
 
-    def test_force_push_delegates_to_guarded_target(self):
+    def test_force_push_delegates_to_guarded_target(self) -> None:
         content = MAKEFILE.read_text()
         force_recipe = _find_target_recipe(content, "force-push")
         assert force_recipe, "force-push target must exist"
@@ -69,7 +69,7 @@ class TestP28PushNoShortcutCIInFlight:
             "P28: force-push must delegate to a guarded push target"
         )
 
-    def test_deploy_and_forget_records_timestamp(self):
+    def test_deploy_and_forget_records_timestamp(self) -> None:
         content = MAKEFILE.read_text()
         if "deploy-and-forget:" in content:
             recipe = _find_target_recipe(content, "deploy-and-forget")

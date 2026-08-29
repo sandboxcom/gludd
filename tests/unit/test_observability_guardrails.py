@@ -66,7 +66,7 @@ class TestNoUnseenEvents:
             "SHARD-HEARTBEAT",
             "WORKER-DEATH",
             "start_new_session=True",
-            "--max-worker-restart=0",
+            "OWNED-PYTEST-RESULT",
         ):
             assert marker in serial_runner, (
                 f"serial named shards must retain observable owned cleanup: {marker}"

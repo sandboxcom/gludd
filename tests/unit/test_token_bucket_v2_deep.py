@@ -258,7 +258,8 @@ class TestBucketGroupOverflow:
         _advance(store_b, 5.0)
         g = BucketGroup("g", [a, b], overflow=True)
         assert g.consume(4.0, auto_refill=True) is True
-        assert a.tokens == 6.0
+        assert a.tokens == 3.0
+        assert b.tokens == 1.0
 
 
 class TestBucketGroupAndGate:
@@ -349,8 +350,19 @@ class TestLimiterV2Allow:
         lim.register("a", BucketConfig(capacity=5.0, rate=0.0))
         lim.register("b", BucketConfig(capacity=5.0, rate=0.0))
         assert lim.allow(3.0) is True
-        assert lim.allow(3.0) is True
         assert lim.allow(3.0) is False
+        assert lim.buckets["a"].tokens == 2.0
+        assert lim.buckets["b"].tokens == 2.0
+
+    def test_allow_no_group_rolls_back_when_later_bucket_denies(self) -> None:
+        """Ungrouped AND gating never partially charges an earlier bucket."""
+        lim = LimiterV2()
+        lim.register("first", BucketConfig(capacity=10.0, rate=0.0))
+        lim.register("second", BucketConfig(capacity=2.0, rate=0.0))
+
+        assert lim.allow(3.0) is False
+        assert lim.buckets["first"].tokens == 10.0
+        assert lim.buckets["second"].tokens == 2.0
 
     def test_allow_with_group_overflow(self) -> None:
         lim = LimiterV2()
@@ -432,13 +444,15 @@ class TestSmoothRefillIntegration:
         for _ in range(100):
             if b.consume(1.0):
                 allowed += 1
-            _advance(store, 0.5)
-        assert 14 <= allowed <= 24
+            _advance(store, 0.05)
+        assert 19 <= allowed <= 20
 
     def test_burst_then_refill(self) -> None:
         clock, store = _fake_clock(0)
         cfg = BucketConfig(capacity=10.0, rate=1.0, burst_multiplier=2.0)
         b = Bucket("a", cfg, clock=clock)
+        _advance(store, 10.0)
+        b.refill()
         burst_allowed = 0
         for _ in range(30):
             if b.consume(1.0):
@@ -457,7 +471,7 @@ class TestEdgeCases:
         assert b.consume(1.0) is False
         _advance(store, 100.0)
         b.refill()
-        assert b.tokens == 5.0
+        assert b.tokens == 0.0
 
     def test_empty_group(self) -> None:
         g = BucketGroup("g", [])
@@ -497,7 +511,7 @@ class TestEdgeCases:
         lim = LimiterV2()
         lim.register("api", BucketConfig(capacity=100.0, rate=10.0))
         lim.register("user", BucketConfig(capacity=20.0, rate=2.0))
-        lim.register("ip", BucketConfig(capacity=5.0, rate=1.0))
+        lim.register("ip", BucketConfig(capacity=6.0, rate=1.0))
         lim.create_group("all", ["api", "user", "ip"], overflow=False)
         assert lim.allow(3.0, group="all") is True
         assert lim.allow(3.0, group="all") is True

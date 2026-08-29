@@ -125,8 +125,15 @@ def sign_with_hsm_key(
     data: bytes,
     mechanism: str = "SHA256-RSA-PKCS",
 ) -> bytes:
-    """Sign data through the session's named key."""
-    return session.sign(key_id, data, mechanism)
+    """Sign data through the session's named key.
+
+    Backends may use ``KeyError`` internally for a missing key, but callers of
+    this public facade receive one stable, backend-independent ``ValueError``.
+    """
+    try:
+        return session.sign(key_id, data, mechanism)
+    except KeyError as exc:
+        raise ValueError(f"Unknown key: {key_id}") from exc
 
 
 def import_key(session: HSMSession, key_pem: bytes, label: str) -> HSMKey | None:

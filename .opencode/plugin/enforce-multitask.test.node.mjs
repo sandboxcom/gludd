@@ -27,6 +27,7 @@ const PROJECT_ROOT = process.cwd()
 const OUTFILE = '/tmp/gludd-test-enforce-multitask.js'
 const EXPORTS_OUTFILE = '/tmp/gludd-test-enforce-multitask-exports.js'
 const OUTFILE_WIN = '/tmp/gludd-test-enforce-multitask-window.js'
+const OUTFILE_REFILL = '/tmp/gludd-test-enforce-multitask-refill.js'
 const TASKS_DIR = '/tmp/gludd-test-multitask-project'
 const EXTRA_DIRS = []
 
@@ -128,6 +129,7 @@ if (!compileWithEsbuild(OUTFILE)) {
 }
 assert.ok(fs.existsSync(OUTFILE), 'esbuild produced output file')
 fs.copyFileSync(OUTFILE, OUTFILE_WIN) // separate require-cache identity for the tiny-window variant
+fs.copyFileSync(OUTFILE, OUTFILE_REFILL) // separate identity for refill env variants
 
 const _require = createRequire(import.meta.url)
 const mod = _require(OUTFILE) // export-surface assertions only; behavior tests use freshPlugin()
@@ -184,6 +186,19 @@ async function freshWindowPlugin() {
   return { m, hook: instance['tool.execute.before'], tc: instance['experimental.text.complete'] }
 }
 
+async function freshRefillPlugin(refreshIntervalMs) {
+  wipeState()
+  process.env.GLUDD_PROJECT_ROOT = TASKS_DIR
+  process.env.GLUDD_MULTITASK_MIN_DISPATCHES = '0'
+  process.env.GLUDD_REFRESH_INTERVAL_MS = String(refreshIntervalMs)
+  delete _require.cache[_require.resolve(OUTFILE_REFILL)]
+  const m = _require(OUTFILE_REFILL)
+  process.env.GLUDD_MULTITASK_MIN_DISPATCHES = '10'
+  delete process.env.GLUDD_REFRESH_INTERVAL_MS
+  const instance = await m.default({})
+  return { hook: instance['tool.execute.before'], tc: instance['experimental.text.complete'] }
+}
+
 function mkProjectDir(name, tasksContent) {
   const dir = `/tmp/gludd-test-multitask-${name}`
   fs.rmSync(dir, { recursive: true, force: true })
@@ -226,6 +241,7 @@ async function buildZeroStreak(tc) {
 function cleanup() {
   try { fs.rmSync(OUTFILE, { force: true }) } catch {}
   try { fs.rmSync(OUTFILE_WIN, { force: true }) } catch {}
+  try { fs.rmSync(OUTFILE_REFILL, { force: true }) } catch {}
   wipeState()
   try { fs.rmSync('/tmp/gludd-test-multitask-alive.json', { force: true }) } catch {}
   try { fs.rmSync(TASKS_DIR, { recursive: true, force: true }) } catch {}
@@ -461,6 +477,30 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
           'stale thisMessageDispatches from the blanked wave must not consume the ceiling',
         )
       }
+    })
+  })
+
+  describe('BEHAVIOR 2b: result-arrival refill reminder', () => {
+    it('warns after a result drains a stale pool below five', async () => {
+      const { hook, tc } = await freshRefillPlugin(1)
+      await dispatchN(hook, 4)
+      await sleep(5)
+
+      const result = await tc({}, { text: 'task result: completed successfully' })
+
+      assert.ok(result && typeof result.text === 'string')
+      assert.match(result.text, /FLOOR LOW: only 3 estimated subagent\(s\) remain/)
+      assert.match(result.text, /Dispatch replacements now/)
+    })
+
+    it('does not warn before the configured refresh interval', async () => {
+      const { hook, tc } = await freshRefillPlugin(30_000)
+      await dispatchN(hook, 4)
+      const output = { text: 'task result: completed successfully' }
+
+      const result = await tc({}, output)
+
+      assert.strictEqual(result, output)
     })
   })
 

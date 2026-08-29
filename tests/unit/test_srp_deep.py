@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import pytest
-
-from general_ludd.algorithms.srp import (
+from ansible_collections.general_ludd.security.plugins.module_utils.srp import (
     _SRP2048_N,
     SRPError,
     _hash,

@@ -17,12 +17,12 @@ SCRIPTS_DIR = ROOT / "scripts"
 _TARGET_RE = re.compile(r"^([a-zA-Z_][a-zA-Z0-9_./-]*)\s*:(?!=)")
 
 
-def _read_text():
+def _read_text() -> str:
     return MAKEFILE.read_text()
 
 
-def _all_target_lines(content):
-    targets = {}
+def _all_target_lines(content: str) -> dict[str, int]:
+    targets: dict[str, int] = {}
     in_phony = False
     for lineno, line in enumerate(content.split("\n"), 1):
         stripped = line.strip()
@@ -39,8 +39,8 @@ def _all_target_lines(content):
     return targets
 
 
-def _phony_names(content):
-    names = set()
+def _phony_names(content: str) -> set[str]:
+    names: set[str] = set()
     in_phony = False
     for line in content.split("\n"):
         stripped = line.strip()
@@ -57,7 +57,37 @@ def _phony_names(content):
     return names
 
 
-def _prereq_targets(line):
+def _without_make_expansions(text: str) -> str:
+    """Replace balanced Make variable/function expansions with whitespace."""
+    output: list[str] = []
+    index = 0
+    while index < len(text):
+        if text[index : index + 2] not in {"$(", "${"}:
+            output.append(text[index])
+            index += 1
+            continue
+
+        start = index
+        closers = [")" if text[index + 1] == "(" else "}"]
+        index += 2
+        while index < len(text) and closers:
+            opener = text[index : index + 2]
+            if opener in {"$(", "${"}:
+                closers.append(")" if opener == "$(" else "}")
+                index += 2
+            elif text[index] == closers[-1]:
+                closers.pop()
+                index += 1
+            else:
+                index += 1
+        if closers:
+            output.append(text[start:])
+            break
+        output.append(" ")
+    return "".join(output)
+
+
+def _prereq_targets(line: str) -> set[str]:
     """Extract prerequisite target names from a target declaration line.
 
     Handles: `target: p1 p2`, `target: p1 ; recipe`, `target: p1 p2 # comment`,
@@ -65,10 +95,10 @@ def _prereq_targets(line):
     """
     if ":" not in line:
         return set()
-    rhs = line.split(":", 1)[1]
+    rhs = _without_make_expansions(line.split(":", 1)[1])
     if ";" in rhs:
         rhs = rhs.split(";", 1)[0]
-    prereqs = set()
+    prereqs: set[str] = set()
     for token in rhs.split():
         token = token.strip()
         if not token:
@@ -84,20 +114,29 @@ def _prereq_targets(line):
     return prereqs
 
 
-def _script_refs(text):
-    refs = set()
+def test_prereq_targets_ignore_nested_make_expansion() -> None:
+    """Dynamic Make functions are not literal prerequisite target names."""
+    line = (
+        "target: $(if $(filter 1,$(VALIDATE_ONLY)),,_clean-tree) "
+        "real-prerequisite"
+    )
+    assert _prereq_targets(line) == {"real-prerequisite"}
+
+
+def _script_refs(text: str) -> set[str]:
+    refs: set[str] = set()
     for m in re.finditer(r"scripts/([a-zA-Z_][a-zA-Z0-9_./-]+\.(?:py|sh|mjs))", text):
         refs.add(m.group(0))
     return refs
 
 
-def _recipe_body(content, target_name):
+def _recipe_body(content: str, target_name: str) -> str:
     idx = content.find(f"\n{target_name}:")
     if idx == -1:
         return ""
     start = idx + len(target_name) + 2
     lines = content[start:].split("\n")
-    body = []
+    body: list[str] = []
     for line in lines:
         if _TARGET_RE.match(line.strip()) and not line.startswith((" ", "\t")):
             break
@@ -105,7 +144,7 @@ def _recipe_body(content, target_name):
     return "\n".join(body)
 
 
-def _help_target_names():
+def _help_target_names() -> tuple[set[str], str]:
     """Extract target names from `make -n help` output. Matches:
     - @echo "  target-name      desc"
     - @echo "  target-name VAR=val  desc"
@@ -116,7 +155,7 @@ def _help_target_names():
         text=True,
         timeout=30,
     )
-    targets = set()
+    targets: set[str] = set()
     for line in r.stdout.split("\n"):
         m = re.match(r'^\s*@?echo\s+"\s{2}([a-zA-Z_][a-zA-Z0-9_-]*)\s', line)
         if m:
@@ -128,22 +167,22 @@ def _help_target_names():
 
 
 @pytest.fixture(scope="module")
-def content():
+def content() -> str:
     return _read_text()
 
 
 @pytest.fixture(scope="module")
-def targets(content):
+def targets(content: str) -> dict[str, int]:
     return _all_target_lines(content)
 
 
 @pytest.fixture(scope="module")
-def phony(content):
+def phony(content: str) -> set[str]:
     return _phony_names(content)
 
 
 @pytest.fixture(scope="module")
-def help_data():
+def help_data() -> tuple[set[str], str]:
     return _help_target_names()
 
 
@@ -151,9 +190,9 @@ def help_data():
 
 
 class TestNoDuplicateTargets:
-    def test_no_duplicates(self, targets):
-        seen = {}
-        dups = {}
+    def test_no_duplicates(self, targets: dict[str, int]) -> None:
+        seen: dict[str, int] = {}
+        dups: dict[str, list[int]] = {}
         for name, lineno in sorted(targets.items()):
             if name in seen:
                 dups.setdefault(name, [seen[name]]).append(lineno)
@@ -168,9 +207,14 @@ class TestNoDuplicateTargets:
 
 
 class TestPrerequisitesResolve:
-    def test_all_prereqs_are_targets(self, content, targets, phony):
+    def test_all_prereqs_are_targets(
+        self,
+        content: str,
+        targets: dict[str, int],
+        phony: set[str],
+    ) -> None:
         all_names = set(targets) | phony
-        missing = {}
+        missing: dict[str, list[str]] = {}
         for line in content.split("\n"):
             stripped = line.strip()
             m = _TARGET_RE.match(stripped)
@@ -199,7 +243,7 @@ class TestScriptReferencesExist:
         }
     )
 
-    def test_all_scripts_exist(self, content):
+    def test_all_scripts_exist(self, content: str) -> None:
         all_refs = _script_refs(content)
         missing = {r for r in all_refs if not (ROOT / r).exists()} - self.SKIP
         assert not missing, f"{len(missing)} script ref(s) missing from disk:\n" + "\n".join(
@@ -211,7 +255,7 @@ class TestScriptReferencesExist:
 
 
 class TestPhonyCoverage:
-    def test_no_phony_shadows_file(self, phony):
+    def test_no_phony_shadows_file(self, phony: set[str]) -> None:
         conflicts = sorted(n for n in phony if (ROOT / n).is_file())
         assert not conflicts, f"{len(conflicts)} PHONY shadow(s) real files:\n" + "\n".join(
             f"  {n}" for n in conflicts[:15]
@@ -256,12 +300,12 @@ class TestHelpText:
         "dist",
     )
 
-    def test_major_targets_in_help(self, help_data):
+    def test_major_targets_in_help(self, help_data: tuple[set[str], str]) -> None:
         h, _ = help_data
         missing = [t for t in self.MAJOR if t not in h]
         assert not missing, f"{len(missing)} major target(s) missing: {missing}"
 
-    def test_help_has_section_headings(self, help_data):
+    def test_help_has_section_headings(self, help_data: tuple[set[str], str]) -> None:
         _, text = help_data
         for section in ("Setup", "Quality", "Git", "Release", "Build", "Terraform"):
             assert section in text, f"help missing heading: '{section}'"
@@ -271,15 +315,15 @@ class TestHelpText:
 
 
 class TestNamingConventions:
-    def test_no_spaces_in_names(self, targets):
+    def test_no_spaces_in_names(self, targets: dict[str, int]) -> None:
         bad = [n for n in targets if " " in n]
         assert not bad, f"Targets with spaces: {bad}"
 
-    def test_all_lowercase(self, targets):
+    def test_all_lowercase(self, targets: dict[str, int]) -> None:
         bad = [n for n in targets if n != n.lower()]
         assert not bad, f"Targets with uppercase: {bad}"
 
-    def test_git_targets_at_least_5_chars(self, targets):
+    def test_git_targets_at_least_5_chars(self, targets: dict[str, int]) -> None:
         git_tgts = [n for n in targets if n.startswith("git-")]
         for name in git_tgts:
             assert len(name) > 5, f"'{name}' too short for git- pattern"
@@ -289,10 +333,10 @@ class TestNamingConventions:
 
 
 class TestTargetCountSanity:
-    def test_at_least_200_targets(self, targets):
+    def test_at_least_200_targets(self, targets: dict[str, int]) -> None:
         assert len(targets) >= 200, f"Only {len(targets)} — expected >= 200"
 
-    def test_at_least_150_phony(self, phony):
+    def test_at_least_150_phony(self, phony: set[str]) -> None:
         assert len(phony) >= 150, f"Only {len(phony)} — expected >= 150"
 
 
@@ -313,7 +357,7 @@ class TestKeyScriptsExist:
         "check_green_branch_guard.py",
     )
 
-    def test_key_scripts_on_disk(self):
+    def test_key_scripts_on_disk(self) -> None:
         missing = [s for s in self.KEY if not (SCRIPTS_DIR / s).exists()]
         assert not missing, f"Key scripts missing: {missing}"
 
@@ -325,7 +369,7 @@ class TestDryRun:
     KEY = ("help", "lint", "typecheck", "test-count", "collect-check", "clean")
 
     @pytest.mark.parametrize("target", KEY)
-    def test_dry_run_ok(self, target):
+    def test_dry_run_ok(self, target: str) -> None:
         r = subprocess.run(
             ["make", "-n", "-f", str(MAKEFILE), target],
             capture_output=True,
@@ -339,16 +383,16 @@ class TestDryRun:
 
 
 class TestPathsExist:
-    def test_scripts_dir(self):
+    def test_scripts_dir(self) -> None:
         assert SCRIPTS_DIR.is_dir()
 
-    def test_plugin_dir(self):
+    def test_plugin_dir(self) -> None:
         assert (ROOT / ".opencode" / "plugin").is_dir()
 
-    def test_config_dir(self):
+    def test_config_dir(self) -> None:
         assert (ROOT / "config").is_dir()
 
-    def test_makefile_exists(self):
+    def test_makefile_exists(self) -> None:
         assert MAKEFILE.is_file()
 
 
@@ -358,8 +402,10 @@ class TestPathsExist:
 class TestSubMake:
     USE_MAKE = ("release-cut", "gate", "gate-lite")
 
-    def test_submake_usage(self, targets, content):
-        missing = []
+    def test_submake_usage(
+        self, targets: dict[str, int], content: str
+    ) -> None:
+        missing: list[str] = []
         for name in self.USE_MAKE:
             if name not in targets:
                 continue
@@ -373,7 +419,7 @@ class TestSubMake:
 
 
 class TestParseOk:
-    def test_make_dry_run_help_ok(self):
+    def test_make_dry_run_help_ok(self) -> None:
         r = subprocess.run(
             ["make", "-n", "-f", str(MAKEFILE), "help"],
             capture_output=True,
@@ -387,7 +433,7 @@ class TestParseOk:
 
 
 class TestTargetFileCollisions:
-    def test_no_file_target_collisions(self, targets):
+    def test_no_file_target_collisions(self, targets: dict[str, int]) -> None:
         bad = sorted(n for n in targets if (ROOT / n).is_file())
         assert not bad, f"{len(bad)} target(s) collide with real files:\n" + "\n".join(
             f"  {n} (line {targets[n]})" for n in bad[:10]
@@ -399,14 +445,14 @@ class TestTargetFileCollisions:
 
 class TestHelpNoDupTargets:
     @staticmethod
-    def _help_lines():
+    def _help_lines() -> list[str]:
         r = subprocess.run(
             ["make", "-n", "-f", str(MAKEFILE), "help"],
             capture_output=True,
             text=True,
             timeout=30,
         )
-        lines = []
+        lines: list[str] = []
         for line in r.stdout.split("\n"):
             m = re.match(r'^\s*@?echo\s+"(\s{2}[a-zA-Z_][a-zA-Z0-9_-]*\s.*)"$', line)
             if m:
@@ -416,10 +462,10 @@ class TestHelpNoDupTargets:
                     lines.append(tm.group(1))
         return lines
 
-    def test_no_duplicate_help_entries(self):
+    def test_no_duplicate_help_entries(self) -> None:
         lines = self._help_lines()
-        seen = {}
-        dups = []
+        seen: dict[str, bool] = {}
+        dups: list[str] = []
         for target in lines:
             if target in seen:
                 dups.append(target)

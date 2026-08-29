@@ -60,11 +60,15 @@ function incrementDispatchCountFile(): void {
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
 const DIVERSITY_ENFORCE = process.env.GLUDD_MULTITASK_DIVERSITY_ENFORCE !== "0"
+const RESULT_ARRIVAL_REFRESH_INTERVAL_MS = (() => {
+  const configured = parseInt(process.env.GLUDD_REFRESH_INTERVAL_MS || "30000", 10)
+  return Number.isFinite(configured) && configured > 0 ? configured : 30000
+})()
 const HAS_CONFIGURED_MIN_DISPATCHES =
   process.env.GLUDD_MIN_DISPATCHES !== undefined ||
   process.env.GLUDD_MULTITASK_MIN_DISPATCHES !== undefined
-// MIN_DISPATCHES is resolved by multitask_config.ts with a recommended
-// default of 10. A mandatory minimum is active only when an environment
+// MIN_DISPATCHES is resolved by multitask_config.ts with a recommendation
+// of 10. A mandatory minimum is active only when an environment
 // variable explicitly opts in; ten remains the hard ceiling, and zero disables.
 const REQUIRED_DISPATCHES = HAS_CONFIGURED_MIN_DISPATCHES
   ? Math.max(0, Math.min(MAX_DISPATCHES, Number.isFinite(MIN_DISPATCHES) ? MIN_DISPATCHES : 0))
@@ -598,6 +602,7 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
         : "THIN WAVE BLOCKED"
       const _lines = [
         _blockKind + " - only " + String(_observedDispatches) + " dispatch(es) in this message.",
+        "MUST DISPATCH suitable independent work before completing this response.",
         "The configured minimum requires " + String(_tef) + " per wave.",
         "Dispatch only suitable independent work; never create agents merely to fill a quota.",
         "Your text has been blanked.",
@@ -628,6 +633,19 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
       return output
     }
     const warnings: string[] = []
+    if (
+      hasResultMarker &&
+      _state.lastDispatchTs > 0 &&
+      _state.estimatedInFlight < 5 &&
+      Date.now() - _state.lastDispatchTs > RESULT_ARRIVAL_REFRESH_INTERVAL_MS
+    ) {
+      warnings.push(
+        "FLOOR LOW: only " + String(_state.estimatedInFlight) +
+        " estimated subagent(s) remain after " +
+        String(Math.round((Date.now() - _state.lastDispatchTs) / 1000)) +
+        " seconds. Dispatch replacements now."
+      )
+    }
     if (_state.underFloorCount >= 3) {
       warnings.push([
         "DISPATCH FLOOR VIOLATION: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(REQUIRED_DISPATCHES) + " dispatches.",

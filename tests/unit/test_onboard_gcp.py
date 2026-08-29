@@ -60,6 +60,10 @@ class TestCreateRoleInstructions:
         text = gcp_onboard.create_role_instructions(project_id="my-project-123")
         assert "onboard-iam-gcp" in text
 
+    def test_rejects_shell_unsafe_instruction_values(self) -> None:
+        with pytest.raises(ValueError, match="unsafe project_id"):
+            gcp_onboard.create_role_instructions(project_id="unsafe project")
+
 
 # ---------------------------------------------------------------------------
 # token_acquisition_guide
@@ -85,6 +89,22 @@ class TestTokenAcquisitionGuide:
 # ---------------------------------------------------------------------------
 
 class TestValidateTokenAndRole:
+    def test_missing_project_in_key_fails_closed(self, tmp_path: Path) -> None:
+        fake_key = tmp_path / "key.json"
+        fake_key.write_text(json.dumps({"client_email": "operator@example.test"}))
+
+        with pytest.raises(ValueError, match="project_id not supplied"):
+            gcp_onboard.validate_token_and_role(token_path=str(fake_key))
+
+    def test_missing_service_account_in_key_fails_closed(
+        self, tmp_path: Path
+    ) -> None:
+        fake_key = tmp_path / "key.json"
+        fake_key.write_text(json.dumps({"project_id": "proj-123"}))
+
+        with pytest.raises(ValueError, match="service_account_email not supplied"):
+            gcp_onboard.validate_token_and_role(token_path=str(fake_key))
+
     def test_calls_compute_instances_list(self, tmp_path: Path) -> None:
         """Validate probes the compute.instances.list API on the target project."""
         fake_key = tmp_path / "key.json"
@@ -176,6 +196,45 @@ class TestValidateTokenAndRole:
         assert any("<custom>" in r for r in info["roles_verified"]), (
             "Custom role gluddComputeOperator not verified"
         )
+
+
+class TestGCPClientHelpers:
+    def test_missing_sdk_reports_install_extra(self) -> None:
+        with (
+            patch("builtins.__import__", side_effect=ImportError("SDK unavailable")),
+            pytest.raises(RuntimeError, match=r"general-ludd-agent\[gcp\]"),
+        ):
+            gcp_onboard._build_gcp_client()
+
+    def test_get_iam_policy_uses_resource_manager(self) -> None:
+        client = MagicMock()
+        client.build.return_value.projects.return_value.getIamPolicy.return_value.execute.return_value = {
+            "bindings": []
+        }
+
+        assert gcp_onboard._get_iam_policy(client, "proj-123") == {"bindings": []}
+        client.build.assert_called_once_with(
+            "cloudresourcemanager", "v1", cache_discovery=False
+        )
+
+    def test_roles_for_member_ignores_other_service_accounts(self) -> None:
+        policy = {
+            "bindings": [
+                {
+                    "role": "roles/logging.logWriter",
+                    "members": ["serviceAccount:other@example.test"],
+                }
+            ]
+        }
+
+        assert gcp_onboard._roles_for_member(policy, "operator@example.test") == set()
+
+    def test_discovery_wrapper_delegates_builder_arguments(self) -> None:
+        builder = MagicMock(return_value="resource")
+        wrapper = gcp_onboard._DiscoveryWrapper(builder)
+
+        assert wrapper.build("compute", "v1", cache_discovery=False) == "resource"
+        builder.assert_called_once_with("compute", "v1", cache_discovery=False)
 
 
 # ---------------------------------------------------------------------------

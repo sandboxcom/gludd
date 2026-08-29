@@ -1,7 +1,7 @@
 # Sandbox ZDD Lifecycle and SELinux Emission
 
 Status: implemented for the beta4 sandbox hardening pass. Last reviewed:
-2026-08-24.
+2026-08-25.
 
 ## Safety Contract
 
@@ -56,6 +56,28 @@ The PID value `0` is a boundary sentinel rather than a literal container limit:
   into an accidentally unbounded process-backend policy.
 - Positive values remain unchanged across both representations.
 
+On Linux, `RLIMIT_NPROC` is a real-UID-wide thread limit rather than a
+subprocess-local counter. Before forking, the process backend therefore samples
+the existing `/proc/<pid>/task` population for its real UID and adds the
+sandbox's positive process budget, capped by the inherited hard limit. This
+prevents a busy hosted runner from making the sandbox shell fail with `EAGAIN`
+before the requested command starts while retaining the requested additional
+task ceiling. Non-Linux hosts keep the direct positive budget.
+
+Every POSIX command also starts in its own session. Before a timeout or
+cancellation sends `SIGKILL` to a group, the owner verifies that the child PID is
+positive, is both the session and process-group leader, and differs from the
+caller's session and group. An ambiguous, already-exited, or non-isolated child
+can therefore never turn `killpg(0, ...)` or a reused caller group into a shard
+self-kill; a live ambiguous child receives only a direct-child kill. The
+termination claim is recorded on the owned `Popen` instance, making repeated
+success, failure, timeout, and cancellation cleanup idempotent. The owner then
+performs the bounded pipe drain so descendants cannot retain pipes or resources.
+Windows retains the direct child-kill path. No service is restarted during this
+repair, so zero-downtime callers see only corrected per-execution resource
+accounting. Rollback is the prior unverified group-kill behavior; it requires no
+state or artifact migration but reintroduces caller-group termination risk.
+
 ## Canonical SELinux Output
 
 Type-enforcement and file-context lines are modeled as semantic sets, then
@@ -102,12 +124,35 @@ present in Gludd.
   cache paths. Gludd canonicalizes only that trusted platform alias at the
   secure-write boundary and then reapplies owner, containment, no-follow, and
   mode checks to the physical path.
+- The Linux
+  [`getrlimit(2)` manual](https://man7.org/linux/man-pages/man2/getrlimit.2.html),
+  reviewed 2026-08-25, specifies that `RLIMIT_NPROC` counts all threads for the
+  real user ID and makes `fork(2)` fail with `EAGAIN` at the soft limit. This is
+  the hosted-runner boundary the UID-task headroom calculation preserves.
+- CPython issue
+  [#70721](https://github.com/python/cpython/issues/70721), opened 2016-03-10
+  and reviewed 2026-08-25, records the long-lived practitioner failure where a
+  timeout kills only the `shell=True` wrapper and leaks the command holding its
+  pipes. Gludd uses the documented separate-session/process-group pattern.
+- pytest-timeout issue
+  [#159](https://github.com/pytest-dev/pytest-timeout/issues/159), opened
+  2023-12-13 and reviewed 2026-08-25, reports the same retained-subprocess
+  failure in CI, including runners that hang after the test owner is killed.
+- CPython issue
+  [#49365](https://github.com/python/cpython/issues/49365), opened 2009-01-31
+  and reviewed 2026-08-25, records the long-lived practitioner warning that
+  process-group signaling is dangerous when the caller is itself the group
+  leader. Gludd therefore verifies both child group/session identity and caller
+  separation immediately before signaling, rather than trusting a PID-shaped
+  value captured by a test double or stale process record.
 
 ## Regression Evidence
 
 Focused tests pin zero-PID translation, deterministic state names, configured
-symlink rejection, allocation rollback, timeout partial output, environment and
-resource overrides, cleanup confinement, and canonical SELinux TE/FC rules.
+symlink rejection, allocation rollback, timeout partial output, caller-group
+confinement, cancellation reaping, idempotent completed-process cleanup,
+environment and resource overrides, cleanup confinement, and canonical SELinux
+TE/FC rules.
 Tests inject rollback and timeout failures without depending on a live SELinux
 host or an unbounded subprocess. The beta4 gate-only regression also writes an
 owner-only `0600` file through macOS's trusted `/tmp` alias and proves that an

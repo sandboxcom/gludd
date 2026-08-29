@@ -11,6 +11,15 @@ Sibling file: ``test_scheduler_self_update_branch.py`` covers the
 
 from __future__ import annotations
 
+from enum import StrEnum
+from typing import cast
+
+
+class _ReloadedApplyTier(StrEnum):
+    """Equivalent enum member produced by a stale/reloaded module boundary."""
+
+    CODE = "code"
+
 
 class TestWorkItemForTier:
     """``work_item_for_tier`` is the tier→resource-label mapping, isolated from
@@ -27,6 +36,20 @@ class TestWorkItemForTier:
 
         assert item.id == "t1"
         assert SELF_UPDATE_CODE_RESOURCE in item.resources
+        assert item.is_greenfield is False
+
+    def test_code_tier_from_reloaded_enum_still_holds_code_resource(self) -> None:
+        """Module reloads must not weaken the source-mutation resource lock."""
+        from general_ludd.self_update.model import ApplyTier
+        from general_ludd.self_update.priority import (
+            SELF_UPDATE_CODE_RESOURCE,
+            work_item_for_tier,
+        )
+
+        reloaded_code = cast(ApplyTier, _ReloadedApplyTier.CODE)
+        item = work_item_for_tier(reloaded_code, "reloaded")
+
+        assert item.resources == frozenset({SELF_UPDATE_CODE_RESOURCE})
         assert item.is_greenfield is False
 
     def test_config_tier_holds_self_update_config_resource(self) -> None:
@@ -107,3 +130,42 @@ class TestToWorkItemDelegates:
             apply_tier=ApplyTier.CONFIG,
         )
         assert to_work_item(plan, "y") == work_item_for_tier(ApplyTier.CONFIG, "y")
+
+
+class TestPriorityBoundaryMetadata:
+    """Keep the scheduler-facing description and optional project binding stable."""
+
+    def test_todo_spec_binds_optional_project(self) -> None:
+        from general_ludd.self_update.model import (
+            ApplyTier,
+            ChangeKind,
+            SelfUpdatePlan,
+            SelfUpdateRequest,
+            Subsystem,
+        )
+        from general_ludd.self_update.priority import to_todo_spec
+
+        plan = SelfUpdatePlan(
+            subsystem=Subsystem.CONFIG,
+            change_kind=ChangeKind.VALUE_EDIT,
+            apply_tier=ApplyTier.CONFIG,
+        )
+        spec = to_todo_spec(
+            plan,
+            SelfUpdateRequest(raw_text="set the bounded value"),
+            project_id="project-1",
+        )
+
+        assert spec["project_id"] == "project-1"
+
+    def test_scheduler_description_names_both_exclusive_resources(self) -> None:
+        from general_ludd.self_update.priority import (
+            SELF_UPDATE_CODE_RESOURCE,
+            SELF_UPDATE_CONFIG_RESOURCE,
+            describe_scheduler_hook,
+        )
+
+        description = describe_scheduler_hook()
+
+        assert SELF_UPDATE_CODE_RESOURCE in description
+        assert SELF_UPDATE_CONFIG_RESOURCE in description

@@ -16,7 +16,6 @@ These tests parse the workflow YAML and enforce the post-fix invariants:
 
 from __future__ import annotations
 
-import fnmatch
 import re
 from pathlib import Path
 from typing import Any
@@ -636,8 +635,7 @@ class TestGateMatrixStructure:
 
 
 class TestShardCoverageInvariant:
-    """Every tests/unit/test_*.py file must be collected by exactly one
-    test-shard matrix leg — never dropped, never double-collected.
+    """Every test file must be owned by the canonical named-shard registry.
 
     Two root causes this guards against:
 
@@ -646,27 +644,25 @@ class TestShardCoverageInvariant:
        and the 'other' shard's testpaths never re-included
        tests/unit/test_*_e2e.py — so the file silently ran in NO shard.
 
-    2. Dead exclusion mechanism: the exclusion originally used pytest
-       --ignore-glob, which is a NO-OP for these shards — bash expands
-       $TESTPATHS into explicit filenames, and pytest registers
-       explicitly-named files as initial args, which unconditionally bypass
-       pytest_ignore_collect/--ignore-glob (those hooks only apply while
-       pytest itself walks directories; see _pytest/main.py). So "ejected"
-       files silently ran in BOTH their letter shard and 'other'.
+    2. Split ownership: workflow-local path/exclude data can drift from the
+       canonical registry used by local release evidence. Hosted and local
+       then execute different plans even though the shard labels match.
 
-    The real mechanism (modelled here) is a shell-level filter in the run
-    step: each shard's `testpaths` globs are expanded by bash, then each
-    expanded path is matched against the shard's `exclude` patterns with
-    `case "$f" in $pat)` and dropped on match, BEFORE pytest is invoked.
-    This test simulates exactly that: pathlib glob expansion of testpaths
-    tokens + fnmatch filtering with the exclude patterns (shell `case`
-    patterns and fnmatch agree here: in both, `*` also crosses `/`).
+    The workflow therefore carries shard labels only and delegates expansion,
+    exclusion, batching, and attestation to ``run_ci_shards_serial.py``. The
+    registry's own exhaustive tests prove exactly-once ownership.
     """
 
     @staticmethod
     def _shard_includes(wf: dict[str, Any]) -> list[dict[str, Any]]:
         ts_job = wf["jobs"]["test-shard"]
-        return ts_job["strategy"]["matrix"]["include"]
+        raw_entries = ts_job["strategy"]["matrix"]["include"]
+        assert isinstance(raw_entries, list)
+        entries: list[dict[str, Any]] = []
+        for entry in raw_entries:
+            assert isinstance(entry, dict)
+            entries.append(entry)
+        return entries
 
     def test_no_ignore_glob_in_test_shard(self) -> None:
         """pytest --ignore-glob is DEAD CODE in the test-shard job (root cause
@@ -697,15 +693,12 @@ class TestShardCoverageInvariant:
                     "test-shard must not pass pytest --ignore-glob: bash hands "
                     "pytest explicit filenames, which bypass ignore hooks entirely "
                     "(they only apply during pytest's own directory traversal). "
-                    "Use the shell-level `exclude` matrix key + run-step case "
+                    "Use the canonical named-shard registry "
                     f"filter instead. Offending line: {ln!r}"
                 )
 
-    def test_run_step_applies_exclude_filter_before_pytest(self) -> None:
-        """The run step must actually consume the `exclude` matrix key and
-        filter the expanded file list before invoking the test runner — the
-        matrix key alone does nothing. Guards against the filter loop being
-        refactored away while the exclude entries silently stop working."""
+    def test_run_step_delegates_exclusion_to_canonical_runner(self) -> None:
+        """Hosted CI must use the same canonical plan owner as local CI."""
         wf = _load_workflow()
         ts_job = wf["jobs"]["test-shard"]
         test_steps = [
@@ -715,25 +708,15 @@ class TestShardCoverageInvariant:
         ]
         assert test_steps, "test-shard must have a 'Test ...' run step"
         script = test_steps[0].get("run", "")
-        assert "${{ matrix.exclude }}" in script, (
-            "test-shard run step must read the `exclude` matrix key; otherwise "
-            "the per-shard exclude patterns are inert and ejected files double-run"
-        )
-        assert re.search(r'case\s+"\$f"\s+in', script), (
-            "test-shard run step must filter expanded files with a shell "
-            '`case "$f" in <pattern>` loop before invoking pytest'
-        )
-        # The runner must be invoked with the FILTERED list, not raw TESTPATHS.
-        runner_lines = [ln for ln in script.splitlines() if "adaptive_test.py" in ln]
-        assert runner_lines, "test-shard run step must invoke scripts/adaptive_test.py"
-        assert all("$FILES" in ln for ln in runner_lines), (
-            "adaptive_test.py must be invoked with the exclude-filtered $FILES "
-            f"list, not raw $TESTPATHS; got: {runner_lines}"
-        )
+        assert "scripts/run_ci_shards_serial.py" in script
+        assert '--shards "${{ matrix.shard }}"' in script
+        assert "${{ matrix.testpaths }}" not in script
+        assert "${{ matrix.exclude }}" not in script
+        assert "adaptive_test.py" not in script
 
     def test_every_unit_test_file_collected_exactly_once(self) -> None:
-        wf = _load_workflow()
-        includes = self._shard_includes(wf)
+        from scripts.ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
+
         unit_dir = ROOT / "tests" / "unit"
         unit_files = sorted(
             path.relative_to(ROOT).as_posix()
@@ -742,32 +725,16 @@ class TestShardCoverageInvariant:
         assert unit_files, "tests/unit/ must contain test_*.py files"
 
         counts: dict[str, int] = {name: 0 for name in unit_files}
-        for entry in includes:
-            testpaths = str(entry.get("testpaths", ""))
-            excludes = str(entry.get("exclude", "")).split()
-            for token in testpaths.split():
-                if not token.startswith("tests/unit/test_") and not token.startswith("tests/unit/"):
-                    continue
-                # Simulate bash glob expansion of the testpaths token.
-                for path in sorted(ROOT.glob(token)):
-                    candidates = path.rglob("test_*.py") if path.is_dir() else [path]
-                    for candidate in candidates:
-                        rel = candidate.relative_to(ROOT).as_posix()
-                        # Simulate the run step's `case "$f" in $pat)` drop.
-                        if any(fnmatch.fnmatch(rel, pat) for pat in excludes):
-                            continue
-                        counts[rel] += 1
-            # A resource-heavy suite may run in a fresh pytest process before
-            # its shard's long-lived coverage process.  Keep that lane
-            # explicit in matrix metadata so this exactly-once invariant can
-            # account for it rather than treating the workflow step as hidden
-            # control flow.
-            for token in str(entry.get("isolated_testpaths", "")).split():
+        for shard in SHARDS:
+            for token in expand_shard(shard):
                 path = ROOT / token
                 candidates = path.rglob("test_*.py") if path.is_dir() else [path]
                 for candidate in candidates:
                     rel = candidate.relative_to(ROOT).as_posix()
-                    counts[rel] += 1
+                    if rel in counts:
+                        counts[rel] += 1
+        for token in ISOLATED_TESTS:
+            counts[token] += 1
 
         never_collected = sorted(n for n, c in counts.items() if c == 0)
         double_collected = {n: c for n, c in counts.items() if c > 1}

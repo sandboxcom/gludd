@@ -90,14 +90,21 @@ def test_release_waits_for_every_test_and_artifact_producer() -> None:
 def test_test_shards_reject_empty_selection_and_missing_coverage() -> None:
     shard = _job("test-shard")
     runs = _run_blocks(shard)
-    assert "selected no files after exclusions" in runs
-    assert "exit 1" in runs
-    assert "RC -eq 5" not in runs
-    assert (
-        "--cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils"
-        in runs
+    assert "scripts/run_ci_shards_serial.py" in runs
+    runner = (ROOT / "scripts" / "run_ci_shards_serial.py").read_text(
+        encoding="utf-8"
     )
-    assert 'test -s "$COVERAGE_FILE"' in runs
+    assert "SHARD-EMPTY" in runner
+    assert "SHARD-COVERAGE-MISSING" in runner
+    assert "failures[shard] = 2" in runner
+    assert "RC -eq 5" not in runner
+    coverage_config = (ROOT / ".coveragerc-greenlet").read_text(encoding="utf-8")
+    assert "src/general_ludd" in coverage_config
+    assert (
+        "collections/ansible_collections/general_ludd/governance/plugins/module_utils"
+        in coverage_config
+    )
+    assert "coverage_file.stat().st_size == 0" in runner
     uploads = _upload_steps(shard)
     assert uploads
     assert all(
@@ -112,10 +119,18 @@ def test_coverage_requires_all_shards_and_both_thresholds() -> None:
     matrix = _job("test-shard")["strategy"]["matrix"]
     expected_files = len(matrix["python-version"]) * len(matrix["shard"])
     assert f"EXPECTED_SHARD_COVERAGE_FILES={expected_files}" in runs
+    assert (
+        'if [ "$ACTUAL_SHARD_COVERAGE_FILES" -ne '
+        '"$EXPECTED_SHARD_COVERAGE_FILES" ]; then' in runs
+    )
+    assert "Expected exactly $EXPECTED_SHARD_COVERAGE_FILES shard coverage files" in runs
+    assert "Expected at least 6 shard coverage files" not in runs
+    assert "one shard's data lost after a green run" not in runs
     assert "coverage report --skip-covered --fail-under=85" in runs
     assert "coverage json -o coverage.json" in runs
     assert "audit_coverage.py" in runs
-    assert "--threshold=75" in runs
+    assert "--threshold=85" in runs
+    assert "--per-file-threshold=75" in runs
     assert "No shard coverage data found" not in runs
     uploads = _upload_steps(coverage)
     assert uploads

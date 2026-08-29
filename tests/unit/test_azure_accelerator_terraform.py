@@ -31,6 +31,9 @@ def test_makefile_has_state_free_azure_stack_initialization() -> None:
     makefile = (ROOT / "Makefile").read_text()
     assert "tf-init-local:" in makefile
     assert "terraform init -backend=false" in makefile
+    assert 'TF_DATA_DIR="$$TF_LOCAL_DATA_DIR"' in makefile
+    assert "scripts/resource_arbiter.py root" in makefile
+    assert 'rm -rf "$$TF_LOCAL_DATA_DIR"' in makefile
     assert "stacks/azure-vllm|stacks/azure-llamacpp" in makefile
     assert 'scripts/clean_terraform_test_artifacts.py "$(TF_ROOT)/$(STACK)"' in makefile
 
@@ -260,6 +263,8 @@ async def test_azure_plan_uses_materialized_release_stack(tmp_path: Path) -> Non
 
     materialize.assert_called_once()
     generate.assert_not_called()
+    assert run.await_args is not None
+    assert create_process.await_args is not None
     assert run.await_args.kwargs["cwd"] == str(stack_dir)
     assert create_process.await_args.kwargs["cwd"] == str(stack_dir)
 

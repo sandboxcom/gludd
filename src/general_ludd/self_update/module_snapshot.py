@@ -7,15 +7,12 @@ if the new version fails its health gate or raises at import time.
 from __future__ import annotations
 
 import gc
-import importlib
-import logging
 import sys
 import threading
 import time
-from dataclasses import dataclass, field
 from types import ModuleType
 
-logger = logging.getLogger(__name__)
+from general_ludd.self_update.module_snapshot_types import ModuleSnapshot as ModuleSnapshot
 
 _EXTENSION_SUFFIXES: frozenset[str] = frozenset(
     {".so", ".pyd", ".dylib", ".dll"}
@@ -28,24 +25,6 @@ _SINGLETON_LIKE_NAMES: frozenset[str] = frozenset(
         "registry", "_registry", "manager", "repo", "repository",
     }
 )
-
-
-@dataclass
-class ModuleSnapshot:
-    """Stores a shallow backup of module objects from ``sys.modules``.
-
-    Attributes:
-        modules: The saved module objects keyed by dotted name.
-        snapshot_at: Monotonic timestamp when the snapshot was taken.
-        warnings: Non-fatal warnings emitted during snapshot (e.g. singletons).
-    """
-
-    modules: dict[str, ModuleType] = field(default_factory=dict)
-    snapshot_at: float = 0.0
-    warnings: list[str] = field(default_factory=list)
-
-    def __bool__(self) -> bool:
-        return bool(self.modules)
 
 
 _lock = threading.Lock()
@@ -78,15 +57,21 @@ def snapshot_modules(module_names: list[str]) -> ModuleSnapshot:
                 continue
 
             snapshot.modules[name] = module
+            snapshot.namespaces[name] = dict(module.__dict__)
             _warn_singletons(name, module, snapshot.warnings)
 
     return snapshot
 
 
 def restore_modules(snapshot: ModuleSnapshot) -> list[str]:
-    """Restore module objects from *snapshot* into ``sys.modules`` and
-    ``importlib.reload`` each restored module so the interpreter picks up the
-    old bytecode.
+    """Restore module objects and namespaces from *snapshot*.
+
+    ``importlib.reload`` is deliberately not used here: it executes the live
+    source into the existing module namespace and creates new class objects.
+    Consumers that imported a class before the reload then fail identity checks
+    even though both classes have the same qualified name.  Restoring the
+    captured namespace preserves the pre-reload functions/classes and makes
+    rollback a real in-memory rollback rather than another forward reload.
 
     Thread-safe: acquires the same lock as :func:`snapshot_modules` so
     snapshot and restore cannot interleave.
@@ -96,21 +81,25 @@ def restore_modules(snapshot: ModuleSnapshot) -> list[str]:
     restored: list[str] = []
     with _lock:
         for name, old_module in snapshot.modules.items():
+            old_namespace = snapshot.namespaces.get(name)
+            if old_namespace is not None:
+                namespace = old_module.__dict__
+                namespace.clear()
+                namespace.update(old_namespace)
             sys.modules[name] = old_module
+            parent_name, separator, child_name = name.rpartition(".")
+            if separator:
+                parent = sys.modules.get(parent_name)
+                if parent is not None:
+                    setattr(parent, child_name, old_module)
             restored.append(name)
-            try:
-                importlib.reload(old_module)
-            except Exception as exc:
-                logger.warning(
-                    "restore_modules: reload skipped for %s: %s", name, exc
-                )
     return restored
 
 
 def find_live_references(module_name: str) -> list[str]:
-    """Use ``gc.get_referrers()`` to discover objects holding references to
-    the current ``sys.modules[module_name]``.
+    """Discover objects holding references to the current module.
 
+    Use ``gc.get_referrers()`` on ``sys.modules[module_name]``.
     Returns a list of ``"<type_name> at <id>"`` strings. Call after a reload
     to audit whether stale references to the old module still exist in live
     objects (which would prevent the old module from being garbage collected
@@ -167,9 +156,10 @@ def _is_extension_module(module: ModuleType) -> bool:
 def _warn_singletons(
     module_name: str, module: ModuleType, warnings: list[str]
 ) -> None:
-    """Detect module-level singletons (globals, connection pools, etc.) and
-    log a warning so the caller is aware that stale state may persist after
-    a rollback.
+    """Detect module-level singleton state.
+
+    Log a warning so the caller is aware that globals, connection pools, or
+    similar singleton state may persist after a rollback.
     """
     for attr_name in dir(module):
         if attr_name.startswith("_"):

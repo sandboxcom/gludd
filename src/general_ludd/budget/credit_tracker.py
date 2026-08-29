@@ -85,7 +85,7 @@ _SPEND_LIMIT_SUPPORTED: frozenset[str] = frozenset({"openrouter", "openai"})
 # ---------------------------------------------------------------------------
 
 
-class _Unparseable(Exception):
+class _Unparseable(ValueError):
     """Raised by per-provider parsers when the JSON shape is unexpected."""
 
 

@@ -35,6 +35,7 @@ _ARCHITECTURE_ALIASES = {
     "arm64": "aarch64",
     "x86_64": "x86_64",
 }
+_TRANSITIVE_DIAGNOSTIC_LIMIT = 50
 _CATEGORIES = frozenset(
     {
         "controller-runtime-boundary",
@@ -84,6 +85,7 @@ class MissingImportEdge:
     flags: tuple[str, ...]
 
     def render(self) -> str:
+        """Render the edge in the stable digest and diagnostic format."""
         flags = ", ".join(self.flags)
         return f"{self.kind} {self.module} <- {self.importer} ({flags})"
 
@@ -588,6 +590,18 @@ def _audit(
             f"expected {transitive_warning_sha256}, "
             f"found {actual_transitive_sha256}"
         )
+        diagnostic_edges = sorted(transitive)[:_TRANSITIVE_DIAGNOSTIC_LIMIT]
+        failures.append(
+            "transitive warning graph: "
+            f"total={len(transitive)} shown={len(diagnostic_edges)} "
+            f"limit={_TRANSITIVE_DIAGNOSTIC_LIMIT}"
+        )
+        failures.extend(
+            f"transitive warning edge: {edge.render()}" for edge in diagnostic_edges
+        )
+        omitted = len(transitive) - len(diagnostic_edges)
+        if omitted:
+            failures.append(f"transitive warning graph omitted={omitted}")
     return failures
 
 
@@ -603,6 +617,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    """Audit one warning graph against its platform and architecture policy."""
     args = _build_parser().parse_args()
     try:
         warning_edges = _parse_warning_file(args.warnings)

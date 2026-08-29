@@ -22,14 +22,21 @@ ROOT = Path(__file__).resolve().parents[2]
 BUILD_YML = ROOT / ".github" / "workflows" / "build.yml"
 
 
+class JobInfo(typing.TypedDict):
+    """The structural job fields extracted from the workflow source."""
+
+    needs: list[str]
+    line: int
+
+
 def _workflow_source() -> str:
     assert BUILD_YML.exists(), f"build.yml not found at {BUILD_YML}"
     return BUILD_YML.read_text()
 
 
-def _extract_jobs(src: str) -> dict[str, dict]:
+def _extract_jobs(src: str) -> dict[str, JobInfo]:
     """Extract job names and their needs from the workflow YAML."""
-    jobs: dict[str, dict] = {}
+    jobs: dict[str, JobInfo] = {}
     lines = src.split("\n")
     i = 0
     while i < len(lines):
@@ -54,7 +61,7 @@ def _extract_jobs(src: str) -> dict[str, dict]:
 class TestNoCircularDependencies:
     """A job MUST NOT depend on itself. This caused 6+ failed CI runs."""
 
-    def test_no_job_depends_on_itself(self):
+    def test_no_job_depends_on_itself(self) -> None:
         jobs = _extract_jobs(_workflow_source())
         violations = []
         for name, info in jobs.items():
@@ -79,16 +86,16 @@ class TestReleaseFanInAndParallelBuilds:
         "container",
     ]
 
-    def test_build_jobs_do_not_serialize_on_test_shard(self):
+    def test_build_jobs_do_not_serialize_on_test_shard(self) -> None:
         jobs = _extract_jobs(_workflow_source())
         violations = [
             name
             for name in self.PARALLEL_BUILD_JOBS
-            if "test-shard" in jobs.get(name, {}).get("needs", [])
+            if "test-shard" in jobs.get(name, {"needs": [], "line": 0})["needs"]
         ]
         assert not violations, f"Build jobs unexpectedly serialize on test-shard: {violations}"
 
-    def test_release_waits_for_test_shard(self):
+    def test_release_waits_for_test_shard(self) -> None:
         jobs = _extract_jobs(_workflow_source())
         assert "test-shard" in jobs["release"]["needs"]
 
@@ -96,19 +103,19 @@ class TestReleaseFanInAndParallelBuilds:
 class TestReleaseJobHasVerificationSteps:
     """The release job MUST verify artifacts before publishing."""
 
-    def test_release_job_exists(self):
+    def test_release_job_exists(self) -> None:
         src = _workflow_source()
         assert re.search(r"^  release:\s*$", src, re.MULTILINE), (
             "release job must exist in build.yml"
         )
 
-    def test_release_verifies_completeness(self):
+    def test_release_verifies_completeness(self) -> None:
         src = _workflow_source()
         assert "verify-release-completeness" in src or "verify_release_completeness" in src, (
             "release job must call verify-release-completeness as a blocking step"
         )
 
-    def test_release_verifies_staged_assets(self):
+    def test_release_verifies_staged_assets(self) -> None:
         src = _workflow_source()
         assert "Verify staged assets" in src, (
             "release job must verify staged assets before publishing"
@@ -118,7 +125,7 @@ class TestReleaseJobHasVerificationSteps:
 class TestWorkflowYamlIsValid:
     """The workflow YAML must be parseable by GitHub Actions."""
 
-    def test_no_bang_cancelled_outside_quotes(self):
+    def test_no_bang_cancelled_outside_quotes(self) -> None:
         """!cancelled() outside quotes is parsed as YAML tag — causes 0s failure."""
         src = _workflow_source()
         for line in src.split("\n"):
@@ -130,7 +137,7 @@ class TestWorkflowYamlIsValid:
                         f"!cancelled() in unquoted if: condition causes YAML parse failure: {stripped}"
                     )
 
-    def test_timeout_is_generous(self):
+    def test_timeout_is_generous(self) -> None:
         """test-shard timeout must be at least 60 minutes."""
         src = _workflow_source()
         m = re.search(r"timeout-minutes:\s*(\d+)", src)
@@ -161,7 +168,7 @@ class TestNoJobExceedsMaxTimeout:
 
     MAX_TIMEOUT_MINUTES = 120
 
-    def test_no_job_exceeds_max_timeout(self):
+    def test_no_job_exceeds_max_timeout(self) -> None:
         import yaml
 
         src = _workflow_source()
@@ -190,7 +197,7 @@ class TestNoJobExceedsMaxTimeout:
             + "\n".join(violations)
         )
 
-    def test_all_jobs_have_explicit_timeout(self):
+    def test_all_jobs_have_explicit_timeout(self) -> None:
         """Every job should declare timeout-minutes (GH default is 360m)."""
         import yaml
 
@@ -220,7 +227,7 @@ class TestReleasePrerequisitesAreBlocking:
         "container",
     ]
 
-    def test_required_jobs_do_not_continue_on_error(self):
+    def test_required_jobs_do_not_continue_on_error(self) -> None:
         import yaml
 
         jobs = yaml.safe_load(_workflow_source()).get("jobs", {})
@@ -250,14 +257,14 @@ class TestReleaseDownloadsAllArtifacts:
         assert idx >= 0, "release job must exist in build.yml"
         return src[idx:]
 
-    def test_release_downloads_gludd_pattern(self):
+    def test_release_downloads_gludd_pattern(self) -> None:
         section = self._release_section()
         assert "pattern: gludd-*" in section, (
             "release job must download artifacts matching pattern: gludd-* "
             "to collect all platform build outputs into one staging directory"
         )
 
-    def test_release_merges_multiple(self):
+    def test_release_merges_multiple(self) -> None:
         section = self._release_section()
         assert "merge-multiple: true" in section, (
             "release job must set merge-multiple: true on download-artifact "
@@ -274,13 +281,13 @@ class TestMoleculeJobExists:
     go undetected until production deployment.
     """
 
-    def test_molecule_job_present(self):
+    def test_molecule_job_present(self) -> None:
         src = _workflow_source()
         assert re.search(r"^  molecule:\s*$", src, re.MULTILINE), (
             "molecule job must exist in build.yml for ansible role/module testing"
         )
 
-    def test_molecule_is_blocking(self):
+    def test_molecule_is_blocking(self) -> None:
         import yaml
 
         jobs = yaml.safe_load(_workflow_source()).get("jobs", {})
@@ -297,14 +304,14 @@ class TestCoverageJobExists:
     coverage by ~75% (only one shard's data would be visible).
     """
 
-    def test_coverage_job_present(self):
+    def test_coverage_job_present(self) -> None:
         src = _workflow_source()
         assert re.search(r"^  coverage:\s*$", src, re.MULTILINE), (
             "coverage job must exist in build.yml to aggregate per-shard "
             "coverage data into a single canonical coverage.xml"
         )
 
-    def test_coverage_needs_test_shard(self):
+    def test_coverage_needs_test_shard(self) -> None:
         import yaml
 
         src = _workflow_source()
@@ -322,7 +329,7 @@ class TestCoverageJobExists:
 
 
 class TestShardMatrixCoverage:
-    """The test-shard matrix MUST cover the full tests/unit/ directory.
+    """The canonical shard registry MUST cover the full tests/unit/ directory.
 
     Every test_* file under tests/unit/ starting with a letter a-z must be
     collected by exactly one shard. The current layout covers all 26 letters:
@@ -342,7 +349,7 @@ class TestShardMatrixCoverage:
         "unit-2", "unit-3a", "unit-3b", "other",
     ]
 
-    def _matrix(self) -> dict:
+    def _matrix(self) -> dict[str, object]:
         import yaml
 
         src = _workflow_source()
@@ -354,9 +361,10 @@ class TestShardMatrixCoverage:
         assert isinstance(matrix, dict), "test-shard must have a strategy.matrix"
         return matrix
 
-    def test_all_expected_shards_present(self):
+    def test_all_expected_shards_present(self) -> None:
         matrix = self._matrix()
         shard_list = matrix.get("shard", [])
+        assert isinstance(shard_list, list), "matrix.shard must be a list"
         missing = [s for s in self.EXPECTED_SHARDS if s not in shard_list]
         assert not missing, (
             "test-shard matrix is missing expected shard(s): "
@@ -364,29 +372,24 @@ class TestShardMatrixCoverage:
             + " — every letter range must have a dedicated shard"
         )
 
-    def test_letter_ranges_cover_a_to_z(self):
-        """Every letter a-z must appear in at least one shard's testpaths glob."""
-        matrix = self._matrix()
-        includes = matrix.get("include", [])
-        covered: set[str] = set()
-        for inc in includes:
-            tp = inc.get("testpaths", "")
-            # Range form: test_[f-m]* → expands f through m
-            for m in re.finditer(r"test_\[([a-z])-([a-z])\]", tp):
-                lo, hi = m.group(1), m.group(2)
-                for code in range(ord(lo), ord(hi) + 1):
-                    covered.add(chr(code))
-            # Set form: test_[bd]* → adds b and d
-            for m in re.finditer(r"test_\[([a-z]+)\]", tp):
-                for ch in m.group(1):
-                    covered.add(ch)
-            # Prefix form: test_a[a-m]* → first letter is 'a'
-            for m in re.finditer(r"test_([a-z])\[", tp):
-                covered.add(m.group(1))
-        all_letters = set(chr(c) for c in range(ord("a"), ord("z") + 1))
-        missing = sorted(all_letters - covered)
+    def test_letter_ranges_cover_a_to_z(self) -> None:
+        """Every top-level lettered unit test belongs to the canonical plan."""
+        from scripts.ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
+
+        selected = {
+            token
+            for shard in SHARDS
+            for token in expand_shard(shard)
+            if token.startswith("tests/unit/test_")
+        }
+        selected.update(ISOLATED_TESTS)
+        unit_root = ROOT / "tests" / "unit"
+        expected = {
+            path.relative_to(ROOT).as_posix()
+            for path in unit_root.glob("test_[a-z]*.py")
+        }
+        missing = sorted(expected - selected)
         assert not missing, (
-            "test-shard matrix does not cover letter(s): "
+            "canonical shard registry does not cover unit test(s): "
             + ", ".join(missing)
-            + " — tests starting with these letters will never be collected"
         )

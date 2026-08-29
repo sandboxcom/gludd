@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import time
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -26,10 +28,12 @@ ROOT = Path(__file__).parent.parent.parent
 SCRIPT_PATH = ROOT / "scripts" / "agent_watchdog.py"
 
 
-def _load_module():
-    spec = importlib.util.spec_from_file_location("agent_watchdog", SCRIPT_PATH)
+def _load_module() -> ModuleType:
+    module_name = "agent_watchdog_test_watchdog"
+    spec = importlib.util.spec_from_file_location(module_name, SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
 

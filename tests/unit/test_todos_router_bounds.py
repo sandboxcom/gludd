@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 
 from general_ludd.routers import todos as todos_router
 from general_ludd.routers.todos import _MAX_INMEMORY_TODOS
+from general_ludd.routers.web_search import SlidingWindowRateLimiter
 
 
 def _build_degraded_app() -> tuple[FastAPI, dict[str, Any]]:
@@ -31,12 +32,16 @@ def _build_degraded_app() -> tuple[FastAPI, dict[str, Any]]:
     handler directly.
     """
     app = FastAPI()
+    app.state._todo_rate_limiter = SlidingWindowRateLimiter(
+        max_requests=_MAX_INMEMORY_TODOS + 200,
+        window_seconds=60.0,
+    )
     daemon_state: dict[str, Any] = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
     todos_router.register(app, daemon_state)
     return app, daemon_state
 
 
-def test_first_degraded_access_converts_todos_to_bounded_deque():
+def test_first_degraded_access_converts_todos_to_bounded_deque() -> None:
     app, daemon_state = _build_degraded_app()
     assert daemon_state["todos"] == []
 
@@ -47,7 +52,7 @@ def test_first_degraded_access_converts_todos_to_bounded_deque():
     assert daemon_state["todos"].maxlen == _MAX_INMEMORY_TODOS
 
 
-def test_register_preserves_preseeded_entries():
+def test_register_preserves_preseeded_entries() -> None:
     app = FastAPI()
     daemon_state: dict[str, Any] = {"todos": [{"todo_id": "seed", "queue": "core"}]}
     todos_router.register(app, daemon_state)
@@ -59,9 +64,11 @@ def test_register_preserves_preseeded_entries():
     assert list(daemon_state["todos"]) == [{"todo_id": "seed", "queue": "core"}]
 
 
-def test_register_is_idempotent_on_already_bounded_deque():
+def test_register_is_idempotent_on_already_bounded_deque() -> None:
     app = FastAPI()
-    existing = collections.deque(maxlen=_MAX_INMEMORY_TODOS)
+    existing: collections.deque[dict[str, object]] = collections.deque(
+        maxlen=_MAX_INMEMORY_TODOS
+    )
     existing.append({"todo_id": "x"})
     daemon_state: dict[str, Any] = {"todos": existing}
     todos_router.register(app, daemon_state)
@@ -70,7 +77,7 @@ def test_register_is_idempotent_on_already_bounded_deque():
     assert list(daemon_state["todos"]) == [{"todo_id": "x"}]
 
 
-def test_degraded_post_caps_in_memory_todos_with_fifo_eviction():
+def test_degraded_post_caps_in_memory_todos_with_fifo_eviction() -> None:
     app, daemon_state = _build_degraded_app()
     client = TestClient(app)
 
@@ -95,7 +102,7 @@ def test_degraded_post_caps_in_memory_todos_with_fifo_eviction():
     assert f"todo-{first_surviving}" in titles
 
 
-def test_degraded_list_still_works_after_eviction():
+def test_degraded_list_still_works_after_eviction() -> None:
     """GET /api/todos list/filter path stays correct against the deque."""
     app, _daemon_state = _build_degraded_app()
     client = TestClient(app)
@@ -113,7 +120,7 @@ def test_degraded_list_still_works_after_eviction():
 
 
 @pytest.mark.parametrize("limit", [1, 50])
-def test_degraded_get_by_id_finds_surviving_todo(limit: int):
+def test_degraded_get_by_id_finds_surviving_todo(limit: int) -> None:
     app, daemon_state = _build_degraded_app()
     client = TestClient(app)
     over = _MAX_INMEMORY_TODOS + 5

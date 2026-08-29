@@ -9,7 +9,7 @@ from general_ludd.secrets.env import EnvSecretsManager
 
 
 class TestZAISkipBehavior:
-    def test_skip_when_no_zai_key(self):
+    def test_skip_when_no_zai_key(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("ZAI_API_KEY", None)
             key = os.environ.get("ZAI_API_KEY")
@@ -21,7 +21,7 @@ class TestZAISkipBehavior:
             assert not os.environ.get("ZAI_API_KEY")
             del reason
 
-    def test_zai_429_handled_as_skip_not_failure(self):
+    def test_zai_429_handled_as_skip_not_failure(self) -> None:
         """ZAI 429 rate-limit: gateway falls back without crashing."""
         registry = ProviderRegistry()
         registry.register_provider("openai", "langchain_openai", "ChatOpenAI")
@@ -60,6 +60,7 @@ class TestZAISkipBehavior:
             model_name="fallback-model",
             credential_alias="ZAI_API_KEY",
             context_window=64000,
+            api_metered=False,
             enabled=True,
         )
 
@@ -76,7 +77,9 @@ class TestZAISkipBehavior:
 
         fallback_response = ModelResponse(content="fallback result")
 
-        def _try_call_side_effect(profile_id, messages, **kwargs):
+        def _try_call_side_effect(
+            profile_id: str, messages: object, **kwargs: object
+        ) -> ModelResponse | None:
             if profile_id == "zai_main":
                 return None
             return fallback_response

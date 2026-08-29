@@ -126,10 +126,11 @@ def work_item_for_tier(tier: ApplyTier, item_id: str) -> WorkItem:
       * Anything else (e.g. REFUSED) -> greenfield/no-resource so it never blocks
         real work.
     """
-    if tier is ApplyTier.CODE:
+    tier_value = tier.value
+    if tier_value == ApplyTier.CODE.value:
         resources = frozenset({SELF_UPDATE_CODE_RESOURCE})
         greenfield = False
-    elif tier in (ApplyTier.CONFIG, ApplyTier.SCAFFOLD):
+    elif tier_value in (ApplyTier.CONFIG.value, ApplyTier.SCAFFOLD.value):
         resources = frozenset({SELF_UPDATE_CONFIG_RESOURCE})
         greenfield = False
     else:

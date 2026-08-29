@@ -642,7 +642,8 @@ def test_tui_handles_multiple_permissioned_tool_prompts(
         "the TUI harness's bash tool executes before tool.execute.before "
         "denials are applied in the current opencode TUI runtime; the no-wait "
         "matcher itself is pinned by tests/unit/test_no_wait_plugin.py and "
-        "the hook-runtime suite"
+        "the hook-runtime suite; tracked by "
+        "docs/specs/BEHAVIORAL_SPECS.md:6364"
     ),
 )
 @pytest.mark.timeout(420)

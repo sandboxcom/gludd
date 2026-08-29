@@ -157,6 +157,30 @@ class TestSmokeTestOrdering:
         )
 
 
+class TestMacOSPackageSmokeLifecycle:
+    """The mounted DMG is force-detached on success and failure paths."""
+
+    def test_dmg_detach_handles_hosted_runner_resource_busy(
+        self, build_workflow: dict[str, Any]
+    ) -> None:
+        """Both teardown paths must use hdiutil's open-file override."""
+        package_steps = [
+            step
+            for step in _steps(build_workflow, "macos")
+            if (step.get("name") or "") == "Smoke packaged macOS artifacts"
+        ]
+        assert len(package_steps) == 1
+        run = package_steps[0].get("run") or ""
+
+        forced_detach = 'hdiutil detach "$mount_point" -force'
+        assert run.count(forced_detach) >= 2, (
+            "macOS packaged-artifact smoke must use force-detach in both the "
+            "normal path and EXIT cleanup because hosted Disk Arbitration can "
+            "report a transient resource-busy mount after executing the image"
+        )
+        assert 'hdiutil detach "$mount_point"\n' not in run
+
+
 # ---------------------------------------------------------------------------
 # Smoke test must check for known crash signatures
 # ---------------------------------------------------------------------------

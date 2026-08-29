@@ -108,7 +108,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
+        init sync relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck _precommit-mypy setup-dirs setup-venv clean healthcheck \
@@ -165,7 +165,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime e2e-setup-test-project test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
-ci-view ci-rerun ci-trigger ci-active ci-job-log ci-shards-log-context \
+ci-view ci-rerun ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
 log-agent-result disk-guard disk-check check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
@@ -283,6 +283,7 @@ help:
 	@echo "  security              Full security: sast + sbom + Python/Node dependency audits"
 	@echo "  test-unit             Unit tests only"
 	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
+	@echo "  test-ci-dual-track-local  Canonical local all-shard evidence (DUAL_TRACK_LOCAL_VALIDATE_ONLY, PYTEST_ARGS, MAX_FILES_PER_BATCH)"
 	@echo "  test-integration      Integration tests"
 	@echo "  integration-health   Run the observable integration gate with isolated temp paths"
 	@echo "  test-e2e              End-to-end tests"
@@ -312,6 +313,7 @@ help:
 	@echo "  test-opencode-e2e     .opencode/ plugin load+invocation tests"
 	@echo "  test-opencode-e2e-hour  1-hour E2E spawner test (TIMEOUT=3600)"
 	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
+	@echo "  test-specific-pyver   Single test under explicit Python (TESTFILE, PYTHON_VERSION)"
 	@echo "  test-files            Multiple tests (TESTFILES=tests/unit/a.py tests/unit/b.py)"
 	@echo "  grep                  Repository text search (Q=regex SEARCH_PATH=path)"
 	@echo "  ci-shards-log-context Show local shard log context (LOG=.gate-logs/ci.log PATTERN=FAILED)"
@@ -409,7 +411,7 @@ help:
 	@echo "  git-tag-rm TAG=<t>           Delete tag locally and on sandboxcom"
 	@echo "  git-tag-delete TAG=<t>       Alias for git-tag-rm"
 	@echo "  git-tag-move TAG=<t> MSG='..'  Delete old tag + create new at HEAD + push"
-	@echo "  submodule-init        Initialize all git submodules (recursive)"
+	@echo "  submodule-init        Initialize submodules or validate configuration (SUBMODULE_INIT_VALIDATE_ONLY=0|1)"
 	@echo "  submodule-update      Update submodules to latest remote (--merge)"
 	@echo "  submodule-status      Show status of each submodule"
 	@echo "  submodule-pin REPO=.. TAG=..  Pin a submodule to a tag/commit"
@@ -487,7 +489,11 @@ help:
 	@echo ""
 	@echo "  --- CI ---"
 	@echo "  ci-kill-zombie          cancel a CI run via gh run cancel"
-	@echo "  ci-run-summary          show CI run job statuses as concise table from gh run view JSON"
+	@echo "  ci-job-failure-context  bounded authenticated failure context (RUN, JOB, PATTERN)"
+	@echo "  ci-artifact-download    atomically download one exact run-bound GHA artifact (RUN, ARTIFACT, CI_ARTIFACT_OUTPUT_ROOT, CI_ARTIFACT_HEARTBEAT_SECS, CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)"
+	@echo "  ci-coverage-artifact-audit audit one externally stored hosted Cobertura report (CI_COVERAGE_*)"
+	@echo "  ci-coverage-gap-plan       print a bounded exact-run line/branch remediation plan (CI_COVERAGE_*)"
+	@echo "  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1"
 	@echo "  ci-await BRANCH=<b> [TIMEOUT=<s>]  Poll CI for branch until terminal (green/red/timeout)"
 	@echo "  ci-verdict-safe        Cooldown-enforced CI check (prefer over bare ci-verdict)"
 	@echo "  ci-dashboard           One-shot compact CI run listing"
@@ -896,6 +902,18 @@ test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
 	@BT="/tmp/gludd-testspecific-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
+test-specific-pyver:
+	@[ -n "$(TESTFILE)" ] && [ -n "$(PYTHON_VERSION)" ] || { echo "Usage: make test-specific-pyver TESTFILE=path::node PYTHON_VERSION=3.11 PYTEST_ARGS=-q"; exit 2; }
+	@case "$(PYTHON_VERSION)" in 3.11|3.12|3.13|3.14) ;; *) echo "Unsupported PYTHON_VERSION=$(PYTHON_VERSION)"; exit 2 ;; esac
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+		WORK="$$(mktemp -d "$$RESOURCE_ROOT/testpyver-$(PYTHON_VERSION)-XXXXXX")"; \
+		cleanup() { RC=$$?; trap - EXIT INT TERM; rm -rf "$$WORK"; exit $$RC; }; \
+		trap cleanup EXIT INT TERM; \
+		export UV_PROJECT_ENVIRONMENT="$$WORK/.venv"; \
+		$(UV) sync --python "$(PYTHON_VERSION)"; \
+		BT="$$WORK/pytest"; \
+		$(UV) run --python "$(PYTHON_VERSION)" python -m pytest $(TESTFILE) -n 1 --dist loadgroup --max-worker-restart=0 -v -W error $(PYTEST_ARGS) --basetemp="$$BT"
+
 test-files:
 	@if [ -z "$(TESTFILES)" ]; then echo "Usage: make test-files TESTFILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi
 	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
@@ -924,7 +942,7 @@ coverage-files:
 		fi; \
 		if [ "$$RC" -eq 0 ]; then \
 			echo "=== COVERAGE FILES: verify every measured file >=$(COVERAGE_PER_FILE_MIN)% ==="; \
-			$(UV) run python scripts/audit_coverage.py --json-file="$(COVERAGE_REPORT)" --threshold="$(COVERAGE_PER_FILE_MIN)" --source=.; \
+			$(UV) run python scripts/audit_coverage.py --json-file="$(COVERAGE_REPORT)" --threshold="$(COVERAGE_AGGREGATE_MIN)" --per-file-threshold="$(COVERAGE_PER_FILE_MIN)" --source=.; \
 			RC=$$?; \
 		fi; \
 		rm -rf "$$BT"; \
@@ -945,13 +963,23 @@ _ci-replica-clean-tree:
 	echo "Commit completed work or create a clean worktree at the pushed HEAD."; \
 	exit 1
 
+test-ci-dual-track-local: $(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),,_ci-replica-clean-tree)
+	@$(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),:,$(MAKE) node-deps-sync NODE_DEPS_VALIDATE_ONLY=0 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false)
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	TOOLCHAIN_ROOT="$${RESOURCE_ROOT}-toolchain"; \
+	UV_PROJECT_ENVIRONMENT="$$TOOLCHAIN_ROOT/ci-shards/python-3.11" GLUDD_CANDIDATE_SHA="$$(git rev-parse HEAD)" $(UV) run --python 3.11 python scripts/run_ci_shards_serial.py \
+		--pytest-args="-W error $(PYTEST_ARGS)" \
+		--require-release-policy \
+		--max-files-per-batch "$(or $(MAX_FILES_PER_BATCH),16)" $(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),--validate-only,) \
+		--attestation-output "$$RESOURCE_ROOT/ci-shards/attestation.json"
+
 test-ci-shard: _ci-replica-clean-tree
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard SHARD=unit-2"; exit 1; fi
 	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
 	GLUDD_CANDIDATE_SHA="$$(git rev-parse HEAD)" $(UV) run python scripts/run_ci_shards_serial.py \
 		--shards "$(SHARD)" \
 		--pytest-args="-W error $(PYTEST_ARGS)" \
-		--max-files-per-batch "$(or $(MAX_FILES_PER_BATCH),64)" \
+		--max-files-per-batch "$(or $(MAX_FILES_PER_BATCH),16)" \
 		--skip-isolated \
 		--skip-aggregate \
 		--coverage-output "$$RESOURCE_ROOT/ci-shards/.coverage.$(SHARD)" \
@@ -3497,7 +3525,7 @@ _push-rate-guard:
 	fi
 
 force-push:
-	@GLUDD_FORCE_PUSH=1 $(MAKE) git-push-sandboxcom
+	@GLUDD_FORCE_PUSH=1 $(MAKE) --no-print-directory _push-rate-guard git-push-sandboxcom
 
 master-force-push:
 	@GLUDD_FORCE_PUSH=1 $(MAKE) --no-print-directory _push-rate-guard
@@ -3805,6 +3833,17 @@ ci-poll-sha:
 # Usage: make ci-dashboard [LIMIT=10] [BRANCH=development]
 ci-dashboard: _require-gh
 	@$(PYTHON) scripts/ci_dashboard.py --limit $(or $(LIMIT),5) $(if $(BRANCH),--branch $(BRANCH),)
+
+# ci-run-summary: fetch one immutable numeric workflow-run identity and print a
+# concise, terminal-only summary. Validation mode is network-free for contracts.
+# Usage: make ci-run-summary RUN=<id> [CI_RUN_SUMMARY_REPO=owner/repo]
+#        [CI_RUN_SUMMARY_VALIDATE_ONLY=0|1]
+CI_RUN_SUMMARY_REPO ?= sandboxcom/gludd
+CI_RUN_SUMMARY_VALIDATE_ONLY ?= 0
+ci-run-summary:
+	@[ -n "$(RUN)" ] || { echo "Usage: make ci-run-summary RUN=<id> [CI_RUN_SUMMARY_REPO=owner/repo] [CI_RUN_SUMMARY_VALIDATE_ONLY=0|1]"; exit 2; }
+	@case "$(CI_RUN_SUMMARY_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_RUN_SUMMARY_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@$(PYTHON) scripts/ci_run_summary.py --run "$(RUN)" --repo "$(CI_RUN_SUMMARY_REPO)" $(if $(filter 1,$(CI_RUN_SUMMARY_VALIDATE_ONLY)),--validate-only,)
 
 # Consolidated, read-only state report for pre-claim verification. Prints the
 # working tree (CLEAN/DIRTY), HEAD identity + branch, remote sync state
@@ -4459,7 +4498,7 @@ typecheck-scope: ## Run strict mypy on explicit FILES without unrelated override
 	@MYPYPATH=src:scripts $(UV) run mypy --explicit-package-bases --no-incremental --no-warn-unused-configs $(FILES)
 # Ansible/YAML lint (#36), fail-on-error (no `|| true`).
 yaml-lint:
-	@ANSIBLE_COLLECTIONS_PATH="$(CURDIR)/collections" $(UV) run ansible-lint playbooks collections/ansible_collections/general_ludd/agent/roles
+	@ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1 PYTHONWARNINGS=error ANSIBLE_COLLECTIONS_PATH="$(CURDIR)/collections" $(UV) run ansible-lint playbooks collections/ansible_collections/general_ludd/agent/roles
 
 ci-log:
 	@if [ -n "$(RUN)" ]; then \
@@ -4485,6 +4524,103 @@ ci-job-log:
 	if [ -z "$$JID" ]; then echo "no job matching '$(JOB)' found in run $(RUN)"; exit 1; fi; \
 	echo "--- job id: $$JID ---"; \
 	gh run view -R sandboxcom/gludd --log --job=$$JID 2>&1 | tail -400 || echo "ci-job-log-failed"
+
+CI_JOB_CONTEXT_VALIDATE_ONLY ?= 0
+ci-job-failure-context:
+	@[ -n "$(RUN)" ] && [ -n "$(JOB)" ] && [ -n "$(PATTERN)" ] || { echo "Usage: make ci-job-failure-context RUN=<run-id> JOB=<numeric-job-id> PATTERN=<literal> BEFORE=10 AFTER=30"; exit 2; }
+	@case "$(RUN):$(JOB):$(or $(BEFORE),10):$(or $(AFTER),30):$(CI_JOB_CONTEXT_VALIDATE_ONLY)" in *[!0-9:]*) echo "RUN, JOB, BEFORE, AFTER, and CI_JOB_CONTEXT_VALIDATE_ONLY must be numeric"; exit 2 ;; esac
+	@case "$(CI_JOB_CONTEXT_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_JOB_CONTEXT_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@if [ "$(CI_JOB_CONTEXT_VALIDATE_ONLY)" = "1" ]; then echo "CI-JOB-CONTEXT VALIDATED run=$(RUN) job=$(JOB) before=$(or $(BEFORE),10) after=$(or $(AFTER),30)"; exit 0; fi; \
+	mkdir -p .gate-logs; \
+	LOG=".gate-logs/ci-job-$(RUN)-$(JOB).log"; \
+	trap 'rm -f "$$LOG"' EXIT INT TERM; \
+	BOUND=$$(gh run view -R sandboxcom/gludd "$(RUN)" --json jobs --jq '.jobs[] | select(.databaseId == $(JOB)) | .databaseId'); \
+	RC=$$?; if [ $$RC -ne 0 ]; then echo "ci-job-failure-context: job lookup failed rc=$$RC"; exit $$RC; fi; \
+	if [ "$$BOUND" != "$(JOB)" ]; then echo "ci-job-failure-context: job $(JOB) is not bound to run $(RUN)"; exit 1; fi; \
+	gh run view -R sandboxcom/gludd --log --job="$(JOB)" > "$$LOG"; \
+	RC=$$?; if [ $$RC -ne 0 ]; then echo "ci-job-failure-context: log fetch failed rc=$$RC"; exit $$RC; fi; \
+	if ! grep -F -q -- "$(PATTERN)" "$$LOG"; then echo "ci-job-failure-context: pattern not found: $(PATTERN)"; exit 1; fi; \
+	$(PYTHON) scripts/ci_shards_log_context.py --log "$$LOG" --pattern "$(PATTERN)" --before "$(or $(BEFORE),10)" --after "$(or $(AFTER),30)" --max-matches 1
+
+CI_ARTIFACT_OUTPUT_ROOT ?= RESOURCE_ROOT
+CI_ARTIFACT_HEARTBEAT_SECS ?= 10
+CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY ?= 0
+ci-artifact-download:
+	@case "$(RUN)" in ''|*[!0-9]*) echo "RUN must be a numeric GitHub Actions run ID"; exit 2 ;; esac
+	@case "$(ARTIFACT)" in ''|*[!A-Za-z0-9._-]*) echo "Refusing unsafe ARTIFACT: $(ARTIFACT)"; exit 2 ;; esac
+	@case "$(CI_ARTIFACT_HEARTBEAT_SECS)" in ''|*[!0-9]*|0) echo "CI_ARTIFACT_HEARTBEAT_SECS must be a positive integer"; exit 2 ;; esac
+	@case "$(CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	if [ "$(CI_ARTIFACT_OUTPUT_ROOT)" = "RESOURCE_ROOT" ]; then OUTPUT_ROOT="$$RESOURCE_ROOT/ci-artifacts"; else OUTPUT_ROOT="$(CI_ARTIFACT_OUTPUT_ROOT)"; fi; \
+	case "$$OUTPUT_ROOT" in "$$RESOURCE_ROOT"/ci-artifacts|"$$RESOURCE_ROOT"/ci-artifacts/*) ;; *) echo "Refusing unsafe CI_ARTIFACT_OUTPUT_ROOT: $$OUTPUT_ROOT"; exit 2 ;; esac; \
+	if [ "$(CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)" = "1" ]; then echo "CI-ARTIFACT-DOWNLOAD VALIDATED run=$(RUN) artifact=$(ARTIFACT) output=$$OUTPUT_ROOT heartbeat=$(CI_ARTIFACT_HEARTBEAT_SECS)s"; exit 0; fi; \
+	ROOT="$$OUTPUT_ROOT/run-$(RUN)"; DEST="$$ROOT/$(ARTIFACT)"; \
+	mkdir -p "$$ROOT"; \
+	if [ -e "$$DEST" ]; then echo "Refusing to overwrite existing artifact destination: $$DEST"; exit 1; fi; \
+	COUNT=$$(gh api repos/sandboxcom/gludd/actions/runs/$(RUN)/artifacts --jq '[.artifacts[] | select(.name == "$(ARTIFACT)" and (.expired | not))] | length'); \
+	if [ "$$COUNT" != "1" ]; then echo "Expected exactly one live artifact named $(ARTIFACT) in run $(RUN), found $$COUNT"; exit 1; fi; \
+	TMP=$$(mktemp -d "$$ROOT/.download-$(ARTIFACT).XXXXXX"); DOWNLOAD_PID=""; \
+	cleanup() { RC=$$?; trap - EXIT INT TERM; if [ -n "$$DOWNLOAD_PID" ] && kill -0 "$$DOWNLOAD_PID" 2>/dev/null; then kill -TERM "$$DOWNLOAD_PID"; wait "$$DOWNLOAD_PID"; fi; if [ -n "$$TMP" ]; then rm -rf "$$TMP"; fi; exit $$RC; }; \
+	trap cleanup EXIT INT TERM; \
+	echo "artifact-download start run=$(RUN) artifact=$(ARTIFACT)"; \
+	gh run download "$(RUN)" -R sandboxcom/gludd -n "$(ARTIFACT)" -D "$$TMP" & DOWNLOAD_PID=$$!; \
+	while kill -0 "$$DOWNLOAD_PID" 2>/dev/null; do echo "artifact-download heartbeat run=$(RUN) artifact=$(ARTIFACT)"; sleep "$(CI_ARTIFACT_HEARTBEAT_SECS)"; done; \
+	wait "$$DOWNLOAD_PID"; DOWNLOAD_STATUS=$$?; DOWNLOAD_PID=""; \
+	if [ "$$DOWNLOAD_STATUS" -ne 0 ]; then echo "artifact download failed rc=$$DOWNLOAD_STATUS"; exit "$$DOWNLOAD_STATUS"; fi; \
+	mv "$$TMP" "$$DEST"; TMP=""; \
+	echo "CI-ARTIFACT-DOWNLOAD COMPLETE run=$(RUN) artifact=$(ARTIFACT) path=$$DEST"
+
+CI_COVERAGE_RUN ?=
+CI_COVERAGE_ARTIFACT ?= coverage-merged
+CI_COVERAGE_INPUT ?= xml
+CI_COVERAGE_SOURCE ?= src/general_ludd
+CI_COVERAGE_AGGREGATE_MIN ?= 85
+CI_COVERAGE_PER_FILE_MIN ?= 75
+CI_COVERAGE_AUDIT_VALIDATE_ONLY ?= 0
+CI_COVERAGE_HEARTBEAT_SECS ?= 10
+ci-coverage-artifact-audit:
+	@case "$(CI_COVERAGE_RUN)" in ''|*[!0-9]*) echo "CI_COVERAGE_RUN must be a numeric GitHub Actions run ID"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_ARTIFACT)" in ''|*[!A-Za-z0-9._-]*) echo "Refusing unsafe CI_COVERAGE_ARTIFACT: $(CI_COVERAGE_ARTIFACT)"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_INPUT)" in xml|data) ;; *) echo "CI_COVERAGE_INPUT must be xml or data"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_AUDIT_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_COVERAGE_AUDIT_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_HEARTBEAT_SECS)" in ''|*[!0-9]*|0) echo "CI_COVERAGE_HEARTBEAT_SECS must be a positive integer"; exit 2 ;; esac
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	RUN_ROOT="$$RESOURCE_ROOT/ci-artifacts/run-$(CI_COVERAGE_RUN)"; ARTIFACT_DIR="$$RUN_ROOT/$(CI_COVERAGE_ARTIFACT)"; \
+	XML="$$ARTIFACT_DIR/coverage.xml"; REPORT="$$ARTIFACT_DIR/coverage-audit.json"; \
+	if [ "$(CI_COVERAGE_AUDIT_VALIDATE_ONLY)" = "1" ]; then echo "CI-COVERAGE-ARTIFACT-AUDIT VALIDATED run=$(CI_COVERAGE_RUN) artifact=$(CI_COVERAGE_ARTIFACT) input=$(CI_COVERAGE_INPUT) output=$$REPORT"; exit 0; fi; \
+	if [ "$(CI_COVERAGE_INPUT)" = "xml" ]; then \
+		if [ ! -f "$$XML" ]; then echo "Hosted coverage artifact is missing: $$XML"; exit 2; fi; \
+		$(PYTHON) scripts/audit_coverage.py --xml-file="$$XML" --json-out="$$REPORT" --threshold="$(CI_COVERAGE_AGGREGATE_MIN)" --per-file-threshold="$(CI_COVERAGE_PER_FILE_MIN)" --source="$(CI_COVERAGE_SOURCE)"; \
+	else \
+		TMP=$$(mktemp -d "$$RUN_ROOT/.coverage-audit.XXXXXX"); JSON_PID=""; \
+		cleanup() { RC=$$?; trap - EXIT INT TERM; if [ -n "$$JSON_PID" ] && kill -0 "$$JSON_PID" 2>/dev/null; then kill -TERM "$$JSON_PID"; wait "$$JSON_PID"; fi; rm -rf "$$TMP"; exit $$RC; }; trap cleanup EXIT INT TERM; \
+		set --; \
+		for NAME in coverage-other-3.11 coverage-unit-1a1-3.11 coverage-unit-1a2-3.11 coverage-unit-1b-3.11 coverage-unit-1d-3.11 coverage-unit-2-3.11 coverage-unit-3a-3.11 coverage-unit-3b-3.11; do \
+			DIR="$$RUN_ROOT/$$NAME"; if [ ! -d "$$DIR" ]; then echo "Hosted coverage shard artifact is missing: $$DIR"; exit 2; fi; set -- "$$@" "$$DIR"; \
+		done; \
+		$(UV) run coverage combine --rcfile=config/coverage_ci_artifacts.ini --keep --data-file="$$TMP/.coverage" "$$@"; COMBINE_RC=$$?; if [ "$$COMBINE_RC" -ne 0 ]; then exit "$$COMBINE_RC"; fi; \
+		$(UV) run coverage json --rcfile=config/coverage_ci_artifacts.ini --data-file="$$TMP/.coverage" --show-contexts -o "$$TMP/coverage.json" & JSON_PID=$$!; \
+		while kill -0 "$$JSON_PID" 2>/dev/null; do echo "coverage-data heartbeat run=$(CI_COVERAGE_RUN)"; sleep "$(CI_COVERAGE_HEARTBEAT_SECS)"; done; \
+		wait "$$JSON_PID"; JSON_RC=$$?; JSON_PID=""; if [ "$$JSON_RC" -ne 0 ]; then exit "$$JSON_RC"; fi; \
+		$(PYTHON) scripts/audit_coverage.py --json-file="$$TMP/coverage.json" --json-out="$$REPORT" --threshold="$(CI_COVERAGE_AGGREGATE_MIN)" --per-file-threshold="$(CI_COVERAGE_PER_FILE_MIN)" --source="$(CI_COVERAGE_SOURCE)"; AUDIT_RC=$$?; \
+		mv "$$TMP/coverage.json" "$$ARTIFACT_DIR/coverage-data.json"; exit "$$AUDIT_RC"; \
+	fi
+
+CI_COVERAGE_GAP_LIMIT ?= 20
+CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY ?= 0
+ci-coverage-gap-plan:
+	@case "$(CI_COVERAGE_RUN)" in ''|*[!0-9]*) echo "CI_COVERAGE_RUN must be a numeric GitHub Actions run ID"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_ARTIFACT)" in ''|*[!A-Za-z0-9._-]*) echo "Refusing unsafe CI_COVERAGE_ARTIFACT: $(CI_COVERAGE_ARTIFACT)"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_SOURCE)" in src/general_ludd) ;; *) echo "CI_COVERAGE_SOURCE must be src/general_ludd"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_GAP_LIMIT)" in ''|*[!0-9]*|0) echo "CI_COVERAGE_GAP_LIMIT must be a positive integer"; exit 2 ;; esac
+	@case "$(CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	DATA="$$RESOURCE_ROOT/ci-artifacts/run-$(CI_COVERAGE_RUN)/$(CI_COVERAGE_ARTIFACT)/coverage-data.json"; \
+	XML="$$RESOURCE_ROOT/ci-artifacts/run-$(CI_COVERAGE_RUN)/$(CI_COVERAGE_ARTIFACT)/coverage.xml"; \
+	if [ "$(CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY)" = "1" ]; then echo "CI-COVERAGE-GAP-PLAN VALIDATED run=$(CI_COVERAGE_RUN) artifact=$(CI_COVERAGE_ARTIFACT) source=$(CI_COVERAGE_SOURCE) threshold=$(CI_COVERAGE_PER_FILE_MIN) limit=$(CI_COVERAGE_GAP_LIMIT) input=$$DATA-or-$$XML"; exit 0; fi; \
+	if [ -f "$$DATA" ]; then INPUT="$$DATA"; MODE="--json"; elif [ -f "$$XML" ]; then INPUT="$$XML"; MODE="--xml"; else echo "Hosted coverage report is missing: $$DATA or $$XML"; exit 2; fi; \
+	echo "COVERAGE-GAP-INPUT mode=$$MODE path=$$INPUT"; \
+	$(PYTHON) scripts/coverage_missing_lines.py $$MODE "$$INPUT" --threshold "$(CI_COVERAGE_PER_FILE_MIN)" --source "$(CI_COVERAGE_SOURCE)" --limit "$(CI_COVERAGE_GAP_LIMIT)"
 
 # Just the FAILED/ERROR test ids + summary lines from a run's failed-step logs
 # (ci-faillog tails raw logs; this filters the signal). Usage: make ci-failed-tests RUN=<id>
@@ -5274,9 +5410,18 @@ git-cherry-pick-list:
 		git cherry-pick "$$SHA" || exit 1; \
 	done
 
+SUBMODULE_INIT_VALIDATE_ONLY ?= 0
+
 submodule-init:
+	@case "$(SUBMODULE_INIT_VALIDATE_ONLY)" in 0|1) ;; *) echo "ERROR: SUBMODULE_INIT_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
 	@if [ ! -f .gitmodules ]; then echo "No .gitmodules file"; exit 1; fi
-	@git submodule update --init --recursive
+	@if [ "$(SUBMODULE_INIT_VALIDATE_ONLY)" = "1" ]; then \
+		git config --file .gitmodules --get-regexp '^submodule\..*\.path$$' >/dev/null || { echo "ERROR: .gitmodules has no submodule paths"; exit 1; }; \
+		git config --file .gitmodules --get-regexp '^submodule\..*\.url$$' >/dev/null || { echo "ERROR: .gitmodules has no submodule URLs"; exit 1; }; \
+		echo "SUBMODULE_INIT_VALIDATED file=.gitmodules mode=network-free"; \
+	else \
+		git submodule update --init --recursive; \
+	fi
 
 submodule-update:
 	@if [ ! -f .gitmodules ]; then echo "No .gitmodules file"; exit 1; fi
@@ -5451,7 +5596,7 @@ agent-merge-dev:
 development-push: check-clean-tree ci-busy-check _push-rate-guard
 	@$(MAKE) ci-busy-check BRANCH=development
 	@$(MAKE) require-sandboxcom-ssh-key
-	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom development
+	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom development
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
 	@echo "Development branch pushed and verified"
 
@@ -5652,6 +5797,7 @@ LINUX_APT_UTILS_VERSION ?= 2.6.1
 PYINSTALLER_WARNING_ALLOWLIST_LINUX ?= config/pyinstaller-warning-allowlist-linux.json
 PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt
 PYINSTALLER_VERSION_LINUX ?= 6.20.0
+PYINSTALLER_WARNING_ARCHITECTURE_LINUX ?=
 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY ?= 0
 
 .PHONY: audit-linux-pyinstaller-warnings
@@ -5660,7 +5806,8 @@ audit-linux-pyinstaller-warnings: ## Re-audit a retained Linux PyInstaller warni
 	@if [ "$(PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)" = "1" ]; then \
 		echo "audit-linux-pyinstaller-warnings: validated $(PYINSTALLER_WARNING_FILE_LINUX)"; \
 	else \
-		architecture="$$(uname -m)"; \
+		architecture="$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)"; \
+		if [ -z "$$architecture" ]; then architecture="$$(uname -m)"; fi; \
 		$(UV) run python scripts/audit_pyinstaller_warnings.py \
 			--warnings "$(PYINSTALLER_WARNING_FILE_LINUX)" \
 			--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
@@ -6478,7 +6625,7 @@ check-types-baseline:
 
 verify-feature-claims:
 	@echo "=== verify-feature-claims: fast evidence verification (file-existence for test: refs) ==="
-	@$(UV) run ansible-playbook playbooks/verify_feature_claims.yml
+	@$(UV) run ansible-playbook -i localhost, -c local playbooks/verify_feature_claims.yml
 
 file-executable:
 	@if [ -f "$(FILE)" ]; then chmod +x "$(FILE)"; else echo "ERROR: FILE '$(FILE)' not found"; exit 1; fi
@@ -8022,7 +8169,13 @@ tf-init-local: tf-cache-setup
 	@case "$(STACK)" in stacks/azure-vllm|stacks/azure-llamacpp) ;; *) echo "Usage: make tf-init-local STACK=stacks/azure-vllm|stacks/azure-llamacpp TF_INIT_LOCAL_VALIDATE_ONLY=0|1"; exit 2;; esac
 	@$(UV) run python scripts/clean_terraform_test_artifacts.py "$(TF_ROOT)/$(STACK)"
 	@if [ "$(TF_INIT_LOCAL_VALIDATE_ONLY)" = "1" ]; then echo "tf-init-local validate-only stack=$(STACK)"; exit 0; fi; \
-		cd "$(TF_ROOT)/$(STACK)" && TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" terraform init -backend=false
+		RESOURCE_ROOT="$$( $(UV) run python scripts/resource_arbiter.py root )"; \
+		TF_LOCAL_PARENT="$$RESOURCE_ROOT/terraform-init"; \
+		mkdir -p "$$TF_LOCAL_PARENT"; \
+		TF_LOCAL_DATA_DIR="$$(mktemp -d "$$TF_LOCAL_PARENT/$(subst /,-,$(STACK)).XXXXXX")"; \
+		cleanup_tf_local() { rm -rf "$$TF_LOCAL_DATA_DIR"; }; \
+		trap cleanup_tf_local EXIT INT TERM; \
+		cd "$(TF_ROOT)/$(STACK)" && TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" TF_DATA_DIR="$$TF_LOCAL_DATA_DIR" terraform init -backend=false
 
 # Validates a single stack against the shared cache.
 #   make tf-validate STACK=stacks/aws-vllm

@@ -6,8 +6,7 @@ import itertools
 import random
 
 import pytest
-
-from general_ludd.algorithms.shamir import (
+from ansible_collections.general_ludd.security.plugins.module_utils.shamir import (
     DEFAULT_PRIME,
     ShamirError,
     combine,

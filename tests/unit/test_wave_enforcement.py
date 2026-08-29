@@ -23,7 +23,7 @@ def test_wave_width_defaults_to_ten_and_is_env_tunable() -> None:
 def test_previous_undersized_wave_is_blocked_before_inline_work() -> None:
     source = _source()
     assert "WAVE WIDTH VIOLATION" in source
-    assert "_prevMessageDispatchCount < WAVE_WIDTH" in source
+    assert "_prevMessageDispatchCount < eff.waveWidth" in source
     assert 'permissionDecision: "deny" as const' in source
 
 

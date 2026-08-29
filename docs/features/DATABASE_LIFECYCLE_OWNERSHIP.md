@@ -29,6 +29,42 @@ lock. This keeps tick-scoped repository references and their `AsyncSession`
 owners together until commit and close complete. A second caller waits for the
 first complete tick; it never shares or replaces the active session.
 
+## Hosted Python 3.11 connection incident (2026-08-26)
+
+GitHub Actions run `32935772799`, job `98077630448`, completed 995 tests in the
+`other` shard before garbage collection exposed one live `aiosqlite.Connection`.
+The acquisition owner was the daemon's `EventLoop.run_forever()` task: teardown
+requested a background-task drain while that producer could still be inside a
+tick and acquire another `AsyncSession`. Disposing the engine later cannot
+close a connection that remains checked out.
+
+The corrected dependency order is mechanical: request the producer's
+cooperative stop, await it for at most five seconds, cancel and await it within
+the same bound if it stalls, and only then drain its tracked child tasks. Engine
+disposal remains after both boundaries. The shared async-lifecycle helper also
+observes a producer's terminal exception so failed tasks cannot bypass the
+dependent drain. Tests cover graceful completion, failure, bounded
+cancellation, and real driver closure through the daemon lifespan.
+
+This matches the official
+[SQLAlchemy asyncio disposal guidance](https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html#synopsis-core):
+async engines must be disposed in an awaitable context, and checked-out
+connections are not closed by `AsyncEngine.dispose()`. The upstream
+[aiosqlite 0.22.1 changelog](https://github.com/omnilib/aiosqlite/blob/main/CHANGELOG.md#v0221)
+also makes the signal intentional: a connection collected without `close()` or
+`stop()` emits `ResourceWarning`. The long-lived practitioner report in
+[aiosqlite issue #259](https://github.com/omnilib/aiosqlite/issues/259), open
+since 2023, documents the same connection-survival failure under cancelled
+async work. These sources were rechecked on 2026-08-26.
+
+For ZDD, the retiring worker stops accepting event-loop work while a replacement
+worker becomes ready independently; no schema, database file, or durable cache
+is mutated by this ordering change. Resource use stays bounded to the existing
+producer task and one five-second grace window—no retry task, process, thread,
+or extra connection is created. Rollback is a code-only revert of the helper
+call followed by a normal rolling worker replacement; there is no data or
+artifact rollback step.
+
 ## Operator and upstream evidence
 
 - [SQLAlchemy discussion #12152](https://github.com/sqlalchemy/sqlalchemy/discussions/12152)

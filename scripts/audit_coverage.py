@@ -13,6 +13,7 @@ Modes:
 
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -32,24 +33,143 @@ def parse_coverage_json(
         raw = f.read()
     data = json.loads(raw)
 
+    return _evaluate_coverage_data(data, threshold, source_path, per_file_threshold)
+
+
+def parse_coverage_xml(
+    xml_path: str,
+    threshold: float,
+    source_path: str,
+    per_file_threshold: float = 75.0,
+) -> tuple[dict[str, object], list[str], bool]:
+    """Parse a coverage.py Cobertura report and evaluate both release floors."""
+    root = ElementTree.parse(xml_path).getroot()
+    declared_sources = [
+        element.text.strip()
+        for element in root.findall("./sources/source")
+        if element.text and element.text.strip()
+    ]
+    files: dict[str, dict[str, object]] = {}
+    for class_element in root.findall("./packages/package/classes/class"):
+        filename = class_element.get("filename")
+        if not filename:
+            raise ValueError("coverage XML class is missing filename")
+        normalized = _normalize_xml_filename(filename, source_path, declared_sources)
+        lines = class_element.findall("./lines/line")
+        num_statements = len(lines)
+        covered_lines = sum(int(line.get("hits", "0")) > 0 for line in lines)
+        num_branches = 0
+        covered_branches = 0
+        missing_branches: list[list[int]] = []
+        missing_lines: list[int] = []
+        for line in lines:
+            line_number = int(line.get("number", "0"))
+            if int(line.get("hits", "0")) <= 0:
+                missing_lines.append(line_number)
+            if line.get("branch", "false").lower() != "true":
+                continue
+            covered, total = _condition_counts(line.get("condition-coverage", ""))
+            covered_branches += covered
+            num_branches += total
+            for destination in line.get("missing-branches", "").split(","):
+                destination = destination.strip()
+                if not destination:
+                    continue
+                missing_branches.append(
+                    [line_number, -line_number if destination == "exit" else int(destination)]
+                )
+        files[normalized] = {
+            "summary": {
+                "num_statements": num_statements,
+                "covered_lines": covered_lines,
+                "num_branches": num_branches,
+                "covered_branches": covered_branches,
+            },
+            "missing_branches": missing_branches,
+            "missing_lines": missing_lines,
+        }
+    return _evaluate_coverage_data(
+        {"files": files}, threshold, source_path, per_file_threshold
+    )
+
+
+def _condition_counts(value: str) -> tuple[int, int]:
+    """Return covered and total branch counts from Cobertura condition text."""
+    match = re.fullmatch(r"\s*[\d.]+%\s*\((\d+)\s*/\s*(\d+)\)\s*", value)
+    if match is None:
+        raise ValueError(f"invalid condition-coverage value: {value!r}")
+    covered, total = (int(part) for part in match.groups())
+    if covered > total:
+        raise ValueError(f"covered branches exceed total branches: {value!r}")
+    return covered, total
+
+
+def _normalize_xml_filename(
+    filename: str,
+    source_path: str,
+    declared_sources: list[str],
+) -> str:
+    """Map a hosted Cobertura filename onto the local semantic source root."""
+    source = Path(source_path).resolve()
+    candidate = Path(filename)
+    if candidate.is_absolute():
+        for declared in declared_sources:
+            try:
+                relative = candidate.relative_to(Path(declared))
+            except ValueError:
+                continue
+            return _normalize_xml_filename(str(relative), source_path, [])
+        return str(candidate.resolve())
+
+    parts = candidate.parts
+    source_parts = Path(source_path).parts
+    if parts[: len(source_parts)] == source_parts:
+        return str(candidate.resolve())
+    if parts and parts[0] == source.name:
+        return str((source.parent / candidate).resolve())
+    for declared in declared_sources:
+        declared_candidate = (Path(declared) / candidate).resolve()
+        if declared_candidate.is_file():
+            return str(declared_candidate)
+    workspace_candidate = candidate.resolve()
+    if workspace_candidate.is_file():
+        return str(workspace_candidate)
+    return str((source / candidate).resolve())
+
+
+def _evaluate_coverage_data(
+    data: dict[str, object],
+    threshold: float,
+    source_path: str,
+    per_file_threshold: float,
+) -> tuple[dict[str, object], list[str], bool]:
+    """Evaluate normalized coverage.py data against independent release floors."""
+
     files_under: list[str] = []
     files_ok: list[str] = []
     per_file: dict[str, float] = {}
     per_file_branch: dict[str, float] = {}
     missing_arcs: dict[str, list[list[int]]] = {}
+    missing_lines: dict[str, list[int]] = {}
+    contexts_by_file: dict[str, list[str]] = {}
     total_statements = covered_statements = 0
     total_branches = covered_branches = 0
 
-    raw_files = data.get("files", {})
+    raw_files = cast(dict[str, dict[str, object]], data.get("files", {}))
     for fpath, finfo in raw_files.items():
-        summary = finfo.get("summary", {})
-        num_stmts = summary.get("num_statements", 0)
-        covered = summary.get("covered_lines", summary.get("num_lines_covered", 0))
+        if not _path_within_source(fpath, source_path):
+            continue
+        summary = cast(dict[str, object], finfo.get("summary", {}))
+        num_stmts = cast(int, summary.get("num_statements", 0))
+        covered = cast(
+            int,
+            summary.get("covered_lines", summary.get("num_lines_covered", 0)),
+        )
         total_statements += int(num_stmts or 0)
         covered_statements += int(covered or 0)
 
-        num_branches = int(summary.get("num_branches", 0) or 0)
-        covered_branch_count = int(summary.get("covered_branches", 0) or 0)
+        num_branches = int(cast(int, summary.get("num_branches", 0)) or 0)
+        covered_branch_count = int(cast(int, summary.get("covered_branches", 0)) or 0)
         # Older reports omit branch fields. Keep line-only JSON fixtures useful,
         # while real --cov-branch reports always provide these counters.
         branch_pct = (
@@ -67,9 +187,21 @@ def parse_coverage_json(
         per_file_branch[rel] = round(branch_pct, 1)
         total_branches += num_branches
         covered_branches += covered_branch_count
-        missing = finfo.get("missing_branches", [])
+        missing = cast(list[list[int]], finfo.get("missing_branches", []))
         if missing:
             missing_arcs[rel] = [list(arc) for arc in missing]
+        uncovered = cast(list[int], finfo.get("missing_lines", []))
+        if uncovered:
+            missing_lines[rel] = [int(line) for line in uncovered]
+        contexts = cast(dict[str, object], finfo.get("contexts", {}))
+        if contexts:
+            contexts_by_file[rel] = sorted(
+                contexts,
+                key=lambda key: (
+                    int(key) if key.isdigit() else 0,
+                    key,
+                ),
+            )
 
         if pct < per_file_threshold or branch_pct < per_file_threshold:
             files_under.append(rel)
@@ -133,14 +265,8 @@ def parse_coverage_json(
         "shards": [],
         "failed_shards": [],
         "missing_arcs": dict(sorted(missing_arcs.items())),
-        "contexts": {
-            rel: sorted(
-                finfo.get("contexts", {}),
-                key=lambda k: (int(k) if isinstance(k, str) and k.isdigit() else 0, k),
-            )
-            for fpath, finfo in raw_files.items()
-            if (rel := _relative_path(fpath, source_path)) in per_file and finfo.get("contexts")
-        },
+        "missing_lines": dict(sorted(missing_lines.items())),
+        "contexts": dict(sorted(contexts_by_file.items())),
     }
 
     return report, files_under, all_ok
@@ -153,6 +279,15 @@ def _relative_path(fpath: str, source_path: str) -> str:
         return str(abs_fpath.relative_to(src_path.parent))
     except ValueError:
         return fpath
+
+
+def _path_within_source(fpath: str, source_path: str) -> bool:
+    """Return whether a measured path belongs to the requested source tree."""
+    try:
+        Path(fpath).resolve().relative_to(Path(source_path).resolve())
+    except ValueError:
+        return False
+    return True
 
 
 COVERAGE_AUDIT_TIMEOUT_SECONDS = int(os.environ.get("GLUDD_COVERAGE_AUDIT_TIMEOUT_SECONDS", "1800"))
@@ -300,6 +435,22 @@ def _coverage_environment() -> dict[str, str]:
     return env
 
 
+def _recover_stale_coverage_databases(root: Path) -> None:
+    """Remove dead or legacy audit databases while preserving possible owners."""
+    prefix = ".coverage.audit."
+    for path in root.glob(f"{prefix}*"):
+        owner = path.name.removeprefix(prefix)
+        if not owner.isdecimal():
+            path.unlink(missing_ok=True)
+            continue
+        try:
+            os.kill(int(owner), 0)
+        except ProcessLookupError:
+            path.unlink(missing_ok=True)
+        except PermissionError:
+            continue
+
+
 def run_pytest_coverage(
     source: str,
     json_out_path: str,
@@ -341,6 +492,7 @@ def run_pytest_coverage(
     )
     coverage_file = root / f".coverage.audit.{os.getpid()}"
     env["COVERAGE_FILE"] = str(coverage_file)
+    _recover_stale_coverage_databases(root)
     coverage_file.unlink(missing_ok=True)
     try:
         results = shard_results if shard_results is not None else []
@@ -541,6 +693,8 @@ def run_pytest_coverage(
             file=sys.stderr,
         )
         return 124
+    finally:
+        coverage_file.unlink(missing_ok=True)
 
 
 def main() -> None:
@@ -548,6 +702,7 @@ def main() -> None:
     threshold = 85.0
     source = "src/general_ludd"
     json_file: str | None = None
+    xml_file: str | None = None
     json_out: str | None = None
 
     args = sys.argv[1:]
@@ -559,6 +714,8 @@ def main() -> None:
             source = arg.split("=", 1)[1]
         elif arg.startswith("--json-file="):
             json_file = arg.split("=", 1)[1]
+        elif arg.startswith("--xml-file="):
+            xml_file = arg.split("=", 1)[1]
         elif arg.startswith("--json-out="):
             json_out = arg.split("=", 1)[1]
 
@@ -570,18 +727,28 @@ def main() -> None:
     if json_out is None:
         json_out = str(logs_dir / f"coverage-{ts}.json")
 
-    if json_file is None:
+    if json_file is not None and xml_file is not None:
+        print("ERROR: choose exactly one of --json-file or --xml-file", file=sys.stderr)
+        sys.exit(2)
+
+    if json_file is None and xml_file is None:
         json_file = str(logs_dir / f"coverage-data-{ts}.json")
 
     shard_results: list[dict[str, object]] = []
 
     # Run pytest with coverage if no existing JSON supplied
-    if not any(arg.startswith("--json-file=") for arg in sys.argv[1:]):
+    if json_file is not None and not any(
+        arg.startswith("--json-file=") for arg in sys.argv[1:]
+    ):
         pyrc = run_pytest_coverage(source, json_file, shard_results)
     else:
         pyrc = 0
 
-    if not Path(json_file).exists():
+    report_input = xml_file or json_file
+    if report_input is None:
+        print("ERROR: no coverage report input was selected", file=sys.stderr)
+        sys.exit(2)
+    if not Path(report_input).exists():
         if pyrc != 0:
             failed_shards = [shard for shard in shard_results if shard["status"] != "passed"]
             failure_report = {
@@ -604,7 +771,7 @@ def main() -> None:
                 file=sys.stderr,
             )
             sys.exit(pyrc if pyrc > 1 else 1)
-        print(f"ERROR: coverage.json not found at {json_file}", file=sys.stderr)
+        print(f"ERROR: coverage report not found at {report_input}", file=sys.stderr)
         sys.exit(2)
 
     per_file_threshold = 75.0
@@ -612,7 +779,16 @@ def main() -> None:
         if arg.startswith("--per-file-threshold="):
             per_file_threshold = float(arg.split("=", 1)[1])
 
-    report, files_under, all_ok = parse_coverage_json(json_file, threshold, source, per_file_threshold)
+    if xml_file is not None:
+        report, files_under, all_ok = parse_coverage_xml(
+            xml_file, threshold, source, per_file_threshold
+        )
+    else:
+        if json_file is None:
+            raise RuntimeError("JSON coverage input unexpectedly missing")
+        report, files_under, all_ok = parse_coverage_json(
+            json_file, threshold, source, per_file_threshold
+        )
 
     report["pytest_exit_code"] = pyrc
     report["shards"] = shard_results

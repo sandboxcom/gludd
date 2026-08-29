@@ -13,8 +13,6 @@ dependencies = [
     "bcrypt>=4.0.0",
     "blake3>=1.0.0",
     "chardet>=5.2.0,<6",
-    "numpy>=1.26.0",
-    "scipy>=1.11.0",
     "fastapi>=0.115.0",
     "starlette>=1.3.1",
     "uvicorn-worker>=0.3.0",
@@ -54,12 +52,8 @@ dependencies = [
     "filelock>=3.13.0",
     "defusedxml>=0.7.1,<1",
     "prompt_toolkit>=3.0.0",
-    "pycryptodome>=3.20.0",
     "pygments>=2.0.0",
-    "shamir>=17.12.0",
     "croniter>=2.0.0",
-    "srptools>=1.0.0",
-    "PyWavelets>=1.4",
 ]
 
 [project.optional-dependencies]
@@ -99,6 +93,12 @@ dev = [
     "pip>=26.1.2",
     "setuptools>=83.0.0",
     "hypothesis>=6.0.0",
+    "numpy>=1.26.0",
+    "scipy>=1.11.0",
+    "PyWavelets>=1.4",
+    "pycryptodome>=3.20.0",
+    "shamir>=17.12.0",
+    "srptools>=1.0.0",
 ]
 local-inference = [
     "llama-cpp-python[server]>=0.3.0",
@@ -131,6 +131,7 @@ observability = [
 sandbox = [
 ]
 game-e2e = [
+    "numpy>=1.26.0",
     "pygame>=2.5.0",
     "pillow>=12.3.0",
     "scikit-image>=0.22.0",
@@ -138,6 +139,7 @@ game-e2e = [
     "yt-dlp>=2025.1.15",
 ]
 e2e-all = [
+    "numpy>=1.26.0",
     "pygame>=2.5.0",
     "pillow>=12.3.0",
     "scikit-image>=0.22.0",
@@ -228,20 +230,12 @@ disallow_untyped_defs = true
 exclude = ["scripts/", "tests/unit/test_injection_patterns.py", "tests/unit/test_sql_injection_patterns.py", "tests/unit/test_ci_push_guard.py", "abtest/"]
 
 [[tool.mypy.overrides]]
-module = "general_ludd.algorithms.srp"
+module = "ansible_collections.general_ludd.security.plugins.module_utils.srp"
 disable_error_code = ["no-any-return"]
 
 [[tool.mypy.overrides]]
 module = "general_ludd.algorithms.sphincs_plus"
 disable_error_code = ["no-any-return"]
-
-[[tool.mypy.overrides]]
-module = "general_ludd.algorithms.wavelet"
-disable_error_code = ["type-arg", "no-any-return"]
-
-[[tool.mypy.overrides]]
-module = "general_ludd.algorithms.kmeans"
-disable_error_code = ["type-arg", "no-any-return"]
 
 [[tool.mypy.overrides]]
 module = "Crypto"
@@ -399,4 +393,10 @@ dev = [
     "pip>=26.1.2",
     "setuptools>=83.0.0",
     "hypothesis>=6.0.0",
+    "numpy>=1.26.0",
+    "scipy>=1.11.0",
+    "PyWavelets>=1.4",
+    "pycryptodome>=3.20.0",
+    "shamir>=17.12.0",
+    "srptools>=1.0.0",
 ]

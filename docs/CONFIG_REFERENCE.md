@@ -109,6 +109,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_BLOCK_COUNTER_FILE` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:41` |
 | `GLUDD_BLOCK_REASON_FILE` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:42` |
 | `GLUDD_BUDGET_FAIL_CLOSED_DEGRADED` | Auto-indexed (see source) | — | optional | `src/general_ludd/routers/models.py:692` |
+| `GLUDD_CANDIDATE_SHA` | Bind the canonical local CI producer to the exact committed candidate SHA; the runner rejects a mismatched checkout or attestation. | current committed `HEAD` supplied by the Make target | required for a real dual-track run | `scripts/run_ci_shards_serial.py:962` |
 | `GLUDD_CI_CACHE_PATH` | Auto-indexed (see source) | — | optional | `scripts/verify_enforcement.py:30` |
 | `GLUDD_CI_HISTORY_FILE` | CI verdict history JSON (atomic writes; consulted by the AA032 push guard and ci-verdict-safe recording) | `/tmp/gludd-ci-verdict-history.json` | optional | `scripts/ci_check_cooldown.py:49` |
 | `GLUDD_CI_RESTART_COUNT_FILE` | AA023 CI-restart cap counter; reset to `0` once CI reports a terminal GREEN/RED verdict for the pushed SHA | `/tmp/gludd-ci-restart-count` | optional | `scripts/ci_check_cooldown.py:50` |

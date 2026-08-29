@@ -25,6 +25,7 @@ from packaging.utils import canonicalize_name
 PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PYPROJECT = os.path.join(PROJECT_ROOT, "pyproject.toml")
 UV_LOCK = os.path.join(PROJECT_ROOT, "uv.lock")
+THIRD_PARTY_LICENSES = os.path.join(PROJECT_ROOT, "THIRD_PARTY_LICENSES.md")
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -170,6 +171,7 @@ _GPL_ALLOWLIST = {
 
 _LGPL_ALLOWLIST = {
     "chardet",
+    "pygame",
     "psycopg",
     "psycopg-binary",
 }
@@ -383,6 +385,7 @@ def test_no_gpl_licensed_dependencies() -> None:
 def test_lgpl_dependencies_documented() -> None:
     """LGPL dependencies are enumerated and verified to be in the allowlist."""
     text = _read(UV_LOCK)
+    notices = _read(THIRD_PARTY_LICENSES).lower()
     packages = _parse_uvlock_packages(text)
 
     lgpl_found: list[tuple[str, str, str]] = []
@@ -395,6 +398,12 @@ def test_lgpl_dependencies_documented() -> None:
     undocumented = [(n, v, lic) for n, v, lic in lgpl_found if n not in _LGPL_ALLOWLIST]
     assert not undocumented, "LGPL packages not in allowlist (review and add if acceptable):\n" + "\n".join(
         f"  {n} v{v} — {lic}" for n, v, lic in undocumented
+    )
+
+    missing_notices = sorted(name for name in _LGPL_ALLOWLIST if name not in notices)
+    assert not missing_notices, (
+        "LGPL allowlist entries missing from THIRD_PARTY_LICENSES.md: "
+        f"{missing_notices}"
     )
 
     assert len(lgpl_found) > 0, "Expected some LGPL dependencies but found none"

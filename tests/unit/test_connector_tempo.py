@@ -176,6 +176,29 @@ class TestSpanFetch:
         assert ok["level_or_status"] == "ok"
         assert ok["message"] == "charge-card"
 
+    def test_span_helpers_filter_malformed_batches_scopes_and_resources(self) -> None:
+        assert TempoSource._iter_batches(None) == []
+        assert TempoSource._iter_batches({"batches": [None, {}]}) == [{}]
+        assert TempoSource._iter_scope_spans({"scopeSpans": "invalid"}) == []
+        assert TempoSource._resource_service(None) == ""
+        assert TempoSource._resource_service({"attributes": [None, {"key": "other"}]}) == ""
+
+    def test_span_fetch_iterates_multiple_batches(self) -> None:
+        trace = {
+            "batches": [
+                {"scopeSpans": [{"spans": []}]},
+                {"scopeSpans": [{"spans": []}]},
+            ]
+        }
+        transport = FakeTransport(
+            [
+                ("/api/traces/tr1", 200, trace),
+                ("/api/search", 200, {"traces": [{"traceID": "tr1"}]}),
+            ]
+        )
+
+        assert _source(transport).query({"fetch_spans": True}) == []
+
 
 class TestSsrf:
     @pytest.mark.parametrize(

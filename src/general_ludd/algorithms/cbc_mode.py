@@ -1,17 +1,19 @@
-"""CBC mode block cipher: encrypt, decrypt with PKCS#7 padding,
-and padding oracle resistance via constant-time validation.
+"""Authenticated CBC encryption with PKCS#7 padding.
 
-Uses the cryptography library's AES-CBC mode and PKCS#7 padding.
-IV is prepended to ciphertext; decryption uses constant-time
-padding validation to resist padding oracle attacks.
+The versioned frame uses encrypt-then-MAC and verifies its HMAC-SHA256 tag
+before CBC decryption.  This makes modified ciphertext fail independently of
+whether the modified plaintext happens to contain valid PKCS#7 padding.
 """
 
 from __future__ import annotations
 
 import secrets
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives import padding as _padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 
 class CBCError(ValueError):
@@ -19,6 +21,8 @@ class CBCError(ValueError):
 
 
 _BLOCK_SIZE: int = 16
+_FRAME_HEADER: bytes = b"GLCBC\x01"
+_TAG_SIZE: int = 32
 _VALID_KEY_SIZES: frozenset[int] = frozenset({16, 24, 32})
 
 
@@ -74,11 +78,41 @@ def _constant_time_compare(a: bytes, b: bytes) -> bool:
     return result == 0
 
 
+def _derive_keys(key: bytes) -> tuple[bytes, bytes]:
+    """Derive domain-separated encryption and authentication keys."""
+    material = HKDF(
+        algorithm=hashes.SHA256(),
+        length=len(key) + _TAG_SIZE,
+        salt=_FRAME_HEADER,
+        info=b"general-ludd/authenticated-cbc",
+    ).derive(key)
+    return material[: len(key)], material[len(key) :]
+
+
+def _authenticate(mac_key: bytes, framed_ciphertext: bytes) -> bytes:
+    """Return an HMAC-SHA256 tag for the versioned ciphertext frame."""
+    authenticator = hmac.HMAC(mac_key, hashes.SHA256())
+    authenticator.update(framed_ciphertext)
+    return authenticator.finalize()
+
+
+def _verify_authentication(mac_key: bytes, framed_ciphertext: bytes, tag: bytes) -> None:
+    """Verify an HMAC tag before any attacker-controlled CBC decryption."""
+    authenticator = hmac.HMAC(mac_key, hashes.SHA256())
+    authenticator.update(framed_ciphertext)
+    try:
+        authenticator.verify(tag)
+    except InvalidSignature as exc:
+        raise CBCError("Integrity verification failed") from exc
+
+
 def generate_iv() -> bytes:
+    """Generate a fresh AES block-sized initialization vector."""
     return secrets.token_bytes(_BLOCK_SIZE)
 
 
 def encrypt(key: bytes, plaintext: bytes, iv: bytes | None = None) -> bytes:
+    """Encrypt and authenticate plaintext in the versioned CBC frame."""
     if len(key) not in _VALID_KEY_SIZES:
         raise CBCError(f"Invalid key size: {len(key)} bytes (must be 16, 24, or 32)")
     if iv is None:
@@ -86,11 +120,13 @@ def encrypt(key: bytes, plaintext: bytes, iv: bytes | None = None) -> bytes:
     if len(iv) != _BLOCK_SIZE:
         raise CBCError(f"IV must be {_BLOCK_SIZE} bytes, got {len(iv)}")
 
+    encryption_key, mac_key = _derive_keys(key)
     padded = _pkcs7_pad(plaintext, _BLOCK_SIZE)
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+    cipher = Cipher(algorithms.AES(encryption_key), modes.CBC(iv))
     encryptor = cipher.encryptor()
     ciphertext = encryptor.update(padded) + encryptor.finalize()
-    return iv + ciphertext
+    framed_ciphertext = _FRAME_HEADER + iv + ciphertext
+    return framed_ciphertext + _authenticate(mac_key, framed_ciphertext)
 
 
 def decrypt(
@@ -99,16 +135,27 @@ def decrypt(
     *,
     constant_time: bool = True,
 ) -> bytes:
+    """Authenticate and decrypt a versioned CBC frame."""
     if len(key) not in _VALID_KEY_SIZES:
         raise CBCError(f"Invalid key size: {len(key)} bytes (must be 16, 24, or 32)")
-    if len(ciphertext_with_iv) < _BLOCK_SIZE * 2:
-        raise CBCError("Ciphertext too short: must contain at least IV + one block")
-    iv = ciphertext_with_iv[:_BLOCK_SIZE]
-    ciphertext = ciphertext_with_iv[_BLOCK_SIZE:]
-    if len(ciphertext) % _BLOCK_SIZE != 0:
-        raise CBCError("Ciphertext not block-aligned")
+    minimum_size = len(_FRAME_HEADER) + (_BLOCK_SIZE * 2) + _TAG_SIZE
+    if len(ciphertext_with_iv) < minimum_size:
+        raise CBCError("Integrity verification failed")
+    if not ciphertext_with_iv.startswith(_FRAME_HEADER):
+        raise CBCError("Integrity verification failed")
 
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+    framed_ciphertext = ciphertext_with_iv[:-_TAG_SIZE]
+    tag = ciphertext_with_iv[-_TAG_SIZE:]
+    encryption_key, mac_key = _derive_keys(key)
+    _verify_authentication(mac_key, framed_ciphertext, tag)
+
+    iv_start = len(_FRAME_HEADER)
+    iv = framed_ciphertext[iv_start : iv_start + _BLOCK_SIZE]
+    ciphertext = framed_ciphertext[iv_start + _BLOCK_SIZE :]
+    if len(ciphertext) % _BLOCK_SIZE != 0:
+        raise CBCError("Integrity verification failed")
+
+    cipher = Cipher(algorithms.AES(encryption_key), modes.CBC(iv))
     decryptor = cipher.decryptor()
     padded = decryptor.update(ciphertext) + decryptor.finalize()
 
@@ -118,12 +165,10 @@ def decrypt(
 
 
 def is_valid_padding(key: bytes, ciphertext_with_iv: bytes) -> bool:
-    """Validate ciphertext integrity without leaking padding byte information.
+    """Validate authenticated ciphertext without exposing padding information.
 
-    Returns True/False without revealing WHICH byte caused a padding failure,
-    making it resistant to padding oracle attacks.  This should be used as
-    the sole gate before decrypting; never call decrypt and inspect the
-    exception message.
+    Authentication is checked before CBC decryption, so callers receive only a
+    boolean integrity result and never a padding-validity oracle.
     """
     try:
         decrypt(key, ciphertext_with_iv, constant_time=True)

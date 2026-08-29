@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import hashlib
 import json
 import os
 import queue
@@ -16,7 +18,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,6 +37,61 @@ else:
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 DEFAULT_SHARDS = tuple(SHARDS)
+_CANCELLATION_RETURN_CODES = frozenset(
+    {128 + int(signal.SIGINT), 128 + int(signal.SIGTERM)}
+)
+ATTESTATION_SCHEMA_VERSION = 3
+RELEASE_PYTEST_ARGS = ("-W", "error")
+RELEASE_PYTHON_VERSION = "3.11"
+RELEASE_PYTHON_IMPLEMENTATION = "cpython"
+MAKE_RECURSION_ENV_VARS = (
+    "MAKEFLAGS",
+    "MFLAGS",
+    "MAKELEVEL",
+    "MAKEOVERRIDES",
+    "GNUMAKEFLAGS",
+)
+
+
+def canonical_json_sha256(payload: object) -> str:
+    """Return a stable SHA-256 digest for JSON-compatible evidence."""
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def execution_policy(pytest_args: list[str]) -> dict[str, object]:
+    """Describe the semantic pytest policy shared by local and hosted lanes."""
+    return {
+        "schema_version": 1,
+        "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "python_implementation": sys.implementation.name,
+        "pytest_args": list(pytest_args),
+        "xdist_workers": 0,
+        "max_processes": 1,
+        "distribution": "none",
+        "max_worker_restart": None,
+        "coverage_config": ".coveragerc-greenlet",
+    }
+
+
+def release_execution_policy() -> dict[str, object]:
+    """Return the canonical hosted release policy independent of this process."""
+    policy = execution_policy(list(RELEASE_PYTEST_ARGS))
+    policy["python_version"] = RELEASE_PYTHON_VERSION
+    policy["python_implementation"] = RELEASE_PYTHON_IMPLEMENTATION
+    return policy
+
+
+def _owned_test_environment(inherited: dict[str, str]) -> dict[str, str]:
+    """Detach owned pytest children from an enclosing Make jobserver."""
+    child = inherited.copy()
+    for name in MAKE_RECURSION_ENV_VARS:
+        child.pop(name, None)
+    return child
 
 
 @dataclass(frozen=True)
@@ -97,6 +154,11 @@ def _identity_is_release_eligible(identity: dict[str, object]) -> bool:
     )
 
 
+def _is_cancellation_returncode(returncode: int) -> bool:
+    """Return whether a child result represents operator cancellation."""
+    return returncode in _CANCELLATION_RETURN_CODES
+
+
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
@@ -110,11 +172,22 @@ def _write_terminal_attestation(
     started_at: str,
     completed_at: str,
     error: str | None = None,
+    coverage: dict[str, object] | None = None,
+    pytest_args: list[str] | None = None,
+    pairing: dict[str, object] | None = None,
 ) -> None:
     """Atomically publish terminal exact-SHA shard evidence."""
     destination.parent.mkdir(parents=True, exist_ok=True)
+    pairing_payload = (
+        _attestation_pairing(
+            shards,
+            pytest_args=list(RELEASE_PYTEST_ARGS) if pytest_args is None else pytest_args,
+        )
+        if pairing is None
+        else pairing
+    )
     payload = {
-        "schema_version": 2,
+        "schema_version": ATTESTATION_SCHEMA_VERSION,
         "lane": "hosted"
         if os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
         else "local",
@@ -126,15 +199,24 @@ def _write_terminal_attestation(
         "completed_at": completed_at,
         "runner": "scripts/run_ci_shards_serial.py",
         "python": sys.version,
+        **pairing_payload,
     }
     if error is not None:
         payload["error"] = error
-    temporary = destination.with_suffix(destination.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(payload, sort_keys=True, indent=2) + "\n",
-        encoding="utf-8",
+    if coverage is not None:
+        payload["coverage"] = coverage
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
     )
-    os.replace(temporary, destination)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, sort_keys=True, indent=2) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 _RESOURCE_PATHS = _resource_paths()
@@ -142,15 +224,13 @@ COVERAGE_SHARDS = _RESOURCE_PATHS.coverage_shards
 COVERAGE_JSON = _RESOURCE_PATHS.coverage_json
 COVERAGE_AUDIT = _RESOURCE_PATHS.coverage_audit
 GREENLET_COVERAGE_CONFIG = ROOT / ".coveragerc-greenlet"
-GOVERNANCE_MODULE_UTILS = (
-    "collections/ansible_collections/general_ludd/governance/plugins/module_utils"
-)
-MAX_FILES_PER_BATCH = 64
+MAX_FILES_PER_BATCH = 16
 DEFAULT_HEARTBEAT_SECONDS = 30.0
 DEFAULT_NO_PROGRESS_SECONDS = 10.0 * 60.0
 WORKER_DEATH_EXIT_CODE = 70
 NO_PROGRESS_EXIT_CODE = 124
 RUNNER_EXCEPTION_EXIT_CODE = 125
+INTERPRETER_DRIFT_EXIT_CODE = 78
 ANSI_ESCAPE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 XDIST_NODE_DOWN_LINE = re.compile(
     r"^\[gw\d+\]\s+node down:\s+\S.*$",
@@ -165,10 +245,70 @@ XDIST_TERMINAL_SUMMARY_LINE = re.compile(
     r"^=+\s+xdist:\s+(?P<message>.+?)\s+=+$",
     re.IGNORECASE,
 )
+COVERAGE_FRAGMENT_NAME = re.compile(
+    r"^\.coverage\.[A-Za-z0-9_-]+\.batch-\d{3}$"
+)
 
 
 def _quote(command: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in command)
+
+
+def _interpreter_identity() -> dict[str, str]:
+    """Return the executable identity that a newly launched batch will use."""
+    probe = (
+        "import json, pathlib, sys; "
+        "print(json.dumps({"
+        "'implementation': sys.implementation.name, "
+        "'version': '.'.join(map(str, sys.version_info[:3])), "
+        "'executable': str(pathlib.Path(sys.executable).resolve(strict=True))"
+        "}, sort_keys=True))"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-I", "-c", probe],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "probe failed").strip()
+        raise RuntimeError(f"interpreter identity probe failed: {detail}")
+    payload = json.loads(completed.stdout)
+    if not isinstance(payload, dict) or set(payload) != {
+        "implementation",
+        "version",
+        "executable",
+    } or not all(isinstance(value, str) and value for value in payload.values()):
+        raise RuntimeError("interpreter identity probe returned malformed evidence")
+    return payload
+
+
+def _interpreter_is_unchanged(
+    expected: dict[str, str],
+    *,
+    context: str,
+) -> bool:
+    """Fail closed when the shared interpreter path changes during a run."""
+    try:
+        observed = _interpreter_identity()
+    except (OSError, RuntimeError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        print(
+            f"SHARD-INTERPRETER-PROBE-FAIL context={context} error={exc}",
+            flush=True,
+        )
+        return False
+    if observed == expected:
+        return True
+    print(
+        "SHARD-INTERPRETER-DRIFT "
+        f"context={context} "
+        f"expected={json.dumps(expected, sort_keys=True)} "
+        f"observed={json.dumps(observed, sort_keys=True)}",
+        flush=True,
+    )
+    return False
 
 
 def _is_xdist_worker_death_line(line: str) -> bool:
@@ -203,22 +343,71 @@ def _pytest_command(
         "-m",
         "pytest",
         *files,
-        "--cov=general_ludd",
-        f"--cov={GOVERNANCE_MODULE_UTILS}",
+        "--cov",
         f"--cov-config={coverage_config}",
         "--cov-report=",
         "--cov-fail-under=0",
         "-v",
         *pytest_args,
-        "-n",
-        "1",
-        "--maxprocesses",
-        "1",
-        "--dist",
-        "loadgroup",
-        "--max-worker-restart=0",
         f"--basetemp={basetemp / 'pytest'}",
     ]
+
+
+def _owned_socket_safe_tmpdir(label: str) -> Path:
+    """Create a compact owned temp root safe for POSIX AF_UNIX endpoints."""
+    digest = hashlib.sha256(label.encode("utf-8")).hexdigest()[:4]
+    system_tmp = Path("/tmp") if os.name == "posix" else Path(tempfile.gettempdir())
+    system_tmp.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix=f"gludd-{digest}-", dir=system_tmp))
+
+
+def _cleanup_owned_tmpdir(path: Path) -> int:
+    """Remove one owned root and return a deferred cancellation status."""
+    expected_parent = Path("/tmp") if os.name == "posix" else Path(tempfile.gettempdir())
+    resolved = path.resolve()
+    if resolved.parent != expected_parent.resolve() or re.fullmatch(
+        r"gludd-[0-9a-f]{4}-[a-z0-9_]+", resolved.name
+    ) is None:
+        raise ValueError(f"refusing to remove unowned shard temp root: {resolved}")
+
+    with (
+        _defer_termination_signals() as deferred_signals,
+        contextlib.suppress(FileNotFoundError),
+    ):
+        shutil.rmtree(resolved)
+
+    if deferred_signals:
+        returncode = 128 + deferred_signals[0]
+        print(
+            f"OWNED-TMPDIR-CLEANUP-SIGNAL path={resolved} "
+            f"signal={deferred_signals[0]} rc={returncode}",
+            flush=True,
+        )
+        return returncode
+    return 0
+
+
+@contextlib.contextmanager
+def _defer_termination_signals() -> Iterator[list[int]]:
+    """Defer SIGINT/SIGTERM through one bounded owner-finalization phase."""
+    deferred_signals: list[int] = []
+    previous_handlers: dict[
+        signal.Signals,
+        signal.Handlers | int | Callable[[int, FrameType | None], Any] | None,
+    ] = {}
+
+    def defer(signum: int, _frame: FrameType | None) -> None:
+        deferred_signals.append(signum)
+
+    if threading.current_thread() is threading.main_thread():
+        for watched_signal in (signal.SIGINT, signal.SIGTERM):
+            previous_handlers[watched_signal] = signal.getsignal(watched_signal)
+            signal.signal(watched_signal, defer)
+    try:
+        yield deferred_signals
+    finally:
+        for watched_signal, previous_handler in previous_handlers.items():
+            signal.signal(watched_signal, previous_handler)
 
 
 def _isolated_pytest_command(pytest_args: list[str]) -> list[str]:
@@ -233,16 +422,8 @@ def _isolated_pytest_command(pytest_args: list[str]) -> list[str]:
     ]
 
 
-def _partition_test_paths(
-    paths: list[str],
-    *,
-    max_files: int,
-    root: Path = ROOT,
-) -> list[list[str]]:
-    """Expand directory arguments and return deterministic bounded file batches."""
-    if max_files < 1:
-        raise ValueError("max_files must be positive")
-
+def _expand_test_paths(paths: list[str], *, root: Path = ROOT) -> list[str]:
+    """Expand directory arguments into deterministic unique test-file paths."""
     expanded: list[str] = []
     seen: set[str] = set()
     for value in paths:
@@ -263,11 +444,95 @@ def _partition_test_paths(
                 continue
             seen.add(selected_path)
             expanded.append(selected_path)
+    return expanded
 
+
+def _partition_test_paths(
+    paths: list[str],
+    *,
+    max_files: int,
+    root: Path = ROOT,
+) -> list[list[str]]:
+    """Expand directory arguments and return deterministic bounded file batches."""
+    if max_files < 1:
+        raise ValueError("max_files must be positive")
+
+    expanded = _expand_test_paths(paths, root=root)
     return [
         expanded[index : index + max_files]
         for index in range(0, len(expanded), max_files)
     ]
+
+
+def _attestation_pairing(
+    shards: list[str],
+    *,
+    pytest_args: list[str],
+) -> dict[str, object]:
+    """Build canonical per-shard plans and their shared semantic policy."""
+    plans: dict[str, object] = {}
+    for shard in shards:
+        paths = _expand_test_paths(expand_shard(shard))
+        plans[shard] = {
+            "paths": paths,
+            "path_count": len(paths),
+            "sha256": canonical_json_sha256(paths),
+        }
+    policy = execution_policy(pytest_args)
+    return {
+        "shard_plans": plans,
+        "execution_policy": policy,
+        "execution_policy_sha256": canonical_json_sha256(policy),
+    }
+
+
+def _plan_shards(
+    shards: list[str],
+    *,
+    max_files_per_batch: int,
+) -> list[tuple[str, list[list[str]]]]:
+    """Resolve canonical shard ownership into deterministic bounded batches."""
+    if max_files_per_batch < 1:
+        raise ValueError("max_files_per_batch must be positive")
+    return [
+        (
+            shard,
+            _partition_test_paths(
+                expand_shard(shard),
+                max_files=max_files_per_batch,
+            ),
+        )
+        for shard in shards
+    ]
+
+
+def _validate_only_plan(
+    shards: list[str],
+    pytest_args: list[str],
+    *,
+    max_files_per_batch: int,
+    attestation_output: Path | None,
+) -> int:
+    """Print the side-effect-free canonical execution plan for Make contracts."""
+    plans = _plan_shards(shards, max_files_per_batch=max_files_per_batch)
+    empty = [shard for shard, batches in plans if not batches]
+    if empty:
+        print(
+            f"SERIAL-SHARD-VALIDATE-FAIL empty={','.join(empty)}",
+            flush=True,
+        )
+        return 2
+    destination = attestation_output or _resource_paths().attestation
+    print(
+        f"SERIAL-SHARD-VALIDATE shards={','.join(shards)} "
+        f"files={sum(len(batch) for _, batches in plans for batch in batches)} "
+        f"batches={sum(len(batches) for _, batches in plans)} worker=1 "
+        f"max_files_per_batch={max_files_per_batch} "
+        f"pytest_args={shlex.join(pytest_args) or '<none>'} "
+        f"attestation={destination}",
+        flush=True,
+    )
+    return 0
 
 
 def _signal_owned_process_group(
@@ -462,13 +727,33 @@ def _save_shard_coverage(
     env: dict[str, str],
 ) -> bool:
     coverage_file = Path(env["COVERAGE_FILE"])
-    if not coverage_file.is_file():
-        # pytest-cov under xdist can leave parallel data. `coverage combine`
-        # canonicalizes it into the shard-specific COVERAGE_FILE.
-        _run_command(
-            [sys.executable, "-m", "coverage", "combine", str(basetemp)],
+    worker_fragments = sorted(basetemp.glob(f"{coverage_file.name}.*"))
+    if worker_fragments or not coverage_file.is_file():
+        # With xdist and ``parallel = True``, pytest-cov can write both a
+        # controller data file and suffixed worker files. The controller file
+        # existing does not mean the worker data has been combined. Append
+        # every owned fragment before publishing the batch artifact.
+        combine_rc = _run_command(
+            [
+                sys.executable,
+                "-m",
+                "coverage",
+                "combine",
+                "--append",
+                "--keep",
+                f"--data-file={coverage_file}",
+                str(basetemp),
+            ],
             env=env,
         )
+        if combine_rc:
+            print(
+                f"SHARD-COVERAGE-COMBINE-FAIL shard={shard} "
+                f"batch={batch_index} fragments={len(worker_fragments)} "
+                f"rc={combine_rc}",
+                flush=True,
+            )
+            return False
     if not coverage_file.is_file() or coverage_file.stat().st_size == 0:
         print(
             f"SHARD-COVERAGE-MISSING shard={shard} batch={batch_index}",
@@ -512,7 +797,8 @@ def _aggregate_coverage() -> int:
             sys.executable,
             str(SCRIPTS / "audit_coverage.py"),
             f"--json-file={COVERAGE_JSON}",
-            "--threshold=75",
+            "--threshold=85",
+            "--per-file-threshold=75",
             "--source=src/general_ludd",
             f"--json-out={COVERAGE_AUDIT}",
         ],
@@ -525,25 +811,106 @@ def _aggregate_coverage() -> int:
 
 def _combine_coverage_output(destination: Path) -> int:
     """Combine bounded batch fragments into one uploadable shard data file."""
+    if not destination.is_absolute():
+        destination = ROOT / destination
+    if COVERAGE_SHARDS.is_symlink() or not COVERAGE_SHARDS.is_dir():
+        print(
+            f"SHARD-COVERAGE-FRAGMENTS-MISSING path={COVERAGE_SHARDS}",
+            flush=True,
+        )
+        return 1
+    fragments = sorted(
+        path
+        for path in COVERAGE_SHARDS.iterdir()
+        if COVERAGE_FRAGMENT_NAME.fullmatch(path.name)
+    )
+    if not fragments:
+        print(
+            f"SHARD-COVERAGE-FRAGMENTS-MISSING path={COVERAGE_SHARDS}",
+            flush=True,
+        )
+        return 1
+    for fragment in fragments:
+        if fragment.is_symlink() or not fragment.is_file() or fragment.stat().st_size == 0:
+            print(f"SHARD-COVERAGE-FRAGMENT-INVALID path={fragment}", flush=True)
+            return 1
+
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.unlink(missing_ok=True)
-    env = os.environ.copy()
-    env["COVERAGE_FILE"] = str(destination)
-    rc = _run_command(
-        [
-            sys.executable,
-            "-m",
-            "coverage",
-            "combine",
-            "--keep",
-            str(COVERAGE_SHARDS),
-        ],
-        env=env,
-    )
-    if rc == 0 and (not destination.is_file() or destination.stat().st_size == 0):
-        print(f"SHARD-COVERAGE-OUTPUT-MISSING path={destination}", flush=True)
-        return 1
-    return rc
+    staged: list[Path] = []
+    try:
+        for index, fragment in enumerate(fragments, start=1):
+            alias = COVERAGE_SHARDS / f"{destination.name}.fragment-{index:03d}"
+            alias.unlink(missing_ok=True)
+            staged.append(alias)
+            shutil.copy2(fragment, alias)
+            source_size = fragment.stat().st_size
+            if alias.stat().st_size != source_size:
+                print(
+                    f"SHARD-COVERAGE-TRANSFER-MISMATCH source={fragment} "
+                    f"destination={alias}",
+                    flush=True,
+                )
+                return 1
+            print(
+                f"SHARD-COVERAGE-TRANSFER source={fragment.name} "
+                f"destination={alias.name} bytes={source_size}",
+                flush=True,
+            )
+        rc = _run_command(
+            [
+                sys.executable,
+                "-m",
+                "coverage",
+                "combine",
+                "--keep",
+                f"--data-file={destination}",
+                str(COVERAGE_SHARDS),
+            ]
+        )
+        if rc:
+            print(
+                f"SHARD-COVERAGE-COMBINE-FAIL fragments={len(fragments)} rc={rc}",
+                flush=True,
+            )
+            return rc
+        if (
+            destination.is_symlink()
+            or not destination.is_file()
+            or destination.stat().st_size == 0
+        ):
+            print(f"SHARD-COVERAGE-OUTPUT-MISSING path={destination}", flush=True)
+            return 1
+        evidence = _coverage_output_evidence(destination)
+        print(
+            f"SHARD-COVERAGE-OUTPUT path={destination} "
+            f"fragments={len(fragments)} bytes={evidence['bytes']} "
+            f"sha256={evidence['sha256']}",
+            flush=True,
+        )
+        return 0
+    finally:
+        for alias in staged:
+            alias.unlink(missing_ok=True)
+
+
+def _coverage_output_evidence(destination: Path) -> dict[str, object]:
+    """Return portable, hash-bound evidence for one durable coverage artifact."""
+    if not destination.is_absolute():
+        destination = ROOT / destination
+    if (
+        destination.is_symlink()
+        or not destination.is_file()
+        or destination.stat().st_size == 0
+    ):
+        raise ValueError(f"coverage output is missing or invalid: {destination}")
+    digest = hashlib.sha256(destination.read_bytes()).hexdigest()
+    return {
+        "artifact": destination.name,
+        "bytes": destination.stat().st_size,
+        "sha256": digest,
+        "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+    }
 
 
 def run(
@@ -560,6 +927,7 @@ def run(
     """Run bounded batches serially and aggregate their coverage fragments."""
     if max_files_per_batch < 1:
         raise ValueError("max_files_per_batch must be positive")
+    expected_interpreter = _interpreter_identity()
     shutil.rmtree(COVERAGE_SHARDS, ignore_errors=True)
     COVERAGE_SHARDS.mkdir(parents=True)
     COVERAGE_AUDIT.parent.mkdir(parents=True, exist_ok=True)
@@ -570,10 +938,11 @@ def run(
         return erase_rc
 
     failures: dict[str, int] = {}
+    cancellation_rc = 0
     if run_isolated:
         isolated_rc = _run_owned_pytest(
             _isolated_pytest_command(pytest_args),
-            env=os.environ.copy(),
+            env=_owned_test_environment(os.environ.copy()),
             label="isolated",
             heartbeat_seconds=heartbeat_seconds,
             no_progress_seconds=no_progress_seconds,
@@ -584,6 +953,20 @@ def run(
         else:
             print("ISOLATED-TESTS-PASS rc=0", flush=True)
 
+    if failures:
+        print(
+            f"SERIAL-ISOLATED-FAILED rc={failures['isolated']}; "
+            "later-shards=not-started",
+            flush=True,
+        )
+        print(
+            f"SERIAL-SHARD-SUMMARY total={len(shards)} "
+            f"failed={len(failures)} failures={failures}",
+            flush=True,
+        )
+        shutil.rmtree(COVERAGE_SHARDS, ignore_errors=True)
+        return max(failures.values())
+
     for index, shard in enumerate(shards, start=1):
         batches = _partition_test_paths(
             expand_shard(shard),
@@ -592,13 +975,20 @@ def run(
         if not batches:
             print(f"SHARD-EMPTY shard={shard}", flush=True)
             failures[shard] = 2
-            continue
+            print(
+                f"SERIAL-SHARD-FAILED shard={shard} rc=2; "
+                "later-shards=not-started",
+                flush=True,
+            )
+            break
 
         workspace_parent = _resource_paths().root / "workspaces"
         workspace_parent.mkdir(parents=True, exist_ok=True)
         workspace = Path(
             tempfile.mkdtemp(prefix=f"gludd-gate-{shard}-", dir=workspace_parent)
         )
+        owned_tmpdirs: list[Path] = []
+        cleanup_rc = 0
         try:
             print(
                 f"=== GATE TEST SHARD {index}/{len(shards)}: {shard} "
@@ -612,19 +1002,34 @@ def run(
                 batchtemp.mkdir(parents=True)
                 batch_name = f"{shard}-batch-{batch_index:03d}"
                 env = _env_for_shard(batch_name, batchtemp)
+                owned_tmpdir = _owned_socket_safe_tmpdir(batch_name)
+                owned_tmpdirs.append(owned_tmpdir)
+                env["TMPDIR"] = str(owned_tmpdir)
                 env["COVERAGE_FILE"] = str(batchtemp / ".coverage")
                 print(
                     f"SHARD-BATCH shard={shard} batch={batch_index}/{len(batches)} "
-                    f"files={len(files)} basetemp={batchtemp / 'pytest'}",
+                    f"files={len(files)} basetemp={owned_tmpdir / 'pytest'}",
                     flush=True,
                 )
+                if not _interpreter_is_unchanged(
+                    expected_interpreter,
+                    context=f"{shard}:batch-{batch_index:03d}:before",
+                ):
+                    failures[shard] = INTERPRETER_DRIFT_EXIT_CODE
+                    shard_failed = True
+                    break
                 rc = _run_owned_pytest(
-                    _pytest_command(shard, files, batchtemp, pytest_args),
-                    env=env,
+                    _pytest_command(shard, files, owned_tmpdir, pytest_args),
+                    env=_owned_test_environment(env),
                     label=f"{shard}:batch-{batch_index:03d}",
                     heartbeat_seconds=heartbeat_seconds,
                     no_progress_seconds=no_progress_seconds,
                 )
+                if not _interpreter_is_unchanged(
+                    expected_interpreter,
+                    context=f"{shard}:batch-{batch_index:03d}:after",
+                ):
+                    rc = INTERPRETER_DRIFT_EXIT_CODE
                 coverage_saved = _save_shard_coverage(
                     shard,
                     batch_index,
@@ -639,6 +1044,8 @@ def run(
                         flush=True,
                     )
                     shard_failed = True
+                    if _is_cancellation_returncode(rc):
+                        cancellation_rc = rc
                     break
                 print(
                     f"SHARD-BATCH-PASS shard={shard} batch={batch_index} rc=0",
@@ -647,9 +1054,38 @@ def run(
             if not shard_failed:
                 print(f"SHARD-PASS shard={shard} rc=0", flush=True)
         finally:
+            for owned_tmpdir in owned_tmpdirs:
+                cleanup_rc = max(
+                    cleanup_rc,
+                    _cleanup_owned_tmpdir(owned_tmpdir) or 0,
+                )
             shutil.rmtree(workspace, ignore_errors=True)
+        if cleanup_rc:
+            failures[shard] = max(failures.get(shard, 0), cleanup_rc)
+            print(
+                f"SHARD-CLEANUP-SIGNAL shard={shard} rc={cleanup_rc}",
+                flush=True,
+            )
+            if _is_cancellation_returncode(cleanup_rc):
+                cancellation_rc = cleanup_rc
+        if cancellation_rc:
+            print(
+                f"SERIAL-SHARD-CANCELLED shard={shard} rc={cancellation_rc}; "
+                "later-shards=not-started",
+                flush=True,
+            )
+            break
+        if shard in failures:
+            print(
+                f"SERIAL-SHARD-FAILED shard={shard} rc={failures[shard]}; "
+                "later-shards=not-started",
+                flush=True,
+            )
+            break
 
-    if coverage_output is not None:
+    if failures:
+        coverage_rc = 0
+    elif coverage_output is not None:
         coverage_rc = _combine_coverage_output(coverage_output)
     elif aggregate_coverage:
         coverage_rc = _aggregate_coverage()
@@ -667,6 +1103,7 @@ def run(
 
 
 def main() -> int:
+    """Parse command-line options and execute the bounded shard plan."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--shards",
@@ -678,7 +1115,7 @@ def main() -> int:
         "--max-files-per-batch",
         type=int,
         default=MAX_FILES_PER_BATCH,
-        help="maximum collected test files in one xdist worker",
+        help="maximum collected test files in one owned pytest process",
     )
     parser.add_argument(
         "--heartbeat-seconds",
@@ -712,8 +1149,39 @@ def main() -> int:
         type=Path,
         help="also publish the terminal exact-SHA attestation at this path",
     )
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="print the bounded canonical plan without executing tests or writing evidence",
+    )
+    parser.add_argument(
+        "--require-release-policy",
+        action="store_true",
+        help="reject noncanonical pytest policy before release-attestation work",
+    )
     args = parser.parse_args()
     shards = _parse_shards(args.shards)
+    pytest_args = shlex.split(args.pytest_args)
+    if args.validate_only:
+        return _validate_only_plan(
+            shards,
+            pytest_args,
+            max_files_per_batch=args.max_files_per_batch,
+            attestation_output=args.attestation_output,
+        )
+    observed_policy = execution_policy(pytest_args)
+    expected_policy = release_execution_policy()
+    if args.require_release_policy and observed_policy != expected_policy:
+        print(
+            "SERIAL-SHARD-POLICY-REJECTED "
+            f"expected={shlex.join(RELEASE_PYTEST_ARGS)} "
+            f"observed={shlex.join(pytest_args) or '<none>'} "
+            f"expected_policy={json.dumps(expected_policy, sort_keys=True)} "
+            f"observed_policy={json.dumps(observed_policy, sort_keys=True)}",
+            flush=True,
+        )
+        return 2
+    pairing = _attestation_pairing(shards, pytest_args=pytest_args)
     started_at = _utc_now()
     identity = _repository_identity(
         expected_sha=os.environ.get("GLUDD_CANDIDATE_SHA")
@@ -723,7 +1191,7 @@ def main() -> int:
         try:
             returncode = run(
                 shards,
-                shlex.split(args.pytest_args),
+                pytest_args,
                 max_files_per_batch=args.max_files_per_batch,
                 heartbeat_seconds=args.heartbeat_seconds,
                 no_progress_seconds=args.no_progress_seconds,
@@ -740,18 +1208,46 @@ def main() -> int:
         returncode = 2
         error = "repository identity is not release eligible"
         print(f"SHARD-IDENTITY-REJECTED identity={identity}", flush=True)
+    coverage_evidence: dict[str, object] | None = None
+    if returncode == 0 and args.coverage_output is not None:
+        try:
+            coverage_evidence = _coverage_output_evidence(args.coverage_output)
+        except (OSError, ValueError) as exc:
+            returncode = RUNNER_EXCEPTION_EXIT_CODE
+            error = f"{type(exc).__name__}: {exc}"
+            print(f"SHARD-COVERAGE-ATTESTATION-FAIL error={error}", flush=True)
     destinations = {_resource_paths().attestation}
     if args.attestation_output is not None:
         destinations.add(args.attestation_output)
-    for destination in destinations:
-        _write_terminal_attestation(
-            destination,
-            identity=identity,
-            shards=shards,
-            returncode=returncode,
-            started_at=started_at,
-            completed_at=_utc_now(),
-            error=error,
+
+    def publish_terminal() -> None:
+        for destination in destinations:
+            _write_terminal_attestation(
+                destination,
+                identity=identity,
+                shards=shards,
+                returncode=returncode,
+                started_at=started_at,
+                completed_at=_utc_now(),
+                error=error,
+                coverage=coverage_evidence,
+                pytest_args=pytest_args,
+                pairing=pairing,
+            )
+
+    with _defer_termination_signals() as deferred_signals:
+        publish_terminal()
+    if deferred_signals:
+        signal_returncode = 128 + deferred_signals[0]
+        if not _is_cancellation_returncode(returncode):
+            returncode = signal_returncode
+            error = f"signal {deferred_signals[0]} received during terminal attestation"
+            with _defer_termination_signals():
+                publish_terminal()
+        print(
+            f"TERMINAL-ATTESTATION-SIGNAL signal={deferred_signals[0]} "
+            f"rc={returncode}",
+            flush=True,
         )
     return returncode
 

@@ -26,17 +26,22 @@ It then follows this sequence:
 1. Take a host-local lock keyed by repository, workflow, and full SHA.
 2. Query `Build and Release` runs using the full commit SHA.
 3. Give the push-triggered run a bounded discovery window.
-4. If an exact-SHA run exists, return its URL without dispatching.
-5. Otherwise dispatch once, durably record that accepted request, and query
+4. If an active or successful exact-SHA run exists, return its URL without
+   dispatching.
+5. If only completed non-success runs exist, emit `GHA-SIGNAL-RETRY`, dispatch
+   one replacement, and atomically refresh the durable marker.
+6. Otherwise dispatch once, durably record that accepted request, and query
    until the exact-SHA run URL is visible.
-6. If GitHub visibility is delayed beyond the confirmation window, fail with
+7. If GitHub visibility is delayed beyond the confirmation window, fail with
    the accepted dispatch URL when available and refuse another dispatch.
 
 The lock prevents concurrent release processes on this host from racing. The
 durable marker under `/tmp/gludd-gha-signal-*.json` prevents a later retry from
-dispatching the same SHA again after GitHub accepted the first request. An
+dispatching the same SHA again while GitHub has not returned terminal evidence.
+A completed `cancelled`, `failure`, or other non-success conclusion invalidates
+that marker and permits exactly one replacement dispatch. An
 external actor on another host can still create a run; the exact-SHA lookup
-detects and reuses any such run that GitHub exposes.
+detects and reuses any active or successful run that GitHub exposes.
 
 Successful output ends with a stable machine-readable line:
 
@@ -46,7 +51,9 @@ GHA_RUN_URL=https://github.com/sandboxcom/gludd/actions/runs/<run-id>
 
 `GHA-SIGNAL-EXISTING` means no dispatch was needed.
 `GHA-SIGNAL-DISPATCHED` means this invocation dispatched and then confirmed
-the run. `GHA-SIGNAL-BLOCKED` is fail-closed and never counts as CI evidence.
+the run. `GHA-SIGNAL-RETRY` identifies the terminal run that authorized a
+replacement. `GHA-SIGNAL-BLOCKED` is fail-closed and never counts as CI
+evidence.
 
 ## Usage
 

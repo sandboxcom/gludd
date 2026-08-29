@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-check_tdd_compliance.py
+"""Enforce tests for every staged production Python change.
 
 Pre-commit guardrail: blocks commits when new/modified source files lack
 corresponding test files or when test files are import-only stubs.
@@ -56,7 +55,7 @@ ALLOWLIST = (
 )
 
 
-def _load_allowlist_config() -> list[re.Pattern]:
+def _load_allowlist_config() -> list[re.Pattern[str]]:
     config_path = PROJECT_ROOT / "config" / "tdd_allowlist.yml"
     if not config_path.is_file():
         return []
@@ -69,7 +68,7 @@ def _load_allowlist_config() -> list[re.Pattern]:
         print(f"WARNING: failed to parse {config_path}: {exc}", file=sys.stderr)
         return []
     entries = data.get("allowlist", []) if isinstance(data, dict) else []
-    patterns: list[re.Pattern] = []
+    patterns: list[re.Pattern[str]] = []
     for entry in entries:
         if isinstance(entry, dict) and "path" in entry:
             p_str = entry["path"]
@@ -114,7 +113,7 @@ def _git_all_staged_files() -> set[str]:
     return files
 
 
-_yaml_patterns: list[re.Pattern] | None = None
+_yaml_patterns: list[re.Pattern[str]] | None = None
 
 
 def _is_allowlisted(path: Path) -> bool:
@@ -154,6 +153,7 @@ def _module_path(src_file: Path) -> str:
 
 
 def _candidate_test_paths(src_file: Path) -> list[Path]:
+    """Map ``src/general_ludd/X.py`` to ``tests/unit/test_X.py`` candidates."""
     rel = src_file.relative_to(SRC_DIR.parent.parent) if src_file.is_absolute() else src_file
     parts = list(rel.parts)
     if parts[0] == "src":
@@ -286,6 +286,7 @@ def _parse_root(argv: list[str]) -> Path:
 
 
 def main(argv: list[str]) -> int:
+    """Validate staged production files beneath the selected project root."""
     global PROJECT_ROOT, SRC_DIR, TESTS_DIR
     root = _parse_root(argv)
     PROJECT_ROOT = root

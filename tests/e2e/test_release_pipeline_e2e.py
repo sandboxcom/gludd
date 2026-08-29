@@ -91,7 +91,7 @@ def test_release_cut_steps_ordered() -> None:
     recipe = m.group(1)
 
     steps = [
-        "require-ci-green",
+        "require-dual-track-green",
         "check-readme-status",
         "git-push-sandboxcom",
         "git-tag-push",
@@ -115,7 +115,7 @@ def test_release_cut_all_dependency_targets_exist() -> None:
     """Every target referenced by release-cut is declared in the Makefile."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     deps = [
-        "require-ci-green",
+        "require-dual-track-green",
         "check-readme-status",
         "git-push-sandboxcom",
         "git-tag-push",

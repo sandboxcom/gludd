@@ -7,9 +7,72 @@
       "behavior": "make test-specific TESTFILE=tests/unit/test_make_target_contract.py::test_make_target_contract_is_valid PYTEST_ARGS=-q"
     },
     {
+      "name": "test-specific-pyver",
+      "make_variables": ["TESTFILE", "PYTHON_VERSION", "PYTEST_ARGS"],
+      "behavior": "make test-specific-pyver TESTFILE=tests/unit/test_ci_hosted_failure_tooling.py PYTHON_VERSION=3.11 PYTEST_ARGS=-q"
+    },
+    {
       "name": "test-files",
       "make_variables": ["TESTFILES", "PYTEST_ARGS"],
       "behavior": "make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS=-q"
+    },
+    {
+      "name": "ci-run-summary",
+      "make_variables": [
+        "RUN",
+        "CI_RUN_SUMMARY_REPO",
+        "CI_RUN_SUMMARY_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-run-summary RUN=123 CI_RUN_SUMMARY_REPO=sandboxcom/gludd CI_RUN_SUMMARY_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-job-failure-context",
+      "make_variables": [
+        "RUN",
+        "JOB",
+        "PATTERN",
+        "BEFORE",
+        "AFTER",
+        "CI_JOB_CONTEXT_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-job-failure-context RUN=1 JOB=1 PATTERN=FAILED BEFORE=2 AFTER=4 CI_JOB_CONTEXT_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-artifact-download",
+      "make_variables": [
+        "RUN",
+        "ARTIFACT",
+        "CI_ARTIFACT_OUTPUT_ROOT",
+        "CI_ARTIFACT_HEARTBEAT_SECS",
+        "CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-artifact-download RUN=1 ARTIFACT=diagnostics CI_ARTIFACT_OUTPUT_ROOT=RESOURCE_ROOT CI_ARTIFACT_HEARTBEAT_SECS=1 CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-coverage-artifact-audit",
+      "make_variables": [
+        "CI_COVERAGE_RUN",
+        "CI_COVERAGE_ARTIFACT",
+        "CI_COVERAGE_INPUT",
+        "CI_COVERAGE_SOURCE",
+        "CI_COVERAGE_AGGREGATE_MIN",
+        "CI_COVERAGE_PER_FILE_MIN",
+        "CI_COVERAGE_AUDIT_VALIDATE_ONLY",
+        "CI_COVERAGE_HEARTBEAT_SECS"
+      ],
+      "behavior": "make ci-coverage-artifact-audit CI_COVERAGE_RUN=1 CI_COVERAGE_ARTIFACT=coverage-merged CI_COVERAGE_INPUT=xml CI_COVERAGE_SOURCE=src/general_ludd CI_COVERAGE_AGGREGATE_MIN=85 CI_COVERAGE_PER_FILE_MIN=75 CI_COVERAGE_AUDIT_VALIDATE_ONLY=1 CI_COVERAGE_HEARTBEAT_SECS=1"
+    },
+    {
+      "name": "ci-coverage-gap-plan",
+      "make_variables": [
+        "CI_COVERAGE_RUN",
+        "CI_COVERAGE_ARTIFACT",
+        "CI_COVERAGE_SOURCE",
+        "CI_COVERAGE_PER_FILE_MIN",
+        "CI_COVERAGE_GAP_LIMIT",
+        "CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-coverage-gap-plan CI_COVERAGE_RUN=1 CI_COVERAGE_ARTIFACT=coverage-merged CI_COVERAGE_SOURCE=src/general_ludd CI_COVERAGE_PER_FILE_MIN=75 CI_COVERAGE_GAP_LIMIT=20 CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY=1"
     },
     {
       "name": "test-e2e",
@@ -53,9 +116,10 @@
         "PYINSTALLER_WARNING_FILE_LINUX",
         "PYINSTALLER_WARNING_ALLOWLIST_LINUX",
         "PYINSTALLER_VERSION_LINUX",
+        "PYINSTALLER_WARNING_ARCHITECTURE_LINUX",
         "PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY"
       ],
-      "behavior": "make audit-linux-pyinstaller-warnings PYINSTALLER_WARNING_FILE_LINUX=dist/linux/warn-gludd.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
+      "behavior": "make audit-linux-pyinstaller-warnings PYINSTALLER_WARNING_FILE_LINUX=dist/linux/warn-gludd.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
     },
     {
       "name": "molecule-test",
@@ -569,6 +633,11 @@
       "behavior": "make git-patch-equivalence PATCH_UPSTREAM=development PATCH_HEAD=master PATCH_LIMIT=3"
     },
     {
+      "name": "submodule-init",
+      "make_variables": ["SUBMODULE_INIT_VALIDATE_ONLY"],
+      "behavior": "make submodule-init SUBMODULE_INIT_VALIDATE_ONLY=1"
+    },
+    {
       "name": "lima-docker-start",
       "make_variables": [
         "LIMA_INSTANCE",
@@ -681,6 +750,11 @@
       "name": "release-branch-new",
       "make_variables": ["NAME", "BASE", "RELEASE_BRANCH_VALIDATE_ONLY"],
       "behavior": "make release-branch-new NAME=release/contract-validation BASE=development RELEASE_BRANCH_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "test-ci-dual-track-local",
+      "make_variables": ["DUAL_TRACK_LOCAL_VALIDATE_ONLY", "PYTEST_ARGS", "MAX_FILES_PER_BATCH"],
+      "behavior": "make test-ci-dual-track-local DUAL_TRACK_LOCAL_VALIDATE_ONLY=1 PYTEST_ARGS='-k __gludd_contract_empty__' MAX_FILES_PER_BATCH=16"
     },
     {
       "name": "require-dual-track-green",

@@ -89,9 +89,9 @@ def _parse_created_at(raw: object) -> str | None:
     if isinstance(raw, (int, float)):
         # Heuristic on magnitude: micro -> milli -> seconds.
         value = float(raw)
-        if value > 1e16:
+        if value > 1e14:
             value /= 1_000_000.0
-        elif value > 1e13:
+        elif value > 1e11:
             value /= 1_000.0
         return datetime.fromtimestamp(value, tz=UTC).isoformat()
     text = str(raw)

@@ -251,11 +251,15 @@ class ModelIndex:
             return
         try:
             with open(self._index_path) as f:
-                raw: dict[str, Any] = json.load(f)
+                decoded: object = json.load(f)
         except (OSError, json.JSONDecodeError):
             return
+        if not isinstance(decoded, dict):
+            return
+        raw = cast("dict[str, Any]", decoded)
         for name, data in raw.items():
-            self._entries[name] = ModelSearchResult(**data)
+            if isinstance(name, str) and isinstance(data, dict):
+                self._entries[name] = ModelSearchResult(**data)
 
     def _save(self) -> None:
         serializable = {

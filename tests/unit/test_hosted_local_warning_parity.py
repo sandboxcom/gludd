@@ -26,8 +26,9 @@ def test_local_named_shard_slice_rejects_warnings() -> None:
 
 
 def test_hosted_named_shards_reject_warnings() -> None:
-    """The hosted adaptive runner must promote warnings to failures."""
+    """The hosted canonical runner must promote warnings to failures."""
     workflow = WORKFLOW.read_text()
-    adaptive = workflow.split("uv run python scripts/adaptive_test.py $FILES", 1)[1]
-    pytest_args = adaptive.split("rc=$?", 1)[0]
-    assert "-W error" in pytest_args
+    assert "scripts/run_ci_shards_serial.py" in workflow
+    assert '--pytest-args="-W error"' in workflow
+    runner = (ROOT / "scripts" / "run_ci_shards_serial.py").read_text()
+    assert "*pytest_args" in runner

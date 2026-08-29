@@ -15,14 +15,14 @@ ROOT = Path(__file__).parent.parent.parent
 class TestT07TDDAllowlistParity:
     """T07 — enforce-tdd.ts and check_tdd_compliance.py use same allowlist."""
 
-    def test_editor_and_commit_gates_share_allowlist(self):
+    def test_editor_and_commit_gates_share_allowlist(self) -> None:
         plugin_path = ROOT / ".opencode" / "plugin" / "enforce-tdd.ts"
         script_path = ROOT / "scripts" / "check_tdd_compliance.py"
 
         assert plugin_path.exists(), "T07: enforce-tdd.ts must exist"
         assert script_path.exists(), "T07: check_tdd_compliance.py must exist"
 
-    def test_allowlist_entries_match(self):
+    def test_allowlist_entries_match(self) -> None:
         plugin_path = ROOT / ".opencode" / "plugin" / "enforce-tdd.ts"
         script_path = ROOT / "scripts" / "check_tdd_compliance.py"
 
@@ -57,7 +57,7 @@ class TestT07TDDAllowlistParity:
             f"T07: check_tdd_compliance.py must reference at least one core allowlist entry from {core_entries}"
         )
 
-    def test_candidate_test_path_logic_matches(self):
+    def test_candidate_test_path_logic_matches(self) -> None:
         """Verify both gates use the same test file mapping logic."""
         plugin_path = ROOT / ".opencode" / "plugin" / "enforce-tdd.ts"
         script_path = ROOT / "scripts" / "check_tdd_compliance.py"

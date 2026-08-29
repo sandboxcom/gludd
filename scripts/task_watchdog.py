@@ -39,21 +39,29 @@ import os
 import re
 import signal
 import subprocess
+import tempfile
 import time
 from contextlib import suppress
 from pathlib import Path
+from typing import TYPE_CHECKING, TypedDict
 
-try:
+if TYPE_CHECKING:
+    from scripts.process_cleanup import descendant_processes, snapshot_processes
+else:
     # ``make task-watchdog-start`` executes this file by path, where the
     # repository root is not on ``sys.path`` and the package import fails.
-    from scripts.process_cleanup import descendant_processes, snapshot_processes
-except ModuleNotFoundError:  # pragma: no cover - exercised by direct launch
-    from process_cleanup import descendant_processes, snapshot_processes
+    try:
+        from scripts.process_cleanup import descendant_processes, snapshot_processes
+    except ModuleNotFoundError:  # pragma: no cover - exercised by direct launch
+        from process_cleanup import descendant_processes, snapshot_processes
 
-try:
+if TYPE_CHECKING:
     from scripts import gludd_env_defaults as gludd_env_defaults
-except ModuleNotFoundError:  # pragma: no cover - direct launch from scripts/
-    import gludd_env_defaults
+else:
+    try:
+        from scripts import gludd_env_defaults as gludd_env_defaults
+    except ModuleNotFoundError:  # pragma: no cover - direct launch from scripts/
+        import gludd_env_defaults
 
 DEADLINES_FILE = os.environ.get(
     "GLUDD_TASK_DEADLINE_STATE", "/tmp/gludd-task-deadlines.json"
@@ -98,6 +106,30 @@ EXCLUDE_PATTERNS = [
 _SELF_PID = os.getpid()
 
 
+class StaleTask(TypedDict):
+    """One deadline entry that exceeded its timeout."""
+
+    task_id: str
+    start_ms: float
+    elapsed_ms: float
+    timeout_ms: float
+
+
+class HungProcess(TypedDict):
+    """One verified task-like process that exceeded its timeout."""
+
+    pid: int
+    etime_secs: float
+    command: str
+
+
+class PollResult(TypedDict):
+    """Counts emitted by one watchdog poll."""
+
+    stale: int
+    killed: int
+
+
 def _log(msg: str) -> None:
     ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
     line = f"[{ts}] {msg}"
@@ -139,14 +171,14 @@ def find_stale_tasks(
     deadlines: dict[str, float],
     timeout_ms: float = TIMEOUT_MS,
     now_ms: float | None = None,
-) -> list[dict]:
+) -> list[StaleTask]:
     """Return tasks whose elapsed wall-clock exceeds the timeout.
 
     Each entry: ``{task_id, start_ms, elapsed_ms, timeout_ms}``.
     """
     if now_ms is None:
         now_ms = time.time() * 1000.0
-    stale: list[dict] = []
+    stale: list[StaleTask] = []
     for tid, start_ms in deadlines.items():
         if start_ms <= 0:
             continue
@@ -239,7 +271,7 @@ def _descendant_pids(lines: list[str], root_pid: int) -> set[int]:
 def find_hung_processes(
     timeout_secs: float = TIMEOUT_SECS,
     gate_pid_file: str = str(GATE_PID_FILE),
-) -> list[dict]:
+) -> list[HungProcess]:
     """Scan ``ps`` for processes older than timeout matching task patterns.
 
     Returns ``[{pid, etime_secs, command}, ...]``. Excludes:
@@ -259,7 +291,7 @@ def find_hung_processes(
         return []
 
     gate_pid = _read_gate_pid(gate_pid_file)
-    hung: list[dict] = []
+    hung: list[HungProcess] = []
     lines = result.stdout.splitlines()[1:]  # skip header
     gate_tree = _descendant_pids(lines, gate_pid) if gate_pid is not None else set()
 
@@ -364,7 +396,7 @@ def record_kill(
     killed_file: str = KILLED_FILE,
 ) -> None:
     """Append a kill record to the audit log (JSON list)."""
-    entry = {
+    entry: dict[str, object] = {
         "task_id": task_id,
         "pid": pid,
         "elapsed_ms": round(elapsed_ms, 1),
@@ -372,14 +404,35 @@ def record_kill(
         "killed_at": time.time(),
     }
     try:
-        existing: list = []
+        existing: list[dict[str, object]] = []
         p = Path(killed_file)
         if p.exists():
-            data = json.loads(p.read_text())
+            try:
+                data = json.loads(p.read_text())
+            except json.JSONDecodeError:
+                data = []
             if isinstance(data, list):
                 existing = data
         existing.append(entry)
-        p.write_text(json.dumps(existing, indent=2))
+        p.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=p.parent,
+                prefix=f".{p.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary:
+                temporary_path = Path(temporary.name)
+                temporary.write(json.dumps(existing, indent=2))
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            os.replace(temporary_path, p)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
     except Exception as exc:
         _log(f"KILL RECORD ERROR: {exc}")
 
@@ -393,7 +446,7 @@ def run_once(
     stale_file: str = STALE_FILE,
     killed_file: str = KILLED_FILE,
     timeout_ms: float = TIMEOUT_MS,
-) -> dict:
+) -> PollResult:
     """One poll cycle. Returns ``{stale: N, killed: N}``.
 
     1. Load deadlines, find stale tasks.
