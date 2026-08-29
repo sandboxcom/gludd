@@ -82,6 +82,40 @@ def test_porcelain_parser_handles_active_locked_and_detached_worktrees(tmp_path:
     assert [record.locked for record in records] == [False, True, False]
 
 
+def test_prunable_registration_is_parsed_and_pruned_without_path_removal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    main = tmp_path / "main"
+    missing = tmp_path / "missing"
+    porcelain = (
+        f"worktree {main}\nHEAD abc\nbranch refs/heads/development\n\n"
+        f"worktree {missing}\nHEAD def\nbranch refs/heads/feature/missing\n"
+        "prunable gitdir file points to non-existent location\n"
+    )
+    calls: list[tuple[str, ...]] = []
+
+    def fake_git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        if args == ("worktree", "list", "--porcelain"):
+            return subprocess.CompletedProcess(args, 0, porcelain, "")
+        if args == ("rev-parse", "--show-toplevel"):
+            return subprocess.CompletedProcess(args, 0, f"{main}\n", "")
+        assert args == ("worktree", "prune", "--expire", "now")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(prune_worktrees_safe, "_git", fake_git)
+
+    records = parse_worktrees(porcelain)
+    assert records[1].prunable is True
+    assert prune_worktrees_safe.prune(
+        registry_path=tmp_path / "missing.json",
+        validate_only=False,
+    ) == 0
+    assert ("worktree", "prune", "--expire", "now") in calls
+    assert ("worktree", "remove", str(missing.resolve())) not in calls
+
+
 def test_unregistered_candidate_is_removable(tmp_path: Path) -> None:
     record = WorktreeRecord(path=tmp_path / "idle", branch="feature/idle", locked=False)
 
@@ -124,7 +158,7 @@ def test_default_registry_path_is_shared_by_git_common_dir(
     monkeypatch.delenv("GLUDD_ACTIVE_WORKSTREAM_REGISTRY", raising=False)
     monkeypatch.setenv("TMPDIR", str(temp_root))
     monkeypatch.setattr(
-        workstream_registry.subprocess,
+        subprocess,
         "run",
         lambda *args, **kwargs: subprocess.CompletedProcess(args, 0, f"{common_dir}\n", ""),
     )

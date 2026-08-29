@@ -18,6 +18,7 @@ class WorktreeRecord:
     path: Path
     branch: str | None
     locked: bool
+    prunable: bool = False
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,10 @@ def parse_worktrees(output: str) -> list[WorktreeRecord]:
                 path=Path(path_line.removeprefix("worktree ")).resolve(),
                 branch=branch,
                 locked=any(line == "locked" or line.startswith("locked ") for line in fields),
+                prunable=any(
+                    line == "prunable" or line.startswith("prunable ")
+                    for line in fields
+                ),
             )
         )
     return records
@@ -82,18 +87,52 @@ def prune(*, registry_path: Path, validate_only: bool) -> int:
     current = Path(_git("rev-parse", "--show-toplevel").stdout.strip()).resolve()
     protected_paths = frozenset({records[0].path, current})
     active_branches = WorkstreamRegistry(registry_path).active_branches()
-    removed = 0
-    protected = 0
-    retained = 0
-    for record in records:
-        decision = pruning_decision(
+    decisions = [
+        pruning_decision(
             record,
             active_branches=active_branches,
             protected_paths=protected_paths,
         )
+        for record in records
+    ]
+    removable_prunable = [
+        record
+        for record, decision in zip(records, decisions, strict=True)
+        if record.prunable and decision.action == "remove"
+    ]
+    protected_prunable = [
+        record
+        for record, decision in zip(records, decisions, strict=True)
+        if record.prunable and decision.action == "protect"
+    ]
+    pruned_paths: frozenset[Path] = frozenset()
+    if removable_prunable and not protected_prunable and not validate_only:
+        prune_result = _git("worktree", "prune", "--expire", "now", check=False)
+        if prune_result.returncode == 0:
+            pruned_paths = frozenset(record.path for record in removable_prunable)
+    removed = 0
+    protected = 0
+    retained = 0
+    for record, decision in zip(records, decisions, strict=True):
         if decision.action == "protect":
             protected += 1
             print(f"  protected ({decision.reason}): {record.path}")
+            continue
+        if record.prunable:
+            if validate_only:
+                retained += 1
+                print(f"  would prune (missing registration): {record.path}")
+            elif record.path in pruned_paths:
+                removed += 1
+                print(f"  pruned (missing registration): {record.path}")
+            else:
+                retained += 1
+                reason = (
+                    "protected prunable registration exists"
+                    if protected_prunable
+                    else "git worktree prune failed"
+                )
+                print(f"  kept ({reason}): {record.path}")
             continue
         if validate_only:
             retained += 1
