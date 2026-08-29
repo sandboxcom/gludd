@@ -52,6 +52,57 @@ def _windows_zip(path: Path, *, include_executable: bool = True) -> None:
             archive.writestr("gludd.exe", b"MZ")
 
 
+def _python_distributions(
+    assets: Path,
+    *,
+    metadata_name: str = "general-ludd-agent",
+    metadata_version: str = DIST_VERSION,
+) -> None:
+    wheel = assets / f"general_ludd_agent-{DIST_VERSION}-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("general_ludd/__init__.py", "")
+        archive.writestr("general_ludd/cli.py", "def main():\n    return 0\n")
+        archive.writestr(
+            f"general_ludd_agent-{DIST_VERSION}.dist-info/METADATA",
+            "Metadata-Version: 2.4\n"
+            f"Name: {metadata_name}\n"
+            f"Version: {metadata_version}\n",
+        )
+        archive.writestr(
+            f"general_ludd_agent-{DIST_VERSION}.dist-info/entry_points.txt",
+            "[console_scripts]\ngludd = general_ludd.cli:main\n",
+        )
+
+    sdist = assets / f"general_ludd_agent-{DIST_VERSION}.tar.gz"
+    with tarfile.open(sdist, "w:gz") as archive:
+        root = f"general_ludd_agent-{DIST_VERSION}"
+        for name, payload in (
+            (
+                "PKG-INFO",
+                (
+                    "Metadata-Version: 2.4\n"
+                    f"Name: {metadata_name}\n"
+                    f"Version: {metadata_version}\n"
+                ).encode(),
+            ),
+            ("src/general_ludd/__init__.py", b""),
+            ("src/general_ludd/cli.py", b"def main():\n    return 0\n"),
+            ("pyproject.toml", b"[project.scripts]\ngludd = 'general_ludd.cli:main'\n"),
+        ):
+            member = tarfile.TarInfo(f"{root}/{name}")
+            member.size = len(payload)
+            archive.addfile(member, io.BytesIO(payload))
+
+
+def _refresh_checksums(assets: Path) -> None:
+    lines = [
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}"
+        for path in sorted(assets.iterdir())
+        if path.name != "SHA256SUMS"
+    ]
+    (assets / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _complete_matrix(tmp_path: Path) -> tuple[Path, Path]:
     repo, assets = tmp_path / "repo", tmp_path / "assets"
     config = repo / "config" / "ansible"
@@ -122,30 +173,7 @@ def _complete_matrix(tmp_path: Path) -> tuple[Path, Path]:
         encoding="utf-8",
     )
 
-    wheel = assets / f"general_ludd_agent-{DIST_VERSION}-py3-none-any.whl"
-    with zipfile.ZipFile(wheel, "w") as archive:
-        archive.writestr("general_ludd/__init__.py", "")
-        archive.writestr("general_ludd/cli.py", "def main():\n    return 0\n")
-        archive.writestr(
-            f"general_ludd_agent-{DIST_VERSION}.dist-info/METADATA",
-            f"Version: {DIST_VERSION}\n",
-        )
-        archive.writestr(
-            f"general_ludd_agent-{DIST_VERSION}.dist-info/entry_points.txt",
-            "[console_scripts]\ngludd = general_ludd.cli:main\n",
-        )
-    sdist = assets / f"general_ludd_agent-{DIST_VERSION}.tar.gz"
-    with tarfile.open(sdist, "w:gz") as archive:
-        root = f"general_ludd_agent-{DIST_VERSION}"
-        for name, payload in (
-            ("PKG-INFO", f"Version: {DIST_VERSION}\n".encode()),
-            ("src/general_ludd/__init__.py", b""),
-            ("src/general_ludd/cli.py", b"def main():\n    return 0\n"),
-            ("pyproject.toml", b"[project.scripts]\ngludd = 'general_ludd.cli:main'\n"),
-        ):
-            member = tarfile.TarInfo(f"{root}/{name}")
-            member.size = len(payload)
-            archive.addfile(member, io.BytesIO(payload))
+    _python_distributions(assets)
 
     manifest = assets / f"gludd-release-manifest-{VERSION}.json"
     manifest.write_text(
@@ -164,11 +192,7 @@ def _complete_matrix(tmp_path: Path) -> tuple[Path, Path]:
         encoding="utf-8",
     )
 
-    lines = [
-        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}"
-        for path in sorted(assets.iterdir())
-    ]
-    (assets / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _refresh_checksums(assets)
     return assets, repo
 
 
@@ -284,6 +308,81 @@ def test_invalid_python_distribution_archives_are_rejected(tmp_path: Path) -> No
     assert any("sdist is invalid" in error for error in errors)
 
 
+def test_python_distribution_metadata_identity_must_match_beta4_filename(
+    tmp_path: Path,
+) -> None:
+    assets, repo = _complete_matrix(tmp_path)
+    _python_distributions(
+        assets,
+        metadata_name="renamed-project",
+        metadata_version="9.9",
+    )
+    _refresh_checksums(assets)
+
+    errors = verify_release_asset_matrix(assets, VERSION, repo)
+
+    assert any("wheel METADATA identity is stale" in error for error in errors)
+    assert any("sdist PKG-INFO identity is stale" in error for error in errors)
+
+
+def test_python_distribution_metadata_is_unique_utf8_and_complete(
+    tmp_path: Path,
+) -> None:
+    assets, repo = _complete_matrix(tmp_path)
+    wheel = assets / f"general_ludd_agent-{DIST_VERSION}-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("general_ludd/__init__.py", "")
+        archive.writestr("general_ludd/cli.py", "")
+        archive.writestr(
+            f"general_ludd_agent-{DIST_VERSION}.dist-info/METADATA", b"\xff"
+        )
+        archive.writestr(
+            f"general_ludd_agent-{DIST_VERSION}.dist-info/entry_points.txt",
+            "[console_scripts]\ngludd = general_ludd.cli:main\n",
+        )
+    sdist = assets / f"general_ludd_agent-{DIST_VERSION}.tar.gz"
+    with tarfile.open(sdist, "w:gz") as archive:
+        root = f"general_ludd_agent-{DIST_VERSION}"
+        for name, payload in (
+            ("PKG-INFO", b"\xff"),
+            ("src/general_ludd/__init__.py", b""),
+            ("src/general_ludd/cli.py", b""),
+            ("pyproject.toml", b""),
+        ):
+            member = tarfile.TarInfo(f"{root}/{name}")
+            member.size = len(payload)
+            archive.addfile(member, io.BytesIO(payload))
+    _refresh_checksums(assets)
+
+    errors = verify_release_asset_matrix(assets, VERSION, repo)
+
+    assert any("wheel METADATA is not UTF-8" in error for error in errors)
+    assert any("sdist PKG-INFO is not UTF-8" in error for error in errors)
+
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("general_ludd/cli.py", "")
+        archive.writestr("one.dist-info/METADATA", "Name: one\nVersion: 1\n")
+        archive.writestr("two.dist-info/METADATA", "Name: two\nVersion: 2\n")
+        archive.writestr("one.dist-info/entry_points.txt", "wrong = target\n")
+    with tarfile.open(sdist, "w:gz") as archive:
+        root = f"general_ludd_agent-{DIST_VERSION}"
+        for name in ("one/PKG-INFO", "two/PKG-INFO", "pyproject.toml"):
+            payload = b"Name: wrong\nVersion: 1\n"
+            member = tarfile.TarInfo(f"{root}/{name}")
+            member.size = len(payload)
+            archive.addfile(member, io.BytesIO(payload))
+    _refresh_checksums(assets)
+
+    errors = verify_release_asset_matrix(assets, VERSION, repo)
+
+    assert "wheel does not contain general_ludd/__init__.py" in errors
+    assert "wheel does not contain distribution METADATA" in errors
+    assert "wheel does not declare the gludd console entrypoint" in errors
+    assert "sdist does not contain PKG-INFO" in errors
+    assert "sdist does not contain src/general_ludd/__init__.py" in errors
+    assert "sdist does not contain src/general_ludd/cli.py" in errors
+
+
 def test_native_archives_must_contain_installed_executables(tmp_path: Path) -> None:
     assets, repo = _complete_matrix(tmp_path)
     _native_tar(assets / f"gludd-{VERSION}-linux-x86_64.tar.gz", executable=False)
@@ -293,6 +392,32 @@ def test_native_archives_must_contain_installed_executables(tmp_path: Path) -> N
     errors = verify_release_asset_matrix(assets, VERSION, repo)
     assert "linux tar executable gludd must be executable" in errors
     assert "windows zip does not contain gludd.exe" in errors
+
+
+def test_native_archives_reject_corrupt_empty_and_duplicate_payloads(
+    tmp_path: Path,
+) -> None:
+    assets, repo = _complete_matrix(tmp_path)
+    (assets / f"gludd-{VERSION}-linux-x86_64.tar.gz").write_bytes(b"not-a-tar")
+    windows_zip = assets / f"gludd-{VERSION}-windows-x86_64.zip"
+    with zipfile.ZipFile(windows_zip, "w") as archive:
+        archive.writestr("gludd.exe", b"")
+    _refresh_checksums(assets)
+
+    errors = verify_release_asset_matrix(assets, VERSION, repo)
+
+    assert any("linux tar archive is invalid" in error for error in errors)
+    assert "windows zip gludd.exe is empty" in errors
+
+    _native_tar(assets / f"gludd-{VERSION}-linux-x86_64.tar.gz")
+    with zipfile.ZipFile(windows_zip, "w") as archive:
+        archive.writestr("first/gludd.exe", b"MZ")
+        archive.writestr("second/gludd.exe", b"MZ")
+    _refresh_checksums(assets)
+
+    assert "windows zip contains multiple gludd.exe files" in (
+        verify_release_asset_matrix(assets, VERSION, repo)
+    )
 
 
 def test_python_distributions_must_install_the_gludd_entrypoint(tmp_path: Path) -> None:

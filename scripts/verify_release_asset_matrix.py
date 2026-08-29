@@ -11,6 +11,7 @@ import stat
 import sys
 import tarfile
 import zipfile
+from email.parser import Parser
 from pathlib import Path
 
 import yaml
@@ -52,6 +53,7 @@ IMAGE_REFERENCE_RE = re.compile(
 )
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+EXPECTED_DISTRIBUTION_NAME = "general-ludd-agent"
 
 
 def distribution_version(version: str) -> str:
@@ -205,8 +207,19 @@ def _verify_distributions(asset_dir: Path, version: str) -> list[str]:
                 errors.append("wheel does not contain general_ludd/__init__.py")
             if "general_ludd/cli.py" not in names:
                 errors.append("wheel does not contain general_ludd/cli.py")
-            if not any(name.endswith(".dist-info/METADATA") for name in names):
+            metadata_names = sorted(
+                name for name in names if name.endswith(".dist-info/METADATA")
+            )
+            if len(metadata_names) != 1:
                 errors.append("wheel does not contain distribution METADATA")
+            else:
+                metadata_error = _distribution_metadata_error(
+                    archive.read(metadata_names[0]),
+                    label="wheel METADATA",
+                    expected_version=normalized,
+                )
+                if metadata_error:
+                    errors.append(metadata_error)
             entry_points = [
                 name for name in names if name.endswith(".dist-info/entry_points.txt")
             ]
@@ -225,8 +238,25 @@ def _verify_distributions(asset_dir: Path, version: str) -> list[str]:
     try:
         with tarfile.open(sdist, "r:gz") as archive:
             names = set(archive.getnames())
-        if not any(name.endswith("/PKG-INFO") for name in names):
-            errors.append("sdist does not contain PKG-INFO")
+            metadata_members = [
+                member
+                for member in archive.getmembers()
+                if member.isfile() and member.name.endswith("/PKG-INFO")
+            ]
+            if len(metadata_members) != 1:
+                errors.append("sdist does not contain PKG-INFO")
+            else:
+                extracted = archive.extractfile(metadata_members[0])
+                if extracted is None:
+                    errors.append("sdist PKG-INFO is unreadable")
+                else:
+                    metadata_error = _distribution_metadata_error(
+                        extracted.read(),
+                        label="sdist PKG-INFO",
+                        expected_version=normalized,
+                    )
+                    if metadata_error:
+                        errors.append(metadata_error)
         if not any(name.endswith("/src/general_ludd/__init__.py") for name in names):
             errors.append("sdist does not contain src/general_ludd/__init__.py")
         if not any(name.endswith("/src/general_ludd/cli.py") for name in names):
@@ -236,6 +266,31 @@ def _verify_distributions(asset_dir: Path, version: str) -> list[str]:
     except (OSError, tarfile.TarError) as exc:
         errors.append(f"sdist is invalid: {exc}")
     return errors
+
+
+def _distribution_metadata_error(
+    raw: bytes,
+    *,
+    label: str,
+    expected_version: str,
+) -> str | None:
+    """Return a fail-closed error when package payload identity is stale."""
+    try:
+        metadata = Parser().parsestr(raw.decode("utf-8"))
+    except UnicodeDecodeError as exc:
+        return f"{label} is not UTF-8: {exc}"
+    actual_name = metadata.get("Name")
+    actual_version = metadata.get("Version")
+    if (
+        actual_name != EXPECTED_DISTRIBUTION_NAME
+        or actual_version != expected_version
+    ):
+        return (
+            f"{label} identity is stale: "
+            f"expected {EXPECTED_DISTRIBUTION_NAME}=={expected_version}, "
+            f"got {actual_name!r}=={actual_version!r}"
+        )
+    return None
 
 
 def _verify_smoke_attestations(asset_dir: Path, version: str) -> list[str]:
