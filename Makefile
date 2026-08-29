@@ -8682,7 +8682,7 @@ show-lines:
 	@$(PYTHON) scripts/show_lines.py "$(FILE)" "$(START)" "$(END)"
 
 ps:
-	@/bin/ps -ax -o pid=,ppid=,command= | /usr/bin/grep '/Users/shawnwilson/gludd\|make search\|grep -R' | /usr/bin/grep -v '/usr/bin/grep' || echo "No matching project processes"
+	@/bin/ps -ax -o pid=,ppid=,command= | /usr/bin/grep '/Users/shawnwilson/gludd\|make search\|grep -R\|llama_cpp.server\|llama-server' | /usr/bin/grep -v '/usr/bin/grep' || echo "No matching project processes"
 
 PROCESS_ROOT_PID ?=
 PROCESS_NAMESPACE ?=

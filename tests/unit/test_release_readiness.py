@@ -255,6 +255,13 @@ def test_release_readiness_make_target_is_safe_and_contracted() -> None:
     assert json.loads(result.stdout)["estimate"]["p50_minutes"] == 200.0
 
 
+def test_make_ps_surfaces_llamacpp_servers_outside_repo_paths() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    ps_recipe = makefile.split("\nps:\n", maxsplit=1)[1].split("\n\n", maxsplit=1)[0]
+    assert "llama_cpp.server" in ps_recipe
+    assert "llama-server" in ps_recipe
+
+
 def test_release_readiness_make_target_binds_the_invoking_worktree() -> None:
     result = subprocess.run(
         [
