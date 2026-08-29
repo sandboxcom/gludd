@@ -31,10 +31,10 @@ RELEASE_POLICY = {
     "python_version": "3.11",
     "python_implementation": "cpython",
     "pytest_args": ["-W", "error"],
-    "xdist_workers": 1,
+    "xdist_workers": 0,
     "max_processes": 1,
-    "distribution": "loadgroup",
-    "max_worker_restart": 0,
+    "distribution": "none",
+    "max_worker_restart": None,
     "coverage_config": ".coveragerc-greenlet",
 }
 

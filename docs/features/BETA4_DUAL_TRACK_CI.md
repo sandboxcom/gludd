@@ -557,7 +557,8 @@ malformed, dirty, failed, wrong-lane, or wrong-SHA evidence.
 `make test-ci-dual-track-local` is the canonical local producer for that
 precondition. `test-ci-shard` remains a focused diagnostic and its per-shard
 attestation is not release evidence. The producer takes no shard list: the
-runner's `DEFAULT_SHARDS` registry, bounded batch planner, single xdist worker,
+runner's `DEFAULT_SHARDS` registry, bounded batch planner, one owned pytest
+process per batch,
 heartbeats, cleanup, aggregate coverage, and terminal writer are the sole source
 of execution truth. `DUAL_TRACK_LOCAL_VALIDATE_ONLY=1` is the read-only Make
 contract and never creates a successful attestation.
@@ -573,9 +574,9 @@ the canonical local producer had not provisioned the lockfile-backed Node plane.
 Schema 3 makes that comparison semantic instead of trusting matching lane names.
 Every terminal attestation records, for each shard, its deterministic ordered
 test paths, path count, and SHA-256 of the canonical JSON path list. It also
-records and hashes the release execution policy: warnings are errors, xdist and
-process limits are one, worker restarts are disabled, distribution is
-`loadgroup`, and branch-aware greenlet coverage is enabled. The verifier
+records and hashes the release execution policy: warnings are errors, the
+process limit is one, nested xdist is disabled, distribution is `none`, and
+branch-aware greenlet coverage is enabled. The verifier
 independently recomputes every digest, requires that exact policy, and pairs each
 hosted shard fingerprint with the same shard in the local all-shard attestation.
 Legacy schemas, internally inconsistent digests, extra or missing plans, a
@@ -1740,7 +1741,7 @@ constructed the expected release policy from its own CPython 3.14 process,
 while both release lanes correctly attested CPython 3.11.
 
 The runner now owns one canonical release-runtime policy: CPython 3.11,
-warnings as errors, one xdist worker, zero worker restarts, and the shared
+warnings as errors, one owned pytest process, no nested xdist, and the shared
 branch-coverage configuration. Attestations still record the actual producing
 runtime, while `--require-release-policy` rejects any producer whose observed
 runtime or pytest policy differs from that canonical contract. The verifier
@@ -1762,3 +1763,41 @@ artifacts, both under the project-namespaced external resource root.
   above showing that an active tool environment can resolve a different
   interpreter than intended. Gludd therefore binds release Python explicitly
   and treats the verifier interpreter as an implementation detail.
+
+### Nested xdist finalization incident (2026-08-29)
+
+Exact commit `6d21b0c62b97713cf89e1ed3b626e57dd37a3a50` reached the
+sixth batch of local shard `unit-1d` with every assertion passing. The nested
+xdist worker then stopped producing output after the final bundled-binary test.
+The owner emitted heartbeats for ten minutes, applied its bounded
+`TERM`-to-`KILL` cleanup, returned 124, and prevented later batches and shards
+from starting. The identical 16-file order exited in seconds on CPython 3.11
+when coverage ran without the redundant xdist controller/worker layer.
+
+Each batch is already a fresh subprocess with a unique temporary root, explicit
+coverage database, progress deadline, and process-group cleanup. Running
+`pytest -n 1` inside that owned process added an execnet pipe and a second
+process without adding concurrency or isolation. The canonical local and hosted
+commands now run that one pytest process directly. The attested policy records
+`xdist_workers: 0`, `distribution: none`, and a null restart policy, so neither
+lane nor the verifier can silently restore the nested lifecycle.
+
+This remains zero-downtime candidate invalidation: the 124 result published no
+passing attestation and cannot authorize a tag, artifact, or deployment. No
+retry, harness cleanup, coverage exclusion, or warning suppression was added.
+Rollback restores the runner, tests, and policy fingerprint together; it also
+invalidates evidence created under either policy. Resource use decreases by one
+controller/worker process and one execnet pipe per batch while retaining the
+single owned pytest process and the existing bounded cleanup path.
+
+- [pytest-xdist distribution documentation](https://pytest-xdist.readthedocs.io/en/latest/distribution.html),
+  reviewed 2026-08-29, defines `-n` as creation of worker processes; one nested
+  worker provides no parallel execution inside Gludd's already serialized batch.
+- [pytest-xdist issue 1313](https://github.com/pytest-dev/pytest-xdist/issues/1313),
+  opened 2026-03-24 and reviewed 2026-08-29, records a practitioner report of
+  an intermittent hang after every test passed because execnet receiver threads
+  remained blocked on dead-worker pipes; the report also records serial mode as
+  the reliable boundary.
+- [pytest-cov xdist support contract](https://github.com/pytest-dev/pytest-cov),
+  reviewed 2026-08-29, confirms that xdist is optional coverage integration,
+  not a prerequisite for subprocess coverage collection.

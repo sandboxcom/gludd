@@ -180,7 +180,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 183,
+      "line": 193,
       "column": 33,
       "kind": "temp-artifact",
       "owner": "_write_terminal_attestation",
@@ -191,7 +191,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 343,
+      "line": 346,
       "column": 16,
       "kind": "temp-artifact",
       "owner": "_owned_socket_safe_tmpdir",
@@ -202,7 +202,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 606,
+      "line": 609,
       "column": 14,
       "kind": "process",
       "owner": "_run_owned_pytest",
@@ -213,7 +213,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 970,
+      "line": 973,
       "column": 12,
       "kind": "temp-artifact",
       "owner": "run",
@@ -510,7 +510,7 @@
     },
     {
       "path": "scripts/verify_dual_track_ci.py",
-      "line": 383,
+      "line": 381,
       "column": 17,
       "kind": "temp-artifact",
       "owner": "main",

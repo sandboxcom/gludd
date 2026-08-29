@@ -63,10 +63,10 @@ def execution_policy(pytest_args: list[str]) -> dict[str, object]:
         "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
         "python_implementation": sys.implementation.name,
         "pytest_args": list(pytest_args),
-        "xdist_workers": 1,
+        "xdist_workers": 0,
         "max_processes": 1,
-        "distribution": "loadgroup",
-        "max_worker_restart": 0,
+        "distribution": "none",
+        "max_worker_restart": None,
         "coverage_config": ".coveragerc-greenlet",
     }
 
@@ -334,13 +334,6 @@ def _pytest_command(
         "--cov-fail-under=0",
         "-v",
         *pytest_args,
-        "-n",
-        "1",
-        "--maxprocesses",
-        "1",
-        "--dist",
-        "loadgroup",
-        "--max-worker-restart=0",
         f"--basetemp={basetemp / 'pytest'}",
     ]
 
@@ -1107,7 +1100,7 @@ def main() -> int:
         "--max-files-per-batch",
         type=int,
         default=MAX_FILES_PER_BATCH,
-        help="maximum collected test files in one xdist worker",
+        help="maximum collected test files in one owned pytest process",
     )
     parser.add_argument(
         "--heartbeat-seconds",

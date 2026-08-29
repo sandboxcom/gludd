@@ -71,7 +71,10 @@ def test_local_dual_track_target_delegates_canonical_bounded_run() -> None:
     assert '--attestation-output "$$RESOURCE_ROOT/ci-shards/attestation.json"' in block
     assert "DUAL_TRACK_LOCAL_VALIDATE_ONLY" in block
     assert "--validate-only" in block
-    assert '"-n",\n        "1"' in inspect.getsource(runner._pytest_command)
+    batch_source = inspect.getsource(runner._pytest_command)
+    assert '"-n"' not in batch_source
+    assert '"--dist"' not in batch_source
+    assert '"--max-worker-restart=0"' not in batch_source
 
 
 def test_real_attestation_rejects_non_release_pytest_policy(

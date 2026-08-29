@@ -169,7 +169,7 @@ def test_serial_gate_runner_is_fresh_process_and_coverage_complete() -> None:
 
     for token in (
         "MAX_FILES_PER_BATCH",
-        "--max-worker-restart=0",
+        "OWNED-PYTEST-RESULT",
         "start_new_session=True",
         "COVERAGE_FILE",
         "coverage combine",
@@ -182,6 +182,24 @@ def test_serial_gate_runner_is_fresh_process_and_coverage_complete() -> None:
         "--per-file-threshold=75",
     ):
         assert token in source
+
+
+def test_bounded_pytest_batches_do_not_nest_xdist_controller_and_worker() -> None:
+    """One owned batch process must not add an unnecessary execnet lifecycle."""
+    module = _load_script("run_ci_shards_serial")
+
+    command = module._pytest_command(
+        "unit-1d",
+        ["tests/unit/test_bundled_binaries.py"],
+        Path("/tmp/gludd-owned-batch"),
+        ["-W", "error"],
+    )
+
+    assert command[:3] == [sys.executable, "-m", "pytest"]
+    assert "--cov" in command
+    assert "-n" not in command
+    assert "--dist" not in command
+    assert "--max-worker-restart=0" not in command
 
 
 def test_coverage_files_target_preserves_aggregate_and_per_file_floors() -> None:
@@ -652,9 +670,9 @@ def test_serial_pytest_command_uses_one_fail_closed_worker_and_isolated_basetemp
     assert command[0] == sys.executable
     assert command[1:3] == ["-m", "pytest"]
     assert "tests/unit/test_alpha.py" in command
-    assert command[command.index("-n") + 1] == "1"
-    assert command[command.index("--maxprocesses") + 1] == "1"
-    assert "--max-worker-restart=0" in command
+    assert "-n" not in command
+    assert "--maxprocesses" not in command
+    assert "--max-worker-restart=0" not in command
     assert "--cov" in command
     assert "--cov=general_ludd" not in command
     assert not any(item.startswith("--cov=") for item in command)
@@ -1774,6 +1792,9 @@ def test_release_execution_policy_uses_canonical_hosted_runtime() -> None:
     assert policy["python_version"] == "3.11"
     assert policy["python_implementation"] == "cpython"
     assert policy["pytest_args"] == ["-W", "error"]
+    assert policy["xdist_workers"] == 0
+    assert policy["distribution"] == "none"
+    assert policy["max_worker_restart"] is None
 
 
 def test_serial_runner_fails_closed_after_batch_mutates_interpreter(
