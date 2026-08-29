@@ -53,6 +53,18 @@ def _nested_dict(depth: int = 0) -> st.SearchStrategy[dict[str, Any]]:
     )
 
 
+def _has_compatible_merge_shapes(*configs: dict[str, Any]) -> bool:
+    """Return whether regrouping preserves documented recursive-merge semantics."""
+    for key in set().union(*(config.keys() for config in configs)):
+        values = [config[key] for config in configs if key in config]
+        mappings = [value for value in values if isinstance(value, dict)]
+        if mappings and len(mappings) != len(values):
+            return False
+        if mappings and not _has_compatible_merge_shapes(*mappings):
+            return False
+    return True
+
+
 # =========================================================================
 # 1. merge_config — algebraic properties
 # =========================================================================
@@ -99,9 +111,18 @@ class TestMergeConfigAlgebraic:
     @given(_nested_dict(), _nested_dict(), _nested_dict())
     @settings(max_examples=200)
     def test_merge_cfg_associative(self, a: dict[str, Any], b: dict[str, Any], c: dict[str, Any]) -> None:
+        assume(_has_compatible_merge_shapes(a, b, c))
         left = merge_config(merge_config(a, b), c)
         right = merge_config(a, merge_config(b, c))
         assert left == right
+
+    def test_merge_cfg_shape_transition_uses_each_project_snapshot_in_order(self) -> None:
+        """A later project mapping replaces an earlier scalar without reviving user keys."""
+        user = {"section": {"retired": 1}}
+        scalar_project = {"section": 0}
+        mapping_project: dict[str, Any] = {"section": {}}
+
+        assert merge_config(merge_config(user, scalar_project), mapping_project) == {"section": {}}
 
     @given(_nested_dict())
     @settings(max_examples=200)
