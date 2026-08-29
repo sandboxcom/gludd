@@ -26,6 +26,16 @@
       "behavior": "make ci-run-summary RUN=123 CI_RUN_SUMMARY_REPO=sandboxcom/gludd CI_RUN_SUMMARY_VALIDATE_ONLY=1"
     },
     {
+      "name": "release-readiness",
+      "make_variables": [
+        "TAG",
+        "RELEASE_READINESS_VALIDATE_ONLY",
+        "RELEASE_COMPLETED_STAGES",
+        "RELEASE_OBSERVATIONS"
+      ],
+      "behavior": "make release-readiness TAG=v0.1.0-beta.4 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS="
+    },
+    {
       "name": "ci-job-failure-context",
       "make_variables": [
         "RUN",

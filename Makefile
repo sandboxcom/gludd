@@ -27,6 +27,9 @@ NODE_DEPS_NPM_CACHE ?= /tmp/gludd-npm-cache-public-v1
 NODE_DEPS_NPM_REGISTRY ?= https://registry.npmjs.org
 NODE_DEPS_NPM_UPDATE_NOTIFIER ?= false
 NODE_DEPS_AUDIT_LEVEL ?= moderate
+RELEASE_READINESS_VALIDATE_ONLY ?= 0
+RELEASE_COMPLETED_STAGES ?=
+RELEASE_OBSERVATIONS ?=
 RECONCILE_QUIET_PROGRESS ?= 0
 MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
@@ -432,6 +435,7 @@ help:
 	@echo ""
 	@echo "  --- Release ---"
 	@echo "  release-list          List all GitHub releases"
+	@echo "  release-readiness TAG=..  Fail-closed beta4 blockers + Gludd-calibrated P50/P90 ETA"
 	@echo "  release-branch-new    Cut a release/* branch from a CI-green base (NAME, BASE, RELEASE_BRANCH_VALIDATE_ONLY)"
 	@echo "  require-dual-track-green Require exact-SHA local + hosted CI attestations (SHA, DUAL_TRACK_CI_VALIDATE_ONLY)"
 	@echo "  release-view TAG=..   Show a published GitHub Release + its assets"
@@ -3995,6 +3999,14 @@ release-recut: _push-rate-guard require-sandboxcom-ssh-key
 release-checklist:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-checklist TAG=v0.1.0-beta.N"; exit 1; }
 	@$(UV) run python scripts/release_cut_checklist.py $(TAG) --human
+
+release-readiness:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-readiness TAG=v0.1.0-beta.4 RELEASE_READINESS_VALIDATE_ONLY=0|1 RELEASE_COMPLETED_STAGES=stage,... RELEASE_OBSERVATIONS=stage=minutes,..."; exit 2; }
+	@RELEASE_READINESS_VALIDATE_ONLY="$(RELEASE_READINESS_VALIDATE_ONLY)" \
+		$(UV) run python scripts/release_readiness.py --root "$(CURDIR)" --tag "$(TAG)" \
+		--completed-stages "$(RELEASE_COMPLETED_STAGES)" \
+		--observations "$(RELEASE_OBSERVATIONS)" \
+		$(if $(filter 1,$(RELEASE_READINESS_VALIDATE_ONLY)),--validate-only,)
 
 # === AC001-AC020 Release Pipeline Integrity Guards ===
 

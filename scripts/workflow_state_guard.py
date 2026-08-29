@@ -18,6 +18,7 @@ RunFn = Callable[[Sequence[str], Optional[str]], subprocess.CompletedProcess[str
 
 @dataclass(frozen=True)
 class WorkflowState:
+    """Immutable local, remote, CI, and sibling-worktree workflow evidence."""
     branch: str
     head: str
     dirty_count: int
@@ -38,18 +39,23 @@ class WorkflowState:
 
     @property
     def is_clean(self) -> bool:
+        """Return whether the current worktree has no changed paths."""
         return self.dirty_count == 0
 
     @property
     def remote_matches_local(self) -> bool:
+        """Return whether the requested remote ref equals local HEAD."""
         return bool(self.remote_head) and self.remote_head == self.head
 
     @property
     def gha_matches_local(self) -> bool:
+        """Return whether supplied hosted-CI evidence equals local HEAD."""
         return bool(self.gha_head_sha) and self.gha_head_sha == self.head
 
 
 class WorkflowError(RuntimeError):
+    """Signal that required workflow evidence could not be collected."""
+
     pass
 
 
@@ -134,6 +140,8 @@ def _worktree_entries(porcelain_output: str) -> list[dict[str, str]]:
             current["head"] = line.removeprefix("HEAD ")
         elif line.startswith("branch "):
             current["branch"] = _short_branch(line.removeprefix("branch "))
+        elif line.startswith("prunable"):
+            current["prunable"] = line.removeprefix("prunable").strip() or "unknown"
     if current.get("path"):
         entries.append(current)
     return entries
@@ -158,6 +166,19 @@ def _collect_unintegrated_worktrees(
         if not path or path == current_path:
             continue
         branch = entry.get("branch", "DETACHED")
+        if entry.get("prunable"):
+            unintegrated.append(
+                {
+                    "path": path,
+                    "branch": branch,
+                    "head": entry.get("head", ""),
+                    "dirty_count": 0,
+                    "status": [],
+                    "reasons": ["prunable_registration"],
+                    "detail": entry["prunable"],
+                }
+            )
+            continue
         head = entry.get("head") or _maybe_stdout(["git", "rev-parse", "--verify", "HEAD"], run, path)
         status = _status_lines(run, path)
         reasons: list[str] = []
@@ -265,10 +286,10 @@ def _load_reconciled_preserve_heads(
 
     if not raw_path.is_absolute():
         repo_root = _maybe_stdout(["git", "rev-parse", "--show-toplevel"], run, cwd)
-        candidate = Path(repo_root) / raw_path if repo_root else None
-        if candidate is not None and candidate not in seen and candidate.exists():
+        repo_candidate = Path(repo_root) / raw_path if repo_root else None
+        if repo_candidate is not None and repo_candidate not in seen and repo_candidate.exists():
             heads.update(
-                _reconciled_preserve_head_tokens(candidate.read_text(encoding="utf-8"))
+                _reconciled_preserve_head_tokens(repo_candidate.read_text(encoding="utf-8"))
             )
     return heads
 
@@ -336,6 +357,7 @@ def collect_state(
     run: RunFn = _run,
     cwd: str | None = None,
 ) -> WorkflowState:
+    """Collect one explicit snapshot of release-relevant Git workflow state."""
     branch = _stdout(["git", "branch", "--show-current"], run, cwd) or "DETACHED"
     head = _stdout(["git", "rev-parse", "--verify", "HEAD"], run, cwd)
     status = _status_lines(run, cwd)
@@ -399,6 +421,7 @@ def workflow_errors(
     assert_no_unintegrated_worktrees: bool = False,
     assert_no_unintegrated_branches: bool = False,
 ) -> list[str]:
+    """Return stable fail-closed diagnostics for requested workflow assertions."""
     errors: list[str] = []
     if assert_clean and not state.is_clean:
         errors.append(
@@ -447,6 +470,7 @@ def workflow_errors(
 
 
 def print_state(state: WorkflowState, errors: Sequence[str], *, as_json: bool) -> None:
+    """Print the workflow snapshot and any assertion failures."""
     if as_json:
         payload = asdict(state)
         payload["is_clean"] = state.is_clean
@@ -503,6 +527,7 @@ def print_state(state: WorkflowState, errors: Sequence[str], *, as_json: bool) -
 
 
 def main(argv: Sequence[str] | None = None, run: RunFn = _run) -> int:
+    """Run the workflow-state CLI and return a stable process exit code."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit machine-readable state")
     parser.add_argument("--remote", default="sandboxcom", help="git remote name")
