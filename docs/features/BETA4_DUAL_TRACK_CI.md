@@ -1729,3 +1729,36 @@ with no application-data migration.
   different `VIRTUAL_ENV` and `UV_PROJECT_ENVIRONMENT` command semantics. The
   Gludd contract uses only the documented project variable for uv project
   operations and pins it explicitly.
+
+### Verifier-interpreter policy incident (2026-08-28)
+
+Exact commit `4ff5102d19fa1b49a91b4ce74517a7227130b535` passed the
+complete local eight-shard run at 93% aggregate coverage with every measured
+file at or above 75%. Hosted run `33218338435` also completed successfully.
+The paired verifier nevertheless rejected all nine attestations because it
+constructed the expected release policy from its own CPython 3.14 process,
+while both release lanes correctly attested CPython 3.11.
+
+The runner now owns one canonical release-runtime policy: CPython 3.11,
+warnings as errors, one xdist worker, zero worker restarts, and the shared
+branch-coverage configuration. Attestations still record the actual producing
+runtime, while `--require-release-policy` rejects any producer whose observed
+runtime or pytest policy differs from that canonical contract. The verifier
+imports the same canonical policy and is therefore independent of the Python
+version used to execute the verification command.
+
+This remains ZDD by immutable-candidate invalidation: two passing lanes were
+not enough to permit a tag or deployment while their policy evidence could not
+be verified. Rollback reverts only the policy helper and verifier binding; no
+application data, daemon, model endpoint, or collection runtime changes. The
+only resources are the already-owned local attestation and downloaded hosted
+artifacts, both under the project-namespaced external resource root.
+
+- [Python `sys.version_info` documentation](https://docs.python.org/3/library/sys.html#sys.version_info),
+  reviewed 2026-08-28, defines the running interpreter's version tuple. The
+  verifier must not use that ambient tuple as the expected release runtime.
+- [uv issue 19563](https://github.com/astral-sh/uv/issues/19563), opened
+  2026-05-26 and reviewed 2026-08-28, is the practitioner report already used
+  above showing that an active tool environment can resolve a different
+  interpreter than intended. Gludd therefore binds release Python explicitly
+  and treats the verifier interpreter as an implementation detail.

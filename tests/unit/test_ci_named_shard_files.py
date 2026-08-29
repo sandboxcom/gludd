@@ -1765,6 +1765,17 @@ def test_release_execution_policy_binds_python_runtime() -> None:
     assert policy["python_implementation"] == sys.implementation.name
 
 
+def test_release_execution_policy_uses_canonical_hosted_runtime() -> None:
+    """Release policy must not depend on the interpreter running the verifier."""
+    module = _load_script("run_ci_shards_serial")
+
+    policy = module.release_execution_policy()
+
+    assert policy["python_version"] == "3.11"
+    assert policy["python_implementation"] == "cpython"
+    assert policy["pytest_args"] == ["-W", "error"]
+
+
 def test_serial_runner_fails_closed_after_batch_mutates_interpreter(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

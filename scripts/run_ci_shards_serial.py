@@ -42,6 +42,8 @@ _CANCELLATION_RETURN_CODES = frozenset(
 )
 ATTESTATION_SCHEMA_VERSION = 3
 RELEASE_PYTEST_ARGS = ("-W", "error")
+RELEASE_PYTHON_VERSION = "3.11"
+RELEASE_PYTHON_IMPLEMENTATION = "cpython"
 
 
 def canonical_json_sha256(payload: object) -> str:
@@ -67,6 +69,14 @@ def execution_policy(pytest_args: list[str]) -> dict[str, object]:
         "max_worker_restart": 0,
         "coverage_config": ".coveragerc-greenlet",
     }
+
+
+def release_execution_policy() -> dict[str, object]:
+    """Return the canonical hosted release policy independent of this process."""
+    policy = execution_policy(list(RELEASE_PYTEST_ARGS))
+    policy["python_version"] = RELEASE_PYTHON_VERSION
+    policy["python_implementation"] = RELEASE_PYTHON_IMPLEMENTATION
+    return policy
 
 
 @dataclass(frozen=True)
@@ -1151,11 +1161,15 @@ def main() -> int:
             max_files_per_batch=args.max_files_per_batch,
             attestation_output=args.attestation_output,
         )
-    if args.require_release_policy and tuple(pytest_args) != RELEASE_PYTEST_ARGS:
+    observed_policy = execution_policy(pytest_args)
+    expected_policy = release_execution_policy()
+    if args.require_release_policy and observed_policy != expected_policy:
         print(
             "SERIAL-SHARD-POLICY-REJECTED "
             f"expected={shlex.join(RELEASE_PYTEST_ARGS)} "
-            f"observed={shlex.join(pytest_args) or '<none>'}",
+            f"observed={shlex.join(pytest_args) or '<none>'} "
+            f"expected_policy={json.dumps(expected_policy, sort_keys=True)} "
+            f"observed_policy={json.dumps(observed_policy, sort_keys=True)}",
             flush=True,
         )
         return 2

@@ -18,18 +18,16 @@ if TYPE_CHECKING:
     from scripts.resource_arbiter import resource_root
     from scripts.run_ci_shards_serial import (
         ATTESTATION_SCHEMA_VERSION,
-        RELEASE_PYTEST_ARGS,
         canonical_json_sha256,
-        execution_policy,
+        release_execution_policy,
     )
 else:
     from ci_named_shard_files import SHARDS
     from resource_arbiter import resource_root
     from run_ci_shards_serial import (
         ATTESTATION_SCHEMA_VERSION,
-        RELEASE_PYTEST_ARGS,
         canonical_json_sha256,
-        execution_policy,
+        release_execution_policy,
     )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +35,7 @@ REPOSITORY = "sandboxcom/gludd"
 WORKFLOW_NAME = "Build and Release"
 COVERAGE_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 COVERAGE_PYTHON = re.compile(r"^\d+\.\d+$")
-EXPECTED_EXECUTION_POLICY = execution_policy(list(RELEASE_PYTEST_ARGS))
+EXPECTED_EXECUTION_POLICY = release_execution_policy()
 EXPECTED_EXECUTION_POLICY_SHA256 = canonical_json_sha256(EXPECTED_EXECUTION_POLICY)
 PairingFingerprint = tuple[str, str]
 

@@ -28,8 +28,8 @@ SHARDS = {
 
 RELEASE_POLICY = {
     "schema_version": 1,
-    "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
-    "python_implementation": sys.implementation.name,
+    "python_version": "3.11",
+    "python_implementation": "cpython",
     "pytest_args": ["-W", "error"],
     "xdist_workers": 1,
     "max_processes": 1,
@@ -124,6 +124,14 @@ def test_dual_track_evidence_accepts_complete_exact_sha_matrix(tmp_path: Path) -
     ]
 
     assert module.verify_dual_track_evidence(local, hosted, sha) == []
+
+
+def test_verifier_release_policy_is_independent_of_verifier_python() -> None:
+    """A Python 3.14 verifier must accept evidence produced by release Python 3.11."""
+    module = _load_script()
+
+    assert module.EXPECTED_EXECUTION_POLICY["python_version"] == "3.11"
+    assert module.EXPECTED_EXECUTION_POLICY["python_implementation"] == "cpython"
 
 
 def test_dual_track_evidence_rejects_mismatched_paired_shard_plan(
