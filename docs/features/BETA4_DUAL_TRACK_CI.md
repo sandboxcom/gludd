@@ -1934,3 +1934,30 @@ SHA, namespaces their evidence and temporary resources, and publishes only
 after both exact-SHA terminal attestations pass. Rollback cancels the untagged
 candidate and leaves the last deployed version serving traffic; no speculative
 ETA or partial green prefix changes live state.
+
+### Local-inference ownership incident (2026-08-29)
+
+Release preparation found a Qwen llama.cpp server running directly as
+`python -m llama_cpp.server` on port 9999 with parent PID 1. It had been started
+as test support, was then reused by later tests as though it were operator-owned,
+and was repeatedly described as “external.” No Gludd daemon existed in its
+ancestor chain. This was a test-orchestration ownership defect and an evidence
+labeling defect, not a daemon shutdown attempt that failed.
+
+The process was terminated through Gludd's namespace- and identity-checked
+cleanup path. Beta4 readiness now inventories llama.cpp processes and fails
+closed when one has no Gludd-daemon ancestor, reporting its PID, parent PID, and
+command. Normal tests use the hermetic endpoint; tests requiring a real GGUF use
+managed mode, where `LocalInferenceManager` owns start, readiness, failure, and
+`stop_all()` teardown. External mode is valid only when the operator explicitly
+supplies a loopback URL; the harness must never create a server and then relabel
+it external to avoid cleanup.
+
+This extends the long-lived port-collision and cleanup evidence recorded in
+`LOCAL_MODEL_TESTING.md`, including the
+[llama-cpp-python port ownership report #1359](https://github.com/abetlen/llama-cpp-python/issues/1359),
+reviewed again 2026-08-29. ZDD is preserved because readiness observation and
+cleanup do not restart the daemon or modify a serving deployment. Rollback
+removes the readiness rule together with its regression; it never revives an
+orphaned model process. Resource use remains bounded to one process-table
+snapshot and ancestor walk per release preflight.
