@@ -1,8 +1,8 @@
 """Integration tests for the SSL certificate management system.
 
 Tests key generation, CSR/self-signing, CA chains, certificate parsing,
-ASN.1 round-trip, OID operations, algorithm evaluation, compliance checks,
-CA jurisdiction lookup, and the end-to-end agent flow.
+algorithm evaluation, compliance checks, CA jurisdiction lookup, the collection
+ASN.1 boundary, and the end-to-end agent flow.
 """
 
 from __future__ import annotations
@@ -10,6 +10,12 @@ from __future__ import annotations
 import datetime
 
 import pytest
+from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+    encode_der,
+    generate_oid,
+    lookup_oid,
+    parse_der,
+)
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa
@@ -17,15 +23,12 @@ from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa
 from general_ludd.ssl_agent import (
     ComplianceProfile,
     algorithm_evaluate,
-    asn1_roundtrip_verify,
     ca_jurisdiction_lookup,
     cert_parse,
     compliance_check,
     generate_ca_chain,
     generate_csr,
     generate_key_pair,
-    oid_generate,
-    oid_lookup,
     self_sign_cert,
     ssl_agent_flow,
 )
@@ -249,174 +252,53 @@ class TestCertificateParsing:
         assert fields.version >= 1
 
 
-class TestASN1RoundTrip:
-    def test_der_roundtrip_produces_match(self) -> None:
-        key = generate_key_pair("rsa-2048")
-        csr = generate_csr("asn1.example.com", key)
-        self_sign_cert(csr, key)
+class TestSecurityCollectionASN1:
+    def test_fqcn_der_roundtrip(self) -> None:
+        structure = {
+            "type": "SEQUENCE",
+            "children": [
+                {"type": "OID", "value": "2.5.4.3"},
+                {"type": "UTF8String", "value": "integration.example"},
+            ],
+        }
 
-        private_key = serialization.load_pem_private_key(key.private_pem, password=None)
-        csr_obj = x509.load_pem_x509_csr(csr.csr_pem)
-        cert = (
-            x509.CertificateBuilder()
-            .subject_name(
-                x509.Name(
-                    [
-                        x509.NameAttribute(
-                            x509.oid.NameOID.COMMON_NAME, "asn1.example.com"
-                        )
-                    ]
-                )
-            )
-            .issuer_name(
-                x509.Name(
-                    [
-                        x509.NameAttribute(
-                            x509.oid.NameOID.COMMON_NAME, "asn1.example.com"
-                        )
-                    ]
-                )
-            )
-            .public_key(csr_obj.public_key())
-            .serial_number(x509.random_serial_number())
-            .not_valid_before(datetime.datetime.now(datetime.UTC))
-            .not_valid_after(
-                datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=365)
-            )
-            .add_extension(
-                x509.BasicConstraints(ca=False, path_length=None),
-                critical=True,
-            )
-            .sign(private_key, hashes.SHA256())
-        )
-
-        result = asn1_roundtrip_verify(cert)
-        assert result["match"] is True
-        assert result["der_length"] > 0
-
-    def test_der_roundtrip_from_pem(self) -> None:
-        key = generate_key_pair("rsa-2048")
-        csr_data = generate_csr("asn1-pem.example.com", key)
-        private_key = serialization.load_pem_private_key(
-            key.private_pem, password=None
-        )
-        csr = x509.load_pem_x509_csr(csr_data.csr_pem)
-        cert = (
-            x509.CertificateBuilder()
-            .subject_name(
-                x509.Name(
-                    [
-                        x509.NameAttribute(
-                            x509.oid.NameOID.COMMON_NAME, "asn1-pem.example.com"
-                        )
-                    ]
-                )
-            )
-            .issuer_name(
-                x509.Name(
-                    [
-                        x509.NameAttribute(
-                            x509.oid.NameOID.COMMON_NAME, "asn1-pem.example.com"
-                        )
-                    ]
-                )
-            )
-            .public_key(csr.public_key())
-            .serial_number(x509.random_serial_number())
-            .not_valid_before(datetime.datetime.now(datetime.UTC))
-            .not_valid_after(
-                datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=365)
-            )
-            .add_extension(
-                x509.BasicConstraints(ca=False, path_length=None),
-                critical=True,
-            )
-            .sign(private_key, hashes.SHA256())
-        )
-
-        cert_pem = cert.public_bytes(serialization.Encoding.PEM)
-        result = asn1_roundtrip_verify(cert_pem)
-        assert result["match"] is True
-
-    def test_der_roundtrip_preserves_subject(self) -> None:
-        key = generate_key_pair("rsa-2048")
-        csr_data = generate_csr("asn1-subject.example.com", key)
-        private_key = serialization.load_pem_private_key(
-            key.private_pem, password=None
-        )
-        csr = x509.load_pem_x509_csr(csr_data.csr_pem)
-        cert = (
-            x509.CertificateBuilder()
-            .subject_name(
-                x509.Name(
-                    [
-                        x509.NameAttribute(
-                            x509.oid.NameOID.COMMON_NAME, "asn1-subject.example.com"
-                        )
-                    ]
-                )
-            )
-            .issuer_name(
-                x509.Name(
-                    [
-                        x509.NameAttribute(
-                            x509.oid.NameOID.COMMON_NAME, "asn1-subject.example.com"
-                        )
-                    ]
-                )
-            )
-            .public_key(csr.public_key())
-            .serial_number(x509.random_serial_number())
-            .not_valid_before(datetime.datetime.now(datetime.UTC))
-            .not_valid_after(
-                datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=365)
-            )
-            .add_extension(
-                x509.BasicConstraints(ca=False, path_length=None),
-                critical=True,
-            )
-            .sign(private_key, hashes.SHA256())
-        )
-
-        result = asn1_roundtrip_verify(cert)
-        assert result["original_fields"].subject_cn == "asn1-subject.example.com"
-        assert result["decoded_fields"].subject_cn == "asn1-subject.example.com"
-
-
-class TestOIDOperations:
-    def test_generate_valid_oid(self) -> None:
-        oid = oid_generate("2.5.4.3")
-        assert oid.dotted_string == "2.5.4.3"
+        assert parse_der(encode_der(structure)) == {
+            "type": "SEQUENCE",
+            "class": "UNIVERSAL",
+            "children": [
+                {"type": "OID", "class": "UNIVERSAL", "value": "2.5.4.3"},
+                {
+                    "type": "UTF8String",
+                    "class": "UNIVERSAL",
+                    "value": "integration.example",
+                },
+            ],
+        }
 
     def test_lookup_known_oid_by_dotted_string(self) -> None:
-        result = oid_lookup("2.5.4.3")
-        assert result is not None
-        assert result.name == "commonName"
-        assert result.oid == "2.5.4.3"
-
-    def test_lookup_known_oid_by_name(self) -> None:
-        result = oid_lookup("commonName")
-        assert result is not None
-        assert result.oid == "2.5.4.3"
+        result = lookup_oid("2.5.4.3")
+        assert result["name"] == "commonName"
+        assert result["oid"] == "2.5.4.3"
 
     def test_lookup_organization_name(self) -> None:
-        result = oid_lookup("2.5.4.10")
-        assert result is not None
-        assert result.name == "organizationName"
+        result = lookup_oid("2.5.4.10")
+        assert result["name"] == "organizationName"
 
     def test_lookup_ec_public_key(self) -> None:
-        result = oid_lookup("1.2.840.10045.2.1")
-        assert result is not None
-        assert result.name == "ecPublicKey"
+        result = lookup_oid("1.2.840.10045.2.1")
+        assert result["name"] == "ecPublicKey"
 
-    def test_lookup_unknown_oid_returns_none(self) -> None:
-        result = oid_lookup("9.9.9.9.9.9.9.9")
-        assert result is None
+    def test_lookup_unknown_oid_is_explicit(self) -> None:
+        result = lookup_oid("9.9.9.9.9.9.9.9")
+        assert result == {
+            "oid": "9.9.9.9.9.9.9.9",
+            "name": "unknown",
+            "description": "Unknown OID",
+        }
 
-    def test_generate_oid_produces_valid_object_identifier(self) -> None:
-        oid = oid_generate("1.2.840.113549.1.1.11")
-        assert oid.dotted_string == "1.2.840.113549.1.1.11"
-        assert oid._name == "sha256WithRSAEncryption"
+    def test_generate_oid_uses_requested_parent(self) -> None:
+        oid = generate_oid("1.2.840.113549.1.1", "integration")
+        assert oid.startswith("1.2.840.113549.1.1.")
 
 
 class TestAlgorithmEvaluation:
