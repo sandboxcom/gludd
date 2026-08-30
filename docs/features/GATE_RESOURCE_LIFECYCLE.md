@@ -34,6 +34,50 @@ when `uv run <nested-script>` creates the root `.venv`:
 [uv project environments](https://docs.astral.sh/uv/concepts/projects/layout/)
 and [uv issue 11302](https://github.com/astral-sh/uv/issues/11302).
 
+### Cross-worktree process census
+
+On 2026-08-29, the canonical local dual-track producer was visibly active in
+`make active-work-status`, including its serial runner, child controller, and
+pytest worker under a `/private/tmp` linked worktree and namespaced resource
+root. At the same instant, `make ps` reported no project processes because its
+grep expression recognized only the main checkout's literal host path. The two
+diagnostics therefore disagreed at exactly the point where an operator needed a
+fast resource-safety decision.
+
+Both surfaces now use the dependency-free `active_work_status.py` inventory.
+The inventory asks Git for the repository's registered main and linked
+worktrees, derives each checkout's Gludd resource namespace, and admits only
+known test, audit, watchdog, daemon, or test-supervisor commands that mention
+one of those complete path roots. A fixed-point parent/child pass retains a
+tracked controller whose relative command line omits its checkout but whose
+tracked child carries the owned path. Path-component boundaries reject sibling
+names such as `gludd-copy`; generic pytest commands and another project's
+Gludd resource namespace remain excluded. Output is read-only and capped at 512
+rows with an explicit overflow count.
+
+Evidence was reviewed on 2026-08-29. Git documents `worktree list --porcelain`
+as a record format whose first attribute is always the worktree path, making it
+the maintained repository-membership source rather than a host-specific glob:
+[Git worktree porcelain format](https://git-scm.com/docs/git-worktree#_porcelain_format).
+The long-lived practitioner discussion in
+[psutil issue 2335, opened 2023-12-09](https://github.com/giampaolo/psutil/issues/2335)
+warns that command lines are not unique process identity and that heuristic
+matching can target the wrong process. Gludd therefore uses command text only
+for a non-mutating census, requires an independently derived repository/resource
+root, and leaves termination to the existing PID/start-time ownership guards.
+The need to keep child processes visible after a controller fault is also
+documented by [pytest-timeout issue 159](https://github.com/pytest-dev/pytest-timeout/issues/159),
+whose practitioner report has remained open since 2022.
+
+The rollout is ZDD: `make ps` remains a synchronous read-only command, starts
+only one bounded Git query and one bounded process-table query (ten seconds
+each), and creates no daemon, lock, temporary artifact, or application state.
+Existing callers receive the same zero/nonzero target contract and a more
+structured table. Rollback is a code-only revert to the former recipe; there is
+no data migration or service restart. During rollback, use
+`make active-work-status` as the authoritative cross-worktree snapshot rather
+than inferring idleness from the legacy main-checkout-only view.
+
 ### Distribution cleanup
 
 `make clean CLEAN_VALIDATE_ONLY=1` is the safe behavioral contract. Actual mode

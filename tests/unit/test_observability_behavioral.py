@@ -193,6 +193,14 @@ class TestMakefileMonitoringTargets:
         mk = MAKEFILE.read_text()
         assert "ps:" in mk and "ps-gludd:" in mk
 
+    def test_ps_delegates_to_cross_worktree_owned_process_inventory(self) -> None:
+        """The lightweight process census must not hard-code one checkout."""
+        mk = MAKEFILE.read_text()
+        block = mk.split("\nps:\n", 1)[1].split("\n\n", 1)[0]
+
+        assert "$(SYSTEM_PYTHON) scripts/active_work_status.py --process-table" in block
+        assert "/Users/shawnwilson/gludd" not in block
+
 
 # ---------------------------------------------------------------------------
 # (c) Gate status file (.gate-status) parseability

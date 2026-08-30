@@ -3,17 +3,23 @@
 
 from __future__ import annotations
 
+import argparse
 import fcntl
 import json
 import os
 import re
 import subprocess
+from contextlib import suppress
+from importlib import import_module
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-try:
+if TYPE_CHECKING or __package__:
     from scripts.resource_arbiter import resource_path, resource_root
-except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from resource_arbiter import resource_path, resource_root
+else:  # pragma: no cover - direct script execution
+    _resource_arbiter = import_module("resource_arbiter")
+    resource_path = _resource_arbiter.resource_path
+    resource_root = _resource_arbiter.resource_root
 
 ROOT = Path(__file__).resolve().parent.parent
 TASK_ID_RE = re.compile(r"^\s*-\s*\[ \]\s+([^ —|]+)", re.MULTILINE)
@@ -31,9 +37,32 @@ _WORKER_TASKS = frozenset(
         "hook-runtime",
         "e2e-daemon",
         "typecheck",
+        "ci-shard-supervisor",
+        "test-supervisor",
+        "python-worker",
     }
 )
 _SINGLETON_WORKER_LEASES = frozenset({"gate-refresh"})
+_PROCESS_DISPLAY_LIMIT = 512
+_COMMAND_DISPLAY_LIMIT = 240
+_TRACKED_PROCESS_TOKENS = (
+    "adaptive_test.py",
+    "agent_watchdog.py",
+    "audit_coverage.py",
+    "detect-secrets",
+    "general_ludd.cli daemon",
+    "gunicorn",
+    "make gate",
+    "multiprocessing",
+    "mypy",
+    "pytest",
+    "run_ci_shards_parallel.py",
+    "run_ci_shards_serial.py",
+    "run_xdist_trace.py",
+    "start_ci_shards_parallel_bg.py",
+    "task_watchdog.py",
+    "test_hook_runtime.py",
+)
 
 
 def _task_label(command: str) -> str:
@@ -41,10 +70,23 @@ def _task_label(command: str) -> str:
         return "watchdog"
     if "audit_coverage.py" in command:
         return "coverage-audit"
-    if "detect-secrets" in command or "multiprocessing" in command:
+    if "detect-secrets" in command:
         return "coverage-audit-support"
+    if "multiprocessing" in command:
+        return "python-worker"
     if "test_hook_runtime.py" in command:
         return "hook-runtime"
+    if any(
+        token in command
+        for token in (
+            "run_ci_shards_parallel.py",
+            "run_ci_shards_serial.py",
+            "start_ci_shards_parallel_bg.py",
+        )
+    ):
+        return "ci-shard-supervisor"
+    if "adaptive_test.py" in command or "run_xdist_trace.py" in command:
+        return "test-supervisor"
     if "gate-refresh" in command or "make gate" in command:
         return "gate-refresh"
     if "test_opencode" in command or "tests/e2e/test_opencode" in command:
@@ -62,36 +104,151 @@ def _task_label(command: str) -> str:
     return "other"
 
 
+def _parse_worktree_roots(payload: str) -> tuple[Path, ...]:
+    """Parse Git's stable porcelain worktree inventory, failing closed."""
+
+    roots: list[Path] = []
+    for line in payload.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        raw_path = line.removeprefix("worktree ")
+        candidate = Path(raw_path)
+        if not raw_path or not candidate.is_absolute():
+            raise ValueError("git worktree list returned an invalid worktree path")
+        if candidate not in roots:
+            roots.append(candidate)
+    if not roots:
+        raise ValueError("git worktree list returned no registered worktrees")
+    return tuple(roots)
+
+
+def _repository_roots() -> tuple[Path, ...]:
+    """Return every checkout registered in this repository's Git common dir."""
+
+    result = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    return _parse_worktree_roots(result.stdout)
+
+
+def _path_forms(path: Path) -> frozenset[str]:
+    """Return textual and canonical spellings for one ownership root."""
+
+    expanded = path.expanduser()
+    forms = {str(expanded)}
+    with suppress(OSError):
+        forms.add(str(expanded.resolve(strict=False)))
+    return frozenset(form.rstrip("/") for form in forms if form != "/")
+
+
+def _command_mentions_path(command: str, path: Path) -> bool:
+    """Match a complete path component, never a checkout-name prefix."""
+
+    for form in _path_forms(path):
+        pattern = rf"(?<![A-Za-z0-9_./-]){re.escape(form)}(?=$|[\s/'\"=,:])"
+        if re.search(pattern, command):
+            return True
+    return False
+
+
+def _owned_resource_roots(repository_roots: tuple[Path, ...]) -> tuple[Path, ...]:
+    """Derive the resource namespace for each registered checkout."""
+
+    roots: list[Path] = []
+    for repository_root in repository_roots:
+        candidate = resource_root(repository_root)
+        if candidate not in roots:
+            roots.append(candidate)
+    return tuple(roots)
+
+
+def _owned_processes_from_output(
+    output: str,
+    *,
+    repository_roots: tuple[Path, ...],
+    resource_roots: tuple[Path, ...],
+) -> list[dict[str, str]]:
+    """Filter a process table to tracked commands with repository ownership."""
+
+    candidates: list[dict[str, str]] = []
+    for line in output.splitlines():
+        fields = line.strip().split(None, 2)
+        if len(fields) != 3:
+            continue
+        pid, ppid, command = fields
+        if not any(token in command for token in _TRACKED_PROCESS_TOKENS):
+            continue
+        candidates.append(
+            {"pid": pid, "ppid": ppid, "command": command, "task": _task_label(command)}
+        )
+
+    ownership_roots = (*repository_roots, *resource_roots)
+    owned_pids = {
+        process["pid"]
+        for process in candidates
+        if any(_command_mentions_path(process["command"], root) for root in ownership_roots)
+    }
+
+    # A controller may have a relative argv while its interpreter-backed child
+    # carries the checkout path. Keep tracked ancestors and descendants in the
+    # same process tree, but never bridge to an unrelated untracked process.
+    changed = True
+    while changed:
+        changed = False
+        for process in candidates:
+            if process["pid"] in owned_pids:
+                continue
+            if process["ppid"] in owned_pids or any(
+                child["ppid"] == process["pid"] and child["pid"] in owned_pids
+                for child in candidates
+            ):
+                owned_pids.add(process["pid"])
+                changed = True
+
+    return [process for process in candidates if process["pid"] in owned_pids]
+
+
 def _processes() -> list[dict[str, str]]:
+    repository_roots = _repository_roots()
     result = subprocess.run(
         ["ps", "-axo", "pid=,ppid=,command="],
         cwd=ROOT,
         capture_output=True,
         text=True,
+        timeout=10,
         check=True,
     )
-    processes: list[dict[str, str]] = []
-    for line in result.stdout.splitlines():
-        fields = line.strip().split(None, 2)
-        if len(fields) != 3:
-            continue
-        pid, ppid, command = fields
-        tracked_tokens = (
-            "audit_coverage.py",
-            "pytest",
-            "make gate",
-            "test_hook_runtime.py",
-            "mypy",
-            "general_ludd.cli daemon",
-            "gunicorn",
-            "detect-secrets",
-            "multiprocessing",
-            "task_watchdog.py",
-            "agent_watchdog.py",
+    return _owned_processes_from_output(
+        result.stdout,
+        repository_roots=repository_roots,
+        resource_roots=_owned_resource_roots(repository_roots),
+    )
+
+
+def _render_process_table(processes: list[dict[str, str]]) -> str:
+    """Render a bounded, auditable human-readable process inventory."""
+
+    if not processes:
+        return "No matching project processes\n"
+    lines = [f"{'PID':>7} {'PPID':>7} {'TASK':<22} COMMAND"]
+    displayed = processes[:_PROCESS_DISPLAY_LIMIT]
+    for process in displayed:
+        command = process["command"]
+        if len(command) > _COMMAND_DISPLAY_LIMIT:
+            command = f"{command[: _COMMAND_DISPLAY_LIMIT - 3]}..."
+        lines.append(
+            f"{process['pid']:>7} {process['ppid']:>7} "
+            f"{process['task']:<22} {command}"
         )
-        if any(token in command for token in tracked_tokens):
-            processes.append({"pid": pid, "ppid": ppid, "command": command, "task": _task_label(command)})
-    return processes
+    remaining = len(processes) - len(displayed)
+    if remaining:
+        lines.append(f"... {remaining} additional owned processes not displayed")
+    return "\n".join(lines) + "\n"
 
 
 def _workstreams(processes: list[dict[str, str]]) -> dict[str, dict[str, object]]:
@@ -99,7 +256,10 @@ def _workstreams(processes: list[dict[str, str]]) -> dict[str, dict[str, object]
     for process in processes:
         task = process["task"]
         stream = streams.setdefault(task, {"process_count": 0, "pids": []})
-        stream["process_count"] = int(stream["process_count"]) + 1
+        process_count = stream["process_count"]
+        if not isinstance(process_count, int):
+            raise TypeError("workstream process_count must be an integer")
+        stream["process_count"] = process_count + 1
         pids = stream["pids"]
         if isinstance(pids, list):
             pids.append(process["pid"])
@@ -226,6 +386,9 @@ def _resource_observability(processes: list[dict[str, str]]) -> dict[str, object
     limit = _worker_limit()
     root = resource_root(ROOT)
     accounting = _worker_accounting(processes, root.name)
+    leased_worker_count = accounting["leased_worker_count"]
+    if not isinstance(leased_worker_count, int):
+        raise TypeError("leased_worker_count must be an integer")
     lease_owner = f"pid:{os.getpid()}"
     lease_inventory = [
         {
@@ -241,7 +404,7 @@ def _resource_observability(processes: list[dict[str, str]]) -> dict[str, object
         "lease_owner": lease_owner,
         "leases": [str(resource_path(name, ROOT)) for name in _RESOURCE_LEASES],
         "lease_inventory": lease_inventory,
-        "worker_count": min(int(accounting["leased_worker_count"]), limit),
+        "worker_count": min(leased_worker_count, limit),
         "worker_limit": limit,
         **accounting,
     }
@@ -272,5 +435,26 @@ def collect_status() -> dict[str, object]:
     }
 
 
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--process-table",
+        action="store_true",
+        help="print the repository-owned process inventory instead of JSON",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Emit the JSON status or the shared human-readable process view."""
+
+    args = _parser().parse_args(argv)
+    if args.process_table:
+        print(_render_process_table(_processes()), end="")
+    else:
+        print(json.dumps(collect_status(), sort_keys=True))
+    return 0
+
+
 if __name__ == "__main__":
-    print(json.dumps(collect_status(), sort_keys=True))
+    raise SystemExit(main())

@@ -552,6 +552,11 @@
       "behavior": "make active-work-status"
     },
     {
+      "name": "ps",
+      "make_variables": [],
+      "behavior": "make ps"
+    },
+    {
       "name": "clean",
       "make_variables": ["CLEAN_VALIDATE_ONLY"],
       "behavior": "make clean CLEAN_VALIDATE_ONLY=1"
