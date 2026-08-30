@@ -581,3 +581,14 @@ def test_secrets_filter_excludes_only_generated_ownership_inventory() -> None:
         re.search(pattern, "config/unrelated_inventory.json")
         for pattern in patterns
     )
+
+
+def test_secrets_baseline_regeneration_preserves_exact_inventory_filter() -> None:
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+
+    assert (
+        "SECRETS_EXCLUDE_FILES ?= "
+        "sandboxcom_github_rsa|sandboxcom_github_rsa.pub|"
+        r"^config/resource_ownership_inventory\.json$"
+    ) in makefile
+    assert makefile.count("--exclude-files '$(SECRETS_EXCLUDE_FILES)'") == 2

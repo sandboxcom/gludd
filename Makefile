@@ -703,6 +703,7 @@ COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO ?= 0
 RESOURCE_OWNERSHIP_ROOT ?= .
 RESOURCE_OWNERSHIP_PATHS ?= src/general_ludd scripts
 RESOURCE_OWNERSHIP_INVENTORY ?= config/resource_ownership_inventory.json
+SECRETS_EXCLUDE_FILES ?= sandboxcom_github_rsa|sandboxcom_github_rsa.pub|^config/resource_ownership_inventory\.json$$
 RESOURCE_OWNERSHIP_WRITE ?= 0
 
 validate-ansible-runtime-boundary:
@@ -3418,7 +3419,7 @@ floor-plan:
 
 scan-secrets-baseline:
 	@echo "[scan-secrets-baseline] scanning tracked files with detect-secrets (no per-file stream; typically 30-90s on this repo)..."
-	@$(UV) run detect-secrets scan --exclude-files 'sandboxcom_github_rsa|sandboxcom_github_rsa.pub' > .secrets.baseline.tmp
+	@$(UV) run detect-secrets scan --exclude-files '$(SECRETS_EXCLUDE_FILES)' > .secrets.baseline.tmp
 	@$(PYTHON) -c "import json; d=json.load(open('.secrets.baseline.tmp')); print('[scan-secrets-baseline] OK: valid JSON, %d files carry flagged (baselined) secrets' % len(d.get('results', {})))"
 	@mv -f .secrets.baseline.tmp .secrets.baseline
 	@echo "[scan-secrets-baseline] wrote .secrets.baseline ($$(wc -c < .secrets.baseline | tr -d ' ') bytes) -- stage it with: make git-add FILES='.secrets.baseline'"
@@ -5004,7 +5005,7 @@ verify-secrets-safe:
 # secrets-baseline: rebuild the .secrets.baseline
 secrets-baseline:
 	@echo "[secrets-baseline] scanning tracked files with detect-secrets (typically 30-90s on this repo)..."
-	@$(UV) run detect-secrets scan --exclude-files 'sandboxcom_github_rsa|sandboxcom_github_rsa.pub' > .secrets.baseline.tmp
+	@$(UV) run detect-secrets scan --exclude-files '$(SECRETS_EXCLUDE_FILES)' > .secrets.baseline.tmp
 	@$(PYTHON) -c "import json; d=json.load(open('.secrets.baseline.tmp')); print('[secrets-baseline] OK: valid JSON, %d files carry flagged (baselined) secrets' % len(d.get('results', {})))"
 	@mv -f .secrets.baseline.tmp .secrets.baseline
 	@echo "[secrets-baseline] wrote .secrets.baseline ($$(wc -c < .secrets.baseline | tr -d ' ') bytes)"

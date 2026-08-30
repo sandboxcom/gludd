@@ -340,6 +340,15 @@ exclusions. Reviewed on 2026-08-24, Gludd therefore excludes only the anchored
 does not match a sibling inventory, and the full secret scan remains green;
 source files represented by the inventory continue to be scanned normally.
 
+The 2026-08-30 exact-SHA local lane found that the committed baseline had lost
+that exclusion even though the ownership contract still required it. The cause
+was updater drift: `scan-secrets-baseline` and `secrets-baseline` each carried a
+separate hard-coded filter instead of consuming the ownership policy. Both
+targets now use one `SECRETS_EXCLUDE_FILES` value, and the ownership regression
+pins both updater call sites as well as the generated JSON. Regenerating the
+baseline is therefore the behavioral test for the updater itself; a future
+inventory rename or filter change cannot silently leave the static check behind.
+
 ## Verification and resources
 
 The focused matrix runs one deterministic authentication/readiness test in both
