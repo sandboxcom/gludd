@@ -4417,6 +4417,11 @@ gate-release-phases:
 	for scenario_dir in molecule/playbooks/*/; do \
 		[ -d "$$scenario_dir" ] || continue; \
 		SCENARIOS=$$((SCENARIOS + 1)); SCENARIO=$$(basename "$$scenario_dir"); \
+		if [ "$$SCENARIO" = "binary_smoke_macos" ]; then \
+			run_command macos-artifact $(GATE_RELEASE_MAKE) build-executable; RC=$$?; \
+			if [ "$$RC" -ne 0 ]; then fail_release macos-artifact "$$RC"; exit "$$RC"; fi; \
+			printf '%s\n' 'macos-artifact PASS 0' >> "$(GATE_STATUS_FILE)"; \
+		fi; \
 		run_command molecule $(GATE_RELEASE_MAKE) molecule-test SCENARIO="$$SCENARIO"; RC=$$?; \
 		if [ "$$RC" -ne 0 ]; then fail_release molecule "$$RC"; exit "$$RC"; fi; \
 	done; \

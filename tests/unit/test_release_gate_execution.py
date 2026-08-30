@@ -178,6 +178,19 @@ def test_release_phases_stream_live_output_and_record_terminal_success(
     assert "=== GATE: FAILED ===" not in status
 
 
+def test_release_phases_build_native_macos_artifact_before_smoke(
+    tmp_path: Path,
+) -> None:
+    """The unpublished candidate must be built before its macOS smoke runs."""
+    result, _status, calls = _run_release_phases(tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    call_lines = calls.splitlines()
+    build_index = call_lines.index("build-executable")
+    smoke_index = call_lines.index("molecule-test SCENARIO=binary_smoke_macos")
+    assert build_index < smoke_index
+
+
 @pytest.mark.parametrize(
     ("fail_match", "failed_phase", "not_called"),
     [

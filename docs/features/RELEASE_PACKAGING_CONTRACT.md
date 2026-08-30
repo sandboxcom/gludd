@@ -28,6 +28,9 @@ commit without borrowing files from another branch or a local scratch path.
   entries were regenerated consistently.
 - Build trees and temporary paths remain checkout-namespaced. Parallel projects
   must not share RPM, NSIS, PyInstaller, or checksum state.
+- The release gate builds the native macOS executable from the candidate commit
+  immediately before `binary_smoke_macos`. The smoke must not borrow a prior
+  GitHub release asset, and a Linux artifact cannot satisfy the macOS input.
 - The OCI image runs one foreground Gunicorn tree under Tini, binds container
   port 8000, and routes access, error, and captured application output to
   container stdio. CI checks container state on every health attempt and prints
@@ -60,6 +63,16 @@ retention and storage behavior. Gludd treats that transport as untrusted input:
 post-download validation checks package-internal identity as well as the release
 manifest and digest, so a coherent rename cannot silently become a different
 release payload.
+
+The 2026-08-30 full-gate replay exposed the same identity problem one stage
+earlier: `binary_smoke_linux` correctly built `dist/linux/gludd`, but the next
+macOS scenario looked only for `dist/gludd` and then offered to download the
+latest published release. That could not test an unpublished beta4 candidate
+and failed closed when no native input existed. The release gate now invokes
+the canonical native build target before the macOS scenario, and a regression
+pins build-before-smoke ordering. This reuses the candidate checkout and keeps
+the transport concerns documented in upload-artifact #290 outside local smoke
+identity.
 
 Gunicorn issue
 [#1184](https://github.com/benoitc/gunicorn/issues/1184), opened in January
