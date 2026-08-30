@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,10 +12,15 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import release_readiness as rr  # type: ignore[import-not-found]  # noqa: E402
+import release_readiness as rr  # noqa: E402
 
 
-def _completed(argv, stdout="", stderr="", returncode=0):
+def _completed(
+    argv: Sequence[str],
+    stdout: str = "",
+    stderr: str = "",
+    returncode: int = 0,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(list(argv), returncode, stdout, stderr)
 
 
@@ -40,7 +46,9 @@ def test_unmanaged_local_inference_detection_requires_daemon_ancestor() -> None:
         "  103     1 /usr/bin/python unrelated.py\n"
     )
 
-    def run(argv, cwd=None):
+    def run(
+        argv: Sequence[str], cwd: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
         assert list(argv) == ["ps", "-ax", "-o", "pid=,ppid=,command="]
         return _completed(argv, process_table)
 
@@ -53,7 +61,9 @@ def test_unmanaged_local_inference_detection_requires_daemon_ancestor() -> None:
     ]
 
 
-def test_main_emits_machine_readable_diagnostics(monkeypatch, capsys) -> None:
+def test_main_emits_machine_readable_diagnostics(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     blocked = rr.Readiness(head="abc123", errors=["CI evidence is not a successful run"])
     monkeypatch.setattr(rr, "assess", lambda **_: blocked)
 
@@ -70,7 +80,9 @@ def test_detached_worktree_detection_reuses_porcelain_parser(tmp_path: Path) -> 
         f"worktree {tmp_path / 'detached'}\nHEAD detached\ndetached\n"
     )
 
-    def run(argv, cwd=None):
+    def run(
+        argv: Sequence[str], cwd: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
         args = list(argv)
         if args == ["git", "worktree", "list", "--porcelain"]:
             return _completed(args, porcelain)
@@ -82,8 +94,10 @@ def test_detached_worktree_detection_reuses_porcelain_parser(tmp_path: Path) -> 
     assert detached == [{"path": str(tmp_path / "detached"), "head": "detached"}]
 
 
-def test_assess_passes_when_all_release_evidence_is_present(monkeypatch, tmp_path: Path) -> None:
-    import workflow_state_guard  # type: ignore[import-not-found]
+def test_assess_passes_when_all_release_evidence_is_present(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import workflow_state_guard
 
     state = SimpleNamespace(
         branch="development",
@@ -104,7 +118,9 @@ def test_assess_passes_when_all_release_evidence_is_present(monkeypatch, tmp_pat
     assert result.head == "abc123"
 
 
-def test_assess_fails_closed_for_dirty_and_unintegrated_state(monkeypatch, tmp_path: Path) -> None:
+def test_assess_fails_closed_for_dirty_and_unintegrated_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     import workflow_state_guard
 
     state = SimpleNamespace(
@@ -127,17 +143,27 @@ def test_assess_fails_closed_for_dirty_and_unintegrated_state(monkeypatch, tmp_p
     assert any("unintegrated" in error for error in result.errors)
 
 
-def test_incomplete_tasks_uses_beta4_session_and_excludes_release_action(tmp_path: Path) -> None:
+def test_incomplete_tasks_uses_current_policy_and_excludes_release_action(tmp_path: Path) -> None:
+    tag = rr.DEFAULT_RELEASE_TAG
+    prefix = rr.RELEASE_TASK_PREFIXES[tag][0]
+    release_action = next(iter(rr.RELEASE_ACTION_TASKS[tag]))
+    pending_task = f"{prefix}997"
+    completed_task = f"{prefix}996"
     (tmp_path / "TASKS.md").write_text(
         "## Current Session\n"
-        "- [ ] S86.5 — build beta4 artifacts\n"
-        "- [x] S86.9 — local model certified\n"
-        "- [ ] S86.10 — perform the release after readiness\n"
+        f"- [ ] {pending_task} — build release artifacts\n"
+        f"- [x] {completed_task} — local model certified\n"
+        f"- [ ] {release_action} — perform the release after readiness\n"
         "- [ ] T-BETA3-RELEASE — obsolete beta3 task\n"
         "- [ ] OTHER-1 — unrelated\n",
         encoding="utf-8",
     )
-    assert rr._incomplete_tasks(tmp_path, tag="v0.1.0-beta.4") == ["S86.5"]
+    assert rr._incomplete_tasks(tmp_path, tag=tag) == [pending_task]
+
+
+def test_incomplete_tasks_fails_closed_without_task_ledger(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match=r"TASKS\.md is missing"):
+        rr._incomplete_tasks(tmp_path)
 
 
 def test_release_eta_uses_gludd_calibration_and_parallel_critical_path() -> None:
@@ -193,10 +219,12 @@ def test_release_eta_rejects_invalid_stage_evidence(
         )
 
 
-def test_readiness_main_validate_only_emits_beta4_eta(capsys) -> None:
-    assert rr.main(["--tag", "v0.1.0-beta.4", "--validate-only"]) == 0
+def test_readiness_main_validate_only_emits_current_release_eta(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert rr.main(["--tag", rr.DEFAULT_RELEASE_TAG, "--validate-only"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["tag"] == "v0.1.0-beta.4"
+    assert payload["tag"] == rr.DEFAULT_RELEASE_TAG
     assert payload["validate_only"] is True
     assert payload["estimate"]["p50_minutes"] > 0
 
@@ -205,9 +233,21 @@ def test_readiness_main_validate_only_emits_beta4_eta(capsys) -> None:
     "argv",
     [
         ["--tag", "v0.1.0-beta.3", "--validate-only"],
-        ["--tag", "v0.1.0-beta.4", "--observations", "broken", "--validate-only"],
-        ["--tag", "v0.1.0-beta.4", "--observations", "hosted_ci=nope", "--validate-only"],
-        ["--tag", "v0.1.0-beta.4", "--completed-stages", "unknown", "--validate-only"],
+        ["--tag", rr.DEFAULT_RELEASE_TAG, "--observations", "broken", "--validate-only"],
+        [
+            "--tag",
+            rr.DEFAULT_RELEASE_TAG,
+            "--observations",
+            "hosted_ci=nope",
+            "--validate-only",
+        ],
+        [
+            "--tag",
+            rr.DEFAULT_RELEASE_TAG,
+            "--completed-stages",
+            "unknown",
+            "--validate-only",
+        ],
     ],
 )
 def test_readiness_cli_rejects_invalid_estimation_evidence(argv: list[str]) -> None:

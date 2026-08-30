@@ -39,8 +39,9 @@ from general_ludd.review.estimation_tracker import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-RELEASE_TASK_PREFIXES = {"v0.1.0-beta.4": ("S86.",)}
-RELEASE_ACTION_TASKS = {"v0.1.0-beta.4": frozenset({"S86.10"})}
+DEFAULT_RELEASE_TAG = "v0.1.0-beta.4"
+RELEASE_TASK_PREFIXES = {DEFAULT_RELEASE_TAG: ("S86.",)}
+RELEASE_ACTION_TASKS = {DEFAULT_RELEASE_TAG: frozenset({"S86.10"})}
 _TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+\Z")
 
 RELEASE_STAGE_BASELINES = {
@@ -306,7 +307,7 @@ def _unmanaged_local_inference_processes(
     return unmanaged
 
 
-def _incomplete_tasks(root: Path, tag: str = "v0.1.0-beta.4") -> list[str]:
+def _incomplete_tasks(root: Path, tag: str = DEFAULT_RELEASE_TAG) -> list[str]:
     extract_tasks = cast(
         "Callable[[Path], tuple[list[dict[str, object]], list[dict[str, object]]]]",
         importlib.import_module("validate_task_ledger").extract_tasks,
@@ -340,7 +341,7 @@ def assess(
     root: Path = ROOT,
     run: RunFn = _run,
     gha_head_sha: str = "",
-    tag: str = "v0.1.0-beta.4",
+    tag: str = DEFAULT_RELEASE_TAG,
 ) -> Readiness:
     """Collect all release evidence without mutating the repository."""
     result = Readiness()
@@ -434,7 +435,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gha-head-sha", default="", help="expected CI HEAD SHA")
     parser.add_argument("--root", default=str(ROOT), help="explicit repository worktree root")
-    parser.add_argument("--tag", default="v0.1.0-beta.4", help="target prerelease tag")
+    parser.add_argument("--tag", default=DEFAULT_RELEASE_TAG, help="target prerelease tag")
     parser.add_argument(
         "--validate-only",
         action="store_true",
