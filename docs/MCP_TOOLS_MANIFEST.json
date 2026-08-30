@@ -969,6 +969,81 @@
     "server_id": "ansible"
   },
   {
+    "name": "general_ludd.agent.gludd_local_model",
+    "description": "Manage a daemon-owned local inference lifecycle — Delegates download, serve, consume, and shutdown to the Gludd daemon. Never installs packages or launches a model process inside the collection. The daemon LocalInferenceManager owns process groups, diagnostics, and teardown.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://127.0.0.1:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 180
+        },
+        "model_id": {
+          "type": "string",
+          "default": ""
+        },
+        "model_path": {
+          "type": "string",
+          "default": ""
+        },
+        "filename": {
+          "type": "string",
+          "default": ""
+        },
+        "source": {
+          "type": "string",
+          "default": "huggingface"
+        },
+        "server_id": {
+          "type": "string",
+          "default": ""
+        },
+        "prompt": {
+          "type": "string",
+          "default": ""
+        },
+        "max_tokens": {
+          "type": "integer",
+          "default": 1024
+        },
+        "host": {
+          "type": "string",
+          "default": "127.0.0.1"
+        },
+        "port": {
+          "type": "integer",
+          "default": 9999
+        },
+        "startup_timeout": {
+          "type": "integer",
+          "default": 120
+        },
+        "gpu_layers": {
+          "type": "integer",
+          "default": 0
+        },
+        "context_size": {
+          "type": "integer",
+          "default": 2048
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
     "name": "general_ludd.agent.gludd_make",
     "description": "Run a make target via the MakeRunner abstraction — Runs a C(make) target through the C(MakeRunner) subprocess wrapper with proper sanitized environment, bounded output capture, and per-target timeout. Supports both blocking and streaming modes. Returns structured result (rc, stdout_tail, stderr_tail, success, phases).",
     "input_schema": {
@@ -1367,8 +1442,7 @@
           "default": ""
         },
         "daemon_url": {
-          "type": "string",
-          "default": "http://localhost:8000"
+          "type": "string"
         },
         "psk": {
           "type": "string",

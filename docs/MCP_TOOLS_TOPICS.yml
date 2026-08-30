@@ -1321,6 +1321,91 @@ general_ludd.agent.gludd_langgraph_workflow:
       returned: success
       type: list
   module: gludd_langgraph_workflow
+general_ludd.agent.gludd_local_model:
+  DOCUMENTATION:
+    description:
+    - Delegates download, serve, consume, and shutdown to the Gludd daemon.
+    - Never installs packages or launches a model process inside the collection.
+    - The daemon LocalInferenceManager owns process groups, diagnostics, and teardown.
+    module: gludd_local_model
+    options:
+      action:
+        choices:
+        - download
+        - serve
+        - consume
+        - shutdown
+        required: true
+        type: str
+      context_size:
+        default: 2048
+        type: int
+      daemon_url:
+        default: http://127.0.0.1:8000
+        type: str
+      filename:
+        default: ''
+        type: str
+      gpu_layers:
+        default: 0
+        type: int
+      host:
+        default: 127.0.0.1
+        type: str
+      max_tokens:
+        default: 1024
+        type: int
+      model_id:
+        default: ''
+        type: str
+      model_path:
+        default: ''
+        type: str
+      port:
+        default: 9999
+        type: int
+      prompt:
+        default: ''
+        type: str
+      psk:
+        default: ''
+        no_log: true
+        type: str
+      server_id:
+        default: ''
+        type: str
+      source:
+        default: huggingface
+        type: str
+      startup_timeout:
+        default: 120
+        type: int
+      timeout:
+        default: 180
+        type: int
+    short_description: Manage a daemon-owned local inference lifecycle
+  EXAMPLES:
+  - general_ludd.agent.gludd_local_model:
+      action: serve
+      model_id: bartowski/Qwen2.5-0.5B-Instruct-GGUF
+      model_path: /srv/models/qwen.gguf
+      startup_timeout: 120
+    name: Start a daemon-owned local model
+    register: local_model
+  RETURN:
+    local_path:
+      description: Downloaded model path.
+      returned: download
+      type: str
+    server_id:
+      description: Daemon-issued server identifier.
+      returned: serve, consume, shutdown
+      type: str
+    text:
+      description: Generated text.
+      returned: consume
+      type: str
+  module: gludd_local_model
 general_ludd.agent.gludd_make:
   DOCUMENTATION:
     description:
@@ -2110,7 +2195,9 @@ general_ludd.agent.gludd_osquery:
     options:
       daemon_url:
         default: http://localhost:8000
-        description: Base URL of the daemon (reserved for future remote resolution).
+        description:
+        - Reserved for future controller-backed resolution.
+        - Non-default values emit a warning and are not used on the managed host.
         type: str
       osquery_path:
         default: ''
@@ -2120,7 +2207,9 @@ general_ludd.agent.gludd_osquery:
         type: str
       psk:
         default: ''
-        description: Pre-shared key for daemon auth.
+        description:
+        - Reserved pre-shared key for future daemon auth.
+        - Non-empty values emit a warning and are not used on the managed host.
         no_log: true
         type: str
       query:
