@@ -6,8 +6,18 @@ from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import httpx
+import pytest
 
 from general_ludd.events.hooks import HookSystem
+
+
+@pytest.fixture(autouse=True)
+def _isolate_webhook_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep hook tests hermetic while dedicated SSRF tests exercise DNS policy."""
+    monkeypatch.setattr(
+        "general_ludd.events.hooks.resolve_and_pin",
+        lambda _host, *, port=443, timeout=2.0: None,
+    )
 
 # ---------------------------------------------------------------------------
 # Helpers — fake httpx.AsyncClient for use in tests
