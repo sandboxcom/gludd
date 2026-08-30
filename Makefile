@@ -8868,17 +8868,16 @@ mkdir-p:
 
 
 replace-lines:
-	@[ -n "/tmp/gludd-replace-lines-atomic.txt" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
-	@[ -n "" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
-	@[ -n "" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
-	@[ -n "" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
-	@TMP=$(mktemp /tmp/gludd-replace.XXXXXX); \
-	cp "/tmp/gludd-replace-lines-atomic.txt" "$TMP"; \
-	python3 scripts/replace_lines.py "$TMP" "" "" ""; \
-	if python3 -c "import yaml" 2>/dev/null; then \
-		python3 -m yaml "$TMP" > /dev/null 2>&1 || { echo "ERROR: yaml validation failed for $TMP"; rm -f "$TMP"; exit 1; }; \
-	fi; \
-	mv "$TMP" "/tmp/gludd-replace-lines-atomic.txt"
+	@[ -n "$(FILE)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@[ -n "$(START)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@[ -n "$(END)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@[ -n "$(NEW_FILE)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@TMP=$$(mktemp "$(FILE).replace.XXXXXX"); \
+	trap 'rm -f "$$TMP"' EXIT INT TERM; \
+	cp "$(FILE)" "$$TMP"; \
+	$(PYTHON) scripts/replace_lines.py "$$TMP" "$(START)" "$(END)" "$(NEW_FILE)"; \
+	mv "$$TMP" "$(FILE)"; \
+	trap - EXIT INT TERM
 
 gate-all-background:
 	@mkdir -p .gate-logs; \
