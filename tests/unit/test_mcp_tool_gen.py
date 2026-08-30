@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 from types import ModuleType
 
@@ -41,6 +42,7 @@ def _load(name: str) -> ModuleType:
 
 gen = _load("gen_mcp_tools")
 docs_check = _load("mcp_docs_check")
+ref_gen = _load("gen_mcp_tool_reference_md")
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +276,87 @@ def test_docs_check_main_exit_codes(
     bad = tmp_path / "gludd_bad.py"
     bad.write_text("def main():\n    pass\n", encoding="utf-8")
     assert docs_check.main([]) == 1
+
+
+# ---------------------------------------------------------------------------
+# reference artifact validity
+# ---------------------------------------------------------------------------
+def test_reference_generator_emits_no_trailing_whitespace(tmp_path: Path) -> None:
+    content = ref_gen.generate(tmp_path / "MCP_TOOL_REFERENCE.md")
+    violations = [line for line in content.splitlines() if line != line.rstrip()]
+    assert violations == []
+
+
+def test_reference_generate_rejects_non_array_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(ref_gen, "MANIFEST_PATH", manifest)
+
+    with pytest.raises(SystemExit, match="not a JSON array"):
+        ref_gen.generate(tmp_path / "reference.md")
+
+
+def test_reference_generate_uses_unknown_when_git_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(ref_gen, "MANIFEST_PATH", manifest)
+
+    def missing_git(*args: object, **kwargs: object) -> str:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(ref_gen.subprocess, "check_output", missing_git)
+    content = ref_gen.generate(tmp_path / "reference.md")
+
+    assert "**Version:** `unknown`" in content
+
+
+def test_reference_check_stale_uses_both_artifact_mtimes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = tmp_path / "manifest.json"
+    reference = tmp_path / "reference.md"
+    monkeypatch.setattr(ref_gen, "MANIFEST_PATH", manifest)
+    monkeypatch.setattr(ref_gen, "OUTPUT_PATH", reference)
+
+    assert ref_gen.check_stale() is True
+    reference.write_text("# Reference\n", encoding="utf-8")
+    assert ref_gen.check_stale() is False
+
+    manifest.write_text("[]", encoding="utf-8")
+    os.utime(reference, (1, 1))
+    os.utime(manifest, (2, 2))
+    assert ref_gen.check_stale() is True
+
+    os.utime(reference, (3, 3))
+    assert ref_gen.check_stale() is False
+
+
+def test_reference_main_check_and_generation_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    manifest = tmp_path / "manifest.json"
+    reference = tmp_path / "reference.md"
+    manifest.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(ref_gen, "MANIFEST_PATH", manifest)
+    monkeypatch.setattr(ref_gen, "OUTPUT_PATH", reference)
+
+    assert ref_gen.main(["ref-gen", "--check"]) == 1
+    assert "STALE" in capsys.readouterr().err
+
+    assert ref_gen.main(["ref-gen"]) == 0
+    assert reference.exists()
+    assert ref_gen.main(["ref-gen", "--check"]) == 0
+    assert "current" in capsys.readouterr().out
+
+    manifest.write_text("{", encoding="utf-8")
+    assert ref_gen.main(["ref-gen"]) == 1
+    assert "ERROR:" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------
