@@ -49,6 +49,8 @@ def test_process_labels_separate_test_workstreams() -> None:
         ("python scripts/audit_coverage.py", "coverage-audit"),
         ("detect-secrets scan", "coverage-audit-support"),
         ("python -c from multiprocessing.resource_tracker import main", "python-worker"),
+        ("python -m llama_cpp.server --port 12001", "local-inference"),
+        ("llama-server --model model.gguf", "local-inference"),
         ("python scripts/test_hook_runtime.py", "hook-runtime"),
         ("python scripts/adaptive_test.py", "test-supervisor"),
         ("make gate", "gate-refresh"),
@@ -106,6 +108,27 @@ def test_owned_process_inventory_uses_path_boundaries() -> None:
     )
 
     assert processes == []
+
+
+def test_owned_process_inventory_surfaces_pathless_local_inference_servers() -> None:
+    """Orphaned model servers remain visible even after losing their worktree path."""
+
+    process_table = "\n".join(
+        (
+            "46215 1 /usr/bin/python -m llama_cpp.server --port 9999",
+            "46216 1 llama-server --model /models/qwen.gguf",
+            "46217 1 /repo/other/.venv/bin/python -m pytest tests/unit/test_other.py",
+        )
+    )
+
+    processes = active_work_status._owned_processes_from_output(
+        process_table,
+        repository_roots=(Path("/repo/gludd"),),
+        resource_roots=(Path("/tmp/gludd-resources/gludd-a1b2"),),
+    )
+
+    assert [process["pid"] for process in processes] == ["46215", "46216"]
+    assert {process["task"] for process in processes} == {"local-inference"}
 
 
 def test_owned_process_inventory_keeps_tracked_supervisor_tree() -> None:

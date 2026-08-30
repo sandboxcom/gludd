@@ -45,6 +45,7 @@ _WORKER_TASKS = frozenset(
 _SINGLETON_WORKER_LEASES = frozenset({"gate-refresh"})
 _PROCESS_DISPLAY_LIMIT = 512
 _COMMAND_DISPLAY_LIMIT = 240
+_LOCAL_INFERENCE_PROCESS_TOKENS = ("llama_cpp.server", "llama-server")
 _TRACKED_PROCESS_TOKENS = (
     "adaptive_test.py",
     "agent_watchdog.py",
@@ -52,6 +53,7 @@ _TRACKED_PROCESS_TOKENS = (
     "detect-secrets",
     "general_ludd.cli daemon",
     "gunicorn",
+    *_LOCAL_INFERENCE_PROCESS_TOKENS,
     "make gate",
     "multiprocessing",
     "mypy",
@@ -74,6 +76,8 @@ def _task_label(command: str) -> str:
         return "coverage-audit-support"
     if "multiprocessing" in command:
         return "python-worker"
+    if any(token in command for token in _LOCAL_INFERENCE_PROCESS_TOKENS):
+        return "local-inference"
     if "test_hook_runtime.py" in command:
         return "hook-runtime"
     if any(
@@ -192,6 +196,9 @@ def _owned_processes_from_output(
         process["pid"]
         for process in candidates
         if any(_command_mentions_path(process["command"], root) for root in ownership_roots)
+        or any(
+            token in process["command"] for token in _LOCAL_INFERENCE_PROCESS_TOKENS
+        )
     }
 
     # A controller may have a relative argv while its interpreter-backed child

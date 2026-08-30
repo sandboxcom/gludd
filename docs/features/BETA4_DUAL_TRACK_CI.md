@@ -1961,3 +1961,23 @@ cleanup do not restart the daemon or modify a serving deployment. Rollback
 removes the readiness rule together with its regression; it never revives an
 orphaned model process. Resource use remains bounded to one process-table
 snapshot and ancestor walk per release preflight.
+
+On 2026-08-30 the final local producer caught a static-contract drift after
+`make ps` was refactored to delegate to the shared cross-worktree inventory.
+The old test still searched the Make recipe for both llama.cpp executable names,
+while the new classifier had not carried those names forward. The repair makes
+`active_work_status.py` the single source of truth, recognizes both
+`llama_cpp.server` and `llama-server`, labels them `local-inference`, and admits
+them to the audit even after an orphan loses every checkout/resource-root path.
+Behavioral tests now feed pathless server processes through that classifier;
+the Make-level test verifies only delegation, so future implementation moves do
+not duplicate the token list. The local candidate failed closed before tagging,
+so ZDD and rollback remain unchanged and no cleanup task or live deployment
+mutation was needed.
+
+This conservative visibility also reflects the practitioner report in
+[llama.cpp issue #20921](https://github.com/ggml-org/llama.cpp/issues/20921),
+reviewed 2026-08-30, where a server could not be stopped gracefully and required
+forced termination. Gludd does not infer ownership from process survival or a
+missing path: it first makes the process visible, then applies the existing
+daemon-ancestor and identity checks before any bounded TERM-to-KILL cleanup.
