@@ -129,6 +129,33 @@ state. The merge allocates one detached user graph plus copied project replaceme
 does no I/O, and starts no processes; CPU and peak memory remain linear in the
 already-loaded configuration size.
 
+### Property-generator resource boundary
+
+Verified on 2026-08-29. The merge algebra tests retain 200 generated examples and
+the complete scalar/key domains, while recursive configuration values now have an
+explicit budget: four root keys and eight scalar leaves per value, for at most 32
+leaves in one generated config. A property test enforces that arithmetic directly.
+No Hypothesis health check is suppressed, so later strategy drift remains visible.
+
+Upstream and practitioner evidence reviewed on 2026-08-29:
+
+- Hypothesis's [recursive-strategy reference](https://hypothesis.readthedocs.io/en/latest/reference/strategies.html#hypothesis.strategies.recursive)
+  defines `max_leaves` as the per-run bound on values drawn from the base strategy
+  and documents recursion-aware shrinking. Gludd uses that maintained primitive
+  instead of rebuilding an exponentially branching deferred strategy.
+- A [Hypothesis user report opened 2019-11-08](https://github.com/HypothesisWorks/hypothesis/issues/2195)
+  records the same `FailedHealthCheck` for slow generation; its diagnostic directs
+  users to decrease generated size with `max_size` or `max_leaves`.
+- In a [practitioner question from 2018-09-25](https://stackoverflow.com/questions/52503486/suppressing-healthcheck-too-slow-for-a-composite-hypothesis-strategy),
+  a Hypothesis maintainer recommends optimizing a known-slow strategy before
+  suppressing the health check. This change keeps the health check active.
+
+This test-only bound does not alter `merge_config()` or deployed configuration
+semantics, so rollout and rollback require no service restart, schema migration, or
+state conversion. It reduces CPU, peak generated-object memory, and shrink work for
+local and hosted gates. Reverting restores only the previous test generator; active
+configuration snapshots and ZDD behavior remain unchanged.
+
 ## Agent-config permission boundary
 
 Implemented and verified on 2026-08-25. The project-local
