@@ -38,6 +38,27 @@ adjudicated in `[tool.deptry.per_rule_ignores]`. The observability extra now
 directly declares `opentelemetry-proto`, whose modules are imported by the
 receiver.
 
+## Exact core ownership inventory (2026-08-29)
+
+The beta4 ownership replay now complements deptry with
+`config/core-python-dependency-ownership.json`. The focused unit contract
+mechanically enumerates every PEP 621 core dependency, parses production AST
+imports under `src/general_ludd` and `collections/ansible_collections`, and
+compares collection execution-environment requirement manifests. Collection
+test imports are deliberately excluded because they prove development usage,
+not controller or managed-host runtime ownership. Any added, removed, moved, or
+stale consumer therefore makes the normal unit suite fail with an exact path
+diff.
+
+The replay found no additional package that can safely leave the core lock.
+Every direct dependency has at least one static core production consumer except
+four exact runtime-selected dependencies: `aiosqlite` is named by the default
+SQLAlchemy URL, `langchain-openai` by the default provider registry, `msgpack`
+by the safe-cache importlib seam, and `uvicorn-worker` by Gunicorn's worker-class
+string. Those four references are pinned by path and token rather than hidden
+behind a broad unused-dependency allowlist. Because all packages remain proven
+core requirements, `pyproject.toml` and `uv.lock` are intentionally unchanged.
+
 ## Dynamic and entrypoint adjudications
 
 The narrow DEP002 list is not a blanket rule suppression:
@@ -80,6 +101,16 @@ dependency into a permanent audit exception.
   statically auditable guarded import instead of adding a custom scanner or a
   Hindsight suppression.
 
+The sources were revalidated on 2026-08-29. The upstream deptry reference still
+states that it derives dependency truth by comparing declared packages with
+Python imports and supports explicit distribution-to-module mappings. Poetry
+issue #4135, opened in June 2021, records the long-lived practitioner need,
+Poetry maintainers' conclusion that source parsing belongs in a separate tool,
+and the later community recommendation of deptry. That division of
+responsibility is why Gludd retains deptry for general package truth and adds
+only a repository-specific exact ownership inventory for runtime-selected and
+collection-boundary evidence.
+
 ## Security, resources, and ZDD
 
 Optional adapters remain absent from the default environment, limiting attack
@@ -93,3 +124,8 @@ quality gates, not live workers, schemas, or network routes. A candidate artifac
 must pass deptry, lock integrity, license, vulnerability, test, and coverage
 checks before promotion. Existing workers keep their immutable environment until
 the new artifact is healthy; rollback selects the previous artifact and lock.
+The ownership replay is read-only, performs bounded single-process AST scans,
+and starts no daemons. Rolling it back removes the inventory, checker, and
+focused test together; it never mutates an installed environment or a managed
+host. Keeping the lock unchanged also avoids candidate churn and preserves the
+existing zero-downtime promotion and rollback artifact pair.
