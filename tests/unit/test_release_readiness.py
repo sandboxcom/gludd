@@ -72,6 +72,15 @@ def test_main_emits_machine_readable_diagnostics(
     assert payload["head"] == "abc123"
     assert payload["ready"] is False
     assert payload["exit_code"] == rr.EXIT_CI
+    assert payload["remediation"]["schema_version"] == 1
+    assert payload["remediation"]["recheck_argv"] == [
+        "make",
+        "release-readiness",
+        f"TAG={rr.DEFAULT_RELEASE_TAG}",
+        "RELEASE_READINESS_VALIDATE_ONLY=0",
+        "RELEASE_COMPLETED_STAGES=",
+        "RELEASE_OBSERVATIONS=",
+    ]
 
 
 def test_detached_worktree_detection_reuses_porcelain_parser(tmp_path: Path) -> None:
@@ -164,6 +173,80 @@ def test_incomplete_tasks_uses_current_policy_and_excludes_release_action(tmp_pa
 def test_incomplete_tasks_fails_closed_without_task_ledger(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match=r"TASKS\.md is missing"):
         rr._incomplete_tasks(tmp_path)
+
+
+def test_prunable_registration_remediation_is_owner_gated_and_validate_first() -> None:
+    result = rr.Readiness(
+        unintegrated_worktrees=[
+            {
+                "branch": "stale-feature",
+                "path": "/tmp/gludd-worktrees/stale-feature",
+                "reasons": ["prunable_registration"],
+            },
+            {
+                "branch": "dirty-feature",
+                "path": "/tmp/gludd-worktrees/dirty-feature",
+                "reasons": ["dirty"],
+            },
+        ]
+    )
+
+    plan = rr.build_remediation_plan(result, tag=rr.DEFAULT_RELEASE_TAG)
+
+    assert len(plan.steps) == 1
+    step = plan.steps[0]
+    assert step.code == "prunable_worktree_registration"
+    assert step.blockers == ("stale-feature@/tmp/gludd-worktrees/stale-feature",)
+    assert step.validate_argv == (
+        "make",
+        "wt-prune-safe",
+        "ACTIVE_WORKSTREAM_REGISTRY=",
+        "WT_PRUNE_VALIDATE_ONLY=1",
+    )
+    assert step.owner_release_argv == (
+        ("make", "workstream-unregister", "BRANCH=stale-feature"),
+    )
+    assert step.apply_argv is not None
+    assert step.apply_argv[-1] == "WT_PRUNE_VALIDATE_ONLY=0"
+    assert step.requires_owner_confirmation is True
+    assert result.ready is False
+
+
+def test_incomplete_release_task_remediation_never_mutates_the_ledger() -> None:
+    result = rr.Readiness(incomplete_release_tasks=["S86.2", "S86.1", "S86.2"])
+
+    plan = rr.build_remediation_plan(result, tag=rr.DEFAULT_RELEASE_TAG)
+
+    assert len(plan.steps) == 1
+    step = plan.steps[0]
+    assert step.code == "incomplete_release_tasks"
+    assert step.blockers == ("S86.1", "S86.2")
+    assert step.validate_argv == ("make", "validate-task-ledger")
+    assert step.owner_release_argv == ()
+    assert step.apply_argv is None
+    assert step.requires_owner_confirmation is True
+    assert "must not be checked merely to clear readiness" in step.resolution
+
+
+def test_nonprunable_worktree_never_receives_cleanup_instructions() -> None:
+    result = rr.Readiness(
+        unintegrated_worktrees=[
+            {
+                "branch": "valuable-feature",
+                "path": "/tmp/gludd-worktrees/valuable-feature",
+                "reasons": ["dirty", "head_not_merged"],
+            },
+            {
+                "branch": "ambiguous-feature",
+                "path": "/tmp/gludd-worktrees/ambiguous-feature",
+                "reasons": ["prunable_registration", "dirty"],
+            },
+        ]
+    )
+
+    assert rr.build_remediation_plan(
+        result, tag=rr.DEFAULT_RELEASE_TAG
+    ).steps == ()
 
 
 def test_release_eta_uses_gludd_calibration_and_parallel_critical_path() -> None:
@@ -293,6 +376,24 @@ def test_release_readiness_make_target_is_safe_and_contracted() -> None:
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(result.stdout)["estimate"]["p50_minutes"] == 200.0
+
+
+def test_readiness_remediation_documentation_pins_safe_operator_boundaries() -> None:
+    text = (ROOT / "docs" / "features" / "BETA4_DUAL_TRACK_CI.md").read_text(
+        encoding="utf-8"
+    )
+
+    for required in (
+        "Remediating release-readiness blockers",
+        "WT_PRUNE_VALIDATE_ONLY=1",
+        "requires_owner_confirmation",
+        "must not be checked merely to clear readiness",
+        "2017-01-09",
+        "zero-downtime",
+        "Rollback",
+        "bounded",
+    ):
+        assert required in text
 
 
 def test_make_ps_delegates_to_shared_process_inventory() -> None:

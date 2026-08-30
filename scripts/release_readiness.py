@@ -132,6 +132,130 @@ class ReleaseEta:
     stages: list[ReleaseStageEstimate]
 
 
+@dataclass(frozen=True)
+class RemediationStep:
+    """One operator-owned action that never bypasses a readiness blocker."""
+
+    code: str
+    blockers: tuple[str, ...]
+    validate_argv: tuple[str, ...]
+    owner_release_argv: tuple[tuple[str, ...], ...]
+    apply_argv: tuple[str, ...] | None
+    requires_owner_confirmation: bool
+    resolution: str
+    safety: str
+
+
+@dataclass(frozen=True)
+class RemediationPlan:
+    """Bounded, machine-readable workflow for remediable blocker classes."""
+
+    schema_version: int
+    steps: tuple[RemediationStep, ...]
+    recheck_argv: tuple[str, ...]
+
+
+def build_remediation_plan(
+    result: Readiness,
+    *,
+    tag: str,
+) -> RemediationPlan:
+    """Return validate-first operator actions without changing release state."""
+    steps: list[RemediationStep] = []
+    prunable: list[dict[str, object]] = []
+    for entry in result.unintegrated_worktrees:
+        raw_reasons = entry.get("reasons")
+        reasons = (
+            {reason for reason in raw_reasons if isinstance(reason, str)}
+            if isinstance(raw_reasons, list)
+            else set()
+        )
+        if reasons == {"prunable_registration"}:
+            prunable.append(entry)
+
+    if prunable:
+        blockers = tuple(
+            sorted(
+                f"{entry.get('branch', '<detached>')}@{entry.get('path', '<unknown>')}"
+                for entry in prunable
+            )
+        )
+        branches = sorted(
+            {
+                branch
+                for entry in prunable
+                if isinstance((branch := entry.get("branch")), str) and branch
+            }
+        )
+        steps.append(
+            RemediationStep(
+                code="prunable_worktree_registration",
+                blockers=blockers,
+                validate_argv=(
+                    "make",
+                    "wt-prune-safe",
+                    "ACTIVE_WORKSTREAM_REGISTRY=",
+                    "WT_PRUNE_VALIDATE_ONLY=1",
+                ),
+                owner_release_argv=tuple(
+                    ("make", "workstream-unregister", f"BRANCH={branch}")
+                    for branch in branches
+                ),
+                apply_argv=(
+                    "make",
+                    "wt-prune-safe",
+                    "ACTIVE_WORKSTREAM_REGISTRY=",
+                    "WT_PRUNE_VALIDATE_ONLY=0",
+                ),
+                requires_owner_confirmation=True,
+                resolution=(
+                    "Run validate-only first. An owner may unregister only its exact "
+                    "completed workstream; validate again and apply only when no "
+                    "unrelated candidate would be removed."
+                ),
+                safety=(
+                    "Dirty, locked, active, unmerged, or mixed-reason worktrees remain "
+                    "blocking and receive no cleanup instruction."
+                ),
+            )
+        )
+
+    incomplete_tasks = tuple(sorted(set(result.incomplete_release_tasks)))
+    if incomplete_tasks:
+        steps.append(
+            RemediationStep(
+                code="incomplete_release_tasks",
+                blockers=incomplete_tasks,
+                validate_argv=("make", "validate-task-ledger"),
+                owner_release_argv=(),
+                apply_argv=None,
+                requires_owner_confirmation=True,
+                resolution=(
+                    "Complete every task's declared implementation and evidence; each "
+                    "task owner marks it complete only after its required checks. An "
+                    "item must not be checked merely to clear readiness."
+                ),
+                safety=(
+                    "The plan never edits TASKS.md or converts incomplete evidence into "
+                    "a release authorization."
+                ),
+            )
+        )
+
+    return RemediationPlan(
+        schema_version=1,
+        steps=tuple(steps),
+        recheck_argv=(
+            "make",
+            "release-readiness",
+            f"TAG={tag}",
+            "RELEASE_READINESS_VALIDATE_ONLY=0",
+            "RELEASE_COMPLETED_STAGES=",
+            "RELEASE_OBSERVATIONS=",
+        ),
+    )
+
+
 def estimate_release_eta(
     *,
     completed_stages: set[str] | None = None,
@@ -474,6 +598,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     payload = asdict(result)
     payload["tag"] = tag
     payload["estimate"] = asdict(estimate)
+    payload["remediation"] = asdict(build_remediation_plan(result, tag=tag))
     payload["ready"] = result.ready
     exit_code = _exit_code(result)
     payload["exit_code"] = exit_code

@@ -1875,6 +1875,56 @@ cannot create a tag, artifact, or deployment. Rollback is to abandon the
 untagged release worktree and retain the prior deployed artifact; evidence from
 the abandoned filesystem is never reused.
 
+#### Remediating release-readiness blockers
+
+The readiness JSON now includes a schema-versioned `remediation` plan. Commands
+are emitted as argument vectors rather than shell strings, and every mutable
+worktree action has `requires_owner_confirmation: true`. The plan remains
+diagnostic: producing it changes neither Git administration nor `TASKS.md`, and
+the original readiness error and non-zero exit remain until a fresh assessment
+observes corrected state.
+
+For an entry whose only reason is `prunable_registration`, follow the emitted
+workflow in order:
+
+```text
+make wt-prune-safe ACTIVE_WORKSTREAM_REGISTRY= WT_PRUNE_VALIDATE_ONLY=1
+make workstream-unregister BRANCH=<exact-owner-confirmed-branch>
+make wt-prune-safe ACTIVE_WORKSTREAM_REGISTRY= WT_PRUNE_VALIDATE_ONLY=1
+make wt-prune-safe ACTIVE_WORKSTREAM_REGISTRY= WT_PRUNE_VALIDATE_ONLY=0
+```
+
+Stop if validate-only protects the entry or selects an unrelated candidate.
+Only the logical owner may run the branch-specific unregister step after its
+work is committed, integrated, or deliberately abandoned. Dirty, locked,
+active, unmerged, or mixed-reason worktrees receive no cleanup instruction and
+remain hard blockers. Direct `.git/worktrees` deletion and broad forced pruning
+remain prohibited.
+
+For `incomplete_release_tasks`, the only automated instruction is the read-only
+ledger check:
+
+```text
+make validate-task-ledger
+```
+
+Each listed S86 owner must complete the implementation and its declared green
+evidence. An item must not be checked merely to clear readiness, and the plan
+never edits the checkbox. After owners resolve the reported state, use the
+emitted `recheck_argv`, which expands to the fully specified beta4 readiness
+command; only that new observation can remove the blocker.
+
+This is a zero-downtime administrative workflow. Validation is read-only, safe
+pruning removes only a missing-path registration after ownership release, and
+neither path changes a running deployment or previously published artifact.
+Rollback recreates and re-registers the still-existing branch if administrative
+cleanup was mistaken; task-ledger rollback is unnecessary because the checker
+never mutates it. Resource use is bounded to one remediation step per blocker
+class, deduplicated task IDs, the existing worktree inventory, and short argv
+vectors rather than repeated task descriptions. The official Git contract and
+the long-lived 2017-01-09 practitioner report below are the evidence for this
+validate-first, owner-gated boundary.
+
 The [official Git worktree documentation](https://git-scm.com/docs/git-worktree),
 reviewed 2026-08-29, defines the refusal for an already checked-out branch,
 machine-stable porcelain inventory, lock semantics, and pruning of missing
