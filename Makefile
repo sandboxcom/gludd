@@ -6682,7 +6682,7 @@ dist: build-executable bundle-binaries sbom
 	@echo "Checksum: dist/$(TARBALL_NAME).tar.gz.sha256"
 
 dist-clean:
-	@rm -rf dist/general-ludd-agent-* dist/hottentot-agent-* dist/gludd dist/hottentot dist/deb-root dist/gludd_*.deb dist/gludd_*.deb.sha256 build
+	@rm -rf dist/general-ludd-agent-* dist/hottentot-agent-* dist/gludd dist/hottentot dist/deb-root dist/gludd_*.deb dist/gludd_*.deb.sha256 dist/linux build
 
 deb-package:
 	@echo "=== Building .deb package ==="
