@@ -86,7 +86,7 @@ _NO_UV_SYNC_GOALS := \
     check-disk check-disk-classification disk disk-check disk-guard cache-disk cache-clean disk-user-caches audit-home-tmp \
     cache-resource-inventory cache-resource-remove tmp-gludd-usage tmp-gludd-worktree-usage \
     tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
-    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status agent-worktree agent-worktree-base \
+    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base \
     development-merge-forward development-merge-forward-batch
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
@@ -149,7 +149,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
          git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count git-patch-equivalence branches-unmerged-development branch-reconciliation-inventory branch-reconciliation-summary check-git-hygiene cache-disk cache-clean disk-user-caches cache-resource-inventory cache-resource-remove rm-files commit-and-ship commit-and-ship-push compute-model-hashes \
-        molecule-clean plan ps-gludd kill-stale terminate-project-process-tree reap-stale-collection-locks reap-orphan-pytest kill-gate-force \
+        molecule-clean plan ps ps-gludd kill-stale terminate-project-process-tree reap-stale-collection-locks reap-orphan-pytest kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         repo-visibility \
          watchdog-read watchdog-start watchdog-status watchdog-stop agent-watchdog-stop watchdog-log \
@@ -333,6 +333,7 @@ help:
 	@echo "  test-opa-policies     Execute Rego policy tests when opa is installed"
 	@echo "  check-make-target-contract  Validate target variables, help, and behavioral examples"
 	@echo "  active-work-status    Emit auditable PIDs, gate state, hashes, and open tasks"
+	@echo "  ps                    Report repository-owned test, audit, and supervisor processes"
 	@echo "  list-plugins          Report the active enforcement plugin roster"
 	@echo "  terminate-project-process-tree  Identity-check and preview/apply one project process tree"
 	@echo "  kill-worktree-e2e    Stop one verified local E2E tree (PID=; validate with KILL_WORKTREE_E2E_VALIDATE_ONLY=1)"
@@ -8682,7 +8683,7 @@ show-lines:
 	@$(PYTHON) scripts/show_lines.py "$(FILE)" "$(START)" "$(END)"
 
 ps:
-	@/bin/ps -ax -o pid=,ppid=,command= | /usr/bin/grep '/Users/shawnwilson/gludd\|make search\|grep -R\|llama_cpp.server\|llama-server' | /usr/bin/grep -v '/usr/bin/grep' || echo "No matching project processes"
+	@UV=echo $(SYSTEM_PYTHON) scripts/active_work_status.py --process-table
 
 PROCESS_ROOT_PID ?=
 PROCESS_NAMESPACE ?=

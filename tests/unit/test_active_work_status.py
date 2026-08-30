@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
+import scripts.active_work_status as active_work_status
 from scripts.active_work_status import _task_label
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,3 +41,374 @@ def test_process_labels_separate_test_workstreams() -> None:
     assert _task_label("pytest tests/e2e/test_opencode_plugin_load.py") == "opencode-e2e"
     assert _task_label("pytest tests/e2e/test_api_routers.py") == "e2e-tests"
     assert _task_label("python scripts/task_watchdog.py") == "watchdog"
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    (
+        ("python scripts/audit_coverage.py", "coverage-audit"),
+        ("detect-secrets scan", "coverage-audit-support"),
+        ("python -c from multiprocessing.resource_tracker import main", "python-worker"),
+        ("python scripts/test_hook_runtime.py", "hook-runtime"),
+        ("python scripts/adaptive_test.py", "test-supervisor"),
+        ("make gate", "gate-refresh"),
+        ("pytest tests/e2e/test_opencode_live.py", "opencode-e2e"),
+        ("pytest tests/e2e/test_api.py", "e2e-tests"),
+        ("pytest plugin/tests.py", "pytest"),
+        ("mypy scripts/tool.py", "typecheck"),
+        ("python -m general_ludd.cli daemon start", "e2e-daemon"),
+        ("python unrelated.py", "other"),
+    ),
+)
+def test_process_labels_cover_every_tracked_role(command: str, expected: str) -> None:
+    assert _task_label(command) == expected
+
+
+def test_owned_process_inventory_spans_registered_roots_and_resource_roots() -> None:
+    """Main, linked-worktree, and resource-only workers remain observable."""
+
+    process_table = "\n".join(
+        (
+            "101 1 /repo/gludd/.venv/bin/python -m pytest tests/unit/test_main.py",
+            (
+                "102 101 /private/tmp/gludd-worktrees/feature/.venv/bin/python "
+                "scripts/run_ci_shards_serial.py"
+            ),
+            (
+                "103 102 /usr/bin/python -m pytest tests/unit/test_worker.py "
+                "--basetemp=/private/tmp/gludd-resources/feature-a1b2/ci-shards/batch"
+            ),
+            "201 1 /repo/other/.venv/bin/python -m pytest tests/unit/test_other.py",
+            (
+                "202 1 /usr/bin/python -m pytest tests/unit/test_other.py "
+                "--basetemp=/private/tmp/gludd-resources/other-c3d4/ci-shards/batch"
+            ),
+        )
+    )
+
+    processes = active_work_status._owned_processes_from_output(
+        process_table,
+        repository_roots=(Path("/repo/gludd"), Path("/private/tmp/gludd-worktrees/feature")),
+        resource_roots=(Path("/private/tmp/gludd-resources/feature-a1b2"),),
+    )
+
+    assert [process["pid"] for process in processes] == ["101", "102", "103"]
+    assert processes[1]["task"] == "ci-shard-supervisor"
+
+
+def test_owned_process_inventory_uses_path_boundaries() -> None:
+    """A checkout-name prefix must not admit another project's worker."""
+
+    processes = active_work_status._owned_processes_from_output(
+        "301 1 /repo/gludd-copy/.venv/bin/python -m pytest tests/unit/test_copy.py",
+        repository_roots=(Path("/repo/gludd"),),
+        resource_roots=(Path("/tmp/gludd-resources/gludd-a1b2"),),
+    )
+
+    assert processes == []
+
+
+def test_owned_process_inventory_keeps_tracked_supervisor_tree() -> None:
+    """Relative controller argv inherits ownership from its rooted child."""
+
+    process_table = "\n".join(
+        (
+            "401 1 make gate",
+            (
+                "402 401 /repo/gludd/.venv/bin/python "
+                "scripts/run_ci_shards_serial.py"
+            ),
+            "403 402 python -m pytest tests/unit/test_worker.py",
+            "501 1 make gate",
+        )
+    )
+
+    processes = active_work_status._owned_processes_from_output(
+        process_table,
+        repository_roots=(Path("/repo/gludd"),),
+        resource_roots=(Path("/tmp/gludd-resources/gludd-a1b2"),),
+    )
+
+    assert [process["pid"] for process in processes] == ["401", "402", "403"]
+
+
+def test_git_porcelain_discovers_main_and_linked_worktree_paths() -> None:
+    payload = """worktree /repo/gludd
+HEAD aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+branch refs/heads/development
+
+worktree /private/tmp/gludd-worktrees/feature
+HEAD bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+branch refs/heads/feature
+"""
+
+    assert active_work_status._parse_worktree_roots(payload) == (
+        Path("/repo/gludd"),
+        Path("/private/tmp/gludd-worktrees/feature"),
+    )
+
+
+def test_git_porcelain_fails_closed_without_registered_worktree() -> None:
+    try:
+        active_work_status._parse_worktree_roots("HEAD deadbeef\n")
+    except ValueError as exc:
+        assert "no registered worktrees" in str(exc)
+    else:  # pragma: no cover - explicit fail-closed assertion
+        raise AssertionError("missing worktree registry must fail closed")
+
+
+def test_git_porcelain_rejects_relative_and_deduplicates_paths() -> None:
+    with pytest.raises(ValueError, match="invalid worktree path"):
+        active_work_status._parse_worktree_roots("worktree relative/path\n")
+
+    assert active_work_status._parse_worktree_roots(
+        "worktree /repo/gludd\n\nworktree /repo/gludd\n"
+    ) == (Path("/repo/gludd"),)
+
+
+def test_repository_roots_uses_git_porcelain(monkeypatch: pytest.MonkeyPatch) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        observed["command"] = command
+        observed.update(kwargs)
+        return SimpleNamespace(stdout="worktree /repo/gludd\n")
+
+    monkeypatch.setattr("scripts.active_work_status.subprocess.run", fake_run)
+
+    assert active_work_status._repository_roots() == (Path("/repo/gludd"),)
+    assert observed["command"] == ["git", "worktree", "list", "--porcelain"]
+    assert observed["timeout"] == 10
+
+
+def test_owned_resource_roots_are_deduplicated(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        active_work_status,
+        "resource_root",
+        lambda _root: Path("/tmp/gludd-resources/shared"),
+    )
+
+    assert active_work_status._owned_resource_roots(
+        (Path("/repo/gludd"), Path("/repo/gludd-worktree"))
+    ) == (Path("/tmp/gludd-resources/shared"),)
+
+
+def test_process_query_uses_registered_and_resource_roots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        active_work_status, "_repository_roots", lambda: (Path("/repo/gludd"),)
+    )
+    monkeypatch.setattr(
+        active_work_status,
+        "_owned_resource_roots",
+        lambda _roots: (Path("/tmp/gludd-resources/gludd-a1b2"),),
+    )
+
+    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        assert command == ["ps", "-axo", "pid=,ppid=,command="]
+        assert kwargs["timeout"] == 10
+        return SimpleNamespace(
+            stdout="101 1 /repo/gludd/.venv/bin/python -m pytest tests/unit/test_a.py\n"
+        )
+
+    monkeypatch.setattr("scripts.active_work_status.subprocess.run", fake_run)
+
+    assert [process["pid"] for process in active_work_status._processes()] == ["101"]
+
+
+def test_process_table_renderer_is_bounded_and_explicit_when_empty() -> None:
+    assert active_work_status._render_process_table([]) == "No matching project processes\n"
+
+    rendered = active_work_status._render_process_table(
+        [
+            {
+                "pid": "101",
+                "ppid": "1",
+                "task": "unit-tests",
+                "command": "/repo/gludd/.venv/bin/python -m pytest tests/unit/test_main.py",
+            }
+        ]
+    )
+    assert "PID" in rendered and "TASK" in rendered
+    assert "101" in rendered and "unit-tests" in rendered
+
+
+def test_process_table_renderer_marks_bounded_overflow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(active_work_status, "_PROCESS_DISPLAY_LIMIT", 1)
+    processes = [
+        {"pid": str(pid), "ppid": "1", "task": "pytest", "command": "pytest"}
+        for pid in (101, 102)
+    ]
+
+    rendered = active_work_status._render_process_table(processes)
+
+    assert "101" in rendered
+    assert "102" not in rendered
+    assert "1 additional owned processes not displayed" in rendered
+
+
+def test_process_table_renderer_bounds_long_commands() -> None:
+    rendered = active_work_status._render_process_table(
+        [
+            {
+                "pid": "101",
+                "ppid": "1",
+                "task": "pytest",
+                "command": "pytest " + "x" * 1_000,
+            }
+        ]
+    )
+
+    process_line = rendered.splitlines()[1]
+    assert len(process_line) <= 290
+    assert process_line.endswith("...")
+
+
+def test_process_table_cli_uses_shared_owned_inventory(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        active_work_status,
+        "_processes",
+        lambda: [
+            {"pid": "101", "ppid": "1", "task": "pytest", "command": "pytest"}
+        ],
+    )
+
+    assert active_work_status.main(["--process-table"]) == 0
+    assert "101" in capsys.readouterr().out
+
+
+def test_workstreams_group_processes_by_task() -> None:
+    streams = active_work_status._workstreams(
+        [
+            {"pid": "101", "ppid": "1", "task": "pytest", "command": "pytest"},
+            {"pid": "102", "ppid": "101", "task": "pytest", "command": "pytest"},
+        ]
+    )
+
+    assert streams == {"pytest": {"process_count": 2, "pids": ["101", "102"]}}
+
+
+def test_git_snapshot_reads_branch_and_head(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        value = "feature\n" if command[-2:] == ["branch", "--show-current"] else "abc123\n"
+        return SimpleNamespace(stdout=value)
+
+    monkeypatch.setattr("scripts.active_work_status.subprocess.run", fake_run)
+
+    assert active_work_status._git() == {"branch": "feature", "head": "abc123"}
+
+
+def test_gate_snapshot_handles_terminal_stale_and_live_pid(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(active_work_status, "ROOT", tmp_path)
+    status_path = tmp_path / ".gate-status"
+    pid_path = tmp_path / ".gate-background.pid"
+
+    assert active_work_status._gate()["state"] == "UNKNOWN"
+
+    status_path.write_text("=== GATE: PASSED ===\n", encoding="utf-8")
+    assert active_work_status._gate()["state"] == "PASS"
+
+    status_path.write_text("=== GATE: FAILED ===\n", encoding="utf-8")
+    pid_path.write_text("not-a-pid\n", encoding="utf-8")
+    failed = active_work_status._gate()
+    assert failed["state"] == "FAIL"
+    assert failed["running_pid"] == ""
+
+    pid_path.write_text("123\n", encoding="utf-8")
+    monkeypatch.setattr("scripts.active_work_status.os.kill", lambda _pid, _signal: None)
+    assert active_work_status._gate()["running_pid"] == "123"
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    (("invalid", 8), ("0", 1), ("999", 128), ("12", 12)),
+)
+def test_worker_limit_is_valid_and_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+    configured: str,
+    expected: int,
+) -> None:
+    monkeypatch.setenv("GLUDD_WORKER_LIMIT", configured)
+    assert active_work_status._worker_limit() == expected
+
+
+def test_gate_owner_reads_contended_lock_and_handles_io_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    lock_path = tmp_path / "gate-refresh.lock"
+    lock_path.write_text("pid=123\n", encoding="utf-8")
+    monkeypatch.setattr(active_work_status, "resource_path", lambda *_args: lock_path)
+
+    def contended_lock(_fd: int, operation: int) -> None:
+        if operation & fcntl.LOCK_NB:
+            raise BlockingIOError
+
+    monkeypatch.setattr("scripts.active_work_status.fcntl.flock", contended_lock)
+    assert active_work_status._active_gate_refresh_owner("namespace") == "123"
+
+    missing = tmp_path / "missing" / "gate-refresh.lock"
+    monkeypatch.setattr(active_work_status, "resource_path", lambda *_args: missing)
+    assert active_work_status._active_gate_refresh_owner("namespace") is None
+
+
+def test_worker_accounting_reports_duplicate_singleton(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(active_work_status, "_SINGLETON_WORKER_LEASES", frozenset({"unit-tests"}))
+    monkeypatch.setattr(active_work_status, "_active_gate_refresh_owner", lambda _namespace: None)
+    processes = [
+        {"pid": "101", "ppid": "1", "task": "unit-tests", "command": "pytest"},
+        {"pid": "102", "ppid": "1", "task": "unit-tests", "command": "pytest"},
+    ]
+
+    accounting = active_work_status._worker_accounting(processes, "namespace")
+
+    assert accounting["leased_worker_count"] == 1
+    assert accounting["duplicate_worker_leases"] == ["unit-tests"]
+
+
+def test_collect_status_promotes_observed_gate_process(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "TASKS.md").write_text("- [ ] S1 — pending\n", encoding="utf-8")
+    processes = [
+        {"pid": "101", "ppid": "1", "task": "gate-refresh", "command": "make gate"}
+    ]
+    monkeypatch.setattr(active_work_status, "ROOT", tmp_path)
+    monkeypatch.setattr(active_work_status, "_processes", lambda: processes)
+    monkeypatch.setattr(
+        active_work_status,
+        "_gate",
+        lambda: {"status_file": "status", "state": "UNKNOWN", "running_pid": ""},
+    )
+    monkeypatch.setattr(active_work_status, "_git", lambda: {"branch": "feature", "head": "abc"})
+    monkeypatch.setattr(active_work_status, "_resource_observability", lambda _items: {})
+
+    payload = active_work_status.collect_status()
+
+    gate = payload["gate"]
+    assert isinstance(gate, dict)
+    assert gate["state"] == "RUNNING"
+    assert gate["running_pid"] == "101"
+    assert payload["open_task_ids"] == ["S1"]
+
+
+def test_json_cli_prints_collected_status(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(active_work_status, "collect_status", lambda: {"status": "ok"})
+
+    assert active_work_status.main([]) == 0
+    assert json.loads(capsys.readouterr().out) == {"status": "ok"}
