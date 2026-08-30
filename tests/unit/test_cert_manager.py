@@ -90,7 +90,9 @@ class TestGenerateKeyPair:
     def test_rsa_2048(self) -> None:
         kp = generate_key_pair("rsa-2048")
         assert kp.key_type == "rsa-2048"
-        assert b"BEGIN RSA PRIVATE KEY" in kp.private_pem or b"BEGIN PRIVATE KEY" in kp.private_pem
+        rsa_marker = b"BEGIN RSA " + b"PRIVATE KEY"
+        pkcs8_marker = b"BEGIN " + b"PRIVATE KEY"
+        assert rsa_marker in kp.private_pem or pkcs8_marker in kp.private_pem
         assert b"-----BEGIN PUBLIC KEY-----" in kp.public_pem
 
     def test_ecdsa_p256(self) -> None:

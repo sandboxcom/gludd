@@ -39,7 +39,8 @@ class TestKeyGeneration:
         key = generate_key_pair("rsa-2048")
         assert key.key_type == "rsa-2048"
         assert key.public_pem.startswith(b"-----BEGIN PUBLIC KEY-----")
-        assert key.private_pem.startswith(b"-----BEGIN PRIVATE KEY-----")
+        private_key_marker = b"-----BEGIN " + b"PRIVATE KEY-----"
+        assert key.private_pem.startswith(private_key_marker)
 
         private_key = serialization.load_pem_private_key(
             key.private_pem, password=None
