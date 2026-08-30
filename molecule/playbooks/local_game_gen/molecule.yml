@@ -14,12 +14,18 @@ provisioner:
   env:
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
   playbooks:
+    cleanup: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/mock_daemon_cleanup.yml"
+    destroy: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/mock_daemon_destroy.yml"
     converge: default/converge.yml
     verify: default/verify.yml
 verifier:
   name: ansible
 scenario:
   test_sequence:
+    - cleanup
+    - destroy
     - syntax
     - converge
     - verify
+    - cleanup
+    - destroy

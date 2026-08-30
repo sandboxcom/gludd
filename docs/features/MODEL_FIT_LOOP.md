@@ -118,7 +118,7 @@ game class name + output snippet + elapsed seconds). Pinned by
 `test_import_time_hang_is_rejected_with_timeout`,
 `test_junk_output_is_rejected`, `test_rejection_carries_all_reasons`.
 
-## Role rejection handling — corrective retry + model fallback
+## Role rejection handling — daemon-owned corrective retry
 
 `collections/ansible_collections/general_ludd/agent/roles/local_game_gen/tasks/generate_and_verify.yml`
 is a recursive generate → verify loop. Each invocation:
@@ -126,51 +126,80 @@ is a recursive generate → verify loop. Each invocation:
 1. Selects the model for the attempt: `model_repo` on attempt 1 (or when
    `fallback_models` is empty), otherwise
    `fallback_models[min(_attempt - 2, len - 1)]`.
-2. Selects the prompt for the attempt: `game_prompt` on attempt 1,
-   `retry_prompt` (the corrective prompt) on later attempts.
-3. Runs the generate-and-verify block: POST to
-   `http://<server_host>:<server_port>/v1/completions` (timeout 300), write
-   the extracted code to the artifact, then three verify steps — AST parse,
-   module import, runtime lifecycle checks.
-4. On any failure, the `rescue` records a REJECTED event naming the failing
-   check (`AST parse`, `module import`, or `runtime checks` in
-   `_verify_failed_check`), increments `_attempt`, and either re-includes
-   this file with `_attempt < max_attempts` or fails the role hard
-   (`ansible.builtin.fail`) when attempts are exhausted — bounded retry,
-   no infinite loop.
+2. Selects the prompt for the attempt: `game_prompt` on attempt 1 and
+   `retry_prompt` on later attempts.
+3. Calls the typed `general_ludd.agent.gludd_local_model` module over the
+   authenticated Gludd daemon API. The daemon owns model download, process
+   launch, kernel-assigned/validated endpoint identity, diagnostics, and
+   teardown; the collection never installs `llama-cpp-python`, invokes
+   `nohup`, writes a PID file, or signals a process.
+4. Consumes the daemon-issued `server_id`, writes the generated code, and
+   runs acceptance, AST, import, and runtime checks through safe
+   `command.argv` entries.
+5. On failure, the rescue records the failed check, increments `_attempt`,
+   asks the daemon to shut down the current server before acquiring a fallback,
+   and either retries below `max_attempts` or fails closed. An outer
+   `always` block requests daemon shutdown on success, failure, or
+   cancellation.
 
-Defaults live in the role's `defaults/main.yml`: `model_repo:
-bartowski/Qwen2.5-0.5B-Instruct-GGUF`, `max_attempts: 1` (preserving the
-original single-shot behavior), `fallback_models: []`, and a `retry_prompt`
-that instructs the model to "CORRECT THE PREVIOUS FAILURES".
+Defaults live in the role's `defaults/main.yml`: the loopback daemon URL,
+authenticated PSK input, bounded daemon/startup timeouts, model identity,
+`max_attempts: 1`, `fallback_models: []`, and the corrective
+`retry_prompt`.
 
-Pinned by `tests/unit/test_game_gen_rejection_retry.py`:
-`TestRejectionEventSurfacing`, `TestCorrectivePromptRetry`,
-`TestModelFallback`, `TestBoundedRetry`, plus the self-pin
-`test_rejection_retry_test_count`.
+Pinned by `tests/unit/test_game_gen_rejection_retry.py`,
+`tests/unit/test_game_gen_local_pipeline.py`, and
+`tests/unit/test_local_game_gen_daemon_lifecycle.py`. The real
+`local_game_gen` Molecule scenario uses a random-port, manifest-owned mock
+daemon and proves endpoint closure during handler cleanup and the
+cleanup/destroy backstops.
+
+## Practitioner and upstream evidence (2026-08-30)
+
+- A llama-cpp-python user asked how to unload a model from GPU/RAM without
+  exhausting memory when switching models
+  ([issue #302](https://github.com/abetlen/llama-cpp-python/issues/302)).
+- Another user reported server port behavior changing across invocations and
+  the requested `--port` apparently being ignored
+  ([issue #1359](https://github.com/abetlen/llama-cpp-python/issues/1359)).
+- An Ansible user reproduced concurrent async-state races and described the
+  detached supervisor as an orphaned process
+  ([ansible/ansible #59306](https://github.com/ansible/ansible/issues/59306)).
+- The upstream server documentation defines the server as a separately
+  installed extra with CLI/environment configuration
+  ([server documentation](https://github.com/abetlen/llama-cpp-python/blob/main/docs/server.md)).
+
+These reports do not establish Gludd defects by themselves. They motivate the
+tested boundary: one daemon owns model memory, process identity, endpoint
+selection, readiness, logs, and shutdown; collection roles are authenticated
+clients only.
+
+## ZDD, rollback, and resources
+
+The role publishes no successful game artifact until generation and validation
+complete; rejected artifacts are removed before failure is surfaced. Daemon
+model acquisition and readiness must return a stable model/server identity
+before the role proceeds. Cleanup is idempotent and identity-bound, so a stale
+or foreign process cannot be signaled. Rollback is the previous committed role
+plus daemon API module; no package or process state is installed on the managed
+host. Resource ceilings are `max_attempts`, `daemon_timeout`,
+`server_startup_timeout`, `context_size`, `max_tokens`, and one active
+server identity per role invocation.
 
 ## Running the live e2e
 
-`tests/e2e/test_model_fit_loop_live.py` proves the full loop against a real
-local model. It is skipped unless `GLUDD_LIVE_MODEL_E2E=1`; it downloads a
-GGUF and starts `llama_cpp.server`, so it needs network access and the
-`llama-cpp-python[server]` extra.
+`tests/e2e/test_model_fit_loop_live.py` proves the loop against a real local
+model through the managed lifecycle. It is skipped unless
+`GLUDD_LIVE_MODEL_E2E=1` and needs the locked local-inference extra plus a
+readable GGUF artifact.
 
 ```text
 GLUDD_LIVE_MODEL_E2E=1 make test TESTFILE=tests/e2e/test_model_fit_loop_live.py
 ```
 
-- Model served: `GLUDD_LIVE_MODEL_REPO` (default
-  `bartowski/Qwen2.5-0.5B-Instruct-GGUF`) and `GLUDD_LIVE_MODEL_FILE`
-  (default `Qwen2.5-0.5B-Instruct-Q5_K_M.gguf`).
-- Test: `test_live_generate_score_record_reassess` — serve the model, ask
-  it "The capital of France is", score the completion, record a good and a
-  bad profile into a real `ModelPerformanceRepository`, assert
-  `router.select_model()` prefers the better-scored model, and assert the
-  `quality` ranking agrees.
-- Runtime bound: `pytest.mark.timeout(480)` — the test must finish within 8
-  minutes. Server health poll budget is 300 seconds; graceful shutdown
-  budget 30 seconds.
+The test uses a bounded startup budget and a bounded graceful-shutdown budget;
+normal completion, startup failure, and assertion failure all converge through
+the same owner cleanup path.
 
 ## Known boundaries
 
@@ -189,11 +218,10 @@ GLUDD_LIVE_MODEL_E2E=1 make test TESTFILE=tests/e2e/test_model_fit_loop_live.py
   `sample_count >= min_calls` (default 3) per (service, model, task type)
   before historical selection engages; below that the router falls through
   to the strategy ranking or the configured fallback.
-- **Single-server assumption.** The `local_game_gen` role and the live e2e
-  assume exactly one local OpenAI-compatible server
-  (`server_host:server_port`, default `127.0.0.1:9999` for the role; a free
-  loopback port in the e2e) serving one model per run. There is no
-  multi-model, multi-server concurrency in these paths.
+- **One role-owned server identity at a time.** The role can retry across
+  fallback models, but it holds only one daemon-issued `server_id` at each
+  step and shuts that identity down before the next serve request. The daemon,
+  rather than the role, selects and owns the concrete process and endpoint.
 - **Local models are opt-in.** `_local_model_available()` requires
   `GLUDD_ALLOW_LOCAL_MODEL_BASE_URLS=1` before a `LOCAL_MODEL_BASE_URL`
   pointing at localhost is treated as a local (non-cloud) source

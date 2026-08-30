@@ -1,0 +1,9 @@
+---
+- name: Reconcile this Molecule run's mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Stop only the private manifest-owned daemon
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml"
+

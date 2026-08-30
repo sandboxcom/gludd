@@ -5,11 +5,12 @@
       - game_name | length > 0
       - model_repo | length > 0
       - model_file | length > 0
+      - daemon_url | length > 0
+      - daemon_timeout | int > 0
+      - server_startup_timeout | int > 0
     fail_msg: >-
-      local_game_gen requires game_name, model_repo, and model_file.
-      Got game_name={{ game_name | default('<undefined>') }},
-      model_repo={{ model_repo | default('<undefined>') }},
-      model_file={{ model_file | default('<undefined>') }}.
+      local_game_gen requires a model identity and an authenticated Gludd
+      daemon endpoint with positive lifecycle timeouts.
 
 - name: "Ensure artifact directory exists"
   ansible.builtin.file:
@@ -17,135 +18,61 @@
     state: directory
     mode: "0755"
 
-# ── Step 1: Download model ───────────────────────────────────────────────
+- name: "Ask the Gludd daemon to acquire the primary model"
+  general_ludd.agent.gludd_local_model:
+    action: download
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    timeout: "{{ daemon_timeout }}"
+    model_id: "{{ model_repo }}"
+    filename: "{{ model_file }}"
+    source: "{{ model_source }}"
+  register: _local_model_download
 
-- name: "Compute full local model path"
-  ansible.builtin.set_fact:
-    _model_path: "{{ model_download_dir }}/{{ model_repo | regex_replace('/', '_') }}/{{ model_file }}"
-
-- name: "Install llama-cpp-python[server] and huggingface_hub"
-  ansible.builtin.pip:
-    name:
-      - huggingface_hub
-      # The [server] extra declares llama_cpp.server's real runtime
-      # dependencies (fastapi, sse-starlette, starlette-context, uvicorn,
-      # pydantic-settings); the base package does not, so the server crashes
-      # at import without them (CI 2026-08-15: sse_starlette, then
-      # starlette_context ModuleNotFoundError).
-      - llama-cpp-python[server]
-    state: present
-
-- name: "Download model if not present"
-  when: _model_path is not exists
+- name: "Generate and verify with a daemon-owned local model"
   block:
-    - name: "Download GGUF via hf"
-      ansible.builtin.command: >-
-        hf download {{ model_repo }} {{ model_file }}
-        --local-dir {{ model_download_dir }}/{{ model_repo | regex_replace('/', '_') }}
-      args:
-        creates: "{{ _model_path }}"
-      changed_when: true
+    - name: "Ask the Gludd daemon to serve the primary model"
+      general_ludd.agent.gludd_local_model:
+        action: serve
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+        timeout: "{{ daemon_timeout }}"
+        model_id: "{{ model_repo }}"
+        model_path: "{{ _local_model_download.local_path }}"
+        host: "{{ server_host }}"
+        port: "{{ server_port }}"
+        startup_timeout: "{{ server_startup_timeout }}"
+        gpu_layers: "{{ server_gpu_layers }}"
+        context_size: "{{ server_context_size }}"
+      register: _local_model_server
 
-# ── Step 2: Start local inference server ──────────────────────────────────
+    - name: "Start first attempt counter"
+      ansible.builtin.set_fact:
+        _attempt: 1
 
-- name: "Set server log path"
-  ansible.builtin.set_fact:
-    _server_log: "{{ artifact_dir }}/llamacpp-server.log"
-    _server_name: "llamacpp-{{ model_file | regex_replace('\\.gguf$', '') }}"
+    - name: "Generate and verify game with bounded rejection retries"
+      ansible.builtin.include_tasks: generate_and_verify.yml
 
-- name: "Start llama.cpp server"
-  ansible.builtin.shell: |
-    nohup {{ ansible_playbook_python }} -m llama_cpp.server \
-      --model "{{ _model_path }}" \
-      --host {{ server_host }} \
-      --port {{ server_port }} \
-      --n_ctx {{ server_context_size }} \
-      --n_gpu_layers {{ server_gpu_layers }} \
-      > "{{ _server_log }}" 2>&1 &
-    echo $! > "{{ artifact_dir }}/server.pid"
-  changed_when: true
-
-- name: "Validate health poll parameters"
-  ansible.builtin.assert:
-    that:
-      - health_check_delay | int > 0
-      - health_check_retries | int > 0
-    fail_msg: "health_check_delay and health_check_retries must be positive integers"
-
-- name: "Poll health endpoint until ready"
-  block:
-    - name: "Poll models endpoint (server readiness)"
-      ansible.builtin.uri:
-        # llama-cpp-python's OpenAI server does not expose /health in
-        # current releases (404) — /v1/models is the stable readiness probe.
-        url: "http://{{ server_host }}:{{ server_port }}/v1/models"
-        method: GET
-        timeout: 5
-      register: _health_poll
-      until: _health_poll.status == 200
-      retries: "{{ health_check_retries }}"
-      delay: "{{ health_check_delay }}"
-      changed_when: false
-  rescue:
-    - name: "Read server log on health poll failure"
-      ansible.builtin.slurp:
-        src: "{{ _server_log }}"
-      register: _server_log_slurp
-      ignore_errors: true
-      changed_when: false
-
-    - name: "Fail with server log content"
-      ansible.builtin.fail:
+    - name: "REJECTED event - surface verify-failure rejection to the orchestrator"
+      when: _verify_failed | default(false) | bool
+      ansible.builtin.debug:
         msg: >-
-          llama.cpp server did not become healthy at
-          http://{{ server_host }}:{{ server_port }}/v1/models after
-          {{ health_check_retries }} attempts.
-          Server log ({{ _server_log }}):
-          {{ (_server_log_slurp.content | default('')) | b64decode }}
-
-# ── Step 3: Generate game via local model (with bounded rejection retry) ───
-
-- name: "Start first attempt counter (host fact — never an include var: include vars shadow set_fact increments and loop the retry forever)"
-  ansible.builtin.set_fact:
-    _attempt: 1
-
-- name: "Generate and verify game (retry on REJECTED with fallback_models)"
-  ansible.builtin.include_tasks: generate_and_verify.yml
-
-- name: "REJECTED event — surface verify-failure rejection to the orchestrator"
-  when: _verify_failed | default(false) | bool
-  ansible.builtin.debug:
-    msg: >-
-      REJECTED: model output from {{ _active_repo | default(model_repo) }} failed
-      verification at check '{{ _verify_failed_check | default('unknown') }}'
-      after {{ max_attempts }} attempt(s).
-
-# ── Step 5: Shutdown server ──────────────────────────────────────────────
-
-- name: "Stop inference server"
-  block:
-    - name: "Enter server cleanup phase"
-      ansible.builtin.debug:
-        msg: "local_game_gen server cleanup phase started"
+          REJECTED: model output from {{ _active_repo | default(model_repo) }}
+          failed verification at check
+          '{{ _verify_failed_check | default('unknown') }}' after
+          {{ max_attempts }} attempt(s).
   always:
-    - name: "Read server PID"
-      ansible.builtin.slurp:
-        src: "{{ artifact_dir }}/server.pid"
-      register: _server_pid
-      ignore_errors: true
-      changed_when: false
+    - name: "Ask the Gludd daemon to stop its owned inference server"
+      general_ludd.agent.gludd_local_model:
+        action: shutdown
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+        server_id: "{{ _local_model_server.server_id }}"
+        timeout: "{{ daemon_timeout }}"
+      when:
+        - _local_model_server is defined
+        - _local_model_server.server_id is defined
 
-    - name: "Kill server process"
-      when: _server_pid.content is defined
-      ansible.builtin.command: "kill -TERM {{ _server_pid.content | b64decode | trim }}"
-      failed_when: false
-      changed_when: true
-
-    - name: "Remove PID file"
-      ansible.builtin.file:
-        path: "{{ artifact_dir }}/server.pid"
-        state: absent
-
-    - name: "Report server cleanup"
+    - name: "Report daemon-owned model cleanup"
       ansible.builtin.debug:
-        msg: "local_game_gen server cleanup phase completed"
+        msg: "local_game_gen daemon-owned inference cleanup completed"

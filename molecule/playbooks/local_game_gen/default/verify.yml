@@ -25,9 +25,19 @@
     - name: "Accepted artifact — verify generated game"
       when: _artifact_stat.stat.exists
       block:
-        - name: AST parse — verify syntax validity
-          ansible.builtin.command: >-
-            python3 -c "import ast; ast.parse(open('{{ artifact_path }}').read()); print('AST: OK')"
+        - name: AST parse - verify syntax validity
+          ansible.builtin.command:
+            argv:
+              - python3
+              - -c
+              - |
+                import ast
+                import sys
+                from pathlib import Path
+
+                ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"))
+                print("AST: OK")
+              - "{{ artifact_path }}"
           register: _ast_result
           changed_when: false
 
@@ -37,19 +47,32 @@
               - "'AST: OK' in _ast_result.stdout"
             fail_msg: "Generated game must be syntactically valid Python"
 
-        - name: Import — verify module is importable with at least one class
-          ansible.builtin.command: >-
-            python3 -c "
-            import importlib.util, sys
-            spec = importlib.util.spec_from_file_location('{{ game_name }}', '{{ artifact_path }}')
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            classes = [v for v in vars(mod).values() if isinstance(v, type) and v.__module__ == '{{ game_name }}']
-            if not classes:
-                print('ERR: no game class found')
-                sys.exit(1)
-            print('Classes: ' + ','.join(c.__name__ for c in classes))
-            "
+        - name: Import - verify module is importable with at least one class
+          ansible.builtin.command:
+            argv:
+              - python3
+              - -c
+              - |
+                import importlib.util
+                import sys
+
+                module_name = sys.argv[2]
+                spec = importlib.util.spec_from_file_location(module_name, sys.argv[1])
+                if spec is None or spec.loader is None:
+                    raise RuntimeError("unable to load generated module")
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                classes = [
+                    value
+                    for value in vars(module).values()
+                    if isinstance(value, type) and value.__module__ == module_name
+                ]
+                if not classes:
+                    print("ERR: no game class found")
+                    raise SystemExit(1)
+                print("Classes: " + ",".join(candidate.__name__ for candidate in classes))
+              - "{{ artifact_path }}"
+              - "{{ game_name }}"
           register: _import_result
           changed_when: false
 
@@ -60,33 +83,46 @@
               - "'Classes:' in _import_result.stdout"
             fail_msg: "Generated game must be importable with at least one class"
 
-        - name: Runtime — full lifecycle verification
-          ansible.builtin.command: >-
-            python3 -c "
-            import importlib.util, sys
-            spec = importlib.util.spec_from_file_location('{{ game_name }}', '{{ artifact_path }}')
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            classes = [v for v in vars(mod).values() if isinstance(v, type) and v.__module__ == '{{ game_name }}']
-            game = classes[0]()
-            sys.stdout.write('Instantiated ' + type(game).__name__ + '\n')
-            if hasattr(game, 'start'):
-                game.start()
-                sys.stdout.write('start(): OK\n')
-            if hasattr(game, 'score'):
-                sys.stdout.write('score(): ' + str(game.score()) + '\n')
-            if hasattr(game, 'is_game_over'):
-                sys.stdout.write('is_game_over(): ' + str(game.is_game_over()) + '\n')
-            if hasattr(game, 'tick') and hasattr(game, 'is_game_over'):
-                for _ in range(5):
-                    if not game.is_game_over():
-                        game.tick('right')
-                sys.stdout.write('tick() x5: OK\n')
-            if hasattr(game, 'restart'):
-                game.restart()
-                sys.stdout.write('restart(): OK\n')
-            sys.stdout.write('RUNTIME: OK\n')
-            "
+        - name: Runtime - full lifecycle verification
+          ansible.builtin.command:
+            argv:
+              - python3
+              - -c
+              - |
+                import importlib.util
+                import sys
+
+                module_name = sys.argv[2]
+                spec = importlib.util.spec_from_file_location(module_name, sys.argv[1])
+                if spec is None or spec.loader is None:
+                    raise RuntimeError("unable to load generated module")
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                classes = [
+                    value
+                    for value in vars(module).values()
+                    if isinstance(value, type) and value.__module__ == module_name
+                ]
+                game = classes[0]()
+                print("Instantiated " + type(game).__name__)
+                if hasattr(game, "start"):
+                    game.start()
+                    print("start(): OK")
+                if hasattr(game, "score"):
+                    print("score(): " + str(game.score()))
+                if hasattr(game, "is_game_over"):
+                    print("is_game_over(): " + str(game.is_game_over()))
+                if hasattr(game, "tick") and hasattr(game, "is_game_over"):
+                    for _ in range(5):
+                        if not game.is_game_over():
+                            game.tick("right")
+                    print("tick() x5: OK")
+                if hasattr(game, "restart"):
+                    game.restart()
+                    print("restart(): OK")
+                print("RUNTIME: OK")
+              - "{{ artifact_path }}"
+              - "{{ game_name }}"
           register: _runtime_result
           changed_when: false
 

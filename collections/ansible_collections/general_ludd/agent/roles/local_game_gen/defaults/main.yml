@@ -3,22 +3,24 @@ game_name: "snake"
 game_genre: "arcade"
 game_description: "Snake game"
 
+daemon_url: "http://127.0.0.1:8000"
+psk: ""
+daemon_timeout: 180
+model_source: "huggingface"
+
 model_repo: "bartowski/Qwen2.5-0.5B-Instruct-GGUF"
 model_file: "Qwen2.5-0.5B-Instruct-Q5_K_M.gguf"
-model_download_dir: "{{ lookup('env', 'GLUDD_MODEL_DIR') | default(lookup('env', 'HOME') + '/.cache/general-ludd/models', true) }}"
 
 server_host: "127.0.0.1"
 server_port: 9999
 server_context_size: 2048
 server_gpu_layers: 0
 server_startup_timeout: 120
-health_check_retries: 60
-health_check_delay: 2
 
 game_prompt: |
   Write a complete, self-contained Python Snake game as a single class.
 
-  Output ONLY the Python code — no prose, no markdown, no explanation.
+  Output ONLY the Python code - no prose, no markdown, no explanation.
 
   The game must be a class with the following lifecycle methods:
   - __init__(self): set up initial state
@@ -42,21 +44,13 @@ game_prompt: |
       # your implementation
 
 max_tokens: 1024
-temperature: 0.2
 artifact_dir: "/tmp/gludd-game-gen"
 
 max_attempts: 1
-# Fallback models served on repeated rejection: each entry is
-# {repo: "org/repo", file: "name.gguf"}. On attempt N (>= 2) the role
-# downloads the Nth fallback, restarts the llama.cpp server with it, and
-# regenerates with the corrective retry_prompt below.
+# Fallback models are acquired and served by the Gludd daemon after a rejected
+# attempt. Each entry is {repo: "org/repo", file: "name.gguf"}.
 fallback_models: []
 fail_on_rejection: true
-# When true, verification runs the full acceptance engine
-# (python -m general_ludd.game_gen.acceptance) — one rejection choke point
-# covering syntax, forbidden imports/calls, class contract, runtime budget,
-# junk output, and import-time filesystem side effects. Defaults false so
-# hosts without the general_ludd package keep the built-in verify steps.
 use_acceptance_engine: false
 retry_prompt: |
   Your previous implementation was rejected because it failed the automated
@@ -64,7 +58,7 @@ retry_prompt: |
 
   Write a complete, self-contained Python Snake game as a single class.
 
-  Output ONLY the Python code — no prose, no markdown, no explanation.
+  Output ONLY the Python code - no prose, no markdown, no explanation.
 
   The game must be a class with the following lifecycle methods:
   - __init__(self): set up initial state

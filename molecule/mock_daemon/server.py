@@ -1614,6 +1614,76 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             # endpoint hits can be snapshotted in isolation.
             _reset_requests()
             self._send_json(200, {"reset": True})
+        elif path == "/admin/models/local/download":
+            self._send_json(
+                200,
+                {
+                    "downloaded": True,
+                    "model_id": payload.get("model_id", ""),
+                    "source": payload.get("source", "huggingface"),
+                    "local_path": "/tmp/gludd-molecule-model.gguf",
+                    "size_bytes": 1024,
+                },
+            )
+        elif path == "/admin/models/local/serve":
+            self._send_json(
+                201,
+                {
+                    "server_id": "mock-local-model-server",
+                    "model_id": payload.get("model_id", ""),
+                    "engine": "llamacpp",
+                    "model": payload.get("model_path", ""),
+                    "endpoint_url": "http://127.0.0.1:12001",
+                    "status": "running",
+                },
+            )
+        elif path == "/admin/models/local/consume":
+            code = (
+                "class Snake:\n"
+                "    def __init__(self):\n"
+                "        self.start()\n"
+                "    def start(self):\n"
+                "        self.snake = [(10, 10)]\n"
+                "        self.food = (15, 10)\n"
+                "        self._score = 0\n"
+                "        self.game_over = False\n"
+                "    def tick(self, direction):\n"
+                "        if self.game_over:\n"
+                "            return\n"
+                "        dx, dy = {'up': (0, -1), 'down': (0, 1), 'left': (-1, 0), 'right': (1, 0)}[direction]\n"
+                "        head = (self.snake[0][0] + dx, self.snake[0][1] + dy)\n"
+                "        if not (0 <= head[0] < 20 and 0 <= head[1] < 20) or head in self.snake:\n"
+                "            self.game_over = True\n"
+                "            return\n"
+                "        self.snake.insert(0, head)\n"
+                "        if head == self.food:\n"
+                "            self._score += 1\n"
+                "            self.food = (1, 1)\n"
+                "        else:\n"
+                "            self.snake.pop()\n"
+                "    def score(self):\n"
+                "        return self._score\n"
+                "    def is_game_over(self):\n"
+                "        return self.game_over\n"
+                "    def restart(self):\n"
+                "        self.start()\n"
+            )
+            self._send_json(
+                200,
+                {
+                    "server_id": payload.get("server_id", ""),
+                    "text": code,
+                    "usage": {"completion_tokens": 128},
+                },
+            )
+        elif path == "/admin/models/local/shutdown":
+            self._send_json(
+                200,
+                {
+                    "shutdown": True,
+                    "server_id": payload.get("server_id", ""),
+                },
+            )
         elif path == "/admin/models/call":
             self._send_json(200, _model_call_response(payload))
         elif path == "/admin/models/workflow":

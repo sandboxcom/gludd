@@ -62,6 +62,17 @@ _ROLE_SCENARIO_ALIASES: dict[str, set[str]] = {
     "stream_input_key_both": {"stream_input_key_both"},
 }
 
+_MODULE_SCENARIO_ALIASES: dict[str, set[str]] = {
+    "gludd_local_model": {"local_game_gen"},
+}
+
+
+def _module_covered(module: str, scenarios: set[str]) -> bool:
+    """Return whether a conventional or role-owned scenario covers a module."""
+    if _module_scenario(module) in scenarios:
+        return True
+    return bool(_MODULE_SCENARIO_ALIASES.get(module, set()) & scenarios)
+
 
 def _role_covered(role: str, scenarios: set[str]) -> bool:
     """True if any covering scenario (conventional role_<name> OR an alias) exists."""
@@ -257,7 +268,7 @@ class TestModuleCoverageChecklist:
         """
         modules = _module_names()
         scenarios = _scenario_names()
-        covered = {m for m in modules if _module_scenario(m) in scenarios}
+        covered = {m for m in modules if _module_covered(m, scenarios)}
         not_covered = modules - covered
 
         # Every not-yet-covered module must be in the declared checklist.
@@ -270,7 +281,7 @@ class TestModuleCoverageChecklist:
     def test_at_least_two_module_scenarios_exist(self) -> None:
         modules = _module_names()
         scenarios = _scenario_names()
-        covered = {m for m in modules if _module_scenario(m) in scenarios}
+        covered = {m for m in modules if _module_covered(m, scenarios)}
         assert len(covered) >= 2, f"expected >= 2 module scenarios, have {sorted(covered)}"
 
 

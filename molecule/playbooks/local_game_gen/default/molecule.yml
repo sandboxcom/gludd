@@ -16,6 +16,9 @@ provisioner:
       localhost:
         ansible_connection: local
         ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  playbooks:
+    cleanup: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/mock_daemon_cleanup.yml"
+    destroy: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/mock_daemon_destroy.yml"
 verifier:
   name: ansible
 scenario:
@@ -26,7 +29,6 @@ scenario:
     - destroy
     - syntax
     - create
-    - prepare
     - converge
     - idempotence
     - side_effect

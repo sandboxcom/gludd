@@ -112,9 +112,10 @@ class TestCorrectivePromptRetry:
 
     def test_retry_path_re_runs_generation_after_rejection(self) -> None:
         tasks_text = _combined_text()
-        assert "retry_prompt" in tasks_text, "tasks must reference retry_prompt"
-        assert "/v1/completions" in tasks_text, "generation call must still exist"
-        assert tasks_text.count("/v1/completions") >= 1
+        assert "retry_prompt" in tasks_text
+        assert "action: consume" in tasks_text
+        assert tasks_text.count("action: consume") == 1
+
 
     def test_retry_uses_effective_prompt(self) -> None:
         tasks_text = _combined_text()
@@ -173,26 +174,33 @@ class TestModelFallback:
     def test_fallback_model_download_task_exists(self) -> None:
         all_tasks = _combined_tasks()
         download_tasks = [
-            t
-            for t in all_tasks
-            if any("ansible.builtin.command" in k for k in t)
-            and "hf download" in str(t.get("ansible.builtin.command", ""))
-            and "_active_repo" in str(t)
-            and "_active_file" in str(t)
+            task
+            for task in all_tasks
+            if task.get("general_ludd.agent.gludd_local_model", {}).get("action")
+            == "download"
+            and "_active_repo" in str(task)
+            and "_active_file" in str(task)
         ]
-        assert download_tasks, (
-            "a download task must fetch the active fallback model (hf download _active_repo _active_file)"
-        )
-        switch_tasks = [t for t in all_tasks if t.get("name", "").lower().startswith("switch to fallback model")]
-        assert switch_tasks, "a 'Switch to fallback model on repeated rejection' block must exist"
+        assert download_tasks
+        switch_tasks = [
+            task
+            for task in all_tasks
+            if task.get("name", "").lower().startswith(
+                "switch daemon-owned server to a fallback model"
+            )
+        ]
+        assert switch_tasks
+
 
     def test_server_restarts_with_fallback_model(self) -> None:
         tasks_text = _combined_text()
-        assert "kill -TERM" in tasks_text, "server must be killed before switching models"
-        assert "_active_file" in tasks_text, "the served model file must follow the active fallback"
-        assert "_attempt | int > 1" in tasks_text or "_attempt | int >= 2" in tasks_text, (
-            "the fallback download/restart path must be gated on attempt >= 2"
-        )
+        assert "action: shutdown" in tasks_text
+        assert "action: serve" in tasks_text
+        assert "_active_file" in tasks_text
+        assert "_attempt | int > 1" in tasks_text
+        assert "kill -TERM" not in tasks_text
+        assert "nohup" not in tasks_text
+
 
     def test_fallback_attempt_uses_corrective_prompt(self) -> None:
         tasks_text = _combined_text()
@@ -201,16 +209,27 @@ class TestModelFallback:
 
     def test_generation_task_selects_model_per_attempt(self) -> None:
         all_tasks = _combined_tasks()
-        gen = next(
-            (t for t in all_tasks if "v1/completions" in str(t.get("ansible.builtin.uri", ""))),
+        consume = next(
+            (
+                task
+                for task in all_tasks
+                if task.get("general_ludd.agent.gludd_local_model", {}).get("action")
+                == "consume"
+            ),
             None,
         )
-        assert gen is not None, "v1/completions generation task must exist"
-        for t in all_tasks:
-            if any("set_fact" in k for k in t) and "model_repo" in str(t) and "fallback_models" in str(t):
-                assert "_attempt" in str(t), "Model selection must be keyed by the attempt number"
-                return
-        pytest.fail("No set_fact task selecting the model for the current attempt")
+        assert consume is not None, "daemon consume generation task must exist"
+        assert consume["general_ludd.agent.gludd_local_model"]["server_id"] == (
+            "{{ _local_model_server.server_id }}"
+        )
+        assert any(
+            "ansible.builtin.set_fact" in task
+            and "model_repo" in str(task)
+            and "fallback_models" in str(task)
+            and "_attempt" in str(task)
+            for task in all_tasks
+        )
+
 
     def test_active_model_path_resolved_in_separate_set_fact(self) -> None:
         """Regression pin: set_fact resolves every key BEFORE any is set, so
@@ -270,27 +289,27 @@ class TestBoundedRetry:
         )
 
     def test_attempt_counter_starts_at_one(self) -> None:
-        main_tasks = _load_yaml("tasks/main.yml")
-        assert isinstance(main_tasks, list) and main_tasks
-        # Regression pin: the attempt counter MUST start as a set_fact host
-        # fact — never as an include var on the generate_and_verify include.
-        # Include vars shadow host facts inside the included file, so the
-        # retry's set_fact increment is invisible to its own `when` guard
-        # and the rejection loop recurses forever (observed 2026-08-16 local
-        # molecule run: 16+ attempts with max_attempts=3).
+        main_tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
+        all_main_tasks = _iter_all_tasks(main_tasks)
         start = next(
-            (t for t in main_tasks if "attempt counter" in t.get("name", "") and any("set_fact" in k for k in t)),
+            (
+                task
+                for task in all_main_tasks
+                if "attempt counter" in task.get("name", "").lower()
+                and "ansible.builtin.set_fact" in task
+            ),
             None,
         )
-        assert start is not None, "main.yml must start the counter via set_fact"
+        assert start is not None
         assert start["ansible.builtin.set_fact"]["_attempt"] == 1
         include = next(
-            t
-            for t in main_tasks
-            if any("include_tasks" in k for k in t)
-            and "generate_and_verify.yml" in str(t.get("ansible.builtin.include_tasks"))
+            task
+            for task in all_main_tasks
+            if "ansible.builtin.include_tasks" in task
+            and "generate_and_verify.yml" in str(task["ansible.builtin.include_tasks"])
         )
-        assert "vars" not in include, "the game-gen include must NOT carry _attempt as an include var"
+        assert "vars" not in include
+
 
     def test_max_attempts_positive(self) -> None:
         defaults = cast(dict[str, Any], _load_yaml("defaults/main.yml"))
@@ -385,8 +404,8 @@ class TestFailOnRejectionContract:
             "molecule converge must set max_attempts >= 3 (attempt 1 + a retry requires"
             " the rescue-incremented counter to satisfy _attempt < max_attempts)"
         )
-        assert bool(role_vars.get("fail_on_rejection")) is False, (
-            "molecule converge must set fail_on_rejection=false so rejection is observed, not fatal"
+        assert bool(role_vars.get("fail_on_rejection")) is True, (
+            "molecule converge must fail closed on lifecycle or generation rejection"
         )
 
     def test_molecule_verify_tolerates_rejection(self) -> None:

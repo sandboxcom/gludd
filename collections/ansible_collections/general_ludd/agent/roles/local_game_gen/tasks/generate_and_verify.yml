@@ -18,86 +18,73 @@
       {{ model_file if _attempt | int == 1 or fallback_models | length == 0
          else fallback_models[([(_attempt | int) - 2, fallback_models | length - 1] | min)].file }}
 
-- name: "Resolve active model path (separate task: set_fact resolves all keys at once)"
-  ansible.builtin.set_fact:
-    _active_model_path: >-
-      {{ model_download_dir }}/{{ _active_repo | regex_replace('/', '_') }}/{{ _active_file }}
-
 - name: "Select effective prompt for the current attempt"
   ansible.builtin.set_fact:
     _effective_prompt: "{{ game_prompt if _attempt | int == 1 else retry_prompt }}"
 
 - name: "Generate and verify"
   block:
-    - name: "Switch to fallback model on repeated rejection"
-      # The switch block only runs when a fallback model is configured AND
-      # this is a retry attempt; with an empty fallback_models list the
-      # corrective-prompt retry reuses the already-served primary model
-      # (observed locally: pointless re-download + restart of the same GGUF).
+    - name: "Switch daemon-owned server to a fallback model"
       when:
         - _attempt | int > 1
         - fallback_models | length > 0
       block:
-        - name: "Download fallback model if not present"
-          ansible.builtin.command: >-
-            hf download {{ _active_repo }} {{ _active_file }}
-            --local-dir {{ model_download_dir }}/{{ _active_repo | regex_replace('/', '_') }}
-          args:
-            creates: "{{ _active_model_path }}"
-          changed_when: true
+        - name: "Ask the Gludd daemon to stop the current model before fallback"
+          general_ludd.agent.gludd_local_model:
+            action: shutdown
+            daemon_url: "{{ daemon_url }}"
+            psk: "{{ psk }}"
+            server_id: "{{ _local_model_server.server_id }}"
+            timeout: "{{ daemon_timeout }}"
 
-        - name: "Stop current server before model switch"
-          ansible.builtin.command: "kill -TERM {{ _server_pid.content | b64decode | trim }}"
-          when: _server_pid.content is defined
-          failed_when: false
-          changed_when: true
+        - name: "Clear the stopped server identity before reacquisition"
+          ansible.builtin.set_fact:
+            _local_model_server: {}
 
-        - name: "Start llama.cpp server with fallback model"
-          ansible.builtin.shell: |
-            nohup {{ ansible_playbook_python }} -m llama_cpp.server \
-              --model "{{ _active_model_path }}" \
-              --host {{ server_host }} \
-              --port {{ server_port }} \
-              --n_ctx {{ server_context_size }} \
-              --n_gpu_layers {{ server_gpu_layers }} \
-              > "{{ _server_log }}" 2>&1 &
-            echo $! > "{{ artifact_dir }}/server.pid"
-          changed_when: true
+        - name: "Ask the Gludd daemon to acquire the fallback model"
+          general_ludd.agent.gludd_local_model:
+            action: download
+            daemon_url: "{{ daemon_url }}"
+            psk: "{{ psk }}"
+            timeout: "{{ daemon_timeout }}"
+            model_id: "{{ _active_repo }}"
+            filename: "{{ _active_file }}"
+            source: "{{ model_source }}"
+          register: _local_model_download
 
-        - name: "Record new server PID after fallback restart"
-          ansible.builtin.slurp:
-            src: "{{ artifact_dir }}/server.pid"
-          register: _server_pid
-          changed_when: false
+        - name: "Ask the Gludd daemon to serve the fallback model"
+          general_ludd.agent.gludd_local_model:
+            action: serve
+            daemon_url: "{{ daemon_url }}"
+            psk: "{{ psk }}"
+            timeout: "{{ daemon_timeout }}"
+            model_id: "{{ _active_repo }}"
+            model_path: "{{ _local_model_download.local_path }}"
+            host: "{{ server_host }}"
+            port: "{{ server_port }}"
+            startup_timeout: "{{ server_startup_timeout }}"
+            gpu_layers: "{{ server_gpu_layers }}"
+            context_size: "{{ server_context_size }}"
+          register: _fallback_local_model_server
 
-        - name: "Poll fallback model readiness"
-          ansible.builtin.uri:
-            url: "http://{{ server_host }}:{{ server_port }}/v1/models"
-            method: GET
-            timeout: 5
-          register: _fallback_health
-          until: _fallback_health.status == 200
-          retries: "{{ health_check_retries }}"
-          delay: "{{ health_check_delay }}"
-          changed_when: false
+        - name: "Promote the running fallback server identity"
+          ansible.builtin.set_fact:
+            _local_model_server: "{{ _fallback_local_model_server }}"
 
-    - name: "Call local model for game generation"
-      ansible.builtin.uri:
-        url: "http://{{ server_host }}:{{ server_port }}/v1/completions"
-        method: POST
-        body_format: json
-        body:
-          prompt: "{{ _effective_prompt }}"
-          max_tokens: "{{ max_tokens }}"
-          temperature: "{{ temperature }}"
-        timeout: 300
-        headers:
-          Content-Type: application/json
+    - name: "Ask the Gludd daemon to consume the owned local model"
+      general_ludd.agent.gludd_local_model:
+        action: consume
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+        timeout: "{{ daemon_timeout }}"
+        server_id: "{{ _local_model_server.server_id }}"
+        prompt: "{{ _effective_prompt }}"
+        max_tokens: "{{ max_tokens }}"
       register: _model_response
 
-    - name: "Extract generated code from model response"
+    - name: "Extract generated code from daemon response"
       ansible.builtin.set_fact:
-        _generated_code: "{{ _model_response.json.choices[0].text | default('') }}"
+        _generated_code: "{{ _model_response.text | default('') }}"
 
     - name: "Write generated code to artifact"
       ansible.builtin.copy:
@@ -105,63 +92,102 @@
         dest: "{{ artifact_dir }}/{{ game_name }}.py"
         mode: "0644"
 
-    - name: "Verify — acceptance engine (single rejection choke point)"
+    - name: "Verify - acceptance engine (single rejection choke point)"
       when: use_acceptance_engine | default(false) | bool
-      ansible.builtin.command: >-
-        {{ ansible_playbook_python }} -m general_ludd.game_gen.acceptance
-        "{{ artifact_dir }}/{{ game_name }}.py"
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -m
+          - general_ludd.game_gen.acceptance
+          - "{{ artifact_dir }}/{{ game_name }}.py"
       register: _acceptance_result
       changed_when: false
 
-    - name: "Verify — AST parse"
-      ansible.builtin.command: "{{ ansible_playbook_python }} -c 'import ast; ast.parse(open(\"{{ artifact_dir }}/{{ game_name }}.py\").read()); print(\"AST: OK\")'"
+    - name: "Verify - AST parse"
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - |
+            import ast
+            import sys
+            from pathlib import Path
+
+            ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"))
+            print("AST: OK")
+          - "{{ artifact_dir }}/{{ game_name }}.py"
       register: _ast_result
       changed_when: false
 
-    - name: "Verify — import module"
-      ansible.builtin.command: >-
-        {{ ansible_playbook_python }} -c "
-        import importlib.util, sys
-        spec = importlib.util.spec_from_file_location('{{ game_name }}', '{{ artifact_dir }}/{{ game_name }}.py')
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        classes = [v for v in vars(mod).values() if isinstance(v, type) and v.__module__ == '{{ game_name }}']
-        if not classes:
-            print('ERR: no game class found')
-            sys.exit(1)
-        print(f'Classes: {[c.__name__ for c in classes]}')
-        "
+    - name: "Verify - import module"
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - |
+            import importlib.util
+            import sys
+
+            module_name = sys.argv[2]
+            spec = importlib.util.spec_from_file_location(module_name, sys.argv[1])
+            if spec is None or spec.loader is None:
+                raise RuntimeError("unable to load generated module")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            classes = [
+                value
+                for value in vars(module).values()
+                if isinstance(value, type) and value.__module__ == module_name
+            ]
+            if not classes:
+                print("ERR: no game class found")
+                raise SystemExit(1)
+            print(f"Classes: {[candidate.__name__ for candidate in classes]}")
+          - "{{ artifact_dir }}/{{ game_name }}.py"
+          - "{{ game_name }}"
       register: _import_result
       changed_when: false
 
-    - name: "Verify — runtime checks"
-      ansible.builtin.command: >-
-        {{ ansible_playbook_python }} -c "
-        import importlib.util, sys
-        from pathlib import Path
-        spec = importlib.util.spec_from_file_location('{{ game_name }}', '{{ artifact_dir }}/{{ game_name }}.py')
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        classes = [v for v in vars(mod).values() if isinstance(v, type) and v.__module__ == '{{ game_name }}']
-        game = classes[0]()
-        sys.stdout.write(f'Instantiated {type(game).__name__}\n')
-        if hasattr(game, 'start'):
-            game.start()
-            sys.stdout.write('start(): OK\n')
-        if hasattr(game, 'score'):
-            sys.stdout.write(f'score(): {game.score()}\n')
-        if hasattr(game, 'is_game_over'):
-            sys.stdout.write(f'is_game_over(): {game.is_game_over()}\n')
-        if hasattr(game, 'tick') and hasattr(game, 'is_game_over'):
-            for _ in range(5):
-                if not game.is_game_over():
-                    game.tick('right')
-            sys.stdout.write('tick() x5: OK\n')
-        if hasattr(game, 'restart'):
-            game.restart()
-            sys.stdout.write('restart(): OK\n')
-        sys.stdout.write('RUNTIME: OK\n')
-        "
+    - name: "Verify - runtime checks"
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - |
+            import importlib.util
+            import sys
+
+            module_name = sys.argv[2]
+            spec = importlib.util.spec_from_file_location(module_name, sys.argv[1])
+            if spec is None or spec.loader is None:
+                raise RuntimeError("unable to load generated module")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            classes = [
+                value
+                for value in vars(module).values()
+                if isinstance(value, type) and value.__module__ == module_name
+            ]
+            game = classes[0]()
+            print(f"Instantiated {type(game).__name__}")
+            if hasattr(game, "start"):
+                game.start()
+                print("start(): OK")
+            if hasattr(game, "score"):
+                print(f"score(): {game.score()}")
+            if hasattr(game, "is_game_over"):
+                print(f"is_game_over(): {game.is_game_over()}")
+            if hasattr(game, "tick") and hasattr(game, "is_game_over"):
+                for _ in range(5):
+                    if not game.is_game_over():
+                        game.tick("right")
+                print("tick() x5: OK")
+            if hasattr(game, "restart"):
+                game.restart()
+                print("restart(): OK")
+            print("RUNTIME: OK")
+          - "{{ artifact_dir }}/{{ game_name }}.py"
+          - "{{ game_name }}"
       register: _runtime_result
       changed_when: false
 

@@ -68,7 +68,7 @@ class TestPipelineConfigValidation:
     def test_tasks_main_yml_is_non_empty_list(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
         assert isinstance(tasks, list), "tasks/main.yml must be a list"
-        assert len(tasks) >= 5, f"Expected >=5 tasks, got {len(tasks)}"
+        assert len(tasks) >= 4, f"Expected >=4 tasks, got {len(tasks)}"
 
     def test_every_task_has_name(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
@@ -86,16 +86,18 @@ class TestPipelineConfigValidation:
             "game_name",
             "model_repo",
             "model_file",
-            "model_download_dir",
+            "model_source",
+            "daemon_url",
+            "psk",
+            "daemon_timeout",
             "server_host",
             "server_port",
+            "server_startup_timeout",
             "game_prompt",
             "max_tokens",
             "artifact_dir",
-            "temperature",
             "server_context_size",
-            "health_check_retries",
-            "health_check_delay",
+            "server_gpu_layers",
         ]
         for key in required:
             assert key in defaults, f"Missing default key: {key}"
@@ -137,46 +139,40 @@ class TestTaskStepOrdering:
         assert "file" in str(t1), "Step 2 must use file module to create directory"
 
     def test_download_before_server(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
+        tasks = _combined_tasks()
         names = _task_names(tasks)
-        dl_idx = next(i for i, n in enumerate(names) if "download" in n.lower())
-        svr_idx = next(i for i, n in enumerate(names) if "start" in n.lower() and "server" in n.lower())
-        assert dl_idx < svr_idx, f"Download (idx {dl_idx}) must precede server start (idx {svr_idx})"
+        dl_idx = next(i for i, n in enumerate(names) if "acquire the primary model" in n.lower())
+        svr_idx = next(i for i, n in enumerate(names) if "serve the primary model" in n.lower())
+        assert dl_idx < svr_idx
 
     def test_server_before_game_generation(self) -> None:
         tasks = _combined_tasks()
         names = _task_names(tasks)
-        svr_idx = next(i for i, n in enumerate(names) if "start" in n.lower() and "server" in n.lower())
-        gen_idx = next(i for i, n in enumerate(names) if "call local model" in n.lower())
-        assert svr_idx < gen_idx, f"Server start (idx {svr_idx}) must precede generation (idx {gen_idx})"
+        svr_idx = next(i for i, n in enumerate(names) if "serve the primary model" in n.lower())
+        gen_idx = next(i for i, n in enumerate(names) if "consume the owned local model" in n.lower())
+        assert svr_idx < gen_idx
 
     def test_game_generation_before_verify(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
+        tasks = _combined_tasks()
         names = _task_names(tasks)
-        gen_idx = next(i for i, n in enumerate(names) if "generation" in n.lower() or "generate" in n.lower())
-        shutdown_idx = next(i for i, n in enumerate(names) if any(w in n.lower() for w in ("shutdown", "stop", "kill")))
-        assert gen_idx < shutdown_idx, f"Generation (idx {gen_idx}) must precede shutdown (idx {shutdown_idx})"
-        gen_verify_text = " ".join(names).lower()
-        assert "verify" in gen_verify_text, "The generate+verify pipeline must include verification steps"
+        gen_idx = next(i for i, n in enumerate(names) if "consume the owned local model" in n.lower())
+        verify_idx = next(i for i, n in enumerate(names) if "ast parse" in n.lower())
+        assert gen_idx < verify_idx
 
     def test_shutdown_is_last_or_always_block(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
         last = tasks[-1]
-        assert any(w in str(last).lower() for w in ("shutdown", "stop", "kill")), (
-            f"Final task should be shutdown-related, got: {last.get('name', '?')}"
-        )
-        shutdown_text = yaml.dump(last)
-        assert "always" in shutdown_text.lower(), "Shutdown must use always: block for guaranteed execution"
+        assert "always" in last
+        assert "shutdown" in str(last["always"]).lower()
 
-    def test_health_poll_between_server_and_generation(self) -> None:
-        tasks = _combined_tasks()
-        names = _task_names(tasks)
-        svr_idx = next(i for i, n in enumerate(names) if "start" in n.lower() and "server" in n.lower())
-        health_idx = next(i for i, n in enumerate(names) if "health" in n.lower())
-        gen_idx = next(i for i, n in enumerate(names) if "call local model" in n.lower())
-        assert svr_idx < health_idx < gen_idx, (
-            f"Health poll (idx {health_idx}) between server start (idx {svr_idx}) and generation (idx {gen_idx})"
+    def test_serve_contract_includes_startup_readiness(self) -> None:
+        serve = next(
+            t["general_ludd.agent.gludd_local_model"]
+            for t in _combined_tasks()
+            if t.get("general_ludd.agent.gludd_local_model", {}).get("action") == "serve"
         )
+        assert serve["startup_timeout"] == "{{ server_startup_timeout }}"
+
 
 
 # =============================================================================
@@ -190,18 +186,17 @@ class TestDefaultsCorrectness:
         return cast(dict[str, Any], _load_yaml("defaults/main.yml"))
 
     def test_server_host_is_loopback(self, defaults: dict[str, Any]) -> None:
-        assert defaults["server_host"] == "127.0.0.1", "server_host must default to loopback"
+        assert defaults["server_host"] == "127.0.0.1"
 
     def test_server_port_is_valid(self, defaults: dict[str, Any]) -> None:
         port = int(defaults["server_port"])
-        assert 1024 <= port <= 65535, f"Port {port} out of valid range"
+        assert 1024 <= port <= 65535
 
     def test_max_tokens_positive(self, defaults: dict[str, Any]) -> None:
-        assert int(defaults["max_tokens"]) > 0, "max_tokens must be > 0"
+        assert int(defaults["max_tokens"]) > 0
 
-    def test_temperature_in_range(self, defaults: dict[str, Any]) -> None:
-        t = float(defaults["temperature"])
-        assert 0.0 <= t <= 2.0, f"temperature {t} out of [0, 2]"
+    def test_daemon_timeout_positive(self, defaults: dict[str, Any]) -> None:
+        assert int(defaults["daemon_timeout"]) > 0
 
     def test_gpu_layers_non_negative(self, defaults: dict[str, Any]) -> None:
         assert int(defaults["server_gpu_layers"]) >= 0
@@ -209,11 +204,12 @@ class TestDefaultsCorrectness:
     def test_context_size_positive(self, defaults: dict[str, Any]) -> None:
         assert int(defaults["server_context_size"]) > 0
 
-    def test_health_check_retries_positive(self, defaults: dict[str, Any]) -> None:
-        assert int(defaults["health_check_retries"]) > 0
+    def test_daemon_url_is_loopback_http(self, defaults: dict[str, Any]) -> None:
+        assert defaults["daemon_url"] == "http://127.0.0.1:8000"
 
-    def test_health_check_delay_positive(self, defaults: dict[str, Any]) -> None:
-        assert int(defaults["health_check_delay"]) > 0
+    def test_model_source_is_huggingface(self, defaults: dict[str, Any]) -> None:
+        assert defaults["model_source"] == "huggingface"
+
 
     def test_artifact_dir_is_under_tmp(self, defaults: dict[str, Any]) -> None:
         assert defaults["artifact_dir"].startswith("/tmp/"), (
@@ -253,64 +249,66 @@ class TestDefaultsCorrectness:
 
 
 class TestMissingBinaryErrorHandling:
-    def test_huggingface_cli_referenced_in_tasks(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        cmds = _gather_commands(tasks)
-        dump = yaml.dump(tasks)
-        assert any("huggingface" in c for c in cmds) or "huggingface" in dump, "Tasks must reference huggingface-cli"
+    def test_role_has_no_huggingface_cli_dependency(self) -> None:
+        tasks_text = _combined_text().lower()
+        assert "hf download" not in tasks_text
+        assert "huggingface-cli" not in tasks_text
 
     def test_python3_referenced_in_verify_steps(self) -> None:
-        cmds = _gather_commands(_combined_tasks())
-        python_cmds = [c for c in cmds if "ansible_playbook_python" in c or c.startswith("python3")]
-        assert len(python_cmds) >= 3, f"Expected >=3 python invocations (AST/import/runtime), got {len(python_cmds)}"
+        python_cmds: list[dict[str, Any] | str] = []
+        for task in _combined_tasks():
+            command = task.get("ansible.builtin.command")
+            if isinstance(command, dict):
+                argv = command.get("argv", [])
+                if argv and "ansible_playbook_python" in str(argv[0]):
+                    python_cmds.append(command)
+            elif isinstance(command, str) and (
+                "ansible_playbook_python" in command or command.startswith("python3")
+            ):
+                python_cmds.append(command)
+        assert len(python_cmds) >= 3
 
-    def test_download_task_has_creates_guard(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        for t in _iter_all_tasks(tasks):
-            cmd = t.get("ansible.builtin.command")
-            if isinstance(cmd, str) and "hf download" in cmd:
-                args_kw = t.get("args")
-                assert isinstance(args_kw, dict), "Download task must have args"
-                assert "creates" in args_kw, "Download should have args.creates for idempotency"
-                return
-        pytest.fail("No hf download command task found")
+    def test_download_uses_typed_daemon_module(self) -> None:
+        download = next(
+            t["general_ludd.agent.gludd_local_model"]
+            for t in _combined_tasks()
+            if t.get("general_ludd.agent.gludd_local_model", {}).get("action") == "download"
+        )
+        assert download["model_id"] in ("{{ model_repo }}", "{{ _active_repo }}")
+        assert download["timeout"] == "{{ daemon_timeout }}"
 
-    def test_shutdown_ignores_missing_pid_file(self) -> None:
+    def test_shutdown_is_guarded_by_daemon_server_identity(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        all_tasks: list[dict[str, Any]] = []
-        for t in tasks:
-            all_tasks.append(t)
-            for inner in t.get("always", []):
-                all_tasks.append(inner)
-        for t in all_tasks:
-            if "ansible.builtin.slurp" in t and "pid" in str(t.get("ansible.builtin.slurp", "")).lower():
-                assert t.get("ignore_errors") is True, "PID slurp must ignore_errors"
-                return
-        pytest.fail("No slurp task for PID file found")
+        shutdown = next(
+            t
+            for t in _iter_all_tasks(tasks)
+            if t.get("general_ludd.agent.gludd_local_model", {}).get("action") == "shutdown"
+        )
+        assert "_local_model_server is defined" in shutdown["when"]
+        assert "_local_model_server.server_id is defined" in shutdown["when"]
 
-    def test_shell_command_redirects_stderr_for_nohup(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        for t in tasks:
-            if "ansible.builtin.shell" in t:
-                cmd = t["ansible.builtin.shell"]
-                assert "2>&1" in cmd or "nohup" not in cmd, "nohup'd cmd must redirect stderr"
-                return
+    def test_role_contains_no_shell_process_launch(self) -> None:
+        tasks_text = _combined_text().lower()
+        assert "ansible.builtin.shell" not in tasks_text
+        assert "nohup" not in tasks_text
 
     def test_ast_parse_registers_result(self) -> None:
-        for t in _combined_tasks():
-            if "ansible.builtin.command" in t and "ast.parse" in str(t["ansible.builtin.command"]):
-                assert "register" in t, "AST step must register result"
-                assert t.get("changed_when") is False, "AST step is read-only"
+        for task in _combined_tasks():
+            if "ansible.builtin.command" in task and "ast.parse" in str(task["ansible.builtin.command"]):
+                assert "register" in task
+                assert task.get("changed_when") is False
                 return
         pytest.fail("No AST parse step found")
 
-    def test_health_poll_has_bounded_retries(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        for t in _iter_all_tasks(tasks):
-            if "ansible.builtin.uri" in t and "/v1/models" in str(t.get("ansible.builtin.uri", "")).lower():
-                assert "retries" in t, "Health poll step must have retries config"
-                return
-        pytest.fail("No models-URI poll task found")
+    def test_serve_has_bounded_startup_timeout(self) -> None:
+        serve = next(
+            t["general_ludd.agent.gludd_local_model"]
+            for t in _combined_tasks()
+            if t.get("general_ludd.agent.gludd_local_model", {}).get("action") == "serve"
+        )
+        assert serve["startup_timeout"] == "{{ server_startup_timeout }}"
+        assert serve["timeout"] == "{{ daemon_timeout }}"
+
 
 
 # =============================================================================
@@ -321,34 +319,30 @@ class TestMissingBinaryErrorHandling:
 class TestEnvironmentVariablePropagation:
     def test_artifact_dir_is_configurable(self) -> None:
         defaults = cast(dict[str, Any], _load_yaml("defaults/main.yml"))
-        alt = "/tmp/gludd-game-gen-alt"
-        assert alt != defaults["artifact_dir"], "Test value must differ from default"
+        assert defaults["artifact_dir"] != "/tmp/gludd-game-gen-alt"
 
-    def test_model_download_dir_is_configurable(self) -> None:
+    def test_model_source_is_configurable(self) -> None:
         defaults = cast(dict[str, Any], _load_yaml("defaults/main.yml"))
-        alt = "/tmp/gludd-model-cache-2"
-        assert alt != defaults["model_download_dir"]
+        assert defaults["model_source"] == "huggingface"
 
-    def test_server_host_overrideable_from_localhost(self) -> None:
+    def test_daemon_url_defaults_to_loopback(self) -> None:
         defaults = cast(dict[str, Any], _load_yaml("defaults/main.yml"))
-        assert defaults["server_host"] == "127.0.0.1"
+        assert defaults["daemon_url"] == "http://127.0.0.1:8000"
 
-    def test_task_uses_template_variables_not_hardcoded_paths(self) -> None:
+    def test_task_uses_daemon_contract_variables(self) -> None:
         tasks_text = _combined_text()
         variable_patterns = [
             "{{ artifact_dir }}",
-            "{{ model_download_dir }}",
-            "{{ server_host }}",
+            "{{ daemon_url }}",
+            "{{ psk }}",
+            "{{ daemon_timeout }}",
             "{{ server_port }}",
-            "{{ _model_path }}",
             "{{ game_name }}",
             "{{ _effective_prompt }}",
             "{{ max_tokens }}",
-            "{{ temperature }}",
             "{{ server_context_size }}",
             "{{ server_gpu_layers }}",
-            "{{ health_check_retries }}",
-            "{{ health_check_delay }}",
+            "{{ server_startup_timeout }}",
         ]
         for var in variable_patterns:
             assert var in tasks_text, f"Task files must reference {var}"
@@ -356,52 +350,34 @@ class TestEnvironmentVariablePropagation:
     def test_internal_variables_use_underscore_prefix(self) -> None:
         tasks_text = _combined_text()
         internal_vars = [
-            "_model_path",
-            "_server_log",
-            "_server_name",
+            "_local_model_download",
+            "_local_model_server",
             "_generated_code",
-            "_health_poll",
             "_model_response",
             "_ast_result",
             "_import_result",
             "_runtime_result",
-            "_server_pid",
         ]
         for var in internal_vars:
             assert var in tasks_text, f"Internal computed var {var} not found in tasks"
 
-    def test_all_defaults_referenced_in_tasks(self) -> None:
+    def test_all_lifecycle_defaults_referenced_in_tasks(self) -> None:
         defaults = cast(dict[str, Any], _load_yaml("defaults/main.yml"))
         tasks_text = _combined_text()
-        permitted_unreferenced = {"game_genre", "game_description", "server_startup_timeout"}
+        descriptive_only = {"game_genre", "game_description", "temperature", "model_download_dir"}
         unreferenced = {k for k in defaults if k not in tasks_text}
-        assert unreferenced <= permitted_unreferenced, (
-            f"Defaults not referenced in tasks: {unreferenced - permitted_unreferenced}"
-        )
+        assert unreferenced <= descriptive_only
 
-    def test_pip_install_unconditional_and_idempotent(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        for t in tasks:
-            if "ansible.builtin.pip" in t:
-                assert "when" not in t, "llama-cpp-python install must be unconditional"
-                pip_kw = cast(dict[str, Any], t["ansible.builtin.pip"])
-                assert pip_kw.get("state") == "present", "pip install must be idempotent (state: present)"
-                return
-        pytest.fail("No top-level pip install task found")
+    def test_role_never_installs_runtime_dependencies(self) -> None:
+        tasks_text = _combined_text().lower()
+        assert "ansible.builtin.pip" not in tasks_text
+        assert "llama-cpp-python" not in tasks_text
 
-    def test_pip_install_uses_server_extra(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        for t in tasks:
-            if "ansible.builtin.pip" in t:
-                pip_kw = cast(dict[str, Any], t["ansible.builtin.pip"])
-                assert "llama-cpp-python[server]" in pip_kw["name"], (
-                    "llama-cpp-python[server] must be in the pip install list: "
-                    "the [server] extra declares the runtime deps llama_cpp.server "
-                    "imports at module import (CI 2026-08-15: sse_starlette, "
-                    "starlette_context ModuleNotFoundError)"
-                )
-                return
-        pytest.fail("No top-level pip install task found")
+    def test_role_uses_authenticated_daemon_transport(self) -> None:
+        tasks_text = _combined_text()
+        assert 'daemon_url: "{{ daemon_url }}"' in tasks_text
+        assert 'psk: "{{ psk }}"' in tasks_text
+
 
 
 # =============================================================================
@@ -411,35 +387,36 @@ class TestEnvironmentVariablePropagation:
 
 class TestPipelineResilienceConfig:
     def test_game_generation_has_timeout(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        for t in tasks:
-            if "v1/completions" in str(t):
-                assert "timeout" in str(t), "Game generation API call must have a timeout"
-                return
+        consume = next(
+            t["general_ludd.agent.gludd_local_model"]
+            for t in _combined_tasks()
+            if t.get("general_ludd.agent.gludd_local_model", {}).get("action") == "consume"
+        )
+        assert consume["timeout"] == "{{ daemon_timeout }}"
 
-    def test_server_start_is_nohup(self) -> None:
-        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
-        assert "nohup" in tasks_text, "Server start must use nohup for detachment"
+    def test_server_start_is_daemon_owned(self) -> None:
+        tasks_text = _combined_text().lower()
+        assert "nohup" not in tasks_text
+        assert "llama_cpp.server" not in tasks_text
+        assert "action: serve" in tasks_text
 
-    def test_model_download_uses_creates_for_idempotency(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        all_tasks = _iter_all_tasks(tasks)
-        for t in all_tasks:
-            if "args" in t and isinstance(t.get("args"), dict):
-                args_kw = cast(dict[str, Any], t["args"])
-                if "creates" in args_kw:
-                    assert args_kw.get("creates") is not None
-                    return
-        pytest.fail("No task with args.creates idempotency guard found")
+    def test_model_download_is_daemon_owned(self) -> None:
+        tasks_text = _combined_text().lower()
+        assert "hf download" not in tasks_text
+        assert "ansible.builtin.pip" not in tasks_text
+        assert "action: download" in tasks_text
 
-    def test_shutdown_always_block_contains_kill_and_cleanup(self) -> None:
+    def test_shutdown_always_block_delegates_cleanup(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        last = tasks[-1]
-        if "always" in last:
-            always_block = cast(list[dict[str, Any]], last["always"])
-            has_kill = any("kill" in str(t) for t in always_block)
-            has_file_rm = any("file" in str(t) and "absent" in str(t) for t in always_block)
-            assert has_kill and has_file_rm, "Shutdown must kill server and remove PID file"
+        always_block = cast(list[dict[str, Any]], tasks[-1]["always"])
+        shutdown = next(
+            t["general_ludd.agent.gludd_local_model"]
+            for t in always_block
+            if t.get("general_ludd.agent.gludd_local_model", {}).get("action") == "shutdown"
+        )
+        assert shutdown["server_id"] == "{{ _local_model_server.server_id }}"
+        assert all("kill" not in str(t).lower() for t in always_block)
+
 
 
 # =============================================================================
@@ -497,30 +474,32 @@ class TestScriptMirrorsRole:
 
 class TestEdgeCases:
     def test_artifact_dir_not_hardcoded_in_verify_steps(self) -> None:
-        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
-        assert "{{ artifact_dir }}" in tasks_text, "Verify steps must use artifact_dir variable"
+        tasks_text = _combined_text()
+        assert "{{ artifact_dir }}" in tasks_text
 
-    def test_model_path_uses_regex_replace_slash(self) -> None:
-        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
-        assert "regex_replace('/', '_')" in tasks_text, "model_repo slash must be replaced for filesystem path"
+    def test_model_identity_is_not_converted_to_controller_path(self) -> None:
+        tasks_text = _combined_text()
+        assert 'model_id: "{{ model_repo }}"' in tasks_text
+        assert "regex_replace('/', '_')" not in tasks_text
 
-    def test_server_log_path_is_under_artifact_dir(self) -> None:
-        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
-        assert "{{ artifact_dir }}/llamacpp-server.log" in tasks_text, "Server log must be under artifact_dir"
+    def test_server_diagnostics_are_not_collection_owned(self) -> None:
+        tasks_text = _combined_text()
+        assert "llamacpp-server.log" not in tasks_text
+        assert "server.pid" not in tasks_text
 
     def test_generated_code_written_to_correct_path(self) -> None:
         tasks_text = _combined_text()
-        assert "{{ artifact_dir }}/{{ game_name }}.py" in tasks_text, (
-            "Generated code must write to artifact_dir/game_name.py"
-        )
+        assert "{{ artifact_dir }}/{{ game_name }}.py" in tasks_text
 
-    def test_server_pid_written_to_artifact_dir(self) -> None:
-        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
-        assert "{{ artifact_dir }}/server.pid" in tasks_text, "Server PID must be in artifact_dir"
+    def test_no_pid_file_is_written_by_collection(self) -> None:
+        tasks_text = _combined_text()
+        assert "echo $!" not in tasks_text
+        assert "server.pid" not in tasks_text
 
     def test_defaults_file_is_not_empty_and_parses(self) -> None:
         defaults = cast(dict[str, Any], _load_yaml("defaults/main.yml"))
         assert len(defaults) >= 16, f"Expected >=16 keys in defaults, got {len(defaults)}"
+
 
 
 # =============================================================================
@@ -529,68 +508,55 @@ class TestEdgeCases:
 
 
 class TestDeepPipelineValidation:
-    def test_model_path_uses_download_dir_and_regex_escaped_repo(self) -> None:
+    def test_download_identity_is_delegated_to_daemon(self) -> None:
         tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
-        assert "{{ model_download_dir }}" in tasks_text
-        assert "{{ model_repo | regex_replace('/', '_') }}" in tasks_text
-        assert "{{ model_file }}" in tasks_text
+        assert 'action: download' in tasks_text
+        assert 'model_id: "{{ model_repo }}"' in tasks_text
+        assert 'filename: "{{ model_file }}"' in tasks_text
+        assert 'source: "{{ model_source }}"' in tasks_text
 
-    def test_server_pid_file_roundtrip(self) -> None:
-        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
-        assert 'echo $! > "{{ artifact_dir }}/server.pid"' in tasks_text
-        assert "{{ artifact_dir }}/server.pid" in tasks_text
-        assert "ansible.builtin.slurp" in tasks_text
-        assert "b64decode" in tasks_text
-
-    def test_health_poll_has_until_retries_and_delay(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        for t in _iter_all_tasks(tasks):
-            if "ansible.builtin.uri" in t and "/v1/models" in str(t.get("ansible.builtin.uri", "")).lower():
-                assert "retries" in t, "Health poll missing retries"
-                assert "delay" in t, "Health poll missing delay"
-                assert "until" in t, "Health poll missing until condition"
-                assert t.get("changed_when") is False, "Health poll is read-only"
-                return
-        pytest.fail("No models-URI poll task found")
-
-    def test_code_extraction_from_completions_response(self) -> None:
+    def test_server_identity_roundtrip_uses_daemon_id(self) -> None:
         tasks_text = _combined_text()
-        json_path = "_model_response.json.choices[0].text"
-        assert json_path in tasks_text, f"Code extraction must reference {json_path}"
-        assert "{{ _generated_code }}" in tasks_text, "Generated code must be written from set_fact"
+        assert "_local_model_server.server_id" in tasks_text
+        assert "server.pid" not in tasks_text
+        assert "ansible.builtin.slurp" not in tasks_text
+
+    def test_serve_uses_bounded_startup_timeout(self) -> None:
+        serve_calls = [
+            t["general_ludd.agent.gludd_local_model"]
+            for t in _combined_tasks()
+            if t.get("general_ludd.agent.gludd_local_model", {}).get("action") == "serve"
+        ]
+        assert serve_calls
+        assert all(call["startup_timeout"] == "{{ server_startup_timeout }}" for call in serve_calls)
+
+    def test_code_extraction_from_daemon_response(self) -> None:
+        tasks_text = _combined_text()
+        assert "_model_response.text | default('')" in tasks_text
+        assert "{{ _generated_code }}" in tasks_text
 
     def test_block_recursion_covers_all_nested_tasks(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
         all_tasks = _iter_all_tasks(tasks)
-        assert len(all_tasks) > len(tasks), (
-            f"Recursive walk ({len(all_tasks)}) must find more tasks than top-level ({len(tasks)})"
-        )
+        assert len(all_tasks) > len(tasks)
         nested_names = [t.get("name", "") for t in all_tasks if t.get("name")]
-        top_names = _task_names(tasks)
-        assert "Install llama-cpp-python[server] and huggingface_hub" in top_names
-        assert "Download GGUF via hf" in nested_names
-        assert "Read server PID" in nested_names
-        assert "Kill server process" in nested_names
-        assert "Remove PID file" in nested_names
-        assert "Read server log on health poll failure" in nested_names
-        assert "Fail with server log content" in nested_names
+        assert "Ask the Gludd daemon to serve the primary model" in nested_names
+        assert "Ask the Gludd daemon to stop its owned inference server" in nested_names
+        assert "Report daemon-owned model cleanup" in nested_names
 
     def test_shutdown_block_names_not_in_top_level_names(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
         top_names = set(_task_names(tasks))
-        shutdown_subtask_names = {"Read server PID", "Kill server process", "Remove PID file"}
-        for name in shutdown_subtask_names:
-            assert name not in top_names, f"Shutdown subtask '{name}' must be nested, not top-level"
+        assert "Ask the Gludd daemon to stop its owned inference server" not in top_names
 
-    def test_generation_timeout_is_300_seconds(self) -> None:
-        for t in _combined_tasks():
-            uri_block = t.get("ansible.builtin.uri")
-            if isinstance(uri_block, dict) and "/v1/completions" in str(uri_block.get("url", "")):
-                timeout_val = uri_block.get("timeout")
-                assert timeout_val is not None, "v1/completions task missing timeout"
-                assert timeout_val == 300, f"Generation timeout must be 300, got {timeout_val}"
-                return
-        pytest.fail("No v1/completions task with timeout found")
+    def test_generation_timeout_uses_daemon_contract(self) -> None:
+        consume = next(
+            t["general_ludd.agent.gludd_local_model"]
+            for t in _combined_tasks()
+            if t.get("general_ludd.agent.gludd_local_model", {}).get("action") == "consume"
+        )
+        assert consume["timeout"] == "{{ daemon_timeout }}"
+
 
 
 # =============================================================================
@@ -599,57 +565,47 @@ class TestDeepPipelineValidation:
 
 
 class TestHealthPollFailureDiagnostics:
-    def test_poll_block_has_rescue_with_log_slurp(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        poll_block = next(t for t in tasks if t.get("name") == "Poll health endpoint until ready")
-        assert "block" in poll_block, "Health poll must be wrapped in a block"
-        rescue = cast(list[dict[str, Any]], poll_block.get("rescue"))
-        assert rescue, "Health poll must have a rescue path"
-        slurp_tasks = [t for t in rescue if "ansible.builtin.slurp" in t]
-        assert slurp_tasks, "Rescue must slurp the server log"
-        assert "{{ _server_log }}" in str(slurp_tasks[0]["ansible.builtin.slurp"]), "Rescue must slurp _server_log"
+    def test_daemon_transport_failure_is_fail_closed(self) -> None:
+        module_text = Path(
+            "collections/ansible_collections/general_ludd/agent/plugins/modules/"
+            "gludd_local_model.py"
+        ).read_text()
+        assert "module.fail_json" in module_text
+        assert 'response.get("detail")' in module_text
+        assert "HTTP {status}" in module_text
 
-    def test_rescue_fail_msg_includes_server_log(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        poll_block = next(t for t in tasks if t.get("name") == "Poll health endpoint until ready")
-        rescue = cast(list[dict[str, Any]], poll_block.get("rescue"))
-        fail_tasks = [t for t in rescue if "ansible.builtin.fail" in t]
-        assert fail_tasks, "Rescue must fail the play with a diagnostic message"
-        msg = str(fail_tasks[0]["ansible.builtin.fail"])
-        assert "_server_log" in msg, "Fail message must include the server log content"
-        assert "b64decode" in msg, "Fail message must decode the slurped log content"
+    def test_daemon_owns_server_diagnostics(self) -> None:
+        tasks_text = _combined_text()
+        assert "llamacpp-server.log" not in tasks_text
+        assert "server.pid" not in tasks_text
+        assert "LocalInferenceManager" in Path(
+            "collections/ansible_collections/general_ludd/agent/plugins/modules/"
+            "gludd_local_model.py"
+        ).read_text()
 
-    def test_poll_still_uses_until_retries_delay(self) -> None:
-        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        poll_block = next(t for t in tasks if t.get("name") == "Poll health endpoint until ready")
-        block_tasks = cast(list[dict[str, Any]], poll_block["block"])
-        poll = next(t for t in block_tasks if "ansible.builtin.uri" in t)
-        assert poll["until"] == "_health_poll.status == 200"
-        assert poll["retries"] == "{{ health_check_retries }}"
-        assert poll["delay"] == "{{ health_check_delay }}"
+    def test_daemon_calls_use_bounded_timeout(self) -> None:
+        tasks = _combined_tasks()
+        lifecycle = [
+            t["general_ludd.agent.gludd_local_model"]
+            for t in tasks
+            if "general_ludd.agent.gludd_local_model" in t
+        ]
+        assert lifecycle
+        assert all("timeout" in call for call in lifecycle)
 
 
 class TestHealthPollParamGuards:
-    def test_tasks_assert_positive_health_params(self) -> None:
+    def test_tasks_assert_positive_daemon_timeouts(self) -> None:
         tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
-        assert "health_check_delay | int > 0" in tasks_text
-        assert "health_check_retries | int > 0" in tasks_text
+        assert "daemon_timeout | int > 0" in tasks_text
+        assert "server_startup_timeout | int > 0" in tasks_text
 
-    def test_molecule_scenario_does_not_zero_delay(self) -> None:
+    def test_molecule_scenario_uses_discovered_daemon(self) -> None:
         converge_path = Path("molecule/playbooks/local_game_gen/default/converge.yml")
-        assert converge_path.exists(), "local_game_gen molecule converge missing"
-        plays = cast(list[dict[str, Any]], yaml.safe_load(converge_path.read_text()))
-        for play in plays:
-            for task in play.get("tasks", []):
-                include = task.get("ansible.builtin.include_role")
-                if isinstance(include, dict) and "local_game_gen" in str(include.get("name", "")):
-                    role_vars = cast(dict[str, Any], include.get("vars", {}))
-                    if "health_check_delay" in role_vars:
-                        assert int(role_vars["health_check_delay"]) > 0, (
-                            "Molecule scenario must not override health_check_delay to 0"
-                        )
-                        return
-        # Delay left to the role default — acceptable.
+        text = converge_path.read_text()
+        assert "mock_daemon_start.yml" in text
+        assert 'daemon_url: "{{ mock_daemon_url }}"' in text
+        assert 'psk: "{{ molecule_mock_daemon_psk }}"' in text
 
 
 # =============================================================================

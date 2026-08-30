@@ -1,0 +1,12 @@
+---
+- name: Destroy the local target after daemon reconciliation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Reconcile private daemon state as an idempotent backstop
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml"
+
+    - name: Confirm the reusable localhost target remains reachable
+      ansible.builtin.ping:
+      changed_when: false
