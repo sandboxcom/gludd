@@ -18,7 +18,6 @@ from general_ludd.ssl_agent.cert_manager import (
     ComplianceProfile,
     _ProxyPrivateKey,
     _verify_chain,
-    asn1_roundtrip_verify,
     cert_parse,
     compliance_check,
 )
@@ -128,16 +127,12 @@ def test_verify_chain_rejects_unsupported_and_invalid_signatures() -> None:
     assert _verify_chain(ca_cert, other_leaf) is False
 
 
-def test_parse_extensions_and_object_roundtrip() -> None:
-    """Parse SAN/key-usage fields and DER-roundtrip a certificate object."""
+def test_parse_extensions() -> None:
+    """Parse SAN and key-usage fields from a certificate object."""
     _ca, leaf = _signed_chain(ec.generate_private_key(ec.SECP256R1()))
     fields = cert_parse(leaf)
     assert fields.sans == ["leaf.example"]
     assert fields.key_usage == ["digital_signature", "key_encipherment", "key_cert_sign"]
-    assert asn1_roundtrip_verify(leaf)["match"] is True
-    summary = asn1_roundtrip_verify(fields)
-    assert summary["der_length"] == 0
-    assert summary["decoded_fields"] is fields
 
 
 def test_compliance_summary_key_types_and_failures(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -156,3 +151,22 @@ def test_compliance_summary_key_types_and_failures(monkeypatch: pytest.MonkeyPat
     monkeypatch.setitem(cert_manager.COMPLIANCE_PROFILES["fips"], "recommend_sha256_plus", False)
     result = compliance_check(rsa_fields, ComplianceProfile.FIPS)
     assert all(check["check"] != "recommend_sha256_plus" for check in result.checks)
+
+
+@pytest.mark.parametrize(
+    "public_key",
+    [ec.generate_private_key(ec.SECP256R1()).public_key(), object()],
+)
+def test_compliance_certificate_public_key_fallbacks(public_key: object) -> None:
+    """Size elliptic keys directly and other supported key families conservatively."""
+    certificate = cast(
+        x509.Certificate,
+        SimpleNamespace(
+            public_key=lambda: public_key,
+            signature_algorithm_oid=SimpleNamespace(_name="sha256"),
+        ),
+    )
+
+    result = compliance_check(certificate, ComplianceProfile.FIPS)
+
+    assert result.checks[0]["value"] == 256

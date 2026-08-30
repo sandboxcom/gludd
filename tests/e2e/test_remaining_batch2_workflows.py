@@ -644,10 +644,10 @@ class TestSSLHSM:
 class TestSSLCertManager:
     def test_import(self):
         from general_ludd.ssl_agent.cert_manager import (
-            CertManager,
+            generate_key_pair,
         )
 
-        assert CertManager is not None
+        assert generate_key_pair is not None
 
     def test_generate_rsa_keypair(self):
         from general_ludd.ssl_agent.cert_manager import generate_key_pair
@@ -712,40 +712,46 @@ class TestSSLCertManager:
         assert "leaf_cert_pem" in chain
         assert chain["chain_valid"] is True
 
-    def test_asn1_roundtrip_verify(self):
-        from general_ludd.ssl_agent.cert_manager import (
-            asn1_roundtrip_verify,
-            generate_ca_chain,
+    def test_collection_asn1_roundtrip(self):
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            encode_der,
+            parse_der,
         )
 
-        chain = generate_ca_chain("Roundtrip Root", "roundtrip.example.com")
-        result = asn1_roundtrip_verify(chain["leaf_cert_pem"])
-        assert result["match"] is True
+        structure = {"type": "OID", "value": "2.5.4.3"}
+        assert parse_der(encode_der(structure))["value"] == "2.5.4.3"
 
     def test_oid_lookup_by_oid(self):
-        from general_ludd.ssl_agent.cert_manager import oid_lookup
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            lookup_oid,
+        )
 
-        result = oid_lookup("2.5.4.3")
-        assert result is not None
-        assert result.name == "commonName"
+        result = lookup_oid("2.5.4.3")
+        assert result["name"] == "commonName"
 
-    def test_oid_lookup_by_name(self):
-        from general_ludd.ssl_agent.cert_manager import oid_lookup
+    def test_oid_lookup_includes_description(self):
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            lookup_oid,
+        )
 
-        result = oid_lookup("commonName")
-        assert result is not None
+        result = lookup_oid("2.5.4.3")
+        assert result["description"]
 
     def test_oid_lookup_missing(self):
-        from general_ludd.ssl_agent.cert_manager import oid_lookup
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            lookup_oid,
+        )
 
-        result = oid_lookup("99.99.99.99.9999")
-        assert result is None
+        result = lookup_oid("99.99.99.99.9999")
+        assert result["name"] == "unknown"
 
     def test_oid_generate(self):
-        from general_ludd.ssl_agent.cert_manager import oid_generate
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            generate_oid,
+        )
 
-        oid = oid_generate("2.5.4.3")
-        assert oid.dotted_string == "2.5.4.3"
+        oid = generate_oid("2.5.4.3", "e2e")
+        assert oid.startswith("2.5.4.3.")
 
     def test_algorithm_evaluate_known(self):
         from general_ludd.ssl_agent.cert_manager import algorithm_evaluate
@@ -798,17 +804,19 @@ class TestSSLCertManager:
         j = ca_jurisdiction_lookup("bogus-ca")
         assert j is None
 
-    def test_cert_manager_constructor(self):
-        from general_ludd.ssl_agent.cert_manager import CertManager
+    def test_collection_oid_owner_import(self):
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            lookup_oid,
+        )
 
-        cm = CertManager()
-        assert cm._known_oids is not None
+        assert lookup_oid is not None
 
-    def test_cert_manager_known_oids(self):
-        from general_ludd.ssl_agent.cert_manager import CertManager
+    def test_collection_oid_owner_has_common_name(self):
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            lookup_oid,
+        )
 
-        cm = CertManager()
-        assert "2.5.4.3" in cm._known_oids
+        assert lookup_oid("2.5.4.3")["name"] == "commonName"
 
 
 # ---------------------------------------------------------------------------

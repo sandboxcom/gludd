@@ -8,26 +8,20 @@ from general_ludd.ssl_agent.cert_manager import (
     ALGORITHM_EVALUATIONS,
     CA_JURISDICTIONS,
     COMPLIANCE_PROFILES,
-    KNOWN_OIDS,
     AlgorithmEvaluation,
     CAJurisdiction,
     CertificateFields,
-    CertManager,
     ComplianceProfile,
     ComplianceResult,
     CSRData,
     KeyPair,
-    OIDInfo,
     algorithm_evaluate,
-    asn1_roundtrip_verify,
     ca_jurisdiction_lookup,
     cert_parse,
     compliance_check,
     generate_ca_chain,
     generate_csr,
     generate_key_pair,
-    oid_generate,
-    oid_lookup,
     self_sign_cert,
 )
 
@@ -50,11 +44,6 @@ class TestDataClasses:
         assert cf.sans == []
         assert cf.key_usage == []
         assert cf.version == 0
-
-    def test_oid_info_fields(self) -> None:
-        oi = OIDInfo(oid="1.2.3", name="test", description="desc")
-        assert oi.oid == "1.2.3"
-        assert oi.name == "test"
 
     def test_algorithm_evaluation_fields(self) -> None:
         ae = AlgorithmEvaluation(
@@ -84,11 +73,6 @@ class TestComplianceProfile:
 
 
 class TestModuleConstants:
-    def test_known_oids_has_entries(self) -> None:
-        assert len(KNOWN_OIDS) >= 4
-        assert "2.5.4.3" in KNOWN_OIDS
-        assert KNOWN_OIDS["2.5.4.3"].name == "commonName"
-
     def test_algorithm_evaluations_is_dict(self) -> None:
         assert isinstance(ALGORITHM_EVALUATIONS, dict)
         assert "rsa-2048" in ALGORITHM_EVALUATIONS
@@ -100,17 +84,6 @@ class TestModuleConstants:
     def test_ca_jurisdictions_has_letsencrypt(self) -> None:
         assert "letsencrypt" in CA_JURISDICTIONS
         assert CA_JURISDICTIONS["letsencrypt"].is_public_trust is True
-
-
-class TestCertManager:
-    def test_constructs(self) -> None:
-        cm = CertManager()
-        assert isinstance(cm, CertManager)
-
-    def test_has_known_oids(self) -> None:
-        cm = CertManager()
-        assert "2.5.4.3" in cm._known_oids
-        assert cm._known_oids["2.5.4.3"].name == "commonName"
 
 
 class TestGenerateKeyPair:
@@ -188,34 +161,6 @@ class TestCertParse:
         csr = generate_csr("rsa-cert.example.com", kp)
         fields = self_sign_cert(csr, kp, validity_days=1)
         assert fields.subject_cn == "rsa-cert.example.com"
-
-
-class TestAsn1Roundtrip:
-    def test_roundtrip_self_signed(self) -> None:
-        chain = generate_ca_chain("RT CA", "rt.local")
-        result = asn1_roundtrip_verify(chain["leaf_cert_pem"])
-        assert "der_length" in result
-
-
-class TestOidLookup:
-    def test_lookup_by_oid_string(self) -> None:
-        result = oid_lookup("2.5.4.3")
-        assert result is not None
-        assert result.name == "commonName"
-
-    def test_lookup_by_name(self) -> None:
-        result = oid_lookup("commonName")
-        assert result is not None
-        assert result.oid == "2.5.4.3"
-
-    def test_lookup_unknown(self) -> None:
-        assert oid_lookup("9.9.9.9.9") is None
-
-
-class TestOidGenerate:
-    def test_generates_object_identifier(self) -> None:
-        result = oid_generate("1.2.3.4")
-        assert result.dotted_string == "1.2.3.4"
 
 
 class TestAlgorithmEvaluate:

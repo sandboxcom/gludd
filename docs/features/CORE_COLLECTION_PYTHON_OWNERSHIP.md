@@ -8,12 +8,13 @@ to their Ansible collection and are imported by fully qualified collection name.
 Collection-specific Python requirements belong to collection execution-environment
 metadata rather than the base `general-ludd-agent` dependency set.
 
-The first beta.4 migration moves the pure-Python ASN.1 DER/OID implementation from
-`general_ludd.ssl.asn1` to
+The beta.4 migration consolidates the pure-Python ASN.1 DER/OID implementation in
 `general_ludd.security.plugins.module_utils.asn1`. The `ssl_cert` role remains the
 managed-host owner and continues to use the mature OpenSSL CLI for file inspection;
 the collection module utility is the controller/plugin API for deterministic DER
-encoding, parsing, and OID lookup. Core retains no compatibility copy.
+encoding, parsing, and OID lookup. The final ownership cleanup removes the six
+legacy ASN.1/OID symbols and their duplicate OID table from
+`general_ludd.ssl_agent.cert_manager`; core retains no compatibility copy.
 
 ## Dependency dispositions
 
@@ -40,6 +41,15 @@ controller-side Python dependencies through `meta/execution-environment.yml` and
 PyWavelets, PyCryptodome, Shamir, or srptools. The development dependency group
 retains them solely to execute collection tests, and the game E2E extra declares
 its own NumPy requirement.
+
+The 2026-08-29 ownership audit also proved that this ASN.1/OID slice introduces no
+Python package requirement: the collection implementation imports only Python's
+standard library. `cryptography` stays in the core dependency set because core
+certificate generation/parsing, authentication, encrypted storage, release
+verification, and TLS trust paths still import it. Consequently this cleanup does
+not change `pyproject.toml` or `uv.lock`; an AST regression fails if any of the six
+legacy symbols returns to core or if the collection utility gains a non-stdlib
+import.
 
 ## Hosted and local parity
 
@@ -104,7 +114,7 @@ allowlist or duplicating the stable type test.
 
 ## Upstream and practitioner evidence
 
-Reviewed 2026-08-27:
+Reviewed and revalidated 2026-08-29:
 
 - [Ansible collection structure](https://docs.ansible.com/projects/ansible-core/2.19/dev_guide/developing_collections_structure.html)
   specifies collection-FQCN imports for `plugins/module_utils`.
@@ -113,10 +123,11 @@ Reviewed 2026-08-27:
 - [Ansible Builder collection dependencies](https://docs.ansible.com/projects/builder/en/latest/collection_metadata/)
   defines collection `meta/execution-environment.yml` and Python requirement
   introspection as the supported dependency boundary.
-- An Ansible user reported long-lived import failures when local plugins attempted
-  to consume non-FQCN module utilities in
+- An Ansible practitioner reported in January 2020 that local plugins could not
+  import local module utilities even when local modules could, in
   [ansible/ansible#66402](https://github.com/ansible/ansible/issues/66402). The
-  collection-FQCN contract avoids that ambiguous loader path.
+  collection-FQCN contract and installed collection artifact avoid that ambiguous
+  loader path.
 - An Ansible Builder user reported a collection requirement that silently failed
   introspection in
   [ansible/ansible-builder#364](https://github.com/ansible/ansible-builder/issues/364).
@@ -146,9 +157,10 @@ The change is additive at the collection artifact boundary and subtractive in th
 core wheel. Build the physics, radio, forensics, and security collections and their
 controller EE before switching consumers to the new FQCNs. Verify ASN.1 DER round
 trips and every numerical/security adapter before deploying the collections and
-core wheel together. Existing managed-host OpenSSL execution is unchanged, and
-the game E2E runtime remains isolated behind its explicit extra, so no certificate
-or service restart is required.
+core wheel together. Consumers of the six removed core symbols must switch to the
+security-collection FQCN in the same rollout. Existing managed-host OpenSSL
+execution is unchanged, and the game E2E runtime remains isolated behind its
+explicit extra, so no certificate or service restart is required.
 
 Rollback reinstalls the prior core wheel and the prior collection artifacts
 together; there is no data migration. ASN.1 parsing and the migrated adapters are

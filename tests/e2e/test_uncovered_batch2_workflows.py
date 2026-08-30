@@ -751,16 +751,19 @@ class TestRoutingRoles:
 class TestSslCertManager:
     """Tests for SSL certificate manager."""
 
-    def test_cert_manager_imports(self):
-        from general_ludd.ssl_agent.cert_manager import CertManager
+    def test_security_collection_asn1_imports(self):
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            lookup_oid,
+        )
 
-        assert CertManager is not None
+        assert lookup_oid is not None
 
-    def test_cert_manager_constructs(self):
-        from general_ludd.ssl_agent.cert_manager import CertManager
+    def test_security_collection_owns_oid_lookup(self):
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            lookup_oid,
+        )
 
-        manager = CertManager()
-        assert manager._known_oids["2.5.4.3"].name == "commonName"
+        assert lookup_oid("2.5.4.3")["name"] == "commonName"
 
 
 class TestSslAgentFlow:
