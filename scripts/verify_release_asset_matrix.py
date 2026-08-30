@@ -54,6 +54,10 @@ IMAGE_REFERENCE_RE = re.compile(
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 EXPECTED_DISTRIBUTION_NAME = "general-ludd-agent"
+MAX_INSTALL_SCRIPT_BYTES = 1_048_576
+INSTALL_FAIL_FAST_RE = re.compile(
+    r"(?m)^[ \t]*set[ \t]+-euo[ \t]+pipefail(?:[ \t]*(?:#.*)?)?$"
+)
 
 
 def distribution_version(version: str) -> str:
@@ -360,6 +364,28 @@ def _verify_checksums(asset_dir: Path) -> list[str]:
     return errors
 
 
+def _verify_install_script(path: Path) -> list[str]:
+    """Validate the staged installer without executing or over-reading it."""
+    errors: list[str] = []
+    if path.stat().st_mode & stat.S_IXUSR == 0:
+        errors.append("install.sh must be executable")
+    if path.stat().st_size > MAX_INSTALL_SCRIPT_BYTES:
+        errors.append(
+            f"install.sh exceeds the {MAX_INSTALL_SCRIPT_BYTES}-byte verification limit"
+        )
+        return errors
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        errors.append(f"install.sh is not readable UTF-8: {exc}")
+        return errors
+    if not text.startswith("#!/usr/bin/env bash\n"):
+        errors.append("install.sh must use the repository bash entrypoint")
+    if INSTALL_FAIL_FAST_RE.search(text) is None:
+        errors.append("install.sh must enable set -euo pipefail")
+    return errors
+
+
 def verify_release_asset_matrix(
     asset_dir: Path, version: str, repository_root: Path
 ) -> list[str]:
@@ -438,14 +464,7 @@ def verify_release_asset_matrix(
 
     install = asset_dir / "install.sh"
     if install.is_file():
-        mode = install.stat().st_mode
-        if mode & stat.S_IXUSR == 0:
-            errors.append("install.sh must be executable")
-        text = install.read_text(encoding="utf-8")
-        if not text.startswith("#!/usr/bin/env bash"):
-            errors.append("install.sh must use the repository bash entrypoint")
-        if "set -euo pipefail" not in text:
-            errors.append("install.sh must enable set -euo pipefail")
+        errors.extend(_verify_install_script(install))
 
     manifest = asset_dir / f"gludd-release-manifest-{version}.json"
     if manifest.is_file():

@@ -105,6 +105,14 @@ pass. `scripts/verify_release_asset_matrix.py` unions those attestations and
 requires all 15 smoke checks before the publishing action runs. Every artifact
 upload sets `if-no-files-found: error`.
 
+The staged `install.sh` is treated as untrusted release input even after its
+execution smoke. Static verification accepts at most 1 MiB of UTF-8, requires
+the executable bit and the exact repository Bash shebang, and requires an
+active `set -euo pipefail` line; a comment containing those words is not
+evidence. Invalid encoding and oversize input produce bounded matrix failures
+instead of an unhandled traceback. This check reads one bounded file and starts
+no process, so parallel platform jobs retain their existing resource budgets.
+
 ## Canonical Ansible runtime artifacts
 
 The release must contain byte-for-byte copies of:
@@ -135,6 +143,12 @@ Rollback routes new work to the previously recorded digest and drains the bad
 revision. Never mutate or retag the prior digest. Platform release assets are
 also immutable: a repair must come from the same tagged CI SHA or from a new
 beta tag.
+
+Installer verification happens entirely in the additive staging directory.
+Failure blocks publication while the active digest and any previously
+published assets remain untouched; rollback is therefore deletion of the
+failed candidate staging set, not mutation of the live release. This preserves
+zero-downtime service for existing users while a corrected candidate is built.
 
 ## Verify with verify-release-completeness
 
@@ -188,15 +202,18 @@ check, then cut the next prerelease tag.
 
 ## Long-lived practitioner failure history
 
-Two long-running reports explain why beta4 fails closed instead of trusting a
-successful build command:
+Reviewed on 2026-08-30, two long-running practitioner reports explain why
+beta4 fails closed instead of trusting a successful build command or a
+well-named transfer artifact:
 
 - GitHub Actions upload-artifact
   [issue #290](https://github.com/actions/upload-artifact/issues/290), opened in
   2022, records practitioner trouble with artifact retention/storage behavior.
   Beta4 treats workflow artifacts as short-lived transfer objects, requires
   every upload to fail when files are absent, and publishes a checksummed
-  release set rather than relying on retained workflow artifacts.
+  release set rather than relying on retained workflow artifacts. The same
+  trust boundary is why malformed, oversized, or comment-only installer
+  content becomes an observable pre-publish failure.
 - PyInstaller
   [issue #5360](https://github.com/pyinstaller/pyinstaller/issues/5360) records
   the long-lived class of frozen applications that build successfully but omit

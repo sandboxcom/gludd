@@ -258,6 +258,46 @@ def test_install_script_must_be_executable_and_fail_fast(tmp_path: Path) -> None
     assert "install.sh must enable set -euo pipefail" in errors
 
 
+def test_install_script_comment_cannot_fake_fail_fast(tmp_path: Path) -> None:
+    assets, repo = _complete_matrix(tmp_path)
+    install = assets / "install.sh"
+    install.write_text(
+        "#!/usr/bin/env bash\n# set -euo pipefail\necho unsafe\n",
+        encoding="utf-8",
+    )
+    _refresh_checksums(assets)
+
+    assert "install.sh must enable set -euo pipefail" in (
+        verify_release_asset_matrix(assets, VERSION, repo)
+    )
+
+
+def test_install_script_non_utf8_is_a_bounded_verification_error(
+    tmp_path: Path,
+) -> None:
+    assets, repo = _complete_matrix(tmp_path)
+    install = assets / "install.sh"
+    install.write_bytes(b"#!/usr/bin/env bash\nset -euo pipefail\n\xff")
+    _refresh_checksums(assets)
+
+    errors = verify_release_asset_matrix(assets, VERSION, repo)
+
+    assert any("install.sh is not readable UTF-8" in error for error in errors)
+
+
+def test_install_script_verification_has_a_size_ceiling(tmp_path: Path) -> None:
+    assets, repo = _complete_matrix(tmp_path)
+    install = assets / "install.sh"
+    install.write_bytes(
+        b"#!/usr/bin/env bash\nset -euo pipefail\n" + (b"#" * 1_048_577)
+    )
+    _refresh_checksums(assets)
+
+    assert "install.sh exceeds the 1048576-byte verification limit" in (
+        verify_release_asset_matrix(assets, VERSION, repo)
+    )
+
+
 @pytest.mark.parametrize(
     ("raw", "normalized"),
     [
