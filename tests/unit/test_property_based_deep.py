@@ -29,6 +29,9 @@ from general_ludd.retrieval.agentic_context import AgenticContextInjector, Agent
 _text = st.text(min_size=0, max_size=100, alphabet=st.characters(blacklist_categories=["Cs"]))
 _short_text = st.text(min_size=0, max_size=30, alphabet=st.characters(blacklist_categories=["Cs"]))
 _float01 = st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False)
+_NESTED_CONFIG_MAX_ROOT_KEYS = 4
+_NESTED_CONFIG_VALUE_MAX_LEAVES = 8
+_NESTED_CONFIG_MAX_LEAVES = _NESTED_CONFIG_MAX_ROOT_KEYS * _NESTED_CONFIG_VALUE_MAX_LEAVES
 
 
 def _simple_dict() -> st.SearchStrategy[dict[str, Any]]:
@@ -42,15 +45,34 @@ def _simple_dict() -> st.SearchStrategy[dict[str, Any]]:
     )
 
 
-def _nested_dict(depth: int = 0) -> st.SearchStrategy[dict[str, Any]]:
-    if depth >= 3:
-        return _simple_dict()
+_config_scalar = st.one_of(
+    st.integers(-1000, 1000),
+    st.floats(-1000.0, 1000.0, allow_nan=False),
+    _text,
+    st.booleans(),
+    st.none(),
+)
+_nested_config_value = st.recursive(
+    _config_scalar,
+    lambda children: st.dictionaries(keys=_short_text, values=children, min_size=0, max_size=4),
+    max_leaves=_NESTED_CONFIG_VALUE_MAX_LEAVES,
+)
+
+
+def _nested_dict() -> st.SearchStrategy[dict[str, Any]]:
     return st.dictionaries(
         keys=_short_text,
-        values=st.one_of(st.integers(-100, 100), _text, st.booleans(), st.deferred(lambda: _nested_dict(depth + 1))),
+        values=_nested_config_value,
         min_size=0,
-        max_size=6,
+        max_size=_NESTED_CONFIG_MAX_ROOT_KEYS,
     )
+
+
+def _config_leaf_count(value: Any) -> int:
+    """Count scalar leaves in a generated configuration tree."""
+    if isinstance(value, dict):
+        return sum(_config_leaf_count(child) for child in value.values())
+    return 1
 
 
 def _has_compatible_merge_shapes(*configs: dict[str, Any]) -> bool:
@@ -71,6 +93,12 @@ def _has_compatible_merge_shapes(*configs: dict[str, Any]) -> bool:
 
 
 class TestMergeConfigAlgebraic:
+    @given(_nested_dict())
+    @settings(max_examples=200)
+    def test_nested_config_strategy_has_bounded_leaf_budget(self, config: dict[str, Any]) -> None:
+        """Keep every generated merge case within its explicit resource budget."""
+        assert _config_leaf_count(config) <= _NESTED_CONFIG_MAX_LEAVES
+
     def test_merge_cfg_idempotent_result_is_detached_from_source(self) -> None:
         """An idempotent merge must not couple later result mutations to its input."""
         source: dict[str, Any] = {
