@@ -141,7 +141,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         container-build container-run container-push \
          file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist-clean bundle-binaries bundle-ripgrep \
         sast sast-summary sbom pip-audit security security-backlog-gate \
-        audit-messages qa validate collect-check pre-commit-check coverage-files gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory \
+        audit-messages qa validate collect-check pre-commit-check coverage-files gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory check-generated-artifact-hygiene \
         status-snapshot audit-evidence deps-audit dogfood-features ruff-audit check-make-help \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
@@ -332,6 +332,7 @@ help:
 	@echo "  runpod-harness        RunPod provider harness (LIVE=1 for read-only credential check)"
 	@echo "  test-opa-policies     Execute Rego policy tests when opa is installed"
 	@echo "  check-make-target-contract  Validate target variables, help, and behavioral examples"
+	@echo "  check-generated-artifact-hygiene  Validate tracked generated Markdown/JSON/YAML postconditions"
 	@echo "  active-work-status    Emit auditable PIDs, gate state, hashes, and open tasks"
 	@echo "  ps                    Report repository-owned test, audit, and supervisor processes"
 	@echo "  list-plugins          Report the active enforcement plugin roster"
@@ -1541,7 +1542,7 @@ opencode-hello:
 	@echo "=== stderr ==="
 	@cat /tmp/opencode-hello-stderr.log
 
-gate-fast: lint typecheck collect-check
+gate-fast: check-generated-artifact-hygiene lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
 _check-windows-tracked-paths:
@@ -1552,7 +1553,7 @@ _gate-run-lock-acquire:
 
 .NOTPARALLEL: gate gate-refresh
 
-gate: _gate-run-lock-acquire _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-resource-ownership check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets check-no-prompt-prone-edit-tools validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
+gate: _gate-run-lock-acquire check-generated-artifact-hygiene _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-resource-ownership check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets check-no-prompt-prone-edit-tools validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
 	@rm -f .gate-failed .gate-status.next .gate-status.running
 	@printf "RUNNING %s %s\n" "$$(date +%s)" "$$PPID" > .gate-status.running && mv .gate-status.running .gate-status
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status.next
@@ -2280,6 +2281,9 @@ gen-mcp-tools:
 
 gen-mcp-tool-ref: gen-mcp-tools
 	@$(UV) run python scripts/gen_mcp_tool_reference_md.py
+
+check-generated-artifact-hygiene:
+	@$(UV) run python scripts/check_generated_artifact_hygiene.py
 
 mcp-docs-check:
 	@$(UV) run python scripts/mcp_docs_check.py
@@ -5072,7 +5076,7 @@ dist-path-check:
 # the preserved test result is unavailable, verbose pytest node IDs stream live
 # and are also retained in .gate-logs/gate-refresh-test.log.
 .PHONY: gate-refresh _gate-refresh-body
-gate-refresh: _gate-run-lock-acquire
+gate-refresh: _gate-run-lock-acquire check-generated-artifact-hygiene
 	@RC=0; \
 	if [ "$(GATE_REFRESH_VALIDATE_ONLY)" = "1" ]; then \
 		$(UV) run python scripts/stream_command.py --help > /dev/null || RC=$$?; \

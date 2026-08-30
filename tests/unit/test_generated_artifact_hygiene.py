@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -13,6 +14,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "check_generated_artifact_hygiene.py"
+MAKEFILE = ROOT / "Makefile"
+TARGET_CONTRACT = ROOT / "config" / "make_target_contract.json"
 
 
 def _load_checker() -> ModuleType:
@@ -337,3 +340,70 @@ def test_main_is_observable_for_pass_drift_and_inventory_error(
     monkeypatch.setattr(checker, "discover_tracked_artifacts", failed_inventory)
     assert checker.main(["--root", str(tmp_path)]) == 2
     assert "ERROR: git index unavailable" in capsys.readouterr().err
+
+
+def _target_prerequisites(makefile: str, target: str) -> list[str]:
+    declaration = next(
+        line for line in makefile.splitlines() if line.startswith(f"{target}:")
+    )
+    return declaration.split(":", 1)[1].split()
+
+
+def test_make_target_is_public_and_delegates_to_the_single_checker() -> None:
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+    stanza = makefile.split("\ncheck-generated-artifact-hygiene:", 1)[1].split(
+        "\n\n",
+        1,
+    )[0]
+    recipe = [line.strip() for line in stanza.splitlines() if line.startswith("\t")]
+
+    assert recipe == ["@$(UV) run python scripts/check_generated_artifact_hygiene.py"]
+    assert (
+        '@echo "  check-generated-artifact-hygiene  '
+        'Validate tracked generated Markdown/JSON/YAML postconditions"'
+    ) in makefile
+    phony_region = makefile.split("help:", 1)[0]
+    assert "check-generated-artifact-hygiene" in phony_region
+
+
+def test_checker_is_an_early_fast_and_full_gate_prerequisite() -> None:
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+    fast = _target_prerequisites(makefile, "gate-fast")
+    full = _target_prerequisites(makefile, "gate")
+    refresh = _target_prerequisites(makefile, "gate-refresh")
+    release_full = _target_prerequisites(makefile, "gate-full")
+
+    assert fast[0] == "check-generated-artifact-hygiene"
+    assert full.index("check-generated-artifact-hygiene") < full.index(
+        "check-opencode-integrity",
+    )
+    assert refresh.index("check-generated-artifact-hygiene") < len(refresh)
+    assert release_full == ["gate-refresh"]
+
+
+def test_make_target_contract_is_exact_and_behavior_is_safe() -> None:
+    contract = json.loads(TARGET_CONTRACT.read_text(encoding="utf-8"))
+    entries = [
+        entry
+        for entry in contract["targets"]
+        if entry["name"] == "check-generated-artifact-hygiene"
+    ]
+    assert entries == [
+        {
+            "name": "check-generated-artifact-hygiene",
+            "make_variables": [],
+            "behavior": "make check-generated-artifact-hygiene",
+        },
+    ]
+
+    result = subprocess.run(
+        ["make", "check-generated-artifact-hygiene"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "generated-artifact-hygiene: PASS artifacts=3"
+    assert result.stderr == ""

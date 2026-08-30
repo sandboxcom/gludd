@@ -747,6 +747,11 @@
       "behavior": "make check-resource-ownership RESOURCE_OWNERSHIP_ROOT=. RESOURCE_OWNERSHIP_PATHS='src/general_ludd scripts' RESOURCE_OWNERSHIP_INVENTORY=config/resource_ownership_inventory.json RESOURCE_OWNERSHIP_WRITE=0"
     },
     {
+      "name": "check-generated-artifact-hygiene",
+      "make_variables": [],
+      "behavior": "make check-generated-artifact-hygiene"
+    },
+    {
       "name": "update-collection-python-boundary-inventory",
       "make_variables": ["COLLECTION_PYTHON_BOUNDARY_ROOT", "COLLECTION_PYTHON_BOUNDARY_INVENTORY"],
       "behavior": "make update-collection-python-boundary-inventory COLLECTION_PYTHON_BOUNDARY_ROOT=collections/ansible_collections COLLECTION_PYTHON_BOUNDARY_INVENTORY=/tmp/gludd-collection-python-boundary-contract.json"

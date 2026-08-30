@@ -24,10 +24,18 @@ Exit status `0` is clean, `1` is artifact drift, and `2` is an inventory failure
 Every result is printed with a path and, when available, a source line; a final
 summary always reports the artifact and violation counts.
 
+`make check-generated-artifact-hygiene` is the sole public entry point and
+delegates directly to that checker; the Make recipe contains no second
+implementation. The target runs before expensive work in `gate-fast`, `gate`,
+and `gate-refresh`. Because `gate-full` depends on `gate-refresh`, the release
+path receives the same fail-closed prerequisite without duplicate logic.
+
 ## Operational Use
 
-Run the checker after `gen-mcp-tools` and `gen-mcp-tool-ref`, before packaging or
-publishing the generated files. Fix the owning generator or source data and
+Run `make check-generated-artifact-hygiene` after `gen-mcp-tools` and
+`gen-mcp-tool-ref`, before packaging or publishing the generated files. Its
+target contract has no variables and uses that same command as the safe,
+read-only behavioral example. Fix the owning generator or source data and
 regenerate; do not hand-edit the output merely to silence the check. The focused
 test suite also checks the real repository artifacts, so an artifact that no
 longer satisfies the contract is visible immediately.
