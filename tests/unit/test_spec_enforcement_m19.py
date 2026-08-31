@@ -1,9 +1,9 @@
 """M19: Release-promote is ff-only merge into master.
 
-`make release-promote TAG=<tag>` MUST use ff-only merge to advance
-master. The release-branch-new and release-promote workflow ensures
-tags are pushed before the ff-merge, so master always advances in
-lockstep with the tagged release.
+`make release-promote TAG=<tag>` MUST bind exact-SHA dual-track evidence
+and readiness before an ff-only merge advances canonical master. Publication
+then delegates to the single `release-cut` owner so tagging, pushing, and
+artifact verification cannot drift across promotion paths.
 """
 
 import re
@@ -34,9 +34,12 @@ class TestM19ReleasePromoteFfOnly:
             if m:
                 target_names.add(m.group(1))
 
-        has_target = "release-promote" in target_names
-        if not has_target:
-            pass  # Target may be planned but not yet built
+        assert "release-promote" in target_names, "M19: release-promote target missing from Makefile"
+        recipe = _find_target_recipe(content, "release-promote")
+        assert "require-dual-track-green" in recipe, "M19: promotion must bind exact dual-track evidence"
+        assert "release-readiness" in recipe, "M19: promotion must re-run release readiness"
+        assert "merge --ff-only" in recipe, "M19: promotion must refuse divergent master history"
+        assert "RELEASE_PROMOTE_VALIDATE_ONLY" in recipe, "M19: promotion needs a no-side-effect contract mode"
 
     def test_check_green_branch_guard_documents_promote(self) -> None:
         guard_path = SCRIPTS_DIR / "check_green_branch_guard.py"

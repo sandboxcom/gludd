@@ -61,7 +61,7 @@ SSH_KEY ?= $(HOME)/.ssh/sandboxcom_gludd_rsa
 _MULTIWORD_VALUE_GOALS := \
     copy-file feature-done feature-start git-add git-branch git-checkout git-cherry-pick-list \
     git-commit git-commit-file git-commit-files git-merge git-reset git-restore git-tag-move \
-    git-tag-push lint-files lint-fix-files lint-markdown lint-docstrings release-cut release-deploy release-upload-assets \
+    git-tag-push lint-files lint-fix-files lint-markdown lint-docstrings release-cut release-deploy release-promote release-upload-assets \
     replace-all-text replace-lines replace-text search ship-commit test-and-commit test-ci-shards-parallel \
     test-ci-shards-parallel-bg test-files ci-shards-log-context
 _FIRST_MAKE_GOAL := $(firstword $(MAKECMDGOALS))
@@ -159,7 +159,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         rearm-enforcement enforcement-status \
         hot-reload-plugins hot-reload-status hot-reload-clean check-plugin-restart-needed \
           verify-release-artifact verify-release-completeness git-tag-rm git-tag-delete git-tag-move release-branch-new release-cut release-recut release-create release-delete \
-         release-upload-assets git-restore-from release-deploy \
+         release-upload-assets git-restore-from release-deploy release-promote \
         build-sandbox-image verify-sandbox-image clean-sandbox-images \
         sandbox-state-dir sandbox-state-list sandbox-state-clean \
         vm-image-build vm-image-list vm-image-clean \
@@ -444,6 +444,7 @@ help:
 	@echo "  release-create TAG=.. CI-green-gated DRAFT release (single binary; complete via CI)"
 	@echo "  release-upload-assets TAG=.. FILES='..'  Add assets to an existing release (repair path)"
 	@echo "  release-cut TAG=.. MSG=.. The single release command (6 fail-closed steps)"
+	@echo "  release-promote TAG=.. MSG=..  Exact-SHA ff-only development promotion (validate-only supported)"
 	@echo "  release-recut TAG=..  Re-trigger CI release job for an existing tag"
 	@echo "  release-deploy TAG=.. MSG=..  Auto-deploy: merge dev->master, push, tag, wait for CI"
 	@echo "  release-delete TAG=.. Delete GitHub Release + local + remote git tags"
@@ -576,6 +577,7 @@ help:
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
 	@echo "  --- New Targets ---"
+	@echo "  release-promote         Promote exact-SHA green development to master and tag it"
 	@echo "  normalize-task-integrityNormalize legacy TASKS metadata and reopen unsupported completions"
 	@echo "  install-opa             install opa via brew"
 	@echo "  gate-local              fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"
@@ -9318,3 +9320,32 @@ diag-opencode-raw-json-pure-no-enforce:
 compare-models:
 	@echo "=== Multi-model comparison benchmark ==="
 	@$(UV) run python scripts/compare_models.py
+
+# --- New Targets (auto-categorized add-target) ---
+# Promote the exact green development commit from the canonical main checkout.
+# Validation mode proves topology and release policy without network or ref writes.
+# Real mode revalidates exact-SHA evidence, fast-forwards master in the main
+# checkout, then delegates tag publication and artifact verification to release-cut.
+# Usage: make release-promote TAG=v0.1.0-beta.N MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=0|1
+release-promote:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-promote TAG=v0.1.0-beta.N [MSG=release-notes] [RELEASE_PROMOTE_VALIDATE_ONLY=0|1]"; exit 2; }
+	@case "$(RELEASE_PROMOTE_VALIDATE_ONLY)" in 0|1|"") ;; *) echo "ERROR: RELEASE_PROMOTE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@MAIN_PATH='/Users/shawnwilson/gludd'; \
+	CURRENT_SHA="$$(git rev-parse --verify HEAD^{commit})" || { echo "ERROR: current HEAD does not resolve"; exit 2; }; \
+	DEV_SHA="$$(git rev-parse --verify development^{commit})" || { echo "ERROR: development does not resolve"; exit 2; }; \
+	MASTER_SHA="$$(git -C "$$MAIN_PATH" rev-parse --verify master^{commit})" || { echo "ERROR: canonical master does not resolve"; exit 2; }; \
+	[ "$$CURRENT_SHA" = "$$DEV_SHA" ] || { echo "ERROR: release-promote must run at the exact development tip"; exit 2; }; \
+	$(MAKE) --no-print-directory worktree-guard; \
+	$(MAKE) --no-print-directory main-worktree-guard; \
+	git -C "$$MAIN_PATH" merge-base --is-ancestor "$$MASTER_SHA" "$$DEV_SHA" || { echo "ERROR: master cannot fast-forward to development"; exit 2; }; \
+	if [ "$(RELEASE_PROMOTE_VALIDATE_ONLY)" = "1" ]; then \
+		$(MAKE) --no-print-directory require-dual-track-green SHA="$$DEV_SHA" DUAL_TRACK_CI_VALIDATE_ONLY=1; \
+		$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS=; \
+		echo "RELEASE-PROMOTE-VALIDATED tag=$(TAG) master=$$MASTER_SHA development=$$DEV_SHA mode=ff-only"; \
+		exit 0; \
+	fi; \
+	$(MAKE) --no-print-directory require-dual-track-green SHA="$$DEV_SHA" DUAL_TRACK_CI_VALIDATE_ONLY=0; \
+	$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_READINESS_VALIDATE_ONLY=0 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS=; \
+	git -C "$$MAIN_PATH" merge --ff-only development; \
+	$(MAKE) --no-print-directory -C "$$MAIN_PATH" release-cut TAG="$(TAG)" MSG="$(MSG)"
+

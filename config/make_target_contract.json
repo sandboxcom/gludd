@@ -36,6 +36,15 @@
       "behavior": "make release-readiness TAG=v0.1.0-beta.4 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS="
     },
     {
+      "name": "release-promote",
+      "make_variables": [
+        "TAG",
+        "MSG",
+        "RELEASE_PROMOTE_VALIDATE_ONLY"
+      ],
+      "behavior": "make release-promote TAG=v0.1.0-beta.4 MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=1"
+    },
+    {
       "name": "ci-job-failure-context",
       "make_variables": [
         "RUN",

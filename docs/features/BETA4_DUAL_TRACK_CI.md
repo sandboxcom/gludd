@@ -2124,3 +2124,48 @@ isolated target, contract, checker, test, and documentation commit. The bounded
 failure-context design also follows the practitioner evidence in
 [pytest-timeout issue 60][pytest-timeout-issue-60]: timeout failures need
 durable, scoped reporting rather than an unbounded or hidden diagnostic scan.
+
+## Exact-SHA promotion contract (2026-08-31)
+
+The beta4 release audit found that `AGENTS.md` and the behavioral specifications
+named `make release-promote`, but the executable target was absent. The legacy
+fallback checked out `master` inside the invoking worktree and used
+`git merge --no-ff`; its structural test explicitly accepted a missing target.
+The corrected target runs at the exact `development` tip, requires clean current
+and canonical main worktrees, validates paired local/hosted evidence and release
+readiness for that immutable SHA, proves that `master` is its ancestor, and moves
+the canonical main checkout only with `git merge --ff-only development`.
+Publication remains single-sourced through `release-cut`.
+
+The validation-only path executes the same topology and policy checks with
+network/ref mutation disabled. Tests pin missing/invalid input failure, exact
+evidence-before-mutation ordering, canonical-main confinement, ff-only refusal,
+side-effect-free validation, `release-cut` delegation, public help, and the
+variable-aware Make contract. A second RED regression found that the static
+contract parser dropped the final target at EOF; it now flushes that stanza
+explicitly, so adding a real target at the end of the Makefile cannot be reported
+as missing.
+
+Upstream and practitioner evidence reviewed 2026-08-31:
+
+- The official [Git merge documentation](https://git-scm.com/docs/git-merge)
+  defines `--ff-only` as refusing a merge when the current tip is not an
+  ancestor, which is the required branch-discipline primitive.
+- GitHub Community discussion
+  [#13226](https://github.com/orgs/community/discussions/13226) records that tags
+  point to commits rather than branches.
+- GitHub Community discussion
+  [#45144](https://github.com/orgs/community/discussions/45144) documents the
+  common tag-push release trigger, while
+  [#196018](https://github.com/orgs/community/discussions/196018) records that
+  branch and tag pushes can trigger distinct workflow runs. Gludd therefore
+  binds the exact SHA before the fast-forward and leaves tag publication to one
+  owner.
+
+ZDD means the untagged candidate is rejected before `master), a remote ref, or a
+release asset changes. The only long-lived resources consulted are the two Git
+worktrees and immutable evidence files; no daemon, model server, or cleanup task
+is started. Rollback before the fast-forward is the isolated promotion commit.
+After a successful fast-forward, publication is idempotently resumed through
+`release-cut`; history is never rewritten and the target never performs a
+compensating reverse merge.
