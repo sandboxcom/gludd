@@ -129,6 +129,33 @@ def test_named_candidate_importing_another_module_remains_no_import(
     assert _status(project)["status"] == "NO_IMPORT"
 
 
+def test_named_candidate_short_circuits_repository_index(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A canonical importing test must not trigger a repository-wide AST scan."""
+    candidate = project / "tests" / "unit" / "test_widgets_engine.py"
+    candidate.write_text(
+        "from general_ludd.widgets.engine import Engine\n\n"
+        "def test_engine():\n    assert Engine() is not None\n"
+    )
+    original = checker._build_test_index
+    calls: list[tuple[Path, ...] | None] = []
+
+    def tracked(test_files: tuple[Path, ...] | None = None) -> checker.TestIndex:
+        calls.append(test_files)
+        if test_files is None:
+            raise AssertionError("canonical candidate should avoid the full repository scan")
+        return original(test_files)
+
+    monkeypatch.setattr(checker, "_build_test_index", tracked)
+
+    result = _status(project)
+
+    assert result["status"] == "OK"
+    assert calls == [(candidate,)]
+
+
 def test_repository_chemistry_installed_import_is_mapped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -172,6 +199,16 @@ def test_source_walk_and_path_candidates_are_exact(project: Path) -> None:
     assert checker._candidate_test_paths(engine) == [
         project / "tests" / "unit" / "test_general_ludd_widgets_engine.py",
         project / "tests" / "unit" / "test_widgets_engine.py",
+    ]
+
+
+def test_path_mapping_supports_a_top_level_module(project: Path) -> None:
+    standalone = project / "standalone.py"
+    standalone.write_text("value = 1\n")
+
+    assert checker._module_path(standalone) == "standalone"
+    assert checker._candidate_test_paths(standalone) == [
+        project / "tests" / "unit" / "test_standalone.py"
     ]
 
 

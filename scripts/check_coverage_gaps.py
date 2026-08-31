@@ -38,6 +38,7 @@ TESTS_DIR = PROJECT_ROOT / "tests" / "unit"
 DEFAULT_BASELINE = "config/coverage_gaps_baseline.json"
 
 ModuleTests: TypeAlias = dict[str, tuple[Path, ...]]
+TestIndex: TypeAlias = tuple[ModuleTests, dict[Path, int]]
 
 
 class CoverageResult(TypedDict):
@@ -360,13 +361,16 @@ def _modules_imported_by_test(
     return imported
 
 
-def _build_test_index() -> tuple[ModuleTests, dict[Path, int]]:
-    """Parse every test once and index modules by real static imports."""
+def _build_test_index(test_files: tuple[Path, ...] | None = None) -> TestIndex:
+    """Parse the selected tests once and index modules by real static imports."""
     source_modules = _source_module_paths()
     reexports = _module_reexports(source_modules)
     tests_by_module: defaultdict[str, set[Path]] = defaultdict(set)
     counts: dict[Path, int] = {}
-    for test_file in sorted(TESTS_DIR.rglob("test_*.py")):
+    selected = sorted(test_files) if test_files is not None else sorted(
+        TESTS_DIR.rglob("test_*.py")
+    )
+    for test_file in selected:
         tree = _parse_python(test_file)
         if tree is None:
             continue
@@ -410,6 +414,15 @@ def _check_module(
     module_path = _module_path(src_file)
     candidates = _candidate_test_paths(src_file)
     existing = [c for c in candidates if c.is_file()]
+    if test_index is None and existing:
+        candidate_index = _build_test_index(tuple(existing))
+        candidate_modules, candidate_counts = candidate_index
+        candidate_covering = [
+            path
+            for path in candidate_modules.get(module_path, ())
+            if candidate_counts.get(path, 0) > 0
+        ]
+        test_index = candidate_index if candidate_covering else _build_test_index()
     tests_by_module, test_counts = test_index or _build_test_index()
     covering = [
         path for path in tests_by_module.get(module_path, ()) if test_counts.get(path, 0) > 0

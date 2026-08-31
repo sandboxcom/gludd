@@ -2031,3 +2031,48 @@ reviewed 2026-08-30, where a server could not be stopped gracefully and required
 forced termination. Gludd does not infer ownership from process survival or a
 missing path: it first makes the process visible, then applies the existing
 daemon-ancestor and identity checks before any bounded TERM-to-KILL cleanup.
+
+
+### Hosted coverage-index timeout incident (2026-08-30)
+
+Exact-SHA hosted run `33345023078` failed Python 3.11 `unit-1b` in batch 5.
+The traceback showed `test_repository_chemistry_installed_import_is_mapped`
+spending more than the 180-second per-test budget in
+`check_coverage_gaps._build_test_index()`. The single-module query parsed and
+walked every repository test even though its canonical candidate test already
+proved the installed-package import. Disk remained 42 percent used, 14 GiB of
+memory was available, and the runner recorded no OOM kill or core dump.
+
+The checker now indexes existing canonical candidate tests first and returns
+immediately when one has a real test function importing the requested module.
+It retains the full repository scan as a fail-closed fallback when candidates
+are absent or do not import the owner. The Python 3.11 regression surface went
+from a hosted timeout above 180 seconds to 16 passing tests in 5.25 seconds;
+the exact formerly failing node is included. No timeout was raised, no test was
+weakened, and no coverage threshold or warning policy changed.
+
+Practitioner and upstream evidence supports repairing the algorithm rather than
+raising the timeout:
+
+- [CPython issue #123373](https://github.com/python/cpython/issues/123373),
+  opened 2024-08-27 and reviewed 2026-08-30, demonstrates that each
+  `ast.walk()` iterates the complete descendant tree. Repeating that operation
+  across the entire repository therefore scales with every test AST, not with
+  the single module being queried.
+- The [pytest-timeout project guidance](https://github.com/pytest-dev/pytest-timeout)
+  reviewed 2026-08-30 says timeouts are a last-resort hang detector rather than
+  a precision performance-regression mechanism. Gludd keeps the 180-second
+  guard and removes the unnecessary work.
+- [pytest-timeout issue #60](https://github.com/pytest-dev/pytest-timeout/issues/60),
+  opened 2019-12-18 and reviewed 2026-08-30, records the long-lived CI problem
+  that externally killed suites can lose their final report. Gludd preserves
+  the owned per-test failure and bounded shard summary instead of hiding the
+  defect behind a longer hosted job timeout.
+
+ZDD is candidate rejection: the untagged SHA was canceled after its first
+terminal red shard, so no release tag or serving deployment changed. Rollback is
+the isolated checker/test/documentation commit. The local reproducer was stopped
+through its owner after the exact failure was known; its serial runner reaped
+the active worker and removed its namespaced temporary root. The hosted run was
+canceled through `make ci-cancel`. The checker starts no daemon, model, network
+client, or subprocess, so this repair adds no compensating cleanup task.
