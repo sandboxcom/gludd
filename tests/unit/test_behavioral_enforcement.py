@@ -31,6 +31,16 @@ def target_uses_guard(target_name: str, guard_name: str) -> bool:
     return bool(re.search(_pat, text, re.MULTILINE))
 
 
+def target_recipe(target_name: str) -> str:
+    """Return one complete Make target recipe without a byte-size assumption."""
+    pattern = re.compile(
+        rf"(?m)^{re.escape(target_name)}:[^\n]*\n(?:\t[^\n]*(?:\n|\Z))*"
+    )
+    match = pattern.search(makefile_text())
+    assert match is not None, f"Make target missing: {target_name}"
+    return match.group(0)
+
+
 def plugin_exists(name: str) -> bool:
     return (PLUGIN_DIR / name).exists()
 
@@ -239,17 +249,14 @@ class TestAA012ReleaseCiGreenGuard:
             "AA012: _release-ci-green-guard or require-ci-green missing"
         )
 
-    def test_git_tag_move_has_ci_green_requirement(self):
+    def test_git_tag_move_has_ci_green_requirement(self) -> None:
         """The release path checks CI before invoking its tag-push step.
 
         ``git-tag-move`` is a low-level recovery utility.  The supported release
         workflow is ``release-cut``, whose CI precondition must remain ahead of
         the tag operation rather than being hidden by a known-gap skip.
         """
-        content = makefile_text()
-        release_index = content.find("release-cut:")
-        assert release_index >= 0, "AA012: supported release-cut target missing"
-        release_block = content[release_index : release_index + 800]
+        release_block = target_recipe("release-cut")
         ci_index = release_block.find("require-dual-track-green")
         tag_index = release_block.find("git-tag-push")
         assert 0 <= ci_index < tag_index, (
