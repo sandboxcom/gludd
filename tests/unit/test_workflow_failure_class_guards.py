@@ -94,14 +94,17 @@ def test_push_workflow_runs_for_development_and_master_without_canceling_push_ru
 
 
 def test_release_paths_verify_complete_artifact_set_before_publish_or_done() -> None:
-    for target in ["release-cut", "release-recut", "release-deploy"]:
+    for target in ["release-cut", "release-recut"]:
         assert "verify-release-completeness" in _target_block(target), target
+    assert "release-promote" in _target_block("release-deploy")
+    assert "release-cut" in _target_block("release-promote")
 
 
-def test_release_deploy_does_not_swallow_ci_await_failure() -> None:
+def test_release_deploy_cannot_bypass_the_promotion_owner() -> None:
     block = _target_block("release-deploy")
-    assert "ci-await BRANCH=master || true" not in block
-    assert "ci-await BRANCH=master" in block
+    assert "release-promote" in block
+    assert "ci-await" not in block
+    assert "development-merge-to-master" not in block
 
 
 def test_development_push_verifies_remote_sha_after_push() -> None:

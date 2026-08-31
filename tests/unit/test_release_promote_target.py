@@ -110,6 +110,22 @@ def test_public_help_and_make_contract_include_safe_behavior() -> None:
     assert "RELEASE_PROMOTE_VALIDATE_ONLY=1" in entries["release-promote"]["behavior"]
 
 
+def test_release_deploy_is_only_a_compatibility_alias() -> None:
+    """No public deployment target may bypass the promotion owner."""
+    block = _target_block("release-deploy")
+
+    assert 'release-promote TAG="$(TAG)" MSG="$(MSG)"' in block
+    for forbidden in (
+        "development-merge-to-master",
+        "git-push-sandboxcom",
+        "git-tag-push",
+        "ci-await",
+        "verify-release-artifact",
+        "verify-release-completeness",
+    ):
+        assert forbidden not in block
+
+
 def test_make_contract_parser_keeps_the_final_target_at_eof() -> None:
     """A public target at EOF must not disappear from static contract checks."""
     makefile = "first:\n\t@echo first\n\nrelease-promote:\n\t@echo promote\n"

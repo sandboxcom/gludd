@@ -4123,34 +4123,10 @@ release-cut:
 	done; \
 	echo "WARNING: release artifact not found after 10 minutes — a cold tag-triggered full-matrix build can take 30-60 min; poll again with make verify-release-completeness TAG=$(TAG) (poll timeout means STILL BUILDING, not failure)"; exit 1
 
-# Auto-deployment target: merge dev->master (if needed), push master, create/push
-# tag, wait for CI, and verify the full artifact matrix before declaring done.
-# Usage: make release-deploy TAG=v0.1.0-beta.2 MSG=release-notes
+# Compatibility entrypoint: release-promote is the only deployment state machine.
+# Usage: make release-deploy TAG=v0.1.0-beta.N MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=0|1
 release-deploy: _no-raw-git-guard
-	@[ -n "$(TAG)" ] || { echo "Usage: make release-deploy TAG=v0.1.0-beta.N MSG=release-notes"; exit 1; }
-	@DEV_AHEAD=$$(git rev-list --count master..development 2>/dev/null || echo 0); \
-	if [ "$$DEV_AHEAD" -gt 0 ]; then \
-		echo "=== Development has $$DEV_AHEAD commits not on master. Merging... ==="; \
-		$(MAKE) -s development-merge-to-master; \
-	else \
-		echo "=== Master already up to date with development ==="; \
-	fi
-	@echo "=== Pushing master to sandboxcom ==="
-	@$(MAKE) -s git-push-sandboxcom
-	@echo "=== Creating and pushing tag $(TAG) ==="
-	@$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"
-	@echo "=== Tag pushed. Waiting for CI on master ==="
-	@$(MAKE) -s ci-await BRANCH=master
-	@echo "=== Verifying release completeness for $(TAG) ==="
-	@i=0; while [ $$i -lt $(VERIFY_POLLS) ]; do \
-		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
-			echo "Release artifact present after $$i polls; checking completeness..."; \
-			$(MAKE) -s verify-release-completeness TAG=$(TAG); exit $$?; \
-		fi; \
-		sleep 10; i=$$((i+1)); \
-	done; \
-	echo "Release completeness not verified after $(VERIFY_POLLS) polls for $(TAG)"; exit 1
-	@echo "=== Deploy complete for $(TAG) ==="
+	@$(MAKE) --no-print-directory release-promote TAG="$(TAG)" MSG="$(MSG)" RELEASE_PROMOTE_VALIDATE_ONLY="$(RELEASE_PROMOTE_VALIDATE_ONLY)"
 
 # Delete a GitHub Release and its associated git tags (local + remote).
 # Usage: make release-delete TAG=v0.1.0-alpha.1
