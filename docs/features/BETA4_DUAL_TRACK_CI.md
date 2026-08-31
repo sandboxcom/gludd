@@ -2247,3 +2247,34 @@ continues to signal only the verified project tree. Failure leaves the candidate
 invalidated and the remote, tag, release, and serving deployment unchanged.
 Rollback is the isolated cleanup/test/coverage-config/documentation commit; no
 compensating cleanup task or background service is introduced.
+
+### Host disk-pressure determinism (2026-08-31)
+
+The exact local dual-track producer for beta4 exposed two database admission tests
+that used `tmp_path` while still reading the host filesystem's live capacity. The
+volume was legitimately 99% full, so production correctly returned `CRITICAL`;
+the tests incorrectly assumed the result could only be `OK` or `WARNING`. Hosted
+CI passed on a roomier runner, creating the precise local/hosted divergence that
+dual-track validation is intended to reveal.
+
+The tests now replace `shutil.disk_usage` with explicit total, used, and free byte
+snapshots for every status assertion. They pin `OK`, configured blocking,
+nonexistent-path, environment fallback, reported byte counts, and real 99.5%
+critical-pressure behavior. Production remains fail closed and no threshold,
+retry, skip, or warning suppression changed.
+
+Evidence reviewed 2026-08-31:
+
+- [pytest temporary-path documentation](https://docs.pytest.org/en/8.2.x/how-to/tmp_path.html)
+  guarantees a unique test directory, not virtualized disk capacity.
+- [CPython issue 35458](https://bugs.python.org/issue35458) records a long-lived
+  practitioner report that live `shutil.disk_usage` assertions fail randomly when
+  tests run concurrently.
+- [GitHub Actions runner-images issue 9344](https://github.com/actions/runner-images/issues/9344)
+  records hosted-runner regressions caused by unexpectedly exhausted disk.
+
+This repair is ZDD: synthetic capacity exists only inside each test, while the
+application continues to observe and reject actual critical disk pressure. The
+only owned resources are pytest's monkeypatch rollback and its namespaced
+temporary directory. Rollback is the isolated test/documentation commit; it does
+not mutate the release tag, remote, database, or host filesystem policy.
