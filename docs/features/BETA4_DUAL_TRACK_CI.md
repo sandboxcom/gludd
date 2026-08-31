@@ -2197,3 +2197,27 @@ The collection lock, one foreground pytest collector, and one bounded log file a
 owned by `collect-check`; no daemon or cleanup task is introduced. Rollback is
 the isolated hook/test/documentation commit, restoring the prior entry without
 rewriting Git history or touching a release ref.
+
+### Cleanup validation and apply parity (2026-08-31)
+
+Stopping an invalidated local dual-track producer exposed a second operational
+contract gap. `terminate-project-process-tree` validation accepted only the
+shape of a positive PID and absolute namespace, while apply also inspected the
+live process command. A supervisor whose command retained an unexpanded resource
+root therefore passed validation and failed at apply time. The owned child was
+stopped safely with its exact expanded namespace, but the two modes did not prove
+the same precondition.
+
+Validation now takes the same bounded process-table snapshot as apply, requires
+the root PID to remain live, and requires the exact namespace to occur in that
+root command before it reports success. It performs no signal operation. Tests
+pin matching identity success, mismatched identity rejection, cross-project
+exclusion, children-first apply, missing-process behavior, and idempotent signal
+errors. Branch-aware coverage measures the cleanup owner directly rather than
+relying on a broad gate to encounter it.
+
+This is ZDD by construction: validation cannot terminate a process, and apply
+continues to signal only the verified project tree. Failure leaves the candidate
+invalidated and the remote, tag, release, and serving deployment unchanged.
+Rollback is the isolated cleanup/test/coverage-config/documentation commit; no
+compensating cleanup task or background service is introduced.

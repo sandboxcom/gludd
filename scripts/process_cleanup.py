@@ -168,12 +168,6 @@ def main(argv: list[str] | None = None) -> int:
     namespace_path = Path(namespace)
     if args.root_pid <= 0 or not namespace_path.is_absolute() or namespace_path == Path("/"):
         parser.error("root PID must be positive and namespace must be a non-root absolute path")
-    if args.validate_only:
-        print(
-            "PROCESS-CLEANUP-VALIDATION PASS "
-            f"pid={args.root_pid} namespace={namespace} apply={int(args.apply)}"
-        )
-        return 0
 
     table = snapshot_processes()
     root = table.get(args.root_pid)
@@ -187,6 +181,12 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    if args.validate_only:
+        print(
+            "PROCESS-CLEANUP-VALIDATION PASS "
+            f"pid={args.root_pid} namespace={namespace} apply={int(args.apply)}"
+        )
+        return 0
 
     candidates = [
         process.pid
