@@ -6125,13 +6125,8 @@ skip-counts-changed:
 # Scans the Makefile itself and exits 1 if any line contains `git push` but
 # does not contain `GIT_SSH_COMMAND`. Exits 0 clean otherwise.
 _no-raw-git-guard:
-	@if grep -n 'git push' Makefile | grep -v 'GIT_SSH_COMMAND'; then \
-		echo "ERROR: raw git push detected in Makefile without GIT_SSH_COMMAND prefix."; \
-		echo "All git pushes MUST use GIT_SSH_COMMAND='ssh -i $(SSH_KEY) ...'"; \
-		echo "See AGENTS.md \"Critical: Bash Command Policy\" and \"No-Manual-Default Policy\""; \
-		exit 1; \
-	fi
-	 	@echo "_no-raw-git-guard: PASS (all git push commands use GIT_SSH_COMMAND)"
+	@uv run python scripts/check_make_git_push.py Makefile
+	@echo "_no-raw-git-guard: PASS (all executable git push commands use GIT_SSH_COMMAND)"
 
 # AA008 — _no-bypass-guard: prevents bypassing CI-idle checks via alternate targets
 # or Makefile.tmp. Agent used `make development-push` (which originally bypassed

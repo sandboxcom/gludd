@@ -98,6 +98,20 @@ discarded child stdio, so 30 refused probes exposed no startup cause. Running
 Gunicorn directly in the foreground with explicit `-` log destinations removes
 that blind spot and gives Tini exact process ownership.
 
+Reviewed 2026-08-31. The official
+[GNU make recipe syntax](https://www.gnu.org/software/make/manual/html_node/Recipe-Syntax.html)
+documents that Makefiles contain distinct make and shell syntaxes, that recipe
+lines are tab-prefixed, and that continued recipe lines form one logical shell
+command. A long-lived Stack Overflow practitioner discussion about
+[enumerating Make targets](https://stackoverflow.com/questions/4219255/how-do-you-get-the-list-of-targets-in-a-makefile/45843594)
+explicitly calls out false positives from simplistic text matching. The beta4
+promotion incident was the same class: a whole-file grep matched the guard's own
+comments and quoted diagnostics. The release guard now scans only executable
+recipe tokens, joins continuations, evaluates shell segments independently, and
+fails closed on a real unprefixed push. Its behavioral regression executes the
+guard before any artifact build; fixture tests prove that prose cannot satisfy
+or trip the policy.
+
 ## Zero-downtime delivery
 
 Packaging runs beside the serving release and writes versioned artifacts.
