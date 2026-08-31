@@ -28,7 +28,7 @@ def _stanzas(makefile: str) -> dict[str, str]:
     result: dict[str, str] = {}
     current: str | None = None
     body: list[str] = []
-    for line in [*lines, ""]:
+    for line in lines:
         match = TARGET_RE.match(line)
         if match:
             if current is not None:
@@ -42,6 +42,8 @@ def _stanzas(makefile: str) -> dict[str, str]:
                 result[current] = "\n".join(body)
                 current = None
                 body = []
+    if current is not None:
+        result[current] = "\n".join(body)
     return result
 
 
