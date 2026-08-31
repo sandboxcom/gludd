@@ -2076,3 +2076,20 @@ through its owner after the exact failure was known; its serial runner reaped
 the active worker and removed its namespaced temporary root. The hosted run was
 canceled through `make ci-cancel`. The checker starts no daemon, model, network
 client, or subprocess, so this repair adds no compensating cleanup task.
+
+Exact-run artifact inspection is now a first-class bounded operation through
+`make ci-artifact-context`. It resolves only the resource-arbiter namespace
+bound to the requested run and artifact, accepts an exact safe file basename,
+and rejects symlinks, duplicate matches, traversal, and root escapes. Context
+size is capped by explicit before, after, and match limits; validate-only mode
+performs no network access or checkout write. For run 33345023078, the target
+exposed the downloaded resource and disk diagnostics without broad filesystem
+access. That artifact contained no pytest tail, so the authenticated job log
+provided the traceback after the terminal-red run was canceled.
+
+This inspection path starts no daemon or subprocess beyond its foreground
+checker and leaves no checkout or service state to clean up. Rollback is the
+isolated target, contract, checker, test, and documentation commit. The bounded
+failure-context design also follows the practitioner evidence in
+[pytest-timeout issue 60][pytest-timeout-issue-60]: timeout failures need
+durable, scoped reporting rather than an unbounded or hidden diagnostic scan.

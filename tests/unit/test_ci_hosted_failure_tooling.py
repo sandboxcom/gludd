@@ -62,6 +62,30 @@ def test_ci_artifact_download_is_run_bound_confined_and_atomic() -> None:
     assert "ignore_errors" not in block
 
 
+def test_ci_artifact_context_is_run_bound_confined_and_bounded() -> None:
+    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    block = _target_block(source, "ci-artifact-context")
+
+    assert "scripts/resource_arbiter.py root" in block
+    assert 'ci-artifacts/run-$(RUN)/$(ARTIFACT)' in block
+    assert "scripts/ci_shards_log_context.py" in block
+    assert "--artifact-root" in block
+    assert "--artifact-file" in block
+    for variable in (
+        "$(RUN)",
+        "$(ARTIFACT)",
+        "$(CI_ARTIFACT_FILE)",
+        "$(PATTERN)",
+        "$(BEFORE)",
+        "$(AFTER)",
+        "$(MAX_MATCHES)",
+        "$(CI_ARTIFACT_CONTEXT_VALIDATE_ONLY)",
+    ):
+        assert variable in block
+    assert "|| true" not in block
+    assert ".gate-logs" not in block
+
+
 def test_ci_artifact_download_rejects_checkout_output_even_in_validate_only() -> None:
     """Diagnostics must never share the source checkout with an active test run."""
     result = subprocess.run(
@@ -236,6 +260,24 @@ def test_new_ci_targets_have_safe_behavioral_contracts() -> None:
             "CI_ARTIFACT_OUTPUT_ROOT=RESOURCE_ROOT "
             "CI_ARTIFACT_HEARTBEAT_SECS=1 "
             "CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY=1"
+        ),
+    }
+    assert contracts["ci-artifact-context"] == {
+        "name": "ci-artifact-context",
+        "make_variables": [
+            "RUN",
+            "ARTIFACT",
+            "CI_ARTIFACT_FILE",
+            "PATTERN",
+            "BEFORE",
+            "AFTER",
+            "MAX_MATCHES",
+            "CI_ARTIFACT_CONTEXT_VALIDATE_ONLY",
+        ],
+        "behavior": (
+            "make ci-artifact-context RUN=1 ARTIFACT=diagnostics "
+            "CI_ARTIFACT_FILE=failure.log PATTERN=FAILED BEFORE=2 AFTER=4 "
+            "MAX_MATCHES=1 CI_ARTIFACT_CONTEXT_VALIDATE_ONLY=1"
         ),
     }
     assert contracts["ci-coverage-artifact-audit"] == {

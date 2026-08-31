@@ -168,7 +168,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime e2e-setup-test-project test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
-ci-view ci-rerun ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
+ci-view ci-rerun ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-artifact-context ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
 log-agent-result disk-guard disk-check check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
@@ -497,6 +497,7 @@ help:
 	@echo "  ci-kill-zombie          cancel a CI run via gh run cancel"
 	@echo "  ci-job-failure-context  bounded authenticated failure context (RUN, JOB, PATTERN)"
 	@echo "  ci-artifact-download    atomically download one exact run-bound GHA artifact (RUN, ARTIFACT, CI_ARTIFACT_OUTPUT_ROOT, CI_ARTIFACT_HEARTBEAT_SECS, CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)"
+	@echo "  ci-artifact-context     bounded context from one downloaded exact-run artifact (RUN, ARTIFACT, CI_ARTIFACT_FILE, PATTERN, BEFORE, AFTER, MAX_MATCHES, CI_ARTIFACT_CONTEXT_VALIDATE_ONLY)"
 	@echo "  ci-coverage-artifact-audit audit one externally stored hosted Cobertura report (CI_COVERAGE_*)"
 	@echo "  ci-coverage-gap-plan       print a bounded exact-run line/branch remediation plan (CI_COVERAGE_*)"
 	@echo "  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1"
@@ -4592,6 +4593,22 @@ ci-artifact-download:
 	if [ "$$DOWNLOAD_STATUS" -ne 0 ]; then echo "artifact download failed rc=$$DOWNLOAD_STATUS"; exit "$$DOWNLOAD_STATUS"; fi; \
 	mv "$$TMP" "$$DEST"; TMP=""; \
 	echo "CI-ARTIFACT-DOWNLOAD COMPLETE run=$(RUN) artifact=$(ARTIFACT) path=$$DEST"
+
+CI_ARTIFACT_FILE ?=
+CI_ARTIFACT_CONTEXT_VALIDATE_ONLY ?= 0
+ci-artifact-context:
+	@case "$(RUN)" in ''|*[!0-9]*) echo "RUN must be a numeric GitHub Actions run ID"; exit 2 ;; esac
+	@case "$(ARTIFACT)" in ''|*[!A-Za-z0-9._-]*) echo "Refusing unsafe ARTIFACT: $(ARTIFACT)"; exit 2 ;; esac
+	@case "$(CI_ARTIFACT_FILE)" in ''|*[!A-Za-z0-9._-]*) echo "Refusing unsafe CI_ARTIFACT_FILE: $(CI_ARTIFACT_FILE)"; exit 2 ;; esac
+	@case "$(PATTERN)" in ''|*[!A-Za-z0-9._:-]*) echo "PATTERN must use only safe literal token characters"; exit 2 ;; esac
+	@case "$(or $(BEFORE),20):$(or $(AFTER),80):$(or $(MAX_MATCHES),5)" in *[!0-9:]*) echo "BEFORE, AFTER, and MAX_MATCHES must be numeric"; exit 2 ;; esac
+	@case "$(or $(MAX_MATCHES),5)" in 0) echo "MAX_MATCHES must be positive"; exit 2 ;; esac
+	@case "$(CI_ARTIFACT_CONTEXT_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_ARTIFACT_CONTEXT_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	ARTIFACT_ROOT="$$RESOURCE_ROOT/ci-artifacts/run-$(RUN)/$(ARTIFACT)"; \
+	if [ "$(CI_ARTIFACT_CONTEXT_VALIDATE_ONLY)" = "1" ]; then echo "CI-ARTIFACT-CONTEXT VALIDATED run=$(RUN) artifact=$(ARTIFACT) file=$(CI_ARTIFACT_FILE) before=$(or $(BEFORE),20) after=$(or $(AFTER),80) matches=$(or $(MAX_MATCHES),5)"; exit 0; fi; \
+	if [ ! -d "$$ARTIFACT_ROOT" ]; then echo "Downloaded artifact root not found: $$ARTIFACT_ROOT"; exit 1; fi; \
+	$(PYTHON) scripts/ci_shards_log_context.py --artifact-root "$$ARTIFACT_ROOT" --artifact-file "$(CI_ARTIFACT_FILE)" --pattern "$(PATTERN)" --before "$(or $(BEFORE),20)" --after "$(or $(AFTER),80)" --max-matches "$(or $(MAX_MATCHES),5)"
 
 CI_COVERAGE_RUN ?=
 CI_COVERAGE_ARTIFACT ?= coverage-merged

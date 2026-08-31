@@ -59,6 +59,20 @@
       "behavior": "make ci-artifact-download RUN=1 ARTIFACT=diagnostics CI_ARTIFACT_OUTPUT_ROOT=RESOURCE_ROOT CI_ARTIFACT_HEARTBEAT_SECS=1 CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY=1"
     },
     {
+      "name": "ci-artifact-context",
+      "make_variables": [
+        "RUN",
+        "ARTIFACT",
+        "CI_ARTIFACT_FILE",
+        "PATTERN",
+        "BEFORE",
+        "AFTER",
+        "MAX_MATCHES",
+        "CI_ARTIFACT_CONTEXT_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-artifact-context RUN=1 ARTIFACT=diagnostics CI_ARTIFACT_FILE=failure.log PATTERN=FAILED BEFORE=2 AFTER=4 MAX_MATCHES=1 CI_ARTIFACT_CONTEXT_VALIDATE_ONLY=1"
+    },
+    {
       "name": "ci-coverage-artifact-audit",
       "make_variables": [
         "CI_COVERAGE_RUN",
