@@ -85,6 +85,34 @@ def test_main_emits_machine_readable_diagnostics(
     ]
 
 
+def test_release_policy_preflight_uses_canonical_bounded_make_invocation(
+    tmp_path: Path,
+) -> None:
+    calls: list[list[str]] = []
+
+    def run(
+        argv: Sequence[str], cwd: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(list(argv))
+        assert cwd == str(tmp_path)
+        return _completed(argv, "SERIAL-SHARD-VALIDATE policy=canonical\n")
+
+    compatible, detail = rr._release_policy_preflight(run, tmp_path)
+
+    assert compatible
+    assert detail == "SERIAL-SHARD-VALIDATE policy=canonical"
+    assert calls == [
+        [
+            "make",
+            "--no-print-directory",
+            "test-ci-dual-track-local",
+            "DUAL_TRACK_LOCAL_VALIDATE_ONLY=1",
+            "PYTEST_ARGS=",
+            "MAX_FILES_PER_BATCH=64",
+        ]
+    ]
+
+
 def test_detached_worktree_detection_reuses_porcelain_parser(tmp_path: Path) -> None:
     porcelain = (
         f"worktree {tmp_path}\nHEAD current\nbranch refs/heads/development\n\n"
@@ -128,6 +156,35 @@ def test_assess_passes_when_all_release_evidence_is_present(
     result = rr.assess(root=tmp_path, run=lambda *_: _completed([]))
     assert result.ready
     assert result.head == "abc123"
+
+
+def test_assess_fails_closed_for_noncanonical_local_policy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import workflow_state_guard
+
+    state = SimpleNamespace(
+        branch="development",
+        head="abc123",
+        dirty_count=0,
+        unintegrated_worktrees=[],
+        unintegrated_branches=[],
+    )
+    monkeypatch.setattr(workflow_state_guard, "collect_state", lambda **_: state)
+    monkeypatch.setattr(rr, "_release_policy_preflight", lambda *_: (False, "rejected"))
+    monkeypatch.setattr(rr, "_detached_worktrees", lambda *_: [])
+    monkeypatch.setattr(rr, "_ci_verdict", lambda *_: ("GREEN", "CI GREEN"))
+    monkeypatch.setattr(rr, "_version_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_incomplete_tasks", lambda *_: [])
+    monkeypatch.setattr(rr, "_ledger_check", lambda *_: (True, "OK"))
+
+    result = rr.assess(root=tmp_path, run=lambda *_: _completed([]))
+
+    assert not result.ready
+    assert result.release_policy_detail == "rejected"
+    assert result.errors == [
+        "local dual-track producer execution policy is not canonical"
+    ]
 
 
 def test_assess_fails_closed_for_dirty_and_unintegrated_state(
@@ -290,6 +347,37 @@ def test_nonprunable_worktree_never_receives_cleanup_instructions() -> None:
     assert rr.build_remediation_plan(
         result, tag=rr.DEFAULT_RELEASE_TAG
     ).steps == ()
+
+
+def test_coverage_gap_reader_fails_closed_on_missing_or_invalid_shapes(
+    tmp_path: Path,
+) -> None:
+    assert rr._coverage_gap_modules(tmp_path) == ()
+    config = tmp_path / "config"
+    config.mkdir()
+    baseline = config / "coverage_gaps_baseline.json"
+
+    for payload in ("{", "[]", '{"allowed_gaps": "not-a-list"}'):
+        baseline.write_text(payload, encoding="utf-8")
+        assert rr._coverage_gap_modules(tmp_path) == ()
+
+    baseline.write_text(
+        '{"allowed_gaps": ["module.b", 7, "module.a", "module.a"]}',
+        encoding="utf-8",
+    )
+    assert rr._coverage_gap_modules(tmp_path) == ("module.a", "module.b")
+
+
+def test_forecast_has_no_blockers_when_release_evidence_is_complete() -> None:
+    result = rr.Readiness(
+        ci_head_matches=True,
+        ci_verdict="GREEN",
+        version_consistent=True,
+        ledger_valid=True,
+        release_policy_compatible=True,
+    )
+
+    assert rr._forecast_blockers(result) == ()
 
 
 def test_release_eta_uses_gludd_calibration_and_parallel_critical_path() -> None:
@@ -542,7 +630,12 @@ def test_release_readiness_make_target_is_safe_and_contracted() -> None:
         timeout=30,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert json.loads(result.stdout)["estimate"]["p50_minutes"] == 200.0
+    payload = json.loads(result.stdout)
+    assert payload["estimate"]["p50_minutes"] == 200.0
+    policy = payload["release_policy_preflight"]
+    assert policy["command"][-1] == "MAX_FILES_PER_BATCH=64"
+    assert policy["execution_policy"]["python_version"] == "3.11"
+    assert len(policy["execution_policy_sha256"]) == 64
 
 
 def test_readiness_remediation_documentation_pins_safe_operator_boundaries() -> None:

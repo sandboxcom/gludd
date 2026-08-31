@@ -92,3 +92,35 @@ Revert the checklist commit to restore the previous operator report. No data
 migration, tag rewrite, service restart, or artifact cleanup is required.
 During rollback, release publication remains protected by the unchanged
 `release-cut` and `release-dry-run` guards, so there is no availability gap.
+
+## Execution-policy fail-fast preflight (2026-08-31)
+
+A long local run can pass its assertions yet still be unusable as release
+proof when its attested execution-policy digest differs from the hosted lane.
+The checklist therefore starts with the existing canonical producer in
+validate-only mode, with `PYTEST_ARGS=` and `MAX_FILES_PER_BATCH=64` stated
+explicitly. Validate-only now applies `--require-release-policy` before it
+prints a plan. A mismatch exits immediately, before repository inspection,
+test collection, the general gate, or an attestation write. Release readiness
+also runs and reports that same bounded command and exposes the canonical
+policy digest; the exact-SHA dual-track verifier remains the final authority.
+
+This ordering follows GitHub's documented matrix failure model, where
+`strategy.fail-fast` cancels in-progress and queued matrix jobs after a
+failure. The long-lived GitHub Community discussion
+[#38361](https://github.com/orgs/community/discussions/38361), reviewed
+2026-08-31, records that practitioners still lack an equivalent automatic
+fail-fast boundary across independent jobs. Gludd therefore performs its
+cross-phase compatibility check locally before starting expensive independent
+phases instead of relying on a late workflow cancellation.
+
+This is zero-downtime deployment protection: the preflight is read-only and an
+invalid immutable candidate remains untagged and undeployed. Rollback reverts
+the preflight/checklist commit; the unchanged exact-SHA verifier continues to
+reject mismatched evidence. Resources are bounded to one short-lived
+validate-only Python process under the existing observable checklist owner. It
+starts no pytest worker, daemon, model server, network request, or artifact
+writer, and its process group retains the existing timeout and cleanup rules.
+
+- [GitHub matrix failure handling](https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs#handling-failures),
+  reviewed 2026-08-31, documents matrix fail-fast cancellation behavior.

@@ -23,6 +23,14 @@ def test_beta4_plan_reuses_canonical_release_and_state_guards() -> None:
     commands = [phase.command for phase in plan]
 
     assert commands == [
+        (
+            "make",
+            "--no-print-directory",
+            "test-ci-dual-track-local",
+            "DUAL_TRACK_LOCAL_VALIDATE_ONLY=1",
+            "PYTEST_ARGS=",
+            "MAX_FILES_PER_BATCH=64",
+        ),
         ("make", "--no-print-directory", "release-worktree-guard"),
         ("make", "--no-print-directory", "check-gate-fresh"),
         ("make", "--no-print-directory", "lint"),
@@ -85,6 +93,24 @@ def test_blocked_phase_is_reported_and_later_read_only_checks_still_run() -> Non
     assert result.errors == []
     assert result.blockers == ["Fresh immutable gate: failed (exit 1)"]
     assert calls[-1] == "tag-immutability"
+
+
+def test_release_policy_mismatch_stops_before_long_checks() -> None:
+    calls: list[str] = []
+
+    def run_phase(**kwargs: object) -> PhaseResult:
+        name = str(kwargs["name"])
+        calls.append(name)
+        if name == "release-policy":
+            return _result(name, "failed", 2)
+        return _result(name)
+
+    result = checklist.run_checklist("v0.1.0-beta.4", phase_runner=run_phase)
+
+    assert calls == ["release-policy"]
+    assert result.blockers == [
+        "Canonical local execution policy: failed (exit 2)"
+    ]
 
 
 @pytest.mark.parametrize(
@@ -193,3 +219,6 @@ def test_beta4_research_zdd_and_rollback_are_documented() -> None:
     assert "Zero-downtime" in doc
     assert "Rollback" in doc
     assert "Resources" in doc
+    assert "Execution-policy fail-fast preflight (2026-08-31)" in doc
+    assert "MAX_FILES_PER_BATCH=64" in doc
+    assert "github.com/orgs/community/discussions/38361" in doc

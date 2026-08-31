@@ -800,6 +800,68 @@ def test_serial_runner_propagates_deferred_cleanup_signal_as_rc(
     )
 
 
+def test_signal_deferral_is_safe_outside_the_main_thread() -> None:
+    module = _load_script("run_ci_shards_serial")
+    observed: list[list[int]] = []
+
+    def worker() -> None:
+        with module._defer_termination_signals() as deferred:
+            observed.append(deferred)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    assert observed == [[]]
+
+
+@pytest.mark.parametrize(
+    ("cleanup_rc", "with_coverage_output", "coverage_rc", "expected_rc"),
+    [(0, False, 0, 0), (9, False, 0, 9), (0, True, 0, 0), (0, True, 7, 7)],
+)
+def test_serial_runner_handles_success_and_noncancellation_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cleanup_rc: int,
+    with_coverage_output: bool,
+    coverage_rc: int,
+    expected_rc: int,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    workspace = tmp_path / "workspace"
+    compact = tmp_path / "compact"
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        del dir
+        path = workspace if prefix.startswith("gludd-gate-") else compact
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(module, "expand_shard", lambda _shard: ["tests/unit/test_a.py"])
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_run_owned_pytest", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: cleanup_rc)
+    monkeypatch.setattr(module, "_combine_coverage_output", lambda _path: coverage_rc)
+    coverage_output = tmp_path / "combined-coverage" if with_coverage_output else None
+
+    assert (
+        module.run(
+            ["unit-3b"],
+            [],
+            run_isolated=False,
+            aggregate_coverage=False,
+            coverage_output=coverage_output,
+        )
+        == expected_rc
+    )
+
+
 def test_serial_runner_stops_the_whole_plan_after_one_interrupted_batch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

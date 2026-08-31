@@ -51,6 +51,7 @@ class PhaseSpec:
     command: tuple[str, ...]
     timeout_seconds: float
     heartbeat_seconds: float = 15.0
+    fail_fast: bool = False
 
 
 @dataclass
@@ -104,6 +105,20 @@ def beta4_check_plan(tag: str) -> list[PhaseSpec]:
     """Return the canonical beta4 guard sequence without duplicating a parser."""
     tag_variable = f"TAG={tag}"
     return [
+        PhaseSpec(
+            title="Canonical local execution policy",
+            name="release-policy",
+            command=(
+                "make",
+                "--no-print-directory",
+                "test-ci-dual-track-local",
+                "DUAL_TRACK_LOCAL_VALIDATE_ONLY=1",
+                "PYTEST_ARGS=",
+                "MAX_FILES_PER_BATCH=64",
+            ),
+            timeout_seconds=60,
+            fail_fast=True,
+        ),
         _make_phase(
             "Release worktrees clean",
             "release-worktree",
@@ -188,12 +203,16 @@ def run_checklist(
             detail = f"{spec.title}: evidence collection failed: {exc}"
             checklist.errors.append(detail)
             checklist.checks.append(Check(spec.title, False, "evidence collection failed"))
+            if spec.fail_fast:
+                break
             continue
 
         evidence_error = _evidence_error(spec, result)
         if evidence_error is not None:
             checklist.errors.append(evidence_error)
             checklist.checks.append(Check(spec.title, False, evidence_error.split(": ", 1)[1]))
+            if spec.fail_fast:
+                break
             continue
 
         passed = result.status == "passed" and result.exit_code == 0
@@ -203,6 +222,8 @@ def run_checklist(
             else f"failed (exit {result.exit_code})"
         )
         checklist.checks.append(Check(spec.title, passed, detail))
+        if spec.fail_fast and not passed:
+            break
 
     return checklist
 

@@ -105,6 +105,35 @@ def test_real_attestation_rejects_non_release_pytest_policy(
     assert "observed=-q -W error" in output
 
 
+def test_validate_only_enforces_release_policy_before_planning(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runner = _load_runner()
+
+    def unexpected(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("invalid validate-only policy must fail before test work")
+
+    monkeypatch.setattr(runner, "run", unexpected)
+    monkeypatch.setattr(runner, "_repository_identity", unexpected)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--validate-only",
+            "--require-release-policy",
+            "--pytest-args=-q -W error",
+            "--max-files-per-batch=64",
+        ],
+    )
+
+    assert runner.main() == 2
+    output = capsys.readouterr().out
+    assert "SERIAL-SHARD-POLICY-REJECTED" in output
+    assert "SERIAL-SHARD-VALIDATE" not in output
+
+
 def test_hosted_producer_requires_release_policy() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
 
@@ -146,14 +175,14 @@ def test_runner_validate_only_is_empty_selector_safe(
     assert not attestation.exists()
 
 
-def test_local_dual_track_make_example_is_safe_and_observable() -> None:
+def test_local_dual_track_make_example_is_canonical_and_observable() -> None:
     result = subprocess.run(
         [
             "make",
             "test-ci-dual-track-local",
             "DUAL_TRACK_LOCAL_VALIDATE_ONLY=1",
-            "PYTEST_ARGS=-k __gludd_contract_empty__",
-            "MAX_FILES_PER_BATCH=16",
+            "PYTEST_ARGS=",
+            "MAX_FILES_PER_BATCH=64",
         ],
         cwd=ROOT,
         text=True,
@@ -163,4 +192,5 @@ def test_local_dual_track_make_example_is_safe_and_observable() -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "SERIAL-SHARD-VALIDATE" in result.stdout
-    assert "__gludd_contract_empty__" in result.stdout
+    assert "max_files_per_batch=64" in result.stdout
+    assert "pytest_args=-W error" in result.stdout

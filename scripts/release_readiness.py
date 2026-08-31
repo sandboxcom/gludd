@@ -34,12 +34,21 @@ from typing import cast
 
 from general_ludd.quality.preflight import check_tasks_ticks
 from general_ludd.review import release_forecast
+from run_ci_shards_serial import canonical_json_sha256, release_execution_policy
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RELEASE_TAG = "v0.1.0-beta.4"
 RELEASE_TASK_PREFIXES = {DEFAULT_RELEASE_TAG: ("S86.",)}
 RELEASE_ACTION_TASKS = {DEFAULT_RELEASE_TAG: frozenset({"S86.10"})}
 _TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+\Z")
+RELEASE_POLICY_PREFLIGHT_COMMAND = (
+    "make",
+    "--no-print-directory",
+    "test-ci-dual-track-local",
+    "DUAL_TRACK_LOCAL_VALIDATE_ONLY=1",
+    "PYTEST_ARGS=",
+    "MAX_FILES_PER_BATCH=64",
+)
 
 RELEASE_STAGE_BASELINES = {
     "readiness_fix": 30.0,
@@ -111,6 +120,14 @@ class Readiness:
     incomplete_release_tasks: list[str] = field(default_factory=list)
     ledger_valid: bool = False
     ledger_detail: str = ""
+    release_policy_compatible: bool = False
+    release_policy_detail: str = ""
+    release_policy_sha256: str = field(
+        default_factory=lambda: canonical_json_sha256(release_execution_policy())
+    )
+    release_policy_command: list[str] = field(
+        default_factory=lambda: list(RELEASE_POLICY_PREFLIGHT_COMMAND)
+    )
     unmanaged_local_inference_processes: list[dict[str, object]] = field(
         default_factory=list
     )
@@ -129,6 +146,7 @@ class Readiness:
             and not self.unintegrated_worktrees
             and self.version_consistent
             and self.ledger_valid
+            and self.release_policy_compatible
             and not self.incomplete_release_tasks
             and not self.unmanaged_local_inference_processes
         )
@@ -394,6 +412,15 @@ def _ci_verdict(head: str, branch: str, run: RunFn) -> tuple[str, str]:
         return verdict, detail
 
 
+def _release_policy_preflight(run: RunFn, root: Path) -> tuple[bool, str]:
+    """Validate the exact bounded local release producer without running tests."""
+    result = run(list(RELEASE_POLICY_PREFLIGHT_COMMAND), str(root))
+    detail = (
+        result.stdout or result.stderr or "release policy preflight returned no output"
+    ).strip()
+    return result.returncode == 0, detail
+
+
 def _version_check(run: RunFn, root: Path) -> tuple[bool, str]:
     """Invoke the canonical version-consistency helper."""
     helper = root / "scripts" / "check_version_consistency.py"
@@ -533,6 +560,14 @@ def assess(
         )
         return result
     try:
+        result.release_policy_compatible, result.release_policy_detail = (
+            _release_policy_preflight(run, root)
+        )
+        if not result.release_policy_compatible:
+            result.errors.append(
+                "local dual-track producer execution policy is not canonical"
+            )
+
         from workflow_state_guard import collect_state
 
         state = collect_state(
@@ -797,6 +832,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             json.dumps(
                 {
                     "estimate": asdict(estimate),
+                    "release_policy_preflight": {
+                        "command": list(RELEASE_POLICY_PREFLIGHT_COMMAND),
+                        "execution_policy": release_execution_policy(),
+                        "execution_policy_sha256": canonical_json_sha256(
+                            release_execution_policy()
+                        ),
+                    },
                     "tag": tag,
                     "validate_only": True,
                 },

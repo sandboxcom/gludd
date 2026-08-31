@@ -1162,13 +1162,6 @@ def main() -> int:
     args = parser.parse_args()
     shards = _parse_shards(args.shards)
     pytest_args = shlex.split(args.pytest_args)
-    if args.validate_only:
-        return _validate_only_plan(
-            shards,
-            pytest_args,
-            max_files_per_batch=args.max_files_per_batch,
-            attestation_output=args.attestation_output,
-        )
     observed_policy = execution_policy(pytest_args)
     expected_policy = release_execution_policy()
     if args.require_release_policy and observed_policy != expected_policy:
@@ -1181,6 +1174,13 @@ def main() -> int:
             flush=True,
         )
         return 2
+    if args.validate_only:
+        return _validate_only_plan(
+            shards,
+            pytest_args,
+            max_files_per_batch=args.max_files_per_batch,
+            attestation_output=args.attestation_output,
+        )
     pairing = _attestation_pairing(shards, pytest_args=pytest_args)
     started_at = _utc_now()
     identity = _repository_identity(
