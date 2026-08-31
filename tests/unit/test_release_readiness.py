@@ -123,6 +123,7 @@ def test_assess_passes_when_all_release_evidence_is_present(
     monkeypatch.setattr(rr, "_version_check", lambda *_: (True, "OK: 0.1.0-beta.3"))
     monkeypatch.setattr(rr, "_incomplete_tasks", lambda *_: [])
     monkeypatch.setattr(rr, "_ledger_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_tasks_tick_check", lambda *_: (True, "OK"))
 
     result = rr.assess(root=tmp_path, run=lambda *_: _completed([]))
     assert result.ready
@@ -147,6 +148,7 @@ def test_assess_fails_closed_for_dirty_and_unintegrated_state(
     monkeypatch.setattr(rr, "_version_check", lambda *_: (True, "OK"))
     monkeypatch.setattr(rr, "_incomplete_tasks", lambda *_: [])
     monkeypatch.setattr(rr, "_ledger_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_tasks_tick_check", lambda *_: (True, "OK"))
 
     result = rr.assess(root=tmp_path, run=lambda *_: _completed([]))
     assert not result.ready
@@ -175,6 +177,45 @@ def test_incomplete_tasks_uses_current_policy_and_excludes_release_action(tmp_pa
 def test_incomplete_tasks_fails_closed_without_task_ledger(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match=r"TASKS\.md is missing"):
         rr._incomplete_tasks(tmp_path)
+
+
+def test_tasks_tick_check_rejects_checked_pending_evidence(tmp_path: Path) -> None:
+    (tmp_path / "TASKS.md").write_text(
+        "- [x] S86.1 — done | evidence: make gate pending abc1234\n",
+        encoding="utf-8",
+    )
+
+    passed, detail = rr._tasks_tick_check(tmp_path)
+
+    assert not passed
+    assert "Forbidden word 'pending'" in detail
+
+
+def test_assess_stops_before_external_evidence_when_task_ticks_invalid(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import workflow_state_guard
+
+    (tmp_path / "TASKS.md").write_text(
+        "- [x] S86.1 — done | evidence: make gate pending abc1234\n",
+        encoding="utf-8",
+    )
+    called = False
+
+    def collect_state(**_: object) -> SimpleNamespace:
+        nonlocal called
+        called = True
+        raise AssertionError("external evidence must not run")
+
+    monkeypatch.setattr(workflow_state_guard, "collect_state", collect_state)
+
+    result = rr.assess(root=tmp_path, run=lambda *_: _completed([]))
+
+    assert not called
+    assert any(
+        "checked TASKS.md completion evidence is invalid" in error
+        for error in result.errors
+    )
 
 
 def test_prunable_registration_remediation_is_owner_gated_and_validate_first() -> None:

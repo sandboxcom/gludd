@@ -1914,6 +1914,21 @@ never edits the checkbox. After owners resolve the reported state, use the
 emitted `recheck_argv`, which expands to the fully specified beta4 readiness
 command; only that new observation can remove the blocker.
 
+A 2026-08-31 beta4 candidate exposed why ledger syntax is part of promotion
+semantics rather than cosmetic state. GitHub Actions run `33368800658` spent
+22 minutes in hosted Python 3.11 unit-3b before
+`test_real_tasks_file_passes` rejected checked S86 entries whose own evidence
+still said `pending` or omitted a concrete `make` target or test path.
+`validate-task-ledger` had accepted the checkbox schema but did not validate
+completion claims. Release readiness now runs the existing
+`check_tasks_ticks` contract before Git, CI, process, version, or artifact
+evidence collection. A malformed checked claim therefore returns the stable
+TASKS exit class without starting hosted work or writing evidence. The check is
+read-only and bounded to one pass over `TASKS.md`; ZDD is preserved because it
+cannot alter a running service, tag, or prior artifact. Rollback is to correct
+or uncheck the inaccurate ledger entry and rerun readiness—never to weaken the
+guard or reuse the cancelled run.
+
 This is a zero-downtime administrative workflow. Validation is read-only, safe
 pruning removes only a missing-path registration after ownership release, and
 neither path changes a running deployment or previously published artifact.

@@ -32,6 +32,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import cast
 
+from general_ludd.quality.preflight import check_tasks_ticks
 from general_ludd.review import release_forecast
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -467,6 +468,24 @@ def _unmanaged_local_inference_processes(
     return unmanaged
 
 
+def _tasks_tick_check(root: Path) -> tuple[bool, str]:
+    """Validate checked task evidence before collecting external release state."""
+    tasks_path = root / "TASKS.md"
+    if not tasks_path.is_file():
+        return False, "TASKS.md is missing"
+    try:
+        lines = tasks_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        return False, f"TASKS.md is unreadable: {exc}"
+    outcome = check_tasks_ticks(lines)
+    raw_violations = outcome.get("violations", [])
+    violations = raw_violations if isinstance(raw_violations, list) else []
+    if outcome.get("passed") is True:
+        return True, "checked TASKS.md completion evidence is valid"
+    detail = "; ".join(str(item) for item in violations)
+    return False, detail or "checked TASKS.md completion evidence is invalid"
+
+
 def _incomplete_tasks(root: Path, tag: str = DEFAULT_RELEASE_TAG) -> list[str]:
     extract_tasks = cast(
         "Callable[[Path], tuple[list[dict[str, object]], list[dict[str, object]]]]",
@@ -505,6 +524,14 @@ def assess(
 ) -> Readiness:
     """Collect all release evidence without mutating the repository."""
     result = Readiness()
+    tick_valid, tick_detail = _tasks_tick_check(root)
+    result.ledger_valid = tick_valid
+    result.ledger_detail = tick_detail
+    if not tick_valid:
+        result.errors.append(
+            "checked TASKS.md completion evidence is invalid: " + tick_detail
+        )
+        return result
     try:
         from workflow_state_guard import collect_state
 
