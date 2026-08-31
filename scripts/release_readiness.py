@@ -32,9 +32,10 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import cast
 
+from run_ci_shards_serial import canonical_json_sha256, release_execution_policy
+
 from general_ludd.quality.preflight import check_tasks_ticks
 from general_ludd.review import release_forecast
-from run_ci_shards_serial import canonical_json_sha256, release_execution_policy
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RELEASE_TAG = "v0.1.0-beta.4"
@@ -551,14 +552,6 @@ def assess(
 ) -> Readiness:
     """Collect all release evidence without mutating the repository."""
     result = Readiness()
-    tick_valid, tick_detail = _tasks_tick_check(root)
-    result.ledger_valid = tick_valid
-    result.ledger_detail = tick_detail
-    if not tick_valid:
-        result.errors.append(
-            "checked TASKS.md completion evidence is invalid: " + tick_detail
-        )
-        return result
     try:
         result.release_policy_compatible, result.release_policy_detail = (
             _release_policy_preflight(run, root)
@@ -567,6 +560,16 @@ def assess(
             result.errors.append(
                 "local dual-track producer execution policy is not canonical"
             )
+            return result
+
+        tick_valid, tick_detail = _tasks_tick_check(root)
+        result.ledger_valid = tick_valid
+        result.ledger_detail = tick_detail
+        if not tick_valid:
+            result.errors.append(
+                "checked TASKS.md completion evidence is invalid: " + tick_detail
+            )
+            return result
 
         from workflow_state_guard import collect_state
 
