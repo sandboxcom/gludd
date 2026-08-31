@@ -9,6 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from general_ludd.review.release_forecast import Blocker, RunObservation
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
@@ -302,9 +304,24 @@ def test_release_eta_rejects_invalid_stage_evidence(
         )
 
 
+def test_forecast_public_types_are_owned_by_release_forecast_module() -> None:
+    assert Blocker.__module__ == "general_ludd.review.release_forecast"
+    assert RunObservation.__module__ == "general_ludd.review.release_forecast"
+    for name in (
+        "Blocker",
+        "CanaryItem",
+        "Priority",
+        "RunObservation",
+        "StagePlan",
+        "build_forecast",
+        "load_observations",
+    ):
+        assert name not in rr.__dict__
+
+
 def test_release_eta_emits_empirical_risk_and_canary_plan() -> None:
     history = (
-        rr.RunObservation(
+        RunObservation(
             run_id="gha-late-unit-1b",
             phase="hosted_ci",
             lane="gha",
@@ -317,7 +334,7 @@ def test_release_eta_emits_empirical_risk_and_canary_plan() -> None:
             platform="linux",
             python_version="3.11",
         ),
-        rr.RunObservation(
+        RunObservation(
             run_id="gha-green",
             phase="hosted_ci",
             lane="gha",
@@ -328,7 +345,7 @@ def test_release_eta_emits_empirical_risk_and_canary_plan() -> None:
         ),
     )
     blockers = (
-        rr.Blocker(
+        Blocker(
             code="hosted-unit-regression",
             phase="hosted_ci",
             repair_minutes=8.0,

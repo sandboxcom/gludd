@@ -32,15 +32,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import cast
 
-from general_ludd.review.release_forecast import (
-    Blocker,
-    CanaryItem,
-    Priority,
-    RunObservation,
-    StagePlan,
-    build_forecast,
-    load_observations,
-)
+from general_ludd.review import release_forecast
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RELEASE_TAG = "v0.1.0-beta.4"
@@ -59,18 +51,18 @@ RELEASE_STAGE_BASELINES = {
 }
 
 RELEASE_STAGE_PLAN = (
-    StagePlan("readiness_fix", "shared", 30.0),
-    StagePlan("candidate_commit", "shared", 15.0, ("readiness_fix",)),
-    StagePlan("local_dual_track", "local", 75.0, ("candidate_commit",)),
-    StagePlan("hosted_ci", "gha", 35.0, ("candidate_commit",)),
-    StagePlan(
+    release_forecast.StagePlan("readiness_fix", "shared", 30.0),
+    release_forecast.StagePlan("candidate_commit", "shared", 15.0, ("readiness_fix",)),
+    release_forecast.StagePlan("local_dual_track", "local", 75.0, ("candidate_commit",)),
+    release_forecast.StagePlan("hosted_ci", "gha", 35.0, ("candidate_commit",)),
+    release_forecast.StagePlan(
         "full_gate",
         "shared",
         55.0,
         ("local_dual_track", "hosted_ci"),
     ),
-    StagePlan("release_dry_run", "shared", 5.0, ("full_gate",)),
-    StagePlan(
+    release_forecast.StagePlan("release_dry_run", "shared", 5.0, ("full_gate",)),
+    release_forecast.StagePlan(
         "promotion_and_publish",
         "shared",
         20.0,
@@ -161,8 +153,8 @@ class ReleaseEta:
     critical_path: list[str]
     stages: list[ReleaseStageEstimate]
     execution_critical_path: list[str] = field(default_factory=list)
-    risk_priorities: list[Priority] = field(default_factory=list)
-    hosted_canary: list[CanaryItem] = field(default_factory=list)
+    risk_priorities: list[release_forecast.Priority] = field(default_factory=list)
+    hosted_canary: list[release_forecast.CanaryItem] = field(default_factory=list)
     coverage_gaps: list[str] = field(default_factory=list)
     replay_gaps: list[str] = field(default_factory=list)
     calibration_sample_count: int = 0
@@ -297,8 +289,8 @@ def estimate_release_eta(
     *,
     completed_stages: set[str] | None = None,
     observations: dict[str, list[float]] | None = None,
-    historical_observations: Sequence[RunObservation] = (),
-    blockers: Sequence[Blocker] = (),
+    historical_observations: Sequence[release_forecast.RunObservation] = (),
+    blockers: Sequence[release_forecast.Blocker] = (),
     coverage_gap_modules: Sequence[str] = (),
     canary_limit: int = 5,
 ) -> ReleaseEta:
@@ -320,7 +312,7 @@ def estimate_release_eta(
             if actual_minutes <= 0:
                 raise ValueError(f"{name} observations must be positive")
             structured.append(
-                RunObservation(
+                release_forecast.RunObservation(
                     run_id=f"legacy:{name}:{index}",
                     phase=name,
                     lane=lane_by_stage[name],
@@ -329,7 +321,7 @@ def estimate_release_eta(
                 )
             )
 
-    forecast = build_forecast(
+    forecast = release_forecast.build_forecast(
         stages=RELEASE_STAGE_PLAN,
         observations=structured,
         blockers=blockers,
@@ -620,12 +612,12 @@ def _forecast_blockers(
     *,
     coverage_gap_modules: Sequence[str] = (),
     replay_gaps: Sequence[str] = (),
-) -> tuple[Blocker, ...]:
+) -> tuple[release_forecast.Blocker, ...]:
     """Translate current fail-closed readiness state into repair candidates."""
-    blockers: list[Blocker] = []
+    blockers: list[release_forecast.Blocker] = []
     if not (result.ci_head_matches and result.ci_verdict == "GREEN"):
         blockers.append(
-            Blocker(
+            release_forecast.Blocker(
                 code="exact-sha-ci-evidence",
                 phase="hosted_ci",
                 repair_minutes=15.0,
@@ -636,7 +628,7 @@ def _forecast_blockers(
         )
     if result.dirty_count:
         blockers.append(
-            Blocker(
+            release_forecast.Blocker(
                 code="worktree-cleanliness",
                 phase="readiness_fix",
                 repair_minutes=5.0,
@@ -645,7 +637,7 @@ def _forecast_blockers(
         )
     if result.detached_worktrees or result.unintegrated_worktrees:
         blockers.append(
-            Blocker(
+            release_forecast.Blocker(
                 code="worktree-topology",
                 phase="readiness_fix",
                 repair_minutes=10.0,
@@ -654,7 +646,7 @@ def _forecast_blockers(
         )
     if not result.version_consistent:
         blockers.append(
-            Blocker(
+            release_forecast.Blocker(
                 code="version-consistency",
                 phase="candidate_commit",
                 repair_minutes=10.0,
@@ -664,7 +656,7 @@ def _forecast_blockers(
         )
     if result.incomplete_release_tasks:
         blockers.append(
-            Blocker(
+            release_forecast.Blocker(
                 code="release-task-ledger",
                 phase="readiness_fix",
                 repair_minutes=max(15.0, len(result.incomplete_release_tasks) * 2.0),
@@ -674,7 +666,7 @@ def _forecast_blockers(
         )
     if not result.ledger_valid:
         blockers.append(
-            Blocker(
+            release_forecast.Blocker(
                 code="ledger-validation",
                 phase="readiness_fix",
                 repair_minutes=15.0,
@@ -684,7 +676,7 @@ def _forecast_blockers(
         )
     if result.unmanaged_local_inference_processes:
         blockers.append(
-            Blocker(
+            release_forecast.Blocker(
                 code="local-inference-lifecycle",
                 phase="local_dual_track",
                 repair_minutes=15.0,
@@ -694,7 +686,7 @@ def _forecast_blockers(
         )
     if coverage_gap_modules:
         blockers.append(
-            Blocker(
+            release_forecast.Blocker(
                 code="coverage-gaps",
                 phase="local_dual_track",
                 repair_minutes=max(10.0, len(coverage_gap_modules) * 5.0),
@@ -764,7 +756,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         else root / ".gludd" / "release_forecast_history.json"
     )
     try:
-        history = load_observations(history_path) if history_path.is_file() else ()
+        history = release_forecast.load_observations(history_path) if history_path.is_file() else ()
         estimate = estimate_release_eta(
             completed_stages=completed,
             observations=observations,
