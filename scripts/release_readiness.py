@@ -32,10 +32,14 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import cast
 
-from general_ludd.review.estimation_tracker import (
-    EstimationTracker,
-    TaskActual,
-    TaskEstimate,
+from general_ludd.review.release_forecast import (
+    Blocker,
+    CanaryItem,
+    Priority,
+    RunObservation,
+    StagePlan,
+    build_forecast,
+    load_observations,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -52,6 +56,32 @@ RELEASE_STAGE_BASELINES = {
     "full_gate": 55.0,
     "release_dry_run": 5.0,
     "promotion_and_publish": 20.0,
+}
+
+RELEASE_STAGE_PLAN = (
+    StagePlan("readiness_fix", "shared", 30.0),
+    StagePlan("candidate_commit", "shared", 15.0, ("readiness_fix",)),
+    StagePlan("local_dual_track", "local", 75.0, ("candidate_commit",)),
+    StagePlan("hosted_ci", "gha", 35.0, ("candidate_commit",)),
+    StagePlan(
+        "full_gate",
+        "shared",
+        55.0,
+        ("local_dual_track", "hosted_ci"),
+    ),
+    StagePlan("release_dry_run", "shared", 5.0, ("full_gate",)),
+    StagePlan(
+        "promotion_and_publish",
+        "shared",
+        20.0,
+        ("release_dry_run",),
+    ),
+)
+RELEASE_ARTIFACT_DEPENDENCIES = {
+    "checksums": ("binaries", "packages", "wheel", "sdist", "collections"),
+    "sbom": ("wheel", "sdist"),
+    "smoke-attestations": ("binaries", "packages"),
+    "release-manifest": ("checksums", "sbom", "smoke-attestations"),
 }
 
 EXIT_OK = 0
@@ -130,6 +160,13 @@ class ReleaseEta:
     p90_minutes: float
     critical_path: list[str]
     stages: list[ReleaseStageEstimate]
+    execution_critical_path: list[str] = field(default_factory=list)
+    risk_priorities: list[Priority] = field(default_factory=list)
+    hosted_canary: list[CanaryItem] = field(default_factory=list)
+    coverage_gaps: list[str] = field(default_factory=list)
+    replay_gaps: list[str] = field(default_factory=list)
+    calibration_sample_count: int = 0
+    method: str = "empirical-critical-path-v1"
 
 
 @dataclass(frozen=True)
@@ -260,11 +297,15 @@ def estimate_release_eta(
     *,
     completed_stages: set[str] | None = None,
     observations: dict[str, list[float]] | None = None,
+    historical_observations: Sequence[RunObservation] = (),
+    blockers: Sequence[Blocker] = (),
+    coverage_gap_modules: Sequence[str] = (),
+    canary_limit: int = 5,
 ) -> ReleaseEta:
-    """Estimate beta release time using Gludd's self-correcting tracker.
+    """Estimate release time from empirical history and the dependency graph.
 
-    Local exact-SHA validation and hosted CI are a parallel pair, so the
-    critical path charges only the slower unfinished lane.
+    Local exact-SHA validation and hosted CI are modeled as parallel nodes.
+    Historical failures also produce a bounded time-to-first-failure canary.
     """
     completed = completed_stages or set()
     observed = observations or {}
@@ -272,70 +313,73 @@ def estimate_release_eta(
     if unknown:
         raise ValueError(f"unknown release stage(s): {', '.join(sorted(unknown))}")
 
-    tracker = EstimationTracker(min_samples=1)
-    stages: list[ReleaseStageEstimate] = []
-    for name, baseline in RELEASE_STAGE_BASELINES.items():
-        samples = observed.get(name, [])
+    structured = list(historical_observations)
+    lane_by_stage = {stage.name: stage.lane for stage in RELEASE_STAGE_PLAN}
+    for name, samples in observed.items():
         for index, actual_minutes in enumerate(samples):
             if actual_minutes <= 0:
                 raise ValueError(f"{name} observations must be positive")
-            todo_id = f"release:{name}:{index}"
-            tracker.record_estimate(
-                TaskEstimate(todo_id, f"release:{name}", 1.0, baseline, 1)
+            structured.append(
+                RunObservation(
+                    run_id=f"legacy:{name}:{index}",
+                    phase=name,
+                    lane=lane_by_stage[name],
+                    duration_minutes=actual_minutes,
+                    succeeded=True,
+                )
             )
-            tracker.record_completion(
-                TaskActual(todo_id, 1.0, actual_minutes, 1, 0)
-            )
-        calibrated = tracker.get_corrected_estimate(
-            f"release:{name}", 1.0, baseline, 1
-        )[1]
-        stages.append(
-            ReleaseStageEstimate(
-                name=name,
-                baseline_minutes=baseline,
-                calibrated_minutes=round(calibrated, 1),
-                source="gludd-calibrated" if samples else "baseline",
-                completed=name in completed,
-            )
-        )
 
-    by_name = {stage.name: stage for stage in stages}
-    serial_names = [
-        "readiness_fix",
-        "candidate_commit",
-        "full_gate",
-        "release_dry_run",
-        "promotion_and_publish",
-    ]
-    p50 = sum(
-        by_name[name].calibrated_minutes
-        for name in serial_names
-        if not by_name[name].completed
+    forecast = build_forecast(
+        stages=RELEASE_STAGE_PLAN,
+        observations=structured,
+        blockers=blockers,
+        artifact_dependencies=RELEASE_ARTIFACT_DEPENDENCIES,
+        completed_stages=completed,
+        coverage_gap_modules=coverage_gap_modules,
+        canary_limit=canary_limit,
     )
-    parallel = [
-        by_name[name]
-        for name in ("local_dual_track", "hosted_ci")
-        if not by_name[name].completed
+    phase_by_name = {phase.name: phase for phase in forecast.phases}
+    stages = [
+        ReleaseStageEstimate(
+            name=name,
+            baseline_minutes=baseline,
+            calibrated_minutes=phase_by_name[name].p50_minutes,
+            source=(
+                "gludd-calibrated"
+                if phase_by_name[name].sample_count
+                else "baseline"
+            ),
+            completed=name in completed,
+        )
+        for name, baseline in RELEASE_STAGE_BASELINES.items()
     ]
-    if parallel:
-        p50 += max(stage.calibrated_minutes for stage in parallel)
 
-    critical_path = [
-        name for name in ("readiness_fix", "candidate_commit")
-        if not by_name[name].completed
+    legacy_critical_path = [
+        name
+        for name in ("readiness_fix", "candidate_commit")
+        if name not in completed
     ]
-    if parallel:
-        critical_path.append("local_dual_track+hosted_ci")
-    critical_path.extend(
+    if any(
+        name not in completed for name in ("local_dual_track", "hosted_ci")
+    ):
+        legacy_critical_path.append("local_dual_track+hosted_ci")
+    legacy_critical_path.extend(
         name
         for name in ("full_gate", "release_dry_run", "promotion_and_publish")
-        if not by_name[name].completed
+        if name not in completed
     )
     return ReleaseEta(
-        p50_minutes=round(p50, 1),
-        p90_minutes=round(p50 * 1.3, 1),
-        critical_path=critical_path,
+        p50_minutes=forecast.p50_minutes,
+        p90_minutes=forecast.p90_minutes,
+        critical_path=legacy_critical_path,
         stages=stages,
+        execution_critical_path=list(forecast.critical_path),
+        risk_priorities=list(forecast.priorities),
+        hosted_canary=list(forecast.hosted_canary),
+        coverage_gaps=list(forecast.coverage_gaps),
+        replay_gaps=list(forecast.replay_gaps),
+        calibration_sample_count=forecast.calibration_sample_count,
+        method=forecast.method,
     )
 
 
@@ -554,6 +598,113 @@ def _exit_code(result: Readiness) -> int:
     return EXIT_ERROR
 
 
+def _coverage_gap_modules(root: Path) -> tuple[str, ...]:
+    """Return the tracked structural coverage backlog as forecast risk."""
+    baseline = root / "config" / "coverage_gaps_baseline.json"
+    if not baseline.is_file():
+        return ()
+    try:
+        decoded = cast(object, json.loads(baseline.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError):
+        return ()
+    if not isinstance(decoded, dict):
+        return ()
+    raw_gaps = decoded.get("allowed_gaps")
+    if not isinstance(raw_gaps, list):
+        return ()
+    return tuple(sorted({item for item in raw_gaps if isinstance(item, str) and item}))
+
+
+def _forecast_blockers(
+    result: Readiness,
+    *,
+    coverage_gap_modules: Sequence[str] = (),
+    replay_gaps: Sequence[str] = (),
+) -> tuple[Blocker, ...]:
+    """Translate current fail-closed readiness state into repair candidates."""
+    blockers: list[Blocker] = []
+    if not (result.ci_head_matches and result.ci_verdict == "GREEN"):
+        blockers.append(
+            Blocker(
+                code="exact-sha-ci-evidence",
+                phase="hosted_ci",
+                repair_minutes=15.0,
+                failure_class="ci-attestation",
+                platform_gaps=tuple(sorted(set(replay_gaps))),
+                artifacts=("smoke-attestations",),
+            )
+        )
+    if result.dirty_count:
+        blockers.append(
+            Blocker(
+                code="worktree-cleanliness",
+                phase="readiness_fix",
+                repair_minutes=5.0,
+                failure_class="state-drift",
+            )
+        )
+    if result.detached_worktrees or result.unintegrated_worktrees:
+        blockers.append(
+            Blocker(
+                code="worktree-topology",
+                phase="readiness_fix",
+                repair_minutes=10.0,
+                failure_class="state-drift",
+            )
+        )
+    if not result.version_consistent:
+        blockers.append(
+            Blocker(
+                code="version-consistency",
+                phase="candidate_commit",
+                repair_minutes=10.0,
+                failure_class="version-drift",
+                artifacts=("binaries", "packages", "wheel", "sdist"),
+            )
+        )
+    if result.incomplete_release_tasks:
+        blockers.append(
+            Blocker(
+                code="release-task-ledger",
+                phase="readiness_fix",
+                repair_minutes=max(15.0, len(result.incomplete_release_tasks) * 2.0),
+                failure_class="incomplete-evidence",
+                artifacts=("release-manifest",),
+            )
+        )
+    if not result.ledger_valid:
+        blockers.append(
+            Blocker(
+                code="ledger-validation",
+                phase="readiness_fix",
+                repair_minutes=15.0,
+                failure_class="invalid-evidence",
+                artifacts=("release-manifest",),
+            )
+        )
+    if result.unmanaged_local_inference_processes:
+        blockers.append(
+            Blocker(
+                code="local-inference-lifecycle",
+                phase="local_dual_track",
+                repair_minutes=15.0,
+                failure_class="resource-lifecycle",
+                artifacts=("smoke-attestations",),
+            )
+        )
+    if coverage_gap_modules:
+        blockers.append(
+            Blocker(
+                code="coverage-gaps",
+                phase="local_dual_track",
+                repair_minutes=max(10.0, len(coverage_gap_modules) * 5.0),
+                failure_class="coverage",
+                coverage_gap_files=len(coverage_gap_modules),
+            )
+        )
+    return tuple(blockers)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the beta release preflight and emit one machine-readable result."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -565,8 +716,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="validate the plan without Git, CI, or filesystem evidence",
     )
-    parser.add_argument("--completed-stages", default="", help="comma-separated completed release stages")
-    parser.add_argument("--observations", default="", help="comma-separated stage=minutes calibration samples")
+    parser.add_argument(
+        "--completed-stages",
+        default="",
+        help="comma-separated completed release stages",
+    )
+    parser.add_argument(
+        "--observations",
+        default="",
+        help="comma-separated stage=minutes calibration samples",
+    )
+    parser.add_argument(
+        "--history",
+        default="",
+        help=(
+            "versioned JSON run history; defaults to "
+            "<root>/.gludd/release_forecast_history.json when present"
+        ),
+    )
+    parser.add_argument(
+        "--canary-limit",
+        default=5,
+        type=int,
+        help="maximum historically failing hosted nodes to front-load",
+    )
     parser.add_argument("--human", action="store_true", help="also print a short human summary")
     args = parser.parse_args(list(argv) if argv is not None else None)
     tag = cast(str, args.tag)
@@ -582,19 +755,59 @@ def main(argv: Sequence[str] | None = None) -> int:
             observations.setdefault(name, []).append(float(raw_minutes))
         except ValueError:
             parser.error("--observations minutes must be numeric")
+
+    root = Path(cast(str, args.root)).absolute()
+    raw_history = cast(str, args.history)
+    history_path = (
+        Path(raw_history).absolute()
+        if raw_history
+        else root / ".gludd" / "release_forecast_history.json"
+    )
     try:
+        history = load_observations(history_path) if history_path.is_file() else ()
         estimate = estimate_release_eta(
             completed_stages=completed,
             observations=observations,
+            historical_observations=history,
+            canary_limit=cast(int, args.canary_limit),
         )
     except ValueError as exc:
         parser.error(str(exc))
     if args.validate_only:
-        print(json.dumps({"estimate": asdict(estimate), "tag": tag, "validate_only": True}, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "estimate": asdict(estimate),
+                    "tag": tag,
+                    "validate_only": True,
+                },
+                sort_keys=True,
+            )
+        )
         return 0
 
-    root = Path(cast(str, args.root)).absolute()
     result = assess(root=root, gha_head_sha=args.gha_head_sha, tag=tag)
+    coverage_gaps = _coverage_gap_modules(root)
+    seed_estimate = estimate_release_eta(
+        completed_stages=completed,
+        observations=observations,
+        historical_observations=history,
+        coverage_gap_modules=coverage_gaps,
+        canary_limit=cast(int, args.canary_limit),
+    )
+    blockers = _forecast_blockers(
+        result,
+        coverage_gap_modules=coverage_gaps,
+        replay_gaps=seed_estimate.replay_gaps,
+    )
+    estimate = estimate_release_eta(
+        completed_stages=completed,
+        observations=observations,
+        historical_observations=history,
+        blockers=blockers,
+        coverage_gap_modules=coverage_gaps,
+        canary_limit=cast(int, args.canary_limit),
+    )
     payload = asdict(result)
     payload["tag"] = tag
     payload["estimate"] = asdict(estimate)
@@ -606,6 +819,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.human:
         print("RELEASE-READY" if result.ready else "RELEASE-BLOCKED")
     return exit_code
+
+
 
 
 if __name__ == "__main__":

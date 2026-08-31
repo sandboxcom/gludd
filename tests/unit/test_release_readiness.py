@@ -302,6 +302,115 @@ def test_release_eta_rejects_invalid_stage_evidence(
         )
 
 
+def test_release_eta_emits_empirical_risk_and_canary_plan() -> None:
+    history = (
+        rr.RunObservation(
+            run_id="gha-late-unit-1b",
+            phase="hosted_ci",
+            lane="gha",
+            duration_minutes=44.0,
+            succeeded=False,
+            failure_class="unit-regression",
+            failing_node="tests/unit/test_cloud.py::test_late_unit_1b",
+            node_order=930,
+            total_nodes=1000,
+            platform="linux",
+            python_version="3.11",
+        ),
+        rr.RunObservation(
+            run_id="gha-green",
+            phase="hosted_ci",
+            lane="gha",
+            duration_minutes=36.0,
+            succeeded=True,
+            platform="linux",
+            python_version="3.11",
+        ),
+    )
+    blockers = (
+        rr.Blocker(
+            code="hosted-unit-regression",
+            phase="hosted_ci",
+            repair_minutes=8.0,
+            failure_class="unit-regression",
+            platform_gaps=("linux/python-3.11",),
+            artifacts=("smoke-attestations",),
+        ),
+    )
+
+    estimate = rr.estimate_release_eta(
+        historical_observations=history,
+        blockers=blockers,
+        coverage_gap_modules=("general_ludd.cloud.model_pipeline",),
+    )
+
+    assert estimate.calibration_sample_count == 2
+    assert estimate.method == "empirical-critical-path-v1"
+    assert estimate.hosted_canary[0].node.endswith("test_late_unit_1b")
+    assert estimate.hosted_canary[0].canary_order == 1
+    assert estimate.risk_priorities[0].code == "hosted-unit-regression"
+    assert estimate.replay_gaps == ["linux/python-3.11"]
+    assert estimate.coverage_gaps == ["general_ludd.cloud.model_pipeline"]
+
+
+def test_readiness_main_loads_bounded_history_and_current_blockers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    history_path = tmp_path / "history.json"
+    history_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "observations": [
+                    {
+                        "run_id": "gha-late",
+                        "phase": "hosted_ci",
+                        "lane": "gha",
+                        "duration_minutes": 40.0,
+                        "succeeded": False,
+                        "failure_class": "ci-attestation",
+                        "failing_node": "tests/unit/test_ci.py::test_exact_sha",
+                        "node_order": 800,
+                        "total_nodes": 900,
+                        "platform": "linux",
+                        "python_version": "3.11",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    blocked = rr.Readiness(
+        head="abc123",
+        ci_verdict="RED",
+        ci_head_matches=True,
+        dirty_count=1,
+        incomplete_release_tasks=["S86.1", "S86.2"],
+        errors=["CI evidence is not a successful run"],
+    )
+    monkeypatch.setattr(rr, "assess", lambda **_: blocked)
+    monkeypatch.setattr(
+        rr,
+        "_coverage_gap_modules",
+        lambda _: ("general_ludd.cloud.model_pipeline",),
+    )
+
+    assert rr.main(["--history", str(history_path)]) == rr.EXIT_CI
+    payload = json.loads(capsys.readouterr().out)
+
+    estimate = payload["estimate"]
+    assert estimate["calibration_sample_count"] == 1
+    assert estimate["hosted_canary"][0]["node"].endswith("test_exact_sha")
+    assert estimate["coverage_gaps"] == ["general_ludd.cloud.model_pipeline"]
+    assert {
+        "exact-sha-ci-evidence",
+        "worktree-cleanliness",
+        "release-task-ledger",
+    }.issubset({item["code"] for item in estimate["risk_priorities"]})
+
+
 def test_readiness_main_validate_only_emits_current_release_eta(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
