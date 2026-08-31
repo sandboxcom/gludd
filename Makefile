@@ -9348,4 +9348,3 @@ release-promote:
 	$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_READINESS_VALIDATE_ONLY=0 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS=; \
 	git -C "$$MAIN_PATH" merge --ff-only development; \
 	$(MAKE) --no-print-directory -C "$$MAIN_PATH" release-cut TAG="$(TAG)" MSG="$(MSG)"
-
