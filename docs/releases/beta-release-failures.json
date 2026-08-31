@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "release_series": "v0.1.0-beta",
+  "reviewed_at": "2026-08-31",
+  "discoveries": [
+    {
+      "id": "gha-32904013362-97985787888",
+      "release_tag": "v0.1.0-beta.4",
+      "run_id": "32904013362",
+      "job_id": "97985787888",
+      "head_sha": "c51d791b7bbc5f014eb53c77b06da5c92e46096b",
+      "run_conclusion": "cancelled",
+      "job_conclusion": "failure",
+      "trigger_event": "workflow_dispatch",
+      "evidence_command": "make ci-view RUN=32904013362",
+      "run_url": "https://github.com/sandboxcom/gludd/actions/runs/32904013362",
+      "job_url": "https://github.com/sandboxcom/gludd/actions/runs/32904013362/job/97985787888"
+    },
+    {
+      "id": "gha-32934741442-98074766623",
+      "release_tag": "v0.1.0-beta.4",
+      "run_id": "32934741442",
+      "job_id": "98074766623",
+      "head_sha": "042932a515a39614fd3508d34a88dd51d89c1cd3",
+      "run_conclusion": "cancelled",
+      "job_conclusion": "failure",
+      "trigger_event": "workflow_dispatch",
+      "evidence_command": "make ci-view RUN=32934741442",
+      "run_url": "https://github.com/sandboxcom/gludd/actions/runs/32934741442",
+      "job_url": "https://github.com/sandboxcom/gludd/actions/runs/32934741442/job/98074766623"
+    }
+  ],
+  "incidents": [
+    {
+      "discovery_id": "gha-32904013362-97985787888",
+      "failure_signature": "CBC decoder accepted valid PKCS#7 padding after framed ciphertext tampering",
+      "fix_commit": "a8969daba137e11c8a217826509e4811bad0fcbf",
+      "regression_node": "tests/unit/test_cbc_mode_deep.py::TestTamperDetection::test_padding_malleability_cannot_forge_valid_frame",
+      "earliest_preflight": {
+        "target": "test-files",
+        "argv": [
+          "make",
+          "test-files",
+          "TESTFILES=tests/unit/test_cbc_mode_deep.py",
+          "PYTEST_ARGS=-q -W error -k test_padding_malleability_cannot_forge_valid_frame"
+        ]
+      }
+    },
+    {
+      "discovery_id": "gha-32934741442-98074766623",
+      "failure_signature": "Salsa20 regression asserted every ciphertext byte must differ despite a valid zero keystream byte",
+      "fix_commit": "dc094cb57d895a53e05aa1cd9175fe89dd3df0dc",
+      "regression_node": "tests/unit/test_salsa20_deep.py::TestStreamEncrypt::test_zero_keystream_byte_may_preserve_plaintext",
+      "earliest_preflight": {
+        "target": "test-files",
+        "argv": [
+          "make",
+          "test-files",
+          "TESTFILES=tests/unit/test_salsa20_deep.py",
+          "PYTEST_ARGS=-q -W error -k test_zero_keystream_byte_may_preserve_plaintext"
+        ]
+      }
+    }
+  ]
+}
