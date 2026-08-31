@@ -577,7 +577,7 @@ help:
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
 	@echo "  --- New Targets ---"
-	@echo "  release-promote         Promote exact-SHA green development to master and tag it"
+
 	@echo "  normalize-task-integrityNormalize legacy TASKS metadata and reopen unsupported completions"
 	@echo "  install-opa             install opa via brew"
 	@echo "  gate-local              fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"

@@ -101,6 +101,7 @@ def test_public_help_and_make_contract_include_safe_behavior() -> None:
     entries = {entry["name"]: entry for entry in payload["targets"]}
 
     assert "release-promote TAG=.. MSG=.." in makefile
+    assert makefile.count('@echo "  release-promote') == 1
     assert "release-promote" in entries
     assert entries["release-promote"]["make_variables"] == [
         "TAG",
