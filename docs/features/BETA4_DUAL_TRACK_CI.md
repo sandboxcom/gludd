@@ -674,6 +674,22 @@ tag, or release can reuse its partial evidence. Rollback removes the opt-in and
 its regression together; that intentionally restores a red coverage consumer
 and therefore cannot silently publish a release.
 
+Run `33368800658` also exposed a separate workflow warning: the pinned
+`dorny/paths-filter` v3 action declared Node 20 even though GitHub forced it
+onto Node 24. GitHub's
+[Node 20 runner deprecation notice](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/)
+requires action consumers to select releases whose metadata declares Node 24.
+A long-lived practitioner discussion,
+[GitHub Community #190988](https://github.com/orgs/community/discussions/190988),
+records that `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` does not remove the warning
+because the runner reports the action's declared runtime. The upstream
+[paths-filter v4 release](https://github.com/dorny/paths-filter/releases/tag/v4.0.3)
+declares Node 24, so Gludd pins v4.0.3 by its full commit SHA and structurally
+rejects regression to the v3 pin. This preserves ZDD because path selection and
+all deployment jobs are unchanged; rollback restores the prior immutable SHA
+but intentionally restores the deprecation warning. Validation uses one
+bounded metadata fetch plus the existing two-test structural workflow check.
+
 The current Node 24 `download-artifact` action also emits a `Buffer()`
 deprecation warning. The project is already pinned to the latest v8.0.1 action;
 the active upstream report reproduces the warning on both operating systems and

@@ -14,6 +14,11 @@ EXPECTED_DOCKER_ACTIONS = {
 }
 
 
+EXPECTED_PATHS_FILTER = (
+    "dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d"
+)
+
+
 def test_build_workflow_uses_only_pinned_node24_docker_actions() -> None:
     """GHE must not force deprecated Node 20 Docker actions onto Node 24."""
     workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
@@ -21,3 +26,12 @@ def test_build_workflow_uses_only_pinned_node24_docker_actions() -> None:
 
     assert refs == EXPECTED_DOCKER_ACTIONS
     assert all(re.fullmatch(r"docker/[a-z-]+@[0-9a-f]{40}", ref) for ref in refs)
+
+
+def test_build_workflow_uses_pinned_node24_paths_filter() -> None:
+    """GHE must not force the deprecated Node 20 paths-filter runtime."""
+    workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+    refs = set(re.findall(r"uses:\s+(dorny/paths-filter@[^\s#]+)", workflow))
+
+    assert refs == {EXPECTED_PATHS_FILTER}
+    assert "v4.0.3" in workflow

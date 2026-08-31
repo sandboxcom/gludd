@@ -273,7 +273,7 @@ jobs:
         env:
           GLUDD_AUTH_PSK: ""
 
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2 (node24)
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d  # v4.0.3 (node24)
         id: css_changes
         with:
           filters: |
