@@ -83,7 +83,7 @@ repos:
 
       - id: collect-check
         name: test collection check
-        entry: uv run python -m pytest tests/ --co -q
+        entry: make collect-check
         language: system
         types: [python]
         pass_filenames: false

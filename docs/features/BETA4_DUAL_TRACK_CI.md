@@ -2169,3 +2169,31 @@ is started. Rollback before the fast-forward is the isolated promotion commit.
 After a successful fast-forward, publication is idempotently resumed through
 `release-cut`; history is never rewritten and the target never performs a
 compensating reverse merge.
+
+### Push-hook collection ownership (2026-08-31)
+
+The first post-promotion push attempt passed formatting, JSON, secrets, workflow,
+Ruff, and mypy, then terminated at the collection hook without moving the remote
+SHA. The hook had bypassed Gludd's owned collection path by launching a second raw
+`pytest tests/ --co` process. It therefore lacked the shared collection lock,
+bounded diagnostics, and the same observable terminal contract already provided
+by `make collect-check`.
+
+The hook now delegates exactly to `make collect-check`. A RED structural
+regression first pinned that owner relationship; the full pre-commit/config
+surface then passed with warnings as errors. The pre-commit implementation
+[prints a hook start marker before executing it](https://github.com/pre-commit/pre-commit/blob/main/pre_commit/commands/run.py)
+but buffers the child output until failure or verbose completion, so the delegated
+target must own its own bounded result. Practitioner issue
+[#2933](https://github.com/pre-commit/pre-commit/issues/2933), reviewed
+2026-08-31, asks for durable per-hook timing/structured visibility, while issue
+[#2069](https://github.com/pre-commit/pre-commit/issues/2069) records a long-lived
+serial hook that appears stalled until interruption. The project's existing
+`require_serial: true` remains, consistent with pre-commit's official changelog
+guidance for non-parallel-safe hooks.
+
+This path is ZDD: a failed hook leaves the remote and hosted pipeline unchanged.
+The collection lock, one foreground pytest collector, and one bounded log file are
+owned by `collect-check`; no daemon or cleanup task is introduced. Rollback is
+the isolated hook/test/documentation commit, restoring the prior entry without
+rewriting Git history or touching a release ref.

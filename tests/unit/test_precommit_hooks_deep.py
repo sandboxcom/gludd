@@ -127,7 +127,7 @@ class TestLocalHookEntryPoints:
         "mypy": "make _precommit-mypy",
         "check-tdd-compliance": "uv run python scripts/check_tdd_compliance.py",
         "check-disk": "uv run python scripts/check_disk_usage.py",
-        "collect-check": "uv run python -m pytest tests/ --co -q",
+        "collect-check": "make collect-check",
         "verify-secrets": "make verify-secrets",
     }
 
