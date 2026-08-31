@@ -916,7 +916,9 @@ test-specific-pyver:
 	@[ -n "$(TESTFILE)" ] && [ -n "$(PYTHON_VERSION)" ] || { echo "Usage: make test-specific-pyver TESTFILE=path::node PYTHON_VERSION=3.11 PYTEST_ARGS=-q"; exit 2; }
 	@case "$(PYTHON_VERSION)" in 3.11|3.12|3.13|3.14) ;; *) echo "Unsupported PYTHON_VERSION=$(PYTHON_VERSION)"; exit 2 ;; esac
 	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
-		WORK="$$(mktemp -d "$$RESOURCE_ROOT/testpyver-$(PYTHON_VERSION)-XXXXXX")"; \
+		mkdir -p "$$RESOURCE_ROOT" || { echo "TEST-PYVER-RESOURCE-ROOT-FAILED root=$$RESOURCE_ROOT"; exit 2; }; \
+		WORK="$$(mktemp -d "$$RESOURCE_ROOT/testpyver-$(PYTHON_VERSION)-XXXXXX")" || { echo "TEST-PYVER-WORKDIR-FAILED root=$$RESOURCE_ROOT"; exit 2; }; \
+		[ -n "$$WORK" ] || { echo "TEST-PYVER-WORKDIR-EMPTY"; exit 2; }; \
 		cleanup() { RC=$$?; trap - EXIT INT TERM; rm -rf "$$WORK"; exit $$RC; }; \
 		trap cleanup EXIT INT TERM; \
 		export UV_PROJECT_ENVIRONMENT="$$WORK/.venv"; \

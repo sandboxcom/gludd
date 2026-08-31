@@ -215,8 +215,11 @@ def test_python_version_replay_runs_only_the_requested_node() -> None:
     block = _target_block(source, "test-specific-pyver")
 
     assert "scripts/resource_arbiter.py root" in block
+    assert 'mkdir -p "$$RESOURCE_ROOT"' in block
+    assert block.index('mkdir -p "$$RESOURCE_ROOT"') < block.index("mktemp -d")
     assert "UV_PROJECT_ENVIRONMENT" in block
     assert "mktemp -d" in block
+    assert 'WORK="$$(mktemp -d ' in block
     assert "trap" in block
     assert '$(UV) sync --python "$(PYTHON_VERSION)"' in block
     assert '$(UV) run --python "$(PYTHON_VERSION)" python -m pytest $(TESTFILE)' in block
