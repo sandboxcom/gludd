@@ -64,6 +64,21 @@ post-download validation checks package-internal identity as well as the release
 manifest and digest, so a coherent rename cannot silently become a different
 release payload.
 
+Reviewed 2026-08-31. The official
+[GitHub CLI release-download manual](https://cli.github.com/manual/gh_release_download)
+documents that `--pattern` is a glob and that matching assets are written to
+the selected directory; it does not designate one match as the executable.
+GitHub CLI issue
+[#13961](https://github.com/cli/cli/issues/13961) records the practitioner need
+to download an archive and its checksum together and verify them explicitly.
+The beta4 publication incident matched that boundary: the broad
+`*linux-x86_64*` pattern correctly downloaded both the tarball and checksum,
+but the post-deploy script then excluded `*.tar.gz` while searching for its
+payload. The smoke now binds the exact versioned tarball, fails if it is absent,
+extracts that path directly, and fails if the expected `gludd` entry is absent.
+The structural test prohibits the contradictory archive exclusion so a
+successful upload cannot mask a broken post-deploy execution path.
+
 The 2026-08-30 full-gate replay exposed the same identity problem one stage
 earlier: `binary_smoke_linux` correctly built `dist/linux/gludd`, but the next
 macOS scenario looked only for `dist/gludd` and then offered to download the

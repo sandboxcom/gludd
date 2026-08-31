@@ -1855,14 +1855,18 @@ jobs:
           echo "--- Staged files ---"
           ls -la /tmp/gludd-smoke
           echo "--- Extracting ---"
-          BIN=$(find /tmp/gludd-smoke -type f -not -name '*.sha256' -not -name '*.tar.gz' | head -1)
-          if file "$BIN" | grep -q 'gzip compressed'; then
-            mv "$BIN" /tmp/gludd-smoke/gludd.tar.gz
-            tar -xzf /tmp/gludd-smoke/gludd.tar.gz -C /tmp/gludd-smoke
-          else
-            mv "$BIN" /tmp/gludd-smoke/gludd
+          ARCHIVE="/tmp/gludd-smoke/gludd-${VERSION}-linux-x86_64.tar.gz"
+          if [ ! -f "$ARCHIVE" ]; then
+            echo "FAIL: expected release archive missing: $ARCHIVE"
+            exit 1
           fi
-          chmod +x /tmp/gludd-smoke/gludd
+          tar -xzf "$ARCHIVE" -C /tmp/gludd-smoke
+          BIN="/tmp/gludd-smoke/gludd"
+          if [ ! -f "$BIN" ]; then
+            echo "FAIL: release archive did not contain gludd"
+            exit 1
+          fi
+          chmod +x "$BIN"
           find /tmp/gludd-smoke -name gludd -exec chmod +x {} \;
           echo "--- Running gludd version ---"
           /tmp/gludd-smoke/gludd version || {
