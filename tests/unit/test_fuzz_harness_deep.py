@@ -11,14 +11,14 @@ allocating without bound on adversarial input.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import multiprocessing
 import multiprocessing.context
-import os
 import re
 import sys
 import threading
-import uuid
+import warnings
 
 import pytest
 import yaml
@@ -60,8 +60,11 @@ def _re_completes(pattern: str, text: str, timeout_s: float = 2.0) -> bool:
     return completed
 
 
-def _rand_bytes(n: int) -> bytes:
-    return os.urandom(n)
+def _rand_bytes(n: int, *, case: int, domain: str) -> bytes:
+    """Return cross-version replayable bytes for one domain-separated case."""
+
+    material = f"gludd-fuzz-v1:{domain}:{case}".encode()
+    return hashlib.shake_256(material).digest(n)
 
 
 # -- JSON Fuzz ----------------------------------------------------------
@@ -69,8 +72,8 @@ def _rand_bytes(n: int) -> bytes:
 
 class TestJSONRandomFuzz:
     def test_random_bytes_does_not_crash(self) -> None:
-        for _ in range(200):
-            payload = _rand_bytes(256)
+        for case in range(200):
+            payload = _rand_bytes(256, case=case, domain="json")
             with contextlib.suppress(json.JSONDecodeError, UnicodeDecodeError, ValueError):
                 json.loads(payload)
 
@@ -169,8 +172,8 @@ class TestJSONRandomFuzz:
 
 class TestYAMLFuzz:
     def test_yaml_random_bytes_does_not_crash(self) -> None:
-        for _ in range(100):
-            payload = _rand_bytes(128)
+        for case in range(100):
+            payload = _rand_bytes(128, case=case, domain="yaml")
             with contextlib.suppress(yaml.YAMLError, UnicodeDecodeError, ValueError, AttributeError):
                 yaml.safe_load(payload)
 
@@ -282,10 +285,31 @@ class TestRegexFuzz:
         assert ok, "_RFC3164_RE suspected ReDoS"
 
     def test_compile_random_patterns(self) -> None:
-        for _ in range(50):
-            raw = _rand_bytes(32).decode("latin-1", errors="replace")
-            with contextlib.suppress(re.error):
-                re.compile(raw)
+        patterns = [b"[[a]"]
+        patterns.extend(
+            _rand_bytes(32, case=case, domain="regex") for case in range(50)
+        )
+        observed: list[tuple[type[Warning], str]] = []
+        for payload in patterns:
+            raw = payload.decode("latin-1", errors="replace")
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                with contextlib.suppress(re.error):
+                    re.compile(raw)
+            observed.extend((item.category, str(item.message)) for item in caught)
+
+        allowed_prefixes = (
+            "Possible nested set at position ",
+            "Possible set difference at position ",
+            "Possible set intersection at position ",
+            "Possible set symmetric difference at position ",
+            "Possible set union at position ",
+        )
+        assert any(message.startswith(allowed_prefixes[0]) for _, message in observed)
+        assert all(
+            category is FutureWarning and message.startswith(allowed_prefixes)
+            for category, message in observed
+        )
 
     def test_search_null_byte_pattern(self) -> None:
         pattern = re.compile(r".*")
@@ -307,8 +331,8 @@ class TestRegexFuzz:
 
 class TestReceiverParserFuzz:
     def test_decode_json_random_bytes(self) -> None:
-        for _ in range(200):
-            payload = _rand_bytes(128)
+        for case in range(200):
+            payload = _rand_bytes(128, case=case, domain="receiver-json")
             result = _decode_json(payload)
             assert result is None or isinstance(result, (dict, list, str, int, float, bool))
 
@@ -318,8 +342,8 @@ class TestReceiverParserFuzz:
             assert result is None or isinstance(result, (dict, list, str, int, float, bool, type(None)))
 
     def test_parse_syslog_random_bytes(self) -> None:
-        for _ in range(100):
-            payload = _rand_bytes(128)
+        for case in range(100):
+            payload = _rand_bytes(128, case=case, domain="syslog")
             result = parse_syslog(payload)
             assert isinstance(result, list)
             for rec in result:
@@ -349,11 +373,12 @@ class TestReceiverParserFuzz:
             pass
 
     def test_otlp_any_value_random_dicts(self) -> None:
-        for _ in range(100):
+        for case in range(100):
             obj: dict[str, object] = {}
-            for _j in range(10):
-                k = uuid.uuid4().hex[:8]
-                v = _rand_bytes(16)
+            for field in range(10):
+                item = case * 10 + field
+                k = _rand_bytes(4, case=item, domain="otlp-key").hex()
+                v = _rand_bytes(16, case=item, domain="otlp-value")
                 obj[k] = v
             with contextlib.suppress(TypeError, ValueError):
                 _otlp_any_value(obj)
@@ -364,17 +389,20 @@ class TestReceiverParserFuzz:
 
 class TestDynamicDispatcherFuzz:
     def test_parse_tool_calls_random_strings(self) -> None:
-        for _ in range(100):
-            raw = _rand_bytes(64).decode("latin-1", errors="replace")
+        for case in range(100):
+            raw = _rand_bytes(64, case=case, domain="tool-call-text").decode(
+                "latin-1", errors="replace"
+            )
             result = parse_tool_calls(raw)
             assert isinstance(result, list)
 
     def test_parse_tool_calls_random_dicts(self) -> None:
-        for _ in range(50):
+        for case in range(50):
             d: dict[str, object] = {}
-            for _j in range(5):
-                k = uuid.uuid4().hex[:8]
-                d[k] = uuid.uuid4().hex[:16]
+            for field in range(5):
+                item = case * 5 + field
+                k = _rand_bytes(4, case=item, domain="tool-call-key").hex()
+                d[k] = _rand_bytes(8, case=item, domain="tool-call-value").hex()
             result = parse_tool_calls(d)
             assert isinstance(result, list)
 
@@ -407,8 +435,8 @@ class TestExtraVarsFuzz:
     def test_parse_extravars_random_bytes(self) -> None:
         from general_ludd.ansible.unsafe import ExtraVarsValidationError
 
-        for _ in range(50):
-            payload = _rand_bytes(64)
+        for case in range(50):
+            payload = _rand_bytes(64, case=case, domain="extra-vars")
             with contextlib.suppress(ExtraVarsValidationError):
                 parse_extravars(payload)
 
@@ -447,8 +475,10 @@ class TestExtraVarsFuzz:
 
 class TestEngineParserFuzz:
     def test_parse_fenced_blocks_random(self) -> None:
-        for _ in range(100):
-            raw = _rand_bytes(256).decode("latin-1", errors="replace")
+        for case in range(100):
+            raw = _rand_bytes(256, case=case, domain="fenced-blocks").decode(
+                "latin-1", errors="replace"
+            )
             result = _parse_fenced_blocks(raw)
             assert isinstance(result, list)
             for block in result:
@@ -481,8 +511,10 @@ class TestEngineParserFuzz:
 
 class TestSkillLoaderFuzz:
     def test_parse_skill_md_random(self) -> None:
-        for _ in range(50):
-            raw = _rand_bytes(128).decode("latin-1", errors="replace")
+        for case in range(50):
+            raw = _rand_bytes(128, case=case, domain="skill-markdown").decode(
+                "latin-1", errors="replace"
+            )
             try:
                 skill = parse_skill_md(raw)
                 assert skill.name

@@ -66,3 +66,40 @@ The regression computes each controlled sample twice with deliberate global
 `random` state perturbation in between. Focused release verification runs the
 same nodes repeatedly both serially and through xdist so execution order and
 worker assignment cannot alter their samples.
+
+## Deep parser fuzz harness incident
+
+On 2026-08-31, GHA run `33366948990` reached 85% of the hosted Python 3.11
+`unit-2` batch before
+`TestRegexFuzz.test_compile_random_patterns` failed. A fresh
+`os.urandom(32)` value happened to contain an ambiguous nested character set;
+CPython emitted `FutureWarning: Possible nested set at position 10`, and the
+release lane correctly promoted the warning to an error. Because the bytes were
+not recorded, the exact case could not be replayed locally.
+
+The deep parser harness now derives every pseudo-random byte sequence from
+domain-separated SHAKE-256 input containing a stable corpus version, domain,
+and case number. It also derives dictionary keys and values from that source
+instead of `uuid.uuid4`. Production entropy is unchanged. The regex corpus
+contains an explicit ambiguous nested-set case, captures warnings for each
+case, and accepts only CPython's five documented ambiguous-set
+`FutureWarning` forms; an unexpected warning still fails the test.
+
+CPython's Python 3.11
+[`re` documentation](https://docs.python.org/3.11/library/re.html)
+documents that ambiguous nested sets and set-operation sequences raise
+`FutureWarning` because their future semantics may change. The long-lived
+pytest issue [#667](https://github.com/pytest-dev/pytest/issues/667), opened
+2015-01-25, records the practitioner problem: an unreported random seed makes a
+failed test impossible to reproduce, especially under reordered execution.
+Hypothesis issue
+[#702](https://github.com/HypothesisWorks/hypothesis/issues/702), opened
+2017-06-22, likewise tracks explicit seeding of global randomness to minimize
+flakiness. Gludd uses a smaller standard-library boundary here because this
+existing harness needs fixed byte corpora rather than shrinking.
+
+The ZDD boundary is test-only and additive: generate the same bounded corpus,
+validate every parser and warning, and publish no state. Each case is at most
+256 bytes; there are no new processes, files, network calls, or production
+dependencies. Rollback is the single atomic harness commit. The deterministic
+contract test fails if unreplayable OS entropy or UUID generation returns.
