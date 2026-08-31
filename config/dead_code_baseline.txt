@@ -519,6 +519,8 @@ src/general_ludd/projects/manager.py:persist_relationships_from_config
 src/general_ludd/prompts/registry.py:get_template_name_for_work_type
 src/general_ludd/quantization/quantize.py:select_quant_for_hardware
 src/general_ludd/resilience/circuit_breaker.py:MultiBreaker
+src/general_ludd/review/release_forecast.py:build_forecast
+src/general_ludd/review/release_forecast.py:load_observations
 src/general_ludd/rules/engine.py:default_rules
 src/general_ludd/runtime/release_orchestrator.py:build_and_validate_release
 src/general_ludd/sagas/orchestrator.py:SagaCompensationFailure
