@@ -3930,7 +3930,7 @@ verify-release-completeness:
 # non-success state (pending, failure, missing run) aborts the release.
 # Usage: make require-ci-green [SHA=<full-sha>]
 require-ci-green:
-	@$(UV) run python scripts/require_ci_green.py $(SHA)
+	@$(UV) run python scripts/require_ci_green.py "$(SHA)" "$(CI_BRANCH)"
 
 # Release precondition that requires the local full-shard attestation and all
 # eight GitHub-hosted shard attestations to match one exact successful SHA.
@@ -3940,8 +3940,12 @@ require-dual-track-green:
 	if [ "$(DUAL_TRACK_CI_VALIDATE_ONLY)" = "1" ]; then \
 		$(UV) run python scripts/verify_dual_track_ci.py --sha "$$SHA_TO_VERIFY" --validate-only; \
 	else \
-		$(MAKE) --no-print-directory require-ci-green SHA="$$SHA_TO_VERIFY"; \
-		$(UV) run python scripts/verify_dual_track_ci.py --sha "$$SHA_TO_VERIFY"; \
+		$(MAKE) --no-print-directory require-ci-green SHA="$$SHA_TO_VERIFY" CI_BRANCH="$(CI_BRANCH)"; \
+		if [ -n "$(DUAL_TRACK_CI_LOCAL_ATTESTATION)" ]; then \
+			$(UV) run python scripts/verify_dual_track_ci.py --sha "$$SHA_TO_VERIFY" --local-attestation "$(DUAL_TRACK_CI_LOCAL_ATTESTATION)"; \
+		else \
+			$(UV) run python scripts/verify_dual_track_ci.py --sha "$$SHA_TO_VERIFY"; \
+		fi; \
 	fi
 
 # Cut a release branch only from an existing CI-green base.  Validation mode
@@ -4107,7 +4111,14 @@ release-dry-run: _release-dry-run-guard
 # Usage: make release-cut TAG=v0.1.0-alpha.1 MSG='release notes'
 release-cut:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-cut TAG=v0.1.0-alpha.1 [MSG='...']"; exit 1; }
-	@$(MAKE) -s require-dual-track-green SHA=$$(git rev-parse HEAD)
+	@HEAD_SHA="$$(git rev-parse HEAD)"; SHA_TO_VERIFY="$(RELEASE_CANDIDATE_SHA)"; \
+	if [ -z "$$SHA_TO_VERIFY" ]; then SHA_TO_VERIFY="$$HEAD_SHA"; fi; \
+	if [ -n "$(RELEASE_CANDIDATE_SHA)$(RELEASE_CI_BRANCH)$(RELEASE_LOCAL_ATTESTATION)" ]; then \
+		[ -n "$(RELEASE_CANDIDATE_SHA)" ] && [ -n "$(RELEASE_CI_BRANCH)" ] && [ -n "$(RELEASE_LOCAL_ATTESTATION)" ] || { echo "ERROR: promoted release evidence identity is incomplete"; exit 2; }; \
+		[ "$$HEAD_SHA" = "$$SHA_TO_VERIFY" ] || { echo "ERROR: release-cut HEAD does not match promoted candidate"; exit 2; }; \
+		[ -f "$(RELEASE_LOCAL_ATTESTATION)" ] || { echo "ERROR: promoted local attestation is missing"; exit 2; }; \
+	fi; \
+	$(MAKE) -s require-dual-track-green SHA="$$SHA_TO_VERIFY" CI_BRANCH="$(RELEASE_CI_BRANCH)" DUAL_TRACK_CI_LOCAL_ATTESTATION="$(RELEASE_LOCAL_ATTESTATION)"
 	@$(MAKE) -s check-readme-status TAG=$(TAG)
 	@$(MAKE) -s git-push-sandboxcom
 	@$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"
@@ -9310,17 +9321,21 @@ release-promote:
 	CURRENT_SHA="$$(git rev-parse --verify HEAD^{commit})" || { echo "ERROR: current HEAD does not resolve"; exit 2; }; \
 	DEV_SHA="$$(git rev-parse --verify development^{commit})" || { echo "ERROR: development does not resolve"; exit 2; }; \
 	MASTER_SHA="$$(git -C "$$MAIN_PATH" rev-parse --verify master^{commit})" || { echo "ERROR: canonical master does not resolve"; exit 2; }; \
+	PROJECT_NAMESPACE="$${GLUDD_PROJECT_NAMESPACE:-}"; \
+	if [ -z "$$PROJECT_NAMESPACE" ]; then PROJECT_NAMESPACE="$$($(PYTHON) scripts/resource_arbiter.py namespace)"; fi; \
+	LOCAL_ATTESTATION="$${GLUDD_RESOURCE_ROOT:-$${TMPDIR:-/tmp}/gludd-resources}/$$PROJECT_NAMESPACE/ci-shards/attestation.json"; \
 	[ "$$CURRENT_SHA" = "$$DEV_SHA" ] || { echo "ERROR: release-promote must run at the exact development tip"; exit 2; }; \
 	$(MAKE) --no-print-directory worktree-guard; \
 	$(MAKE) --no-print-directory main-worktree-guard; \
 	git -C "$$MAIN_PATH" merge-base --is-ancestor "$$MASTER_SHA" "$$DEV_SHA" || { echo "ERROR: master cannot fast-forward to development"; exit 2; }; \
 	if [ "$(RELEASE_PROMOTE_VALIDATE_ONLY)" = "1" ]; then \
-		$(MAKE) --no-print-directory require-dual-track-green SHA="$$DEV_SHA" DUAL_TRACK_CI_VALIDATE_ONLY=1; \
+		$(MAKE) --no-print-directory require-dual-track-green SHA="$$DEV_SHA" CI_BRANCH=development DUAL_TRACK_CI_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION" DUAL_TRACK_CI_VALIDATE_ONLY=1; \
 		$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS=; \
 		echo "RELEASE-PROMOTE-VALIDATED tag=$(TAG) master=$$MASTER_SHA development=$$DEV_SHA mode=ff-only"; \
 		exit 0; \
 	fi; \
-	$(MAKE) --no-print-directory require-dual-track-green SHA="$$DEV_SHA" DUAL_TRACK_CI_VALIDATE_ONLY=0; \
+	[ -f "$$LOCAL_ATTESTATION" ] || { echo "ERROR: development local attestation is missing: $$LOCAL_ATTESTATION"; exit 2; }; \
+	$(MAKE) --no-print-directory require-dual-track-green SHA="$$DEV_SHA" CI_BRANCH=development DUAL_TRACK_CI_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION" DUAL_TRACK_CI_VALIDATE_ONLY=0; \
 	$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_READINESS_VALIDATE_ONLY=0 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS=; \
 	git -C "$$MAIN_PATH" merge --ff-only development; \
-	$(MAKE) --no-print-directory -C "$$MAIN_PATH" release-cut TAG="$(TAG)" MSG="$(MSG)"
+	$(MAKE) --no-print-directory -C "$$MAIN_PATH" release-cut TAG="$(TAG)" MSG="$(MSG)" RELEASE_CANDIDATE_SHA="$$DEV_SHA" RELEASE_CI_BRANCH=development RELEASE_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION"

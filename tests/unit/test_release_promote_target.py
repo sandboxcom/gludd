@@ -135,3 +135,39 @@ def test_make_contract_parser_keeps_the_final_target_at_eof() -> None:
 
     assert "release-promote" in stanzas
     assert "@echo promote" in stanzas["release-promote"]
+
+
+def test_promote_carries_source_bound_evidence_across_fast_forward() -> None:
+    """Publication must retain the already-validated development evidence identity."""
+    block = _target_block("release-promote")
+
+    evidence = block.index('LOCAL_ATTESTATION=')
+    merge = block.index('merge --ff-only development')
+    publication = block.index('release-cut TAG="$(TAG)"')
+
+    assert evidence < merge < publication
+    assert 'RELEASE_CANDIDATE_SHA="$$DEV_SHA"' in block
+    assert 'RELEASE_CI_BRANCH=development' in block
+    assert 'RELEASE_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION"' in block
+
+
+def test_release_cut_revalidates_explicit_source_bound_evidence() -> None:
+    """The cut must bind its repeated check to the promoted SHA and source evidence."""
+    block = _target_block("release-cut")
+
+    assert "RELEASE_CANDIDATE_SHA" in block
+    assert "RELEASE_CI_BRANCH" in block
+    assert "RELEASE_LOCAL_ATTESTATION" in block
+    assert '[ "$$HEAD_SHA" = "$$SHA_TO_VERIFY" ]' in block
+    assert 'CI_BRANCH="$(RELEASE_CI_BRANCH)"' in block
+    assert 'DUAL_TRACK_CI_LOCAL_ATTESTATION="$(RELEASE_LOCAL_ATTESTATION)"' in block
+
+
+def test_dual_track_gate_accepts_explicit_branch_and_local_attestation() -> None:
+    """Exact evidence lookup must not silently switch namespaces after promotion."""
+    ci_block = _target_block("require-ci-green")
+    dual_block = _target_block("require-dual-track-green")
+
+    assert '"$(CI_BRANCH)"' in ci_block
+    assert 'CI_BRANCH="$(CI_BRANCH)"' in dual_block
+    assert '--local-attestation "$(DUAL_TRACK_CI_LOCAL_ATTESTATION)"' in dual_block

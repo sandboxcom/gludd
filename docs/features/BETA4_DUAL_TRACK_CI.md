@@ -2016,6 +2016,32 @@ after both exact-SHA terminal attestations pass. Rollback cancels the untagged
 candidate and leaves the last deployed version serving traffic; no speculative
 ETA or partial green prefix changes live state.
 
+### Promotion evidence namespace incident (2026-08-31)
+
+The first real beta4 promotion validated the development candidate, fast-forwarded
+the canonical master checkout, and then failed before tagging because the delegated
+release cut rediscovered CI and local attestations from the new master branch and
+resource namespace. The bytes and candidate SHA had not changed, but branch-scoped
+run discovery returned no master run and the default local evidence path selected a
+different namespace. This was a promotion transaction-order defect; no tag, release,
+or artifact was published by the failed attempt.
+
+Promotion now carries the exact 40-character candidate SHA, source branch, and
+source-local attestation path across the fast-forward. The delegated cut rejects a
+partial identity, a missing attestation, or a post-merge HEAD mismatch, then repeats
+the hosted/local proof against those explicit immutable inputs. This follows the
+GitHub SHA and generated-merge warning documented above and the long-lived
+practitioner confusion in
+[GitHub Community #25191](https://github.com/orgs/community/discussions/25191):
+branch labels are discovery context, not artifact identity.
+
+ZDD is preserved because all evidence checks complete before the only ref mutation;
+a repeated post-merge check cannot silently select another namespace, and failure
+still occurs before tag creation. Rollback before publication is a no-op fast-forward
+reconciliation to the already-validated commit. Resources remain bounded to one
+source attestation, eight hosted shard attestations, one exact branch query, and the
+existing release poller.
+
 ### Local-inference ownership incident (2026-08-29)
 
 Release preparation found a Qwen llama.cpp server running directly as
