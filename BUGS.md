@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-08-31 — (resolved) Local beta4 shard exhausted disk during Terraform provider installation
+
+- **What happened**: Candidate `a9372f33b52dd942f09b72331572393b58a55643` passed both hosted workflows, but the canonical local exact-SHA lane reached `unit-3b:batch-007` and failed `test_module_fmt_and_validate[network]` when Terraform could not install `hashicorp/azurerm v5.3.0`: the filesystem returned `no space left on device`.
+- **Root cause**: The serial shard runner retained every batch workspace until the end of a shard and inherited a non-owned Terraform cache location. It had no pre-child disk headroom check, so a late provider download discovered cumulative resource exhaustion after hours of otherwise green testing.
+- **Fix applied**: Each shard now owns a disposable `TF_PLUGIN_CACHE_DIR`, checks for at least two GiB of free space before every pytest child, removes each batch workspace immediately after its coverage fragment is saved, and stops later work on disk-observation or cleanup failure. The exact formerly failing Terraform node is green with the disposable cache.
+- **Lesson**: Long release lanes must validate resource headroom before every expensive child and release batch-scoped artifacts at the batch boundary. End-of-shard cleanup is too late to prevent cumulative disk failures.
+
 ### 2026-08-20 — (resolved) Outer E2E file workers raced on enforcement simulator state
 
 - **What happened**: The authoritative beta4 E2E run executed two enforcement files in separate pytest processes. Their identical xdist group names only serialized tests within each controller, so one file intermittently deleted or rewrote the other file's `/tmp/gludd-*` simulator state; one file failed despite both passing alone and in one pytest invocation.

@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import FrameType
-from typing import TYPE_CHECKING, Any, TextIO
+from typing import TYPE_CHECKING, Any, Protocol, TextIO
 
 if TYPE_CHECKING:
     from scripts.ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
@@ -92,6 +92,68 @@ def _owned_test_environment(inherited: dict[str, str]) -> dict[str, str]:
     for name in MAKE_RECURSION_ENV_VARS:
         child.pop(name, None)
     return child
+
+
+DISK_HEADROOM_EXIT_CODE = 73
+DEFAULT_MIN_FREE_DISK_BYTES = 2 * 1024**3
+
+
+class _DiskUsage(Protocol):
+    """Minimal disk-usage observation required by the shard preflight."""
+
+    @property
+    def free(self) -> int:
+        """Return the currently available bytes."""
+
+
+class _DiskUsageReader(Protocol):
+    """Read one filesystem's current disk usage."""
+
+    def __call__(self, path: Path) -> _DiskUsage:
+        """Return a disk-usage observation for the path."""
+
+
+def _owned_terraform_environment(
+    inherited: dict[str, str],
+    workspace: Path,
+) -> dict[str, str]:
+    """Bind Terraform provider downloads to one disposable shard cache."""
+    child = inherited.copy()
+    cache = workspace / "terraform-plugin-cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    child["TF_PLUGIN_CACHE_DIR"] = str(cache)
+    return child
+
+
+def _read_disk_usage(path: Path) -> _DiskUsage:
+    """Adapt the stdlib observation to the injectable disk-usage protocol."""
+    return shutil.disk_usage(path)
+
+
+def _disk_headroom_available(
+    path: Path,
+    *,
+    minimum_free_bytes: int = DEFAULT_MIN_FREE_DISK_BYTES,
+    disk_usage: _DiskUsageReader = _read_disk_usage,
+    context: str,
+) -> bool:
+    """Report whether the next owned batch has enough filesystem headroom."""
+    try:
+        free_bytes = disk_usage(path).free
+    except OSError as exc:
+        print(
+            f"SHARD-DISK-PREFLIGHT status=error context={context} "
+            f"path={path} error={type(exc).__name__}:{exc}",
+            flush=True,
+        )
+        return False
+    status = "available" if free_bytes >= minimum_free_bytes else "insufficient"
+    print(
+        f"SHARD-DISK-PREFLIGHT status={status} context={context} path={path} "
+        f"free_bytes={free_bytes} minimum_free_bytes={minimum_free_bytes}",
+        flush=True,
+    )
+    return status == "available"
 
 
 @dataclass(frozen=True)
@@ -1001,7 +1063,22 @@ def run(
                 batchtemp = workspace / f"batch-{batch_index:03d}"
                 batchtemp.mkdir(parents=True)
                 batch_name = f"{shard}-batch-{batch_index:03d}"
-                env = _env_for_shard(batch_name, batchtemp)
+                env = _owned_terraform_environment(
+                    _env_for_shard(batch_name, batchtemp),
+                    workspace,
+                )
+                if not _disk_headroom_available(
+                    workspace,
+                    context=f"{shard}:batch-{batch_index:03d}:before",
+                ):
+                    failures[shard] = DISK_HEADROOM_EXIT_CODE
+                    print(
+                        f"SHARD-DISK-FAIL shard={shard} batch={batch_index} "
+                        f"rc={DISK_HEADROOM_EXIT_CODE}; later-batches=not-started",
+                        flush=True,
+                    )
+                    shard_failed = True
+                    break
                 owned_tmpdir = _owned_socket_safe_tmpdir(batch_name)
                 owned_tmpdirs.append(owned_tmpdir)
                 env["TMPDIR"] = str(owned_tmpdir)
@@ -1036,6 +1113,23 @@ def run(
                     batchtemp,
                     env,
                 )
+                batch_cleanup_rc = _cleanup_owned_tmpdir(owned_tmpdir) or 0
+                owned_tmpdirs.remove(owned_tmpdir)
+                cleanup_rc = max(cleanup_rc, batch_cleanup_rc)
+                if batch_cleanup_rc:
+                    failures[shard] = max(
+                        failures.get(shard, 0),
+                        batch_cleanup_rc,
+                    )
+                    print(
+                        f"SHARD-CLEANUP-SIGNAL shard={shard} "
+                        f"batch={batch_index} rc={batch_cleanup_rc}",
+                        flush=True,
+                    )
+                    shard_failed = True
+                    if _is_cancellation_returncode(batch_cleanup_rc):
+                        cancellation_rc = batch_cleanup_rc
+                    break
                 if rc != 0 or not coverage_saved:
                     failures[shard] = rc or 1
                     print(
