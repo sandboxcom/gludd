@@ -15,6 +15,7 @@ from general_ludd.algorithms.ed25519 import (
     Ed25519Error,
     Ed25519KeyPair,
     EDPoint,
+    P,
     Q,
     _scalar_clamp,
     decode_point,
@@ -23,8 +24,11 @@ from general_ludd.algorithms.ed25519 import (
     from_affine,
     generate_keypair,
     is_on_curve,
+    point_add,
+    scalar_mult,
     sign,
     verify,
+    xrecover,
 )
 
 
@@ -214,6 +218,27 @@ class TestCurveOperations:
         dbl = B._double()
         add = B + B
         assert dbl == add
+
+    def test_protocol_operations_reject_wrong_type(self) -> None:
+        assert EDPoint.__eq__(B, object()) is NotImplemented
+        assert EDPoint.__add__(B, object()) is NotImplemented
+
+    def test_degenerate_and_identity_paths(self) -> None:
+        assert EDPoint(1, 2, 0, 3)._affine() == (0, 0)
+        assert EDPoint.identity()._double() == EDPoint.identity()
+
+    def test_negative_and_reflected_scalar_multiplication(self) -> None:
+        assert B * -1 == -B
+        assert 2 * B == B * 2
+
+    def test_xrecover_alternate_root_and_decode_rejects_large_y(self) -> None:
+        assert is_on_curve(xrecover(0), 0)
+        with pytest.raises(Ed25519Error, match="out of range"):
+            decode_point(P.to_bytes(32, "little"))
+
+    def test_public_point_wrappers(self) -> None:
+        assert point_add(B, EDPoint.identity()) == B
+        assert scalar_mult(2, B) == B + B
 
 
 class TestEncoding:
