@@ -32,7 +32,7 @@ class CacheEntry:
         return json.dumps(payload, sort_keys=True)
 
 
-def _allowed_roots() -> frozenset[Path]:
+def _removable_roots() -> frozenset[Path]:
     home = Path.home().resolve(strict=False)
     return frozenset(
         {
@@ -43,13 +43,28 @@ def _allowed_roots() -> frozenset[Path]:
     )
 
 
-def _validate_root(root: Path) -> Path:
+def _inventory_roots() -> frozenset[Path]:
+    home = Path.home().resolve(strict=False)
+    return _removable_roots() | frozenset({(home / "tmp").resolve(strict=False)})
+
+
+def _validate_root(root: Path, *, removal: bool = False) -> Path:
     expanded = root.expanduser()
     if expanded.is_symlink():
         raise CacheResourceError("root must not be a symlink")
     canonical = expanded.resolve(strict=False)
-    if canonical not in _allowed_roots():
-        raise CacheResourceError(f"root is not allowlisted: {canonical}")
+    if removal:
+        allowed = canonical in _removable_roots()
+    else:
+        temp_root = (Path.home().resolve(strict=False) / "tmp").resolve(strict=False)
+        allowed = (
+            canonical in _inventory_roots()
+            or canonical.parent == temp_root
+            or canonical.parent.parent == temp_root
+        )
+    if not allowed:
+        operation = " for removal" if removal else ""
+        raise CacheResourceError(f"root is not allowlisted{operation}: {canonical}")
     if not canonical.is_dir():
         raise CacheResourceError(f"root is not a directory: {canonical}")
     return canonical
@@ -100,7 +115,7 @@ def inventory_cache_children(root: Path, *, limit: int) -> list[CacheEntry]:
 
 def remove_cache_child(root: Path, candidate: Path, *, apply: bool) -> bool:
     """Validate and optionally remove exactly one immediate cache child."""
-    canonical_root = _validate_root(root)
+    canonical_root = _validate_root(root, removal=True)
     expanded = candidate.expanduser()
     if expanded.is_symlink():
         raise CacheResourceError("candidate must not be a symlink")

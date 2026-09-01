@@ -17,17 +17,22 @@ reviewable in Git.
 
 ## Operator contract
 
-- `make cache-resource-inventory` accepts only `~/.cache`,
-  `~/.local/share/containers`, or `~/Library/Caches` and emits one bounded JSON
-  line per immediate child.
+- `make cache-resource-inventory` accepts `~/.cache`,
+  `~/.local/share/containers`, `~/Library/Caches`, or the project temp root
+  `~/tmp` and emits one bounded JSON line per immediate child. The temp root
+  plus its immediate project-state/resource children and their exact namespace
+  children are inventory-only. Disk incidents can therefore be narrowed through
+  the two project-owned namespace levels without granting deletion or traversing
+  arbitrary descendants.
 - Measurement failures remain visible as `status=error` entries. One protected
   Apple cache cannot hide the remaining inventory.
-- `make cache-resource-remove ... CACHE_RESOURCE_VALIDATE_ONLY=1` performs the
-  same path validation without deletion. Apply mode removes exactly one named,
-  existing immediate child.
+- `make cache-resource-remove ... CACHE_RESOURCE_VALIDATE_ONLY=1` accepts only
+  the three cache roots, never `~/tmp`, and performs the same path validation
+  without deletion. Apply mode removes exactly one named, existing immediate
+  cache child.
 - Roots and candidates must be canonical, non-symlink paths. Parent roots,
-  nested descendants, missing paths, and paths outside the allowlist fail
-  closed before mutation.
+  nested descendants, missing paths, project-temp removal, and paths outside
+  the operation-specific allowlist fail closed before mutation.
 - Worktree cache cleanup recursively finds generated `.venv`, pytest, mypy,
   Ruff, and coverage directories without following symlinks, including nested
   branch-name directories.
