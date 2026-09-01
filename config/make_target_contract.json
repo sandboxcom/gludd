@@ -2,6 +2,29 @@
   "version": 1,
   "targets": [
     {
+      "name": "test-self-improve",
+      "make_variables": [
+        "TARGET",
+        "SELF_IMPROVE_MODEL_PATH",
+        "SELF_IMPROVE_BASELINE_REF",
+        "SELF_IMPROVE_REFERENCE_REF",
+        "SELF_IMPROVE_TASK_FILE",
+        "SELF_IMPROVE_MAX_ATTEMPTS",
+        "SELF_IMPROVE_VALIDATE_ONLY"
+      ],
+      "behavior": "make test-self-improve TARGET=dependency-floor SELF_IMPROVE_MODEL_PATH=/tmp/gludd-qwen-e2e-model/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf SELF_IMPROVE_BASELINE_REF=df6c84a5da10b11e0e1407b0c5699073b7523b8e SELF_IMPROVE_REFERENCE_REF=3e8b9a275f70dcd84d75940a64042d3113f0f8fe SELF_IMPROVE_TASK_FILE=config/self-improve/codex-parity-smoke.json SELF_IMPROVE_MAX_ATTEMPTS=1 SELF_IMPROVE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "self-improve-local-proposal",
+      "make_variables": [
+        "SELF_IMPROVE_MODEL_PATH",
+        "SELF_IMPROVE_PROMPT_FILE",
+        "SELF_IMPROVE_PROPOSAL_FILE",
+        "SELF_IMPROVE_WORKER_VALIDATE_ONLY"
+      ],
+      "behavior": "make self-improve-local-proposal SELF_IMPROVE_MODEL_PATH=/tmp/gludd-qwen-e2e-model/example.gguf SELF_IMPROVE_PROMPT_FILE=/tmp/gludd-self-improve-example/prompt.txt SELF_IMPROVE_PROPOSAL_FILE=/tmp/gludd-self-improve-example/proposal.json SELF_IMPROVE_WORKER_VALIDATE_ONLY=1"
+    },
+    {
       "name": "test-specific",
       "make_variables": ["TESTFILE", "PYTEST_ARGS"],
       "behavior": "make test-specific TESTFILE=tests/unit/test_make_target_contract.py::test_make_target_contract_is_valid PYTEST_ARGS=-q"

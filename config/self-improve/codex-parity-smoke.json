@@ -1,0 +1,14 @@
+{
+  "task_id": "S83.79",
+  "objective": "Restore the exact beta4 core dependency floor without hiding missing runtime dependencies, preserve the controller execution-environment boundary, and update every affected contract.",
+  "canonical_make_commands": [
+    "make test-files TESTFILES=tests/unit/test_dependency_security_floor.py PYTEST_ARGS=-q",
+    "make coverage-files COVERAGE_TESTFILES=tests/unit/test_dependency_security_floor.py",
+    "make lint-files FILES=tests/unit/test_dependency_security_floor.py",
+    "make typecheck-scope FILES=tests/unit/test_dependency_security_floor.py",
+    "make lint-docstrings DOCSTRING_FILES=tests/unit/test_dependency_security_floor.py",
+    "make lint-markdown MARKDOWN_FILES=docs/features/RELEASE_DEPENDENCY_FLOOR_INTEGRITY.md",
+    "make check-resource-ownership RESOURCE_OWNERSHIP_SCOPE=src/general_ludd"
+  ],
+  "reference_elapsed_seconds": 1800.0
+}

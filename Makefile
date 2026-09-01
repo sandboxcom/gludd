@@ -31,6 +31,15 @@ RELEASE_READINESS_VALIDATE_ONLY ?= 0
 RELEASE_COMPLETED_STAGES ?=
 RELEASE_OBSERVATIONS ?=
 RELEASE_FAILURE_LEDGER ?= docs/releases/beta-release-failures.json
+SELF_IMPROVE_MODEL_PATH ?= /tmp/gludd-qwen-e2e-model/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf
+SELF_IMPROVE_PROMPT_FILE ?=
+SELF_IMPROVE_PROPOSAL_FILE ?=
+SELF_IMPROVE_WORKER_VALIDATE_ONLY ?= 0
+SELF_IMPROVE_BASELINE_REF ?=
+SELF_IMPROVE_REFERENCE_REF ?=
+SELF_IMPROVE_TASK_FILE ?=
+SELF_IMPROVE_MAX_ATTEMPTS ?= 2
+SELF_IMPROVE_VALIDATE_ONLY ?= 0
 RECONCILE_QUIET_PROGRESS ?= 0
 MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
@@ -126,7 +135,7 @@ PYTEST_VERBOSITY ?= -v
         feature-start feature-done test-and-commit preflight \
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
-        test-self-improve test-self-improve-all \
+        self-improve-local-proposal test-self-improve test-self-improve-all \
           development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key workstream-register workstream-unregister wt-prune-safe \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
@@ -398,8 +407,9 @@ help:
 	@echo "  agent-merge BRANCH=<name>     Merge a subagent worktree branch into master (--no-ff)"
 	@echo "  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge"
 	@echo "  agent-worktree-list           List active git worktrees"
-	@echo "  test-self-improve TARGET=<name>  E2E: run self-improvement on one target in isolated worktree"
-	@echo "  test-self-improve-all            E2E: run self-improvement on ALL targets in isolated worktree"
+	@echo "  self-improve-local-proposal  Owned local GGUF proposal worker (SELF_IMPROVE_MODEL_PATH/PROMPT_FILE/PROPOSAL_FILE)"
+	@echo "  test-self-improve TARGET=<name>  Compare local-model proposal with Codex reference (SELF_IMPROVE_*)"
+	@echo "  test-self-improve-all            Deprecated alias for one explicit Codex-reference benchmark"
 	@echo "  git-index                    Index git log into SQLite (.gludd/git_history.db)"
 	@echo "  git-search Q='...'           Search indexed git history"
 	@echo "  git-stats                    Show git history index statistics"
@@ -5592,15 +5602,29 @@ clean-stale-worktrees:
 agent-worktree-list:
 	@git worktree list
 
-# Self-improvement E2E — runs in isolated worktree, tests gludd improving itself
-# Usage: make test-self-improve TARGET=azure_iam_validator
-test-self-improve:
-	@$(UV) run python scripts/run_self_improve_e2e.py --target $(TARGET) --worktree
+# Isolated inference worker: the parent owns its process group and exchange files.
+self-improve-local-proposal:
+	@if [ "$(SELF_IMPROVE_WORKER_VALIDATE_ONLY)" = "1" ]; then \
+		echo "SELF_IMPROVE_LOCAL_PROPOSAL_PLAN model=$(SELF_IMPROVE_MODEL_PATH) prompt=$(SELF_IMPROVE_PROMPT_FILE) proposal=$(SELF_IMPROVE_PROPOSAL_FILE)"; \
+	else \
+		[ -n "$(SELF_IMPROVE_MODEL_PATH)" ] || { echo "SELF_IMPROVE_MODEL_PATH is required"; exit 2; }; \
+		[ -n "$(SELF_IMPROVE_PROMPT_FILE)" ] || { echo "SELF_IMPROVE_PROMPT_FILE is required"; exit 2; }; \
+		[ -n "$(SELF_IMPROVE_PROPOSAL_FILE)" ] || { echo "SELF_IMPROVE_PROPOSAL_FILE is required"; exit 2; }; \
+		$(UV) run --extra local-inference python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)"; \
+	fi
 
-# Self-improvement E2E — runs ALL targets, merges successful improvements
-# Usage: make test-self-improve-all
+# Local self-improvement benchmark — compares every proposed edit with Codex.
+# Usage: make test-self-improve TARGET=name SELF_IMPROVE_MODEL_PATH=... SELF_IMPROVE_BASELINE_REF=<sha> SELF_IMPROVE_REFERENCE_REF=<sha> SELF_IMPROVE_TASK_FILE=task.json SELF_IMPROVE_VALIDATE_ONLY=0
+test-self-improve:
+	@[ -n "$(TARGET)" ] || { echo "TARGET is required"; exit 2; }
+	@[ -n "$(SELF_IMPROVE_BASELINE_REF)" ] || { echo "SELF_IMPROVE_BASELINE_REF is required"; exit 2; }
+	@[ -n "$(SELF_IMPROVE_REFERENCE_REF)" ] || { echo "SELF_IMPROVE_REFERENCE_REF is required"; exit 2; }
+	@[ -n "$(SELF_IMPROVE_TASK_FILE)" ] || { echo "SELF_IMPROVE_TASK_FILE is required"; exit 2; }
+	@$(UV) run python scripts/run_self_improve_e2e.py --target "$(TARGET)" --local-model-path "$(SELF_IMPROVE_MODEL_PATH)" --baseline-ref "$(SELF_IMPROVE_BASELINE_REF)" --reference-ref "$(SELF_IMPROVE_REFERENCE_REF)" --task-file "$(SELF_IMPROVE_TASK_FILE)" --max-attempts "$(SELF_IMPROVE_MAX_ATTEMPTS)" $(if $(filter 1,$(SELF_IMPROVE_VALIDATE_ONLY)),--validate-only,)
+
+# Compatibility alias retains one explicit reference boundary; it never fans out.
 test-self-improve-all:
-	@$(UV) run python scripts/run_self_improve_e2e.py --all --worktree
+	@$(MAKE) --no-print-directory test-self-improve TARGET="$(TARGET)" SELF_IMPROVE_MODEL_PATH="$(SELF_IMPROVE_MODEL_PATH)" SELF_IMPROVE_BASELINE_REF="$(SELF_IMPROVE_BASELINE_REF)" SELF_IMPROVE_REFERENCE_REF="$(SELF_IMPROVE_REFERENCE_REF)" SELF_IMPROVE_TASK_FILE="$(SELF_IMPROVE_TASK_FILE)" SELF_IMPROVE_MAX_ATTEMPTS="$(SELF_IMPROVE_MAX_ATTEMPTS)" SELF_IMPROVE_VALIDATE_ONLY="$(SELF_IMPROVE_VALIDATE_ONLY)"
 
 # --- Development-branch workflow targets ---
 # Feature work merges into `development` (not master). `development` merges into
