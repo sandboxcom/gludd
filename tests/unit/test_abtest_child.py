@@ -11,8 +11,10 @@ import pytest
 from general_ludd.abtest._child import _apply_limits, _run_workload, _write_result_nonce, main
 
 
-def test_apply_limits_delegates_without_poisoning_pytest(monkeypatch):
-    calls = []
+def test_apply_limits_delegates_without_poisoning_pytest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, int]] = []
     monkeypatch.setattr(
         "general_ludd.abtest._child.apply_limits",
         lambda mem_mb, cpu_s: calls.append((mem_mb, cpu_s)),
@@ -22,13 +24,13 @@ def test_apply_limits_delegates_without_poisoning_pytest(monkeypatch):
     assert calls == [(256, 30)]
 
 
-def test_run_workload_import_module():
+def test_run_workload_import_module() -> None:
     result = _run_workload({"kind": "import_module", "module": "os"})
     assert isinstance(result, dict)
     assert result["imported"] == "os"
 
 
-def test_run_workload_import_module_with_expect_attr():
+def test_run_workload_import_module_with_expect_attr() -> None:
     result = _run_workload(
         {
             "kind": "import_module",
@@ -39,7 +41,7 @@ def test_run_workload_import_module_with_expect_attr():
     assert result["imported"] == "os"
 
 
-def test_run_workload_import_module_missing_attr_raises():
+def test_run_workload_import_module_missing_attr_raises() -> None:
     with pytest.raises(AssertionError, match="missing attr"):
         _run_workload(
             {
@@ -50,12 +52,12 @@ def test_run_workload_import_module_missing_attr_raises():
         )
 
 
-def test_run_workload_unknown_kind_raises():
+def test_run_workload_unknown_kind_raises() -> None:
     with pytest.raises(ValueError, match="unknown workload kind"):
         _run_workload({"kind": "nonexistent"})
 
 
-def test_write_result_nonce(tmp_path: Path):
+def test_write_result_nonce(tmp_path: Path) -> None:
     result_path = str(tmp_path / "result.json")
     nonce = "test-nonce-123"
     detail = {"status": "ok", "count": 42}
@@ -68,7 +70,7 @@ def test_write_result_nonce(tmp_path: Path):
     assert data["detail"] == detail
 
 
-def test_write_result_nonce_overwrites(tmp_path: Path):
+def test_write_result_nonce_overwrites(tmp_path: Path) -> None:
     result_path = str(tmp_path / "result.json")
     _write_result_nonce(result_path, "first", {})
     _write_result_nonce(result_path, "second", {"x": 1})
@@ -79,13 +81,16 @@ def test_write_result_nonce_overwrites(tmp_path: Path):
     assert data["detail"] == {"x": 1}
 
 
-def test_main_usage_error():
+def test_main_usage_error() -> None:
     rc = main([])
     assert rc == 2
 
 
-def test_main_happy_path(monkeypatch, tmp_path: Path):
-    calls = []
+def test_main_happy_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[int, int]] = []
     monkeypatch.setattr(
         "general_ludd.abtest._child.apply_limits",
         lambda mem_mb, cpu_s: calls.append((mem_mb, cpu_s)),
@@ -108,7 +113,7 @@ def test_main_happy_path(monkeypatch, tmp_path: Path):
     assert calls == [(256, 30)]
 
 
-def test_main_invalid_json_returns_1():
+def test_main_invalid_json_returns_1() -> None:
     rc = main(
         [
             "prog",
@@ -123,7 +128,10 @@ def test_main_invalid_json_returns_1():
     assert rc == 1
 
 
-def test_main_workload_exception_returns_1(monkeypatch, tmp_path: Path):
+def test_main_workload_exception_returns_1(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     monkeypatch.setattr(
         "general_ludd.abtest._child.apply_limits",
         lambda mem_mb, cpu_s: None,
@@ -147,7 +155,10 @@ def test_main_workload_exception_returns_1(monkeypatch, tmp_path: Path):
     assert rc == 1
 
 
-def test_main_write_result_oserror_returns_1(monkeypatch, tmp_path: Path):
+def test_main_write_result_oserror_returns_1(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     monkeypatch.setattr(
         "general_ludd.abtest._child.apply_limits",
         lambda mem_mb, cpu_s: None,
