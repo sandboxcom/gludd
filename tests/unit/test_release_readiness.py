@@ -693,3 +693,33 @@ def _head(root: Path) -> str:
         timeout=10,
     )
     return result.stdout.strip()
+
+
+def test_assess_reports_exact_ci_head_mismatch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import workflow_state_guard
+
+    state = SimpleNamespace(
+        branch="development",
+        head="local123",
+        dirty_count=0,
+        unintegrated_worktrees=[],
+        unintegrated_branches=[],
+    )
+    monkeypatch.setattr(workflow_state_guard, "collect_state", lambda **_: state)
+    monkeypatch.setattr(rr, "_detached_worktrees", lambda *_: [])
+    monkeypatch.setattr(rr, "_ci_verdict", lambda *_: ("GREEN", "CI GREEN"))
+    monkeypatch.setattr(rr, "_version_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_incomplete_tasks", lambda *_: [])
+    monkeypatch.setattr(rr, "_ledger_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_tasks_tick_check", lambda *_: (True, "OK"))
+
+    result = rr.assess(
+        root=tmp_path,
+        run=lambda *_: _completed([]),
+        gha_head_sha="hosted456",
+    )
+
+    assert result.ci_head_matches is False
+    assert any("CI evidence is not a successful run" in error for error in result.errors)

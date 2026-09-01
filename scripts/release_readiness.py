@@ -562,6 +562,11 @@ def assess(
             )
             return result
 
+        head_result = run(["git", "rev-parse", "HEAD"], str(root))
+        branch_result = run(["git", "branch", "--show-current"], str(root))
+        result.head = head_result.stdout.strip()
+        result.branch = branch_result.stdout.strip()
+
         tick_valid, tick_detail = _tasks_tick_check(root)
         result.ledger_valid = tick_valid
         result.ledger_detail = tick_detail
@@ -570,7 +575,6 @@ def assess(
                 "checked TASKS.md completion evidence is invalid: " + tick_detail
             )
             return result
-
         from workflow_state_guard import collect_state
 
         state = collect_state(
