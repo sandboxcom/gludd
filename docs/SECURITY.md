@@ -332,11 +332,22 @@ advisory and ignores ONLY the adjudicated exceptions below by ID.
   fail-closed in its own regression test.
 
 The 2026-08-13 beta.4 audit remediated, rather than ignored,
-`PYSEC-2026-3458` by requiring stable ansible-core 2.19.11 on Python 3.11 and 2.21.2 or newer on Python 3.12+. Earlier remediation
-also fixed `PYSEC-2026-196` with pip 26.1.2 and `PYSEC-2026-3447` with
-setuptools 83.0.0. The Ansible patch upgrade is wire- and state-neutral: deploy
-the updated automation runtime before invoking new jobs, while already-running
-jobs continue under their original process image.
+`PYSEC-2026-3458` by requiring stable ansible-core 2.19.11 on Python 3.11 and
+2.21.2 or newer on Python 3.12+. Earlier remediation fixed
+`PYSEC-2026-196` with pip 26.1.2 and `PYSEC-2026-3447` with setuptools
+83.0.0. The 2026-09-01 audit then remediated `PYSEC-2026-3721`
+(`CVE-2026-13346`) by requiring pip 26.2, which rejects the
+[doubly encoded package-URL traversal](https://github.com/advisories/ghsa-qwm4-qh6w-59xr)
+rather than adding a VEX exception. The pip 26.2
+[practitioner compatibility report #14227](https://github.com/pypa/pip/issues/14227)
+pins the known build-isolation behavior change covered by Gludd's locked
+dependency and hosted-lane tests.
+
+These tool-only upgrades are wire- and state-neutral: deploy the updated
+automation environment before invoking new dependency jobs while running Gludd
+services continue under their original process image. Roll back application
+code independently if needed, but do not downgrade the audited installer below
+26.2; restore the last known-good lock while retaining that security floor.
 
 ---
 
