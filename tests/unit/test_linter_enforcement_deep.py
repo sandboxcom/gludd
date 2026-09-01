@@ -112,8 +112,11 @@ class TestNoSuppressionsRuleMatching:
     """Verify the five suppression patterns match exactly the spec's cases,
     including boundary conditions and whitespace variants."""
 
+    patterns: list[str]
+    allowlist: list[str]
+
     @classmethod
-    def setup_class(cls):
+    def setup_class(cls) -> None:
         src = NO_SUPPRESSIONS_TS.read_text()
         cls.patterns = _extract_js_regex_array(src, "SUPPRESSION_PATTERNS")
         cls.allowlist = _extract_js_string_array(src, "ALLOWLIST_PATHS")
@@ -130,13 +133,13 @@ class TestNoSuppressionsRuleMatching:
 
     # ── noqa variants ──
 
-    def test_noqa_basic(self):
+    def test_noqa_basic(self) -> None:
         assert self._is_suppression("x = 1  # noqa"), "basic # noqa must match"
 
-    def test_noqa_with_code(self):
+    def test_noqa_with_code(self) -> None:
         assert self._is_suppression("x = 1  # noqa: E501"), "# noqa: E501 must match"
 
-    def test_noqa_whitespace_variants(self):
+    def test_noqa_whitespace_variants(self) -> None:
         for variant in [
             "#  noqa",
             "#   noqa",
@@ -146,96 +149,96 @@ class TestNoSuppressionsRuleMatching:
         ]:
             assert self._is_suppression(variant), f"whitespace variant {variant!r} must match"
 
-    def test_noqa_at_line_end_only(self):
+    def test_noqa_at_line_end_only(self) -> None:
         assert self._is_suppression("def long_function_name(arg1: int, arg2: str, arg3: float) -> None:  # noqa"), (
             "# noqa at end of long line must match"
         )
 
     # ── type: ignore variants ──
 
-    def test_type_ignore_basic(self):
+    def test_type_ignore_basic(self) -> None:
         assert self._is_suppression("x: int = f()  # type: ignore"), "basic # type: ignore"
 
-    def test_type_ignore_with_bracket_code(self):
+    def test_type_ignore_with_bracket_code(self) -> None:
         assert self._is_suppression("x = g()  # type: ignore[return-value]"), "# type: ignore[code] must match"
 
-    def test_type_ignore_whitespace_around_colon(self):
+    def test_type_ignore_whitespace_around_colon(self) -> None:
         assert self._is_suppression("x = 1  # type:  ignore"), "extra whitespace after colon must match"
 
     # ── pylint variants ──
 
-    def test_pylint_disable(self):
+    def test_pylint_disable(self) -> None:
         assert self._is_suppression("obj.attr  # pylint: disable=E1101"), "# pylint: disable= must match"
 
-    def test_pylint_enable(self):
+    def test_pylint_enable(self) -> None:
         assert self._is_suppression("# pylint: enable=W0612"), "# pylint: enable= must match"
 
     # ── fmt variants ──
 
-    def test_fmt_skip(self):
+    def test_fmt_skip(self) -> None:
         assert self._is_suppression("# fmt: skip")
 
-    def test_fmt_off(self):
+    def test_fmt_off(self) -> None:
         assert self._is_suppression("# fmt: off")
 
-    def test_fmt_on(self):
+    def test_fmt_on(self) -> None:
         assert self._is_suppression("# fmt: on")
 
     # ── isort variants ──
 
-    def test_isort_skip(self):
+    def test_isort_skip(self) -> None:
         assert self._is_suppression("import sys  # isort:skip")
 
-    def test_isort_skip_with_space(self):
+    def test_isort_skip_with_space(self) -> None:
         assert self._is_suppression("from . import foo  # isort: skip"), (
             "# isort: skip (with space before skip) must match"
         )
 
     # ── false positives ──
 
-    def test_false_positive_no_quality_assurance(self):
+    def test_false_positive_no_quality_assurance(self) -> None:
         assert not self._is_suppression("# no quality assurance"), (
             "'no quality assurance' must NOT match # noqa pattern"
         )
 
-    def test_false_positive_plain_comment(self):
+    def test_false_positive_plain_comment(self) -> None:
         assert not self._is_suppression("# this is a regular comment about types"), (
             "plain comment must not match any suppression pattern"
         )
 
-    def test_false_positive_code_without_comment(self):
+    def test_false_positive_code_without_comment(self) -> None:
         assert not self._is_suppression("x = 1 + 2\ny = 3 + 4\n"), "code without comments must not match"
 
-    def test_false_positive_docstring(self):
+    def test_false_positive_docstring(self) -> None:
         assert not self._is_suppression(
             '"""This function does something.\n\nIt has a docstring with # noqa in it but it is not a comment."""'
         ), "docstring containing # noqa must not match (no leading # on line)"
 
-    def test_false_positive_hash_in_data(self):
+    def test_false_positive_hash_in_data(self) -> None:
         assert not self._is_suppression('HASH_PREFIX = "#noqa"'), (
             "string literal '#noqa' without leading # must not match"
         )
 
     # ── boundary: inline suppression in complex context ──
 
-    def test_inline_inside_multiline_string(self):
+    def test_inline_inside_multiline_string(self) -> None:
         assert not self._is_suppression('"""\n# noqa is in a multiline string\n"""'), (
             "multiline string content must not match (no leading # at column 0)"
         )
 
     # ── allowlist paths ──
 
-    def test_allowlist_fix_not_disable(self):
+    def test_allowlist_fix_not_disable(self) -> None:
         assert self._is_allowlisted("src/general_ludd/security/fix_not_disable.py"), (
             "fix_not_disable.py must be in allowlist"
         )
 
-    def test_allowlist_test_type_safety(self):
+    def test_allowlist_test_type_safety(self) -> None:
         assert self._is_allowlisted("tests/unit/test_type_safety_guardrails.py"), (
             "test_type_safety_guardrails.py must be in allowlist"
         )
 
-    def test_non_allowlisted_src_denied(self):
+    def test_non_allowlisted_src_denied(self) -> None:
         assert not self._is_allowlisted("src/general_ludd/daemon.py"), "daemon.py must NOT be in allowlist"
 
 
@@ -247,16 +250,16 @@ class TestNoSuppressionsRuleMatching:
 class TestNoSuppressionsHardOn:
     """Verify environment variables cannot disable this hard guardrail."""
 
-    def test_disable_env_var_absent(self):
+    def test_disable_env_var_absent(self) -> None:
         src = NO_SUPPRESSIONS_TS.read_text()
         assert "GLUDD_NO_SUPPRESSIONS_ENFORCE" not in src
 
-    def test_matcher_remains_in_default_hook(self):
+    def test_matcher_remains_in_default_hook(self) -> None:
         src = NO_SUPPRESSIONS_TS.read_text()
         assert "shouldAllowEdit(filePath, text)" in src
         assert 'permissionDecision: "deny"' in src
 
-    def test_subagent_guard_present(self):
+    def test_subagent_guard_present(self) -> None:
         src = NO_SUPPRESSIONS_TS.read_text()
         assert "isSubagent" in src, "plugin must guard against subagent enforcement via isSubagent()"
 
@@ -269,8 +272,11 @@ class TestNoSuppressionsHardOn:
 class TestTDDAllowlistPatterns:
     """Verify the TDD plugin's allowlist correctly covers all exempt file types."""
 
+    raw: str
+    patterns: list[str]
+
     @classmethod
-    def setup_class(cls):
+    def setup_class(cls) -> None:
         src = TDD_TS.read_text()
         cls.raw = src
         cls.patterns = _extract_js_regex_array(src, "ALLOWLIST_PATTERNS")
@@ -279,52 +285,52 @@ class TestTDDAllowlistPatterns:
         normalized = path.replace("\\", "/")
         return any(re.search(p, normalized) for p in self.patterns)
 
-    def test_pycache_dir_is_allowlisted(self):
+    def test_pycache_dir_is_allowlisted(self) -> None:
         assert self._matches_allowlist("src/general_ludd/__pycache__/foo.cpython-311.pyc")
 
-    def test_pyi_stub_is_allowlisted(self):
+    def test_pyi_stub_is_allowlisted(self) -> None:
         assert self._matches_allowlist("src/general_ludd/foo.pyi")
 
-    def test_typing_py_is_allowlisted(self):
+    def test_typing_py_is_allowlisted(self) -> None:
         assert self._matches_allowlist("src/general_ludd/typing.py")
 
-    def test_type_defs_py_is_allowlisted(self):
+    def test_type_defs_py_is_allowlisted(self) -> None:
         assert self._matches_allowlist("src/general_ludd/type_defs.py")
 
-    def test_protocols_py_is_allowlisted(self):
+    def test_protocols_py_is_allowlisted(self) -> None:
         assert self._matches_allowlist("src/general_ludd/protocols.py")
 
-    def test_types_module_is_allowlisted(self):
+    def test_types_module_is_allowlisted(self) -> None:
         assert self._matches_allowlist("src/general_ludd/_types.py")
 
-    def test_init_py_is_allowlisted(self):
+    def test_init_py_is_allowlisted(self) -> None:
         init_allowed = "__init__.py" in self.raw and "isInitInEmptyDir" in self.raw
         assert init_allowed, "__init__.py must be handled via isInitInEmptyDir() or allowlist"
 
-    def test_regular_source_is_NOT_allowlisted(self):
+    def test_regular_source_is_NOT_allowlisted(self) -> None:
         assert not self._matches_allowlist("src/general_ludd/daemon.py"), "regular source file must NOT be allowlisted"
 
 
 class TestTDDCandidatePathComputation:
     """Verify candidate test paths mirror check_tdd_compliance.py behavior."""
 
-    def test_single_level_module_path(self):
+    def test_single_level_module_path(self) -> None:
         src = TDD_TS.read_text()
         assert "candidateTestPaths" in src or "candidates" in src, "plugin must compute candidate test paths"
 
-    def test_src_prefix_stripping(self):
+    def test_src_prefix_stripping(self) -> None:
         src = TDD_TS.read_text()
         assert "src/" in src, "must strip src/ prefix when computing test path"
 
-    def test_tests_unit_prefix_applied(self):
+    def test_tests_unit_prefix_applied(self) -> None:
         src = TDD_TS.read_text()
         assert "tests/unit" in src or "tests" in src, "candidate paths must be under tests/unit/"
 
-    def test_test_prefix_applied(self):
+    def test_test_prefix_applied(self) -> None:
         src = TDD_TS.read_text()
         assert "test_" in src, "candidate filename must start with test_"
 
-    def test_leaf_name_candidate_present(self):
+    def test_leaf_name_candidate_present(self) -> None:
         src = TDD_TS.read_text()
         assert "parts[parts.length - 1]" in src or "leaf" in src.lower(), (
             "plugin must compute leaf-name candidate (e.g. test_bar.py for src/general_ludd/foo/bar.py)"
@@ -334,18 +340,18 @@ class TestTDDCandidatePathComputation:
 class TestTDDEnvVarDisable:
     """Verify the GLUDD_TDD_ENFORCE env var disable path."""
 
-    def test_disable_env_var_referenced(self):
+    def test_disable_env_var_referenced(self) -> None:
         src = TDD_TS.read_text()
         assert "GLUDD_TDD_ENFORCE" in src, "plugin must check GLUDD_TDD_ENFORCE env var"
 
-    def test_disable_returns_early(self):
+    def test_disable_returns_early(self) -> None:
         src = TDD_TS.read_text()
         disable_idx = src.find("GLUDD_TDD_ENFORCE")
         assert disable_idx != -1
         window = src[disable_idx : disable_idx + 200]
         assert "return" in window, "env var disable must return early (skip enforcement)"
 
-    def test_subagent_guard_present(self):
+    def test_subagent_guard_present(self) -> None:
         src = TDD_TS.read_text()
         assert "isSubagent" in src, "plugin must guard against subagent enforcement"
 
@@ -358,54 +364,56 @@ class TestTDDEnvVarDisable:
 class TestBashMetacharacterDetection:
     """Verify shell metacharacter patterns from enforce_make_impl.ts."""
 
+    src: str
+
     @classmethod
-    def setup_class(cls):
+    def setup_class(cls) -> None:
         cls.src = MAKE_IMPL_TS.read_text()
 
-    def _get_meta_re(self) -> re.Pattern:
+    def _get_meta_re(self) -> re.Pattern[str]:
         m = re.search(r"SHELL_META_CHARS\s*=\s*/([^/]+)/", self.src)
         assert m, "SHELL_META_CHARS regex not found in source"
         return re.compile(m.group(1))
 
-    def test_pipe_detected(self):
+    def test_pipe_detected(self) -> None:
         meta = self._get_meta_re()
         assert meta.search("make test | tee log"), "| must be detected"
 
-    def test_semicolon_detected(self):
+    def test_semicolon_detected(self) -> None:
         meta = self._get_meta_re()
         assert meta.search("make test; make lint"), "; must be detected"
 
-    def test_double_ampersand_detected(self):
+    def test_double_ampersand_detected(self) -> None:
         meta = self._get_meta_re()
         assert meta.search("make test && make lint"), "&& must be detected (via &)"
 
-    def test_dollar_detected(self):
+    def test_dollar_detected(self) -> None:
         meta = self._get_meta_re()
         assert meta.search("echo $(cat file)"), "$ must be detected"
 
-    def test_backtick_detected(self):
+    def test_backtick_detected(self) -> None:
         meta = self._get_meta_re()
         assert meta.search("echo `date`"), "` must be detected"
 
-    def test_backslash_detected(self):
+    def test_backslash_detected(self) -> None:
         meta = self._get_meta_re()
         assert meta.search("make\\ test"), "\\ must be detected"
 
-    def test_exclamation_detected(self):
+    def test_exclamation_detected(self) -> None:
         meta = self._get_meta_re()
         assert meta.search("!make test"), "! must be detected"
 
-    def test_brace_detected(self):
+    def test_brace_detected(self) -> None:
         meta = self._get_meta_re()
         assert meta.search("echo {a,b}"), "{} must be detected (via {)"
 
-    def test_pipe_inside_quotes_exempt(self):
+    def test_pipe_inside_quotes_exempt(self) -> None:
         meta = self._get_meta_re()
         raw = 'make git-commit MSG="fix pipe | in message"'
         unquoted = re.sub(r"'[^']*'", "", re.sub(r'"[^"]*"', "", raw))
         assert not meta.search(unquoted), "metacharacters inside double quotes must be exempt (commit messages)"
 
-    def test_parens_not_blocked(self):
+    def test_parens_not_blocked(self) -> None:
         meta = self._get_meta_re()
         raw = 'make git-commit MSG="fix foo (see #123)"'
         unquoted = re.sub(r"'[^']*'", "", re.sub(r'"[^"]*"', "", raw))
@@ -415,8 +423,11 @@ class TestBashMetacharacterDetection:
 class TestCompletionStopPatternDetection:
     """Verify completion-sounding pattern detection from enforce_make_impl.ts."""
 
+    src: str
+    phrases: list[str]
+
     @classmethod
-    def setup_class(cls):
+    def setup_class(cls) -> None:
         cls.src = MAKE_IMPL_TS.read_text()
         m = re.search(r"const\s+COMPLETION_SOUNDING\s*=\s*\[(.*?)\]", cls.src, re.DOTALL)
         assert m, "COMPLETION_SOUNDING array not found in source"
@@ -430,48 +441,48 @@ class TestCompletionStopPatternDetection:
             return not ("want me to" in lower or "should i" in lower or "shall i" in lower)
         return False
 
-    def test_all_passed_detected(self):
+    def test_all_passed_detected(self) -> None:
         assert self._detected("All tests passed, committed."), "'all passed' must trigger"
 
-    def test_all_done_detected(self):
+    def test_all_done_detected(self) -> None:
         assert self._detected("All done. Everything is complete."), "'all done' must trigger"
 
-    def test_ready_for_review_detected(self):
+    def test_ready_for_review_detected(self) -> None:
         assert self._detected("Ready for review."), "'ready for review' must trigger"
 
-    def test_summary_detected(self):
+    def test_summary_detected(self) -> None:
         assert self._detected("Here is a summary of the changes."), "'summary' must trigger"
 
-    def test_committed_detected(self):
+    def test_committed_detected(self) -> None:
         assert self._detected("Changes committed successfully."), "'committed' must trigger"
 
-    def test_done_detected(self):
+    def test_done_detected(self) -> None:
         assert self._detected("Done."), "'done' must trigger"
 
-    def test_checkmark_detected(self):
+    def test_checkmark_detected(self) -> None:
         assert self._detected("Task ✅ completed."), "✅ must trigger"
 
-    def test_should_i_negation(self):
+    def test_should_i_negation(self) -> None:
         assert not self._detected("Should I continue with the next task?"), (
             "'should i' question must NOT trigger stop-pattern detection (negation)"
         )
 
-    def test_want_me_to_negation(self):
+    def test_want_me_to_negation(self) -> None:
         assert not self._detected("Want me to proceed with the remaining items?"), (
             "'want me to' question must NOT trigger stop-pattern detection"
         )
 
-    def test_shall_i_negation(self):
+    def test_shall_i_negation(self) -> None:
         assert not self._detected("Shall I start the next wave?"), (
             "'shall i' question must NOT trigger stop-pattern detection"
         )
 
-    def test_normal_text_not_detected(self):
+    def test_normal_text_not_detected(self) -> None:
         assert not self._detected("Running tests for the new feature implementation."), (
             "normal work output must not trigger stop-pattern detection"
         )
 
-    def test_question_in_completion_context(self):
+    def test_question_in_completion_context(self) -> None:
         assert not self._detected("All tasks complete. Should I start the next phase?"), (
             "question negation must override completion phrases"
         )
@@ -480,11 +491,11 @@ class TestCompletionStopPatternDetection:
 class TestMakeEnvVarDisable:
     """Verify make enforcement env var disable paths."""
 
-    def test_make_enforce_env_var(self):
+    def test_make_enforce_env_var(self) -> None:
         src = MAKE_IMPL_TS.read_text()
         assert "GLUDD_MAKE_ENFORCE" in src, "plugin must check GLUDD_MAKE_ENFORCE env var"
 
-    def test_make_enforce_default_on(self):
+    def test_make_enforce_default_on(self) -> None:
         src = MAKE_IMPL_TS.read_text()
         assert 'GLUDD_MAKE_ENFORCE !== "0"' in src or "GLUDD_MAKE_ENFORCE !== '0'" in src, (
             "GLUDD_MAKE_ENFORCE must default to ON (enforce unless explicitly set to '0')"
@@ -494,8 +505,10 @@ class TestMakeEnvVarDisable:
 class TestMakeCommandValidation:
     """Verify command validation rules from enforce_make_impl.ts."""
 
+    src: str
+
     @classmethod
-    def setup_class(cls):
+    def setup_class(cls) -> None:
         cls.src = MAKE_IMPL_TS.read_text()
 
     def _extract_forbidden_builtins(self) -> list[str]:
@@ -513,50 +526,50 @@ class TestMakeCommandValidation:
             if (match := re.fullmatch(r"\\b(\w+)\\b", literal))
         ]
 
-    def test_forbidden_patterns_exist(self):
+    def test_forbidden_patterns_exist(self) -> None:
         patterns = self._extract_forbidden_builtins()
         assert len(patterns) > 0, "must define forbidden shell builtin patterns"
 
-    def test_grep_is_forbidden(self):
+    def test_grep_is_forbidden(self) -> None:
         patterns = self._extract_forbidden_builtins()
         assert "grep" in patterns, "grep must be in forbidden builtins"
 
-    def test_cat_is_forbidden(self):
+    def test_cat_is_forbidden(self) -> None:
         patterns = self._extract_forbidden_builtins()
         assert "cat" in patterns, "cat must be in forbidden builtins"
 
-    def test_find_is_forbidden(self):
+    def test_find_is_forbidden(self) -> None:
         patterns = self._extract_forbidden_builtins()
         assert "find" in patterns, "find must be in forbidden builtins"
 
-    def test_python_is_forbidden(self):
+    def test_python_is_forbidden(self) -> None:
         patterns = self._extract_forbidden_builtins()
         assert "python" in patterns, "python must be in forbidden builtins"
 
-    def test_unknown_target_blocked(self):
+    def test_unknown_target_blocked(self) -> None:
         assert "makeTargetExists" in self.src, "must check target existence via makeTargetExists()"
 
-    def test_long_running_foreground_gate_blocked(self):
+    def test_long_running_foreground_gate_blocked(self) -> None:
         assert "isGate" in self.src or "lrTarget === 'gate'" in self.src, "foreground `make gate` must be blocked"
 
-    def test_long_running_foreground_test_unit_blocked(self):
+    def test_long_running_foreground_test_unit_blocked(self) -> None:
         assert "isTestUnit" in self.src or "lrTarget === 'test-unit'" in self.src, (
             "foreground `make test-unit` must be blocked"
         )
 
-    def test_gate_concurrency_guard_present(self):
+    def test_gate_concurrency_guard_present(self) -> None:
         assert "isGateAlreadyRunning" in self.src, "must guard against concurrent gate/test runs"
 
-    def test_guardrail_integrity_check_present(self):
+    def test_guardrail_integrity_check_present(self) -> None:
         assert "throw new Error" in self.src, "must actively block violations via thrown errors"
 
-    def test_bash_must_start_with_make(self):
+    def test_bash_must_start_with_make(self) -> None:
         src = self.src
         assert re.search(r"""\.startsWith\((["'])make \1\)""", src), (
             "must require command to start with 'make '"
         )
 
-    def test_dispatch_tool_reset(self):
+    def test_dispatch_tool_reset(self) -> None:
         src = self.src
         assert "dispatchCount" in src, "must track dispatch count for reset logic"
 
@@ -569,7 +582,7 @@ class TestMakeCommandValidation:
 class TestCrossPluginInvariants:
     """Verify invariants that span multiple enforcement plugins."""
 
-    def test_all_three_have_fail_open(self):
+    def test_all_three_have_fail_open(self) -> None:
         for path, name in [
             (NO_SUPPRESSIONS_TS, "enforce-no-suppressions"),
             (TDD_TS, "enforce-tdd"),
@@ -578,7 +591,7 @@ class TestCrossPluginInvariants:
             src = path.read_text()
             assert "catch" in src, f"{name} must have try/catch for fail-open behavior"
 
-    def test_all_three_have_subagent_guard(self):
+    def test_all_three_have_subagent_guard(self) -> None:
         for path, name in [
             (NO_SUPPRESSIONS_TS, "enforce-no-suppressions"),
             (TDD_TS, "enforce-tdd"),
@@ -587,7 +600,7 @@ class TestCrossPluginInvariants:
             src = path.read_text()
             assert "isSubagent" in src or "OPENCODE_SUBAGENT" in src, f"{name} must guard against subagent enforcement"
 
-    def test_all_three_use_permission_decision_for_deny(self):
+    def test_all_three_use_permission_decision_for_deny(self) -> None:
         for path, name in [
             (NO_SUPPRESSIONS_TS, "enforce-no-suppressions"),
             (TDD_TS, "enforce-tdd"),
