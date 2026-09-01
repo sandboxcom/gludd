@@ -34,7 +34,7 @@ _ROLE = (
 )
 
 
-def _load(rel: str) -> list:
+def _load(rel: str) -> list[dict[str, object]]:
     """yaml.safe_load a role file into a list of task/handler dicts."""
     text = (_ROLE / rel).read_text()
     data = yaml.safe_load(text)
@@ -42,7 +42,7 @@ def _load(rel: str) -> list:
     return data
 
 
-def _module_keys(task: dict) -> set[str]:
+def _module_keys(task: dict[str, object]) -> set[str]:
     """Top-level keys of a task that name a module (have a dotted FQCN or are
     bare module names), excluding directive keys."""
     directives = {
@@ -54,7 +54,19 @@ def _module_keys(task: dict) -> set[str]:
     return {k for k in task if k not in directives}
 
 
-def test_role_layout_present():
+def _mapping(value: object) -> dict[str, object]:
+    """Narrow a parsed YAML mapping for strict structural assertions."""
+    assert isinstance(value, dict)
+    return value
+
+
+def _list(value: object) -> list[object]:
+    """Narrow a parsed YAML list for strict structural assertions."""
+    assert isinstance(value, list)
+    return value
+
+
+def test_role_layout_present() -> None:
     """All deliverable files exist (mirrors implement_change layout)."""
     for rel in (
         "tasks/main.yml",
@@ -68,7 +80,7 @@ def test_role_layout_present():
         assert (_ROLE / rel).is_file(), f"missing role file: {rel}"
 
 
-def test_main_batches_for_concurrency_cap():
+def test_main_batches_for_concurrency_cap() -> None:
     """main.yml slices dispatch_calls into max_in_flight batches and loops the
     per-batch include — the ONLY honest in-flight concurrency cap."""
     tasks = _load("tasks/main.yml")
@@ -86,18 +98,20 @@ def test_main_batches_for_concurrency_cap():
     )
 
 
-def test_main_validates_sum_over_batches_timeout():
+def test_main_validates_sum_over_batches_timeout() -> None:
     """The input assert must bound ceil(N/max_in_flight) sequential batches under
     the playbook timeout (the sum-over-batches graft) AND validate join_policy."""
     tasks = _load("tasks/main.yml")
     asserts = [t for t in tasks if "ansible.builtin.assert" in t]
-    that_blob = yaml.dump([t["ansible.builtin.assert"].get("that") for t in asserts])
+    that_blob = yaml.dump(
+        [_mapping(t["ansible.builtin.assert"]).get("that") for t in asserts]
+    )
     assert "playbook_timeout" in that_blob, "no playbook_timeout ceiling in asserts"
     assert "max_in_flight" in that_blob, "sum-over-batches term missing max_in_flight"
     assert "join_policy in" in that_blob, "join_policy membership not validated"
 
 
-def test_main_join_assert_honors_required_subset():
+def test_main_join_assert_honors_required_subset() -> None:
     """The final join assert is the single source of truth and checks the
     required-subset (required_returned vs required_names) for 'required'."""
     tasks = _load("tasks/main.yml")
@@ -108,7 +122,7 @@ def test_main_join_assert_honors_required_subset():
     assert "selectattr('required')" in blob, "required flag selection absent"
 
 
-def test_dispatch_task_is_async_promise():
+def test_dispatch_task_is_async_promise() -> None:
     """The dispatch task launches gludd_model_call with async: + poll: 0 (the
     promise) over the batch."""
     tasks = _load("tasks/dispatch_batch.yml")
@@ -129,7 +143,7 @@ def test_dispatch_task_is_async_promise():
     )
 
 
-def test_barrier_is_async_status_with_until_retries_delay():
+def test_barrier_is_async_status_with_until_retries_delay() -> None:
     """The await: async_status looped with until/retries/delay, and the until
     counts only FINISHED jobs in the required wait-set."""
     tasks = _load("tasks/dispatch_batch.yml")
@@ -146,7 +160,7 @@ def test_barrier_is_async_status_with_until_retries_delay():
     assert "barrier_delay" in str(bar["delay"])
 
 
-def test_harvest_drops_unfinished_and_failed():
+def test_harvest_drops_unfinished_and_failed() -> None:
     """Harvest folds in only finished, non-failed jobs (optional timeouts absent)."""
     tasks = _load("tasks/dispatch_batch.yml")
     harvest = next(
@@ -154,12 +168,12 @@ def test_harvest_drops_unfinished_and_failed():
         if "ansible.builtin.set_fact" in t and "_apd_results" in str(t.get("when", "")) + str(t)
         and t.get("when")
     )
-    when = " ".join(str(c) for c in harvest["when"])
+    when = " ".join(str(c) for c in _list(harvest["when"]))
     assert "finished" in when, "harvest must require finished"
     assert "failed" in when, "harvest must exclude failed"
 
 
-def test_handler_variant_flush_then_rejoin():
+def test_handler_variant_flush_then_rejoin() -> None:
     """The handler variant notifies per call, flushes handlers as the barrier,
     then async_status-re-joins the ledger."""
     tasks = _load("tasks/handler_barrier.yml")
@@ -184,7 +198,7 @@ def test_handler_variant_flush_then_rejoin():
     assert h_launch[0].get("listen") == "apd dispatch", "handler must listen on the group"
 
 
-def test_defaults_expose_promised_knobs():
+def test_defaults_expose_promised_knobs() -> None:
     """defaults/main.yml exposes the documented tunables with safe defaults."""
     text = (_ROLE / "defaults" / "main.yml").read_text()
     defaults = yaml.safe_load(text)
@@ -209,6 +223,6 @@ def test_defaults_expose_promised_knobs():
         "meta/main.yml",
     ],
 )
-def test_role_yaml_parses(rel: str):
+def test_role_yaml_parses(rel: str) -> None:
     """Every role YAML file is valid YAML (cheap syntax guard)."""
     yaml.safe_load((_ROLE / rel).read_text())
