@@ -122,6 +122,83 @@ class FakeGit:
         return subprocess.CompletedProcess(args, returncode, stdout, stderr)
 
 
+@pytest.mark.parametrize(
+    ("stdout", "stderr", "detail"),
+    [
+        ("", "", "git command failed"),
+        ("stdout detail", "", "stdout detail"),
+        ("", "stderr detail", "stderr detail"),
+    ],
+)
+def test_checked_stdout_preserves_bounded_failure_detail(
+    stdout: str,
+    stderr: str,
+    detail: str,
+) -> None:
+    def failed_run(
+        argv: Sequence[str], cwd: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        del cwd
+        return subprocess.CompletedProcess(argv, 2, stdout, stderr)
+
+    with pytest.raises(inventory.InventoryError, match=detail):
+        inventory._checked_stdout(
+            ["git", "status"],
+            run=failed_run,
+            cwd=None,
+            label="probe failed",
+        )
+
+
+def test_namespace_boundary_and_empty_head_name_fail_closed() -> None:
+    tag_only = f"refs/tags/release\t{TARGET_HEAD}\n"
+    assert inventory._parse_branch_entries(
+        tag_only,
+        allow_namespace_boundary=True,
+    ) == []
+
+    empty_head = f"refs/heads/\t{TARGET_HEAD}\n"
+    with pytest.raises(inventory.InventoryError, match="malformed"):
+        inventory._parse_branch_entries(
+            empty_head,
+            allow_namespace_boundary=True,
+        )
+
+
+def test_ancestor_and_commit_count_failures_are_bounded() -> None:
+    def unexpected_ancestor(
+        argv: Sequence[str], cwd: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        del cwd
+        return subprocess.CompletedProcess(argv, 128, "", "repository unavailable")
+
+    with pytest.raises(inventory.InventoryError, match="repository unavailable"):
+        inventory._ancestor(
+            PATCH_HEAD,
+            TARGET_HEAD,
+            run=unexpected_ancestor,
+            cwd=None,
+        )
+
+    for output in ("not-a-count\n", "-1\n"):
+        def invalid_count(
+            argv: Sequence[str],
+            cwd: str | None = None,
+            *,
+            value: str = output,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd
+            return subprocess.CompletedProcess(argv, 0, value, "")
+
+        with pytest.raises(inventory.InventoryError, match="malformed commit count"):
+            inventory._commit_count(
+                TARGET_HEAD,
+                PATCH_HEAD,
+                run=invalid_count,
+                cwd=None,
+            )
+
+
 def test_ancestor_is_historical_without_patch_scan() -> None:
     fake = FakeGit(
         refs=[
