@@ -34,7 +34,7 @@ def _hex(b: bytes) -> str:
     return b.hex()
 
 
-def test_signed_content_accepted():
+def test_signed_content_accepted() -> None:
     """Signed content with the correct key -> True."""
     priv, pub = _generate_keypair()
     content = "key: value\n"
@@ -42,14 +42,14 @@ def test_signed_content_accepted():
     assert verify_signature(content, _hex(sig), _hex(pub)) is True
 
 
-def test_unsigned_content_rejected():
+def test_unsigned_content_rejected() -> None:
     """Empty signature -> False (fail-closed)."""
     _priv, pub = _generate_keypair()
     content = "key: value\n"
     assert verify_signature(content, "", _hex(pub)) is False
 
 
-def test_tampered_content_rejected():
+def test_tampered_content_rejected() -> None:
     """Signature over original content, but payload differs -> False."""
     priv, pub = _generate_keypair()
     original = "key: value\n"
@@ -58,7 +58,7 @@ def test_tampered_content_rejected():
     assert verify_signature(tampered, _hex(sig), _hex(pub)) is False
 
 
-def test_wrong_key_rejected():
+def test_wrong_key_rejected() -> None:
     """Signature produced by key A, verified with key B -> False."""
     priv_a, _pub_a = _generate_keypair()
     _priv_b, pub_b = _generate_keypair()
@@ -67,7 +67,7 @@ def test_wrong_key_rejected():
     assert verify_signature(content, _hex(sig), _hex(pub_b)) is False
 
 
-def test_missing_content_fail_closed():
+def test_missing_content_fail_closed() -> None:
     """Empty content string -> False."""
     priv, pub = _generate_keypair()
     content = "payload"
@@ -75,7 +75,7 @@ def test_missing_content_fail_closed():
     assert verify_signature("", _hex(sig), _hex(pub)) is False
 
 
-def test_missing_public_key_fail_closed():
+def test_missing_public_key_fail_closed() -> None:
     """Empty public key -> False."""
     priv, _pub = _generate_keypair()
     content = "payload"
@@ -83,13 +83,13 @@ def test_missing_public_key_fail_closed():
     assert verify_signature(content, _hex(sig), "") is False
 
 
-def test_malformed_signature_fail_closed():
+def test_malformed_signature_fail_closed() -> None:
     """Garbage signature bytes -> False (no crash)."""
     _priv, pub = _generate_keypair()
     assert verify_signature("content", "not-valid-hex", _hex(pub)) is False
 
 
-def test_malformed_public_key_fail_closed():
+def test_malformed_public_key_fail_closed() -> None:
     """Garbage public key bytes -> False (no crash)."""
     priv, _pub = _generate_keypair()
     content = "content"
@@ -97,20 +97,20 @@ def test_malformed_public_key_fail_closed():
     assert verify_signature(content, _hex(sig), "not-valid-hex") is False
 
 
-def test_signature_too_short_fail_closed():
+def test_signature_too_short_fail_closed() -> None:
     """31-byte 'signature' -> False (wrong length)."""
     _priv, pub = _generate_keypair()
     short_sig = b"\x00" * 31
     assert verify_signature("content", _hex(short_sig), _hex(pub)) is False
 
 
-def test_public_key_too_short_fail_closed():
+def test_public_key_too_short_fail_closed() -> None:
     """31-byte 'key' -> False (wrong length)."""
     short_key = b"\x00" * 31
     assert verify_signature("content", "", _hex(short_key)) is False
 
 
-def test_base64_encoding_accepted():
+def test_base64_encoding_accepted() -> None:
     """Base64-encoded key and signature are decoded correctly."""
     import base64
 
