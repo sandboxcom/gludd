@@ -1015,7 +1015,7 @@ jobs:
             dist/gludd-smoke-macos-${{ env.VERSION }}.json
 
   windows:
-    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
+    needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
     # PyInstaller artifacts are OS-specific. Pin the stable image rather than
     # inheriting windows-latest image migrations during a release.
     runs-on: windows-2022

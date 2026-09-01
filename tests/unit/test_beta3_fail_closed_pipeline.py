@@ -64,6 +64,7 @@ def test_tag_pipeline_has_no_false_green_escape_hatches() -> None:
     assert "|| true" not in source
     assert "(informational)" not in source
     assert "reporting-only, non-gating" not in source
+    assert "continue-on-error, non-blocking" not in source
 
 
 def test_cleanup_traps_preserve_primary_failures_and_fail_closed() -> None:
