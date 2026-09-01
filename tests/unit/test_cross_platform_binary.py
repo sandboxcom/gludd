@@ -89,7 +89,7 @@ def build_yml_text() -> str:
 class TestSpecPlatformCompatibility:
     """Verify gludd.spec works on all target platforms."""
 
-    def test_no_windows_incompatible_paths(self, spec_text: str):
+    def test_no_windows_incompatible_paths(self, spec_text: str) -> None:
         """Spec doesn't use paths with colons or backslashes that break Windows.
 
         Windows paths use backslashes and disallow colons in file names. The
@@ -116,7 +116,7 @@ class TestSpecPlatformCompatibility:
             absolute_match = re.search(r"(?<![\w/'\"])/(?:usr|etc|opt|var|home|bin|tmp)(?:/|\b)", stripped)
             assert absolute_match is None, f"line {lineno}: absolute POSIX path in spec breaks Windows: {line!r}"
 
-    def test_no_macos_incompatible_flags(self, spec_text: str):
+    def test_no_macos_incompatible_flags(self, spec_text: str) -> None:
         """Spec doesn't use PyInstaller flags unavailable on macOS.
 
         ``win_no_prefer_redirects`` and ``win_private_assemblies`` are
@@ -143,7 +143,7 @@ class TestSpecPlatformCompatibility:
                 f"UPX path must not be absolute (breaks other OSes): {upx_path}"
             )
 
-    def test_ansible_controller_runtime_excluded(self, spec_text: str):
+    def test_ansible_controller_runtime_excluded(self, spec_text: str) -> None:
         """The frozen core excludes the independently packaged controller runtime.
 
         Beta4 runs Ansible in its digest-pinned execution environment. Bundling
@@ -173,7 +173,7 @@ class TestSpecPlatformCompatibility:
                 "the separately locked Ansible controller runtime"
             )
 
-    def test_data_files_use_relative_paths(self, spec_text: str):
+    def test_data_files_use_relative_paths(self, spec_text: str) -> None:
         """All ``datas`` entries use relative paths, not absolute.
 
         Absolute paths in ``datas`` would only resolve on the build host that
@@ -197,7 +197,7 @@ class TestSpecPlatformCompatibility:
             assert not dest.startswith(("/", "~")), f"datas dest must be relative (not absolute): {dest!r}"
             assert not re.match(r"^[A-Za-z]:", dest), f"datas dest must not be a Windows drive path: {dest!r}"
 
-    def test_no_hardcoded_os_paths(self, spec_text: str):
+    def test_no_hardcoded_os_paths(self, spec_text: str) -> None:
         """No hardcoded /usr/, /etc/, or C:\\ paths in the spec.
 
         Hardcoded OS paths would only exist on the OS where they were written,
@@ -228,21 +228,21 @@ class TestBuildYmlPlatformCoverage:
     # release job fans in on all of them via `needs`.
     REQUIRED_BUILD_JOBS = ("linux", "macos", "windows", "termux")
 
-    def test_linux_job_exists(self, build_yml_text: str):
+    def test_linux_job_exists(self, build_yml_text: str) -> None:
         """Linux x86_64 build job exists."""
         assert re.search(r"^  linux\s*:", build_yml_text, re.MULTILINE), "build.yml must define a 'linux:' build job"
         assert "runs-on: ubuntu-latest" in build_yml_text, "linux job must run on ubuntu-latest"
         # Linux x86_64 produces a tarball + .deb + .rpm.
         assert "linux-x86_64.tar.gz" in build_yml_text, "linux job must produce a linux-x86_64 tarball artifact"
 
-    def test_macos_job_exists(self, build_yml_text: str):
+    def test_macos_job_exists(self, build_yml_text: str) -> None:
         """macOS arm64 build job exists."""
         assert re.search(r"^  macos\s*:", build_yml_text, re.MULTILINE), "build.yml must define a 'macos:' build job"
         assert "runs-on: macos-latest" in build_yml_text, "macos job must run on macos-latest"
         # macOS arm64 produces a tarball + .dmg.
         assert "macos-arm64.tar.gz" in build_yml_text, "macos job must produce a macos-arm64 tarball artifact"
 
-    def test_windows_job_exists(self, build_yml_text: str):
+    def test_windows_job_exists(self, build_yml_text: str) -> None:
         """Windows x86_64 build job exists with UTF-8 locale fix."""
         assert re.search(r"^  windows\s*:", build_yml_text, re.MULTILINE), (
             "build.yml must define a 'windows:' build job"
@@ -255,7 +255,7 @@ class TestBuildYmlPlatformCoverage:
         )
         assert "windows-x86_64.zip" in build_yml_text, "windows job must produce a windows-x86_64 zip artifact"
 
-    def test_termux_job_exists(self, build_yml_text: str):
+    def test_termux_job_exists(self, build_yml_text: str) -> None:
         """Termux (Linux aarch64) build job exists."""
         assert re.search(r"^  termux\s*:", build_yml_text, re.MULTILINE), (
             "build.yml must define a 'termux:' build job (Linux aarch64)"
@@ -264,7 +264,7 @@ class TestBuildYmlPlatformCoverage:
         assert "ubuntu-24.04-arm" in build_yml_text, "termux job must run on ubuntu-24.04-arm for the aarch64 build"
         assert "linux-aarch64.tar.gz" in build_yml_text, "termux job must produce a linux-aarch64 tarball artifact"
 
-    def test_each_job_has_smoke_test(self, build_yml_text: str):
+    def test_each_job_has_smoke_test(self, build_yml_text: str) -> None:
         """Each build job has a post-build smoke test step.
 
         A "smoke test" here is any step that exercises the produced binary
@@ -290,7 +290,7 @@ class TestBuildYmlPlatformCoverage:
             f"(one per platform), found {pyinstaller_invocations}"
         )
 
-    def test_each_job_has_upload_artifact(self, build_yml_text: str):
+    def test_each_job_has_upload_artifact(self, build_yml_text: str) -> None:
         """Each build job uploads its artifact via actions/upload-artifact.
 
         Without an upload step, the built binary never reaches the release
@@ -312,7 +312,7 @@ class TestBuildYmlPlatformCoverage:
         ):
             assert platform_pattern in build_yml_text, f"build.yml must upload an artifact named {platform_pattern!r}"
 
-    def test_build_jobs_are_blocking_no_continue_on_error(self, build_yml_text: str):
+    def test_build_jobs_are_blocking_no_continue_on_error(self, build_yml_text: str) -> None:
         """Platform build jobs are fail-closed (no continue-on-error).
 
         Every platform produces required release artifacts, so each build job
@@ -332,7 +332,7 @@ class TestBuildYmlPlatformCoverage:
                 f"its artifacts are required release assets and failures must block the release"
             )
 
-    def test_release_fans_in_on_all_platform_jobs(self, build_yml_text: str):
+    def test_release_fans_in_on_all_platform_jobs(self, build_yml_text: str) -> None:
         """The release job waits on every platform build job."""
         release_body = self._extract_job_body(build_yml_text, "release")
         assert release_body is not None, "could not extract job body for 'release'"
