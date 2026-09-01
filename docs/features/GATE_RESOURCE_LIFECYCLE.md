@@ -321,3 +321,38 @@ namespaced, but only the newer gate guarantees a clean checkout afterward.
 Rollback must restore the tracked status snapshot and repository-global test
 writes together; doing so reintroduces source mutation and is not operationally
 safe while another gate is inspecting the same checkout.
+
+
+## Mock Daemon Startup Ownership (2026-08-31)
+
+Hosted run 33446746453 exposed a happens-before gap: the mock daemon could
+answer `/healthz` before its atomic PID record existed. Startup now publishes
+the PID file before `serve_forever` can accept a request, then publishes the
+ready manifest after the serving thread starts. Callers use the existing bounded
+deadline to observe either readiness or the owned child becoming terminal;
+terminal diagnostics include the child PID and return code instead of waiting
+until an opaque timeout.
+
+The resource owner remains the daemon entry point. Its single serving thread,
+socket, lease timer, PID file, and ready manifest share one outer cleanup
+boundary on successful startup, publication failure, signal termination, and
+lease expiry. No polling interval, process count, port, schema, or persistent
+artifact changed. Delivery is zero-downtime and needs no migration or restart.
+Rollback is one code/test/documentation revert after any active mock daemon
+exits, but it restores the known readiness race and should be used only with the
+previous build.
+
+Evidence reviewed 2026-08-31:
+
+- CPython's official `socketserver` implementation makes `serve_forever` the
+  point at which requests become serviceable and pairs it with explicit
+  `shutdown` and `server_close` ownership:
+  <https://github.com/python/cpython/blob/main/Lib/socketserver.py>.
+- systemd's official service contract documents PID-file consumption after
+  startup and recommends readiness-aware service types over avoidable PID-file
+  guessing:
+  <https://github.com/systemd/systemd/blob/main/man/systemd.service.xml>.
+- A long-lived practitioner report from 2016 describes a watchdog observing a
+  daemon before its PID file was written, the same ordering failure reproduced
+  by this regression:
+  <https://stackoverflow.com/questions/36489529/linux-daemonize-without-pid-file-race-condition>.

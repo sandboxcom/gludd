@@ -1833,36 +1833,42 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _on_sigterm)
 
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
-    server_thread.start()
-    if args.pidfile:
-        _atomic_write(args.pidfile, str(os.getpid()))
-    if args.ready_file:
-        _atomic_write(
-            args.ready_file,
-            json.dumps(
-                {
-                    "base_url": f"http://{bound_host}:{bound_port}",
-                    "host": bound_host,
-                    "instance_id": args.instance_id,
-                    "pid": os.getpid(),
-                    "port": bound_port,
-                },
-                sort_keys=True,
-            ),
-        )
+    server_started = False
     lease_timer: threading.Timer | None = None
-    if args.lease_seconds > 0:
-        lease_timer = threading.Timer(args.lease_seconds, shutdown_event.set)
-        lease_timer.daemon = True
-        lease_timer.start()
     try:
+        # Ownership evidence must exist before the first request can be served.
+        # The ready manifest follows thread start, so each published signal has
+        # a strict happens-before relationship with the state it promises.
+        if args.pidfile:
+            _atomic_write(args.pidfile, str(os.getpid()))
+        server_thread.start()
+        server_started = True
+        if args.ready_file:
+            _atomic_write(
+                args.ready_file,
+                json.dumps(
+                    {
+                        "base_url": f"http://{bound_host}:{bound_port}",
+                        "host": bound_host,
+                        "instance_id": args.instance_id,
+                        "pid": os.getpid(),
+                        "port": bound_port,
+                    },
+                    sort_keys=True,
+                ),
+            )
+        if args.lease_seconds > 0:
+            lease_timer = threading.Timer(args.lease_seconds, shutdown_event.set)
+            lease_timer.daemon = True
+            lease_timer.start()
         with contextlib.suppress(KeyboardInterrupt):
             shutdown_event.wait()
     finally:
         if lease_timer is not None:
             lease_timer.cancel()
-        server.shutdown()
-        server_thread.join(timeout=5)
+        if server_started:
+            server.shutdown()
+            server_thread.join(timeout=5)
         server.server_close()
         for lifecycle_file in (args.ready_file, args.pidfile):
             if lifecycle_file:

@@ -8,16 +8,21 @@ status code, and error handling behaviour.
 from __future__ import annotations
 
 import concurrent.futures
+import importlib.util
 import json
+import os
 import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
 from collections.abc import Generator
 from pathlib import Path
+from types import ModuleType
+from typing import Protocol
 
 import pytest
 
@@ -36,15 +41,50 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
-def _wait_for_server(url: str, timeout: float = 10.0) -> None:
+class _ChildProcess(Protocol):
+    """Minimum child identity needed for readiness diagnostics."""
+
+    @property
+    def pid(self) -> int: ...
+
+    def poll(self) -> int | None: ...
+
+
+def _wait_for_server(
+    url: str,
+    timeout: float = 10.0,
+    process: _ChildProcess | None = None,
+) -> None:
     deadline = time.monotonic() + timeout
+    last_error: OSError | None = None
     while time.monotonic() < deadline:
+        if process is not None:
+            returncode = process.poll()
+            if returncode is not None:
+                raise RuntimeError(
+                    "Mock daemon child terminated before readiness: "
+                    f"pid={process.pid} returncode={returncode}"
+                )
         try:
             with urllib.request.urlopen(f"{url}/healthz", timeout=1):
                 return
-        except Exception:
+        except OSError as exc:
+            last_error = exc
             time.sleep(0.05)
-    raise TimeoutError(f"Mock daemon did not start within {timeout}s")
+    child = f"pid={process.pid} state=running" if process is not None else "child=unobserved"
+    error = type(last_error).__name__ if last_error is not None else "none"
+    raise TimeoutError(
+        f"Mock daemon did not start within {timeout}s; {child}; last_error={error}"
+    )
+
+
+def _load_mock_daemon() -> ModuleType:
+    """Load the server implementation for deterministic startup-order tests."""
+    spec = importlib.util.spec_from_file_location("mock_daemon_startup_under_test", MOCK_DAEMON_SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _get(url: str, path: str) -> tuple[int, dict]:
@@ -75,7 +115,7 @@ class TestCollectionControlPlaneEndpoints:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -330,6 +370,75 @@ def _get_error(url: str, path: str) -> tuple[int, dict]:
 class TestMockDaemonStartup:
     """Tests for mock daemon process startup and shutdown."""
 
+    def test_wait_reports_terminal_child_before_timeout(self) -> None:
+        class ExitedChild:
+            pid = 4242
+
+            def poll(self) -> int:
+                return 17
+
+        with pytest.raises(
+            RuntimeError,
+            match=r"pid=4242 returncode=17",
+        ):
+            _wait_for_server(
+                "http://127.0.0.1:1",
+                timeout=10.0,
+                process=ExitedChild(),
+            )
+
+    def test_readiness_waits_for_delayed_pidfile_publish(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        module = _load_mock_daemon()
+        port = _find_free_port()
+        url = f"http://127.0.0.1:{port}"
+        pidfile = tmp_path / "mock-daemon.pid"
+        pid_write_started = threading.Event()
+        allow_pid_write = threading.Event()
+        original_write = module._atomic_write
+
+        def delayed_write(path: str, content: str) -> None:
+            if Path(path) == pidfile:
+                pid_write_started.set()
+                if not allow_pid_write.wait(timeout=2):
+                    raise TimeoutError("test did not release delayed pidfile write")
+            original_write(path, content)
+
+        monkeypatch.setattr(module, "_atomic_write", delayed_write)
+        monkeypatch.setattr(module.signal, "signal", lambda *_args: None)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                str(MOCK_DAEMON_SCRIPT),
+                "--port",
+                str(port),
+                "--pidfile",
+                str(pidfile),
+                "--lease-seconds",
+                "0.75",
+            ],
+        )
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(module.main)
+            assert pid_write_started.wait(timeout=2)
+            try:
+                with (
+                    pytest.raises(OSError),
+                    urllib.request.urlopen(f"{url}/healthz", timeout=0.2),
+                ):
+                    pass
+            finally:
+                allow_pid_write.set()
+
+            _wait_for_server(url, timeout=2)
+            assert pidfile.read_text(encoding="utf-8") == str(os.getpid())
+            assert future.result(timeout=3) == 0
+
     def test_daemon_starts_and_writes_pidfile(self, tmp_path: Path):
         port = _find_free_port()
         pidfile = tmp_path / "mock-daemon.pid"
@@ -339,7 +448,7 @@ class TestMockDaemonStartup:
             stderr=subprocess.DEVNULL,
         )
         try:
-            _wait_for_server(f"http://127.0.0.1:{port}")
+            _wait_for_server(f"http://127.0.0.1:{port}", process=proc)
             assert pidfile.exists()
             pid = int(pidfile.read_text().strip())
             assert pid == proc.pid
@@ -356,7 +465,7 @@ class TestMockDaemonStartup:
             stderr=subprocess.DEVNULL,
         )
         try:
-            _wait_for_server(f"http://127.0.0.1:{port}")
+            _wait_for_server(f"http://127.0.0.1:{port}", process=proc)
             _, body = _get(f"http://127.0.0.1:{port}", "/healthz")
             assert body == {"status": "ok"}
         finally:
@@ -372,7 +481,7 @@ class TestMockDaemonStartup:
             stderr=subprocess.DEVNULL,
         )
         try:
-            _wait_for_server(f"http://127.0.0.1:{port}")
+            _wait_for_server(f"http://127.0.0.1:{port}", process=proc)
         finally:
             proc.send_signal(signal.SIGTERM)
             proc.wait(timeout=5)
@@ -391,7 +500,7 @@ class TestHealthEndpoints:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -433,7 +542,7 @@ class TestFactsMetricsTraces:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -475,7 +584,7 @@ class TestObserveEndpoints:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -516,7 +625,7 @@ class TestMessagesEndpoints:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -561,7 +670,7 @@ class TestTodosEndpoints:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -592,7 +701,7 @@ class TestFeaturesSpendAccounting:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -662,7 +771,7 @@ class TestScheduleDispatch:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -731,7 +840,7 @@ class TestEnvironmentEndpoints:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -773,7 +882,7 @@ class TestModelEndpoints:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -830,7 +939,7 @@ class TestSTSTokenLifecycle:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -902,7 +1011,7 @@ class TestProcessManagement:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -952,7 +1061,7 @@ class TestOrnithAndHumanTodos:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -1003,7 +1112,7 @@ class TestStreamDispatch:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -1051,7 +1160,7 @@ class TestProcessAuditAndResourcePreferences:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -1081,7 +1190,7 @@ class TestGitHubApiMocks:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -1120,7 +1229,7 @@ class TestOpenBaoBreakGlass:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -1171,7 +1280,7 @@ class TestRequestLogIntrospection:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -1213,7 +1322,7 @@ class TestErrorHandling:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -1259,7 +1368,7 @@ class TestConcurrentRequests:
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -1325,7 +1434,7 @@ class TestManagedPidOverride:
             stderr=subprocess.DEVNULL,
         )
         try:
-            _wait_for_server(f"http://127.0.0.1:{port}")
+            _wait_for_server(f"http://127.0.0.1:{port}", process=proc)
             _, body = _get(f"http://127.0.0.1:{port}", "/admin/processes")
             assert body["processes"][0]["pid"] == 99999
             assert body["processes"][0]["pgid"] == 99999
