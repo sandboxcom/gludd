@@ -121,5 +121,7 @@ internal actions because canonical names avoid ambiguity and redirect overhead:
 - `tests/unit/test_mock_daemon_server.py` validates the bounded control-plane
   facade used by the real collection modules.
 - `make yaml-lint` validates repository YAML without warning suppressions.
+- `make ansible-lint-playbooks` delegates to that canonical production-profile
+  target, so a missing path or fatal lint result cannot be converted into success.
 - `make ansible-syntax` validates playbook syntax before release.
 - The full release gate remains authoritative for promotion.

@@ -2450,8 +2450,7 @@ healthcheck:
 ansible-syntax:
 	@for f in playbooks/*.yml; do echo "Checking $$f..."; $(UV) run --no-sync ansible-playbook -i localhost, --syntax-check "$$f" || exit 1; done
 
-ansible-lint-playbooks:
-	@$(UV) run ansible-lint playbooks/roles || true
+ansible-lint-playbooks: yaml-lint
 
 ansible-collection-test:
 	@echo "=== Ansible Collection Tests (pytest) ==="
