@@ -21,7 +21,7 @@ class _PicklePayload:
     def __init__(self, marker: Path) -> None:
         self._marker = marker
 
-    def __reduce__(self):
+    def __reduce__(self) -> tuple[object, tuple[str]]:
         return _write_marker, (str(self._marker),)
 
 
