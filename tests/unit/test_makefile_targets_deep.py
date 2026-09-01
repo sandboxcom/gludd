@@ -475,7 +475,7 @@ def _is_known_entry_point(name: str) -> bool:
 class TestHelpTextCoverage:
     """Targets visible to users should appear in help text."""
 
-    def test_help_text_below_threshold(self):
+    def test_help_text_below_threshold(self) -> None:
         content = _read_makefile()
         targets = _extract_target_defs(content)
         help_map = _extract_help_mapping(content)
@@ -493,7 +493,7 @@ class TestHelpTextCoverage:
             f"missing from help text (max 70%). First 20: " + ", ".join(sorted(missing)[:20])
         )
 
-    def test_help_text_no_duplicates(self):
+    def test_help_text_no_duplicates(self) -> None:
         content = _read_makefile()
         help_map = _extract_help_mapping(content)
         seen: dict[str, int] = {}
@@ -506,11 +506,11 @@ class TestHelpTextCoverage:
 class TestPrerequisiteExistence:
     """Every prerequisite referenced by a target must itself be a defined target."""
 
-    def test_all_prerequisites_exist(self):
+    def test_all_prerequisites_exist(self) -> None:
         content = _read_makefile()
         targets = _extract_target_defs(content)
         prereqs = _extract_prereqs(content)
-        missing = {}
+        missing: dict[str, list[str]] = {}
         for name, deps in prereqs.items():
             for dep in deps:
                 if dep not in targets:
@@ -524,14 +524,14 @@ class TestPrerequisiteExistence:
 class TestCircularDependencies:
     """No target should have a circular dependency chain."""
 
-    def test_no_circular_dependencies(self):
+    def test_no_circular_dependencies(self) -> None:
         content = _read_makefile()
         prereqs = _extract_prereqs(content)
         cycles: list[list[str]] = []
         WHITE, GRAY, BLACK = 0, 1, 2
         color: dict[str, int] = {name: WHITE for name in prereqs}
 
-        def dfs(node: str, path: list[str]):
+        def dfs(node: str, path: list[str]) -> None:
             color[node] = GRAY
             path.append(node)
             for nxt in prereqs.get(node, []):
@@ -557,10 +557,10 @@ class TestCircularDependencies:
 class TestScriptReferencesResolve:
     """Every script referenced by a target should exist on disk."""
 
-    def test_script_references_exist(self):
+    def test_script_references_exist(self) -> None:
         content = _read_makefile()
         refs = _extract_script_refs(content)
-        missing = {}
+        missing: dict[str, list[str]] = {}
         for target_name, scripts in refs.items():
             for script in scripts:
                 path = ROOT / script
@@ -577,7 +577,7 @@ class TestScriptReferencesResolve:
 class TestPhonyCompleteness:
     """Every PHONY target that collides with a file on disk is a bug."""
 
-    def test_phony_target_no_file_collision(self):
+    def test_phony_target_no_file_collision(self) -> None:
         content = _read_makefile()
         phony_names = _extract_phony_names(content)
         violations = []
@@ -589,7 +589,7 @@ class TestPhonyCompleteness:
             violations[:8]
         )
 
-    def test_phony_coverage_above_minimum(self):
+    def test_phony_coverage_above_minimum(self) -> None:
         """At least 75% of non-internal targets should be in .PHONY."""
         content = _read_makefile()
         targets = _extract_target_defs(content)
@@ -605,7 +605,7 @@ class TestPhonyCompleteness:
 class TestOrphanTargets:
     """Targets should be either entry points, have help text, or be referenced as prereqs."""
 
-    def test_no_orphan_targets(self):
+    def test_no_orphan_targets(self) -> None:
         content = _read_makefile()
         targets = _extract_target_defs(content)
         prereqs = _extract_prereqs(content)
@@ -635,7 +635,7 @@ class TestOrphanTargets:
 class TestMakeHelpMatchesTargets:
     """Running `make help` should not produce errors."""
 
-    def test_make_help_runs(self):
+    def test_make_help_runs(self) -> None:
         result = subprocess.run(
             ["make", "-n", "-f", str(MAKEFILE), "help"],
             capture_output=True,
@@ -645,7 +645,7 @@ class TestMakeHelpMatchesTargets:
         )
         assert result.returncode == 0, f"make help failed (rc={result.returncode}):\n{result.stderr[-500:]}"
 
-    def test_help_invokes_index_script(self):
+    def test_help_invokes_index_script(self) -> None:
         content = _read_makefile()
         assert "check_make_help.py" in content, "help target must reference scripts/check_make_help.py"
 
@@ -653,7 +653,7 @@ class TestMakeHelpMatchesTargets:
 class TestTargetRecipeIntegrity:
     """Targets defined at column 0 should have a tab-indented recipe or be prereq-only."""
 
-    def test_targets_have_recipe(self):
+    def test_targets_have_recipe(self) -> None:
         content = _read_makefile()
         lines = content.split("\n")
         _extract_target_defs(content)
@@ -689,7 +689,7 @@ class TestTargetRecipeIntegrity:
 class TestNoDuplicateTargets:
     """Target names must not be declared more than once."""
 
-    def test_no_duplicate_target_definitions(self):
+    def test_no_duplicate_target_definitions(self) -> None:
         content = _read_makefile()
         targets = _extract_target_defs(content)
         seen: dict[str, int] = {}
@@ -707,7 +707,7 @@ class TestNoDuplicateTargets:
 class TestMakefileParsability:
     """Makefile should be syntactically valid."""
 
-    def test_makefile_parses_clean(self):
+    def test_makefile_parses_clean(self) -> None:
         result = subprocess.run(
             ["make", "-n", "-f", str(MAKEFILE), "help"],
             capture_output=True,
@@ -721,7 +721,7 @@ class TestMakefileParsability:
 class TestDotPhonyFormatting:
     """.PHONY continuation lines should use spaces not tabs."""
 
-    def test_phony_no_tabs(self):
+    def test_phony_no_tabs(self) -> None:
         content = _read_makefile()
         in_phony = False
         violations = []
@@ -742,7 +742,7 @@ class TestDotPhonyFormatting:
 class TestMakefileTargetCount:
     """Makefile should have a reasonable number of targets."""
 
-    def test_minimum_target_count(self):
+    def test_minimum_target_count(self) -> None:
         content = _read_makefile()
         targets = _extract_target_defs(content)
         assert len(targets) >= 500, f"Only {len(targets)} targets — Makefile may be truncated"
@@ -751,7 +751,7 @@ class TestMakefileTargetCount:
 class TestInternalTargetConventions:
     """Underscore-prefixed targets should not leak into help text."""
 
-    def test_internal_targets_not_in_help(self):
+    def test_internal_targets_not_in_help(self) -> None:
         content = _read_makefile()
         help_map = _extract_help_mapping(content)
         dangling = [name for name in help_map if name.startswith("_")]
@@ -761,7 +761,7 @@ class TestInternalTargetConventions:
 class TestSddTargetsExist:
     """SDD pipeline targets must be present."""
 
-    def test_sdd_targets_exist(self):
+    def test_sdd_targets_exist(self) -> None:
         content = _read_makefile()
         targets = _extract_target_defs(content)
         expected = [
@@ -785,7 +785,7 @@ class TestSddTargetsExist:
 class TestKeyTargetsExist:
     """Essential targets must exist."""
 
-    def test_quality_targets(self):
+    def test_quality_targets(self) -> None:
         targets = _extract_target_defs(_read_makefile())
         essential = [
             "lint",
@@ -811,7 +811,7 @@ class TestKeyTargetsExist:
         missing = [t for t in essential if t not in targets]
         assert not missing, f"Missing essential targets: {missing}"
 
-    def test_release_targets(self):
+    def test_release_targets(self) -> None:
         targets = _extract_target_defs(_read_makefile())
         essential = [
             "release-cut",
@@ -827,7 +827,7 @@ class TestKeyTargetsExist:
         missing = [t for t in essential if t not in targets]
         assert not missing, f"Missing release targets: {missing}"
 
-    def test_git_targets(self):
+    def test_git_targets(self) -> None:
         targets = _extract_target_defs(_read_makefile())
         essential = [
             "git-status",
@@ -851,7 +851,7 @@ class TestKeyTargetsExist:
         missing = [t for t in essential if t not in targets]
         assert not missing, f"Missing git targets: {missing}"
 
-    def test_enforcement_targets(self):
+    def test_enforcement_targets(self) -> None:
         targets = _extract_target_defs(_read_makefile())
         essential = [
             "crash-recovery",
@@ -871,7 +871,7 @@ class TestKeyTargetsExist:
 class TestVariableConsistency:
     """Variable assignments should prefer ?= or := over bare =."""
 
-    def test_no_bare_equals(self):
+    def test_no_bare_equals(self) -> None:
         content = _read_makefile()
         violations = []
         for i, line in enumerate(content.split("\n"), 1):
@@ -898,7 +898,7 @@ class TestVariableConsistency:
 class TestMakeHelpStructure:
     """Help text should cover the expected section categories."""
 
-    def test_help_section_count(self):
+    def test_help_section_count(self) -> None:
         content = _read_makefile()
         section_count = 0
         in_help = False
@@ -916,7 +916,7 @@ class TestMakeHelpStructure:
 class TestBlankLineSeparation:
     """Targets should be separated by blank lines for readability (best effort)."""
 
-    def test_blank_lines_between_targets(self):
+    def test_blank_lines_between_targets(self) -> None:
         content = _read_makefile()
         lines = content.split("\n")
         in_phony = False
