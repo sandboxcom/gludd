@@ -16,6 +16,7 @@ from general_ludd.security.secure_xml import parse_xml_file
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).parent.parent.parent.parent
+TASK_TICK_FORBIDDEN_WORDS = frozenset({"pending", "partial", "groundwork"})
 
 # Path to the bundled ansible-galaxy collection's terraform plugins. The
 # importer is run on this tree during preflight so layout/provider/policy
@@ -190,7 +191,7 @@ def check_tasks_ticks(lines: list[str] | None = None) -> dict[str, object]:
     violations: list[str] = []
     checked = 0
     legacy_audited_ledger = any("Evidence-Integrity Audit" in line for line in lines)
-    forbidden = {"pending", "partial", "groundwork"}
+    forbidden = TASK_TICK_FORBIDDEN_WORDS
     file_paths = (
         "tests/", "test_", ".gate-status", "src/", ".github/", ".opencode/",
         "Makefile", "TASKS.md", "AGENTS.md", "scripts/", "molecule/",
