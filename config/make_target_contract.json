@@ -36,6 +36,11 @@
       "behavior": "make release-readiness TAG=v0.1.0-beta.4 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS="
     },
     {
+      "name": "check-release-failure-ledger",
+      "make_variables": ["RELEASE_FAILURE_LEDGER"],
+      "behavior": "make check-release-failure-ledger RELEASE_FAILURE_LEDGER=docs/releases/beta-release-failures.json"
+    },
+    {
       "name": "release-promote",
       "make_variables": [
         "TAG",

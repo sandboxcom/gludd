@@ -30,6 +30,7 @@ NODE_DEPS_AUDIT_LEVEL ?= moderate
 RELEASE_READINESS_VALIDATE_ONLY ?= 0
 RELEASE_COMPLETED_STAGES ?=
 RELEASE_OBSERVATIONS ?=
+RELEASE_FAILURE_LEDGER ?= docs/releases/beta-release-failures.json
 RECONCILE_QUIET_PROGRESS ?= 0
 MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
@@ -438,6 +439,7 @@ help:
 	@echo "  --- Release ---"
 	@echo "  release-list          List all GitHub releases"
 	@echo "  release-readiness TAG=..  Fail-closed beta4 blockers + Gludd-calibrated P50/P90 ETA"
+	@echo "  check-release-failure-ledger RELEASE_FAILURE_LEDGER=..  Validate immutable beta failure mappings"
 	@echo "  release-branch-new    Cut a release/* branch from a CI-green base (NAME, BASE, RELEASE_BRANCH_VALIDATE_ONLY)"
 	@echo "  require-dual-track-green Require exact-SHA local + hosted CI attestations (SHA, DUAL_TRACK_CI_VALIDATE_ONLY)"
 	@echo "  release-view TAG=..   Show a published GitHub Release + its assets"
@@ -4014,6 +4016,11 @@ release-recut: _push-rate-guard require-sandboxcom-ssh-key
 release-checklist:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-checklist TAG=v0.1.0-beta.N"; exit 1; }
 	@$(UV) run python scripts/release_cut_checklist.py $(TAG) --human
+
+.PHONY: check-release-failure-ledger
+check-release-failure-ledger:
+	@[ -n "$(RELEASE_FAILURE_LEDGER)" ] || { echo "Usage: make check-release-failure-ledger RELEASE_FAILURE_LEDGER=docs/releases/beta-release-failures.json"; exit 2; }
+	@$(UV) run python scripts/check_release_failure_ledger.py --ledger "$(RELEASE_FAILURE_LEDGER)" --repository-root .
 
 release-readiness:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-readiness TAG=v0.1.0-beta.4 RELEASE_READINESS_VALIDATE_ONLY=0|1 RELEASE_COMPLETED_STAGES=stage,... RELEASE_OBSERVATIONS=stage=minutes,..."; exit 2; }
