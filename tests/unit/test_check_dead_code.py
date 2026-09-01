@@ -46,7 +46,7 @@ def _run(*args: str, repo_root: Path | None = None) -> subprocess.CompletedProce
 
 
 class TestDeadCodeCheckExitCodes:
-    def test_flag_test_only_class(self, tmp_path: Path):
+    def test_flag_test_only_class(self, tmp_path: Path) -> None:
         src = tmp_path / "src" / "general_ludd"
         tests = tmp_path / "tests"
         src.mkdir(parents=True)
@@ -65,7 +65,7 @@ class TestDeadCodeCheckExitCodes:
         names = [d["name"] for d in data["dead"]]
         assert "UnusedHelper" in names
 
-    def test_flag_orphan_function(self, tmp_path: Path):
+    def test_flag_orphan_function(self, tmp_path: Path) -> None:
         src = tmp_path / "src" / "general_ludd"
         tests = tmp_path / "tests"
         src.mkdir(parents=True)
@@ -83,7 +83,7 @@ class TestDeadCodeCheckExitCodes:
         names = [d["name"] for d in data["dead"]]
         assert "forgotten_util" in names
 
-    def test_clean_exit_when_no_dead_code(self, tmp_path: Path):
+    def test_clean_exit_when_no_dead_code(self, tmp_path: Path) -> None:
         src = tmp_path / "src" / "general_ludd"
         tests = tmp_path / "tests"
         src.mkdir(parents=True)
@@ -101,7 +101,7 @@ class TestDeadCodeCheckExitCodes:
         data = json.loads(result.stdout)
         assert data["dead_count"] == 0
 
-    def test_skips_private_classes(self, tmp_path: Path):
+    def test_skips_private_classes(self, tmp_path: Path) -> None:
         src = tmp_path / "src" / "general_ludd"
         tests = tmp_path / "tests"
         src.mkdir(parents=True)
@@ -116,7 +116,7 @@ class TestDeadCodeCheckExitCodes:
         data = json.loads(result.stdout)
         assert data["dead_count"] == 0
 
-    def test_does_not_flag_module_with_src_reference(self, tmp_path: Path):
+    def test_does_not_flag_module_with_src_reference(self, tmp_path: Path) -> None:
         src = tmp_path / "src" / "general_ludd"
         tests = tmp_path / "tests"
         src.mkdir(parents=True)
@@ -137,7 +137,7 @@ class TestDeadCodeCheckExitCodes:
         names = [d["name"] for d in data["dead"]]
         assert "Provider" not in names
 
-    def test_does_not_flag_symbol_used_inside_its_own_module(self, tmp_path: Path):
+    def test_does_not_flag_symbol_used_inside_its_own_module(self, tmp_path: Path) -> None:
         src = tmp_path / "src" / "general_ludd"
         tests = tmp_path / "tests"
         src.mkdir(parents=True)
@@ -162,7 +162,7 @@ class TestDeadCodeCheckExitCodes:
         names = [d["name"] for d in data["dead"]]
         assert "Provider" not in names
 
-    def test_static_all_registers_only_named_public_api(self, tmp_path: Path):
+    def test_static_all_registers_only_named_public_api(self, tmp_path: Path) -> None:
         src = tmp_path / "src" / "general_ludd"
         tests = tmp_path / "tests"
         src.mkdir(parents=True)
@@ -186,7 +186,7 @@ class TestDeadCodeCheckExitCodes:
         assert "exported_api" not in names
         assert "test_only_helper" in names
 
-    def test_static_registry_registers_exact_module_symbol(self, tmp_path: Path):
+    def test_static_registry_registers_exact_module_symbol(self, tmp_path: Path) -> None:
         src = tmp_path / "src" / "general_ludd"
         tests = tmp_path / "tests"
         config = tmp_path / "config"
@@ -234,7 +234,7 @@ class TestDirectCheckerContracts:
         )
         return root
 
-    def test_direct_run_and_format_contract(self, tmp_path: Path):
+    def test_direct_run_and_format_contract(self, tmp_path: Path) -> None:
         result = CHECKER.run(self._repo(tmp_path))
         assert [item.symbol.name for item in result.dead] == ["test_only_helper"]
         assert "Test-only (1)" in CHECKER.format_text(result)
@@ -242,7 +242,7 @@ class TestDirectCheckerContracts:
 
     def test_direct_main_update_baseline_and_quiet(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ):
+    ) -> None:
         repo = self._repo(tmp_path)
         assert CHECKER.main(["--repo-root", str(repo), "--json"]) == 1
         assert json.loads(capsys.readouterr().out)["new_dead_count"] == 1
@@ -255,7 +255,7 @@ class TestDirectCheckerContracts:
         assert CHECKER.main(["--repo-root", str(repo), "--quiet"]) == 0
         assert "0 new dead symbol" in capsys.readouterr().out
 
-    def test_baseline_read_and_write_modes_are_mutually_exclusive(self, tmp_path: Path):
+    def test_baseline_read_and_write_modes_are_mutually_exclusive(self, tmp_path: Path) -> None:
         repo = self._repo(tmp_path)
         with pytest.raises(SystemExit) as raised:
             CHECKER.main([
@@ -269,7 +269,7 @@ class TestDirectCheckerContracts:
 
     def test_check_baseline_current_is_read_only_and_detects_drift(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-    ):
+    ) -> None:
         repo = self._repo(tmp_path)
         baseline = repo / "config" / "dead_code_baseline.txt"
 
@@ -293,7 +293,7 @@ class TestDirectCheckerContracts:
         assert baseline.read_bytes() == original
         assert "stale=1" in capsys.readouterr().out
 
-    def test_static_export_parser_is_conservative(self, tmp_path: Path):
+    def test_static_export_parser_is_conservative(self, tmp_path: Path) -> None:
         static_file = tmp_path / "static.py"
         static_file.write_text('__all__: tuple[str, ...] = ("public",)\n')
         assert CHECKER._declared_public_names(static_file) == {"public"}
@@ -311,7 +311,7 @@ class TestDirectCheckerContracts:
         assert CHECKER._declared_public_names(invalid_file) == set()
         assert CHECKER._declared_public_names(tmp_path / "missing.py") == set()
 
-    def test_missing_source_root_exits_two(self, tmp_path: Path):
+    def test_missing_source_root_exits_two(self, tmp_path: Path) -> None:
         with pytest.raises(SystemExit, match="2"):
             CHECKER.run(tmp_path)
 
@@ -328,7 +328,7 @@ class TestDirectCheckerContracts:
     )
     def test_public_registry_rejects_invalid_or_stale_entries(
         self, tmp_path: Path, registry: str
-    ):
+    ) -> None:
         repo = self._repo(tmp_path)
         config = repo / "config"
         config.mkdir()
@@ -338,8 +338,113 @@ class TestDirectCheckerContracts:
             CHECKER.run(repo)
 
 
+class TestCheckerBranchContracts:
+    def test_registry_and_baseline_loaders_are_bounded(self, tmp_path: Path) -> None:
+        missing = tmp_path / "missing.txt"
+        assert CHECKER._load_baseline(None) == set()
+        assert CHECKER._load_baseline(missing) == set()
+        assert CHECKER._load_public_api_registry(missing, set()) == set()
+
+        baseline = tmp_path / "baseline.txt"
+        baseline.write_text("# comment\n\nkey\nkey\n", encoding="utf-8")
+        assert CHECKER._load_baseline(baseline) == {"key"}
+
+    def test_symbol_and_reference_parsers_handle_all_static_forms(
+        self, tmp_path: Path
+    ) -> None:
+        repo = tmp_path
+        src = repo / "src" / "general_ludd"
+        src.mkdir(parents=True)
+        invalid = src / "invalid.py"
+        invalid.write_text("def broken(:\n", encoding="utf-8")
+        assert CHECKER._extract_symbols(invalid, repo) == []
+        assert CHECKER._extract_symbols(src / "missing.py", repo) == []
+
+        module = src / "module.py"
+        module.write_text(
+            "class PublicClass:\n"
+            "    pass\n\n"
+            "class _PrivateClass:\n"
+            "    pass\n\n"
+            "async def public_async():\n"
+            "    return None\n\n"
+            "def main():\n"
+            "    return None\n",
+            encoding="utf-8",
+        )
+        assert {item.name for item in CHECKER._extract_symbols(module, repo)} == {
+            "PublicClass",
+            "public_async",
+        }
+
+        references = src / "references.py"
+        references.write_text(
+            "from package import PublicClass as Alias\n"
+            "result = module.public_async\n",
+            encoding="utf-8",
+        )
+        assert CHECKER._referenced_names(
+            references, {"PublicClass", "Alias", "public_async"}
+        ) == {"PublicClass", "Alias", "public_async"}
+        assert CHECKER._referenced_names(invalid, {"broken"}) == set()
+
+    def test_formatters_cover_detailed_and_empty_reports(self) -> None:
+        public = CHECKER.Symbol(
+            name="Public",
+            kind="class",
+            file="src/general_ludd/public.py",
+            line=7,
+            module="general_ludd.public",
+        )
+        orphan = CHECKER.Symbol(
+            name="Orphan",
+            kind="function",
+            file="src/general_ludd/orphan.py",
+            line=9,
+            module="general_ludd.orphan",
+        )
+        detailed = CHECKER.ScanResult(
+            symbols=[public, orphan],
+            dead=[
+                CHECKER.DeadSymbol(
+                    symbol=public,
+                    referenced_in=["a.py", "b.py", "c.py", "d.py"],
+                ),
+                CHECKER.DeadSymbol(symbol=orphan),
+            ],
+            files_scanned=2,
+        )
+        report = CHECKER.format_text(detailed)
+        assert "Test-only (1)" in report
+        assert "(+1 more)" in report
+        assert "Orphans (1)" in report
+        assert "no references found" in report
+        assert json.loads(CHECKER.format_json(detailed))["dead_count"] == 2
+
+        empty = CHECKER.ScanResult(files_scanned=3)
+        assert CHECKER.format_text(empty) == "dead-code: 0 dead symbol(s) across 3 file(s)\n"
+
+    def test_direct_main_quiet_mode_reports_new_findings(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        src = tmp_path / "src" / "general_ludd"
+        tests = tmp_path / "tests"
+        src.mkdir(parents=True)
+        tests.mkdir()
+        (src / "__init__.py").write_text("", encoding="utf-8")
+        (src / "module.py").write_text(
+            "def orphan():\n    return 1\n", encoding="utf-8"
+        )
+        (tests / "__init__.py").write_text("", encoding="utf-8")
+
+        assert CHECKER.main(
+            ["--repo-root", str(tmp_path), "--quiet"]
+        ) == 1
+        assert "1 NEW dead symbol" in capsys.readouterr().out
+
+
 class TestJsonOutput:
-    def test_json_structure(self, tmp_path: Path):
+    def test_json_structure(self, tmp_path: Path) -> None:
         src = tmp_path / "src" / "general_ludd"
         src.mkdir(parents=True)
         (src / "__init__.py").write_text("")
@@ -360,7 +465,7 @@ class TestJsonOutput:
 
 
 class TestQuietOutput:
-    def test_quiet_format(self, tmp_path: Path):
+    def test_quiet_format(self, tmp_path: Path) -> None:
         src = tmp_path / "src" / "general_ludd"
         src.mkdir(parents=True)
         (src / "__init__.py").write_text("")
@@ -374,7 +479,7 @@ class TestQuietOutput:
 
 
 class TestMakeTargetExists:
-    def test_makefile_has_check_dead_code_target(self):
+    def test_makefile_has_check_dead_code_target(self) -> None:
         makefile = Path(__file__).resolve().parents[2] / "Makefile"
         content = makefile.read_text()
         assert "\ncheck-dead-code:" in content
