@@ -725,3 +725,132 @@ class TestQuorum:
         n.handle_client_command("test")
         assert len(n.log) == 1
         assert n.commit_index == 0
+
+
+class TestFailClosedResponseBranches:
+    def test_single_voter_tick_enters_leader_path(self) -> None:
+        node = RaftNode("n0", [])
+        messages = node.tick(0.0, lambda: 0.0)
+
+        assert messages == []
+        assert node.role == NodeRole.LEADER
+
+    def test_equal_term_follower_transition_and_vote_hash_are_stable(self) -> None:
+        node = RaftNode("n0", ["n1"])
+        node.current_term = 2
+        node.role = NodeRole.CANDIDATE
+        node._become_follower(2)
+        request = RequestVoteRequest(2, "n1", -1, 0)
+
+        assert node.current_term == 2
+        assert node.role == NodeRole.FOLLOWER
+        assert hash(request) == hash(RequestVoteRequest(2, "n1", -1, 0))
+
+    def test_client_and_commit_guards_preserve_nonleader_state(self) -> None:
+        follower = RaftNode("n0", ["n1"])
+        follower.log = [LogEntry(term=1, index=0, command="old")]
+        follower.commit_index = -1
+        follower._advance_commit()
+        follower.role = NodeRole.CANDIDATE
+        follower.handle_client_command("ignored")
+
+        leader = RaftNode("solo", [])
+        leader.handle_client_command("first")
+        leader.handle_client_command("second")
+
+        assert follower.commit_index == -1
+        assert len(follower.log) == 1
+        assert leader.state_machine == ["first", "second"]
+
+    def test_previous_term_entry_does_not_advance_leader_commit(self) -> None:
+        leader = RaftNode("n0", ["n1"])
+        leader.current_term = 2
+        leader.role = NodeRole.LEADER
+        leader.log = [LogEntry(term=1, index=0, command="old")]
+        leader.match_index = {"n1": 0}
+
+        leader._advance_commit()
+
+        assert leader.commit_index == -1
+
+    def test_vote_responses_enforce_term_boundaries(self) -> None:
+        stale = RaftNode("n0", ["n1"])
+        stale.current_term = 2
+        stale.role = NodeRole.CANDIDATE
+        stale.handle_request_vote_response(RequestVoteResponse(1, True, "n1"))
+
+        higher = RaftNode("n0", ["n1"])
+        higher.current_term = 2
+        higher.role = NodeRole.CANDIDATE
+        higher.handle_request_vote_response(RequestVoteResponse(3, True, "n1"))
+
+        assert stale.role == NodeRole.CANDIDATE
+        assert higher.role == NodeRole.FOLLOWER
+        assert higher.current_term == 3
+
+    def test_conflicting_entry_replaces_suffix_without_preserving_old_data(self) -> None:
+        follower = RaftNode("n1", ["n0"])
+        follower.log = [
+            LogEntry(term=1, index=0, command="old"),
+            LogEntry(term=1, index=1, command="suffix"),
+        ]
+        response = follower.handle_append_entries(
+            AppendEntriesRequest(
+                term=2,
+                leader_id="n0",
+                prev_log_index=-1,
+                prev_log_term=0,
+                entries=[LogEntry(term=2, index=0, command="new")],
+                leader_commit=-1,
+            )
+        )
+
+        assert response.success is True
+        assert follower.log == [LogEntry(term=2, index=0, command="new")]
+
+    def test_append_responses_enforce_role_term_and_identity(self) -> None:
+        follower = RaftNode("n0", ["n1"])
+        follower.handle_append_entries_response(AppendEntriesResponse(0, True, "n1", 0))
+
+        stale = RaftNode("n0", ["n1"])
+        stale.current_term = 2
+        stale.role = NodeRole.LEADER
+        stale.handle_append_entries_response(AppendEntriesResponse(1, True, "n1", 0))
+        stale.handle_append_entries_response(AppendEntriesResponse(2, True, "unknown", 0))
+
+        higher = RaftNode("n0", ["n1"])
+        higher.current_term = 2
+        higher.role = NodeRole.LEADER
+        higher.handle_append_entries_response(AppendEntriesResponse(3, True, "n1", 0))
+
+        assert follower.role == NodeRole.FOLLOWER
+        assert stale.role == NodeRole.LEADER
+        assert stale.match_index == {}
+        assert higher.role == NodeRole.FOLLOWER
+        assert higher.current_term == 3
+
+    def test_snapshot_requests_and_responses_enforce_term_and_done_state(self) -> None:
+        node = RaftNode("n1", ["n0"])
+        node.current_term = 3
+        stale = node.handle_install_snapshot(
+            InstallSnapshotRequest(2, "n0", 4, 2, 0, b"stale", True)
+        )
+        node.log = [LogEntry(term=3, index=4, command="retained")]
+        partial = node.handle_install_snapshot(
+            InstallSnapshotRequest(4, "n0", 3, 3, 0, b"partial", False)
+        )
+        node.commit_index = 5
+        node.last_applied = 5
+        node.handle_install_snapshot(
+            InstallSnapshotRequest(4, "n0", 3, 3, 0, b"done", True)
+        )
+        node.role = NodeRole.LEADER
+        node.handle_install_snapshot_response(InstallSnapshotResponse(5))
+
+        assert stale.term == 3
+        assert partial.term == 4
+        assert node.log == [LogEntry(term=3, index=4, command="retained")]
+        assert node.commit_index == 5
+        assert node.last_applied == 5
+        assert node.role == NodeRole.FOLLOWER
+        assert node.current_term == 5
