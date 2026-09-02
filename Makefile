@@ -40,6 +40,7 @@ SELF_IMPROVE_REFERENCE_REF ?=
 SELF_IMPROVE_TASK_FILE ?=
 SELF_IMPROVE_MAX_ATTEMPTS ?= 2
 SELF_IMPROVE_VALIDATE_ONLY ?= 0
+SELF_IMPROVE_CATALOG_LIVE ?= 0
 RECONCILE_QUIET_PROGRESS ?= 0
 MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
@@ -410,6 +411,7 @@ help:
 	@echo "  agent-worktree-list           List active git worktrees"
 	@echo "  self-improve-local-proposal  Owned local GGUF proposal worker (SELF_IMPROVE_MODEL_PATH/PROMPT_FILE/PROPOSAL_FILE)"
 	@echo "  test-self-improve TARGET=<name>  Compare an auto-managed local model with Codex (optional SELF_IMPROVE_MODEL_PATH override)"
+	@echo "  test-self-improve-catalog-truth  Replay pinned catalog fixture (SELF_IMPROVE_CATALOG_LIVE=0|1)"
 	@echo "  test-self-improve-all            Deprecated alias for one explicit Codex-reference benchmark"
 	@echo "  git-index                    Index git log into SQLite (.gludd/git_history.db)"
 	@echo "  git-search Q='...'           Search indexed git history"
@@ -5622,6 +5624,13 @@ test-self-improve:
 	@[ -n "$(SELF_IMPROVE_REFERENCE_REF)" ] || { echo "SELF_IMPROVE_REFERENCE_REF is required"; exit 2; }
 	@[ -n "$(SELF_IMPROVE_TASK_FILE)" ] || { echo "SELF_IMPROVE_TASK_FILE is required"; exit 2; }
 	@$(UV) run python scripts/run_self_improve_e2e.py --target "$(TARGET)" --local-model-path "$(SELF_IMPROVE_MODEL_PATH)" --baseline-ref "$(SELF_IMPROVE_BASELINE_REF)" --reference-ref "$(SELF_IMPROVE_REFERENCE_REF)" --task-file "$(SELF_IMPROVE_TASK_FILE)" --max-attempts "$(SELF_IMPROVE_MAX_ATTEMPTS)" $(if $(filter 1,$(SELF_IMPROVE_VALIDATE_ONLY)),--validate-only,)
+
+# Reproducible catalog-truth sentinel: safe plan by default; live inference is explicit.
+test-self-improve-catalog-truth:
+	@case "$(SELF_IMPROVE_CATALOG_LIVE)" in 0|1) ;; *) echo "SELF_IMPROVE_CATALOG_LIVE must be 0 or 1"; exit 2;; esac
+	@ACTUAL_FIXTURE_SHA256="$$($(PYTHON) -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "config/self-improve/catalog-truth.json")"; \
+		[ "$$ACTUAL_FIXTURE_SHA256" = "30fa70cb42c5dd408a0b3d4678bbf90b419706faac4d120d658a9b05548dbaac" ] || { echo "catalog-truth fixture drift: expected=30fa70cb42c5dd408a0b3d4678bbf90b419706faac4d120d658a9b05548dbaac actual=$$ACTUAL_FIXTURE_SHA256"; exit 2; }
+	@$(MAKE) --no-print-directory test-self-improve TARGET=catalog-truth SELF_IMPROVE_MODEL_PATH= SELF_IMPROVE_BASELINE_REF=eac05dc88c03f14fbd7dd5f4c6d72943609d9e26 SELF_IMPROVE_REFERENCE_REF=80b381bd87f32487d784964ce93566e3b016b191 SELF_IMPROVE_TASK_FILE=config/self-improve/catalog-truth.json SELF_IMPROVE_MAX_ATTEMPTS=2 SELF_IMPROVE_VALIDATE_ONLY="$(if $(filter 1,$(SELF_IMPROVE_CATALOG_LIVE)),0,1)"
 
 # Compatibility alias retains one explicit reference boundary; it never fans out.
 test-self-improve-all:
