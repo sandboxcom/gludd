@@ -14,6 +14,7 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -66,10 +67,15 @@ from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.task_return import TaskReturn, TaskReturnStatus
 from general_ludd.schemas.todo import Todo, TodoStatus
 from general_ludd.self_improve.managed_runner import ApprovedSelfImprovePlan
+from general_ludd.self_improve.promotion import (
+    ManagedPromotionReceipt,
+    build_managed_self_improve_promotion_coordinator,
+)
 from general_ludd.self_improve.result_artifact import (
     ManagedSelfImproveResultArtifact,
 )
 from general_ludd.self_improve.runtime import build_managed_self_improve_runner
+from general_ludd.self_improve.staging import MANAGED_SELF_IMPROVE_APPROVAL_POLICY
 
 if TYPE_CHECKING:
     # TYPE_CHECKING-only: avoids a runtime import cycle and keeps the drain
@@ -78,6 +84,15 @@ if TYPE_CHECKING:
     from general_ludd.ipc.queue import WriteQueue
 
 logger = logging.getLogger(__name__)
+
+
+def _is_managed_self_improve_todo(todo: object) -> bool:
+    """Return whether a todo carries the explicit managed approval contract."""
+    return (
+        getattr(todo, "work_type", None) == "self_improve"
+        and getattr(todo, "approval_policy", None)
+        == MANAGED_SELF_IMPROVE_APPROVAL_POLICY
+    )
 
 
 class _FileClaimConflict(Exception):
@@ -379,6 +394,10 @@ class EventLoop(EventLoopHandlers):
         checkpoint_manager: Any | None = None,
         service_discovery: Any | None = None,
         self_improve_runner_factory: Callable[[Path], Any] | None = None,
+        self_improve_promotion_factory: Callable[
+            [AsyncSession, Path, str], Any
+        ]
+        | None = None,
     ) -> None:
         """Initialize the loop and its injected service boundaries."""
         self.worker_base_url = worker_base_url
@@ -418,6 +437,11 @@ class EventLoop(EventLoopHandlers):
             self_improve_runner_factory or build_managed_self_improve_runner
         )
         self._self_improve_run_lock = asyncio.Lock()
+        self._self_improve_promotion_factory = (
+            self_improve_promotion_factory
+            or build_managed_self_improve_promotion_coordinator
+        )
+        self._self_improve_promotion_instance = uuid4().hex[:12]
         # Compaction feedback loop: accumulated accuracy samples across ticks.
         self._compaction_passed = 0
         self._compaction_total = 0
@@ -1319,6 +1343,133 @@ class EventLoop(EventLoopHandlers):
                     pass
         return self.config.get("repo_root") if isinstance(self.config, dict) else None
 
+    async def _persist_in_process_decision(
+        self,
+        tr: Any,
+        decision: TaskDecision,
+    ) -> None:
+        """Commit the review record before any managed promotion side effect."""
+        if self._active_session is None:
+            raise RuntimeError("review decision persistence requires an active session")
+        existing = (
+            await self._active_session.execute(
+                select(TaskDecisionModel).where(
+                    TaskDecisionModel.return_id == decision.return_id
+                )
+            )
+        ).scalar_one_or_none()
+        project_id = getattr(tr, "project_id", None)
+        if not isinstance(project_id, str):
+            project_id = None
+        if existing is not None:
+            expected = (
+                project_id,
+                decision.matched_todo_id,
+                decision.decision,
+                float(decision.confidence),
+                json.dumps(decision.evidence_refs),
+                json.dumps(decision.todo_updates),
+                json.dumps(decision.child_todos),
+                json.dumps(decision.validation_requests),
+                json.dumps(decision.git_requests),
+                json.dumps(decision.audit_notes),
+                json.dumps(decision.policy_flags),
+            )
+            actual = (
+                existing.project_id,
+                existing.matched_todo_id,
+                existing.decision,
+                float(existing.confidence),
+                existing.evidence_refs,
+                existing.todo_updates,
+                existing.child_todos,
+                existing.validation_requests,
+                existing.git_requests,
+                existing.audit_notes,
+                existing.policy_flags,
+            )
+            if actual != expected:
+                raise ValueError(
+                    "persisted review decision cannot be rebound to new content"
+                )
+            await self._active_session.commit()
+            return
+        self._active_session.add(
+            TaskDecisionModel(
+                return_id=decision.return_id,
+                project_id=project_id,
+                matched_todo_id=decision.matched_todo_id,
+                decision=decision.decision,
+                confidence=float(decision.confidence),
+                evidence_refs=json.dumps(decision.evidence_refs),
+                todo_updates=json.dumps(decision.todo_updates),
+                child_todos=json.dumps(decision.child_todos),
+                validation_requests=json.dumps(decision.validation_requests),
+                git_requests=json.dumps(decision.git_requests),
+                audit_notes=json.dumps(decision.audit_notes),
+                policy_flags=json.dumps(decision.policy_flags),
+            )
+        )
+        await self._active_session.flush()
+        await self._active_session.commit()
+
+    async def _ensure_managed_self_improve_promotion(
+        self,
+        tr: Any,
+        todo: Any,
+    ) -> ManagedPromotionReceipt:
+        """Return a Git-verified durable receipt for one reviewed result."""
+        if self._active_session is None:
+            raise RuntimeError("managed promotion requires an active session")
+        todo_id = getattr(todo, "todo_id", None)
+        project_id = getattr(todo, "project_id", None)
+        plan_artifact = getattr(todo, "plan_artifact", None)
+        result_artifact = getattr(tr, "result_summary", None)
+        return_id = getattr(tr, "return_id", None)
+        if not isinstance(todo_id, str) or not todo_id:
+            raise ValueError("managed promotion requires a todo identity")
+        if not isinstance(project_id, str) or not project_id:
+            raise ValueError("managed promotion requires a project identity")
+        if not isinstance(plan_artifact, str) or not plan_artifact:
+            raise ValueError("managed promotion requires an approved plan artifact")
+        if not isinstance(result_artifact, str) or not result_artifact:
+            raise ValueError("managed promotion requires a result artifact")
+        if not isinstance(return_id, str) or not return_id:
+            raise ValueError("managed promotion requires a return identity")
+        repo_root = self._resolve_repo_root(project_id)
+        if not isinstance(repo_root, str) or not repo_root:
+            raise ValueError("managed promotion requires a canonical repository root")
+        owner = (
+            f"gludd-promotion:{project_id}:"
+            f"{self._self_improve_promotion_instance}"
+        )
+        coordinator = self._self_improve_promotion_factory(
+            self._active_session,
+            Path(repo_root),
+            owner,
+        )
+        receipt = await coordinator.promote(
+            plan_artifact=plan_artifact,
+            result_artifact=result_artifact,
+            todo_id=todo_id,
+            project_id=project_id,
+            repo_root=Path(repo_root),
+            return_id=return_id,
+        )
+        if not isinstance(receipt, ManagedPromotionReceipt):
+            raise ValueError("managed promotion returned an invalid receipt")
+        return receipt
+
+    async def _release_managed_review_for_retry(self, tr: Any) -> None:
+        """Durably re-open a managed review after a promotion failure."""
+        if self._active_session is None:
+            return
+        tr.status = TaskReturnStatus.CREATED.value
+        if hasattr(tr, "updated_at"):
+            tr.updated_at = datetime.now(UTC)
+        await self._active_session.flush()
+        await self._active_session.commit()
+
     async def _review_in_process(self, tr: Any) -> None:
         from general_ludd.review.decision_applier import apply_decision
 
@@ -1363,6 +1514,42 @@ class EventLoop(EventLoopHandlers):
             )
         assert self._todo_repo is not None
         assert self._active_session is not None
+        promotion_receipt: ManagedPromotionReceipt | None = None
+        if decision.decision == "complete" and task_return.work_type == "self_improve":
+            project_id = getattr(tr, "project_id", None)
+            if not isinstance(project_id, str):
+                project_id = None
+            todo = await self._todo_repo.get_by_id(
+                todo_id,
+                project_id=project_id,
+            )
+            if todo is None:
+                logger.error("Managed promotion todo %s no longer exists", todo_id)
+                await self._release_managed_review_for_retry(tr)
+                return
+            if _is_managed_self_improve_todo(todo):
+                try:
+                    await self._persist_in_process_decision(tr, decision)
+                except Exception as exc:
+                    logger.error(
+                        "Decision persistence failed for return %s: %s",
+                        return_id,
+                        exc,
+                    )
+                    await self._release_managed_review_for_retry(tr)
+                    return
+                try:
+                    promotion_receipt = (
+                        await self._ensure_managed_self_improve_promotion(tr, todo)
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Managed promotion failed for return %s: %s",
+                        return_id,
+                        exc,
+                    )
+                    await self._release_managed_review_for_retry(tr)
+                    return
         try:
             _review_project_id = getattr(tr, "project_id", None) or None
             await apply_decision(
@@ -1370,6 +1557,7 @@ class EventLoop(EventLoopHandlers):
                 self._todo_repo,
                 self._active_session,
                 repo_root=self._resolve_repo_root(_review_project_id),
+                managed_promotion_receipt=promotion_receipt,
             )
             await self._active_session.flush()
         except Exception as exc:
@@ -3823,6 +4011,45 @@ class EventLoop(EventLoopHandlers):
                         new_status = TodoStatus.NEEDS_MORE_WORK
                     elif _gate_decision.lower() == "approved":
                         pass  # Keep new_status as COMPLETE
+            if (
+                new_status == TodoStatus.COMPLETE
+                and _is_managed_self_improve_todo(todo)
+            ):
+                if self._task_return_repo is None:
+                    logger.error(
+                        "Reconcile: managed todo %s has no task-return repository",
+                        todo.todo_id,
+                    )
+                    continue
+                task_return_row = await self._task_return_repo.get_by_id(d.return_id)
+                if task_return_row is None:
+                    logger.error(
+                        "Reconcile: managed todo %s is missing return %s",
+                        todo.todo_id,
+                        d.return_id,
+                    )
+                    continue
+                try:
+                    promotion_receipt = (
+                        await self._ensure_managed_self_improve_promotion(
+                            task_return_row,
+                            todo,
+                        )
+                    )
+                    promotion_receipt.verify_for(
+                        todo_id=todo.todo_id,
+                        project_id=todo.project_id,
+                        repo_root=_repo_root,
+                        return_id=d.return_id,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Reconcile: managed promotion blocked COMPLETE for todo "
+                        "%s: %s",
+                        todo.todo_id,
+                        exc,
+                    )
+                    continue
             # F6: version race. We transition with the version we just read; the
             # repository performs a guarded compare-and-set on (version, status).
             # If a CONCURRENT reconcile already moved the row, the CAS affects
@@ -4563,6 +4790,9 @@ class EventLoop(EventLoopHandlers):
         if self._todo_repo is None or self._active_session is None:
             return 0
         from general_ludd.self_improve.gate import SelfImproveGate
+        from general_ludd.self_improve.staging import (
+            build_managed_plan_request_payload,
+        )
 
         si_cfg = self.config.get("self_improve", {}) if isinstance(self.config, dict) else {}
         if not isinstance(si_cfg, dict):
@@ -4587,6 +4817,11 @@ class EventLoop(EventLoopHandlers):
                 priority = priority_raw
             else:
                 priority = self._PRIORITY_MAP.get(str(priority_raw).lower(), 10)
+            managed_payload = (
+                build_managed_plan_request_payload(todo, project_id=project_id)
+                if project_id is not None
+                else {}
+            )
             payload: dict[str, Any] = {
                 "title": str(todo.get("title", "Self-improvement task"))[:512],
                 "description": str(todo.get("description", "")),
@@ -4595,6 +4830,7 @@ class EventLoop(EventLoopHandlers):
                 "priority": priority,
                 "created_by": "self_improve_harness",
                 "project_id": project_id,
+                **managed_payload,
             }
             try:
                 await self._todo_repo.create(payload)

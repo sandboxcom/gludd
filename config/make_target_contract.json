@@ -26,6 +26,16 @@
       "behavior": "make test-self-improve-multifile SELF_IMPROVE_MULTIFILE_LIVE=0"
     },
     {
+      "name": "self-improve-promotion-marker",
+      "make_variables": [
+        "SELF_IMPROVE_PROMOTION_ARTIFACT_DIGEST",
+        "SELF_IMPROVE_PROMOTION_PLAN_DIGEST",
+        "SELF_IMPROVE_PROMOTION_ATTEMPT_DIGEST",
+        "SELF_IMPROVE_PROMOTION_VALIDATE_ONLY"
+      ],
+      "behavior": "make self-improve-promotion-marker SELF_IMPROVE_PROMOTION_ARTIFACT_DIGEST=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa SELF_IMPROVE_PROMOTION_PLAN_DIGEST=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb SELF_IMPROVE_PROMOTION_ATTEMPT_DIGEST=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc SELF_IMPROVE_PROMOTION_VALIDATE_ONLY=1"
+    },
+    {
       "name": "test-self-improve",
       "make_variables": [
         "TARGET",

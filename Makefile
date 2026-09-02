@@ -421,6 +421,7 @@ help:
 	@echo "  test-self-improve-failure-corpus Replay typed local failures offline (SELF_IMPROVE_FAILURE_CORPUS_FILE)"
 	@echo "  test-self-improve-acceptance-matrix Validate/run the serial ten-shape contract (SELF_IMPROVE_ACCEPTANCE_MATRIX_*)"
 	@echo "  test-self-improve-all            Deprecated alias for one explicit Codex-reference benchmark"
+	@echo "  self-improve-promotion-marker    Verify an exact promotion marker on development (SELF_IMPROVE_PROMOTION_* variables)"
 	@echo "  git-index                    Index git log into SQLite (.gludd/git_history.db)"
 	@echo "  git-search Q='...'           Search indexed git history"
 	@echo "  git-stats                    Show git history index statistics"
@@ -5659,6 +5660,28 @@ test-self-improve-multifile:
 	@ACTUAL_FIXTURE_SHA256="$$($(PYTHON) -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "config/self-improve/context-budget-lifecycle.json")"; \
 		[ "$$ACTUAL_FIXTURE_SHA256" = "dd31576d14d1f6c996a8ce55909a167c3d7e6da38c8579f9bdb621181dd71a63" ] || { echo "multifile fixture drift: expected=dd31576d14d1f6c996a8ce55909a167c3d7e6da38c8579f9bdb621181dd71a63 actual=$$ACTUAL_FIXTURE_SHA256"; exit 2; }
 	@$(MAKE) --no-print-directory test-self-improve TARGET=multifile-context-lifecycle SELF_IMPROVE_MODEL_PATH= SELF_IMPROVE_BASELINE_REF=80b381bd87f32487d784964ce93566e3b016b191 SELF_IMPROVE_REFERENCE_REF=6463324cfcf6db9b9a2f9ec203e0bd3862a1e80e SELF_IMPROVE_TASK_FILE=config/self-improve/context-budget-lifecycle.json SELF_IMPROVE_MAX_ATTEMPTS=2 SELF_IMPROVE_VALIDATE_ONLY="$(if $(filter 1,$(SELF_IMPROVE_MULTIFILE_LIVE)),0,1)"
+
+# Verify an immutable managed-promotion marker only on development history.
+# Usage: make self-improve-promotion-marker SELF_IMPROVE_PROMOTION_ARTIFACT_DIGEST=<sha256> SELF_IMPROVE_PROMOTION_PLAN_DIGEST=<sha256> SELF_IMPROVE_PROMOTION_ATTEMPT_DIGEST=<sha256> SELF_IMPROVE_PROMOTION_VALIDATE_ONLY=0|1
+self-improve-promotion-marker:
+	@ARTIFACT="$(SELF_IMPROVE_PROMOTION_ARTIFACT_DIGEST)"; \
+	PLAN="$(SELF_IMPROVE_PROMOTION_PLAN_DIGEST)"; \
+	ATTEMPT="$(SELF_IMPROVE_PROMOTION_ATTEMPT_DIGEST)"; \
+	VALIDATE_ONLY="$(SELF_IMPROVE_PROMOTION_VALIDATE_ONLY)"; \
+	for VALUE in "$$ARTIFACT" "$$PLAN" "$$ATTEMPT"; do \
+		case "$$VALUE" in *[!0-9a-f]*|'') echo "promotion digests must be lowercase hexadecimal"; exit 2;; esac; \
+		[ "$${#VALUE}" -eq 64 ] || { echo "promotion digests must contain 64 characters"; exit 2; }; \
+	done; \
+	case "$$VALIDATE_ONLY" in 0|1) ;; *) echo "SELF_IMPROVE_PROMOTION_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac; \
+	if [ "$$VALIDATE_ONLY" = 1 ]; then echo "PROMOTION_MARKER_VALIDATE_ONLY=ok branch=development"; exit 0; fi; \
+	git rev-parse --verify development^{commit} >/dev/null 2>&1 || { echo "development branch is unavailable"; exit 2; }; \
+	COMMIT=$$(git log development --fixed-strings --grep="Gludd-Self-Improve-Artifact=$$ARTIFACT" --format='%H' -n 1); \
+	if [ -z "$$COMMIT" ]; then echo "PROMOTION_ABSENT"; exit 3; fi; \
+	BODY=$$(git show -s --format='%B' "$$COMMIT"); \
+	printf '%s\n' "$$BODY" | grep -Fq "Gludd-Self-Improve-Artifact=$$ARTIFACT" || { echo "artifact marker mismatch"; exit 2; }; \
+	printf '%s\n' "$$BODY" | grep -Fq "Gludd-Self-Improve-Plan=$$PLAN" || { echo "plan marker mismatch"; exit 2; }; \
+	printf '%s\n' "$$BODY" | grep -Fq "Gludd-Self-Improve-Attempt=$$ATTEMPT" || { echo "attempt marker mismatch"; exit 2; }; \
+	echo "PROMOTION_COMMIT=$$COMMIT"
 
 # Compatibility alias retains one explicit reference boundary; it never fans out.
 test-self-improve-all:
