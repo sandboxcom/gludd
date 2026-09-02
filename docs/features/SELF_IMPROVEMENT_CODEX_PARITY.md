@@ -43,6 +43,36 @@ Those keywords caused a native grammar-expansion crash with the one-megabyte
 runtime text bound. Python parsing remains authoritative for all count and byte
 limits.
 
+## Automatic model acquisition and ownership
+
+The normal self-improvement path no longer requires an operator to run a model
+download target first. Immediately before the first non-mechanical proposal,
+Gludd selects a configured coding model, resolves the Hub `main` reference to a
+40-character commit, checks managed quota and filesystem headroom, and downloads
+that exact revision into a dedicated cache. A mechanical task does not acquire a
+model at all. `SELF_IMPROVE_MODEL_PATH` remains an optional test and operator
+override, not a production prerequisite.
+
+A successful managed acquisition records a bounded, atomically replaced
+ownership manifest. The manifest binds model and repository IDs, filename,
+immutable revision, cache-contained path, byte size, SHA-256 digest, and last-use
+time. An exclusive acquisition claim prevents two Gludd processes from writing
+the same repository revision concurrently. A cache hit is reusable only after
+its path, size, and digest are verified again.
+
+Every use has a lease containing the artifact digest plus the owner PID and
+process birth time. The birth time prevents PID reuse from keeping a stale lease
+alive. Normal return, validation failure, timeout, cancellation, and other
+exceptions all release the lease in the runner's `finally` boundary. Model
+inference remains separately responsible for its owned llama.cpp process group;
+the model cache does not leave or adopt an inference daemon.
+
+Explicit paths have deliberately different ownership. Gludd verifies and hashes
+the file and leases it while active, but does not download, move, manifest,
+quota-account, or evict it. The caller retains storage ownership. Automatic
+reclaim considers only cache entries whose valid Gludd manifest proves ownership,
+and it never deletes the ambient Hugging Face cache or an arbitrary directory.
+
 ## Measured historical comparison
 
 The small fixture uses baseline
@@ -90,11 +120,20 @@ Promotion remains an explicit later operation. Rollback is deletion of the
 unmerged candidate worktree; the development and master branches remain
 unchanged.
 
+Model revisions also follow a zero-downtime handoff. A newly downloaded revision
+is not admitted as usable owned state until its immutable revision, contained
+path, size, and digest have been validated and its manifest is durable. An active
+lease pins the current artifact throughout inference, so reclamation cannot
+remove it while a newer revision is acquired or evaluated. Failed acquisition
+or validation leaves the previously admitted revision usable. Rollback stops
+selecting the candidate revision and permits its removal only after its final
+lease is gone.
+
 The worker owns its temporary files and process group on normal completion,
 validation failure, timeout, cancellation, and native process death. No test
 harness cleanup compensates for missing application ownership.
 
-## Resource bounds
+## Resource bounds and fail-closed cleanup
 
 - 32 edits, 64 tests, 32 Make commands, and 1 MiB of proposal edit text.
 - 256 KiB prompt and roughly 1.25 MiB serialized proposal exchange.
@@ -102,8 +141,23 @@ harness cleanup compensates for missing application ownership.
 - 2 MiB observable command capture with 15-second heartbeats.
 - 128 Codex-reference files.
 - One candidate worktree per attempt; commands stop after the first failure.
-- Disk checks run before additional model acquisition. The validated 0.5B model
-  is reused rather than downloaded per attempt.
+- The managed model cache defaults to an 8 GiB quota and 2 GiB free-space
+  reserve. `GLUDD_SELF_IMPROVE_MODEL_QUOTA_BYTES` and
+  `GLUDD_SELF_IMPROVE_MODEL_RESERVE_BYTES` provide explicit byte overrides.
+- `GLUDD_SELF_IMPROVE_MODEL_CACHE` may relocate the dedicated cache without
+  transferring ownership to an ambient Hugging Face cache.
+- Reclaim orders only Gludd-owned, unleased revisions by least recent use. It
+  invokes Hugging Face revision deletion, verifies the owned artifact vanished,
+  and then removes the ownership manifest.
+- Admission checks both manifest-accounted bytes and independent filesystem free
+  space. Cache-library totals alone cannot authorize another download.
+- Malformed manifests or leases, escaped paths, unverifiable process owners,
+  digest drift, deletion that leaves the artifact present, and exhausted
+  headroom with all candidates leased stop the operation. Gludd does not guess
+  ownership or widen deletion scope to recover space.
+- Interrupted files or third-party cache content without a valid Gludd ownership
+  manifest are never silently removed. They still reduce measured filesystem
+  headroom, so acquisition stops instead of consuming the reserve.
 
 ## Evidence and prior art
 
@@ -118,6 +172,14 @@ Official sources:
 - [Aider architect/editor mode](https://aider.chat/docs/) separates planning
   from file editing; Gludd similarly separates local proposal generation from
   the Make-mediated executor.
+- [Hugging Face cache-system reference](https://huggingface.co/docs/huggingface_hub/en/package_reference/cache)
+  documents scanning an explicit cache directory and preparing immutable
+  revision deletion through `delete_revisions`. The returned strategy exposes
+  expected freed space before its separate `execute` step.
+- [Hugging Face cache guide](https://huggingface.co/docs/huggingface_hub/guides/manage-cache)
+  explains shared blob and snapshot storage, revision-aware deletion, and
+  incomplete downloads. Gludd uses the supported revision graph but narrows it
+  further with application ownership and live leases.
 
 Practitioner evidence:
 
@@ -125,7 +187,17 @@ Practitioner evidence:
   reports long-lived structured/tool-use reliability problems.
 - [llama.cpp issue 15012](https://github.com/ggml-org/llama.cpp/issues/15012)
   records JSON/schema-constrained generation difficulties in real integrations.
+- [huggingface_hub issue 3390](https://github.com/huggingface/huggingface_hub/issues/3390)
+  records a long-running practitioner report of apparent duplicate disk use
+  between Hub files and the Xet chunk cache. Gludd therefore owns a dedicated
+  model root and never treats an ambient multi-library cache as reclaimable.
+- [huggingface_hub issue 4420](https://github.com/huggingface/huggingface_hub/issues/4420)
+  demonstrates why cache-reported totals are insufficient: a model repository
+  consuming about 915 MiB was omitted while the listing reported only 416.3 KiB.
+  Independent filesystem headroom and fail-closed metadata handling cover that
+  class of accounting gap.
 
 The operational consequence is fail-closed validation, bounded raw-output
-diagnostics, isolated native inference, and deterministic tool routing instead
-of treating syntactically plausible model text as a usable change.
+diagnostics, isolated native inference, deterministic tool routing, and
+lease-aware application ownership instead of treating syntactically plausible
+model text or cache-library totals as sufficient evidence.
