@@ -158,6 +158,123 @@ def test_representative_selection_is_bounded_diverse_and_deterministic() -> None
     assert selected == reversed_selected
 
 
+@pytest.mark.parametrize(
+    "invalid_record",
+    (
+        pytest.param(
+            {"task_type": TaskType.FEATURE.value, "task_kind": "coding"},
+            id="missing-model-profile-id",
+        ),
+        pytest.param(
+            {
+                "model_profile_id": "",
+                "task_type": TaskType.FEATURE.value,
+                "task_kind": "coding",
+            },
+            id="empty-model-profile-id",
+        ),
+        pytest.param(
+            {
+                "model_profile_id": 7,
+                "task_type": TaskType.FEATURE.value,
+                "task_kind": "coding",
+            },
+            id="non-string-model-profile-id",
+        ),
+        pytest.param(
+            {
+                "model_profile_id": "model-invalid",
+                "task_type": 7,
+                "task_kind": "coding",
+            },
+            id="non-string-task-type",
+        ),
+        pytest.param(
+            {
+                "model_profile_id": "model-invalid",
+                "task_type": "unknown-task-type",
+                "task_kind": "coding",
+            },
+            id="unknown-task-type",
+        ),
+        pytest.param(
+            {
+                "model_profile_id": "model-invalid",
+                "task_type": TaskType.FEATURE.value,
+            },
+            id="missing-task-kind",
+        ),
+        pytest.param(
+            {
+                "model_profile_id": "model-invalid",
+                "task_type": TaskType.FEATURE.value,
+                "task_kind": 7,
+            },
+            id="non-string-task-kind",
+        ),
+    ),
+)
+def test_representative_selection_excludes_invalid_record_dimensions(
+    invalid_record: dict[str, object],
+) -> None:
+    valid = _record(
+        model="model-valid",
+        task_type=TaskType.FEATURE,
+        suite_id="valid",
+    )
+
+    assert select_representative_evidence([invalid_record, valid]) == (valid,)
+
+
+def test_representative_selection_breaks_timestamp_ties_deterministically() -> None:
+    tied_records = [
+        _record(
+            model="model-a",
+            task_type=TaskType.FEATURE,
+            suite_id="tie-a",
+            registered_at=5.0,
+        ),
+        _record(
+            model="model-a",
+            task_type=TaskType.FEATURE,
+            suite_id="tie-b",
+            registered_at=5.0,
+        ),
+    ]
+
+    selected = select_representative_evidence(tied_records, max_cases=1)
+    reversed_selected = select_representative_evidence(
+        list(reversed(tied_records)),
+        max_cases=1,
+    )
+
+    assert selected[0]["suite_id"] == "tie-b"
+    assert selected == reversed_selected
+
+
+def test_representative_selection_uses_distinct_records_in_second_round() -> None:
+    records = [
+        _record(
+            model=model,
+            task_type=task_type,
+            suite_id=f"{task_type.value}-{model}",
+        )
+        for model in ("model-b", "model-a")
+        for task_type in (TaskType.FEATURE, TaskType.BUG_FIX)
+    ]
+
+    selected = select_representative_evidence(records, max_cases=4)
+    selected_suite_ids = [str(record["suite_id"]) for record in selected]
+
+    assert selected_suite_ids == [
+        "bug_fix-model-a",
+        "feature-model-a",
+        "bug_fix-model-b",
+        "feature-model-b",
+    ]
+    assert len(selected_suite_ids) == len(set(selected_suite_ids))
+
+
 @pytest.mark.parametrize("max_cases", [0, 11, cast(int, True)])
 def test_representative_selection_has_a_task_type_sized_bound(
     max_cases: int,
