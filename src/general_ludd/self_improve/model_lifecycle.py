@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import math
 import os
 import re
 import shutil
+import threading
 import time
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -24,6 +28,46 @@ _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _DEFAULT_QUOTA_BYTES = 8 * 1024 * 1024 * 1024
 _DEFAULT_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
 _JSON_LIMIT = 64 * 1024
+_DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 15.0
+
+logger = logging.getLogger(__name__)
+
+
+class ModelAcquisitionPhase(StrEnum):
+    """Secret-safe phases emitted during managed model acquisition."""
+
+    CACHE_HIT = "cache_hit"
+    REVISION_RESOLUTION_STARTED = "revision_resolution_started"
+    REVISION_RESOLUTION_PROGRESS = "revision_resolution_progress"
+    REVISION_RESOLUTION_COMPLETED = "revision_resolution_completed"
+    REVISION_RESOLUTION_FAILED = "revision_resolution_failed"
+    DOWNLOAD_STARTED = "download_started"
+    DOWNLOAD_PROGRESS = "download_progress"
+    DOWNLOAD_COMPLETED = "download_completed"
+    DOWNLOAD_FAILED = "download_failed"
+
+
+class ModelAcquisitionFailure(StrEnum):
+    """Bounded failure categories that never include exception messages."""
+
+    TIMEOUT = "timeout"
+    IO = "io"
+    VALIDATION = "validation"
+    INTERRUPTED = "interrupted"
+    INTERNAL = "internal"
+
+
+@dataclass(frozen=True, slots=True)
+class ModelAcquisitionEvent:
+    """One bounded event for an observable managed-model operation."""
+
+    phase: ModelAcquisitionPhase
+    operation_id: str
+    repository_key: str
+    model_key: str | None
+    revision: str | None
+    elapsed_seconds: float
+    failure: ModelAcquisitionFailure | None = None
 
 
 class _Downloader(Protocol):
@@ -195,6 +239,8 @@ class ModelLeaseManager:
         disk_free: Callable[[Path], int] | None = None,
         revision_deleter: Callable[[Path, str], None] | None = None,
         process_started: Callable[[int], float | None] | None = None,
+        event_sink: Callable[[ModelAcquisitionEvent], None] | None = None,
+        heartbeat_interval_seconds: float = _DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     ) -> None:
         """Initialize a dedicated model cache with explicit quota and reserve."""
         selected_root = cache_root or _default_cache_root()
@@ -219,6 +265,18 @@ class ModelLeaseManager:
             or self.reserve_bytes < 0
         ):
             raise ValueError("model cache quota must be positive and reserve non-negative")
+        if event_sink is not None and not callable(event_sink):
+            raise TypeError("model acquisition event sink must be callable")
+        if (
+            isinstance(heartbeat_interval_seconds, bool)
+            or not isinstance(heartbeat_interval_seconds, (int, float))
+            or not math.isfinite(float(heartbeat_interval_seconds))
+            or heartbeat_interval_seconds <= 0
+        ):
+            raise ValueError("model acquisition heartbeat interval must be positive and finite")
+        self._event_sink = event_sink
+        self._heartbeat_interval_seconds = float(heartbeat_interval_seconds)
+        self._event_sink_lock = threading.Lock()
 
         self._models_dir = self.cache_root / ".gludd" / "models"
         self._leases_dir = self.cache_root / ".gludd" / "leases"
@@ -235,6 +293,130 @@ class ModelLeaseManager:
         if current_started is None:
             raise RuntimeError("cannot identify current model lease owner")
         self._current_started = current_started
+
+    @staticmethod
+    def _identity_key(value: str) -> str:
+        """Return a bounded correlation key without exposing an identifier."""
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+    @staticmethod
+    def _failure_category(error: BaseException) -> ModelAcquisitionFailure:
+        """Map an exception to a stable category without retaining its message."""
+        if isinstance(error, TimeoutError):
+            return ModelAcquisitionFailure.TIMEOUT
+        if isinstance(error, (KeyboardInterrupt, SystemExit)):
+            return ModelAcquisitionFailure.INTERRUPTED
+        if isinstance(error, OSError):
+            return ModelAcquisitionFailure.IO
+        if isinstance(error, ValueError):
+            return ModelAcquisitionFailure.VALIDATION
+        return ModelAcquisitionFailure.INTERNAL
+
+    def _emit_event(self, event: ModelAcquisitionEvent) -> None:
+        """Invoke the non-blocking observer without risking model ownership."""
+        with self._event_sink_lock:
+            sink = self._event_sink
+        if sink is None:
+            return
+        try:
+            sink(event)
+        except Exception:
+            with self._event_sink_lock:
+                if self._event_sink is sink:
+                    self._event_sink = None
+            logger.warning(
+                "model acquisition event sink failed for phase=%s",
+                event.phase.value,
+            )
+
+    def _emit_cache_hit(self, artifact: _OwnedArtifact) -> None:
+        """Emit verified cache reuse without exposing paths or repository names."""
+        self._emit_event(
+            ModelAcquisitionEvent(
+                phase=ModelAcquisitionPhase.CACHE_HIT,
+                operation_id=uuid.uuid4().hex,
+                repository_key=self._identity_key(artifact.repo_id),
+                model_key=self._identity_key(artifact.model_id),
+                revision=artifact.revision,
+                elapsed_seconds=0.0,
+            )
+        )
+
+    @contextmanager
+    def _observe_operation(
+        self,
+        *,
+        repository_id: str,
+        model_id: str | None,
+        revision: str | None,
+        started_phase: ModelAcquisitionPhase,
+        progress_phase: ModelAcquisitionPhase,
+        completed_phase: ModelAcquisitionPhase,
+        failed_phase: ModelAcquisitionPhase,
+    ) -> Iterator[Callable[[str | None], None]]:
+        """Emit ordered lifecycle events and bounded periodic heartbeats."""
+        if self._event_sink is None:
+            yield lambda _revision: None
+            return
+
+        operation_id = uuid.uuid4().hex
+        repository_key = self._identity_key(repository_id)
+        model_key = self._identity_key(model_id) if model_id is not None else None
+        started_at = time.monotonic()
+        completed_revision = [revision]
+
+        def event(
+            phase: ModelAcquisitionPhase,
+            *,
+            failure: ModelAcquisitionFailure | None = None,
+        ) -> ModelAcquisitionEvent:
+            return ModelAcquisitionEvent(
+                phase=phase,
+                operation_id=operation_id,
+                repository_key=repository_key,
+                model_key=model_key,
+                revision=completed_revision[0],
+                elapsed_seconds=round(max(0.0, time.monotonic() - started_at), 3),
+                failure=failure,
+            )
+
+        def remember_revision(resolved: str | None) -> None:
+            completed_revision[0] = (
+                resolved if isinstance(resolved, str) and _SHA_RE.fullmatch(resolved) else None
+            )
+
+        self._emit_event(event(started_phase))
+        stopped = threading.Event()
+
+        def heartbeat() -> None:
+            while not stopped.wait(self._heartbeat_interval_seconds):
+                self._emit_event(event(progress_phase))
+
+        observer: threading.Thread | None = None
+        if self._event_sink is not None:
+            observer = threading.Thread(
+                target=heartbeat,
+                name=f"gludd-model-acquire-{operation_id[:8]}",
+                daemon=False,
+            )
+            observer.start()
+
+        def stop_observer() -> None:
+            stopped.set()
+            if observer is not None:
+                observer.join()
+
+        try:
+            yield remember_revision
+        except BaseException as error:
+            stop_observer()
+            self._emit_event(
+                event(failed_phase, failure=self._failure_category(error))
+            )
+            raise
+        else:
+            stop_observer()
+            self._emit_event(event(completed_phase))
 
     @contextmanager
     def acquire(
@@ -348,11 +530,25 @@ class ModelLeaseManager:
                 raise RuntimeError(
                     f"owned model artifact is missing or changed: {newest.path}"
                 )
+            self._emit_cache_hit(newest)
             return newest.revision
-        resolved = self._resolve_revision(normalized_repo)
-        revision = resolved.lower() if isinstance(resolved, str) else ""
-        if _SHA_RE.fullmatch(revision) is None:
-            raise RuntimeError("model revision resolver did not return a 40-character commit")
+
+        with self._observe_operation(
+            repository_id=normalized_repo,
+            model_id=None,
+            revision=None,
+            started_phase=ModelAcquisitionPhase.REVISION_RESOLUTION_STARTED,
+            progress_phase=ModelAcquisitionPhase.REVISION_RESOLUTION_PROGRESS,
+            completed_phase=ModelAcquisitionPhase.REVISION_RESOLUTION_COMPLETED,
+            failed_phase=ModelAcquisitionPhase.REVISION_RESOLUTION_FAILED,
+        ) as remember_revision:
+            resolved = self._resolve_revision(normalized_repo)
+            revision = resolved.lower() if isinstance(resolved, str) else ""
+            if _SHA_RE.fullmatch(revision) is None:
+                raise RuntimeError(
+                    "model revision resolver did not return a 40-character commit"
+                )
+            remember_revision(revision)
         return revision
 
     def _acquire_managed(
@@ -374,21 +570,34 @@ class ModelLeaseManager:
             raise RuntimeError("planned model revision must be a 40-character commit")
 
         cached = self._find_owned(config, revision)
-        if cached is None:
+        if cached is not None:
+            self._emit_cache_hit(cached)
+        else:
             estimated = config.size_mb * 1024 * 1024
             self.reclaim(required_bytes=estimated)
             lock_path = self._acquisition_lock_path(config.repo, revision)
             descriptor = self._claim_acquisition(lock_path)
             try:
                 cached = self._find_owned(config, revision)
-                if cached is None:
+                if cached is not None:
+                    self._emit_cache_hit(cached)
+                else:
                     downloader = self._downloader_factory(self.cache_root)
-                    downloaded = downloader.download_gguf(
-                        config.repo,
-                        config.filename,
+                    with self._observe_operation(
+                        repository_id=config.repo,
+                        model_id=config.name,
                         revision=revision,
-                    )
-                    cached = self._record_download(config, revision, downloaded)
+                        started_phase=ModelAcquisitionPhase.DOWNLOAD_STARTED,
+                        progress_phase=ModelAcquisitionPhase.DOWNLOAD_PROGRESS,
+                        completed_phase=ModelAcquisitionPhase.DOWNLOAD_COMPLETED,
+                        failed_phase=ModelAcquisitionPhase.DOWNLOAD_FAILED,
+                    ):
+                        downloaded = downloader.download_gguf(
+                            config.repo,
+                            config.filename,
+                            revision=revision,
+                        )
+                        cached = self._record_download(config, revision, downloaded)
             finally:
                 os.close(descriptor)
                 with suppress(FileNotFoundError):
@@ -654,4 +863,10 @@ class ModelLeaseManager:
             ) from exc
 
 
-__all__ = ["AcquiredModel", "ModelLeaseManager"]
+__all__ = [
+    "AcquiredModel",
+    "ModelAcquisitionEvent",
+    "ModelAcquisitionFailure",
+    "ModelAcquisitionPhase",
+    "ModelLeaseManager",
+]
