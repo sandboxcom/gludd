@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import shutil
@@ -388,7 +389,10 @@ def create_app(
     @application.post("/jobs/execute")
     async def execute_job(job: JobSpec) -> dict[str, Any]:
         if job.work_type == "self_improve":
-            from general_ludd.self_improve import ApprovedSelfImprovePlan
+            from general_ludd.self_improve import (
+                ApprovedSelfImprovePlan,
+                ManagedSelfImproveResultArtifact,
+            )
 
             def reject(reason: str, description: str) -> HTTPException:
                 return HTTPException(
@@ -444,6 +448,10 @@ def create_app(
                 )
                 async with application.state.self_improve_model_lock:
                     managed_result = await asyncio.to_thread(managed_runner.run, plan)
+                result_artifact = ManagedSelfImproveResultArtifact.from_run_result(
+                    managed_result
+                )
+                result_summary = result_artifact.to_json()
             except Exception as exc:
                 logger.error(
                     "Managed self-improvement failed for job_id=%s error_type=%s",
@@ -460,7 +468,16 @@ def create_app(
                     "tool_calls_detected": [],
                     "tool_dispatch_results": [],
                     "exit_code": 1,
-                    "result_summary": "managed self-improvement failed",
+                    "result_summary": json.dumps(
+                        {
+                            "accepted": False,
+                            "kind": "managed_self_improve",
+                            "reason": "managed_execution_failed",
+                        },
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
                     "artifacts": [],
                     "events": [
                         {
@@ -470,9 +487,8 @@ def create_app(
                     ],
                 }
 
-            accepted = managed_result.accepted
-            attempts = managed_result.attempts
-            disposition = "accepted" if accepted else "rejected"
+            accepted = result_artifact.accepted
+            attempts = result_artifact.attempts
             return {
                 "status": "created",
                 "return_id": f"RET-{job.job_id}",
@@ -483,24 +499,22 @@ def create_app(
                 "tool_calls_detected": [],
                 "tool_dispatch_results": [],
                 "exit_code": 0 if accepted else 1,
-                "result_summary": (
-                    f"managed self-improvement {disposition} after {attempts} attempt(s)"
-                ),
+                "result_summary": result_summary,
                 "artifacts": [],
                 "events": [
                     {
                         "event": "self_improve_completed",
                         "accepted": accepted,
                         "attempts": attempts,
-                        "plan_identity_digest": managed_result.plan_identity_digest,
+                        "plan_identity_digest": result_artifact.plan_identity_digest,
                         "attempt_identity_digest": (
-                            managed_result.attempt_identity_digest
+                            result_artifact.attempt_identity_digest
                         ),
                         "attempted_model_ids": list(
-                            managed_result.attempted_model_ids
+                            result_artifact.attempted_model_ids
                         ),
                         "outcome_record_ids": list(
-                            managed_result.outcome_record_ids
+                            result_artifact.outcome_record_ids
                         ),
                     }
                 ],

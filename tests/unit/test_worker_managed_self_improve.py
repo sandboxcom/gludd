@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -18,22 +18,25 @@ import general_ludd.projects.workspace as workspace_module
 import general_ludd.self_improve as self_improve_package
 import general_ludd.worker.app as worker_app
 from general_ludd.models.gateway import ModelProfile
-from general_ludd.self_improve.codex_comparison import CodexReference
-from general_ludd.self_improve.managed_runner import ApprovedSelfImprovePlan, TaskSpec
-
-
-@dataclass(frozen=True)
-class _ManagedResult:
-    accepted: bool
-    attempts: int
-    plan_identity_digest: str
-    attempt_identity_digest: str
-    attempted_model_ids: tuple[str, ...] = ("qwen-test",)
-    outcome_record_ids: tuple[str, ...] = ("outcome-1",)
+from general_ludd.self_improve.codex_comparison import (
+    CandidateEvidence,
+    CodexReference,
+    ComparisonResult,
+    ProposalManifest,
+)
+from general_ludd.self_improve.managed_runner import (
+    ApprovedSelfImprovePlan,
+    AttemptResult,
+    ManagedRunResult,
+    TaskSpec,
+)
+from general_ludd.self_improve.result_artifact import (
+    ManagedSelfImproveResultArtifact,
+)
 
 
 class _Runner:
-    def __init__(self, result: _ManagedResult, *, delay: float = 0.0) -> None:
+    def __init__(self, result: ManagedRunResult, *, delay: float = 0.0) -> None:
         self.result = result
         self.delay = delay
         self.plans: list[ApprovedSelfImprovePlan] = []
@@ -41,7 +44,7 @@ class _Runner:
         self.active = 0
         self.max_active = 0
 
-    def run(self, plan: ApprovedSelfImprovePlan) -> _ManagedResult:
+    def run(self, plan: ApprovedSelfImprovePlan) -> ManagedRunResult:
         with self._counter_lock:
             self.active += 1
             self.max_active = max(self.max_active, self.active)
@@ -66,7 +69,7 @@ class _Factory:
 
 
 class _FailingRunner:
-    def run(self, _plan: ApprovedSelfImprovePlan) -> _ManagedResult:
+    def run(self, _plan: ApprovedSelfImprovePlan) -> ManagedRunResult:
         raise RuntimeError("secret-token")
 
 
@@ -94,6 +97,70 @@ def _plan(repo_root: Path, *, project_id: str = "project-worker") -> ApprovedSel
         prompt="Return one bounded worker endpoint improvement.",
         required_output_tokens=512,
         max_attempts=1,
+    )
+
+
+def _managed_result(
+    plan: ApprovedSelfImprovePlan,
+    *,
+    accepted: bool = True,
+) -> ManagedRunResult:
+    proposal = ProposalManifest.from_json(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "baseline_sha": plan.reference.baseline_sha,
+                "task_id": plan.task.task_id,
+                "edits": [
+                    {
+                        "operation": "replace",
+                        "path": "src/general_ludd/worker/app.py",
+                        "old_text": "before",
+                        "new_text": "after",
+                    }
+                ],
+                "tests": ["tests/unit/test_worker_managed_self_improve.py"],
+                "make_commands": list(plan.task.canonical_make_commands),
+                "commit_message": "feat: improve worker runtime",
+            }
+        )
+    )
+    evidence = CandidateEvidence(
+        changed_files=frozenset({"src/general_ludd/worker/app.py"}),
+        tests_passed=accepted,
+        warnings=0,
+        coverage_aggregate=93.0,
+        coverage_min_file=86.0,
+        ruff_passed=True,
+        mypy_passed=True,
+        docstrings_passed=True,
+        markdown_passed=True,
+        cleanup_passed=True,
+        commit_count=1,
+        worktree_clean=True,
+        elapsed_seconds=0.1,
+        changed_lines=2,
+    )
+    comparison = ComparisonResult(
+        accepted=accepted,
+        score=100.0 if accepted else 50.0,
+        blockers=() if accepted else ("tests",),
+        changed_file_precision=1.0,
+        changed_file_recall=1.0,
+    )
+    return ManagedRunResult(
+        final_result=AttemptResult(
+            comparison=comparison,
+            evidence=evidence,
+            patch_equivalence="worker-patch-identity",
+            proposal=proposal,
+            diagnostics="" if accepted else "tests failed",
+            attempt_identity_digest=plan.attempt_identity_digest,
+        ),
+        attempts=1,
+        plan_identity_digest=plan.identity_digest,
+        attempted_model_ids=("qwen-test",),
+        outcome_record_ids=("outcome-1",),
     )
 
 
@@ -174,7 +241,7 @@ def test_default_runner_factory_delegates_to_installed_composition_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    sentinel: Any = _Runner(_ManagedResult(True, 1, "x", "y"))
+    sentinel: Any = _Runner(_managed_result(_plan(tmp_path)))
     roots: list[Path] = []
 
     def build(repo_root: Path) -> Any:
@@ -303,12 +370,7 @@ async def test_self_improve_executes_approved_plan_without_playbook_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     plan = _plan(tmp_path)
-    managed = _ManagedResult(
-        accepted=True,
-        attempts=1,
-        plan_identity_digest=plan.identity_digest,
-        attempt_identity_digest=plan.attempt_identity_digest,
-    )
+    managed = _managed_result(plan)
     runner = _Runner(managed)
     factory = _Factory(runner)
     app = _build_app(monkeypatch, repo_root=tmp_path, factory=factory)
@@ -320,6 +382,14 @@ async def test_self_improve_executes_approved_plan_without_playbook_fallback(
     body = response.json()
     assert body["status"] == "created"
     assert body["exit_code"] == 0
+    artifact = ManagedSelfImproveResultArtifact.from_json(body["result_summary"])
+    assert artifact.to_json() == body["result_summary"]
+    assert artifact.plan_identity_digest == plan.identity_digest
+    assert artifact.attempt_identity_digest == plan.attempt_identity_digest
+    assert artifact.proposal == managed.final_result.proposal
+    assert artifact.evidence == managed.final_result.evidence
+    assert artifact.comparison == managed.final_result.comparison
+    assert "managed self-improvement accepted" not in body["result_summary"]
     assert body["events"] == [{
         "event": "self_improve_completed",
         "accepted": True,
@@ -339,22 +409,25 @@ async def test_self_improve_rejection_is_a_typed_failed_task_return(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     plan = _plan(tmp_path)
-    runner = _Runner(
-        _ManagedResult(
-            accepted=False,
-            attempts=1,
-            plan_identity_digest=plan.identity_digest,
-            attempt_identity_digest=plan.attempt_identity_digest,
-        )
-    )
+    managed = _managed_result(plan, accepted=False)
+    runner = _Runner(managed)
     app = _build_app(monkeypatch, repo_root=tmp_path, factory=_Factory(runner))
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post("/jobs/execute", json=_payload(plan))
 
     assert response.status_code == 200
-    assert response.json()["exit_code"] == 1
-    assert response.json()["events"][0]["accepted"] is False
+    body = response.json()
+    assert body["exit_code"] == 1
+    artifact = ManagedSelfImproveResultArtifact.from_json(body["result_summary"])
+    assert artifact.to_json() == body["result_summary"]
+    assert artifact.accepted is False
+    assert artifact.plan_identity_digest == plan.identity_digest
+    assert artifact.proposal == managed.final_result.proposal
+    assert artifact.evidence == managed.final_result.evidence
+    assert artifact.comparison.blockers == ("tests",)
+    assert body["events"][0]["accepted"] is False
+    assert "managed self-improvement rejected" not in body["result_summary"]
 
 
 @pytest.mark.asyncio
@@ -375,7 +448,7 @@ async def test_self_improve_fails_closed_for_missing_malformed_or_mismatched_ide
     reason: str,
 ) -> None:
     plan = _plan(tmp_path)
-    factory = _Factory(_Runner(_ManagedResult(True, 1, "x", "y")))
+    factory = _Factory(_Runner(_managed_result(plan)))
     app = _build_app(monkeypatch, repo_root=tmp_path, factory=factory)
     payload = _payload(plan)
     payload.update(payload_change)
@@ -394,7 +467,7 @@ async def test_self_improve_fails_closed_when_repository_mapping_is_absent_or_mi
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     plan = _plan(tmp_path)
-    factory = _Factory(_Runner(_ManagedResult(True, 1, "x", "y")))
+    factory = _Factory(_Runner(_managed_result(plan)))
 
     def missing(_project_id: str) -> Path:
         raise LookupError("not configured")
@@ -455,12 +528,7 @@ async def test_self_improve_model_execution_is_serialized_per_worker(
 ) -> None:
     plan = _plan(tmp_path)
     runner = _Runner(
-        _ManagedResult(
-            accepted=True,
-            attempts=1,
-            plan_identity_digest=plan.identity_digest,
-            attempt_identity_digest=plan.attempt_identity_digest,
-        ),
+        _managed_result(plan),
         delay=0.05,
     )
     app = _build_app(monkeypatch, repo_root=tmp_path, factory=_Factory(runner))
@@ -493,7 +561,11 @@ async def test_self_improve_runtime_exception_is_secret_safe_failed_return(
     body = response.json()
     assert response.status_code == 200
     assert body["exit_code"] == 1
-    assert body["result_summary"] == "managed self-improvement failed"
+    assert json.loads(body["result_summary"]) == {
+        "accepted": False,
+        "kind": "managed_self_improve",
+        "reason": "managed_execution_failed",
+    }
     assert "secret-token" not in response.text
     assert body["events"] == [
         {"event": "self_improve_failed", "reason": "managed_execution_failed"}
