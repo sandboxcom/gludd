@@ -43,6 +43,50 @@ Those keywords caused a native grammar-expansion crash with the one-megabyte
 runtime text bound. Python parsing remains authoritative for all count and byte
 limits.
 
+## Structured proposal decoding
+
+The implementation boundary is llama-cpp-python's documented chat
+`response_format` API, using `{"type": "json_object", "schema": ...}` with
+the existing proposal schema. The repository pins llama-cpp-python 0.3.24. Its
+chat formatter converts that public request shape to
+`LlamaGrammar.from_json_schema`, and its schema converter emits object rules
+from `required`, `additionalProperties`, `const`, `enum`, array bounds,
+and supported patterns. Gludd must not maintain another JSON-Schema-to-GBNF
+converter or depend on private formatter helpers. It also must not use the newer
+OpenAI `{"type": "json_schema"}` spelling unless the pinned runtime explicitly
+supports it.
+
+The full schema is supplied through `response_format`, not merely
+`{"type": "json_object"}`; JSON-only mode proves syntax but cannot require
+`schema_version`, `task_id`, `tests`, or the other proposal fields. The
+prompt still names the required shape because llama.cpp documents that a schema
+constrains sampling but is not injected into the model prompt. This gives the
+model both semantic guidance and a token-level structural boundary.
+
+Grammar acceptance is not promotion evidence. Gludd still checks the completion
+finish reason, extracts one complete object, and validates it again through
+`ProposalManifest.from_json`. A length stop, missing closing object, absent
+required field, extra field, wrong baseline, unsafe path, oversized value, or
+invalid Make command remains a failed proposal. The runner must classify and
+record that bounded failure against the immutable model identity before trying
+a different eligible candidate; it must not silently retry unconstrained output
+or weaken required fields.
+
+Grammar construction and inference remain inside the owned proposal worker. A
+converter exception, native crash, cancellation, or timeout therefore tears down
+the same process group, exchange directory, and model lease as any other failed
+attempt. The bounded schema is compiled once per worker invocation; it does not
+start a persistent llama.cpp server or add another cache owner. Decode tokens,
+context, elapsed time, proposal bytes, and diagnostic tails retain their existing
+limits.
+
+This change is zero-downtime because it changes only an isolated, unpromoted
+candidate path. It has no daemon or database migration and cannot interrupt a
+current Gludd deployment. Rollback restores the previous gateway commit; model
+manifests and leases are format-independent and remain valid. If the public
+structured-output path is incompatible with a pinned runtime or model, the
+attempt fails closed and the previously admitted revision remains available.
+
 ## Automatic model acquisition and ownership
 
 The normal self-improvement path no longer requires an operator to run a model
@@ -163,6 +207,18 @@ harness cleanup compensates for missing application ownership.
 
 Official sources:
 
+- [llama-cpp-python JSON and JSON Schema mode](https://github.com/abetlen/llama-cpp-python#json-and-json-schema-mode)
+  documents `create_chat_completion(response_format={"type": "json_object",
+  "schema": ...})` as the public schema-constrained chat API.
+- [llama-cpp-python chat-format source](https://github.com/abetlen/llama-cpp-python/blob/main/llama_cpp/llama_chat_format.py)
+  converts that request shape to `LlamaGrammar.from_json_schema`; the
+  [schema-converter source](https://github.com/abetlen/llama-cpp-python/blob/main/llama_cpp/llama_grammar.py)
+  constructs the required-property and additional-property grammar rules. These
+  are upstream seams Gludd reuses rather than reimplementing.
+- [llama.cpp grammar documentation](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md)
+  defines the supported JSON Schema subset and warns that the schema constrains
+  output without being shown to the model, which is why Gludd also describes the
+  contract in the prompt and validates the result independently.
 - [SWE-bench evaluation](https://github.com/SWE-bench/SWE-bench) evaluates a
   generated patch by applying it to a reproducible repository environment and
   running its tests. Gludd adds repository-specific static, resource, and Git
@@ -183,6 +239,15 @@ Official sources:
 
 Practitioner evidence:
 
+- [llama-cpp-python issue 1483](https://github.com/abetlen/llama-cpp-python/issues/1483)
+  has remained open since May 2024 after a user supplied a schema with four
+  required fields and observed the Python kernel die during streamed structured
+  generation. Gludd therefore compiles and runs grammar-constrained inference
+  only in its owned subprocess and treats native death as bounded evidence.
+- [llama-cpp-python discussion 614](https://github.com/abetlen/llama-cpp-python/discussions/614)
+  records unresolved user difficulty hand-building and parsing GBNF since
+  August 2023. Gludd uses the maintained schema API instead of asking models or
+  operators to construct grammar text.
 - [llama.cpp issue 20164](https://github.com/ggml-org/llama.cpp/issues/20164)
   reports long-lived structured/tool-use reliability problems.
 - [llama.cpp issue 15012](https://github.com/ggml-org/llama.cpp/issues/15012)
