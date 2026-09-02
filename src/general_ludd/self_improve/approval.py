@@ -22,9 +22,17 @@ Two surfaces are provided:
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Protocol
 
 from general_ludd.schemas.todo import Todo, TodoStatus, validate_transition
+from general_ludd.self_improve.staging import (
+    MANAGED_SELF_IMPROVE_APPROVAL_POLICY,
+    ManagedSelfImproveArtifactKind,
+    classify_self_improve_artifact,
+    validate_bound_managed_plan,
+)
 
 #: Work type stamped on self-improve todos (see event_loop/loop.py). The wired
 #: release path refuses to approve/reject anything else so this human gate can
@@ -73,6 +81,18 @@ class SelfImproveApprovalManager:
     not be able to "approve" an already-running or completed todo).
     """
 
+    def __init__(
+        self,
+        managed_repo_resolver: Callable[[str], Path] | None = None,
+    ) -> None:
+        """Bind the optional trusted project-to-repository resolver.
+
+        Legacy config/non-config records do not need this resolver. Managed
+        periodic requests do: without a trusted canonical root, their stored
+        execution plan cannot be safely released into the scheduler.
+        """
+        self._managed_repo_resolver = managed_repo_resolver
+
     def is_pending_approval(self, todo: Todo) -> bool:
         """True when ``todo`` is awaiting a human approve/reject decision."""
         return todo.status == TodoStatus.APPROVAL_REQUIRED
@@ -93,6 +113,7 @@ class SelfImproveApprovalManager:
                 f"Cannot approve {todo.todo_id}: "
                 f"{todo.status.value} -> queued is not a valid transition"
             )
+        self._validate_managed_release(todo)
         todo.transition_to(TodoStatus.QUEUED)
         return todo
 
@@ -213,6 +234,55 @@ class SelfImproveApprovalManager:
                 f"Cannot {action} {todo_id}: not a self-improve todo "
                 f"(work_type={work_type})"
             )
+        if target == TodoStatus.QUEUED:
+            self._validate_managed_release(todo)
         return await store.transition(
             todo_id, target, expected_version=todo.version, project_id=project_id
         )
+
+    def _validate_managed_release(self, todo: Any) -> None:
+        """Require a canonical, row-bound plan for managed periodic work."""
+        policy = getattr(todo, "approval_policy", None)
+        if policy != MANAGED_SELF_IMPROVE_APPROVAL_POLICY:
+            # Existing config and non-config flows use their own immutable
+            # artifacts and two-step apply endpoints. Preserve that behavior
+            # until those flows are migrated to a separate status/type.
+            return
+        raw = getattr(todo, "plan_artifact", None)
+        artifact_kind = classify_self_improve_artifact(raw, policy)
+        if artifact_kind is ManagedSelfImproveArtifactKind.MANAGED_PLAN_REQUEST:
+            raise ApprovalError(
+                "Cannot approve managed self-improve todo: plan must be prepared "
+                "from explicit immutable baseline/reference commits first"
+            )
+        if artifact_kind is not ManagedSelfImproveArtifactKind.MANAGED_APPROVED_PLAN:
+            raise ApprovalError(
+                "Cannot approve managed self-improve todo: managed plan artifact "
+                "is missing or malformed"
+            )
+        todo_id = getattr(todo, "todo_id", None)
+        project_id = getattr(todo, "project_id", None)
+        if not isinstance(todo_id, str) or not isinstance(project_id, str):
+            raise ApprovalError(
+                "Cannot approve managed self-improve todo: row identity is malformed"
+            )
+        if self._managed_repo_resolver is None:
+            raise ApprovalError(
+                "Cannot approve managed self-improve todo: canonical repository "
+                "resolver is unavailable"
+            )
+        try:
+            repo_root = self._managed_repo_resolver(project_id)
+            validate_bound_managed_plan(
+                raw,
+                todo_id=todo_id,
+                project_id=project_id,
+                repo_root=repo_root,
+            )
+        except ApprovalError:
+            raise
+        except Exception as exc:
+            raise ApprovalError(
+                "Cannot approve managed self-improve todo: stored plan is not "
+                "bound to its todo, project, and canonical repository"
+            ) from exc
