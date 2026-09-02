@@ -76,6 +76,29 @@ def test_every_hub_download_path_binds_the_configured_cache(tmp_path: Path) -> N
     assert ollama_snapshot.call_args.kwargs["cache_dir"] == str(cache_dir)
 
 
+def test_anonymous_hub_download_explicitly_disables_implicit_auth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache_dir = tmp_path / "models"
+    downloaded = tmp_path / "weights.gguf"
+    downloaded.write_bytes(_GGUF_BYTES)
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
+    downloader = ModelDownloader(cache_dir=str(cache_dir))
+
+    with (
+        patch("huggingface_hub.try_to_load_from_cache", return_value=None),
+        patch(
+            "huggingface_hub.hf_hub_download",
+            return_value=str(downloaded),
+        ) as hub_download,
+    ):
+        downloader.download_gguf("org/public", "weights.gguf", revision=_REVISION)
+
+    assert hub_download.call_args.kwargs["token"] is False
+
+
 def test_exact_cached_gguf_is_reused_without_network(tmp_path: Path) -> None:
     cache_dir = tmp_path / "models"
     cached_path, _ = _cached_artifact(cache_dir)

@@ -427,6 +427,10 @@ def test_hugging_face_helpers_pin_revision_and_execute_exact_deletion(
     monkeypatch.setenv("HF_TOKEN", "secret")
 
     assert lifecycle._default_revision_resolver("example/repo") == _REVISION
+    monkeypatch.delenv("HF_TOKEN")
+    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
+    assert lifecycle._default_revision_resolver("example/public-repo") == _REVISION
+    assert ("token", False) in observed
     assert isinstance(lifecycle._default_downloader(tmp_path), ModelDownloader)
     lifecycle._delete_hf_revision(tmp_path, _REVISION)
     assert ("example/repo", "main") in observed

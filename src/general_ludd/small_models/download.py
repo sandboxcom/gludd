@@ -243,7 +243,7 @@ class ModelDownloader:
                 model_id,
             )
 
-        token = self._resolve_token()
+        token: str | bool = self._resolve_token() or False
 
         cached = self._find_cached_artifact(model_id, filename, revision) if filename else None
         if cached is not None:
@@ -298,7 +298,7 @@ class ModelDownloader:
 
         os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", str(self.timeout))
 
-        token = self._resolve_token()
+        token: str | bool = self._resolve_token() or False
 
         cached = self._find_cached_artifact(model_id, filename, revision)
         if cached is not None:
@@ -352,7 +352,7 @@ class ModelDownloader:
                 model_id,
             )
 
-        token = self._resolve_token()
+        token: str | bool = self._resolve_token() or False
 
         local_path = snapshot_download(
             repo_id=stripped_id,

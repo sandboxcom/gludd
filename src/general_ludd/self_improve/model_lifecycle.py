@@ -6,9 +6,11 @@ import hashlib
 import json
 import logging
 import math
+import multiprocessing
 import os
 import re
 import shutil
+import stat
 import threading
 import time
 import uuid
@@ -16,6 +18,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from enum import StrEnum
+from multiprocessing.connection import Connection
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -29,6 +32,8 @@ _DEFAULT_QUOTA_BYTES = 8 * 1024 * 1024 * 1024
 _DEFAULT_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
 _JSON_LIMIT = 64 * 1024
 _DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 15.0
+_DEFAULT_ACQUISITION_TIMEOUT_SECONDS = 600.0
+_PROCESS_SHUTDOWN_GRACE_SECONDS = 5.0
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +50,9 @@ class ModelAcquisitionPhase(StrEnum):
     DOWNLOAD_PROGRESS = "download_progress"
     DOWNLOAD_COMPLETED = "download_completed"
     DOWNLOAD_FAILED = "download_failed"
+    EVICTION_PLANNED = "eviction_planned"
+    EVICTION_COMPLETED = "eviction_completed"
+    EVICTION_REFUSED = "eviction_refused"
 
 
 class ModelAcquisitionFailure(StrEnum):
@@ -149,7 +157,11 @@ def _default_revision_resolver(repo_id: str) -> str:
     from huggingface_hub import HfApi
     from huggingface_hub.errors import HfHubHTTPError
 
-    token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    token: str | bool = (
+        os.environ.get("HF_TOKEN")
+        or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+        or False
+    )
     try:
         info = HfApi(token=token).model_info(repo_id=repo_id, revision="main")
     except (HfHubHTTPError, OSError) as exc:
@@ -162,6 +174,20 @@ def _default_revision_resolver(repo_id: str) -> str:
 
 def _default_downloader(cache_root: Path) -> _Downloader:
     return ModelDownloader(cache_dir=str(cache_root))
+
+
+def _download_default_gguf(
+    cache_root: str,
+    model_id: str,
+    filename: str,
+    revision: str,
+) -> DownloadedModel:
+    """Download one immutable GGUF inside the isolated acquisition worker."""
+    return _default_downloader(Path(cache_root)).download_gguf(
+        model_id,
+        filename,
+        revision=revision,
+    )
 
 
 def _default_disk_free(cache_root: Path) -> int:
@@ -224,6 +250,92 @@ def _read_json(path: Path, label: str) -> dict[str, object]:
     return cast(dict[str, object], value)
 
 
+def _bounded_process_entry(
+    sender: Connection,
+    operation: Callable[..., object],
+    args: tuple[object, ...],
+) -> None:
+    """Execute one blocking external operation and return one bounded payload."""
+    try:
+        try:
+            sender.send(("result", operation(*args)))
+        except BaseException as error:
+            try:
+                sender.send(("error", error))
+            except Exception:
+                sender.send(("error_type", type(error).__name__))
+    finally:
+        sender.close()
+
+
+def _run_bounded_process(
+    operation: Callable[..., object],
+    args: tuple[object, ...],
+    *,
+    timeout_seconds: float,
+    process_name: str,
+) -> object:
+    """Run a blocking external operation in a terminable, always-joined process."""
+    context = multiprocessing.get_context("spawn")
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_bounded_process_entry,
+        args=(sender, operation, args),
+        name=process_name,
+        daemon=False,
+    )
+    started = False
+    try:
+        process.start()
+        started = True
+        sender.close()
+        process.join(timeout_seconds)
+        if process.is_alive():
+            process.terminate()
+            process.join(_PROCESS_SHUTDOWN_GRACE_SECONDS)
+            if process.is_alive():
+                process.kill()
+                process.join(_PROCESS_SHUTDOWN_GRACE_SECONDS)
+            if process.is_alive():
+                raise RuntimeError("model acquisition worker could not be stopped")
+            raise TimeoutError("model acquisition deadline exceeded")
+        if not receiver.poll(_PROCESS_SHUTDOWN_GRACE_SECONDS):
+            raise RuntimeError("model acquisition worker returned no result")
+        try:
+            payload = receiver.recv()
+        except EOFError as exc:
+            raise RuntimeError(
+                "model acquisition worker returned no result"
+            ) from exc
+    finally:
+        if started and process.is_alive():
+            process.terminate()
+            process.join(_PROCESS_SHUTDOWN_GRACE_SECONDS)
+            if process.is_alive():
+                process.kill()
+                process.join(_PROCESS_SHUTDOWN_GRACE_SECONDS)
+        receiver.close()
+        with suppress(OSError, ValueError):
+            sender.close()
+        if started and not process.is_alive():
+            process.close()
+
+    if (
+        not isinstance(payload, tuple)
+        or len(payload) != 2
+        or not isinstance(payload[0], str)
+    ):
+        raise RuntimeError("model acquisition worker returned an invalid result")
+    status, value = payload
+    if status == "result":
+        return value
+    if status == "error" and isinstance(value, BaseException):
+        raise value
+    if status == "error_type" and isinstance(value, str):
+        raise RuntimeError(f"model acquisition worker failed with {value}")
+    raise RuntimeError("model acquisition worker returned an invalid result")
+
+
 class ModelLeaseManager:
     """Own self-improvement model acquisition and reclaim only safe cache entries."""
 
@@ -241,6 +353,7 @@ class ModelLeaseManager:
         process_started: Callable[[int], float | None] | None = None,
         event_sink: Callable[[ModelAcquisitionEvent], None] | None = None,
         heartbeat_interval_seconds: float = _DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+        acquisition_timeout_seconds: float | None = None,
     ) -> None:
         """Initialize a dedicated model cache with explicit quota and reserve."""
         selected_root = cache_root or _default_cache_root()
@@ -274,8 +387,27 @@ class ModelLeaseManager:
             or heartbeat_interval_seconds <= 0
         ):
             raise ValueError("model acquisition heartbeat interval must be positive and finite")
+        timeout_value: object = (
+            acquisition_timeout_seconds
+            if acquisition_timeout_seconds is not None
+            else os.environ.get(
+                "GLUDD_SELF_IMPROVE_MODEL_ACQUISITION_TIMEOUT_SECONDS",
+                _DEFAULT_ACQUISITION_TIMEOUT_SECONDS,
+            )
+        )
+        if isinstance(timeout_value, bool):
+            raise ValueError("model acquisition deadline must be positive and finite")
+        try:
+            normalized_timeout = float(cast(str | float, timeout_value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "model acquisition deadline must be positive and finite"
+            ) from exc
+        if not math.isfinite(normalized_timeout) or normalized_timeout <= 0:
+            raise ValueError("model acquisition deadline must be positive and finite")
         self._event_sink = event_sink
         self._heartbeat_interval_seconds = float(heartbeat_interval_seconds)
+        self._acquisition_timeout_seconds = normalized_timeout
         self._event_sink_lock = threading.Lock()
 
         self._models_dir = self.cache_root / ".gludd" / "models"
@@ -284,7 +416,9 @@ class ModelLeaseManager:
         for directory in (self._models_dir, self._leases_dir, self._acquire_dir):
             directory.mkdir(parents=True, exist_ok=True)
         self._selector = model_selector or _default_selector
+        self._isolate_revision_resolution = revision_resolver is None
         self._resolve_revision = revision_resolver or _default_revision_resolver
+        self._isolate_download = downloader_factory is None
         self._downloader_factory = downloader_factory or _default_downloader
         self._disk_free = disk_free or _default_disk_free
         self._delete_revision = revision_deleter or _delete_hf_revision
@@ -341,6 +475,148 @@ class ModelLeaseManager:
                 elapsed_seconds=0.0,
             )
         )
+
+    def _emit_eviction_event(
+        self,
+        phase: ModelAcquisitionPhase,
+        *,
+        operation_id: str,
+        started_at: float,
+        artifact: _OwnedArtifact | None = None,
+    ) -> None:
+        """Emit one secret-safe cache-pressure decision event."""
+        self._emit_event(
+            ModelAcquisitionEvent(
+                phase=phase,
+                operation_id=operation_id,
+                repository_key=self._identity_key(
+                    artifact.repo_id if artifact is not None else "cache-pressure"
+                ),
+                model_key=(
+                    self._identity_key(artifact.model_id)
+                    if artifact is not None
+                    else None
+                ),
+                revision=artifact.revision if artifact is not None else None,
+                elapsed_seconds=round(
+                    max(0.0, time.monotonic() - started_at),
+                    3,
+                ),
+            )
+        )
+
+    def _cache_payload_bytes(self) -> int:
+        """Measure physical cache payload, including unmanifested partial files."""
+        total = 0
+        seen_files: set[tuple[int, int]] = set()
+        walk_errors: list[OSError] = []
+
+        def remember_error(error: OSError) -> None:
+            walk_errors.append(error)
+
+        for directory, child_dirs, filenames in os.walk(
+            self.cache_root,
+            followlinks=False,
+            onerror=remember_error,
+        ):
+            current = Path(directory)
+            if current == self.cache_root:
+                child_dirs[:] = [name for name in child_dirs if name != ".gludd"]
+            for filename in filenames:
+                path = current / filename
+                try:
+                    metadata = path.lstat()
+                except OSError as exc:
+                    raise RuntimeError(
+                        "cannot inspect model cache payload"
+                    ) from exc
+                if not stat.S_ISREG(metadata.st_mode):
+                    continue
+                identity = (metadata.st_dev, metadata.st_ino)
+                if identity in seen_files:
+                    continue
+                seen_files.add(identity)
+                total += metadata.st_size
+        if walk_errors:
+            raise RuntimeError("cannot inspect model cache payload") from walk_errors[0]
+        return total
+
+    def _partial_transfer_paths(self, repository_id: str | None) -> set[Path]:
+        """Snapshot regular partials under the owned cache without following links."""
+        expected_root = (
+            f"models--{repository_id.replace('/', '--')}"
+            if repository_id is not None
+            else None
+        )
+        partials: set[Path] = set()
+        try:
+            candidates = tuple(self.cache_root.rglob("*.incomplete"))
+        except OSError as exc:
+            raise RuntimeError("cannot inspect partial model transfers") from exc
+        for candidate in candidates:
+            try:
+                metadata = candidate.lstat()
+                relative = candidate.relative_to(self.cache_root)
+                resolved = candidate.resolve(strict=True)
+                resolved.relative_to(self.cache_root)
+            except (OSError, ValueError):
+                continue
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or (expected_root is not None and relative.parts[0] != expected_root)
+            ):
+                continue
+            partials.add(resolved)
+        return partials
+
+    def _cleanup_new_partial_transfers(
+        self,
+        before: set[Path],
+        *,
+        repository_id: str | None,
+    ) -> None:
+        """Delete only partial files created by this bounded operation."""
+        after = self._partial_transfer_paths(repository_id)
+        for partial in sorted(after - before):
+            try:
+                partial.unlink()
+            except OSError as exc:
+                raise RuntimeError(
+                    "timed-out model partial cleanup failed"
+                ) from exc
+
+    def _run_isolated_operation(
+        self,
+        operation: Callable[..., object],
+        args: tuple[object, ...],
+        *,
+        operation_name: str,
+        clean_partial_transfers: bool,
+        repository_id: str | None = None,
+    ) -> object:
+        """Run one default external call under a finite, terminable deadline."""
+        if operation_name not in {"download", "revision"}:
+            raise ValueError("unsupported model acquisition operation")
+        before = (
+            self._partial_transfer_paths(repository_id)
+            if clean_partial_transfers
+            else set()
+        )
+        cache_key = self._identity_key(str(self.cache_root))
+        try:
+            return _run_bounded_process(
+                operation,
+                args,
+                timeout_seconds=self._acquisition_timeout_seconds,
+                process_name=f"gludd-model-{operation_name}-{cache_key}",
+            )
+        except TimeoutError:
+            if clean_partial_transfers:
+                self._cleanup_new_partial_transfers(
+                    before,
+                    repository_id=repository_id,
+                )
+            raise
 
     @contextmanager
     def _observe_operation(
@@ -463,19 +739,27 @@ class ModelLeaseManager:
 
     def reclaim(self, *, required_bytes: int) -> tuple[Path, ...]:
         """Evict oldest owned, unleased revisions until quota/headroom is safe."""
-        if isinstance(required_bytes, bool) or required_bytes < 0:
+        if (
+            isinstance(required_bytes, bool)
+            or not isinstance(required_bytes, int)
+            or required_bytes < 0
+        ):
             raise ValueError("required_bytes must be a non-negative integer")
         manifests = self._load_manifests()
         active = self._active_digests()
-        total = sum(item.size_bytes for item in manifests)
         removed: list[Path] = []
+        operation_id = uuid.uuid4().hex
+        started_at = time.monotonic()
 
         def under_pressure() -> bool:
             try:
                 free = self._disk_free(self.cache_root)
             except OSError as exc:
                 raise RuntimeError("cannot inspect model cache disk headroom") from exc
-            return total + required_bytes > self.quota_bytes or free < self.reserve_bytes + required_bytes
+            return (
+                self._cache_payload_bytes() + required_bytes > self.quota_bytes
+                or free < self.reserve_bytes + required_bytes
+            )
 
         if not under_pressure():
             return ()
@@ -485,22 +769,59 @@ class ModelLeaseManager:
             key=lambda item: (item.last_used_ns, item.artifact_sha256),
         )
         for item in candidates:
-            self._delete_revision(self.cache_root, item.revision)
+            self._emit_eviction_event(
+                ModelAcquisitionPhase.EVICTION_PLANNED,
+                operation_id=operation_id,
+                started_at=started_at,
+                artifact=item,
+            )
+            try:
+                self._delete_revision(self.cache_root, item.revision)
+            except BaseException:
+                self._emit_eviction_event(
+                    ModelAcquisitionPhase.EVICTION_REFUSED,
+                    operation_id=operation_id,
+                    started_at=started_at,
+                    artifact=item,
+                )
+                raise
             if item.path.exists():
+                self._emit_eviction_event(
+                    ModelAcquisitionPhase.EVICTION_REFUSED,
+                    operation_id=operation_id,
+                    started_at=started_at,
+                    artifact=item,
+                )
                 raise RuntimeError(
                     f"model revision eviction did not remove owned artifact: {item.path}"
                 )
             try:
                 item.manifest_path.unlink()
             except OSError as exc:
+                self._emit_eviction_event(
+                    ModelAcquisitionPhase.EVICTION_REFUSED,
+                    operation_id=operation_id,
+                    started_at=started_at,
+                    artifact=item,
+                )
                 raise RuntimeError(
                     f"model ownership manifest cleanup failed: {item.manifest_path}"
                 ) from exc
-            total -= item.size_bytes
             removed.append(item.path)
+            self._emit_eviction_event(
+                ModelAcquisitionPhase.EVICTION_COMPLETED,
+                operation_id=operation_id,
+                started_at=started_at,
+                artifact=item,
+            )
             if not under_pressure():
                 return tuple(removed)
 
+        self._emit_eviction_event(
+            ModelAcquisitionPhase.EVICTION_REFUSED,
+            operation_id=operation_id,
+            started_at=started_at,
+        )
         raise RuntimeError(
             "insufficient model cache headroom: all remaining artifacts are leased "
             "or the configured quota/reserve cannot admit the request"
@@ -542,7 +863,16 @@ class ModelLeaseManager:
             completed_phase=ModelAcquisitionPhase.REVISION_RESOLUTION_COMPLETED,
             failed_phase=ModelAcquisitionPhase.REVISION_RESOLUTION_FAILED,
         ) as remember_revision:
-            resolved = self._resolve_revision(normalized_repo)
+            resolved: object = (
+                self._run_isolated_operation(
+                    self._resolve_revision,
+                    (normalized_repo,),
+                    operation_name="revision",
+                    clean_partial_transfers=False,
+                )
+                if self._isolate_revision_resolution
+                else self._resolve_revision(normalized_repo)
+            )
             revision = resolved.lower() if isinstance(resolved, str) else ""
             if _SHA_RE.fullmatch(revision) is None:
                 raise RuntimeError(
@@ -582,7 +912,6 @@ class ModelLeaseManager:
                 if cached is not None:
                     self._emit_cache_hit(cached)
                 else:
-                    downloader = self._downloader_factory(self.cache_root)
                     with self._observe_operation(
                         repository_id=config.repo,
                         model_id=config.name,
@@ -592,11 +921,31 @@ class ModelLeaseManager:
                         completed_phase=ModelAcquisitionPhase.DOWNLOAD_COMPLETED,
                         failed_phase=ModelAcquisitionPhase.DOWNLOAD_FAILED,
                     ):
-                        downloaded = downloader.download_gguf(
-                            config.repo,
-                            config.filename,
-                            revision=revision,
-                        )
+                        if self._isolate_download:
+                            result = self._run_isolated_operation(
+                                _download_default_gguf,
+                                (
+                                    str(self.cache_root),
+                                    config.repo,
+                                    config.filename,
+                                    revision,
+                                ),
+                                operation_name="download",
+                                clean_partial_transfers=True,
+                                repository_id=config.repo,
+                            )
+                            if not isinstance(result, DownloadedModel):
+                                raise RuntimeError(
+                                    "model acquisition worker returned an invalid artifact"
+                                )
+                            downloaded = result
+                        else:
+                            downloader = self._downloader_factory(self.cache_root)
+                            downloaded = downloader.download_gguf(
+                                config.repo,
+                                config.filename,
+                                revision=revision,
+                            )
                         cached = self._record_download(config, revision, downloaded)
             finally:
                 os.close(descriptor)

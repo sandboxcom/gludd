@@ -212,7 +212,7 @@ def test_quota_evicts_only_oldest_owned_unleased_revision(
             downloader,
             selector=lambda task: configs[task],
             revision_resolver=lambda repo: revisions[repo],
-            quota_bytes=active.path.stat().st_size,
+            quota_bytes=active.path.stat().st_size + unrelated.stat().st_size,
             revision_deleter=delete_revision,
         )
         removed = pressure_manager.reclaim(required_bytes=0)
