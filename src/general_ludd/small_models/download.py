@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -25,6 +27,8 @@ DEFAULT_CACHE_DIR = os.environ.get(
 )
 DEFAULT_DOWNLOAD_TIMEOUT = float(os.environ.get("GLUDD_HF_DOWNLOAD_TIMEOUT", "30"))
 _LARGE_DOWNLOAD_GB = 1.0
+_HF_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
+_HF_BLOB_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$", re.IGNORECASE)
 
 
 class DownloadSource(StrEnum):
@@ -34,6 +38,10 @@ class DownloadSource(StrEnum):
     GGUF = "gguf"
     OLLAMA = "ollama"
     CACHE = "cache"
+
+
+class ModelCacheIntegrityError(RuntimeError):
+    """Raised when an exact cached artifact cannot be trusted."""
 
 
 @dataclass
@@ -131,6 +139,92 @@ class ModelDownloader:
                     return oidc_token
         return self.hf_token
 
+    @staticmethod
+    def _resolved_revision(local_path: str, requested_revision: str | None) -> str | None:
+        """Return the immutable commit encoded by a Hub snapshot path."""
+        if requested_revision is not None and _HF_COMMIT_RE.fullmatch(requested_revision):
+            return requested_revision
+
+        parts = Path(local_path).parts
+        for index, part in enumerate(parts[:-1]):
+            if part == "snapshots" and _HF_COMMIT_RE.fullmatch(parts[index + 1]):
+                return parts[index + 1]
+        return requested_revision
+
+    @staticmethod
+    def _blob_digest(path: Path) -> str | None:
+        """Compute the digest encoded by a Hugging Face blob filename."""
+        blob_name = path.name
+        if not _HF_BLOB_RE.fullmatch(blob_name):
+            return None
+
+        if len(blob_name) == 64:
+            digest = hashlib.sha256()
+        else:
+            digest = hashlib.sha1(usedforsecurity=False)
+            digest.update(f"blob {path.stat().st_size}\0".encode())
+
+        with path.open("rb") as artifact:
+            for chunk in iter(lambda: artifact.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _validate_cached_artifact(self, cached_path: str, filename: str) -> None:
+        """Reject incomplete, escaped, empty, or digest-mismatched cache entries."""
+        candidate = Path(cached_path)
+        cache_root = Path(self.cache_dir).resolve(strict=True)
+        try:
+            resolved = candidate.resolve(strict=True)
+            resolved.relative_to(cache_root)
+        except (OSError, ValueError) as exc:
+            raise ModelCacheIntegrityError(
+                f"cached model artifact failed integrity validation: {candidate}"
+            ) from exc
+
+        if (
+            not resolved.is_file()
+            or resolved.stat().st_size <= 0
+            or any(part.endswith(".incomplete") for part in (*candidate.parts, *resolved.parts))
+        ):
+            raise ModelCacheIntegrityError(
+                f"cached model artifact failed integrity validation: {candidate}"
+            )
+
+        expected_digest = resolved.name.lower()
+        actual_digest = self._blob_digest(resolved)
+        if actual_digest is not None and actual_digest != expected_digest:
+            raise ModelCacheIntegrityError(
+                f"cached model artifact failed integrity validation: {candidate}"
+            )
+
+        if filename.lower().endswith(".gguf"):
+            with resolved.open("rb") as artifact:
+                if artifact.read(4) != b"GGUF":
+                    raise ModelCacheIntegrityError(
+                        f"cached model artifact failed integrity validation: {candidate}"
+                    )
+
+    def _find_cached_artifact(
+        self,
+        model_id: str,
+        filename: str,
+        revision: str | None,
+    ) -> tuple[str, str | None] | None:
+        """Look up and validate one exact artifact without contacting the Hub."""
+        from huggingface_hub import try_to_load_from_cache
+
+        cached_path = try_to_load_from_cache(
+            repo_id=model_id,
+            filename=filename,
+            cache_dir=self.cache_dir,
+            revision=revision,
+        )
+        if not isinstance(cached_path, str):
+            return None
+
+        self._validate_cached_artifact(cached_path, filename)
+        return cached_path, self._resolved_revision(cached_path, revision)
+
     def download_huggingface(
         self,
         model_id: str,
@@ -151,26 +245,36 @@ class ModelDownloader:
 
         token = self._resolve_token()
 
-        if filename:
+        cached = self._find_cached_artifact(model_id, filename, revision) if filename else None
+        if cached is not None:
+            local_path, resolved_revision = cached
+            source = DownloadSource.CACHE
+        elif filename:
             local_path = hf_hub_download(
                 repo_id=model_id,
                 filename=filename,
                 token=token,
                 revision=revision,
+                cache_dir=self.cache_dir,
             )
+            resolved_revision = self._resolved_revision(local_path, revision)
+            source = DownloadSource.HUGGINGFACE
         else:
             local_path = snapshot_download(
                 repo_id=model_id,
                 token=token,
                 revision=revision,
+                cache_dir=self.cache_dir,
             )
+            resolved_revision = self._resolved_revision(local_path, revision)
+            source = DownloadSource.HUGGINGFACE
 
         downloaded = DownloadedModel(
             model_id=model_id,
             local_path=local_path,
-            source=DownloadSource.HUGGINGFACE,
+            source=source,
             filename=filename,
-            revision=revision,
+            revision=resolved_revision,
             downloaded_at=time.time(),
         )
 
@@ -196,20 +300,28 @@ class ModelDownloader:
 
         token = self._resolve_token()
 
-        local_path = hf_hub_download(
-            repo_id=model_id,
-            filename=filename,
-            token=token,
-            revision=revision,
-            local_files_only=local_files_only,
-        )
+        cached = self._find_cached_artifact(model_id, filename, revision)
+        if cached is not None:
+            local_path, resolved_revision = cached
+            source = DownloadSource.CACHE
+        else:
+            local_path = hf_hub_download(
+                repo_id=model_id,
+                filename=filename,
+                token=token,
+                revision=revision,
+                cache_dir=self.cache_dir,
+                local_files_only=local_files_only,
+            )
+            resolved_revision = self._resolved_revision(local_path, revision)
+            source = DownloadSource.GGUF
 
         downloaded = DownloadedModel(
             model_id=model_id,
             local_path=local_path,
-            source=DownloadSource.GGUF,
+            source=source,
             filename=filename,
-            revision=revision,
+            revision=resolved_revision,
             downloaded_at=_time.time(),
         )
 
@@ -246,13 +358,14 @@ class ModelDownloader:
             repo_id=stripped_id,
             token=token,
             revision=revision,
+            cache_dir=self.cache_dir,
         )
 
         downloaded = DownloadedModel(
             model_id=model_id,
             local_path=local_path,
             source=DownloadSource.OLLAMA,
-            revision=revision,
+            revision=self._resolved_revision(local_path, revision),
             downloaded_at=_time.time(),
         )
 

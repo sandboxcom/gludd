@@ -487,6 +487,7 @@ class TestEdgeCases:
                 filename="f.gguf",
                 token="tok",
                 revision=None,
+                cache_dir=tmpdir,
                 local_files_only=True,
             )
 
