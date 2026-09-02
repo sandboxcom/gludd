@@ -658,6 +658,16 @@ Practitioner evidence:
   records a missing cache reference surfacing as `FileNotFoundError` in 2023.
   Gludd consequently requires its own complete immutable manifest and fails
   closed on an offline cache miss instead of treating cache presence as enough.
+- [Aider issue 3010](https://github.com/Aider-AI/aider/issues/3010)
+  records January 2025 reports from local Ollama/DeepSeek users whose model
+  denied seeing a file already added to the coding chat. Gludd therefore derives
+  required paths from the live Codex reference and rejects a proposal that omits
+  any of them; the model's returned edit list is never proof of complete scope.
+- [podman-compose issue 1061](https://github.com/containers/podman-compose/issues/1061)
+  has remained open since October 2024 after a nested `podman build` reported
+  status 5 while its wrapper returned status 0. Gludd treats the exact exit
+  status of every Make-mediated subprocess as authoritative and cannot publish
+  a candidate merely because a wrapper returned normally.
 
 The operational consequence is fail-closed validation, bounded raw-output
 diagnostics, isolated native inference, deterministic tool routing, and

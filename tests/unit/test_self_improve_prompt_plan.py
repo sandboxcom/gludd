@@ -128,6 +128,98 @@ def _manifest(
         "tests": list(tests), "make_commands": list(commands),
         "commit_message": "fix(self-improve): complete one bounded shard"}))
 
+def test_multifile_plan_uses_singleton_focus_shards_in_one_worker_request(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep every model turn single-file while retaining one batch worker."""
+    paths = ("src/one.py", "tests/unit/test_one.py")
+    contents = ("value = 1\n", "def test_value() -> None:\n    assert True\n")
+    for relative, content in zip(paths, contents, strict=True):
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    commands = (
+        "make test-files TESTFILES=tests/unit/test_one.py",
+    )
+    task = TaskSpec(
+        task_id="S83.133",
+        objective="Change both exact files without omitting either path.",
+        canonical_make_commands=commands,
+    )
+    reference = CodexReference(
+        baseline_sha="a" * 40,
+        reference_sha="b" * 40,
+        changed_files=frozenset(paths),
+        test_files=frozenset({paths[1]}),
+        changed_lines=2,
+        elapsed_seconds=1.0,
+    )
+
+    plan = build_prompt(task, reference, tmp_path)
+
+    expected_groups = tuple((path,) for path in sorted(paths))
+    assert tuple(shard.focus_paths for shard in plan.shards) == expected_groups
+    assert len(plan.shards) == len(paths)
+    assert all(
+        len(shard.prompt.encode("utf-8"))
+        <= runner_module._MAX_BASE_PROMPT_SHARD_BYTES
+        for shard in plan.shards
+    )
+    comparison = ComparisonResult(
+        accepted=False,
+        score=80.0,
+        blockers=("scope",),
+        changed_file_precision=1.0,
+        changed_file_recall=0.5,
+    )
+    retried = build_retry_prompt_plan(plan, comparison, diagnostics="bounded retry")
+    assert tuple(shard.focus_paths for shard in retried.shards) == expected_groups
+    assert retried.protocol_digest == plan.protocol_digest
+
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"GGUF")
+    requests: list[str] = []
+
+    def propose(
+        _runner: object,
+        _model: Path,
+        request: str,
+        *,
+        contract: ProposalContract | None = None,
+    ) -> str:
+        assert contract is not None
+        requests.append(request)
+        return encode_proposal_batch(
+            tuple(
+                _manifest(
+                    shard.focus_paths,
+                    tests=(paths[1],),
+                    commands=commands,
+                )
+                for shard in plan.shards
+            ),
+            protocol_digest=plan.protocol_digest,
+        )
+
+    monkeypatch.setattr(runner_module, "_run_local_proposal_request", propose)
+    merged = generate_local_proposal_plan(
+        runner_module.MakeRunner(tmp_path),
+        model,
+        plan,
+        task,
+        reference,
+    )
+
+    decoded_prompts, decoded_digest = decode_prompt_batch(requests[0])
+    assert len(requests) == 1
+    assert decoded_prompts == tuple(shard.prompt for shard in plan.shards)
+    assert decoded_digest == plan.protocol_digest
+    assert {edit.path for edit in merged.edits} == set(paths)
+    assert merged.tests == (paths[1],)
+    assert merged.make_commands == commands
+
+
 def test_51859_byte_multifile_context_is_decomposed_without_identity_loss(tmp_path: Path) -> None:
     _large_fixture(tmp_path)
     plan = build_prompt(_task(), _reference(), tmp_path)

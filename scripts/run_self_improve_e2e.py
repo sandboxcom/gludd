@@ -1252,7 +1252,7 @@ def build_prompt(
             current
             and (
                 len(rendered.encode("utf-8")) > _MAX_BASE_PROMPT_SHARD_BYTES
-                or len(tentative) > 3
+                or len(tentative) > 1
             )
         ):
             groups.append(tuple(current))
