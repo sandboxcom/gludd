@@ -41,6 +41,7 @@ from general_ludd.self_improve.model_lifecycle import (
     ModelLeaseManager,
 )
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+from general_ludd.small_models.recommender import map_task_to_capabilities
 
 _MAX_CAPTURE_BYTES: Final = 2_097_152
 _MAX_TASK_BYTES: Final = 262_144
@@ -989,6 +990,10 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
     root = Path(__file__).resolve().parents[1]
     root_runner = MakeRunner(root)
     task = TaskSpec.from_path(Path(args.task_file))
+    if not args.local_model_path and not map_task_to_capabilities(task.objective):
+        raise ValueError(
+            "automatic local model task must match a mapped coding capability"
+        )
     reference = build_reference(
         root_runner,
         args.baseline_ref,

@@ -716,3 +716,28 @@ def test_managed_runner_wires_bounded_acquisition_event_sink(
         "model=0011223344556677 revision=" + "a" * 40
         + " elapsed_seconds=15.25 failure=none"
     ) in output
+
+
+def test_validate_only_rejects_unmapped_automatic_model_task(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _wire_common(tmp_path, monkeypatch)
+    task_file = tmp_path / "unmapped-task.json"
+    task_file.write_text(
+        json.dumps(
+            {
+                "task_id": "S83.133",
+                "objective": "Improve the local workflow.",
+                "canonical_make_commands": [
+                    "make test-files TESTFILES=tests/unit/test_example.py"
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    args = _args(task_file)
+    args.validate_only = True
+
+    with pytest.raises(ValueError, match="mapped coding capability"):
+        runner.run_benchmark(args)
