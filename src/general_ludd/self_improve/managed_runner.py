@@ -327,7 +327,7 @@ class PromptPlan:
     def __post_init__(self) -> None:
         """Require immutable non-overlapping shards and stable protocol identity."""
         if not isinstance(self.shards, tuple) or not self.shards:
-            raise ValueError("prompt plan must contain an immutable shard tuple")
+            raise ValueError("prompt plan must contain at least one shard in an immutable tuple")
         if isinstance(self.source_bytes, bool) or not isinstance(self.source_bytes, int) or self.source_bytes < 0:
             raise ValueError("prompt plan source_bytes must be non-negative")
         paths = [path for shard in self.shards for path in shard.focus_paths]
@@ -345,7 +345,7 @@ class PromptPlan:
                     or not isinstance(item[0], str)
                     or (item[1] is not None and not isinstance(item[1], str))
                 ):
-                    raise ValueError("prompt plan baseline files must contain path/text tuples")
+                    raise ValueError("prompt plan baseline files must contain path/text pairs")
                 path, content = item
                 baseline_paths.append(path)
                 if content is not None:
@@ -1386,7 +1386,7 @@ def _stable_digest(value: object) -> str:
 
 def _validate_digest(label: str, value: object) -> str:
     if not isinstance(value, str) or _DIGEST_RE.fullmatch(value) is None:
-        raise ValueError(f"{label} must be a lowercase 64-character hexadecimal digest")
+        raise ValueError(f"{label} must be a lowercase SHA-256 (64-character hexadecimal) digest")
     return value
 
 
