@@ -13,7 +13,42 @@ FIXTURE = ROOT / "config/self-improve/catalog-truth.json"
 DOCUMENT = ROOT / "docs/features/SELF_IMPROVEMENT_CATALOG_TRUTH_FIXTURE.md"
 BASELINE = "eac05dc88c03f14fbd7dd5f4c6d72943609d9e26"
 REFERENCE = "80b381bd87f32487d784964ce93566e3b016b191"
-FIXTURE_SHA256 = "30fa70cb42c5dd408a0b3d4678bbf90b419706faac4d120d658a9b05548dbaac"
+FIXTURE_SHA256 = "67e59f242aba0ade9b5992354daf5f0ec2392df3627ef0c929596011cfe5c30e"
+OBJECTIVE = (
+    "Change only src/general_ludd/local_model/_local_model_configs.py and "
+    "tests/unit/test_e2e_model_configs.py. The runtime catalog must map "
+    "deepseek-coder-1.3b to repository "
+    "TheBloke/deepseek-coder-1.3b-instruct-GGUF and filename "
+    "deepseek-coder-1.3b-instruct.Q4_K_M.gguf; map starcoder2-3b to repository "
+    "QuantFactory/starcoder2-3b-instruct-GGUF and filename "
+    "starcoder2-3b-instruct.Q4_K_M.gguf; contain neither stale pair "
+    "bartowski/DeepSeek-Coder-1.3B-Instruct-GGUF plus "
+    "DeepSeek-Coder-1.3B-Instruct-Q4_K_M.gguf nor "
+    "bartowski/StarCoder2-3B-Instruct-GGUF plus "
+    "StarCoder2-3B-Instruct-Q4_K_M.gguf; and keep smollm2-1.7b context_size "
+    "exactly 8192. In the one allowed test file, add focused regression coverage "
+    "that asserts both exact mappings, excludes both stale pairs from the complete "
+    "catalog identity set, and asserts the exact SmolLM2 context size. Do not "
+    "change any other path or catalog entry."
+)
+OBJECTIVE_FACTS = (
+    "src/general_ludd/local_model/_local_model_configs.py",
+    "tests/unit/test_e2e_model_configs.py",
+    "TheBloke/deepseek-coder-1.3b-instruct-GGUF",
+    "deepseek-coder-1.3b-instruct.Q4_K_M.gguf",
+    "QuantFactory/starcoder2-3b-instruct-GGUF",
+    "starcoder2-3b-instruct.Q4_K_M.gguf",
+    "bartowski/DeepSeek-Coder-1.3B-Instruct-GGUF",
+    "DeepSeek-Coder-1.3B-Instruct-Q4_K_M.gguf",
+    "bartowski/StarCoder2-3B-Instruct-GGUF",
+    "StarCoder2-3B-Instruct-Q4_K_M.gguf",
+    "smollm2-1.7b context_size exactly 8192",
+    "one allowed test file",
+    "asserts both exact mappings",
+    "excludes both stale pairs",
+    "asserts the exact SmolLM2 context size",
+    "Do not change any other path or catalog entry.",
+)
 
 
 def _target_block(makefile: str, name: str) -> str:
@@ -26,10 +61,7 @@ def test_catalog_truth_fixture_reuses_strict_task_spec() -> None:
 
     assert spec == TaskSpec(
         task_id="S83.134",
-        objective=(
-            "Fix the local coding model catalog artifact repository and filename "
-            "mappings and add regression coverage."
-        ),
+        objective=OBJECTIVE,
         canonical_make_commands=(
             'make test-specific TESTFILE=tests/unit/test_e2e_model_configs.py '
             'PYTEST_ARGS="-q -W error --tb=short"',
@@ -42,6 +74,9 @@ def test_catalog_truth_fixture_reuses_strict_task_spec() -> None:
         ),
         reference_elapsed_seconds=600.0,
     )
+    for fact in OBJECTIVE_FACTS:
+        assert fact in spec.objective
+
     fixture_text = FIXTURE.read_text(encoding="utf-8")
     payload = json.loads(fixture_text)
     assert fixture_text == json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -124,5 +159,7 @@ def test_catalog_truth_fixture_documents_lifecycle_and_central_evidence() -> Non
         "8 GiB",
         "2 GiB",
         "isolated worktree",
+        "input parity",
+        "same exact acceptance facts",
     ):
         assert fact in document

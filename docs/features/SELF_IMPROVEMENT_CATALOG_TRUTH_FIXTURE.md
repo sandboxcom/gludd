@@ -8,7 +8,7 @@ Status: tracked, reproducible sentinel for the managed self-improvement path.
 | --- | --- |
 | Task | `S83.134` (`catalog-truth`) |
 | Fixture | `config/self-improve/catalog-truth.json` |
-| Fixture SHA-256 | `30fa70cb42c5dd408a0b3d4678bbf90b419706faac4d120d658a9b05548dbaac` |
+| Fixture SHA-256 | `67e59f242aba0ade9b5992354daf5f0ec2392df3627ef0c929596011cfe5c30e` |
 | Baseline | `eac05dc88c03f14fbd7dd5f4c6d72943609d9e26` |
 | Independent Codex reference | `80b381bd87f32487d784964ce93566e3b016b191` |
 | Candidate limit | Two attempts, stopped after the first accepted candidate |
@@ -27,6 +27,21 @@ The reference changes only
 `tests/unit/test_e2e_model_configs.py`. Its required regression test and
 static checks are embedded in the fixture rather than reimplemented by the
 wrapper target.
+
+## Input parity
+
+This input parity is deliberate: Codex and managed local models receive the
+same exact acceptance facts. The canonical objective names the exact DeepSeek and
+StarCoder2 repository/filename identities, excludes both stale identities,
+preserves the native SmolLM2 context of 8192, and bounds the change to the two
+reference paths and one regression-test file. The previous shorthand to "fix
+mappings" left a local candidate to infer facts that the independent reference
+already received, so the comparison did not isolate model behavior.
+
+The fixture exposes requirements, not answers: neither a Codex patch/diff nor
+raw model output enters the candidate prompt. Exact compact JSON bytes and
+the pinned digest make any future change to this shared input an explicit,
+reviewable fixture revision.
 
 ## Reproducible execution
 

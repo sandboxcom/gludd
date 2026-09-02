@@ -5629,7 +5629,7 @@ test-self-improve:
 test-self-improve-catalog-truth:
 	@case "$(SELF_IMPROVE_CATALOG_LIVE)" in 0|1) ;; *) echo "SELF_IMPROVE_CATALOG_LIVE must be 0 or 1"; exit 2;; esac
 	@ACTUAL_FIXTURE_SHA256="$$($(PYTHON) -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "config/self-improve/catalog-truth.json")"; \
-		[ "$$ACTUAL_FIXTURE_SHA256" = "30fa70cb42c5dd408a0b3d4678bbf90b419706faac4d120d658a9b05548dbaac" ] || { echo "catalog-truth fixture drift: expected=30fa70cb42c5dd408a0b3d4678bbf90b419706faac4d120d658a9b05548dbaac actual=$$ACTUAL_FIXTURE_SHA256"; exit 2; }
+		[ "$$ACTUAL_FIXTURE_SHA256" = "67e59f242aba0ade9b5992354daf5f0ec2392df3627ef0c929596011cfe5c30e" ] || { echo "catalog-truth fixture drift: expected=67e59f242aba0ade9b5992354daf5f0ec2392df3627ef0c929596011cfe5c30e actual=$$ACTUAL_FIXTURE_SHA256"; exit 2; }
 	@$(MAKE) --no-print-directory test-self-improve TARGET=catalog-truth SELF_IMPROVE_MODEL_PATH= SELF_IMPROVE_BASELINE_REF=eac05dc88c03f14fbd7dd5f4c6d72943609d9e26 SELF_IMPROVE_REFERENCE_REF=80b381bd87f32487d784964ce93566e3b016b191 SELF_IMPROVE_TASK_FILE=config/self-improve/catalog-truth.json SELF_IMPROVE_MAX_ATTEMPTS=2 SELF_IMPROVE_VALIDATE_ONLY="$(if $(filter 1,$(SELF_IMPROVE_CATALOG_LIVE)),0,1)"
 
 # Compatibility alias retains one explicit reference boundary; it never fans out.
