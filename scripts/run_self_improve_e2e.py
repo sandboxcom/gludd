@@ -12,6 +12,7 @@ import selectors
 import shlex
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import asdict, dataclass
@@ -34,7 +35,7 @@ from general_ludd.self_improve.model_candidate_planner import (
     plan_model_candidates,
     record_self_improve_outcome,
 )
-from general_ludd.self_improve.model_lifecycle import ModelLeaseManager
+from general_ludd.self_improve.model_lifecycle import AcquiredModel, ModelLeaseManager
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
 _MAX_CAPTURE_BYTES: Final = 2_097_152
@@ -54,6 +55,18 @@ def _report_model_resolution_failure(
     print(
         "SELF_IMPROVE_MODEL_UNAVAILABLE "
         f"model={model.name} error={json.dumps(reason[:1000])}",
+        flush=True,
+    )
+
+
+def _report_model_release(model: AcquiredModel) -> None:
+    try:
+        released = not model.lease_path.exists()
+    except OSError:
+        released = False
+    print(
+        "SELF_IMPROVE_MODEL_RELEASED "
+        f"model={model.model_id} lease_released={str(released).lower()}",
         flush=True,
     )
 
@@ -346,7 +359,7 @@ def generate_local_proposal(
                 "SELF_IMPROVE_PROMPT_FILE": str(prompt_path),
                 "SELF_IMPROVE_PROPOSAL_FILE": str(proposal_path),
             },
-            timeout=900,
+            timeout=300,
         )
         if result.returncode != 0:
             diagnostic = (result.stderr or result.stdout or "no worker diagnostic")[-2000:]
@@ -1092,6 +1105,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                         unified_probe(),
                         model_evidence_store,
                         model_manager.resolve_revision,
+                        input_tokens=max(1, (len(prompt.encode("utf-8")) + 3) // 4),
                         max_candidates=min(3, max(1, model_attempt_budget)),
                         on_resolution_failure=_report_model_resolution_failure,
                     )
@@ -1131,26 +1145,37 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                     )
                 else:
                     raise RuntimeError("local model candidate was not selected")
-                with acquisition as acquired:
-                    print(
-                        "SELF_IMPROVE_MODEL_ACQUIRED "
-                        f"model={acquired.model_id} source={acquired.source} "
-                        f"revision={acquired.resolved_revision or 'explicit'} "
-                        f"sha256={acquired.artifact_sha256}",
-                        flush=True,
-                    )
-                    proposal = generate_local_proposal(
-                        root_runner,
-                        acquired.path,
-                        prompt,
-                    )
+                acquired_model: AcquiredModel | None = None
+                try:
+                    with acquisition as acquired:
+                        acquired_model = acquired
+                        print(
+                            "SELF_IMPROVE_MODEL_ACQUIRED "
+                            f"model={acquired.model_id} source={acquired.source} "
+                            f"revision={acquired.resolved_revision or 'explicit'} "
+                            f"sha256={acquired.artifact_sha256}",
+                            flush=True,
+                        )
+                        proposal = generate_local_proposal(
+                            root_runner,
+                            acquired.path,
+                            prompt,
+                        )
+                finally:
+                    if acquired_model is not None:
+                        _report_model_release(acquired_model)
         except (RuntimeError, ValueError) as exc:
             if candidate is not None and model_evidence_store is not None:
-                record_self_improve_outcome(
+                outcome_id = record_self_improve_outcome(
                     model_evidence_store,
                     task_text=task.objective,
                     candidate=candidate,
                     succeeded=False,
+                )
+                print(
+                    "SELF_IMPROVE_MODEL_OUTCOME "
+                    f"model={candidate.config.name} succeeded=false record={outcome_id}",
+                    flush=True,
                 )
             print(
                 f"SELF_IMPROVE_PROPOSAL_REJECTED attempt={attempt} "
@@ -1175,11 +1200,18 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
             merge=args.merge,
         )
         if candidate is not None and model_evidence_store is not None:
-            record_self_improve_outcome(
+            outcome_id = record_self_improve_outcome(
                 model_evidence_store,
                 task_text=task.objective,
                 candidate=candidate,
                 succeeded=final.comparison.accepted,
+            )
+            print(
+                "SELF_IMPROVE_MODEL_OUTCOME "
+                f"model={candidate.config.name} "
+                f"succeeded={str(final.comparison.accepted).lower()} "
+                f"record={outcome_id}",
+                flush=True,
             )
         print(
             f"SELF_IMPROVE_ATTEMPT_END attempt={attempt} "
@@ -1301,10 +1333,20 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def main() -> int:
     """Run the local-versus-Codex benchmark and publish bounded JSON evidence."""
     args = _parser().parse_args()
-    result = run_benchmark(args)
+    try:
+        result = run_benchmark(args)
+    except (OSError, RuntimeError, ValueError) as exc:
+        message = str(exc).replace("\n", " ").replace("\r", " ")[:2000]
+        print(
+            f"SELF_IMPROVE_ERROR type={type(exc).__name__} "
+            f"message={json.dumps(message)}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 2
     payload = {
         "target": args.target,
         "accepted": result.comparison.accepted,
@@ -1323,8 +1365,7 @@ def main() -> None:
         },
     }
     print(json.dumps(payload, sort_keys=True))
-    if not args.validate_only and not result.comparison.accepted:
-        raise SystemExit(1)
+    return int(not args.validate_only and not result.comparison.accepted)
 
 
 if __name__ == "__main__":

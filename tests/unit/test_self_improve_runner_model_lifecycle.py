@@ -170,6 +170,8 @@ class _LeaseManager:
     ) -> Iterator[SimpleNamespace]:
         type(self).acquired.append((task_description, explicit_path))
         model_id = getattr(model_config, "name", "test-model")
+        lease_path = type(self).cache_root / f"{model_id}.lease"
+        lease_path.touch()
         try:
             yield SimpleNamespace(
                 path=type(self).model_path,
@@ -177,8 +179,10 @@ class _LeaseManager:
                 resolved_revision=resolved_revision or "a" * 40,
                 artifact_sha256="b" * 64,
                 source="managed" if explicit_path is None else "explicit",
+                lease_path=lease_path,
             )
         finally:
+            lease_path.unlink(missing_ok=True)
             type(self).released += 1
 
 
@@ -381,6 +385,8 @@ def test_managed_retries_escalate_across_distinct_planned_model_leases(
             path = tmp_path / f"{model_id}.gguf"
             path.write_bytes(b"GGUF")
             acquired.append((model_id, resolved_revision))
+            lease_path = self.cache_root / f"{model_id}.lease"
+            lease_path.touch()
             try:
                 yield SimpleNamespace(
                     path=path,
@@ -388,8 +394,10 @@ def test_managed_retries_escalate_across_distinct_planned_model_leases(
                     resolved_revision=resolved_revision,
                     artifact_sha256="c" * 64,
                     source="managed",
+                    lease_path=lease_path,
                 )
             finally:
+                lease_path.unlink(missing_ok=True)
                 released.append(model_id)
 
     def plan(
@@ -400,11 +408,13 @@ def test_managed_retries_escalate_across_distinct_planned_model_leases(
         evidence_store: object,
         revision_resolver: object,
         *,
+        input_tokens: int,
         max_candidates: int,
         on_resolution_failure: Callable[[LocalModelConfig, str], None],
     ) -> tuple[PlannedModelCandidate, ...]:
         assert task_text == "Repair Python code safely."
         assert output_tokens > 0
+        assert input_tokens == 4
         assert prior_failed_model_ids == ()
         assert hardware == "hardware"
         assert evidence_store == "evidence"
@@ -530,6 +540,8 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
             assert model_config is not None
             assert resolved_revision is not None
             events.append(f"acquire:{model_config.name}")
+            lease_path = self.cache_root / f"{model_config.name}.lease"
+            lease_path.touch()
             try:
                 path = tmp_path / f"{model_config.name}.gguf"
                 path.write_bytes(b"GGUF")
@@ -539,8 +551,10 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
                     resolved_revision=resolved_revision,
                     artifact_sha256="c" * 64,
                     source="managed",
+                    lease_path=lease_path,
                 )
             finally:
+                lease_path.unlink(missing_ok=True)
                 events.append(f"release:{model_config.name}")
 
     def load_failures(store: object, *, task_text: str) -> tuple[str, ...]:
@@ -557,11 +571,13 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
         store: object,
         revision_resolver: object,
         *,
+        input_tokens: int,
         max_candidates: int,
         on_resolution_failure: Callable[[LocalModelConfig, str], None],
     ) -> tuple[PlannedModelCandidate, ...]:
         assert task_text == "Repair Python code safely."
         assert output_tokens > 0
+        assert input_tokens == 4
         assert prior_failed_model_ids == (failed.name,)
         assert hardware == "hardware"
         assert store is evidence_store
@@ -608,6 +624,18 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
     assert (
         "SELF_IMPROVE_MODEL_UNAVAILABLE "
         f"model={failed.name} error=\"network unavailable\""
+    ) in output
+    assert (
+        f"SELF_IMPROVE_MODEL_RELEASED model={first.name} lease_released=true"
+    ) in output
+    assert (
+        f"SELF_IMPROVE_MODEL_OUTCOME model={first.name} succeeded=false"
+    ) in output
+    assert (
+        f"SELF_IMPROVE_MODEL_RELEASED model={second.name} lease_released=true"
+    ) in output
+    assert (
+        f"SELF_IMPROVE_MODEL_OUTCOME model={second.name} succeeded=true"
     ) in output
     assert events == [
         "load",

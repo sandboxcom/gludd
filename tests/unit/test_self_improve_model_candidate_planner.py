@@ -205,6 +205,42 @@ def test_context_and_hardware_filter_before_revision_calls(
     assert calls == []
 
 
+def test_full_rendered_prompt_context_filters_native_overflow_before_resolution(
+    tmp_path: object,
+) -> None:
+    candidates = plan_model_candidates(
+        "implement a change",
+        4096,
+        ("qwen2.5-coder-0.5b", "deepseek-coder-1.3b", "qwen2.5-coder-1.5b"),
+        _hardware(),
+        _store(tmp_path),
+        _revision,
+        input_tokens=5000,
+        max_candidates=3,
+    )
+
+    assert candidates
+    assert all(item.config.context_size >= 5000 + 4096 + 512 for item in candidates)
+    assert all(item.config.name != "smollm2-1.7b" for item in candidates)
+
+
+@pytest.mark.parametrize("input_tokens", [0, -1, cast(int, True)])
+def test_invalid_input_token_estimates_fail_before_revision_resolution(
+    tmp_path: object,
+    input_tokens: int,
+) -> None:
+    with pytest.raises(ValueError, match="input_tokens"):
+        plan_model_candidates(
+            "implement a change",
+            1024,
+            (),
+            _hardware(),
+            _store(tmp_path),
+            lambda _repo: pytest.fail("invalid context must not resolve a model"),
+            input_tokens=input_tokens,
+        )
+
+
 def test_revision_resolution_is_limited_to_selected_candidates(tmp_path: object) -> None:
     calls: list[str] = []
 

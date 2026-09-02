@@ -459,7 +459,7 @@ def test_local_gateway_uses_explicit_model_and_deterministic_decode(
     assert proposal.task_id == "S83.133"
     assert calls["factory"] == {
         "model_path": str(model_path),
-        "n_ctx": 32768,
+        "n_ctx": 0,
         "verbose": False,
     }
     assert calls["decode"] == {

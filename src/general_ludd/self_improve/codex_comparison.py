@@ -464,7 +464,7 @@ class LocalProposalGateway:
         if self._model is None:
             self._model = self._model_factory(
                 model_path=str(self._model_path),
-                n_ctx=32768,
+                n_ctx=0,
                 verbose=False,
             )
         if hasattr(self._model, "create_chat_completion"):

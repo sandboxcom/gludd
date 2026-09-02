@@ -906,12 +906,38 @@ def test_main_publishes_json_and_fails_for_unaccepted_result(
     monkeypatch.setattr(runner_module, "_parser", lambda: Parser())
     monkeypatch.setattr(runner_module, "run_benchmark", lambda _args: rejected)
 
-    with pytest.raises(SystemExit, match="1"):
-        runner_module.main()
+    assert runner_module.main() == 1
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["target"] == "unit"
     assert payload["accepted"] is False
+
+
+def test_main_publishes_bounded_terminal_error_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = argparse.Namespace(target="unit", validate_only=False)
+
+    class Parser:
+        def parse_args(self) -> argparse.Namespace:
+            return args
+
+    monkeypatch.setattr(runner_module, "_parser", lambda: Parser())
+    monkeypatch.setattr(
+        runner_module,
+        "run_benchmark",
+        lambda _args: (_ for _ in ()).throw(RuntimeError("candidate plan exhausted")),
+    )
+
+    assert runner_module.main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == (
+        'SELF_IMPROVE_ERROR type=RuntimeError '
+        'message="candidate plan exhausted"\n'
+    )
+    assert "Traceback" not in captured.err
 
 
 def test_reference_and_worktree_helpers_publish_exact_identity(tmp_path: Path) -> None:

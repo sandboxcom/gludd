@@ -93,9 +93,17 @@ class PlannedModelCandidate:
             raise ValueError("escalation_level must be a non-negative integer")
 
 
-def _estimated_required_context(task_text: str, output_tokens: int) -> int:
-    input_tokens = max(1, (len(task_text.encode("utf-8")) + 3) // 4)
-    return input_tokens + output_tokens + _PROMPT_OVERHEAD_TOKENS
+def _estimated_required_context(
+    task_text: str,
+    output_tokens: int,
+    input_tokens: int | None,
+) -> int:
+    estimated_input = (
+        max(1, (len(task_text.encode("utf-8")) + 3) // 4)
+        if input_tokens is None
+        else input_tokens
+    )
+    return estimated_input + output_tokens + _PROMPT_OVERHEAD_TOKENS
 
 
 def _coding_models() -> tuple[LocalModelConfig, ...]:
@@ -174,6 +182,7 @@ def plan_model_candidates(
     evidence_store: CapabilityEvidenceStore,
     revision_resolver: Callable[[str], str],
     *,
+    input_tokens: int | None = None,
     max_candidates: int = _MAX_CANDIDATES,
     on_resolution_failure: Callable[[LocalModelConfig, str], None] | None = None,
 ) -> tuple[PlannedModelCandidate, ...]:
@@ -190,6 +199,15 @@ def plan_model_candidates(
     if isinstance(output_tokens, bool) or not isinstance(output_tokens, int) or output_tokens <= 0:
         raise ValueError("output_tokens must be a positive integer")
     if (
+        input_tokens is not None
+        and (
+            isinstance(input_tokens, bool)
+            or not isinstance(input_tokens, int)
+            or input_tokens <= 0
+        )
+    ):
+        raise ValueError("input_tokens must be a positive integer when provided")
+    if (
         isinstance(max_candidates, bool)
         or not isinstance(max_candidates, int)
         or not 1 <= max_candidates <= _MAX_CANDIDATES
@@ -201,7 +219,11 @@ def plan_model_candidates(
         prior_failed_model_ids,
         coding_models,
     )
-    required_context = _estimated_required_context(task_text, output_tokens)
+    required_context = _estimated_required_context(
+        task_text,
+        output_tokens,
+        input_tokens,
+    )
     eligible = [
         model
         for model in coding_models

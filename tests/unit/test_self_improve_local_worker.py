@@ -110,7 +110,7 @@ def test_parent_delegates_inference_to_owned_make_worker(tmp_path: Path) -> None
 
     assert proposal.task_id == "S83.133"
     assert runner.calls[0][0] == "self-improve-local-proposal"
-    assert runner.calls[0][2] == 900
+    assert runner.calls[0][2] == 300
     variables = runner.calls[0][1]
     assert variables["SELF_IMPROVE_MODEL_PATH"] == str(model)
     assert not Path(variables["SELF_IMPROVE_PROMPT_FILE"]).exists()
