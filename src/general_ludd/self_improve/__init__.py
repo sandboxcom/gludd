@@ -11,6 +11,7 @@ __all__ = (
     "SelfImproveGate",
     "SelfImprovementHarness",
     "build_managed_self_improve_runner",
+    "prepare_managed_self_improve_plan",
 )
 
 from general_ludd.self_improve.apply import ExternalApply, SelfApply
@@ -22,4 +23,7 @@ from general_ludd.self_improve.managed_runner import (
     ManagedSelfImproveRunner,
 )
 from general_ludd.self_improve.result_artifact import ManagedSelfImproveResultArtifact
-from general_ludd.self_improve.runtime import build_managed_self_improve_runner
+from general_ludd.self_improve.runtime import (
+    build_managed_self_improve_runner,
+    prepare_managed_self_improve_plan,
+)

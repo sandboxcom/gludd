@@ -1397,6 +1397,98 @@ def build_managed_self_improve_runner(
     return service
 
 
+def prepare_managed_self_improve_plan(
+    repo_root: Path,
+    *,
+    approval_id: str,
+    todo_id: str,
+    project_id: str,
+    baseline_ref: str,
+    reference_ref: str,
+    task: TaskSpec,
+    max_attempts: int,
+    explicit_model_path: Path | None = None,
+    output_token_limit: int | None = None,
+    root_runner: _RuntimeMakeRunner | None = None,
+    make_runner_factory: _MakeRunnerFactory | None = None,
+) -> ApprovedSelfImprovePlan:
+    """Prepare one immutable, repository-bound plan without inference or merge.
+
+    Reference inspection, baseline context acquisition, prompt construction, and
+    an optional mature mechanical repair all remain Make-mediated. The temporary
+    context worktree is released before the approval artifact crosses this API.
+    """
+    if not isinstance(repo_root, Path):
+        raise ValueError("repo_root must be a pathlib.Path")
+    if not isinstance(task, TaskSpec):
+        raise ValueError("task must be a TaskSpec")
+    canonical_root = repo_root.resolve(strict=True)
+    runner_factory = make_runner_factory or MakeRunner
+    operation_runner = root_runner or runner_factory(canonical_root)
+    reference = build_reference(
+        operation_runner,
+        baseline_ref,
+        reference_ref,
+        task.reference_elapsed_seconds,
+    )
+    required_output_tokens = estimate_required_output_tokens(
+        reference.changed_lines,
+        len(reference.changed_files),
+    )
+    if output_token_limit is not None:
+        if (
+            isinstance(output_token_limit, bool)
+            or not isinstance(output_token_limit, int)
+            or output_token_limit <= 0
+        ):
+            raise ValueError("output_token_limit must be a positive integer")
+        if required_output_tokens > output_token_limit:
+            raise ValueError(
+                "Codex reference exceeds the local decode budget: "
+                f"estimated={required_output_tokens} available={output_token_limit}; "
+                "select a larger local model/context or a smaller atomic task"
+            )
+    context_root, context_branch = create_worktree(
+        operation_runner,
+        reference.baseline_sha,
+        0,
+    )
+    try:
+        prompt = build_prompt(task, reference, context_root)
+        mechanical_proposal = generate_mechanical_proposal(
+            runner_factory(context_root),
+            task,
+            reference,
+            context_root,
+        )
+    finally:
+        context_cleanup = operation_runner.run(
+            "agent-cleanup",
+            {"BRANCH": context_branch},
+            timeout=180,
+        )
+        if context_cleanup.returncode != 0:
+            raise RuntimeError(
+                "baseline context worktree cleanup failed: "
+                + (context_cleanup.stderr or context_cleanup.stdout)
+            )
+
+    plan = ApprovedSelfImprovePlan.approve(
+        approval_id=approval_id,
+        todo_id=todo_id,
+        project_id=project_id,
+        repo_root=canonical_root,
+        task=task,
+        reference=reference,
+        prompt=prompt,
+        required_output_tokens=required_output_tokens,
+        max_attempts=max_attempts,
+        explicit_model_path=explicit_model_path,
+        mechanical_proposal=mechanical_proposal,
+    )
+    return ApprovedSelfImprovePlan.from_json(plan.to_json())
+
+
 def run_benchmark(args: argparse.Namespace) -> AttemptResult:
     """Run bounded local attempts until Codex parity or the attempt limit."""
     root = Path(__file__).resolve().parents[3]
@@ -1406,23 +1498,17 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
         raise ValueError(
             "automatic local model task must match a mapped coding capability"
         )
-    reference = build_reference(
-        root_runner,
-        args.baseline_ref,
-        args.reference_ref,
-        task.reference_elapsed_seconds,
-    )
-    required_output_tokens = estimate_required_output_tokens(
-        reference.changed_lines,
-        len(reference.changed_files),
-    )
-    if required_output_tokens > 4096 and not args.validate_only:
-        raise ValueError(
-            "Codex reference exceeds the local decode budget: "
-            f"estimated={required_output_tokens} available=4096; "
-            "select a larger local model/context or a smaller atomic task"
-        )
     if args.validate_only:
+        reference = build_reference(
+            root_runner,
+            args.baseline_ref,
+            args.reference_ref,
+            task.reference_elapsed_seconds,
+        )
+        required_output_tokens = estimate_required_output_tokens(
+            reference.changed_lines,
+            len(reference.changed_files),
+        )
         print(
             "SELF_IMPROVE_CODEX_PLAN "
             f"task={task.task_id} baseline={reference.baseline_sha} "
@@ -1483,56 +1569,35 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
             ),
         )
 
-    explicit_model_path = Path(args.local_model_path).expanduser() if args.local_model_path else None
-    context_root, context_branch = create_worktree(
-        root_runner,
-        reference.baseline_sha,
-        0,
+    explicit_model_path = (
+        Path(args.local_model_path).expanduser() if args.local_model_path else None
     )
-    mechanical_proposal: ProposalManifest | None = None
-    try:
-        base_prompt = build_prompt(task, reference, context_root)
-        mechanical_proposal = generate_mechanical_proposal(
-            MakeRunner(context_root),
-            task,
-            reference,
-            context_root,
-        )
-    finally:
-        context_cleanup = root_runner.run(
-            "agent-cleanup",
-            {"BRANCH": context_branch},
-            timeout=180,
-        )
-        if context_cleanup.returncode != 0:
-            raise RuntimeError(
-                "baseline context worktree cleanup failed: "
-                + (context_cleanup.stderr or context_cleanup.stdout)
-            )
-    attempt_identity_digest = _attempt_identity_digest(base_prompt)
-    if isinstance(base_prompt, PromptPlan):
+    approved_plan = prepare_managed_self_improve_plan(
+        root,
+        approval_id=f"cli:{args.target}:{args.reference_ref}",
+        todo_id=task.task_id,
+        project_id="cli-self-improve",
+        baseline_ref=args.baseline_ref,
+        reference_ref=args.reference_ref,
+        task=task,
+        max_attempts=args.max_attempts,
+        explicit_model_path=explicit_model_path,
+        output_token_limit=4096,
+        root_runner=root_runner,
+        make_runner_factory=MakeRunner,
+    )
+    reference = approved_plan.reference
+    if isinstance(approved_plan.prompt, PromptPlan):
         print(
             "SELF_IMPROVE_PROMPT_PLAN "
-            f"shards={len(base_prompt.shards)} source_bytes={base_prompt.source_bytes} "
-            f"protocol_digest={base_prompt.protocol_digest} "
-            f"attempt_identity_digest={attempt_identity_digest} "
-            f"max_prompt_bytes={base_prompt.max_prompt_bytes} "
+            f"shards={len(approved_plan.prompt.shards)} "
+            f"source_bytes={approved_plan.prompt.source_bytes} "
+            f"protocol_digest={approved_plan.prompt.protocol_digest} "
+            f"attempt_identity_digest={approved_plan.attempt_identity_digest} "
+            f"max_prompt_bytes={approved_plan.prompt.max_prompt_bytes} "
             f"paths={json.dumps(sorted(reference.changed_files))}",
             flush=True,
         )
-    approved_plan = ApprovedSelfImprovePlan.approve(
-        approval_id=f"cli:{args.target}:{reference.reference_sha}",
-        todo_id=task.task_id,
-        project_id="cli-self-improve",
-        repo_root=root,
-        task=task,
-        reference=reference,
-        prompt=base_prompt,
-        required_output_tokens=required_output_tokens,
-        max_attempts=args.max_attempts,
-        explicit_model_path=explicit_model_path,
-        mechanical_proposal=mechanical_proposal,
-    )
     service = build_managed_self_improve_runner(
         root,
         root_runner=root_runner,
