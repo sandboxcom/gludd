@@ -22,6 +22,10 @@ from general_ludd.self_improve.codex_comparison import (
     ProposalManifest,
 )
 from general_ludd.self_improve.model_candidate_planner import PlannedModelCandidate
+from general_ludd.self_improve.model_lifecycle import (
+    ModelAcquisitionEvent,
+    ModelAcquisitionPhase,
+)
 
 
 def _task_file(tmp_path: Path) -> Path:
@@ -155,6 +159,12 @@ class _LeaseManager:
     model_path: ClassVar[Path]
     cache_root: ClassVar[Path]
 
+    def __init__(
+        self,
+        *,
+        event_sink: Callable[[ModelAcquisitionEvent], None] | None = None,
+    ) -> None:
+        assert callable(event_sink)
 
     def resolve_revision(self, _repo_id: str) -> str:
         return "a" * 40
@@ -360,7 +370,12 @@ def test_managed_retries_escalate_across_distinct_planned_model_leases(
     evidence_paths: list[str] = []
 
     class CandidateLeaseManager:
-        def __init__(self) -> None:
+        def __init__(
+            self,
+            *,
+            event_sink: Callable[[ModelAcquisitionEvent], None] | None = None,
+        ) -> None:
+            assert callable(event_sink)
             self.cache_root = tmp_path / "cache"
             self.cache_root.mkdir(exist_ok=True)
 
@@ -470,7 +485,12 @@ def test_no_fitting_managed_candidate_fails_before_model_acquisition(
     _wire_common(tmp_path, monkeypatch)
 
     class NoAcquireManager:
-        def __init__(self) -> None:
+        def __init__(
+            self,
+            *,
+            event_sink: Callable[[ModelAcquisitionEvent], None] | None = None,
+        ) -> None:
+            assert callable(event_sink)
             self.cache_root = tmp_path / "cache"
             self.cache_root.mkdir(exist_ok=True)
 
@@ -519,7 +539,12 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
     events: list[str] = []
 
     class EvidenceLeaseManager:
-        def __init__(self) -> None:
+        def __init__(
+            self,
+            *,
+            event_sink: Callable[[ModelAcquisitionEvent], None] | None = None,
+        ) -> None:
+            assert callable(event_sink)
             self.cache_root = tmp_path / "cache"
             self.cache_root.mkdir(exist_ok=True)
 
@@ -647,3 +672,47 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
         f"release:{second.name}",
         f"outcome:{second.name}:True",
     ]
+
+
+
+def test_managed_runner_wires_bounded_acquisition_event_sink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _wire_common(tmp_path, monkeypatch)
+    captured: dict[str, Callable[[ModelAcquisitionEvent], None]] = {}
+
+    class ObservableLeaseManager(_LeaseManager):
+        def __init__(
+            self,
+            *,
+            event_sink: Callable[[ModelAcquisitionEvent], None] | None = None,
+        ) -> None:
+            assert event_sink is not None
+            captured["sink"] = event_sink
+
+    monkeypatch.setattr(runner, "ModelLeaseManager", ObservableLeaseManager)
+    monkeypatch.setattr(runner, "generate_local_proposal", lambda *_args: _proposal())
+    monkeypatch.setattr(runner, "evaluate_attempt", lambda *_args, **_kwargs: _result())
+
+    result = runner.run_benchmark(_args(_task_file(tmp_path)))
+    captured["sink"](
+        ModelAcquisitionEvent(
+            phase=ModelAcquisitionPhase.DOWNLOAD_PROGRESS,
+            operation_id="0123456789abcdef",
+            repository_key="fedcba9876543210",
+            model_key="0011223344556677",
+            revision="a" * 40,
+            elapsed_seconds=15.25,
+        )
+    )
+
+    assert result.comparison.accepted
+    output = capsys.readouterr().out
+    assert (
+        "SELF_IMPROVE_MODEL_ACQUISITION phase=download_progress "
+        "operation=0123456789abcdef repository=fedcba9876543210 "
+        "model=0011223344556677 revision=" + "a" * 40
+        + " elapsed_seconds=15.25 failure=none"
+    ) in output

@@ -35,7 +35,11 @@ from general_ludd.self_improve.model_candidate_planner import (
     plan_model_candidates,
     record_self_improve_outcome,
 )
-from general_ludd.self_improve.model_lifecycle import AcquiredModel, ModelLeaseManager
+from general_ludd.self_improve.model_lifecycle import (
+    AcquiredModel,
+    ModelAcquisitionEvent,
+    ModelLeaseManager,
+)
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
 _MAX_CAPTURE_BYTES: Final = 2_097_152
@@ -55,6 +59,19 @@ def _report_model_resolution_failure(
     print(
         "SELF_IMPROVE_MODEL_UNAVAILABLE "
         f"model={model.name} error={json.dumps(reason[:1000])}",
+        flush=True,
+    )
+
+
+def _report_model_acquisition_event(event: ModelAcquisitionEvent) -> None:
+    """Publish one secret-safe, bounded acquisition phase marker."""
+    print(
+        "SELF_IMPROVE_MODEL_ACQUISITION "
+        f"phase={event.phase.value} operation={event.operation_id} "
+        f"repository={event.repository_key} model={event.model_key or 'none'} "
+        f"revision={event.revision or 'none'} "
+        f"elapsed_seconds={event.elapsed_seconds:.2f} "
+        f"failure={event.failure.value if event.failure is not None else 'none'}",
         flush=True,
     )
 
@@ -1082,7 +1099,9 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
         candidate: PlannedModelCandidate | None = None
         if not use_mechanical:
             if model_manager is None:
-                model_manager = ModelLeaseManager()
+                model_manager = ModelLeaseManager(
+                    event_sink=_report_model_acquisition_event,
+                )
             if explicit_model_path is None:
                 if managed_candidates is None:
                     model_attempt_budget = args.max_attempts - (
