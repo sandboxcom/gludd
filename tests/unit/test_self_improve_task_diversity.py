@@ -252,6 +252,32 @@ def test_representative_selection_breaks_timestamp_ties_deterministically() -> N
     assert selected == reversed_selected
 
 
+def test_representative_selection_normalizes_non_finite_timestamps() -> None:
+    records = [
+        _record(
+            model="model-a",
+            task_type=TaskType.FEATURE,
+            suite_id="non-finite-a",
+            registered_at=float("nan"),
+        ),
+        _record(
+            model="model-a",
+            task_type=TaskType.FEATURE,
+            suite_id="non-finite-b",
+            registered_at=float("nan"),
+        ),
+    ]
+
+    selected = select_representative_evidence(records, max_cases=1)
+    reversed_selected = select_representative_evidence(
+        list(reversed(records)),
+        max_cases=1,
+    )
+
+    assert selected[0]["suite_id"] == "non-finite-b"
+    assert selected == reversed_selected
+
+
 def test_representative_selection_uses_distinct_records_in_second_round() -> None:
     records = [
         _record(

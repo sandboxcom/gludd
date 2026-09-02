@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -132,6 +133,8 @@ def _record_order_key(record: Mapping[str, Any]) -> tuple[float, str]:
         and not isinstance(registered_at, bool)
         else 0.0
     )
+    if not math.isfinite(timestamp):
+        timestamp = 0.0
     return timestamp, _stable_record_identity(record)
 
 
