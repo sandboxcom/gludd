@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Final, Protocol, TextIO, cast
 
 from general_ludd.hardware.model_fit import unified_probe
+from general_ludd.local_model import LocalModelConfig
 from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
     CodexReference,
@@ -44,6 +45,17 @@ _HEARTBEAT_SECONDS: Final = 15.0
 _FORBIDDEN_COMMAND_CHARS: Final = frozenset(";|&$()<>\n\r")
 _SHA_RE: Final = re.compile(r"^[0-9a-f]{40}$")
 _TASK_RE: Final = re.compile(r"^S[0-9]+(?:\.[0-9]+)?$")
+
+
+def _report_model_resolution_failure(
+    model: LocalModelConfig,
+    reason: str,
+) -> None:
+    print(
+        "SELF_IMPROVE_MODEL_UNAVAILABLE "
+        f"model={model.name} error={json.dumps(reason[:1000])}",
+        flush=True,
+    )
 
 
 @dataclass(frozen=True)
@@ -1081,6 +1093,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                         model_evidence_store,
                         model_manager.resolve_revision,
                         max_candidates=min(3, max(1, model_attempt_budget)),
+                        on_resolution_failure=_report_model_resolution_failure,
                     )
                     print(
                         "SELF_IMPROVE_MODEL_PLAN "

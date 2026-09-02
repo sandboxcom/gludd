@@ -175,6 +175,7 @@ def plan_model_candidates(
     revision_resolver: Callable[[str], str],
     *,
     max_candidates: int = _MAX_CANDIDATES,
+    on_resolution_failure: Callable[[LocalModelConfig, str], None] | None = None,
 ) -> tuple[PlannedModelCandidate, ...]:
     """Plan a deterministic, bounded sequence of immutable coding models.
 
@@ -213,25 +214,38 @@ def plan_model_candidates(
         return ()
 
     scores = _evidence_scores(task_text, hardware, evidence_store)
-    shortlist = _ordered_shortlist(eligible, scores, max_candidates)
+    ordered = _ordered_shortlist(eligible, scores, len(eligible))
 
     planned: list[PlannedModelCandidate] = []
-    for level, config in enumerate(shortlist):
-        revision = revision_resolver(config.repo)
+    for config in ordered:
+        try:
+            revision = revision_resolver(config.repo)
+        except (OSError, RuntimeError, ValueError) as exc:
+            if on_resolution_failure is None:
+                raise
+            reason = str(exc).strip().replace("\n", " ")[:1000] or type(exc).__name__
+            on_resolution_failure(config, reason)
+            continue
         normalized_revision = revision.lower() if isinstance(revision, str) else ""
         if _SHA_RE.fullmatch(normalized_revision) is None:
-            raise RuntimeError(
+            reason = (
                 f"revision resolver for {config.repo} did not return a "
                 "40-character hexadecimal commit"
             )
+            if on_resolution_failure is None:
+                raise RuntimeError(reason)
+            on_resolution_failure(config, reason)
+            continue
         planned.append(
             PlannedModelCandidate(
                 config=config,
                 resolved_revision=normalized_revision,
                 evidence_score=float(scores.get(config.name, 0.0)),
-                escalation_level=level,
+                escalation_level=len(planned),
             )
         )
+        if len(planned) == max_candidates:
+            break
     return tuple(planned)
 
 

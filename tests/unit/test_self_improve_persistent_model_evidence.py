@@ -62,6 +62,25 @@ def test_public_mapper_adds_coding_without_hiding_specific_capabilities() -> Non
     ]
 
 
+@pytest.mark.parametrize(
+    "description",
+    [
+        "Bind the model downloader to its configured isolated cache.",
+        "Add an immutable cache manifest.",
+        "Fix the lifecycle race.",
+        "Integrate the model planner with the runner.",
+        "Migrate the adapter to the collection.",
+        "Remove the unused dependency.",
+        "Replace the stale backend.",
+        "Wire the lease manager into retries.",
+    ],
+)
+def test_public_mapper_recognizes_action_oriented_coding_tasks(
+    description: str,
+) -> None:
+    assert ("coding", TaskRole.CODER) in map_task_to_capabilities(description)
+
+
 def test_record_writes_one_revision_bound_outcome_for_multi_match_task(
     tmp_path: object,
 ) -> None:

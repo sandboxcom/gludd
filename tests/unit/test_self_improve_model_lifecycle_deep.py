@@ -392,6 +392,12 @@ def test_hugging_face_helpers_pin_revision_and_execute_exact_deletion(
 ) -> None:
     observed: list[object] = []
     fake_hub = ModuleType("huggingface_hub")
+    fake_errors = ModuleType("huggingface_hub.errors")
+
+    class FakeHubHttpError(Exception):
+        pass
+
+    fake_errors.__dict__["HfHubHTTPError"] = FakeHubHttpError
 
     class FakeApi:
         def __init__(self, *, token: str | None) -> None:
@@ -417,6 +423,7 @@ def test_hugging_face_helpers_pin_revision_and_execute_exact_deletion(
     fake_hub.__dict__["HfApi"] = FakeApi
     fake_hub.__dict__["scan_cache_dir"] = scan_cache_dir
     monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+    monkeypatch.setitem(sys.modules, "huggingface_hub.errors", fake_errors)
     monkeypatch.setenv("HF_TOKEN", "secret")
 
     assert lifecycle._default_revision_resolver("example/repo") == _REVISION
@@ -495,6 +502,30 @@ def test_planned_candidate_identity_bypasses_selector_and_revision_network(
         assert acquired.repo_id == config.repo
 
     assert downloader.calls == 1
+
+
+def test_revision_resolution_reuses_verified_owned_manifest_before_network(
+    tmp_path: Path,
+) -> None:
+    config = _config()
+    downloader = _Downloader(tmp_path / "cache")
+    manager = _manager(
+        tmp_path,
+        downloader=downloader,
+        selector=lambda _task: config,
+    )
+    with manager.acquire("implement code") as acquired:
+        assert acquired.resolved_revision == _REVISION
+
+    offline = _manager(
+        tmp_path,
+        selector=lambda _task: config,
+        revision_resolver=lambda _repo: pytest.fail(
+            "verified owned manifest must resolve without network"
+        ),
+    )
+
+    assert offline.resolve_revision(config.repo) == _REVISION
 
 
 @pytest.mark.parametrize(

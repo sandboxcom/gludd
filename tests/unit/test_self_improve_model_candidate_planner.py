@@ -238,6 +238,45 @@ def test_invalid_immutable_revision_fails_closed(tmp_path: object) -> None:
         )
 
 
+def test_unavailable_candidate_is_observable_and_next_models_fill_plan(
+    tmp_path: object,
+) -> None:
+    smallest = get_model("qwen2.5-coder-0.5b")
+    assert smallest is not None
+    calls: list[str] = []
+    unavailable: list[tuple[str, str]] = []
+
+    def resolver(repo_id: str) -> str:
+        calls.append(repo_id)
+        if repo_id == smallest.repo:
+            raise RuntimeError("repository unavailable")
+        return _revision(repo_id)
+
+    candidates = plan_model_candidates(
+        "implement a change",
+        1024,
+        (),
+        _hardware(),
+        _store(tmp_path),
+        resolver,
+        max_candidates=2,
+        on_resolution_failure=lambda model, reason: unavailable.append(
+            (model.name, reason)
+        ),
+    )
+
+    assert [candidate.config.name for candidate in candidates] == [
+        "deepseek-coder-1.3b",
+        "qwen2.5-coder-1.5b",
+    ]
+    assert calls == [
+        smallest.repo,
+        candidates[0].config.repo,
+        candidates[1].config.repo,
+    ]
+    assert unavailable == [(smallest.name, "repository unavailable")]
+
+
 @pytest.mark.parametrize(
     ("task_text", "output_tokens", "max_candidates", "message"),
     [

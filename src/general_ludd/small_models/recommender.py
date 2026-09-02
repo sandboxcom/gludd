@@ -65,7 +65,7 @@ _TASK_KEYWORD_MAP: list[tuple[str, str, TaskRole]] = [
     ("schema_extraction", r"\b(schema|extract|parse|field|structur)\b", TaskRole.EDITOR),
     (
         "coding",
-        r"\b(code|coding|implement|implementation|program|python|function|class|module|refactor|test|patch|repository|repo)\b",
+        r"\b(add(?:ed|ing)?|bind|binding|bound|chang(?:e|ed|ing)|code|coding|debug(?:ged|ging)?|fix(?:ed|ing)?|implement|implementation|integrat(?:e|ed|ing|ion)|migrat(?:e|ed|ing|ion)|modif(?:y|ied|ying|ication)|program|python|function|class|module|refactor|remov(?:e|ed|ing|al)|replac(?:e|ed|ing|ement)|test|patch|repository|repo|wir(?:e|ed|ing))\b",
         TaskRole.CODER,
     ),
 ]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -401,6 +401,7 @@ def test_managed_retries_escalate_across_distinct_planned_model_leases(
         revision_resolver: object,
         *,
         max_candidates: int,
+        on_resolution_failure: Callable[[LocalModelConfig, str], None],
     ) -> tuple[PlannedModelCandidate, ...]:
         assert task_text == "Repair Python code safely."
         assert output_tokens > 0
@@ -409,6 +410,7 @@ def test_managed_retries_escalate_across_distinct_planned_model_leases(
         assert evidence_store == "evidence"
         assert callable(revision_resolver)
         assert max_candidates == 2
+        assert callable(on_resolution_failure)
         return candidates
 
     def propose(_root: object, path: Path, _prompt: str) -> ProposalManifest:
@@ -490,6 +492,7 @@ def test_no_fitting_managed_candidate_fails_before_model_acquisition(
 def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     _wire_common(tmp_path, monkeypatch)
     first = get_model("deepseek-coder-1.3b")
@@ -555,6 +558,7 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
         revision_resolver: object,
         *,
         max_candidates: int,
+        on_resolution_failure: Callable[[LocalModelConfig, str], None],
     ) -> tuple[PlannedModelCandidate, ...]:
         assert task_text == "Repair Python code safely."
         assert output_tokens > 0
@@ -563,6 +567,7 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
         assert store is evidence_store
         assert callable(revision_resolver)
         assert max_candidates == 2
+        on_resolution_failure(failed, "network unavailable")
         events.append("plan")
         return candidates
 
@@ -599,6 +604,11 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
     result = runner.run_benchmark(_args(_task_file(tmp_path)))
 
     assert result.comparison.accepted
+    output = capsys.readouterr().out
+    assert (
+        "SELF_IMPROVE_MODEL_UNAVAILABLE "
+        f"model={failed.name} error=\"network unavailable\""
+    ) in output
     assert events == [
         "load",
         "plan",

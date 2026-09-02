@@ -103,9 +103,13 @@ def _default_selector(_task: str) -> LocalModelConfig:
 
 def _default_revision_resolver(repo_id: str) -> str:
     from huggingface_hub import HfApi
+    from huggingface_hub.errors import HfHubHTTPError
 
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
-    info = HfApi(token=token).model_info(repo_id=repo_id, revision="main")
+    try:
+        info = HfApi(token=token).model_info(repo_id=repo_id, revision="main")
+    except (HfHubHTTPError, OSError) as exc:
+        raise RuntimeError(f"Hub revision lookup failed for {repo_id}: {exc}") from exc
     revision = str(info.sha or "").lower()
     if _SHA_RE.fullmatch(revision) is None:
         raise RuntimeError(f"Hub did not return an immutable revision for {repo_id}")
@@ -324,7 +328,28 @@ class ModelLeaseManager:
         """Resolve one repository to a normalized immutable model commit."""
         if not isinstance(repo_id, str) or not repo_id.strip():
             raise ValueError("model repository identifier must be non-empty")
-        resolved = self._resolve_revision(repo_id)
+        normalized_repo = repo_id.strip()
+        owned = sorted(
+            (
+                item
+                for item in self._load_manifests()
+                if item.repo_id == normalized_repo
+            ),
+            key=lambda item: (item.last_used_ns, item.revision),
+            reverse=True,
+        )
+        if owned:
+            newest = owned[0]
+            if (
+                not newest.path.is_file()
+                or newest.path.stat().st_size != newest.size_bytes
+                or _sha256(newest.path) != newest.artifact_sha256
+            ):
+                raise RuntimeError(
+                    f"owned model artifact is missing or changed: {newest.path}"
+                )
+            return newest.revision
+        resolved = self._resolve_revision(normalized_repo)
         revision = resolved.lower() if isinstance(resolved, str) else ""
         if _SHA_RE.fullmatch(revision) is None:
             raise RuntimeError("model revision resolver did not return a 40-character commit")
