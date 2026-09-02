@@ -14,11 +14,11 @@ import signal
 import subprocess
 import tempfile
 import time
-from contextlib import ExitStack
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Final, Protocol, TextIO, cast
 
+from general_ludd.hardware.model_fit import unified_probe
 from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
     CodexReference,
@@ -27,7 +27,12 @@ from general_ludd.self_improve.codex_comparison import (
     build_retry_prompt,
     compare_with_codex,
 )
+from general_ludd.self_improve.model_candidate_planner import (
+    PlannedModelCandidate,
+    plan_model_candidates,
+)
 from general_ludd.self_improve.model_lifecycle import ModelLeaseManager
+from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
 _MAX_CAPTURE_BYTES: Final = 2_097_152
 _MAX_TASK_BYTES: Final = 262_144
@@ -1040,66 +1045,120 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
             )
     prompt = base_prompt
     final: AttemptResult | None = None
-    model_path: Path | None = None
-    with ExitStack() as model_stack:
-        for attempt in range(1, args.max_attempts + 1):
-            print(f"SELF_IMPROVE_ATTEMPT_START attempt={attempt}", flush=True)
-            try:
-                if attempt == 1 and mechanical_proposal is not None:
-                    proposal = mechanical_proposal
+    model_manager: ModelLeaseManager | None = None
+    managed_candidates: tuple[PlannedModelCandidate, ...] | None = None
+    candidate_index = 0
+    for attempt in range(1, args.max_attempts + 1):
+        print(f"SELF_IMPROVE_ATTEMPT_START attempt={attempt}", flush=True)
+        use_mechanical = attempt == 1 and mechanical_proposal is not None
+        candidate: PlannedModelCandidate | None = None
+        if not use_mechanical:
+            if model_manager is None:
+                model_manager = ModelLeaseManager()
+            if explicit_model_path is None:
+                if managed_candidates is None:
+                    model_attempt_budget = args.max_attempts - (
+                        1 if mechanical_proposal is not None else 0
+                    )
+                    evidence_path = (
+                        model_manager.cache_root
+                        / ".gludd"
+                        / "capability-evidence.json"
+                    )
+                    managed_candidates = plan_model_candidates(
+                        task.objective,
+                        required_output_tokens,
+                        (),
+                        unified_probe(),
+                        CapabilityEvidenceStore(str(evidence_path)),
+                        model_manager.resolve_revision,
+                        max_candidates=min(3, max(1, model_attempt_budget)),
+                    )
+                    print(
+                        "SELF_IMPROVE_MODEL_PLAN "
+                        f"candidates={json.dumps([item.config.name for item in managed_candidates])}",
+                        flush=True,
+                    )
+                    if not managed_candidates:
+                        raise RuntimeError(
+                            "no fitting local coding model candidates for task, context, and hardware"
+                        )
+                if candidate_index >= len(managed_candidates):
+                    raise RuntimeError(
+                        "bounded local coding model candidate plan is exhausted"
+                    )
+                candidate = managed_candidates[candidate_index]
+                candidate_index += 1
+        try:
+            if use_mechanical:
+                if mechanical_proposal is None:
+                    raise RuntimeError("mechanical proposal was not generated")
+                proposal = mechanical_proposal
+            else:
+                if model_manager is None:
+                    raise RuntimeError("local model manager was not initialized")
+                if explicit_model_path is not None:
+                    acquisition = model_manager.acquire(
+                        task.objective,
+                        explicit_path=explicit_model_path,
+                    )
+                elif candidate is not None:
+                    acquisition = model_manager.acquire(
+                        task.objective,
+                        model_config=candidate.config,
+                        resolved_revision=candidate.resolved_revision,
+                    )
                 else:
-                    if model_path is None:
-                        acquired = model_stack.enter_context(
-                            ModelLeaseManager().acquire(
-                                task.objective,
-                                explicit_path=explicit_model_path,
-                            )
-                        )
-                        model_path = acquired.path
-                        print(
-                            "SELF_IMPROVE_MODEL_ACQUIRED "
-                            f"model={acquired.model_id} source={acquired.source} "
-                            f"revision={acquired.resolved_revision or 'explicit'} "
-                            f"sha256={acquired.artifact_sha256}",
-                            flush=True,
-                        )
-                    proposal = generate_local_proposal(root_runner, model_path, prompt)
-            except (RuntimeError, ValueError) as exc:
-                print(
-                    f"SELF_IMPROVE_PROPOSAL_REJECTED attempt={attempt} "
-                    f"error={json.dumps(str(exc)[:1000])}",
-                    flush=True,
-                )
-                if attempt == args.max_attempts:
-                    raise
-                prompt = (
-                    base_prompt
-                    + "\\nPrevious output failed strict proposal validation: "
-                    + str(exc)[:1000]
-                    + "\\nReturn a complete object satisfying every required field."
-                )
-                continue
-            final = evaluate_attempt(
-                root_runner,
-                task,
-                reference,
-                proposal,
-                attempt,
-                merge=args.merge,
-            )
+                    raise RuntimeError("local model candidate was not selected")
+                with acquisition as acquired:
+                    print(
+                        "SELF_IMPROVE_MODEL_ACQUIRED "
+                        f"model={acquired.model_id} source={acquired.source} "
+                        f"revision={acquired.resolved_revision or 'explicit'} "
+                        f"sha256={acquired.artifact_sha256}",
+                        flush=True,
+                    )
+                    proposal = generate_local_proposal(
+                        root_runner,
+                        acquired.path,
+                        prompt,
+                    )
+        except (RuntimeError, ValueError) as exc:
             print(
-                f"SELF_IMPROVE_ATTEMPT_END attempt={attempt} "
-                f"score={final.comparison.score:.2f} accepted={final.comparison.accepted} "
-                f"blockers={json.dumps(final.comparison.blockers)}",
+                f"SELF_IMPROVE_PROPOSAL_REJECTED attempt={attempt} "
+                f"error={json.dumps(str(exc)[:1000])}",
                 flush=True,
             )
-            if final.comparison.accepted:
-                return final
-            prompt = build_retry_prompt(
-                base_prompt,
-                final.comparison,
-                diagnostics=final.diagnostics,
+            if attempt == args.max_attempts:
+                raise
+            prompt = (
+                base_prompt
+                + "\\nPrevious output failed strict proposal validation: "
+                + str(exc)[:1000]
+                + "\\nReturn a complete object satisfying every required field."
             )
+            continue
+        final = evaluate_attempt(
+            root_runner,
+            task,
+            reference,
+            proposal,
+            attempt,
+            merge=args.merge,
+        )
+        print(
+            f"SELF_IMPROVE_ATTEMPT_END attempt={attempt} "
+            f"score={final.comparison.score:.2f} accepted={final.comparison.accepted} "
+            f"blockers={json.dumps(final.comparison.blockers)}",
+            flush=True,
+        )
+        if final.comparison.accepted:
+            return final
+        prompt = build_retry_prompt(
+            base_prompt,
+            final.comparison,
+            diagnostics=final.diagnostics,
+        )
     if final is None:
         raise RuntimeError("no local-model attempt was executed")
     return final

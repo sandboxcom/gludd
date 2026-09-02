@@ -238,14 +238,24 @@ class ModelLeaseManager:
         task_description: str,
         *,
         explicit_path: Path | None = None,
+        model_config: LocalModelConfig | None = None,
+        resolved_revision: str | None = None,
     ) -> Iterator[AcquiredModel]:
-        """Acquire one model, yield its lease, and always release the lease."""
+        """Acquire one explicit or planned model and always release its lease."""
         if not task_description.strip():
             raise ValueError("task description must not be empty")
+        if (model_config is None) != (resolved_revision is None):
+            raise ValueError("planned model config and resolved revision must be paired")
+        if explicit_path is not None and model_config is not None:
+            raise ValueError("explicit model path cannot combine with a planned candidate")
         model = (
             self._acquire_explicit(explicit_path)
             if explicit_path is not None
-            else self._acquire_managed(task_description)
+            else self._acquire_managed(
+                task_description,
+                model_config=model_config,
+                resolved_revision=resolved_revision,
+            )
         )
         primary_error: BaseException | None = None
         try:
@@ -310,13 +320,33 @@ class ModelLeaseManager:
             "or the configured quota/reserve cannot admit the request"
         )
 
-    def _acquire_managed(self, task_description: str) -> AcquiredModel:
-        config = self._selector(task_description)
-        if not isinstance(config, LocalModelConfig) or config.category != "coding":
-            raise RuntimeError("self-improvement selector must return a coding model")
-        revision = self._resolve_revision(config.repo).lower()
+    def resolve_revision(self, repo_id: str) -> str:
+        """Resolve one repository to a normalized immutable model commit."""
+        if not isinstance(repo_id, str) or not repo_id.strip():
+            raise ValueError("model repository identifier must be non-empty")
+        resolved = self._resolve_revision(repo_id)
+        revision = resolved.lower() if isinstance(resolved, str) else ""
         if _SHA_RE.fullmatch(revision) is None:
             raise RuntimeError("model revision resolver did not return a 40-character commit")
+        return revision
+
+    def _acquire_managed(
+        self,
+        task_description: str,
+        *,
+        model_config: LocalModelConfig | None = None,
+        resolved_revision: str | None = None,
+    ) -> AcquiredModel:
+        config = model_config if model_config is not None else self._selector(task_description)
+        if not isinstance(config, LocalModelConfig) or config.category != "coding":
+            raise RuntimeError("self-improvement selector must return a coding model")
+        revision = (
+            resolved_revision.lower()
+            if isinstance(resolved_revision, str)
+            else self.resolve_revision(config.repo)
+        )
+        if _SHA_RE.fullmatch(revision) is None:
+            raise RuntimeError("planned model revision must be a 40-character commit")
 
         cached = self._find_owned(config, revision)
         if cached is None:

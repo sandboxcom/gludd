@@ -468,3 +468,55 @@ def test_process_identity_helper_handles_gone_and_unverifiable_processes(
     fake_psutil.__dict__["Process"] = DeniedProcess
     with pytest.raises(RuntimeError, match="cannot verify model lease owner"):
         lifecycle._default_process_started(123)
+
+
+def test_planned_candidate_identity_bypasses_selector_and_revision_network(
+    tmp_path: Path,
+) -> None:
+    config = _config(name="planned-coder", repo="example/planned-coder")
+    cache_root = tmp_path / "cache"
+    downloader = _Downloader(cache_root, returned_revision=_OTHER_REVISION)
+    manager = _manager(
+        tmp_path,
+        downloader=downloader,
+        selector=lambda _task: pytest.fail("planned candidate must bypass selector"),
+        revision_resolver=lambda _repo: pytest.fail(
+            "planned immutable revision must bypass resolver"
+        ),
+    )
+
+    with manager.acquire(
+        "implement code",
+        model_config=config,
+        resolved_revision=_OTHER_REVISION.upper(),
+    ) as acquired:
+        assert acquired.model_id == config.name
+        assert acquired.resolved_revision == _OTHER_REVISION
+        assert acquired.repo_id == config.repo
+
+    assert downloader.calls == 1
+
+
+@pytest.mark.parametrize(
+    ("model_config", "revision", "explicit", "message"),
+    [
+        (_config(), None, None, "paired"),
+        (None, _REVISION, None, "paired"),
+        (_config(), _REVISION, Path("/tmp/operator.gguf"), "cannot combine"),
+    ],
+)
+def test_planned_candidate_identity_is_complete_and_unambiguous(
+    tmp_path: Path,
+    model_config: LocalModelConfig | None,
+    revision: str | None,
+    explicit: Path | None,
+    message: str,
+) -> None:
+    manager = _manager(tmp_path)
+    with pytest.raises(ValueError, match=message), manager.acquire(
+        "implement code",
+        explicit_path=explicit,
+        model_config=model_config,
+        resolved_revision=revision,
+    ):
+        pytest.fail("invalid acquisition identity must not yield")
