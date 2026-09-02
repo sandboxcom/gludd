@@ -163,6 +163,24 @@ class ValidationRetryProtocol:
     safe_feedback: tuple[tuple[str, str], ...]
 
 
+@dataclass(frozen=True)
+class ModelAttemptOutcomeProtocol:
+    """Identity-bearing boundary between lifecycle failures and model outcomes."""
+
+    version: str
+    acquisition_failure: str
+    plan_exhaustion: str
+    outcome_eligibility: str
+
+
+LOCAL_MODEL_ATTEMPT_OUTCOME_PROTOCOL = ModelAttemptOutcomeProtocol(
+    version="self-improve-model-attempt-outcome-v2",
+    acquisition_failure="terminal_typed_no_model_outcome",
+    plan_exhaustion="terminal_typed_no_attempt_or_model_outcome",
+    outcome_eligibility="candidate_reached_proposal_generation",
+)
+
+
 LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
     version="self-improve-validation-retry-v3",
     error_marker="SELF_IMPROVE_LOCAL_PROPOSAL_ERROR",
@@ -252,6 +270,7 @@ def local_proposal_attempt_identity_digest(prompt_protocol_digest: str) -> str:
         "attempt_protocol": "self-improve-local-attempt-v1",
         "prompt_protocol_digest": prompt_protocol_digest,
         "validation_retry": asdict(LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL),
+        "model_attempt_outcome": asdict(LOCAL_MODEL_ATTEMPT_OUTCOME_PROTOCOL),
         "compact_output": {
             "protocol_version": _COMPACT_PROPOSAL_PROTOCOL_VERSION,
             "schema": _COMPACT_PROPOSAL_JSON_SCHEMA,

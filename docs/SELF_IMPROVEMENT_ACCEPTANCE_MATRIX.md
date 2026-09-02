@@ -77,9 +77,12 @@ ownership-manifest digest. It also records:
 
 The complete attempt-protocol digest, not the prompt digest alone, is the
 selection and outcome key. A schema, system prompt, chat template, canary,
-sampling value, token bound, operation inference, path rule, or decoder change
-therefore invalidates reuse of an earlier failure without deleting its audit
-record.
+sampling value, token bound, operation inference, path rule, decoder, or
+acquisition/outcome-attribution change therefore invalidates reuse of an
+earlier failure without deleting its audit record. The digested lifecycle
+contract states that acquisition refusal and plan exhaustion are terminal
+pre-outcome states, so evidence written under the former phantom-failure
+semantics is retained for audit but cannot exclude a current candidate.
 
 A fixed seed is necessary but does not promise byte-identical output across
 CPU, Metal, CUDA, Vulkan, different offload settings, or runtime revisions.
@@ -231,7 +234,9 @@ phase it never reached.
 application lifecycle defect and must not be hidden by relabeling it as poor
 model output. An `artifact_acquisition` refusal terminates with its typed,
 secret-safe cache cause; it neither writes a failed model-capability outcome nor
-enters proposal-validation retry, because no proposal was generated.
+enters proposal-validation retry, because no proposal was generated. An empty
+or consumed bounded candidate plan terminates as `model_plan_exhausted` before
+another attempt marker, acquisition, proposal retry, or outcome record.
 
 ## Result states and aggregation
 

@@ -18,6 +18,7 @@ import tempfile
 import time
 from contextlib import ExitStack
 from dataclasses import asdict, dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from typing import Final, Protocol, TextIO, cast
 
@@ -78,6 +79,23 @@ _RELEVANCE_STOPWORDS: Final = frozenset(
         "that", "the", "this", "uses", "with", "without",
     }
 )
+
+
+class ModelPlanFailure(StrEnum):
+    """Secret-safe terminal states for bounded model selection."""
+
+    EXHAUSTED = "model_plan_exhausted"
+
+
+class ModelPlanError(RuntimeError):
+    """Typed failure raised before a candidate can begin an attempt."""
+
+    def __init__(self, failure: ModelPlanFailure) -> None:
+        """Retain only a stable category and operator-safe message."""
+        if failure is not ModelPlanFailure.EXHAUSTED:
+            raise ValueError("unsupported typed model plan failure")
+        super().__init__("managed model candidate plan failed: model_plan_exhausted")
+        self.failure = failure
 
 
 def _report_model_resolution_failure(
@@ -702,7 +720,24 @@ def _validation_retry_feedback(error: str) -> str:
 
 def _public_failure_feedback(exc: BaseException) -> str:
     """Return only a typed, bounded, model-text-free public failure marker."""
-    return _validation_retry_feedback(str(exc))
+    typed_failure: str | None = None
+    source = "runner"
+    if isinstance(exc, ModelPlanError):
+        typed_failure = exc.failure.value
+    elif isinstance(exc, ModelAcquisitionError):
+        typed_failure = exc.failure.value
+        source = "model_lifecycle"
+    if typed_failure is None:
+        return _validation_retry_feedback(str(exc))
+
+    protocol = LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
+    feedback = (
+        f"protocol={protocol.version} type={typed_failure} "
+        f"source={source} detail={protocol.redacted_detail}"
+    )
+    if len(feedback.encode("utf-8")) > protocol.max_feedback_bytes:
+        raise RuntimeError("typed public failure feedback exceeds its protocol bound")
+    return feedback
 
 
 def _validation_retry_suffix(error: str) -> str:
@@ -1686,7 +1721,6 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
     reservation_stack = ExitStack()
     try:
         for attempt in range(1, args.max_attempts + 1):
-            print(f"SELF_IMPROVE_ATTEMPT_START attempt={attempt}", flush=True)
             use_mechanical = attempt == 1 and mechanical_proposal is not None
             candidate: PlannedModelCandidate | None = None
             candidate_identity: ModelArtifactIdentity | None = None
@@ -1739,9 +1773,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                             flush=True,
                         )
                         if not managed_candidates:
-                            raise RuntimeError(
-                                "no fitting local coding model candidates for task, context, and hardware"
-                            )
+                            raise ModelPlanError(ModelPlanFailure.EXHAUSTED)
                         failure_hints = (
                             model_manager.owned_identities_for_model_ids(
                                 prior_failed_model_ids
@@ -1757,9 +1789,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                             )
                         )
                     if candidate_index >= len(managed_candidates):
-                        raise RuntimeError(
-                            "bounded local coding model candidate plan is exhausted"
-                        )
+                        raise ModelPlanError(ModelPlanFailure.EXHAUSTED)
                     candidate = managed_candidates[candidate_index]
                     candidate_index += 1
                 candidate_identity = (
@@ -1767,6 +1797,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                     if candidate is not None
                     else None
                 )
+            print(f"SELF_IMPROVE_ATTEMPT_START attempt={attempt}", flush=True)
             try:
                 if use_mechanical:
                     if mechanical_proposal is None:

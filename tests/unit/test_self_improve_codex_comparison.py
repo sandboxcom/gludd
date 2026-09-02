@@ -163,6 +163,35 @@ def test_attempt_identity_binds_complete_managed_output_protocol(
         )
 
 
+def test_attempt_identity_binds_model_acquisition_and_outcome_protocol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prompt_digest = "a" * 64
+    baseline = comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
+    protocol = comparison_module.LOCAL_MODEL_ATTEMPT_OUTCOME_PROTOCOL
+    changed_protocols = (
+        replace(protocol, version="self-improve-model-attempt-outcome-v-next"),
+        replace(
+            protocol,
+            acquisition_failure="recorded_as_model_failure",
+        ),
+        replace(protocol, plan_exhaustion="counts_as_attempt"),
+        replace(protocol, outcome_eligibility="candidate_selected"),
+    )
+
+    for changed in changed_protocols:
+        with monkeypatch.context() as scoped:
+            scoped.setattr(
+                comparison_module,
+                "LOCAL_MODEL_ATTEMPT_OUTCOME_PROTOCOL",
+                changed,
+            )
+            assert (
+                comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
+                != baseline
+            )
+
+
 def test_attempt_identity_binds_runtime_validation_retry_protocol(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

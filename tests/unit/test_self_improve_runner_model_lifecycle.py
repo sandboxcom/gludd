@@ -578,9 +578,10 @@ def test_managed_retries_escalate_across_distinct_planned_model_leases(
     assert evidence_paths == [str(tmp_path / "cache" / ".gludd" / "capability-evidence.json")]
 
 
-def test_no_fitting_managed_candidate_fails_before_model_acquisition(
+def test_no_fitting_managed_candidate_emits_typed_plan_exhaustion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     _wire_common(tmp_path, monkeypatch)
 
@@ -615,8 +616,20 @@ def test_no_fitting_managed_candidate_fails_before_model_acquisition(
         raising=False,
     )
 
-    with pytest.raises(RuntimeError, match="no fitting local coding model candidates"):
+    with pytest.raises(runner.ModelPlanError) as raised:
         runner.run_benchmark(_args(_task_file(tmp_path)))
+
+    assert raised.value.failure is runner.ModelPlanFailure.EXHAUSTED
+    feedback = runner._public_failure_feedback(raised.value)
+    assert "type=model_plan_exhausted" in feedback
+    assert "source=runner" in feedback
+    assert "detail=<redacted>" in feedback
+    assert "no fitting local coding model candidates" not in feedback
+    output = capsys.readouterr().out
+    assert "SELF_IMPROVE_MODEL_PLAN candidates=[]" in output
+    assert "SELF_IMPROVE_ATTEMPT_START" not in output
+    assert "SELF_IMPROVE_MODEL_OUTCOME" not in output
+    assert "SELF_IMPROVE_PROPOSAL_REJECTED" not in output
 
 
 def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
@@ -1276,6 +1289,13 @@ def test_typed_acquisition_refusal_does_not_poison_evidence_or_retry_plan(
     assert "SELF_IMPROVE_PROPOSAL_REJECTED" not in output
     assert "SELF_IMPROVE_MODEL_OUTCOME" not in output
     assert "candidate plan is exhausted" not in output
+    feedback = runner._public_failure_feedback(
+        TypedAcquisitionFailure("must not be exposed")
+    )
+    assert "type=cache_reclaim" in feedback
+    assert "source=model_lifecycle" in feedback
+    assert "detail=<redacted>" in feedback
+    assert "must not be exposed" not in feedback
 
 
 def test_prompt_plan_generation_failure_retries_with_next_reserved_candidate(
@@ -1330,3 +1350,56 @@ def test_prompt_plan_generation_failure_retries_with_next_reserved_candidate(
     assert result.comparison.accepted
     assert proposal_calls == 2
     assert _LeaseManager.released == 2
+
+
+def test_consumed_managed_plan_exhausts_without_fake_second_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _wire_common(tmp_path, monkeypatch)
+    model = get_model("qwen2.5-coder-0.5b")
+    assert model is not None
+    candidate = PlannedModelCandidate(model, "a" * 40, 0.0, 0)
+    outcomes: list[tuple[str, bool]] = []
+
+    def reject_proposal(
+        _root: object,
+        _path: Path,
+        _prompt: str,
+    ) -> ProposalManifest:
+        raise ValueError("invalid structured proposal")
+
+    def record(
+        _store: object,
+        *,
+        task_text: str,
+        candidate: PlannedModelCandidate,
+        attempt_identity_digest: str,
+        succeeded: bool,
+    ) -> int:
+        assert task_text
+        assert len(attempt_identity_digest) == 64
+        outcomes.append((candidate.config.name, succeeded))
+        return len(outcomes)
+
+    monkeypatch.setattr(
+        runner,
+        "plan_model_candidates",
+        lambda *_args, **_kwargs: (candidate,),
+    )
+    monkeypatch.setattr(runner, "generate_local_proposal", reject_proposal)
+    monkeypatch.setattr(runner, "record_self_improve_outcome", record)
+
+    with pytest.raises(runner.ModelPlanError) as raised:
+        runner.run_benchmark(_args(_task_file(tmp_path)))
+
+    assert raised.value.failure is runner.ModelPlanFailure.EXHAUSTED
+    assert outcomes == [(model.name, False)]
+    assert len(_LeaseManager.acquired) == 1
+    assert _LeaseManager.released == 1
+    output = capsys.readouterr().out
+    assert output.count("SELF_IMPROVE_ATTEMPT_START") == 1
+    assert "SELF_IMPROVE_ATTEMPT_START attempt=2" not in output
+    assert output.count("SELF_IMPROVE_MODEL_OUTCOME") == 1
+    assert output.count("SELF_IMPROVE_PROPOSAL_REJECTED") == 1

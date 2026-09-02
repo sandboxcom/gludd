@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import cast
 
 import pytest
 
+import general_ludd.self_improve.codex_comparison as comparison_module
 from general_ludd.hardware.survey import GpuInfo, HardwareInventory
 from general_ludd.local_model import get_model
 from general_ludd.schemas.benchmark import TaskRole, TaskType
@@ -130,6 +132,43 @@ def test_failure_is_loaded_for_same_mapped_task(tmp_path: object) -> None:
         task_text="implement another Python module",
         attempt_identity_digest=_ATTEMPT_IDENTITY,
     ) == ("qwen2.5-coder-0.5b",)
+
+
+def test_pre_fix_phantom_failure_is_ineligible_after_outcome_protocol_change(
+    tmp_path: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prompt_digest = "a" * 64
+    protocol = comparison_module.LOCAL_MODEL_ATTEMPT_OUTCOME_PROTOCOL
+    with monkeypatch.context() as scoped:
+        scoped.setattr(
+            comparison_module,
+            "LOCAL_MODEL_ATTEMPT_OUTCOME_PROTOCOL",
+            replace(
+                protocol,
+                version="self-improve-model-attempt-outcome-pre-cache-refusal-fix",
+            ),
+        )
+        pre_fix_identity = (
+            comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
+        )
+    current_identity = comparison_module.local_proposal_attempt_identity_digest(
+        prompt_digest
+    )
+    assert pre_fix_identity != current_identity
+
+    store = _store(tmp_path)
+    _record(
+        store,
+        succeeded=False,
+        attempt_identity_digest=pre_fix_identity,
+    )
+
+    assert load_latest_failed_model_ids(
+        store,
+        task_text="implement another Python module",
+        attempt_identity_digest=current_identity,
+    ) == ()
 
 
 def test_latest_success_clears_older_failure_for_same_attempt_identity(
