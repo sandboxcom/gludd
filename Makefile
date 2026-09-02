@@ -42,6 +42,7 @@ SELF_IMPROVE_MAX_ATTEMPTS ?= 2
 SELF_IMPROVE_VALIDATE_ONLY ?= 0
 SELF_IMPROVE_CATALOG_LIVE ?= 0
 SELF_IMPROVE_MULTIFILE_LIVE ?= 0
+SELF_IMPROVE_FAILURE_CORPUS_FILE ?= config/self-improve/failure-corpus.json
 RECONCILE_QUIET_PROGRESS ?= 0
 MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
@@ -414,6 +415,7 @@ help:
 	@echo "  test-self-improve TARGET=<name>  Compare an auto-managed local model with Codex (optional SELF_IMPROVE_MODEL_PATH override)"
 	@echo "  test-self-improve-catalog-truth  Replay pinned catalog fixture (SELF_IMPROVE_CATALOG_LIVE=0|1)"
 	@echo "  test-self-improve-multifile      Replay pinned multi-file fixture (SELF_IMPROVE_MULTIFILE_LIVE=0|1)"
+	@echo "  test-self-improve-failure-corpus Replay typed local failures offline (SELF_IMPROVE_FAILURE_CORPUS_FILE)"
 	@echo "  test-self-improve-all            Deprecated alias for one explicit Codex-reference benchmark"
 	@echo "  git-index                    Index git log into SQLite (.gludd/git_history.db)"
 	@echo "  git-search Q='...'           Search indexed git history"
@@ -5633,6 +5635,11 @@ test-self-improve-catalog-truth:
 	@ACTUAL_FIXTURE_SHA256="$$($(PYTHON) -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "config/self-improve/catalog-truth.json")"; \
 		[ "$$ACTUAL_FIXTURE_SHA256" = "67e59f242aba0ade9b5992354daf5f0ec2392df3627ef0c929596011cfe5c30e" ] || { echo "catalog-truth fixture drift: expected=67e59f242aba0ade9b5992354daf5f0ec2392df3627ef0c929596011cfe5c30e actual=$$ACTUAL_FIXTURE_SHA256"; exit 2; }
 	@$(MAKE) --no-print-directory test-self-improve TARGET=catalog-truth SELF_IMPROVE_MODEL_PATH= SELF_IMPROVE_BASELINE_REF=eac05dc88c03f14fbd7dd5f4c6d72943609d9e26 SELF_IMPROVE_REFERENCE_REF=80b381bd87f32487d784964ce93566e3b016b191 SELF_IMPROVE_TASK_FILE=config/self-improve/catalog-truth.json SELF_IMPROVE_MAX_ATTEMPTS=2 SELF_IMPROVE_VALIDATE_ONLY="$(if $(filter 1,$(SELF_IMPROVE_CATALOG_LIVE)),0,1)"
+
+# Fast deterministic replay of typed failures; never loads or downloads a model.
+test-self-improve-failure-corpus:
+	@[ -n "$(SELF_IMPROVE_FAILURE_CORPUS_FILE)" ] || { echo "SELF_IMPROVE_FAILURE_CORPUS_FILE is required"; exit 2; }
+	@$(UV) run python -m scripts.replay_self_improve_failure_corpus --corpus "$(SELF_IMPROVE_FAILURE_CORPUS_FILE)"
 
 # Reproducible multi-file context/lifecycle sentinel; safe plan by default.
 test-self-improve-multifile:

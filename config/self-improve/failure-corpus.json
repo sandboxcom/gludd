@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "protocol": "self-improve-failure-corpus-v1",
+  "cases": [
+    {
+      "id": "no-op-replace",
+      "kind": "compact_decode",
+      "input": {
+        "focus_path": "src/general_ludd/self_improve/example.py",
+        "model_output": "{\"e\":[{\"a\":\"same model text\",\"z\":\"same model text\"}]}"
+      },
+      "expected": {
+        "type": "edit_replace_contract",
+        "source": "worker_tail",
+        "detail": "replace requires distinct non-empty old_text",
+        "forbidden_substrings": []
+      }
+    },
+    {
+      "id": "multiline-redundant-metadata",
+      "kind": "compact_decode",
+      "input": {
+        "focus_path": "src/general_ludd/self_improve/example.py",
+        "model_output": "{\n  \"schema_version\": 1,\n  \"task_id\": \"S83.134\",\n  \"e\": [{\"a\": \"old\", \"z\": \"new\"}]\n}"
+      },
+      "expected": {
+        "type": "proposal_root_contract",
+        "source": "worker_tail",
+        "detail": "compact proposal must contain exactly e",
+        "forbidden_substrings": []
+      }
+    },
+    {
+      "id": "token-exhaustion",
+      "kind": "completion_decode",
+      "input": {
+        "phase": "proposal",
+        "budget": 1536,
+        "require_stop": true,
+        "worker_response": {
+          "choices": [
+            {
+              "finish_reason": "length",
+              "text": "{\"e\":["
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 1100,
+            "completion_tokens": 1536,
+            "total_tokens": 2636
+          }
+        }
+      },
+      "expected": {
+        "type": "decode_budget",
+        "source": "worker_tail",
+        "detail": "local model exhausted the proposal token budget before completion",
+        "forbidden_substrings": []
+      }
+    },
+    {
+      "id": "worker-success-parent-merge-rejection",
+      "kind": "parent_merge",
+      "input": {
+        "worker_path": "src/general_ludd/self_improve/worker_selected.py",
+        "expected_path": "src/general_ludd/self_improve/parent_expected.py",
+        "protocol_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expected": {
+        "type": "proposal_scope",
+        "source": "worker_tail",
+        "detail": "proposal shard edits must cover the exact focus paths",
+        "forbidden_substrings": []
+      }
+    },
+    {
+      "id": "raw-native-log-leakage",
+      "kind": "retry_feedback",
+      "input": {
+        "error": "llama_model_loader: loaded tensor metadata\nggml_metal_init: allocating command buffers\nSELF_IMPROVE_LOCAL_PROPOSAL_ERROR replace requires distinct non-empty old_text\nllama_perf_context_print: prompt eval time recorded"
+      },
+      "expected": {
+        "type": "edit_replace_contract",
+        "source": "proposal_error",
+        "detail": "replace requires distinct non-empty old_text",
+        "forbidden_substrings": [
+          "llama_model_loader",
+          "ggml_metal_init",
+          "llama_perf_context_print",
+          "command buffers"
+        ]
+      }
+    }
+  ]
+}

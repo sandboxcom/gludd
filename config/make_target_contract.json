@@ -2,6 +2,11 @@
   "version": 1,
   "targets": [
     {
+      "name": "test-self-improve-failure-corpus",
+      "make_variables": ["SELF_IMPROVE_FAILURE_CORPUS_FILE"],
+      "behavior": "make test-self-improve-failure-corpus SELF_IMPROVE_FAILURE_CORPUS_FILE=config/self-improve/failure-corpus.json"
+    },
+    {
       "name": "test-self-improve-catalog-truth",
       "make_variables": ["SELF_IMPROVE_CATALOG_LIVE"],
       "behavior": "make test-self-improve-catalog-truth SELF_IMPROVE_CATALOG_LIVE=0"
