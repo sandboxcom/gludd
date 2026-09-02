@@ -5,6 +5,7 @@ __all__ = (
     "ExternalApply",
     "GateDecision",
     "ManagedRunResult",
+    "ManagedSelfImproveResultArtifact",
     "ManagedSelfImproveRunner",
     "SelfApply",
     "SelfImproveGate",
@@ -20,4 +21,5 @@ from general_ludd.self_improve.managed_runner import (
     ManagedRunResult,
     ManagedSelfImproveRunner,
 )
+from general_ludd.self_improve.result_artifact import ManagedSelfImproveResultArtifact
 from general_ludd.self_improve.runtime import build_managed_self_improve_runner

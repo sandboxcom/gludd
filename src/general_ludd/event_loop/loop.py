@@ -65,6 +65,11 @@ from general_ludd.schemas.queue import Queue
 from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.task_return import TaskReturn, TaskReturnStatus
 from general_ludd.schemas.todo import Todo, TodoStatus
+from general_ludd.self_improve.managed_runner import ApprovedSelfImprovePlan
+from general_ludd.self_improve.result_artifact import (
+    ManagedSelfImproveResultArtifact,
+)
+from general_ludd.self_improve.runtime import build_managed_self_improve_runner
 
 if TYPE_CHECKING:
     # TYPE_CHECKING-only: avoids a runtime import cycle and keeps the drain
@@ -76,8 +81,7 @@ logger = logging.getLogger(__name__)
 
 
 class _FileClaimConflict(Exception):
-    """Raised when a todo's git-delivery would clobber a file held by another
-    live worker (#31 multi-agent safety).
+    """Signal that a todo's delivery would clobber another worker's file.
 
     Treated by the completed-work push path exactly like any other delivery
     failure: the work id is left OUT of the pushed ledger so the commit is
@@ -314,6 +318,8 @@ def _compute_todo_estimate(todo: object) -> float:
 
 
 class EventLoop(EventLoopHandlers):
+    """Coordinate one durable scheduling, dispatch, and reconciliation loop."""
+
     def __init__(
         self,
         worker_base_url: str = "http://localhost:8000",
@@ -372,7 +378,9 @@ class EventLoop(EventLoopHandlers):
         inbound_queue: WriteQueue | None = None,
         checkpoint_manager: Any | None = None,
         service_discovery: Any | None = None,
+        self_improve_runner_factory: Callable[[Path], Any] | None = None,
     ) -> None:
+        """Initialize the loop and its injected service boundaries."""
         self.worker_base_url = worker_base_url
         self.config = config or {}
         self._daemon_state = daemon_state
@@ -406,6 +414,10 @@ class EventLoop(EventLoopHandlers):
         # and on boot re-runs any dispatch whose checkpoint survived a
         # writer crash. None = checkpoint/resume disabled (back-compat).
         self._checkpoint_manager = checkpoint_manager
+        self._self_improve_runner_factory = (
+            self_improve_runner_factory or build_managed_self_improve_runner
+        )
+        self._self_improve_run_lock = asyncio.Lock()
         # Compaction feedback loop: accumulated accuracy samples across ticks.
         self._compaction_passed = 0
         self._compaction_total = 0
@@ -878,6 +890,7 @@ class EventLoop(EventLoopHandlers):
             return await asyncio.to_thread(fn, *args, **kwargs)
 
     async def run_forever(self, interval: float = 1.0) -> None:
+        """Run observable ticks until :meth:`stop` is called."""
         self._running = True
         # B3.1.5: re-hydrate crash-interrupted dispatches before the tick
         # loop starts so a writer restart does not lose in-flight work.
@@ -976,6 +989,7 @@ class EventLoop(EventLoopHandlers):
         self._wake_event.set()
 
     def stop(self) -> None:
+        """Request a graceful stop and wake a sleeping loop."""
         self._running = False
         self.wake()
 
@@ -993,6 +1007,7 @@ class EventLoop(EventLoopHandlers):
         await self._drain_background_tasks()
 
     def get_available_tools(self) -> list[str]:
+        """Return the names of currently registered MCP tools."""
         if self._mcp_tool_registry is None:
             return []
         return self._mcp_tool_registry.tool_names()
@@ -1026,8 +1041,7 @@ class EventLoop(EventLoopHandlers):
         return project_id
 
     def _resolve_project_root_for_collections(self, project_id: str | None) -> str | None:
-        """Resolve the directory whose ``.gludd/collections/`` holds the
-        project-local Ansible content.
+        """Resolve the root containing project-local Ansible collections.
 
         Looks up the per-project workspace (``self._project_workspace``) and
         returns its ``repo_dir`` (where the project repo — and its
@@ -2004,7 +2018,6 @@ class EventLoop(EventLoopHandlers):
         and promoted.  Legacy test-only loops without a durable store retain the
         older helper above until their caller explicitly wires admission.
         """
-
         from general_ludd.security.sandboxes import SandboxTarget, detect
         from general_ludd.security.sandboxes.attestation import (
             RuntimeSandboxObservation,
@@ -2112,7 +2125,6 @@ class EventLoop(EventLoopHandlers):
 
     async def _sandbox_release_backend(self, backend: Any, handle: Any) -> None:
         """Release the exact backend selected for this admission attempt."""
-
         try:
             await self._bounded_to_thread(backend.release, handle)
         except Exception as exc:
@@ -2214,8 +2226,7 @@ class EventLoop(EventLoopHandlers):
         return PermissionSpecParser.intersection(human_spec, agent_spec)
 
     async def _resolve_human_input_for_todo(self, todo_id: str) -> str | None:
-        """Return the resolution text of the most-recently-resolved HumanTodo
-        that names this todo as its parent (``parent_agent_todo_id``).
+        """Return the latest resolved HumanTodo text for a parent todo.
 
         Injected into the next dispatch's extravars as ``human_input`` so the
         agent receives the human's response to a blocker it raised. Returns
@@ -2325,6 +2336,14 @@ class EventLoop(EventLoopHandlers):
         default_playbook = self._config_snapshot.get("default_playbook", "noop.yml")
         work_type = _safe_str(todo, "work_type", "code") or "code"
         project_id_val = todo.project_id if hasattr(todo, "project_id") and isinstance(todo.project_id, str) else None
+        if work_type == "self_improve":
+            await self._dispatch_managed_self_improve(
+                todo,
+                project_id=project_id_val,
+                task_return_repo=eff_task_return_repo,
+                session=eff_session,
+            )
+            return
         workspaces = self._project_workspace if isinstance(self._project_workspace, dict) else None
         ws = workspaces.get(project_id_val) if workspaces and project_id_val else None
         playbook = _playbook_for_work_type(
@@ -3111,6 +3130,195 @@ class EventLoop(EventLoopHandlers):
             if todo_id:
                 with contextlib.suppress(Exception):
                     self._checkpoint_manager.clear(todo_id)
+
+    async def _dispatch_managed_self_improve(
+        self,
+        todo: Any,
+        *,
+        project_id: str | None,
+        task_return_repo: TaskReturnRepository | None,
+        session: AsyncSession | None,
+    ) -> None:
+        """Run one immutable approved plan without a generic dispatch fallback."""
+        plan_artifact = _safe_str(todo, "plan_artifact")
+        if not plan_artifact:
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=project_id,
+                reason="missing_plan_artifact",
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+        try:
+            plan = ApprovedSelfImprovePlan.from_json(plan_artifact)
+        except (TypeError, ValueError):
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=project_id,
+                reason="invalid_plan_artifact",
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+
+        todo_id = _safe_str(todo, "todo_id", "") or ""
+        if plan.todo_id != todo_id:
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=project_id,
+                reason="todo_identity_mismatch",
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+        if project_id is None or plan.project_id != project_id:
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=project_id,
+                reason="project_identity_mismatch",
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+
+        repo_root = self._resolve_managed_self_improve_repo(project_id)
+        if repo_root is None:
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=project_id,
+                reason="repository_unavailable",
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+        if plan.repo_root != repo_root:
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=project_id,
+                reason="repository_identity_mismatch",
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+
+        try:
+            async with self._self_improve_run_lock:
+                managed_runner = self._self_improve_runner_factory(repo_root)
+                result = await self._bounded_to_thread(managed_runner.run, plan)
+        except Exception as exc:
+            logger.warning(
+                "Managed self-improvement failed for todo %s (%s)",
+                todo_id,
+                type(exc).__name__,
+            )
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=project_id,
+                reason="managed_execution_failed",
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+
+        try:
+            artifact = ManagedSelfImproveResultArtifact.from_run_result(result)
+            if (
+                artifact.plan_identity_digest != plan.identity_digest
+                or artifact.attempt_identity_digest != plan.attempt_identity_digest
+            ):
+                raise ValueError("managed result identity does not match approved plan")
+            result_summary = artifact.to_json()
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "Managed self-improvement returned an invalid result for todo %s (%s)",
+                todo_id,
+                type(exc).__name__,
+            )
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=project_id,
+                reason="managed_result_invalid",
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+
+        await self._persist_managed_self_improve_return(
+            todo,
+            project_id=project_id,
+            result_summary=result_summary,
+            exit_code=0 if artifact.accepted else 1,
+            task_return_repo=task_return_repo,
+            session=session,
+        )
+
+    def _resolve_managed_self_improve_repo(self, project_id: str) -> Path | None:
+        """Resolve one project-owned canonical repository without fallbacks."""
+        workspaces = (
+            self._project_workspace
+            if isinstance(self._project_workspace, dict)
+            else None
+        )
+        if workspaces is None:
+            return None
+        workspace = workspaces.get(project_id)
+        repo_dir = getattr(workspace, "repo_dir", None)
+        if repo_dir is None:
+            return None
+        try:
+            repo_root = Path(repo_dir).resolve(strict=True)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return None
+        return repo_root if repo_root.is_dir() else None
+
+    async def _persist_managed_self_improve_return(
+        self,
+        todo: Any,
+        *,
+        project_id: str | None,
+        task_return_repo: TaskReturnRepository | None,
+        session: AsyncSession | None,
+        reason: str | None = None,
+        result_summary: str | None = None,
+        exit_code: int = 1,
+    ) -> None:
+        """Persist a managed result through the existing TaskReturn pipeline."""
+        if result_summary is None:
+            result_summary = json.dumps(
+                {
+                    "accepted": False,
+                    "kind": "managed_self_improve",
+                    "reason": reason or "managed_execution_failed",
+                },
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        job = JobSpec(
+            job_id=f"EXEC-{todo.todo_id}",
+            todo_id=todo.todo_id,
+            playbook=_WORK_TYPE_PLAYBOOK_MAP["self_improve"],
+            queue=_safe_str(todo, "queue", "core") or "core",
+            work_type="self_improve",
+            resource_profile=(
+                _safe_str(todo, "resource_profile", "local_heavy")
+                or "local_heavy"
+            ),
+            plan_artifact=_safe_str(todo, "plan_artifact"),
+            project_id=project_id,
+        )
+        await self._persist_task_return(
+            todo,
+            job,
+            {
+                "return_id": f"RET-{job.job_id}",
+                "exit_code": exit_code,
+                "result_summary": result_summary,
+            },
+            _task_return_repo_override=task_return_repo,
+            _session_override=session,
+        )
 
     async def _resume_interrupted_dispatches(self) -> None:
         """B3.1.5: hydrate crash-interrupted dispatches on boot, re-enqueue.
@@ -4406,6 +4614,7 @@ class EventLoop(EventLoopHandlers):
         return persisted
 
     async def dispatch_return_review(self, task_return: TaskReturn) -> dict[str, Any]:
+        """Describe a review dispatch for one newly created task return."""
         if task_return.status != TaskReturnStatus.CREATED:
             return {"status": "skipped", "reason": "not_created"}
         job = JobSpec(
@@ -4421,10 +4630,12 @@ class EventLoop(EventLoopHandlers):
         return {"status": "dispatched", "job_id": job.job_id}
 
     async def claim_runnable_todos(self, todos: list[Todo]) -> list[Todo]:
+        """Return only todos whose status is ready for execution."""
         runnable = [t for t in todos if t.status == TodoStatus.QUEUED]
         return runnable
 
     async def reconcile_decision(self, decision: TaskDecision, todo: Todo) -> Todo:
+        """Apply one review decision to the in-memory todo state machine."""
         if decision.decision == "complete":
             todo.transition_to(TodoStatus.COMPLETE)
         elif decision.decision == "needs_more_work":
