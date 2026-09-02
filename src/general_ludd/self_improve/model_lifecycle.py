@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import logging
@@ -11,10 +12,11 @@ import os
 import re
 import shutil
 import stat
+import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from enum import StrEnum
@@ -76,6 +78,23 @@ class ModelAcquisitionEvent:
     revision: str | None
     elapsed_seconds: float
     failure: ModelAcquisitionFailure | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ModelCacheDiagnostic:
+    """Secret-safe cache pressure and reclamation feasibility evidence."""
+
+    cache_key: str
+    payload_bytes: int
+    required_bytes: int
+    quota_bytes: int
+    reserve_bytes: int
+    disk_free_bytes: int
+    owned_count: int
+    leased_count: int
+    eviction_candidate_count: int
+    under_pressure: bool
+    can_reclaim: bool
 
 
 class _Downloader(Protocol):
@@ -737,6 +756,54 @@ class ModelLeaseManager:
             if primary_error is None:
                 self.reclaim(required_bytes=0)
 
+    def diagnose_reclaim(self, *, required_bytes: int) -> ModelCacheDiagnostic:
+        """Report whether owned unleased artifacts can satisfy cache pressure."""
+        if (
+            isinstance(required_bytes, bool)
+            or not isinstance(required_bytes, int)
+            or required_bytes < 0
+        ):
+            raise ValueError("required_bytes must be a non-negative integer")
+        manifests = self._load_manifests()
+        active = self._active_digests()
+        try:
+            free = self._disk_free(self.cache_root)
+        except OSError as exc:
+            raise RuntimeError("cannot inspect model cache disk headroom") from exc
+        payload = self._cache_payload_bytes()
+        candidates = [
+            item for item in manifests if item.artifact_sha256 not in active
+        ]
+        reclaimable_bytes = sum(item.size_bytes for item in candidates)
+        under_pressure = (
+            payload + required_bytes > self.quota_bytes
+            or free < self.reserve_bytes + required_bytes
+        )
+        can_reclaim = (
+            not under_pressure
+            or (
+                max(0, payload - reclaimable_bytes) + required_bytes
+                <= self.quota_bytes
+                and free + reclaimable_bytes
+                >= self.reserve_bytes + required_bytes
+            )
+        )
+        return ModelCacheDiagnostic(
+            cache_key=self._identity_key(str(self.cache_root)),
+            payload_bytes=payload,
+            required_bytes=required_bytes,
+            quota_bytes=self.quota_bytes,
+            reserve_bytes=self.reserve_bytes,
+            disk_free_bytes=free,
+            owned_count=len(manifests),
+            leased_count=sum(
+                item.artifact_sha256 in active for item in manifests
+            ),
+            eviction_candidate_count=len(candidates),
+            under_pressure=under_pressure,
+            can_reclaim=can_reclaim,
+        )
+
     def reclaim(self, *, required_bytes: int) -> tuple[Path, ...]:
         """Evict oldest owned, unleased revisions until quota/headroom is safe."""
         if (
@@ -1212,10 +1279,99 @@ class ModelLeaseManager:
             ) from exc
 
 
+def _print_operator_event(event: ModelAcquisitionEvent) -> None:
+    """Print one secret-safe lifecycle event for an operator invocation."""
+    print(
+        json.dumps(
+            {
+                "failure": event.failure.value if event.failure is not None else None,
+                "kind": "model_cache_event",
+                "operation_id": event.operation_id,
+                "phase": event.phase.value,
+                "repository_key": event.repository_key,
+                "revision": event.revision,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        flush=True,
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the fail-closed operator cache diagnostic or reclamation fallback."""
+    parser = argparse.ArgumentParser(
+        description="Diagnose or reclaim Gludd-owned self-improvement models."
+    )
+    parser.add_argument("--cache-root", required=True)
+    parser.add_argument("--required-bytes", required=True, type=int)
+    parser.add_argument("--validate-only", required=True, choices=("0", "1"))
+    arguments = parser.parse_args(list(argv) if argv is not None else None)
+    try:
+        configured_root = str(arguments.cache_root).strip()
+        manager = ModelLeaseManager(
+            cache_root=(
+                Path(configured_root).expanduser()
+                if configured_root
+                else None
+            ),
+            event_sink=_print_operator_event,
+        )
+        diagnostic = manager.diagnose_reclaim(
+            required_bytes=arguments.required_bytes
+        )
+        removed: tuple[Path, ...] = ()
+        if arguments.validate_only == "1":
+            status = "validated" if diagnostic.can_reclaim else "refused"
+        else:
+            removed = manager.reclaim(required_bytes=arguments.required_bytes)
+            status = "applied"
+        payload = {
+            "cache_key": diagnostic.cache_key,
+            "can_reclaim": diagnostic.can_reclaim,
+            "disk_free_bytes": diagnostic.disk_free_bytes,
+            "eviction_candidate_count": diagnostic.eviction_candidate_count,
+            "leased_count": diagnostic.leased_count,
+            "owned_count": diagnostic.owned_count,
+            "payload_bytes": diagnostic.payload_bytes,
+            "quota_bytes": diagnostic.quota_bytes,
+            "removed_count": len(removed),
+            "required_bytes": diagnostic.required_bytes,
+            "reserve_bytes": diagnostic.reserve_bytes,
+            "status": status,
+            "under_pressure": diagnostic.under_pressure,
+        }
+        print(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")),
+            flush=True,
+        )
+        return 0 if status != "refused" else 2
+    except (OSError, RuntimeError, ValueError) as error:
+        print(
+            json.dumps(
+                {
+                    "error_type": type(error).__name__,
+                    "status": "refused",
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
+        return 2
+
+
 __all__ = [
     "AcquiredModel",
     "ModelAcquisitionEvent",
     "ModelAcquisitionFailure",
     "ModelAcquisitionPhase",
+    "ModelCacheDiagnostic",
     "ModelLeaseManager",
+    "main",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

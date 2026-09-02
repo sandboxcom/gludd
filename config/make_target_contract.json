@@ -218,6 +218,11 @@
       "behavior": "make clean-e2e-small-model E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY=1"
     },
     {
+      "name": "clean-hf-cache",
+      "make_variables": ["CLEAN_HF_CACHE_ROOT", "CLEAN_HF_CACHE_REQUIRED_BYTES", "CLEAN_HF_CACHE_VALIDATE_ONLY"],
+      "behavior": "make clean-hf-cache CLEAN_HF_CACHE_ROOT=/tmp/gludd-clean-hf-cache-contract CLEAN_HF_CACHE_REQUIRED_BYTES=0 CLEAN_HF_CACHE_VALIDATE_ONLY=1"
+    },
+    {
       "name": "node-deps-sync",
       "make_variables": ["NODE_DEPS_VALIDATE_ONLY", "NODE_DEPS_NPM_USERCONFIG", "NODE_DEPS_NPM_CACHE", "NODE_DEPS_NPM_REGISTRY", "NODE_DEPS_NPM_UPDATE_NOTIFIER"],
       "behavior": "make node-deps-sync NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false"

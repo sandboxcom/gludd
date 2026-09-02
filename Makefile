@@ -208,6 +208,7 @@ help:
 	@echo "  sync-llama-cpp        Sync locked local-inference extra (SYNC_LLAMA_CPP_VALIDATE_ONLY=0|1)"
 	@echo "  test-local-model-inference  Locked optional-runtime smoke (LOCAL_MODEL_INFERENCE_MODEL_PATH, LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=0|1)"
 	@echo "  clean-e2e-small-model       Remove only the reproducible /tmp GGUF materialization (E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY=0|1)"
+	@echo "  clean-hf-cache             Diagnose/reclaim Gludd-owned unleased models (CLEAN_HF_CACHE_ROOT, CLEAN_HF_CACHE_REQUIRED_BYTES, CLEAN_HF_CACHE_VALIDATE_ONLY=0|1)"
 	@echo "  validate-ansible-runtime-boundary  Validate split core/controller/managed-host artifacts"
 	@echo "  build-ansible-execution-environment  Build the locked controller EE (ANSIBLE_EE_*)"
 	@echo "  verify-ansible-execution-environment Verify one digest-addressed controller EE (ANSIBLE_EE_*)"
@@ -7812,16 +7813,16 @@ gate-cleanup:
 	@rm -f .gate-logs/coverage-branch.json .gate-logs/coverage-data-*.json .gate-logs/coverage-data-*.json.progress.json
 	@echo "[gate-cleanup] done"
 
+CLEAN_HF_CACHE_ROOT ?= $(GLUDD_SELF_IMPROVE_MODEL_CACHE)
+CLEAN_HF_CACHE_REQUIRED_BYTES ?= 0
+CLEAN_HF_CACHE_VALIDATE_ONLY ?= 1
+
 .PHONY: clean-hf-cache
-clean-hf-cache:
-	@echo "=== Cleaning HuggingFace model cache ==="
-	@du -sh ~/.cache/huggingface/hub/models--*/ 2>/dev/null | sort -h | tail -10 || echo "  No HF hub cache found"
-	@rm -rf ~/.cache/huggingface/hub/models--bartowski--Qwen2.5-0.5B-Instruct-GGUF 2>/dev/null || true
-	@rm -rf ~/.cache/huggingface/hub/models--bartowski--Qwen2.5-1.5B-Instruct-GGUF 2>/dev/null || true
-	@rm -rf ~/.cache/huggingface/hub/models--bartowski--DeepSeek-Coder-1.3B-Base-GGUF 2>/dev/null || true
-	@rm -rf ~/.cache/huggingface/hub/models--bartowski--Llama-3.2-1B-Instruct-GGUF 2>/dev/null || true
-	@rm -rf ~/.cache/huggingface/hub/models--bartowski--Phi-3-mini-4k-instruct-GGUF 2>/dev/null || true
-	@echo "=== HF cache cleaned ==="
+clean-hf-cache: ## Diagnose or reclaim only Gludd-owned unleased model artifacts
+	@$(UV) run python -m general_ludd.self_improve.model_lifecycle \
+		--cache-root "$(CLEAN_HF_CACHE_ROOT)" \
+		--required-bytes "$(CLEAN_HF_CACHE_REQUIRED_BYTES)" \
+		--validate-only "$(CLEAN_HF_CACHE_VALIDATE_ONLY)"
 
 # ---------------------------------------------------------------------------
 # Coverage audit: per-file coverage check with configurable threshold.
