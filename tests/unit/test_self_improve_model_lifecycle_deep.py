@@ -8,7 +8,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import Literal
+from typing import Literal, cast
 
 import pytest
 
@@ -173,8 +173,18 @@ def test_constructor_rejects_symlinked_cache_and_unverifiable_owner(
     with pytest.raises(RuntimeError, match="must not be a symlink"):
         ModelLeaseManager(cache_root=linked)
 
-    with pytest.raises(RuntimeError, match="cannot identify current"):
-        _manager(tmp_path / "owner", process_started=lambda _pid: None)
+    def process_started_with(value: object) -> Callable[[int], float | None]:
+        def process_started(_pid: int) -> float | None:
+            return cast(float | None, value)
+
+        return process_started
+
+    for index, invalid_birth in enumerate((None, 0.0, float("nan"), True)):
+        with pytest.raises(RuntimeError, match="cannot identify current"):
+            _manager(
+                tmp_path / f"owner-{index}",
+                process_started=process_started_with(invalid_birth),
+            )
 
 
 def test_acquisition_rejects_empty_task_non_coding_selector_and_mutable_revision(
@@ -386,7 +396,7 @@ def test_primary_failure_survives_lease_cleanup_failure(
     assert any("lease unlink failed" in note for note in raised.value.__notes__)
 
 
-def test_hugging_face_helpers_pin_revision_and_execute_exact_deletion(
+def test_hugging_face_helpers_pin_revision_and_build_downloader(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -407,21 +417,7 @@ def test_hugging_face_helpers_pin_revision_and_execute_exact_deletion(
             observed.append((repo_id, revision))
             return SimpleNamespace(sha=_REVISION.upper())
 
-    class FakeStrategy:
-        def execute(self) -> None:
-            observed.append("execute")
-
-    class FakeCache:
-        def delete_revisions(self, revision: str) -> FakeStrategy:
-            observed.append(("delete", revision))
-            return FakeStrategy()
-
-    def scan_cache_dir(*, cache_dir: Path) -> FakeCache:
-        observed.append(("cache", cache_dir))
-        return FakeCache()
-
     fake_hub.__dict__["HfApi"] = FakeApi
-    fake_hub.__dict__["scan_cache_dir"] = scan_cache_dir
     monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
     monkeypatch.setitem(sys.modules, "huggingface_hub.errors", fake_errors)
     monkeypatch.setenv("HF_TOKEN", "secret")
@@ -432,10 +428,7 @@ def test_hugging_face_helpers_pin_revision_and_execute_exact_deletion(
     assert lifecycle._default_revision_resolver("example/public-repo") == _REVISION
     assert ("token", False) in observed
     assert isinstance(lifecycle._default_downloader(tmp_path), ModelDownloader)
-    lifecycle._delete_hf_revision(tmp_path, _REVISION)
     assert ("example/repo", "main") in observed
-    assert ("delete", _REVISION) in observed
-    assert "execute" in observed
 
     class BadApi(FakeApi):
         def model_info(self, *, repo_id: str, revision: str) -> SimpleNamespace:

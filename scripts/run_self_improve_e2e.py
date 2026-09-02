@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import ExitStack
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Final, Protocol, TextIO, cast
@@ -45,7 +46,9 @@ from general_ludd.self_improve.model_candidate_planner import (
 from general_ludd.self_improve.model_lifecycle import (
     AcquiredModel,
     ModelAcquisitionEvent,
+    ModelArtifactIdentity,
     ModelLeaseManager,
+    ModelPlanReservation,
 )
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 from general_ludd.small_models.recommender import map_task_to_capabilities
@@ -82,6 +85,18 @@ def _report_model_resolution_failure(
         "SELF_IMPROVE_MODEL_UNAVAILABLE "
         f"model={model.name} error={json.dumps(reason[:1000])}",
         flush=True,
+    )
+
+
+def _planned_artifact_identity(
+    candidate: PlannedModelCandidate,
+) -> ModelArtifactIdentity:
+    """Adapt a planner result to the lifecycle's immutable artifact boundary."""
+    return ModelArtifactIdentity(
+        model_id=candidate.config.name,
+        repo_id=candidate.config.repo,
+        filename=candidate.config.filename,
+        revision=candidate.resolved_revision,
     )
 
 
@@ -1584,195 +1599,249 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
     model_manager: ModelLeaseManager | None = None
     model_evidence_store: CapabilityEvidenceStore | None = None
     managed_candidates: tuple[PlannedModelCandidate, ...] | None = None
+    model_plan_reservation: ModelPlanReservation | None = None
     candidate_index = 0
-    for attempt in range(1, args.max_attempts + 1):
-        print(f"SELF_IMPROVE_ATTEMPT_START attempt={attempt}", flush=True)
-        use_mechanical = attempt == 1 and mechanical_proposal is not None
-        candidate: PlannedModelCandidate | None = None
-        if not use_mechanical:
-            if model_manager is None:
-                model_manager = ModelLeaseManager(
-                    event_sink=_report_model_acquisition_event,
-                )
-            if explicit_model_path is None:
-                if managed_candidates is None:
-                    model_attempt_budget = args.max_attempts - (
-                        1 if mechanical_proposal is not None else 0
-                    )
-                    evidence_path = (
-                        model_manager.cache_root
-                        / ".gludd"
-                        / "capability-evidence.json"
-                    )
-                    model_evidence_store = CapabilityEvidenceStore(str(evidence_path))
-                    prior_failed_model_ids = load_latest_failed_model_ids(
-                        model_evidence_store,
-                        task_text=task.objective,
-                        attempt_identity_digest=attempt_identity_digest,
-                    )
-                    managed_candidates = plan_model_candidates(
-                        task.objective,
-                        required_output_tokens,
-                        prior_failed_model_ids,
-                        unified_probe(),
-                        model_evidence_store,
-                        model_manager.resolve_revision,
-                        input_tokens=max(
-                            1,
-                            (
-                                (
-                                    prompt.max_prompt_bytes
-                                    if isinstance(prompt, PromptPlan)
-                                    else len(prompt.encode("utf-8"))
-                                )
-                                + 3
-                            )
-                            // 4,
-                        ),
-                        max_candidates=min(3, max(1, model_attempt_budget)),
-                        on_resolution_failure=_report_model_resolution_failure,
-                    )
-                    print(
-                        "SELF_IMPROVE_MODEL_PLAN "
-                        f"candidates={json.dumps([item.config.name for item in managed_candidates])}",
-                        flush=True,
-                    )
-                    if not managed_candidates:
-                        raise RuntimeError(
-                            "no fitting local coding model candidates for task, context, and hardware"
-                        )
-                if candidate_index >= len(managed_candidates):
-                    raise RuntimeError(
-                        "bounded local coding model candidate plan is exhausted"
-                    )
-                candidate = managed_candidates[candidate_index]
-                candidate_index += 1
-        try:
-            if use_mechanical:
-                if mechanical_proposal is None:
-                    raise RuntimeError("mechanical proposal was not generated")
-                proposal = mechanical_proposal
-            else:
+    reservation_stack = ExitStack()
+    try:
+        for attempt in range(1, args.max_attempts + 1):
+            print(f"SELF_IMPROVE_ATTEMPT_START attempt={attempt}", flush=True)
+            use_mechanical = attempt == 1 and mechanical_proposal is not None
+            candidate: PlannedModelCandidate | None = None
+            candidate_identity: ModelArtifactIdentity | None = None
+            if not use_mechanical:
                 if model_manager is None:
-                    raise RuntimeError("local model manager was not initialized")
-                if explicit_model_path is not None:
-                    acquisition = model_manager.acquire(
-                        task.objective,
-                        explicit_path=explicit_model_path,
+                    model_manager = ModelLeaseManager(
+                        event_sink=_report_model_acquisition_event,
                     )
-                elif candidate is not None:
-                    acquisition = model_manager.acquire(
-                        task.objective,
-                        model_config=candidate.config,
-                        resolved_revision=candidate.resolved_revision,
-                    )
-                else:
-                    raise RuntimeError("local model candidate was not selected")
-                acquired_model: AcquiredModel | None = None
-                try:
-                    with acquisition as acquired:
-                        acquired_model = acquired
+                if explicit_model_path is None:
+                    if managed_candidates is None:
+                        model_attempt_budget = args.max_attempts - (
+                            1 if mechanical_proposal is not None else 0
+                        )
+                        evidence_path = (
+                            model_manager.cache_root
+                            / ".gludd"
+                            / "capability-evidence.json"
+                        )
+                        model_evidence_store = CapabilityEvidenceStore(str(evidence_path))
+                        prior_failed_model_ids = load_latest_failed_model_ids(
+                            model_evidence_store,
+                            task_text=task.objective,
+                            attempt_identity_digest=attempt_identity_digest,
+                        )
+                        managed_candidates = plan_model_candidates(
+                            task.objective,
+                            required_output_tokens,
+                            prior_failed_model_ids,
+                            unified_probe(),
+                            model_evidence_store,
+                            model_manager.resolve_revision,
+                            input_tokens=max(
+                                1,
+                                (
+                                    (
+                                        prompt.max_prompt_bytes
+                                        if isinstance(prompt, PromptPlan)
+                                        else len(prompt.encode("utf-8"))
+                                    )
+                                    + 3
+                                )
+                                // 4,
+                            ),
+                            max_candidates=min(3, max(1, model_attempt_budget)),
+                            on_resolution_failure=_report_model_resolution_failure,
+                        )
                         print(
-                            "SELF_IMPROVE_MODEL_ACQUIRED "
-                            f"model={acquired.model_id} source={acquired.source} "
-                            f"revision={acquired.resolved_revision or 'explicit'} "
-                            f"sha256={acquired.artifact_sha256}",
+                            "SELF_IMPROVE_MODEL_PLAN "
+                            f"candidates={json.dumps([item.config.name for item in managed_candidates])}",
                             flush=True,
                         )
-                        if isinstance(prompt, PromptPlan):
-                            proposal = generate_local_proposal_plan(
-                                root_runner,
-                                acquired.path,
-                                prompt,
-                                task,
-                                reference,
+                        if not managed_candidates:
+                            raise RuntimeError(
+                                "no fitting local coding model candidates for task, context, and hardware"
                             )
-                        else:
-                            proposal = generate_local_proposal(
-                                root_runner,
-                                acquired.path,
-                                prompt,
+                        failure_hints = (
+                            model_manager.owned_identities_for_model_ids(
+                                prior_failed_model_ids
                             )
-                finally:
-                    if acquired_model is not None:
-                        _report_model_release(acquired_model)
-        except (RuntimeError, ValueError) as exc:
+                        )
+                        model_plan_reservation = reservation_stack.enter_context(
+                            model_manager.reserve_plan(
+                                tuple(
+                                    _planned_artifact_identity(item)
+                                    for item in managed_candidates
+                                ),
+                                failure_hints=failure_hints,
+                            )
+                        )
+                    if candidate_index >= len(managed_candidates):
+                        raise RuntimeError(
+                            "bounded local coding model candidate plan is exhausted"
+                        )
+                    candidate = managed_candidates[candidate_index]
+                    candidate_index += 1
+                candidate_identity = (
+                    _planned_artifact_identity(candidate)
+                    if candidate is not None
+                    else None
+                )
+            try:
+                if use_mechanical:
+                    if mechanical_proposal is None:
+                        raise RuntimeError("mechanical proposal was not generated")
+                    proposal = mechanical_proposal
+                else:
+                    if model_manager is None:
+                        raise RuntimeError("local model manager was not initialized")
+                    if explicit_model_path is not None:
+                        acquisition = model_manager.acquire(
+                            task.objective,
+                            explicit_path=explicit_model_path,
+                        )
+                    elif candidate is not None:
+                        acquisition = model_manager.acquire(
+                            task.objective,
+                            model_config=candidate.config,
+                            resolved_revision=candidate.resolved_revision,
+                        )
+                    else:
+                        raise RuntimeError("local model candidate was not selected")
+                    acquired_model: AcquiredModel | None = None
+                    try:
+                        with acquisition as acquired:
+                            acquired_model = acquired
+                            print(
+                                "SELF_IMPROVE_MODEL_ACQUIRED "
+                                f"model={acquired.model_id} source={acquired.source} "
+                                f"revision={acquired.resolved_revision or 'explicit'} "
+                                f"sha256={acquired.artifact_sha256}",
+                                flush=True,
+                            )
+                            if isinstance(prompt, PromptPlan):
+                                proposal = generate_local_proposal_plan(
+                                    root_runner,
+                                    acquired.path,
+                                    prompt,
+                                    task,
+                                    reference,
+                                )
+                            else:
+                                proposal = generate_local_proposal(
+                                    root_runner,
+                                    acquired.path,
+                                    prompt,
+                                )
+                            if (
+                                model_plan_reservation is not None
+                                and candidate_identity is not None
+                            ):
+                                model_plan_reservation.mark_eligible(
+                                    candidate_identity
+                                )
+                    finally:
+                        if acquired_model is not None:
+                            _report_model_release(acquired_model)
+            except BaseException as exc:
+                if (
+                    model_plan_reservation is not None
+                    and candidate_identity is not None
+                ):
+                    model_plan_reservation.mark_failed(candidate_identity)
+                if not isinstance(exc, (RuntimeError, ValueError)):
+                    raise
+                if candidate is not None and model_evidence_store is not None:
+                    outcome_id = record_self_improve_outcome(
+                        model_evidence_store,
+                        task_text=task.objective,
+                        candidate=candidate,
+                        attempt_identity_digest=attempt_identity_digest,
+                        succeeded=False,
+                    )
+                    print(
+                        "SELF_IMPROVE_MODEL_OUTCOME "
+                        f"model={candidate.config.name} succeeded=false record={outcome_id}",
+                        flush=True,
+                    )
+                print(
+                    f"SELF_IMPROVE_PROPOSAL_REJECTED attempt={attempt} "
+                    f"error={json.dumps(str(exc)[:1000])}",
+                    flush=True,
+                )
+                if attempt == args.max_attempts:
+                    raise
+                if isinstance(base_prompt, PromptPlan):
+                    prompt = _build_validation_retry_prompt_plan(base_prompt, str(exc))
+                else:
+                    prompt = (
+                        base_prompt
+                        + "\\nPrevious output failed strict proposal validation: "
+                        + str(exc)[:1000]
+                        + "\\nReturn a complete object satisfying every required field."
+                    )
+                continue
+            try:
+                final = evaluate_attempt(
+                    root_runner,
+                    task,
+                    reference,
+                    proposal,
+                    attempt,
+                    merge=args.merge,
+                )
+            except BaseException:
+                if (
+                    model_plan_reservation is not None
+                    and candidate_identity is not None
+                ):
+                    model_plan_reservation.mark_failed(candidate_identity)
+                raise
+            if (
+                model_plan_reservation is not None
+                and candidate_identity is not None
+                and not final.comparison.accepted
+            ):
+                model_plan_reservation.mark_failed(candidate_identity)
             if candidate is not None and model_evidence_store is not None:
                 outcome_id = record_self_improve_outcome(
                     model_evidence_store,
                     task_text=task.objective,
                     candidate=candidate,
                     attempt_identity_digest=attempt_identity_digest,
-                    succeeded=False,
+                    succeeded=final.comparison.accepted,
                 )
                 print(
                     "SELF_IMPROVE_MODEL_OUTCOME "
-                    f"model={candidate.config.name} succeeded=false record={outcome_id}",
+                    f"model={candidate.config.name} "
+                    f"succeeded={str(final.comparison.accepted).lower()} "
+                    f"record={outcome_id}",
                     flush=True,
                 )
             print(
-                f"SELF_IMPROVE_PROPOSAL_REJECTED attempt={attempt} "
-                f"error={json.dumps(str(exc)[:1000])}",
+                f"SELF_IMPROVE_ATTEMPT_END attempt={attempt} "
+                f"score={final.comparison.score:.2f} accepted={final.comparison.accepted} "
+                f"blockers={json.dumps(final.comparison.blockers)}",
                 flush=True,
             )
-            if attempt == args.max_attempts:
-                raise
+            if final.comparison.accepted:
+                return final
             if isinstance(base_prompt, PromptPlan):
-                prompt = _build_validation_retry_prompt_plan(base_prompt, str(exc))
-            else:
-                prompt = (
-                    base_prompt
-                    + "\\nPrevious output failed strict proposal validation: "
-                    + str(exc)[:1000]
-                    + "\\nReturn a complete object satisfying every required field."
+                prompt = build_retry_prompt_plan(
+                    base_prompt,
+                    final.comparison,
+                    diagnostics=final.diagnostics,
                 )
-            continue
-        final = evaluate_attempt(
-            root_runner,
-            task,
-            reference,
-            proposal,
-            attempt,
-            merge=args.merge,
-        )
-        if candidate is not None and model_evidence_store is not None:
-            outcome_id = record_self_improve_outcome(
-                model_evidence_store,
-                task_text=task.objective,
-                candidate=candidate,
-                attempt_identity_digest=attempt_identity_digest,
-                succeeded=final.comparison.accepted,
-            )
-            print(
-                "SELF_IMPROVE_MODEL_OUTCOME "
-                f"model={candidate.config.name} "
-                f"succeeded={str(final.comparison.accepted).lower()} "
-                f"record={outcome_id}",
-                flush=True,
-            )
-        print(
-            f"SELF_IMPROVE_ATTEMPT_END attempt={attempt} "
-            f"score={final.comparison.score:.2f} accepted={final.comparison.accepted} "
-            f"blockers={json.dumps(final.comparison.blockers)}",
-            flush=True,
-        )
-        if final.comparison.accepted:
-            return final
-        if isinstance(base_prompt, PromptPlan):
-            prompt = build_retry_prompt_plan(
-                base_prompt,
-                final.comparison,
-                diagnostics=final.diagnostics,
-            )
-        else:
-            prompt = build_retry_prompt(
-                base_prompt,
-                final.comparison,
-                diagnostics=final.diagnostics,
-            )
-    if final is None:
-        raise RuntimeError("no local-model attempt was executed")
-    return final
+            else:
+                prompt = build_retry_prompt(
+                    base_prompt,
+                    final.comparison,
+                    diagnostics=final.diagnostics,
+                )
+        if final is None:
+            raise RuntimeError("no local-model attempt was executed")
+        return final
+
+    finally:
+        reservation_stack.__exit__(*sys.exc_info())
 
 
 def _clean_environment() -> dict[str, str]:

@@ -6,6 +6,7 @@ import argparse
 import json
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import ClassVar
@@ -25,6 +26,7 @@ from general_ludd.self_improve.model_candidate_planner import PlannedModelCandid
 from general_ludd.self_improve.model_lifecycle import (
     ModelAcquisitionEvent,
     ModelAcquisitionPhase,
+    ModelArtifactIdentity,
 )
 
 
@@ -153,6 +155,24 @@ class _RootRunner:
         return MakeResult(("make", target), 0, "", "", 0.1)
 
 
+class _ReservationHandle:
+    def __init__(
+        self,
+        path: Path,
+        transitions: list[str] | None = None,
+    ) -> None:
+        self.path = path
+        self._transitions = transitions
+
+    def mark_eligible(self, identity: ModelArtifactIdentity) -> None:
+        if self._transitions is not None:
+            self._transitions.append(f"eligible:{identity.model_id}")
+
+    def mark_failed(self, identity: ModelArtifactIdentity) -> None:
+        if self._transitions is not None:
+            self._transitions.append(f"failed:{identity.model_id}")
+
+
 class _LeaseManager:
     acquired: ClassVar[list[tuple[str, Path | None]]] = []
     released: ClassVar[int] = 0
@@ -168,6 +188,22 @@ class _LeaseManager:
 
     def resolve_revision(self, _repo_id: str) -> str:
         return "a" * 40
+
+    def owned_identities_for_model_ids(
+        self,
+        _model_ids: tuple[str, ...],
+    ) -> tuple[ModelArtifactIdentity, ...]:
+        return ()
+
+    @contextmanager
+    def reserve_plan(
+        self,
+        _identities: tuple[ModelArtifactIdentity, ...],
+        *,
+        failure_hints: tuple[ModelArtifactIdentity, ...] = (),
+    ) -> Iterator[_ReservationHandle]:
+        del failure_hints
+        yield _ReservationHandle(type(self).cache_root / "reservation.json")
 
     @contextmanager
     def acquire(
@@ -382,6 +418,22 @@ def test_managed_retries_escalate_across_distinct_planned_model_leases(
         def resolve_revision(self, _repo_id: str) -> str:
             raise AssertionError("the injected planner owns revision resolution")
 
+        def owned_identities_for_model_ids(
+            self,
+            _model_ids: tuple[str, ...],
+        ) -> tuple[ModelArtifactIdentity, ...]:
+            return ()
+
+        @contextmanager
+        def reserve_plan(
+            self,
+            _identities: tuple[ModelArtifactIdentity, ...],
+            *,
+            failure_hints: tuple[ModelArtifactIdentity, ...] = (),
+        ) -> Iterator[_ReservationHandle]:
+            del failure_hints
+            yield _ReservationHandle(self.cache_root / "reservation.json")
+
         @contextmanager
         def acquire(
             self,
@@ -552,6 +604,22 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
         def resolve_revision(self, _repo_id: str) -> str:
             raise AssertionError("the injected planner owns revision resolution")
 
+        def owned_identities_for_model_ids(
+            self,
+            _model_ids: tuple[str, ...],
+        ) -> tuple[ModelArtifactIdentity, ...]:
+            return ()
+
+        @contextmanager
+        def reserve_plan(
+            self,
+            _identities: tuple[ModelArtifactIdentity, ...],
+            *,
+            failure_hints: tuple[ModelArtifactIdentity, ...] = (),
+        ) -> Iterator[_ReservationHandle]:
+            del failure_hints
+            yield _ReservationHandle(self.cache_root / "reservation.json", events)
+
         @contextmanager
         def acquire(
             self,
@@ -679,8 +747,10 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
         "plan",
         f"acquire:{first.name}",
         f"release:{first.name}",
+        f"failed:{first.name}",
         f"outcome:{first.name}:False",
         f"acquire:{second.name}",
+        f"eligible:{second.name}",
         f"release:{second.name}",
         f"outcome:{second.name}:True",
     ]
@@ -753,3 +823,380 @@ def test_validate_only_rejects_unmapped_automatic_model_task(
 
     with pytest.raises(ValueError, match="mapped coding capability"):
         runner.run_benchmark(args)
+
+
+def test_managed_runner_reserves_every_candidate_with_exact_failure_hints(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _wire_common(tmp_path, monkeypatch)
+    first = get_model("qwen2.5-coder-0.5b")
+    second = get_model("deepseek-coder-1.3b")
+    failed = get_model("qwen2.5-coder-1.5b")
+    assert first is not None and second is not None and failed is not None
+    first_model: LocalModelConfig = first
+    second_model: LocalModelConfig = second
+    failed_model: LocalModelConfig = failed
+    candidates = (
+        PlannedModelCandidate(first_model, "a" * 40, 0.4, 0),
+        PlannedModelCandidate(second_model, "b" * 40, 0.6, 1),
+    )
+    failure_identity = ModelArtifactIdentity(
+        failed_model.name,
+        failed_model.repo,
+        failed_model.filename,
+        "f" * 40,
+    )
+    reservations: list[
+        tuple[
+            tuple[ModelArtifactIdentity, ...],
+            tuple[ModelArtifactIdentity, ...],
+        ]
+    ] = []
+    events: list[str] = []
+    active = False
+
+    class ReservationManager(_LeaseManager):
+        def owned_identities_for_model_ids(
+            self,
+            model_ids: tuple[str, ...],
+        ) -> tuple[ModelArtifactIdentity, ...]:
+            assert model_ids == (failed_model.name,)
+            return (failure_identity,)
+
+        @contextmanager
+        def reserve_plan(
+            self,
+            identities: tuple[ModelArtifactIdentity, ...],
+            *,
+            failure_hints: tuple[ModelArtifactIdentity, ...] = (),
+        ) -> Iterator[_ReservationHandle]:
+            nonlocal active
+            reservations.append((identities, failure_hints))
+            active = True
+            events.append("reservation-enter")
+            handle = _ReservationHandle(
+                self.cache_root / "reservation.json",
+                events,
+            )
+            try:
+                yield handle
+            finally:
+                active = False
+                events.append("reservation-exit")
+
+    evaluation_calls = 0
+
+    def propose(*_args: object) -> ProposalManifest:
+        assert active
+        return _proposal()
+
+    def evaluate(*_args: object, **_kwargs: object) -> AttemptResult:
+        nonlocal evaluation_calls
+        evaluation_calls += 1
+        result = _result()
+        if evaluation_calls == 1:
+            return replace(
+                result,
+                comparison=replace(
+                    result.comparison,
+                    accepted=False,
+                    score=0.0,
+                    blockers=("quality threshold",),
+                ),
+            )
+        return result
+
+    monkeypatch.setattr(runner, "ModelLeaseManager", ReservationManager)
+    monkeypatch.setattr(
+        runner,
+        "load_latest_failed_model_ids",
+        lambda *_args, **_kwargs: (failed_model.name,),
+    )
+    monkeypatch.setattr(
+        runner,
+        "plan_model_candidates",
+        lambda *_args, **_kwargs: candidates,
+    )
+    monkeypatch.setattr(runner, "generate_local_proposal", propose)
+    monkeypatch.setattr(runner, "evaluate_attempt", evaluate)
+
+    assert runner.run_benchmark(_args(_task_file(tmp_path))).comparison.accepted
+
+    assert reservations == [
+        (
+            (
+                ModelArtifactIdentity(
+                    first_model.name,
+                    first_model.repo,
+                    first_model.filename,
+                    "a" * 40,
+                ),
+                ModelArtifactIdentity(
+                    second_model.name,
+                    second_model.repo,
+                    second_model.filename,
+                    "b" * 40,
+                ),
+            ),
+            (failure_identity,),
+        )
+    ]
+    assert events == [
+        "reservation-enter",
+        f"eligible:{first_model.name}",
+        f"failed:{first_model.name}",
+        f"eligible:{second_model.name}",
+        "reservation-exit",
+    ]
+    assert not active
+
+
+def test_managed_runner_releases_plan_reservation_on_cancellation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _wire_common(tmp_path, monkeypatch)
+    candidate = get_model("qwen2.5-coder-0.5b")
+    assert candidate is not None
+    candidate_model: LocalModelConfig = candidate
+    active = False
+    exited = False
+    transitions: list[str] = []
+
+    class ReservationManager(_LeaseManager):
+        def owned_identities_for_model_ids(
+            self,
+            _model_ids: tuple[str, ...],
+        ) -> tuple[ModelArtifactIdentity, ...]:
+            return ()
+
+        @contextmanager
+        def reserve_plan(
+            self,
+            identities: tuple[ModelArtifactIdentity, ...],
+            *,
+            failure_hints: tuple[ModelArtifactIdentity, ...] = (),
+        ) -> Iterator[_ReservationHandle]:
+            nonlocal active, exited
+            assert identities == (
+                ModelArtifactIdentity(
+                    candidate_model.name,
+                    candidate_model.repo,
+                    candidate_model.filename,
+                    "a" * 40,
+                ),
+            )
+            assert failure_hints == ()
+            active = True
+            handle = _ReservationHandle(
+                self.cache_root / "reservation.json",
+                transitions,
+            )
+            try:
+                yield handle
+            except BaseException as exc:
+                exc.add_note("reservation observed primary cancellation")
+                raise
+            finally:
+                active = False
+                exited = True
+
+    def cancelled(*_args: object) -> ProposalManifest:
+        assert active
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(runner, "ModelLeaseManager", ReservationManager)
+    monkeypatch.setattr(runner, "generate_local_proposal", cancelled)
+
+    with pytest.raises(KeyboardInterrupt) as raised:
+        runner.run_benchmark(_args(_task_file(tmp_path)))
+
+    assert exited
+    assert not active
+    assert transitions == [f"failed:{candidate_model.name}"]
+    assert "reservation observed primary cancellation" in raised.value.__notes__
+
+
+def test_managed_runner_marks_evaluation_cancellation_failed_before_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _wire_common(tmp_path, monkeypatch)
+    candidate = get_model("qwen2.5-coder-0.5b")
+    assert candidate is not None
+    candidate_model: LocalModelConfig = candidate
+    transitions: list[str] = []
+    exited = False
+
+    class EvaluationManager(_LeaseManager):
+        @contextmanager
+        def reserve_plan(
+            self,
+            identities: tuple[ModelArtifactIdentity, ...],
+            *,
+            failure_hints: tuple[ModelArtifactIdentity, ...] = (),
+        ) -> Iterator[_ReservationHandle]:
+            nonlocal exited
+            assert identities == (
+                ModelArtifactIdentity(
+                    candidate_model.name,
+                    candidate_model.repo,
+                    candidate_model.filename,
+                    "a" * 40,
+                ),
+            )
+            assert failure_hints == ()
+            try:
+                yield _ReservationHandle(
+                    self.cache_root / "reservation.json",
+                    transitions,
+                )
+            finally:
+                exited = True
+
+    def cancel_evaluation(*_args: object, **_kwargs: object) -> AttemptResult:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(runner, "ModelLeaseManager", EvaluationManager)
+    monkeypatch.setattr(runner, "generate_local_proposal", lambda *_args: _proposal())
+    monkeypatch.setattr(runner, "evaluate_attempt", cancel_evaluation)
+
+    with pytest.raises(KeyboardInterrupt):
+        runner.run_benchmark(_args(_task_file(tmp_path)))
+
+    assert transitions == [
+        f"eligible:{candidate_model.name}",
+        f"failed:{candidate_model.name}",
+    ]
+    assert exited
+    assert EvaluationManager.released == 1
+
+
+def test_explicit_model_evaluation_exception_releases_without_reservation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _wire_common(tmp_path, monkeypatch)
+    monkeypatch.setattr(runner, "generate_local_proposal", lambda *_args: _proposal())
+
+    def fail_evaluation(*_args: object, **_kwargs: object) -> AttemptResult:
+        raise RuntimeError("evaluation failed")
+
+    monkeypatch.setattr(runner, "evaluate_attempt", fail_evaluation)
+
+    with pytest.raises(RuntimeError, match="evaluation failed"):
+        runner.run_benchmark(
+            _args(_task_file(tmp_path), model_path=str(_LeaseManager.model_path))
+        )
+
+    assert _LeaseManager.acquired == [
+        ("Repair Python code safely.", _LeaseManager.model_path)
+    ]
+    assert _LeaseManager.released == 1
+
+
+def test_managed_acquisition_entry_failure_closes_plan_before_reraising(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _wire_common(tmp_path, monkeypatch)
+    transitions: list[str] = []
+    exited = False
+
+    class EntryFailureManager(_LeaseManager):
+        @contextmanager
+        def reserve_plan(
+            self,
+            _identities: tuple[ModelArtifactIdentity, ...],
+            *,
+            failure_hints: tuple[ModelArtifactIdentity, ...] = (),
+        ) -> Iterator[_ReservationHandle]:
+            nonlocal exited
+            assert failure_hints == ()
+            try:
+                yield _ReservationHandle(
+                    self.cache_root / "reservation.json",
+                    transitions,
+                )
+            finally:
+                exited = True
+
+        @contextmanager
+        def acquire(
+            self,
+            _task_description: str,
+            *,
+            explicit_path: Path | None = None,
+            model_config: object | None = None,
+            resolved_revision: str | None = None,
+        ) -> Iterator[SimpleNamespace]:
+            del explicit_path, model_config, resolved_revision
+            if False:
+                yield SimpleNamespace()
+            raise RuntimeError("acquisition entry failed")
+
+    monkeypatch.setattr(runner, "ModelLeaseManager", EntryFailureManager)
+    args = _args(_task_file(tmp_path))
+    args.max_attempts = 1
+
+    with pytest.raises(RuntimeError, match="acquisition entry failed"):
+        runner.run_benchmark(args)
+
+    assert transitions == ["failed:qwen2.5-coder-0.5b"]
+    assert exited
+    assert EntryFailureManager.released == 0
+
+
+def test_prompt_plan_generation_failure_retries_with_next_reserved_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _wire_common(tmp_path, monkeypatch)
+    first = get_model("qwen2.5-coder-0.5b")
+    second = get_model("deepseek-coder-1.3b")
+    assert first is not None and second is not None
+    prompt_plan = runner.PromptPlan(
+        shards=(
+            runner.PromptShard(
+                (
+                    "src/general_ludd/example.py",
+                    "tests/unit/test_example.py",
+                ),
+                "bounded prompt",
+            ),
+        ),
+        source_bytes=14,
+    )
+    candidates = (
+        PlannedModelCandidate(first, "a" * 40, 0.0, 0),
+        PlannedModelCandidate(second, "b" * 40, 0.0, 1),
+    )
+    proposal_calls = 0
+
+    def generate_plan(*_args: object) -> ProposalManifest:
+        nonlocal proposal_calls
+        proposal_calls += 1
+        if proposal_calls == 1:
+            raise RuntimeError("first candidate generation failed")
+        return _proposal()
+
+    monkeypatch.setattr(runner, "build_prompt", lambda *_args: prompt_plan)
+    monkeypatch.setattr(
+        runner,
+        "plan_model_candidates",
+        lambda *_args, **_kwargs: candidates,
+    )
+    monkeypatch.setattr(runner, "generate_local_proposal_plan", generate_plan)
+    monkeypatch.setattr(
+        runner,
+        "_build_validation_retry_prompt_plan",
+        lambda base, _diagnostic: base,
+    )
+    monkeypatch.setattr(runner, "evaluate_attempt", lambda *_args, **_kwargs: _result())
+
+    result = runner.run_benchmark(_args(_task_file(tmp_path)))
+
+    assert result.comparison.accepted
+    assert proposal_calls == 2
+    assert _LeaseManager.released == 2

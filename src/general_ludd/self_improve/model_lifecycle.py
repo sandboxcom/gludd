@@ -16,7 +16,7 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from enum import StrEnum
@@ -25,9 +25,14 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from general_ludd.local_model._local_model_configs import _LOCAL_MODELS, LocalModelConfig
+from general_ludd.self_improve.hf_cache_delete import (
+    CacheArtifactIdentity,
+    HuggingFaceCacheDeletion,
+)
 from general_ludd.small_models.download import DownloadedModel, ModelDownloader
 
 _MANIFEST_SCHEMA = 1
+_RESERVATION_SCHEMA = 1
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _DEFAULT_QUOTA_BYTES = 8 * 1024 * 1024 * 1024
@@ -105,6 +110,88 @@ class ModelCacheDiagnostic:
     eviction_candidate_count: int
     under_pressure: bool
     can_reclaim: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ModelArtifactIdentity:
+    """Exact immutable identity used to protect one planned GGUF artifact."""
+
+    model_id: str
+    repo_id: str
+    filename: str
+    revision: str
+
+    def __post_init__(self) -> None:
+        """Reject ambiguous, mutable, or path-escaping artifact identities."""
+        strings = (self.model_id, self.repo_id, self.filename, self.revision)
+        if not all(isinstance(item, str) and item.strip() == item and item for item in strings):
+            raise ValueError("model artifact identity fields must be non-empty strings")
+        revision = self.revision.lower()
+        if _SHA_RE.fullmatch(revision) is None:
+            raise ValueError("model artifact revision must be an immutable commit")
+        filename = Path(self.filename)
+        if filename.is_absolute() or ".." in filename.parts:
+            raise ValueError("model artifact filename must stay inside its repository")
+        object.__setattr__(self, "revision", revision)
+
+
+class _ReservationState(StrEnum):
+    PLANNED = "planned"
+    ELIGIBLE = "eligible"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class _ActivePlanReservations:
+    protected: frozenset[ModelArtifactIdentity]
+    failure_hints: frozenset[ModelArtifactIdentity]
+
+
+class ModelPlanReservation:
+    """Mutable atomic state for one bounded candidate retry plan."""
+
+    def __init__(
+        self,
+        manager: ModelLeaseManager,
+        path: Path,
+        candidates: frozenset[ModelArtifactIdentity],
+        failure_hints: frozenset[ModelArtifactIdentity],
+    ) -> None:
+        """Create an in-memory plan whose persistence is owned by the manager."""
+        self._manager = manager
+        self.path = path
+        self._created_ns = time.time_ns()
+        self._states = {
+            identity: _ReservationState.PLANNED for identity in candidates
+        }
+        self._failure_hints = failure_hints
+
+    def mark_eligible(self, identity: ModelArtifactIdentity) -> None:
+        """Allow normal LRU eviction after this candidate finishes generation."""
+        self._transition(identity, _ReservationState.ELIGIBLE)
+
+    def mark_failed(self, identity: ModelArtifactIdentity) -> None:
+        """Prioritize an exact failed candidate ahead of normal LRU entries."""
+        self._transition(identity, _ReservationState.FAILED)
+
+    def _transition(
+        self,
+        identity: ModelArtifactIdentity,
+        state: _ReservationState,
+    ) -> None:
+        if not isinstance(identity, ModelArtifactIdentity) or identity not in self._states:
+            raise ValueError("reservation transition requires a planned identity")
+        previous = self._states[identity]
+        if previous is _ReservationState.FAILED and state is _ReservationState.ELIGIBLE:
+            raise RuntimeError("failed model reservation state cannot become eligible")
+        if previous is state:
+            return
+        self._states[identity] = state
+        try:
+            self._manager._write_plan_reservation(self, require_existing=True)
+        except BaseException:
+            self._states[identity] = previous
+            raise
 
 
 class _Downloader(Protocol):
@@ -251,12 +338,6 @@ def _default_process_started(pid: int) -> float | None:
     except (psutil.AccessDenied, OSError) as exc:
         raise RuntimeError(f"cannot verify model lease owner pid={pid}") from exc
 
-
-def _delete_hf_revision(cache_root: Path, revision: str) -> None:
-    from huggingface_hub import scan_cache_dir
-
-    strategy = scan_cache_dir(cache_dir=cache_root).delete_revisions(revision)
-    strategy.execute()
 
 
 def _sha256(path: Path) -> str:
@@ -467,8 +548,14 @@ class ModelLeaseManager:
 
         self._models_dir = self.cache_root / ".gludd" / "models"
         self._leases_dir = self.cache_root / ".gludd" / "leases"
+        self._reservations_dir = self.cache_root / ".gludd" / "reservations"
         self._acquire_dir = self.cache_root / ".gludd" / "acquiring"
-        for directory in (self._models_dir, self._leases_dir, self._acquire_dir):
+        for directory in (
+            self._models_dir,
+            self._leases_dir,
+            self._reservations_dir,
+            self._acquire_dir,
+        ):
             directory.mkdir(parents=True, exist_ok=True)
         self._selector = model_selector or _default_selector
         self._isolate_revision_resolution = revision_resolver is None
@@ -476,12 +563,18 @@ class ModelLeaseManager:
         self._isolate_download = downloader_factory is None
         self._downloader_factory = downloader_factory or _default_downloader
         self._disk_free = disk_free or _default_disk_free
-        self._delete_revision = revision_deleter or _delete_hf_revision
+        self._delete_revision = revision_deleter
         self._process_started = process_started or _default_process_started
         current_started = self._process_started(os.getpid())
-        if current_started is None:
+        if (
+            current_started is None
+            or isinstance(current_started, bool)
+            or not isinstance(current_started, (int, float))
+            or not math.isfinite(float(current_started))
+            or float(current_started) <= 0
+        ):
             raise RuntimeError("cannot identify current model lease owner")
-        self._current_started = current_started
+        self._current_started = float(current_started)
 
     @staticmethod
     def _identity_key(value: str) -> str:
@@ -831,6 +924,189 @@ class ModelLeaseManager:
             if primary_error is None:
                 self.reclaim(required_bytes=0)
 
+    @staticmethod
+    def _identity_sort_key(
+        identity: ModelArtifactIdentity,
+    ) -> tuple[str, str, str, str]:
+        """Return a stable order for serialized immutable identities."""
+        return (
+            identity.model_id,
+            identity.repo_id,
+            identity.filename,
+            identity.revision,
+        )
+
+    @staticmethod
+    def _identity_payload(identity: ModelArtifactIdentity) -> dict[str, str]:
+        """Serialize one validated identity without paths or credentials."""
+        return {
+            "filename": identity.filename,
+            "model_id": identity.model_id,
+            "repo_id": identity.repo_id,
+            "revision": identity.revision,
+        }
+
+    @staticmethod
+    def _identity_from_payload(
+        value: object,
+        *,
+        reservation_path: Path,
+    ) -> ModelArtifactIdentity:
+        """Parse one exact identity from bounded reservation metadata."""
+        if not isinstance(value, dict) or set(value) != {
+            "filename",
+            "model_id",
+            "repo_id",
+            "revision",
+        }:
+            raise RuntimeError(
+                f"model plan reservation is invalid: {reservation_path}"
+            )
+        try:
+            return ModelArtifactIdentity(
+                model_id=cast(str, value["model_id"]),
+                repo_id=cast(str, value["repo_id"]),
+                filename=cast(str, value["filename"]),
+                revision=cast(str, value["revision"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"model plan reservation is invalid: {reservation_path}"
+            ) from exc
+
+    @contextmanager
+    def reserve_plan(
+        self,
+        candidates: Sequence[ModelArtifactIdentity],
+        *,
+        failure_hints: Sequence[ModelArtifactIdentity] = (),
+    ) -> Iterator[ModelPlanReservation]:
+        """Atomically protect all immutable candidates for one live retry plan."""
+        if isinstance(candidates, (str, bytes)) or not candidates:
+            raise ValueError("model plan must contain at least one artifact identity")
+        if any(
+            not isinstance(item, ModelArtifactIdentity) for item in candidates
+        ) or any(
+            not isinstance(item, ModelArtifactIdentity) for item in failure_hints
+        ):
+            raise ValueError("model plan identities must be unique validated artifacts")
+        protected = frozenset(candidates)
+        failures = frozenset(failure_hints)
+        if len(protected) != len(candidates) or len(failures) != len(failure_hints):
+            raise ValueError("model plan identities must be unique validated artifacts")
+        reservation_path = self._reservations_dir / (
+            f"{os.getpid()}-{uuid.uuid4().hex}.json"
+        )
+        reservation = ModelPlanReservation(
+            self,
+            reservation_path,
+            protected,
+            failures,
+        )
+        self._write_plan_reservation(reservation, require_existing=False)
+        primary_error: BaseException | None = None
+        try:
+            yield reservation
+        except BaseException as exc:
+            primary_error = exc
+            raise
+        finally:
+            try:
+                reservation_path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                cleanup_error = RuntimeError(
+                    f"model plan reservation cleanup failed: {reservation_path}"
+                )
+                if primary_error is None:
+                    raise cleanup_error from exc
+                primary_error.add_note(str(cleanup_error)[:1000])
+
+    def _write_plan_reservation(
+        self,
+        reservation: ModelPlanReservation,
+        *,
+        require_existing: bool,
+    ) -> None:
+        """Persist one complete plan state with an atomic replacement."""
+        if require_existing and (
+            reservation.path.is_symlink() or not reservation.path.is_file()
+        ):
+            raise RuntimeError(
+                f"model plan reservation disappeared before update: {reservation.path}"
+            )
+        candidates = [
+            {
+                "identity": self._identity_payload(identity),
+                "state": state.value,
+            }
+            for identity, state in sorted(
+                reservation._states.items(),
+                key=lambda item: self._identity_sort_key(item[0]),
+            )
+        ]
+        _atomic_json(
+            reservation.path,
+            {
+                "schema_version": _RESERVATION_SCHEMA,
+                "pid": os.getpid(),
+                "process_started": self._current_started,
+                "created_ns": reservation._created_ns,
+                "candidates": candidates,
+                "failure_hints": [
+                    self._identity_payload(item)
+                    for item in sorted(
+                        reservation._failure_hints,
+                        key=self._identity_sort_key,
+                    )
+                ],
+            },
+        )
+
+    def owned_identities_for_model_ids(
+        self,
+        model_ids: Collection[str],
+    ) -> tuple[ModelArtifactIdentity, ...]:
+        """Expand historical model IDs only to exact currently owned artifacts."""
+        if isinstance(model_ids, (str, bytes)) or any(
+            not isinstance(item, str) or not item.strip() for item in model_ids
+        ):
+            raise ValueError("failed model identifiers must be non-empty strings")
+        requested = set(model_ids)
+        identities = {
+            self._owned_identity(item)
+            for item in self._load_manifests()
+            if item.model_id in requested
+        }
+        return tuple(sorted(identities, key=self._identity_sort_key))
+
+    @staticmethod
+    def _owned_identity(artifact: _OwnedArtifact) -> ModelArtifactIdentity:
+        """Project one verified ownership manifest into an immutable identity."""
+        return ModelArtifactIdentity(
+            model_id=artifact.model_id,
+            repo_id=artifact.repo_id,
+            filename=artifact.filename,
+            revision=artifact.revision,
+        )
+
+    def _delete_owned_artifact(self, artifact: _OwnedArtifact) -> None:
+        """Delete one proven owned artifact through the exact cache adapter."""
+        if self._delete_revision is not None:
+            self._delete_revision(self.cache_root, artifact.revision)
+            return
+        plan = HuggingFaceCacheDeletion(self.cache_root).plan(
+            CacheArtifactIdentity(
+                repo_id=artifact.repo_id,
+                revision=artifact.revision,
+                filename=artifact.filename,
+                path=artifact.path,
+            )
+        )
+        plan.dry_run()
+        plan.execute_and_verify()
+
     def diagnose_reclaim(self, *, required_bytes: int) -> ModelCacheDiagnostic:
         """Report whether owned unleased artifacts can satisfy cache pressure."""
         if (
@@ -841,13 +1117,17 @@ class ModelLeaseManager:
             raise ValueError("required_bytes must be a non-negative integer")
         manifests = self._load_manifests()
         active = self._active_digests()
+        reservation = self._active_plan_reservation()
         try:
             free = self._disk_free(self.cache_root)
         except OSError as exc:
             raise RuntimeError("cannot inspect model cache disk headroom") from exc
         payload = self._cache_payload_bytes()
         candidates = [
-            item for item in manifests if item.artifact_sha256 not in active
+            item
+            for item in manifests
+            if item.artifact_sha256 not in active
+            and self._owned_identity(item) not in reservation.protected
         ]
         reclaimable_bytes = sum(item.size_bytes for item in candidates)
         under_pressure = (
@@ -889,6 +1169,7 @@ class ModelLeaseManager:
             raise ValueError("required_bytes must be a non-negative integer")
         manifests = self._load_manifests()
         active = self._active_digests()
+        reservation = self._active_plan_reservation()
         removed: list[Path] = []
         operation_id = uuid.uuid4().hex
         started_at = time.monotonic()
@@ -907,8 +1188,17 @@ class ModelLeaseManager:
             return ()
 
         candidates = sorted(
-            (item for item in manifests if item.artifact_sha256 not in active),
-            key=lambda item: (item.last_used_ns, item.artifact_sha256),
+            (
+                item
+                for item in manifests
+                if item.artifact_sha256 not in active
+                and self._owned_identity(item) not in reservation.protected
+            ),
+            key=lambda item: (
+                self._owned_identity(item) not in reservation.failure_hints,
+                item.last_used_ns,
+                item.artifact_sha256,
+            ),
         )
         for item in candidates:
             self._emit_eviction_event(
@@ -918,7 +1208,7 @@ class ModelLeaseManager:
                 artifact=item,
             )
             try:
-                self._delete_revision(self.cache_root, item.revision)
+                self._delete_owned_artifact(item)
             except BaseException:
                 self._emit_eviction_event(
                     ModelAcquisitionPhase.EVICTION_REFUSED,
@@ -965,8 +1255,8 @@ class ModelLeaseManager:
             started_at=started_at,
         )
         raise RuntimeError(
-            "insufficient model cache headroom: all remaining artifacts are leased "
-            "or the configured quota/reserve cannot admit the request"
+            "insufficient model cache headroom: all remaining artifacts are leased, "
+            "reserved, or the configured quota/reserve cannot admit the request"
         )
 
     def resolve_revision(self, repo_id: str) -> str:
@@ -1298,6 +1588,113 @@ class ModelLeaseManager:
                 "size_bytes": artifact.size_bytes,
                 "last_used_ns": artifact.last_used_ns,
             },
+        )
+
+    def _active_plan_reservation(self) -> _ActivePlanReservations:
+        """Load live reservations and reap only PID/birth-verified stale files."""
+        protected: set[ModelArtifactIdentity] = set()
+        failure_hints: set[ModelArtifactIdentity] = set()
+        for path in sorted(self._reservations_dir.glob("*.json")):
+            value = _read_json(path, "model plan reservation")
+            expected = {
+                "schema_version",
+                "pid",
+                "process_started",
+                "created_ns",
+                "candidates",
+                "failure_hints",
+            }
+            pid = value.get("pid")
+            started = value.get("process_started")
+            created = value.get("created_ns")
+            candidate_values = value.get("candidates")
+            failure_values = value.get("failure_hints")
+            if (
+                set(value) != expected
+                or value.get("schema_version") != _RESERVATION_SCHEMA
+                or isinstance(pid, bool)
+                or not isinstance(pid, int)
+                or pid <= 0
+                or isinstance(started, bool)
+                or not isinstance(started, (int, float))
+                or not math.isfinite(float(started))
+                or float(started) <= 0
+                or isinstance(created, bool)
+                or not isinstance(created, int)
+                or created <= 0
+                or not isinstance(candidate_values, list)
+                or not candidate_values
+                or not isinstance(failure_values, list)
+            ):
+                raise RuntimeError(f"model plan reservation is invalid: {path}")
+            parsed_candidates: list[
+                tuple[ModelArtifactIdentity, _ReservationState]
+            ] = []
+            for item in candidate_values:
+                if not isinstance(item, dict) or set(item) != {"identity", "state"}:
+                    raise RuntimeError(
+                        f"model plan reservation is invalid: {path}"
+                    )
+                identity = self._identity_from_payload(
+                    item.get("identity"),
+                    reservation_path=path,
+                )
+                state_value = item.get("state")
+                if not isinstance(state_value, str):
+                    raise RuntimeError(
+                        f"model plan reservation is invalid: {path}"
+                    )
+                try:
+                    state = _ReservationState(state_value)
+                except ValueError as exc:
+                    raise RuntimeError(
+                        f"model plan reservation is invalid: {path}"
+                    ) from exc
+                parsed_candidates.append((identity, state))
+            parsed_failures = tuple(
+                self._identity_from_payload(item, reservation_path=path)
+                for item in failure_values
+            )
+            candidate_identities = [item[0] for item in parsed_candidates]
+            if (
+                len(set(candidate_identities)) != len(candidate_identities)
+                or len(set(parsed_failures)) != len(parsed_failures)
+            ):
+                raise RuntimeError(f"model plan reservation is invalid: {path}")
+            observed = self._process_started(pid)
+            if observed is not None and (
+                isinstance(observed, bool)
+                or not isinstance(observed, (int, float))
+                or not math.isfinite(float(observed))
+                or float(observed) <= 0
+            ):
+                raise RuntimeError(
+                    f"model plan reservation process birth is invalid: {path}"
+                )
+            if observed is None or abs(float(started) - float(observed)) > 0.001:
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    raise RuntimeError(
+                        f"stale model plan reservation cleanup failed: {path}"
+                    ) from exc
+                continue
+            protected.update(
+                identity
+                for identity, state in parsed_candidates
+                if state is _ReservationState.PLANNED
+            )
+            failure_hints.update(parsed_failures)
+            failure_hints.update(
+                identity
+                for identity, state in parsed_candidates
+                if state is _ReservationState.FAILED
+            )
+        return _ActivePlanReservations(
+            protected=frozenset(protected),
+            failure_hints=frozenset(failure_hints),
         )
 
     def _active_digests(self) -> set[str]:
