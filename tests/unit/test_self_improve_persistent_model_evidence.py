@@ -16,6 +16,8 @@ from general_ludd.self_improve.model_candidate_planner import (
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 from general_ludd.small_models.recommender import map_task_to_capabilities
 
+_ATTEMPT_IDENTITY = "1" * 64
+
 
 def _store(tmp_path: object) -> CapabilityEvidenceStore:
     return CapabilityEvidenceStore(str(tmp_path) + "/selection-evidence.json")
@@ -42,12 +44,14 @@ def _record(
     model_id: str = "qwen2.5-coder-0.5b",
     revision: str = "a" * 40,
     succeeded: bool = False,
+    attempt_identity_digest: str = _ATTEMPT_IDENTITY,
 ) -> int:
     return record_self_improve_outcome(
         store,
         task_text=task_text,
         candidate=_candidate(model_id, revision),
         succeeded=succeeded,
+        attempt_identity_digest=attempt_identity_digest,
     )
 
 
@@ -97,6 +101,7 @@ def test_record_writes_one_revision_bound_outcome_for_multi_match_task(
     assert records[0]["task_kind"] == "failure_classification"
     assert records[0]["role"] == TaskRole.REVIEWER.value
     assert records[0]["suite_revision"] == "a" * 40
+    assert records[0]["attempt_identity_digest"] == _ATTEMPT_IDENTITY
     assert records[0]["model_identity_digest"] != "a" * 64
     assert len(cast(str, records[0]["model_identity_digest"])) == 64
     assert records[0]["passed_cases"] == 0
@@ -112,10 +117,13 @@ def test_failure_is_loaded_for_same_mapped_task(tmp_path: object) -> None:
     assert load_latest_failed_model_ids(
         store,
         task_text="implement another Python module",
+        attempt_identity_digest=_ATTEMPT_IDENTITY,
     ) == ("qwen2.5-coder-0.5b",)
 
 
-def test_latest_success_clears_older_failure_across_revision(tmp_path: object) -> None:
+def test_latest_success_clears_older_failure_for_same_attempt_identity(
+    tmp_path: object,
+) -> None:
     store = _store(tmp_path)
     _record(store, revision="a" * 40, succeeded=False)
     _record(store, revision="b" * 40, succeeded=True)
@@ -125,6 +133,7 @@ def test_latest_success_clears_older_failure_across_revision(tmp_path: object) -
     assert load_latest_failed_model_ids(
         store,
         task_text="implement another Python module",
+        attempt_identity_digest=_ATTEMPT_IDENTITY,
     ) == ()
 
 
@@ -136,6 +145,7 @@ def test_new_failure_after_success_is_active(tmp_path: object) -> None:
     assert load_latest_failed_model_ids(
         store,
         task_text="write code for a module",
+        attempt_identity_digest=_ATTEMPT_IDENTITY,
     ) == ("qwen2.5-coder-0.5b",)
 
 
@@ -147,6 +157,7 @@ def test_failures_are_deterministically_sorted(tmp_path: object) -> None:
     assert load_latest_failed_model_ids(
         store,
         task_text="implement code",
+        attempt_identity_digest=_ATTEMPT_IDENTITY,
     ) == (
         "deepseek-coder-1.3b",
         "qwen2.5-coder-1.5b",
@@ -164,6 +175,7 @@ def test_unrelated_task_outcome_is_ignored(tmp_path: object) -> None:
     assert load_latest_failed_model_ids(
         store,
         task_text="implement a Python module",
+        attempt_identity_digest=_ATTEMPT_IDENTITY,
     ) == ()
 
 
@@ -177,6 +189,7 @@ def test_malformed_later_success_cannot_clear_valid_failure(tmp_path: object) ->
     assert load_latest_failed_model_ids(
         store,
         task_text="implement a Python module",
+        attempt_identity_digest=_ATTEMPT_IDENTITY,
     ) == ("qwen2.5-coder-0.5b",)
 
 
@@ -191,6 +204,7 @@ def test_unrelated_benchmark_record_cannot_clear_failure(tmp_path: object) -> No
     assert load_latest_failed_model_ids(
         store,
         task_text="implement a Python module",
+        attempt_identity_digest=_ATTEMPT_IDENTITY,
     ) == ("qwen2.5-coder-0.5b",)
 
 
@@ -222,6 +236,7 @@ def test_invalid_outcomes_fail_before_write(
             task_text=task_text,
             candidate=candidate,
             succeeded=succeeded,
+            attempt_identity_digest=_ATTEMPT_IDENTITY,
         )
 
     assert store.list_all() == []
@@ -232,4 +247,86 @@ def test_unmapped_load_fails_closed(tmp_path: object) -> None:
         load_latest_failed_model_ids(
             _store(tmp_path),
             task_text="unmapped prose",
+            attempt_identity_digest=_ATTEMPT_IDENTITY,
         )
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [
+        None,
+        "",
+        "a" * 63,
+        "A" * 64,
+        "g" * 64,
+    ],
+)
+def test_invalid_attempt_identity_fails_closed_before_read_or_write(
+    tmp_path: object,
+    identity: object,
+) -> None:
+    store = _store(tmp_path)
+    invalid_identity = cast(str, identity)
+
+    with pytest.raises(ValueError, match="attempt_identity_digest"):
+        record_self_improve_outcome(
+            store,
+            task_text="implement a focused Python change",
+            candidate=_candidate(),
+            succeeded=False,
+            attempt_identity_digest=invalid_identity,
+        )
+    assert store.list_all() == []
+
+    with pytest.raises(ValueError, match="attempt_identity_digest"):
+        load_latest_failed_model_ids(
+            store,
+            task_text="implement another Python module",
+            attempt_identity_digest=invalid_identity,
+        )
+
+
+def test_legacy_unscoped_failure_is_auditable_but_not_reused(
+    tmp_path: object,
+) -> None:
+    source = _store(tmp_path)
+    _record(source)
+    legacy_record = dict(source.list_all()[0])
+    legacy_record.pop("attempt_identity_digest")
+    legacy_store = CapabilityEvidenceStore(str(tmp_path) + "/legacy-evidence.json")
+    legacy_store.register_evidence(legacy_record)
+
+    assert load_latest_failed_model_ids(
+        legacy_store,
+        task_text="implement another Python module",
+        attempt_identity_digest=_ATTEMPT_IDENTITY,
+    ) == ()
+    assert "attempt_identity_digest" not in legacy_store.list_all()[0]
+
+
+def test_old_prompt_identity_failure_does_not_exclude_compacted_attempt(
+    tmp_path: object,
+) -> None:
+    store = _store(tmp_path)
+    old_identity = "1" * 64
+    compacted_identity = "2" * 64
+
+    record_self_improve_outcome(
+        store,
+        task_text="implement a focused Python change",
+        candidate=_candidate(),
+        succeeded=False,
+        attempt_identity_digest=old_identity,
+    )
+
+    assert load_latest_failed_model_ids(
+        store,
+        task_text="implement another Python module",
+        attempt_identity_digest=compacted_identity,
+    ) == ()
+    assert load_latest_failed_model_ids(
+        store,
+        task_text="implement another Python module",
+        attempt_identity_digest=old_identity,
+    ) == ("qwen2.5-coder-0.5b",)
+    assert store.list_all()[0]["attempt_identity_digest"] == old_identity

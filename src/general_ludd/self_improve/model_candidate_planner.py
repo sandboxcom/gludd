@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from general_ludd.hardware.model_fit import can_run_model
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.local_model._local_model_configs import _LOCAL_MODELS, LocalModelConfig
-from general_ludd.routing_roles.small_model_policy import CapabilityEvidence
 from general_ludd.schemas.benchmark import TaskRole
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 from general_ludd.small_models.recommender import (
@@ -20,6 +19,7 @@ from general_ludd.small_models.recommender import (
 )
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _PROMPT_OVERHEAD_TOKENS = 512
 _MAX_CANDIDATES = 3
 _OUTCOME_COLLECTION = "general_ludd.self_improve"
@@ -28,6 +28,7 @@ _OUTCOME_RECORD_KEYS = frozenset(
     {
         "model_profile_id",
         "model_identity_digest",
+        "attempt_identity_digest",
         "task_kind",
         "role",
         "collection",
@@ -57,8 +58,8 @@ def _stable_digest(payload: Mapping[str, object]) -> str:
 _OUTCOME_ACCEPTANCE_DIGEST = _stable_digest(
     {
         "collection": _OUTCOME_COLLECTION,
-        "schema_version": 1,
-        "semantics": "one_case_passed_means_self_improvement_succeeded",
+        "schema_version": 2,
+        "semantics": "one_case_passed_means_prompt_protocol_scoped_self_improvement_succeeded",
         "suite_id": _OUTCOME_SUITE_ID,
     }
 )
@@ -287,16 +288,28 @@ def _canonical_candidate_model(candidate: PlannedModelCandidate) -> LocalModelCo
     raise ValueError("candidate must contain a configured coding model")
 
 
+def _validate_attempt_identity_digest(value: object) -> str:
+    """Return one canonical prompt-plan/protocol identity or fail closed."""
+    if not isinstance(value, str) or _DIGEST_RE.fullmatch(value) is None:
+        raise ValueError(
+            "attempt_identity_digest must be a lowercase 64-character hexadecimal digest"
+        )
+    return value
+
+
 def _outcome_payload(
     model: LocalModelConfig,
     revision: str,
     task_kind: str,
     role: TaskRole,
+    attempt_identity_digest: str,
     *,
     succeeded: bool,
 ) -> dict[str, object]:
+    attempt_identity = _validate_attempt_identity_digest(attempt_identity_digest)
     identity_digest = _stable_digest(
         {
+            "attempt_identity_digest": attempt_identity,
             "model_profile_id": model.name,
             "resolved_revision": revision,
         }
@@ -304,6 +317,7 @@ def _outcome_payload(
     return {
         "model_profile_id": model.name,
         "model_identity_digest": identity_digest,
+        "attempt_identity_digest": attempt_identity,
         "task_kind": task_kind,
         "role": role.value,
         "collection": _OUTCOME_COLLECTION,
@@ -323,8 +337,10 @@ def record_self_improve_outcome(
     task_text: str,
     candidate: PlannedModelCandidate,
     succeeded: bool,
+    attempt_identity_digest: str,
 ) -> int:
-    """Persist exactly one revision-bound outcome in the shared evidence store."""
+    """Persist one revision- and prompt-protocol-bound outcome."""
+    attempt_identity = _validate_attempt_identity_digest(attempt_identity_digest)
     task_kind, role = _primary_task_capability(task_text)
     model = _canonical_candidate_model(candidate)
     if not isinstance(succeeded, bool):
@@ -338,35 +354,19 @@ def record_self_improve_outcome(
         revision,
         task_kind,
         role,
+        attempt_identity,
         succeeded=succeeded,
     )
-    evidence = CapabilityEvidence(
-        model_profile_id=model.name,
-        model_identity_digest=_stable_digest(
-            {
-                "model_profile_id": model.name,
-                "resolved_revision": revision,
-            }
-        ),
-        task_kind=task_kind,
-        role=role,
-        collection=_OUTCOME_COLLECTION,
-        suite_id=_OUTCOME_SUITE_ID,
-        suite_revision=revision,
-        acceptance_contract_digest=_OUTCOME_ACCEPTANCE_DIGEST,
-        passed_cases=int(succeeded),
-        total_cases=1,
-        collection_ok=True,
-        local_only=True,
-        evidence_digest=_stable_digest(payload),
-    )
-    return store.register_evidence(evidence)
+    record = dict(payload)
+    record["evidence_digest"] = _stable_digest(payload)
+    return store.register_evidence(record)
 
 
 def _valid_outcome_state(
     record: Mapping[str, object],
     task_kind: str,
     role: TaskRole,
+    attempt_identity_digest: str,
 ) -> tuple[str, bool] | None:
     if set(record) != _OUTCOME_RECORD_KEYS:
         return None
@@ -378,11 +378,15 @@ def _valid_outcome_state(
     ):
         return None
 
+    record_attempt_identity = record.get("attempt_identity_digest")
     model_id = record.get("model_profile_id")
     revision = record.get("suite_revision")
     passed_cases = record.get("passed_cases")
     if (
-        not isinstance(model_id, str)
+        not isinstance(record_attempt_identity, str)
+        or _DIGEST_RE.fullmatch(record_attempt_identity) is None
+        or record_attempt_identity != attempt_identity_digest
+        or not isinstance(model_id, str)
         or not isinstance(revision, str)
         or _SHA_RE.fullmatch(revision) is None
         or isinstance(passed_cases, bool)
@@ -402,6 +406,7 @@ def _valid_outcome_state(
         revision,
         task_kind,
         role,
+        record_attempt_identity,
         succeeded=passed_cases == 1,
     )
     if any(record.get(key) != value for key, value in expected.items()):
@@ -419,12 +424,19 @@ def load_latest_failed_model_ids(
     store: CapabilityEvidenceStore,
     *,
     task_text: str,
+    attempt_identity_digest: str,
 ) -> tuple[str, ...]:
-    """Load models whose latest valid outcome failed for the mapped task."""
+    """Load latest failures for exactly one prompt-plan/protocol identity."""
+    attempt_identity = _validate_attempt_identity_digest(attempt_identity_digest)
     task_kind, role = _primary_task_capability(task_text)
     latest: dict[str, bool] = {}
     for record in store.list_all():
-        state = _valid_outcome_state(record, task_kind, role)
+        state = _valid_outcome_state(
+            record,
+            task_kind,
+            role,
+            attempt_identity,
+        )
         if state is None:
             continue
         model_id, succeeded = state
