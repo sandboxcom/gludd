@@ -543,7 +543,9 @@ class ProposalManifest:
             if operation not in {"replace", "create", "delete"}:
                 raise ValueError(f"unsupported edit operation: {operation!r}")
             if not isinstance(path, str) or not _safe_relative_path(path):
-                raise ValueError(f"edit path is not repository-relative and confined: {path!r}")
+                raise ValueError(
+                    f"edit path is not canonical, repository-relative, and confined: {path!r}"
+                )
             if not isinstance(old_text, str) or not isinstance(new_text, str):
                 raise ValueError(f"edit text must be UTF-8 text: {path}")
             if operation == "replace" and (
@@ -1323,6 +1325,8 @@ def _safe_relative_path(raw: str) -> bool:
     if not raw or "\\" in raw or "\x00" in raw:
         return False
     path = PurePosixPath(raw)
+    if not path.parts or str(path) != raw:
+        return False
     return (
         not path.is_absolute()
         and ".." not in path.parts

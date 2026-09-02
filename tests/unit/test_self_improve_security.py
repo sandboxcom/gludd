@@ -22,6 +22,7 @@ from general_ludd.security.path_canonicalizer import (
     CANONICAL_DENY_MARKERS,
     PROTECTED_PATH_MARKERS,
 )
+from general_ludd.self_improve.codex_comparison import ProposalManifest
 from general_ludd.self_update.applier import (
     UpdateApplier,
 )
@@ -356,7 +357,7 @@ class TestSignatureVerification:
     def _boom_verifier(_content: str, _sig: str, _key: str) -> bool:
         raise RuntimeError("verifier crashed")
 
-    def _make_applier(self, verifier=None) -> UpdateApplier:
+    def _make_applier(self) -> UpdateApplier:
         return UpdateApplier(
             writer=_FakeWriter(),
             capability_checker=_FixedChecker({"config_write"}),
@@ -601,3 +602,53 @@ class TestDenyListConsistency:
             assert found, (
                 f"Hard-deny substring {substring!r} has no matching canonical marker"
             )
+
+
+# ---------------------------------------------------------------------------
+# 4. SELF-IMPROVEMENT PROPOSAL PATH IDENTITY
+# ---------------------------------------------------------------------------
+
+
+def _proposal_with_edit_paths(*paths: str) -> str:
+    """Build a synthetic proposal with raw path identities controlled by the test."""
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "baseline_sha": "a" * 40,
+            "task_id": "S83.208",
+            "edits": [
+                {
+                    "operation": "replace",
+                    "path": path,
+                    "old_text": f"before-{index}",
+                    "new_text": f"after-{index}",
+                }
+                for index, path in enumerate(paths)
+            ],
+            "tests": ["tests/unit/test_self_improve_security.py"],
+            "make_commands": [
+                "make test-files "
+                "TESTFILES=tests/unit/test_self_improve_security.py PYTEST_ARGS=-q"
+            ],
+            "commit_message": "fix: reject noncanonical proposal paths",
+        }
+    )
+
+
+@pytest.mark.parametrize("alias_path", ["src//x.py", "src/./x.py"])
+def test_proposal_rejects_alias_that_bypasses_raw_path_identity(
+    alias_path: str,
+) -> None:
+    """Textually distinct aliases must not evade duplicate/scope identity checks."""
+    raw = _proposal_with_edit_paths("src/x.py", alias_path)
+
+    with pytest.raises(ValueError, match="canonical"):
+        ProposalManifest.from_json(raw)
+
+
+def test_proposal_preserves_canonical_path_identity() -> None:
+    """A valid path retains its exact approved identity without normalization."""
+    manifest = ProposalManifest.from_json(_proposal_with_edit_paths("src/x.py"))
+
+    assert manifest.edits[0].path == "src/x.py"
+    assert json.loads(manifest.to_json())["edits"][0]["path"] == "src/x.py"
