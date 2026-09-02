@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import re
@@ -82,8 +83,23 @@ _PROPOSAL_JSON_SCHEMA: dict[str, object] = {
     },
 }
 
+_COMPACT_PROPOSAL_PROTOCOL_VERSION = "self-improve-compact-proposal-v2"
 _COMPACT_PROPOSAL_TOKENS = 1536
 _STRUCTURED_CANARY_TOKENS = 32
+_DETERMINISTIC_DECODE_TEMPERATURE = 0.0
+_DETERMINISTIC_DECODE_SEED = 0
+_STRUCTURED_OUTPUT_REQUIRE_STOP = True
+_STRUCTURED_CANARY_PROMPT = 'Return {"ok":true}.'
+_STRUCTURED_CANARY_EXPECTED: dict[str, object] = {"ok": True}
+_COMPACT_ROOT_FIELDS = frozenset({"e", "c"})
+_COMPACT_EDIT_FIELDS = frozenset({"p", "a", "z"})
+_COMPACT_MAX_EDITS = 16
+_COMPACT_OPERATION_BY_EMPTY_TEXT = {
+    (False, False): "replace",
+    (False, True): "delete",
+    (True, False): "create",
+}
+_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v1"
 _SAFE_FINISH_REASONS = frozenset(
     {"stop", "length", "tool_calls", "function_call", "content_filter"}
 )
@@ -101,7 +117,7 @@ _COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
         "e": {
             "type": "array",
             "minItems": 1,
-            "maxItems": 16,
+            "maxItems": _COMPACT_MAX_EDITS,
             "items": {
                 "type": "object",
                 "additionalProperties": False,
@@ -124,6 +140,71 @@ _COMPACT_SYSTEM_PROMPT = (
     "Never emit o or another operation field. Use the shortest unique exact replacement "
     "and never reproduce a whole file."
 )
+
+
+def local_proposal_attempt_identity_digest(prompt_protocol_digest: str) -> str:
+    """Bind one prompt plan to the complete managed local-output protocol."""
+    if (
+        not isinstance(prompt_protocol_digest, str)
+        or _PROTOCOL_DIGEST_RE.fullmatch(prompt_protocol_digest) is None
+    ):
+        raise ValueError(
+            "prompt protocol digest must be a lowercase 64-character SHA-256"
+        )
+    operation_policy = [
+        {
+            "new_text_empty": new_empty,
+            "old_text_empty": old_empty,
+            "operation": operation,
+        }
+        for (old_empty, new_empty), operation in sorted(
+            _COMPACT_OPERATION_BY_EMPTY_TEXT.items()
+        )
+    ]
+    payload: dict[str, object] = {
+        "attempt_protocol": "self-improve-local-attempt-v1",
+        "prompt_protocol_digest": prompt_protocol_digest,
+        "compact_output": {
+            "protocol_version": _COMPACT_PROPOSAL_PROTOCOL_VERSION,
+            "schema": _COMPACT_PROPOSAL_JSON_SCHEMA,
+            "system_prompt": _COMPACT_SYSTEM_PROMPT,
+        },
+        "structured_canary": {
+            "expected": _STRUCTURED_CANARY_EXPECTED,
+            "prompt": _STRUCTURED_CANARY_PROMPT,
+            "schema": _STRUCTURED_CANARY_SCHEMA,
+        },
+        "output_token_policy": {
+            "canary_max_tokens": _STRUCTURED_CANARY_TOKENS,
+            "proposal_max_tokens": _COMPACT_PROPOSAL_TOKENS,
+            "require_stop": _STRUCTURED_OUTPUT_REQUIRE_STOP,
+            "safe_finish_reasons": sorted(_SAFE_FINISH_REASONS),
+            "seed": _DETERMINISTIC_DECODE_SEED,
+            "temperature": _DETERMINISTIC_DECODE_TEMPERATURE,
+        },
+        "strict_decoder_semantics": {
+            "authoritative_manifest_schema": _PROPOSAL_JSON_SCHEMA,
+            "batch_protocol": _PROPOSAL_BATCH_PROTOCOL,
+            "command_max_bytes": _MAX_COMMAND_BYTES,
+            "content_max_bytes": _MAX_CONTENT_BYTES,
+            "edit_fields": sorted(_COMPACT_EDIT_FIELDS),
+            "max_commands": _MAX_COMMANDS,
+            "max_compact_edits": _COMPACT_MAX_EDITS,
+            "max_manifest_edits": _MAX_EDITS,
+            "max_tests": _MAX_TESTS,
+            "operation_by_empty_text": operation_policy,
+            "parent_decoder_version": _STRICT_PARENT_DECODER_VERSION,
+            "path_policy": "confined-pure-posix-v1",
+            "root_fields": sorted(_COMPACT_ROOT_FIELDS),
+        },
+    }
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 class _LocalModel(Protocol):
@@ -837,27 +918,29 @@ def _decode_compact_proposal(
             "compact proposal is not one complete JSON object; "
             f"output_bytes={len(stripped.encode('utf-8'))}"
         ) from exc
-    if not isinstance(value, dict) or set(value) != {"e", "c"}:
+    if not isinstance(value, dict) or set(value) != _COMPACT_ROOT_FIELDS:
         raise ValueError("compact proposal must contain exactly e and c")
     edits_raw = value["e"]
-    if not isinstance(edits_raw, list) or not 1 <= len(edits_raw) <= 16:
-        raise ValueError("compact proposal edits must contain 1..16 entries")
+    if (
+        not isinstance(edits_raw, list)
+        or not 1 <= len(edits_raw) <= _COMPACT_MAX_EDITS
+    ):
+        raise ValueError(
+            f"compact proposal edits must contain 1..{_COMPACT_MAX_EDITS} entries"
+        )
     edits: list[dict[str, object]] = []
     for item in edits_raw:
-        if not isinstance(item, dict) or set(item) != {"p", "a", "z"}:
+        if not isinstance(item, dict) or set(item) != _COMPACT_EDIT_FIELDS:
             raise ValueError("each compact edit must contain exactly p, a, and z")
         old_text = item["a"]
         new_text = item["z"]
         if not isinstance(old_text, str) or not isinstance(new_text, str):
             raise ValueError("compact edit text fields must be strings")
-        if not old_text and not new_text:
+        operation = _COMPACT_OPERATION_BY_EMPTY_TEXT.get(
+            (not old_text, not new_text)
+        )
+        if operation is None:
             raise ValueError("compact edit must change content")
-        if not old_text:
-            operation = "create"
-        elif not new_text:
-            operation = "delete"
-        else:
-            operation = "replace"
         edits.append(
             {
                 "operation": operation,
@@ -933,11 +1016,11 @@ class LocalProposalGateway:
         output = model.create_chat_completion(
             messages=[
                 {"role": "system", "content": _COMPACT_SYSTEM_PROMPT},
-                {"role": "user", "content": 'Return {"ok":true}.'},
+                {"role": "user", "content": _STRUCTURED_CANARY_PROMPT},
             ],
             max_tokens=_STRUCTURED_CANARY_TOKENS,
-            temperature=0.0,
-            seed=0,
+            temperature=_DETERMINISTIC_DECODE_TEMPERATURE,
+            seed=_DETERMINISTIC_DECODE_SEED,
             response_format={
                 "type": "json_object",
                 "schema": _STRUCTURED_CANARY_SCHEMA,
@@ -948,12 +1031,12 @@ class LocalProposalGateway:
                 output,
                 phase="canary",
                 budget=_STRUCTURED_CANARY_TOKENS,
-                require_stop=True,
+                require_stop=_STRUCTURED_OUTPUT_REQUIRE_STOP,
             )
             value = json.loads(text)
         except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ValueError(f"local structured-output canary failed: {exc}") from exc
-        if value != {"ok": True}:
+        if value != _STRUCTURED_CANARY_EXPECTED:
             raise ValueError(
                 "local structured-output canary failed: response did not match contract"
             )
@@ -977,8 +1060,8 @@ class LocalProposalGateway:
                         {"role": "user", "content": prompt},
                     ],
                     max_tokens=_COMPACT_PROPOSAL_TOKENS,
-                    temperature=0.0,
-                    seed=0,
+                    temperature=_DETERMINISTIC_DECODE_TEMPERATURE,
+                    seed=_DETERMINISTIC_DECODE_SEED,
                     response_format={
                         "type": "json_object",
                         "schema": _COMPACT_PROPOSAL_JSON_SCHEMA,
@@ -988,7 +1071,7 @@ class LocalProposalGateway:
                     output,
                     phase="proposal",
                     budget=_COMPACT_PROPOSAL_TOKENS,
-                    require_stop=True,
+                    require_stop=_STRUCTURED_OUTPUT_REQUIRE_STOP,
                 )
                 return _decode_compact_proposal(text, contract)
             output = chat_model.create_chat_completion(

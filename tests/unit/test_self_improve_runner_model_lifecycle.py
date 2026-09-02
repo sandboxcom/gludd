@@ -656,6 +656,7 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
     result = runner.run_benchmark(_args(_task_file(tmp_path)))
 
     assert result.comparison.accepted
+    assert attempt_identities == [runner._attempt_identity_digest("bounded prompt")]
     output = capsys.readouterr().out
     assert (
         "SELF_IMPROVE_MODEL_UNAVAILABLE "

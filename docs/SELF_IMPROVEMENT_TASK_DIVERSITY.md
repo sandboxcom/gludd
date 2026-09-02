@@ -21,17 +21,21 @@ into the evidence digest.
 
 ## Closed failure-to-escalation loop
 
-When the caller supplies a lowercase 64-character prompt-protocol digest, the
-planner reads its own persistent outcome store before resolving candidates. It
-unions exact-shape, exact-protocol failures with any explicit failures, then
-uses the largest failed artifact as a strict size floor. Two failed small
-models therefore produce a deterministic next plan beginning with the next
-larger fitting catalog model.
+When the caller supplies a lowercase 64-character attempt digest, the planner
+reads its own persistent outcome store before resolving candidates. That digest
+binds the prompt plan to the compact schema/version, structured canary,
+output-token policy, and strict parent decoder. It unions exact-shape,
+exact-attempt failures with any explicit failures, then uses the largest failed
+artifact as a strict size floor. Two failed small models therefore produce a
+deterministic next plan beginning with the next larger fitting catalog model.
 
-A different TaskType, task kind, or protocol digest starts from its own evidence
-boundary. It cannot inherit the exclusion. This keeps real-run feedback useful
-without turning one difficult prompt or one task family into a global model
-ban. The legacy no-digest planner path remains unchanged.
+A different TaskType, task kind, prompt plan, or output protocol starts from its
+own evidence boundary. It cannot inherit the exclusion. Prompt-only records
+from the previous identity remain visible in the append-only evidence store but
+cannot exclude a model under the complete identity. This keeps real-run
+feedback useful without turning one difficult prompt, decoder revision, or task
+family into a global model ban. The legacy no-digest planner path remains
+unchanged.
 
 ## Representative-case bound
 
@@ -77,7 +81,9 @@ task-shape-specific regression tests.
 - failure history isolation between feature and bug-fix tasks sharing the
   `coding` contract; and
 - automatic, deterministic escalation after two exact-shape/protocol failures,
-  with both protocol and task-shape isolation pinned in one integration case.
+  with both protocol and task-shape isolation pinned in one integration case; and
+- complete attempt identity across prompt, compact schema, canary, token policy,
+  and decoder semantics, including prompt-only evidence migration.
 
 The focused branch-coverage gate includes the planner, diversity selector, and
 evidence store and requires at least 85 percent aggregate branch coverage and

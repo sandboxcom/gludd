@@ -33,6 +33,7 @@ from general_ludd.self_improve.codex_comparison import (
     compare_with_codex,
     decode_proposal_batch,
     encode_prompt_batch,
+    local_proposal_attempt_identity_digest,
     merge_proposal_manifests,
 )
 from general_ludd.self_improve.model_candidate_planner import (
@@ -244,19 +245,21 @@ class PromptPlan:
 
 
 def _attempt_identity_digest(prompt: PromptPlan | str) -> str:
-    """Return the immutable protocol identity used to scope model outcomes."""
+    """Bind prompt identity to the complete managed proposal protocol."""
     if isinstance(prompt, PromptPlan):
-        return prompt.protocol_digest
-    canonical = json.dumps(
-        {
-            "prompt": prompt,
-            "protocol": "self-improve-string-prompt-v1",
-        },
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
+        prompt_protocol_digest = prompt.protocol_digest
+    else:
+        canonical = json.dumps(
+            {
+                "prompt": prompt,
+                "protocol": "self-improve-string-prompt-v1",
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        prompt_protocol_digest = hashlib.sha256(canonical).hexdigest()
+    return local_proposal_attempt_identity_digest(prompt_protocol_digest)
 
 
 @dataclass(frozen=True)
@@ -1572,6 +1575,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
             "SELF_IMPROVE_PROMPT_PLAN "
             f"shards={len(base_prompt.shards)} source_bytes={base_prompt.source_bytes} "
             f"protocol_digest={base_prompt.protocol_digest} "
+            f"attempt_identity_digest={attempt_identity_digest} "
             f"max_prompt_bytes={base_prompt.max_prompt_bytes} "
             f"paths={json.dumps(sorted(reference.changed_files))}",
             flush=True,

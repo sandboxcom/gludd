@@ -107,6 +107,67 @@ def _contract() -> ProposalContract:
     )
 
 
+def test_attempt_identity_binds_complete_managed_output_protocol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prompt_digest = "a" * 64
+    baseline = comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
+
+    assert baseline == comparison_module.local_proposal_attempt_identity_digest(
+        prompt_digest
+    )
+    assert baseline != comparison_module.local_proposal_attempt_identity_digest(
+        "b" * 64
+    )
+    protocol_changes: tuple[tuple[str, object], ...] = (
+        ("_COMPACT_PROPOSAL_PROTOCOL_VERSION", "compact-proposal-v-next"),
+        ("_COMPACT_PROPOSAL_JSON_SCHEMA", {"type": "object"}),
+        ("_STRUCTURED_CANARY_SCHEMA", {"type": "boolean"}),
+        ("_STRUCTURED_CANARY_PROMPT", "Return a different canary."),
+        ("_STRUCTURED_CANARY_EXPECTED", {"ok": False}),
+        ("_COMPACT_PROPOSAL_TOKENS", 1537),
+        ("_STRUCTURED_CANARY_TOKENS", 33),
+        ("_DETERMINISTIC_DECODE_SEED", 1),
+        ("_DETERMINISTIC_DECODE_TEMPERATURE", 0.1),
+        ("_STRUCTURED_OUTPUT_REQUIRE_STOP", False),
+        ("_COMPACT_ROOT_FIELDS", frozenset({"c", "e", "unexpected"})),
+        (
+            "_COMPACT_OPERATION_BY_EMPTY_TEXT",
+            {(False, False): "replace", (False, True): "delete"},
+        ),
+        ("_STRICT_PARENT_DECODER_VERSION", "proposal-manifest-strict-v-next"),
+    )
+    for name, changed_value in protocol_changes:
+        with monkeypatch.context() as scoped:
+            scoped.setattr(comparison_module, name, changed_value)
+            assert (
+                comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
+                != baseline
+            ), name
+
+    reordered_schema = dict(
+        reversed(list(comparison_module._COMPACT_PROPOSAL_JSON_SCHEMA.items()))
+    )
+    with monkeypatch.context() as scoped:
+        scoped.setattr(
+            comparison_module,
+            "_COMPACT_PROPOSAL_JSON_SCHEMA",
+            reordered_schema,
+        )
+        assert (
+            comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
+            == baseline
+        )
+
+
+@pytest.mark.parametrize("prompt_digest", ["", "A" * 64, "a" * 63, "g" * 64])
+def test_attempt_identity_rejects_noncanonical_prompt_digest(
+    prompt_digest: str,
+) -> None:
+    with pytest.raises(ValueError, match="prompt protocol digest"):
+        comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
+
+
 def test_proposal_contract_round_trips_only_trusted_immutable_fields() -> None:
     contract = _contract()
     assert ProposalContract.from_json(contract.to_json()) == contract

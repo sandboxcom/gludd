@@ -22,6 +22,7 @@ from general_ludd.self_improve.codex_comparison import (
     ProposalManifest,
     decode_prompt_batch,
     encode_proposal_batch,
+    local_proposal_attempt_identity_digest,
     merge_proposal_manifests,
 )
 
@@ -60,7 +61,11 @@ def test_attempt_identity_uses_exact_prompt_protocol_and_is_legacy_sensitive() -
         source_bytes=14,
     )
 
-    assert runner_module._attempt_identity_digest(plan) == plan.protocol_digest
+    attempt_identity = runner_module._attempt_identity_digest(plan)
+    assert attempt_identity != plan.protocol_digest
+    assert attempt_identity == local_proposal_attempt_identity_digest(
+        plan.protocol_digest
+    )
     legacy = runner_module._attempt_identity_digest("bounded prompt")
     assert len(legacy) == 64
     int(legacy, 16)

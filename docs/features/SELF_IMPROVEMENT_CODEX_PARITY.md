@@ -123,6 +123,56 @@ directory, and model lease as any other failed attempt. The parent applies one
 published. The retained worker does not start a persistent llama.cpp server or
 add another cache owner.
 
+## Complete attempt evidence identity
+
+A prompt-plan digest is not an attempt identity by itself. The output protocol
+can change while the prompt bytes remain identical: the compact schema can add
+or remove a field, the canary can change, a decode budget can move, or the
+strict decoder can infer operations differently. Reusing a failure recorded
+under the earlier behavior would incorrectly exclude a model that has never
+tried the new contract.
+
+The runner therefore hashes one canonical JSON descriptor containing the exact
+`PromptPlan.protocol_digest` plus all managed output semantics:
+
+- compact protocol version, full JSON Schema, and system prompt;
+- canary request, expected object, schema, and token bound;
+- proposal token bound, deterministic temperature and seed, required stop
+  policy, and allowlisted finish classifications; and
+- exact compact root/edit fields, edit bounds, empty-text operation mapping,
+  authoritative manifest schema and limits, path policy, batch protocol, and
+  strict parent-decoder version.
+
+Sorted-key serialization makes retry-identical inputs stable. Retry diagnostics,
+model path, cache path, hardware details, process identifiers, timestamps, and
+credentials are intentionally absent because they do not define the proposal
+language. Any material protocol constant used by inference or validation changes
+the digest. The runner sends that exact digest to both historical-failure
+loading and every success/failure record and prints it beside the narrower
+prompt digest.
+
+Existing prompt-only outcome records are preserved for audit. Exact-digest
+selection makes them ineligible to exclude a model under the new protocol; no
+database clearing or evidence mutation is needed. A rollback to an earlier
+protocol naturally restores that earlier identity and its matching evidence.
+This is a zero-downtime evidence migration because it changes neither the store
+schema nor the running daemon.
+
+This boundary also responds to long-lived practitioner evidence.
+[llama-cpp-python issue 1483](https://github.com/abetlen/llama-cpp-python/issues/1483)
+shows that changing structured-output shape can change runtime behavior all the
+way to native process death, while
+[discussion 614](https://github.com/abetlen/llama-cpp-python/discussions/614)
+documents persistent difficulty keeping hand-authored grammar and parsing
+semantics aligned. Gludd treats schema, canary, budget, and decoder as one
+versioned attempt rather than assuming prompt equality proves behavioral
+equality.
+
+Regression tests first reproduced the old collision, then pin every protocol
+component independently, canonical ordering, invalid digest rejection,
+retry-stable identity, exact runner load/record wiring, and preservation but
+ineligibility of prompt-only evidence.
+
 This change is zero-downtime because it changes only an isolated, unpromoted
 candidate path. It has no daemon or database migration and cannot interrupt a
 current Gludd deployment. Rollback restores the previous gateway commit; model

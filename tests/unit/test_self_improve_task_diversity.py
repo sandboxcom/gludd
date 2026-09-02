@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 
+import general_ludd.self_improve.codex_comparison as comparison_module
 from general_ludd.hardware.survey import GpuInfo, HardwareInventory
 from general_ludd.local_model import get_model
 from general_ludd.schemas.benchmark import TaskType
@@ -231,4 +232,46 @@ def test_outcomes_are_task_type_scoped_even_for_same_contract_and_prompt(
         store,
         task_text="Implement another new product feature in Python.",
         attempt_identity_digest=attempt_identity,
+    ) == ("qwen2.5-coder-0.5b",)
+
+
+
+def test_prompt_only_failure_remains_auditable_but_is_ineligible_for_full_protocol(
+    tmp_path: object,
+) -> None:
+    store = _store(tmp_path)
+    task_text = "Fix a defect in Python code."
+    prompt_only_identity = "1" * 64
+    full_identity = comparison_module.local_proposal_attempt_identity_digest(
+        prompt_only_identity
+    )
+
+    record_self_improve_outcome(
+        store,
+        task_text=task_text,
+        candidate=_candidate(),
+        succeeded=False,
+        attempt_identity_digest=prompt_only_identity,
+    )
+
+    assert store.list_all()[0]["attempt_identity_digest"] == prompt_only_identity
+    assert load_latest_failed_model_ids(
+        store,
+        task_text=task_text,
+        attempt_identity_digest=full_identity,
+    ) == ()
+
+    record_self_improve_outcome(
+        store,
+        task_text=task_text,
+        candidate=_candidate(),
+        succeeded=False,
+        attempt_identity_digest=full_identity,
+    )
+
+    assert len(store.list_all()) == 2
+    assert load_latest_failed_model_ids(
+        store,
+        task_text=task_text,
+        attempt_identity_digest=full_identity,
     ) == ("qwen2.5-coder-0.5b",)
