@@ -227,6 +227,7 @@ def plan_model_candidates(
     revision_resolver: Callable[[str], str],
     *,
     input_tokens: int | None = None,
+    attempt_identity_digest: str | None = None,
     max_candidates: int = _MAX_CANDIDATES,
     on_resolution_failure: Callable[[LocalModelConfig, str], None] | None = None,
 ) -> tuple[PlannedModelCandidate, ...]:
@@ -235,8 +236,10 @@ def plan_model_candidates(
     Local context capacity, hardware fit, and prior failures are evaluated before
     the resolver performs any remote immutable-revision lookup. Capability
     evidence chooses the first candidate when available; subsequent candidates
-    grow monotonically by artifact size. Without matching evidence, the smallest
-    fitting catalog models provide a stable fallback.
+    grow monotonically by artifact size. When an attempt identity is supplied,
+    persisted failures for that exact prompt protocol and task shape become the
+    escalation floor. Without matching evidence, the smallest fitting catalog
+    models provide a stable fallback.
     """
     if not isinstance(task_text, str) or not task_text.strip():
         raise ValueError("task_text must be a non-empty string")
@@ -263,6 +266,17 @@ def plan_model_candidates(
         prior_failed_model_ids,
         coding_models,
     )
+    if attempt_identity_digest is not None:
+        persisted_names, persisted_size_floor = _failed_names_and_floor(
+            load_latest_failed_model_ids(
+                evidence_store,
+                task_text=task_text,
+                attempt_identity_digest=attempt_identity_digest,
+            ),
+            coding_models,
+        )
+        failed_names = failed_names | persisted_names
+        failed_size_floor = max(failed_size_floor, persisted_size_floor)
     required_context = _estimated_required_context(
         task_text,
         output_tokens,

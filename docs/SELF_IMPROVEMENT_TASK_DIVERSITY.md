@@ -19,6 +19,20 @@ the recommender a read-only evidence view containing only the inferred TaskType
 and contract-backed task kinds. Outcomes persist that same TaskType and bind it
 into the evidence digest.
 
+## Closed failure-to-escalation loop
+
+When the caller supplies a lowercase 64-character prompt-protocol digest, the
+planner reads its own persistent outcome store before resolving candidates. It
+unions exact-shape, exact-protocol failures with any explicit failures, then
+uses the largest failed artifact as a strict size floor. Two failed small
+models therefore produce a deterministic next plan beginning with the next
+larger fitting catalog model.
+
+A different TaskType, task kind, or protocol digest starts from its own evidence
+boundary. It cannot inherit the exclusion. This keeps real-run feedback useful
+without turning one difficult prompt or one task family into a global model
+ban. The legacy no-digest planner path remains unchanged.
+
 ## Representative-case bound
 
 Evidence selection keeps the newest record for each exact model and task shape.
@@ -61,7 +75,9 @@ task-shape-specific regression tests.
 - bounded, deterministic, model-preserving representative selection;
 - planner selection using only the inferred exact shape; and
 - failure history isolation between feature and bug-fix tasks sharing the
-  `coding` contract.
+  `coding` contract; and
+- automatic, deterministic escalation after two exact-shape/protocol failures,
+  with both protocol and task-shape isolation pinned in one integration case.
 
 The focused branch-coverage gate includes the planner, diversity selector, and
 evidence store and requires at least 85 percent aggregate branch coverage and

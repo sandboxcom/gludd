@@ -6,11 +6,13 @@ from typing import cast
 
 import pytest
 
+from general_ludd.hardware.survey import GpuInfo, HardwareInventory
 from general_ludd.local_model import get_model
-from general_ludd.schemas.benchmark import TaskRole
+from general_ludd.schemas.benchmark import TaskRole, TaskType
 from general_ludd.self_improve.model_candidate_planner import (
     PlannedModelCandidate,
     load_latest_failed_model_ids,
+    plan_model_candidates,
     record_self_improve_outcome,
 )
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
@@ -21,6 +23,15 @@ _ATTEMPT_IDENTITY = "1" * 64
 
 def _store(tmp_path: object) -> CapabilityEvidenceStore:
     return CapabilityEvidenceStore(str(tmp_path) + "/selection-evidence.json")
+
+
+def _hardware() -> HardwareInventory:
+    return HardwareInventory(
+        gpus=[GpuInfo("test GPU", 24.0, backend="metal")],
+        total_ram_gb=32.0,
+        disk_free_gb=100.0,
+        cpu_cores=8,
+    )
 
 
 def _candidate(
@@ -330,3 +341,62 @@ def test_old_prompt_identity_failure_does_not_exclude_compacted_attempt(
         attempt_identity_digest=old_identity,
     ) == ("qwen2.5-coder-0.5b",)
     assert store.list_all()[0]["attempt_identity_digest"] == old_identity
+
+
+def test_outcome_history_drives_deterministic_next_larger_candidate_only_for_shape(
+    tmp_path: object,
+) -> None:
+    store = _store(tmp_path)
+    task_text = "Implement a focused Python product feature."
+    attempt_identity = "a" * 64
+    initial = plan_model_candidates(
+        task_text,
+        1024,
+        (),
+        _hardware(),
+        store,
+        lambda _repo: "a" * 40,
+        max_candidates=3,
+    )
+    assert [candidate.config.name for candidate in initial] == [
+        "qwen2.5-coder-0.5b",
+        "deepseek-coder-1.3b",
+        "qwen2.5-coder-1.5b",
+    ]
+
+    for candidate in initial[:2]:
+        record_self_improve_outcome(
+            store,
+            task_text=task_text,
+            candidate=candidate,
+            succeeded=False,
+            attempt_identity_digest=attempt_identity,
+        )
+    records = store.list_all()
+    assert {
+        (record["task_type"], record["task_kind"], record["attempt_identity_digest"])
+        for record in records
+    } == {(TaskType.FEATURE.value, "coding", attempt_identity)}
+
+    def next_plan(text: str, identity: str) -> tuple[PlannedModelCandidate, ...]:
+        return plan_model_candidates(
+            text,
+            1024,
+            (),
+            _hardware(),
+            store,
+            lambda _repo: "a" * 40,
+            attempt_identity_digest=identity,
+            max_candidates=1,
+        )
+
+    expected = next_plan(task_text, attempt_identity)
+    assert [candidate.config.name for candidate in expected] == [
+        "qwen2.5-coder-1.5b"
+    ]
+    assert next_plan(task_text, attempt_identity) == expected
+    assert next_plan(task_text, "b" * 64)[0].config.name == "qwen2.5-coder-0.5b"
+    assert (
+        next_plan("Fix a defect in Python code.", attempt_identity)[0].config.name
+        == "qwen2.5-coder-0.5b"
+    )
