@@ -173,6 +173,134 @@ Research rationale remains in
 [Evaluation practice and practitioner evidence](#evaluation-practice-and-practitioner-evidence);
 this executable contract does not duplicate a separate forum survey.
 
+## Author an independent reference fixture
+
+Use this procedure to turn one `ineligible` row into auditable reference
+evidence. It deliberately separates the independent reference commit from the
+later fixture-admission commit. For `AM-DOC-01`, the reference commit may change
+only this document and
+`tests/unit/test_self_improve_acceptance_matrix.py`, exactly as declared by the
+row's `allowed_changed_paths`.
+
+The mechanically enforced source anchors are the
+[canonical matrix manifest](../config/self-improve/acceptance-matrix.json), the
+[executable matrix runner](../tests/unit/self_improve_acceptance_matrix_runner.py),
+and the [matrix Make target](../Makefile). The relevant symbols have distinct
+responsibilities:
+
+| Concern | Enforcing source |
+| --- | --- |
+| Parsed row identity | `MatrixCase` carries the task, path, fixture, baseline, and reference identities |
+| Fixture admission | `_validate_evidence` verifies the tracked fixture bytes, `fixture_digest`, exact task identity, and distinct full Git identities |
+| Whole-manifest admission | `load_manifest` requires canonical JSON, every task shape, the serial attempt bound, and unique baseline/reference pairs |
+| Replay | `execute_matrix` emits the ordered events and invokes only the existing `test-self-improve` Make seam |
+| Tracked manifest bytes | `EXPECTED_MATRIX_SHA256` in the Make target rejects an unreviewed manifest-byte change before the runner starts |
+
+### 1. Freeze the task and immutable baseline
+
+Copy the row's exact task object and acceptance boundary before implementation.
+Select a clean, reachable, 40-character commit SHA that does not contain the
+reference change. Record it as `baseline_ref`, then create a namespaced isolated
+worktree from that exact commit:
+
+```console
+make agent-worktree-base BRANCH=acceptance-am-doc-reference BASE=<40-character-baseline-sha>
+```
+
+The branch name is an example; the `BASE` value is not. Do not substitute
+`development`, a tag, or another mutable name in the fixture. In that worktree,
+write the contract test first and capture its expected failure before editing
+the document. For this row, the focused warning-free test is:
+
+```console
+make test-files TESTFILES=tests/unit/test_self_improve_acceptance_matrix.py PYTEST_ARGS='-q -W error'
+```
+
+Reference independence invariant: the reference author receives the frozen
+task, baseline, and allowed paths, but must not inspect a local-model proposal.
+Seal and commit the reference before any local-model inference for that row.
+This prevents the reference from becoming a rewrite or rating of the candidate.
+Run the focused test again, run the row's canonical Markdown command, and make
+one atomic reference commit through the guarded Make seam:
+
+```console
+make lint-markdown MARKDOWN_FILES=docs/SELF_IMPROVEMENT_ACCEPTANCE_MATRIX.md
+make ship-commit-files FILES='docs/SELF_IMPROVEMENT_ACCEPTANCE_MATRIX.md tests/unit/test_self_improve_acceptance_matrix.py' MSG='docs(self-improve): document acceptance fixture replay'
+make worktree-state
+```
+
+The full committed hash reported by repository state is `reference_ref`; it
+must differ from `baseline_ref`. Preserve the commit on a reachable integration
+branch before removing the reference branch. Never reuse the pair for another
+matrix row: `load_manifest` rejects duplicate eligible pairs.
+
+### 2. Canonicalize the fixture and admit the row
+
+Create the row's separate tracked task fixture under `config/self-improve/` in a
+follow-up fixture-admission change. Its only fields are
+`canonical_make_commands`, `objective`, `reference_elapsed_seconds`, and
+`task_id`, and their values must equal the task object already in the matrix.
+Serialize the object exactly as the runner does:
+
+```python
+json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True) + "\n"
+```
+
+Read those exact UTF-8 bytes as `fixture_bytes`; the manifest value is:
+
+```python
+hashlib.sha256(fixture_bytes).hexdigest()
+```
+
+Update only that row's evidence fields: set `eligibility` to `eligible`, set
+`ineligible_reason` to null, and fill `fixture_path`, `fixture_digest`,
+`baseline_ref`, and `reference_ref`. Keep the exact task text, type, capability,
+role, checks, allowed paths, required tests, and attempt bound unchanged. Then
+serialize the entire manifest with the same canonical `json.dumps` settings and
+one final newline. Compute its SHA-256 over the resulting bytes and update
+`EXPECTED_MATRIX_SHA256` in the matrix Make target in the same admission change.
+
+`_validate_evidence` re-hashes the tracked fixture and compares its parsed task
+identity; `load_manifest` checks the full row and matrix invariants. A placeholder
+digest, mutable ref, mismatched task, reused pair, non-canonical encoding, or
+partial evidence tuple must remain a hard `MatrixContractError`, not an eligible
+row.
+
+### 3. Validate, replay live, and clean up
+
+First run the pinned validate-only entry point with every documented variable
+set explicitly:
+
+```console
+make test-self-improve-acceptance-matrix SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE=config/self-improve/acceptance-matrix.json SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH= SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE=0
+```
+
+If another row is still ineligible, the aggregate result remains non-zero and
+names every blocked step; that is correct readiness evidence. It is not a model
+failure. Run live inference only after all ten rows pass admission, using the
+exact immutable fixture/reference identities and an admitted local model:
+
+```console
+make test-self-improve-acceptance-matrix SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE=config/self-improve/acceptance-matrix.json SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH=/tmp/gludd-acceptance-model.gguf SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE=1
+```
+
+This authoring guide does not claim a live pass. A pass exists only when the
+observable eleven-step summary and every acceptance predicate are green for the
+recorded identity.
+
+After the reference commit is reachable from the integrating branch, clean up
+its isolated worktree from the main checkout:
+
+```console
+make agent-cleanup BRANCH=acceptance-am-doc-reference
+```
+
+Do not clean an unintegrated reference: deleting its only branch would make its
+recorded SHA unsafe to reproduce. Matrix replay itself uses bounded temporary
+task files in `execute_matrix`; normal exit and exceptions close that temporary
+directory, while the managed candidate runner owns its candidate worktree,
+worker, exchange directory, and lease cleanup.
+
 ## Execution plan and bounds
 
 Run cases in case-ID order. Select at most two candidates per case and stop the
