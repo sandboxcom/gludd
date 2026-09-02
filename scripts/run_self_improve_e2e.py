@@ -16,9 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from contextlib import ExitStack
-from dataclasses import asdict, dataclass, field
-from enum import StrEnum
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Final, Protocol, TextIO, cast
 
@@ -33,12 +31,36 @@ from general_ludd.self_improve.codex_comparison import (
     ProposalContract,
     ProposalManifest,
     bind_compact_focus_path,
-    build_retry_prompt,
     compare_with_codex,
     decode_proposal_batch,
     encode_prompt_batch,
-    local_proposal_attempt_identity_digest,
     merge_proposal_manifests,
+)
+from general_ludd.self_improve.managed_runner import (
+    ApprovedSelfImprovePlan,
+    AttemptResult,
+    CapabilityEvidenceOutcomeAdapter,
+    ManagedSelfImproveRunner,
+    ModelPlanError,
+    PlanBoundProposal,
+    PromptPlan,
+    PromptShard,
+    TaskSpec,
+    _attempt_identity_digest,
+    _build_validation_retry_prompt_plan,
+    _is_safe_make_command,
+    _validate_attempt_identity_digest,
+    apply_proposal,
+    build_retry_prompt_plan,
+)
+from general_ludd.self_improve.managed_runner import (
+    ModelPlanFailure as ModelPlanFailure,
+)
+from general_ludd.self_improve.managed_runner import (
+    _validate_approved_result_identity as _validate_approved_result_identity,
+)
+from general_ludd.self_improve.managed_runner import (
+    _write_atomic_temp as _write_atomic_temp,
 )
 from general_ludd.self_improve.model_candidate_planner import (
     PlannedModelCandidate,
@@ -52,7 +74,6 @@ from general_ludd.self_improve.model_lifecycle import (
     ModelAcquisitionEvent,
     ModelArtifactIdentity,
     ModelLeaseManager,
-    ModelPlanReservation,
 )
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 from general_ludd.small_models.recommender import map_task_to_capabilities
@@ -80,23 +101,6 @@ _RELEVANCE_STOPWORDS: Final = frozenset(
         "that", "the", "this", "uses", "with", "without",
     }
 )
-
-
-class ModelPlanFailure(StrEnum):
-    """Secret-safe terminal states for bounded model selection."""
-
-    EXHAUSTED = "model_plan_exhausted"
-
-
-class ModelPlanError(RuntimeError):
-    """Typed failure raised before a candidate can begin an attempt."""
-
-    def __init__(self, failure: ModelPlanFailure) -> None:
-        """Retain only a stable category and operator-safe message."""
-        if failure is not ModelPlanFailure.EXHAUSTED:
-            raise ValueError("unsupported typed model plan failure")
-        super().__init__("managed model candidate plan failed: model_plan_exhausted")
-        self.failure = failure
 
 
 def _report_model_resolution_failure(
@@ -146,211 +150,6 @@ def _report_model_release(model: AcquiredModel) -> None:
         flush=True,
     )
 
-
-@dataclass(frozen=True)
-class TaskSpec:
-    """Deterministic benchmark task and canonical quality commands."""
-
-    task_id: str
-    objective: str
-    canonical_make_commands: tuple[str, ...]
-    reference_elapsed_seconds: float = 0.0
-
-    @classmethod
-    def from_path(cls, path: Path) -> TaskSpec:
-        """Load one strict, bounded JSON benchmark task."""
-        if not path.is_file():
-            raise FileNotFoundError(f"self-improvement task is not readable: {path}")
-        if path.stat().st_size > _MAX_TASK_BYTES:
-            raise ValueError(f"task exceeds {_MAX_TASK_BYTES} bytes")
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ValueError(f"task is not valid UTF-8 JSON: {exc}") from exc
-        if not isinstance(value, dict):
-            raise ValueError("task must be a JSON object")
-        allowed = {
-            "task_id",
-            "objective",
-            "canonical_make_commands",
-            "reference_elapsed_seconds",
-        }
-        unknown = set(value) - allowed
-        if unknown:
-            raise ValueError(f"task has unknown fields: {sorted(unknown)}")
-        missing = {"task_id", "objective", "canonical_make_commands"} - set(value)
-        if missing:
-            raise ValueError(f"task is missing fields: {sorted(missing)}")
-
-        task_id = value["task_id"]
-        objective = value["objective"]
-        commands = value["canonical_make_commands"]
-        elapsed = value.get("reference_elapsed_seconds", 0.0)
-        if not isinstance(task_id, str) or not _TASK_RE.fullmatch(task_id):
-            raise ValueError("task_id must use the canonical S<number>[.<number>] form")
-        if not isinstance(objective, str) or not objective.strip():
-            raise ValueError("objective must be non-empty text")
-        if len(objective.encode("utf-8")) > 65_536:
-            raise ValueError("objective exceeds 65536 bytes")
-        if not isinstance(commands, list) or not commands or len(commands) > 32:
-            raise ValueError("canonical_make_commands must contain 1..32 entries")
-        parsed_commands: list[str] = []
-        for command in commands:
-            if not isinstance(command, str) or not _is_safe_make_command(command):
-                raise ValueError("every canonical step must be one bounded make command")
-            parsed_commands.append(command)
-        if not isinstance(elapsed, (int, float)) or elapsed < 0:
-            raise ValueError("reference_elapsed_seconds must be non-negative")
-        return cls(
-            task_id=task_id,
-            objective=objective.strip(),
-            canonical_make_commands=tuple(parsed_commands),
-            reference_elapsed_seconds=float(elapsed),
-        )
-
-
-@dataclass(frozen=True)
-class PromptShard:
-    """One bounded proposal prompt with an exact, disjoint edit focus."""
-
-    focus_paths: tuple[str, ...]
-    prompt: str
-
-    def __post_init__(self) -> None:
-        """Reject empty, duplicate, or oversized shard state."""
-        if not self.focus_paths or len(set(self.focus_paths)) != len(self.focus_paths):
-            raise ValueError("prompt shard focus paths must be non-empty and unique")
-        if not self.prompt.strip():
-            raise ValueError("prompt shard must not be empty")
-        if len(self.prompt.encode("utf-8")) > _MAX_PROMPT_SHARD_BYTES:
-            raise ValueError(
-                f"prompt shard exceeds {_MAX_PROMPT_SHARD_BYTES} bytes"
-            )
-
-
-@dataclass(frozen=True)
-class PromptPlan:
-    """Complete reference identity split into bounded local-model prompts."""
-
-    shards: tuple[PromptShard, ...]
-    source_bytes: int
-    protocol_digest: str = ""
-    baseline_files: tuple[tuple[str, str | None], ...] = field(
-        default=(),
-        repr=False,
-    )
-
-    def __post_init__(self) -> None:
-        """Require non-overlapping shards and publish stable protocol identity."""
-        if not self.shards:
-            raise ValueError("prompt plan must contain at least one shard")
-        if self.source_bytes < 0:
-            raise ValueError("prompt plan source_bytes must be non-negative")
-        paths = [path for shard in self.shards for path in shard.focus_paths]
-        if len(paths) != len(set(paths)):
-            raise ValueError("prompt plan focus paths must be disjoint")
-        if self.baseline_files:
-            if not isinstance(self.baseline_files, tuple):
-                raise ValueError("prompt plan baseline files must be an immutable tuple")
-            baseline_paths: list[str] = []
-            baseline_bytes = 0
-            for item in self.baseline_files:
-                if (
-                    not isinstance(item, tuple)
-                    or len(item) != 2
-                    or not isinstance(item[0], str)
-                    or (item[1] is not None and not isinstance(item[1], str))
-                ):
-                    raise ValueError(
-                        "prompt plan baseline files must contain path/text pairs"
-                    )
-                path, content = item
-                baseline_paths.append(path)
-                if content is not None:
-                    baseline_bytes += len(content.encode("utf-8"))
-            if baseline_paths != paths:
-                raise ValueError(
-                    "prompt plan baseline files must match focus paths in order"
-                )
-            if baseline_bytes != self.source_bytes:
-                raise ValueError(
-                    "prompt plan baseline bytes must match the source byte count"
-                )
-        if self.protocol_digest:
-            if re.fullmatch(r"[0-9a-f]{64}", self.protocol_digest) is None:
-                raise ValueError("prompt plan protocol_digest must be lowercase SHA-256")
-            return
-        canonical_plan = json.dumps(
-            {
-                "protocol": "self-improve-prompt-plan-v1",
-                "shards": [
-                    {
-                        "focus_paths": list(shard.focus_paths),
-                        "prompt": shard.prompt,
-                    }
-                    for shard in self.shards
-                ],
-                "source_bytes": self.source_bytes,
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-        object.__setattr__(
-            self,
-            "protocol_digest",
-            hashlib.sha256(canonical_plan).hexdigest(),
-        )
-
-    def __contains__(self, value: object) -> bool:
-        """Support compatibility membership checks across every shard prompt."""
-        return isinstance(value, str) and any(value in shard.prompt for shard in self.shards)
-
-    @property
-    def max_prompt_bytes(self) -> int:
-        """Return the largest individual inference input."""
-        return max(len(shard.prompt.encode("utf-8")) for shard in self.shards)
-
-
-def _validate_attempt_identity_digest(value: object) -> str:
-    """Return one canonical attempt identity or fail closed."""
-    if not isinstance(value, str) or _ATTEMPT_IDENTITY_RE.fullmatch(value) is None:
-        raise ValueError(
-            "attempt identity must be a lowercase 64-character hexadecimal digest"
-        )
-    return value
-
-
-@dataclass(frozen=True)
-class PlanBoundProposal:
-    """A proposal inseparably bound to the trusted parent prompt plan."""
-
-    proposal: ProposalManifest
-    attempt_identity_digest: str
-
-    def __post_init__(self) -> None:
-        """Reject unvalidated manifests and non-canonical plan identities."""
-        if not isinstance(self.proposal, ProposalManifest):
-            raise ValueError("plan-bound proposal must contain a proposal manifest")
-        _validate_attempt_identity_digest(self.attempt_identity_digest)
-
-
-def _attempt_identity_digest(prompt: PromptPlan | str) -> str:
-    """Bind prompt identity to the complete managed proposal protocol."""
-    if isinstance(prompt, PromptPlan):
-        prompt_protocol_digest = prompt.protocol_digest
-    else:
-        canonical = json.dumps(
-            {
-                "prompt": prompt,
-                "protocol": "self-improve-string-prompt-v1",
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-        prompt_protocol_digest = hashlib.sha256(canonical).hexdigest()
-    return local_proposal_attempt_identity_digest(prompt_protocol_digest)
 
 
 @dataclass(frozen=True)
@@ -675,30 +474,7 @@ def generate_local_proposal_plan(
     )
 
 
-def build_retry_prompt_plan(
-    plan: PromptPlan,
-    comparison: ComparisonResult,
-    *,
-    diagnostics: str = "",
-) -> PromptPlan:
-    """Apply the same bounded retry evidence to every immutable prompt shard."""
-    return PromptPlan(
-        shards=tuple(
-            PromptShard(
-                focus_paths=shard.focus_paths,
-                prompt=build_retry_prompt(
-                    shard.prompt,
-                    comparison,
-                    diagnostics=diagnostics,
-                    max_diagnostic_bytes=2_048,
-                ),
-            )
-            for shard in plan.shards
-        ),
-        source_bytes=plan.source_bytes,
-        protocol_digest=plan.protocol_digest,
-        baseline_files=plan.baseline_files,
-    )
+
 
 
 def _validation_retry_feedback(error: str) -> str:
@@ -774,55 +550,7 @@ def _validation_retry_suffix(error: str) -> str:
     )
 
 
-def _build_validation_retry_prompt_plan(
-    plan: PromptPlan,
-    error: str,
-) -> PromptPlan:
-    suffix = _validation_retry_suffix(error)
-    return PromptPlan(
-        shards=tuple(
-            PromptShard(
-                focus_paths=shard.focus_paths,
-                prompt=shard.prompt + suffix,
-            )
-            for shard in plan.shards
-        ),
-        source_bytes=plan.source_bytes,
-        protocol_digest=plan.protocol_digest,
-        baseline_files=plan.baseline_files,
-    )
 
-
-@dataclass(frozen=True)
-class AttemptResult:
-    """Final evidence, comparison, and patch identity for one local attempt."""
-
-    comparison: ComparisonResult
-    evidence: CandidateEvidence
-    patch_equivalence: str
-    proposal: ProposalManifest
-    diagnostics: str
-    attempt_identity_digest: str
-
-    def __post_init__(self) -> None:
-        """Require every approval/result to retain one canonical plan identity."""
-        _validate_attempt_identity_digest(self.attempt_identity_digest)
-
-
-def _validate_approved_result_identity(
-    result: AttemptResult,
-    bound_proposal: PlanBoundProposal,
-    expected_attempt_identity_digest: str,
-) -> str:
-    """Prove approval and proposal still belong to the executing prompt plan."""
-    expected = _validate_attempt_identity_digest(expected_attempt_identity_digest)
-    if bound_proposal.attempt_identity_digest != expected:
-        raise ValueError("proposal plan identity drifted before approval")
-    if result.attempt_identity_digest != expected:
-        raise ValueError("approved result plan identity drifted before outcome")
-    if result.proposal != bound_proposal.proposal:
-        raise ValueError("approved proposal drifted before outcome")
-    return expected
 
 
 def parse_reference_files(output: str) -> frozenset[str]:
@@ -1036,111 +764,6 @@ def estimate_required_output_tokens(changed_lines: int, changed_files: int) -> i
     if changed_lines < 0 or changed_files < 0:
         raise ValueError("reference metrics must be non-negative")
     return 512 + changed_lines * 5 + changed_files * 96
-
-
-def apply_proposal(repo_root: Path, proposal: ProposalManifest) -> int:
-    """Transactionally apply confined exact patches and return changed line count."""
-    proposal.validate_paths(repo_root)
-    originals: dict[Path, tuple[bool, str, int]] = {}
-    planned: dict[Path, tuple[bool, str]] = {}
-    for edit in proposal.edits:
-        destination = repo_root / edit.path
-        if destination.is_symlink():
-            raise ValueError(f"proposal path must not be a symlink: {edit.path}")
-        if destination not in originals:
-            exists = destination.is_file()
-            before = destination.read_text(encoding="utf-8") if exists else ""
-            mode = destination.stat().st_mode if exists else 0o644
-            originals[destination] = (exists, before, mode)
-            planned[destination] = (exists, before)
-        exists, current = planned[destination]
-        if edit.operation == "replace":
-            if not exists or current.count(edit.old_text) != 1:
-                raise ValueError(
-                    f"replace old_text must occur exactly once: {edit.path}"
-                )
-            planned[destination] = (
-                True,
-                current.replace(edit.old_text, edit.new_text, 1),
-            )
-        elif edit.operation == "create":
-            if exists:
-                raise ValueError(f"create target already exists: {edit.path}")
-            planned[destination] = (True, edit.new_text)
-        elif edit.operation == "delete":
-            if not exists or current != edit.old_text:
-                raise ValueError(
-                    f"delete old_text must equal the complete file: {edit.path}"
-                )
-            planned[destination] = (False, "")
-        else:
-            raise ValueError(f"unsupported edit operation: {edit.operation}")
-
-    changed_lines = sum(
-        _line_delta(originals[path][1], final_text)
-        for path, (_exists, final_text) in planned.items()
-    )
-    staged: dict[Path, Path] = {}
-    backups: dict[Path, Path] = {}
-    try:
-        for destination, (final_exists, final_text) in planned.items():
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            original_exists, original_text, original_mode = originals[destination]
-            if original_exists:
-                backups[destination] = _write_atomic_temp(
-                    destination,
-                    original_text,
-                    original_mode,
-                    ".self-improve-backup",
-                )
-            if final_exists:
-                staged[destination] = _write_atomic_temp(
-                    destination,
-                    final_text,
-                    original_mode,
-                    ".self-improve-tmp",
-                )
-        try:
-            for destination, (final_exists, _final_text) in planned.items():
-                if final_exists:
-                    os.replace(staged.pop(destination), destination)
-                else:
-                    destination.unlink()
-        except BaseException:
-            for destination, (original_exists, _text, _mode) in originals.items():
-                if original_exists:
-                    backup = backups.get(destination)
-                    if backup is not None and backup.exists():
-                        os.replace(backup, destination)
-                else:
-                    destination.unlink(missing_ok=True)
-            raise
-        return changed_lines
-    finally:
-        for temporary in (*staged.values(), *backups.values()):
-            temporary.unlink(missing_ok=True)
-
-
-def _write_atomic_temp(
-    destination: Path,
-    content: str,
-    mode: int,
-    suffix: str,
-) -> Path:
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=destination.parent,
-        prefix=".gludd-self-improve-",
-        suffix=suffix,
-        delete=False,
-    ) as handle:
-        handle.write(content)
-        handle.flush()
-        os.fsync(handle.fileno())
-        temporary = Path(handle.name)
-    os.chmod(temporary, mode)
-    return temporary
 
 
 def build_reference(
@@ -1759,7 +1382,6 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                 "baseline context worktree cleanup failed: "
                 + (context_cleanup.stderr or context_cleanup.stdout)
             )
-    prompt: PromptPlan | str = base_prompt
     attempt_identity_digest = _attempt_identity_digest(base_prompt)
     if isinstance(base_prompt, PromptPlan):
         print(
@@ -1771,266 +1393,86 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
             f"paths={json.dumps(sorted(reference.changed_files))}",
             flush=True,
         )
-    final: AttemptResult | None = None
-    model_manager: ModelLeaseManager | None = None
-    model_evidence_store: CapabilityEvidenceStore | None = None
-    managed_candidates: tuple[PlannedModelCandidate, ...] | None = None
-    model_plan_reservation: ModelPlanReservation | None = None
-    candidate_index = 0
-    reservation_stack = ExitStack()
-    try:
-        for attempt in range(1, args.max_attempts + 1):
-            use_mechanical = attempt == 1 and mechanical_proposal is not None
-            candidate: PlannedModelCandidate | None = None
-            candidate_identity: ModelArtifactIdentity | None = None
-            if not use_mechanical:
-                if model_manager is None:
-                    model_manager = ModelLeaseManager(
-                        event_sink=_report_model_acquisition_event,
-                    )
-                if explicit_model_path is None:
-                    if managed_candidates is None:
-                        model_attempt_budget = args.max_attempts - (
-                            1 if mechanical_proposal is not None else 0
-                        )
-                        evidence_path = (
-                            model_manager.cache_root
-                            / ".gludd"
-                            / "capability-evidence.json"
-                        )
-                        model_evidence_store = CapabilityEvidenceStore(str(evidence_path))
-                        prior_failed_model_ids = load_latest_failed_model_ids(
-                            model_evidence_store,
-                            task_text=task.objective,
-                            attempt_identity_digest=attempt_identity_digest,
-                        )
-                        managed_candidates = plan_model_candidates(
-                            task.objective,
-                            required_output_tokens,
-                            prior_failed_model_ids,
-                            unified_probe(),
-                            model_evidence_store,
-                            model_manager.resolve_revision,
-                            input_tokens=max(
-                                1,
-                                (
-                                    (
-                                        prompt.max_prompt_bytes
-                                        if isinstance(prompt, PromptPlan)
-                                        else len(prompt.encode("utf-8"))
-                                    )
-                                    + 3
-                                )
-                                // 4,
-                            ),
-                            max_candidates=min(3, max(1, model_attempt_budget)),
-                            on_resolution_failure=_report_model_resolution_failure,
-                        )
-                        print(
-                            "SELF_IMPROVE_MODEL_PLAN "
-                            f"candidates={json.dumps([item.config.name for item in managed_candidates])}",
-                            flush=True,
-                        )
-                        if not managed_candidates:
-                            raise ModelPlanError(ModelPlanFailure.EXHAUSTED)
-                        failure_hints = (
-                            model_manager.owned_identities_for_model_ids(
-                                prior_failed_model_ids
-                            )
-                        )
-                        model_plan_reservation = reservation_stack.enter_context(
-                            model_manager.reserve_plan(
-                                tuple(
-                                    _planned_artifact_identity(item)
-                                    for item in managed_candidates
-                                ),
-                                failure_hints=failure_hints,
-                            )
-                        )
-                    if candidate_index >= len(managed_candidates):
-                        raise ModelPlanError(ModelPlanFailure.EXHAUSTED)
-                    candidate = managed_candidates[candidate_index]
-                    candidate_index += 1
-                candidate_identity = (
-                    _planned_artifact_identity(candidate)
-                    if candidate is not None
-                    else None
-                )
-            print(
-                f"SELF_IMPROVE_ATTEMPT_START attempt={attempt} "
-                f"attempt_identity_digest={attempt_identity_digest}",
-                flush=True,
+    def generate_managed_proposal(
+        model_path: Path,
+        prompt: PromptPlan | str,
+        task: TaskSpec,
+        reference: CodexReference,
+    ) -> ProposalManifest:
+        if isinstance(prompt, PromptPlan):
+            return generate_local_proposal_plan(
+                root_runner,
+                model_path,
+                prompt,
+                task,
+                reference,
             )
-            try:
-                if use_mechanical:
-                    if mechanical_proposal is None:
-                        raise RuntimeError("mechanical proposal was not generated")
-                    proposal = mechanical_proposal
-                else:
-                    if model_manager is None:
-                        raise RuntimeError("local model manager was not initialized")
-                    if explicit_model_path is not None:
-                        acquisition = model_manager.acquire(
-                            task.objective,
-                            explicit_path=explicit_model_path,
-                        )
-                    elif candidate is not None:
-                        acquisition = model_manager.acquire(
-                            task.objective,
-                            model_config=candidate.config,
-                            resolved_revision=candidate.resolved_revision,
-                        )
-                    else:
-                        raise RuntimeError("local model candidate was not selected")
-                    acquired_model: AcquiredModel | None = None
-                    try:
-                        with acquisition as acquired:
-                            acquired_model = acquired
-                            print(
-                                "SELF_IMPROVE_MODEL_ACQUIRED "
-                                f"model={acquired.model_id} source={acquired.source} "
-                                f"revision={acquired.resolved_revision or 'explicit'} "
-                                f"sha256={acquired.artifact_sha256}",
-                                flush=True,
-                            )
-                            if isinstance(prompt, PromptPlan):
-                                proposal = generate_local_proposal_plan(
-                                    root_runner,
-                                    acquired.path,
-                                    prompt,
-                                    task,
-                                    reference,
-                                )
-                            else:
-                                proposal = generate_local_proposal(
-                                    root_runner,
-                                    acquired.path,
-                                    prompt,
-                                )
-                            if (
-                                model_plan_reservation is not None
-                                and candidate_identity is not None
-                            ):
-                                model_plan_reservation.mark_eligible(
-                                    candidate_identity
-                                )
-                    finally:
-                        if acquired_model is not None:
-                            _report_model_release(acquired_model)
-            except ModelAcquisitionError as exc:
-                print(
-                    "SELF_IMPROVE_MODEL_ACQUISITION_REJECTED "
-                    f"attempt={attempt} failure={exc.failure.value}",
-                    flush=True,
-                )
-                raise
-            except BaseException as exc:
-                if (
-                    model_plan_reservation is not None
-                    and candidate_identity is not None
-                ):
-                    model_plan_reservation.mark_failed(candidate_identity)
-                if not isinstance(exc, (RuntimeError, ValueError)):
-                    raise
-                if candidate is not None and model_evidence_store is not None:
-                    outcome_id = record_self_improve_outcome(
-                        model_evidence_store,
-                        task_text=task.objective,
-                        candidate=candidate,
-                        attempt_identity_digest=attempt_identity_digest,
-                        succeeded=False,
-                    )
-                    print(
-                        "SELF_IMPROVE_MODEL_OUTCOME "
-                        f"model={candidate.config.name} succeeded=false record={outcome_id}",
-                        flush=True,
-                    )
-                feedback = _validation_retry_feedback(str(exc))
-                print(
-                    f"SELF_IMPROVE_PROPOSAL_REJECTED attempt={attempt} {feedback}",
-                    flush=True,
-                )
-                if attempt == args.max_attempts:
-                    raise
-                if isinstance(base_prompt, PromptPlan):
-                    prompt = _build_validation_retry_prompt_plan(base_prompt, str(exc))
-                else:
-                    prompt = base_prompt + _validation_retry_suffix(str(exc))
-                continue
-            try:
-                bound_proposal = PlanBoundProposal(
-                    proposal=proposal,
-                    attempt_identity_digest=attempt_identity_digest,
-                )
-                final = evaluate_attempt(
-                    root_runner,
-                    task,
-                    reference,
-                    bound_proposal,
-                    attempt,
-                    expected_attempt_identity_digest=attempt_identity_digest,
-                    merge=args.merge,
-                )
-                approved_identity = _validate_approved_result_identity(
-                    final,
-                    bound_proposal,
-                    attempt_identity_digest,
-                )
-            except BaseException:
-                if (
-                    model_plan_reservation is not None
-                    and candidate_identity is not None
-                ):
-                    model_plan_reservation.mark_failed(candidate_identity)
-                raise
-            if (
-                model_plan_reservation is not None
-                and candidate_identity is not None
-                and not final.comparison.accepted
-            ):
-                model_plan_reservation.mark_failed(candidate_identity)
-            if candidate is not None and model_evidence_store is not None:
-                outcome_id = record_self_improve_outcome(
-                    model_evidence_store,
-                    task_text=task.objective,
-                    candidate=candidate,
-                    attempt_identity_digest=approved_identity,
-                    succeeded=final.comparison.accepted,
-                )
-                print(
-                    "SELF_IMPROVE_MODEL_OUTCOME "
-                    f"model={candidate.config.name} "
-                    f"succeeded={str(final.comparison.accepted).lower()} "
-                    f"record={outcome_id} attempt_identity_digest={approved_identity}",
-                    flush=True,
-                )
-            print(
-                f"SELF_IMPROVE_ATTEMPT_END attempt={attempt} "
-                f"score={final.comparison.score:.2f} accepted={final.comparison.accepted} "
-                f"blockers={json.dumps(final.comparison.blockers)} "
-                f"attempt_identity_digest={approved_identity}",
-                flush=True,
-            )
-            if final.comparison.accepted:
-                return final
-            if isinstance(base_prompt, PromptPlan):
-                prompt = build_retry_prompt_plan(
-                    base_prompt,
-                    final.comparison,
-                    diagnostics=final.diagnostics,
-                )
-            else:
-                prompt = build_retry_prompt(
-                    base_prompt,
-                    final.comparison,
-                    diagnostics=final.diagnostics,
-                )
-        if final is None:
-            raise RuntimeError("no local-model attempt was executed")
-        return final
+        return generate_local_proposal(root_runner, model_path, prompt)
 
-    finally:
-        reservation_stack.__exit__(*sys.exc_info())
+    def evaluate_managed_proposal(
+        task: TaskSpec,
+        reference: CodexReference,
+        bound_proposal: PlanBoundProposal,
+        attempt: int,
+        *,
+        expected_attempt_identity_digest: str,
+        merge: bool,
+    ) -> AttemptResult:
+        return evaluate_attempt(
+            root_runner,
+            task,
+            reference,
+            bound_proposal,
+            attempt,
+            expected_attempt_identity_digest=expected_attempt_identity_digest,
+            merge=merge,
+        )
+
+    def outcome_adapter(cache_root: Path) -> CapabilityEvidenceOutcomeAdapter:
+        store = CapabilityEvidenceStore(
+            str(cache_root / ".gludd" / "capability-evidence.json")
+        )
+        return CapabilityEvidenceOutcomeAdapter(
+            store,
+            failure_loader=load_latest_failed_model_ids,
+            outcome_recorder=record_self_improve_outcome,
+        )
+
+    approved_plan = ApprovedSelfImprovePlan.approve(
+        approval_id=f"cli:{args.target}:{reference.reference_sha}",
+        todo_id=task.task_id,
+        project_id="cli-self-improve",
+        repo_root=root,
+        task=task,
+        reference=reference,
+        prompt=base_prompt,
+        required_output_tokens=required_output_tokens,
+        max_attempts=args.max_attempts,
+        explicit_model_path=explicit_model_path,
+        mechanical_proposal=mechanical_proposal,
+    )
+    service = ManagedSelfImproveRunner(
+        proposal_generator=generate_managed_proposal,
+        attempt_evaluator=evaluate_managed_proposal,
+        model_manager_factory=ModelLeaseManager,
+        outcome_adapter_factory=outcome_adapter,
+        candidate_planner=plan_model_candidates,
+        hardware_probe=unified_probe,
+        artifact_identity=_planned_artifact_identity,
+        acquisition_event_sink=_report_model_acquisition_event,
+        resolution_failure_sink=_report_model_resolution_failure,
+        release_sink=_report_model_release,
+        model_acquisition_error=ModelAcquisitionError,
+        comparison_retry_builder=lambda plan, comparison, diagnostics: (
+            build_retry_prompt_plan(
+                plan,
+                comparison,
+                diagnostics=diagnostics,
+            )
+        ),
+        validation_retry_builder=_build_validation_retry_prompt_plan,
+    )
+    return service.run(approved_plan).final_result
 
 
 def _clean_environment() -> dict[str, str]:
@@ -2039,17 +1481,7 @@ def _clean_environment() -> dict[str, str]:
     return environment
 
 
-def _is_safe_make_command(command: str) -> bool:
-    try:
-        tokens = shlex.split(command)
-    except ValueError:
-        return False
-    return (
-        bool(tokens)
-        and tokens[0] == "make"
-        and len(command.encode("utf-8")) <= 4096
-        and not any(character in command for character in _FORBIDDEN_COMMAND_CHARS)
-    )
+
 
 
 def _validate_target_and_variables(target: str, variables: dict[str, str]) -> None:
@@ -2065,20 +1497,6 @@ def _validate_target_and_variables(target: str, variables: dict[str, str]) -> No
 def _validate_sha(label: str, value: str) -> None:
     if not _SHA_RE.fullmatch(value):
         raise ValueError(f"{label} must be exactly 40 lowercase hex characters")
-
-
-def _line_delta(before: str, after: str) -> int:
-    delta = 0
-    for line in difflib.unified_diff(
-        before.splitlines(),
-        after.splitlines(),
-        lineterm="",
-    ):
-        if line.startswith(("+++", "---", "@@")):
-            continue
-        if line.startswith(("+", "-")):
-            delta += 1
-    return delta
 
 
 def _line_count_from_patch(patch: str) -> int:
