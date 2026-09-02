@@ -13,8 +13,16 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-import scripts.run_self_improve_e2e as runner_module
-from scripts.run_self_improve_e2e import (
+
+import general_ludd.self_improve.runtime as runner_module
+from general_ludd.self_improve.codex_comparison import (
+    CandidateEvidence,
+    CodexReference,
+    ComparisonResult,
+    ProposalManifest,
+)
+from general_ludd.self_improve.model_lifecycle import AcquiredModel
+from general_ludd.self_improve.runtime import (
     MakeResult,
     MakeRunner,
     TaskSpec,
@@ -31,14 +39,6 @@ from scripts.run_self_improve_e2e import (
     proposal_scope_matches,
     quality_defaults_for_paths,
 )
-
-from general_ludd.self_improve.codex_comparison import (
-    CandidateEvidence,
-    CodexReference,
-    ComparisonResult,
-    ProposalManifest,
-)
-from general_ludd.self_improve.model_lifecycle import AcquiredModel
 
 
 def _manifest() -> ProposalManifest:
@@ -532,6 +532,116 @@ def test_failure_diagnostic_reports_exact_first_failed_make_tail() -> None:
     assert "E assert 41 == 42" in diagnostic
     assert "worker failed" in diagnostic
     assert len(diagnostic.encode("utf-8")) <= 4608
+
+
+def test_installed_failure_diagnosis_compacts_captured_trace_without_raw_secrets() -> None:
+    """Preserve exact failure facts without forwarding an unbounded raw trace."""
+    secret = "gludd_debug_token_never_emit_123456789"
+    captured_trace = (
+        "SELF_IMPROVE_COMMAND_START command=\"make test-files\"\n"
+        f"AUTH_TOKEN={secret}\n"
+        + ("unbounded stack frame with model-controlled detail\n" * 4_000)
+        + "SELF_IMPROVE_LOCAL_DECODE phase=proposal_decode finish=length "
+        "prompt_tokens=88 completion_tokens=256 total_tokens=344 budget=256\n"
+        "SELF_IMPROVE_FAILURE phase=proposal_decode "
+        "failure=decode_budget_exhausted\n"
+        "SELF_IMPROVE_COMMAND_END rc=1 elapsed=2.00s\n"
+    )
+
+    artifact = runner_module.compact_failure_diagnosis(
+        captured_trace,
+        hypothesis="proposal output exhausted the configured decode budget",
+        max_bytes=256,
+        max_tokens=256,
+    )
+
+    assert json.loads(artifact) == {
+        "exit_code": 1,
+        "failure_class": "decode_budget_exhausted",
+        "finish_reason": "length",
+        "finished": True,
+        "hypothesis": "proposal output exhausted the configured decode budget",
+        "phase": "proposal_decode",
+        "schema_version": 1,
+    }
+    assert artifact == json.dumps(
+        json.loads(artifact), ensure_ascii=True, separators=(",", ":"), sort_keys=True
+    )
+    assert len(artifact.encode("utf-8")) <= 256
+    assert secret not in artifact
+    assert "unbounded stack frame" not in artifact
+    with pytest.raises(ValueError, match="token budget"):
+        runner_module.compact_failure_diagnosis(
+            captured_trace,
+            hypothesis="proposal output exhausted the configured decode budget",
+            max_bytes=256,
+            max_tokens=len(artifact.encode("utf-8")) - 1,
+        )
+    with pytest.raises(ValueError, match="secret-like material"):
+        runner_module.compact_failure_diagnosis(
+            captured_trace,
+            hypothesis="token=do-not-forward",
+        )
+
+
+def test_installed_failure_diagnosis_fails_closed_on_incomplete_facts() -> None:
+    """Reject malformed inputs rather than inventing diagnostic state."""
+    valid_trace = (
+        "SELF_IMPROVE_LOCAL_DECODE phase=proposal_decode finish=length\n"
+        "SELF_IMPROVE_FAILURE phase=proposal_decode failure=decode_failed\n"
+        "SELF_IMPROVE_COMMAND_END rc=1 elapsed=2.00s\n"
+    )
+    invalid_cases: tuple[tuple[str, str, int, int, str], ...] = (
+        ("", "bounded hypothesis", 512, 512, "non-empty string"),
+        (valid_trace, "", 512, 512, "non-empty string"),
+        (valid_trace, "bounded hypothesis", 0, 512, "positive integers"),
+        (valid_trace, "x" * 161, 512, 512, "hypothesis exceeds"),
+        (
+            valid_trace.replace("phase=proposal_decode", "stage=proposal_decode"),
+            "bounded hypothesis",
+            512,
+            512,
+            "missing phase",
+        ),
+        (
+            valid_trace.replace("failure=decode_failed", "cause=decode_failed"),
+            "bounded hypothesis",
+            512,
+            512,
+            "missing failure class",
+        ),
+        (
+            valid_trace.replace("finish=length", "completion=length"),
+            "bounded hypothesis",
+            512,
+            512,
+            "missing finish reason",
+        ),
+        (
+            valid_trace.replace("SELF_IMPROVE_COMMAND_END", "SELF_IMPROVE_COMMAND_STOP"),
+            "bounded hypothesis",
+            512,
+            512,
+            "missing exit code",
+        ),
+        (
+            valid_trace.replace("rc=1", "rc=999"),
+            "bounded hypothesis",
+            512,
+            512,
+            "outside the bounded range",
+        ),
+        (valid_trace, "bounded hypothesis", 1, 512, "byte budget"),
+    )
+
+    for trace, hypothesis, max_bytes, max_tokens, match in invalid_cases:
+        with pytest.raises(ValueError, match=match):
+            runner_module.compact_failure_diagnosis(
+                trace,
+                hypothesis=hypothesis,
+                max_bytes=max_bytes,
+                max_tokens=max_tokens,
+            )
 
 
 def test_mechanical_docs_route_uses_existing_make_tool_and_minimal_patch() -> None:

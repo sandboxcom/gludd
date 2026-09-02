@@ -38,26 +38,35 @@ from general_ludd.self_improve.codex_comparison import (
 )
 from general_ludd.self_improve.managed_runner import (
     ApprovedSelfImprovePlan,
-    AttemptResult,
     CapabilityEvidenceOutcomeAdapter,
     ManagedOutcomeAdapter,
     ManagedRunResult,
     ManagedSelfImproveRunner,
     ModelPlanError,
-    PlanBoundProposal,
     PromptPlan,
     PromptShard,
-    TaskSpec,
-    _attempt_identity_digest,
     _build_validation_retry_prompt_plan,
-    _is_safe_make_command,
     _validate_attempt_identity_digest,
     _validation_retry_feedback,
-    apply_proposal,
     build_retry_prompt_plan,
 )
 from general_ludd.self_improve.managed_runner import (
+    AttemptResult as AttemptResult,
+)
+from general_ludd.self_improve.managed_runner import (
     ModelPlanFailure as ModelPlanFailure,
+)
+from general_ludd.self_improve.managed_runner import (
+    PlanBoundProposal as PlanBoundProposal,
+)
+from general_ludd.self_improve.managed_runner import (
+    TaskSpec as TaskSpec,
+)
+from general_ludd.self_improve.managed_runner import (
+    _attempt_identity_digest as _attempt_identity_digest,
+)
+from general_ludd.self_improve.managed_runner import (
+    _is_safe_make_command as _is_safe_make_command,
 )
 from general_ludd.self_improve.managed_runner import (
     _OutcomeAdapterFactory as _OutcomeAdapterFactory,
@@ -67,6 +76,9 @@ from general_ludd.self_improve.managed_runner import (
 )
 from general_ludd.self_improve.managed_runner import (
     _write_atomic_temp as _write_atomic_temp,
+)
+from general_ludd.self_improve.managed_runner import (
+    apply_proposal as apply_proposal,
 )
 from general_ludd.self_improve.model_candidate_planner import (
     PlannedModelCandidate,
@@ -93,6 +105,8 @@ _MAX_PROMPT_SHARD_BYTES: Final = 16_384
 _MAX_BASE_PROMPT_SHARD_BYTES: Final = 12_000
 _MAX_FILE_EXCERPT_BYTES: Final = 4_096
 _MAX_CONTEXT_FILE_BYTES: Final = 2_097_152
+_MAX_FAILURE_DIAGNOSIS_TRACE_BYTES: Final = 131_072
+_MAX_FAILURE_DIAGNOSIS_HYPOTHESIS_BYTES: Final = 160
 _PROMPT_CONTEXT_LINES: Final = 5
 _HEARTBEAT_SECONDS: Final = 15.0
 _FORBIDDEN_COMMAND_CHARS: Final = frozenset(";|&$()<>\n\r")
@@ -100,6 +114,23 @@ _SHA_RE: Final = re.compile(r"^[0-9a-f]{40}$")
 _ATTEMPT_IDENTITY_RE: Final = re.compile(r"^[0-9a-f]{64}$")
 _TASK_RE: Final = re.compile(r"^S[0-9]+(?:\.[0-9]+)?$")
 _WORD_RE: Final = re.compile(r"[A-Za-z][A-Za-z0-9]+")
+_DIAGNOSIS_PHASE_RE: Final = re.compile(
+    r"(?m)^SELF_IMPROVE_[A-Z_]+\b[^\r\n]*\bphase=([a-z][a-z0-9_-]{0,63})\b"
+)
+_DIAGNOSIS_FAILURE_RE: Final = re.compile(
+    r"(?m)^SELF_IMPROVE_[A-Z_]+\b[^\r\n]*\bfailure=([a-z][a-z0-9_-]{0,63})\b"
+)
+_DIAGNOSIS_FINISH_RE: Final = re.compile(
+    r"(?m)^SELF_IMPROVE_LOCAL_DECODE\b[^\r\n]*\b"
+    r"finish=(stop|length|tool_calls|function_call|content_filter|unknown)\b"
+)
+_DIAGNOSIS_EXIT_RE: Final = re.compile(
+    r"(?m)^SELF_IMPROVE_COMMAND_END\b[^\r\n]*\brc=(-?[0-9]{1,3})\b"
+)
+_DIAGNOSIS_SECRET_RE: Final = re.compile(
+    r"(?i)(?:api[_-]?key|authorization|password|secret|token)\s*[:=]|"
+    r"-----BEGIN [A-Z ]+PRIVATE KEY-----"
+)
 _RELEVANCE_STOPWORDS: Final = frozenset(
     {
         "and", "cannot", "each", "every", "file", "five", "from", "full",
@@ -579,6 +610,96 @@ def build_failure_diagnostic(results: list[MakeResult]) -> str:
             f"{tail}"
         )
     return ""
+
+
+def compact_failure_diagnosis(
+    trace: str,
+    *,
+    hypothesis: str,
+    max_bytes: int = 512,
+    max_tokens: int = 512,
+) -> str:
+    """Convert a marker-bearing failure trace to bounded canonical JSON.
+
+    Only allowlisted execution facts are copied from the trace.  The output is
+    ASCII JSON, so its byte length is also a conservative upper bound for a
+    byte-fallback tokenizer's token count.
+    """
+    if not isinstance(trace, str) or not trace.strip():
+        raise ValueError("failure trace must be a non-empty string")
+    if not isinstance(hypothesis, str) or not hypothesis.strip():
+        raise ValueError("failure hypothesis must be a non-empty string")
+    if (
+        isinstance(max_bytes, bool)
+        or not isinstance(max_bytes, int)
+        or max_bytes <= 0
+        or isinstance(max_tokens, bool)
+        or not isinstance(max_tokens, int)
+        or max_tokens <= 0
+    ):
+        raise ValueError("diagnosis byte and token limits must be positive integers")
+
+    normalized_hypothesis = " ".join(hypothesis.split())
+    if (
+        len(normalized_hypothesis.encode("utf-8"))
+        > _MAX_FAILURE_DIAGNOSIS_HYPOTHESIS_BYTES
+    ):
+        raise ValueError("failure hypothesis exceeds its byte bound")
+    if _DIAGNOSIS_SECRET_RE.search(normalized_hypothesis):
+        raise ValueError("failure hypothesis contains secret-like material")
+
+    bounded_trace = _failure_diagnosis_trace_view(trace)
+    phase = _last_diagnosis_fact(_DIAGNOSIS_PHASE_RE, bounded_trace, "phase")
+    failure = _last_diagnosis_fact(
+        _DIAGNOSIS_FAILURE_RE, bounded_trace, "failure class"
+    )
+    finish = _last_diagnosis_fact(
+        _DIAGNOSIS_FINISH_RE, bounded_trace, "finish reason"
+    )
+    exit_text = _last_diagnosis_fact(_DIAGNOSIS_EXIT_RE, bounded_trace, "exit code")
+    exit_code = int(exit_text)
+    if not -255 <= exit_code <= 255:
+        raise ValueError("failure diagnosis exit code is outside the bounded range")
+
+    artifact = json.dumps(
+        {
+            "exit_code": exit_code,
+            "failure_class": failure,
+            "finish_reason": finish,
+            "finished": True,
+            "hypothesis": normalized_hypothesis,
+            "phase": phase,
+            "schema_version": 1,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    artifact_bytes = len(artifact.encode("ascii"))
+    if artifact_bytes > max_bytes:
+        raise ValueError("failure diagnosis exceeds its byte budget")
+    if artifact_bytes > max_tokens:
+        raise ValueError("failure diagnosis exceeds its conservative token budget")
+    return artifact
+
+
+def _failure_diagnosis_trace_view(trace: str) -> str:
+    """Retain only bounded head and tail windows for marker extraction."""
+    encoded = trace.encode("utf-8", errors="replace")
+    if len(encoded) <= _MAX_FAILURE_DIAGNOSIS_TRACE_BYTES:
+        return encoded.decode("utf-8", errors="replace")
+    half = _MAX_FAILURE_DIAGNOSIS_TRACE_BYTES // 2
+    head = encoded[:half].decode("utf-8", errors="replace")
+    tail = encoded[-half:].decode("utf-8", errors="replace")
+    return f"{head}\n{tail}"
+
+
+def _last_diagnosis_fact(pattern: re.Pattern[str], trace: str, label: str) -> str:
+    """Return the final allowlisted fact for one required trace field."""
+    matches = tuple(pattern.finditer(trace))
+    if not matches:
+        raise ValueError(f"failure trace is missing {label}")
+    return matches[-1].group(1)
 
 
 def parse_coverage_evidence(output: str) -> tuple[float, float]:
