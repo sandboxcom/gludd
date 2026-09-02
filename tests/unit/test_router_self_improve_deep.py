@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from general_ludd.db.models import ProjectModel
 from general_ludd.db.repository import TodoRepository
 from general_ludd.db.session import create_async_session_factory, ensure_tables
 from general_ludd.schemas.todo import TodoStatus
@@ -37,6 +38,24 @@ async def inmemory_factory():
     factory = create_async_session_factory(engine)
     yield factory
     await engine.dispose()
+
+
+async def _non_config_workspace(inmemory_factory, tmp_path: Path) -> tuple[Path, Path]:
+    """Create one persisted project and an existing confined worktree."""
+    workspace_root = tmp_path / "project-workspace"
+    repo_root = workspace_root / "repo"
+    worktree = repo_root / "worktrees" / "approved"
+    worktree.mkdir(parents=True)
+    async with inmemory_factory() as session:
+        session.add(
+            ProjectModel(
+                project_id="project-1",
+                name="Project one",
+                workspace_path=str(workspace_root),
+            )
+        )
+        await session.commit()
+    return repo_root, worktree
 
 
 # ---------------------------------------------------------------------------
@@ -511,7 +530,11 @@ class TestApplyApprovedConfigChange:
 
 class TestEnqueueNonConfigChange:
     @pytest.mark.asyncio
-    async def test_enqueues_approval_required_record(self, inmemory_factory):
+    async def test_enqueues_approval_required_record(
+        self,
+        inmemory_factory,
+        tmp_path: Path,
+    ):
         from general_ludd.routers.self_improve import (
             SELF_IMPROVE_WORK_TYPE,
             _enqueue_non_config_change,
@@ -521,9 +544,16 @@ class TestEnqueueNonConfigChange:
             "kind": "code",
             "title": "Refactor loop",
             "description": "Simplify the event loop tick method",
-            "worktree_path": "/tmp/wt-agent-loop",
         }
-        result = await _enqueue_non_config_change(inmemory_factory, "code", payload)
+        repo_root, worktree = await _non_config_workspace(inmemory_factory, tmp_path)
+        payload["worktree_path"] = str(worktree)
+        result = await _enqueue_non_config_change(
+            inmemory_factory,
+            "code",
+            payload,
+            project_id="project-1",
+            repo_root=repo_root,
+        )
         assert result["tier"] == "code"
         assert result["status"] == "approval_required"
         approval_id = result["approval_id"]
@@ -534,45 +564,86 @@ class TestEnqueueNonConfigChange:
             assert todo.work_type == SELF_IMPROVE_WORK_TYPE
             assert todo.priority == 10
             assert todo.created_by == "self_improve_apply"
+            assert todo.project_id == "project-1"
 
             spec = json.loads(todo.plan_artifact or "{}")
             assert spec["kind"] == "code"
             assert spec["title"] == "Refactor loop"
-            assert spec["worktree_path"] == "/tmp/wt-agent-loop"
+            assert spec["project_id"] == "project-1"
+            assert spec["schema_version"] == 1
+            assert spec["worktree_path"] == str(worktree.resolve())
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_generic_title_when_empty(self, inmemory_factory):
+    async def test_falls_back_to_generic_title_when_empty(
+        self,
+        inmemory_factory,
+        tmp_path: Path,
+    ):
         from general_ludd.routers.self_improve import _enqueue_non_config_change
 
-        payload: dict = {"kind": "role"}
-        result = await _enqueue_non_config_change(inmemory_factory, "role", payload)
+        repo_root, worktree = await _non_config_workspace(inmemory_factory, tmp_path)
+        payload: dict = {"kind": "role", "worktree_path": str(worktree)}
+        result = await _enqueue_non_config_change(
+            inmemory_factory,
+            "role",
+            payload,
+            project_id="project-1",
+            repo_root=repo_root,
+        )
 
         async with inmemory_factory() as session:
             todo = await TodoRepository(session).get_by_id(result["approval_id"])
             assert todo.title == "self-improve role change"
 
     @pytest.mark.asyncio
-    async def test_truncates_title_to_512(self, inmemory_factory):
+    async def test_truncates_title_to_512(
+        self,
+        inmemory_factory,
+        tmp_path: Path,
+    ):
         from general_ludd.routers.self_improve import _enqueue_non_config_change
 
+        repo_root, worktree = await _non_config_workspace(inmemory_factory, tmp_path)
         long_title = "A" * 600
-        payload = {"kind": "code", "title": long_title}
-        result = await _enqueue_non_config_change(inmemory_factory, "code", payload)
+        payload = {
+            "kind": "code",
+            "title": long_title,
+            "worktree_path": str(worktree),
+        }
+        result = await _enqueue_non_config_change(
+            inmemory_factory,
+            "code",
+            payload,
+            project_id="project-1",
+            repo_root=repo_root,
+        )
 
         async with inmemory_factory() as session:
             todo = await TodoRepository(session).get_by_id(result["approval_id"])
             assert len(todo.title) == 512
 
     @pytest.mark.asyncio
-    async def test_uses_description_for_plan_spec(self, inmemory_factory):
+    async def test_uses_description_for_plan_spec(
+        self,
+        inmemory_factory,
+        tmp_path: Path,
+    ):
         from general_ludd.routers.self_improve import _enqueue_non_config_change
 
+        repo_root, worktree = await _non_config_workspace(inmemory_factory, tmp_path)
         payload = {
             "kind": "code",
             "title": "Fix N+1",
             "description": "Replace N+1 query pattern with joinedload",
+            "worktree_path": str(worktree),
         }
-        result = await _enqueue_non_config_change(inmemory_factory, "code", payload)
+        result = await _enqueue_non_config_change(
+            inmemory_factory,
+            "code",
+            payload,
+            project_id="project-1",
+            repo_root=repo_root,
+        )
 
         async with inmemory_factory() as session:
             todo = await TodoRepository(session).get_by_id(result["approval_id"])

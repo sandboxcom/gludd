@@ -1,3 +1,5 @@
+"""Administrative routes for gated self-improvement workflows."""
+
 from __future__ import annotations
 
 import asyncio
@@ -29,6 +31,17 @@ from general_ludd.self_update.safe_writer import AtomicSafeWriter
 # tiers are handled elsewhere (Phase 4 wires code-tier hot rotation).
 _CONFIG_TIER_KINDS: frozenset[str] = frozenset({"config", "yaml"})
 _CONFIG_TIER_CAPABILITY: str = "config_write"
+_NON_CONFIG_PLAN_SCHEMA_VERSION: int = 1
+_NON_CONFIG_PLAN_FIELDS: frozenset[str] = frozenset(
+    {
+        "description",
+        "kind",
+        "project_id",
+        "schema_version",
+        "title",
+        "worktree_path",
+    }
+)
 
 # Priority label -> integer, mirroring EventLoop._PRIORITY_MAP so self-improve
 # todos persisted from the admin surfaces sort the same as loop-persisted ones.
@@ -47,12 +60,106 @@ _TERMINAL_STATUSES: frozenset[str] = frozenset(
 
 @dataclass
 class _ConfigTierPlan:
-    """Adapter exposing the applier's ``UpdatePlan`` Protocol shape from a
-    request payload (config-tier only)."""
+    """Adapt a config-tier request to the applier's ``UpdatePlan`` protocol.
+
+    The adapter is intentionally limited to the config-tier route.
+    """
 
     kind: str
     capability_required: str
     target_paths: list[str]
+
+
+@dataclass(frozen=True)
+class _NonConfigPlanSpec:
+    """Immutable approved identity for one non-config self-improvement run."""
+
+    schema_version: int
+    project_id: str
+    kind: str
+    title: str
+    description: str
+    worktree_path: str
+
+    def __post_init__(self) -> None:
+        """Reject ambiguous values before an approval artifact is persisted."""
+        if (
+            isinstance(self.schema_version, bool)
+            or self.schema_version != _NON_CONFIG_PLAN_SCHEMA_VERSION
+        ):
+            raise ValueError("non-config plan schema version is unsupported")
+        string_fields = {
+            "project_id": self.project_id,
+            "kind": self.kind,
+            "title": self.title,
+            "description": self.description,
+            "worktree_path": self.worktree_path,
+        }
+        if any(not isinstance(value, str) for value in string_fields.values()):
+            raise ValueError("non-config plan string fields are malformed")
+        if (
+            not self.project_id
+            or self.project_id != self.project_id.strip()
+            or len(self.project_id.encode("utf-8")) > 32
+        ):
+            raise ValueError("non-config plan project identity is malformed")
+        if not self.kind.strip() or self.kind in _CONFIG_TIER_KINDS:
+            raise ValueError("non-config plan kind is malformed")
+        if not self.title.strip():
+            raise ValueError("non-config plan title is malformed")
+        if "\x00" in self.worktree_path or not Path(self.worktree_path).is_absolute():
+            raise ValueError("non-config plan worktree path is not canonical")
+
+    def to_json(self) -> str:
+        """Serialize the exact approved fields in one canonical representation."""
+        return json.dumps(
+            {
+                "description": self.description,
+                "kind": self.kind,
+                "project_id": self.project_id,
+                "schema_version": self.schema_version,
+                "title": self.title,
+                "worktree_path": self.worktree_path,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+
+    @classmethod
+    def from_json(
+        cls,
+        raw: object,
+        *,
+        expected_project_id: str,
+    ) -> _NonConfigPlanSpec:
+        """Parse an exact canonical artifact bound to its immutable project row."""
+        if not isinstance(raw, str) or not raw:
+            raise ValueError("non-config approval plan artifact is missing")
+        try:
+            value = json.loads(raw)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("non-config approval plan artifact is malformed") from exc
+        if not isinstance(value, dict) or set(value) != _NON_CONFIG_PLAN_FIELDS:
+            raise ValueError("non-config approval plan fields are malformed")
+        if type(value["schema_version"]) is not int or any(
+            not isinstance(value[field], str)
+            for field in _NON_CONFIG_PLAN_FIELDS - {"schema_version"}
+        ):
+            raise ValueError("non-config approval plan field types are malformed")
+        plan = cls(
+            schema_version=value["schema_version"],
+            project_id=cast(str, value["project_id"]),
+            kind=cast(str, value["kind"]),
+            title=cast(str, value["title"]),
+            description=cast(str, value["description"]),
+            worktree_path=cast(str, value["worktree_path"]),
+        )
+        if plan.project_id != expected_project_id:
+            raise ValueError("non-config approval project identity drifted")
+        if raw != plan.to_json():
+            raise ValueError("non-config approval plan artifact is not canonical")
+        return plan
 
 
 class _ConfigTierCapabilityChecker:
@@ -71,6 +178,65 @@ class _ConfigTierCapabilityChecker:
 
 def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
+
+
+def _resolve_non_config_project_repo(app: FastAPI, project_id: str) -> Path:
+    """Resolve one stored project identity to an existing repository root."""
+    if (
+        not isinstance(project_id, str)
+        or not project_id
+        or project_id != project_id.strip()
+        or len(project_id.encode("utf-8")) > 32
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="non-config self-improve approval has an invalid project identity",
+        )
+    manager = getattr(app.state, "_project_manager", None)
+    if manager is None:
+        raise HTTPException(
+            status_code=422,
+            detail="non-config self-improve project workspace is unavailable",
+        )
+    try:
+        project = manager.get_project(project_id)
+        workspace_path = getattr(project, "workspace_path", "") if project else ""
+        if not isinstance(workspace_path, str) or not workspace_path:
+            raise ValueError("project workspace is missing")
+        from general_ludd.projects.workspace import ProjectWorkspace
+
+        workspace = ProjectWorkspace(
+            project_id=project_id,
+            workspace_path=workspace_path,
+        )
+        repo_root = workspace.repo_dir.resolve(strict=True)
+        if not repo_root.is_dir():
+            raise ValueError("project repository is not a directory")
+    except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="non-config self-improve project workspace is unavailable",
+        ) from exc
+    return repo_root
+
+
+def _confine_non_config_worktree(raw: object, repo_root: Path) -> str:
+    """Return an existing canonical worktree confined to ``repo_root``."""
+    if not isinstance(raw, str) or not raw or raw != raw.strip() or "\x00" in raw:
+        raise ValueError("non-config approval worktree path is missing or malformed")
+    try:
+        canonical_root = repo_root.resolve(strict=True)
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = canonical_root / candidate
+        canonical_candidate = candidate.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError("non-config approval worktree path does not exist") from exc
+    if not canonical_root.is_dir() or not canonical_candidate.is_dir():
+        raise ValueError("non-config approval worktree path is not a directory")
+    if not canonical_candidate.is_relative_to(canonical_root):
+        raise ValueError("non-config approval worktree escapes its project workspace")
+    return str(canonical_candidate)
 
 
 _MAX_PRIORITY: int = 1000
@@ -313,33 +479,51 @@ async def _enqueue_non_config_change(
     factory: async_sessionmaker[AsyncSession],
     kind: str,
     payload: dict[str, object],
+    *,
+    project_id: str,
+    repo_root: Path,
 ) -> dict[str, object]:
-    """Enqueue a non-config self-improve change as APPROVAL_REQUIRED (C13).
+    """Enqueue an immutable project-bound non-config approval plan (C13).
 
     No execution happens without a human approval_id. The record is created
     with work_type=self_improve and status=APPROVAL_REQUIRED; a human must
     approve it via /admin/self-improve/approvals before re-POSTing with the
     approval_id to execute.
     """
-    title = str(payload.get("title", "")).strip() or f"self-improve {kind} change"
+    title = (
+        str(payload.get("title", "")).strip() or f"self-improve {kind} change"
+    )[:512]
     desc = str(payload.get("description", ""))
-    spec: dict[str, object] = {
-        "kind": kind,
-        "title": title,
-        "description": desc,
-        "worktree_path": str(payload.get("worktree_path", "")),
-    }
+    try:
+        worktree_path = _confine_non_config_worktree(
+            payload.get("worktree_path"),
+            repo_root,
+        )
+        spec = _NonConfigPlanSpec(
+            schema_version=_NON_CONFIG_PLAN_SCHEMA_VERSION,
+            project_id=project_id,
+            kind=kind,
+            title=title,
+            description=desc,
+            worktree_path=worktree_path,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="non-config self-improve request has an invalid plan artifact",
+        ) from exc
     async with factory() as session:
         repo = TodoRepository(session)
         created = await repo.create(
             {
-                "title": title[:512],
+                "project_id": spec.project_id,
+                "title": spec.title,
                 "description": desc or f"Self-improve {kind} change awaiting human approval",
                 "status": TodoStatus.APPROVAL_REQUIRED.value,
                 "work_type": SELF_IMPROVE_WORK_TYPE,
                 "priority": _PRIORITY_MAP["high"],
                 "created_by": "self_improve_apply",
-                "plan_artifact": json.dumps(spec),
+                "plan_artifact": spec.to_json(),
             }
         )
         approval_id = created.todo_id
@@ -351,7 +535,106 @@ async def _enqueue_non_config_change(
     }
 
 
+async def _apply_approved_non_config_change(
+    app: FastAPI,
+    factory: async_sessionmaker[AsyncSession],
+    approval_id: str,
+) -> dict[str, object]:
+    """Execute only the released todo's immutable project-bound plan."""
+    async with factory() as session:
+        repo = TodoRepository(session)
+        approval_todo = await repo.get_by_id(approval_id)
+        if approval_todo is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"approval {approval_id} not found",
+            )
+        if getattr(approval_todo, "work_type", None) != SELF_IMPROVE_WORK_TYPE:
+            raise HTTPException(
+                status_code=409,
+                detail=f"approval {approval_id} is not a self-improve record",
+            )
+        if approval_todo.status != TodoStatus.QUEUED.value:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"approval {approval_id} is not released "
+                    f"(status={approval_todo.status}); a human must approve it first"
+                ),
+            )
+        stored_project_id = getattr(approval_todo, "project_id", None)
+        if not isinstance(stored_project_id, str):
+            raise HTTPException(
+                status_code=422,
+                detail=f"approval {approval_id} has a malformed plan artifact",
+            )
+        try:
+            spec = _NonConfigPlanSpec.from_json(
+                getattr(approval_todo, "plan_artifact", None),
+                expected_project_id=stored_project_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"approval {approval_id} has a malformed plan artifact",
+            ) from exc
+        repo_root = _resolve_non_config_project_repo(app, spec.project_id)
+        try:
+            worktree_path = _confine_non_config_worktree(
+                spec.worktree_path,
+                repo_root,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"approval {approval_id} has an invalid worktree artifact",
+            ) from exc
+        if worktree_path != spec.worktree_path:
+            raise HTTPException(
+                status_code=422,
+                detail=f"approval {approval_id} worktree identity drifted",
+            )
+        await session.commit()
+
+    from general_ludd.reload.self_improve import SelfImprovementWorkflow
+
+    workflow = SelfImprovementWorkflow()
+    validation = await asyncio.to_thread(workflow.validate_improvement, worktree_path)
+    apply_result = await asyncio.to_thread(
+        workflow.apply_improvement,
+        approval_id,
+        validation,
+    )
+    reload_result = await asyncio.to_thread(workflow.reload_if_needed, apply_result)
+
+    if apply_result.applied:
+        async with factory() as session:
+            repo = TodoRepository.scoped(session, spec.project_id)
+            approved = await repo.get_by_id(approval_id)
+            if approved is not None:
+                active = await repo.transition(
+                    approval_id,
+                    TodoStatus.ACTIVE,
+                    expected_version=approved.version,
+                )
+                await repo.transition(
+                    approval_id,
+                    TodoStatus.COMPLETE,
+                    expected_version=active.version,
+                )
+                await session.commit()
+
+    return {
+        "todo_id": approval_id,
+        "validation_passed": validation.success,
+        "applied": apply_result.applied,
+        "reload_needed": apply_result.reload_needed,
+        "reload_status": reload_result.status,
+    }
+
+
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register self-improvement administration routes on ``app``."""
 
     @app.post("/admin/self-improve/analyze")
     async def admin_self_improve_analyze() -> dict[str, object]:
@@ -388,20 +671,6 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.post("/admin/self-improve/apply")
     async def admin_self_improve_apply(payload: dict[str, object]) -> dict[str, object]:
         kind = str(payload.get("kind", ""))
-        project_id = str(payload.get("project_id", "") or "")
-        workspace_root: Path | None = None
-        if project_id:
-            pm = getattr(app.state, "_project_manager", None)
-            if pm is not None:
-                proj = pm.get_project(project_id)
-                if proj is not None and proj.workspace_path:
-                    from general_ludd.projects.workspace import ProjectWorkspace
-
-                    ws = ProjectWorkspace(
-                        project_id=project_id,
-                        workspace_path=proj.workspace_path,
-                    )
-                    workspace_root = ws.repo_dir
 
         # Config-tier path: route through UpdateApplier + AtomicSafeWriter. The
         # applier owns capability gating, workspace confinement, the protected-
@@ -421,6 +690,20 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         #      is impossible. The capability/denylist/YAML/rollback guards still
         #      run inside UpdateApplier + AtomicSafeWriter.
         if kind in _CONFIG_TIER_KINDS:
+            project_id = str(payload.get("project_id", "") or "")
+            workspace_root: Path | None = None
+            if project_id:
+                pm = getattr(app.state, "_project_manager", None)
+                if pm is not None:
+                    proj = pm.get_project(project_id)
+                    if proj is not None and proj.workspace_path:
+                        from general_ludd.projects.workspace import ProjectWorkspace
+
+                        ws = ProjectWorkspace(
+                            project_id=project_id,
+                            workspace_path=proj.workspace_path,
+                        )
+                        workspace_root = ws.repo_dir
             return await _config_tier_apply(app, kind, payload, workspace_root=workspace_root)
 
         # Non-config-tier path: gate through SelfImproveGate (C13).
@@ -435,61 +718,21 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             )
         approval_id = payload.get("approval_id")
         if not approval_id:
-            return await _enqueue_non_config_change(factory, kind, payload)
+            project_id = str(payload.get("project_id", "") or "")
+            repo_root = _resolve_non_config_project_repo(app, project_id)
+            return await _enqueue_non_config_change(
+                factory,
+                kind,
+                payload,
+                project_id=project_id,
+                repo_root=repo_root,
+            )
 
-        from general_ludd.reload.self_improve import SelfImprovementWorkflow
-
-        async with factory() as session:
-            repo = TodoRepository(session)
-            approval_todo = await repo.get_by_id(str(approval_id))
-            if approval_todo is None:
-                raise HTTPException(
-                    status_code=404, detail=f"approval {approval_id} not found"
-                )
-            if getattr(approval_todo, "work_type", None) != SELF_IMPROVE_WORK_TYPE:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"approval {approval_id} is not a self-improve record",
-                )
-            if approval_todo.status != TodoStatus.QUEUED.value:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        f"approval {approval_id} is not released "
-                        f"(status={approval_todo.status}); a human must approve it first"
-                    ),
-                )
-            await session.commit()
-
-        workflow = SelfImprovementWorkflow()
-        worktree_path = str(payload.get("worktree_path", ""))
-        # execute the work: blocking sync ops offloaded to thread
-        validation = await asyncio.to_thread(workflow.validate_improvement, worktree_path)
-        apply_result = await asyncio.to_thread(
-            workflow.apply_improvement, str(approval_id), validation
+        return await _apply_approved_non_config_change(
+            app,
+            factory,
+            str(approval_id),
         )
-        reload_result = await asyncio.to_thread(workflow.reload_if_needed, apply_result)
-
-        if apply_result.applied:
-            async with factory() as session:
-                repo = TodoRepository(session)
-                approved = await repo.get_by_id(str(approval_id))
-                if approved is not None:
-                    active = await repo.transition(
-                        str(approval_id), TodoStatus.ACTIVE, expected_version=approved.version
-                    )
-                    await repo.transition(
-                        str(approval_id), TodoStatus.COMPLETE, expected_version=active.version
-                    )
-                    await session.commit()
-
-        return {
-            "todo_id": str(approval_id),
-            "validation_passed": validation.success,
-            "applied": apply_result.applied,
-            "reload_needed": apply_result.reload_needed,
-            "reload_status": reload_result.status,
-        }
 
     @app.get("/admin/self-improve/status")
     async def admin_self_improve_status() -> dict[str, object]:

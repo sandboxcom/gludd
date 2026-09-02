@@ -11,8 +11,11 @@ Covers:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+from dataclasses import FrozenInstanceError, dataclass, field
 from pathlib import Path
+
+import pytest
 
 from general_ludd.security.path_canonicalizer import (
     _SEGMENT_EXACT_MARKERS,
@@ -50,6 +53,98 @@ class _FixedChecker:
 
     def allows(self, capability: str) -> bool:
         return capability in self._allowed
+
+
+def test_non_config_approval_plan_is_frozen_canonical_and_project_bound(
+    tmp_path: Path,
+) -> None:
+    from general_ludd.routers.self_improve import _NonConfigPlanSpec
+
+    worktree = tmp_path / "repo" / "worktrees" / "approved"
+    worktree.mkdir(parents=True)
+    spec = _NonConfigPlanSpec(
+        schema_version=1,
+        project_id="approved-project",
+        kind="code",
+        title="approved title",
+        description="approved description",
+        worktree_path=str(worktree.resolve()),
+    )
+
+    encoded = spec.to_json()
+    assert encoded == json.dumps(
+        json.loads(encoded),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    assert _NonConfigPlanSpec.from_json(
+        encoded,
+        expected_project_id="approved-project",
+    ) == spec
+    with pytest.raises(ValueError, match="project identity"):
+        _NonConfigPlanSpec.from_json(
+            encoded,
+            expected_project_id="attacker-project",
+        )
+    with pytest.raises(FrozenInstanceError):
+        spec.__setattr__("project_id", "attacker-project")
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        ("unsupported-schema", "schema version"),
+        ("malformed-project", "project identity"),
+        ("config-kind", "kind"),
+        ("empty-title", "title"),
+        ("relative-worktree", "worktree path"),
+        ("unexpected-field", "fields"),
+        ("wrong-field-type", "field types"),
+        ("noncanonical", "not canonical"),
+    ],
+)
+def test_non_config_approval_plan_rejects_ambiguous_artifacts(
+    case: str,
+    message: str,
+) -> None:
+    """Every persisted representation must have one exact approved meaning."""
+    from general_ludd.routers.self_improve import _NonConfigPlanSpec
+
+    payload: dict[str, object] = {
+        "description": "approved description",
+        "kind": "code",
+        "project_id": "approved-project",
+        "schema_version": 1,
+        "title": "approved title",
+        "worktree_path": "/approved/worktree",
+    }
+    if case == "unsupported-schema":
+        payload["schema_version"] = 2
+    elif case == "malformed-project":
+        payload["project_id"] = " approved-project"
+    elif case == "config-kind":
+        payload["kind"] = "config"
+    elif case == "empty-title":
+        payload["title"] = " "
+    elif case == "relative-worktree":
+        payload["worktree_path"] = "relative/worktree"
+    elif case == "unexpected-field":
+        payload["attacker_override"] = "/attacker/worktree"
+    elif case == "wrong-field-type":
+        payload["description"] = 17
+
+    raw = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=None if case == "noncanonical" else (",", ":"),
+        sort_keys=True,
+    )
+    with pytest.raises(ValueError, match=message):
+        _NonConfigPlanSpec.from_json(
+            raw,
+            expected_project_id="approved-project",
+        )
 
 
 # ---------------------------------------------------------------------------

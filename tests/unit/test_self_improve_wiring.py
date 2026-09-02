@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -440,12 +441,34 @@ class TestSelfImproveApplyConfigTier:
     """Config-tier plans route through UpdateApplier + AtomicSafeWriter."""
 
     @pytest.mark.asyncio
-    async def test_non_config_kind_enqueues_for_approval(self, app, transport):
+    async def test_non_config_kind_enqueues_for_approval(
+        self, app, transport, tmp_path
+    ):
         """C13: non-config apply is gated — enqueues APPROVAL_REQUIRED, no silent execute."""
+        from general_ludd.db.models import ProjectModel
         from general_ludd.routers.self_improve import SELF_IMPROVE_WORK_TYPE
 
         engine, factory = await _attach_inmemory_db(app)
+        workspace_root = tmp_path / "project-workspace"
+        worktree = workspace_root / "repo" / "worktrees" / "approved"
+        worktree.mkdir(parents=True)
+        app.state._project_manager = SimpleNamespace(
+            get_project=lambda project_id: SimpleNamespace(
+                workspace_path=str(workspace_root)
+            )
+            if project_id == "project-1"
+            else None
+        )
         try:
+            async with factory() as session:
+                session.add(
+                    ProjectModel(
+                        project_id="project-1",
+                        name="Project one",
+                        workspace_path=str(workspace_root),
+                    )
+                )
+                await session.commit()
             async with AsyncClient(
                 transport=transport, base_url="http://test"
             ) as client:
@@ -455,7 +478,8 @@ class TestSelfImproveApplyConfigTier:
                         "kind": "code",
                         "title": "title-x",
                         "description": "desc-x",
-                        "worktree_path": "/nonexistent-xyz",
+                        "project_id": "project-1",
+                        "worktree_path": str(worktree),
                     },
                 )
                 assert resp.status_code == 200
@@ -470,6 +494,7 @@ class TestSelfImproveApplyConfigTier:
                     assert approved is not None
                     assert approved.status == "approval_required"
                     assert getattr(approved, "work_type", "") == SELF_IMPROVE_WORK_TYPE
+                    assert approved.project_id == "project-1"
         finally:
             await engine.dispose()
 
