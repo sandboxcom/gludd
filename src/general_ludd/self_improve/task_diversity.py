@@ -125,6 +125,45 @@ def select_representative_evidence(
     return tuple(selected)
 
 
+def export_representative_evidence(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    max_cases: int = _MAX_REPRESENTATIVE_CASES,
+) -> bytes:
+    """Export bounded representative evidence as canonical UTF-8 JSON bytes.
+
+    Selection is delegated to :func:`select_representative_evidence`, so exports
+    retain its stable task-shape ordering and bounds. Values outside the JSON data
+    model fail closed instead of being stringified into a lossy evidence record.
+    """
+    evidence = select_representative_evidence(records, max_cases=max_cases)
+    _validate_mapping_keys(evidence)
+    payload = {"schema_version": 1, "evidence": evidence}
+    try:
+        rendered = json.dumps(
+            payload,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("evidence contains a value outside canonical JSON") from exc
+    return rendered.encode("utf-8")
+
+
+def _validate_mapping_keys(value: object) -> None:
+    if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value):
+            raise ValueError("canonical JSON mappings require string keys")
+        for nested in value.values():
+            _validate_mapping_keys(nested)
+        return
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        for nested in value:
+            _validate_mapping_keys(nested)
+
+
 def _record_order_key(record: Mapping[str, Any]) -> tuple[float, str]:
     registered_at = record.get("registered_at", 0.0)
     timestamp = (
@@ -151,6 +190,7 @@ def _stable_record_identity(record: Mapping[str, Any]) -> str:
 
 
 __all__ = [
+    "export_representative_evidence",
     "infer_task_type",
     "select_representative_evidence",
 ]

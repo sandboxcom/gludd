@@ -18,6 +18,7 @@ from general_ludd.self_improve.model_candidate_planner import (
     record_self_improve_outcome,
 )
 from general_ludd.self_improve.task_diversity import (
+    export_representative_evidence,
     infer_task_type,
     select_representative_evidence,
 )
@@ -156,6 +157,58 @@ def test_representative_selection_is_bounded_diverse_and_deterministic() -> None
     ]
     assert selected[1]["suite_id"] == "feature-new"
     assert selected == reversed_selected
+
+
+def test_evidence_export_is_canonical_and_independent_of_input_order() -> None:
+    records = [
+        {
+            "z": 2,
+            "task_type": TaskType.FEATURE.value,
+            "model_profile_id": "model-z",
+            "task_kind": "coding",
+        },
+        {
+            "task_kind": "coding",
+            "model_profile_id": "model-a",
+            "z": 1,
+            "task_type": TaskType.BUG_FIX.value,
+        },
+    ]
+
+    exported = export_representative_evidence(records)
+
+    assert exported == (
+        b'{"evidence":[{"model_profile_id":"model-a","task_kind":"coding",'
+        b'"task_type":"bug_fix","z":1},{"model_profile_id":"model-z",'
+        b'"task_kind":"coding","task_type":"feature","z":2}],'
+        b'"schema_version":1}'
+    )
+    assert export_representative_evidence(list(reversed(records))) == exported
+
+
+@pytest.mark.parametrize(
+    "invalid_value",
+    (
+        pytest.param(float("nan"), id="non-finite-number"),
+        pytest.param(object(), id="non-json-value"),
+    ),
+)
+def test_evidence_export_rejects_values_outside_canonical_json(
+    invalid_value: object,
+) -> None:
+    record = _record(model="model-a", task_type=TaskType.FEATURE)
+    record["invalid"] = invalid_value
+
+    with pytest.raises(ValueError, match="canonical JSON"):
+        export_representative_evidence([record])
+
+
+def test_evidence_export_rejects_non_string_mapping_keys() -> None:
+    record = _record(model="model-a", task_type=TaskType.FEATURE)
+    record[cast(str, 1)] = "ambiguous-key"
+
+    with pytest.raises(ValueError, match="string keys"):
+        export_representative_evidence([record])
 
 
 @pytest.mark.parametrize(
