@@ -17,7 +17,7 @@ import sys
 import tempfile
 import time
 from contextlib import ExitStack
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Final, Protocol, TextIO, cast
 
@@ -215,6 +215,10 @@ class PromptPlan:
     shards: tuple[PromptShard, ...]
     source_bytes: int
     protocol_digest: str = ""
+    baseline_files: tuple[tuple[str, str | None], ...] = field(
+        default=(),
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         """Require non-overlapping shards and publish stable protocol identity."""
@@ -225,6 +229,33 @@ class PromptPlan:
         paths = [path for shard in self.shards for path in shard.focus_paths]
         if len(paths) != len(set(paths)):
             raise ValueError("prompt plan focus paths must be disjoint")
+        if self.baseline_files:
+            if not isinstance(self.baseline_files, tuple):
+                raise ValueError("prompt plan baseline files must be an immutable tuple")
+            baseline_paths: list[str] = []
+            baseline_bytes = 0
+            for item in self.baseline_files:
+                if (
+                    not isinstance(item, tuple)
+                    or len(item) != 2
+                    or not isinstance(item[0], str)
+                    or (item[1] is not None and not isinstance(item[1], str))
+                ):
+                    raise ValueError(
+                        "prompt plan baseline files must contain path/text pairs"
+                    )
+                path, content = item
+                baseline_paths.append(path)
+                if content is not None:
+                    baseline_bytes += len(content.encode("utf-8"))
+            if baseline_paths != paths:
+                raise ValueError(
+                    "prompt plan baseline files must match focus paths in order"
+                )
+            if baseline_bytes != self.source_bytes:
+                raise ValueError(
+                    "prompt plan baseline bytes must match the source byte count"
+                )
         if self.protocol_digest:
             if re.fullmatch(r"[0-9a-f]{64}", self.protocol_digest) is None:
                 raise ValueError("prompt plan protocol_digest must be lowercase SHA-256")
@@ -595,6 +626,9 @@ def generate_local_proposal_plan(
         expected_task_id=task.task_id,
         expected_tests=required_tests,
         expected_make_commands=task.canonical_make_commands,
+        expected_baseline_files=(
+            dict(plan.baseline_files) if plan.baseline_files else None
+        ),
     )
 
 
@@ -620,6 +654,7 @@ def build_retry_prompt_plan(
         ),
         source_bytes=plan.source_bytes,
         protocol_digest=plan.protocol_digest,
+        baseline_files=plan.baseline_files,
     )
 
 
@@ -631,7 +666,14 @@ def _validation_retry_feedback(error: str) -> str:
         rf"{re.escape(protocol.error_marker)}[ \t]+([^\r\n]+)"
     )
     marker_details = marker_pattern.findall(cleaned)
-    if marker_details:
+    parent_marker_pattern = re.compile(
+        rf"{re.escape(protocol.parent_error_marker)}[ \t]+([^\r\n]+)"
+    )
+    parent_marker_details = parent_marker_pattern.findall(cleaned)
+    if parent_marker_details:
+        source = protocol.parent_source
+        candidate = parent_marker_details[-1]
+    elif marker_details:
         source = protocol.marker_source
         candidate = marker_details[-1]
     else:
@@ -687,6 +729,7 @@ def _build_validation_retry_prompt_plan(
         ),
         source_bytes=plan.source_bytes,
         protocol_digest=plan.protocol_digest,
+        baseline_files=plan.baseline_files,
     )
 
 
@@ -1161,12 +1204,12 @@ def _build_file_context(
     baseline_root: Path,
     relative: str,
     task: TaskSpec,
-) -> tuple[str, int]:
+) -> tuple[str, int, str | None]:
     path = baseline_root / relative
     if path.is_symlink():
         raise ValueError(f"baseline context path must not be a symlink: {relative}")
     if not path.exists():
-        return f"FILE {relative} state=absent bytes=0 sha256=none", 0
+        return f"FILE {relative} state=absent bytes=0 sha256=none", 0, None
     if not path.is_file():
         raise ValueError(f"baseline context path is not a regular file: {relative}")
     raw = path.read_bytes()
@@ -1209,7 +1252,7 @@ def _build_file_context(
             "\nOMITTED content remains bound by the published sha256; "
             "do not invent old_text outside the exact numbered excerpts."
         )
-    return f"{marker}\n{excerpt}", len(raw)
+    return f"{marker}\n{excerpt}", len(raw), content
 
 
 def _required_prompt_tests(
@@ -1281,10 +1324,16 @@ def build_prompt(
         )
     required_tests = _required_prompt_tests(task, reference)
     contexts: dict[str, str] = {}
+    baseline_files: list[tuple[str, str | None]] = []
     source_bytes = 0
     for relative in paths:
-        context, size = _build_file_context(baseline_root, relative, task)
+        context, size, baseline_text = _build_file_context(
+            baseline_root,
+            relative,
+            task,
+        )
         contexts[relative] = context
+        baseline_files.append((relative, baseline_text))
         source_bytes += size
 
     groups = [(relative,) for relative in paths]
@@ -1319,7 +1368,11 @@ def build_prompt(
         )
         for index, group in enumerate(groups, start=1)
     )
-    return PromptPlan(shards=shards, source_bytes=source_bytes)
+    return PromptPlan(
+        shards=shards,
+        source_bytes=source_bytes,
+        baseline_files=tuple(baseline_files),
+    )
 
 
 def create_worktree(

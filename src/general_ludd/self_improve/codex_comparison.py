@@ -102,7 +102,7 @@ _COMPACT_OPERATION_BY_EMPTY_TEXT = {
     (False, True): "delete",
     (True, False): "create",
 }
-_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v2"
+_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v3"
 _SAFE_FINISH_REASONS = frozenset(
     {"stop", "length", "tool_calls", "function_call", "content_filter"}
 )
@@ -151,6 +151,8 @@ class ValidationRetryProtocol:
     version: str
     error_marker: str
     marker_source: str
+    parent_error_marker: str
+    parent_source: str
     fallback_source: str
     fallback_tail_bytes: int
     max_feedback_bytes: int
@@ -162,9 +164,11 @@ class ValidationRetryProtocol:
 
 
 LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
-    version="self-improve-validation-retry-v2",
+    version="self-improve-validation-retry-v3",
     error_marker="SELF_IMPROVE_LOCAL_PROPOSAL_ERROR",
     marker_source="proposal_error",
+    parent_error_marker="SELF_IMPROVE_PARENT_PROPOSAL_ERROR",
+    parent_source="parent_validation",
     fallback_source="worker_tail",
     fallback_tail_bytes=512,
     max_feedback_bytes=256,
@@ -204,6 +208,18 @@ LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
         (
             "proposal batch count does not match the prompt plan",
             "proposal_batch_count",
+        ),
+        (
+            "replace old_text must occur exactly once in trusted baseline",
+            "edit_replace_precondition",
+        ),
+        (
+            "create target must be absent in trusted baseline",
+            "edit_create_precondition",
+        ),
+        (
+            "delete old_text must equal the complete trusted baseline file",
+            "edit_delete_precondition",
         ),
         (
             "proposal shard edits must cover the exact focus paths",
@@ -270,6 +286,7 @@ def local_proposal_attempt_identity_digest(prompt_protocol_digest: str) -> str:
             "operation_by_empty_text": operation_policy,
             "parent_decoder_version": _STRICT_PARENT_DECODER_VERSION,
             "path_policy": "confined-pure-posix-v1",
+            "precondition_policy": "sequential-exact-trusted-baseline-v1",
             "root_fields": sorted(_COMPACT_ROOT_FIELDS),
         },
     }
@@ -694,6 +711,59 @@ def decode_proposal_batch(
     )
 
 
+def _parent_proposal_error(detail: str) -> ValueError:
+    """Create one path-free parent-validation error for typed retry feedback."""
+    return ValueError(
+        f"{LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.parent_error_marker} {detail}"
+    )
+
+
+def _validate_proposal_preconditions(
+    proposal: ProposalManifest,
+    expected_baseline_files: Mapping[str, str | None],
+) -> None:
+    """Validate every edit sequentially against an immutable parent snapshot."""
+    expected_paths = {edit.path for edit in proposal.edits}
+    if set(expected_baseline_files) != expected_paths:
+        raise _parent_proposal_error(
+            "trusted baseline files must cover the exact proposal paths"
+        )
+    planned: dict[str, str | None] = {}
+    for path, content in expected_baseline_files.items():
+        if not isinstance(path, str) or not _safe_relative_path(path):
+            raise _parent_proposal_error("trusted baseline contains an unsafe path")
+        if content is not None and not isinstance(content, str):
+            raise _parent_proposal_error("trusted baseline content must be UTF-8 text")
+        planned[path] = content
+
+    for edit in proposal.edits:
+        current = planned[edit.path]
+        if edit.operation == "replace":
+            if current is None or current.count(edit.old_text) != 1:
+                raise _parent_proposal_error(
+                    "replace old_text must occur exactly once in trusted baseline"
+                )
+            planned[edit.path] = current.replace(
+                edit.old_text,
+                edit.new_text,
+                1,
+            )
+        elif edit.operation == "create":
+            if current is not None:
+                raise _parent_proposal_error(
+                    "create target must be absent in trusted baseline"
+                )
+            planned[edit.path] = edit.new_text
+        elif edit.operation == "delete":
+            if current is None or current != edit.old_text:
+                raise _parent_proposal_error(
+                    "delete old_text must equal the complete trusted baseline file"
+                )
+            planned[edit.path] = None
+        else:
+            raise _parent_proposal_error("proposal operation is unsupported")
+
+
 def merge_proposal_manifests(
     manifests: tuple[ProposalManifest, ...],
     *,
@@ -702,6 +772,7 @@ def merge_proposal_manifests(
     expected_task_id: str,
     expected_tests: tuple[str, ...],
     expected_make_commands: tuple[str, ...],
+    expected_baseline_files: Mapping[str, str | None] | None = None,
 ) -> ProposalManifest:
     """Merge disjoint shard manifests without weakening the final schema."""
     if not manifests or len(manifests) != len(expected_path_groups):
@@ -753,7 +824,7 @@ def merge_proposal_manifests(
 
     if {str(edit["path"]) for edit in edits} != expected_paths:
         raise ValueError("merged proposal does not cover every expected path")
-    return ProposalManifest.from_json(
+    merged = ProposalManifest.from_json(
         json.dumps(
             {
                 "schema_version": 1,
@@ -766,6 +837,9 @@ def merge_proposal_manifests(
             }
         )
     )
+    if expected_baseline_files is not None:
+        _validate_proposal_preconditions(merged, expected_baseline_files)
+    return merged
 
 
 @dataclass(frozen=True)

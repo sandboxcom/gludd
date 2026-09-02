@@ -333,7 +333,7 @@ def test_terminal_proposal_rejection_publishes_only_typed_safe_marker(
     args = _args(_task_file(tmp_path))
     args.max_attempts = 1
     expected = (
-        "protocol=self-improve-validation-retry-v2 "
+        "protocol=self-improve-validation-retry-v3 "
         "type=edit_replace_contract source=proposal_error "
         "detail=replace requires distinct non-empty old_text"
     )

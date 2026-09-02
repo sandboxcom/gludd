@@ -122,6 +122,35 @@ into attempt identity, states the distinct-text and 3,072-byte rules in the
 prompt, and keeps strict rejection for no-op edits. The canary rejects
 unsupported chat or grammar behavior before reading a task-sized completion.
 
+A September 2026 DeepSeek catalog attempt then exposed a separate parent-side
+gap. Both compact-v3 shards completed and passed worker schema validation, but a
+replacement precondition did not apply exactly to the immutable baseline. That
+error was discovered only during the later attempt worktree mutation, outside
+the proposal-retry boundary, so the public classification lost the safe cause.
+The prompt plan now retains an in-memory parent snapshot for every focus path.
+After decoding and identity checks, strict merge simulates all edits in order
+against those snapshots. A missing or repeated replacement, create of an
+existing file, or delete whose old text is not the complete file fails before
+an attempt worktree is created. Validation-retry v3 reports only a path-free
+typed precondition and never the model text.
+
+This behavior matches long-lived practitioner reports rather than treating
+valid JSON as an applicable patch. Aider users have reported
+[exact SEARCH/REPLACE mismatches since July 2024](https://github.com/Aider-AI/aider/issues/770)
+and an
+[open March 2025 report](https://github.com/Aider-AI/aider/issues/3651)
+where the model identified the intended change but its search text still failed
+character-for-character matching. Gludd therefore makes baseline applicability
+a deterministic parent contract and uses the typed result for the next bounded
+candidate instead of weakening exact replacement.
+
+Snapshots are bounded by the existing 2 MiB-per-file and 32-path limits, are
+excluded from diagnostics and dataclass representations, and live only for the
+one runner invocation. They add no daemon, database, file lease, or persistent
+artifact. Rollback removes the parent precondition phase and restores the prior
+attempt identity; existing immutable outcome evidence remains scoped to the
+protocol digest that produced it, preserving ZDD during either version.
+
 Grammar construction and inference remain inside the owned proposal worker. The
 model factory runs once after request admission. Each shard then invokes the
 documented `create_chat_completion` method on that same live model and validates

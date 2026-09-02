@@ -349,6 +349,130 @@ def test_proposal_batch_decoder_rejects_protocol_or_schema_drift(
         )
 
 
+def _encoded_single_edit_batch(
+    operation: str,
+    old_text: str,
+    new_text: str,
+) -> tuple[ProposalManifest, ...]:
+    manifest = ProposalManifest.from_json(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "baseline_sha": "a" * 40,
+                "task_id": "S83.133",
+                "edits": [
+                    {
+                        "operation": operation,
+                        "path": "src/one.py",
+                        "old_text": old_text,
+                        "new_text": new_text,
+                    }
+                ],
+                "tests": ["tests/unit/test_example.py"],
+                "make_commands": [
+                    "make test-files TESTFILES=tests/unit/test_example.py"
+                ],
+                "commit_message": "fix(self-improve): apply exact replacement",
+            }
+        )
+    )
+    encoded = encode_proposal_batch((manifest,), protocol_digest="a" * 64)
+    return decode_proposal_batch(
+        encoded,
+        expected_protocol_digest="a" * 64,
+        expected_count=1,
+    )
+
+
+@pytest.mark.parametrize(
+    ("operation", "old_text", "new_text", "error_type", "safe_detail"),
+    [
+        (
+            "replace",
+            "MODEL_SECRET=do-not-publish",
+            "after = 2\\n",
+            "edit_replace_precondition",
+            "replace old_text must occur exactly once in trusted baseline",
+        ),
+        (
+            "create",
+            "",
+            "MODEL_SECRET=do-not-publish",
+            "edit_create_precondition",
+            "create target must be absent in trusted baseline",
+        ),
+        (
+            "delete",
+            "MODEL_SECRET=do-not-publish",
+            "",
+            "edit_delete_precondition",
+            "delete old_text must equal the complete trusted baseline file",
+        ),
+    ],
+)
+def test_parent_batch_merge_rejects_inapplicable_edit_with_typed_safe_cause(
+    operation: str,
+    old_text: str,
+    new_text: str,
+    error_type: str,
+    safe_detail: str,
+) -> None:
+    """A schema-valid worker batch must be applicable to the trusted baseline."""
+    decoded = _encoded_single_edit_batch(operation, old_text, new_text)
+
+    with pytest.raises(ValueError, match=safe_detail) as error:
+        runner_module.merge_proposal_manifests(
+            decoded,
+            expected_path_groups=(("src/one.py",),),
+            expected_baseline_sha="a" * 40,
+            expected_task_id="S83.133",
+            expected_tests=("tests/unit/test_example.py",),
+            expected_make_commands=(
+                "make test-files TESTFILES=tests/unit/test_example.py",
+            ),
+            expected_baseline_files={"src/one.py": "before = 1\\n"},
+        )
+
+    feedback = runner_module._validation_retry_feedback(str(error.value))
+    assert feedback == (
+        "protocol=self-improve-validation-retry-v3 "
+        f"type={error_type} source=parent_validation detail={safe_detail}"
+    )
+    assert "MODEL_SECRET" not in str(error.value)
+    assert "MODEL_SECRET" not in feedback
+
+
+@pytest.mark.parametrize(
+    ("operation", "old_text", "new_text", "baseline"),
+    [
+        ("replace", "before", "after", "before = 1\\n"),
+        ("create", "", "created = True\\n", None),
+        ("delete", "before = 1\\n", "", "before = 1\\n"),
+    ],
+)
+def test_parent_batch_merge_accepts_each_exact_baseline_precondition(
+    operation: str,
+    old_text: str,
+    new_text: str,
+    baseline: str | None,
+) -> None:
+    decoded = _encoded_single_edit_batch(operation, old_text, new_text)
+
+    merged = runner_module.merge_proposal_manifests(
+        decoded,
+        expected_path_groups=(("src/one.py",),),
+        expected_baseline_sha="a" * 40,
+        expected_task_id="S83.133",
+        expected_tests=("tests/unit/test_example.py",),
+        expected_make_commands=(
+            "make test-files TESTFILES=tests/unit/test_example.py",
+        ),
+        expected_baseline_files={"src/one.py": baseline},
+    )
+
+    assert merged == decoded[0]
+
+
 class _InProcessOwnedRunner:
     def __init__(
         self,

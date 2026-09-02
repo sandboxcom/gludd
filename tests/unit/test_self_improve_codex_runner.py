@@ -1037,7 +1037,7 @@ def test_run_benchmark_retries_rejected_local_output_with_evidence(
 
     assert result is accepted
     assert len(prompts) == 2
-    assert "protocol=self-improve-validation-retry-v2" in prompts[1]
+    assert "protocol=self-improve-validation-retry-v3" in prompts[1]
     assert "type=proposal_validation" in prompts[1]
     assert "source=worker_tail" in prompts[1]
     assert "detail=<redacted>" in prompts[1]
@@ -1133,7 +1133,7 @@ def test_main_redacts_native_terminal_failure_to_typed_safe_marker(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == (
-        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v2 "
+        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v3 "
         "type=edit_replace_contract source=proposal_error "
         "detail=replace requires distinct non-empty old_text\n"
     )
@@ -1172,7 +1172,7 @@ def test_main_publishes_bounded_terminal_error_without_traceback(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == (
-        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v2 "
+        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v3 "
         "type=proposal_validation source=worker_tail detail=<redacted>\n"
     )
     assert "Traceback" not in captured.err
@@ -1239,7 +1239,7 @@ def test_live_entrypoint_propagates_terminal_failure_exit(
 
     assert completed.returncode == 2
     assert (
-        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v2 "
+        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v3 "
         "type=proposal_validation source=worker_tail detail=<redacted>"
         in completed.stderr
     )

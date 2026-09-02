@@ -134,7 +134,10 @@ def test_multifile_plan_uses_singleton_focus_shards_in_one_worker_request(
 ) -> None:
     """Keep every model turn single-file while retaining one batch worker."""
     paths = ("src/one.py", "tests/unit/test_one.py")
-    contents = ("value = 1\n", "def test_value() -> None:\n    assert True\n")
+    contents = (
+        "value = 1\nassert True\n",
+        "def test_value() -> None:\n    assert True\n",
+    )
     for relative, content in zip(paths, contents, strict=True):
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -159,6 +162,12 @@ def test_multifile_plan_uses_singleton_focus_shards_in_one_worker_request(
     plan = build_prompt(task, reference, tmp_path)
 
     expected_groups = tuple((path,) for path in sorted(paths))
+    expected_baseline_files = tuple(
+        (path, content)
+        for path, content in sorted(zip(paths, contents, strict=True))
+    )
+    assert plan.baseline_files == expected_baseline_files
+    assert "baseline_files=" not in repr(plan)
     assert tuple(shard.focus_paths for shard in plan.shards) == expected_groups
     assert len(plan.shards) == len(paths)
     assert all(
@@ -183,6 +192,7 @@ def test_multifile_plan_uses_singleton_focus_shards_in_one_worker_request(
     retried = build_retry_prompt_plan(plan, comparison, diagnostics="bounded retry")
     assert tuple(shard.focus_paths for shard in retried.shards) == expected_groups
     assert retried.protocol_digest == plan.protocol_digest
+    assert retried.baseline_files == plan.baseline_files
 
     model = tmp_path / "model.gguf"
     model.write_bytes(b"GGUF")
@@ -225,6 +235,89 @@ def test_multifile_plan_uses_singleton_focus_shards_in_one_worker_request(
     assert {edit.path for edit in merged.edits} == set(paths)
     assert merged.tests == (paths[1],)
     assert merged.make_commands == commands
+
+
+def test_parent_rejects_inapplicable_batch_before_attempt_worktree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parent validation must make a schema-valid bad edit retryable."""
+    relative = "src/one.py"
+    baseline = "before = 1\n"
+    target = tmp_path / relative
+    target.parent.mkdir(parents=True)
+    target.write_text(baseline, encoding="utf-8")
+    commands = ("make test-files TESTFILES=tests/unit/test_one.py",)
+    task = TaskSpec(
+        task_id="S83.133",
+        objective="Replace one exact assignment.",
+        canonical_make_commands=commands,
+    )
+    reference = CodexReference(
+        baseline_sha="a" * 40,
+        reference_sha="b" * 40,
+        changed_files=frozenset({relative}),
+        test_files=frozenset({"tests/unit/test_one.py"}),
+        changed_lines=1,
+        elapsed_seconds=1.0,
+    )
+    plan = build_prompt(task, reference, tmp_path)
+    secret_old_text = "MODEL_SECRET=must-not-escape"
+    manifest = ProposalManifest.from_json(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "baseline_sha": reference.baseline_sha,
+                "task_id": task.task_id,
+                "edits": [
+                    {
+                        "operation": "replace",
+                        "path": relative,
+                        "old_text": secret_old_text,
+                        "new_text": "after = 2\n",
+                    }
+                ],
+                "tests": ["tests/unit/test_one.py"],
+                "make_commands": list(commands),
+                "commit_message": "fix(self-improve): apply exact replacement",
+            }
+        )
+    )
+
+    def propose(
+        _runner: object,
+        _model: Path,
+        _request: str,
+        *,
+        contract: ProposalContract | None = None,
+    ) -> str:
+        assert contract is not None
+        return encode_proposal_batch(
+            (manifest,),
+            protocol_digest=plan.protocol_digest,
+        )
+
+    monkeypatch.setattr(runner_module, "_run_local_proposal_request", propose)
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"GGUF")
+
+    with pytest.raises(
+        ValueError,
+        match="replace old_text must occur exactly once in trusted baseline",
+    ) as error:
+        generate_local_proposal_plan(
+            runner_module.MakeRunner(tmp_path),
+            model,
+            plan,
+            task,
+            reference,
+        )
+
+    feedback = runner_module._validation_retry_feedback(str(error.value))
+    assert "type=edit_replace_precondition" in feedback
+    assert "source=parent_validation" in feedback
+    assert secret_old_text not in str(error.value)
+    assert secret_old_text not in feedback
 
 
 def test_51859_byte_multifile_context_is_decomposed_without_identity_loss(tmp_path: Path) -> None:
@@ -528,8 +621,36 @@ def test_local_plan_runs_one_retained_worker_then_merges_once(
         assert contract is not None
         calls.append(request)
         contracts.append(contract)
+        manifests: list[ProposalManifest] = []
+        for shard in plan.shards:
+            path = shard.focus_paths[0]
+            content = (tmp_path / path).read_text(encoding="utf-8")
+            old_text = content.splitlines(keepends=True)[0]
+            assert content.count(old_text) == 1
+            manifests.append(
+                ProposalManifest.from_json(
+                    json.dumps(
+                        {
+                            "schema_version": 1,
+                            "baseline_sha": _reference().baseline_sha,
+                            "task_id": _task().task_id,
+                            "edits": [
+                                {
+                                    "operation": "replace",
+                                    "path": path,
+                                    "old_text": old_text,
+                                    "new_text": old_text + "# exact change\n",
+                                }
+                            ],
+                            "tests": list(_TESTS),
+                            "make_commands": list(_COMMANDS),
+                            "commit_message": "fix(self-improve): exact shard",
+                        }
+                    )
+                )
+            )
         return encode_proposal_batch(
-            tuple(_manifest(shard.focus_paths) for shard in plan.shards),
+            tuple(manifests),
             protocol_digest=plan.protocol_digest,
         )
 
