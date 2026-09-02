@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from configparser import ConfigParser
 from pathlib import Path
 
 from scripts.run_self_improve_e2e import TaskSpec
@@ -12,7 +13,8 @@ from scripts.run_self_improve_e2e import TaskSpec
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "config/self-improve/context-budget-lifecycle.json"
 DOCUMENT = ROOT / "docs/features/SELF_IMPROVEMENT_MULTIFILE_FIXTURE.md"
-FIXTURE_SHA256 = "33a58eab1407d174cda2f98a3a3a7594622c61b7d84696c0f5c568fec9187462"
+COVERAGE_CONFIG = ROOT / "config/coverage_self_improve.ini"
+FIXTURE_SHA256 = "dd31576d14d1f6c996a8ce55909a167c3d7e6da38c8579f9bdb621181dd71a63"
 OBJECTIVE = (
     "Fix the local-model self-improvement runner so it rejects model candidates "
     "whose native context cannot hold the full rendered prompt and required proposal, "
@@ -28,18 +30,40 @@ COMMANDS = (
     'tests/unit/test_self_improve_codex_runner.py" '
     'PYTEST_ARGS="-q -W error --tb=short"',
     'make coverage-files COVERAGE_TESTFILES="'
+    'tests/unit/test_self_improve_acquisition_trace_corpus.py '
+    'tests/unit/test_self_improve_apply.py '
+    'tests/unit/test_self_improve_approval.py '
+    'tests/unit/test_self_improve_approval_release.py '
+    'tests/unit/test_self_improve_catalog_truth_fixture.py '
+    'tests/unit/test_self_improve_codex_comparison.py '
+    'tests/unit/test_self_improve_codex_runner.py '
+    'tests/unit/test_self_improve_evaluator.py '
+    'tests/unit/test_self_improve_failure_corpus.py '
+    'tests/unit/test_self_improve_failure_corpus_edges.py '
+    'tests/unit/test_self_improve_failure_corpus_target.py '
+    'tests/unit/test_self_improve_harness.py '
+    'tests/unit/test_self_improve_hf_auth_mode.py '
+    'tests/unit/test_self_improve_local_worker.py '
+    'tests/unit/test_self_improve_model_acquisition_bounds.py '
+    'tests/unit/test_self_improve_model_acquisition_observability.py '
     'tests/unit/test_self_improve_model_candidate_planner.py '
     'tests/unit/test_self_improve_model_lifecycle.py '
     'tests/unit/test_self_improve_model_lifecycle_deep.py '
+    'tests/unit/test_self_improve_model_plan_reservations.py '
+    'tests/unit/test_self_improve_model_target_contract.py '
+    'tests/unit/test_self_improve_multifile_fixture.py '
+    'tests/unit/test_self_improve_outcomes.py '
     'tests/unit/test_self_improve_persistent_model_evidence.py '
+    'tests/unit/test_self_improve_prompt_plan.py '
+    'tests/unit/test_self_improve_retained_worker.py '
     'tests/unit/test_self_improve_runner_model_lifecycle.py '
-    'tests/unit/test_self_improve_codex_runner.py '
-    'tests/unit/test_self_improve_codex_comparison.py '
-    'tests/unit/test_self_improve_local_worker.py '
-    'tests/unit/test_small_models_recommender.py '
-    'tests/unit/test_recommender_deep.py '
-    'tests/unit/test_model_recommender_deep.py" '
+    'tests/unit/test_self_improve_security.py '
+    'tests/unit/test_self_improve_slice.py '
+    'tests/unit/test_self_improve_task_diversity.py '
+    'tests/unit/test_self_improve_wiring.py '
+    'tests/unit/test_small_models_recommender_branch_coverage.py" '
     'COVERAGE_CONFIG=config/coverage_self_improve.ini '
+    'COVERAGE_REPORT=.gate-logs/coverage-self-improve.json '
     'COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75',
     'make lint-files FILES="scripts/run_self_improve_e2e.py '
     'src/general_ludd/self_improve/codex_comparison.py '
@@ -80,7 +104,8 @@ def test_multifile_fixture_reuses_strict_task_spec() -> None:
     )
     payload_text = FIXTURE.read_text(encoding="utf-8")
     payload = json.loads(payload_text)
-    assert payload_text == json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    expected_payload = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    assert payload_text == f"{expected_payload}\n"
     assert set(payload) == {
         "task_id",
         "objective",
@@ -92,6 +117,39 @@ def test_multifile_fixture_reuses_strict_task_spec() -> None:
 
 def test_multifile_fixture_bytes_are_immutable() -> None:
     assert hashlib.sha256(FIXTURE.read_bytes()).hexdigest() == FIXTURE_SHA256
+
+
+def test_canonical_coverage_runs_every_self_improvement_contract() -> None:
+    spec = TaskSpec.from_path(FIXTURE)
+    coverage_command = next(
+        command for command in spec.canonical_make_commands if command.startswith("make coverage-files ")
+    )
+    match = re.search(r'COVERAGE_TESTFILES="([^"]+)"', coverage_command)
+    assert match is not None
+    canonical_tests = set(match.group(1).split())
+    required_tests = {
+        path.relative_to(ROOT).as_posix()
+        for path in (ROOT / "tests/unit").glob("test_self_improve_*.py")
+    }
+    required_tests.add("tests/unit/test_small_models_recommender_branch_coverage.py")
+
+    coverage_config = ConfigParser()
+    coverage_config.read(COVERAGE_CONFIG, encoding="utf-8")
+    configured_sources = {
+        line for line in coverage_config["run"]["include"].splitlines() if line
+    }
+
+    assert configured_sources == {
+        "*/scripts/run_self_improve_e2e.py",
+        "*/scripts/self_improve_local_proposal.py",
+        "*/src/general_ludd/self_improve/codex_comparison.py",
+        "*/src/general_ludd/self_improve/model_candidate_planner.py",
+        "*/src/general_ludd/self_improve/model_lifecycle.py",
+        "*/src/general_ludd/small_models/recommender.py",
+    }
+    assert required_tests <= canonical_tests, sorted(required_tests - canonical_tests)
+    assert "COVERAGE_AGGREGATE_MIN=85" in coverage_command
+    assert "COVERAGE_PER_FILE_MIN=75" in coverage_command
 
 
 def test_multifile_target_is_pinned_and_safe_by_default() -> None:

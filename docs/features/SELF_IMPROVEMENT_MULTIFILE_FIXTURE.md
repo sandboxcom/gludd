@@ -8,7 +8,7 @@ Status: tracked, deterministic sentinel for the managed self-improvement path.
 | --- | --- |
 | Task | `S83.133` (`multifile-context-lifecycle`) |
 | Fixture | `config/self-improve/context-budget-lifecycle.json` |
-| Fixture SHA-256 | `33a58eab1407d174cda2f98a3a3a7594622c61b7d84696c0f5c568fec9187462` |
+| Fixture SHA-256 | `dd31576d14d1f6c996a8ce55909a167c3d7e6da38c8579f9bdb621181dd71a63` |
 | Baseline | `80b381bd87f32487d784964ce93566e3b016b191` |
 | Independent Codex reference | `6463324cfcf6db9b9a2f9ec203e0bd3862a1e80e` |
 | Candidate limit | Two attempts, stopped after the first accepted candidate |
@@ -20,10 +20,14 @@ the runner, comparison contract, model planner, and five focused test files. The
 task requires native-context admission, a five-minute worker deadline, explicit
 lease-release and persistent outcome evidence, and a bounded terminal diagnostic.
 Its six canonical Make commands preserve the same exact protocol, test, static,
-and branch-coverage obligations given to the independent Codex reference.
+and branch-coverage obligations given to the independent Codex reference. The
+coverage command runs all 31 focused `test_self_improve_*.py` contracts plus the
+dedicated recommender branch suite against every source in
+`config/coverage_self_improve.ini`.
 
-The compact, sorted-key JSON and its digest are immutable inputs. The wrapper
-checks the raw bytes before the shared strict parser or any inference can run.
+The compact, sorted-key, newline-terminated JSON and its digest are immutable
+inputs. The wrapper checks the raw bytes before the shared strict parser or any
+inference can run.
 Missing Git objects, changed fixture bytes, invalid live mode, or an invalid task
 fail closed.
 
@@ -62,8 +66,8 @@ for reuse, but an owned worker, lease, reservation, proposal exchange file, or
 rejected worktree surviving completion is a failed cleanup result.
 
 Acceptance requires all canonical tests and static checks, at least 85% aggregate
-branch coverage, and at least 75% in each measured file. Warnings and incomplete
-model output fail the candidate.
+branch-aware coverage, and at least 75% line-and-branch coverage in each measured
+file. Warnings and incomplete model output fail the candidate.
 
 ## Official and long-lived practitioner evidence
 
