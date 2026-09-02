@@ -114,6 +114,58 @@ def test_exact_cached_gguf_is_reused_without_network(tmp_path: Path) -> None:
     assert result.size_bytes == len(_GGUF_BYTES)
 
 
+def test_exact_cached_huggingface_file_skips_all_auth_resolution(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "models"
+    cached_path, _ = _cached_artifact(cache_dir)
+    downloader = ModelDownloader(cache_dir=str(cache_dir))
+
+    with (
+        patch.object(
+            downloader,
+            "_resolve_token",
+            side_effect=AssertionError("cache hit must not resolve authentication"),
+        ) as auth_resolution,
+        patch("huggingface_hub.hf_hub_download") as network_download,
+    ):
+        result = downloader.download_huggingface(
+            "org/model",
+            filename="model.gguf",
+            revision=_REVISION,
+        )
+
+    auth_resolution.assert_not_called()
+    network_download.assert_not_called()
+    assert result.local_path == str(cached_path)
+    assert result.source is DownloadSource.CACHE
+
+
+def test_exact_cached_gguf_skips_all_auth_resolution(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "models"
+    cached_path, _ = _cached_artifact(cache_dir)
+    downloader = ModelDownloader(cache_dir=str(cache_dir))
+
+    with (
+        patch.object(
+            downloader,
+            "_resolve_token",
+            side_effect=AssertionError("cache hit must not resolve authentication"),
+        ) as auth_resolution,
+        patch("huggingface_hub.hf_hub_download") as network_download,
+    ):
+        result = downloader.download_gguf(
+            "org/model",
+            "model.gguf",
+            revision=_REVISION,
+        )
+
+    auth_resolution.assert_not_called()
+    network_download.assert_not_called()
+    assert result.local_path == str(cached_path)
+    assert result.source is DownloadSource.CACHE
+
+
 def test_mutable_cached_ref_is_recorded_as_immutable_revision(tmp_path: Path) -> None:
     cache_dir = tmp_path / "models"
     cached_path, _ = _cached_artifact(cache_dir)

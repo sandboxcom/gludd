@@ -243,29 +243,27 @@ class ModelDownloader:
                 model_id,
             )
 
-        token: str | bool = self._resolve_token() or False
-
         cached = self._find_cached_artifact(model_id, filename, revision) if filename else None
         if cached is not None:
             local_path, resolved_revision = cached
             source = DownloadSource.CACHE
-        elif filename:
-            local_path = hf_hub_download(
-                repo_id=model_id,
-                filename=filename,
-                token=token,
-                revision=revision,
-                cache_dir=self.cache_dir,
-            )
-            resolved_revision = self._resolved_revision(local_path, revision)
-            source = DownloadSource.HUGGINGFACE
         else:
-            local_path = snapshot_download(
-                repo_id=model_id,
-                token=token,
-                revision=revision,
-                cache_dir=self.cache_dir,
-            )
+            token: str | bool = self._resolve_token() or False
+            if filename:
+                local_path = hf_hub_download(
+                    repo_id=model_id,
+                    filename=filename,
+                    token=token,
+                    revision=revision,
+                    cache_dir=self.cache_dir,
+                )
+            else:
+                local_path = snapshot_download(
+                    repo_id=model_id,
+                    token=token,
+                    revision=revision,
+                    cache_dir=self.cache_dir,
+                )
             resolved_revision = self._resolved_revision(local_path, revision)
             source = DownloadSource.HUGGINGFACE
 
@@ -298,13 +296,12 @@ class ModelDownloader:
 
         os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", str(self.timeout))
 
-        token: str | bool = self._resolve_token() or False
-
         cached = self._find_cached_artifact(model_id, filename, revision)
         if cached is not None:
             local_path, resolved_revision = cached
             source = DownloadSource.CACHE
         else:
+            token: str | bool = self._resolve_token() or False
             local_path = hf_hub_download(
                 repo_id=model_id,
                 filename=filename,

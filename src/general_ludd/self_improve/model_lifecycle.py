@@ -40,10 +40,19 @@ _PROCESS_SHUTDOWN_GRACE_SECONDS = 5.0
 logger = logging.getLogger(__name__)
 
 
+class ModelAcquisitionAuthMode(StrEnum):
+    """Secret-free authentication choice for one Hugging Face operation."""
+
+    ANONYMOUS_PUBLIC = "anonymous_public"
+    EXPLICIT_ENV_TOKEN = "explicit_env_token"
+
+
 class ModelAcquisitionPhase(StrEnum):
     """Secret-safe phases emitted during managed model acquisition."""
 
     CACHE_HIT = "cache_hit"
+    ANONYMOUS_PUBLIC = "anonymous_public"
+    EXPLICIT_ENV_TOKEN = "explicit_env_token"
     REVISION_RESOLUTION_STARTED = "revision_resolution_started"
     REVISION_RESOLUTION_PROGRESS = "revision_resolution_progress"
     REVISION_RESOLUTION_COMPLETED = "revision_resolution_completed"
@@ -78,6 +87,7 @@ class ModelAcquisitionEvent:
     revision: str | None
     elapsed_seconds: float
     failure: ModelAcquisitionFailure | None = None
+    auth_mode: ModelAcquisitionAuthMode | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,15 +182,33 @@ def _default_selector(_task: str) -> LocalModelConfig:
     return min(coding, key=lambda model: (model.size_mb, model.name))
 
 
+def _hf_token_from_environment() -> str | None:
+    """Return an explicitly configured token without retaining or logging it."""
+    return (
+        os.environ.get("HF_TOKEN")
+        or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+        or None
+    )
+
+
+def _hf_token_required_from_environment() -> bool:
+    """Parse the fail-closed optional Hugging Face authentication policy."""
+    raw = os.environ.get("GLUDD_SELF_IMPROVE_HF_TOKEN_REQUIRED", "false")
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off", ""}:
+        return False
+    raise ValueError(
+        "HF token required policy must be a boolean value"
+    )
+
+
 def _default_revision_resolver(repo_id: str) -> str:
     from huggingface_hub import HfApi
     from huggingface_hub.errors import HfHubHTTPError
 
-    token: str | bool = (
-        os.environ.get("HF_TOKEN")
-        or os.environ.get("HUGGING_FACE_HUB_TOKEN")
-        or False
-    )
+    token: str | bool = _hf_token_from_environment() or False
     try:
         info = HfApi(token=token).model_info(repo_id=repo_id, revision="main")
     except (HfHubHTTPError, OSError) as exc:
@@ -373,6 +401,7 @@ class ModelLeaseManager:
         event_sink: Callable[[ModelAcquisitionEvent], None] | None = None,
         heartbeat_interval_seconds: float = _DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
         acquisition_timeout_seconds: float | None = None,
+        hf_token_required: bool | None = None,
     ) -> None:
         """Initialize a dedicated model cache with explicit quota and reserve."""
         selected_root = cache_root or _default_cache_root()
@@ -399,6 +428,13 @@ class ModelLeaseManager:
             raise ValueError("model cache quota must be positive and reserve non-negative")
         if event_sink is not None and not callable(event_sink):
             raise TypeError("model acquisition event sink must be callable")
+        if hf_token_required is not None and not isinstance(hf_token_required, bool):
+            raise TypeError("HF token required policy must be a boolean or None")
+        self._hf_token_required = (
+            _hf_token_required_from_environment()
+            if hf_token_required is None
+            else hf_token_required
+        )
         if (
             isinstance(heartbeat_interval_seconds, bool)
             or not isinstance(heartbeat_interval_seconds, (int, float))
@@ -637,6 +673,21 @@ class ModelLeaseManager:
                 )
             raise
 
+    @staticmethod
+    def _hf_auth_mode() -> ModelAcquisitionAuthMode:
+        """Classify ambient auth without retaining the credential value."""
+        if _hf_token_from_environment() is not None:
+            return ModelAcquisitionAuthMode.EXPLICIT_ENV_TOKEN
+        return ModelAcquisitionAuthMode.ANONYMOUS_PUBLIC
+
+    @staticmethod
+    def _missing_required_hf_token() -> RuntimeError:
+        """Build a secret-free strict-policy refusal."""
+        return RuntimeError(
+            "managed model acquisition requires an explicit Hugging Face token "
+            "in HF_TOKEN or HUGGING_FACE_HUB_TOKEN"
+        )
+
     @contextmanager
     def _observe_operation(
         self,
@@ -649,8 +700,14 @@ class ModelLeaseManager:
         completed_phase: ModelAcquisitionPhase,
         failed_phase: ModelAcquisitionPhase,
     ) -> Iterator[Callable[[str | None], None]]:
-        """Emit ordered lifecycle events and bounded periodic heartbeats."""
+        """Emit ordered lifecycle and auth events with bounded heartbeats."""
+        auth_mode = self._hf_auth_mode()
         if self._event_sink is None:
+            if (
+                self._hf_token_required
+                and auth_mode is ModelAcquisitionAuthMode.ANONYMOUS_PUBLIC
+            ):
+                raise self._missing_required_hf_token()
             yield lambda _revision: None
             return
 
@@ -664,6 +721,7 @@ class ModelLeaseManager:
             phase: ModelAcquisitionPhase,
             *,
             failure: ModelAcquisitionFailure | None = None,
+            selected_auth_mode: ModelAcquisitionAuthMode | None = None,
         ) -> ModelAcquisitionEvent:
             return ModelAcquisitionEvent(
                 phase=phase,
@@ -673,6 +731,7 @@ class ModelLeaseManager:
                 revision=completed_revision[0],
                 elapsed_seconds=round(max(0.0, time.monotonic() - started_at), 3),
                 failure=failure,
+                auth_mode=selected_auth_mode,
             )
 
         def remember_revision(resolved: str | None) -> None:
@@ -681,6 +740,22 @@ class ModelLeaseManager:
             )
 
         self._emit_event(event(started_phase))
+        self._emit_event(
+            event(
+                ModelAcquisitionPhase(auth_mode.value),
+                selected_auth_mode=auth_mode,
+            )
+        )
+        if (
+            self._hf_token_required
+            and auth_mode is ModelAcquisitionAuthMode.ANONYMOUS_PUBLIC
+        ):
+            error = self._missing_required_hf_token()
+            self._emit_event(
+                event(failed_phase, failure=ModelAcquisitionFailure.VALIDATION)
+            )
+            raise error
+
         stopped = threading.Event()
 
         def heartbeat() -> None:
@@ -1364,6 +1439,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 __all__ = [
     "AcquiredModel",
+    "ModelAcquisitionAuthMode",
     "ModelAcquisitionEvent",
     "ModelAcquisitionFailure",
     "ModelAcquisitionPhase",

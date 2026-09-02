@@ -106,7 +106,10 @@ def _manager(
 
 def test_revision_resolution_emits_bounded_progress_without_identifiers(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
     repo = f"https://user:{_SECRET}@example.invalid/private-model"
     release = threading.Event()
     events: list[ModelAcquisitionEvent] = []
@@ -134,6 +137,7 @@ def test_revision_resolution_emits_bounded_progress_without_identifiers(
 
     assert [event.phase for event in events] == [
         ModelAcquisitionPhase.REVISION_RESOLUTION_STARTED,
+        ModelAcquisitionPhase.ANONYMOUS_PUBLIC,
         ModelAcquisitionPhase.REVISION_RESOLUTION_PROGRESS,
         ModelAcquisitionPhase.REVISION_RESOLUTION_COMPLETED,
     ]
@@ -230,9 +234,12 @@ def test_download_failure_is_typed_secret_safe_and_releases_acquisition_lock(
 )
 def test_revision_failure_uses_stable_category_without_secret(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     error: BaseException,
     expected: ModelAcquisitionFailure,
 ) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
     events: list[ModelAcquisitionEvent] = []
 
     def fail_resolution(_repo: str) -> str:
@@ -250,6 +257,7 @@ def test_revision_failure_uses_stable_category_without_secret(
 
     assert [event.phase for event in events] == [
         ModelAcquisitionPhase.REVISION_RESOLUTION_STARTED,
+        ModelAcquisitionPhase.ANONYMOUS_PUBLIC,
         ModelAcquisitionPhase.REVISION_RESOLUTION_FAILED,
     ]
     assert events[-1].failure is expected
