@@ -5,11 +5,14 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 from typing import Protocol, cast
+
+from general_ludd.self_improve.model_lifecycle import ModelArtifactIdentity
 
 _MAX_EDITS = 32
 _MAX_TESTS = 64
@@ -27,6 +30,13 @@ _MAX_PROMPT_BATCH_SHARDS = 32
 _MAX_PROMPT_BATCH_BYTES = 262_144
 _MAX_PROMPT_SHARD_BYTES = 16_384
 _PROTOCOL_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+_PLANNER_FEEDBACK_SCHEMA_VERSION = 1
+_PLANNER_FEEDBACK_KIND = "self-improve-planner-feedback"
+_PLANNER_FEEDBACK_SOURCE_KIND = "managed-self-improve-result"
+_MAX_PLANNER_FEEDBACK_BYTES = 65_536
+_MAX_TASK_OBJECTIVE_BYTES = 32_768
+_MAX_BLOCKERS = 32
+_MAX_BLOCKER_BYTES = 128
 
 
 _PROPOSAL_JSON_SCHEMA: dict[str, object] = {
@@ -906,6 +916,256 @@ class ComparisonResult:
     changed_file_recall: float
 
 
+def _reject_feedback_duplicate_fields(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    """Reject ambiguous duplicate JSON keys in a planner exchange."""
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"planner feedback contains duplicate field: {key}")
+        result[key] = value
+    return result
+
+
+def _feedback_mapping(
+    value: object,
+    fields: frozenset[str],
+    *,
+    label: str,
+) -> dict[str, object]:
+    """Return an exact JSON mapping or reject missing and unknown fields."""
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ValueError(f"planner feedback {label} fields are incomplete or unknown")
+    return cast(dict[str, object], value)
+
+
+def _feedback_digest(value: object, label: str) -> str:
+    """Validate one immutable SHA-256 identity in a planner exchange."""
+    if not isinstance(value, str) or _PROTOCOL_DIGEST_RE.fullmatch(value) is None:
+        raise ValueError(f"planner feedback {label} must be lowercase SHA-256")
+    return value
+
+
+def _feedback_outcome(value: object) -> ComparisonResult:
+    """Hydrate and validate the comparison-only outcome subdocument."""
+    mapping = _feedback_mapping(
+        value,
+        frozenset(
+            {
+                "accepted",
+                "blockers",
+                "changed_file_precision",
+                "changed_file_recall",
+                "score",
+            }
+        ),
+        label="outcome",
+    )
+    accepted = mapping["accepted"]
+    score = mapping["score"]
+    precision = mapping["changed_file_precision"]
+    recall = mapping["changed_file_recall"]
+    blockers = mapping["blockers"]
+    if not isinstance(accepted, bool):
+        raise ValueError("planner feedback accepted outcome must be a boolean")
+    for label, metric, maximum in (
+        ("score", score, 100.0),
+        ("changed_file_precision", precision, 1.0),
+        ("changed_file_recall", recall, 1.0),
+    ):
+        if (
+            isinstance(metric, bool)
+            or not isinstance(metric, (int, float))
+            or not math.isfinite(float(metric))
+            or not 0.0 <= float(metric) <= maximum
+        ):
+            raise ValueError(f"planner feedback {label} is outside its valid range")
+    if not isinstance(blockers, list) or len(blockers) > _MAX_BLOCKERS:
+        raise ValueError("planner feedback blockers must be a bounded JSON list")
+    normalized_blockers = tuple(blockers)
+    if any(
+        not isinstance(item, str)
+        or not item
+        or item.strip() != item
+        or len(item.encode("utf-8")) > _MAX_BLOCKER_BYTES
+        for item in normalized_blockers
+    ) or len(set(normalized_blockers)) != len(normalized_blockers):
+        raise ValueError("planner feedback blockers must be unique bounded text")
+    normalized_score = float(cast(int | float, score))
+    normalized_precision = float(cast(int | float, precision))
+    normalized_recall = float(cast(int | float, recall))
+    if accepted is not (normalized_score == 100.0 and not normalized_blockers):
+        raise ValueError("planner feedback acceptance contradicts its comparison")
+    return ComparisonResult(
+        accepted=accepted,
+        score=normalized_score,
+        blockers=normalized_blockers,
+        changed_file_precision=normalized_precision,
+        changed_file_recall=normalized_recall,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class PlannerFeedbackExchange:
+    """Exact immutable bridge from a managed result into model planning."""
+
+    plan_identity_digest: str
+    attempt_identity_digest: str
+    attempt_number: int
+    model_identity: ModelArtifactIdentity
+    task_id: str
+    task_objective: str
+    outcome: ComparisonResult
+    source_artifact_digest: str
+
+    def __post_init__(self) -> None:
+        """Reconcile every plan, attempt, model, task, and outcome field."""
+        _feedback_digest(self.plan_identity_digest, "plan identity digest")
+        _feedback_digest(self.attempt_identity_digest, "attempt identity digest")
+        _feedback_digest(self.source_artifact_digest, "source artifact digest")
+        if (
+            isinstance(self.attempt_number, bool)
+            or not isinstance(self.attempt_number, int)
+            or not 1 <= self.attempt_number <= 32
+        ):
+            raise ValueError("planner feedback attempt_number must be between 1 and 32")
+        if not isinstance(self.model_identity, ModelArtifactIdentity):
+            raise ValueError("planner feedback model_identity must be immutable")
+        if not isinstance(self.task_id, str) or _TASK_RE.fullmatch(self.task_id) is None:
+            raise ValueError("planner feedback task_id is not canonical")
+        if (
+            not isinstance(self.task_objective, str)
+            or not self.task_objective
+            or self.task_objective.strip() != self.task_objective
+            or "\x00" in self.task_objective
+            or len(self.task_objective.encode("utf-8")) > _MAX_TASK_OBJECTIVE_BYTES
+        ):
+            raise ValueError("planner feedback task_objective must be bounded text")
+        if not isinstance(self.outcome, ComparisonResult):
+            raise ValueError("planner feedback outcome must be a ComparisonResult")
+        _feedback_outcome(self._outcome_value())
+
+    def to_json(self) -> str:
+        """Serialize the exact exchange as bounded canonical JSON."""
+        encoded = json.dumps(
+            self._json_value(),
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        if len(encoded.encode("utf-8")) > _MAX_PLANNER_FEEDBACK_BYTES:
+            raise ValueError("planner feedback exchange exceeds its byte bound")
+        return encoded
+
+    @classmethod
+    def from_json(cls, raw: str) -> PlannerFeedbackExchange:
+        """Hydrate one canonical exchange and reject schema ambiguity."""
+        if (
+            not isinstance(raw, str)
+            or not raw
+            or len(raw.encode("utf-8")) > _MAX_PLANNER_FEEDBACK_BYTES
+        ):
+            raise ValueError("planner feedback exchange must be bounded JSON text")
+        try:
+            value = json.loads(raw, object_pairs_hook=_reject_feedback_duplicate_fields)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError(f"planner feedback exchange is not valid JSON: {exc}") from exc
+        mapping = _feedback_mapping(
+            value,
+            frozenset(
+                {
+                    "attempt_identity_digest",
+                    "attempt_number",
+                    "kind",
+                    "model_identity",
+                    "outcome",
+                    "plan_identity_digest",
+                    "schema_version",
+                    "source",
+                    "task",
+                }
+            ),
+            label="root",
+        )
+        if mapping["schema_version"] != _PLANNER_FEEDBACK_SCHEMA_VERSION:
+            raise ValueError("planner feedback schema_version is unsupported")
+        if mapping["kind"] != _PLANNER_FEEDBACK_KIND:
+            raise ValueError("planner feedback kind is unsupported")
+        model = _feedback_mapping(
+            mapping["model_identity"],
+            frozenset({"filename", "model_id", "repo_id", "revision"}),
+            label="model_identity",
+        )
+        task = _feedback_mapping(
+            mapping["task"],
+            frozenset({"objective", "task_id"}),
+            label="task",
+        )
+        source = _feedback_mapping(
+            mapping["source"],
+            frozenset({"artifact_digest", "kind"}),
+            label="source",
+        )
+        if source["kind"] != _PLANNER_FEEDBACK_SOURCE_KIND:
+            raise ValueError("planner feedback source kind is unsupported")
+        if not all(isinstance(model[field], str) for field in model):
+            raise ValueError("planner feedback model identity fields must be strings")
+        if not isinstance(task["task_id"], str) or not isinstance(task["objective"], str):
+            raise ValueError("planner feedback task fields must be strings")
+        return cls(
+            plan_identity_digest=_feedback_digest(
+                mapping["plan_identity_digest"], "plan identity digest"
+            ),
+            attempt_identity_digest=_feedback_digest(
+                mapping["attempt_identity_digest"], "attempt identity digest"
+            ),
+            attempt_number=cast(int, mapping["attempt_number"]),
+            model_identity=ModelArtifactIdentity(
+                model_id=cast(str, model["model_id"]),
+                repo_id=cast(str, model["repo_id"]),
+                filename=cast(str, model["filename"]),
+                revision=cast(str, model["revision"]),
+            ),
+            task_id=task["task_id"],
+            task_objective=task["objective"],
+            outcome=_feedback_outcome(mapping["outcome"]),
+            source_artifact_digest=_feedback_digest(
+                source["artifact_digest"], "source artifact digest"
+            ),
+        )
+
+    def _outcome_value(self) -> dict[str, object]:
+        return {
+            "accepted": self.outcome.accepted,
+            "blockers": list(self.outcome.blockers),
+            "changed_file_precision": self.outcome.changed_file_precision,
+            "changed_file_recall": self.outcome.changed_file_recall,
+            "score": self.outcome.score,
+        }
+
+    def _json_value(self) -> dict[str, object]:
+        return {
+            "attempt_identity_digest": self.attempt_identity_digest,
+            "attempt_number": self.attempt_number,
+            "kind": _PLANNER_FEEDBACK_KIND,
+            "model_identity": {
+                "filename": self.model_identity.filename,
+                "model_id": self.model_identity.model_id,
+                "repo_id": self.model_identity.repo_id,
+                "revision": self.model_identity.revision,
+            },
+            "outcome": self._outcome_value(),
+            "plan_identity_digest": self.plan_identity_digest,
+            "schema_version": _PLANNER_FEEDBACK_SCHEMA_VERSION,
+            "source": {
+                "artifact_digest": self.source_artifact_digest,
+                "kind": _PLANNER_FEEDBACK_SOURCE_KIND,
+            },
+            "task": {"objective": self.task_objective, "task_id": self.task_id},
+        }
+
+
 def compare_with_codex(
     proposal: ProposalManifest,
     evidence: CandidateEvidence,
@@ -1420,6 +1680,7 @@ def _default_model_factory(
 
 __all__ = [
     "LocalProposalGateway",
+    "PlannerFeedbackExchange",
     "bind_compact_focus_path",
     "build_retry_prompt",
     "compare_with_codex",

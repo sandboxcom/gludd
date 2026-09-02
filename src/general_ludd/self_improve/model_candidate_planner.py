@@ -13,8 +13,13 @@ from general_ludd.hardware.model_fit import can_run_model
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.local_model._local_model_configs import _LOCAL_MODELS, LocalModelConfig
 from general_ludd.schemas.benchmark import TaskRole, TaskType
+from general_ludd.self_improve.codex_comparison import (
+    ComparisonResult,
+    PlannerFeedbackExchange,
+)
 from general_ludd.self_improve.model_lifecycle import (
     DEFAULT_SELF_IMPROVE_MODEL_PRIORITY,
+    ModelArtifactIdentity,
 )
 from general_ludd.self_improve.task_diversity import (
     infer_task_type,
@@ -52,6 +57,26 @@ _OUTCOME_RECORD_KEYS = frozenset(
         "registered_at",
     }
 )
+_FEEDBACK_OUTCOME_FIELDS = frozenset(
+    {
+        "attempt_number",
+        "comparison_blockers",
+        "comparison_changed_file_precision",
+        "comparison_changed_file_recall",
+        "comparison_score",
+        "feedback_schema_version",
+        "model_artifact_identity_digest",
+        "model_filename",
+        "model_repo_id",
+        "plan_identity_digest",
+        "resolved_revision",
+        "source_artifact_digest",
+        "task_id",
+        "task_objective",
+    }
+)
+_FEEDBACK_OUTCOME_RECORD_KEYS = _OUTCOME_RECORD_KEYS | _FEEDBACK_OUTCOME_FIELDS
+_FEEDBACK_SCHEMA_VERSION = 1
 
 
 def _stable_digest(payload: Mapping[str, object]) -> str:
@@ -411,6 +436,103 @@ def _outcome_payload(
     }
 
 
+def _model_artifact_identity_digest(identity: ModelArtifactIdentity) -> str:
+    """Bind every configured model-artifact field used by planner feedback."""
+    return _stable_digest(
+        {
+            "filename": identity.filename,
+            "model_id": identity.model_id,
+            "repo_id": identity.repo_id,
+            "revision": identity.revision,
+        }
+    )
+
+
+def _feedback_outcome_payload(
+    feedback: PlannerFeedbackExchange,
+    model: LocalModelConfig,
+    task_type: TaskType,
+    task_kind: str,
+    role: TaskRole,
+) -> dict[str, object]:
+    """Translate one verified exchange without inferring absent identities."""
+    expected_model = ModelArtifactIdentity(
+        model_id=model.name,
+        repo_id=model.repo,
+        filename=model.filename,
+        revision=feedback.model_identity.revision,
+    )
+    if feedback.model_identity != expected_model:
+        raise ValueError("planner feedback model identity is not configured")
+    if infer_task_type(feedback.task_objective) is not task_type:
+        raise ValueError("planner feedback task type drifted")
+    if _primary_task_capability(feedback.task_objective) != (task_kind, role):
+        raise ValueError("planner feedback task capability drifted")
+
+    payload = _outcome_payload(
+        model,
+        feedback.model_identity.revision,
+        task_type,
+        task_kind,
+        role,
+        feedback.attempt_identity_digest,
+        succeeded=feedback.outcome.accepted,
+    )
+    payload.update(
+        {
+            "attempt_number": feedback.attempt_number,
+            "comparison_blockers": list(feedback.outcome.blockers),
+            "comparison_changed_file_precision": feedback.outcome.changed_file_precision,
+            "comparison_changed_file_recall": feedback.outcome.changed_file_recall,
+            "comparison_score": feedback.outcome.score,
+            "feedback_schema_version": _FEEDBACK_SCHEMA_VERSION,
+            "model_artifact_identity_digest": _model_artifact_identity_digest(
+                feedback.model_identity
+            ),
+            "model_filename": feedback.model_identity.filename,
+            "model_repo_id": feedback.model_identity.repo_id,
+            "plan_identity_digest": feedback.plan_identity_digest,
+            "resolved_revision": feedback.model_identity.revision,
+            "source_artifact_digest": feedback.source_artifact_digest,
+            "task_id": feedback.task_id,
+            "task_objective": feedback.task_objective,
+        }
+    )
+    return payload
+
+
+def record_self_improve_feedback(
+    store: CapabilityEvidenceStore,
+    *,
+    feedback: PlannerFeedbackExchange,
+) -> int:
+    """Persist one exact runtime/comparison exchange as planner evidence."""
+    if not isinstance(feedback, PlannerFeedbackExchange):
+        raise ValueError("feedback must be a PlannerFeedbackExchange")
+    model = next(
+        (
+            item
+            for item in _coding_models()
+            if item.name == feedback.model_identity.model_id
+        ),
+        None,
+    )
+    if model is None:
+        raise ValueError("planner feedback model identity is not configured")
+    task_type = infer_task_type(feedback.task_objective)
+    task_kind, role = _primary_task_capability(feedback.task_objective)
+    payload = _feedback_outcome_payload(
+        feedback,
+        model,
+        task_type,
+        task_kind,
+        role,
+    )
+    record = dict(payload)
+    record["evidence_digest"] = _stable_digest(payload)
+    return store.register_evidence(record)
+
+
 def record_self_improve_outcome(
     store: CapabilityEvidenceStore,
     *,
@@ -444,6 +566,53 @@ def record_self_improve_outcome(
     return store.register_evidence(record)
 
 
+def _feedback_exchange_from_record(
+    record: Mapping[str, object],
+    model: LocalModelConfig,
+    passed_cases: int,
+) -> PlannerFeedbackExchange | None:
+    """Rehydrate a stored exchange so every extra field is revalidated."""
+    blockers = record.get("comparison_blockers")
+    if not isinstance(blockers, list) or not all(
+        isinstance(item, str) for item in blockers
+    ):
+        return None
+    try:
+        return PlannerFeedbackExchange(
+            plan_identity_digest=cast(str, record.get("plan_identity_digest")),
+            attempt_identity_digest=cast(
+                str, record.get("attempt_identity_digest")
+            ),
+            attempt_number=cast(int, record.get("attempt_number")),
+            model_identity=ModelArtifactIdentity(
+                model_id=model.name,
+                repo_id=cast(str, record.get("model_repo_id")),
+                filename=cast(str, record.get("model_filename")),
+                revision=cast(str, record.get("resolved_revision")),
+            ),
+            task_id=cast(str, record.get("task_id")),
+            task_objective=cast(str, record.get("task_objective")),
+            outcome=ComparisonResult(
+                accepted=passed_cases == 1,
+                score=cast(float, record.get("comparison_score")),
+                blockers=tuple(blockers),
+                changed_file_precision=cast(
+                    float,
+                    record.get("comparison_changed_file_precision"),
+                ),
+                changed_file_recall=cast(
+                    float,
+                    record.get("comparison_changed_file_recall"),
+                ),
+            ),
+            source_artifact_digest=cast(
+                str, record.get("source_artifact_digest")
+            ),
+        )
+    except (TypeError, ValueError):
+        return None
+
+
 def _valid_outcome_state(
     record: Mapping[str, object],
     task_type: TaskType,
@@ -451,7 +620,9 @@ def _valid_outcome_state(
     role: TaskRole,
     attempt_identity_digest: str,
 ) -> tuple[str, bool] | None:
-    if set(record) != _OUTCOME_RECORD_KEYS:
+    record_keys = set(record)
+    is_feedback = record_keys == _FEEDBACK_OUTCOME_RECORD_KEYS
+    if record_keys != _OUTCOME_RECORD_KEYS and not is_feedback:
         return None
     registered_at = record.get("registered_at")
     if (
@@ -484,15 +655,32 @@ def _valid_outcome_state(
     )
     if model is None:
         return None
-    expected = _outcome_payload(
-        model,
-        revision,
-        task_type,
-        task_kind,
-        role,
-        record_attempt_identity,
-        succeeded=passed_cases == 1,
-    )
+    if is_feedback:
+        if record.get("feedback_schema_version") != _FEEDBACK_SCHEMA_VERSION:
+            return None
+        feedback = _feedback_exchange_from_record(record, model, passed_cases)
+        if feedback is None:
+            return None
+        try:
+            expected = _feedback_outcome_payload(
+                feedback,
+                model,
+                task_type,
+                task_kind,
+                role,
+            )
+        except ValueError:
+            return None
+    else:
+        expected = _outcome_payload(
+            model,
+            revision,
+            task_type,
+            task_kind,
+            role,
+            record_attempt_identity,
+            succeeded=passed_cases == 1,
+        )
     if any(record.get(key) != value for key, value in expected.items()):
         return None
     evidence_digest = record.get("evidence_digest")
@@ -534,5 +722,6 @@ __all__ = [
     "PlannedModelCandidate",
     "load_latest_failed_model_ids",
     "plan_model_candidates",
+    "record_self_improve_feedback",
     "record_self_improve_outcome",
 ]

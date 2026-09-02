@@ -15,13 +15,25 @@ from typing import Any, cast
 import pytest
 
 import general_ludd.self_improve.runtime as runner_module
+from general_ludd.local_model import get_model
 from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
     CodexReference,
     ComparisonResult,
+    PlannerFeedbackExchange,
     ProposalManifest,
 )
-from general_ludd.self_improve.model_lifecycle import AcquiredModel
+from general_ludd.self_improve.managed_runner import (
+    ApprovedSelfImprovePlan,
+    ManagedRunResult,
+)
+from general_ludd.self_improve.model_candidate_planner import (
+    PlannedModelCandidate,
+    load_latest_failed_model_ids,
+    record_self_improve_feedback,
+)
+from general_ludd.self_improve.model_lifecycle import AcquiredModel, ModelArtifactIdentity
+from general_ludd.self_improve.result_artifact import ManagedSelfImproveResultArtifact
 from general_ludd.self_improve.runtime import (
     MakeResult,
     MakeRunner,
@@ -39,6 +51,7 @@ from general_ludd.self_improve.runtime import (
     proposal_scope_matches,
     quality_defaults_for_paths,
 )
+from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
 
 def _manifest() -> ProposalManifest:
@@ -1094,13 +1107,203 @@ def _attempt_result(*, accepted: bool) -> runner_module.AttemptResult:
             elapsed_seconds=1.0,
             changed_lines=4,
         ),
-        patch_equivalence="patch-equivalent=1" if accepted else "",
+        patch_equivalence="patch-equivalent=1" if accepted else "patch-equivalent=0",
         proposal=proposal,
         diagnostics="" if accepted else "E assert false",
         attempt_identity_digest=runner_module._attempt_identity_digest(
             "bounded prompt"
         ),
     )
+
+
+def _planner_feedback_exchange() -> PlannerFeedbackExchange:
+    config = get_model("qwen2.5-coder-0.5b")
+    assert config is not None
+    return PlannerFeedbackExchange(
+        plan_identity_digest="a" * 64,
+        attempt_identity_digest="b" * 64,
+        attempt_number=1,
+        model_identity=ModelArtifactIdentity(
+            model_id=config.name,
+            repo_id=config.repo,
+            filename=config.filename,
+            revision="c" * 40,
+        ),
+        task_id="S83.209",
+        task_objective="Integrate exact schema feedback.",
+        outcome=ComparisonResult(
+            accepted=False,
+            score=70.0,
+            blockers=("tests",),
+            changed_file_precision=1.0,
+            changed_file_recall=1.0,
+        ),
+        source_artifact_digest="d" * 64,
+    )
+
+
+@pytest.mark.parametrize(
+    ("field_path", "value", "match"),
+    [
+        (("schema_version",), 2, "schema_version"),
+        (("kind",), "other", "kind"),
+        (("attempt_number",), 0, "attempt_number"),
+        (("plan_identity_digest",), "bad", "SHA-256"),
+        (("model_identity", "filename"), 7, "model identity fields"),
+        (("task", "task_id"), "bad", "task_id"),
+        (("task", "objective"), 7, "task fields"),
+        (("source", "kind"), "other", "source kind"),
+        (("outcome", "accepted"), "yes", "boolean"),
+        (("outcome", "score"), -1, "valid range"),
+        (("outcome", "blockers"), "tests", "bounded JSON list"),
+        (("outcome", "blockers"), ["tests", "tests"], "unique bounded"),
+        (("outcome", "accepted"), True, "contradicts"),
+    ],
+)
+def test_planner_feedback_exchange_rejects_each_identity_or_schema_drift(
+    field_path: tuple[str, ...],
+    value: object,
+    match: str,
+) -> None:
+    """Reject malformed identities and outcomes before planner persistence."""
+    payload = json.loads(_planner_feedback_exchange().to_json())
+    target = payload
+    for field in field_path[:-1]:
+        target = cast(dict[str, Any], target[field])
+    target[field_path[-1]] = value
+
+    with pytest.raises(ValueError, match=match):
+        PlannerFeedbackExchange.from_json(json.dumps(payload))
+
+
+def test_planner_feedback_exchange_rejects_ambiguous_json() -> None:
+    """Reject non-objects, invalid JSON, and duplicate fields."""
+    for raw, match in (
+        ("[]", "root fields"),
+        ("{", "valid JSON"),
+        (
+            _planner_feedback_exchange()
+            .to_json()
+            .replace('"schema_version":1', '"schema_version":1,"schema_version":1'),
+            "duplicate field",
+        ),
+    ):
+        with pytest.raises(ValueError, match=match):
+            PlannerFeedbackExchange.from_json(raw)
+
+
+@pytest.mark.parametrize(("accepted", "expected_failed"), [(True, ()), (False, ("qwen2.5-coder-0.5b",))])
+def test_runtime_comparison_exchange_reaches_planner_with_exact_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    accepted: bool,
+    expected_failed: tuple[str, ...],
+) -> None:
+    """Round-trip one exact runtime result into durable planner feedback."""
+    objective = (
+        "Integrate existing self-improvement components and wire their schema "
+        "through planner feedback."
+    )
+    task = TaskSpec(
+        task_id="S83.133",
+        objective=objective,
+        canonical_make_commands=(
+            "make test-files TESTFILES=tests/unit/test_example.py",
+        ),
+    )
+    reference = CodexReference(
+        baseline_sha="a" * 40,
+        reference_sha="b" * 40,
+        changed_files=frozenset(
+            {"src/general_ludd/example.py", "tests/unit/test_example.py"}
+        ),
+        test_files=frozenset({"tests/unit/test_example.py"}),
+        changed_lines=4,
+        elapsed_seconds=1.0,
+    )
+    plan = ApprovedSelfImprovePlan.approve(
+        approval_id="approval-integration",
+        todo_id="todo-integration",
+        project_id="project-integration",
+        repo_root=tmp_path,
+        task=task,
+        reference=reference,
+        prompt="bounded prompt",
+        required_output_tokens=1024,
+        max_attempts=2,
+    )
+    config = get_model("qwen2.5-coder-0.5b")
+    assert config is not None
+    candidate = PlannedModelCandidate(
+        config=config,
+        resolved_revision="d" * 40,
+        evidence_score=0.0,
+        escalation_level=0,
+    )
+    attempt_result = _attempt_result(accepted=accepted)
+    bound = runner_module.PlanBoundProposal(
+        attempt_result.proposal,
+        plan.attempt_identity_digest,
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "evaluate_attempt",
+        lambda *_args, **_kwargs: attempt_result,
+    )
+
+    result, exchange = runner_module.evaluate_attempt_feedback(
+        MakeRunner(tmp_path),
+        plan,
+        candidate,
+        bound,
+        1,
+        merge=False,
+    )
+
+    assert result is attempt_result
+    assert exchange.model_identity == ModelArtifactIdentity(
+        model_id=config.name,
+        repo_id=config.repo,
+        filename=config.filename,
+        revision="d" * 40,
+    )
+    assert exchange.task_id == task.task_id
+    assert exchange.task_objective == objective
+    assert exchange.outcome == attempt_result.comparison
+    expected_source = ManagedSelfImproveResultArtifact.from_run_result(
+        ManagedRunResult(
+            final_result=attempt_result,
+            attempts=1,
+            plan_identity_digest=plan.approved_plan_digest,
+            attempted_model_ids=(config.name,),
+            outcome_record_ids=(),
+        )
+    )
+    assert exchange.source_artifact_digest == expected_source.artifact_digest
+    encoded = exchange.to_json()
+    decoded = PlannerFeedbackExchange.from_json(encoded)
+    assert decoded == exchange
+    assert decoded.to_json() == encoded
+
+    store = CapabilityEvidenceStore(str(tmp_path / "planner-feedback.json"))
+    assert record_self_improve_feedback(store, feedback=decoded) == 1
+    record = store.list_all()[0]
+    assert record["plan_identity_digest"] == plan.approved_plan_digest
+    assert record["attempt_identity_digest"] == plan.attempt_identity_digest
+    assert record["task_id"] == task.task_id
+    assert record["model_repo_id"] == config.repo
+    assert record["source_artifact_digest"] == expected_source.artifact_digest
+    assert record["passed_cases"] == int(accepted)
+    assert load_latest_failed_model_ids(
+        store,
+        task_text=objective,
+        attempt_identity_digest=plan.attempt_identity_digest,
+    ) == expected_failed
+
+    incomplete = json.loads(encoded)
+    incomplete.pop("plan_identity_digest")
+    with pytest.raises(ValueError, match="fields are incomplete or unknown"):
+        PlannerFeedbackExchange.from_json(json.dumps(incomplete))
 
 
 def _benchmark_args(task_file: Path, *, max_attempts: int = 1) -> argparse.Namespace:
