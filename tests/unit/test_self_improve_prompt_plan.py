@@ -166,6 +166,13 @@ def test_multifile_plan_uses_singleton_focus_shards_in_one_worker_request(
         <= runner_module._MAX_BASE_PROMPT_SHARD_BYTES
         for shard in plan.shards
     )
+    assert all(
+        shard.prompt.startswith(
+            f"GLUDD_SELF_IMPROVE_FOCUS_PATH={shard.focus_paths[0]}\n"
+        )
+        for shard in plan.shards
+    )
+    assert all('\"p\"' not in shard.prompt and '\"c\"' not in shard.prompt for shard in plan.shards)
     comparison = ComparisonResult(
         accepted=False,
         score=80.0,
@@ -231,7 +238,7 @@ def test_51859_byte_multifile_context_is_decomposed_without_identity_loss(tmp_pa
     assert max(sizes) < 51_859 // 3
     assert {path for shard in plan.shards for path in shard.focus_paths} == set(_PATHS)
     shared_prefixes = {
-        shard.prompt.split("\nShard-specific contract:", 1)[0]
+        shard.prompt.split("\n", 1)[1].split("\nShard-specific contract:", 1)[0]
         for shard in plan.shards
     }
     assert len(shared_prefixes) == 1
@@ -324,7 +331,7 @@ def test_validation_retry_uses_last_typed_marker_without_raw_worker_output() -> 
     )
     error = (
         "llama loader /Users/operator/models/deepseek.gguf TOKEN=top-secret\n"
-        "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR compact proposal must contain exactly e and c\n"
+        "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR compact proposal must contain exactly e\n"
         '{"e":[{"p":"src/private.py","a":"raw model body","z":"PASSWORD=hunter2"}]}\n'
         "worker failed rc=2: SELF_IMPROVE_LOCAL_PROPOSAL_ERROR "
         "replace requires distinct non-empty old_text\n"
@@ -350,7 +357,7 @@ def test_validation_retry_uses_last_typed_marker_without_raw_worker_output() -> 
             "src/private.py",
             "raw model body",
             "hunter2",
-            "compact proposal must contain exactly e and c",
+            "compact proposal must contain exactly e",
         )
     )
     assert tuple(shard.focus_paths for shard in retried.shards) == tuple(

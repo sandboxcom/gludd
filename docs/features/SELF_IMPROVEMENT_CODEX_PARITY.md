@@ -54,8 +54,9 @@ comparison orchestrator.
 
 The llama.cpp JSON grammar deliberately omits `minLength` and `maxLength`.
 Those keywords caused a native grammar-expansion crash with the one-megabyte
-runtime text bound. Python parsing remains authoritative for all count and byte
-limits.
+legacy runtime text bound. Managed compact output is instead capped at 1,024
+decode tokens and Python rejects more than 3,072 total UTF-8 edit bytes. Python
+parsing remains authoritative for all count and byte limits.
 
 ## Structured proposal decoding
 
@@ -74,16 +75,19 @@ A schema is supplied through `response_format`, not merely
 `{"type": "json_object"}`; JSON-only mode proves syntax but cannot require the
 proposal fields. Managed `PromptPlan` requests put immutable
 `baseline_sha`, `task_id`, tests, and Make commands in a separate atomic
-0600 `contract.json` file. The model emits only compact `e` (edits) and
-`c` (commit subject) fields; each edit uses `p/a/z` for path, old text, and
-new text. Operation is not model-supplied: the worker deterministically infers
+0600 `contract.json` file. Every prompt carries one parent-authored, validated
+focus-path marker. The model emits only compact `e` (edits), and every edit
+contains only `a/z` for old and new text. Path and commit subject are no longer
+model-supplied; the worker derives the path from the original trusted prompt and
+uses one bounded parent-owned commit subject. Operation is likewise inferred:
 create from empty/non-empty text, delete from non-empty/empty text, and replace
-from non-empty/non-empty text. Both-empty edits and any extra operation field
-are rejected. The worker expands those keys with the trusted contract and then
-calls `ProposalManifest.from_json`, so output compaction does not make model
-text authoritative. Legacy single-string callers retain the complete manifest
-schema. The prompt names the compact shape because llama.cpp documents that a
-schema constrains sampling but is not injected into the model prompt.
+from distinct non-empty text. Both-empty edits and any extra path, commit, or
+operation field are rejected. The worker expands those fields with the trusted
+contract and then calls `ProposalManifest.from_json`, so output compaction does
+not make model text authoritative. Legacy single-string callers retain the
+complete manifest schema. The prompt names the compact shape because llama.cpp
+documents that a schema constrains sampling but is not injected into the model
+prompt.
 
 Grammar acceptance is not promotion evidence. Gludd checks that the 32-token
 canary and each compact proposal finish with `stop`, parses one complete object,
@@ -96,27 +100,37 @@ that bounded failure against the immutable model identity before trying a
 different eligible candidate; it must not silently retry unconstrained output
 or weaken required fields.
 
-The managed proposal budget is 1,536 tokens per shard, versus the legacy
-4,096-token compatibility path. A July 2026 managed acceptance motivated this
-bound: Metal-enabled Qwen2.5-Coder-0.5B and DeepSeek-Coder-1.3B ran for 176.62
-and 154.80 seconds respectively before both consumed 4,096 tokens without
-closing the proposal. Trusted-field elision plus the shorter budget gives a
-minimal exact edit room to finish while rejecting the same runaway behavior in
-at most 37.5% of its former decode budget. A follow-up managed acceptance showed
-why operation inference must also have one authority: Qwen1.5B finished with
-`stop` after 1,142 tokens and 47.31 seconds but labeled a non-empty old/new
-pair as create, while SmolLM2 finished after 135 tokens and 14.62 seconds but
-labeled an empty/non-empty pair as delete. Removing that redundant label makes
-both shapes unambiguous without weakening the authoritative manifest validator.
-The canary rejects unsupported chat or grammar behavior before reading a
-task-sized completion.
+The managed proposal budget is 1,024 tokens per single-file shard, versus
+the legacy 4,096-token compatibility path. A July 2026 managed acceptance
+motivated the bound: Metal-enabled Qwen2.5-Coder-0.5B and
+DeepSeek-Coder-1.3B ran for 176.62 and 154.80 seconds respectively before both
+consumed 4,096 tokens without closing the proposal. Trusted-field elision plus
+the shorter budget preserves room for minimal exact edits while rejecting the
+same runaway behavior after at most 25% of the former decode budget. A follow-up
+managed acceptance showed why operation inference must have one authority:
+Qwen1.5B finished with `stop` after 1,142 tokens and 47.31 seconds but labeled
+a non-empty old/new pair as create, while SmolLM2 finished after 135 tokens and
+14.62 seconds but labeled an empty/non-empty pair as delete.
+
+A later live catalog run exposed the same authority defect in the remaining
+fields. Qwen2.5-Coder-1.5B produced otherwise valid bounded edits but supplied
+an invalid commit subject; SmolLM2-1.7B supplied a no-op replacement. Path and
+commit subject were already known to the parent, so normalizing either model
+value would preserve unnecessary authority. Compact protocol v3 removes both
+from the wire shape, binds the trusted focus marker and fixed commit subject
+into attempt identity, states the distinct-text and 3,072-byte rules in the
+prompt, and keeps strict rejection for no-op edits. The canary rejects
+unsupported chat or grammar behavior before reading a task-sized completion.
 
 Grammar construction and inference remain inside the owned proposal worker. The
 model factory runs once after request admission. Each shard then invokes the
 documented `create_chat_completion` method on that same live model and validates
 one `ProposalManifest` before it can join the batch. Observability emits only
 an allowlisted finish classification, non-negative token counts, phase, and
-budget; it never includes completion text. A converter exception, native crash,
+budget; it never includes completion text. Public proposal-rejection and
+terminal-error events contain only the final bounded typed classification;
+they never replay Metal initialization, model paths, child logs, or model text.
+A converter exception, native crash,
 cancellation, or timeout therefore tears down the same process group, exchange
 directory, and model lease as any other failed attempt. The parent applies one
 300-second deadline to the complete candidate attempt; no partial batch is
@@ -191,15 +205,16 @@ available, classification examines only the final 512 UTF-8 bytes rather than
 the noisy head. That bounded candidate can select an allowlisted canonical
 validation phrase and type; it is never copied into the prompt. Unrecognized
 detail becomes `<redacted>`. Paths, assignments that may carry credentials,
-backend logs, and model completion text therefore cannot cross the retry
-boundary. The complete typed feedback is capped at 256 bytes and the identical
-suffix is applied to every original shard.
+backend logs, and model completion text therefore cannot cross the retry or
+public CLI boundary. The complete typed feedback is capped at 256 bytes; the
+same marker is printed for the rejection, preserved in the terminal exception,
+and applied to every original shard.
 
 The immutable `PromptPlan` digest and every shard focus remain stable during
 retries. The complete attempt digest additionally binds the one runtime-used
 retry descriptor, so an unchanged algorithm is deterministic while any version,
-marker, bound, classification, or framing change starts a new evidence identity.
-This keeps the strict proposal manifest and decode-token limits unchanged.
+marker, bound, classification, framing, trusted derivation, or decode limit
+change starts a new evidence identity.
 
 The change follows ZDD: proposal retries run only in the isolated, unpromoted
 worktree and do not mutate daemon or database state. Each attempt retains its

@@ -31,6 +31,7 @@ from general_ludd.self_improve.codex_comparison import (
     ComparisonResult,
     ProposalContract,
     ProposalManifest,
+    bind_compact_focus_path,
     build_retry_prompt,
     compare_with_codex,
     decode_proposal_batch,
@@ -656,6 +657,11 @@ def _validation_retry_feedback(error: str) -> str:
     return feedback
 
 
+def _public_failure_feedback(exc: BaseException) -> str:
+    """Return only a typed, bounded, model-text-free public failure marker."""
+    return _validation_retry_feedback(str(exc))
+
+
 def _validation_retry_suffix(error: str) -> str:
     """Frame one typed diagnostic with the identity-bearing retry protocol."""
     protocol = LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
@@ -1228,14 +1234,19 @@ def _render_prompt_shard(
     shard_index: int,
     shard_total: int,
 ) -> str:
-    return (
+    if len(focus_paths) != 1:
+        raise ValueError("compact prompt shards must have exactly one focus path")
+    body = (
         "Produce one shard of a Codex-quality repository patch proposal. You have "
-        "no shell, Git, or tool authority. Return exactly one strict proposal JSON "
-        "object and no prose. The separately supplied JSON grammar remains "
-        "authoritative. Use minimal exact replace operations copied verbatim from "
-        "numbered excerpts; never regenerate a whole existing file. Do not invent "
-        "old_text from explicitly omitted content. Use create only for an absent "
-        "focus path and delete only when the complete baseline file is shown.\n"
+        "no shell, Git, or tool authority. Return one compact JSON object and no "
+        "prose: its only root key is e, whose array items have only string keys a and "
+        "z. The separately supplied JSON grammar "
+        "is authoritative. The parent supplies path, operation, commit message, tests, "
+        "and commands; never emit those fields. For replace, copy the shortest unique "
+        "old text verbatim and make old/new distinct. Never regenerate a whole existing "
+        "file. Keep all edit text within 3,072 UTF-8 bytes total. Do not invent old_text "
+        "from explicitly omitted content. Use empty old text only for an absent focus "
+        "path and empty new text only when deleting a complete shown file.\n"
         f"Task: {task.objective}\n"
         f"Baseline: {reference.baseline_sha}\n"
         f"Task ID: {task.task_id}\n"
@@ -1252,6 +1263,7 @@ def _render_prompt_shard(
         + "\nExact baseline contexts for the focus paths:\n"
         + "\n\n".join(contexts[path] for path in focus_paths)
     )
+    return bind_compact_focus_path(body, focus_paths[0])
 
 
 def build_prompt(
@@ -1275,35 +1287,13 @@ def build_prompt(
         contexts[relative] = context
         source_bytes += size
 
-    groups: list[tuple[str, ...]] = []
-    current: list[str] = []
-    for relative in paths:
-        tentative = tuple((*current, relative))
-        rendered = _render_prompt_shard(
-            task,
-            reference,
-            required_tests,
-            tentative,
-            contexts,
-            shard_index=1,
-            shard_total=1,
-        )
-        if (
-            current
-            and (
-                len(rendered.encode("utf-8")) > _MAX_BASE_PROMPT_SHARD_BYTES
-                or len(tentative) > 1
-            )
-        ):
-            groups.append(tuple(current))
-            current = [relative]
-        else:
-            current = list(tentative)
+    groups = [(relative,) for relative in paths]
+    for relative, group in zip(paths, groups, strict=True):
         single = _render_prompt_shard(
             task,
             reference,
             required_tests,
-            tuple(current),
+            group,
             contexts,
             shard_index=1,
             shard_total=1,
@@ -1313,8 +1303,6 @@ def build_prompt(
                 "one exact prompt shard cannot fit the bounded CPU context: "
                 f"{relative}"
             )
-    if current:
-        groups.append(tuple(current))
 
     shards = tuple(
         PromptShard(
@@ -1802,9 +1790,9 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                         f"model={candidate.config.name} succeeded=false record={outcome_id}",
                         flush=True,
                     )
+                feedback = _validation_retry_feedback(str(exc))
                 print(
-                    f"SELF_IMPROVE_PROPOSAL_REJECTED attempt={attempt} "
-                    f"error={json.dumps(str(exc)[:1000])}",
+                    f"SELF_IMPROVE_PROPOSAL_REJECTED attempt={attempt} {feedback}",
                     flush=True,
                 )
                 if attempt == args.max_attempts:
@@ -1987,10 +1975,8 @@ def main() -> int:
     try:
         result = run_benchmark(args)
     except (OSError, RuntimeError, ValueError) as exc:
-        message = str(exc).replace("\n", " ").replace("\r", " ")[:2000]
         print(
-            f"SELF_IMPROVE_ERROR type={type(exc).__name__} "
-            f"message={json.dumps(message)}",
+            f"SELF_IMPROVE_ERROR {_public_failure_feedback(exc)}",
             file=sys.stderr,
             flush=True,
         )

@@ -125,7 +125,10 @@ def test_attempt_identity_binds_complete_managed_output_protocol(
         ("_STRUCTURED_CANARY_SCHEMA", {"type": "boolean"}),
         ("_STRUCTURED_CANARY_PROMPT", "Return a different canary."),
         ("_STRUCTURED_CANARY_EXPECTED", {"ok": False}),
-        ("_COMPACT_PROPOSAL_TOKENS", 1537),
+        ("_COMPACT_PROPOSAL_TOKENS", 1025),
+        ("_COMPACT_MAX_CONTENT_BYTES", 3073),
+        ("_COMPACT_FOCUS_PATH_MARKER", "CHANGED_FOCUS_PATH="),
+        ("_COMPACT_COMMIT_MESSAGE", "fix: changed trusted commit message"),
         ("_STRUCTURED_CANARY_TOKENS", 33),
         ("_DETERMINISTIC_DECODE_SEED", 1),
         ("_DETERMINISTIC_DECODE_TEMPERATURE", 0.1),
@@ -825,12 +828,10 @@ def test_compact_gateway_uses_one_fast_canary_and_expands_trusted_contract(
                     {
                         "e": [
                             {
-                                "p": "src/general_ludd/example.py",
                                 "a": "x = 0",
                                 "z": "x = 1",
                             }
-                        ],
-                        "c": "fix: compact local proposal",
+                        ]
                     }
                 )
                 usage = {
@@ -863,8 +864,16 @@ def test_compact_gateway_uses_one_fast_canary_and_expands_trusted_contract(
         make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
     )
     gateway = LocalProposalGateway(model_path, model_factory=factory)
-    proposal = gateway.propose("Repair the example.", contract=contract)
-    second = gateway.propose("Repair the example again.", contract=contract)
+    first_prompt = comparison_module.bind_compact_focus_path(
+        "Repair the example.",
+        "src/general_ludd/example.py",
+    )
+    second_prompt = comparison_module.bind_compact_focus_path(
+        "Repair the example again.",
+        "src/general_ludd/example.py",
+    )
+    proposal = gateway.propose(first_prompt, contract=contract)
+    second = gateway.propose(second_prompt, contract=contract)
 
     assert factory_calls == 1
     assert second == proposal
@@ -873,7 +882,9 @@ def test_compact_gateway_uses_one_fast_canary_and_expands_trusted_contract(
     assert proposal.tests == contract.tests
     assert proposal.make_commands == contract.make_commands
     assert proposal.edits[0].old_text == "x = 0"
-    assert [call["max_tokens"] for call in calls] == [32, 1536, 1536]
+    assert proposal.edits[0].path == "src/general_ludd/example.py"
+    assert proposal.commit_message == "fix: apply bounded self-improvement proposal"
+    assert [call["max_tokens"] for call in calls] == [32, 1024, 1024]
     canary_schema = calls[0]["response_format"]
     compact_schema = calls[1]["response_format"]
     assert isinstance(canary_schema, dict)
@@ -881,18 +892,20 @@ def test_compact_gateway_uses_one_fast_canary_and_expands_trusted_contract(
     assert canary_schema["schema"]["required"] == ["ok"]
     proposal_schema = compact_schema["schema"]
     assert isinstance(proposal_schema, dict)
-    assert set(proposal_schema["required"]) == {"e", "c"}
+    assert proposal_schema["required"] == ["e"]
     properties = proposal_schema["properties"]
     assert isinstance(properties, dict)
     edits_schema = properties["e"]
     assert isinstance(edits_schema, dict)
     edit_schema = edits_schema["items"]
     assert isinstance(edit_schema, dict)
-    assert edit_schema["required"] == ["p", "a", "z"]
+    assert edit_schema["required"] == ["a", "z"]
     assert edit_schema["additionalProperties"] is False
     edit_properties = edit_schema["properties"]
     assert isinstance(edit_properties, dict)
-    assert set(edit_properties) == {"p", "a", "z"}
+    assert set(edit_properties) == {"a", "z"}
+    assert "p" not in edit_properties
+    assert "c" not in properties
     assert "maxLength" not in json.dumps(compact_schema, sort_keys=True)
     output = capsys.readouterr().out
     assert "phase=canary finish=stop" in output
@@ -917,107 +930,82 @@ def test_compact_codec_infers_operation_only_from_validated_text(
         {
             "e": [
                 {
-                    "p": "src/general_ludd/example.py",
                     "a": old_text,
                     "z": new_text,
                 }
-            ],
-            "c": "fix: infer compact operation",
+            ]
         }
     )
 
-    proposal = comparison_module._decode_compact_proposal(raw, _contract())
+    proposal = comparison_module._decode_compact_proposal(
+        raw,
+        _contract(),
+        focus_path="src/general_ludd/example.py",
+    )
 
     assert proposal.edits[0].operation == expected_operation
+    assert proposal.edits[0].path == "src/general_ludd/example.py"
+    assert proposal.commit_message == "fix: apply bounded self-improvement proposal"
 
 
-@pytest.mark.parametrize(
-    "raw",
-    [
-        json.dumps(
-            {
-                "e": [
-                    {
-                        "o": "c",
-                        "p": "src/general_ludd/example.py",
-                        "a": "x = 0",
-                        "z": "x = 1",
-                    }
-                ],
-                "c": "fix: qwen contradiction",
-            }
-        ),
-        json.dumps(
-            {
-                "e": [
-                    {
-                        "o": "d",
-                        "p": "src/general_ludd/example.py",
-                        "a": "",
-                        "z": "created = True\n",
-                    }
-                ],
-                "c": "fix: smollm contradiction",
-            }
-        ),
-        json.dumps(
-            {
-                "e": [
-                    {
-                        "operation": "delete",
-                        "p": "src/general_ludd/example.py",
-                        "a": "x = 0",
-                        "z": "x = 1",
-                    }
-                ],
-                "c": "fix: malicious verbose operation",
-            }
-        ),
-    ],
-    ids=(
-        "qwen-create-with-old-text",
-        "smollm-delete-without-old-text",
-        "malicious-verbose-operation",
-    ),
-)
-def test_compact_codec_rejects_redundant_model_operation(raw: str) -> None:
-    with pytest.raises(ValueError, match="exactly p, a, and z"):
-        comparison_module._decode_compact_proposal(raw, _contract())
+@pytest.mark.parametrize("extra_field", ["o", "operation", "p"])
+def test_compact_codec_rejects_parent_owned_model_fields(extra_field: str) -> None:
+    item = {"a": "x = 0", "z": "x = 1", extra_field: "model-controlled"}
+    raw = json.dumps({"e": [item]})
+
+    with pytest.raises(ValueError, match="exactly a and z"):
+        comparison_module._decode_compact_proposal(
+            raw,
+            _contract(),
+            focus_path="src/general_ludd/example.py",
+        )
 
 
-def test_compact_codec_rejects_noop_text_pair() -> None:
+def test_compact_protocol_bounds_one_file_output_before_manifest_limits() -> None:
+    assert comparison_module._COMPACT_PROPOSAL_TOKENS == 1024
+    assert comparison_module._COMPACT_MAX_CONTENT_BYTES == 3072
+    assert "3,072 UTF-8 bytes total" in comparison_module._COMPACT_SYSTEM_PROMPT
+    assert "distinct non-empty strings" in comparison_module._COMPACT_SYSTEM_PROMPT
+
     raw = json.dumps(
         {
             "e": [
                 {
-                    "p": "src/general_ludd/example.py",
-                    "a": "",
-                    "z": "",
+                    "a": "x = 0",
+                    "z": "x" * 3068,
                 }
-            ],
-            "c": "fix: empty edit",
+            ]
         }
     )
 
+    with pytest.raises(ValueError, match="compact edit content exceeds 3072 bytes"):
+        comparison_module._decode_compact_proposal(
+            raw,
+            _contract(),
+            focus_path="src/general_ludd/example.py",
+        )
+
+
+def test_compact_codec_rejects_noop_text_pair() -> None:
+    raw = json.dumps({"e": [{"a": "", "z": ""}]})
+
     with pytest.raises(ValueError, match="must change content"):
-        comparison_module._decode_compact_proposal(raw, _contract())
+        comparison_module._decode_compact_proposal(
+            raw,
+            _contract(),
+            focus_path="src/general_ludd/example.py",
+        )
 
 
 @pytest.mark.parametrize(
     ("raw", "match"),
     [
         ("{", "complete JSON"),
-        ("{}", "exactly e and c"),
-        ('{"e":[],"c":"fix: empty"}', "1..16"),
-        ('{"e":[7],"c":"fix: invalid"}', "compact edit"),
-        (
-            '{"e":[{"p":"src/example.py","a":7,"z":"y"}],"c":"fix: invalid"}',
-            "text fields",
-        ),
-        (
-            '{"e":[{"p":"../escape.py","a":"x","z":"y"}],"c":"fix: invalid"}',
-            "path",
-        ),
+        ("{}", "exactly e"),
+        ('{"e":[]}', "1..16"),
+        ('{"e":[7]}', "compact edit"),
+        ('{"e":[{"a":7,"z":"y"}]}', "text fields"),
+        ('{"e":[{"p":"src/example.py","a":"x","z":"y"}]}', "exactly a and z"),
     ],
 )
 def test_compact_proposal_codec_rejects_ambiguous_or_unsafe_output(
@@ -1025,7 +1013,30 @@ def test_compact_proposal_codec_rejects_ambiguous_or_unsafe_output(
     match: str,
 ) -> None:
     with pytest.raises(ValueError, match=match):
-        comparison_module._decode_compact_proposal(raw, _contract())
+        comparison_module._decode_compact_proposal(
+            raw,
+            _contract(),
+            focus_path="src/general_ludd/example.py",
+        )
+
+
+def test_compact_codec_rejects_untrusted_or_duplicate_focus_marker() -> None:
+    raw = json.dumps({"e": [{"a": "x", "z": "y"}]})
+    with pytest.raises(ValueError, match="focus path"):
+        comparison_module._decode_compact_proposal(
+            raw,
+            _contract(),
+            focus_path="../escape.py",
+        )
+    prompt = comparison_module.bind_compact_focus_path(
+        "bounded task",
+        "src/general_ludd/example.py",
+    )
+    with pytest.raises(ValueError, match="already contains"):
+        comparison_module.bind_compact_focus_path(
+            prompt,
+            "src/general_ludd/example.py",
+        )
 
 
 def test_compact_gateway_rejects_failed_canary_without_task_decode_or_secret_leak(
@@ -1099,12 +1110,10 @@ def test_compact_gateway_rejects_non_stop_even_when_json_looks_complete(
                             {
                                 "e": [
                                     {
-                                        "p": "src/example.py",
                                         "a": "x = 0",
                                         "z": "x = 1",
                                     }
-                                ],
-                                "c": "fix: looks complete",
+                                ]
                             }
                         )
                     },
@@ -1112,8 +1121,8 @@ def test_compact_gateway_rejects_non_stop_even_when_json_looks_complete(
             ],
             "usage": {
                 "prompt_tokens": 500,
-                "completion_tokens": 1536,
-                "total_tokens": 2036,
+                "completion_tokens": 1024,
+                "total_tokens": 1524,
             },
         },
     ]
@@ -1139,8 +1148,8 @@ def test_compact_gateway_rejects_non_stop_even_when_json_looks_complete(
     with pytest.raises(ValueError, match="token budget") as error:
         gateway.propose("Repair the example.", contract=contract)
 
-    assert "budget=1536" in str(error.value)
-    assert "completion_tokens=1536" in str(error.value)
+    assert "budget=1024" in str(error.value)
+    assert "completion_tokens=1024" in str(error.value)
 
 
 def test_local_gateway_rejects_token_budget_truncation_even_with_valid_json(

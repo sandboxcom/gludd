@@ -83,23 +83,26 @@ _PROPOSAL_JSON_SCHEMA: dict[str, object] = {
     },
 }
 
-_COMPACT_PROPOSAL_PROTOCOL_VERSION = "self-improve-compact-proposal-v2"
-_COMPACT_PROPOSAL_TOKENS = 1536
+_COMPACT_PROPOSAL_PROTOCOL_VERSION = "self-improve-compact-proposal-v3"
+_COMPACT_PROPOSAL_TOKENS = 1024
+_COMPACT_MAX_CONTENT_BYTES = 3072
+_COMPACT_FOCUS_PATH_MARKER = "GLUDD_SELF_IMPROVE_FOCUS_PATH="
+_COMPACT_COMMIT_MESSAGE = "fix: apply bounded self-improvement proposal"
 _STRUCTURED_CANARY_TOKENS = 32
 _DETERMINISTIC_DECODE_TEMPERATURE = 0.0
 _DETERMINISTIC_DECODE_SEED = 0
 _STRUCTURED_OUTPUT_REQUIRE_STOP = True
 _STRUCTURED_CANARY_PROMPT = 'Return {"ok":true}.'
 _STRUCTURED_CANARY_EXPECTED: dict[str, object] = {"ok": True}
-_COMPACT_ROOT_FIELDS = frozenset({"e", "c"})
-_COMPACT_EDIT_FIELDS = frozenset({"p", "a", "z"})
+_COMPACT_ROOT_FIELDS = frozenset({"e"})
+_COMPACT_EDIT_FIELDS = frozenset({"a", "z"})
 _COMPACT_MAX_EDITS = 16
 _COMPACT_OPERATION_BY_EMPTY_TEXT = {
     (False, False): "replace",
     (False, True): "delete",
     (True, False): "create",
 }
-_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v1"
+_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v2"
 _SAFE_FINISH_REASONS = frozenset(
     {"stop", "length", "tool_calls", "function_call", "content_filter"}
 )
@@ -112,7 +115,7 @@ _STRUCTURED_CANARY_SCHEMA: dict[str, object] = {
 _COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["e", "c"],
+    "required": ["e"],
     "properties": {
         "e": {
             "type": "array",
@@ -121,24 +124,23 @@ _COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["p", "a", "z"],
+                "required": ["a", "z"],
                 "properties": {
-                    "p": {"type": "string"},
                     "a": {"type": "string"},
                     "z": {"type": "string"},
                 },
             },
         },
-        "c": {"type": "string"},
     },
 }
 _COMPACT_SYSTEM_PROMPT = (
-    "Return exactly one compact JSON object and no prose. "
-    "e is the edit array and c is the one-line commit message. "
-    "For each edit, p is the repository path, a is exact old text, and z is new text. "
-    "Empty a creates, empty z deletes, otherwise replace; a and z cannot both be empty. "
-    "Never emit o or another operation field. Use the shortest unique exact replacement "
-    "and never reproduce a whole file."
+    "Return exactly one compact JSON object with only e and no prose. "
+    "e is an array whose entries contain only a and z. The trusted parent supplies "
+    "the one focus path and commit message; never emit either. a is exact old text and "
+    "z is new text. For a replacement, a and z must be distinct non-empty strings. "
+    "Empty a creates and empty z deletes; they cannot both be empty. Across all edits, "
+    "a and z may contain at most 3,072 UTF-8 bytes total. Use the shortest unique exact "
+    "replacement and never reproduce a whole file."
 )
 
 
@@ -160,7 +162,7 @@ class ValidationRetryProtocol:
 
 
 LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
-    version="self-improve-validation-retry-v1",
+    version="self-improve-validation-retry-v2",
     error_marker="SELF_IMPROVE_LOCAL_PROPOSAL_ERROR",
     marker_source="proposal_error",
     fallback_source="worker_tail",
@@ -185,11 +187,12 @@ LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
             "compact proposal is not one complete JSON object",
             "proposal_json_contract",
         ),
-        ("compact proposal must contain exactly e and c", "proposal_root_contract"),
+        ("compact proposal must contain exactly e", "proposal_root_contract"),
         (
-            "each compact edit must contain exactly p, a, and z",
+            "each compact edit must contain exactly a and z",
             "edit_shape_contract",
         ),
+        ("compact edit content exceeds 3072 bytes", "edit_content_budget"),
         ("compact edit text fields must be strings", "edit_text_contract"),
         (
             "local model exhausted the proposal token budget before completion",
@@ -237,6 +240,9 @@ def local_proposal_attempt_identity_digest(prompt_protocol_digest: str) -> str:
             "protocol_version": _COMPACT_PROPOSAL_PROTOCOL_VERSION,
             "schema": _COMPACT_PROPOSAL_JSON_SCHEMA,
             "system_prompt": _COMPACT_SYSTEM_PROMPT,
+            "max_content_bytes": _COMPACT_MAX_CONTENT_BYTES,
+            "trusted_focus_path_marker": _COMPACT_FOCUS_PATH_MARKER,
+            "trusted_commit_message": _COMPACT_COMMIT_MESSAGE,
         },
         "structured_canary": {
             "expected": _STRUCTURED_CANARY_EXPECTED,
@@ -931,6 +937,29 @@ def _safe_token_count(output: Mapping[object, object], field: str) -> str:
     return "unknown"
 
 
+def bind_compact_focus_path(prompt: str, focus_path: str) -> str:
+    """Bind one parent-trusted path to a compact single-file prompt."""
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ValueError("compact prompt must be non-empty")
+    if _COMPACT_FOCUS_PATH_MARKER in prompt:
+        raise ValueError("compact prompt already contains a focus-path marker")
+    if not isinstance(focus_path, str) or not _safe_relative_path(focus_path):
+        raise ValueError("compact focus path is not repository-relative and confined")
+    return f"{_COMPACT_FOCUS_PATH_MARKER}{focus_path}\n{prompt}"
+
+
+def _trusted_compact_focus_path(prompt: str) -> str:
+    """Recover exactly one parent-authored focus path, never model output."""
+    candidates = tuple(
+        line.removeprefix(_COMPACT_FOCUS_PATH_MARKER)
+        for line in prompt.splitlines()
+        if line.startswith(_COMPACT_FOCUS_PATH_MARKER)
+    )
+    if len(candidates) != 1 or not _safe_relative_path(candidates[0]):
+        raise ValueError("compact prompt must contain exactly one trusted focus path")
+    return candidates[0]
+
+
 def _completion_text(
     output: object,
     *,
@@ -977,8 +1006,12 @@ def _completion_text(
 def _decode_compact_proposal(
     raw: str,
     contract: ProposalContract,
+    *,
+    focus_path: str,
 ) -> ProposalManifest:
-    """Expand one exact compact object and revalidate the authoritative manifest."""
+    """Expand parent-owned fields and revalidate one compact single-file object."""
+    if not isinstance(focus_path, str) or not _safe_relative_path(focus_path):
+        raise ValueError("compact focus path is not repository-relative and confined")
     stripped = raw.strip()
     try:
         value = json.loads(stripped)
@@ -988,7 +1021,7 @@ def _decode_compact_proposal(
             f"output_bytes={len(stripped.encode('utf-8'))}"
         ) from exc
     if not isinstance(value, dict) or set(value) != _COMPACT_ROOT_FIELDS:
-        raise ValueError("compact proposal must contain exactly e and c")
+        raise ValueError("compact proposal must contain exactly e")
     edits_raw = value["e"]
     if (
         not isinstance(edits_raw, list)
@@ -998,13 +1031,20 @@ def _decode_compact_proposal(
             f"compact proposal edits must contain 1..{_COMPACT_MAX_EDITS} entries"
         )
     edits: list[dict[str, object]] = []
+    content_bytes = 0
     for item in edits_raw:
         if not isinstance(item, dict) or set(item) != _COMPACT_EDIT_FIELDS:
-            raise ValueError("each compact edit must contain exactly p, a, and z")
+            raise ValueError("each compact edit must contain exactly a and z")
         old_text = item["a"]
         new_text = item["z"]
         if not isinstance(old_text, str) or not isinstance(new_text, str):
             raise ValueError("compact edit text fields must be strings")
+        content_bytes += len(old_text.encode("utf-8"))
+        content_bytes += len(new_text.encode("utf-8"))
+        if content_bytes > _COMPACT_MAX_CONTENT_BYTES:
+            raise ValueError(
+                f"compact edit content exceeds {_COMPACT_MAX_CONTENT_BYTES} bytes"
+            )
         operation = _COMPACT_OPERATION_BY_EMPTY_TEXT.get(
             (not old_text, not new_text)
         )
@@ -1013,7 +1053,7 @@ def _decode_compact_proposal(
         edits.append(
             {
                 "operation": operation,
-                "path": item["p"],
+                "path": focus_path,
                 "old_text": old_text,
                 "new_text": new_text,
             }
@@ -1026,7 +1066,7 @@ def _decode_compact_proposal(
             "edits": edits,
             "tests": list(contract.tests),
             "make_commands": list(contract.make_commands),
-            "commit_message": value["c"],
+            "commit_message": _COMPACT_COMMIT_MESSAGE,
         },
         ensure_ascii=False,
         separators=(",", ":"),
@@ -1142,7 +1182,11 @@ class LocalProposalGateway:
                     budget=_COMPACT_PROPOSAL_TOKENS,
                     require_stop=_STRUCTURED_OUTPUT_REQUIRE_STOP,
                 )
-                return _decode_compact_proposal(text, contract)
+                return _decode_compact_proposal(
+                    text,
+                    contract,
+                    focus_path=_trusted_compact_focus_path(prompt),
+                )
             output = chat_model.create_chat_completion(
                 messages=[
                     {

@@ -312,6 +312,54 @@ def test_explicit_model_retries_without_silent_model_switch_and_releases_each_le
     assert attempts == 2
 
 
+def test_terminal_proposal_rejection_publishes_only_typed_safe_marker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Do not copy native logs, model paths, or model text into public failures."""
+    _wire_common(tmp_path, monkeypatch)
+    raw_failure = (
+        "ggml_metal_init model=/Users/operator/models/private.gguf TOKEN=top-secret\n"
+        "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR "
+        "replace requires distinct non-empty old_text\n"
+        '{"e":[{"p":"src/private.py","a":"raw child text","z":"PASSWORD=hunter2"}]}'
+    )
+
+    def reject(*_args: object) -> ProposalManifest:
+        raise ValueError(raw_failure)
+
+    monkeypatch.setattr(runner, "generate_local_proposal", reject)
+    args = _args(_task_file(tmp_path))
+    args.max_attempts = 1
+    expected = (
+        "protocol=self-improve-validation-retry-v2 "
+        "type=edit_replace_contract source=proposal_error "
+        "detail=replace requires distinct non-empty old_text"
+    )
+
+    with pytest.raises(ValueError):
+        runner.run_benchmark(args)
+
+    rejected = next(
+        line
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("SELF_IMPROVE_PROPOSAL_REJECTED")
+    )
+    assert rejected == f"SELF_IMPROVE_PROPOSAL_REJECTED attempt=1 {expected}"
+    assert all(
+        secret not in rejected
+        for secret in (
+            "/Users/operator",
+            "private.gguf",
+            "top-secret",
+            "src/private.py",
+            "raw child text",
+            "hunter2",
+        )
+    )
+
+
 def test_explicit_model_path_remains_an_operator_override(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

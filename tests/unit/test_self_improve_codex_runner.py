@@ -1037,7 +1037,7 @@ def test_run_benchmark_retries_rejected_local_output_with_evidence(
 
     assert result is accepted
     assert len(prompts) == 2
-    assert "protocol=self-improve-validation-retry-v1" in prompts[1]
+    assert "protocol=self-improve-validation-retry-v2" in prompts[1]
     assert "type=proposal_validation" in prompts[1]
     assert "source=worker_tail" in prompts[1]
     assert "detail=<redacted>" in prompts[1]
@@ -1106,6 +1106,51 @@ def test_main_publishes_json_and_fails_for_unaccepted_result(
     assert payload["accepted"] is False
 
 
+def test_main_redacts_native_terminal_failure_to_typed_safe_marker(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = argparse.Namespace(target="unit", validate_only=False)
+    raw_failure = (
+        "ggml_metal_init model=/Users/operator/models/private.gguf TOKEN=top-secret\n"
+        "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR "
+        "replace requires distinct non-empty old_text\n"
+        '{"e":[{"p":"src/private.py","a":"raw child text","z":"PASSWORD=hunter2"}]}'
+    )
+
+    class Parser:
+        def parse_args(self) -> argparse.Namespace:
+            return args
+
+    monkeypatch.setattr(runner_module, "_parser", lambda: Parser())
+    monkeypatch.setattr(
+        runner_module,
+        "run_benchmark",
+        lambda _args: (_ for _ in ()).throw(RuntimeError(raw_failure)),
+    )
+
+    assert runner_module.main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == (
+        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v2 "
+        "type=edit_replace_contract source=proposal_error "
+        "detail=replace requires distinct non-empty old_text\n"
+    )
+    assert all(
+        secret not in captured.err
+        for secret in (
+            "/Users/operator",
+            "private.gguf",
+            "top-secret",
+            "src/private.py",
+            "raw child text",
+            "hunter2",
+            "Traceback",
+        )
+    )
+
+
 def test_main_publishes_bounded_terminal_error_without_traceback(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1127,8 +1172,8 @@ def test_main_publishes_bounded_terminal_error_without_traceback(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == (
-        'SELF_IMPROVE_ERROR type=RuntimeError '
-        'message="candidate plan exhausted"\n'
+        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v2 "
+        "type=proposal_validation source=worker_tail detail=<redacted>\n"
     )
     assert "Traceback" not in captured.err
 
@@ -1193,7 +1238,12 @@ def test_live_entrypoint_propagates_terminal_failure_exit(
     )
 
     assert completed.returncode == 2
-    assert "SELF_IMPROVE_ERROR type=FileNotFoundError" in completed.stderr
+    assert (
+        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v2 "
+        "type=proposal_validation source=worker_tail detail=<redacted>"
+        in completed.stderr
+    )
+    assert str(tmp_path) not in completed.stderr
     assert "Traceback" not in completed.stderr
 
 
