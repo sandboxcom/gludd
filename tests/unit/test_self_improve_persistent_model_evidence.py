@@ -398,9 +398,9 @@ def test_outcome_history_drives_deterministic_next_larger_candidate_only_for_sha
         max_candidates=3,
     )
     assert [candidate.config.name for candidate in initial] == [
-        "qwen2.5-coder-0.5b",
-        "deepseek-coder-1.3b",
         "qwen2.5-coder-1.5b",
+        "qwen2.5-coder-3b",
+        "codellama-7b",
     ]
 
     for candidate in initial[:2]:
@@ -430,12 +430,10 @@ def test_outcome_history_drives_deterministic_next_larger_candidate_only_for_sha
         )
 
     expected = next_plan(task_text, attempt_identity)
-    assert [candidate.config.name for candidate in expected] == [
-        "qwen2.5-coder-1.5b"
-    ]
+    assert [candidate.config.name for candidate in expected] == ["codellama-7b"]
     assert next_plan(task_text, attempt_identity) == expected
-    assert next_plan(task_text, "b" * 64)[0].config.name == "qwen2.5-coder-0.5b"
+    assert next_plan(task_text, "b" * 64)[0].config.name == "qwen2.5-coder-1.5b"
     assert (
         next_plan("Fix a defect in Python code.", attempt_identity)[0].config.name
-        == "qwen2.5-coder-0.5b"
+        == "qwen2.5-coder-1.5b"
     )
