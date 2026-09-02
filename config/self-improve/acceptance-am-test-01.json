@@ -1,0 +1,1 @@
+{"canonical_make_commands":["make test-files TESTFILES=tests/unit/test_self_improve_task_diversity.py PYTEST_ARGS=-q"],"objective":"Write unit tests for existing task-diversity behavior: enumerate a finite branch table, add only missing parameter cases, assert expected behavior, and establish a regression safety net.","reference_elapsed_seconds":312,"task_id":"S83.203"}

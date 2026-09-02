@@ -384,6 +384,7 @@ help:
 	@echo "  git-diff              Show diff stats"
 	@echo "  git-staged            Show staged changes"
 	@echo "  git-log               Show recent commits"
+	@echo "  git-show-commit C=<sha>  Show hash, parents, committer time, subject, and files"
 	@echo "  git-patch-equivalence PATCH_UPSTREAM=<ref> PATCH_HEAD=<ref> PATCH_LIMIT=<n>  Compare patch identity"
 	@echo "  branches-unmerged-development  List every local branch tip not reachable from development"
 	@echo "  branch-reconciliation-inventory RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_AFTER=<ref|empty>  Page bounded local branch reconciliation state as JSON"
@@ -3122,11 +3123,11 @@ git-patch-equivalence:
 	echo "patch-equivalent=$$PATCH_EQ unique=$$UNIQUE upstream=$$PATCH_UPSTREAM head=$$PATCH_HEAD"; \
 	if [ "$$PATCH_LIMIT" -gt 0 ]; then git cherry -v "$$PATCH_UPSTREAM" "$$PATCH_HEAD" | sed -n "1,$${PATCH_LIMIT}p"; fi
 
-# Read-only: show a commit's parent SHA + the files it touched (rebase planning).
+# Read-only: show a commit's hash, parents, committer time, subject, and files.
 # Usage: make git-show-commit C=<sha>
 git-show-commit:
 	@[ -n "$(C)" ] || { echo "Usage: make git-show-commit C=<sha>"; exit 1; }
-	@echo "--- $(C) summary ---"; git log -1 --format='%H%nparent: %P%n%s' $(C)
+	@echo "--- $(C) summary ---"; git log -1 --format='%H%nparent: %P%ncommitter_unix: %ct%n%s' $(C)
 	@echo "--- files touched ---"; git show --stat --oneline $(C) | tail -n +2
 
 # Recreate a branch at BASE by cherry-picking a commit RANGE onto it. Used to
@@ -5643,7 +5644,7 @@ test-self-improve:
 # Canonical ten-shape contract; validate-only is safe, live inference is explicit.
 test-self-improve-acceptance-matrix:
 	@case "$(SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE)" in 0|1) ;; *) echo "SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE must be 0 or 1"; exit 2;; esac
-	@EXPECTED_MATRIX_SHA256="3f95bcc9a1b36673e0ce45fbdc16ccfcf84bef81d8531371a1b30d6a197b7b86"; \
+	@EXPECTED_MATRIX_SHA256="5a5dfc0b40308a8b39039dd28e923d59bd9b8855eb5d679bd25fb68ba4b19a25"; \
 		ACTUAL_MATRIX_SHA256="$$($(PYTHON) -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$(SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE)")"; \
 		[ "$$ACTUAL_MATRIX_SHA256" = "$$EXPECTED_MATRIX_SHA256" ] || { echo "acceptance matrix drift: expected=$$EXPECTED_MATRIX_SHA256 actual=$$ACTUAL_MATRIX_SHA256"; exit 2; }
 	@$(UV) run python -m tests.unit.self_improve_acceptance_matrix_runner --manifest "$(SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE)" --model-path "$(SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH)" $(if $(filter 1,$(SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE)),--live,)

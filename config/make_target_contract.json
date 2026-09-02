@@ -738,6 +738,11 @@
       "behavior": "make resolve-development-conflicts MERGE_SOURCE=master APPLY=0"
     },
     {
+      "name": "git-show-commit",
+      "make_variables": ["C"],
+      "behavior": "make git-show-commit C=e4c9b68aea0ff59cab77a06747471e248e9e0601"
+    },
+    {
       "name": "git-patch-equivalence",
       "make_variables": ["PATCH_UPSTREAM", "PATCH_HEAD", "PATCH_LIMIT"],
       "behavior": "make git-patch-equivalence PATCH_UPSTREAM=development PATCH_HEAD=master PATCH_LIMIT=3"

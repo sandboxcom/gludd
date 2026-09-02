@@ -12,10 +12,15 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Protocol, cast
 
-from scripts.run_self_improve_e2e import MakeRunner, TaskSpec
-
 from general_ludd.routing_roles.small_model_policy import DEFAULT_TASK_CONTRACTS
 from general_ludd.schemas.benchmark import TaskRole, TaskType
+from general_ludd.self_improve.codex_comparison import CodexReference
+from general_ludd.self_improve.runtime import (
+    MakeRunner,
+    TaskSpec,
+    _TargetRunner,
+    build_reference,
+)
 from general_ludd.self_improve.task_diversity import infer_task_type
 from general_ludd.small_models.recommender import map_task_to_capabilities
 
@@ -253,6 +258,10 @@ def _validate_evidence(
         return False, reason, None, None, None, None
     if status != "eligible" or reason is not None:
         raise MatrixContractError(f"{case_id} eligibility is invalid")
+    if task.reference_elapsed_seconds <= 0:
+        raise MatrixContractError(
+            f"{case_id} eligible reference elapsed time must be positive"
+        )
     if (
         not isinstance(baseline_ref, str)
         or _SHA_RE.fullmatch(baseline_ref) is None
@@ -512,6 +521,113 @@ def build_execution_plan(manifest: MatrixManifest) -> tuple[MatrixStep, ...]:
     return tuple(steps)
 
 
+def _commit_boundary(
+    runner: _TargetRunner,
+    sha: str,
+    *,
+    case_id: str,
+) -> tuple[tuple[str, ...], int]:
+    """Return exact parent identities and committer epoch from the Make seam."""
+    summary = runner.run(
+        "git-show-commit",
+        {"C": sha},
+        read_only=True,
+    )
+    if summary.returncode != 0:
+        raise MatrixContractError(f"{case_id} reference commit is not reachable")
+    parent_lines = tuple(
+        line.removeprefix("parent: ")
+        for line in summary.stdout.splitlines()
+        if line.startswith("parent: ")
+    )
+    timestamp_lines = tuple(
+        line.removeprefix("committer_unix: ")
+        for line in summary.stdout.splitlines()
+        if line.startswith("committer_unix: ")
+    )
+    if len(parent_lines) != 1 or len(timestamp_lines) != 1:
+        raise MatrixContractError(
+            f"{case_id} commit metadata is incomplete or ambiguous"
+        )
+    try:
+        committed_at = int(timestamp_lines[0])
+    except ValueError as exc:
+        raise MatrixContractError(
+            f"{case_id} committer timestamp is not an integer"
+        ) from exc
+    if committed_at < 0 or str(committed_at) != timestamp_lines[0]:
+        raise MatrixContractError(
+            f"{case_id} committer timestamp is not canonical"
+        )
+    parents = tuple(parent_lines[0].split()) if parent_lines[0] else ()
+    if any(_SHA_RE.fullmatch(parent) is None for parent in parents):
+        raise MatrixContractError(f"{case_id} parent identity is invalid")
+    return parents, committed_at
+
+
+def validate_reference_boundaries(
+    manifest: MatrixManifest,
+    *,
+    runner: _TargetRunner | None = None,
+) -> tuple[CodexReference, ...]:
+    """Resolve every eligible direct-parent reference and exact path boundary."""
+    active_runner = runner or MakeRunner(_ROOT)
+    references: list[CodexReference] = []
+    for case in manifest.cases:
+        if not case.eligible:
+            continue
+        assert case.baseline_ref is not None
+        assert case.reference_ref is not None
+        _baseline_parents, baseline_committed_at = _commit_boundary(
+            active_runner,
+            case.baseline_ref,
+            case_id=case.case_id,
+        )
+        reference_parents, reference_committed_at = _commit_boundary(
+            active_runner,
+            case.reference_ref,
+            case_id=case.case_id,
+        )
+        if reference_parents != (case.baseline_ref,):
+            raise MatrixContractError(
+                f"{case.case_id} reference must be a direct child of its baseline"
+            )
+        elapsed_seconds = reference_committed_at - baseline_committed_at
+        if elapsed_seconds <= 0:
+            raise MatrixContractError(
+                f"{case.case_id} committer-time delta must be positive"
+            )
+        if float(elapsed_seconds) != case.task.reference_elapsed_seconds:
+            raise MatrixContractError(
+                f"{case.case_id} reference elapsed bound drifted from commit metadata"
+            )
+        try:
+            reference = build_reference(
+                active_runner,
+                case.baseline_ref,
+                case.reference_ref,
+                case.task.reference_elapsed_seconds,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise MatrixContractError(
+                f"{case.case_id} reference facts are unavailable"
+            ) from exc
+        if reference.changed_files != frozenset(case.allowed_changed_paths):
+            raise MatrixContractError(
+                f"{case.case_id} reference changed-file scope drifted"
+            )
+        if reference.test_files != frozenset(case.required_test_paths):
+            raise MatrixContractError(
+                f"{case.case_id} reference test-file scope drifted"
+            )
+        if reference.changed_lines <= 0:
+            raise MatrixContractError(
+                f"{case.case_id} reference must contain a non-empty patch"
+            )
+        references.append(reference)
+    return tuple(references)
+
+
 def aggregate_outcomes(
     steps: tuple[MatrixStep, ...],
     outcomes: tuple[MatrixOutcome, ...],
@@ -681,6 +797,7 @@ def main() -> int:
     args = _parser().parse_args()
     try:
         manifest = load_manifest(Path(args.manifest))
+        validate_reference_boundaries(manifest)
         summary = execute_matrix(
             manifest,
             live=bool(args.live),

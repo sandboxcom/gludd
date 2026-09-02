@@ -1,7 +1,7 @@
 # Local-Model Self-Improvement Acceptance Matrix
 
-Status: reproducible acceptance contract. The document baseline is
-`a7b8dce9dc68e047177b6f540991eed6ae6ba9ad`.
+Status: reproducible acceptance contract with ten immutable reference rows
+admitted. This status does not claim that live local-model inference passes.
 
 ## Purpose
 
@@ -39,19 +39,21 @@ exclude evidence from the earlier identity.
 
 ### Fixture identity
 
-Each tracked fixture must contain one canonical JSON manifest serialized with
-sorted keys, ASCII escaping, and compact separators. Its SHA-256 is the
-`fixture_digest`. The manifest contains:
+Each tracked task fixture is canonical JSON serialized with sorted keys, ASCII
+escaping, compact separators, and one final newline. It remains the existing
+strict `TaskSpec` shape: `canonical_make_commands`, `objective`,
+`reference_elapsed_seconds`, and `task_id`, with no parallel fixture schema.
+Its raw-byte SHA-256 is the matrix row's `fixture_digest`.
 
-- a stable fixture ID and exact task text;
-- the expected existing `TaskType`, `task_kind`, and role;
-- the required checks copied from the selected `DEFAULT_TASK_CONTRACTS` entry;
-- the 40-character baseline and independent Codex reference commit SHAs;
-- every allowed changed path, required test path, and ordered Make command;
-- the SHA-256 and byte count of each baseline input file;
-- the reference changed-file set, test-file set, changed-line count, elapsed
-  seconds, and patch ID; and
-- the expected task-specific assertions and any performance counter.
+The canonical matrix manifest separately binds that task to its expected
+existing `TaskType`, `task_kind`, role, acceptance checks, 40-character
+baseline and independent reference SHAs, allowed changed paths, and required
+test paths. Before a model call, `validate_reference_boundaries` resolves the
+reference through the existing `build_reference` implementation and verifies
+that it is a direct child of the baseline, has the exact changed/test sets, and
+contains a non-empty patch. The immutable commits provide baseline file and
+patch identity; changed-line and patch-equivalence facts are derived from those
+Git objects rather than copied into a second JSON schema.
 
 Before inference, `infer_task_type(task_text)` and
 `map_task_to_capabilities(task_text)[0]` must equal the manifest values. An
@@ -121,7 +123,7 @@ worker/model reuse and strict merge behavior. Every case remains within the
 global proposal limits; the matrix does not multiply task size, model size,
 backend, and cache state into an unbounded Cartesian product.
 
-### Executable manifest and current eligibility
+### Executable manifest and admitted references
 
 The canonical executable source is
 `config/self-improve/acceptance-matrix.json`. It contains exactly one ordered
@@ -131,23 +133,33 @@ The loader rejects unknown fields, non-canonical JSON, changed contract checks,
 unsafe paths, duplicate task IDs, and any plan above twenty candidate attempts.
 
 A row is runnable only after the same exact task has an independently produced
-baseline/reference pair and tracked fixture digest. The repository currently
-has two such reference fixtures, documented in
+baseline/reference pair and tracked fixture digest. All ten matrix rows now have
+distinct, direct-parent reference pairs. The earlier catalog-truth and
+multi-file fixtures remain useful standalone lifecycle sentinels, documented in
 [SELF_IMPROVEMENT_CATALOG_TRUTH_FIXTURE.md](features/SELF_IMPROVEMENT_CATALOG_TRUTH_FIXTURE.md)
 and
-[SELF_IMPROVEMENT_MULTIFILE_FIXTURE.md](features/SELF_IMPROVEMENT_MULTIFILE_FIXTURE.md).
-Their task text does not satisfy any complete matrix row identity: both infer as
-`security_fix`, while neither is the matrix's synthetic exploit-regression task.
-They therefore remain useful standalone lifecycle fixtures but are not relabelled
-or reused as capability evidence here.
+[SELF_IMPROVEMENT_MULTIFILE_FIXTURE.md](features/SELF_IMPROVEMENT_MULTIFILE_FIXTURE.md),
+but are not relabelled or reused as matrix evidence.
 
-All ten matrix rows consequently record `ineligible` with null fixture and Git
-identities plus the explicit reason
-`no_semantically_matching_independent_reference`. Turning a row eligible requires
-its own exact tracked task, SHA-256, distinct full baseline/reference SHAs, path
-and test contract, and unchanged type/capability mappings. Reusing another row's
-reference or filling only some identity fields fails closed before a workflow
-call.
+`reference_elapsed_seconds` is the positive difference between the reference
+commit's committer Unix timestamp and its direct parent's committer Unix
+timestamp. This durable value is a conservative end-to-end upper bound that
+includes all work between commits. It is not an inference-only benchmark and is
+not presented as one. A zero/negative delta, non-parent pair, unavailable commit,
+or path/test mismatch fails closed.
+
+| Case | Baseline -> independent reference | Changed lines | Upper bound (s) | Fixture SHA-256 |
+| --- | --- | ---: | ---: | --- |
+| `AM-BUG-01` | `0af495b60a60c05b2ea6a011fd5b4beb6272b846` -> `e4c9b68aea0ff59cab77a06747471e248e9e0601` | 29 | 278 | `eae86c84f15beea98a2c4ea5a9dc19c5fb0e04b3341ea7c6625befc55c0a0f12` |
+| `AM-FEATURE-01` | `e4c9b68aea0ff59cab77a06747471e248e9e0601` -> `21a4759880a549eae1ba14f3332c967937690843` | 93 | 578 | `54012f6ddf78b49af71fb7396355f0dce11acf61c803f78d82423e68b476bec1` |
+| `AM-REFACTOR-01` | `58a36457ab6333e885b7203011b15ffc1c6af48c` -> `2bb39446d770c7e00be1e0eb18da384221f47236` | 189 | 157 | `a64fce9d61d29e4c42a469cea0e26ff2e9d7cb73387a51aef0ece53757862c03` |
+| `AM-TEST-01` | `459899671737a199628ac317a3626fab5ef64935` -> `0af495b60a60c05b2ea6a011fd5b4beb6272b846` | 117 | 312 | `70e47909434e2676c4aaa88a3765617619d92f725104ce864165aadb37ed89ca` |
+| `AM-REVIEW-01` | `ad09bd07d64d834a6e4d46c7d4e493d1c3229910` -> `a55a96a619135aeb21e63ab5ef2d863cbc8ce1db` | 55 | 1,345 | `e637425572916545f0ad1361e9962dc5d41d715f4e777c67eccbb9aea3aed09c` |
+| `AM-DOC-01` | `2bb39446d770c7e00be1e0eb18da384221f47236` -> `ab45aae30f989a02b1c2cb98da49d8bbcfd208d1` | 437 | 603 | `a6d4288f97582e24b20628d5281b87ce5dbd346f3cec187b82b0e8afb086632c` |
+| `AM-DEBUG-01` | `ab45aae30f989a02b1c2cb98da49d8bbcfd208d1` -> `85c1b6a69b1b224ce5004bf995ad32ce3549b799` | 263 | 655 | `59bc0f3e8ddb1a5d291afa79aa226b852bb6d394ac96f328128d0972b3d86c8c` |
+| `AM-OPT-01` | `21a4759880a549eae1ba14f3332c967937690843` -> `ad09bd07d64d834a6e4d46c7d4e493d1c3229910` | 89 | 385 | `aadc4f22c3a85460d34f77edb3856d72bdc9f9f05e1d1446c3f237827483e899` |
+| `AM-SEC-01` | `85c1b6a69b1b224ce5004bf995ad32ce3549b799` -> `5d46410bf204f285b5c7b5e90823d2fc0598e2ee` | 59 | 1,245 | `3ca088a1bd3a259720fca019da53ffe05dfd051aba96187262dd9751e138ab00` |
+| `AM-INTEGRATION-01` | `5d46410bf204f285b5c7b5e90823d2fc0598e2ee` -> `8c10bb7fb59975a5037d99eec85cf34d7c19173e` | 739 | 909 | `1a4d8711377ce958ba141091323665b03139caa9d71cc5d91db88817ee29b304` |
 
 The safe validate-only invocation is:
 
@@ -155,16 +167,16 @@ The safe validate-only invocation is:
 make test-self-improve-acceptance-matrix SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE=config/self-improve/acceptance-matrix.json SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH= SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE=0
 ```
 
-While any row is ineligible, this command emits an observable result for all
-eleven ordered steps, makes zero underlying self-improvement workflow calls, and
-returns non-zero. That expected failure is the readiness result, not a model
-failure or a partial capability claim. Live mode is a separate explicit command:
+This command resolves all ten immutable references and emits an observable
+validate-only result for all eleven ordered steps without loading a model. A
+failed boundary or child workflow returns non-zero. Live mode is a separate
+explicit command:
 
 ```console
 make test-self-improve-acceptance-matrix SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE=config/self-improve/acceptance-matrix.json SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH=/tmp/gludd-acceptance-model.gguf SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE=1
 ```
 
-An incomplete matrix blocks that command before inference. Once every row is
+An incomplete matrix blocks that command before inference. With every row now
 admitted, execution remains serial and observable through per-case start/end
 events plus the existing runner heartbeat. The cold/warm sentinel is the same
 `AM-BUG-01` task object replayed twice at one attempt each; the other nine rows
@@ -191,7 +203,8 @@ responsibilities:
 | Concern | Enforcing source |
 | --- | --- |
 | Parsed row identity | `MatrixCase` carries the task, path, fixture, baseline, and reference identities |
-| Fixture admission | `_validate_evidence` verifies the tracked fixture bytes, `fixture_digest`, exact task identity, and distinct full Git identities |
+| Fixture admission | `_validate_evidence` verifies the tracked fixture bytes, `fixture_digest`, exact task identity, positive elapsed bound, and distinct full Git identities |
+| Reference admission | `validate_reference_boundaries` verifies reachability, direct parentage, exact changed/test paths, and a non-empty patch through `build_reference` |
 | Whole-manifest admission | `load_manifest` requires canonical JSON, every task shape, the serial attempt bound, and unique baseline/reference pairs |
 | Replay | `execute_matrix` emits the ordered events and invokes only the existing `test-self-improve` Make seam |
 | Tracked manifest bytes | `EXPECTED_MATRIX_SHA256` in the Make target rejects an unreviewed manifest-byte change before the runner starts |
@@ -230,16 +243,23 @@ make worktree-state
 ```
 
 The full committed hash reported by repository state is `reference_ref`; it
-must differ from `baseline_ref`. Preserve the commit on a reachable integration
-branch before removing the reference branch. Never reuse the pair for another
-matrix row: `load_manifest` rejects duplicate eligible pairs.
+must differ from `baseline_ref`, and its sole parent must be `baseline_ref`.
+Run `make git-show-commit C=<40-character-sha>` for each identity, read the two
+immutable `committer_unix` values, and subtract baseline from reference. The
+exact positive delta is `reference_elapsed_seconds`; a
+zero or negative result is missing evidence and cannot be replaced with an
+estimate.
+Preserve the commit on a reachable integration branch before removing the
+reference branch. Never reuse the pair for another matrix row: `load_manifest`
+rejects duplicate eligible pairs.
 
 ### 2. Canonicalize the fixture and admit the row
 
 Create the row's separate tracked task fixture under `config/self-improve/` in a
-follow-up fixture-admission change. Its only fields are
+follow-up fixture-admission change. Its only fields remain
 `canonical_make_commands`, `objective`, `reference_elapsed_seconds`, and
-`task_id`, and their values must equal the task object already in the matrix.
+`task_id`, and their values must equal the task object in the matrix, including
+the committer-time delta derived above.
 Serialize the object exactly as the runner does:
 
 ```python
@@ -261,10 +281,12 @@ one final newline. Compute its SHA-256 over the resulting bytes and update
 `EXPECTED_MATRIX_SHA256` in the matrix Make target in the same admission change.
 
 `_validate_evidence` re-hashes the tracked fixture and compares its parsed task
-identity; `load_manifest` checks the full row and matrix invariants. A placeholder
-digest, mutable ref, mismatched task, reused pair, non-canonical encoding, or
-partial evidence tuple must remain a hard `MatrixContractError`, not an eligible
-row.
+identity; `load_manifest` checks the full row and matrix invariants. Before
+execution, `validate_reference_boundaries` proves direct parentage and compares
+the Git-derived changed and test sets to the manifest. A placeholder digest,
+mutable ref, mismatched task, reused pair, non-canonical encoding, non-positive
+elapsed bound, path drift, or partial evidence tuple remains a hard
+`MatrixContractError`, not an eligible row.
 
 ### 3. Validate, replay live, and clean up
 
@@ -275,10 +297,10 @@ set explicitly:
 make test-self-improve-acceptance-matrix SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE=config/self-improve/acceptance-matrix.json SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH= SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE=0
 ```
 
-If another row is still ineligible, the aggregate result remains non-zero and
-names every blocked step; that is correct readiness evidence. It is not a model
-failure. Run live inference only after all ten rows pass admission, using the
-exact immutable fixture/reference identities and an admitted local model:
+If any future edit makes a row ineligible, the aggregate result remains
+non-zero and names every blocked step; that is correct readiness evidence, not a
+model failure. Run live inference only while all ten rows pass admission, using
+the exact immutable fixture/reference identities and an admitted local model:
 
 ```console
 make test-self-improve-acceptance-matrix SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE=config/self-improve/acceptance-matrix.json SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH=/tmp/gludd-acceptance-model.gguf SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE=1

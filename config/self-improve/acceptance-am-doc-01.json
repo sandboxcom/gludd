@@ -1,0 +1,1 @@
+{"canonical_make_commands":["make lint-markdown MARKDOWN_FILES=docs/SELF_IMPROVEMENT_ACCEPTANCE_MATRIX.md"],"objective":"Write documentation for the self-improvement acceptance matrix: draft one feature guide with exact source citations, explain how to use the contract, and change no runtime file.","reference_elapsed_seconds":603,"task_id":"S83.205"}

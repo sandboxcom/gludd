@@ -1,0 +1,1 @@
+{"canonical_make_commands":["make test-files TESTFILES=tests/unit/test_self_improve_codex_runner.py PYTEST_ARGS=-q"],"objective":"Integrate two existing self-improvement components: extract their exchange schema, wire data across the boundary, reconcile every required field, and validate the end-to-end interaction with tests.","reference_elapsed_seconds":909,"task_id":"S83.209"}
