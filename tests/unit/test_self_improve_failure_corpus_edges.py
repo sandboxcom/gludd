@@ -38,19 +38,19 @@ def _write(tmp_path: Path, value: object) -> Path:
 @pytest.mark.parametrize(
     ("case_index", "section", "field", "replacement"),
     (
-        (0, "case", "id", "Bad_ID"),
-        (0, "input", "focus_path", ""),
-        (0, "input", "model_output", 42),
-        (0, "expected", "type", "Bad-Type"),
-        (0, "expected", "source", "Bad-Source"),
-        (0, "expected", "forbidden_substrings", "not-a-list"),
-        (0, "expected", "forbidden_substrings", ["duplicate", "duplicate"]),
-        (2, "input", "budget", True),
-        (2, "input", "budget", 0),
-        (2, "input", "require_stop", "true"),
-        (2, "input", "worker_response", []),
-        (3, "input", "protocol_digest", "a" * 63),
-        (4, "input", "error", ""),
+        (1, "case", "id", "Bad_ID"),
+        (1, "input", "focus_path", ""),
+        (1, "input", "model_output", 42),
+        (1, "expected", "type", "Bad-Type"),
+        (1, "expected", "source", "Bad-Source"),
+        (1, "expected", "forbidden_substrings", "not-a-list"),
+        (1, "expected", "forbidden_substrings", ["duplicate", "duplicate"]),
+        (3, "input", "budget", True),
+        (3, "input", "budget", 0),
+        (3, "input", "require_stop", "true"),
+        (3, "input", "worker_response", []),
+        (4, "input", "protocol_digest", "a" * 63),
+        (5, "input", "error", ""),
     ),
 )
 def test_loader_rejects_field_level_contract_drift(
@@ -79,7 +79,7 @@ def test_loader_rejects_non_object_roots(
 
 
 def test_valid_compact_output_is_not_misclassified_as_a_failure() -> None:
-    tracked = corpus.load_corpus(TRACKED_CORPUS)[0]
+    tracked = corpus.load_corpus(TRACKED_CORPUS)[1]
     valid = corpus.FailureCase(
         case_id="valid-output",
         kind="compact_decode",
@@ -97,7 +97,7 @@ def test_valid_compact_output_is_not_misclassified_as_a_failure() -> None:
 
 
 def test_matching_parent_scope_is_not_misclassified_as_a_rejection() -> None:
-    tracked = corpus.load_corpus(TRACKED_CORPUS)[3]
+    tracked = corpus.load_corpus(TRACKED_CORPUS)[4]
     matching = corpus.FailureCase(
         case_id="matching-parent-scope",
         kind="parent_merge",

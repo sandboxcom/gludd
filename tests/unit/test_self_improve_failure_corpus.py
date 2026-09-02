@@ -14,6 +14,7 @@ import scripts.replay_self_improve_failure_corpus as corpus
 ROOT = Path(__file__).resolve().parents[2]
 TRACKED_CORPUS = ROOT / "config/self-improve/failure-corpus.json"
 EXPECTED_CASES = (
+    "eviction-refused-phantom-proposal",
     "no-op-replace",
     "multiline-redundant-metadata",
     "token-exhaustion",
@@ -143,10 +144,10 @@ def test_cli_emits_deterministic_bounded_case_and_summary_evidence(
     captured = capsys.readouterr()
     lines = captured.out.splitlines()
 
-    assert len([line for line in lines if line.startswith("SELF_IMPROVE_FAILURE_CORPUS_CASE ")]) == 5
+    assert len([line for line in lines if line.startswith("SELF_IMPROVE_FAILURE_CORPUS_CASE ")]) == 6
     assert lines[-1] == (
         'SELF_IMPROVE_FAILURE_CORPUS_SUMMARY '
-        '{"cases":5,"failed":0,"passed":5,"protocol":"self-improve-failure-corpus-v1"}'
+        '{"cases":6,"failed":0,"passed":6,"protocol":"self-improve-failure-corpus-v2"}'
     )
     assert captured.err == ""
 
@@ -156,7 +157,7 @@ def test_cli_emits_deterministic_bounded_case_and_summary_evidence(
     (
         lambda value: value.update({"extra": True}),
         lambda value: value.pop("protocol"),
-        lambda value: value.update({"schema_version": 2}),
+        lambda value: value.update({"schema_version": 3}),
         lambda value: value.update({"protocol": "unknown"}),
         lambda value: value.update({"cases": []}),
         lambda value: value["cases"].append(copy.deepcopy(value["cases"][0])),
@@ -195,7 +196,10 @@ def test_expectation_drift_fails_closed_without_echoing_model_payload(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     value = _raw_fixture()
-    expected = cast("dict[str, object]", _fixture_cases(value)[0]["expected"])
+    no_op_case = next(
+        item for item in _fixture_cases(value) if item["id"] == "no-op-replace"
+    )
+    expected = cast("dict[str, object]", no_op_case["expected"])
     expected["type"] = "wrong_type"
     path = _write_fixture(tmp_path, value)
 

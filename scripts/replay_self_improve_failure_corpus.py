@@ -28,7 +28,7 @@ from general_ludd.self_improve.codex_comparison import (
     merge_proposal_manifests,
 )
 
-_PROTOCOL: Final = "self-improve-failure-corpus-v1"
+_PROTOCOL: Final = "self-improve-failure-corpus-v2"
 _MAX_CORPUS_BYTES: Final = 65_536
 _MAX_CASES: Final = 32
 _MAX_TEXT_BYTES: Final = 8_192
@@ -44,6 +44,7 @@ _EXPECTED_FIELDS: Final = frozenset(
     {"type", "source", "detail", "forbidden_substrings"}
 )
 _INPUT_FIELDS: Final = {
+    "acquisition_trace": frozenset({"events"}),
     "compact_decode": frozenset({"focus_path", "model_output"}),
     "completion_decode": frozenset(
         {"phase", "budget", "require_stop", "worker_response"}
@@ -53,6 +54,46 @@ _INPUT_FIELDS: Final = {
     ),
     "retry_feedback": frozenset({"error"}),
 }
+_TRACE_EVENT_FIELDS: Final = frozenset({"phase", "cause"})
+_TRACE_PHASES: Final = frozenset(
+    {
+        "download_completed",
+        "eviction_completed",
+        "eviction_planned",
+        "eviction_refused",
+        "lease_acquired",
+        "lease_released",
+        "next_attempt_empty",
+        "proposal_error",
+        "terminal_refusal",
+    }
+)
+_ACQUISITION_CAUSE_DETAILS: Final = {
+    "internal": "model acquisition failed internally",
+    "interrupted": "model acquisition was interrupted",
+    "io": "model acquisition failed during bounded I/O",
+    "no_safe_reclaim": "model cache has no safe reclaim candidate",
+    "timeout": "model acquisition exceeded its deadline",
+    "validation": "model acquisition artifact validation failed",
+}
+_COMPLETED_ACQUISITION_TRACE: Final = (
+    "eviction_planned",
+    "eviction_completed",
+    "download_completed",
+    "lease_acquired",
+    "lease_released",
+)
+_TERMINAL_REFUSAL_TRACE: Final = (
+    "eviction_planned",
+    "eviction_refused",
+    "terminal_refusal",
+)
+_PHANTOM_PROPOSAL_TRACE: Final = (
+    "eviction_planned",
+    "eviction_refused",
+    "proposal_error",
+    "next_attempt_empty",
+)
 _CONTRACT: Final = ProposalContract(
     baseline_sha="0" * 40,
     task_id="S83.134",
@@ -111,6 +152,15 @@ class ReplayResult:
     feedback_bytes: int
     worker_succeeded: bool
     parent_stage: str
+
+
+@dataclass(frozen=True)
+class AcquisitionTraceVerdict:
+    """Bounded decision for one synthetic acquisition lifecycle trace."""
+
+    accepted: bool
+    outcome: str
+    feedback: str
 
 
 class CorpusMismatch(ValueError):
@@ -218,7 +268,9 @@ def _validate_inputs(
     kind: str,
     inputs: Mapping[str, object],
 ) -> None:
-    if kind == "compact_decode":
+    if kind == "acquisition_trace":
+        _parse_acquisition_trace(inputs["events"])
+    elif kind == "compact_decode":
         _required_string(inputs["focus_path"], f"{case_id} focus path")
         _required_string(inputs["model_output"], f"{case_id} model output")
     elif kind == "completion_decode":
@@ -243,6 +295,71 @@ def _validate_inputs(
         _required_string(inputs["error"], f"{case_id} error")
 
 
+def _parse_acquisition_trace(value: object) -> tuple[tuple[str, str | None], ...]:
+    if (
+        not isinstance(value, (list, tuple))
+        or not 1 <= len(value) <= 16
+    ):
+        raise ValueError("acquisition trace must contain 1..16 events")
+    parsed: list[tuple[str, str | None]] = []
+    for index, item in enumerate(value):
+        event = _required_object(item, f"acquisition trace event {index}")
+        if set(event) != _TRACE_EVENT_FIELDS:
+            raise ValueError("acquisition trace event fields drifted")
+        phase = _required_string(
+            event["phase"],
+            f"acquisition trace event {index} phase",
+            max_bytes=64,
+        )
+        if phase not in _TRACE_PHASES:
+            raise ValueError("acquisition trace phase is unsupported")
+        cause = event["cause"]
+        if cause is not None and not isinstance(cause, str):
+            raise ValueError("acquisition trace cause must be a string or null")
+        parsed.append((phase, cause))
+    return tuple(parsed)
+
+
+def _typed_acquisition_feedback(cause: str) -> str:
+    try:
+        detail = _ACQUISITION_CAUSE_DETAILS[cause]
+    except KeyError as exc:
+        raise ValueError(
+            "refusal requires a typed safe acquisition cause"
+        ) from exc
+    return (
+        f"protocol={LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.version} "
+        "type=acquisition_refused source=acquisition_trace "
+        f"detail={detail}"
+    )
+
+
+def check_acquisition_trace(
+    events: Sequence[Mapping[str, object]],
+) -> AcquisitionTraceVerdict:
+    """Accept only a complete lease lifecycle or an explicit typed refusal."""
+    parsed = _parse_acquisition_trace(events)
+    phases = tuple(phase for phase, _cause in parsed)
+    causes = tuple(cause for _phase, cause in parsed)
+    if phases == _COMPLETED_ACQUISITION_TRACE:
+        if any(cause is not None for cause in causes):
+            raise ValueError("completed acquisition trace cannot contain a cause")
+        return AcquisitionTraceVerdict(True, "completed", "")
+    if phases not in {_TERMINAL_REFUSAL_TRACE, _PHANTOM_PROPOSAL_TRACE}:
+        raise ValueError("acquisition trace has an unsupported transition")
+    refusal_cause = causes[1]
+    if not isinstance(refusal_cause, str):
+        raise ValueError("refusal requires a typed safe acquisition cause")
+    feedback = _typed_acquisition_feedback(refusal_cause)
+    if phases == _TERMINAL_REFUSAL_TRACE:
+        if causes != (None, refusal_cause, refusal_cause):
+            raise ValueError("refusal requires one matching typed safe acquisition cause")
+        return AcquisitionTraceVerdict(True, "refused", feedback)
+    if causes != (None, refusal_cause, None, None):
+        raise ValueError("refusal requires one matching typed safe acquisition cause")
+    return AcquisitionTraceVerdict(False, "refused", feedback)
+
+
 def load_corpus(path: Path) -> tuple[FailureCase, ...]:
     """Load a strict, bounded, versioned offline failure corpus."""
     if not path.is_file():
@@ -259,7 +376,7 @@ def load_corpus(path: Path) -> tuple[FailureCase, ...]:
     root = _required_object(decoded, "failure corpus")
     if set(root) != _ROOT_FIELDS:
         raise ValueError("failure corpus fields drifted")
-    if root["schema_version"] != 1 or root["protocol"] != _PROTOCOL:
+    if root["schema_version"] != 2 or root["protocol"] != _PROTOCOL:
         raise ValueError("failure corpus protocol is unsupported")
     raw_cases = root["cases"]
     if not isinstance(raw_cases, list) or not 1 <= len(raw_cases) <= _MAX_CASES:
@@ -363,6 +480,18 @@ def _replay_parent_merge(case: FailureCase) -> str:
 
 
 def _actual_feedback(case: FailureCase) -> tuple[str, bool, str]:
+    if case.kind == "acquisition_trace":
+        raw_events = case.inputs["events"]
+        if not isinstance(raw_events, list):
+            raise ValueError("acquisition trace events must be a list")
+        events = cast("list[Mapping[str, object]]", raw_events)
+        verdict = check_acquisition_trace(events)
+        if verdict.accepted:
+            raise CorpusMismatch(
+                case.case_id,
+                "expected_acquisition_rejection_missing",
+            )
+        return verdict.feedback, False, "acquisition"
     if case.kind in {"compact_decode", "completion_decode"}:
         return _replay_gateway_failure(case), False, ""
     if case.kind == "parent_merge":

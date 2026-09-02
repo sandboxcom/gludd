@@ -1,7 +1,28 @@
 {
-  "schema_version": 1,
-  "protocol": "self-improve-failure-corpus-v1",
+  "schema_version": 2,
+  "protocol": "self-improve-failure-corpus-v2",
   "cases": [
+    {
+      "id": "eviction-refused-phantom-proposal",
+      "kind": "acquisition_trace",
+      "input": {
+        "events": [
+          {"phase": "eviction_planned", "cause": null},
+          {"phase": "eviction_refused", "cause": "no_safe_reclaim"},
+          {"phase": "proposal_error", "cause": null},
+          {"phase": "next_attempt_empty", "cause": null}
+        ]
+      },
+      "expected": {
+        "type": "acquisition_refused",
+        "source": "acquisition_trace",
+        "detail": "model cache has no safe reclaim candidate",
+        "forbidden_substrings": [
+          "proposal_error",
+          "next_attempt_empty"
+        ]
+      }
+    },
     {
       "id": "no-op-replace",
       "kind": "compact_decode",

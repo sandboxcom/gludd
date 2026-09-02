@@ -2,8 +2,8 @@
 
 The failure corpus turns expensive local-model incidents into deterministic,
 offline regression cases. It exercises the same compact proposal gateway, batch
-decoder, strict parent merge, and typed retry sanitizer used by the live
-self-improvement flow. It does not load, download, or start a model.
+decoder, strict parent merge, typed retry sanitizer, and a deterministic model
+acquisition state checker. It does not load, download, or start a model.
 
 Run the pinned corpus with an explicit input:
 
@@ -19,6 +19,7 @@ typed result exits 1. Neither failure mode echoes model output or native logs.
 
 | Case | Boundary replayed | Required result |
 | --- | --- | --- |
+| `eviction-refused-phantom-proposal` | Model acquisition state trace | Reject proposal fall-through and retain the typed cache-refusal cause |
 | `no-op-replace` | Compact proposal expansion | Reject identical old and new text |
 | `multiline-redundant-metadata` | Compact proposal expansion | Reject model-owned parent metadata |
 | `token-exhaustion` | Structured completion decode | Classify a length stop as `decode_budget` |
@@ -57,13 +58,44 @@ stderr. That practitioner evidence is recorded in
 The corpus consequently verifies output sanitization instead of assuming native
 logging stays quiet.
 
+## Acquisition trace contract
+
+Corpus schema v2 admits only three exact, bounded acquisition traces:
+
+| Trace | Verdict |
+| --- | --- |
+| `eviction_planned` → `eviction_completed` → `download_completed` → `lease_acquired` → `lease_released` | Accepted completion |
+| `eviction_planned` → `eviction_refused` → `terminal_refusal` | Accepted terminal refusal when both refusal events carry the same allowlisted cause |
+| `eviction_planned` → `eviction_refused` → `proposal_error` → `next_attempt_empty` | Rejected phantom proposal; publish only the fixed detail selected by the typed acquisition cause |
+
+Every completion event carries a null cause. A refusal cause is an allowlisted
+token such as `no_safe_reclaim`, `timeout`, or `validation`; it maps to a fixed
+operator-safe detail. Arbitrary strings, filesystem paths, exception messages,
+missing causes, mismatched causes, skipped lease/release transitions, and every
+other ordering fail closed. Consequently, a failed eviction cannot be
+misreported as model output failure and cannot silently create an empty retry.
+
+This state model follows the maintained
+[Hugging Face cache reference](https://huggingface.co/docs/huggingface_hub/en/package_reference/cache),
+which exposes revision scan and deletion strategies as explicit operations, and
+the official [cache management guide](https://huggingface.co/docs/huggingface_hub/guides/manage-cache),
+which treats cache removal as a deliberate lifecycle step. Practitioner reports
+show why the refusal path must remain explicit: a January 2023
+[Hugging Face forum report](https://discuss.huggingface.co/t/huggingface-hub-filled-my-c-disk-where-are-the-files/30354)
+describes the Hub cache filling a system disk, while a July 2023
+[forum discussion](https://discuss.huggingface.co/t/how-to-sync-to-the-latest-version-with-snapshot-download-old-files-removed/47406)
+documents old snapshot revisions remaining after newer downloads. Those
+long-lived operational reports inform the bounded trace checker; they are not
+treated as normative API documentation.
+
 ## Zero-downtime and lifecycle boundary
 
 This is a zero-downtime check: it does not mutate application state, contact the
 network, acquire a model lease, create a daemon, touch the database, or change a
-Git worktree. Each gateway replay uses a uniquely namespaced temporary
-directory, and Python's temporary-directory context removes it on every normal
-or exceptional exit. The fixture chat object lives only in memory.
+Git worktree. Acquisition events are synthetic JSON objects. Each gateway
+replay uses a uniquely namespaced temporary directory, and Python's
+temporary-directory context removes it on every normal or exceptional exit.
+The fixture chat object lives only in memory.
 
 The offline target complements rather than replaces live acceptance. Live tests
 still prove acquisition, llama.cpp compatibility, model quality, process
