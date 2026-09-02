@@ -105,9 +105,8 @@ _COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["o", "p", "a", "z"],
+                "required": ["p", "a", "z"],
                 "properties": {
-                    "o": {"type": "string", "enum": ["r", "c", "d"]},
                     "p": {"type": "string"},
                     "a": {"type": "string"},
                     "z": {"type": "string"},
@@ -120,9 +119,10 @@ _COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
 _COMPACT_SYSTEM_PROMPT = (
     "Return exactly one compact JSON object and no prose. "
     "e is the edit array and c is the one-line commit message. "
-    "For each edit, o is r (replace), c (create), or d (delete); "
-    "p is the repository path; a is exact old text; z is new text. "
-    "Use the shortest unique exact replacement and never reproduce a whole file."
+    "For each edit, p is the repository path, a is exact old text, and z is new text. "
+    "Empty a creates, empty z deletes, otherwise replace; a and z cannot both be empty. "
+    "Never emit o or another operation field. Use the shortest unique exact replacement "
+    "and never reproduce a whole file."
 )
 
 
@@ -842,20 +842,28 @@ def _decode_compact_proposal(
     edits_raw = value["e"]
     if not isinstance(edits_raw, list) or not 1 <= len(edits_raw) <= 16:
         raise ValueError("compact proposal edits must contain 1..16 entries")
-    operations = {"r": "replace", "c": "create", "d": "delete"}
     edits: list[dict[str, object]] = []
     for item in edits_raw:
-        if not isinstance(item, dict) or set(item) != {"o", "p", "a", "z"}:
-            raise ValueError("each compact edit must contain exactly o, p, a, and z")
-        operation = item["o"]
-        if not isinstance(operation, str) or operation not in operations:
-            raise ValueError("compact edit operation must be r, c, or d")
+        if not isinstance(item, dict) or set(item) != {"p", "a", "z"}:
+            raise ValueError("each compact edit must contain exactly p, a, and z")
+        old_text = item["a"]
+        new_text = item["z"]
+        if not isinstance(old_text, str) or not isinstance(new_text, str):
+            raise ValueError("compact edit text fields must be strings")
+        if not old_text and not new_text:
+            raise ValueError("compact edit must change content")
+        if not old_text:
+            operation = "create"
+        elif not new_text:
+            operation = "delete"
+        else:
+            operation = "replace"
         edits.append(
             {
-                "operation": operations[operation],
+                "operation": operation,
                 "path": item["p"],
-                "old_text": item["a"],
-                "new_text": item["z"],
+                "old_text": old_text,
+                "new_text": new_text,
             }
         )
     expanded = json.dumps(

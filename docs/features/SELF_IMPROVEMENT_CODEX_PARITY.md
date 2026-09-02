@@ -75,12 +75,15 @@ A schema is supplied through `response_format`, not merely
 proposal fields. Managed `PromptPlan` requests put immutable
 `baseline_sha`, `task_id`, tests, and Make commands in a separate atomic
 0600 `contract.json` file. The model emits only compact `e` (edits) and
-`c` (commit subject) fields; each edit uses `o/p/a/z` for operation, path,
-old text, and new text. The worker expands those keys with the trusted contract
-and then calls `ProposalManifest.from_json`, so output compaction does not
-make model text authoritative. Legacy single-string callers retain the complete
-manifest schema. The prompt names the compact shape because llama.cpp documents
-that a schema constrains sampling but is not injected into the model prompt.
+`c` (commit subject) fields; each edit uses `p/a/z` for path, old text, and
+new text. Operation is not model-supplied: the worker deterministically infers
+create from empty/non-empty text, delete from non-empty/empty text, and replace
+from non-empty/non-empty text. Both-empty edits and any extra operation field
+are rejected. The worker expands those keys with the trusted contract and then
+calls `ProposalManifest.from_json`, so output compaction does not make model
+text authoritative. Legacy single-string callers retain the complete manifest
+schema. The prompt names the compact shape because llama.cpp documents that a
+schema constrains sampling but is not injected into the model prompt.
 
 Grammar acceptance is not promotion evidence. Gludd checks that the 32-token
 canary and each compact proposal finish with `stop`, parses one complete object,
@@ -99,8 +102,14 @@ bound: Metal-enabled Qwen2.5-Coder-0.5B and DeepSeek-Coder-1.3B ran for 176.62
 and 154.80 seconds respectively before both consumed 4,096 tokens without
 closing the proposal. Trusted-field elision plus the shorter budget gives a
 minimal exact edit room to finish while rejecting the same runaway behavior in
-at most 37.5% of its former decode budget. The canary rejects unsupported chat
-or grammar behavior before reading a task-sized completion.
+at most 37.5% of its former decode budget. A follow-up managed acceptance showed
+why operation inference must also have one authority: Qwen1.5B finished with
+`stop` after 1,142 tokens and 47.31 seconds but labeled a non-empty old/new
+pair as create, while SmolLM2 finished after 135 tokens and 14.62 seconds but
+labeled an empty/non-empty pair as delete. Removing that redundant label makes
+both shapes unambiguous without weakening the authoritative manifest validator.
+The canary rejects unsupported chat or grammar behavior before reading a
+task-sized completion.
 
 Grammar construction and inference remain inside the owned proposal worker. The
 model factory runs once after request admission. Each shard then invokes the
