@@ -117,6 +117,84 @@ quota-account, or evict it. The caller retains storage ownership. Automatic
 reclaim considers only cache entries whose valid Gludd manifest proves ownership,
 and it never deletes the ambient Hugging Face cache or an arbitrary directory.
 
+## Catalog admission and Hub authentication resilience
+
+A catalog name is discovery input, not proof that a public repository, requested
+file, or immutable revision exists. The eight configured coding artifacts were
+audited against the public Hub on 2026-09-02. Six configured repository/file
+pairs resolved:
+
+- `bartowski/Qwen2.5-Coder-0.5B-Instruct-GGUF` /
+  `Qwen2.5-Coder-0.5B-Instruct-Q4_K_M.gguf`: `main` resolved to
+  [`69a2c192eed24297fb09a34d8ba948b8624cc3e2`](https://huggingface.co/bartowski/Qwen2.5-Coder-0.5B-Instruct-GGUF/commit/69a2c192eed24297fb09a34d8ba948b8624cc3e2).
+- `bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF` /
+  `Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf`: `main` resolved to
+  [`1af47f78b1f9b0c242fabe43f7a365d5a67f3207`](https://huggingface.co/bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF/commit/1af47f78b1f9b0c242fabe43f7a365d5a67f3207).
+- `TheBloke/CodeLlama-7B-Instruct-GGUF` /
+  `codellama-7b-instruct.Q4_K_M.gguf`: `main` resolved to
+  [`2f064ee0c6ae3f025ec4e392c6ba5dd049c77969`](https://huggingface.co/TheBloke/CodeLlama-7B-Instruct-GGUF/commit/2f064ee0c6ae3f025ec4e392c6ba5dd049c77969).
+- `bartowski/Qwen2.5-Coder-3B-Instruct-GGUF` /
+  `Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf`: `main` resolved to
+  [`7c137640ef0332dfedb229f2504c58d83ed4307a`](https://huggingface.co/bartowski/Qwen2.5-Coder-3B-Instruct-GGUF/commit/7c137640ef0332dfedb229f2504c58d83ed4307a).
+- `bartowski/Phi-3-mini-4k-instruct-GGUF` /
+  `Phi-3-mini-4k-instruct-Q4_K_M.gguf`: `main` resolved to
+  [`e1447f6da0be91f91683c5d19f938d4f51122d88`](https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/commit/e1447f6da0be91f91683c5d19f938d4f51122d88).
+- `bartowski/SmolLM2-1.7B-Instruct-GGUF` /
+  `SmolLM2-1.7B-Instruct-Q4_K_M.gguf`: `main` resolved to
+  [`1f03464768bfcc0319fc50da8ff5fb20b6417ba2`](https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/commit/1f03464768bfcc0319fc50da8ff5fb20b6417ba2).
+
+Two configured repository IDs could not be resolved as public repositories by
+direct lookup or Hub model search during that audit. Exact public artifacts that
+currently resolve are available, but changing publisher or artifact identity is
+a reviewed catalog migration rather than an automatic fallback:
+
+- `bartowski/DeepSeek-Coder-1.3B-Instruct-GGUF` /
+  `DeepSeek-Coder-1.3B-Instruct-Q4_K_M.gguf` was unresolved. The verified
+  replacement is
+  [`TheBloke/deepseek-coder-1.3b-instruct-GGUF`](https://huggingface.co/TheBloke/deepseek-coder-1.3b-instruct-GGUF/tree/main)
+  / `deepseek-coder-1.3b-instruct.Q4_K_M.gguf`, whose `main` resolved to
+  [`4595af8c3dff738094bd6c86054dfb5a90d5c41e`](https://huggingface.co/TheBloke/deepseek-coder-1.3b-instruct-GGUF/commit/4595af8c3dff738094bd6c86054dfb5a90d5c41e).
+- `bartowski/StarCoder2-3B-Instruct-GGUF` /
+  `StarCoder2-3B-Instruct-Q4_K_M.gguf` was unresolved. The verified
+  replacement is
+  [`QuantFactory/starcoder2-3b-instruct-GGUF`](https://huggingface.co/QuantFactory/starcoder2-3b-instruct-GGUF/tree/main)
+  / `starcoder2-3b-instruct.Q4_K_M.gguf`, whose `main` resolved to
+  [`6eb3cec2979e1e2275e14dc07032a4f69af78aaa`](https://huggingface.co/QuantFactory/starcoder2-3b-instruct-GGUF/commit/6eb3cec2979e1e2275e14dc07032a4f69af78aaa).
+
+These `main` values are dated observations, not durable identities. Admission
+must resolve the selected repository and exact filename to a full commit, then
+bind that immutable revision and the downloaded digest in Gludd's ownership
+manifest. An unresolved configured entry is discarded before model-byte
+transfer; Gludd must not silently substitute a search result because publisher,
+license, quantization, and trust identity may differ.
+
+Authentication failure is also not sufficient evidence that a catalog entry is
+private. Hugging Face sends a locally saved token by default even for requests
+that do not require authentication, and its repository-not-found exception uses
+the same 401 response for an invalid repository and an inaccessible private
+repository. For a catalog entry explicitly declared public, one authenticated
+metadata 401 may therefore be followed by exactly one anonymous metadata probe.
+That retry must use the same repository and filename. It is forbidden for a
+gated or private entry, and failure of both probes leaves the candidate
+ineligible. This bounded retry never authorizes an arbitrary replacement or a
+download before identity validation.
+
+Offline reuse is narrower still. A previously admitted artifact may be used
+without resolving mutable `main` only when Gludd's durable ownership manifest
+already binds the exact immutable revision, contained path, size, and digest and
+all are revalidated. A Hub `refs` entry, partial snapshot, or ambient shared
+cache alone is not ownership evidence. An offline cache miss or validation
+failure stops before a worker starts.
+
+Catalog correction follows a zero-downtime handoff. Gludd retains the leased
+current artifact while a reviewed replacement is resolved, downloaded, hashed,
+and durably admitted; selection changes only after validation. Failure leaves
+the old admitted revision usable. Rollback restores the prior catalog selection,
+and reclamation cannot remove either revision until its final lease ends. Each
+candidate consumes at most one normal metadata probe and one anonymous retry,
+does not start an inference process while ineligible, and transfers no model
+bytes until repository, filename, and revision admission succeeds.
+
 ## Measured historical comparison
 
 The small fixture uses baseline
@@ -236,6 +314,17 @@ Official sources:
   explains shared blob and snapshot storage, revision-aware deletion, and
   incomplete downloads. Gludd uses the supported revision graph but narrows it
   further with application ownership and live leases.
+- [Hugging Face authentication quickstart](https://huggingface.co/docs/huggingface_hub/en/quick-start#authentication)
+  documents that a saved token is sent by default even for requests that do not
+  require authentication, and that `HF_HUB_DISABLE_IMPLICIT_TOKEN=1` disables
+  that implicit credential.
+- [Hugging Face Hub error definitions](https://github.com/huggingface/huggingface_hub/blob/main/src/huggingface_hub/errors.py)
+  document that `RepositoryNotFoundError` covers both an invalid repository
+  identifier and an inaccessible private repository, with a 401 response in the
+  example. Gludd therefore does not infer privacy from status alone.
+- The dated repository, artifact, and immutable commit links in the catalog
+  admission section are direct Hugging Face Hub evidence for every resolving
+  configured artifact and both reviewed replacement candidates.
 
 Practitioner evidence:
 
@@ -261,6 +350,18 @@ Practitioner evidence:
   consuming about 915 MiB was omitted while the listing reported only 416.3 KiB.
   Independent filesystem headroom and fail-closed metadata handling cover that
   class of accounting gap.
+- [huggingface_hub issue 3445](https://github.com/huggingface/huggingface_hub/issues/3445)
+  reproduces a 401 for public `Qwen/Qwen2.5-Coder-7B-Instruct` metadata when an
+  empty token is supplied, while the anonymous path works. This is direct
+  evidence for a same-identity, one-shot anonymous metadata probe.
+- [Hugging Face forum thread 19714](https://discuss.huggingface.co/t/error-401-client-error-unauthorized-for-url/19714)
+  has collected reports since June 2022 of 401 responses for private, gated,
+  misspelled, and browser-readable public artifacts. The long-lived ambiguity is
+  why status code alone cannot drive catalog mutation.
+- [huggingface_hub issue 1305](https://github.com/huggingface/huggingface_hub/issues/1305)
+  records a missing cache reference surfacing as `FileNotFoundError` in 2023.
+  Gludd consequently requires its own complete immutable manifest and fails
+  closed on an offline cache miss instead of treating cache presence as enough.
 
 The operational consequence is fail-closed validation, bounded raw-output
 diagnostics, isolated native inference, deterministic tool routing, and
