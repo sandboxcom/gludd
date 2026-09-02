@@ -33,12 +33,23 @@ agent.
 
 ## Local inference lifecycle
 
-Local GGUF inference runs in a dedicated Make worker with a parent-owned process
-group. Prompt and proposal files live in a unique temporary exchange directory;
-inputs reject symlinks, output is written with fsync plus atomic replacement, and
-the parent always removes the exchange. The parent streams output and emits a
-15-second heartbeat. Timeout or a native exit such as 139 becomes bounded
-evidence and cannot terminate the comparison orchestrator.
+Local GGUF inference runs in one dedicated Make worker per candidate attempt,
+with a parent-owned process group. One digest-bound request carries every ordered
+`PromptPlan` shard. The worker constructs one `LocalProposalGateway`; that
+gateway lazily constructs one public `Llama` instance and uses it for every
+sequential shard. The immutable prefix is byte-identical and ordered, allowing
+the pinned `Llama.generate` path to reuse its live in-memory longest token
+prefix. Correctness does not require a cache hit: each complete prompt is
+independently schema-constrained and parsed. Gludd configures neither a
+`LlamaRAMCache` nor disk cache and starts no daemon or server.
+
+Prompt and proposal files live in one unique temporary exchange directory.
+Inputs reject symlinks, output is written with fsync plus atomic replacement only
+after every shard succeeds, and the parent always removes the exchange. The
+parent streams output and emits a 15-second heartbeat. Start failure, body
+failure, cancellation, timeout, or a native exit such as 139 becomes bounded
+evidence, reaps the owned process group when one exists, and cannot terminate the
+comparison orchestrator.
 
 The llama.cpp JSON grammar deliberately omits `minLength` and `maxLength`.
 Those keywords caused a native grammar-expansion crash with the one-megabyte
@@ -74,13 +85,16 @@ record that bounded failure against the immutable model identity before trying
 a different eligible candidate; it must not silently retry unconstrained output
 or weaken required fields.
 
-Grammar construction and inference remain inside the owned proposal worker. A
-converter exception, native crash, cancellation, or timeout therefore tears down
-the same process group, exchange directory, and model lease as any other failed
-attempt. The bounded schema is compiled once per worker invocation; it does not
-start a persistent llama.cpp server or add another cache owner. Decode tokens,
-context, elapsed time, proposal bytes, and diagnostic tails retain their existing
-limits.
+Grammar construction and inference remain inside the owned proposal worker. The
+model factory runs once after request admission. Each shard then invokes the
+documented `create_chat_completion` method on that same live model and validates
+one `ProposalManifest` before it can join the batch. A converter exception,
+native crash, cancellation, or timeout therefore tears down the same process
+group, exchange directory, and model lease as any other failed attempt. The
+parent applies one 300-second deadline to the complete candidate attempt; no
+partial batch is published. The retained worker does not start a persistent
+llama.cpp server or add another cache owner. Per-shard decode tokens, context,
+proposal bytes, and diagnostic tails retain their existing limits.
 
 This change is zero-downtime because it changes only an isolated, unpromoted
 candidate path. It has no daemon or database migration and cannot interrupt a
@@ -99,10 +113,10 @@ The vendored llama.cpp C interface at commit `af6528e6d` defines the same
 contract: context parameter `n_ctx` is text context and zero means "from
 model." Model-native therefore means the training-context value encoded in the
 GGUF metadata. It does not mean unlimited context or a context automatically
-sized to current memory headroom. The current proposal gateway explicitly
-requests 32,768 tokens; replacing that value with zero would be a
-candidate-specific capacity change, because each GGUF may advertise a smaller
-or much larger `n_ctx_train`.
+sized to current memory headroom. The proposal gateway requests `n_ctx=0`, so its effective context is the
+candidate GGUF's own `n_ctx_train` value. Each candidate may advertise a
+smaller or much larger context, so admission must use the loaded context rather
+than a catalog assumption.
 
 The acceptance boundary is the effective context reported by the created
 context, not the input byte limit. Gludd must tokenize the fully rendered chat
@@ -162,9 +176,10 @@ missing, duplicate, broadened, wrong-baseline, wrong-task, wrong-test, or
 reordered-command output through the original strict `ProposalManifest`
 parser before candidate worktree creation. The immutable task, baseline, global
 paths, tests, and commands precede a named shard-specific suffix, so every
-inference shares a long byte-identical prefix. That layout is ready for
-llama.cpp KV-prefix reuse when the owned worker lifecycle retains one model
-instance across the sequential shard requests.
+inference shares a long byte-identical prefix. The single retained model receives
+those prompts in canonical order, enabling the pinned runtime's live longest-
+prefix reuse without another cache owner. Tests pin exact prefix bytes and order;
+correctness and promotion never depend on a measured cache hit.
 
 Each plan publishes a lowercase SHA-256 protocol digest over canonical JSON
 containing its protocol version, ordered shard focus paths, exact prompts, and
@@ -182,11 +197,15 @@ baseline and the attempt fails closed. It never silently guesses omitted patch
 text. The model candidate preflight uses the largest individual rendered shard,
 not the old aggregate/truncated prompt.
 
-Shards execute sequentially under one acquired-model lease, so the process does
-not multiply resident model workers. Each shard retains the 300-second owned
-worker boundary, live heartbeat, bounded exchange, and automatic temporary-file
-cleanup. Failure stops the remaining shards; the enclosing `finally` releases
-the lease. No persistent llama.cpp server is introduced.
+Shards execute sequentially under one acquired-model lease, inside one
+parent-owned worker process and one total 300-second candidate-attempt deadline,
+so neither model instances nor resident workers multiply with shard count. One
+live heartbeat covers the attempt. Start failure removes the exchange; body
+failure, timeout, or cancellation also terminates and reaps the worker process
+group. The worker publishes one atomic batch only after every shard validates.
+Failure stops all remaining shards, leaves no stale exchange or proposal file,
+and the enclosing `finally` releases the lease. No persistent llama.cpp server
+is introduced.
 
 The production llama-cpp-python constructor now asks that exact loaded runtime's
 `llama_supports_gpu_offload()` function before setting `n_gpu_layers`. A
@@ -201,9 +220,9 @@ resource guidance rather than assuming accelerator capacity.
 
 The change is zero-downtime. Prompt planning and inference occur only in an
 unpromoted isolated worktree, with no daemon-state or database migration.
-Rollback restores the previous runner/comparison commit; an in-flight worker is
-terminated by its existing owner, its exchange is removed, and the admitted
-model artifact remains valid for later lease-governed use.
+Rollback restores the previous runner/comparison commit; the parent terminates
+and reaps an in-flight retained worker, removes its sole exchange, and leaves the
+admitted model artifact valid for later lease-governed use.
 
 ## Automatic model acquisition and ownership
 
@@ -378,9 +397,11 @@ harness cleanup compensates for missing application ownership.
 - 32 edits, 64 tests, 32 Make commands, and 1 MiB of proposal edit text.
 - 12,000-byte base prompt shards, at most three focus paths per shard, a
   16,384-byte hard retry boundary, 4,096 bytes of exact context per file, and a
-  2 MiB input-file admission bound.
-- 4,096 decode tokens and a 300-second owned worker timeout per sequential
-  shard; the strict merged proposal remains roughly 1.25 MiB at most.
+  262,144-byte total request admission bound.
+- One owned worker and one lazily constructed `Llama` instance per candidate
+  attempt; shards execute sequentially with no daemon, server, or explicit cache.
+- 4,096 decode tokens per shard and one 300-second total owned worker timeout per
+  candidate attempt; the strict merged proposal remains roughly 1.25 MiB at most.
 - 2 MiB observable command capture with 15-second heartbeats.
 - 128 Codex-reference files.
 - One candidate worktree per attempt; commands stop after the first failure.
@@ -424,7 +445,13 @@ Official sources:
   [versioned `Llama` source](https://github.com/abetlen/llama-cpp-python/blob/26633bd1a2eaf7fd0567cc5eaec8b0165a7ea0bd/llama_cpp/llama.py)
   resolves `n_ctx=0` through `LlamaModel.n_ctx_train()`; the maintained
   [API reference](https://llama-cpp-python.readthedocs.io/en/latest/api-reference/#llama_cpp.Llama)
-  describes zero as selecting context from the model. The versioned
+  describes zero as selecting context from the model. The same versioned
+  `Llama.generate` implementation compares the next tokenized prompt with its
+  live input IDs, preserves the longest matching prefix, removes only the
+  divergent tail from the context sequence, and evaluates the suffix. Gludd
+  reaches that behavior through the public `Llama` object and
+  `create_chat_completion`; it does not call private KV-state helpers. The
+  versioned
   [low-level binding](https://github.com/abetlen/llama-cpp-python/blob/26633bd1a2eaf7fd0567cc5eaec8b0165a7ea0bd/llama_cpp/llama_cpp.py)
   exposes `llama_supports_gpu_offload()`; Gludd queries that binding instead
   of inferring support from an unrelated framework. The
@@ -504,6 +531,15 @@ Practitioner evidence:
   March 2023. Participants reported multi-minute reprocessing when a prompt
   prefix changes, so immutable small shards are preferable to repeatedly
   decoding a monolithic 52 KiB prompt.
+- [llama-cpp-python issue 1369](https://github.com/abetlen/llama-cpp-python/issues/1369)
+  records a 2024 prefix-cache miss caused by token-boundary differences near a
+  changing prompt suffix. Gludd pins byte-identical complete prefixes and
+  deterministic order, but it never makes correctness depend on reuse or claims
+  a latency hit without measurement.
+- [llama.cpp discussion 1394](https://github.com/ggml-org/llama.cpp/discussions/1394)
+  records long-lived practitioner complexity around shifting and reusing KV
+  state. Gludd avoids direct KV manipulation and owns only the public model
+  lifetime within its bounded worker.
 - [llama.cpp discussion 8652](https://github.com/ggml-org/llama.cpp/discussions/8652)
   is a July 2024 unanswered practitioner report of CPU responses slowing as
   prompt context grows despite smaller configured contexts. The unresolved

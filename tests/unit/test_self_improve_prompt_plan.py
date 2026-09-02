@@ -19,6 +19,8 @@ from general_ludd.self_improve.codex_comparison import (
     CodexReference,
     ComparisonResult,
     ProposalManifest,
+    decode_prompt_batch,
+    encode_proposal_batch,
     merge_proposal_manifests,
 )
 
@@ -300,26 +302,32 @@ def test_shard_merger_rejects_invalid_focus_partition(
         )
 
 
-def test_local_plan_runs_bounded_shards_then_merges_once(tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_local_plan_runs_one_retained_worker_then_merges_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _large_fixture(tmp_path)
     plan = build_prompt(_task(), _reference(), tmp_path)
     model = tmp_path / "model.gguf"
     model.write_bytes(b"GGUF")
     calls: list[str] = []
-    def propose(_runner: object, _model: Path, prompt: str) -> ProposalManifest:
-        calls.append(prompt)
-        return _manifest(plan.shards[len(calls) - 1].focus_paths)
-    monkeypatch.setattr(runner_module, "generate_local_proposal", propose)
+
+    def propose(_runner: object, _model: Path, request: str) -> str:
+        calls.append(request)
+        return encode_proposal_batch(
+            tuple(_manifest(shard.focus_paths) for shard in plan.shards),
+            protocol_digest=plan.protocol_digest,
+        )
+
+    monkeypatch.setattr(runner_module, "_run_local_proposal_request", propose)
     proposal = generate_local_proposal_plan(
         runner_module.MakeRunner(tmp_path), model, plan, _task(), _reference()
     )
-    assert len(calls) == len(plan.shards)
+    prompts, digest = decode_prompt_batch(calls[0])
+    assert len(calls) == 1
+    assert prompts == tuple(shard.prompt for shard in plan.shards)
+    assert digest == plan.protocol_digest
     assert {edit.path for edit in proposal.edits} == set(_PATHS)
-    output = capsys.readouterr().out
-    assert output.count("SELF_IMPROVE_PROMPT_SHARD_START") == len(plan.shards)
-    assert output.count("SELF_IMPROVE_PROMPT_SHARD_END") == len(plan.shards)
-    assert output.count(f"protocol_digest={plan.protocol_digest}") == len(plan.shards)
 
 def test_retry_plan_redacts_and_bounds_diagnostics_without_identity_drift(tmp_path: Path) -> None:
     _large_fixture(tmp_path)

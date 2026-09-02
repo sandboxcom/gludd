@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Protocol, cast
@@ -19,6 +19,13 @@ _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _TASK_RE = re.compile(r"^S[0-9]+(?:\.[0-9]+)?$")
 _SHELL_METACHARACTERS = frozenset(";|&$()<>\n\r")
 _SECRET_ASSIGNMENT_RE = re.compile(r"(?i)\b(token|psk|password|secret)=([^\s]+)")
+_PROMPT_BATCH_MARKER = "GLUDD_SELF_IMPROVE_PROMPT_BATCH_V1\n"
+_PROMPT_BATCH_PROTOCOL = "self-improve-local-prompt-batch-v1"
+_PROPOSAL_BATCH_PROTOCOL = "self-improve-local-proposal-batch-v1"
+_MAX_PROMPT_BATCH_SHARDS = 32
+_MAX_PROMPT_BATCH_BYTES = 262_144
+_MAX_PROMPT_SHARD_BYTES = 16_384
+_PROTOCOL_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 _PROPOSAL_JSON_SCHEMA: dict[str, object] = {
@@ -299,6 +306,134 @@ class ProposalManifest:
             candidate = (canonical_root / path).resolve(strict=False)
             if not candidate.is_relative_to(canonical_root):
                 raise ValueError(f"proposal path escapes repository root: {path}")
+
+
+def encode_prompt_batch(
+    prompts: Sequence[str],
+    *,
+    protocol_digest: str,
+) -> str:
+    """Serialize bounded ordered prompts for one retained local worker."""
+    if isinstance(prompts, (str, bytes)) or not 1 <= len(prompts) <= _MAX_PROMPT_BATCH_SHARDS:
+        raise ValueError(
+            f"prompt batch must contain 1..{_MAX_PROMPT_BATCH_SHARDS} prompts"
+        )
+    if _PROTOCOL_DIGEST_RE.fullmatch(protocol_digest) is None:
+        raise ValueError("prompt batch protocol digest must be lowercase SHA-256")
+    normalized: list[str] = []
+    for prompt in prompts:
+        if (
+            not isinstance(prompt, str)
+            or not prompt.strip()
+            or len(prompt.encode("utf-8")) > _MAX_PROMPT_SHARD_BYTES
+        ):
+            raise ValueError(
+                f"each prompt batch item must contain 1..{_MAX_PROMPT_SHARD_BYTES} bytes"
+            )
+        normalized.append(prompt)
+    payload = json.dumps(
+        {
+            "protocol": _PROMPT_BATCH_PROTOCOL,
+            "protocol_digest": protocol_digest,
+            "prompts": normalized,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    serialized = _PROMPT_BATCH_MARKER + payload
+    if len(serialized.encode("utf-8")) > _MAX_PROMPT_BATCH_BYTES:
+        raise ValueError(f"prompt batch exceeds {_MAX_PROMPT_BATCH_BYTES} bytes")
+    return serialized
+
+
+def decode_prompt_batch(raw: str) -> tuple[tuple[str, ...], str | None]:
+    """Parse a batch request, or preserve a legacy single-string request."""
+    if not raw.startswith(_PROMPT_BATCH_MARKER):
+        return (raw,), None
+    try:
+        value = json.loads(raw.removeprefix(_PROMPT_BATCH_MARKER))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError(f"prompt batch is not valid JSON: {exc}") from exc
+    required = {"protocol", "protocol_digest", "prompts"}
+    if not isinstance(value, dict) or set(value) != required:
+        raise ValueError("prompt batch must contain exactly protocol, digest, and prompts")
+    if value["protocol"] != _PROMPT_BATCH_PROTOCOL:
+        raise ValueError("prompt batch protocol is unsupported")
+    prompts = value["prompts"]
+    digest = value["protocol_digest"]
+    if not isinstance(prompts, list) or not isinstance(digest, str):
+        raise ValueError("prompt batch prompts and protocol digest have invalid types")
+    normalized = tuple(prompts)
+    encode_prompt_batch(normalized, protocol_digest=digest)
+    return normalized, digest
+
+
+def encode_proposal_batch(
+    manifests: Sequence[ProposalManifest],
+    *,
+    protocol_digest: str,
+) -> str:
+    """Serialize independently validated shard proposals as one batch result."""
+    if (
+        isinstance(manifests, (str, bytes))
+        or not 1 <= len(manifests) <= _MAX_PROMPT_BATCH_SHARDS
+        or any(not isinstance(manifest, ProposalManifest) for manifest in manifests)
+    ):
+        raise ValueError(
+            f"proposal batch must contain 1..{_MAX_PROMPT_BATCH_SHARDS} manifests"
+        )
+    if _PROTOCOL_DIGEST_RE.fullmatch(protocol_digest) is None:
+        raise ValueError("proposal batch protocol digest must be lowercase SHA-256")
+    return json.dumps(
+        {
+            "protocol": _PROPOSAL_BATCH_PROTOCOL,
+            "protocol_digest": protocol_digest,
+            "proposals": [json.loads(manifest.to_json()) for manifest in manifests],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def decode_proposal_batch(
+    raw: str,
+    *,
+    expected_protocol_digest: str,
+    expected_count: int,
+) -> tuple[ProposalManifest, ...]:
+    """Validate a retained worker response before the strict parent merge."""
+    if (
+        isinstance(expected_count, bool)
+        or not isinstance(expected_count, int)
+        or not 1 <= expected_count <= _MAX_PROMPT_BATCH_SHARDS
+    ):
+        raise ValueError("expected proposal count is outside the batch bound")
+    if _PROTOCOL_DIGEST_RE.fullmatch(expected_protocol_digest) is None:
+        raise ValueError("expected proposal protocol digest must be lowercase SHA-256")
+    try:
+        value = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError(f"proposal batch is not valid JSON: {exc}") from exc
+    required = {"protocol", "protocol_digest", "proposals"}
+    if not isinstance(value, dict) or set(value) != required:
+        raise ValueError(
+            "proposal batch must contain exactly protocol, digest, and proposals"
+        )
+    if value["protocol"] != _PROPOSAL_BATCH_PROTOCOL:
+        raise ValueError("proposal batch protocol is unsupported")
+    if value["protocol_digest"] != expected_protocol_digest:
+        raise ValueError("proposal batch protocol identity drifted")
+    proposals = value["proposals"]
+    if not isinstance(proposals, list) or len(proposals) != expected_count:
+        raise ValueError("proposal batch count does not match the prompt plan")
+    return tuple(
+        ProposalManifest.from_json(
+            json.dumps(item, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        )
+        for item in proposals
+    )
 
 
 def merge_proposal_manifests(

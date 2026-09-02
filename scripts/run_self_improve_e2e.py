@@ -30,6 +30,8 @@ from general_ludd.self_improve.codex_comparison import (
     ProposalManifest,
     build_retry_prompt,
     compare_with_codex,
+    decode_proposal_batch,
+    encode_prompt_batch,
     merge_proposal_manifests,
 )
 from general_ludd.self_improve.model_candidate_planner import (
@@ -392,13 +394,14 @@ class MakeRunner:
         if proc.stdout is None:
             _terminate_process_group(proc)
             raise RuntimeError("Make command did not expose an output stream")
-        selector = selectors.DefaultSelector()
-        selector.register(proc.stdout, selectors.EVENT_READ)
+        selector: selectors.BaseSelector | None = None
         captured: list[str] = []
         captured_bytes = 0
-        next_heartbeat = time.monotonic() + _HEARTBEAT_SECONDS
         timed_out = False
         try:
+            next_heartbeat = time.monotonic() + _HEARTBEAT_SECONDS
+            selector = selectors.DefaultSelector()
+            selector.register(proc.stdout, selectors.EVENT_READ)
             while True:
                 now = time.monotonic()
                 if now - started > timeout:
@@ -433,9 +436,15 @@ class MakeRunner:
                         flush=True,
                     )
                     next_heartbeat = now + _HEARTBEAT_SECONDS
+        except BaseException:
+            _terminate_process_group(proc)
+            raise
         finally:
-            selector.close()
-            proc.stdout.close()
+            try:
+                if selector is not None:
+                    selector.close()
+            finally:
+                proc.stdout.close()
         returncode = 124 if timed_out else int(proc.returncode or 0)
         result = MakeResult(
             argv=tuple(argv),
@@ -453,24 +462,26 @@ class MakeRunner:
         return result
 
 
-def generate_local_proposal(
+def _run_local_proposal_request(
     runner: _ObservableRunner,
     model_path: Path,
-    prompt: str,
-) -> ProposalManifest:
-    """Generate one proposal through an isolated, parent-owned Make worker."""
+    request: str,
+) -> str:
+    """Run one bounded request through one isolated parent-owned Make worker."""
     if not model_path.is_file():
         raise FileNotFoundError(f"local GGUF is not readable: {model_path}")
-    if not prompt.strip() or len(prompt.encode("utf-8")) > _MAX_TASK_BYTES:
+    if not request.strip() or len(request.encode("utf-8")) > _MAX_TASK_BYTES:
         raise ValueError(f"proposal prompt must contain 1..{_MAX_TASK_BYTES} bytes")
 
-    with tempfile.TemporaryDirectory(prefix="gludd-self-improve-proposal-") as raw_exchange:
+    with tempfile.TemporaryDirectory(
+        prefix="gludd-self-improve-proposal-"
+    ) as raw_exchange:
         exchange = Path(raw_exchange)
         prompt_path = exchange / "prompt.txt"
         proposal_path = exchange / "proposal.json"
         temporary = _write_atomic_temp(
             prompt_path,
-            prompt,
+            request,
             0o600,
             ".prompt-tmp",
         )
@@ -494,12 +505,26 @@ def generate_local_proposal(
             or not proposal_path.is_file()
             or proposal_path.stat().st_size > _MAX_PROPOSAL_BYTES
         ):
-            raise RuntimeError("local proposal worker did not publish one bounded regular file")
+            raise RuntimeError(
+                "local proposal worker did not publish one bounded regular file"
+            )
         try:
-            proposal_text = proposal_path.read_text(encoding="utf-8")
+            return proposal_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
-            raise RuntimeError(f"local proposal output is not readable UTF-8: {exc}") from exc
-        return ProposalManifest.from_json(proposal_text)
+            raise RuntimeError(
+                f"local proposal output is not readable UTF-8: {exc}"
+            ) from exc
+
+
+def generate_local_proposal(
+    runner: _ObservableRunner,
+    model_path: Path,
+    prompt: str,
+) -> ProposalManifest:
+    """Generate one legacy proposal through one isolated owned Make worker."""
+    return ProposalManifest.from_json(
+        _run_local_proposal_request(runner, model_path, prompt)
+    )
 
 
 def generate_local_proposal_plan(
@@ -509,32 +534,18 @@ def generate_local_proposal_plan(
     task: TaskSpec,
     reference: CodexReference,
 ) -> ProposalManifest:
-    """Decode all disjoint shards and merge them through the strict schema."""
-    proposals: list[ProposalManifest] = []
-    total = len(plan.shards)
-    for index, shard in enumerate(plan.shards, start=1):
-        print(
-            "SELF_IMPROVE_PROMPT_SHARD_START "
-            f"shard={index}/{total} protocol_digest={plan.protocol_digest} "
-            f"focus={json.dumps(shard.focus_paths)} "
-            f"prompt_bytes={len(shard.prompt.encode('utf-8'))}",
-            flush=True,
-        )
-        try:
-            proposal = generate_local_proposal(runner, model_path, shard.prompt)
-        except (OSError, RuntimeError, ValueError):
-            print(
-                f"SELF_IMPROVE_PROMPT_SHARD_END shard={index}/{total} succeeded=false",
-                flush=True,
-            )
-            raise
-        proposals.append(proposal)
-        print(
-            f"SELF_IMPROVE_PROMPT_SHARD_END shard={index}/{total} succeeded=true",
-            flush=True,
-        )
+    """Decode all shards in one retained worker, then strictly merge them."""
+    request = encode_prompt_batch(
+        tuple(shard.prompt for shard in plan.shards),
+        protocol_digest=plan.protocol_digest,
+    )
+    proposals = decode_proposal_batch(
+        _run_local_proposal_request(runner, model_path, request),
+        expected_protocol_digest=plan.protocol_digest,
+        expected_count=len(plan.shards),
+    )
     return merge_proposal_manifests(
-        tuple(proposals),
+        proposals,
         expected_path_groups=tuple(shard.focus_paths for shard in plan.shards),
         expected_baseline_sha=reference.baseline_sha,
         expected_task_id=task.task_id,

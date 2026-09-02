@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one local proposal decode inside a bounded, parent-owned process."""
+"""Run ordered local proposal decodes inside one bounded, parent-owned process."""
 
 from __future__ import annotations
 
@@ -14,9 +14,16 @@ from typing import Protocol
 from general_ludd.self_improve.codex_comparison import (
     LocalProposalGateway,
     ProposalManifest,
+    decode_prompt_batch,
+    decode_proposal_batch,
+    encode_prompt_batch,
+    encode_proposal_batch,
 )
 
 _MAX_PROMPT_BYTES = 262_144
+_MAX_PROPOSAL_BYTES = 1_310_720
+
+__all__ = ("decode_proposal_batch", "encode_prompt_batch", "main", "run_worker")
 
 
 class _ProposalGateway(Protocol):
@@ -35,7 +42,7 @@ def run_worker(
     *,
     gateway_factory: _GatewayFactory = LocalProposalGateway,
 ) -> Path:
-    """Decode one proposal and publish it atomically inside the exchange directory."""
+    """Decode one request or an ordered batch and atomically publish its result."""
     if exchange_dir.is_symlink():
         raise ValueError("exchange directory must not be a symlink")
     exchange = exchange_dir.resolve(strict=True)
@@ -50,19 +57,54 @@ def run_worker(
     if prompt_path.stat().st_size > _MAX_PROMPT_BYTES:
         raise ValueError(f"prompt exceeds {_MAX_PROMPT_BYTES} bytes")
     try:
-        prompt = prompt_path.read_text(encoding="utf-8")
+        request = prompt_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise ValueError(f"prompt is not readable UTF-8: {exc}") from exc
-    if not prompt.strip():
+    if not request.strip():
         raise ValueError("prompt must not be empty")
 
+    prompts, protocol_digest = decode_prompt_batch(request)
+    gateway = gateway_factory(model_path)
+    proposals: list[ProposalManifest] = []
+    total = len(prompts)
     print(
         f"SELF_IMPROVE_LOCAL_PROPOSAL_START model={model_path.name} "
-        f"prompt_bytes={len(prompt.encode('utf-8'))}",
+        f"shards={total} prompt_bytes={len(request.encode('utf-8'))}",
         flush=True,
     )
-    proposal = gateway_factory(model_path).propose(prompt)
-    serialized = proposal.to_json()
+    for index, prompt in enumerate(prompts, start=1):
+        print(
+            "SELF_IMPROVE_PROMPT_SHARD_START "
+            f"shard={index}/{total} "
+            f"protocol_digest={protocol_digest or 'legacy'} "
+            f"prompt_bytes={len(prompt.encode('utf-8'))}",
+            flush=True,
+        )
+        try:
+            proposal = gateway.propose(prompt)
+        except BaseException:
+            print(
+                f"SELF_IMPROVE_PROMPT_SHARD_END shard={index}/{total} succeeded=false",
+                flush=True,
+            )
+            raise
+        proposals.append(proposal)
+        print(
+            f"SELF_IMPROVE_PROMPT_SHARD_END shard={index}/{total} succeeded=true",
+            flush=True,
+        )
+
+    serialized = (
+        proposals[0].to_json()
+        if protocol_digest is None
+        else encode_proposal_batch(
+            proposals,
+            protocol_digest=protocol_digest,
+        )
+    )
+    if len(serialized.encode("utf-8")) > _MAX_PROPOSAL_BYTES:
+        raise ValueError(f"proposal output exceeds {_MAX_PROPOSAL_BYTES} bytes")
+
     temporary: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -73,18 +115,19 @@ def run_worker(
             suffix=".tmp",
             delete=False,
         ) as handle:
+            temporary = Path(handle.name)
             handle.write(serialized)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-            temporary = Path(handle.name)
         os.replace(temporary, proposal_path)
         temporary = None
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
     print(
-        f"SELF_IMPROVE_LOCAL_PROPOSAL_END output_bytes={proposal_path.stat().st_size}",
+        "SELF_IMPROVE_LOCAL_PROPOSAL_END "
+        f"shards={total} output_bytes={proposal_path.stat().st_size}",
         flush=True,
     )
     return proposal_path
