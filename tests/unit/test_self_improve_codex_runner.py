@@ -7,6 +7,7 @@ import json
 import os
 import signal
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,7 @@ from general_ludd.self_improve.codex_comparison import (
     ComparisonResult,
     ProposalManifest,
 )
+from general_ludd.self_improve.model_lifecycle import AcquiredModel
 
 
 def _manifest() -> ProposalManifest:
@@ -133,6 +135,24 @@ def test_make_runner_never_caches_mutations(
     assert calls == 2
 
 
+def test_make_runner_rejects_non_make_command_before_spawn(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject an unsafe command and accept one exact Make command."""
+    runner = MakeRunner(tmp_path)
+    with pytest.raises(ValueError, match="bounded make command"):
+        runner.run_command("python -m pytest")
+
+    def observe(argv: list[str], *, timeout: int) -> MakeResult:
+        return MakeResult(tuple(argv), 0, str(timeout), "", 0.1)
+
+    monkeypatch.setattr(runner, "_run_observable_argv", observe)
+    result = runner.run_command("make ps", timeout=7)
+    assert result.argv == ("make", "ps")
+    assert result.stdout == "7"
+
+
 @pytest.mark.parametrize(
     "payload, match",
     [
@@ -183,6 +203,56 @@ tests/unit/test_example.py
         parse_reference_files("commit " + "b" * 40)
 
 
+@pytest.mark.parametrize(
+    "unsafe_path",
+    ("/absolute.py", "src/../escape.py", ".git/config"),
+)
+def test_reference_file_parser_rejects_each_unsafe_path_component(
+    unsafe_path: str,
+) -> None:
+    """Fail closed for each absolute, traversal, and Git-internal path class."""
+    with pytest.raises(ValueError, match="unsafe reference path"):
+        parse_reference_files(unsafe_path)
+
+
+def test_model_release_report_survives_unreadable_lease_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Publish conservative release evidence when lease inspection fails."""
+    model = AcquiredModel(
+        path=tmp_path / "model.gguf",
+        model_id="bounded-model",
+        repo_id="example/model",
+        filename="model.gguf",
+        resolved_revision="a" * 40,
+        artifact_sha256="b" * 64,
+        source="managed",
+        manifest_path=tmp_path / "manifest.json",
+        lease_path=tmp_path / "lease",
+    )
+
+    def fail_exists(_path: Path) -> bool:
+        raise OSError("bounded denial")
+
+    with monkeypatch.context() as context:
+        context.setattr(Path, "exists", fail_exists)
+        runner_module._report_model_release(model)
+
+    assert "lease_released=false" in capsys.readouterr().out
+
+
+def test_reference_file_parser_rejects_oversized_scope() -> None:
+    """Reject a reference whose unique file count exceeds the hard boundary."""
+    output = "\n".join(
+        f"src/file-{index}.py"
+        for index in range(runner_module._MAX_REFERENCE_FILES + 1)
+    )
+    with pytest.raises(ValueError, match="reference exceeds"):
+        parse_reference_files(output)
+
+
 def test_apply_proposal_atomically_replaces_all_bounded_files(tmp_path: Path) -> None:
     source = tmp_path / "src/general_ludd/example.py"
     test = tmp_path / "tests/unit/test_example.py"
@@ -225,6 +295,19 @@ def test_output_capacity_estimate_rejects_codex_patch_that_cannot_fit_decode() -
     assert estimate_required_output_tokens(changed_lines=10, changed_files=2) < 4096
 
 
+@pytest.mark.parametrize(
+    ("changed_lines", "changed_files"),
+    ((-1, 0), (0, -1)),
+)
+def test_output_capacity_estimate_rejects_each_negative_metric(
+    changed_lines: int,
+    changed_files: int,
+) -> None:
+    """Reject either invalid reference metric before estimating capacity."""
+    with pytest.raises(ValueError, match="non-negative"):
+        estimate_required_output_tokens(changed_lines, changed_files)
+
+
 def test_docs_only_patch_marks_python_quality_gates_not_applicable() -> None:
     assert quality_defaults_for_paths(
         ["docs/features/example.md"],
@@ -247,6 +330,48 @@ def test_canonical_test_paths_cover_docs_only_reference() -> None:
             "make lint-markdown MARKDOWN_FILES=docs/features/example.md",
         )
     ) == ("tests/unit/test_markdown_docs_deep.py",)
+
+
+def test_required_prompt_tests_fail_closed_without_test_identity() -> None:
+    """Reject prompt construction when neither reference nor command names a test."""
+    task = TaskSpec(
+        task_id="S83.133",
+        objective="Edit one file.",
+        canonical_make_commands=("make lint-files FILES=src/example.py",),
+    )
+    reference = CodexReference(
+        baseline_sha="a" * 40,
+        reference_sha="b" * 40,
+        changed_files=frozenset({"src/example.py"}),
+        test_files=frozenset(),
+        changed_lines=1,
+        elapsed_seconds=1.0,
+    )
+
+    with pytest.raises(ValueError, match="no canonical test path"):
+        runner_module._required_prompt_tests(task, reference)
+
+
+def test_prompt_requires_at_least_one_exact_focus_path(tmp_path: Path) -> None:
+    """Reject an empty Codex file identity before reading baseline context."""
+    task = TaskSpec(
+        task_id="S83.133",
+        objective="Edit one file.",
+        canonical_make_commands=(
+            "make test-files TESTFILES=tests/unit/test_example.py",
+        ),
+    )
+    reference = CodexReference(
+        baseline_sha="a" * 40,
+        reference_sha="b" * 40,
+        changed_files=frozenset(),
+        test_files=frozenset({"tests/unit/test_example.py"}),
+        changed_lines=0,
+        elapsed_seconds=1.0,
+    )
+
+    with pytest.raises(ValueError, match="no prompt paths"):
+        build_prompt(task, reference, tmp_path)
 
 
 def test_prompt_uses_exact_codex_paths_instead_of_placeholder(tmp_path: Path) -> None:
@@ -334,6 +459,42 @@ def test_exact_patch_supports_confined_create_and_delete(tmp_path: Path) -> None
     assert not obsolete.exists()
 
 
+@pytest.mark.parametrize(
+    ("operation", "old_text", "new_text", "current", "match"),
+    (
+        ("create", "", "created = True\n", "already = True\n", "already exists"),
+        ("delete", "expected = True\n", "", "different = True\n", "complete file"),
+    ),
+)
+def test_exact_patch_rejects_existing_create_and_stale_delete(
+    tmp_path: Path,
+    operation: str,
+    old_text: str,
+    new_text: str,
+    current: str,
+    match: str,
+) -> None:
+    """Reject conflicting create/delete state without mutating the target."""
+    target = tmp_path / "src/example.py"
+    target.parent.mkdir(parents=True)
+    target.write_text(current, encoding="utf-8")
+    proposal = _edit_manifest(
+        [
+            {
+                "operation": operation,
+                "path": "src/example.py",
+                "old_text": old_text,
+                "new_text": new_text,
+            }
+        ]
+    )
+
+    with pytest.raises(ValueError, match=match):
+        apply_proposal(tmp_path, proposal)
+
+    assert target.read_text(encoding="utf-8") == current
+
+
 def test_scope_mismatch_is_known_before_worktree_or_tests() -> None:
     proposal = _manifest()
     assert proposal_scope_matches(
@@ -399,6 +560,34 @@ def test_mechanical_docs_route_uses_existing_make_tool_and_minimal_patch() -> No
     assert proposal.edits[0].new_text == "Body text\n"
     assert proposal.make_commands == task.canonical_make_commands
     assert proposal.tests == ("tests/unit/test_markdown_docs_deep.py",)
+
+
+def test_mechanical_proposal_requires_canonical_test_path() -> None:
+    """A mature-tool patch still fails closed without an exact test path."""
+    relative = "docs/example.md"
+    task = TaskSpec(
+        task_id="S83.133",
+        objective="Remove trailing whitespace.",
+        canonical_make_commands=(
+            "make lint-markdown MARKDOWN_FILES=docs/example.md",
+        ),
+    )
+    reference = CodexReference(
+        baseline_sha="a" * 40,
+        reference_sha="b" * 40,
+        changed_files=frozenset({relative}),
+        test_files=frozenset(),
+        changed_lines=2,
+        elapsed_seconds=1.0,
+    )
+
+    with pytest.raises(ValueError, match="no canonical test path"):
+        proposal_from_mechanical_changes(
+            task,
+            reference,
+            {relative: "before\n"},
+            {relative: "after\n"},
+        )
 
 
 def test_mechanical_router_does_not_guess_for_python_change() -> None:
@@ -938,6 +1127,91 @@ def test_main_publishes_bounded_terminal_error_without_traceback(
         'message="candidate plan exhausted"\n'
     )
     assert "Traceback" not in captured.err
+
+
+_CATALOG_BASELINE = "eac05dc88c03f14fbd7dd5f4c6d72943609d9e26"
+_CATALOG_REFERENCE = "80b381bd87f32487d784964ce93566e3b016b191"
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _live_self_improve_command(
+    *, through_make: bool, task_file: Path, validate_only: bool
+) -> list[str]:
+    """Build one bounded process command for the real script or Make boundary."""
+    if through_make:
+        return [
+            "make",
+            "test-self-improve",
+            "TARGET=entrypoint-contract",
+            "SELF_IMPROVE_MODEL_PATH=",
+            f"SELF_IMPROVE_BASELINE_REF={_CATALOG_BASELINE}",
+            f"SELF_IMPROVE_REFERENCE_REF={_CATALOG_REFERENCE}",
+            f"SELF_IMPROVE_TASK_FILE={task_file}",
+            "SELF_IMPROVE_MAX_ATTEMPTS=1",
+            f"SELF_IMPROVE_VALIDATE_ONLY={int(validate_only)}",
+        ]
+    command = [
+        sys.executable,
+        "scripts/run_self_improve_e2e.py",
+        "--target",
+        "entrypoint-contract",
+        "--baseline-ref",
+        _CATALOG_BASELINE,
+        "--reference-ref",
+        _CATALOG_REFERENCE,
+        "--task-file",
+        str(task_file),
+        "--max-attempts",
+        "1",
+    ]
+    if validate_only:
+        command.append("--validate-only")
+    return command
+
+
+@pytest.mark.parametrize("through_make", [False, True], ids=("script", "make"))
+def test_live_entrypoint_propagates_terminal_failure_exit(
+    tmp_path: Path,
+    through_make: bool,
+) -> None:
+    """A handled live failure must cross both process boundaries as exit two."""
+    completed = subprocess.run(
+        _live_self_improve_command(
+            through_make=through_make,
+            task_file=tmp_path / "missing-task.json",
+            validate_only=False,
+        ),
+        cwd=_REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert completed.returncode == 2
+    assert "SELF_IMPROVE_ERROR type=FileNotFoundError" in completed.stderr
+    assert "Traceback" not in completed.stderr
+
+
+@pytest.mark.parametrize("through_make", [False, True], ids=("script", "make"))
+def test_live_validate_only_entrypoint_stays_zero(through_make: bool) -> None:
+    """The tracked synthetic catalog plan remains a successful dry boundary."""
+    completed = subprocess.run(
+        _live_self_improve_command(
+            through_make=through_make,
+            task_file=_REPOSITORY_ROOT / "config/self-improve/catalog-truth.json",
+            validate_only=True,
+        ),
+        cwd=_REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0
+    assert "SELF_IMPROVE_CODEX_PLAN" in completed.stdout
+    assert "SELF_IMPROVE_ERROR" not in completed.stderr
 
 
 def test_reference_and_worktree_helpers_publish_exact_identity(tmp_path: Path) -> None:
