@@ -7,7 +7,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
-from typing import Any, TypedDict, Unpack
+from typing import Any, TypedDict, Unpack, cast
 
 import pytest
 
@@ -105,6 +105,134 @@ def _contract() -> ProposalContract:
         tests=("tests/unit/test_example.py",),
         make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
     )
+
+
+def test_proposal_contract_rejects_mutable_identity_collections() -> None:
+    """Keep trusted tests and commands immutable across the worker boundary."""
+    with pytest.raises(ValueError, match="tests must be a tuple"):
+        ProposalContract(
+            baseline_sha="a" * 40,
+            task_id="S83.133",
+            tests=cast(tuple[str, ...], ["tests/unit/test_example.py"]),
+            make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+        )
+    with pytest.raises(ValueError, match="make_commands must be a tuple"):
+        ProposalContract(
+            baseline_sha="a" * 40,
+            task_id="S83.133",
+            tests=("tests/unit/test_example.py",),
+            make_commands=cast(
+                tuple[str, ...],
+                ["make test-files TESTFILES=tests/unit/test_example.py"],
+            ),
+        )
+
+
+def test_worker_protocol_entry_points_are_declared_public_exports() -> None:
+    """Keep script consumers explicit so dead-code checks see the real API seam."""
+    expected = {
+        "LocalProposalGateway",
+        "bind_compact_focus_path",
+        "build_retry_prompt",
+        "compare_with_codex",
+        "decode_prompt_batch",
+        "decode_proposal_batch",
+        "encode_proposal_batch",
+        "local_proposal_attempt_identity_digest",
+        "merge_proposal_manifests",
+    }
+
+    assert expected <= set(getattr(comparison_module, "__all__", ()))
+
+
+def test_prompt_batch_rejects_ambiguous_protocol_identity() -> None:
+    """Reject malformed request envelopes instead of guessing their identity."""
+    digest = "a" * 64
+    marker = comparison_module._PROMPT_BATCH_MARKER
+
+    with pytest.raises(ValueError, match="must contain 1"):
+        comparison_module.encode_prompt_batch("prompt", protocol_digest=digest)
+    with pytest.raises(ValueError, match="lowercase SHA-256"):
+        comparison_module.encode_prompt_batch(("prompt",), protocol_digest="bad")
+    with pytest.raises(ValueError, match="each prompt batch item"):
+        comparison_module.encode_prompt_batch(
+            (cast(str, object()),),
+            protocol_digest=digest,
+        )
+    oversized = ("x" * comparison_module._MAX_PROMPT_SHARD_BYTES,) * (
+        comparison_module._MAX_PROMPT_BATCH_SHARDS
+    )
+    with pytest.raises(ValueError, match="prompt batch exceeds"):
+        comparison_module.encode_prompt_batch(oversized, protocol_digest=digest)
+
+    valid = {
+        "protocol": comparison_module._PROMPT_BATCH_PROTOCOL,
+        "protocol_digest": digest,
+        "prompts": ["prompt"],
+    }
+    malformed_requests = (
+        (marker + "{", "valid JSON"),
+        (marker + json.dumps({}), "exactly protocol"),
+        (
+            marker + json.dumps({**valid, "protocol": "wrong"}),
+            "unsupported",
+        ),
+        (
+            marker + json.dumps({**valid, "prompts": "prompt"}),
+            "invalid types",
+        ),
+    )
+    for raw, match in malformed_requests:
+        with pytest.raises(ValueError, match=match):
+            comparison_module.decode_prompt_batch(raw)
+
+
+def test_proposal_batch_rejects_ambiguous_protocol_identity() -> None:
+    """Bind every response envelope to its expected prompt plan identity."""
+    digest = "a" * 64
+    proposal = _proposal()
+
+    with pytest.raises(ValueError, match="must contain 1"):
+        comparison_module.encode_proposal_batch((), protocol_digest=digest)
+    with pytest.raises(ValueError, match="must contain 1"):
+        comparison_module.encode_proposal_batch(
+            (cast(ProposalManifest, object()),),
+            protocol_digest=digest,
+        )
+    with pytest.raises(ValueError, match="lowercase SHA-256"):
+        comparison_module.encode_proposal_batch((proposal,), protocol_digest="bad")
+    with pytest.raises(ValueError, match="outside the batch bound"):
+        comparison_module.decode_proposal_batch(
+            "{}",
+            expected_protocol_digest=digest,
+            expected_count=0,
+        )
+    with pytest.raises(ValueError, match="lowercase SHA-256"):
+        comparison_module.decode_proposal_batch(
+            "{}",
+            expected_protocol_digest="bad",
+            expected_count=1,
+        )
+
+    valid = {
+        "protocol": comparison_module._PROPOSAL_BATCH_PROTOCOL,
+        "protocol_digest": digest,
+        "proposals": [json.loads(proposal.to_json())],
+    }
+    malformed_responses = (
+        ("{", "valid JSON"),
+        (json.dumps({}), "exactly protocol"),
+        (json.dumps({**valid, "protocol": "wrong"}), "unsupported"),
+        (json.dumps({**valid, "protocol_digest": "b" * 64}), "identity drifted"),
+        (json.dumps({**valid, "proposals": []}), "count does not match"),
+    )
+    for raw, match in malformed_responses:
+        with pytest.raises(ValueError, match=match):
+            comparison_module.decode_proposal_batch(
+                raw,
+                expected_protocol_digest=digest,
+                expected_count=1,
+            )
 
 
 def test_attempt_identity_binds_complete_managed_output_protocol(

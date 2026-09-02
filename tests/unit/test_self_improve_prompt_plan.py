@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 import scripts.run_self_improve_e2e as runner_module
@@ -71,6 +72,42 @@ def test_attempt_identity_uses_exact_prompt_protocol_and_is_legacy_sensitive() -
     int(legacy, 16)
     assert legacy == runner_module._attempt_identity_digest("bounded prompt")
     assert legacy != runner_module._attempt_identity_digest("changed prompt")
+
+
+def test_prompt_plan_rejects_mutable_or_drifted_baseline_identity() -> None:
+    """Fail closed when baseline evidence cannot identify the exact prompt plan."""
+    shard = PromptShard(("src/one.py",), "bounded prompt")
+
+    with pytest.raises(ValueError, match="immutable tuple"):
+        PromptPlan(
+            shards=(shard,),
+            source_bytes=1,
+            baseline_files=cast(
+                tuple[tuple[str, str | None], ...],
+                [("src/one.py", "x")],
+            ),
+        )
+    with pytest.raises(ValueError, match="path/text pairs"):
+        PromptPlan(
+            shards=(shard,),
+            source_bytes=1,
+            baseline_files=cast(
+                tuple[tuple[str, str | None], ...],
+                (("src/one.py",),),
+            ),
+        )
+    with pytest.raises(ValueError, match="match focus paths"):
+        PromptPlan(
+            shards=(shard,),
+            source_bytes=1,
+            baseline_files=(("src/two.py", "x"),),
+        )
+    with pytest.raises(ValueError, match="source byte count"):
+        PromptPlan(
+            shards=(shard,),
+            source_bytes=1,
+            baseline_files=(("src/one.py", "xx"),),
+        )
 
 
 def _large_fixture(root: Path) -> None:

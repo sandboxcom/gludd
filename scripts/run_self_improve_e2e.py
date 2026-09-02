@@ -70,6 +70,7 @@ _PROMPT_CONTEXT_LINES: Final = 5
 _HEARTBEAT_SECONDS: Final = 15.0
 _FORBIDDEN_COMMAND_CHARS: Final = frozenset(";|&$()<>\n\r")
 _SHA_RE: Final = re.compile(r"^[0-9a-f]{40}$")
+_ATTEMPT_IDENTITY_RE: Final = re.compile(r"^[0-9a-f]{64}$")
 _TASK_RE: Final = re.compile(r"^S[0-9]+(?:\.[0-9]+)?$")
 _WORD_RE: Final = re.compile(r"[A-Za-z][A-Za-z0-9]+")
 _RELEVANCE_STOPWORDS: Final = frozenset(
@@ -309,6 +310,29 @@ class PromptPlan:
     def max_prompt_bytes(self) -> int:
         """Return the largest individual inference input."""
         return max(len(shard.prompt.encode("utf-8")) for shard in self.shards)
+
+
+def _validate_attempt_identity_digest(value: object) -> str:
+    """Return one canonical attempt identity or fail closed."""
+    if not isinstance(value, str) or _ATTEMPT_IDENTITY_RE.fullmatch(value) is None:
+        raise ValueError(
+            "attempt identity must be a lowercase 64-character hexadecimal digest"
+        )
+    return value
+
+
+@dataclass(frozen=True)
+class PlanBoundProposal:
+    """A proposal inseparably bound to the trusted parent prompt plan."""
+
+    proposal: ProposalManifest
+    attempt_identity_digest: str
+
+    def __post_init__(self) -> None:
+        """Reject unvalidated manifests and non-canonical plan identities."""
+        if not isinstance(self.proposal, ProposalManifest):
+            raise ValueError("plan-bound proposal must contain a proposal manifest")
+        _validate_attempt_identity_digest(self.attempt_identity_digest)
 
 
 def _attempt_identity_digest(prompt: PromptPlan | str) -> str:
@@ -778,6 +802,27 @@ class AttemptResult:
     patch_equivalence: str
     proposal: ProposalManifest
     diagnostics: str
+    attempt_identity_digest: str
+
+    def __post_init__(self) -> None:
+        """Require every approval/result to retain one canonical plan identity."""
+        _validate_attempt_identity_digest(self.attempt_identity_digest)
+
+
+def _validate_approved_result_identity(
+    result: AttemptResult,
+    bound_proposal: PlanBoundProposal,
+    expected_attempt_identity_digest: str,
+) -> str:
+    """Prove approval and proposal still belong to the executing prompt plan."""
+    expected = _validate_attempt_identity_digest(expected_attempt_identity_digest)
+    if bound_proposal.attempt_identity_digest != expected:
+        raise ValueError("proposal plan identity drifted before approval")
+    if result.attempt_identity_digest != expected:
+        raise ValueError("approved result plan identity drifted before outcome")
+    if result.proposal != bound_proposal.proposal:
+        raise ValueError("approved proposal drifted before outcome")
+    return expected
 
 
 def parse_reference_files(output: str) -> frozenset[str]:
@@ -1439,12 +1484,19 @@ def evaluate_attempt(
     root_runner: _TargetRunner,
     task: TaskSpec,
     reference: CodexReference,
-    proposal: ProposalManifest,
+    bound_proposal: PlanBoundProposal,
     attempt: int,
     *,
+    expected_attempt_identity_digest: str,
     merge: bool,
 ) -> AttemptResult:
     """Apply, test, commit, compare, and clean one local proposal."""
+    expected_identity = _validate_attempt_identity_digest(
+        expected_attempt_identity_digest
+    )
+    if bound_proposal.attempt_identity_digest != expected_identity:
+        raise ValueError("proposal plan identity drifted before execution")
+    proposal = bound_proposal.proposal
     if proposal.baseline_sha != reference.baseline_sha:
         raise ValueError("proposal baseline does not match the exact benchmark baseline")
     if proposal.task_id != task.task_id:
@@ -1484,6 +1536,7 @@ def evaluate_attempt(
                 "proposal changed paths outside the exact Codex reference: "
                 + ", ".join(sorted(edit.path for edit in proposal.edits))
             ),
+            attempt_identity_digest=expected_identity,
         )
     worktree, branch = create_worktree(root_runner, reference.baseline_sha, attempt)
     runner = MakeRunner(worktree)
@@ -1586,6 +1639,7 @@ def evaluate_attempt(
             patch_equivalence=patch_identity,
             proposal=proposal,
             diagnostics=build_failure_diagnostic(results),
+            attempt_identity_digest=expected_identity,
         )
     except BaseException:
         if not cleanup_passed:
@@ -1627,6 +1681,27 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
             f"estimated_output_tokens={required_output_tokens} "
             f"model={Path(args.local_model_path) if args.local_model_path else 'auto'}"
         )
+        validation_proposal = ProposalManifest.from_json(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "baseline_sha": reference.baseline_sha,
+                    "task_id": task.task_id,
+                    "edits": [
+                        {
+                            "operation": "create",
+                            "path": sorted(reference.changed_files)[0],
+                            "old_text": "",
+                            "new_text": "validate-only",
+                        }
+                    ],
+                    "tests": sorted(reference.test_files)
+                    or ["tests/unit/test_placeholder.py"],
+                    "make_commands": list(task.canonical_make_commands),
+                    "commit_message": "test: validate self-improvement plan",
+                }
+            )
+        )
         return AttemptResult(
             comparison=ComparisonResult(
                 accepted=False,
@@ -1651,27 +1726,11 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                 elapsed_seconds=0.0,
             ),
             patch_equivalence="validate-only",
-            proposal=ProposalManifest.from_json(
-                json.dumps(
-                    {
-                        "schema_version": 1,
-                        "baseline_sha": reference.baseline_sha,
-                        "task_id": task.task_id,
-                        "edits": [
-                            {
-                                "operation": "create",
-                                "path": sorted(reference.changed_files)[0],
-                                "old_text": "",
-                                "new_text": "validate-only",
-                            }
-                        ],
-                        "tests": sorted(reference.test_files) or ["tests/unit/test_placeholder.py"],
-                        "make_commands": list(task.canonical_make_commands),
-                        "commit_message": "test: validate self-improvement plan",
-                    }
-                )
-            ),
+            proposal=validation_proposal,
             diagnostics="validate-only",
+            attempt_identity_digest=_attempt_identity_digest(
+                validation_proposal.to_json()
+            ),
         )
 
     explicit_model_path = Path(args.local_model_path).expanduser() if args.local_model_path else None
@@ -1797,7 +1856,11 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                     if candidate is not None
                     else None
                 )
-            print(f"SELF_IMPROVE_ATTEMPT_START attempt={attempt}", flush=True)
+            print(
+                f"SELF_IMPROVE_ATTEMPT_START attempt={attempt} "
+                f"attempt_identity_digest={attempt_identity_digest}",
+                flush=True,
+            )
             try:
                 if use_mechanical:
                     if mechanical_proposal is None:
@@ -1895,13 +1958,23 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                     prompt = base_prompt + _validation_retry_suffix(str(exc))
                 continue
             try:
+                bound_proposal = PlanBoundProposal(
+                    proposal=proposal,
+                    attempt_identity_digest=attempt_identity_digest,
+                )
                 final = evaluate_attempt(
                     root_runner,
                     task,
                     reference,
-                    proposal,
+                    bound_proposal,
                     attempt,
+                    expected_attempt_identity_digest=attempt_identity_digest,
                     merge=args.merge,
+                )
+                approved_identity = _validate_approved_result_identity(
+                    final,
+                    bound_proposal,
+                    attempt_identity_digest,
                 )
             except BaseException:
                 if (
@@ -1921,20 +1994,21 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                     model_evidence_store,
                     task_text=task.objective,
                     candidate=candidate,
-                    attempt_identity_digest=attempt_identity_digest,
+                    attempt_identity_digest=approved_identity,
                     succeeded=final.comparison.accepted,
                 )
                 print(
                     "SELF_IMPROVE_MODEL_OUTCOME "
                     f"model={candidate.config.name} "
                     f"succeeded={str(final.comparison.accepted).lower()} "
-                    f"record={outcome_id}",
+                    f"record={outcome_id} attempt_identity_digest={approved_identity}",
                     flush=True,
                 )
             print(
                 f"SELF_IMPROVE_ATTEMPT_END attempt={attempt} "
                 f"score={final.comparison.score:.2f} accepted={final.comparison.accepted} "
-                f"blockers={json.dumps(final.comparison.blockers)}",
+                f"blockers={json.dumps(final.comparison.blockers)} "
+                f"attempt_identity_digest={approved_identity}",
                 flush=True,
             )
             if final.comparison.accepted:
@@ -2076,6 +2150,7 @@ def main() -> int:
     payload = {
         "target": args.target,
         "accepted": result.comparison.accepted,
+        "attempt_identity_digest": result.attempt_identity_digest,
         "comparison": asdict(result.comparison),
         "evidence": {
             **asdict(result.evidence),

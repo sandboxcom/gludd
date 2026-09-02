@@ -135,7 +135,94 @@ def _result() -> AttemptResult:
         patch_equivalence="equivalent",
         proposal=proposal,
         diagnostics="",
+        attempt_identity_digest=runner._attempt_identity_digest("bounded prompt"),
     )
+
+
+def test_approved_result_plan_identity_drift_cannot_reach_outcome_store(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stale approval must fail closed before capability evidence is recorded."""
+    _wire_common(tmp_path, monkeypatch)
+    recorded: list[str] = []
+    monkeypatch.setattr(runner, "generate_local_proposal", lambda *_args: _proposal())
+    monkeypatch.setattr(
+        runner,
+        "evaluate_attempt",
+        lambda *_args, **_kwargs: replace(
+            _result(),
+            attempt_identity_digest="f" * 64,
+        ),
+    )
+    monkeypatch.setattr(
+        runner,
+        "record_self_improve_outcome",
+        lambda *_args, **kwargs: recorded.append(
+            str(kwargs["attempt_identity_digest"])
+        ),
+    )
+
+    with pytest.raises(ValueError, match="approved result plan identity drifted"):
+        runner.run_benchmark(_args(_task_file(tmp_path)))
+
+    assert recorded == []
+
+
+def test_plan_identity_is_single_source_through_execution_and_outcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Proposal, execution, approval, and outcome share the exact plan digest."""
+    _wire_common(tmp_path, monkeypatch)
+    observed: list[tuple[str, str]] = []
+    monkeypatch.setattr(runner, "generate_local_proposal", lambda *_args: _proposal())
+
+    def evaluate(
+        _root: object,
+        _task: object,
+        _reference: object,
+        bound: runner.PlanBoundProposal,
+        _attempt: int,
+        *,
+        expected_attempt_identity_digest: str,
+        merge: bool,
+    ) -> AttemptResult:
+        assert merge is False
+        observed.append(("proposal", bound.attempt_identity_digest))
+        observed.append(("execution", expected_attempt_identity_digest))
+        return replace(
+            _result(),
+            proposal=bound.proposal,
+            attempt_identity_digest=expected_attempt_identity_digest,
+        )
+
+    def record(
+        _store: object,
+        *,
+        task_text: str,
+        candidate: PlannedModelCandidate,
+        attempt_identity_digest: str,
+        succeeded: bool,
+    ) -> int:
+        assert task_text == "Repair Python code safely."
+        assert candidate.config.name == "qwen2.5-coder-0.5b"
+        assert succeeded is True
+        observed.append(("outcome", attempt_identity_digest))
+        return 1
+
+    monkeypatch.setattr(runner, "evaluate_attempt", evaluate)
+    monkeypatch.setattr(runner, "record_self_improve_outcome", record)
+
+    result = runner.run_benchmark(_args(_task_file(tmp_path)))
+
+    expected = runner._attempt_identity_digest("bounded prompt")
+    assert result.attempt_identity_digest == expected
+    assert observed == [
+        ("proposal", expected),
+        ("execution", expected),
+        ("outcome", expected),
+    ]
 
 
 class _RootRunner:
@@ -290,7 +377,14 @@ def test_explicit_model_retries_without_silent_model_switch_and_releases_each_le
         return _proposal()
 
     monkeypatch.setattr(runner, "generate_local_proposal", propose)
-    monkeypatch.setattr(runner, "evaluate_attempt", lambda *_args, **_kwargs: _result())
+    monkeypatch.setattr(
+        runner,
+        "evaluate_attempt",
+        lambda *_args, **kwargs: replace(
+            _result(),
+            attempt_identity_digest=kwargs["expected_attempt_identity_digest"],
+        ),
+    )
     monkeypatch.setattr(
         runner,
         "plan_model_candidates",
@@ -1343,7 +1437,14 @@ def test_prompt_plan_generation_failure_retries_with_next_reserved_candidate(
         "_build_validation_retry_prompt_plan",
         lambda base, _diagnostic: base,
     )
-    monkeypatch.setattr(runner, "evaluate_attempt", lambda *_args, **_kwargs: _result())
+    monkeypatch.setattr(
+        runner,
+        "evaluate_attempt",
+        lambda *_args, **kwargs: replace(
+            _result(),
+            attempt_identity_digest=kwargs["expected_attempt_identity_digest"],
+        ),
+    )
 
     result = runner.run_benchmark(_args(_task_file(tmp_path)))
 

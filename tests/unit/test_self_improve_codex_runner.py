@@ -8,8 +8,9 @@ import os
 import signal
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import scripts.run_self_improve_e2e as runner_module
@@ -818,8 +819,9 @@ def test_evaluate_attempt_covers_green_commit_and_cleanup(
         RootRunner(),
         task,
         reference,
-        proposal,
+        runner_module.PlanBoundProposal(proposal, "c" * 64),
         1,
+        expected_attempt_identity_digest="c" * 64,
         merge=False,
     )
 
@@ -850,13 +852,94 @@ def test_evaluate_attempt_rejects_scope_before_worktree() -> None:
             ),
         ),
         reference,
-        _manifest(),
+        runner_module.PlanBoundProposal(_manifest(), "c" * 64),
         1,
+        expected_attempt_identity_digest="c" * 64,
         merge=False,
     )
 
     assert result.patch_equivalence == "scope-preflight-rejected"
     assert "outside the exact Codex reference" in result.diagnostics
+
+
+def test_evaluate_attempt_rejects_plan_identity_drift_before_worktree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A proposal approved under another plan must never reach execution."""
+    expected_identity = "a" * 64
+    bound = runner_module.PlanBoundProposal(_manifest(), "b" * 64)
+    monkeypatch.setattr(
+        runner_module,
+        "create_worktree",
+        lambda *_args: pytest.fail("identity drift must fail before execution"),
+    )
+
+    with pytest.raises(ValueError, match="proposal plan identity drifted"):
+        runner_module.evaluate_attempt(
+            MakeRunner(Path.cwd()),
+            TaskSpec(
+                task_id="S83.133",
+                objective="Repair exact Python code.",
+                canonical_make_commands=(
+                    "make test-files TESTFILES=tests/unit/test_example.py",
+                ),
+            ),
+            CodexReference(
+                baseline_sha="a" * 40,
+                reference_sha="b" * 40,
+                changed_files=frozenset(
+                    {
+                        "src/general_ludd/example.py",
+                        "tests/unit/test_example.py",
+                    }
+                ),
+                test_files=frozenset({"tests/unit/test_example.py"}),
+                changed_lines=4,
+                elapsed_seconds=1.0,
+            ),
+            bound,
+            1,
+            expected_attempt_identity_digest=expected_identity,
+            merge=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("proposal", "identity", "message"),
+    [
+        (object(), "a" * 64, "proposal manifest"),
+        (_manifest(), "A" * 64, "attempt identity"),
+    ],
+)
+def test_plan_bound_proposal_rejects_untrusted_identity_shapes(
+    proposal: object,
+    identity: str,
+    message: str,
+) -> None:
+    """Only a validated manifest and canonical digest can cross the boundary."""
+    with pytest.raises(ValueError, match=message):
+        runner_module.PlanBoundProposal(cast(ProposalManifest, proposal), identity)
+
+
+def test_approval_rejects_bound_proposal_or_manifest_drift() -> None:
+    """Approval validation binds both the plan digest and exact proposal value."""
+    original = _manifest()
+    bound = runner_module.PlanBoundProposal(original, "a" * 64)
+    result = replace(
+        _attempt_result(accepted=True),
+        proposal=original,
+        attempt_identity_digest="a" * 64,
+    )
+
+    with pytest.raises(ValueError, match="proposal plan identity drifted"):
+        runner_module._validate_approved_result_identity(result, bound, "b" * 64)
+
+    with pytest.raises(ValueError, match="approved proposal drifted"):
+        runner_module._validate_approved_result_identity(
+            replace(result, proposal=replace(original, commit_message="fix: drifted")),
+            bound,
+            "a" * 64,
+        )
 
 
 def test_runner_validation_helpers_fail_closed() -> None:
@@ -904,6 +987,9 @@ def _attempt_result(*, accepted: bool) -> runner_module.AttemptResult:
         patch_equivalence="patch-equivalent=1" if accepted else "",
         proposal=proposal,
         diagnostics="" if accepted else "E assert false",
+        attempt_identity_digest=runner_module._attempt_identity_digest(
+            "bounded prompt"
+        ),
     )
 
 
@@ -1268,6 +1354,32 @@ def test_live_validate_only_entrypoint_stays_zero(through_make: bool) -> None:
     assert "SELF_IMPROVE_ERROR" not in completed.stderr
 
 
+def test_dependency_floor_validate_only_preserves_requested_plan_identity() -> None:
+    """Validate-only must return the exact requested task/reference identity."""
+    baseline = "df6c84a5da10b11e0e1407b0c5699073b7523b8e"
+    reference = "3e8b9a275f70dcd84d75940a64042d3113f0f8fe"
+    task_file = _REPOSITORY_ROOT / "config/self-improve/codex-parity-smoke.json"
+
+    result = runner_module.run_benchmark(
+        argparse.Namespace(
+            target="dependency-floor",
+            local_model_path="",
+            baseline_ref=baseline,
+            reference_ref=reference,
+            task_file=str(task_file),
+            max_attempts=1,
+            merge=False,
+            validate_only=True,
+        )
+    )
+
+    assert result.proposal.baseline_sha == baseline
+    assert result.proposal.task_id == "S83.79"
+    assert result.proposal.make_commands == TaskSpec.from_path(
+        task_file
+    ).canonical_make_commands
+
+
 def test_reference_and_worktree_helpers_publish_exact_identity(tmp_path: Path) -> None:
     class RootRunner:
         def run(
@@ -1432,7 +1544,15 @@ def test_evaluate_attempt_stops_on_first_failed_command_and_cleans(
     monkeypatch.setattr(runner_module, "create_worktree", lambda *_args: (tmp_path, "candidate"))
     monkeypatch.setattr(runner_module, "MakeRunner", lambda _root: FailedCandidate())
 
-    result = runner_module.evaluate_attempt(root, task, reference, proposal, 1, merge=False)
+    result = runner_module.evaluate_attempt(
+        root,
+        task,
+        reference,
+        runner_module.PlanBoundProposal(proposal, "c" * 64),
+        1,
+        expected_attempt_identity_digest="c" * 64,
+        merge=False,
+    )
 
     assert result.evidence.tests_passed is False
     assert "E failure" in result.diagnostics

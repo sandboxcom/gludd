@@ -1413,3 +1413,15 @@ def _default_model_factory(
         n_gpu_layers=effective_gpu_layers,
     )
 
+
+__all__ = [
+    "LocalProposalGateway",
+    "bind_compact_focus_path",
+    "build_retry_prompt",
+    "compare_with_codex",
+    "decode_prompt_batch",
+    "decode_proposal_batch",
+    "encode_proposal_batch",
+    "local_proposal_attempt_identity_digest",
+    "merge_proposal_manifests",
+]
