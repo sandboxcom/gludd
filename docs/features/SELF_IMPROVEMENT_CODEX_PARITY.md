@@ -87,6 +87,53 @@ manifests and leases are format-independent and remain valid. If the public
 structured-output path is incompatible with a pinned runtime or model, the
 attempt fails closed and the previously admitted revision remains available.
 
+## Context capacity and overflow
+
+For the pinned llama-cpp-python 0.3.24 high-level API, `n_ctx=0`
+selects the model-native training context. The versioned `Llama`
+implementation loads model metadata, replaces zero with
+`self._model.n_ctx_train()`, and passes that value into context creation.
+The vendored llama.cpp C interface at commit `af6528e6d` defines the same
+contract: context parameter `n_ctx` is text context and zero means "from
+model." Model-native therefore means the training-context value encoded in the
+GGUF metadata. It does not mean unlimited context or a context automatically
+sized to current memory headroom. The current proposal gateway explicitly
+requests 32,768 tokens; replacing that value with zero would be a
+candidate-specific capacity change, because each GGUF may advertise a smaller
+or much larger `n_ctx_train`.
+
+The acceptance boundary is the effective context reported by the created
+context, not the input byte limit. Gludd must tokenize the fully rendered chat
+prompt with the same model and template that inference will use, then prove:
+
+`rendered prompt tokens + reserved decode tokens <= effective n_ctx`.
+
+A prompt at or beyond the context window is rejected by llama-cpp-python, and
+generation is limited to the remaining context. Gludd must perform the equivalent
+check before decoding so context overflow is deterministic evidence rather than
+a late native failure. It must not silently truncate task text, Codex evidence,
+tests, or proposal-schema guidance, and it must not rely on context shifting;
+either would change the comparison being evaluated.
+
+Zero is semantically correct when the model-native window is also
+resource-admissible, but native capacity is not free capacity. llama.cpp
+allocates context-dependent KV state, so a model advertising a very large
+training window can materially increase RAM or VRAM use and initialization
+time even for a small prompt. Resource admission must account for the proposed
+effective context before worker launch. If native capacity cannot fit the
+managed headroom, Gludd may select an explicit smaller context no greater than
+`n_ctx_train` only when the full prompt and decode reserve still fit. It fails
+closed otherwise; it never requests a context above training capacity without
+a separately reviewed and tested RoPE policy.
+
+Context construction remains inside the owned proposal subprocess. Preflight
+rejection, allocation failure, timeout, cancellation, or overflow releases the
+model lease, terminates the worker process group, removes the exchange
+directory, and leaves no candidate change. This preserves zero downtime: the
+running Gludd daemon and any previously admitted revision remain available
+while a context policy is evaluated. Rollback restores the previous worker
+policy without a database migration, daemon restart, or cache-format change.
+
 ## Automatic model acquisition and ownership
 
 The normal self-improvement path no longer requires an operator to run a model
@@ -297,6 +344,19 @@ Official sources:
   defines the supported JSON Schema subset and warns that the schema constrains
   output without being shown to the model, which is why Gludd also describes the
   contract in the prompt and validates the result independently.
+- [llama-cpp-python 0.3.24](https://github.com/abetlen/llama-cpp-python/releases/tag/v0.3.24)
+  is the exact pinned release at commit
+  `26633bd1a2eaf7fd0567cc5eaec8b0165a7ea0bd`. Its
+  [versioned `Llama` source](https://github.com/abetlen/llama-cpp-python/blob/26633bd1a2eaf7fd0567cc5eaec8b0165a7ea0bd/llama_cpp/llama.py)
+  resolves `n_ctx=0` through `LlamaModel.n_ctx_train()`; the maintained
+  [API reference](https://llama-cpp-python.readthedocs.io/en/latest/api-reference/#llama_cpp.Llama)
+  describes zero as selecting context from the model.
+- The
+  [0.3.24 changelog](https://github.com/abetlen/llama-cpp-python/blob/26633bd1a2eaf7fd0567cc5eaec8b0165a7ea0bd/CHANGELOG.md)
+  pins bundled llama.cpp commit `af6528e6d`. That commit's
+  [C API header](https://github.com/ggml-org/llama.cpp/blob/af6528e6d/include/llama.h)
+  gives `llama_context_params.n_ctx` the same zero-from-model contract and
+  separately exposes the model training-context accessor.
 - [SWE-bench evaluation](https://github.com/SWE-bench/SWE-bench) evaluates a
   generated patch by applying it to a reproducible repository environment and
   running its tests. Gludd adds repository-specific static, resource, and Git
@@ -341,6 +401,20 @@ Practitioner evidence:
   reports long-lived structured/tool-use reliability problems.
 - [llama.cpp issue 15012](https://github.com/ggml-org/llama.cpp/issues/15012)
   records JSON/schema-constrained generation difficulties in real integrations.
+- [llama-cpp-python issue 416](https://github.com/abetlen/llama-cpp-python/issues/416)
+  records a 2023 application reaching the binding's deterministic
+  `Requested tokens exceed context window` exception at 512 tokens. This
+  requires Gludd to preflight the fully rendered prompt instead of discovering
+  that boundary after starting proposal inference.
+- [llama.cpp discussion 4054](https://github.com/ggml-org/llama.cpp/discussions/4054)
+  records practitioners confirming in November 2023 that changing `n_ctx`
+  changes preallocated memory, while actual prompt length does not reduce that
+  initial reservation. Native context is therefore included in admission
+  accounting even for short tasks.
+- [llama.cpp issue 3716](https://github.com/ggml-org/llama.cpp/issues/3716)
+  records an October 2023 M1 Max report where a 16,224-token context crashed
+  while loading a long-context model. The owned subprocess and headroom gate
+  keep this failure class outside the running daemon.
 - [huggingface_hub issue 3390](https://github.com/huggingface/huggingface_hub/issues/3390)
   records a long-running practitioner report of apparent duplicate disk use
   between Hub files and the Xet chunk cache. Gludd therefore owns a dedicated
