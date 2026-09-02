@@ -16,9 +16,10 @@ from typing import Any
 from general_ludd.routing_roles.small_model_policy import (
     _IDENTIFIER_RE,
     _TASK_KIND_RE,
+    DEFAULT_TASK_CONTRACTS,
     CapabilityEvidence,
 )
-from general_ludd.schemas.benchmark import TaskRole
+from general_ludd.schemas.benchmark import TaskRole, TaskType
 
 
 class CapabilityEvidenceStore:
@@ -30,6 +31,7 @@ class CapabilityEvidenceStore:
     """
 
     def __init__(self, path: str) -> None:
+        """Open or initialize the evidence store at an absolute path."""
         self._path = os.path.abspath(path)
         self._lock = threading.Lock()
         self._records: list[dict[str, Any]] = []
@@ -106,6 +108,42 @@ class CapabilityEvidenceStore:
             raise ValueError("task_kind has an invalid format")
         with self._lock:
             return [dict(r) for r in self._records if r.get("task_kind") == task_kind]
+
+    def query_by_task_shape(
+        self,
+        task_type: TaskType,
+        task_kind: str,
+        *,
+        model_profile_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return evidence for one exact existing task-type/contract shape.
+
+        Legacy records without task_type never match. This makes a success for
+        feature coding evidence unavailable to bug-fix coding selection.
+        """
+        if not isinstance(task_type, TaskType):
+            raise ValueError("task_type must be a TaskType value")
+        if task_kind not in DEFAULT_TASK_CONTRACTS:
+            raise ValueError("task_kind must name a default task contract")
+        if (
+            model_profile_id is not None
+            and (
+                not isinstance(model_profile_id, str)
+                or _IDENTIFIER_RE.fullmatch(model_profile_id) is None
+            )
+        ):
+            raise ValueError("model_profile_id has an invalid format")
+        with self._lock:
+            return [
+                dict(record)
+                for record in self._records
+                if record.get("task_type") == task_type.value
+                and record.get("task_kind") == task_kind
+                and (
+                    model_profile_id is None
+                    or record.get("model_profile_id") == model_profile_id
+                )
+            ]
 
     def list_all(self) -> list[dict[str, Any]]:
         """Return a shallow copy of every stored record."""

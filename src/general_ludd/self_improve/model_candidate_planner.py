@@ -7,11 +7,16 @@ import json
 import re
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
+from typing import Any, cast
 
 from general_ludd.hardware.model_fit import can_run_model
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.local_model._local_model_configs import _LOCAL_MODELS, LocalModelConfig
-from general_ludd.schemas.benchmark import TaskRole
+from general_ludd.schemas.benchmark import TaskRole, TaskType
+from general_ludd.self_improve.task_diversity import (
+    infer_task_type,
+    select_representative_evidence,
+)
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 from general_ludd.small_models.recommender import (
     map_task_to_capabilities,
@@ -29,6 +34,7 @@ _OUTCOME_RECORD_KEYS = frozenset(
         "model_profile_id",
         "model_identity_digest",
         "attempt_identity_digest",
+        "task_type",
         "task_kind",
         "role",
         "collection",
@@ -58,8 +64,11 @@ def _stable_digest(payload: Mapping[str, object]) -> str:
 _OUTCOME_ACCEPTANCE_DIGEST = _stable_digest(
     {
         "collection": _OUTCOME_COLLECTION,
-        "schema_version": 2,
-        "semantics": "one_case_passed_means_prompt_protocol_scoped_self_improvement_succeeded",
+        "schema_version": 3,
+        "semantics": (
+            "one_case_passed_means_prompt_protocol_and_task_shape_scoped_"
+            "self_improvement_succeeded"
+        ),
         "suite_id": _OUTCOME_SUITE_ID,
     }
 )
@@ -143,12 +152,46 @@ def _failed_names_and_floor(
     return frozenset(failed_names), failed_size_floor
 
 
+class _TaskShapeEvidenceView:
+    """Read-only exact-shape view used by the public recommendation path."""
+
+    def __init__(
+        self,
+        store: CapabilityEvidenceStore,
+        task_type: TaskType,
+    ) -> None:
+        self._store = store
+        self._task_type = task_type
+
+    def query_by_task_kind(self, task_kind: str) -> list[dict[str, Any]]:
+        records = self._store.query_by_task_shape(self._task_type, task_kind)
+        return list(select_representative_evidence(records))
+
+    def query_by_model(self, model_profile_id: str) -> list[dict[str, Any]]:
+        records = [
+            record
+            for record in self._store.query_by_model(model_profile_id)
+            if record.get("task_type") == self._task_type.value
+        ]
+        return list(select_representative_evidence(records))
+
+
 def _evidence_scores(
     task_text: str,
     hardware: HardwareInventory,
     store: CapabilityEvidenceStore,
 ) -> dict[str, float]:
-    recommendations = recommend_model(task_text, hardware, store, urgent=True)
+    task_type = infer_task_type(task_text)
+    scoped_store = cast(
+        CapabilityEvidenceStore,
+        _TaskShapeEvidenceView(store, task_type),
+    )
+    recommendations = recommend_model(
+        task_text,
+        hardware,
+        scoped_store,
+        urgent=True,
+    )
     return {
         recommendation.model_profile_id: recommendation.score
         for recommendation in recommendations
@@ -300,6 +343,7 @@ def _validate_attempt_identity_digest(value: object) -> str:
 def _outcome_payload(
     model: LocalModelConfig,
     revision: str,
+    task_type: TaskType,
     task_kind: str,
     role: TaskRole,
     attempt_identity_digest: str,
@@ -318,6 +362,7 @@ def _outcome_payload(
         "model_profile_id": model.name,
         "model_identity_digest": identity_digest,
         "attempt_identity_digest": attempt_identity,
+        "task_type": task_type.value,
         "task_kind": task_kind,
         "role": role.value,
         "collection": _OUTCOME_COLLECTION,
@@ -341,6 +386,7 @@ def record_self_improve_outcome(
 ) -> int:
     """Persist one revision- and prompt-protocol-bound outcome."""
     attempt_identity = _validate_attempt_identity_digest(attempt_identity_digest)
+    task_type = infer_task_type(task_text)
     task_kind, role = _primary_task_capability(task_text)
     model = _canonical_candidate_model(candidate)
     if not isinstance(succeeded, bool):
@@ -352,6 +398,7 @@ def record_self_improve_outcome(
     payload = _outcome_payload(
         model,
         revision,
+        task_type,
         task_kind,
         role,
         attempt_identity,
@@ -364,6 +411,7 @@ def record_self_improve_outcome(
 
 def _valid_outcome_state(
     record: Mapping[str, object],
+    task_type: TaskType,
     task_kind: str,
     role: TaskRole,
     attempt_identity_digest: str,
@@ -404,6 +452,7 @@ def _valid_outcome_state(
     expected = _outcome_payload(
         model,
         revision,
+        task_type,
         task_kind,
         role,
         record_attempt_identity,
@@ -428,11 +477,13 @@ def load_latest_failed_model_ids(
 ) -> tuple[str, ...]:
     """Load latest failures for exactly one prompt-plan/protocol identity."""
     attempt_identity = _validate_attempt_identity_digest(attempt_identity_digest)
+    task_type = infer_task_type(task_text)
     task_kind, role = _primary_task_capability(task_text)
     latest: dict[str, bool] = {}
     for record in store.list_all():
         state = _valid_outcome_state(
             record,
+            task_type,
             task_kind,
             role,
             attempt_identity,

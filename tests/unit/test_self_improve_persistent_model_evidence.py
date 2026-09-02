@@ -144,7 +144,7 @@ def test_new_failure_after_success_is_active(tmp_path: object) -> None:
 
     assert load_latest_failed_model_ids(
         store,
-        task_text="write code for a module",
+        task_text="Implement another product feature in Python.",
         attempt_identity_digest=_ATTEMPT_IDENTITY,
     ) == ("qwen2.5-coder-0.5b",)
 

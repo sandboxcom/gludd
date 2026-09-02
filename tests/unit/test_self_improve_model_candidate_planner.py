@@ -9,10 +9,12 @@ import pytest
 
 from general_ludd.hardware.survey import GpuInfo, HardwareInventory
 from general_ludd.local_model import get_model
+from general_ludd.schemas.benchmark import TaskType
 from general_ludd.self_improve.model_candidate_planner import (
     PlannedModelCandidate,
     plan_model_candidates,
 )
+from general_ludd.self_improve.task_diversity import infer_task_type
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
 
@@ -45,6 +47,7 @@ def _register_failure_evidence(
         store.register_evidence(
             {
                 "model_profile_id": model_id,
+                "task_type": TaskType.BUG_FIX.value,
                 "task_kind": "failure_classification",
                 "role": "reviewer",
                 "suite_id": f"suite-{index}",
@@ -113,8 +116,11 @@ def test_capability_evidence_selects_anchor_then_escalates_by_size(tmp_path: obj
         passed=0,
     )
 
+    task_text = "classify this failure and root cause"
+    assert infer_task_type(task_text) is TaskType.BUG_FIX
+
     candidates = plan_model_candidates(
-        "classify this failure and root cause",
+        task_text,
         1024,
         (),
         _hardware(),
