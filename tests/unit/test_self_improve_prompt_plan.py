@@ -51,6 +51,20 @@ def _reference() -> CodexReference:
         changed_files=frozenset(_PATHS), test_files=frozenset(_TESTS),
         changed_lines=213, elapsed_seconds=900.0)
 
+def test_attempt_identity_uses_exact_prompt_protocol_and_is_legacy_sensitive() -> None:
+    plan = PromptPlan(
+        shards=(PromptShard(("src/general_ludd/example.py",), "bounded prompt"),),
+        source_bytes=14,
+    )
+
+    assert runner_module._attempt_identity_digest(plan) == plan.protocol_digest
+    legacy = runner_module._attempt_identity_digest("bounded prompt")
+    assert len(legacy) == 64
+    int(legacy, 16)
+    assert legacy == runner_module._attempt_identity_digest("bounded prompt")
+    assert legacy != runner_module._attempt_identity_digest("changed prompt")
+
+
 def _large_fixture(root: Path) -> None:
     bodies = {
         _PATHS[0]: (

@@ -240,6 +240,22 @@ class PromptPlan:
         return max(len(shard.prompt.encode("utf-8")) for shard in self.shards)
 
 
+def _attempt_identity_digest(prompt: PromptPlan | str) -> str:
+    """Return the immutable protocol identity used to scope model outcomes."""
+    if isinstance(prompt, PromptPlan):
+        return prompt.protocol_digest
+    canonical = json.dumps(
+        {
+            "prompt": prompt,
+            "protocol": "self-improve-string-prompt-v1",
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
 @dataclass(frozen=True)
 class MakeResult:
     """One observable Make operation and its bounded output."""
@@ -1515,6 +1531,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                 + (context_cleanup.stderr or context_cleanup.stdout)
             )
     prompt: PromptPlan | str = base_prompt
+    attempt_identity_digest = _attempt_identity_digest(base_prompt)
     if isinstance(base_prompt, PromptPlan):
         print(
             "SELF_IMPROVE_PROMPT_PLAN "
@@ -1552,6 +1569,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                     prior_failed_model_ids = load_latest_failed_model_ids(
                         model_evidence_store,
                         task_text=task.objective,
+                        attempt_identity_digest=attempt_identity_digest,
                     )
                     managed_candidates = plan_model_candidates(
                         task.objective,
@@ -1645,6 +1663,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                     model_evidence_store,
                     task_text=task.objective,
                     candidate=candidate,
+                    attempt_identity_digest=attempt_identity_digest,
                     succeeded=False,
                 )
                 print(
@@ -1682,6 +1701,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                 model_evidence_store,
                 task_text=task.objective,
                 candidate=candidate,
+                attempt_identity_digest=attempt_identity_digest,
                 succeeded=final.comparison.accepted,
             )
             print(

@@ -537,6 +537,7 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
     )
     evidence_store = object()
     events: list[str] = []
+    attempt_identities: list[str] = []
 
     class EvidenceLeaseManager:
         def __init__(
@@ -582,9 +583,17 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
                 lease_path.unlink(missing_ok=True)
                 events.append(f"release:{model_config.name}")
 
-    def load_failures(store: object, *, task_text: str) -> tuple[str, ...]:
+    def load_failures(
+        store: object,
+        *,
+        task_text: str,
+        attempt_identity_digest: str,
+    ) -> tuple[str, ...]:
         assert store is evidence_store
         assert task_text == "Repair Python code safely."
+        assert len(attempt_identity_digest) == 64
+        int(attempt_identity_digest, 16)
+        attempt_identities.append(attempt_identity_digest)
         events.append("load")
         return (failed.name,)
 
@@ -626,10 +635,12 @@ def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
         *,
         task_text: str,
         candidate: PlannedModelCandidate,
+        attempt_identity_digest: str,
         succeeded: bool,
     ) -> int:
         assert store is evidence_store
         assert task_text == "Repair Python code safely."
+        assert attempt_identities == [attempt_identity_digest]
         events.append(f"outcome:{candidate.config.name}:{succeeded}")
         return len(events)
 
