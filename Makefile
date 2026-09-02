@@ -31,7 +31,7 @@ RELEASE_READINESS_VALIDATE_ONLY ?= 0
 RELEASE_COMPLETED_STAGES ?=
 RELEASE_OBSERVATIONS ?=
 RELEASE_FAILURE_LEDGER ?= docs/releases/beta-release-failures.json
-SELF_IMPROVE_MODEL_PATH ?= /tmp/gludd-qwen-e2e-model/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf
+SELF_IMPROVE_MODEL_PATH ?=
 SELF_IMPROVE_PROMPT_FILE ?=
 SELF_IMPROVE_PROPOSAL_FILE ?=
 SELF_IMPROVE_WORKER_VALIDATE_ONLY ?= 0
@@ -408,7 +408,7 @@ help:
 	@echo "  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge"
 	@echo "  agent-worktree-list           List active git worktrees"
 	@echo "  self-improve-local-proposal  Owned local GGUF proposal worker (SELF_IMPROVE_MODEL_PATH/PROMPT_FILE/PROPOSAL_FILE)"
-	@echo "  test-self-improve TARGET=<name>  Compare local-model proposal with Codex reference (SELF_IMPROVE_*)"
+	@echo "  test-self-improve TARGET=<name>  Compare an auto-managed local model with Codex (optional SELF_IMPROVE_MODEL_PATH override)"
 	@echo "  test-self-improve-all            Deprecated alias for one explicit Codex-reference benchmark"
 	@echo "  git-index                    Index git log into SQLite (.gludd/git_history.db)"
 	@echo "  git-search Q='...'           Search indexed git history"
@@ -5614,7 +5614,7 @@ self-improve-local-proposal:
 	fi
 
 # Local self-improvement benchmark — compares every proposed edit with Codex.
-# Usage: make test-self-improve TARGET=name SELF_IMPROVE_MODEL_PATH=... SELF_IMPROVE_BASELINE_REF=<sha> SELF_IMPROVE_REFERENCE_REF=<sha> SELF_IMPROVE_TASK_FILE=task.json SELF_IMPROVE_VALIDATE_ONLY=0
+# Usage: make test-self-improve TARGET=name [SELF_IMPROVE_MODEL_PATH=optional override] SELF_IMPROVE_BASELINE_REF=<sha> SELF_IMPROVE_REFERENCE_REF=<sha> SELF_IMPROVE_TASK_FILE=task.json SELF_IMPROVE_VALIDATE_ONLY=0
 test-self-improve:
 	@[ -n "$(TARGET)" ] || { echo "TARGET is required"; exit 2; }
 	@[ -n "$(SELF_IMPROVE_BASELINE_REF)" ] || { echo "SELF_IMPROVE_BASELINE_REF is required"; exit 2; }

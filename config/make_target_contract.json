@@ -12,7 +12,7 @@
         "SELF_IMPROVE_MAX_ATTEMPTS",
         "SELF_IMPROVE_VALIDATE_ONLY"
       ],
-      "behavior": "make test-self-improve TARGET=dependency-floor SELF_IMPROVE_MODEL_PATH=/tmp/gludd-qwen-e2e-model/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf SELF_IMPROVE_BASELINE_REF=df6c84a5da10b11e0e1407b0c5699073b7523b8e SELF_IMPROVE_REFERENCE_REF=3e8b9a275f70dcd84d75940a64042d3113f0f8fe SELF_IMPROVE_TASK_FILE=config/self-improve/codex-parity-smoke.json SELF_IMPROVE_MAX_ATTEMPTS=1 SELF_IMPROVE_VALIDATE_ONLY=1"
+      "behavior": "make test-self-improve TARGET=dependency-floor SELF_IMPROVE_MODEL_PATH= SELF_IMPROVE_BASELINE_REF=df6c84a5da10b11e0e1407b0c5699073b7523b8e SELF_IMPROVE_REFERENCE_REF=3e8b9a275f70dcd84d75940a64042d3113f0f8fe SELF_IMPROVE_TASK_FILE=config/self-improve/codex-parity-smoke.json SELF_IMPROVE_MAX_ATTEMPTS=1 SELF_IMPROVE_VALIDATE_ONLY=1"
     },
     {
       "name": "self-improve-local-proposal",

@@ -719,9 +719,11 @@ def _attempt_result(*, accepted: bool) -> runner_module.AttemptResult:
 
 
 def _benchmark_args(task_file: Path, *, max_attempts: int = 1) -> argparse.Namespace:
+    model_path = task_file.parent / "model.gguf"
+    model_path.write_bytes(b"GGUF test model")
     return argparse.Namespace(
         target="unit",
-        local_model_path="/tmp/model.gguf",
+        local_model_path=str(model_path),
         baseline_ref="a" * 40,
         reference_ref="b" * 40,
         task_file=str(task_file),

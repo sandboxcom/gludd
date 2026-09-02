@@ -14,6 +14,7 @@ import signal
 import subprocess
 import tempfile
 import time
+from contextlib import ExitStack
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Final, Protocol, TextIO, cast
@@ -26,6 +27,7 @@ from general_ludd.self_improve.codex_comparison import (
     build_retry_prompt,
     compare_with_codex,
 )
+from general_ludd.self_improve.model_lifecycle import ModelLeaseManager
 
 _MAX_CAPTURE_BYTES: Final = 2_097_152
 _MAX_TASK_BYTES: Final = 262_144
@@ -961,7 +963,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
             f"reference={reference.reference_sha} files={len(reference.changed_files)} "
             f"tests={len(reference.test_files)} "
             f"estimated_output_tokens={required_output_tokens} "
-            f"model={Path(args.local_model_path)}"
+            f"model={Path(args.local_model_path) if args.local_model_path else 'auto'}"
         )
         return AttemptResult(
             comparison=ComparisonResult(
@@ -1010,7 +1012,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
             diagnostics="validate-only",
         )
 
-    model_path = Path(args.local_model_path)
+    explicit_model_path = Path(args.local_model_path).expanduser() if args.local_model_path else None
     context_root, context_branch = create_worktree(
         root_runner,
         reference.baseline_sha,
@@ -1038,49 +1040,66 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
             )
     prompt = base_prompt
     final: AttemptResult | None = None
-    for attempt in range(1, args.max_attempts + 1):
-        print(f"SELF_IMPROVE_ATTEMPT_START attempt={attempt}", flush=True)
-        try:
-            if attempt == 1 and mechanical_proposal is not None:
-                proposal = mechanical_proposal
-            else:
-                proposal = generate_local_proposal(root_runner, model_path, prompt)
-        except (RuntimeError, ValueError) as exc:
+    model_path: Path | None = None
+    with ExitStack() as model_stack:
+        for attempt in range(1, args.max_attempts + 1):
+            print(f"SELF_IMPROVE_ATTEMPT_START attempt={attempt}", flush=True)
+            try:
+                if attempt == 1 and mechanical_proposal is not None:
+                    proposal = mechanical_proposal
+                else:
+                    if model_path is None:
+                        acquired = model_stack.enter_context(
+                            ModelLeaseManager().acquire(
+                                task.objective,
+                                explicit_path=explicit_model_path,
+                            )
+                        )
+                        model_path = acquired.path
+                        print(
+                            "SELF_IMPROVE_MODEL_ACQUIRED "
+                            f"model={acquired.model_id} source={acquired.source} "
+                            f"revision={acquired.resolved_revision or 'explicit'} "
+                            f"sha256={acquired.artifact_sha256}",
+                            flush=True,
+                        )
+                    proposal = generate_local_proposal(root_runner, model_path, prompt)
+            except (RuntimeError, ValueError) as exc:
+                print(
+                    f"SELF_IMPROVE_PROPOSAL_REJECTED attempt={attempt} "
+                    f"error={json.dumps(str(exc)[:1000])}",
+                    flush=True,
+                )
+                if attempt == args.max_attempts:
+                    raise
+                prompt = (
+                    base_prompt
+                    + "\\nPrevious output failed strict proposal validation: "
+                    + str(exc)[:1000]
+                    + "\\nReturn a complete object satisfying every required field."
+                )
+                continue
+            final = evaluate_attempt(
+                root_runner,
+                task,
+                reference,
+                proposal,
+                attempt,
+                merge=args.merge,
+            )
             print(
-                f"SELF_IMPROVE_PROPOSAL_REJECTED attempt={attempt} "
-                f"error={json.dumps(str(exc)[:1000])}",
+                f"SELF_IMPROVE_ATTEMPT_END attempt={attempt} "
+                f"score={final.comparison.score:.2f} accepted={final.comparison.accepted} "
+                f"blockers={json.dumps(final.comparison.blockers)}",
                 flush=True,
             )
-            if attempt == args.max_attempts:
-                raise
-            prompt = (
-                base_prompt
-                + "\\nPrevious output failed strict proposal validation: "
-                + str(exc)[:1000]
-                + "\\nReturn a complete object satisfying every required field."
+            if final.comparison.accepted:
+                return final
+            prompt = build_retry_prompt(
+                base_prompt,
+                final.comparison,
+                diagnostics=final.diagnostics,
             )
-            continue
-        final = evaluate_attempt(
-            root_runner,
-            task,
-            reference,
-            proposal,
-            attempt,
-            merge=args.merge,
-        )
-        print(
-            f"SELF_IMPROVE_ATTEMPT_END attempt={attempt} "
-            f"score={final.comparison.score:.2f} accepted={final.comparison.accepted} "
-            f"blockers={json.dumps(final.comparison.blockers)}",
-            flush=True,
-        )
-        if final.comparison.accepted:
-            return final
-        prompt = build_retry_prompt(
-            base_prompt,
-            final.comparison,
-            diagnostics=final.diagnostics,
-        )
     if final is None:
         raise RuntimeError("no local-model attempt was executed")
     return final
@@ -1174,7 +1193,11 @@ def _parser() -> argparse.ArgumentParser:
         description="Benchmark local self-improvement against a Codex reference patch"
     )
     parser.add_argument("--target", required=True, help="Stable benchmark target label")
-    parser.add_argument("--local-model-path", required=True)
+    parser.add_argument(
+        "--local-model-path",
+        default="",
+        help="Optional operator GGUF override; managed acquisition is the default",
+    )
     parser.add_argument("--baseline-ref", required=True)
     parser.add_argument("--reference-ref", required=True)
     parser.add_argument("--task-file", required=True)
