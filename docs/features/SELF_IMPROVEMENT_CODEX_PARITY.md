@@ -143,13 +143,16 @@ The runner therefore hashes one canonical JSON descriptor containing the exact
   authoritative manifest schema and limits, path policy, batch protocol, and
   strict parent-decoder version.
 
-Sorted-key serialization makes retry-identical inputs stable. Retry diagnostics,
-model path, cache path, hardware details, process identifiers, timestamps, and
-credentials are intentionally absent because they do not define the proposal
-language. Any material protocol constant used by inference or validation changes
-the digest. The runner sends that exact digest to both historical-failure
-loading and every success/failure record and prints it beside the narrower
-prompt digest.
+Sorted-key serialization makes retry-identical inputs stable. Per-attempt
+diagnostic content, model path, cache path, hardware details, process
+identifiers, timestamps, and credentials are intentionally absent because they
+do not define the proposal language. The versioned validation-retry descriptor
+is included because its marker selection, tail and feedback limits, canonical
+classifications, and prompt framing do affect the next candidate output. Any
+material protocol constant used by inference, validation, or retry changes the
+digest. The runner sends that exact digest to both historical-failure loading
+and every success/failure record and prints it beside the narrower prompt
+digest.
 
 Existing prompt-only outcome records are preserved for audit. Exact-digest
 selection makes them ineligible to exclude a model under the new protocol; no
@@ -160,25 +163,51 @@ schema nor the running daemon.
 
 This boundary also responds to long-lived practitioner evidence.
 [llama-cpp-python issue 1483](https://github.com/abetlen/llama-cpp-python/issues/1483)
-shows that changing structured-output shape can change runtime behavior all the
-way to native process death, while
+reports that a structured response format can end in native process failure,
+while
 [discussion 614](https://github.com/abetlen/llama-cpp-python/discussions/614)
-documents persistent difficulty keeping hand-authored grammar and parsing
-semantics aligned. Gludd treats schema, canary, budget, and decoder as one
-versioned attempt rather than assuming prompt equality proves behavioral
-equality.
+records persistent grammar/parser alignment failures and diagnostics containing
+local execution details. Gludd treats schema, canary, budget, decoder, and retry
+feedback as one versioned attempt rather than assuming prompt equality proves
+behavioral equality or replaying backend output into another model.
 
-Regression tests first reproduced the old collision, then pin every protocol
-component independently, canonical ordering, invalid digest rejection,
-retry-stable identity, exact runner load/record wiring, and preservation but
+Regression tests first reproduced the old identity collision, then pin every
+protocol component independently, canonical ordering, invalid digest rejection,
+deterministic identity under an unchanged descriptor, identity rotation when
+retry semantics change, exact runner load/record wiring, and preservation but
 ineligibility of prompt-only evidence.
 
-This change is zero-downtime because it changes only an isolated, unpromoted
-candidate path. It has no daemon or database migration and cannot interrupt a
-current Gludd deployment. Rollback restores the previous gateway commit; model
-manifests and leases are format-independent and remain valid. If the public
-structured-output path is incompatible with a pinned runtime or model, the
-attempt fails closed and the previously admitted revision remains available.
+## Typed validation retry feedback
+
+A managed local attempt exposed an ordering defect: verbose backend
+initialization occupied the beginning of a captured failure while the stable
+proposal-validation marker and actionable edit-contract reason arrived at the
+end. The former retry copied the first 1,000 characters, so the next candidate
+received noise and lost the reason. The parity document records the behavior,
+not the raw worker or model output.
+
+The runner now selects the final stable proposal-error marker. If no marker is
+available, classification examines only the final 512 UTF-8 bytes rather than
+the noisy head. That bounded candidate can select an allowlisted canonical
+validation phrase and type; it is never copied into the prompt. Unrecognized
+detail becomes `<redacted>`. Paths, assignments that may carry credentials,
+backend logs, and model completion text therefore cannot cross the retry
+boundary. The complete typed feedback is capped at 256 bytes and the identical
+suffix is applied to every original shard.
+
+The immutable `PromptPlan` digest and every shard focus remain stable during
+retries. The complete attempt digest additionally binds the one runtime-used
+retry descriptor, so an unchanged algorithm is deterministic while any version,
+marker, bound, classification, or framing change starts a new evidence identity.
+This keeps the strict proposal manifest and decode-token limits unchanged.
+
+The change follows ZDD: proposal retries run only in the isolated, unpromoted
+worktree and do not mutate daemon or database state. Each attempt retains its
+existing five-minute worker deadline, one model lease, bounded capture, atomic
+exchange, and process-group cleanup. Rollback restores the prior runner and
+protocol descriptor; earlier evidence remains immutable and naturally matches
+its earlier digest. A failed or rolled-back attempt leaves the running service
+and previously admitted model artifact available.
 
 ## Context capacity and overflow
 

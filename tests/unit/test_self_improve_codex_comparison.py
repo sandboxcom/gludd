@@ -160,6 +160,40 @@ def test_attempt_identity_binds_complete_managed_output_protocol(
         )
 
 
+def test_attempt_identity_binds_runtime_validation_retry_protocol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prompt_digest = "a" * 64
+    baseline = comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
+    protocol = comparison_module.LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
+
+    assert baseline == comparison_module.local_proposal_attempt_identity_digest(
+        prompt_digest
+    )
+    changed_protocols = (
+        replace(protocol, version="self-improve-validation-retry-v-next"),
+        replace(
+            protocol,
+            fallback_tail_bytes=protocol.fallback_tail_bytes + 1,
+        ),
+        replace(
+            protocol,
+            max_feedback_bytes=protocol.max_feedback_bytes + 1,
+        ),
+    )
+    for changed in changed_protocols:
+        with monkeypatch.context() as scoped:
+            scoped.setattr(
+                comparison_module,
+                "LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL",
+                changed,
+            )
+            assert (
+                comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
+                != baseline
+            )
+
+
 @pytest.mark.parametrize("prompt_digest", ["", "A" * 64, "a" * 63, "g" * 64])
 def test_attempt_identity_rejects_noncanonical_prompt_digest(
     prompt_digest: str,

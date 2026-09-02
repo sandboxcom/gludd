@@ -7,7 +7,7 @@ import importlib
 import json
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 from typing import Protocol, cast
 
@@ -142,6 +142,74 @@ _COMPACT_SYSTEM_PROMPT = (
 )
 
 
+@dataclass(frozen=True)
+class ValidationRetryProtocol:
+    """Identity-bearing safe feedback contract for proposal-validation retries."""
+
+    version: str
+    error_marker: str
+    marker_source: str
+    fallback_source: str
+    fallback_tail_bytes: int
+    max_feedback_bytes: int
+    fallback_type: str
+    redacted_detail: str
+    prompt_prefix: str
+    prompt_suffix: str
+    safe_feedback: tuple[tuple[str, str], ...]
+
+
+LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
+    version="self-improve-validation-retry-v1",
+    error_marker="SELF_IMPROVE_LOCAL_PROPOSAL_ERROR",
+    marker_source="proposal_error",
+    fallback_source="worker_tail",
+    fallback_tail_bytes=512,
+    max_feedback_bytes=256,
+    fallback_type="proposal_validation",
+    redacted_detail="<redacted>",
+    prompt_prefix="\nPrevious output failed strict proposal validation: ",
+    prompt_suffix="\nReturn a complete object satisfying every required field.",
+    safe_feedback=(
+        ("replace requires distinct non-empty old_text", "edit_replace_contract"),
+        (
+            "create requires empty old_text and non-empty new_text",
+            "edit_create_contract",
+        ),
+        (
+            "delete requires non-empty old_text and empty new_text",
+            "edit_delete_contract",
+        ),
+        ("compact edit must change content", "edit_content_contract"),
+        (
+            "compact proposal is not one complete JSON object",
+            "proposal_json_contract",
+        ),
+        ("compact proposal must contain exactly e and c", "proposal_root_contract"),
+        (
+            "each compact edit must contain exactly p, a, and z",
+            "edit_shape_contract",
+        ),
+        ("compact edit text fields must be strings", "edit_text_contract"),
+        (
+            "local model exhausted the proposal token budget before completion",
+            "decode_budget",
+        ),
+        ("local model did not complete structured output", "decode_completion"),
+        ("local model response has no proposal text", "decode_empty"),
+        ("proposal batch protocol identity drifted", "protocol_identity"),
+        (
+            "proposal batch count does not match the prompt plan",
+            "proposal_batch_count",
+        ),
+        (
+            "proposal shard edits must cover the exact focus paths",
+            "proposal_scope",
+        ),
+    ),
+)
+
+
 def local_proposal_attempt_identity_digest(prompt_protocol_digest: str) -> str:
     """Bind one prompt plan to the complete managed local-output protocol."""
     if (
@@ -164,6 +232,7 @@ def local_proposal_attempt_identity_digest(prompt_protocol_digest: str) -> str:
     payload: dict[str, object] = {
         "attempt_protocol": "self-improve-local-attempt-v1",
         "prompt_protocol_digest": prompt_protocol_digest,
+        "validation_retry": asdict(LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL),
         "compact_output": {
             "protocol_version": _COMPACT_PROPOSAL_PROTOCOL_VERSION,
             "schema": _COMPACT_PROPOSAL_JSON_SCHEMA,

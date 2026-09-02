@@ -313,6 +313,106 @@ def test_prompt_plan_exposes_stable_protocol_digest_across_retries(tmp_path: Pat
     )
     assert altered.protocol_digest != first.protocol_digest
 
+
+def test_validation_retry_uses_last_typed_marker_without_raw_worker_output() -> None:
+    plan = PromptPlan(
+        shards=(
+            PromptShard(("src/one.py",), "first bounded prompt"),
+            PromptShard(("tests/unit/test_one.py",), "second bounded prompt"),
+        ),
+        source_bytes=31,
+    )
+    error = (
+        "llama loader /Users/operator/models/deepseek.gguf TOKEN=top-secret\n"
+        "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR compact proposal must contain exactly e and c\n"
+        '{"e":[{"p":"src/private.py","a":"raw model body","z":"PASSWORD=hunter2"}]}\n'
+        "worker failed rc=2: SELF_IMPROVE_LOCAL_PROPOSAL_ERROR "
+        "replace requires distinct non-empty old_text\n"
+    )
+
+    retried = runner_module._build_validation_retry_prompt_plan(plan, error)
+
+    suffixes = tuple(
+        retried_shard.prompt[len(original.prompt) :]
+        for original, retried_shard in zip(plan.shards, retried.shards, strict=True)
+    )
+    assert len(set(suffixes)) == 1
+    assert "type=edit_replace_contract" in suffixes[0]
+    assert "source=proposal_error" in suffixes[0]
+    assert "replace requires distinct non-empty old_text" in suffixes[0]
+    assert len(suffixes[0].encode("utf-8")) < 384
+    assert all(
+        value not in suffixes[0]
+        for value in (
+            "/Users/operator",
+            "deepseek.gguf",
+            "top-secret",
+            "src/private.py",
+            "raw model body",
+            "hunter2",
+            "compact proposal must contain exactly e and c",
+        )
+    )
+    assert tuple(shard.focus_paths for shard in retried.shards) == tuple(
+        shard.focus_paths for shard in plan.shards
+    )
+    assert all(
+        retried_shard.prompt.startswith(original.prompt)
+        for original, retried_shard in zip(plan.shards, retried.shards, strict=True)
+    )
+    assert retried.source_bytes == plan.source_bytes
+    assert retried.protocol_digest == plan.protocol_digest
+    assert runner_module._attempt_identity_digest(retried) == (
+        runner_module._attempt_identity_digest(plan)
+    )
+
+
+def test_validation_retry_markerless_feedback_uses_bounded_tail() -> None:
+    plan = PromptPlan(
+        shards=(PromptShard(("src/one.py",), "bounded prompt"),),
+        source_bytes=14,
+    )
+    error = (
+        "replace requires distinct non-empty old_text\n"
+        + ("early noisy loader output " * 100)
+        + "\ncreate requires empty old_text and non-empty new_text "
+        "API_KEY=tail-secret /tmp/private/model.gguf raw-model-fragment"
+    )
+
+    retried = runner_module._build_validation_retry_prompt_plan(plan, error)
+    suffix = retried.shards[0].prompt[len(plan.shards[0].prompt) :]
+
+    assert "type=edit_create_contract" in suffix
+    assert "source=worker_tail" in suffix
+    assert "create requires empty old_text and non-empty new_text" in suffix
+    assert "replace requires distinct non-empty old_text" not in suffix
+    assert "tail-secret" not in suffix
+    assert "/tmp/private" not in suffix
+    assert "raw-model-fragment" not in suffix
+    assert len(suffix.encode("utf-8")) < 384
+
+
+def test_validation_retry_redacts_unrecognized_marker_detail() -> None:
+    plan = PromptPlan(
+        shards=(PromptShard(("src/one.py",), "bounded prompt"),),
+        source_bytes=14,
+    )
+    error = (
+        "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR "
+        "/Users/operator/private.py TOKEN=top-secret raw-model-fragment"
+    )
+
+    retried = runner_module._build_validation_retry_prompt_plan(plan, error)
+    suffix = retried.shards[0].prompt[len(plan.shards[0].prompt) :]
+
+    assert "type=proposal_validation" in suffix
+    assert "source=proposal_error" in suffix
+    assert "detail=<redacted>" in suffix
+    assert "/Users/operator" not in suffix
+    assert "top-secret" not in suffix
+    assert "raw-model-fragment" not in suffix
+
+
 def test_shard_merger_preserves_exact_scope_tests_and_commands() -> None:
     groups = (
         (_PATHS[0], _PATHS[3]),

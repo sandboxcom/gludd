@@ -25,6 +25,7 @@ from general_ludd.hardware.model_fit import unified_probe
 from general_ludd.local_model import LocalModelConfig
 from general_ludd.planning.repo_map import RepoMapBuilder
 from general_ludd.self_improve.codex_comparison import (
+    LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL,
     CandidateEvidence,
     CodexReference,
     ComparisonResult,
@@ -621,16 +622,55 @@ def build_retry_prompt_plan(
     )
 
 
+def _validation_retry_feedback(error: str) -> str:
+    """Classify a bounded failure tail without returning worker-controlled text."""
+    protocol = LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
+    cleaned = error.replace("\x00", "")
+    marker_pattern = re.compile(
+        rf"{re.escape(protocol.error_marker)}[ \t]+([^\r\n]+)"
+    )
+    marker_details = marker_pattern.findall(cleaned)
+    if marker_details:
+        source = protocol.marker_source
+        candidate = marker_details[-1]
+    else:
+        source = protocol.fallback_source
+        candidate = (
+            cleaned.encode("utf-8")[-protocol.fallback_tail_bytes :]
+            .decode("utf-8", errors="replace")
+        )
+
+    feedback_type = protocol.fallback_type
+    safe_detail = protocol.redacted_detail
+    for expected_detail, expected_type in protocol.safe_feedback:
+        if expected_detail in candidate:
+            feedback_type = expected_type
+            safe_detail = expected_detail
+            break
+    feedback = (
+        f"protocol={protocol.version} type={feedback_type} "
+        f"source={source} detail={safe_detail}"
+    )
+    if len(feedback.encode("utf-8")) > protocol.max_feedback_bytes:
+        raise RuntimeError("validation retry feedback exceeds its protocol bound")
+    return feedback
+
+
+def _validation_retry_suffix(error: str) -> str:
+    """Frame one typed diagnostic with the identity-bearing retry protocol."""
+    protocol = LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
+    return (
+        protocol.prompt_prefix
+        + _validation_retry_feedback(error)
+        + protocol.prompt_suffix
+    )
+
+
 def _build_validation_retry_prompt_plan(
     plan: PromptPlan,
     error: str,
 ) -> PromptPlan:
-    diagnostic = error.replace("\x00", "").replace("\n", " ").replace("\r", " ")[:1000]
-    suffix = (
-        "\nPrevious output failed strict proposal validation: "
-        + diagnostic
-        + "\nReturn a complete object satisfying every required field."
-    )
+    suffix = _validation_retry_suffix(error)
     return PromptPlan(
         shards=tuple(
             PromptShard(
@@ -1772,12 +1812,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                 if isinstance(base_prompt, PromptPlan):
                     prompt = _build_validation_retry_prompt_plan(base_prompt, str(exc))
                 else:
-                    prompt = (
-                        base_prompt
-                        + "\\nPrevious output failed strict proposal validation: "
-                        + str(exc)[:1000]
-                        + "\\nReturn a complete object satisfying every required field."
-                    )
+                    prompt = base_prompt + _validation_retry_suffix(str(exc))
                 continue
             try:
                 final = evaluate_attempt(

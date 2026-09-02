@@ -1037,7 +1037,11 @@ def test_run_benchmark_retries_rejected_local_output_with_evidence(
 
     assert result is accepted
     assert len(prompts) == 2
-    assert "incomplete JSON tail" in prompts[1]
+    assert "protocol=self-improve-validation-retry-v1" in prompts[1]
+    assert "type=proposal_validation" in prompts[1]
+    assert "source=worker_tail" in prompts[1]
+    assert "detail=<redacted>" in prompts[1]
+    assert "incomplete JSON tail" not in prompts[1]
 
 
 def test_run_benchmark_returns_final_rejected_comparison(
