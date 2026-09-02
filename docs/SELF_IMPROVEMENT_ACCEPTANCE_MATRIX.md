@@ -121,6 +121,58 @@ worker/model reuse and strict merge behavior. Every case remains within the
 global proposal limits; the matrix does not multiply task size, model size,
 backend, and cache state into an unbounded Cartesian product.
 
+### Executable manifest and current eligibility
+
+The canonical executable source is
+`config/self-improve/acceptance-matrix.json`. It contains exactly one ordered
+task contract for every existing `TaskType`, and each objective must reproduce
+both its declared `TaskType` and the first declared capability/role mapping.
+The loader rejects unknown fields, non-canonical JSON, changed contract checks,
+unsafe paths, duplicate task IDs, and any plan above twenty candidate attempts.
+
+A row is runnable only after the same exact task has an independently produced
+baseline/reference pair and tracked fixture digest. The repository currently
+has two such reference fixtures, documented in
+[SELF_IMPROVEMENT_CATALOG_TRUTH_FIXTURE.md](features/SELF_IMPROVEMENT_CATALOG_TRUTH_FIXTURE.md)
+and
+[SELF_IMPROVEMENT_MULTIFILE_FIXTURE.md](features/SELF_IMPROVEMENT_MULTIFILE_FIXTURE.md).
+Their task text does not satisfy any complete matrix row identity: both infer as
+`security_fix`, while neither is the matrix's synthetic exploit-regression task.
+They therefore remain useful standalone lifecycle fixtures but are not relabelled
+or reused as capability evidence here.
+
+All ten matrix rows consequently record `ineligible` with null fixture and Git
+identities plus the explicit reason
+`no_semantically_matching_independent_reference`. Turning a row eligible requires
+its own exact tracked task, SHA-256, distinct full baseline/reference SHAs, path
+and test contract, and unchanged type/capability mappings. Reusing another row's
+reference or filling only some identity fields fails closed before a workflow
+call.
+
+The safe validate-only invocation is:
+
+```console
+make test-self-improve-acceptance-matrix SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE=config/self-improve/acceptance-matrix.json SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH= SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE=0
+```
+
+While any row is ineligible, this command emits an observable result for all
+eleven ordered steps, makes zero underlying self-improvement workflow calls, and
+returns non-zero. That expected failure is the readiness result, not a model
+failure or a partial capability claim. Live mode is a separate explicit command:
+
+```console
+make test-self-improve-acceptance-matrix SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE=config/self-improve/acceptance-matrix.json SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH=/tmp/gludd-acceptance-model.gguf SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE=1
+```
+
+An incomplete matrix blocks that command before inference. Once every row is
+admitted, execution remains serial and observable through per-case start/end
+events plus the existing runner heartbeat. The cold/warm sentinel is the same
+`AM-BUG-01` task object replayed twice at one attempt each; the other nine rows
+allow at most two attempts each, so the complete plan cannot exceed twenty.
+Research rationale remains in
+[Evaluation practice and practitioner evidence](#evaluation-practice-and-practitioner-evidence);
+this executable contract does not duplicate a separate forum survey.
+
 ## Execution plan and bounds
 
 Run cases in case-ID order. Select at most two candidates per case and stop the

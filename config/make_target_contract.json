@@ -2,6 +2,15 @@
   "version": 1,
   "targets": [
     {
+      "name": "test-self-improve-acceptance-matrix",
+      "make_variables": [
+        "SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE",
+        "SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH",
+        "SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE"
+      ],
+      "behavior": "make test-self-improve-acceptance-matrix SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE=config/self-improve/acceptance-matrix.json SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH= SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE=0"
+    },
+    {
       "name": "test-self-improve-failure-corpus",
       "make_variables": ["SELF_IMPROVE_FAILURE_CORPUS_FILE"],
       "behavior": "make test-self-improve-failure-corpus SELF_IMPROVE_FAILURE_CORPUS_FILE=config/self-improve/failure-corpus.json"

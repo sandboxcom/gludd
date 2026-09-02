@@ -43,6 +43,9 @@ SELF_IMPROVE_VALIDATE_ONLY ?= 0
 SELF_IMPROVE_CATALOG_LIVE ?= 0
 SELF_IMPROVE_MULTIFILE_LIVE ?= 0
 SELF_IMPROVE_FAILURE_CORPUS_FILE ?= config/self-improve/failure-corpus.json
+SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE ?= config/self-improve/acceptance-matrix.json
+SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH ?=
+SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE ?= 0
 RECONCILE_QUIET_PROGRESS ?= 0
 MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
@@ -138,7 +141,7 @@ PYTEST_VERBOSITY ?= -v
         feature-start feature-done test-and-commit preflight \
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
-        self-improve-local-proposal test-self-improve test-self-improve-all \
+        self-improve-local-proposal test-self-improve test-self-improve-all test-self-improve-acceptance-matrix \
           development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key workstream-register workstream-unregister wt-prune-safe \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
@@ -416,6 +419,7 @@ help:
 	@echo "  test-self-improve-catalog-truth  Replay pinned catalog fixture (SELF_IMPROVE_CATALOG_LIVE=0|1)"
 	@echo "  test-self-improve-multifile      Replay pinned multi-file fixture (SELF_IMPROVE_MULTIFILE_LIVE=0|1)"
 	@echo "  test-self-improve-failure-corpus Replay typed local failures offline (SELF_IMPROVE_FAILURE_CORPUS_FILE)"
+	@echo "  test-self-improve-acceptance-matrix Validate/run the serial ten-shape contract (SELF_IMPROVE_ACCEPTANCE_MATRIX_*)"
 	@echo "  test-self-improve-all            Deprecated alias for one explicit Codex-reference benchmark"
 	@echo "  git-index                    Index git log into SQLite (.gludd/git_history.db)"
 	@echo "  git-search Q='...'           Search indexed git history"
@@ -5628,6 +5632,14 @@ test-self-improve:
 	@[ -n "$(SELF_IMPROVE_REFERENCE_REF)" ] || { echo "SELF_IMPROVE_REFERENCE_REF is required"; exit 2; }
 	@[ -n "$(SELF_IMPROVE_TASK_FILE)" ] || { echo "SELF_IMPROVE_TASK_FILE is required"; exit 2; }
 	@$(UV) run python scripts/run_self_improve_e2e.py --target "$(TARGET)" --local-model-path "$(SELF_IMPROVE_MODEL_PATH)" --baseline-ref "$(SELF_IMPROVE_BASELINE_REF)" --reference-ref "$(SELF_IMPROVE_REFERENCE_REF)" --task-file "$(SELF_IMPROVE_TASK_FILE)" --max-attempts "$(SELF_IMPROVE_MAX_ATTEMPTS)" $(if $(filter 1,$(SELF_IMPROVE_VALIDATE_ONLY)),--validate-only,)
+
+# Canonical ten-shape contract; validate-only is safe, live inference is explicit.
+test-self-improve-acceptance-matrix:
+	@case "$(SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE)" in 0|1) ;; *) echo "SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE must be 0 or 1"; exit 2;; esac
+	@EXPECTED_MATRIX_SHA256="3f95bcc9a1b36673e0ce45fbdc16ccfcf84bef81d8531371a1b30d6a197b7b86"; \
+		ACTUAL_MATRIX_SHA256="$$($(PYTHON) -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$(SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE)")"; \
+		[ "$$ACTUAL_MATRIX_SHA256" = "$$EXPECTED_MATRIX_SHA256" ] || { echo "acceptance matrix drift: expected=$$EXPECTED_MATRIX_SHA256 actual=$$ACTUAL_MATRIX_SHA256"; exit 2; }
+	@$(UV) run python -m tests.unit.self_improve_acceptance_matrix_runner --manifest "$(SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE)" --model-path "$(SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH)" $(if $(filter 1,$(SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE)),--live,)
 
 # Reproducible catalog-truth sentinel: safe plan by default; live inference is explicit.
 test-self-improve-catalog-truth:
