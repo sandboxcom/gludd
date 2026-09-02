@@ -74,6 +74,11 @@
       "behavior": "make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS=-q"
     },
     {
+      "name": "migrate-up",
+      "make_variables": ["MIGRATE_DATABASE_URL", "MIGRATE_REVISION"],
+      "behavior": "make migrate-up MIGRATE_DATABASE_URL=sqlite:// MIGRATE_REVISION=head"
+    },
+    {
       "name": "ci-run-summary",
       "make_variables": [
         "RUN",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import os
 import re
@@ -15,7 +16,7 @@ from fastapi import FastAPI, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.cli_core_changes import _excluded
-from general_ludd.db.repository import TodoRepository
+from general_ludd.db.repository import ConcurrencyError, TodoRepository
 from general_ludd.integrity.change_log import ChangeRecordStore
 from general_ludd.schemas.todo import TodoStatus
 from general_ludd.self_improve.approval import (
@@ -29,8 +30,10 @@ from general_ludd.self_improve.managed_runner import ApprovedSelfImprovePlan
 from general_ludd.self_improve.runtime import prepare_managed_self_improve_plan
 from general_ludd.self_improve.staging import (
     MANAGED_SELF_IMPROVE_APPROVAL_POLICY,
+    ManagedSelfImproveArtifactKind,
     ManagedSelfImprovePlanRequest,
     classify_self_improve_artifact,
+    self_improve_artifact_digest,
     validate_bound_managed_plan,
 )
 from general_ludd.self_update.applier import UpdateApplier
@@ -191,6 +194,50 @@ class _ConfigTierCapabilityChecker:
 
 def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
+
+
+def _require_bound_legacy_artifact(
+    todo: object,
+    *,
+    expected_kind: ManagedSelfImproveArtifactKind,
+) -> str:
+    """Return the immutable human-approved artifact or fail before side effects."""
+    approval_id = getattr(todo, "todo_id", "unknown")
+    if getattr(todo, "status", None) != TodoStatus.APPROVED.value:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"approval {approval_id} is not released "
+                f"(status={getattr(todo, 'status', None)}); a human must approve it first"
+            ),
+        )
+    raw = getattr(todo, "plan_artifact", None)
+    artifact_kind = classify_self_improve_artifact(
+        raw,
+        getattr(todo, "approval_policy", None),
+    )
+    if artifact_kind is not expected_kind:
+        raise HTTPException(
+            status_code=422,
+            detail=f"approval {approval_id} has a malformed change spec",
+        )
+    try:
+        actual_digest = self_improve_artifact_digest(raw)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"approval {approval_id} has a malformed change spec",
+        ) from exc
+    approved_digest = getattr(todo, "approved_artifact_digest", None)
+    if not isinstance(approved_digest, str) or not hmac.compare_digest(
+        actual_digest,
+        approved_digest,
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=f"approval {approval_id} artifact changed since human approval",
+        )
+    return cast(str, raw)
 
 
 def _resolve_non_config_project_repo(app: FastAPI, project_id: str) -> Path:
@@ -362,7 +409,8 @@ async def _enqueue_config_change(
                 "title": f"Self-improve config write: {targets}"[:512],
                 "description": (
                     "Config-tier self-improve on-disk write awaiting human "
-                    "approval. Release via /admin/self-improve/approvals then "
+                    "approval. Release to the non-runnable APPROVED state via "
+                    "/admin/self-improve/approvals then "
                     "re-POST /admin/self-improve/apply with approval_id."
                 ),
                 "status": TodoStatus.APPROVAL_REQUIRED.value,
@@ -390,10 +438,10 @@ async def _apply_approved_config_change(
     """Perform the on-disk config write for a human-RELEASED approval record.
 
     The record must be a self-improve todo that a human approved
-    (APPROVAL_REQUIRED -> QUEUED). The write uses the spec stored on the record,
+    (APPROVAL_REQUIRED -> APPROVED). The write uses the spec stored on the record,
     routed through UpdateApplier + AtomicSafeWriter so the capability/denylist/
     YAML/rollback guards still run. A successfully-applied record is consumed
-    (QUEUED -> ACTIVE -> COMPLETE) so it cannot be replayed.
+    (APPROVED -> ACTIVE -> COMPLETE) so it cannot be replayed.
     """
     async with factory() as session:
         repo = TodoRepository(session)
@@ -407,18 +455,12 @@ async def _apply_approved_config_change(
                 status_code=409,
                 detail=f"approval {approval_id} is not a self-improve record",
             )
-        if todo.status != TodoStatus.QUEUED.value:
-            # Not yet released by a human (APPROVAL_REQUIRED), or already
-            # consumed/rejected. Refuse rather than write.
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"approval {approval_id} is not released "
-                    f"(status={todo.status}); a human must approve it first"
-                ),
-            )
+        raw_artifact = _require_bound_legacy_artifact(
+            todo,
+            expected_kind=ManagedSelfImproveArtifactKind.LEGACY_CONFIG,
+        )
         try:
-            spec = cast(dict[str, object], json.loads(todo.plan_artifact or "{}"))
+            spec = cast(dict[str, object], json.loads(raw_artifact))
         except (TypeError, ValueError) as exc:
             raise HTTPException(
                 status_code=422,
@@ -467,18 +509,40 @@ async def _apply_approved_config_change(
             ),
             target_paths=list(cast(Iterable[str], spec.get("target_paths", []))),
         )
-        result = applier.apply(plan, str(spec.get("change_content", "")))
-
-        if result.status == "applied":
-            # Consume the record so the approval cannot be replayed into a
-            # second write (QUEUED -> ACTIVE -> COMPLETE).
+        # Claim the non-runnable approval before the filesystem write. A second
+        # caller loses the version/status CAS and cannot replay the same human
+        # authorization concurrently.
+        try:
             active = await repo.transition(
-                approval_id, TodoStatus.ACTIVE, expected_version=todo.version
+                approval_id,
+                TodoStatus.ACTIVE,
+                expected_version=todo.version,
             )
+        except ConcurrencyError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=f"approval {approval_id} is already being applied or consumed",
+            ) from exc
+        await session.commit()
+        try:
+            result = applier.apply(plan, str(spec.get("change_content", "")))
+        except Exception:
             await repo.transition(
-                approval_id, TodoStatus.COMPLETE, expected_version=active.version
+                approval_id,
+                TodoStatus.FAILED,
+                expected_version=active.version,
             )
             await session.commit()
+            raise
+        terminal_status = (
+            TodoStatus.COMPLETE if result.status == "applied" else TodoStatus.FAILED
+        )
+        await repo.transition(
+            approval_id,
+            terminal_status,
+            expected_version=active.version,
+        )
+        await session.commit()
         return {
             "tier": "config",
             "status": result.status,
@@ -500,8 +564,9 @@ async def _enqueue_non_config_change(
 
     No execution happens without a human approval_id. The record is created
     with work_type=self_improve and status=APPROVAL_REQUIRED; a human must
-    approve it via /admin/self-improve/approvals before re-POSTing with the
-    approval_id to execute.
+    approve it into the non-runnable APPROVED state via
+    /admin/self-improve/approvals before re-POSTing with the approval_id to
+    execute.
     """
     title = (
         str(payload.get("title", "")).strip() or f"self-improve {kind} change"
@@ -567,14 +632,10 @@ async def _apply_approved_non_config_change(
                 status_code=409,
                 detail=f"approval {approval_id} is not a self-improve record",
             )
-        if approval_todo.status != TodoStatus.QUEUED.value:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"approval {approval_id} is not released "
-                    f"(status={approval_todo.status}); a human must approve it first"
-                ),
-            )
+        raw_artifact = _require_bound_legacy_artifact(
+            approval_todo,
+            expected_kind=ManagedSelfImproveArtifactKind.LEGACY_NON_CONFIG,
+        )
         stored_project_id = getattr(approval_todo, "project_id", None)
         if not isinstance(stored_project_id, str):
             raise HTTPException(
@@ -583,7 +644,7 @@ async def _apply_approved_non_config_change(
             )
         try:
             spec = _NonConfigPlanSpec.from_json(
-                getattr(approval_todo, "plan_artifact", None),
+                raw_artifact,
                 expected_project_id=stored_project_id,
             )
         except ValueError as exc:
@@ -607,35 +668,58 @@ async def _apply_approved_non_config_change(
                 status_code=422,
                 detail=f"approval {approval_id} worktree identity drifted",
             )
+        try:
+            await repo.transition(
+                approval_id,
+                TodoStatus.ACTIVE,
+                expected_version=approval_todo.version,
+                project_id=spec.project_id,
+            )
+        except ConcurrencyError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=f"approval {approval_id} is already being applied or consumed",
+            ) from exc
         await session.commit()
 
     from general_ludd.reload.self_improve import SelfImprovementWorkflow
 
-    workflow = SelfImprovementWorkflow()
-    validation = await asyncio.to_thread(workflow.validate_improvement, worktree_path)
-    apply_result = await asyncio.to_thread(
-        workflow.apply_improvement,
-        approval_id,
-        validation,
-    )
-    reload_result = await asyncio.to_thread(workflow.reload_if_needed, apply_result)
-
-    if apply_result.applied:
+    try:
+        workflow = SelfImprovementWorkflow()
+        validation = await asyncio.to_thread(workflow.validate_improvement, worktree_path)
+        apply_result = await asyncio.to_thread(
+            workflow.apply_improvement,
+            approval_id,
+            validation,
+        )
+        reload_result = await asyncio.to_thread(workflow.reload_if_needed, apply_result)
+    except Exception:
         async with factory() as session:
             repo = TodoRepository.scoped(session, spec.project_id)
-            approved = await repo.get_by_id(approval_id)
-            if approved is not None:
-                active = await repo.transition(
-                    approval_id,
-                    TodoStatus.ACTIVE,
-                    expected_version=approved.version,
-                )
+            active = await repo.get_by_id(approval_id)
+            if active is not None and active.status == TodoStatus.ACTIVE.value:
                 await repo.transition(
                     approval_id,
-                    TodoStatus.COMPLETE,
                     expected_version=active.version,
+                    new_status=TodoStatus.FAILED,
                 )
                 await session.commit()
+        raise
+
+    async with factory() as session:
+        repo = TodoRepository.scoped(session, spec.project_id)
+        active = await repo.get_by_id(approval_id)
+        if active is None or active.status != TodoStatus.ACTIVE.value:
+            raise HTTPException(
+                status_code=409,
+                detail=f"approval {approval_id} lost its active apply claim",
+            )
+        await repo.transition(
+            approval_id,
+            TodoStatus.COMPLETE if apply_result.applied else TodoStatus.FAILED,
+            expected_version=active.version,
+        )
+        await session.commit()
 
     return {
         "todo_id": approval_id,
@@ -825,7 +909,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         #   1. No ``approval_id`` -> ENQUEUE an APPROVAL_REQUIRED self-improve
         #      record capturing the change spec and return WITHOUT writing. The
         #      record shows up in /admin/self-improve/approvals for a human.
-        #   2. ``approval_id`` referencing a human-RELEASED (approved -> QUEUED)
+        #   2. ``approval_id`` referencing a human-RELEASED APPROVED
         #      self-improve record -> perform the write, using the RECORDED spec
         #      (never the request body) so an approve-A / apply-B bait-and-switch
         #      is impossible. The capability/denylist/YAML/rollback guards still
@@ -850,7 +934,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         # Non-config-tier path: gate through SelfImproveGate (C13).
         # Same two-step flow as config-tier:
         #   1. No approval_id -> ENQUEUE an APPROVAL_REQUIRED record (no execution)
-        #   2. approval_id referencing a human-RELEASED record -> execute
+        #   2. approval_id referencing a human-RELEASED APPROVED record -> execute
         factory = _get_session_factory(app)
         if factory is None:
             raise HTTPException(
@@ -923,7 +1007,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/self-improve/approvals/{todo_id}/approve")
     async def admin_self_improve_approve(todo_id: str) -> dict[str, object]:
-        """Release a held self-improve todo into the queue (APPROVAL_REQUIRED -> QUEUED)."""
+        """Release managed work to QUEUED or legacy manual work to APPROVED."""
         factory = _get_session_factory(app)
         if factory is None:
             raise HTTPException(status_code=503, detail="No database session factory")

@@ -7,7 +7,8 @@ they call the daemon's ``/admin/self-improve/approvals`` routes (which persist
 through the ``SelfImproveApprovalManager`` + ``TodoRepository``):
 
 * ``gludd self-improve pending``           — list todos awaiting review
-* ``gludd self-improve approve <todo_id>``  — release APPROVAL_REQUIRED -> QUEUED
+* ``gludd self-improve approve <todo_id>``  — release managed work to QUEUED
+  or legacy manual-apply work to non-runnable APPROVED
 * ``gludd self-improve reject <todo_id>``   — retire  APPROVAL_REQUIRED -> CANCELLED
 
 Write operations send ``GLUDD_AUTH_PSK`` as a Bearer token so the daemon's PSK

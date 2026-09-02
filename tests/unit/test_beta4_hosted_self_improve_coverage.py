@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -43,7 +44,7 @@ class _Repository:
         self.todo = SimpleNamespace(
             todo_id="approval-1",
             work_type=SELF_IMPROVE_WORK_TYPE,
-            status=TodoStatus.QUEUED.value,
+            status=TodoStatus.APPROVED.value,
             version=1,
         )
 
@@ -56,8 +57,12 @@ class _Repository:
         status: TodoStatus,
         *,
         expected_version: int,
+        project_id: str | None = None,
     ) -> SimpleNamespace:
-        return SimpleNamespace(status=status.value, version=expected_version + 1)
+        del project_id
+        self.todo.status = status.value
+        self.todo.version = expected_version + 1
+        return self.todo
 
 
 class _Workflow:
@@ -167,25 +172,28 @@ def test_released_non_config_change_executes_and_is_consumed(
     project_root = tmp_path / "project"
     worktree = project_root / "repo" / "worktrees" / "approved"
     worktree.mkdir(parents=True)
+    artifact = json.dumps(
+        {
+            "description": "approved",
+            "kind": "code",
+            "project_id": "project-1",
+            "schema_version": 1,
+            "title": "approved",
+            "worktree_path": str(worktree.resolve()),
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
     todo = SimpleNamespace(
         todo_id="approval-1",
         work_type=SELF_IMPROVE_WORK_TYPE,
-        status=TodoStatus.QUEUED.value,
+        status=TodoStatus.APPROVED.value,
         version=1,
         project_id="project-1",
-        plan_artifact=json.dumps(
-            {
-                "description": "approved",
-                "kind": "code",
-                "project_id": "project-1",
-                "schema_version": 1,
-                "title": "approved",
-                "worktree_path": str(worktree.resolve()),
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        ),
+        approval_policy="none",
+        plan_artifact=artifact,
+        approved_artifact_digest=hashlib.sha256(artifact.encode("utf-8")).hexdigest(),
     )
 
     class Repository(_Repository):
@@ -254,10 +262,12 @@ def test_released_non_config_change_uses_only_approved_project_and_plan(
     todo = SimpleNamespace(
         todo_id="approval-1",
         work_type=SELF_IMPROVE_WORK_TYPE,
-        status=TodoStatus.QUEUED.value,
+        status=TodoStatus.APPROVED.value,
         version=1,
         project_id="approved-project",
+        approval_policy="none",
         plan_artifact=artifact,
+        approved_artifact_digest=hashlib.sha256(artifact.encode("utf-8")).hexdigest(),
     )
 
     class Repository:
@@ -281,7 +291,9 @@ def test_released_non_config_change_uses_only_approved_project_and_plan(
             project_id: str | None = None,
         ) -> SimpleNamespace:
             assert project_id in (None, "approved-project")
-            return SimpleNamespace(status=status.value, version=expected_version + 1)
+            todo.status = status.value
+            todo.version = expected_version + 1
+            return todo
 
     validated_paths: list[str] = []
 
@@ -355,10 +367,16 @@ def test_invalid_approved_non_config_artifact_fails_before_workflow(
     todo = SimpleNamespace(
         todo_id="approval-1",
         work_type=SELF_IMPROVE_WORK_TYPE,
-        status=TodoStatus.QUEUED.value,
+        status=TodoStatus.APPROVED.value,
         version=1,
         project_id="approved-project",
+        approval_policy="none",
         plan_artifact=artifact,
+        approved_artifact_digest=(
+            hashlib.sha256(artifact.encode("utf-8")).hexdigest()
+            if isinstance(artifact, str)
+            else None
+        ),
     )
 
     class Repository:

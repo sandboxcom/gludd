@@ -3,8 +3,9 @@
 When ``SelfImproveGate`` parks a proposed self-improve todo in
 ``APPROVAL_REQUIRED`` (the default, no-auto-queue path), a human must release it
 before the event loop will ever claim it.  This module is the backend for that
-release: an approve flips ``APPROVAL_REQUIRED -> QUEUED``, and a reject flips it
-to ``CANCELLED``.  Both are validated against the real todo state machine
+release: an approve sends immutable managed plans to ``QUEUED`` and legacy
+manual-apply artifacts to non-runnable ``APPROVED``; a reject sends either to
+``CANCELLED``. Both are validated against the real todo state machine
 (``schemas/todo.py``) so an out-of-state approval is rejected rather than
 silently corrupting status.
 
@@ -31,6 +32,7 @@ from general_ludd.self_improve.staging import (
     MANAGED_SELF_IMPROVE_APPROVAL_POLICY,
     ManagedSelfImproveArtifactKind,
     classify_self_improve_artifact,
+    self_improve_artifact_digest,
     validate_bound_managed_plan,
 )
 
@@ -98,23 +100,31 @@ class SelfImproveApprovalManager:
         return todo.status == TodoStatus.APPROVAL_REQUIRED
 
     def approve(self, todo: Todo) -> Todo:
-        """Release a held self-improve todo into the queue.
+        """Release a held self-improve todo to its artifact-specific state.
 
-        Transitions ``APPROVAL_REQUIRED -> QUEUED`` in place and returns the
-        same object.
+        Managed plans enter ``QUEUED``; exact legacy artifacts enter
+        non-runnable ``APPROVED``. Returns the same object.
 
         Raises:
             ApprovalError: if the todo is not currently ``APPROVAL_REQUIRED`` or
                            the transition is not permitted by the state machine.
         """
         self._require_pending(todo, action="approve")
-        if not validate_transition(todo.status, TodoStatus.QUEUED):
+        target = self._approval_target(todo)
+        if not validate_transition(todo.status, target):
             raise ApprovalError(
                 f"Cannot approve {todo.todo_id}: "
-                f"{todo.status.value} -> queued is not a valid transition"
+                f"{todo.status.value} -> {target.value} is not a valid transition"
             )
-        self._validate_managed_release(todo)
-        todo.transition_to(TodoStatus.QUEUED)
+        try:
+            todo.approved_artifact_digest = self_improve_artifact_digest(
+                todo.plan_artifact
+            )
+        except ValueError as exc:
+            raise ApprovalError(
+                f"Cannot approve {todo.todo_id}: approval artifact is invalid"
+            ) from exc
+        todo.transition_to(target)
         return todo
 
     def reject(self, todo: Todo, reason: str = "") -> Todo:
@@ -172,7 +182,7 @@ class SelfImproveApprovalManager:
         *,
         project_id: str | None = None,
     ) -> Any:
-        """Release a persisted held self-improve todo: APPROVAL_REQUIRED -> QUEUED.
+        """Release a persisted held todo to QUEUED (managed) or APPROVED (legacy).
 
         Loads the row, verifies it is a self-improve todo still awaiting approval,
         and persists the transition through the repository (optimistic-version
@@ -235,19 +245,53 @@ class SelfImproveApprovalManager:
                 f"(work_type={work_type})"
             )
         if target == TodoStatus.QUEUED:
-            self._validate_managed_release(todo)
+            target = self._approval_target(todo)
+            try:
+                digest = self_improve_artifact_digest(
+                    getattr(todo, "plan_artifact", None)
+                )
+            except ValueError as exc:
+                raise ApprovalError(
+                    f"Cannot approve {todo_id}: approval artifact is invalid"
+                ) from exc
+            digested = await store.update(
+                todo_id,
+                {"approved_artifact_digest": digest},
+                expected_version=todo.version,
+                project_id=project_id,
+            )
+            todo = digested
         return await store.transition(
             todo_id, target, expected_version=todo.version, project_id=project_id
+        )
+
+    def _approval_target(self, todo: Any) -> TodoStatus:
+        """Choose the runnable managed or non-runnable legacy release state."""
+        policy = getattr(todo, "approval_policy", None)
+        artifact_kind = classify_self_improve_artifact(
+            getattr(todo, "plan_artifact", None),
+            policy,
+        )
+        if policy == MANAGED_SELF_IMPROVE_APPROVAL_POLICY:
+            self._validate_managed_release(todo)
+            return TodoStatus.QUEUED
+        if artifact_kind in {
+            ManagedSelfImproveArtifactKind.LEGACY_CONFIG,
+            ManagedSelfImproveArtifactKind.LEGACY_NON_CONFIG,
+        }:
+            return TodoStatus.APPROVED
+        raise ApprovalError(
+            "Cannot approve legacy self-improve artifact: stored artifact is "
+            "missing, malformed, or unsupported"
         )
 
     def _validate_managed_release(self, todo: Any) -> None:
         """Require a canonical, row-bound plan for managed periodic work."""
         policy = getattr(todo, "approval_policy", None)
         if policy != MANAGED_SELF_IMPROVE_APPROVAL_POLICY:
-            # Existing config and non-config flows use their own immutable
-            # artifacts and two-step apply endpoints. Preserve that behavior
-            # until those flows are migrated to a separate status/type.
-            return
+            raise ApprovalError(
+                "Cannot queue self-improve todo without the managed approval policy"
+            )
         raw = getattr(todo, "plan_artifact", None)
         artifact_kind = classify_self_improve_artifact(raw, policy)
         if artifact_kind is ManagedSelfImproveArtifactKind.MANAGED_PLAN_REQUEST:

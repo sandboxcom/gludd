@@ -79,12 +79,17 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     # cancelling it. CANCELLED retires the schedule permanently.
     TodoStatus.SCHEDULED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
     # APPROVAL_REQUIRED is the human-gate holding state for self-improve todos.
-    # A human releases a held todo to QUEUED (approve) or retires it to
-    # CANCELLED (reject) via SelfImproveApprovalManager; MANUAL_HOLD lets an
-    # operator park it further. Without this entry TodoRepository.transition()
-    # would reject the release and self-improve todos would strand in
-    # APPROVAL_REQUIRED forever.
-    TodoStatus.APPROVAL_REQUIRED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
+    # A human releases a held managed plan to QUEUED or a legacy manual-apply
+    # artifact to non-runnable APPROVED. Rejecting retires either to CANCELLED;
+    # MANUAL_HOLD lets an operator park it further. Without this entry,
+    # TodoRepository.transition() would strand self-improve approvals forever.
+    TodoStatus.APPROVAL_REQUIRED: {
+        TodoStatus.APPROVED,
+        TodoStatus.QUEUED,
+        TodoStatus.CANCELLED,
+        TodoStatus.MANUAL_HOLD,
+    },
+    TodoStatus.APPROVED: {TodoStatus.ACTIVE, TodoStatus.CANCELLED},
     TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.FAILED, TodoStatus.BLOCKED, TodoStatus.BLOCKED_ON_HUMAN},
     TodoStatus.ACTIVE: {
         TodoStatus.COMPLETE,
@@ -151,6 +156,7 @@ ALLOWED_TODO_CREATE_FIELDS: frozenset[str] = frozenset(
         "artifacts",
         "evidence_refs",
         "plan_artifact",
+        "approved_artifact_digest",
         "confidence",
         "manual_hold_reason",
         "approval_policy",
@@ -361,6 +367,15 @@ class TodoRepository:
         todo = await self.get_by_id(todo_id, project_id=_pid)
         if todo is None:
             raise InvalidTransitionError(f"Todo {todo_id} not found")
+        artifact_fields = {"plan_artifact", "approved_artifact_digest"}
+        if (
+            todo.work_type == "self_improve"
+            and todo.status != TodoStatus.APPROVAL_REQUIRED.value
+            and artifact_fields & updates.keys()
+        ):
+            raise ValueError(
+                "self-improve approval artifact fields are immutable after human approval"
+            )
         if todo.version != expected_version:
             raise ConcurrencyError(f"Version mismatch: expected {expected_version}, actual {todo.version}")
         now = datetime.now(UTC)
@@ -487,6 +502,118 @@ class TodoRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def recover_queued_legacy_self_improve(
+        self,
+        *,
+        limit: int = 100,
+        project_id: str | None = None,
+    ) -> list[TodoModel]:
+        """Move exact legacy approvals out of the scheduler queue in a bounded batch.
+
+        Releases created before the durable ``APPROVED`` status existed may
+        still be ``QUEUED``. Artifacts matching one of the two exact legacy
+        schemas become ``APPROVED``; malformed or unknown artifacts are moved
+        to ``MANUAL_HOLD``. Both outcomes remove the row from scheduler claim.
+        """
+        from sqlalchemy import update
+
+        from general_ludd.self_improve.staging import (
+            ManagedSelfImproveArtifactKind,
+            classify_self_improve_artifact,
+            self_improve_artifact_digest,
+        )
+
+        bounded_limit = min(max(limit, 0), _DEFAULT_LIST_LIMIT)
+        if bounded_limit == 0:
+            return []
+        _pid = self._resolve_pid(project_id)
+        stmt = (
+            select(TodoModel)
+            .where(
+                TodoModel.status == TodoStatus.QUEUED.value,
+                TodoModel.work_type == "self_improve",
+                TodoModel.approval_policy != "managed_self_improve_plan",
+            )
+            .order_by(TodoModel.id)
+            .limit(bounded_limit)
+        )
+        if _pid is not None:
+            stmt = stmt.where(TodoModel.project_id == _pid)
+        else:
+            stmt = stmt.where(TodoModel.project_id.is_(None))
+        result = await self._session.execute(stmt)
+        candidates = list(result.scalars().all())
+        legacy_kinds = {
+            ManagedSelfImproveArtifactKind.LEGACY_CONFIG,
+            ManagedSelfImproveArtifactKind.LEGACY_NON_CONFIG,
+        }
+        now = datetime.now(UTC)
+        recovered: list[TodoModel] = []
+        quarantine_reason = (
+            "Quarantined queued self-improvement artifact that does not match an "
+            "approved executable schema"
+        )
+        for todo in candidates:
+            artifact_kind = classify_self_improve_artifact(
+                todo.plan_artifact,
+                todo.approval_policy,
+            )
+            next_status = TodoStatus.MANUAL_HOLD
+            digest: str | None = None
+            reason = quarantine_reason
+            if artifact_kind in legacy_kinds:
+                try:
+                    digest = self_improve_artifact_digest(todo.plan_artifact)
+                except ValueError:
+                    pass
+                else:
+                    next_status = TodoStatus.APPROVED
+                    reason = "Recovered legacy approval from scheduler queue"
+            old_version = todo.version
+            guard = (
+                update(TodoModel)
+                .where(
+                    TodoModel.id == todo.id,
+                    TodoModel.status == TodoStatus.QUEUED.value,
+                    TodoModel.version == old_version,
+                )
+                .values(
+                    status=next_status.value,
+                    approved_artifact_digest=digest,
+                    manual_hold_reason=(
+                        quarantine_reason
+                        if next_status is TodoStatus.MANUAL_HOLD
+                        else None
+                    ),
+                    version=old_version + 1,
+                    updated_at=now,
+                )
+            )
+            update_result = await self._session.execute(guard)
+            if (cast("CursorResult[Any]", update_result).rowcount or 0) != 1:
+                await self._session.refresh(todo)
+                continue
+            todo.status = next_status.value
+            todo.approved_artifact_digest = digest
+            todo.manual_hold_reason = (
+                quarantine_reason if next_status is TodoStatus.MANUAL_HOLD else None
+            )
+            todo.version = old_version + 1
+            todo.updated_at = now
+            self._session.add(
+                TodoEventModel(
+                    todo_id=todo.todo_id,
+                    event_type="status_change",
+                    old_status=TodoStatus.QUEUED.value,
+                    new_status=next_status.value,
+                    actor="recover_legacy_self_improve",
+                    reason=reason,
+                )
+            )
+            recovered.append(todo)
+        await self._session.flush()
+        return recovered
+
     async def claim_runnable(self, limit: int = 10, project_id: str | None = None) -> list[TodoModel]:
         """Claim QUEUED todos for execution with a guarded conditional UPDATE.
 
@@ -501,7 +628,11 @@ class TodoRepository:
         from sqlalchemy import update
 
         _pid = self._resolve_pid(project_id)
-        stmt = select(TodoModel).where(TodoModel.status == TodoStatus.QUEUED.value)
+        stmt = select(TodoModel).where(
+            TodoModel.status == TodoStatus.QUEUED.value,
+            (TodoModel.work_type != "self_improve")
+            | (TodoModel.approval_policy == "managed_self_improve_plan"),
+        )
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
         else:

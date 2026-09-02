@@ -127,7 +127,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
+        init sync migrate-up relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck _precommit-mypy setup-dirs setup-venv clean healthcheck \
@@ -211,6 +211,7 @@ help:
 	@echo "  --- Setup ---"
 	@echo "  init                  Set up project (dirs + deps)"
 	@echo "  sync                  Sync uv dependencies"
+	@echo "  migrate-up            Upgrade an explicit database URL to a revision (MIGRATE_DATABASE_URL, MIGRATE_REVISION)"
 	@echo "  sync-llama-cpp        Sync locked local-inference extra (SYNC_LLAMA_CPP_VALIDATE_ONLY=0|1)"
 	@echo "  test-local-model-inference  Locked optional-runtime smoke (LOCAL_MODEL_INFERENCE_MODEL_PATH, LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=0|1)"
 	@echo "  clean-e2e-small-model       Remove only the reproducible /tmp GGUF materialization (E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY=0|1)"
@@ -710,6 +711,11 @@ init: setup-dirs
 
 sync:
 	@$(UV) sync --locked
+
+migrate-up:
+	@test -n "$(strip $(MIGRATE_DATABASE_URL))" || { echo "MIGRATE_DATABASE_URL is required"; exit 2; }
+	@test -n "$(strip $(MIGRATE_REVISION))" || { echo "MIGRATE_REVISION is required"; exit 2; }
+	@DATABASE_URL="$(MIGRATE_DATABASE_URL)" $(UV) run alembic upgrade "$(MIGRATE_REVISION)"
 
 sync-local-inference:
 	@$(UV) sync --locked --extra local-inference

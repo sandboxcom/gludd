@@ -362,11 +362,15 @@ async def test_only_bound_canonical_managed_plan_can_queue(tmp_path: Path) -> No
         plan_artifact=_approved_plan(repo_root).to_json(),
         version=4,
     )
-    released_values = vars(row).copy()
-    released_values.update(status=TodoStatus.QUEUED.value, version=5)
+    digested_values = vars(row).copy()
+    digested_values.update(version=5)
+    digested = SimpleNamespace(**digested_values)
+    released_values = vars(digested).copy()
+    released_values.update(status=TodoStatus.QUEUED.value, version=6)
     released = SimpleNamespace(**released_values)
     store = AsyncMock()
     store.get_by_id.return_value = row
+    store.update.return_value = digested
     store.transition.return_value = released
     manager = SelfImproveApprovalManager(
         managed_repo_resolver=lambda project_id: (
@@ -378,7 +382,7 @@ async def test_only_bound_canonical_managed_plan_can_queue(tmp_path: Path) -> No
     store.transition.assert_awaited_once_with(
         row.todo_id,
         TodoStatus.QUEUED,
-        expected_version=4,
+        expected_version=5,
         project_id=None,
     )
 
@@ -426,8 +430,28 @@ async def test_managed_approval_fails_closed_on_every_identity_drift(
 @pytest.mark.asyncio
 async def test_legacy_config_and_non_config_approvals_remain_releasable() -> None:
     for artifact in (
-        '{"kind":"config"}',
-        '{"kind":"code","schema_version":1}',
+        json.dumps(
+            {
+                "capability_required": "config_write",
+                "change_content": "enabled: true\n",
+                "kind": "config",
+                "reason": "legacy config",
+                "target_paths": ["config/test.yml"],
+            }
+        ),
+        json.dumps(
+            {
+                "description": "legacy code",
+                "kind": "code",
+                "project_id": "legacy-project",
+                "schema_version": 1,
+                "title": "legacy code",
+                "worktree_path": "/tmp/gludd-legacy-worktree",
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ),
     ):
         row = SimpleNamespace(
             todo_id="legacy",
@@ -440,11 +464,17 @@ async def test_legacy_config_and_non_config_approvals_remain_releasable() -> Non
         )
         store = AsyncMock()
         store.get_by_id.return_value = row
+        store.update.return_value = SimpleNamespace(**{**vars(row), "version": 2})
         store.transition.return_value = row
         manager = SelfImproveApprovalManager()
 
         assert await manager.approve_by_id(store, row.todo_id) is row
-        store.transition.assert_awaited_once()
+        store.transition.assert_awaited_once_with(
+            row.todo_id,
+            TodoStatus.APPROVED,
+            expected_version=2,
+            project_id=None,
+        )
 
 
 class _Session:

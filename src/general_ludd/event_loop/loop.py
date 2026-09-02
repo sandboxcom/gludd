@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hmac
 import json
 import logging
 import queue as _stdqueue
@@ -75,7 +76,10 @@ from general_ludd.self_improve.result_artifact import (
     ManagedSelfImproveResultArtifact,
 )
 from general_ludd.self_improve.runtime import build_managed_self_improve_runner
-from general_ludd.self_improve.staging import MANAGED_SELF_IMPROVE_APPROVAL_POLICY
+from general_ludd.self_improve.staging import (
+    MANAGED_SELF_IMPROVE_APPROVAL_POLICY,
+    self_improve_artifact_digest,
+)
 
 if TYPE_CHECKING:
     # TYPE_CHECKING-only: avoids a runtime import cycle and keeps the drain
@@ -717,8 +721,11 @@ class EventLoop(EventLoopHandlers):
         liveness clock and must never be used to reap live work.
 
         ``version`` is NOT a retry counter (it is bumped by every write), so it is
-        no longer conflated with attempts. A genuinely stale todo is simply
-        requeued for another attempt.
+        no longer conflated with attempts. A genuinely stale scheduler-owned todo
+        is requeued for another attempt. A legacy manual self-improve apply has
+        already consumed its one-time approval before entering ``ACTIVE``; an
+        interrupted apply is therefore failed terminally instead of being made
+        replayable through the queue-recovery path.
         """
         if self._active_session is None or self._todo_repo is None:
             return
@@ -750,6 +757,7 @@ class EventLoop(EventLoopHandlers):
             live_bucket_keys: set[str] = set(live_lease_result.scalars().all())
 
             reaped = 0
+            terminally_failed = 0
             for todo in candidates:
                 queue = _safe_str(todo, "queue", "core") or "core"
                 todo_id = _safe_str(todo, "todo_id", "") or ""
@@ -757,16 +765,30 @@ class EventLoop(EventLoopHandlers):
                 if bucket_key in live_bucket_keys:
                     # Worker is still heartbeating (lease alive) -> do NOT reap.
                     continue
-                # Guarded compare-and-set: transition ACTIVE->QUEUED only if the
-                # row is STILL active at the version we read. A concurrent writer
+                # Guarded compare-and-set: transition only if the row is STILL
+                # active at the version we read. A concurrent writer
                 # (claim, reconcile, manual edit) that moved the row makes the CAS
                 # affect zero rows -> ConcurrencyError, treated as a lost race and
                 # skipped. This mirrors claim_runnable()/transition()'s version +
                 # status guard so the reaper can never silently clobber a
                 # concurrent status write (the check-then-act race this method
                 # previously had when it assigned the ORM attribute directly).
+                is_consumed_legacy_approval = (
+                    _safe_str(todo, "work_type") == "self_improve"
+                    and getattr(todo, "approval_policy", None)
+                    != MANAGED_SELF_IMPROVE_APPROVAL_POLICY
+                )
+                recovery_status = (
+                    TodoStatus.FAILED
+                    if is_consumed_legacy_approval
+                    else TodoStatus.QUEUED
+                )
                 try:
-                    await self._todo_repo.transition(todo.todo_id, TodoStatus.QUEUED, todo.version)
+                    await self._todo_repo.transition(
+                        todo.todo_id,
+                        recovery_status,
+                        todo.version,
+                    )
                 except ConcurrencyError as exc:
                     logger.info(
                         "Reaper lost version race for todo %s: %s — skipping",
@@ -774,10 +796,18 @@ class EventLoop(EventLoopHandlers):
                         exc,
                     )
                     continue
+                if is_consumed_legacy_approval:
+                    terminally_failed += 1
+                    continue
                 reaped += 1
                 self._tick_state.setdefault("reaped_todo_ids", set()).add(todo.todo_id)
             if reaped:
                 logger.info("Reaped %d stuck ACTIVE todos (no live lease)", reaped)
+            if terminally_failed:
+                logger.warning(
+                    "Terminally failed %d interrupted legacy self-improve applies",
+                    terminally_failed,
+                )
         except Exception as exc:
             logger.warning("Stuck-todo reaper failed: %s", exc)
 
@@ -1844,6 +1874,21 @@ class EventLoop(EventLoopHandlers):
             pid_desired = pid_outputs.desired_total_active_buckets
             pid_claimable = max(0, pid_desired - currently_active)
             effective_limit = min(effective_limit, pid_claimable)
+
+        # Migration 045 moves historical legacy approvals out of QUEUED, but a
+        # daemon may encounter rows written by an older process during a rolling
+        # deployment. Recover a bounded batch before every claim. The repository
+        # claim query independently excludes every non-managed self-improve row,
+        # so a recovery failure remains fail-closed.
+        try:
+            recovered_legacy = await self._todo_repo.recover_queued_legacy_self_improve(
+                limit=10,
+                project_id=project_id,
+            )
+            self._tick_state["recovered_legacy_self_improve"] = len(recovered_legacy)
+        except Exception:
+            logger.exception("Failed to recover queued legacy self-improve approvals")
+            self._tick_state["recovered_legacy_self_improve"] = 0
 
         if effective_limit <= 0:
             logger.debug(
@@ -3334,6 +3379,23 @@ class EventLoop(EventLoopHandlers):
                 todo,
                 project_id=project_id,
                 reason="missing_plan_artifact",
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+        approved_digest = getattr(todo, "approved_artifact_digest", None)
+        try:
+            actual_digest = self_improve_artifact_digest(plan_artifact)
+        except ValueError:
+            actual_digest = ""
+        if not isinstance(approved_digest, str) or not hmac.compare_digest(
+            approved_digest,
+            actual_digest,
+        ):
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=project_id,
+                reason="approval_artifact_digest_mismatch",
                 task_return_repo=task_return_repo,
                 session=session,
             )

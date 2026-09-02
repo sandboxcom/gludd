@@ -264,6 +264,7 @@ class TodoModel(Base):
     artifacts: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     evidence_refs: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     plan_artifact: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_artifact_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     manual_hold_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     approval_policy: Mapped[str] = mapped_column(String(32), nullable=False, default="none")

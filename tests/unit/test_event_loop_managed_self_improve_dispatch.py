@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -75,6 +76,11 @@ def _todo(plan_artifact: str | None, *, project_id: str = "project-managed") -> 
         resource_profile="local_heavy",
         project_id=project_id,
         plan_artifact=plan_artifact,
+        approved_artifact_digest=(
+            hashlib.sha256(plan_artifact.encode("utf-8")).hexdigest()
+            if plan_artifact
+            else None
+        ),
         prompt_profile=None,
         model_profile=None,
         acceptance_criteria=None,
@@ -250,6 +256,74 @@ async def test_missing_or_malformed_plan_fails_closed_without_generic_fallback(
         "kind": "managed_self_improve",
         "reason": reason,
     }
+
+
+@pytest.mark.asyncio
+async def test_post_approval_plan_artifact_change_fails_closed(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    plan = _approved_plan(repo_root)
+    todo = _todo(plan.to_json())
+    todo.approved_artifact_digest = "0" * 64
+    managed_runner = MagicMock()
+    loop, collaborators = _make_loop(repo_root, managed_runner)
+
+    await loop._dispatch_execute_job(todo)
+
+    collaborators["factory"].assert_not_called()
+    managed_runner.run.assert_not_called()
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert json.loads(persisted["result_summary"])["reason"] == (
+        "approval_artifact_digest_mismatch"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("approved_digest", [None, 7])
+async def test_missing_or_non_text_approval_digest_fails_closed(
+    tmp_path: Path,
+    approved_digest: object,
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    plan = _approved_plan(repo_root)
+    todo = _todo(plan.to_json())
+    todo.approved_artifact_digest = approved_digest
+    managed_runner = MagicMock()
+    loop, collaborators = _make_loop(repo_root, managed_runner)
+
+    await loop._dispatch_execute_job(todo)
+
+    managed_runner.run.assert_not_called()
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert json.loads(persisted["result_summary"])["reason"] == (
+        "approval_artifact_digest_mismatch"
+    )
+
+
+@pytest.mark.asyncio
+async def test_oversized_approved_artifact_fails_closed_before_parsing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    artifact = "x" * 1_048_577
+    todo = _todo(artifact)
+    managed_runner = MagicMock()
+    loop, _collaborators = _make_loop(repo_root, managed_runner)
+    persist = AsyncMock()
+    monkeypatch.setattr(loop, "_persist_managed_self_improve_return", persist)
+
+    await loop._dispatch_execute_job(todo)
+
+    managed_runner.run.assert_not_called()
+    persist.assert_awaited_once()
+    assert persist.await_args.kwargs["reason"] == (
+        "approval_artifact_digest_mismatch"
+    )
 
 
 @pytest.mark.asyncio

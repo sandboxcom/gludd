@@ -8,6 +8,7 @@ do NOT exercise directly.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -415,7 +416,7 @@ class TestApplyApprovedConfigChange:
             created = await repo.create(
                 {
                     "title": "Not self-improve",
-                    "status": TodoStatus.QUEUED.value,
+                    "status": TodoStatus.APPROVED.value,
                     "work_type": "code",
                     "priority": 5,
                     "created_by": "test",
@@ -471,11 +472,14 @@ class TestApplyApprovedConfigChange:
             created = await repo.create(
                 {
                     "title": "Broken spec",
-                    "status": TodoStatus.QUEUED.value,
+                    "status": TodoStatus.APPROVED.value,
                     "work_type": SELF_IMPROVE_WORK_TYPE,
                     "priority": 10,
                     "created_by": "test",
                     "plan_artifact": "not valid json {{{",
+                    "approved_artifact_digest": hashlib.sha256(
+                        b"not valid json {{{"
+                    ).hexdigest(),
                 }
             )
             await session.commit()
@@ -496,20 +500,26 @@ class TestApplyApprovedConfigChange:
 
         async with inmemory_factory() as session:
             repo = TodoRepository(session)
+            artifact = json.dumps(
+                {
+                    "capability_required": "config_write",
+                    "change_content": "key: value\n",
+                    "kind": "config",
+                    "reason": "test",
+                    "target_paths": ["/tmp/gludd-test-cwd/cfg.yml"],
+                }
+            )
             created = await repo.create(
                 {
                     "title": "Config write",
-                    "status": TodoStatus.QUEUED.value,
+                    "status": TodoStatus.APPROVED.value,
                     "work_type": SELF_IMPROVE_WORK_TYPE,
                     "priority": 10,
                     "created_by": "test",
-                    "plan_artifact": json.dumps(
-                        {
-                            "kind": "config",
-                            "target_paths": ["/tmp/gludd-test-cwd/cfg.yml"],
-                            "change_content": "key: value\n",
-                        }
-                    ),
+                    "plan_artifact": artifact,
+                    "approved_artifact_digest": hashlib.sha256(
+                        artifact.encode("utf-8")
+                    ).hexdigest(),
                 }
             )
             await session.commit()
@@ -686,20 +696,26 @@ class TestConfigTierApplyRouting:
 
         async with inmemory_factory() as session:
             repo = TodoRepository(session)
+            artifact = json.dumps(
+                {
+                    "capability_required": "config_write",
+                    "change_content": "key: value\n",
+                    "kind": "config",
+                    "reason": "test",
+                    "target_paths": ["/tmp/gludd-test-cwd/cfg.yml"],
+                }
+            )
             created = await repo.create(
                 {
                     "title": "Config write",
-                    "status": TodoStatus.QUEUED.value,
+                    "status": TodoStatus.APPROVED.value,
                     "work_type": SELF_IMPROVE_WORK_TYPE,
                     "priority": 10,
                     "created_by": "test",
-                    "plan_artifact": json.dumps(
-                        {
-                            "kind": "config",
-                            "target_paths": ["/tmp/gludd-test-cwd/cfg.yml"],
-                            "change_content": "key: value\n",
-                        }
-                    ),
+                    "plan_artifact": artifact,
+                    "approved_artifact_digest": hashlib.sha256(
+                        artifact.encode("utf-8")
+                    ).hexdigest(),
                 }
             )
             await session.commit()

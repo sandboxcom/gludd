@@ -28,6 +28,7 @@ _MAX_REQUEST_BYTES: Final = 262_144
 _MAX_IDENTITY_BYTES: Final = 128
 _MAX_TEXT_BYTES: Final = 65_536
 _MAX_RECENT_TODOS: Final = 32
+_MAX_APPROVAL_ARTIFACT_BYTES: Final = 1_048_576
 _LEGACY_CONFIG_FIELDS: Final = frozenset(
     {"capability_required", "change_content", "kind", "reason", "target_paths"}
 )
@@ -52,6 +53,17 @@ class ManagedSelfImproveArtifactKind(StrEnum):
     LEGACY_CONFIG = "legacy_config"
     LEGACY_NON_CONFIG = "legacy_non_config"
     LEGACY_UNKNOWN = "legacy_unknown"
+
+
+def self_improve_artifact_digest(raw: object) -> str:
+    """Return the SHA-256 binding for one bounded persisted approval artifact."""
+    if (
+        not isinstance(raw, str)
+        or not raw
+        or len(raw.encode("utf-8")) > _MAX_APPROVAL_ARTIFACT_BYTES
+    ):
+        raise ValueError("self-improve approval artifact must be bounded text")
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _bounded_text(value: object, label: str, *, allow_empty: bool = False) -> str:
@@ -390,9 +402,27 @@ def classify_self_improve_artifact(
     if not isinstance(value, dict):
         return ManagedSelfImproveArtifactKind.LEGACY_UNKNOWN
     fields = frozenset(value)
-    if fields == _LEGACY_CONFIG_FIELDS:
+    if fields == _LEGACY_CONFIG_FIELDS and (
+        value["kind"] in {"config", "yaml"}
+        and all(
+            isinstance(value[field], str)
+            for field in ("capability_required", "change_content", "kind", "reason")
+        )
+        and isinstance(value["target_paths"], list)
+        and all(isinstance(path, str) for path in value["target_paths"])
+    ):
         return ManagedSelfImproveArtifactKind.LEGACY_CONFIG
-    if fields == _LEGACY_NON_CONFIG_FIELDS:
+    if fields == _LEGACY_NON_CONFIG_FIELDS and (
+        type(value["schema_version"]) is int
+        and value["schema_version"] == 1
+        and all(
+            isinstance(value[field], str)
+            for field in _LEGACY_NON_CONFIG_FIELDS - {"schema_version"}
+        )
+        and bool(value["project_id"])
+        and bool(value["title"])
+        and value["kind"] not in {"config", "yaml"}
+    ):
         return ManagedSelfImproveArtifactKind.LEGACY_NON_CONFIG
     return ManagedSelfImproveArtifactKind.LEGACY_UNKNOWN
 
@@ -440,5 +470,6 @@ __all__ = [
     "ManagedSelfImprovePlanRequest",
     "build_managed_plan_request_payload",
     "classify_self_improve_artifact",
+    "self_improve_artifact_digest",
     "validate_bound_managed_plan",
 ]
