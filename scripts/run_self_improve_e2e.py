@@ -29,7 +29,9 @@ from general_ludd.self_improve.codex_comparison import (
 )
 from general_ludd.self_improve.model_candidate_planner import (
     PlannedModelCandidate,
+    load_latest_failed_model_ids,
     plan_model_candidates,
+    record_self_improve_outcome,
 )
 from general_ludd.self_improve.model_lifecycle import ModelLeaseManager
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
@@ -1046,6 +1048,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
     prompt = base_prompt
     final: AttemptResult | None = None
     model_manager: ModelLeaseManager | None = None
+    model_evidence_store: CapabilityEvidenceStore | None = None
     managed_candidates: tuple[PlannedModelCandidate, ...] | None = None
     candidate_index = 0
     for attempt in range(1, args.max_attempts + 1):
@@ -1065,12 +1068,17 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                         / ".gludd"
                         / "capability-evidence.json"
                     )
+                    model_evidence_store = CapabilityEvidenceStore(str(evidence_path))
+                    prior_failed_model_ids = load_latest_failed_model_ids(
+                        model_evidence_store,
+                        task_text=task.objective,
+                    )
                     managed_candidates = plan_model_candidates(
                         task.objective,
                         required_output_tokens,
-                        (),
+                        prior_failed_model_ids,
                         unified_probe(),
-                        CapabilityEvidenceStore(str(evidence_path)),
+                        model_evidence_store,
                         model_manager.resolve_revision,
                         max_candidates=min(3, max(1, model_attempt_budget)),
                     )
@@ -1124,6 +1132,13 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                         prompt,
                     )
         except (RuntimeError, ValueError) as exc:
+            if candidate is not None and model_evidence_store is not None:
+                record_self_improve_outcome(
+                    model_evidence_store,
+                    task_text=task.objective,
+                    candidate=candidate,
+                    succeeded=False,
+                )
             print(
                 f"SELF_IMPROVE_PROPOSAL_REJECTED attempt={attempt} "
                 f"error={json.dumps(str(exc)[:1000])}",
@@ -1146,6 +1161,13 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
             attempt,
             merge=args.merge,
         )
+        if candidate is not None and model_evidence_store is not None:
+            record_self_improve_outcome(
+                model_evidence_store,
+                task_text=task.objective,
+                candidate=candidate,
+                succeeded=final.comparison.accepted,
+            )
         print(
             f"SELF_IMPROVE_ATTEMPT_END attempt={attempt} "
             f"score={final.comparison.score:.2f} accepted={final.comparison.accepted} "

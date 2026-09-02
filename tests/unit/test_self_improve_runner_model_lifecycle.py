@@ -209,6 +209,16 @@ def _wire_common(
     monkeypatch.setattr(runner, "CapabilityEvidenceStore", lambda _path: object())
     monkeypatch.setattr(
         runner,
+        "load_latest_failed_model_ids",
+        lambda *_args, **_kwargs: (),
+    )
+    monkeypatch.setattr(
+        runner,
+        "record_self_improve_outcome",
+        lambda *_args, **_kwargs: 1,
+    )
+    monkeypatch.setattr(
+        runner,
         "plan_model_candidates",
         lambda *_args, **_kwargs: (candidate,),
     )
@@ -475,3 +485,127 @@ def test_no_fitting_managed_candidate_fails_before_model_acquisition(
 
     with pytest.raises(RuntimeError, match="no fitting local coding model candidates"):
         runner.run_benchmark(_args(_task_file(tmp_path)))
+
+
+def test_managed_attempts_load_prior_failures_and_persist_each_outcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _wire_common(tmp_path, monkeypatch)
+    first = get_model("deepseek-coder-1.3b")
+    second = get_model("qwen2.5-coder-1.5b")
+    failed = get_model("qwen2.5-coder-0.5b")
+    assert first is not None
+    assert second is not None
+    assert failed is not None
+    candidates = (
+        PlannedModelCandidate(first, "a" * 40, 0.4, 0),
+        PlannedModelCandidate(second, "b" * 40, 0.5, 1),
+    )
+    evidence_store = object()
+    events: list[str] = []
+
+    class EvidenceLeaseManager:
+        def __init__(self) -> None:
+            self.cache_root = tmp_path / "cache"
+            self.cache_root.mkdir(exist_ok=True)
+
+        def resolve_revision(self, _repo_id: str) -> str:
+            raise AssertionError("the injected planner owns revision resolution")
+
+        @contextmanager
+        def acquire(
+            self,
+            task_description: str,
+            *,
+            explicit_path: Path | None = None,
+            model_config: LocalModelConfig | None = None,
+            resolved_revision: str | None = None,
+        ) -> Iterator[SimpleNamespace]:
+            assert task_description == "Repair Python code safely."
+            assert explicit_path is None
+            assert model_config is not None
+            assert resolved_revision is not None
+            events.append(f"acquire:{model_config.name}")
+            try:
+                path = tmp_path / f"{model_config.name}.gguf"
+                path.write_bytes(b"GGUF")
+                yield SimpleNamespace(
+                    path=path,
+                    model_id=model_config.name,
+                    resolved_revision=resolved_revision,
+                    artifact_sha256="c" * 64,
+                    source="managed",
+                )
+            finally:
+                events.append(f"release:{model_config.name}")
+
+    def load_failures(store: object, *, task_text: str) -> tuple[str, ...]:
+        assert store is evidence_store
+        assert task_text == "Repair Python code safely."
+        events.append("load")
+        return (failed.name,)
+
+    def plan(
+        task_text: str,
+        output_tokens: int,
+        prior_failed_model_ids: tuple[str, ...],
+        hardware: object,
+        store: object,
+        revision_resolver: object,
+        *,
+        max_candidates: int,
+    ) -> tuple[PlannedModelCandidate, ...]:
+        assert task_text == "Repair Python code safely."
+        assert output_tokens > 0
+        assert prior_failed_model_ids == (failed.name,)
+        assert hardware == "hardware"
+        assert store is evidence_store
+        assert callable(revision_resolver)
+        assert max_candidates == 2
+        events.append("plan")
+        return candidates
+
+    proposal_calls = 0
+
+    def propose(_root: object, _path: Path, _prompt: str) -> ProposalManifest:
+        nonlocal proposal_calls
+        proposal_calls += 1
+        if proposal_calls == 1:
+            raise ValueError("strict schema failure")
+        return _proposal()
+
+    def record(
+        store: object,
+        *,
+        task_text: str,
+        candidate: PlannedModelCandidate,
+        succeeded: bool,
+    ) -> int:
+        assert store is evidence_store
+        assert task_text == "Repair Python code safely."
+        events.append(f"outcome:{candidate.config.name}:{succeeded}")
+        return len(events)
+
+    monkeypatch.setattr(runner, "ModelLeaseManager", EvidenceLeaseManager)
+    monkeypatch.setattr(runner, "unified_probe", lambda: "hardware")
+    monkeypatch.setattr(runner, "CapabilityEvidenceStore", lambda _path: evidence_store)
+    monkeypatch.setattr(runner, "load_latest_failed_model_ids", load_failures, raising=False)
+    monkeypatch.setattr(runner, "plan_model_candidates", plan)
+    monkeypatch.setattr(runner, "record_self_improve_outcome", record, raising=False)
+    monkeypatch.setattr(runner, "generate_local_proposal", propose)
+    monkeypatch.setattr(runner, "evaluate_attempt", lambda *_args, **_kwargs: _result())
+
+    result = runner.run_benchmark(_args(_task_file(tmp_path)))
+
+    assert result.comparison.accepted
+    assert events == [
+        "load",
+        "plan",
+        f"acquire:{first.name}",
+        f"release:{first.name}",
+        f"outcome:{first.name}:False",
+        f"acquire:{second.name}",
+        f"release:{second.name}",
+        f"outcome:{second.name}:True",
+    ]
