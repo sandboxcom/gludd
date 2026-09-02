@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import sys
 from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
@@ -416,7 +415,6 @@ def test_local_gateway_reports_bounded_output_without_json_start(tmp_path: Path)
     gateway = LocalProposalGateway(
         model_path,
         model_factory=lambda **_kwargs: FakeChatModel(),
-        grammar_factory=lambda _schema: object(),
     )
 
     with pytest.raises(ValueError, match=r"no JSON start.*plain text"):
@@ -471,7 +469,7 @@ def test_local_gateway_uses_explicit_model_and_deterministic_decode(
     }
 
 
-def test_local_gateway_prefers_json_constrained_chat_completion(
+def test_local_gateway_prefers_native_schema_constrained_chat_completion(
     tmp_path: Path,
 ) -> None:
     model_path = tmp_path / "model.gguf"
@@ -499,31 +497,33 @@ def test_local_gateway_prefers_json_constrained_chat_completion(
     class FakeChatModel:
         def create_chat_completion(self, **kwargs: object) -> dict[str, object]:
             calls.update(kwargs)
-            return {"choices": [{"message": {"content": proposal_json}}]}
+            return {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": proposal_json},
+                    }
+                ]
+            }
 
         def __call__(self, prompt: str, **kwargs: object) -> object:
             raise AssertionError("raw completion must not be used when chat is available")
 
-    grammar_inputs: list[str] = []
-    grammar = object()
-
-    def grammar_factory(schema_json: str) -> object:
-        grammar_inputs.append(schema_json)
-        return grammar
-
     gateway = LocalProposalGateway(
         model_path,
         model_factory=lambda **_kwargs: FakeChatModel(),
-        grammar_factory=grammar_factory,
     )
     proposal = gateway.propose("Repair the example.")
 
     assert proposal.commit_message == "fix: local chat proposal"
     assert calls["temperature"] == 0.0
     assert calls["max_tokens"] == 4096
-    assert calls["grammar"] is grammar
-    assert "response_format" not in calls
-    schema = json.loads(grammar_inputs[0])
+    assert calls["seed"] == 0
+    assert "grammar" not in calls
+    response_format = calls["response_format"]
+    assert isinstance(response_format, dict)
+    assert response_format["type"] == "json_object"
+    schema = response_format["schema"]
     assert isinstance(schema, dict)
     assert schema["additionalProperties"] is False
     schema_text = json.dumps(schema, sort_keys=True)
@@ -543,6 +543,50 @@ def test_local_gateway_prefers_json_constrained_chat_completion(
     assert messages[-1] == {"role": "user", "content": "Repair the example."}
 
 
+def test_local_gateway_rejects_token_budget_truncation_even_with_valid_json(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+
+    class TruncatedChatModel:
+        def create_chat_completion(self, **_kwargs: object) -> dict[str, object]:
+            return {
+                "choices": [
+                    {
+                        "finish_reason": "length",
+                        "message": {"content": json.dumps({
+                            "schema_version": 1,
+                            "baseline_sha": "a" * 40,
+                            "task_id": "S83.133",
+                            "edits": [{
+                                "operation": "replace",
+                                "path": "src/general_ludd/example.py",
+                                "old_text": "x = 0",
+                                "new_text": "x = 1",
+                            }],
+                            "tests": ["tests/unit/test_example.py"],
+                            "make_commands": [
+                                "make test-files TESTFILES=tests/unit/test_example.py"
+                            ],
+                            "commit_message": "fix: apparently complete",
+                        })},
+                    }
+                ]
+            }
+
+        def __call__(self, prompt: str, **kwargs: object) -> object:
+            raise AssertionError("raw completion must not be used")
+
+    gateway = LocalProposalGateway(
+        model_path,
+        model_factory=lambda **_kwargs: TruncatedChatModel(),
+    )
+
+    with pytest.raises(ValueError, match="token budget"):
+        gateway.propose("Repair the example.")
+
+
 def test_local_gateway_reports_bounded_incomplete_json_output(tmp_path: Path) -> None:
     model_path = tmp_path / "model.gguf"
     model_path.write_bytes(b"GGUF")
@@ -558,7 +602,6 @@ def test_local_gateway_reports_bounded_incomplete_json_output(tmp_path: Path) ->
     gateway = LocalProposalGateway(
         model_path,
         model_factory=lambda **_kwargs: FakeChatModel(),
-        grammar_factory=lambda _schema: object(),
     )
 
     with pytest.raises(ValueError, match="incomplete JSON") as error:
@@ -656,24 +699,6 @@ def test_json_extractor_accepts_fenced_json_and_rejects_incomplete_tail() -> Non
         comparison_module._extract_json_object('prefix {"ok": true')
 
 
-def test_default_grammar_factory_requires_runtime_grammar_support(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake_module = ModuleType("llama_cpp")
-
-    class FakeGrammar:
-        @staticmethod
-        def from_json_schema(schema_json: str, *, verbose: bool) -> object:
-            return schema_json, verbose
-
-    vars(fake_module)["LlamaGrammar"] = FakeGrammar
-    monkeypatch.setitem(sys.modules, "llama_cpp", fake_module)
-    assert comparison_module._default_grammar_factory("{}") == ("{}", False)
-
-    vars(fake_module).pop("LlamaGrammar")
-    with pytest.raises(RuntimeError, match="does not expose JSON grammar"):
-        comparison_module._default_grammar_factory("{}")
-
 
 def test_optional_llama_runtime_loads_through_dynamic_typed_boundary(
     monkeypatch: pytest.MonkeyPatch,
@@ -691,13 +716,7 @@ def test_optional_llama_runtime_loads_through_dynamic_typed_boundary(
         ) -> None:
             self.settings = model_path, n_ctx, verbose
 
-    class FakeGrammar:
-        @staticmethod
-        def from_json_schema(schema_json: str, *, verbose: bool) -> object:
-            return schema_json, verbose
-
     vars(fake_module)["Llama"] = FakeModel
-    vars(fake_module)["LlamaGrammar"] = FakeGrammar
 
     def import_runtime(name: str) -> ModuleType:
         imports.append(name)
@@ -711,5 +730,4 @@ def test_optional_llama_runtime_loads_through_dynamic_typed_boundary(
     )
     assert isinstance(model, FakeModel)
     assert model.settings == ("/tmp/gludd-model.gguf", 8192, False)
-    assert comparison_module._default_grammar_factory("{}") == ("{}", False)
-    assert imports == ["llama_cpp", "llama_cpp"]
+    assert imports == ["llama_cpp"]

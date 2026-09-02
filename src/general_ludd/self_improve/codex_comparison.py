@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Protocol, cast
@@ -98,7 +98,8 @@ class _ChatLocalModel(Protocol):
         messages: list[dict[str, str]],
         max_tokens: int,
         temperature: float,
-        grammar: object,
+        seed: int,
+        response_format: dict[str, object],
     ) -> object: ...
 
 
@@ -114,21 +115,10 @@ class _ModelFactory(Protocol):
     ) -> _LocalModel: ...
 
 
-class _GrammarConstructor(Protocol):
-    """Typed llama.cpp grammar class boundary."""
-
-    def from_json_schema(self, schema_json: str, *, verbose: bool) -> object:
-        """Build one grammar from a JSON schema."""
-
-
 class _LlamaCppRuntime(Protocol):
     """Typed optional llama.cpp module boundary."""
 
     Llama: _ModelFactory
-    LlamaGrammar: _GrammarConstructor
-
-
-_GrammarFactory = Callable[[str], object]
 
 
 @dataclass(frozen=True)
@@ -461,14 +451,12 @@ class LocalProposalGateway:
         model_path: Path,
         *,
         model_factory: _ModelFactory | None = None,
-        grammar_factory: _GrammarFactory | None = None,
     ) -> None:
-        """Bind one explicit GGUF and injectable llama.cpp factories."""
+        """Bind one explicit GGUF and injectable llama.cpp model factory."""
         if not model_path.is_file():
             raise FileNotFoundError(f"local GGUF is not readable: {model_path}")
         self._model_path = model_path
         self._model_factory = model_factory or _default_model_factory
-        self._grammar_factory = grammar_factory or _default_grammar_factory
         self._model: _LocalModel | None = None
 
     def propose(self, prompt: str) -> ProposalManifest:
@@ -494,9 +482,11 @@ class LocalProposalGateway:
                 ],
                 max_tokens=4096,
                 temperature=0.0,
-                grammar=self._grammar_factory(
-                    json.dumps(_PROPOSAL_JSON_SCHEMA, sort_keys=True)
-                ),
+                seed=0,
+                response_format={
+                    "type": "json_object",
+                    "schema": _PROPOSAL_JSON_SCHEMA,
+                },
             )
         else:
             output = self._model(
@@ -515,6 +505,10 @@ class LocalProposalGateway:
         ):
             raise ValueError("local model response has no choices")
         choice = choices[0]
+        if choice.get("finish_reason") == "length":
+            raise ValueError(
+                "local model exhausted the proposal token budget before completion"
+            )
         text = choice.get("text")
         if not isinstance(text, str):
             message = choice.get("message")
@@ -589,11 +583,3 @@ def _default_model_factory(
     runtime = _load_llama_cpp_runtime()
     return runtime.Llama(model_path=model_path, n_ctx=n_ctx, verbose=verbose)
 
-
-def _default_grammar_factory(schema_json: str) -> object:
-    runtime = _load_llama_cpp_runtime()
-    grammar_value = getattr(runtime, "LlamaGrammar", None)
-    if grammar_value is None:
-        raise RuntimeError("llama.cpp runtime does not expose JSON grammar support")
-    grammar_type = cast("_GrammarConstructor", grammar_value)
-    return grammar_type.from_json_schema(schema_json, verbose=False)
