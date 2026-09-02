@@ -47,6 +47,7 @@ from general_ludd.self_improve.model_candidate_planner import (
 )
 from general_ludd.self_improve.model_lifecycle import (
     AcquiredModel,
+    ModelAcquisitionError,
     ModelAcquisitionEvent,
     ModelArtifactIdentity,
     ModelLeaseManager,
@@ -1822,6 +1823,13 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                     finally:
                         if acquired_model is not None:
                             _report_model_release(acquired_model)
+            except ModelAcquisitionError as exc:
+                print(
+                    "SELF_IMPROVE_MODEL_ACQUISITION_REJECTED "
+                    f"attempt={attempt} failure={exc.failure.value}",
+                    flush=True,
+                )
+                raise
             except BaseException as exc:
                 if (
                     model_plan_reservation is not None

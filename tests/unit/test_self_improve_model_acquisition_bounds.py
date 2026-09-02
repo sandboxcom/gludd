@@ -15,6 +15,7 @@ import general_ludd.self_improve.model_lifecycle as lifecycle
 from general_ludd.local_model._local_model_configs import LocalModelConfig
 from general_ludd.self_improve.model_lifecycle import (
     ModelAcquisitionEvent,
+    ModelAcquisitionFailure,
     ModelAcquisitionPhase,
     ModelLeaseManager,
 )
@@ -246,6 +247,7 @@ def test_leased_pressure_emits_refused_without_deleting_any_payload(
     assert [event.phase for event in events] == [
         ModelAcquisitionPhase.EVICTION_REFUSED
     ]
+    assert events[0].failure is ModelAcquisitionFailure.CACHE_HEADROOM
 
 
 def _return_value(value: str) -> str:
@@ -393,6 +395,7 @@ def test_eviction_failure_emits_refusal_and_never_claims_completion(
     assert ModelAcquisitionPhase.EVICTION_COMPLETED not in {
         event.phase for event in events
     }
+    assert events[-1].failure is ModelAcquisitionFailure.CACHE_RECLAIM
 
 
 def test_timeout_environment_must_also_be_finite(

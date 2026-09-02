@@ -1196,6 +1196,88 @@ def test_managed_acquisition_entry_failure_closes_plan_before_reraising(
     assert EntryFailureManager.released == 0
 
 
+def test_typed_acquisition_refusal_does_not_poison_evidence_or_retry_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _wire_common(tmp_path, monkeypatch)
+    transitions: list[str] = []
+    outcomes: list[str] = []
+    acquisition_calls = 0
+    reservation_exited = False
+
+    class TypedAcquisitionFailure(RuntimeError):
+        failure = SimpleNamespace(value="cache_reclaim")
+
+    class RefusingManager(_LeaseManager):
+        @contextmanager
+        def reserve_plan(
+            self,
+            _identities: tuple[ModelArtifactIdentity, ...],
+            *,
+            failure_hints: tuple[ModelArtifactIdentity, ...] = (),
+        ) -> Iterator[_ReservationHandle]:
+            nonlocal reservation_exited
+            assert failure_hints == ()
+            try:
+                yield _ReservationHandle(
+                    self.cache_root / "reservation.json",
+                    transitions,
+                )
+            finally:
+                reservation_exited = True
+
+        @contextmanager
+        def acquire(
+            self,
+            _task_description: str,
+            *,
+            explicit_path: Path | None = None,
+            model_config: object | None = None,
+            resolved_revision: str | None = None,
+        ) -> Iterator[SimpleNamespace]:
+            nonlocal acquisition_calls
+            del explicit_path, model_config, resolved_revision
+            acquisition_calls += 1
+            if False:
+                yield SimpleNamespace()
+            raise TypedAcquisitionFailure(
+                "managed model acquisition failed: cache_reclaim"
+            )
+
+    monkeypatch.setattr(
+        runner,
+        "ModelAcquisitionError",
+        TypedAcquisitionFailure,
+        raising=False,
+    )
+    monkeypatch.setattr(runner, "ModelLeaseManager", RefusingManager)
+    monkeypatch.setattr(
+        runner,
+        "record_self_improve_outcome",
+        lambda *_args, **_kwargs: outcomes.append("recorded"),
+    )
+    args = _args(_task_file(tmp_path))
+    args.max_attempts = 2
+
+    with pytest.raises(TypedAcquisitionFailure, match="cache_reclaim"):
+        runner.run_benchmark(args)
+
+    output = capsys.readouterr().out
+    assert acquisition_calls == 1
+    assert reservation_exited
+    assert transitions == []
+    assert outcomes == []
+    assert (
+        "SELF_IMPROVE_MODEL_ACQUISITION_REJECTED "
+        "attempt=1 failure=cache_reclaim"
+    ) in output
+    assert "SELF_IMPROVE_PROPOSAL_REJECTED" not in output
+    assert "SELF_IMPROVE_MODEL_OUTCOME" not in output
+    assert "candidate plan is exhausted" not in output
+
+
 def test_prompt_plan_generation_failure_retries_with_next_reserved_candidate(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

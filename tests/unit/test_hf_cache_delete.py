@@ -692,6 +692,38 @@ def test_default_scanner_deletes_a_real_hf_cache_layout(
     assert not repo_path.exists()
 
 
+def test_default_scanner_ignores_gludd_control_metadata_for_exact_deletion(
+    tmp_path: Path,
+) -> None:
+    cache_root = tmp_path / "cache"
+    repo_path = cache_root / "models--example--model"
+    blob_path = repo_path / "blobs" / ("b" * 64)
+    blob_path.parent.mkdir(parents=True)
+    blob_path.write_bytes(b"GGUF")
+    snapshot_path = repo_path / "snapshots" / _REVISION
+    target_path = snapshot_path / _FILENAME
+    target_path.parent.mkdir(parents=True)
+    target_path.symlink_to(blob_path)
+    refs_path = repo_path / "refs"
+    refs_path.mkdir()
+    (refs_path / "main").write_text(_REVISION, encoding="utf-8")
+    metadata_path = cache_root / ".gludd" / "models" / "owned.json"
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text("{}\n", encoding="utf-8")
+    identity = CacheArtifactIdentity(
+        repo_id="example/model",
+        revision=_REVISION,
+        filename=_FILENAME,
+        path=target_path,
+    )
+
+    result = HuggingFaceCacheDeletion(cache_root).plan(identity).execute_and_verify()
+
+    assert result.verified_absent is True
+    assert not repo_path.exists()
+    assert metadata_path.read_text(encoding="utf-8") == "{}\n"
+
+
 def test_execution_error_and_failed_verification_are_bounded(
     tmp_path: Path,
 ) -> None:

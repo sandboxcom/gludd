@@ -127,6 +127,32 @@ def _is_within(path: Path, parent: Path) -> bool:
     return True
 
 
+def _is_owned_control_directory_warning(
+    warning: BaseException,
+    *,
+    cache_root: Path,
+) -> bool:
+    """Recognize only Hugging Face's exact warning for Gludd-owned metadata."""
+    from huggingface_hub.errors import CorruptedCacheException
+
+    control_directory = cache_root / ".gludd"
+    try:
+        canonical_control = control_directory.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return False
+    expected = (
+        "Repo path is not a valid HuggingFace cache directory: "
+        f"{control_directory}"
+    )
+    return (
+        isinstance(warning, CorruptedCacheException)
+        and not control_directory.is_symlink()
+        and canonical_control == control_directory
+        and control_directory.is_dir()
+        and str(warning) == expected
+    )
+
+
 def _paths_from_strategy(strategy: _DeleteStrategy, field_name: str) -> frozenset[Path]:
     try:
         raw_paths = getattr(strategy, field_name)
@@ -224,10 +250,18 @@ class HuggingFaceCacheDeletion:
                 _CacheInfo,
                 self._scanner(cache_dir=self._cache_root),
             )
-            warnings = cache_info.warnings
+            warnings = tuple(cache_info.warnings)
         except Exception:
             raise CacheDeletionError("cache scan failed") from None
-        if warnings:
+        unexpected_warnings = tuple(
+            warning
+            for warning in warnings
+            if not _is_owned_control_directory_warning(
+                warning,
+                cache_root=self._cache_root,
+            )
+        )
+        if unexpected_warnings:
             raise CacheDeletionError("cache scan reported warnings")
         return cache_info
 

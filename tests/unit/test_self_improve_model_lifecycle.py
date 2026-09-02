@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from general_ludd.local_model._local_model_configs import LocalModelConfig
+from general_ludd.self_improve.hf_cache_delete import CacheDeletionError
 from general_ludd.self_improve.model_lifecycle import ModelLeaseManager
 from general_ludd.small_models.download import DownloadedModel, DownloadSource
 
@@ -239,6 +240,45 @@ def test_insufficient_headroom_fails_before_download(tmp_path: Path) -> None:
         pytest.fail("acquisition must not start")
 
     assert downloader.calls == []
+
+
+def test_exact_cache_refusal_is_a_typed_acquisition_failure_before_download(
+    tmp_path: Path,
+) -> None:
+    cache_root = tmp_path / "self-improve-cache"
+    downloader = _Downloader(cache_root)
+    old = _coding_config("old-coder", "example/old")
+    new = _coding_config("new-coder", "example/new")
+    revisions = {old.repo: _REV_A, new.repo: _REV_B}
+    seed = _manager(
+        tmp_path,
+        downloader,
+        selector=lambda task: {"old": old, "new": new}[task],
+        revision_resolver=lambda repo: revisions[repo],
+    )
+    with seed.acquire("old"):
+        pass
+
+    def refuse_exact_deletion(_cache: Path, _revision: str) -> None:
+        raise CacheDeletionError("cache deletion strategy is invalid")
+
+    pressured = _manager(
+        tmp_path,
+        downloader,
+        selector=lambda task: {"old": old, "new": new}[task],
+        revision_resolver=lambda repo: revisions[repo],
+        quota_bytes=1,
+        revision_deleter=refuse_exact_deletion,
+    )
+
+    with pytest.raises(RuntimeError) as raised, pressured.acquire("new"):
+        pytest.fail("acquisition must not start")
+
+    assert type(raised.value).__name__ == "ModelAcquisitionError"
+    assert raised.value.failure.value == "cache_reclaim"
+    assert str(raised.value) == "managed model acquisition failed: cache_reclaim"
+    assert isinstance(raised.value.__cause__, CacheDeletionError)
+    assert downloader.calls == [(old.repo, old.filename, _REV_A)]
 
 
 def test_corrupt_ownership_manifest_blocks_eviction(tmp_path: Path) -> None:

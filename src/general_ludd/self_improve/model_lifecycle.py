@@ -79,6 +79,27 @@ class ModelAcquisitionFailure(StrEnum):
     VALIDATION = "validation"
     INTERRUPTED = "interrupted"
     INTERNAL = "internal"
+    CACHE_RECLAIM = "cache_reclaim"
+    CACHE_HEADROOM = "cache_headroom"
+
+
+class ModelAcquisitionError(RuntimeError):
+    """Typed, secret-safe failure raised before a managed model is usable."""
+
+    def __init__(self, failure: ModelAcquisitionFailure) -> None:
+        """Retain only a stable category and a bounded operator-safe message."""
+        if failure is ModelAcquisitionFailure.CACHE_RECLAIM:
+            message = "managed model acquisition failed: cache_reclaim"
+        elif failure is ModelAcquisitionFailure.CACHE_HEADROOM:
+            message = (
+                "insufficient model cache headroom: all remaining artifacts are "
+                "leased, reserved, or the configured quota/reserve cannot admit "
+                "the request"
+            )
+        else:
+            raise ValueError("unsupported typed model acquisition failure")
+        super().__init__(message)
+        self.failure = failure
 
 
 @dataclass(frozen=True, slots=True)
@@ -584,6 +605,8 @@ class ModelLeaseManager:
     @staticmethod
     def _failure_category(error: BaseException) -> ModelAcquisitionFailure:
         """Map an exception to a stable category without retaining its message."""
+        if isinstance(error, ModelAcquisitionError):
+            return error.failure
         if isinstance(error, TimeoutError):
             return ModelAcquisitionFailure.TIMEOUT
         if isinstance(error, (KeyboardInterrupt, SystemExit)):
@@ -631,6 +654,7 @@ class ModelLeaseManager:
         operation_id: str,
         started_at: float,
         artifact: _OwnedArtifact | None = None,
+        failure: ModelAcquisitionFailure | None = None,
     ) -> None:
         """Emit one secret-safe cache-pressure decision event."""
         self._emit_event(
@@ -650,6 +674,7 @@ class ModelLeaseManager:
                     max(0.0, time.monotonic() - started_at),
                     3,
                 ),
+                failure=failure,
             )
         )
 
@@ -1209,12 +1234,22 @@ class ModelLeaseManager:
             )
             try:
                 self._delete_owned_artifact(item)
-            except BaseException:
+            except (KeyboardInterrupt, SystemExit):
                 self._emit_eviction_event(
                     ModelAcquisitionPhase.EVICTION_REFUSED,
                     operation_id=operation_id,
                     started_at=started_at,
                     artifact=item,
+                    failure=ModelAcquisitionFailure.INTERRUPTED,
+                )
+                raise
+            except Exception:
+                self._emit_eviction_event(
+                    ModelAcquisitionPhase.EVICTION_REFUSED,
+                    operation_id=operation_id,
+                    started_at=started_at,
+                    artifact=item,
+                    failure=ModelAcquisitionFailure.CACHE_RECLAIM,
                 )
                 raise
             if item.path.exists():
@@ -1223,6 +1258,7 @@ class ModelLeaseManager:
                     operation_id=operation_id,
                     started_at=started_at,
                     artifact=item,
+                    failure=ModelAcquisitionFailure.CACHE_RECLAIM,
                 )
                 raise RuntimeError(
                     f"model revision eviction did not remove owned artifact: {item.path}"
@@ -1235,6 +1271,7 @@ class ModelLeaseManager:
                     operation_id=operation_id,
                     started_at=started_at,
                     artifact=item,
+                    failure=ModelAcquisitionFailure.CACHE_RECLAIM,
                 )
                 raise RuntimeError(
                     f"model ownership manifest cleanup failed: {item.manifest_path}"
@@ -1253,10 +1290,10 @@ class ModelLeaseManager:
             ModelAcquisitionPhase.EVICTION_REFUSED,
             operation_id=operation_id,
             started_at=started_at,
+            failure=ModelAcquisitionFailure.CACHE_HEADROOM,
         )
-        raise RuntimeError(
-            "insufficient model cache headroom: all remaining artifacts are leased, "
-            "reserved, or the configured quota/reserve cannot admit the request"
+        raise ModelAcquisitionError(
+            ModelAcquisitionFailure.CACHE_HEADROOM
         )
 
     def resolve_revision(self, repo_id: str) -> str:
@@ -1336,7 +1373,14 @@ class ModelLeaseManager:
             self._emit_cache_hit(cached)
         else:
             estimated = config.size_mb * 1024 * 1024
-            self.reclaim(required_bytes=estimated)
+            try:
+                self.reclaim(required_bytes=estimated)
+            except ModelAcquisitionError:
+                raise
+            except (OSError, RuntimeError) as error:
+                raise ModelAcquisitionError(
+                    ModelAcquisitionFailure.CACHE_RECLAIM
+                ) from error
             lock_path = self._acquisition_lock_path(config.repo, revision)
             descriptor = self._claim_acquisition(lock_path)
             try:
@@ -1837,6 +1881,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 __all__ = [
     "AcquiredModel",
     "ModelAcquisitionAuthMode",
+    "ModelAcquisitionError",
     "ModelAcquisitionEvent",
     "ModelAcquisitionFailure",
     "ModelAcquisitionPhase",

@@ -229,7 +229,9 @@ phase it never reached.
 `input_admission` and missing external prerequisites invalidate the case. Phases
 3 through 8 are model/runtime evidence for the exact identity. Phase 9 is an
 application lifecycle defect and must not be hidden by relabeling it as poor
-model output.
+model output. An `artifact_acquisition` refusal terminates with its typed,
+secret-safe cache cause; it neither writes a failed model-capability outcome nor
+enters proposal-validation retry, because no proposal was generated.
 
 ## Result states and aggregation
 
@@ -309,6 +311,13 @@ Official evaluation practice:
   records prompt/completion tokens, throughput, and `stop` versus `length`
   completion rates. Gludd records those raw measures but runs its owned Python
   worker rather than introducing a server.
+- The [Hugging Face cache API reference](https://huggingface.co/docs/huggingface_hub/en/package_reference/cache)
+  specifies that repository scan corruption is captured as warnings and that
+  `delete_revisions` produces a previewable strategy. The
+  [official cache layout](https://huggingface.co/docs/huggingface_hub/en/guides/manage-cache)
+  reserves top-level repository directories and `.locks`. Gludd therefore
+  accepts only the exact scanner warning for its canonical, non-symlink
+  `.gludd` control directory; every other warning still refuses deletion.
 
 Long-lived practitioner reports are design inputs, not proof that Gludd has the
 same defect:
@@ -328,6 +337,14 @@ same defect:
   (opened May 2024) reported a server path ignoring request seed values. Gludd
   records the effective seed inside its full attempt protocol and avoids using
   an unowned external server for acceptance.
+- [huggingface_hub issue 1738](https://github.com/huggingface/huggingface_hub/issues/1738)
+  (opened August 2023) contains a long-running practitioner discussion about
+  colocating tool metadata under a reserved cache subdirectory without
+  confusing repository content. [Issue 2218](https://github.com/huggingface/huggingface_hub/issues/2218)
+  (opened April 2024) records another cache-layout mismatch where a consumer's
+  directory naming differed from the scanner's accepted layout. These reports
+  support pinning Gludd's one allowed metadata diagnostic exactly rather than
+  ignoring arbitrary cache warnings.
 
 ## Completion checklist
 
