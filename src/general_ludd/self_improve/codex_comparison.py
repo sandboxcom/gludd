@@ -82,6 +82,49 @@ _PROPOSAL_JSON_SCHEMA: dict[str, object] = {
     },
 }
 
+_COMPACT_PROPOSAL_TOKENS = 1536
+_STRUCTURED_CANARY_TOKENS = 32
+_SAFE_FINISH_REASONS = frozenset(
+    {"stop", "length", "tool_calls", "function_call", "content_filter"}
+)
+_STRUCTURED_CANARY_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["ok"],
+    "properties": {"ok": {"type": "boolean", "const": True}},
+}
+_COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["e", "c"],
+    "properties": {
+        "e": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["o", "p", "a", "z"],
+                "properties": {
+                    "o": {"type": "string", "enum": ["r", "c", "d"]},
+                    "p": {"type": "string"},
+                    "a": {"type": "string"},
+                    "z": {"type": "string"},
+                },
+            },
+        },
+        "c": {"type": "string"},
+    },
+}
+_COMPACT_SYSTEM_PROMPT = (
+    "Return exactly one compact JSON object and no prose. "
+    "e is the edit array and c is the one-line commit message. "
+    "For each edit, o is r (replace), c (create), or d (delete); "
+    "p is the repository path; a is exact old text; z is new text. "
+    "Use the shortest unique exact replacement and never reproduce a whole file."
+)
+
 
 class _LocalModel(Protocol):
     """Minimal llama.cpp-compatible inference protocol."""
@@ -141,6 +184,80 @@ class ProposalEdit:
     path: str
     old_text: str
     new_text: str
+
+
+@dataclass(frozen=True)
+class ProposalContract:
+    """Trusted immutable fields omitted from the compact model response."""
+
+    baseline_sha: str
+    task_id: str
+    tests: tuple[str, ...]
+    make_commands: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        """Reject malformed contract values before they reach local inference."""
+        if not isinstance(self.baseline_sha, str) or not _SHA_RE.fullmatch(
+            self.baseline_sha
+        ):
+            raise ValueError(
+                "proposal contract baseline_sha must be 40 lowercase hex characters"
+            )
+        if not isinstance(self.task_id, str) or not _TASK_RE.fullmatch(self.task_id):
+            raise ValueError("proposal contract task_id is not canonical")
+        if not isinstance(self.tests, tuple):
+            raise ValueError("proposal contract tests must be a tuple")
+        if not isinstance(self.make_commands, tuple):
+            raise ValueError("proposal contract make_commands must be a tuple")
+        if _parse_path_list(list(self.tests), "test path", _MAX_TESTS) != self.tests:
+            raise ValueError("proposal contract tests are not canonical")
+        if _parse_make_commands(list(self.make_commands)) != self.make_commands:
+            raise ValueError("proposal contract make_commands are not canonical")
+
+    def to_json(self) -> str:
+        """Serialize the trusted contract for one confined worker exchange."""
+        return json.dumps(
+            {
+                "baseline_sha": self.baseline_sha,
+                "task_id": self.task_id,
+                "tests": list(self.tests),
+                "make_commands": list(self.make_commands),
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+
+    @classmethod
+    def from_json(cls, raw: str) -> ProposalContract:
+        """Parse one exact trusted contract object."""
+        try:
+            value = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError(f"proposal contract is not valid JSON: {exc}") from exc
+        required = {"baseline_sha", "task_id", "tests", "make_commands"}
+        if not isinstance(value, dict) or set(value) != required:
+            raise ValueError("proposal contract fields are incomplete or unknown")
+        baseline_sha = value["baseline_sha"]
+        task_id = value["task_id"]
+        tests = value["tests"]
+        make_commands = value["make_commands"]
+        if not isinstance(baseline_sha, str) or not isinstance(task_id, str):
+            raise ValueError("proposal contract identity fields must be strings")
+        if not isinstance(tests, list) or not all(
+            isinstance(item, str) for item in tests
+        ):
+            raise ValueError("proposal contract tests must be a string list")
+        if not isinstance(make_commands, list) or not all(
+            isinstance(item, str) for item in make_commands
+        ):
+            raise ValueError("proposal contract make_commands must be a string list")
+        return cls(
+            baseline_sha=baseline_sha,
+            task_id=task_id,
+            tests=tuple(tests),
+            make_commands=tuple(make_commands),
+        )
 
 
 @dataclass(frozen=True)
@@ -263,22 +380,7 @@ class ProposalManifest:
             raise ValueError(f"proposal edit content exceeds {_MAX_CONTENT_BYTES} bytes")
 
         tests = _parse_path_list(value["tests"], "test path", _MAX_TESTS)
-        commands_raw = value["make_commands"]
-        if (
-            not isinstance(commands_raw, list)
-            or not commands_raw
-            or len(commands_raw) > _MAX_COMMANDS
-        ):
-            raise ValueError(f"make_commands must contain 1..{_MAX_COMMANDS} entries")
-        commands: list[str] = []
-        for command in commands_raw:
-            if not isinstance(command, str) or not command.startswith("make "):
-                raise ValueError("every tool step must be a make command")
-            if len(command.encode("utf-8")) > _MAX_COMMAND_BYTES:
-                raise ValueError("make command exceeds the bounded command size")
-            if any(token in command for token in _SHELL_METACHARACTERS):
-                raise ValueError("make command contains a forbidden shell metacharacter")
-            commands.append(command)
+        commands = _parse_make_commands(value["make_commands"])
 
         commit_message = value["commit_message"]
         if (
@@ -664,6 +766,115 @@ def build_retry_prompt(
     )
 
 
+def _safe_finish_reason(choice: Mapping[object, object]) -> str:
+    """Return one allowlisted finish classification without model-controlled text."""
+    raw = choice.get("finish_reason")
+    return raw if isinstance(raw, str) and raw in _SAFE_FINISH_REASONS else "unknown"
+
+
+def _safe_token_count(output: Mapping[object, object], field: str) -> str:
+    """Return a non-negative token count or an explicit unknown marker."""
+    usage = output.get("usage")
+    value = usage.get(field) if isinstance(usage, Mapping) else None
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return str(value)
+    return "unknown"
+
+
+def _completion_text(
+    output: object,
+    *,
+    phase: str,
+    budget: int,
+    require_stop: bool,
+) -> str:
+    """Extract completion text with secret-safe finish and token diagnostics."""
+    if not isinstance(output, Mapping):
+        raise ValueError("local model returned a non-object response")
+    choices = output.get("choices")
+    if (
+        not isinstance(choices, list)
+        or not choices
+        or not isinstance(choices[0], Mapping)
+    ):
+        raise ValueError("local model response has no choices")
+    choice = choices[0]
+    finish = _safe_finish_reason(choice)
+    diagnostic = (
+        f"phase={phase} finish={finish} "
+        f"prompt_tokens={_safe_token_count(output, 'prompt_tokens')} "
+        f"completion_tokens={_safe_token_count(output, 'completion_tokens')} "
+        f"total_tokens={_safe_token_count(output, 'total_tokens')} "
+        f"budget={budget}"
+    )
+    print(f"SELF_IMPROVE_LOCAL_DECODE {diagnostic}", flush=True)
+    if finish == "length":
+        raise ValueError(
+            "local model exhausted the proposal token budget before completion; "
+            + diagnostic
+        )
+    if require_stop and finish != "stop":
+        raise ValueError("local model did not complete structured output; " + diagnostic)
+    text = choice.get("text")
+    if not isinstance(text, str):
+        message = choice.get("message")
+        text = message.get("content") if isinstance(message, Mapping) else None
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("local model response has no proposal text; " + diagnostic)
+    return text
+
+
+def _decode_compact_proposal(
+    raw: str,
+    contract: ProposalContract,
+) -> ProposalManifest:
+    """Expand one exact compact object and revalidate the authoritative manifest."""
+    stripped = raw.strip()
+    try:
+        value = json.loads(stripped)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError(
+            "compact proposal is not one complete JSON object; "
+            f"output_bytes={len(stripped.encode('utf-8'))}"
+        ) from exc
+    if not isinstance(value, dict) or set(value) != {"e", "c"}:
+        raise ValueError("compact proposal must contain exactly e and c")
+    edits_raw = value["e"]
+    if not isinstance(edits_raw, list) or not 1 <= len(edits_raw) <= 16:
+        raise ValueError("compact proposal edits must contain 1..16 entries")
+    operations = {"r": "replace", "c": "create", "d": "delete"}
+    edits: list[dict[str, object]] = []
+    for item in edits_raw:
+        if not isinstance(item, dict) or set(item) != {"o", "p", "a", "z"}:
+            raise ValueError("each compact edit must contain exactly o, p, a, and z")
+        operation = item["o"]
+        if not isinstance(operation, str) or operation not in operations:
+            raise ValueError("compact edit operation must be r, c, or d")
+        edits.append(
+            {
+                "operation": operations[operation],
+                "path": item["p"],
+                "old_text": item["a"],
+                "new_text": item["z"],
+            }
+        )
+    expanded = json.dumps(
+        {
+            "schema_version": 1,
+            "baseline_sha": contract.baseline_sha,
+            "task_id": contract.task_id,
+            "edits": edits,
+            "tests": list(contract.tests),
+            "make_commands": list(contract.make_commands),
+            "commit_message": value["c"],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return ProposalManifest.from_json(expanded)
+
+
 class LocalProposalGateway:
     """Generate strict proposal JSON with one explicit local GGUF model."""
 
@@ -687,9 +898,10 @@ class LocalProposalGateway:
         self._model_factory = model_factory or _default_model_factory
         self._n_gpu_layers = n_gpu_layers
         self._model: _LocalModel | None = None
+        self._structured_canary_passed = False
 
-    def propose(self, prompt: str) -> ProposalManifest:
-        """Run deterministic decode and parse one bounded proposal."""
+    def _load_model(self) -> _LocalModel:
+        """Lazily construct exactly one retained model instance."""
         if self._model is None:
             if self._n_gpu_layers is None:
                 self._model = self._model_factory(
@@ -704,8 +916,73 @@ class LocalProposalGateway:
                     verbose=False,
                     n_gpu_layers=self._n_gpu_layers,
                 )
-        if hasattr(self._model, "create_chat_completion"):
-            chat_model = cast("_ChatLocalModel", self._model)
+        return self._model
+
+    def _run_structured_canary(self, model: _ChatLocalModel) -> None:
+        """Prove the retained model can finish a tiny schema before task decoding."""
+        if self._structured_canary_passed:
+            return
+        output = model.create_chat_completion(
+            messages=[
+                {"role": "system", "content": _COMPACT_SYSTEM_PROMPT},
+                {"role": "user", "content": 'Return {"ok":true}.'},
+            ],
+            max_tokens=_STRUCTURED_CANARY_TOKENS,
+            temperature=0.0,
+            seed=0,
+            response_format={
+                "type": "json_object",
+                "schema": _STRUCTURED_CANARY_SCHEMA,
+            },
+        )
+        try:
+            text = _completion_text(
+                output,
+                phase="canary",
+                budget=_STRUCTURED_CANARY_TOKENS,
+                require_stop=True,
+            )
+            value = json.loads(text)
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError(f"local structured-output canary failed: {exc}") from exc
+        if value != {"ok": True}:
+            raise ValueError(
+                "local structured-output canary failed: response did not match contract"
+            )
+        self._structured_canary_passed = True
+
+    def propose(
+        self,
+        prompt: str,
+        *,
+        contract: ProposalContract | None = None,
+    ) -> ProposalManifest:
+        """Run deterministic decode and parse one bounded proposal."""
+        model = self._load_model()
+        if hasattr(model, "create_chat_completion"):
+            chat_model = cast("_ChatLocalModel", model)
+            if contract is not None:
+                self._run_structured_canary(chat_model)
+                output = chat_model.create_chat_completion(
+                    messages=[
+                        {"role": "system", "content": _COMPACT_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=_COMPACT_PROPOSAL_TOKENS,
+                    temperature=0.0,
+                    seed=0,
+                    response_format={
+                        "type": "json_object",
+                        "schema": _COMPACT_PROPOSAL_JSON_SCHEMA,
+                    },
+                )
+                text = _completion_text(
+                    output,
+                    phase="proposal",
+                    budget=_COMPACT_PROPOSAL_TOKENS,
+                    require_stop=True,
+                )
+                return _decode_compact_proposal(text, contract)
             output = chat_model.create_chat_completion(
                 messages=[
                     {
@@ -726,32 +1003,22 @@ class LocalProposalGateway:
                 },
             )
         else:
-            output = self._model(
+            if contract is not None:
+                raise ValueError(
+                    "compact structured proposal requires chat-completion support"
+                )
+            output = model(
                 prompt,
                 max_tokens=4096,
                 temperature=0.0,
                 echo=False,
             )
-        if not isinstance(output, Mapping):
-            raise ValueError("local model returned a non-object response")
-        choices = output.get("choices")
-        if (
-            not isinstance(choices, list)
-            or not choices
-            or not isinstance(choices[0], Mapping)
-        ):
-            raise ValueError("local model response has no choices")
-        choice = choices[0]
-        if choice.get("finish_reason") == "length":
-            raise ValueError(
-                "local model exhausted the proposal token budget before completion"
-            )
-        text = choice.get("text")
-        if not isinstance(text, str):
-            message = choice.get("message")
-            text = message.get("content") if isinstance(message, Mapping) else None
-        if not isinstance(text, str) or not text.strip():
-            raise ValueError("local model response has no proposal text")
+        text = _completion_text(
+            output,
+            phase="proposal",
+            budget=4096,
+            require_stop=False,
+        )
         return ProposalManifest.from_json(_extract_json_object(text))
 
 
@@ -764,6 +1031,22 @@ def _safe_relative_path(raw: str) -> bool:
         and ".." not in path.parts
         and path.parts[0] not in {".git", ".venv"}
     )
+
+
+def _parse_make_commands(value: object) -> tuple[str, ...]:
+    """Parse one bounded list of Make-only tool steps."""
+    if not isinstance(value, list) or not value or len(value) > _MAX_COMMANDS:
+        raise ValueError(f"make_commands must contain 1..{_MAX_COMMANDS} entries")
+    commands: list[str] = []
+    for command in value:
+        if not isinstance(command, str) or not command.startswith("make "):
+            raise ValueError("every tool step must be a make command")
+        if len(command.encode("utf-8")) > _MAX_COMMAND_BYTES:
+            raise ValueError("make command exceeds the bounded command size")
+        if any(token in command for token in _SHELL_METACHARACTERS):
+            raise ValueError("make command contains a forbidden shell metacharacter")
+        commands.append(command)
+    return tuple(commands)
 
 
 def _parse_path_list(value: object, label: str, maximum: int) -> tuple[str, ...]:
@@ -790,7 +1073,8 @@ def _extract_json_object(text: str) -> str:
     start = stripped.find("{")
     end = stripped.rfind("}")
     diagnostic = (
-        f"head={stripped[:256]!r} tail={stripped[-768:]!r}"
+        f"output_bytes={len(stripped.encode('utf-8'))} "
+        f"has_json_start={start >= 0} has_json_end={end >= start}"
     )
     if start < 0:
         raise ValueError(f"local model response has no JSON start: {diagnostic}")

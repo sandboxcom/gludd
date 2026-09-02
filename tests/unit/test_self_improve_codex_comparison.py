@@ -16,6 +16,7 @@ from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
     CodexReference,
     LocalProposalGateway,
+    ProposalContract,
     ProposalManifest,
     build_retry_prompt,
     compare_with_codex,
@@ -95,6 +96,149 @@ def _reference() -> CodexReference:
         changed_lines=10,
         elapsed_seconds=10.0,
     )
+
+
+def _contract() -> ProposalContract:
+    return ProposalContract(
+        baseline_sha="a" * 40,
+        task_id="S83.133",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+    )
+
+
+def test_proposal_contract_round_trips_only_trusted_immutable_fields() -> None:
+    contract = _contract()
+    assert ProposalContract.from_json(contract.to_json()) == contract
+    assert set(json.loads(contract.to_json())) == {
+        "baseline_sha",
+        "task_id",
+        "tests",
+        "make_commands",
+    }
+
+
+@pytest.mark.parametrize(
+    ("raw", "match"),
+    [
+        ("{", "valid JSON"),
+        ("{}", "fields"),
+        (
+            json.dumps(
+                {
+                    "baseline_sha": 7,
+                    "task_id": "S83.133",
+                    "tests": ["tests/unit/test_example.py"],
+                    "make_commands": [
+                        "make test-files TESTFILES=tests/unit/test_example.py"
+                    ],
+                }
+            ),
+            "identity",
+        ),
+        (
+            json.dumps(
+                {
+                    "baseline_sha": "a" * 40,
+                    "task_id": "S83.133",
+                    "tests": "tests/unit/test_example.py",
+                    "make_commands": [
+                        "make test-files TESTFILES=tests/unit/test_example.py"
+                    ],
+                }
+            ),
+            "tests",
+        ),
+        (
+            json.dumps(
+                {
+                    "baseline_sha": "a" * 40,
+                    "task_id": "S83.133",
+                    "tests": [7],
+                    "make_commands": [
+                        "make test-files TESTFILES=tests/unit/test_example.py"
+                    ],
+                }
+            ),
+            "tests",
+        ),
+        (
+            json.dumps(
+                {
+                    "baseline_sha": "a" * 40,
+                    "task_id": "S83.133",
+                    "tests": ["tests/unit/test_example.py"],
+                    "make_commands": "make test-files",
+                }
+            ),
+            "make_commands",
+        ),
+        (
+            json.dumps(
+                {
+                    "baseline_sha": "a" * 40,
+                    "task_id": "S83.133",
+                    "tests": ["tests/unit/test_example.py"],
+                    "make_commands": [7],
+                }
+            ),
+            "make_commands",
+        ),
+        (
+            json.dumps(
+                {
+                    "baseline_sha": "short",
+                    "task_id": "S83.133",
+                    "tests": ["tests/unit/test_example.py"],
+                    "make_commands": ["make test-files TESTFILES=tests/unit/test_example.py"],
+                }
+            ),
+            "baseline_sha",
+        ),
+        (
+            json.dumps(
+                {
+                    "baseline_sha": "a" * 40,
+                    "task_id": "bad",
+                    "tests": ["tests/unit/test_example.py"],
+                    "make_commands": ["make test-files TESTFILES=tests/unit/test_example.py"],
+                }
+            ),
+            "task_id",
+        ),
+        (
+            json.dumps(
+                {
+                    "baseline_sha": "a" * 40,
+                    "task_id": "S83.133",
+                    "tests": [
+                        "tests/unit/test_example.py",
+                        "tests/unit/test_example.py",
+                    ],
+                    "make_commands": ["make test-files TESTFILES=tests/unit/test_example.py"],
+                }
+            ),
+            "duplicate",
+        ),
+        (
+            json.dumps(
+                {
+                    "baseline_sha": "a" * 40,
+                    "task_id": "S83.133",
+                    "tests": ["tests/unit/test_example.py"],
+                    "make_commands": ["python -m pytest"],
+                }
+            ),
+            "make command",
+        ),
+    ],
+)
+def test_proposal_contract_rejects_malformed_exchange_json(
+    raw: str,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        ProposalContract.from_json(raw)
 
 
 def test_proposal_manifest_accepts_bounded_make_only_multi_file_plan() -> None:
@@ -417,8 +561,10 @@ def test_local_gateway_reports_bounded_output_without_json_start(tmp_path: Path)
         model_factory=lambda **_kwargs: FakeChatModel(),
     )
 
-    with pytest.raises(ValueError, match=r"no JSON start.*plain text"):
+    with pytest.raises(ValueError, match=r"no JSON start.*output_bytes=15") as error:
         gateway.propose("Repair exactly.")
+
+    assert "plain text" not in str(error.value)
 
 
 def test_local_gateway_uses_explicit_model_and_deterministic_decode(
@@ -560,6 +706,234 @@ def test_local_gateway_prefers_native_schema_constrained_chat_completion(
     assert messages[-1] == {"role": "user", "content": "Repair the example."}
 
 
+def test_compact_gateway_uses_one_fast_canary_and_expands_trusted_contract(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    calls: list[dict[str, object]] = []
+    factory_calls = 0
+
+    class CompactChatModel:
+        def create_chat_completion(self, **kwargs: object) -> dict[str, object]:
+            calls.append(dict(kwargs))
+            if len(calls) == 1:
+                content = json.dumps({"ok": True})
+                usage = {
+                    "prompt_tokens": 24,
+                    "completion_tokens": 5,
+                    "total_tokens": 29,
+                }
+            else:
+                content = json.dumps(
+                    {
+                        "e": [
+                            {
+                                "o": "r",
+                                "p": "src/general_ludd/example.py",
+                                "a": "x = 0",
+                                "z": "x = 1",
+                            }
+                        ],
+                        "c": "fix: compact local proposal",
+                    }
+                )
+                usage = {
+                    "prompt_tokens": 640,
+                    "completion_tokens": 88,
+                    "total_tokens": 728,
+                }
+            return {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": content},
+                    }
+                ],
+                "usage": usage,
+            }
+
+        def __call__(self, prompt: str, **kwargs: object) -> object:
+            raise AssertionError("raw completion must not be used")
+
+    def factory(**_kwargs: object) -> CompactChatModel:
+        nonlocal factory_calls
+        factory_calls += 1
+        return CompactChatModel()
+
+    contract = ProposalContract(
+        baseline_sha="a" * 40,
+        task_id="S83.133",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+    )
+    gateway = LocalProposalGateway(model_path, model_factory=factory)
+    proposal = gateway.propose("Repair the example.", contract=contract)
+    second = gateway.propose("Repair the example again.", contract=contract)
+
+    assert factory_calls == 1
+    assert second == proposal
+    assert proposal.baseline_sha == contract.baseline_sha
+    assert proposal.task_id == contract.task_id
+    assert proposal.tests == contract.tests
+    assert proposal.make_commands == contract.make_commands
+    assert proposal.edits[0].old_text == "x = 0"
+    assert [call["max_tokens"] for call in calls] == [32, 1536, 1536]
+    canary_schema = calls[0]["response_format"]
+    compact_schema = calls[1]["response_format"]
+    assert isinstance(canary_schema, dict)
+    assert isinstance(compact_schema, dict)
+    assert canary_schema["schema"]["required"] == ["ok"]
+    assert set(compact_schema["schema"]["required"]) == {"e", "c"}
+    assert "maxLength" not in json.dumps(compact_schema, sort_keys=True)
+    output = capsys.readouterr().out
+    assert "phase=canary finish=stop" in output
+    assert "phase=proposal finish=stop" in output
+    assert "completion_tokens=88" in output
+
+
+@pytest.mark.parametrize(
+    ("raw", "match"),
+    [
+        ("{", "complete JSON"),
+        ("{}", "exactly e and c"),
+        ('{"e":[],"c":"fix: empty"}', "1..16"),
+        ('{"e":[7],"c":"fix: invalid"}', "compact edit"),
+        (
+            '{"e":[{"o":"x","p":"src/example.py","a":"x","z":"y"}],"c":"fix: invalid"}',
+            "operation",
+        ),
+        (
+            '{"e":[{"o":"r","p":"../escape.py","a":"x","z":"y"}],"c":"fix: invalid"}',
+            "path",
+        ),
+    ],
+)
+def test_compact_proposal_codec_rejects_ambiguous_or_unsafe_output(
+    raw: str,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        comparison_module._decode_compact_proposal(raw, _contract())
+
+
+def test_compact_gateway_rejects_failed_canary_without_task_decode_or_secret_leak(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    calls = 0
+
+    class FailedCanaryModel:
+        def create_chat_completion(self, **_kwargs: object) -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            return {
+                "choices": [
+                    {
+                        "finish_reason": "length",
+                        "message": {"content": '{"token=do-not-log":"secret"'},
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 32,
+                    "total_tokens": 52,
+                },
+            }
+
+        def __call__(self, prompt: str, **kwargs: object) -> object:
+            raise AssertionError("raw completion must not be used")
+
+    gateway = LocalProposalGateway(
+        model_path,
+        model_factory=lambda **_kwargs: FailedCanaryModel(),
+    )
+    contract = ProposalContract(
+        baseline_sha="a" * 40,
+        task_id="S83.133",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+    )
+
+    with pytest.raises(ValueError, match="structured-output canary") as error:
+        gateway.propose("Repair the example.", contract=contract)
+
+    assert calls == 1
+    assert "finish=length" in str(error.value)
+    assert "completion_tokens=32" in str(error.value)
+    assert "do-not-log" not in str(error.value)
+
+
+def test_compact_gateway_rejects_non_stop_even_when_json_looks_complete(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    outputs: list[dict[str, object]] = [
+        {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"content": '{"ok":true}'},
+                }
+            ]
+        },
+        {
+            "choices": [
+                {
+                    "finish_reason": "length",
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "e": [
+                                    {
+                                        "o": "r",
+                                        "p": "src/example.py",
+                                        "a": "x = 0",
+                                        "z": "x = 1",
+                                    }
+                                ],
+                                "c": "fix: looks complete",
+                            }
+                        )
+                    },
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 500,
+                "completion_tokens": 1536,
+                "total_tokens": 2036,
+            },
+        },
+    ]
+
+    class LengthModel:
+        def create_chat_completion(self, **_kwargs: object) -> dict[str, object]:
+            return outputs.pop(0)
+
+        def __call__(self, prompt: str, **kwargs: object) -> object:
+            raise AssertionError("raw completion must not be used")
+
+    gateway = LocalProposalGateway(
+        model_path,
+        model_factory=lambda **_kwargs: LengthModel(),
+    )
+    contract = ProposalContract(
+        baseline_sha="a" * 40,
+        task_id="S83.133",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+    )
+
+    with pytest.raises(ValueError, match="token budget") as error:
+        gateway.propose("Repair the example.", contract=contract)
+
+    assert "budget=1536" in str(error.value)
+    assert "completion_tokens=1536" in str(error.value)
+
+
 def test_local_gateway_rejects_token_budget_truncation_even_with_valid_json(
     tmp_path: Path,
 ) -> None:
@@ -604,6 +978,50 @@ def test_local_gateway_rejects_token_budget_truncation_even_with_valid_json(
         gateway.propose("Repair the example.")
 
 
+def test_local_gateway_length_stop_reports_secret_safe_finish_and_usage(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+
+    class ExhaustedChatModel:
+        def create_chat_completion(self, **_kwargs: object) -> dict[str, object]:
+            return {
+                "choices": [
+                    {
+                        "finish_reason": "length",
+                        "message": {
+                            "content": '{"token=do-not-log-this":"still truncated"'
+                        },
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 640,
+                    "completion_tokens": 4096,
+                    "total_tokens": 4736,
+                },
+            }
+
+        def __call__(self, prompt: str, **kwargs: object) -> object:
+            raise AssertionError("raw completion must not be used")
+
+    gateway = LocalProposalGateway(
+        model_path,
+        model_factory=lambda **_kwargs: ExhaustedChatModel(),
+    )
+
+    with pytest.raises(ValueError, match="token budget") as error:
+        gateway.propose("Repair the example.")
+
+    diagnostic = str(error.value)
+    assert "finish=length" in diagnostic
+    assert "prompt_tokens=640" in diagnostic
+    assert "completion_tokens=4096" in diagnostic
+    assert "total_tokens=4736" in diagnostic
+    assert "do-not-log-this" not in diagnostic
+    assert len(diagnostic.encode("utf-8")) <= 300
+
+
 def test_local_gateway_reports_bounded_incomplete_json_output(tmp_path: Path) -> None:
     model_path = tmp_path / "model.gguf"
     model_path.write_bytes(b"GGUF")
@@ -624,8 +1042,9 @@ def test_local_gateway_reports_bounded_incomplete_json_output(tmp_path: Path) ->
     with pytest.raises(ValueError, match="incomplete JSON") as error:
         gateway.propose("Repair exactly.")
 
-    assert "schema_version" in str(error.value)
-    assert len(str(error.value).encode("utf-8")) <= 1400
+    assert "output_bytes=" in str(error.value)
+    assert "schema_version" not in str(error.value)
+    assert len(str(error.value).encode("utf-8")) <= 300
 
 
 def test_self_improve_runner_uses_local_model_and_make_only_git_workflow() -> None:

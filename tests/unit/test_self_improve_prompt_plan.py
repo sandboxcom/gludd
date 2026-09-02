@@ -18,6 +18,7 @@ from scripts.run_self_improve_e2e import (
 from general_ludd.self_improve.codex_comparison import (
     CodexReference,
     ComparisonResult,
+    ProposalContract,
     ProposalManifest,
     decode_prompt_batch,
     encode_proposal_batch,
@@ -311,9 +312,18 @@ def test_local_plan_runs_one_retained_worker_then_merges_once(
     model = tmp_path / "model.gguf"
     model.write_bytes(b"GGUF")
     calls: list[str] = []
+    contracts: list[ProposalContract] = []
 
-    def propose(_runner: object, _model: Path, request: str) -> str:
+    def propose(
+        _runner: object,
+        _model: Path,
+        request: str,
+        *,
+        contract: ProposalContract | None = None,
+    ) -> str:
+        assert contract is not None
         calls.append(request)
+        contracts.append(contract)
         return encode_proposal_batch(
             tuple(_manifest(shard.focus_paths) for shard in plan.shards),
             protocol_digest=plan.protocol_digest,
@@ -325,6 +335,9 @@ def test_local_plan_runs_one_retained_worker_then_merges_once(
     )
     prompts, digest = decode_prompt_batch(calls[0])
     assert len(calls) == 1
+    assert len(contracts) == 1
+    assert contracts[0].baseline_sha == _reference().baseline_sha
+    assert contracts[0].task_id == _task().task_id
     assert prompts == tuple(shard.prompt for shard in plan.shards)
     assert digest == plan.protocol_digest
     assert {edit.path for edit in proposal.edits} == set(_PATHS)

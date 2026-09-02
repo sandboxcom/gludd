@@ -13,6 +13,7 @@ from typing import Protocol
 
 from general_ludd.self_improve.codex_comparison import (
     LocalProposalGateway,
+    ProposalContract,
     ProposalManifest,
     decode_prompt_batch,
     decode_proposal_batch,
@@ -21,6 +22,7 @@ from general_ludd.self_improve.codex_comparison import (
 )
 
 _MAX_PROMPT_BYTES = 262_144
+_MAX_CONTRACT_BYTES = 196_608
 _MAX_PROPOSAL_BYTES = 1_310_720
 
 __all__ = ("decode_proposal_batch", "encode_prompt_batch", "main", "run_worker")
@@ -29,7 +31,12 @@ __all__ = ("decode_proposal_batch", "encode_prompt_batch", "main", "run_worker")
 class _ProposalGateway(Protocol):
     """Minimal proposal inference interface used by the owned worker."""
 
-    def propose(self, prompt: str) -> ProposalManifest:
+    def propose(
+        self,
+        prompt: str,
+        *,
+        contract: ProposalContract | None = None,
+    ) -> ProposalManifest:
         """Generate one validated proposal."""
 
 
@@ -63,13 +70,27 @@ def run_worker(
     if not request.strip():
         raise ValueError("prompt must not be empty")
 
+    contract_path = exchange / "contract.json"
+    contract: ProposalContract | None = None
+    if contract_path.is_symlink() or contract_path.exists():
+        if contract_path.is_symlink() or not contract_path.is_file():
+            raise ValueError("proposal contract must be one regular confined file")
+        if contract_path.stat().st_size > _MAX_CONTRACT_BYTES:
+            raise ValueError(f"proposal contract exceeds {_MAX_CONTRACT_BYTES} bytes")
+        try:
+            contract_raw = contract_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ValueError(f"proposal contract is not readable UTF-8: {exc}") from exc
+        contract = ProposalContract.from_json(contract_raw)
+
     prompts, protocol_digest = decode_prompt_batch(request)
     gateway = gateway_factory(model_path)
     proposals: list[ProposalManifest] = []
     total = len(prompts)
     print(
         f"SELF_IMPROVE_LOCAL_PROPOSAL_START model={model_path.name} "
-        f"shards={total} prompt_bytes={len(request.encode('utf-8'))}",
+        f"shards={total} mode={'compact' if contract is not None else 'legacy'} "
+        f"prompt_bytes={len(request.encode('utf-8'))}",
         flush=True,
     )
     for index, prompt in enumerate(prompts, start=1):
@@ -81,7 +102,11 @@ def run_worker(
             flush=True,
         )
         try:
-            proposal = gateway.propose(prompt)
+            proposal = (
+                gateway.propose(prompt, contract=contract)
+                if contract is not None
+                else gateway.propose(prompt)
+            )
         except BaseException:
             print(
                 f"SELF_IMPROVE_PROMPT_SHARD_END shard={index}/{total} succeeded=false",

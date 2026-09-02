@@ -27,6 +27,7 @@ from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
     CodexReference,
     ComparisonResult,
+    ProposalContract,
     ProposalManifest,
     build_retry_prompt,
     compare_with_codex,
@@ -466,6 +467,8 @@ def _run_local_proposal_request(
     runner: _ObservableRunner,
     model_path: Path,
     request: str,
+    *,
+    contract: ProposalContract | None = None,
 ) -> str:
     """Run one bounded request through one isolated parent-owned Make worker."""
     if not model_path.is_file():
@@ -479,6 +482,7 @@ def _run_local_proposal_request(
         exchange = Path(raw_exchange)
         prompt_path = exchange / "prompt.txt"
         proposal_path = exchange / "proposal.json"
+        contract_path = exchange / "contract.json"
         temporary = _write_atomic_temp(
             prompt_path,
             request,
@@ -486,6 +490,14 @@ def _run_local_proposal_request(
             ".prompt-tmp",
         )
         os.replace(temporary, prompt_path)
+        if contract is not None:
+            contract_temporary = _write_atomic_temp(
+                contract_path,
+                contract.to_json(),
+                0o600,
+                ".contract-tmp",
+            )
+            os.replace(contract_temporary, contract_path)
         result = runner.run_observable(
             "self-improve-local-proposal",
             {
@@ -539,8 +551,20 @@ def generate_local_proposal_plan(
         tuple(shard.prompt for shard in plan.shards),
         protocol_digest=plan.protocol_digest,
     )
+    required_tests = _required_prompt_tests(task, reference)
+    contract = ProposalContract(
+        baseline_sha=reference.baseline_sha,
+        task_id=task.task_id,
+        tests=required_tests,
+        make_commands=task.canonical_make_commands,
+    )
     proposals = decode_proposal_batch(
-        _run_local_proposal_request(runner, model_path, request),
+        _run_local_proposal_request(
+            runner,
+            model_path,
+            request,
+            contract=contract,
+        ),
         expected_protocol_digest=plan.protocol_digest,
         expected_count=len(plan.shards),
     )
@@ -549,7 +573,7 @@ def generate_local_proposal_plan(
         expected_path_groups=tuple(shard.focus_paths for shard in plan.shards),
         expected_baseline_sha=reference.baseline_sha,
         expected_task_id=task.task_id,
-        expected_tests=_required_prompt_tests(task, reference),
+        expected_tests=required_tests,
         expected_make_commands=task.canonical_make_commands,
     )
 

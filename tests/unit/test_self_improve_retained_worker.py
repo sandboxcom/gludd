@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import selectors
+import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +18,7 @@ import scripts.self_improve_local_proposal as worker_module
 from general_ludd.self_improve.codex_comparison import (
     CodexReference,
     LocalProposalGateway,
+    ProposalContract,
     ProposalManifest,
     decode_prompt_batch,
     decode_proposal_batch,
@@ -86,6 +91,17 @@ def test_worker_retains_one_model_for_ordered_common_prefix_shards(
     prompt_calls: list[str] = []
 
     class FakeChatModel:
+        def __call__(
+            self,
+            prompt: str,
+            *,
+            max_tokens: int,
+            temperature: float,
+            echo: bool,
+        ) -> object:
+            del prompt, max_tokens, temperature, echo
+            raise AssertionError("compact mode must use chat completion")
+
         def create_chat_completion(self, **kwargs: object) -> dict[str, object]:
             messages = kwargs["messages"]
             assert isinstance(messages, list)
@@ -104,8 +120,21 @@ def test_worker_retains_one_model_for_ordered_common_prefix_shards(
                 ]
             }
 
-    def model_factory(**kwargs: object) -> FakeChatModel:
-        factory_calls.append(dict(kwargs))
+    def model_factory(
+        *,
+        model_path: str,
+        n_ctx: int,
+        verbose: bool,
+        n_gpu_layers: int = 0,
+    ) -> FakeChatModel:
+        factory_calls.append(
+            {
+                "model_path": model_path,
+                "n_ctx": n_ctx,
+                "verbose": verbose,
+                "n_gpu_layers": n_gpu_layers,
+            }
+        )
         return FakeChatModel()
 
     def gateway_factory(path: Path) -> LocalProposalGateway:
@@ -342,7 +371,11 @@ class _InProcessOwnedRunner:
         self.calls.append((target, variables, timeout))
         prompt = Path(variables["SELF_IMPROVE_PROMPT_FILE"])
         self.exchange_paths.extend(
-            (prompt, Path(variables["SELF_IMPROVE_PROPOSAL_FILE"]))
+            (
+                prompt,
+                Path(variables["SELF_IMPROVE_PROPOSAL_FILE"]),
+                prompt.parent / "contract.json",
+            )
         )
         if self.failure is not None:
             raise self.failure
@@ -380,13 +413,21 @@ def test_parent_runs_one_owned_worker_then_strictly_merges_all_shards(
     model_path = tmp_path / "model.gguf"
     model_path.write_bytes(b"GGUF")
     prompts: list[str] = []
+    contracts: list[ProposalContract] = []
 
     class Gateway:
         def __init__(self, _path: Path) -> None:
             pass
 
-        def propose(self, prompt: str) -> ProposalManifest:
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> ProposalManifest:
+            assert contract is not None
             prompts.append(prompt)
+            contracts.append(contract)
             return _manifest(plan.shards[len(prompts) - 1].focus_paths[0])
 
     owned = _InProcessOwnedRunner(Gateway)
@@ -404,6 +445,10 @@ def test_parent_runs_one_owned_worker_then_strictly_merges_all_shards(
     assert owned.calls[0][0] == "self-improve-local-proposal"
     assert owned.calls[0][2] == 300
     assert prompts == [shard.prompt for shard in plan.shards]
+    assert len(contracts) == 2
+    assert all(contract.baseline_sha == reference.baseline_sha for contract in contracts)
+    assert all(contract.task_id == task.task_id for contract in contracts)
+    assert all(contract.tests == ("tests/unit/test_example.py",) for contract in contracts)
     assert {edit.path for edit in merged.edits} == {"src/one.py", "src/two.py"}
     assert all(not path.exists() for path in owned.exchange_paths)
 
@@ -420,8 +465,14 @@ def test_parent_rejects_batch_scope_drift_after_worker_schema_validation(
         def __init__(self, _path: Path) -> None:
             pass
 
-        def propose(self, _prompt: str) -> ProposalManifest:
+        def propose(
+            self,
+            _prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> ProposalManifest:
             nonlocal count
+            assert contract is not None
             count += 1
             return _manifest("src/one.py" if count == 1 else "src/unexpected.py")
 
@@ -485,7 +536,13 @@ def test_worker_failure_publishes_no_partial_batch_or_stale_temp(
         def __init__(self, _path: Path) -> None:
             pass
 
-        def propose(self, _prompt: str) -> ProposalManifest:
+        def propose(
+            self,
+            _prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> ProposalManifest:
+            del contract
             nonlocal count
             count += 1
             if count == 2:
@@ -518,13 +575,19 @@ def test_worker_removes_temporary_output_when_fsync_fails(
         def __init__(self, _path: Path) -> None:
             pass
 
-        def propose(self, _prompt: str) -> ProposalManifest:
+        def propose(
+            self,
+            _prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> ProposalManifest:
+            del contract
             return _manifest("src/one.py")
 
     def fail_fsync(_descriptor: int) -> None:
         raise OSError("fsync failed")
 
-    monkeypatch.setattr(worker_module.os, "fsync", fail_fsync)
+    monkeypatch.setattr(os, "fsync", fail_fsync)
 
     with pytest.raises(OSError, match="fsync failed"):
         worker_module.run_worker(
@@ -568,13 +631,13 @@ def test_observable_runner_emits_heartbeat_and_enforces_total_deadline(
             pass
 
     moments = iter((0.0, 0.0, 16.0, 301.0, 302.0))
-    monkeypatch.setattr(runner_module.time, "monotonic", lambda: next(moments))
+    monkeypatch.setattr(time, "monotonic", lambda: next(moments))
     monkeypatch.setattr(
-        runner_module.subprocess,
+        subprocess,
         "Popen",
         lambda *args, **kwargs: process,
     )
-    monkeypatch.setattr(runner_module.selectors, "DefaultSelector", Selector)
+    monkeypatch.setattr(selectors, "DefaultSelector", Selector)
     monkeypatch.setattr(
         runner_module,
         "_terminate_process_group",
@@ -621,11 +684,11 @@ def test_observable_runner_reaps_process_group_when_selector_setup_fails(
             selector_closed.append(True)
 
     monkeypatch.setattr(
-        runner_module.subprocess,
+        subprocess,
         "Popen",
         lambda *args, **kwargs: process,
     )
-    monkeypatch.setattr(runner_module.selectors, "DefaultSelector", Selector)
+    monkeypatch.setattr(selectors, "DefaultSelector", Selector)
     monkeypatch.setattr(
         runner_module,
         "_terminate_process_group",
@@ -676,11 +739,11 @@ def test_observable_runner_reaps_process_group_on_body_or_cancel(
             pass
 
     monkeypatch.setattr(
-        runner_module.subprocess,
+        subprocess,
         "Popen",
         lambda *args, **kwargs: process,
     )
-    monkeypatch.setattr(runner_module.selectors, "DefaultSelector", Selector)
+    monkeypatch.setattr(selectors, "DefaultSelector", Selector)
     monkeypatch.setattr(
         runner_module,
         "_terminate_process_group",

@@ -36,12 +36,13 @@ agent.
 Local GGUF inference runs in one dedicated Make worker per candidate attempt,
 with a parent-owned process group. One digest-bound request carries every ordered
 `PromptPlan` shard. The worker constructs one `LocalProposalGateway`; that
-gateway lazily constructs one public `Llama` instance and uses it for every
-sequential shard. The immutable prefix is byte-identical and ordered, allowing
-the pinned `Llama.generate` path to reuse its live in-memory longest token
-prefix. Correctness does not require a cache hit: each complete prompt is
-independently schema-constrained and parsed. Gludd configures neither a
-`LlamaRAMCache` nor disk cache and starts no daemon or server.
+gateway lazily constructs one public `Llama` instance and uses it for a
+32-token structured-output canary and every sequential shard. The canary and
+proposal share the same system prefix, so the pinned `Llama.generate` path can
+reuse its live in-memory longest token prefix. Correctness does not require a
+cache hit: each complete prompt is independently schema-constrained and parsed.
+Gludd configures neither a `LlamaRAMCache` nor disk cache and starts no daemon
+or server.
 
 Prompt and proposal files live in one unique temporary exchange directory.
 Inputs reject symlinks, output is written with fsync plus atomic replacement only
@@ -69,32 +70,49 @@ converter or depend on private formatter helpers. It also must not use the newer
 OpenAI `{"type": "json_schema"}` spelling unless the pinned runtime explicitly
 supports it.
 
-The full schema is supplied through `response_format`, not merely
-`{"type": "json_object"}`; JSON-only mode proves syntax but cannot require
-`schema_version`, `task_id`, `tests`, or the other proposal fields. The
-prompt still names the required shape because llama.cpp documents that a schema
-constrains sampling but is not injected into the model prompt. This gives the
-model both semantic guidance and a token-level structural boundary.
+A schema is supplied through `response_format`, not merely
+`{"type": "json_object"}`; JSON-only mode proves syntax but cannot require the
+proposal fields. Managed `PromptPlan` requests put immutable
+`baseline_sha`, `task_id`, tests, and Make commands in a separate atomic
+0600 `contract.json` file. The model emits only compact `e` (edits) and
+`c` (commit subject) fields; each edit uses `o/p/a/z` for operation, path,
+old text, and new text. The worker expands those keys with the trusted contract
+and then calls `ProposalManifest.from_json`, so output compaction does not
+make model text authoritative. Legacy single-string callers retain the complete
+manifest schema. The prompt names the compact shape because llama.cpp documents
+that a schema constrains sampling but is not injected into the model prompt.
 
-Grammar acceptance is not promotion evidence. Gludd still checks the completion
-finish reason, extracts one complete object, and validates it again through
-`ProposalManifest.from_json`. A length stop, missing closing object, absent
-required field, extra field, wrong baseline, unsafe path, oversized value, or
-invalid Make command remains a failed proposal. The runner must classify and
-record that bounded failure against the immutable model identity before trying
-a different eligible candidate; it must not silently retry unconstrained output
+Grammar acceptance is not promotion evidence. Gludd checks that the 32-token
+canary and each compact proposal finish with `stop`, parses one complete object,
+expands trusted fields, and validates it again through
+`ProposalManifest.from_json`. A length stop, missing closing object, absent or
+extra compact field, wrong baseline, unsafe path, oversized value, or invalid
+Make command remains a failed proposal. A complete-looking object carrying a
+`length` finish reason is still rejected. The runner must classify and record
+that bounded failure against the immutable model identity before trying a
+different eligible candidate; it must not silently retry unconstrained output
 or weaken required fields.
+
+The managed proposal budget is 1,536 tokens per shard, versus the legacy
+4,096-token compatibility path. A July 2026 managed acceptance motivated this
+bound: Metal-enabled Qwen2.5-Coder-0.5B and DeepSeek-Coder-1.3B ran for 176.62
+and 154.80 seconds respectively before both consumed 4,096 tokens without
+closing the proposal. Trusted-field elision plus the shorter budget gives a
+minimal exact edit room to finish while rejecting the same runaway behavior in
+at most 37.5% of its former decode budget. The canary rejects unsupported chat
+or grammar behavior before reading a task-sized completion.
 
 Grammar construction and inference remain inside the owned proposal worker. The
 model factory runs once after request admission. Each shard then invokes the
 documented `create_chat_completion` method on that same live model and validates
-one `ProposalManifest` before it can join the batch. A converter exception,
-native crash, cancellation, or timeout therefore tears down the same process
-group, exchange directory, and model lease as any other failed attempt. The
-parent applies one 300-second deadline to the complete candidate attempt; no
-partial batch is published. The retained worker does not start a persistent
-llama.cpp server or add another cache owner. Per-shard decode tokens, context,
-proposal bytes, and diagnostic tails retain their existing limits.
+one `ProposalManifest` before it can join the batch. Observability emits only
+an allowlisted finish classification, non-negative token counts, phase, and
+budget; it never includes completion text. A converter exception, native crash,
+cancellation, or timeout therefore tears down the same process group, exchange
+directory, and model lease as any other failed attempt. The parent applies one
+300-second deadline to the complete candidate attempt; no partial batch is
+published. The retained worker does not start a persistent llama.cpp server or
+add another cache owner.
 
 This change is zero-downtime because it changes only an isolated, unpromoted
 candidate path. It has no daemon or database migration and cannot interrupt a
@@ -400,8 +418,10 @@ harness cleanup compensates for missing application ownership.
   262,144-byte total request admission bound.
 - One owned worker and one lazily constructed `Llama` instance per candidate
   attempt; shards execute sequentially with no daemon, server, or explicit cache.
-- 4,096 decode tokens per shard and one 300-second total owned worker timeout per
-  candidate attempt; the strict merged proposal remains roughly 1.25 MiB at most.
+- One 32-token same-instance canary, then 1,536 compact decode tokens per managed
+  shard and one 300-second total owned worker timeout per candidate attempt. The
+  legacy single-string compatibility path remains 4,096 tokens; the strict merged
+  proposal remains roughly 1.25 MiB at most.
 - 2 MiB observable command capture with 15-second heartbeats.
 - 128 Codex-reference files.
 - One candidate worktree per attempt; commands stop after the first failure.

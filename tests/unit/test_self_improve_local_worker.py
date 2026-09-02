@@ -11,7 +11,7 @@ import scripts.self_improve_local_proposal as worker_module
 from scripts.run_self_improve_e2e import MakeResult, generate_local_proposal
 from scripts.self_improve_local_proposal import run_worker
 
-from general_ludd.self_improve.codex_comparison import ProposalManifest
+from general_ludd.self_improve.codex_comparison import ProposalContract, ProposalManifest
 
 
 def _proposal_json() -> str:
@@ -41,7 +41,13 @@ class _FakeGateway:
     def __init__(self, _model_path: Path) -> None:
         self.calls: list[str] = []
 
-    def propose(self, prompt: str) -> ProposalManifest:
+    def propose(
+        self,
+        prompt: str,
+        *,
+        contract: ProposalContract | None = None,
+    ) -> ProposalManifest:
+        del contract
         self.calls.append(prompt)
         return ProposalManifest.from_json(_proposal_json())
 
@@ -152,6 +158,54 @@ def test_worker_rejects_invalid_exchange_state(
 
     with pytest.raises(ValueError, match=match):
         run_worker(exchange, model, gateway_factory=_FakeGateway)
+
+
+@pytest.mark.parametrize(
+    ("contract_bytes", "symlink", "match"),
+    [
+        (b"{", False, "valid JSON"),
+        (bytes([255]), False, "UTF-8"),
+        (b"x" * 196_609, False, "exceeds"),
+        (
+            json.dumps(
+                {
+                    "baseline_sha": "a" * 40,
+                    "task_id": "S83.133",
+                    "tests": ["tests/unit/test_example.py"],
+                    "make_commands": [
+                        "make test-files TESTFILES=tests/unit/test_example.py"
+                    ],
+                }
+            ).encode(),
+            True,
+            "regular confined",
+        ),
+    ],
+    ids=("malformed", "non-utf8", "oversized", "symlink"),
+)
+def test_worker_rejects_invalid_compact_contract_before_model_construction(
+    tmp_path: Path,
+    contract_bytes: bytes,
+    symlink: bool,
+    match: str,
+) -> None:
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"gguf")
+    exchange = tmp_path / "exchange"
+    exchange.mkdir()
+    (exchange / "prompt.txt").write_text("repair", encoding="utf-8")
+    contract = exchange / "contract.json"
+    if symlink:
+        outside = tmp_path / "outside-contract.json"
+        outside.write_bytes(contract_bytes)
+        contract.symlink_to(outside)
+    else:
+        contract.write_bytes(contract_bytes)
+
+    with pytest.raises(ValueError, match=match):
+        run_worker(exchange, model, gateway_factory=_FakeGateway)
+
+    assert not (exchange / "proposal.json").exists()
 
 
 def test_worker_main_validates_paths_and_surfaces_owned_errors(
