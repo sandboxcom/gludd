@@ -2,19 +2,66 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 
 from general_ludd.hardware.model_fit import can_run_model
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.local_model._local_model_configs import _LOCAL_MODELS, LocalModelConfig
+from general_ludd.routing_roles.small_model_policy import CapabilityEvidence
+from general_ludd.schemas.benchmark import TaskRole
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
-from general_ludd.small_models.recommender import recommend_model
+from general_ludd.small_models.recommender import (
+    map_task_to_capabilities,
+    recommend_model,
+)
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _PROMPT_OVERHEAD_TOKENS = 512
 _MAX_CANDIDATES = 3
+_OUTCOME_COLLECTION = "general_ludd.self_improve"
+_OUTCOME_SUITE_ID = "self_improve_outcome"
+_OUTCOME_RECORD_KEYS = frozenset(
+    {
+        "model_profile_id",
+        "model_identity_digest",
+        "task_kind",
+        "role",
+        "collection",
+        "suite_id",
+        "suite_revision",
+        "acceptance_contract_digest",
+        "passed_cases",
+        "total_cases",
+        "collection_ok",
+        "local_only",
+        "evidence_digest",
+        "registered_at",
+    }
+)
+
+
+def _stable_digest(payload: Mapping[str, object]) -> str:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+_OUTCOME_ACCEPTANCE_DIGEST = _stable_digest(
+    {
+        "collection": _OUTCOME_COLLECTION,
+        "schema_version": 1,
+        "semantics": "one_case_passed_means_self_improvement_succeeded",
+        "suite_id": _OUTCOME_SUITE_ID,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -188,4 +235,170 @@ def plan_model_candidates(
     return tuple(planned)
 
 
-__all__ = ["PlannedModelCandidate", "plan_model_candidates"]
+def _primary_task_capability(task_text: str) -> tuple[str, TaskRole]:
+    capabilities = map_task_to_capabilities(task_text)
+    if not capabilities:
+        raise ValueError("task_text must match a mapped capability")
+    return capabilities[0]
+
+
+def _canonical_candidate_model(candidate: PlannedModelCandidate) -> LocalModelConfig:
+    if not isinstance(candidate, PlannedModelCandidate):
+        raise ValueError("candidate must be a PlannedModelCandidate")
+    for model in _coding_models():
+        if candidate.config == model:
+            return model
+    raise ValueError("candidate must contain a configured coding model")
+
+
+def _outcome_payload(
+    model: LocalModelConfig,
+    revision: str,
+    task_kind: str,
+    role: TaskRole,
+    *,
+    succeeded: bool,
+) -> dict[str, object]:
+    identity_digest = _stable_digest(
+        {
+            "model_profile_id": model.name,
+            "resolved_revision": revision,
+        }
+    )
+    return {
+        "model_profile_id": model.name,
+        "model_identity_digest": identity_digest,
+        "task_kind": task_kind,
+        "role": role.value,
+        "collection": _OUTCOME_COLLECTION,
+        "suite_id": _OUTCOME_SUITE_ID,
+        "suite_revision": revision,
+        "acceptance_contract_digest": _OUTCOME_ACCEPTANCE_DIGEST,
+        "passed_cases": int(succeeded),
+        "total_cases": 1,
+        "collection_ok": True,
+        "local_only": True,
+    }
+
+
+def record_self_improve_outcome(
+    store: CapabilityEvidenceStore,
+    *,
+    task_text: str,
+    candidate: PlannedModelCandidate,
+    succeeded: bool,
+) -> int:
+    """Persist exactly one revision-bound outcome in the shared evidence store."""
+    task_kind, role = _primary_task_capability(task_text)
+    model = _canonical_candidate_model(candidate)
+    if not isinstance(succeeded, bool):
+        raise ValueError("succeeded must be a boolean")
+
+    revision = candidate.resolved_revision
+    if _SHA_RE.fullmatch(revision) is None:
+        raise ValueError("candidate revision must be an immutable commit")
+    payload = _outcome_payload(
+        model,
+        revision,
+        task_kind,
+        role,
+        succeeded=succeeded,
+    )
+    evidence = CapabilityEvidence(
+        model_profile_id=model.name,
+        model_identity_digest=_stable_digest(
+            {
+                "model_profile_id": model.name,
+                "resolved_revision": revision,
+            }
+        ),
+        task_kind=task_kind,
+        role=role,
+        collection=_OUTCOME_COLLECTION,
+        suite_id=_OUTCOME_SUITE_ID,
+        suite_revision=revision,
+        acceptance_contract_digest=_OUTCOME_ACCEPTANCE_DIGEST,
+        passed_cases=int(succeeded),
+        total_cases=1,
+        collection_ok=True,
+        local_only=True,
+        evidence_digest=_stable_digest(payload),
+    )
+    return store.register_evidence(evidence)
+
+
+def _valid_outcome_state(
+    record: Mapping[str, object],
+    task_kind: str,
+    role: TaskRole,
+) -> tuple[str, bool] | None:
+    if set(record) != _OUTCOME_RECORD_KEYS:
+        return None
+    registered_at = record.get("registered_at")
+    if (
+        isinstance(registered_at, bool)
+        or not isinstance(registered_at, (int, float))
+        or registered_at < 0
+    ):
+        return None
+
+    model_id = record.get("model_profile_id")
+    revision = record.get("suite_revision")
+    passed_cases = record.get("passed_cases")
+    if (
+        not isinstance(model_id, str)
+        or not isinstance(revision, str)
+        or _SHA_RE.fullmatch(revision) is None
+        or isinstance(passed_cases, bool)
+        or not isinstance(passed_cases, int)
+        or passed_cases not in (0, 1)
+    ):
+        return None
+
+    model = next(
+        (item for item in _coding_models() if item.name == model_id),
+        None,
+    )
+    if model is None:
+        return None
+    expected = _outcome_payload(
+        model,
+        revision,
+        task_kind,
+        role,
+        succeeded=passed_cases == 1,
+    )
+    if any(record.get(key) != value for key, value in expected.items()):
+        return None
+    evidence_digest = record.get("evidence_digest")
+    if (
+        not isinstance(evidence_digest, str)
+        or evidence_digest != _stable_digest(expected)
+    ):
+        return None
+    return model.name, passed_cases == 1
+
+
+def load_latest_failed_model_ids(
+    store: CapabilityEvidenceStore,
+    *,
+    task_text: str,
+) -> tuple[str, ...]:
+    """Load models whose latest valid outcome failed for the mapped task."""
+    task_kind, role = _primary_task_capability(task_text)
+    latest: dict[str, bool] = {}
+    for record in store.list_all():
+        state = _valid_outcome_state(record, task_kind, role)
+        if state is None:
+            continue
+        model_id, succeeded = state
+        latest[model_id] = succeeded
+    return tuple(sorted(model_id for model_id, succeeded in latest.items() if not succeeded))
+
+
+__all__ = [
+    "PlannedModelCandidate",
+    "load_latest_failed_model_ids",
+    "plan_model_candidates",
+    "record_self_improve_outcome",
+]

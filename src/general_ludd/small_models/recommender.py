@@ -37,6 +37,7 @@ class ModelRecommendation:
     prefer_off_peak: bool
 
     def __post_init__(self) -> None:
+        """Validate bounded scores and recommendation metadata."""
         if not isinstance(self.score, (int, float)) or not (0.0 <= self.score <= 1.0):
             raise ValueError("score must be between 0.0 and 1.0")
         if not isinstance(self.cost_score, (int, float)) or not (0.0 <= self.cost_score <= 1.0):
@@ -62,17 +63,28 @@ _TASK_KEYWORD_MAP: list[tuple[str, str, TaskRole]] = [
     ),
     ("format_normalization", r"\b(format|normalize|normaliz|standardi[sz]e|cleanse|scrub)\b", TaskRole.EDITOR),
     ("schema_extraction", r"\b(schema|extract|parse|field|structur)\b", TaskRole.EDITOR),
+    (
+        "coding",
+        r"\b(code|coding|implement|implementation|program|python|function|class|module|refactor|test|patch|repository|repo)\b",
+        TaskRole.CODER,
+    ),
 ]
 
 
-def _map_task_to_capabilities(description: str) -> list[tuple[str, TaskRole]]:
-    """Map a natural-language task description to (task_kind, TaskRole) pairs."""
+def map_task_to_capabilities(description: str) -> list[tuple[str, TaskRole]]:
+    """Map a natural-language task description to task-kind and role pairs."""
+    if not isinstance(description, str):
+        raise ValueError("description must be a string")
     lowered = description.lower()
     matched: list[tuple[str, TaskRole]] = []
     for task_kind, pattern, role in _TASK_KEYWORD_MAP:
         if re.search(pattern, lowered):
             matched.append((task_kind, role))
     return matched
+
+
+# Compatibility for callers that imported the mapper before it became public.
+_map_task_to_capabilities = map_task_to_capabilities
 
 
 # ── hardware fit ───────────────────────────────────────────────────
@@ -208,7 +220,7 @@ def recommend_model(
     Returns a list sorted by descending ``score``.  Empty list when no capability
     evidence matches any mapped task kind.
     """
-    capabilities = _map_task_to_capabilities(task_description)
+    capabilities = map_task_to_capabilities(task_description)
     if not capabilities:
         return []
 
@@ -288,3 +300,11 @@ def list_tasks_for_model(
     records = store.query_by_model(model_id)
     task_kinds = sorted({r.get("task_kind", "") for r in records if r.get("task_kind")})
     return task_kinds
+
+
+__all__ = [
+    "ModelRecommendation",
+    "list_tasks_for_model",
+    "map_task_to_capabilities",
+    "recommend_model",
+]
