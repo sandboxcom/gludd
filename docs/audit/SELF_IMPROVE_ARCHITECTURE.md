@@ -255,7 +255,58 @@ repo_url=<gludd's own origin URL>, workspace_path="gludd-self")` and
 runs `materialize_project_workspace` so there is a fresh clone to route
 to. Today this registration does not exist.
 
-## 6. Cross-references
+## 6. Long-lived practitioner evidence
+
+Evidence was reviewed on 2026-09-02. These reports do not prove that Gludd
+reproduced every upstream failure; they explain why the boundaries identified
+by this audit must remain mechanical rather than prompt conventions.
+
+- **Bound autonomous retries.** AutoGPT issue
+  [#2711](https://github.com/Significant-Gravitas/AutoGPT/issues/2711), opened
+  2023-04-20, records malformed model JSON entering the same parse-and-repair
+  loop until the operator terminated the process. Gludd's
+  `run_gap_analysis()` instead makes one gateway attempt, accepts only a JSON
+  list of object findings, and falls back to static checks on malformed output.
+  Cross-cycle de-duplication and grinding detection must continue to treat a
+  recurring parse failure as evidence, never as permission for an unbounded
+  model retry or duplicate self-update backlog.
+- **Make approval an explicit state transition.** AutoGPT issue
+  [#150](https://github.com/Significant-Gravitas/AutoGPT/issues/150), opened
+  2023-04-04, describes continuous mode as capable of running indefinitely or
+  taking actions the user would not approve. Aider issue
+  [#3543](https://github.com/Aider-AI/aider/issues/3543), opened 2025-03-14,
+  shows the corresponding user surprise when an architecture-oriented mode
+  began applying edits without asking. This supports Gludd's F8 default of
+  `auto_queue=False` and the durable `APPROVAL_REQUIRED` to `QUEUED`
+  transition. Model confidence, a route invocation, or a prior approval must
+  not stand in for approval of the exact current plan; auto-applied tiers still
+  require their capability and protected-path gates.
+- **Separate byte restoration from workflow rollback.** Aider issue
+  [#1528](https://github.com/Aider-AI/aider/issues/1528), opened 2024-09-14,
+  notes that reverting a commit did not restore prior conversational state and
+  that several agent commits made the intended return point ambiguous. CPython
+  issue [#126548](https://github.com/python/cpython/issues/126548), opened
+  2024-11-07, demonstrates races when two threads call `importlib.reload()` on
+  the same module. Gludd's digest check, original-byte snapshot, health gate,
+  restore, and second reload are therefore a narrow module rollback, not a
+  claim that todo state, external effects, or objects retained by other modules
+  were reversed. Reload must have one owner, and the durable target remains an
+  isolated project workspace with reviewable Git history.
+- **Keep local inference outside the mutation transaction.** Aider issue
+  [#3010](https://github.com/Aider-AI/aider/issues/3010), opened 2025-01-26,
+  records a local Ollama-backed coding model denying access to a file that the
+  client had supplied. llama.cpp issue
+  [#5993](https://github.com/ggml-org/llama.cpp/issues/5993), opened 2024-03-11,
+  reports server memory accumulating under concurrent requests until CUDA OOM;
+  issue [#864](https://github.com/ggml-org/llama.cpp/issues/864), opened
+  2023-04-09, also shows why mmap-backed model memory is not reliably described
+  by process RSS alone. Because `_invoke_gateway()` is profile-agnostic, local
+  and hosted output must cross the same strict parse-and-fallback boundary.
+  The harness must not infer a usable proposal from endpoint liveness, and any
+  local server used by a cycle needs an external owner, bounded concurrency,
+  host/GPU accounting, and verified teardown before another cycle starts.
+
+## 7. Cross-references
 
 - F8 human-approval gate: `self_improve/gate.py`, `self_improve/approval.py`
 - Recurring-failure ingest: `self_improve/harness.py:130` (`_check_recurring_failures`)
