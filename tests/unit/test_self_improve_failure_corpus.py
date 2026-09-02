@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import copy
+import importlib
 import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
 import pytest
-import scripts.replay_self_improve_failure_corpus as corpus
+
+corpus = importlib.import_module("scripts.replay_self_improve_failure_corpus")
 
 ROOT = Path(__file__).resolve().parents[2]
 TRACKED_CORPUS = ROOT / "config/self-improve/failure-corpus.json"
@@ -20,6 +22,7 @@ EXPECTED_CASES = (
     "token-exhaustion",
     "worker-success-parent-merge-rejection",
     "raw-native-log-leakage",
+    "replace-precondition-mismatch",
     "legacy-outcome-unchanged-identity-empty-plan",
 )
 
@@ -86,6 +89,12 @@ def test_tracked_corpus_replays_every_observed_failure_class() -> None:
             "proposal_error",
             "replace requires distinct non-empty old_text",
         ),
+        (
+            "replace-precondition-mismatch",
+            "edit_replace_precondition",
+            "parent_validation",
+            "replace old_text must occur exactly once in trusted baseline",
+        ),
     ),
 )
 def test_failure_class_has_exact_typed_feedback(
@@ -104,6 +113,31 @@ def test_failure_class_has_exact_typed_feedback(
     assert f"type={feedback_type}" in result.feedback
     assert f"source={source}" in result.feedback
     assert f"detail={detail}" in result.feedback
+
+
+def test_replace_precondition_mismatch_cites_bounded_captured_evidence() -> None:
+    case = next(
+        item
+        for item in corpus.load_corpus(TRACKED_CORPUS)
+        if item.case_id == "replace-precondition-mismatch"
+    )
+
+    assert case.kind == "retry_feedback"
+    assert case.inputs == {
+        "error": (
+            "SELF_IMPROVE_PARENT_PROPOSAL_ERROR "
+            "replace old_text must occur exactly once in trusted baseline"
+        )
+    }
+    evidence = cast("str", case.inputs["error"])
+    assert len(evidence.encode("utf-8")) <= 256
+
+    result = corpus.replay_case(case)
+    assert result.feedback_type == "edit_replace_precondition"
+    assert result.source == "parent_validation"
+    assert result.detail == (
+        "replace old_text must occur exactly once in trusted baseline"
+    )
 
 
 def test_parent_rejection_occurs_after_worker_and_batch_decode_succeed() -> None:
@@ -145,10 +179,10 @@ def test_cli_emits_deterministic_bounded_case_and_summary_evidence(
     captured = capsys.readouterr()
     lines = captured.out.splitlines()
 
-    assert len([line for line in lines if line.startswith("SELF_IMPROVE_FAILURE_CORPUS_CASE ")]) == 7
+    assert len([line for line in lines if line.startswith("SELF_IMPROVE_FAILURE_CORPUS_CASE ")]) == 8
     assert lines[-1] == (
         'SELF_IMPROVE_FAILURE_CORPUS_SUMMARY '
-        '{"cases":7,"failed":0,"passed":7,"protocol":"self-improve-failure-corpus-v3"}'
+        '{"cases":8,"failed":0,"passed":8,"protocol":"self-improve-failure-corpus-v3"}'
     )
     assert captured.err == ""
 

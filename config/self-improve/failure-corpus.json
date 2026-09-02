@@ -113,6 +113,21 @@
       }
     },
     {
+      "id": "replace-precondition-mismatch",
+      "kind": "retry_feedback",
+      "input": {
+        "error": "SELF_IMPROVE_PARENT_PROPOSAL_ERROR replace old_text must occur exactly once in trusted baseline"
+      },
+      "expected": {
+        "type": "edit_replace_precondition",
+        "source": "parent_validation",
+        "detail": "replace old_text must occur exactly once in trusted baseline",
+        "forbidden_substrings": [
+          "SELF_IMPROVE_PARENT_PROPOSAL_ERROR"
+        ]
+      }
+    },
+    {
       "id": "legacy-outcome-unchanged-identity-empty-plan",
       "kind": "acquisition_trace",
       "input": {
