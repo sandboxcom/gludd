@@ -20,6 +20,7 @@ EXPECTED_CASES = (
     "token-exhaustion",
     "worker-success-parent-merge-rejection",
     "raw-native-log-leakage",
+    "legacy-outcome-unchanged-identity-empty-plan",
 )
 
 
@@ -144,10 +145,10 @@ def test_cli_emits_deterministic_bounded_case_and_summary_evidence(
     captured = capsys.readouterr()
     lines = captured.out.splitlines()
 
-    assert len([line for line in lines if line.startswith("SELF_IMPROVE_FAILURE_CORPUS_CASE ")]) == 6
+    assert len([line for line in lines if line.startswith("SELF_IMPROVE_FAILURE_CORPUS_CASE ")]) == 7
     assert lines[-1] == (
         'SELF_IMPROVE_FAILURE_CORPUS_SUMMARY '
-        '{"cases":6,"failed":0,"passed":6,"protocol":"self-improve-failure-corpus-v2"}'
+        '{"cases":7,"failed":0,"passed":7,"protocol":"self-improve-failure-corpus-v3"}'
     )
     assert captured.err == ""
 
@@ -157,7 +158,7 @@ def test_cli_emits_deterministic_bounded_case_and_summary_evidence(
     (
         lambda value: value.update({"extra": True}),
         lambda value: value.pop("protocol"),
-        lambda value: value.update({"schema_version": 3}),
+        lambda value: value.update({"schema_version": 4}),
         lambda value: value.update({"protocol": "unknown"}),
         lambda value: value.update({"cases": []}),
         lambda value: value["cases"].append(copy.deepcopy(value["cases"][0])),

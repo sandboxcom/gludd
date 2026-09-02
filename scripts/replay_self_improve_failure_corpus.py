@@ -28,7 +28,7 @@ from general_ludd.self_improve.codex_comparison import (
     merge_proposal_manifests,
 )
 
-_PROTOCOL: Final = "self-improve-failure-corpus-v2"
+_PROTOCOL: Final = "self-improve-failure-corpus-v3"
 _MAX_CORPUS_BYTES: Final = 65_536
 _MAX_CASES: Final = 32
 _MAX_TEXT_BYTES: Final = 8_192
@@ -63,8 +63,14 @@ _TRACE_PHASES: Final = frozenset(
         "eviction_refused",
         "lease_acquired",
         "lease_released",
+        "legacy_outcome_invalidated",
+        "legacy_outcome_observed",
         "next_attempt_empty",
         "proposal_error",
+        "protocol_identity_rotated",
+        "protocol_identity_unchanged",
+        "candidates_empty",
+        "terminal_outcome",
         "terminal_refusal",
     }
 )
@@ -93,6 +99,28 @@ _PHANTOM_PROPOSAL_TRACE: Final = (
     "eviction_refused",
     "proposal_error",
     "next_attempt_empty",
+)
+_LEGACY_EMPTY_PLAN_TRACE: Final = (
+    "legacy_outcome_observed",
+    "protocol_identity_unchanged",
+    "candidates_empty",
+)
+_ROTATED_LEGACY_TRACE: Final = (
+    "legacy_outcome_observed",
+    "protocol_identity_rotated",
+    "legacy_outcome_invalidated",
+)
+_EXHAUSTED_PLAN_TRACE: Final = (
+    "legacy_outcome_observed",
+    "protocol_identity_unchanged",
+    "candidates_empty",
+    "terminal_outcome",
+)
+_INVALID_EMPTY_PLAN_DETAIL: Final = (
+    "empty model plan reused a legacy outcome without rotating the attempt identity"
+)
+_MODEL_PLAN_EXHAUSTED_DETAIL: Final = (
+    "no eligible local model candidates remain for this attempt protocol"
 )
 _CONTRACT: Final = ProposalContract(
     baseline_sha="0" * 40,
@@ -327,9 +355,13 @@ def _typed_acquisition_feedback(cause: str) -> str:
         raise ValueError(
             "refusal requires a typed safe acquisition cause"
         ) from exc
+    return _typed_trace_feedback("acquisition_refused", detail)
+
+
+def _typed_trace_feedback(feedback_type: str, detail: str) -> str:
     return (
         f"protocol={LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.version} "
-        "type=acquisition_refused source=acquisition_trace "
+        f"type={feedback_type} source=acquisition_trace "
         f"detail={detail}"
     )
 
@@ -345,6 +377,34 @@ def check_acquisition_trace(
         if any(cause is not None for cause in causes):
             raise ValueError("completed acquisition trace cannot contain a cause")
         return AcquisitionTraceVerdict(True, "completed", "")
+    if phases == _ROTATED_LEGACY_TRACE:
+        if causes != ("proposal_validation", None, None):
+            raise ValueError(
+                "acquisition trace legacy outcome invalidation is not canonical"
+            )
+        return AcquisitionTraceVerdict(True, "replanned", "")
+    if phases in {_LEGACY_EMPTY_PLAN_TRACE, _EXHAUSTED_PLAN_TRACE}:
+        if causes[:3] != ("proposal_validation", None, None):
+            raise ValueError("acquisition trace legacy outcome is not canonical")
+        if phases == _LEGACY_EMPTY_PLAN_TRACE:
+            return AcquisitionTraceVerdict(
+                False,
+                "invalid",
+                _typed_trace_feedback(
+                    "acquisition_trace_invalid",
+                    _INVALID_EMPTY_PLAN_DETAIL,
+                ),
+            )
+        if causes[3] != "model_plan_exhausted":
+            raise ValueError("acquisition trace terminal outcome is not typed")
+        return AcquisitionTraceVerdict(
+            True,
+            "model_plan_exhausted",
+            _typed_trace_feedback(
+                "model_plan_exhausted",
+                _MODEL_PLAN_EXHAUSTED_DETAIL,
+            ),
+        )
     if phases not in {_TERMINAL_REFUSAL_TRACE, _PHANTOM_PROPOSAL_TRACE}:
         raise ValueError("acquisition trace has an unsupported transition")
     refusal_cause = causes[1]
@@ -376,7 +436,7 @@ def load_corpus(path: Path) -> tuple[FailureCase, ...]:
     root = _required_object(decoded, "failure corpus")
     if set(root) != _ROOT_FIELDS:
         raise ValueError("failure corpus fields drifted")
-    if root["schema_version"] != 2 or root["protocol"] != _PROTOCOL:
+    if root["schema_version"] != 3 or root["protocol"] != _PROTOCOL:
         raise ValueError("failure corpus protocol is unsupported")
     raw_cases = root["cases"]
     if not isinstance(raw_cases, list) or not 1 <= len(raw_cases) <= _MAX_CASES:

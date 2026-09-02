@@ -25,6 +25,7 @@ typed result exits 1. Neither failure mode echoes model output or native logs.
 | `token-exhaustion` | Structured completion decode | Classify a length stop as `decode_budget` |
 | `worker-success-parent-merge-rejection` | Worker encode, parent decode, strict merge | Prove worker and batch decode succeed before scope rejection |
 | `raw-native-log-leakage` | Validation retry sanitizer | Select the stable error marker and exclude native logs |
+| `legacy-outcome-unchanged-identity-empty-plan` | Outcome identity and candidate-plan trace | Reject an empty plan derived from a pre-fix generic outcome under an unchanged identity |
 
 The tracked JSON contains synthetic, reviewed inputs only. It records no real
 secret, home-directory path, prompt, repository excerpt, or complete native
@@ -60,13 +61,16 @@ logging stays quiet.
 
 ## Acquisition trace contract
 
-Corpus schema v2 admits only three exact, bounded acquisition traces:
+Corpus schema v3 admits only exact, bounded acquisition traces:
 
 | Trace | Verdict |
 | --- | --- |
 | `eviction_planned` → `eviction_completed` → `download_completed` → `lease_acquired` → `lease_released` | Accepted completion |
 | `eviction_planned` → `eviction_refused` → `terminal_refusal` | Accepted terminal refusal when both refusal events carry the same allowlisted cause |
 | `eviction_planned` → `eviction_refused` → `proposal_error` → `next_attempt_empty` | Rejected phantom proposal; publish only the fixed detail selected by the typed acquisition cause |
+| `legacy_outcome_observed(proposal_validation)` → `protocol_identity_unchanged` → `candidates_empty` | Rejected invalid state; the generic legacy outcome cannot exhaust a current plan |
+| `legacy_outcome_observed(proposal_validation)` → `protocol_identity_rotated` → `legacy_outcome_invalidated` | Accepted replan boundary; the new protocol identity cannot consume legacy evidence |
+| `legacy_outcome_observed(proposal_validation)` → `protocol_identity_unchanged` → `candidates_empty` → `terminal_outcome(model_plan_exhausted)` | Accepted typed terminal with no fabricated attempt or model outcome |
 
 Every completion event carries a null cause. A refusal cause is an allowlisted
 token such as `no_safe_reclaim`, `timeout`, or `validation`; it maps to a fixed
@@ -74,6 +78,14 @@ operator-safe detail. Arbitrary strings, filesystem paths, exception messages,
 missing causes, mismatched causes, skipped lease/release transitions, and every
 other ordering fail closed. Consequently, a failed eviction cannot be
 misreported as model output failure and cannot silently create an empty retry.
+
+The candidate-plan extension also treats `proposal_validation` as legacy,
+non-terminal evidence only. An unchanged attempt identity plus an empty
+candidate set is invalid unless it ends with the exact typed
+`model_plan_exhausted` terminal. A protocol change must rotate the identity and
+explicitly invalidate the legacy outcome. Invented attempt-start, success, or
+model-outcome events are outside the schema, so the checker cannot manufacture
+work merely to make the trace look complete.
 
 This state model follows the maintained
 [Hugging Face cache reference](https://huggingface.co/docs/huggingface_hub/en/package_reference/cache),

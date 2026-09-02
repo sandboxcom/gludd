@@ -1,6 +1,6 @@
 {
-  "schema_version": 2,
-  "protocol": "self-improve-failure-corpus-v2",
+  "schema_version": 3,
+  "protocol": "self-improve-failure-corpus-v3",
   "cases": [
     {
       "id": "eviction-refused-phantom-proposal",
@@ -109,6 +109,27 @@
           "ggml_metal_init",
           "llama_perf_context_print",
           "command buffers"
+        ]
+      }
+    },
+    {
+      "id": "legacy-outcome-unchanged-identity-empty-plan",
+      "kind": "acquisition_trace",
+      "input": {
+        "events": [
+          {"phase": "legacy_outcome_observed", "cause": "proposal_validation"},
+          {"phase": "protocol_identity_unchanged", "cause": null},
+          {"phase": "candidates_empty", "cause": null}
+        ]
+      },
+      "expected": {
+        "type": "acquisition_trace_invalid",
+        "source": "acquisition_trace",
+        "detail": "empty model plan reused a legacy outcome without rotating the attempt identity",
+        "forbidden_substrings": [
+          "proposal_validation",
+          "attempt_started",
+          "outcome_recorded"
         ]
       }
     }

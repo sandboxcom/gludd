@@ -141,3 +141,101 @@ def test_tracked_incident_replays_as_a_typed_acquisition_rejection() -> None:
     assert result.detail == "model cache has no safe reclaim candidate"
     assert result.worker_succeeded is False
     assert result.parent_stage == "acquisition"
+
+
+def test_legacy_outcome_with_unchanged_identity_cannot_empty_the_plan() -> None:
+    verdict = corpus.check_acquisition_trace(
+        (
+            _event("legacy_outcome_observed", "proposal_validation"),
+            _event("protocol_identity_unchanged"),
+            _event("candidates_empty"),
+        )
+    )
+
+    assert verdict.accepted is False
+    assert verdict.outcome == "invalid"
+    assert verdict.feedback == (
+        "protocol=self-improve-validation-retry-v3 "
+        "type=acquisition_trace_invalid source=acquisition_trace "
+        "detail=empty model plan reused a legacy outcome without rotating "
+        "the attempt identity"
+    )
+    assert "proposal_validation" not in verdict.feedback
+
+
+def test_rotated_protocol_identity_explicitly_invalidates_legacy_outcome() -> None:
+    verdict = corpus.check_acquisition_trace(
+        (
+            _event("legacy_outcome_observed", "proposal_validation"),
+            _event("protocol_identity_rotated"),
+            _event("legacy_outcome_invalidated"),
+        )
+    )
+
+    assert verdict.accepted is True
+    assert verdict.outcome == "replanned"
+    assert verdict.feedback == ""
+
+
+def test_empty_plan_can_end_only_with_typed_model_plan_exhausted() -> None:
+    verdict = corpus.check_acquisition_trace(
+        (
+            _event("legacy_outcome_observed", "proposal_validation"),
+            _event("protocol_identity_unchanged"),
+            _event("candidates_empty"),
+            _event("terminal_outcome", "model_plan_exhausted"),
+        )
+    )
+
+    assert verdict.accepted is True
+    assert verdict.outcome == "model_plan_exhausted"
+    assert verdict.feedback == (
+        "protocol=self-improve-validation-retry-v3 "
+        "type=model_plan_exhausted source=acquisition_trace "
+        "detail=no eligible local model candidates remain for this attempt protocol"
+    )
+
+
+@pytest.mark.parametrize(
+    "trace",
+    (
+        (
+            _event("legacy_outcome_observed", "proposal_validation"),
+            _event("protocol_identity_rotated"),
+        ),
+        (
+            _event("legacy_outcome_observed", "proposal_validation"),
+            _event("protocol_identity_unchanged"),
+            _event("candidates_empty"),
+            _event("terminal_outcome", "proposal_validation"),
+        ),
+        (
+            _event("attempt_started", "invented-model"),
+            _event("outcome_recorded", "success"),
+        ),
+    ),
+)
+def test_generic_or_fabricated_attempt_outcomes_fail_closed(
+    trace: tuple[dict[str, object], ...],
+) -> None:
+    with pytest.raises(ValueError, match="acquisition trace"):
+        corpus.check_acquisition_trace(trace)
+
+
+def test_tracked_empty_plan_incident_replays_as_invalid_state() -> None:
+    case = next(
+        item
+        for item in corpus.load_corpus(TRACKED_CORPUS)
+        if item.case_id == "legacy-outcome-unchanged-identity-empty-plan"
+    )
+
+    result = corpus.replay_case(case)
+
+    assert result.passed is True
+    assert result.feedback_type == "acquisition_trace_invalid"
+    assert result.source == "acquisition_trace"
+    assert result.detail == (
+        "empty model plan reused a legacy outcome without rotating "
+        "the attempt identity"
+    )
+    assert result.parent_stage == "acquisition"
