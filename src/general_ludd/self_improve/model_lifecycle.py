@@ -41,6 +41,11 @@ _JSON_LIMIT = 64 * 1024
 _DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 15.0
 _DEFAULT_ACQUISITION_TIMEOUT_SECONDS = 600.0
 _PROCESS_SHUTDOWN_GRACE_SECONDS = 5.0
+DEFAULT_SELF_IMPROVE_MODEL_PRIORITY = (
+    "qwen2.5-coder-1.5b",
+    "qwen2.5-coder-3b",
+    "codellama-7b",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -276,13 +281,8 @@ def _default_selector(_task: str) -> LocalModelConfig:
             )
         return matches[0]
 
-    priority = (
-        "qwen2.5-coder-1.5b",
-        "deepseek-coder-1.3b",
-        "qwen2.5-coder-0.5b",
-    )
     by_name = {model.name: model for model in coding}
-    for name in priority:
+    for name in DEFAULT_SELF_IMPROVE_MODEL_PRIORITY:
         if name in by_name:
             return by_name[name]
     if not coding:

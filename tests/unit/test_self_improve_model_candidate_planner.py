@@ -60,7 +60,9 @@ def _register_failure_evidence(
         )
 
 
-def test_no_evidence_fallback_is_deterministic_and_bounded(tmp_path: object) -> None:
+def test_no_evidence_fallback_uses_quality_ladder_and_is_bounded(
+    tmp_path: object,
+) -> None:
     store = _store(tmp_path)
     calls: list[str] = []
 
@@ -88,9 +90,9 @@ def test_no_evidence_fallback_is_deterministic_and_bounded(tmp_path: object) -> 
     )
 
     assert [item.config.name for item in first] == [
-        "qwen2.5-coder-0.5b",
-        "deepseek-coder-1.3b",
         "qwen2.5-coder-1.5b",
+        "qwen2.5-coder-3b",
+        "codellama-7b",
     ]
     assert first == second
     assert [item.escalation_level for item in first] == [0, 1, 2]
@@ -142,7 +144,7 @@ def test_prior_failure_alias_is_excluded_and_sets_escalation_floor(tmp_path: obj
     candidates = plan_model_candidates(
         "implement a Python fix",
         1024,
-        ("qwen-coder-0.5b",),
+        ("qwen-coder-1.5b",),
         _hardware(),
         store,
         _revision,
@@ -150,10 +152,10 @@ def test_prior_failure_alias_is_excluded_and_sets_escalation_floor(tmp_path: obj
     )
 
     assert [item.config.name for item in candidates] == [
-        "deepseek-coder-1.3b",
-        "qwen2.5-coder-1.5b",
+        "qwen2.5-coder-3b",
+        "codellama-7b",
     ]
-    assert all(item.config.size_mb > 312 for item in candidates)
+    assert all(item.config.size_mb > 936 for item in candidates)
 
 
 def test_failed_evidence_anchor_remains_excluded(tmp_path: object) -> None:
@@ -283,14 +285,14 @@ def test_invalid_immutable_revision_fails_closed(tmp_path: object) -> None:
 def test_unavailable_candidate_is_observable_and_next_models_fill_plan(
     tmp_path: object,
 ) -> None:
-    smallest = get_model("qwen2.5-coder-0.5b")
-    assert smallest is not None
+    preferred = get_model("qwen2.5-coder-1.5b")
+    assert preferred is not None
     calls: list[str] = []
     unavailable: list[tuple[str, str]] = []
 
     def resolver(repo_id: str) -> str:
         calls.append(repo_id)
-        if repo_id == smallest.repo:
+        if repo_id == preferred.repo:
             raise RuntimeError("repository unavailable")
         return _revision(repo_id)
 
@@ -308,15 +310,15 @@ def test_unavailable_candidate_is_observable_and_next_models_fill_plan(
     )
 
     assert [candidate.config.name for candidate in candidates] == [
-        "deepseek-coder-1.3b",
-        "qwen2.5-coder-1.5b",
+        "qwen2.5-coder-3b",
+        "codellama-7b",
     ]
     assert calls == [
-        smallest.repo,
+        preferred.repo,
         candidates[0].config.repo,
         candidates[1].config.repo,
     ]
-    assert unavailable == [(smallest.name, "repository unavailable")]
+    assert unavailable == [(preferred.name, "repository unavailable")]
 
 
 @pytest.mark.parametrize(
@@ -424,7 +426,7 @@ def test_unknown_historical_failure_is_ignored(tmp_path: object) -> None:
         max_candidates=1,
     )
 
-    assert candidates[0].config.name == "qwen2.5-coder-0.5b"
+    assert candidates[0].config.name == "qwen2.5-coder-1.5b"
 
 
 @pytest.mark.parametrize(

@@ -13,6 +13,9 @@ from general_ludd.hardware.model_fit import can_run_model
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.local_model._local_model_configs import _LOCAL_MODELS, LocalModelConfig
 from general_ludd.schemas.benchmark import TaskRole, TaskType
+from general_ludd.self_improve.model_lifecycle import (
+    DEFAULT_SELF_IMPROVE_MODEL_PRIORITY,
+)
 from general_ludd.self_improve.task_diversity import (
     infer_task_type,
     select_representative_evidence,
@@ -205,7 +208,25 @@ def _ordered_shortlist(
 ) -> tuple[LocalModelConfig, ...]:
     evidenced = [model for model in eligible if scores.get(model.name, 0.0) > 0.0]
     if not evidenced:
-        return tuple(sorted(eligible, key=lambda model: (model.size_mb, model.name))[:max_candidates])
+        by_name = {model.name: model for model in eligible}
+        preferred = [
+            by_name[name]
+            for name in DEFAULT_SELF_IMPROVE_MODEL_PRIORITY
+            if name in by_name
+        ]
+        preferred_names = {model.name for model in preferred}
+        remaining = sorted(
+            (model for model in eligible if model.name not in preferred_names),
+            key=lambda model: (model.size_mb, model.name),
+        )
+        shortlist: list[LocalModelConfig] = []
+        for model in (*preferred, *remaining):
+            if shortlist and model.size_mb <= shortlist[-1].size_mb:
+                continue
+            shortlist.append(model)
+            if len(shortlist) == max_candidates:
+                break
+        return tuple(shortlist)
 
     anchor = min(
         evidenced,
@@ -238,8 +259,8 @@ def plan_model_candidates(
     evidence chooses the first candidate when available; subsequent candidates
     grow monotonically by artifact size. When an attempt identity is supplied,
     persisted failures for that exact prompt protocol and task shape become the
-    escalation floor. Without matching evidence, the smallest fitting catalog
-    models provide a stable fallback.
+    escalation floor. Without matching evidence, the maintained quality ladder
+    provides a stable fallback before larger catalog models are considered.
     """
     if not isinstance(task_text, str) or not task_text.strip():
         raise ValueError("task_text must be a non-empty string")
