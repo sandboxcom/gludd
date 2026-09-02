@@ -7,6 +7,7 @@ from typing import cast
 import pytest
 
 import general_ludd.self_improve.codex_comparison as comparison_module
+import general_ludd.self_improve.task_diversity as task_diversity_module
 from general_ludd.hardware.survey import GpuInfo, HardwareInventory
 from general_ludd.local_model import get_model
 from general_ludd.schemas.benchmark import TaskType
@@ -303,6 +304,46 @@ def test_representative_selection_breaks_timestamp_ties_deterministically() -> N
 
     assert selected[0]["suite_id"] == "tie-b"
     assert selected == reversed_selected
+
+
+def test_representative_selection_serializes_each_record_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records = [
+        {
+            "model_profile_id": "model-a",
+            "task_type": TaskType.FEATURE.value,
+            "task_kind": "coding",
+            "record_id": record_id,
+            "registered_at": 5.0,
+        }
+        for record_id in ("a", "b", "c", "d")
+    ]
+    original_identity = task_diversity_module._stable_record_identity
+    serialization_calls = 0
+
+    def counted_identity(record: object) -> str:
+        nonlocal serialization_calls
+        serialization_calls += 1
+        return original_identity(cast(dict[str, object], record))
+
+    monkeypatch.setattr(
+        task_diversity_module,
+        "_stable_record_identity",
+        counted_identity,
+    )
+
+    exported = task_diversity_module.export_representative_evidence(
+        records,
+        max_cases=1,
+    )
+
+    assert exported == (
+        b'{"evidence":[{"model_profile_id":"model-a","record_id":"d",'
+        b'"registered_at":5.0,"task_kind":"coding","task_type":"feature"}],'
+        b'"schema_version":1}'
+    )
+    assert serialization_calls == len(records)
 
 
 def test_representative_selection_normalizes_non_finite_timestamps() -> None:

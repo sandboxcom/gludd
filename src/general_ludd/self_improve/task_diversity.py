@@ -67,7 +67,10 @@ def select_representative_evidence(
     if isinstance(records, (str, bytes)) or not isinstance(records, Sequence):
         raise ValueError("records must be a sequence of evidence mappings")
 
-    newest_by_shape: dict[tuple[str, TaskType, str], dict[str, Any]] = {}
+    newest_by_shape: dict[
+        tuple[str, TaskType, str],
+        tuple[dict[str, Any], str],
+    ] = {}
     for raw_record in records:
         if not isinstance(raw_record, Mapping):
             continue
@@ -88,25 +91,29 @@ def select_representative_evidence(
         if task_kind not in DEFAULT_TASK_CONTRACTS:
             continue
         record = dict(raw_record)
+        stable_identity = _stable_record_identity(record)
         shape = (model_profile_id, task_type, task_kind)
         current = newest_by_shape.get(shape)
-        if current is None or _record_order_key(record) > _record_order_key(current):
-            newest_by_shape[shape] = record
+        if current is None or _record_order_key(
+            record,
+            stable_identity=stable_identity,
+        ) > _record_order_key(current[0], stable_identity=current[1]):
+            newest_by_shape[shape] = (record, stable_identity)
 
     by_task_type: dict[
         TaskType,
-        list[tuple[str, str, dict[str, Any]]],
+        list[tuple[str, str, str, dict[str, Any]]],
     ] = defaultdict(list)
-    for (model_profile_id, task_type, task_kind), record in newest_by_shape.items():
-        by_task_type[task_type].append((task_kind, model_profile_id, record))
-    for queue in by_task_type.values():
-        queue.sort(
-            key=lambda item: (
-                item[0],
-                item[1],
-                _stable_record_identity(item[2]),
-            )
+    for (
+        model_profile_id,
+        task_type,
+        task_kind,
+    ), (record, stable_identity) in newest_by_shape.items():
+        by_task_type[task_type].append(
+            (task_kind, model_profile_id, stable_identity, record)
         )
+    for queue in by_task_type.values():
+        queue.sort(key=lambda item: item[:3])
 
     selected: list[dict[str, Any]] = []
     round_index = 0
@@ -115,7 +122,7 @@ def select_representative_evidence(
         for task_type in TaskType:
             queue = by_task_type.get(task_type, [])
             if round_index < len(queue):
-                selected.append(dict(queue[round_index][2]))
+                selected.append(dict(queue[round_index][3]))
                 added = True
                 if len(selected) == max_cases:
                     break
@@ -164,7 +171,11 @@ def _validate_mapping_keys(value: object) -> None:
             _validate_mapping_keys(nested)
 
 
-def _record_order_key(record: Mapping[str, Any]) -> tuple[float, str]:
+def _record_order_key(
+    record: Mapping[str, Any],
+    *,
+    stable_identity: str | None = None,
+) -> tuple[float, str]:
     registered_at = record.get("registered_at", 0.0)
     timestamp = (
         float(registered_at)
@@ -174,7 +185,12 @@ def _record_order_key(record: Mapping[str, Any]) -> tuple[float, str]:
     )
     if not math.isfinite(timestamp):
         timestamp = 0.0
-    return timestamp, _stable_record_identity(record)
+    identity = (
+        stable_identity
+        if stable_identity is not None
+        else _stable_record_identity(record)
+    )
+    return timestamp, identity
 
 
 def _stable_record_identity(record: Mapping[str, Any]) -> str:
