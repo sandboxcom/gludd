@@ -112,6 +112,7 @@ class _ModelFactory(Protocol):
         model_path: str,
         n_ctx: int,
         verbose: bool,
+        n_gpu_layers: int = 0,
     ) -> _LocalModel: ...
 
 
@@ -119,6 +120,10 @@ class _LlamaCppRuntime(Protocol):
     """Typed optional llama.cpp module boundary."""
 
     Llama: _ModelFactory
+
+    def llama_supports_gpu_offload(self) -> bool:
+        """Return whether this exact runtime was built with GPU offload."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -296,6 +301,80 @@ class ProposalManifest:
                 raise ValueError(f"proposal path escapes repository root: {path}")
 
 
+def merge_proposal_manifests(
+    manifests: tuple[ProposalManifest, ...],
+    *,
+    expected_path_groups: tuple[tuple[str, ...], ...],
+    expected_baseline_sha: str,
+    expected_task_id: str,
+    expected_tests: tuple[str, ...],
+    expected_make_commands: tuple[str, ...],
+) -> ProposalManifest:
+    """Merge disjoint shard manifests without weakening the final schema."""
+    if not manifests or len(manifests) != len(expected_path_groups):
+        raise ValueError("proposal shard count does not match the prompt plan")
+    if not _SHA_RE.fullmatch(expected_baseline_sha):
+        raise ValueError("expected baseline identity is invalid")
+    if not _TASK_RE.fullmatch(expected_task_id):
+        raise ValueError("expected task identity is invalid")
+    if not expected_tests or len(set(expected_tests)) != len(expected_tests):
+        raise ValueError("expected tests must be a non-empty unique identity set")
+    if not expected_make_commands:
+        raise ValueError("expected Make commands must not be empty")
+
+    expected_paths: set[str] = set()
+    for group in expected_path_groups:
+        if not group:
+            raise ValueError("every prompt shard must have focus paths")
+        if len(set(group)) != len(group) or expected_paths.intersection(group):
+            raise ValueError("prompt shard focus paths must be disjoint")
+        if any(not _safe_relative_path(path) for path in group):
+            raise ValueError("prompt shard focus path is unsafe")
+        expected_paths.update(group)
+
+    edits: list[dict[str, str]] = []
+    for manifest, focus_paths in zip(manifests, expected_path_groups, strict=True):
+        if manifest.baseline_sha != expected_baseline_sha:
+            raise ValueError("proposal shard baseline identity drifted")
+        if manifest.task_id != expected_task_id:
+            raise ValueError("proposal shard task identity drifted")
+        actual_paths = {edit.path for edit in manifest.edits}
+        if actual_paths != set(focus_paths):
+            raise ValueError("proposal shard edits must cover the exact focus paths")
+        if (
+            len(manifest.tests) != len(expected_tests)
+            or frozenset(manifest.tests) != frozenset(expected_tests)
+        ):
+            raise ValueError("proposal shard test identity drifted")
+        if manifest.make_commands != expected_make_commands:
+            raise ValueError("proposal shard Make command identity drifted")
+        edits.extend(
+            {
+                "operation": edit.operation,
+                "path": edit.path,
+                "old_text": edit.old_text,
+                "new_text": edit.new_text,
+            }
+            for edit in manifest.edits
+        )
+
+    if {str(edit["path"]) for edit in edits} != expected_paths:
+        raise ValueError("merged proposal does not cover every expected path")
+    return ProposalManifest.from_json(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "baseline_sha": expected_baseline_sha,
+                "task_id": expected_task_id,
+                "edits": edits,
+                "tests": list(expected_tests),
+                "make_commands": list(expected_make_commands),
+                "commit_message": manifests[0].commit_message,
+            }
+        )
+    )
+
+
 @dataclass(frozen=True)
 class CandidateEvidence:
     """Deterministic gate and repository evidence for one applied proposal."""
@@ -419,15 +498,22 @@ def build_retry_prompt(
     comparison: ComparisonResult,
     *,
     diagnostics: str = "",
+    max_diagnostic_bytes: int = 4096,
 ) -> str:
     """Build bounded, secret-redacted evidence for a subsequent local attempt."""
+    if (
+        isinstance(max_diagnostic_bytes, bool)
+        or not isinstance(max_diagnostic_bytes, int)
+        or not 1 <= max_diagnostic_bytes <= 4096
+    ):
+        raise ValueError("max_diagnostic_bytes must be an integer from 1 through 4096")
     gaps = ", ".join(comparison.blockers) if comparison.blockers else "none"
-    raw_tail = diagnostics.replace("\x00", "")[-4096:].encode("utf-8")
-    diagnostic_tail = raw_tail[-4096:].decode("utf-8", errors="replace")
-    diagnostic_tail = _SECRET_ASSIGNMENT_RE.sub(
+    redacted = _SECRET_ASSIGNMENT_RE.sub(
         lambda match: f"{match.group(1)}=<redacted>",
-        diagnostic_tail,
+        diagnostics.replace("\x00", ""),
     )
+    raw_tail = redacted.encode("utf-8")[-max_diagnostic_bytes:]
+    diagnostic_tail = raw_tail.decode("utf-8", errors="replace")
     failure_evidence = (
         f"\nExact bounded failure evidence:\n{diagnostic_tail}\n"
         if diagnostic_tail
@@ -451,22 +537,38 @@ class LocalProposalGateway:
         model_path: Path,
         *,
         model_factory: _ModelFactory | None = None,
+        n_gpu_layers: int | None = None,
     ) -> None:
-        """Bind one explicit GGUF and injectable llama.cpp model factory."""
+        """Bind one GGUF and an optional hardware-derived GPU offload boundary."""
         if not model_path.is_file():
             raise FileNotFoundError(f"local GGUF is not readable: {model_path}")
+        if (
+            isinstance(n_gpu_layers, bool)
+            or not isinstance(n_gpu_layers, (int, type(None)))
+            or (n_gpu_layers is not None and n_gpu_layers < -1)
+        ):
+            raise ValueError("n_gpu_layers must be None or an integer of at least -1")
         self._model_path = model_path
         self._model_factory = model_factory or _default_model_factory
+        self._n_gpu_layers = n_gpu_layers
         self._model: _LocalModel | None = None
 
     def propose(self, prompt: str) -> ProposalManifest:
         """Run deterministic decode and parse one bounded proposal."""
         if self._model is None:
-            self._model = self._model_factory(
-                model_path=str(self._model_path),
-                n_ctx=0,
-                verbose=False,
-            )
+            if self._n_gpu_layers is None:
+                self._model = self._model_factory(
+                    model_path=str(self._model_path),
+                    n_ctx=0,
+                    verbose=False,
+                )
+            else:
+                self._model = self._model_factory(
+                    model_path=str(self._model_path),
+                    n_ctx=0,
+                    verbose=False,
+                    n_gpu_layers=self._n_gpu_layers,
+                )
         if hasattr(self._model, "create_chat_completion"):
             chat_model = cast("_ChatLocalModel", self._model)
             output = chat_model.create_chat_completion(
@@ -579,7 +681,19 @@ def _default_model_factory(
     model_path: str,
     n_ctx: int,
     verbose: bool,
+    n_gpu_layers: int | None = None,
 ) -> _LocalModel:
     runtime = _load_llama_cpp_runtime()
-    return runtime.Llama(model_path=model_path, n_ctx=n_ctx, verbose=verbose)
+    try:
+        supports_gpu_offload = runtime.llama_supports_gpu_offload() is True
+    except (AttributeError, OSError, RuntimeError):
+        supports_gpu_offload = False
+    requested_gpu_layers = -1 if n_gpu_layers is None else n_gpu_layers
+    effective_gpu_layers = requested_gpu_layers if supports_gpu_offload else 0
+    return runtime.Llama(
+        model_path=model_path,
+        n_ctx=n_ctx,
+        verbose=verbose,
+        n_gpu_layers=effective_gpu_layers,
+    )
 

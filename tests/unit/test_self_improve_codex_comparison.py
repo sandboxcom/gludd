@@ -453,13 +453,18 @@ def test_local_gateway_uses_explicit_model_and_deterministic_decode(
         calls["factory"] = kwargs
         return FakeModel()
 
-    gateway = LocalProposalGateway(model_path, model_factory=factory)
+    gateway = LocalProposalGateway(
+        model_path,
+        model_factory=factory,
+        n_gpu_layers=12,
+    )
     proposal = gateway.propose("Repair the example.")
 
     assert proposal.task_id == "S83.133"
     assert calls["factory"] == {
         "model_path": str(model_path),
         "n_ctx": 0,
+        "n_gpu_layers": 12,
         "verbose": False,
     }
     assert calls["decode"] == {
@@ -467,6 +472,18 @@ def test_local_gateway_uses_explicit_model_and_deterministic_decode(
         "temperature": 0.0,
         "echo": False,
     }
+
+
+@pytest.mark.parametrize("n_gpu_layers", [True, -2, 1.5])
+def test_local_gateway_rejects_invalid_hardware_offload_seam(
+    tmp_path: Path,
+    n_gpu_layers: int,
+) -> None:
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+
+    with pytest.raises(ValueError, match="n_gpu_layers"):
+        LocalProposalGateway(model_path, n_gpu_layers=n_gpu_layers)
 
 
 def test_local_gateway_prefers_native_schema_constrained_chat_completion(
@@ -663,8 +680,9 @@ def test_gateway_fails_closed_for_each_malformed_model_response(tmp_path: Path) 
             model_path: str,
             n_ctx: int,
             verbose: bool,
+            n_gpu_layers: int = 0,
         ) -> FakeModel:
-            del model_path, n_ctx, verbose
+            del model_path, n_ctx, verbose, n_gpu_layers
             return FakeModel(self.output)
 
     malformed = [
@@ -700,8 +718,14 @@ def test_json_extractor_accepts_fenced_json_and_rejects_incomplete_tail() -> Non
 
 
 
-def test_optional_llama_runtime_loads_through_dynamic_typed_boundary(
+@pytest.mark.parametrize(
+    ("offload_probe_result", "expected_gpu_layers"),
+    [(True, -1), (False, 0), (OSError("probe failed"), 0)],
+)
+def test_optional_llama_runtime_gates_offload_through_native_support_probe(
     monkeypatch: pytest.MonkeyPatch,
+    offload_probe_result: bool | OSError,
+    expected_gpu_layers: int,
 ) -> None:
     fake_module = ModuleType("llama_cpp")
     imports: list[str] = []
@@ -713,10 +737,18 @@ def test_optional_llama_runtime_loads_through_dynamic_typed_boundary(
             model_path: str,
             n_ctx: int,
             verbose: bool,
+            n_gpu_layers: int,
         ) -> None:
-            self.settings = model_path, n_ctx, verbose
+            self.settings = model_path, n_ctx, verbose, n_gpu_layers
 
     vars(fake_module)["Llama"] = FakeModel
+
+    def probe_gpu_offload() -> bool:
+        if isinstance(offload_probe_result, OSError):
+            raise offload_probe_result
+        return offload_probe_result
+
+    vars(fake_module)["llama_supports_gpu_offload"] = probe_gpu_offload
 
     def import_runtime(name: str) -> ModuleType:
         imports.append(name)
@@ -725,9 +757,14 @@ def test_optional_llama_runtime_loads_through_dynamic_typed_boundary(
     monkeypatch.setattr(importlib, "import_module", import_runtime)
     model = comparison_module._default_model_factory(
         model_path="/tmp/gludd-model.gguf",
-        n_ctx=8192,
+        n_ctx=0,
         verbose=False,
     )
     assert isinstance(model, FakeModel)
-    assert model.settings == ("/tmp/gludd-model.gguf", 8192, False)
+    assert model.settings == (
+        "/tmp/gludd-model.gguf",
+        0,
+        False,
+        expected_gpu_layers,
+    )
     assert imports == ["llama_cpp"]

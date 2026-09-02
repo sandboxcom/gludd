@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import json
 import os
 import re
@@ -21,6 +22,7 @@ from typing import Final, Protocol, TextIO, cast
 
 from general_ludd.hardware.model_fit import unified_probe
 from general_ludd.local_model import LocalModelConfig
+from general_ludd.planning.repo_map import RepoMapBuilder
 from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
     CodexReference,
@@ -28,6 +30,7 @@ from general_ludd.self_improve.codex_comparison import (
     ProposalManifest,
     build_retry_prompt,
     compare_with_codex,
+    merge_proposal_manifests,
 )
 from general_ludd.self_improve.model_candidate_planner import (
     PlannedModelCandidate,
@@ -47,10 +50,24 @@ _MAX_CAPTURE_BYTES: Final = 2_097_152
 _MAX_TASK_BYTES: Final = 262_144
 _MAX_PROPOSAL_BYTES: Final = 1_310_720
 _MAX_REFERENCE_FILES: Final = 128
+_MAX_PROMPT_PATHS: Final = 32
+_MAX_PROMPT_SHARD_BYTES: Final = 16_384
+_MAX_BASE_PROMPT_SHARD_BYTES: Final = 12_000
+_MAX_FILE_EXCERPT_BYTES: Final = 4_096
+_MAX_CONTEXT_FILE_BYTES: Final = 2_097_152
+_PROMPT_CONTEXT_LINES: Final = 5
 _HEARTBEAT_SECONDS: Final = 15.0
 _FORBIDDEN_COMMAND_CHARS: Final = frozenset(";|&$()<>\n\r")
 _SHA_RE: Final = re.compile(r"^[0-9a-f]{40}$")
 _TASK_RE: Final = re.compile(r"^S[0-9]+(?:\.[0-9]+)?$")
+_WORD_RE: Final = re.compile(r"[A-Za-z][A-Za-z0-9]+")
+_RELEVANCE_STOPWORDS: Final = frozenset(
+    {
+        "and", "cannot", "each", "every", "file", "five", "from", "full",
+        "into", "local", "model", "proposal", "required", "self", "should",
+        "that", "the", "this", "uses", "with", "without",
+    }
+)
 
 
 def _report_model_resolution_failure(
@@ -149,6 +166,78 @@ class TaskSpec:
             canonical_make_commands=tuple(parsed_commands),
             reference_elapsed_seconds=float(elapsed),
         )
+
+
+@dataclass(frozen=True)
+class PromptShard:
+    """One bounded proposal prompt with an exact, disjoint edit focus."""
+
+    focus_paths: tuple[str, ...]
+    prompt: str
+
+    def __post_init__(self) -> None:
+        """Reject empty, duplicate, or oversized shard state."""
+        if not self.focus_paths or len(set(self.focus_paths)) != len(self.focus_paths):
+            raise ValueError("prompt shard focus paths must be non-empty and unique")
+        if not self.prompt.strip():
+            raise ValueError("prompt shard must not be empty")
+        if len(self.prompt.encode("utf-8")) > _MAX_PROMPT_SHARD_BYTES:
+            raise ValueError(
+                f"prompt shard exceeds {_MAX_PROMPT_SHARD_BYTES} bytes"
+            )
+
+
+@dataclass(frozen=True)
+class PromptPlan:
+    """Complete reference identity split into bounded local-model prompts."""
+
+    shards: tuple[PromptShard, ...]
+    source_bytes: int
+    protocol_digest: str = ""
+
+    def __post_init__(self) -> None:
+        """Require non-overlapping shards and publish stable protocol identity."""
+        if not self.shards:
+            raise ValueError("prompt plan must contain at least one shard")
+        if self.source_bytes < 0:
+            raise ValueError("prompt plan source_bytes must be non-negative")
+        paths = [path for shard in self.shards for path in shard.focus_paths]
+        if len(paths) != len(set(paths)):
+            raise ValueError("prompt plan focus paths must be disjoint")
+        if self.protocol_digest:
+            if re.fullmatch(r"[0-9a-f]{64}", self.protocol_digest) is None:
+                raise ValueError("prompt plan protocol_digest must be lowercase SHA-256")
+            return
+        canonical_plan = json.dumps(
+            {
+                "protocol": "self-improve-prompt-plan-v1",
+                "shards": [
+                    {
+                        "focus_paths": list(shard.focus_paths),
+                        "prompt": shard.prompt,
+                    }
+                    for shard in self.shards
+                ],
+                "source_bytes": self.source_bytes,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        object.__setattr__(
+            self,
+            "protocol_digest",
+            hashlib.sha256(canonical_plan).hexdigest(),
+        )
+
+    def __contains__(self, value: object) -> bool:
+        """Support compatibility membership checks across every shard prompt."""
+        return isinstance(value, str) and any(value in shard.prompt for shard in self.shards)
+
+    @property
+    def max_prompt_bytes(self) -> int:
+        """Return the largest individual inference input."""
+        return max(len(shard.prompt.encode("utf-8")) for shard in self.shards)
 
 
 @dataclass(frozen=True)
@@ -395,6 +484,95 @@ def generate_local_proposal(
         except (OSError, UnicodeDecodeError) as exc:
             raise RuntimeError(f"local proposal output is not readable UTF-8: {exc}") from exc
         return ProposalManifest.from_json(proposal_text)
+
+
+def generate_local_proposal_plan(
+    runner: _ObservableRunner,
+    model_path: Path,
+    plan: PromptPlan,
+    task: TaskSpec,
+    reference: CodexReference,
+) -> ProposalManifest:
+    """Decode all disjoint shards and merge them through the strict schema."""
+    proposals: list[ProposalManifest] = []
+    total = len(plan.shards)
+    for index, shard in enumerate(plan.shards, start=1):
+        print(
+            "SELF_IMPROVE_PROMPT_SHARD_START "
+            f"shard={index}/{total} protocol_digest={plan.protocol_digest} "
+            f"focus={json.dumps(shard.focus_paths)} "
+            f"prompt_bytes={len(shard.prompt.encode('utf-8'))}",
+            flush=True,
+        )
+        try:
+            proposal = generate_local_proposal(runner, model_path, shard.prompt)
+        except (OSError, RuntimeError, ValueError):
+            print(
+                f"SELF_IMPROVE_PROMPT_SHARD_END shard={index}/{total} succeeded=false",
+                flush=True,
+            )
+            raise
+        proposals.append(proposal)
+        print(
+            f"SELF_IMPROVE_PROMPT_SHARD_END shard={index}/{total} succeeded=true",
+            flush=True,
+        )
+    return merge_proposal_manifests(
+        tuple(proposals),
+        expected_path_groups=tuple(shard.focus_paths for shard in plan.shards),
+        expected_baseline_sha=reference.baseline_sha,
+        expected_task_id=task.task_id,
+        expected_tests=_required_prompt_tests(task, reference),
+        expected_make_commands=task.canonical_make_commands,
+    )
+
+
+def build_retry_prompt_plan(
+    plan: PromptPlan,
+    comparison: ComparisonResult,
+    *,
+    diagnostics: str = "",
+) -> PromptPlan:
+    """Apply the same bounded retry evidence to every immutable prompt shard."""
+    return PromptPlan(
+        shards=tuple(
+            PromptShard(
+                focus_paths=shard.focus_paths,
+                prompt=build_retry_prompt(
+                    shard.prompt,
+                    comparison,
+                    diagnostics=diagnostics,
+                    max_diagnostic_bytes=2_048,
+                ),
+            )
+            for shard in plan.shards
+        ),
+        source_bytes=plan.source_bytes,
+        protocol_digest=plan.protocol_digest,
+    )
+
+
+def _build_validation_retry_prompt_plan(
+    plan: PromptPlan,
+    error: str,
+) -> PromptPlan:
+    diagnostic = error.replace("\x00", "").replace("\n", " ").replace("\r", " ")[:1000]
+    suffix = (
+        "\nPrevious output failed strict proposal validation: "
+        + diagnostic
+        + "\nReturn a complete object satisfying every required field."
+    )
+    return PromptPlan(
+        shards=tuple(
+            PromptShard(
+                focus_paths=shard.focus_paths,
+                prompt=shard.prompt + suffix,
+            )
+            for shard in plan.shards
+        ),
+        source_bytes=plan.source_bytes,
+        protocol_digest=plan.protocol_digest,
+    )
 
 
 @dataclass(frozen=True)
@@ -754,53 +932,297 @@ def build_reference(
     )
 
 
+def _relevance_terms(task: TaskSpec, relative: str) -> frozenset[str]:
+    raw = " ".join((task.objective, Path(relative).stem.replace("_", " ")))
+    terms: set[str] = set()
+    for match in _WORD_RE.finditer(raw.casefold()):
+        term = match.group(0)
+        if len(term) < 3 or term in _RELEVANCE_STOPWORDS:
+            continue
+        terms.add(term)
+        for suffix in ("ing", "ed", "es", "s"):
+            if term.endswith(suffix) and len(term) - len(suffix) >= 4:
+                terms.add(term[: -len(suffix)])
+                break
+    return frozenset(terms)
+
+
+def _relevance_score(text: str, terms: frozenset[str]) -> int:
+    lowered = text.casefold()
+    return sum(1 for term in terms if term in lowered)
+
+
+def _merge_selected_lines(selected: set[int]) -> tuple[tuple[int, int], ...]:
+    if not selected:
+        return ()
+    ordered = sorted(selected)
+    ranges: list[tuple[int, int]] = []
+    start = previous = ordered[0]
+    for number in ordered[1:]:
+        if number == previous + 1:
+            previous = number
+            continue
+        ranges.append((start, previous + 1))
+        start = previous = number
+    ranges.append((start, previous + 1))
+    return tuple(ranges)
+
+
+def _render_selected_lines(lines: list[str], selected: set[int]) -> str:
+    sections: list[str] = []
+    for start, end in _merge_selected_lines(selected):
+        sections.append(
+            f"LINES {start + 1}-{end}\n" + "".join(lines[start:end])
+        )
+    return "\n".join(sections)
+
+
+def _select_python_excerpt(
+    relative: str,
+    content: str,
+    terms: frozenset[str],
+    *,
+    budget: int,
+) -> tuple[str, int]:
+    lines = content.splitlines(keepends=True)
+    if not lines:
+        return "", 0
+    candidates: list[tuple[int, int, int]] = []
+    header_end = min(len(lines), 24)
+    candidates.append((2, 0, header_end))
+    symbols = RepoMapBuilder().parse_file(relative, content)
+    for symbol in symbols:
+        start = max(0, symbol.line_start)
+        end = min(len(lines), symbol.line_end + 1)
+        body = "".join(lines[start:end])
+        score = _relevance_score(symbol.name, terms) * 8
+        score += _relevance_score(body, terms)
+        if score <= 0:
+            continue
+        if len(body.encode("utf-8")) <= budget * 3 // 4:
+            candidates.append((score + 4, start, end))
+        candidates.append((score + 3, start, min(end, start + 3)))
+        for number in range(start, end):
+            line_score = _relevance_score(lines[number], terms)
+            if line_score:
+                candidates.append(
+                    (
+                        score + line_score,
+                        max(start, number - _PROMPT_CONTEXT_LINES),
+                        min(end, number + _PROMPT_CONTEXT_LINES + 1),
+                    )
+                )
+    for number, line in enumerate(lines):
+        score = _relevance_score(line, terms)
+        if score:
+            candidates.append(
+                (
+                    score,
+                    max(0, number - _PROMPT_CONTEXT_LINES),
+                    min(len(lines), number + _PROMPT_CONTEXT_LINES + 1),
+                )
+            )
+    candidates.append((1, max(0, len(lines) - 8), len(lines)))
+
+    selected: set[int] = set()
+    for _score, start, end in sorted(
+        candidates,
+        key=lambda item: (-item[0], item[1], item[2]),
+    ):
+        candidate = selected.union(range(start, end))
+        rendered = _render_selected_lines(lines, candidate)
+        if len(rendered.encode("utf-8")) <= budget:
+            selected = candidate
+    if not selected:
+        for number, _line in enumerate(lines):
+            rendered_candidate = _render_selected_lines(lines, {number})
+            if len(rendered_candidate.encode("utf-8")) <= budget:
+                selected.add(number)
+                break
+    return _render_selected_lines(lines, selected), len(selected)
+
+
+def _build_file_context(
+    baseline_root: Path,
+    relative: str,
+    task: TaskSpec,
+) -> tuple[str, int]:
+    path = baseline_root / relative
+    if path.is_symlink():
+        raise ValueError(f"baseline context path must not be a symlink: {relative}")
+    if not path.exists():
+        return f"FILE {relative} state=absent bytes=0 sha256=none", 0
+    if not path.is_file():
+        raise ValueError(f"baseline context path is not a regular file: {relative}")
+    raw = path.read_bytes()
+    if len(raw) > _MAX_CONTEXT_FILE_BYTES:
+        raise ValueError(
+            f"baseline context file exceeds {_MAX_CONTEXT_FILE_BYTES} bytes: {relative}"
+        )
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"baseline context is not UTF-8: {relative}") from exc
+    digest = hashlib.sha256(raw).hexdigest()
+    lines = content.splitlines(keepends=True)
+    if len(raw) <= _MAX_FILE_EXCERPT_BYTES:
+        excerpt = content
+        selected_lines = len(lines)
+        complete = True
+    elif relative.endswith(".py"):
+        excerpt, selected_lines = _select_python_excerpt(
+            relative,
+            content,
+            _relevance_terms(task, relative),
+            budget=_MAX_FILE_EXCERPT_BYTES,
+        )
+        complete = False
+    else:
+        excerpt = "".join(lines[: min(len(lines), 40)])
+        if len(excerpt.encode("utf-8")) > _MAX_FILE_EXCERPT_BYTES:
+            excerpt = ""
+        selected_lines = min(len(lines), 40) if excerpt else 0
+        complete = selected_lines == len(lines)
+    if not excerpt and raw:
+        raise ValueError(f"no bounded exact context could be selected: {relative}")
+    marker = (
+        f"FILE {relative} state=present bytes={len(raw)} sha256={digest} "
+        f"complete={str(complete).lower()} selected_lines={selected_lines}/{len(lines)}"
+    )
+    if not complete:
+        marker += (
+            "\nOMITTED content remains bound by the published sha256; "
+            "do not invent old_text outside the exact numbered excerpts."
+        )
+    return f"{marker}\n{excerpt}", len(raw)
+
+
+def _required_prompt_tests(
+    task: TaskSpec,
+    reference: CodexReference,
+) -> tuple[str, ...]:
+    tests = tuple(sorted(reference.test_files)) or canonical_test_paths(
+        task.canonical_make_commands
+    )
+    if not tests:
+        raise ValueError("task has no canonical test path for the proposal contract")
+    return tests
+
+
+def _render_prompt_shard(
+    task: TaskSpec,
+    reference: CodexReference,
+    required_tests: tuple[str, ...],
+    focus_paths: tuple[str, ...],
+    contexts: dict[str, str],
+    *,
+    shard_index: int,
+    shard_total: int,
+) -> str:
+    return (
+        "Produce one shard of a Codex-quality repository patch proposal. You have "
+        "no shell, Git, or tool authority. Return exactly one strict proposal JSON "
+        "object and no prose. The separately supplied JSON grammar remains "
+        "authoritative. Use minimal exact replace operations copied verbatim from "
+        "numbered excerpts; never regenerate a whole existing file. Do not invent "
+        "old_text from explicitly omitted content. Use create only for an absent "
+        "focus path and delete only when the complete baseline file is shown.\n"
+        f"Task: {task.objective}\n"
+        f"Baseline: {reference.baseline_sha}\n"
+        f"Task ID: {task.task_id}\n"
+        "Global immutable Codex reference paths:\n"
+        + "\n".join(sorted(reference.changed_files))
+        + "\nRequired test paths (copy all exactly):\n"
+        + "\n".join(required_tests)
+        + "\nRequired canonical evidence commands (copy exactly and in order):\n"
+        + "\n".join(task.canonical_make_commands)
+        + "\nShard-specific contract:\n"
+        f"Shard: {shard_index}/{shard_total}\n"
+        "Exact focus paths for this shard:\nEdit every and only these paths:\n"
+        + "\n".join(focus_paths)
+        + "\nExact baseline contexts for the focus paths:\n"
+        + "\n\n".join(contexts[path] for path in focus_paths)
+    )
+
+
 def build_prompt(
     task: TaskSpec,
     reference: CodexReference,
     baseline_root: Path,
-) -> str:
-    """Build a bounded teacher-guided prompt without exposing the Codex solution."""
-    excerpts: list[str] = []
-    remaining = 48_000
-    for relative in sorted(reference.changed_files):
-        path = baseline_root / relative
-        if not path.is_file():
-            continue
-        try:
-            content = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        clipped = content[:remaining]
-        excerpts.append(f"FILE {relative}\n{clipped}")
-        remaining -= len(clipped)
-        if remaining <= 0:
-            break
-    required_tests = (
-        tuple(sorted(reference.test_files))
-        or canonical_test_paths(task.canonical_make_commands)
+) -> PromptPlan:
+    """Build complete identity as bounded syntax-aware proposal shards."""
+    paths = tuple(sorted(reference.changed_files))
+    if not paths:
+        raise ValueError("Codex reference contains no prompt paths")
+    if len(paths) > _MAX_PROMPT_PATHS:
+        raise ValueError(
+            f"Codex reference exceeds the {_MAX_PROMPT_PATHS}-path prompt boundary"
+        )
+    required_tests = _required_prompt_tests(task, reference)
+    contexts: dict[str, str] = {}
+    source_bytes = 0
+    for relative in paths:
+        context, size = _build_file_context(baseline_root, relative, task)
+        contexts[relative] = context
+        source_bytes += size
+
+    groups: list[tuple[str, ...]] = []
+    current: list[str] = []
+    for relative in paths:
+        tentative = tuple((*current, relative))
+        rendered = _render_prompt_shard(
+            task,
+            reference,
+            required_tests,
+            tentative,
+            contexts,
+            shard_index=1,
+            shard_total=1,
+        )
+        if (
+            current
+            and (
+                len(rendered.encode("utf-8")) > _MAX_BASE_PROMPT_SHARD_BYTES
+                or len(tentative) > 3
+            )
+        ):
+            groups.append(tuple(current))
+            current = [relative]
+        else:
+            current = list(tentative)
+        single = _render_prompt_shard(
+            task,
+            reference,
+            required_tests,
+            tuple(current),
+            contexts,
+            shard_index=1,
+            shard_total=1,
+        )
+        if len(single.encode("utf-8")) > _MAX_BASE_PROMPT_SHARD_BYTES:
+            raise ValueError(
+                "one exact prompt shard cannot fit the bounded CPU context: "
+                f"{relative}"
+            )
+    if current:
+        groups.append(tuple(current))
+
+    shards = tuple(
+        PromptShard(
+            focus_paths=group,
+            prompt=_render_prompt_shard(
+                task,
+                reference,
+                required_tests,
+                group,
+                contexts,
+                shard_index=index,
+                shard_total=len(groups),
+            ),
+        )
+        for index, group in enumerate(groups, start=1)
     )
-    if not required_tests:
-        raise ValueError("task has no canonical test path for the proposal contract")
-    return (
-        "Produce a Codex-quality repository patch proposal. You have no shell, Git, or "
-        "tool authority. Return exactly one JSON object and no prose. The JSON grammar "
-        "is supplied separately. Use minimal exact patch operations, never regenerate "
-        "a whole existing file. For replace, copy the smallest unique old_text verbatim "
-        "from the baseline excerpt and provide only its new_text. Preserve every other "
-        "byte, including the final newline. Use create only for an absent path and delete "
-        "only when old_text is the complete baseline file.\n"
-        f"Task: {task.objective}\n"
-        f"Baseline: {reference.baseline_sha}\n"
-        f"Task ID: {task.task_id}\n"
-        "Every and only these independent Codex reference paths must be edited:\n"
-        + "\n".join(sorted(reference.changed_files))
-        + "\nRequired test paths:\n"
-        + "\n".join(required_tests)
-        + "\nRequired canonical evidence commands (copy exactly):\n"
-        + "\n".join(task.canonical_make_commands)
-        + "\nBaseline file excerpts:\n"
-        + "\n\n".join(excerpts)
-    )
+    return PromptPlan(shards=shards, source_bytes=source_bytes)
 
 
 def create_worktree(
@@ -1092,7 +1514,16 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                 "baseline context worktree cleanup failed: "
                 + (context_cleanup.stderr or context_cleanup.stdout)
             )
-    prompt = base_prompt
+    prompt: PromptPlan | str = base_prompt
+    if isinstance(base_prompt, PromptPlan):
+        print(
+            "SELF_IMPROVE_PROMPT_PLAN "
+            f"shards={len(base_prompt.shards)} source_bytes={base_prompt.source_bytes} "
+            f"protocol_digest={base_prompt.protocol_digest} "
+            f"max_prompt_bytes={base_prompt.max_prompt_bytes} "
+            f"paths={json.dumps(sorted(reference.changed_files))}",
+            flush=True,
+        )
     final: AttemptResult | None = None
     model_manager: ModelLeaseManager | None = None
     model_evidence_store: CapabilityEvidenceStore | None = None
@@ -1129,7 +1560,18 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                         unified_probe(),
                         model_evidence_store,
                         model_manager.resolve_revision,
-                        input_tokens=max(1, (len(prompt.encode("utf-8")) + 3) // 4),
+                        input_tokens=max(
+                            1,
+                            (
+                                (
+                                    prompt.max_prompt_bytes
+                                    if isinstance(prompt, PromptPlan)
+                                    else len(prompt.encode("utf-8"))
+                                )
+                                + 3
+                            )
+                            // 4,
+                        ),
                         max_candidates=min(3, max(1, model_attempt_budget)),
                         on_resolution_failure=_report_model_resolution_failure,
                     )
@@ -1180,11 +1622,20 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
                             f"sha256={acquired.artifact_sha256}",
                             flush=True,
                         )
-                        proposal = generate_local_proposal(
-                            root_runner,
-                            acquired.path,
-                            prompt,
-                        )
+                        if isinstance(prompt, PromptPlan):
+                            proposal = generate_local_proposal_plan(
+                                root_runner,
+                                acquired.path,
+                                prompt,
+                                task,
+                                reference,
+                            )
+                        else:
+                            proposal = generate_local_proposal(
+                                root_runner,
+                                acquired.path,
+                                prompt,
+                            )
                 finally:
                     if acquired_model is not None:
                         _report_model_release(acquired_model)
@@ -1208,12 +1659,15 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
             )
             if attempt == args.max_attempts:
                 raise
-            prompt = (
-                base_prompt
-                + "\\nPrevious output failed strict proposal validation: "
-                + str(exc)[:1000]
-                + "\\nReturn a complete object satisfying every required field."
-            )
+            if isinstance(base_prompt, PromptPlan):
+                prompt = _build_validation_retry_prompt_plan(base_prompt, str(exc))
+            else:
+                prompt = (
+                    base_prompt
+                    + "\\nPrevious output failed strict proposal validation: "
+                    + str(exc)[:1000]
+                    + "\\nReturn a complete object satisfying every required field."
+                )
             continue
         final = evaluate_attempt(
             root_runner,
@@ -1245,11 +1699,18 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
         )
         if final.comparison.accepted:
             return final
-        prompt = build_retry_prompt(
-            base_prompt,
-            final.comparison,
-            diagnostics=final.diagnostics,
-        )
+        if isinstance(base_prompt, PromptPlan):
+            prompt = build_retry_prompt_plan(
+                base_prompt,
+                final.comparison,
+                diagnostics=final.diagnostics,
+            )
+        else:
+            prompt = build_retry_prompt(
+                base_prompt,
+                final.comparison,
+                diagnostics=final.diagnostics,
+            )
     if final is None:
         raise RuntimeError("no local-model attempt was executed")
     return final

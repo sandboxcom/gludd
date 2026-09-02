@@ -9,9 +9,11 @@ file scope, canonical tests, warnings, aggregate and per-file coverage, Ruff,
 mypy, docstrings, Markdown, resource cleanup, one atomic commit, a clean worktree,
 changed-line economy, elapsed time, and Git patch identity.
 
-The local model has no shell, Git, or direct system-tool authority. It emits one
-strict, bounded proposal. Gludd applies exact replacements transactionally in an
-isolated worktree and runs every operation through an explicit Make target.
+The local model has no shell, Git, or direct system-tool authority. It emits
+strict, bounded proposal shards; Gludd validates and merges those into one
+unchanged proposal schema before applying anything. Gludd applies exact
+replacements transactionally in an isolated worktree and runs every operation
+through an explicit Make target.
 
 ## Model and tool routing
 
@@ -133,6 +135,75 @@ directory, and leaves no candidate change. This preserves zero downtime: the
 running Gludd daemon and any previously admitted revision remain available
 while a context policy is evaluated. Rollback restores the previous worker
 policy without a database migration, daemon restart, or cache-format change.
+
+## CPU-bounded prompt decomposition
+
+The former prompt builder allocated 48,000 characters to baseline source and
+then appended the task and proposal contract. In the measured eight-file
+reference from baseline `80b381bd8` to `6463324cfcf6db9b9a2f9ec203e0bd3862a1e80e`,
+that produced a 52,017-byte prompt. StarCoder2 3B, Qwen2.5-Coder 3B, and
+CodeLlama 7B each reached the owned 300-second timeout without a proposal.
+Worse, lexicographic truncation spent the source budget on the first path and
+did not show later required files. Larger-model escalation cannot correct that
+input-boundary defect.
+
+Gludd now decomposes a reference into deterministic, disjoint prompt shards of
+at most three focus paths. A base shard is at most 12,000 bytes and any
+diagnostic retry remains at most 16,384 bytes. Every shard repeats the exact
+task ID, baseline SHA, complete global changed-path list, complete test list,
+and ordered canonical Make commands. Each focus file includes its full byte
+count and SHA-256 identity. Files of at most 4,096 bytes are included in full.
+For larger Python files, the existing
+`general_ludd.planning.repo_map.RepoMapBuilder` Tree-sitter parser supplies
+syntax boundaries and Gludd selects exact numbered symbol and task-relevant
+line windows. Omission is explicit, digest-bound, and never presented as full
+source. A shard may edit every and only its focus paths; the merger rejects
+missing, duplicate, broadened, wrong-baseline, wrong-task, wrong-test, or
+reordered-command output through the original strict `ProposalManifest`
+parser before candidate worktree creation. The immutable task, baseline, global
+paths, tests, and commands precede a named shard-specific suffix, so every
+inference shares a long byte-identical prefix. That layout is ready for
+llama.cpp KV-prefix reuse when the owned worker lifecycle retains one model
+instance across the sequential shard requests.
+
+Each plan publishes a lowercase SHA-256 protocol digest over canonical JSON
+containing its protocol version, ordered shard focus paths, exact prompts, and
+measured source bytes. Identical inputs produce the same digest, a material
+prompt or partition change produces a different digest, and validation retries
+carry the original digest. The runner emits it with plan and shard events. A
+follow-up evidence-key migration can therefore distinguish the old 52,017-byte
+protocol's failures from this bounded protocol without guessing from timestamps.
+
+This decomposition preserves the comparison rather than summarizing it. Gludd's
+conversation `ContextCompactor` was considered but is intentionally not used:
+its lossy summary cannot supply verbatim unique `old_text`. If exact excerpts
+are insufficient, the generated replacement cannot validate against the
+baseline and the attempt fails closed. It never silently guesses omitted patch
+text. The model candidate preflight uses the largest individual rendered shard,
+not the old aggregate/truncated prompt.
+
+Shards execute sequentially under one acquired-model lease, so the process does
+not multiply resident model workers. Each shard retains the 300-second owned
+worker boundary, live heartbeat, bounded exchange, and automatic temporary-file
+cleanup. Failure stops the remaining shards; the enclosing `finally` releases
+the lease. No persistent llama.cpp server is introduced.
+
+The production llama-cpp-python constructor now asks that exact loaded runtime's
+`llama_supports_gpu_offload()` function before setting `n_gpu_layers`. A
+supporting build receives `-1` (all layers subject to llama.cpp's own
+admission); an unsupported, missing, or failed probe receives `0` and remains
+on CPU. It does not infer Metal capability from PyTorch MPS. `n_ctx=0`
+continues to select the GGUF native context. The explicit constructor seam is
+available to later hardware policy, while the default remains gated by the
+runtime that will actually execute inference. On the measured 8 GiB host, the
+ordered catalog still prefers 3B Q4 models and treats 7B Q4 as the upper
+resource guidance rather than assuming accelerator capacity.
+
+The change is zero-downtime. Prompt planning and inference occur only in an
+unpromoted isolated worktree, with no daemon-state or database migration.
+Rollback restores the previous runner/comparison commit; an in-flight worker is
+terminated by its existing owner, its exchange is removed, and the admitted
+model artifact remains valid for later lease-governed use.
 
 ## Automatic model acquisition and ownership
 
@@ -305,8 +376,11 @@ harness cleanup compensates for missing application ownership.
 ## Resource bounds and fail-closed cleanup
 
 - 32 edits, 64 tests, 32 Make commands, and 1 MiB of proposal edit text.
-- 256 KiB prompt and roughly 1.25 MiB serialized proposal exchange.
-- 4,096 decode tokens and a 900-second owned worker timeout.
+- 12,000-byte base prompt shards, at most three focus paths per shard, a
+  16,384-byte hard retry boundary, 4,096 bytes of exact context per file, and a
+  2 MiB input-file admission bound.
+- 4,096 decode tokens and a 300-second owned worker timeout per sequential
+  shard; the strict merged proposal remains roughly 1.25 MiB at most.
 - 2 MiB observable command capture with 15-second heartbeats.
 - 128 Codex-reference files.
 - One candidate worktree per attempt; commands stop after the first failure.
@@ -350,7 +424,12 @@ Official sources:
   [versioned `Llama` source](https://github.com/abetlen/llama-cpp-python/blob/26633bd1a2eaf7fd0567cc5eaec8b0165a7ea0bd/llama_cpp/llama.py)
   resolves `n_ctx=0` through `LlamaModel.n_ctx_train()`; the maintained
   [API reference](https://llama-cpp-python.readthedocs.io/en/latest/api-reference/#llama_cpp.Llama)
-  describes zero as selecting context from the model.
+  describes zero as selecting context from the model. The versioned
+  [low-level binding](https://github.com/abetlen/llama-cpp-python/blob/26633bd1a2eaf7fd0567cc5eaec8b0165a7ea0bd/llama_cpp/llama_cpp.py)
+  exposes `llama_supports_gpu_offload()`; Gludd queries that binding instead
+  of inferring support from an unrelated framework. The
+  [versioned server settings](https://github.com/abetlen/llama-cpp-python/blob/26633bd1a2eaf7fd0567cc5eaec8b0165a7ea0bd/llama_cpp/server/settings.py)
+  define `n_gpu_layers=0` as CPU and `-1` as moving all layers to the GPU.
 - The
   [0.3.24 changelog](https://github.com/abetlen/llama-cpp-python/blob/26633bd1a2eaf7fd0567cc5eaec8b0165a7ea0bd/CHANGELOG.md)
   pins bundled llama.cpp commit `af6528e6d`. That commit's
@@ -366,6 +445,15 @@ Official sources:
 - [Aider architect/editor mode](https://aider.chat/docs/) separates planning
   from file editing; Gludd similarly separates local proposal generation from
   the Make-mediated executor.
+- [Aider's repository-map documentation](https://aider.chat/docs/repomap.html)
+  documents budgeted source maps built from important classes, functions,
+  signatures, and exact critical lines. Gludd reuses its existing Tree-sitter
+  repository-map boundary, but preserves file digests and exact replacement
+  validation because its output is an executable patch proposal.
+- [Tree-sitter query syntax](https://tree-sitter.github.io/tree-sitter/using-parsers/queries/1-syntax.html)
+  documents typed syntax-node matching and explicit `ERROR` nodes. Gludd uses
+  the maintained parser already locked by the project instead of inventing a
+  Python source parser.
 - [Hugging Face cache-system reference](https://huggingface.co/docs/huggingface_hub/en/package_reference/cache)
   documents scanning an explicit cache directory and preparing immutable
   revision deletion through `delete_revisions`. The returned strategy exposes
@@ -406,6 +494,25 @@ Practitioner evidence:
   `Requested tokens exceed context window` exception at 512 tokens. This
   requires Gludd to preflight the fully rendered prompt instead of discovering
   that boundary after starting proposal inference.
+- [llama-cpp-python issue 1692](https://github.com/abetlen/llama-cpp-python/issues/1692)
+  has tracked a practitioner's GPU-build mismatch since August 2024: the binding
+  reported no offload despite other GPU evidence. Gludd treats a false or failed
+  binding probe as a safe CPU fallback; it never forces layers based on PyTorch
+  or device-name inference.
+- [llama.cpp discussion 229](https://github.com/ggml-org/llama.cpp/discussions/229)
+  has recorded CPU prompt-ingestion latency and repeated-prefix work since
+  March 2023. Participants reported multi-minute reprocessing when a prompt
+  prefix changes, so immutable small shards are preferable to repeatedly
+  decoding a monolithic 52 KiB prompt.
+- [llama.cpp discussion 8652](https://github.com/ggml-org/llama.cpp/discussions/8652)
+  is a July 2024 unanswered practitioner report of CPU responses slowing as
+  prompt context grows despite smaller configured contexts. The unresolved
+  report supports measuring and bounding the actual rendered input rather than
+  treating model capacity as a latency guarantee.
+- [llama.cpp issue 865](https://github.com/ggml-org/llama.cpp/issues/865)
+  records a Ryzen CPU user observing roughly a minute of delay after adding
+  retrieved context while a tiny prompt began almost immediately. This
+  long-lived input-size failure class is pinned by the 51,859-byte regression.
 - [llama.cpp discussion 4054](https://github.com/ggml-org/llama.cpp/discussions/4054)
   records practitioners confirming in November 2023 that changing `n_ctx`
   changes preallocated memory, while actual prompt length does not reduce that
