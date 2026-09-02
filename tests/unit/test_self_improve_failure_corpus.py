@@ -44,6 +44,19 @@ def _write_fixture(tmp_path: Path, value: object) -> Path:
     return path
 
 
+def _canonical_fixture_text(value: object) -> str:
+    return json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True) + "\n"
+
+
+def test_tracked_corpus_is_canonical_and_normalization_is_idempotent() -> None:
+    raw = TRACKED_CORPUS.read_text(encoding="utf-8")
+    payload = json.loads(raw)
+    canonical = _canonical_fixture_text(payload)
+
+    assert raw == canonical
+    assert canonical == _canonical_fixture_text(json.loads(canonical))
+
+
 def test_tracked_corpus_replays_every_observed_failure_class() -> None:
     cases = corpus.load_corpus(TRACKED_CORPUS)
 

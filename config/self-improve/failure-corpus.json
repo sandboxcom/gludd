@@ -1,62 +1,77 @@
 {
-  "schema_version": 3,
-  "protocol": "self-improve-failure-corpus-v3",
   "cases": [
     {
-      "id": "eviction-refused-phantom-proposal",
-      "kind": "acquisition_trace",
-      "input": {
-        "events": [
-          {"phase": "eviction_planned", "cause": null},
-          {"phase": "eviction_refused", "cause": "no_safe_reclaim"},
-          {"phase": "proposal_error", "cause": null},
-          {"phase": "next_attempt_empty", "cause": null}
-        ]
-      },
       "expected": {
-        "type": "acquisition_refused",
-        "source": "acquisition_trace",
         "detail": "model cache has no safe reclaim candidate",
         "forbidden_substrings": [
           "proposal_error",
           "next_attempt_empty"
+        ],
+        "source": "acquisition_trace",
+        "type": "acquisition_refused"
+      },
+      "id": "eviction-refused-phantom-proposal",
+      "input": {
+        "events": [
+          {
+            "cause": null,
+            "phase": "eviction_planned"
+          },
+          {
+            "cause": "no_safe_reclaim",
+            "phase": "eviction_refused"
+          },
+          {
+            "cause": null,
+            "phase": "proposal_error"
+          },
+          {
+            "cause": null,
+            "phase": "next_attempt_empty"
+          }
         ]
-      }
+      },
+      "kind": "acquisition_trace"
     },
     {
+      "expected": {
+        "detail": "replace requires distinct non-empty old_text",
+        "forbidden_substrings": [],
+        "source": "worker_tail",
+        "type": "edit_replace_contract"
+      },
       "id": "no-op-replace",
-      "kind": "compact_decode",
       "input": {
         "focus_path": "src/general_ludd/self_improve/example.py",
         "model_output": "{\"e\":[{\"a\":\"same model text\",\"z\":\"same model text\"}]}"
       },
-      "expected": {
-        "type": "edit_replace_contract",
-        "source": "worker_tail",
-        "detail": "replace requires distinct non-empty old_text",
-        "forbidden_substrings": []
-      }
+      "kind": "compact_decode"
     },
     {
+      "expected": {
+        "detail": "compact proposal must contain exactly e",
+        "forbidden_substrings": [],
+        "source": "worker_tail",
+        "type": "proposal_root_contract"
+      },
       "id": "multiline-redundant-metadata",
-      "kind": "compact_decode",
       "input": {
         "focus_path": "src/general_ludd/self_improve/example.py",
         "model_output": "{\n  \"schema_version\": 1,\n  \"task_id\": \"S83.134\",\n  \"e\": [{\"a\": \"old\", \"z\": \"new\"}]\n}"
       },
-      "expected": {
-        "type": "proposal_root_contract",
-        "source": "worker_tail",
-        "detail": "compact proposal must contain exactly e",
-        "forbidden_substrings": []
-      }
+      "kind": "compact_decode"
     },
     {
+      "expected": {
+        "detail": "local model exhausted the proposal token budget before completion",
+        "forbidden_substrings": [],
+        "source": "worker_tail",
+        "type": "decode_budget"
+      },
       "id": "token-exhaustion",
-      "kind": "completion_decode",
       "input": {
-        "phase": "proposal",
         "budget": 1536,
+        "phase": "proposal",
         "require_stop": true,
         "worker_response": {
           "choices": [
@@ -66,87 +81,93 @@
             }
           ],
           "usage": {
-            "prompt_tokens": 1100,
             "completion_tokens": 1536,
+            "prompt_tokens": 1100,
             "total_tokens": 2636
           }
         }
       },
-      "expected": {
-        "type": "decode_budget",
-        "source": "worker_tail",
-        "detail": "local model exhausted the proposal token budget before completion",
-        "forbidden_substrings": []
-      }
+      "kind": "completion_decode"
     },
     {
-      "id": "worker-success-parent-merge-rejection",
-      "kind": "parent_merge",
-      "input": {
-        "worker_path": "src/general_ludd/self_improve/worker_selected.py",
-        "expected_path": "src/general_ludd/self_improve/parent_expected.py",
-        "protocol_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      },
       "expected": {
-        "type": "proposal_scope",
-        "source": "worker_tail",
         "detail": "proposal shard edits must cover the exact focus paths",
-        "forbidden_substrings": []
-      }
+        "forbidden_substrings": [],
+        "source": "worker_tail",
+        "type": "proposal_scope"
+      },
+      "id": "worker-success-parent-merge-rejection",
+      "input": {
+        "expected_path": "src/general_ludd/self_improve/parent_expected.py",
+        "protocol_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "worker_path": "src/general_ludd/self_improve/worker_selected.py"
+      },
+      "kind": "parent_merge"
     },
     {
-      "id": "raw-native-log-leakage",
-      "kind": "retry_feedback",
-      "input": {
-        "error": "llama_model_loader: loaded tensor metadata\nggml_metal_init: allocating command buffers\nSELF_IMPROVE_LOCAL_PROPOSAL_ERROR replace requires distinct non-empty old_text\nllama_perf_context_print: prompt eval time recorded"
-      },
       "expected": {
-        "type": "edit_replace_contract",
-        "source": "proposal_error",
         "detail": "replace requires distinct non-empty old_text",
         "forbidden_substrings": [
           "llama_model_loader",
           "ggml_metal_init",
           "llama_perf_context_print",
           "command buffers"
-        ]
-      }
+        ],
+        "source": "proposal_error",
+        "type": "edit_replace_contract"
+      },
+      "id": "raw-native-log-leakage",
+      "input": {
+        "error": "llama_model_loader: loaded tensor metadata\nggml_metal_init: allocating command buffers\nSELF_IMPROVE_LOCAL_PROPOSAL_ERROR replace requires distinct non-empty old_text\nllama_perf_context_print: prompt eval time recorded"
+      },
+      "kind": "retry_feedback"
     },
     {
-      "id": "replace-precondition-mismatch",
-      "kind": "retry_feedback",
-      "input": {
-        "error": "SELF_IMPROVE_PARENT_PROPOSAL_ERROR replace old_text must occur exactly once in trusted baseline"
-      },
       "expected": {
-        "type": "edit_replace_precondition",
-        "source": "parent_validation",
         "detail": "replace old_text must occur exactly once in trusted baseline",
         "forbidden_substrings": [
           "SELF_IMPROVE_PARENT_PROPOSAL_ERROR"
-        ]
-      }
+        ],
+        "source": "parent_validation",
+        "type": "edit_replace_precondition"
+      },
+      "id": "replace-precondition-mismatch",
+      "input": {
+        "error": "SELF_IMPROVE_PARENT_PROPOSAL_ERROR replace old_text must occur exactly once in trusted baseline"
+      },
+      "kind": "retry_feedback"
     },
     {
-      "id": "legacy-outcome-unchanged-identity-empty-plan",
-      "kind": "acquisition_trace",
-      "input": {
-        "events": [
-          {"phase": "legacy_outcome_observed", "cause": "proposal_validation"},
-          {"phase": "protocol_identity_unchanged", "cause": null},
-          {"phase": "candidates_empty", "cause": null}
-        ]
-      },
       "expected": {
-        "type": "acquisition_trace_invalid",
-        "source": "acquisition_trace",
         "detail": "empty model plan reused a legacy outcome without rotating the attempt identity",
         "forbidden_substrings": [
           "proposal_validation",
           "attempt_started",
           "outcome_recorded"
+        ],
+        "source": "acquisition_trace",
+        "type": "acquisition_trace_invalid"
+      },
+      "id": "legacy-outcome-unchanged-identity-empty-plan",
+      "input": {
+        "events": [
+          {
+            "cause": "proposal_validation",
+            "phase": "legacy_outcome_observed"
+          },
+          {
+            "cause": null,
+            "phase": "protocol_identity_unchanged"
+          },
+          {
+            "cause": null,
+            "phase": "candidates_empty"
+          }
         ]
-      }
+      },
+      "kind": "acquisition_trace"
     }
-  ]
+  ],
+  "protocol": "self-improve-failure-corpus-v3",
+  "schema_version": 3
 }
