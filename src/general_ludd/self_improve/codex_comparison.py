@@ -39,6 +39,8 @@ _MAX_PLANNER_FEEDBACK_BYTES = 65_536
 _MAX_TASK_OBJECTIVE_BYTES = 32_768
 _MAX_BLOCKERS = 32
 _MAX_BLOCKER_BYTES = 128
+_SNAPSHOT_MANIFEST_SCHEMA_VERSION = 2
+_MAX_SNAPSHOT_CONTENT_BYTES = 8_391_680
 
 
 _PROPOSAL_JSON_SCHEMA: dict[str, object] = {
@@ -124,6 +126,7 @@ _LEGACY_STRUCTURED_DECODING_MODE = "llama-cpp-bounded-span-grammar-v3"
 _STRUCTURED_DECODING_MODE = "llama-cpp-bounded-span-grammar-v5"
 _MODEL_VISIBLE_PROMPT_POLICY = "validated-parent-metadata-stripped-v1"
 _COMPACT_COMPARISON_RETRY_POLICY = "independent-trusted-baseline-smallest-diff-v1"
+_COMPACT_LINE_MATERIALIZATION_POLICY = "trusted-eol-full-snapshot-v1"
 _STRUCTURED_CANARY_PROMPT = 'Return {"ok":true}.'
 _STRUCTURED_CANARY_EXPECTED: dict[str, object] = {"ok": True}
 _COMPACT_ROOT_FIELDS = frozenset({"e"})
@@ -137,8 +140,7 @@ _COMPACT_OPERATION_BY_EMPTY_TEXT = {
     (True, False): "create",
 }
 _LEGACY_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v3"
-_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v4-line-budget-v5"
-_COMPACT_MAX_ANCHOR_BYTES = 65_536
+_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v4-snapshot-lines-v6"
 _SAFE_FINISH_REASONS = frozenset(
     {"stop", "length", "tool_calls", "function_call", "content_filter"}
 )
@@ -256,9 +258,10 @@ _COMPACT_SYSTEM_PROMPT = (
     f"Each e item has only s, n, z. Emit the fewest complete edits, at most "
     f"{_COMPACT_SPAN_MAX_EDITS}; never repeat an edit, coordinate, or unchanged context. "
     "Prefer increasing s; the parent sorts valid non-overlapping snapshot spans. It owns path, "
-    "baseline, and commit metadata. s is the 1-based baseline start, n is old lines "
-    "consumed, and z is literal replacement text without labels. Choose s only from the "
-    "per-shard grammar enum. "
+    "baseline, commit metadata, and line-separator bytes. s is the 1-based baseline "
+    "start, n is old lines consumed, and z is logical replacement-line content without "
+    "labels; the parent preserves trusted LF/CRLF and final-newline boundaries, so do not "
+    "add unchanged neighboring lines. Choose s only from the per-shard grammar enum. "
     f"Each edit may consume at most {_COMPACT_SPAN_MAX_OLD_LINES} old lines and "
     f"contain at most {_COMPACT_SPAN_MAX_NEW_LINES} replacement lines. Across every "
     f"shard, emit at most {_COMPACT_SPAN_MAX_CHANGED_LINES} changed lines, counting "
@@ -358,7 +361,7 @@ LOCAL_MODEL_ATTEMPT_OUTCOME_PROTOCOL = ModelAttemptOutcomeProtocol(
 EVALUATION_DIAGNOSIS_PROTOCOL = EvaluationDiagnosisProtocol(
     version="self-improve-evaluation-diagnosis-v2",
     schema_version=3,
-    max_event_bytes=256,
+    max_event_bytes=384,
     max_diagnosis_bytes=768,
     max_duration_ms=3_600_000,
     max_coordinate=2_097_153,
@@ -697,7 +700,7 @@ def local_proposal_attempt_identity_digest(
             "precondition_policy": (
                 "sequential-exact-trusted-baseline-v1"
                 if legacy
-                else "numbered-shown-lines-to-unique-exact-preimage-v1"
+                else "numbered-shown-lines-to-complete-exact-snapshot-v2"
             ),
             "root_fields": sorted(_COMPACT_ROOT_FIELDS),
         },
@@ -707,14 +710,16 @@ def local_proposal_attempt_identity_digest(
         strict = cast(dict[str, object], payload["strict_decoder_semantics"])
         strict.update(
             {
-                "anchor_max_bytes": _COMPACT_MAX_ANCHOR_BYTES,
                 "coordinate_base": 1,
                 "insertion_boundary_policy": "closed-boundaries-of-shown-half-open-range",
                 "comparison_retry_policy": _COMPACT_COMPARISON_RETRY_POLICY,
+                "line_materialization_policy": _COMPACT_LINE_MATERIALIZATION_POLICY,
                 "line_count_policy": "python-splitlines-additions-plus-deletions-v1",
                 "max_changed_lines": _COMPACT_SPAN_MAX_CHANGED_LINES,
                 "max_new_lines_per_edit": _COMPACT_SPAN_MAX_NEW_LINES,
                 "max_old_lines_per_edit": _COMPACT_SPAN_MAX_OLD_LINES,
+                "max_snapshot_content_bytes": _MAX_SNAPSHOT_CONTENT_BYTES,
+                "parent_manifest_schema_version": _SNAPSHOT_MANIFEST_SCHEMA_VERSION,
                 "span_order": "parent-canonical-start-nonoverlap-v2",
             }
         )
@@ -1062,8 +1067,13 @@ class ProposalManifest:
             raise ValueError(f"proposal has unknown fields: {sorted(unknown)}")
         if missing:
             raise ValueError(f"proposal is missing fields: {sorted(missing)}")
-        if value["schema_version"] != 1:
-            raise ValueError("schema_version must be 1")
+        schema_version = value["schema_version"]
+        if (
+            isinstance(schema_version, bool)
+            or not isinstance(schema_version, int)
+            or schema_version not in {1, _SNAPSHOT_MANIFEST_SCHEMA_VERSION}
+        ):
+            raise ValueError("schema_version must be 1 or 2")
 
         baseline_sha = value["baseline_sha"]
         if not isinstance(baseline_sha, str) or not _SHA_RE.fullmatch(baseline_sha):
@@ -1096,10 +1106,16 @@ class ProposalManifest:
                 )
             if not isinstance(old_text, str) or not isinstance(new_text, str):
                 raise ValueError(f"edit text must be UTF-8 text: {path}")
-            if operation == "replace" and (
+            if operation == "replace" and schema_version == 1 and (
                 not old_text or old_text == new_text
             ):
                 raise ValueError("replace requires distinct non-empty old_text")
+            if (
+                operation == "replace"
+                and schema_version == _SNAPSHOT_MANIFEST_SCHEMA_VERSION
+                and old_text == new_text
+            ):
+                raise ValueError("snapshot replace requires distinct complete file text")
             if operation == "create" and (old_text or not new_text):
                 raise ValueError("create requires empty old_text and non-empty new_text")
             if operation == "delete" and (not old_text or new_text):
@@ -1118,8 +1134,13 @@ class ProposalManifest:
                     new_text=new_text,
                 )
             )
-        if content_bytes > _MAX_CONTENT_BYTES:
-            raise ValueError(f"proposal edit content exceeds {_MAX_CONTENT_BYTES} bytes")
+        content_limit = (
+            _MAX_CONTENT_BYTES
+            if schema_version == 1
+            else _MAX_SNAPSHOT_CONTENT_BYTES
+        )
+        if content_bytes > content_limit:
+            raise ValueError(f"proposal edit content exceeds {content_limit} bytes")
 
         tests = _parse_path_list(value["tests"], "test path", _MAX_TESTS)
         commands = _parse_make_commands(value["make_commands"])
@@ -1134,7 +1155,7 @@ class ProposalManifest:
             raise ValueError("commit_message must be one bounded non-empty line")
 
         return cls(
-            schema_version=1,
+            schema_version=schema_version,
             baseline_sha=baseline_sha,
             task_id=task_id,
             edits=tuple(edits),
@@ -1523,74 +1544,80 @@ def _shown_line_numbers(
     return frozenset(shown)
 
 
-def _span_replacement_within_anchor(
-    lines: list[str],
-    span: CompactLineSpan,
+def _line_ending(value: str) -> str | None:
+    """Return one terminal line separator without inspecting model-authored content."""
+    if value.endswith("\r\n"):
+        return "\r\n"
+    if value.endswith("\n"):
+        return "\n"
+    if value.endswith("\r"):
+        return "\r"
+    return None
+
+
+def _trusted_line_ending(lines: list[str]) -> str:
+    """Choose the first immutable baseline separator, defaulting empty files to LF."""
+    for line in lines:
+        ending = _line_ending(line)
+        if ending is not None:
+            return ending
+    return "\n"
+
+
+def _normalized_compact_replacement(
+    new_text: str,
     *,
-    anchor_start: int,
-    anchor_end: int,
+    line_ending: str,
+    terminal_line: bool,
 ) -> str:
-    """Replace one zero-based line slice inside one trusted anchor."""
-    start = span.start_line - 1
-    end = start + span.old_line_count
-    return (
-        "".join(lines[anchor_start:start])
-        + span.new_text
-        + "".join(lines[end:anchor_end])
-    )
+    """Render model-authored logical lines with a trusted boundary convention."""
+    if not new_text:
+        return ""
+    rendered = line_ending.join(new_text.splitlines())
+    return rendered + line_ending if terminal_line else rendered
 
 
-def _bounded_unique_anchor(
-    content: str,
+def _materialize_compact_snapshot(
+    baseline: str,
     lines: list[str],
-    span: CompactLineSpan,
-) -> tuple[int, int, str, str]:
-    """Derive a deterministic line-aligned unique preimage around one exact span."""
+    spans: tuple[CompactLineSpan, ...],
+) -> str:
+    """Apply immutable line coordinates once and preserve trusted newline semantics."""
+    if not baseline:
+        return spans[0].new_text
     line_count = len(lines)
-    start = span.start_line - 1
-    end = start + span.old_line_count
-    base_start = start
-    base_end = end
-    if base_start == base_end:
-        if base_end < line_count:
-            base_end += 1
-        elif base_start > 0:
-            base_start -= 1
-    radii = [0]
-    radius = 1
-    while radius < line_count:
-        radii.append(radius)
-        radius *= 2
-    radii.append(line_count)
-    visited: set[tuple[int, int]] = set()
-    for amount in radii:
-        candidates = (
-            (max(0, base_start - amount), base_end),
-            (base_start, min(line_count, base_end + amount)),
-            (
-                max(0, base_start - amount),
-                min(line_count, base_end + amount),
-            ),
-        )
-        for anchor_start, anchor_end in candidates:
-            bounds = (anchor_start, anchor_end)
-            if bounds in visited or anchor_start == anchor_end:
-                continue
-            visited.add(bounds)
-            old_text = "".join(lines[anchor_start:anchor_end])
-            if len(old_text.encode("utf-8")) > _COMPACT_MAX_ANCHOR_BYTES:
-                continue
-            new_text = _span_replacement_within_anchor(
-                lines,
-                span,
-                anchor_start=anchor_start,
-                anchor_end=anchor_end,
+    line_ending = _trusted_line_ending(lines)
+    baseline_has_final_newline = _line_ending(baseline) is not None
+    cursor = 0
+    pieces: list[str] = []
+    for span in spans:
+        start = span.start_line - 1
+        end = start + span.old_line_count
+        pieces.extend(lines[cursor:start])
+        if (
+            span.new_text
+            and span.old_line_count == 0
+            and start == line_count
+            and pieces
+            and _line_ending(pieces[-1]) is None
+        ):
+            pieces.append(line_ending)
+        pieces.append(
+            _normalized_compact_replacement(
+                span.new_text,
+                line_ending=line_ending,
+                terminal_line=end < line_count or baseline_has_final_newline,
             )
-            if old_text and old_text != new_text and new_text and content.count(old_text) == 1:
-                return anchor_start, anchor_end, old_text, new_text
-    raise _parent_proposal_error(
-        "compact span has no unique bounded baseline anchor"
-    )
+        )
+        cursor = end
+    pieces.extend(lines[cursor:])
+    materialized = "".join(pieces)
+    materialized_ending = _line_ending(materialized)
+    if materialized and baseline_has_final_newline and materialized_ending is None:
+        return materialized + line_ending
+    if materialized and not baseline_has_final_newline and materialized_ending is not None:
+        return materialized[: -len(materialized_ending)]
+    return materialized
 
 
 def _manifest_from_compact_span_proposal(
@@ -1628,7 +1655,8 @@ def _manifest_from_compact_span_proposal(
         lines = baseline.splitlines(keepends=True)
         line_count = len(lines)
         shown = _shown_line_numbers(editable_ranges, line_count=line_count)
-        anchors: list[tuple[int, int]] = []
+        line_ending = _trusted_line_ending(lines)
+        baseline_has_final_newline = _line_ending(baseline) is not None
         for span in proposal.edits:
             start = span.start_line - 1
             end = start + span.old_line_count
@@ -1643,7 +1671,12 @@ def _manifest_from_compact_span_proposal(
                         "compact span must consume only explicitly shown baseline lines"
                     )
                 old_slice = "".join(lines[start:end])
-                if old_slice == span.new_text:
+                normalized_replacement = _normalized_compact_replacement(
+                    span.new_text,
+                    line_ending=line_ending,
+                    terminal_line=end < line_count or baseline_has_final_newline,
+                )
+                if old_slice == normalized_replacement:
                     raise _parent_proposal_error("compact span must change content")
             else:
                 boundary_is_shown = any(
@@ -1663,37 +1696,35 @@ def _manifest_from_compact_span_proposal(
                         span=span,
                         editable_ranges=editable_ranges,
                     )
-            if start == 0 and end == line_count and not span.new_text:
-                edits.append(
-                    {
-                        "operation": "delete",
-                        "path": proposal.focus_path,
-                        "old_text": baseline,
-                        "new_text": "",
-                    }
-                )
-                anchors.append((0, line_count))
-                continue
-            anchor_start, anchor_end, old_text, new_text = _bounded_unique_anchor(
-                baseline,
-                lines,
-                span,
-            )
-            if any(anchor_start < used_end and anchor_end > used_start for used_start, used_end in anchors):
-                raise _parent_proposal_error("compact derived anchors must not overlap")
-            anchors.append((anchor_start, anchor_end))
+        materialized = _materialize_compact_snapshot(
+            baseline,
+            lines,
+            proposal.edits,
+        )
+        if materialized == baseline:
+            raise _parent_proposal_error("compact span must change content")
+        if materialized:
             edits.append(
                 {
                     "operation": "replace",
                     "path": proposal.focus_path,
-                    "old_text": old_text,
-                    "new_text": new_text,
+                    "old_text": baseline,
+                    "new_text": materialized,
+                }
+            )
+        else:
+            edits.append(
+                {
+                    "operation": "delete",
+                    "path": proposal.focus_path,
+                    "old_text": baseline,
+                    "new_text": "",
                 }
             )
     return ProposalManifest.from_json(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": _SNAPSHOT_MANIFEST_SCHEMA_VERSION,
                 "baseline_sha": contract.baseline_sha,
                 "task_id": contract.task_id,
                 "edits": edits,
@@ -1792,15 +1823,22 @@ def _validate_proposal_preconditions(
     for edit in proposal.edits:
         current = planned[edit.path]
         if edit.operation == "replace":
-            if current is None or current.count(edit.old_text) != 1:
-                raise _parent_proposal_error(
-                    "replace old_text must occur exactly once in trusted baseline"
+            if proposal.schema_version == _SNAPSHOT_MANIFEST_SCHEMA_VERSION:
+                if current is None or current != edit.old_text:
+                    raise _parent_proposal_error(
+                        "replace old_text must equal the complete trusted snapshot"
+                    )
+                planned[edit.path] = edit.new_text
+            else:
+                if current is None or current.count(edit.old_text) != 1:
+                    raise _parent_proposal_error(
+                        "replace old_text must occur exactly once in trusted baseline"
+                    )
+                planned[edit.path] = current.replace(
+                    edit.old_text,
+                    edit.new_text,
+                    1,
                 )
-            planned[edit.path] = current.replace(
-                edit.old_text,
-                edit.new_text,
-                1,
-            )
         elif edit.operation == "create":
             if current is not None:
                 raise _parent_proposal_error(
@@ -1849,8 +1887,11 @@ def merge_proposal_manifests(
             raise ValueError("prompt shard focus path is unsafe")
         expected_paths.update(group)
 
+    manifest_schema_version = manifests[0].schema_version
     edits: list[dict[str, str]] = []
     for manifest, focus_paths in zip(manifests, expected_path_groups, strict=True):
+        if manifest.schema_version != manifest_schema_version:
+            raise ValueError("proposal shard manifest schema drifted")
         if manifest.baseline_sha != expected_baseline_sha:
             raise ValueError("proposal shard baseline identity drifted")
         if manifest.task_id != expected_task_id:
@@ -1880,7 +1921,7 @@ def merge_proposal_manifests(
     merged = ProposalManifest.from_json(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": manifest_schema_version,
                 "baseline_sha": expected_baseline_sha,
                 "task_id": expected_task_id,
                 "edits": edits,

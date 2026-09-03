@@ -309,10 +309,9 @@ def test_attempt_identity_binds_complete_managed_output_protocol(
         ("_DETERMINISTIC_DECODE_TEMPERATURE", 0.1),
         ("_STRUCTURED_OUTPUT_REQUIRE_STOP", False),
         ("_COMPACT_ROOT_FIELDS", frozenset({"c", "e", "unexpected"})),
-        (
-            "_COMPACT_MAX_ANCHOR_BYTES",
-            65_535,
-        ),
+        ("_COMPACT_LINE_MATERIALIZATION_POLICY", "trusted-eol-mutated"),
+        ("_MAX_SNAPSHOT_CONTENT_BYTES", 8_391_679),
+        ("_SNAPSHOT_MANIFEST_SCHEMA_VERSION", 3),
         ("_STRICT_PARENT_DECODER_VERSION", "proposal-manifest-strict-v-next"),
     )
     for name, changed_value in protocol_changes:
@@ -923,7 +922,7 @@ def test_proposal_parser_enforces_all_outer_bounds_and_identities() -> None:
     cases: list[tuple[dict[str, object], str]] = []
 
     wrong_schema = dict(base)
-    wrong_schema["schema_version"] = 2
+    wrong_schema["schema_version"] = 3
     cases.append((wrong_schema, "schema_version"))
 
     wrong_task = dict(base)
@@ -1363,6 +1362,64 @@ def test_compact_v4_binds_per_edit_line_limits_into_schema_and_identity(
         with monkeypatch.context() as scoped:
             scoped.setattr(comparison_module, name, changed)
             assert comparison_module.local_proposal_attempt_identity_digest("a" * 64) != baseline
+
+
+def test_v4_identity_binds_snapshot_line_materialization_without_rotating_v3(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rotate corrected whole-line semantics while preserving legacy identity bytes."""
+    v4 = comparison_module.local_proposal_attempt_identity_digest("a" * 64)
+    v3 = comparison_module.local_proposal_attempt_identity_digest(
+        "a" * 64,
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V3,
+    )
+
+    monkeypatch.setattr(
+        comparison_module,
+        "_COMPACT_LINE_MATERIALIZATION_POLICY",
+        "mutated-for-regression",
+    )
+
+    assert comparison_module.local_proposal_attempt_identity_digest("a" * 64) != v4
+    assert (
+        comparison_module.local_proposal_attempt_identity_digest(
+            "a" * 64,
+            proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V3,
+        )
+        == v3
+    )
+
+
+def test_snapshot_manifest_content_bound_is_finite_and_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bound complete snapshot preimages and results independently of repetition."""
+    monkeypatch.setattr(comparison_module, "_MAX_SNAPSHOT_CONTENT_BYTES", 64)
+    exact = _proposal(
+        schema_version=2,
+        edits=[
+            {
+                "operation": "replace",
+                "path": "src/general_ludd/example.py",
+                "old_text": "a" * 32,
+                "new_text": "b" * 32,
+            }
+        ],
+    )
+    assert exact.schema_version == 2
+
+    with pytest.raises(ValueError, match="proposal edit content exceeds 64 bytes"):
+        _proposal(
+            schema_version=2,
+            edits=[
+                {
+                    "operation": "replace",
+                    "path": "src/general_ludd/example.py",
+                    "old_text": "a" * 33,
+                    "new_text": "b" * 32,
+                }
+            ],
+        )
 
 
 def test_compact_v4_total_line_budget_admits_reference_and_rejects_live_rewrite() -> None:
@@ -2354,6 +2411,52 @@ def test_compact_v4_parent_compiles_insert_partial_delete_and_whole_delete() -> 
         assert actual == expected
 
 
+@pytest.mark.parametrize(
+    ("baseline", "start_line", "old_line_count", "new_text", "expected"),
+    [
+        ("first\nsecond\nthird\n", 2, 1, "changed", "first\nchanged\nthird\n"),
+        ("first\r\nsecond\r\nthird\r\n", 2, 1, "changed", "first\r\nchanged\r\nthird\r\n"),
+        ("first\nsecond\n", 2, 0, "inserted", "first\ninserted\nsecond\n"),
+        ("first\r\nsecond\r\n", 2, 0, "inserted", "first\r\ninserted\r\nsecond\r\n"),
+        ("first\nsecond\nthird\n", 2, 1, "", "first\nthird\n"),
+        ("first\nsecond\n", 2, 1, "changed", "first\nchanged\n"),
+        ("first\nsecond", 2, 1, "changed\n", "first\nchanged"),
+        ("first\n", 2, 0, "last", "first\nlast\n"),
+        ("first", 2, 0, "last\n", "first\nlast"),
+    ],
+)
+def test_compact_v4_parent_owns_whole_line_boundaries(
+    baseline: str,
+    start_line: int,
+    old_line_count: int,
+    new_text: str,
+    expected: str,
+) -> None:
+    """Materialize logical line spans without delegating separator bytes to a model."""
+    path = "src/general_ludd/example.py"
+    line_count = len(baseline.splitlines())
+
+    manifest = _expand_span_proposals(
+        (
+            _span_proposal(
+                {"e": [{"s": start_line, "n": old_line_count, "z": new_text}]}
+            ),
+        ),
+        baselines={path: baseline},
+        editable_ranges=(((1, line_count + 1),),),
+    )
+
+    assert manifest.schema_version == 2
+    assert manifest.edits == (
+        comparison_module.ProposalEdit(
+            operation="replace",
+            path=path,
+            old_text=baseline,
+            new_text=expected,
+        ),
+    )
+
+
 def test_compact_v4_parent_accepts_only_canonical_absent_file_create() -> None:
     path = "src/general_ludd/example.py"
     manifest = _expand_span_proposals(
@@ -2382,13 +2485,23 @@ def test_compact_v4_parent_accepts_only_canonical_absent_file_create() -> None:
         )
 
 
-def test_compact_v4_parent_rejects_empty_existing_file_without_unique_anchor() -> None:
-    with pytest.raises(ValueError, match="unique bounded baseline anchor"):
-        _expand_span_proposals(
-            (_span_proposal({"e": [{"s": 1, "n": 0, "z": "created = True\n"}]}),),
-            baselines={"src/general_ludd/example.py": ""},
-            editable_ranges=((),),
-        )
+def test_compact_v4_parent_materializes_empty_existing_snapshot_without_anchor() -> None:
+    path = "src/general_ludd/example.py"
+    manifest = _expand_span_proposals(
+        (_span_proposal({"e": [{"s": 1, "n": 0, "z": "created = True\n"}]}),),
+        baselines={path: ""},
+        editable_ranges=((),),
+    )
+
+    assert manifest.schema_version == 2
+    assert manifest.edits == (
+        comparison_module.ProposalEdit(
+            operation="replace",
+            path=path,
+            old_text="",
+            new_text="created = True\n",
+        ),
+    )
 
 
 def test_compact_v4_parent_preserves_two_ordered_edits_in_one_file() -> None:
@@ -2496,19 +2609,49 @@ def test_compact_v4_parent_accepts_shown_zero_width_edge_boundaries(
     assert baseline.replace(edit.old_text, edit.new_text, 1) == expected
 
 
-def test_compact_v4_parent_fails_when_unique_anchor_exceeds_byte_bound() -> None:
+def test_compact_v4_parent_materializes_repeated_snapshot_without_unique_anchor() -> None:
     path = "src/general_ludd/example.py"
     baseline = "same\n" * 30_000
     proposal = _span_proposal(
         {"e": [{"s": 15_000, "n": 1, "z": "changed\n"}]}
     )
 
-    with pytest.raises(ValueError, match="unique bounded baseline anchor"):
-        _expand_span_proposals(
-            (proposal,),
-            baselines={path: baseline},
-            editable_ranges=(((1, 30_001),),),
-        )
+    manifest = _expand_span_proposals(
+        (proposal,),
+        baselines={path: baseline},
+        editable_ranges=(((1, 30_001),),),
+    )
+
+    assert manifest.schema_version == 2
+    assert manifest.edits[0].old_text == baseline
+    expected_lines = baseline.splitlines(keepends=True)
+    expected_lines[14_999] = "changed\n"
+    assert manifest.edits[0].new_text == "".join(expected_lines)
+
+
+def test_compact_v4_parent_materializes_repeated_closers_and_blank_line_insertion() -> None:
+    """Immutable coordinates disambiguate content that has no unique local anchor."""
+    path = "src/general_ludd/example.py"
+    baseline = "def first():\n    pass\n\n}\n\n}\n"
+    proposal = _span_proposal(
+        {
+            "e": [
+                {"s": 3, "n": 0, "z": "    return 1"},
+                {"s": 6, "n": 1, "z": "# final closer"},
+            ]
+        }
+    )
+
+    manifest = _expand_span_proposals(
+        (proposal,),
+        baselines={path: baseline},
+        editable_ranges=(((1, 7),),),
+    )
+
+    assert manifest.edits[0].old_text == baseline
+    assert manifest.edits[0].new_text == (
+        "def first():\n    pass\n    return 1\n\n}\n\n# final closer\n"
+    )
 
 
 def test_compact_gateway_rejects_failed_canary_without_task_decode_or_secret_leak(

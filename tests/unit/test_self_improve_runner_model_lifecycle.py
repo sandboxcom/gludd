@@ -1768,15 +1768,16 @@ def test_run_benchmark_default_sink_flushes_evaluation_and_retry_diagnosis(
         "SELF_IMPROVE_RETRY_DIAGNOSIS "
         "protocol=self-improve-evaluation-diagnosis-v2 "
         "phase=approved_make failure=make_failed rc=1 duration_ms=1000 "
-        f"command_sha256={command_sha256}"
+        f"command_sha256={command_sha256} category=none path_sha256=none "
+        "line=0 column=0"
     ]
     first_event = output_lines.index(evaluation_lines[0])
     retry_event = output_lines.index(retry_lines[0])
     rotated_attempt_identity = (
-        "d365837126948c7cde74959adc76ddcc28a1c8789fccc69b35ffe996ad00f65c"
+        "a954fb52b2c47704813156f2a16e610aa47addee2d1af1cf90061855ac9aa87c"
     )
     assert rotated_attempt_identity != (
-        "ee4671f30088b25acf380a6f3c53b1b518693439e99e7ed290e4986f5d85b82a"
+        "d365837126948c7cde74959adc76ddcc28a1c8789fccc69b35ffe996ad00f65c"
     )
     attempt_lines = [
         line
@@ -1815,8 +1816,50 @@ def test_retry_diagnosis_event_sanitizes_invalid_injected_artifact() -> None:
         "SELF_IMPROVE_RETRY_DIAGNOSIS "
         "protocol=self-improve-evaluation-diagnosis-v2 phase=evaluation "
         "failure=diagnosis_unavailable rc=1 duration_ms=0 "
-        f"command_sha256={hashlib.sha256(b'self-improve-evaluation-diagnosis-v2').hexdigest()}"
+        f"command_sha256={hashlib.sha256(b'self-improve-evaluation-diagnosis-v2').hexdigest()} "
+        "category=none path_sha256=none line=0 column=0"
     )
-    assert len(rendered.encode("ascii")) <= 256
+    assert len(rendered.encode("ascii")) <= 384
     for forbidden in ("MODEL_Z", "SECRET_TOKEN", "/absolute/private/repo", "make hidden"):
+        assert forbidden not in rendered
+
+
+def test_retry_diagnosis_event_exposes_only_safe_syntax_coordinates() -> None:
+    """Surface actionable parent coordinates without parser text, paths, or source."""
+    path_sha256 = hashlib.sha256(b"src/general_ludd/private.py").hexdigest()
+    diagnosis = json.dumps(
+        {
+            "category": "python_syntax",
+            "column": 17,
+            "command_kind": "syntax_preflight",
+            "command_sha256": hashlib.sha256(b"syntax-preflight").hexdigest(),
+            "duration_ms": 9,
+            "exit_code": 2,
+            "failure_class": "python_syntax",
+            "finish_reason": "unknown",
+            "finished": True,
+            "hypothesis": "approved evaluation failed; correct only the typed phase",
+            "line": 41,
+            "path_sha256": path_sha256,
+            "phase": "syntax_preflight",
+            "protocol": "self-improve-evaluation-diagnosis-v2",
+            "schema_version": 3,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+    rendered = runner._render_retry_diagnosis_event(diagnosis)
+
+    assert rendered.endswith(
+        f"category=python_syntax path_sha256={path_sha256} line=41 column=17"
+    )
+    assert len(rendered.encode("ascii")) <= 384
+    for forbidden in (
+        "src/general_ludd/private.py",
+        "invalid syntax",
+        "source",
+        "SECRET_TOKEN",
+    ):
         assert forbidden not in rendered

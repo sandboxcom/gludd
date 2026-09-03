@@ -117,14 +117,21 @@ def apply_proposal(repo_root: Path, proposal: ProposalManifest) -> int:
             planned[destination] = (exists, before)
         exists, current = planned[destination]
         if edit.operation == "replace":
-            if not exists or current.count(edit.old_text) != 1:
-                raise ValueError(
-                    f"replace old_text must occur exactly once: {edit.path}"
+            if proposal.schema_version == 2:
+                if not exists or current != edit.old_text:
+                    raise ValueError(
+                        f"replace old_text must equal the complete trusted snapshot: {edit.path}"
+                    )
+                planned[destination] = (True, edit.new_text)
+            else:
+                if not exists or current.count(edit.old_text) != 1:
+                    raise ValueError(
+                        f"replace old_text must occur exactly once: {edit.path}"
+                    )
+                planned[destination] = (
+                    True,
+                    current.replace(edit.old_text, edit.new_text, 1),
                 )
-            planned[destination] = (
-                True,
-                current.replace(edit.old_text, edit.new_text, 1),
-            )
         elif edit.operation == "create":
             if exists:
                 raise ValueError(f"create target already exists: {edit.path}")

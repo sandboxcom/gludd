@@ -2111,12 +2111,15 @@ def _render_retry_diagnosis_event(diagnostics: str) -> str:
     """Render only allowlisted fields from the diagnosis consumed by a retry."""
     validated = safe_evaluation_retry_diagnosis(diagnostics)
     payload = cast(dict[str, object], json.loads(validated))
+    path_sha256 = payload["path_sha256"] or "none"
     rendered = (
         "SELF_IMPROVE_RETRY_DIAGNOSIS "
         f"protocol={payload['protocol']} phase={payload['phase']} "
         f"failure={payload['failure_class']} rc={payload['exit_code']} "
         f"duration_ms={payload['duration_ms']} "
-        f"command_sha256={payload['command_sha256']}"
+        f"command_sha256={payload['command_sha256']} "
+        f"category={payload['category']} path_sha256={path_sha256} "
+        f"line={payload['line']} column={payload['column']}"
     )
     if len(rendered.encode("ascii")) > EVALUATION_DIAGNOSIS_PROTOCOL.max_event_bytes:
         raise RuntimeError("retry diagnosis event exceeded its fixed byte bound")

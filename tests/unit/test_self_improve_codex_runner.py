@@ -2666,6 +2666,49 @@ def test_parent_syntax_preflight_rejects_exact_live_classes_with_safe_feedback(
     assert root.targets == ["agent-cleanup"]
 
 
+def test_live_v4_logical_line_materialization_prevents_syntax_concatenation(
+    tmp_path: Path,
+) -> None:
+    """Supply an omitted interior LF before syntax validation sees the candidate."""
+    relative = "src/general_ludd/example.py"
+    baseline = "def enabled() -> bool:\n    value = False\n    return value\n"
+    target = tmp_path / relative
+    target.parent.mkdir(parents=True)
+    target.write_text(baseline, encoding="utf-8")
+    proposal = comparison_module.CompactSpanProposal(
+        focus_path=relative,
+        edits=(
+            comparison_module.CompactLineSpan(
+                start_line=2,
+                old_line_count=1,
+                new_text="    value = True",
+            ),
+        ),
+    )
+    contract = comparison_module.ProposalContract(
+        baseline_sha="a" * 40,
+        task_id="S83.134",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+
+    manifest = comparison_module.expand_compact_span_proposals(
+        (proposal,),
+        contract=contract,
+        expected_path_groups=((relative,),),
+        expected_baseline_files={relative: baseline},
+        expected_editable_ranges=(((1, 4),),),
+    )
+    changed_lines = apply_proposal(tmp_path, manifest)
+
+    assert changed_lines == 2
+    assert target.read_text(encoding="utf-8") == (
+        "def enabled() -> bool:\n    value = True\n    return value\n"
+    )
+    assert runner_module._python_syntax_preflight(tmp_path, (relative,)) is None
+
+
 def test_parent_syntax_preflight_is_tokenize_aware_and_skips_non_python(
     tmp_path: Path,
 ) -> None:

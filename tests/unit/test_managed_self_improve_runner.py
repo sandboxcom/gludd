@@ -933,6 +933,96 @@ def test_proposal_apply_rolls_back_every_path_after_publish_failure(
     assert not list(tmp_path.rglob(".gludd-self-improve-*"))
 
 
+def test_snapshot_manifest_applies_empty_file_and_preserves_legacy_rejection(
+    tmp_path: Path,
+) -> None:
+    """Allow parent-authored exact snapshots without weakening schema-v1 replace."""
+    source = tmp_path / "src/general_ludd/example.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("", encoding="utf-8")
+    payload = {
+        "schema_version": 2,
+        "baseline_sha": "a" * 40,
+        "task_id": "S83.200",
+        "edits": [
+            {
+                "operation": "replace",
+                "path": "src/general_ludd/example.py",
+                "old_text": "",
+                "new_text": "value = 1\n",
+            }
+        ],
+        "tests": ["tests/unit/test_example.py"],
+        "make_commands": ["make test-files TESTFILES=tests/unit/test_example.py"],
+        "commit_message": "fix: apply bounded self-improvement proposal",
+    }
+
+    snapshot = ProposalManifest.from_json(json.dumps(payload))
+    assert apply_proposal(tmp_path, snapshot) == 1
+    assert source.read_text(encoding="utf-8") == "value = 1\n"
+
+    payload["schema_version"] = 1
+    with pytest.raises(ValueError, match="distinct non-empty old_text"):
+        ProposalManifest.from_json(json.dumps(payload))
+
+
+def test_snapshot_manifest_requires_exact_file_and_rolls_back_publish_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify full immutable preimages before atomically publishing any snapshot."""
+    first = tmp_path / "src/general_ludd/first.py"
+    second = tmp_path / "src/general_ludd/second.py"
+    first.parent.mkdir(parents=True)
+    first.write_text("same\nsame\n", encoding="utf-8")
+    second.write_text("other\n", encoding="utf-8")
+    payload = {
+        "schema_version": 2,
+        "baseline_sha": "a" * 40,
+        "task_id": "S83.200",
+        "edits": [
+            {
+                "operation": "replace",
+                "path": "src/general_ludd/first.py",
+                "old_text": "same\nsame\n",
+                "new_text": "same\nchanged\n",
+            },
+            {
+                "operation": "replace",
+                "path": "src/general_ludd/second.py",
+                "old_text": "other\n",
+                "new_text": "updated\n",
+            },
+        ],
+        "tests": ["tests/unit/test_example.py"],
+        "make_commands": ["make test-files TESTFILES=tests/unit/test_example.py"],
+        "commit_message": "fix: apply bounded self-improvement proposal",
+    }
+    proposal = ProposalManifest.from_json(json.dumps(payload))
+
+    first.write_text("drifted\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="complete trusted snapshot"):
+        apply_proposal(tmp_path, proposal)
+    assert first.read_text(encoding="utf-8") == "drifted\n"
+    assert second.read_text(encoding="utf-8") == "other\n"
+
+    first.write_text("same\nsame\n", encoding="utf-8")
+    real_replace = os.replace
+
+    def fail_second_publish(source_path: Path, destination_path: Path) -> None:
+        if destination_path == second and "self-improve-tmp" in source_path.name:
+            raise OSError("snapshot publish interrupted")
+        real_replace(source_path, destination_path)
+
+    monkeypatch.setattr(os, "replace", fail_second_publish)
+    with pytest.raises(OSError, match="snapshot publish interrupted"):
+        apply_proposal(tmp_path, proposal)
+
+    assert first.read_text(encoding="utf-8") == "same\nsame\n"
+    assert second.read_text(encoding="utf-8") == "other\n"
+    assert not list(tmp_path.rglob(".gludd-self-improve-*"))
+
+
 @pytest.mark.parametrize("nested", [False, True])
 def test_approved_plan_json_rejects_unknown_or_stale_fields(
     tmp_path: Path,

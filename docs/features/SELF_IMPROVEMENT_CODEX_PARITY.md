@@ -91,34 +91,38 @@ proposal fields. Managed `PromptPlan` requests put immutable
 focus-path marker. Managed output uses compact protocol v4: the model emits only
 `e` (edits), and every edit contains exactly `s`, `n`, and `z`. `s` is a
 one-based line boundary in the immutable baseline, `n` is the number of
-baseline lines consumed, and `z` is the replacement UTF-8 text. For each shown
+baseline lines consumed, and `z` contains logical replacement lines rather than
+trusted line-separator bytes. For each shown
 contiguous `Lx` through `Ly` section, a zero count may insert at any boundary
 `s=x` through `s=y+1`, including immediately before or after the section. A
 boundary wholly inside an omitted gap remains forbidden. Every coordinate
 addresses the original snapshot, never the result of an earlier edit. The owned
-worker decodes one typed `CompactSpanProposal` per shard and
-publishes the complete span batch atomically. The parent then resolves each span
-with `splitlines(keepends=True)` and deterministically widens its baseline slice
-only as far as needed to form a bounded unique old-text anchor. It preserves the
-canonical span order and infers create, delete, or replace from the trusted
-before/after state. Anchor widening cannot leave the same disclosed editable
-range, and neither the anchor nor snapshot is copied into retry diagnostics.
+worker decodes one typed `CompactSpanProposal` per shard and publishes the
+complete span batch atomically. The parent resolves each span with
+`splitlines(keepends=True)`, restores the immutable baseline's LF or CRLF
+convention and final-newline state, and materializes the complete result once in
+canonical coordinate order. It infers create, delete, or replace from that
+trusted before/after state. The schema-2 manifest carries the complete immutable
+file as the replace preimage, so application requires byte-exact snapshot
+equality without searching for a unique local anchor. Neither complete snapshot
+is copied into retry diagnostics.
 
 Path, old text, operation, and commit subject are not model-supplied. An absent
 file accepts only one non-empty insertion at `{s: 1, n: 0}`; deleting a file
 requires one span covering the complete shown file with empty `z`. Existing-file
 spans may arrive in any order; the parent sorts them by immutable snapshot
 coordinate before requiring distinct, non-overlapping, in-range spans wholly
-inside content disclosed by that prompt shard. A zero-count edit requires one of the
-closed boundary intervals derived from a shown contiguous section. Duplicate
-insertion boundaries,
-Boolean or non-integral coordinates, edits into omitted regions, inability to
-derive a unique bounded anchor, and a final file identical to the baseline are
-rejected. An existing empty file is therefore not treated as an absent-file
-create. Compact v4 accepts one to four spans per shard, and the existing 3,072 UTF-8-byte
+inside content disclosed by that prompt shard. A zero-count edit requires one of
+the closed boundary intervals derived from a shown contiguous section. Duplicate
+insertion boundaries, Boolean or non-integral coordinates, edits into omitted
+regions, and a final file identical to the baseline are rejected. An existing
+empty file may receive an insertion but is not treated as an absent-file create.
+Compact v4 accepts one to four spans per shard, and the existing 3,072 UTF-8-byte
 limit applies to their combined `z` text. The parent expands the validated spans
-to the complete trusted manifest and calls `ProposalManifest.from_json`, so the
-line coordinate is a compact addressing mechanism rather than new authority.
+to a complete trusted snapshot manifest and calls `ProposalManifest.from_json`.
+Schema 2 caps the combined complete preimage and result at 8,391,680 bytes;
+schema 1 retains its historical 1 MiB content cap. The line coordinate is
+therefore a compact addressing mechanism rather than new authority.
 The prompt names the compact shape because llama.cpp documents that a schema
 constrains sampling but is not injected into the model prompt.
 
@@ -175,8 +179,8 @@ parent-authored editable-range marker. The worker reads only that leading marker
 never `L...` source text or model output, and specializes `s` to a bounded integer
 enum containing the closed insertion boundaries of the trusted half-open ranges.
 Hidden-gap coordinates are absent from the grammar, while the unchanged parent
-validator still checks `n`, consumed lines, immutable snapshots, unique anchors,
-and exact application. More than 2,048 possible `s` values fails before grammar
+validator still checks `n`, consumed lines, immutable snapshots, complete-file
+preimages, and exact application. More than 2,048 possible `s` values fails before grammar
 construction instead of widening the schema. The marker is canonical ASCII JSON,
 is independently capped at 16,384 bytes before parsing, rejects duplicate or
 overlapping sections, and deduplicates the shared boundary of adjacent half-open
@@ -362,7 +366,7 @@ with 33 insertions and four deletions. Compact v4 now permits at most 64 consume
 old lines and 64 replacement lines in one edit, and at most 96 changed lines across
 all shards, counting consumed plus replacement lines. Sixty-four is larger than
 the reference's complete 37-line change, and 96 provides more than 2.5 times that
-observed budget while rejecting the 360-line rewrite before anchor derivation,
+observed budget while rejecting the 360-line rewrite before snapshot materialization,
 worktree creation, or syntax evaluation.
 
 The range-specialized llama.cpp schema binds `n.maximum` to the smaller of 64 and
@@ -385,6 +389,36 @@ the prior model's failed patch. The next live acceptance must admit a proposal n
 larger than the 37-line reference, reject any over-96-line proposal with only safe
 count telemetry, publish syntax coordinates without authored text, and release all
 leases and temporary worktrees on either path.
+
+A later bounded live pass exposed a byte-boundary defect after those controls:
+Qwen3B proposed 48 changed lines against the 37-line reference but still reached
+syntax failure, while StarCoder2 supplied valid bounded immutable coordinates that
+were rejected because a repeated baseline slice was not a unique string. The old
+compiler concatenated `z` directly with the untouched suffix. Thus an interior
+logical replacement such as `changed` could become `changednext\n`; insertion at
+EOF in a file without a final newline could similarly join two logical lines.
+
+Compact v4 now makes newline materialization a trusted-parent responsibility.
+Model text is split into logical lines, rendered with the baseline's LF or CRLF
+separator, and joined to untouched neighbors while preserving whether the file
+ended in a newline. Immutable coordinates are then compiled into one schema-2
+whole-file replacement (or complete create/delete), and both comparison and apply
+require the current file to equal that complete preimage. Repeated blank lines,
+repeated closing lines, and empty files therefore need no fuzzy search or unique
+substring. The approved-plan limit remains 4,194,304 bytes, and schema 2's
+8,391,680-byte aggregate preimage/result ceiling bounds materialization and its
+serialized artifact. Schema-1 replace semantics and public error text remain
+unchanged.
+
+The production retry record now includes diagnosis-v2's allowlisted category,
+path SHA-256, line, and column; absent coordinates use fixed sentinel values.
+Replacement text, source, raw paths, parser messages, and command output remain
+excluded. The line-materialization policy, schema version, complete-preimage
+rule, byte ceiling, prompt digest, and strict decoder revision rotate compact-v4
+attempt identity without changing stored v1-v3 evidence. The next live acceptance
+must apply the 37-line reference-shaped change without token concatenation or a
+unique-anchor rejection, preserve LF/CRLF and final-newline state, expose only
+bounded safe syntax coordinates on failure, and clean every temporary worktree.
 
 A September 2026 DeepSeek catalog attempt then exposed a separate parent-side
 gap. Both compact-v3 shards completed and passed worker schema validation, but a
@@ -440,10 +474,11 @@ and grammar states, and adds no package or system-tool owner.
 
 ### Compatibility, rollout, and rollback
 
-Compact v4 is a managed-proposal wire migration, not a manifest or database
-migration. Each accepted span is expanded to the same complete
-`ProposalManifest` consumed by comparison and application. Legacy single-string
-callers continue to submit that complete manifest on their separate path.
+Compact v4 is a managed-proposal wire migration plus an internal manifest schema
+extension, not a database migration. Each accepted span is expanded to a
+schema-2 complete-snapshot `ProposalManifest` consumed by comparison and
+application. Legacy single-string callers continue to submit schema-1 manifests
+on their separate byte-stable path.
 Managed compact-v3 `{a,z}` objects are not guessed into v4 coordinates and v4
 objects are not accepted by a v3 decoder; the versioned schema, prompt, decoder,
 and span rules all rotate the complete attempt digest. Historical v3 outcome
@@ -468,12 +503,14 @@ descriptor and decoder; its digest naturally selects the earlier compatible
 evidence without rewriting records or restarting a data service. This preserves
 zero downtime while making the migration fail closed in both directions.
 
-Snapshots are bounded by the existing 2 MiB-per-file and 32-path limits, are
-excluded from diagnostics and dataclass representations, and live only for the
-one runner invocation. They add no daemon, database, file lease, or persistent
-artifact. Rollback removes the parent precondition phase and restores the prior
-attempt identity; existing immutable outcome evidence remains scoped to the
-protocol digest that produced it, preserving ZDD during either version.
+Approved-plan input is bounded at 4,194,304 bytes and 32 paths; a schema-2
+manifest additionally caps its combined complete preimages and results at
+8,391,680 bytes. Snapshots are excluded from diagnostics and dataclass
+representations and live only for the one runner invocation. They add no daemon,
+database, file lease, or persistent artifact. Rollback restores the prior
+materialization policy and attempt identity; existing immutable outcome evidence
+remains scoped to the protocol digest that produced it, preserving ZDD during
+either version.
 
 Grammar construction and inference remain inside the owned proposal worker. The
 model factory runs once after request admission. Each shard then invokes the
@@ -509,9 +546,10 @@ The runner therefore hashes one canonical JSON descriptor containing the exact
 - proposal token bound, deterministic temperature and seed, required stop
   policy, and allowlisted finish classifications; and
 - exact compact root/edit fields, one-based span convention, insertion boundary,
-  ordering and overlap policy, snapshot/excerpt authorization, unique-anchor
-  derivation, operation mapping, authoritative manifest schema and limits, path
-  policy, batch protocol, and strict parent-decoder version.
+  ordering and overlap policy, snapshot/excerpt authorization, trusted newline
+  materialization, complete-file preimage comparison, operation mapping,
+  authoritative manifest schema and limits, path policy, batch protocol, and
+  strict parent-decoder version.
 
 Sorted-key serialization makes retry-identical inputs stable. Per-attempt
 diagnostic content, model path, cache path, hardware details, process
