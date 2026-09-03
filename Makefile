@@ -5664,7 +5664,7 @@ test-self-improve-failure-corpus:
 test-self-improve-multifile:
 	@case "$(SELF_IMPROVE_MULTIFILE_LIVE)" in 0|1) ;; *) echo "SELF_IMPROVE_MULTIFILE_LIVE must be 0 or 1"; exit 2;; esac
 	@ACTUAL_FIXTURE_SHA256="$$($(PYTHON) -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "config/self-improve/context-budget-lifecycle.json")"; \
-		[ "$$ACTUAL_FIXTURE_SHA256" = "dd31576d14d1f6c996a8ce55909a167c3d7e6da38c8579f9bdb621181dd71a63" ] || { echo "multifile fixture drift: expected=dd31576d14d1f6c996a8ce55909a167c3d7e6da38c8579f9bdb621181dd71a63 actual=$$ACTUAL_FIXTURE_SHA256"; exit 2; }
+		[ "$$ACTUAL_FIXTURE_SHA256" = "33e86fabb8514219b463ee3e95e45656dcf8b069b33f180f09ea566dbff52f35" ] || { echo "multifile fixture drift: expected=33e86fabb8514219b463ee3e95e45656dcf8b069b33f180f09ea566dbff52f35 actual=$$ACTUAL_FIXTURE_SHA256"; exit 2; }
 	@$(MAKE) --no-print-directory test-self-improve TARGET=multifile-context-lifecycle SELF_IMPROVE_MODEL_PATH= SELF_IMPROVE_BASELINE_REF=80b381bd87f32487d784964ce93566e3b016b191 SELF_IMPROVE_REFERENCE_REF=6463324cfcf6db9b9a2f9ec203e0bd3862a1e80e SELF_IMPROVE_TASK_FILE=config/self-improve/context-budget-lifecycle.json SELF_IMPROVE_MAX_ATTEMPTS=2 SELF_IMPROVE_VALIDATE_ONLY="$(if $(filter 1,$(SELF_IMPROVE_MULTIFILE_LIVE)),0,1)"
 
 # Verify an immutable managed-promotion marker only on development history.

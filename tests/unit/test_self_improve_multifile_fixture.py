@@ -8,13 +8,66 @@ import re
 from configparser import ConfigParser
 from pathlib import Path
 
-from scripts.run_self_improve_e2e import TaskSpec
+from general_ludd.self_improve.managed_runner import TaskSpec
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "config/self-improve/context-budget-lifecycle.json"
 DOCUMENT = ROOT / "docs/features/SELF_IMPROVEMENT_MULTIFILE_FIXTURE.md"
 COVERAGE_CONFIG = ROOT / "config/coverage_self_improve.ini"
-FIXTURE_SHA256 = "dd31576d14d1f6c996a8ce55909a167c3d7e6da38c8579f9bdb621181dd71a63"
+FIXTURE_SHA256 = "33e86fabb8514219b463ee3e95e45656dcf8b069b33f180f09ea566dbff52f35"
+COVERAGE_TEST_SELECTOR = (
+    "tests/unit/test_project*.py",
+    "tests/unit/test_daemon*.py",
+    "tests/unit/test_event_loop*.py",
+    "tests/unit/test_self_improve*.py",
+    "tests/unit/test_managed_self_improve*.py",
+    "tests/unit/test_worker*.py",
+    "tests/unit/test_job*.py",
+    "tests/unit/test_approval*.py",
+    "tests/unit/test_runtime*.py",
+    "tests/unit/test_router*.py",
+    "tests/unit/test_managed_promotion*.py",
+    "tests/unit/test_beta4_hosted_self_improve_coverage.py",
+    "tests/unit/test_c13_self_improve_gate.py",
+    "tests/unit/test_cli_self_improve.py",
+    "tests/unit/test_ornith_self_improve_role.py",
+    "tests/unit/test_reload_self_improve.py",
+    "tests/unit/test_small_models_recommender_branch_coverage.py",
+    "tests/unit/test_gap_fixes.py",
+    "tests/unit/test_c21_alpha4_open.py",
+    "tests/unit/test_c21_alpha4_leftovers.py",
+    "tests/unit/test_generation_tool_dispatch.py",
+    "tests/unit/test_toolcallloop_work_types.py",
+    "tests/unit/test_adaptive_routing.py",
+    "tests/unit/test_scheduler_self_update_branch.py",
+    "tests/unit/test_completion_audit_wiring.py",
+    "tests/unit/test_ab_test_dispatch.py",
+    "tests/unit/test_task48_debt_eval_seam.py",
+    "tests/unit/test_floor_controller_wiring.py",
+    "tests/unit/test_run_recorder_daemon_wiring.py",
+)
+COVERAGE_SOURCES = (
+    "*/scripts/run_self_improve_e2e.py",
+    "*/scripts/self_improve_local_proposal.py",
+    "*/src/general_ludd/self_improve/codex_comparison.py",
+    "*/src/general_ludd/self_improve/model_candidate_planner.py",
+    "*/src/general_ludd/self_improve/model_lifecycle.py",
+    "*/src/general_ludd/small_models/recommender.py",
+    "*/src/general_ludd/self_improve/managed_runner.py",
+    "*/src/general_ludd/self_improve/runtime.py",
+    "*/src/general_ludd/self_improve/result_artifact.py",
+    "*/src/general_ludd/self_improve/staging.py",
+    "*/src/general_ludd/self_improve/approval.py",
+    "*/src/general_ludd/self_improve/promotion.py",
+    "*/src/general_ludd/db/promotion_repository.py",
+    "*/src/general_ludd/projects/repository_binding.py",
+    "*/src/general_ludd/projects/manager.py",
+    "*/src/general_ludd/routers/self_improve.py",
+    "*/src/general_ludd/schemas/job.py",
+    "*/src/general_ludd/event_loop/loop.py",
+    "*/src/general_ludd/worker/app.py",
+    "*/src/general_ludd/daemon.py",
+)
 OBJECTIVE = (
     "Fix the local-model self-improvement runner so it rejects model candidates "
     "whose native context cannot hold the full rendered prompt and required proposal, "
@@ -29,42 +82,15 @@ COMMANDS = (
     'tests/unit/test_self_improve_runner_model_lifecycle.py '
     'tests/unit/test_self_improve_codex_runner.py" '
     'PYTEST_ARGS="-q -W error --tb=short"',
-    'make coverage-files COVERAGE_TESTFILES="'
-    'tests/unit/test_self_improve_acquisition_trace_corpus.py '
-    'tests/unit/test_self_improve_apply.py '
-    'tests/unit/test_self_improve_approval.py '
-    'tests/unit/test_self_improve_approval_release.py '
-    'tests/unit/test_self_improve_catalog_truth_fixture.py '
-    'tests/unit/test_self_improve_codex_comparison.py '
-    'tests/unit/test_self_improve_codex_runner.py '
-    'tests/unit/test_self_improve_evaluator.py '
-    'tests/unit/test_self_improve_failure_corpus.py '
-    'tests/unit/test_self_improve_failure_corpus_edges.py '
-    'tests/unit/test_self_improve_failure_corpus_target.py '
-    'tests/unit/test_self_improve_harness.py '
-    'tests/unit/test_self_improve_hf_auth_mode.py '
-    'tests/unit/test_self_improve_local_worker.py '
-    'tests/unit/test_self_improve_model_acquisition_bounds.py '
-    'tests/unit/test_self_improve_model_acquisition_observability.py '
-    'tests/unit/test_self_improve_model_candidate_planner.py '
-    'tests/unit/test_self_improve_model_lifecycle.py '
-    'tests/unit/test_self_improve_model_lifecycle_deep.py '
-    'tests/unit/test_self_improve_model_plan_reservations.py '
-    'tests/unit/test_self_improve_model_target_contract.py '
-    'tests/unit/test_self_improve_multifile_fixture.py '
-    'tests/unit/test_self_improve_outcomes.py '
-    'tests/unit/test_self_improve_persistent_model_evidence.py '
-    'tests/unit/test_self_improve_prompt_plan.py '
-    'tests/unit/test_self_improve_retained_worker.py '
-    'tests/unit/test_self_improve_runner_model_lifecycle.py '
-    'tests/unit/test_self_improve_security.py '
-    'tests/unit/test_self_improve_slice.py '
-    'tests/unit/test_self_improve_task_diversity.py '
-    'tests/unit/test_self_improve_wiring.py '
-    'tests/unit/test_small_models_recommender_branch_coverage.py" '
-    'COVERAGE_CONFIG=config/coverage_self_improve.ini '
-    'COVERAGE_REPORT=.gate-logs/coverage-self-improve.json '
-    'COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75',
+    (
+        'make coverage-files COVERAGE_TESTFILES="'
+        + " ".join(COVERAGE_TEST_SELECTOR)
+        + '" COVERAGE_CONFIG=config/coverage_self_improve.ini '
+        'COVERAGE_REPORT=.gate-logs/coverage-self-improve.json '
+        'COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 '
+        'OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 '
+        'OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20'
+    ),
     'make lint-files FILES="scripts/run_self_improve_e2e.py '
     'src/general_ludd/self_improve/codex_comparison.py '
     'src/general_ludd/self_improve/model_candidate_planner.py '
@@ -126,28 +152,31 @@ def test_canonical_coverage_runs_every_self_improvement_contract() -> None:
     )
     match = re.search(r'COVERAGE_TESTFILES="([^"]+)"', coverage_command)
     assert match is not None
-    canonical_tests = set(match.group(1).split())
-    required_tests = {
+    canonical_selector = tuple(match.group(1).split())
+    selected_tests: set[str] = set()
+    for selector in COVERAGE_TEST_SELECTOR:
+        matches = {
+            path.relative_to(ROOT).as_posix()
+            for path in ROOT.glob(selector)
+        }
+        assert matches, selector
+        selected_tests.update(matches)
+    required_self_improve_tests = {
         path.relative_to(ROOT).as_posix()
-        for path in (ROOT / "tests/unit").glob("test_self_improve_*.py")
+        for path in (ROOT / "tests/unit").glob("test_*self_improve*.py")
     }
-    required_tests.add("tests/unit/test_small_models_recommender_branch_coverage.py")
 
     coverage_config = ConfigParser()
     coverage_config.read(COVERAGE_CONFIG, encoding="utf-8")
-    configured_sources = {
+    configured_sources = tuple(
         line for line in coverage_config["run"]["include"].splitlines() if line
-    }
+    )
 
-    assert configured_sources == {
-        "*/scripts/run_self_improve_e2e.py",
-        "*/scripts/self_improve_local_proposal.py",
-        "*/src/general_ludd/self_improve/codex_comparison.py",
-        "*/src/general_ludd/self_improve/model_candidate_planner.py",
-        "*/src/general_ludd/self_improve/model_lifecycle.py",
-        "*/src/general_ludd/small_models/recommender.py",
-    }
-    assert required_tests <= canonical_tests, sorted(required_tests - canonical_tests)
+    assert canonical_selector == COVERAGE_TEST_SELECTOR
+    assert configured_sources == COVERAGE_SOURCES
+    assert required_self_improve_tests <= selected_tests, sorted(
+        required_self_improve_tests - selected_tests
+    )
     assert "COVERAGE_AGGREGATE_MIN=85" in coverage_command
     assert "COVERAGE_PER_FILE_MIN=75" in coverage_command
 

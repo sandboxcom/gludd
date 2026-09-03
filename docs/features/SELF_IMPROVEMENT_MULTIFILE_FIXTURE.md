@@ -8,7 +8,7 @@ Status: tracked, deterministic sentinel for the managed self-improvement path.
 | --- | --- |
 | Task | `S83.133` (`multifile-context-lifecycle`) |
 | Fixture | `config/self-improve/context-budget-lifecycle.json` |
-| Fixture SHA-256 | `dd31576d14d1f6c996a8ce55909a167c3d7e6da38c8579f9bdb621181dd71a63` |
+| Fixture SHA-256 | `33e86fabb8514219b463ee3e95e45656dcf8b069b33f180f09ea566dbff52f35` |
 | Baseline | `80b381bd87f32487d784964ce93566e3b016b191` |
 | Independent Codex reference | `6463324cfcf6db9b9a2f9ec203e0bd3862a1e80e` |
 | Candidate limit | Two attempts, stopped after the first accepted candidate |
@@ -21,9 +21,10 @@ task requires native-context admission, a five-minute worker deadline, explicit
 lease-release and persistent outcome evidence, and a bounded terminal diagnostic.
 Its six canonical Make commands preserve the same exact protocol, test, static,
 and branch-coverage obligations given to the independent Codex reference. The
-coverage command runs all 31 focused `test_self_improve_*.py` contracts plus the
-dedicated recommender branch suite against every source in
-`config/coverage_self_improve.ini`.
+coverage command reuses the deterministic repository-binding selector, including
+all self-improvement contracts and the adjacent project, job, router, EventLoop,
+worker, promotion, and daemon seams. It measures all 20 managed-lifecycle sources
+in `config/coverage_self_improve.ini`.
 
 The compact, sorted-key, newline-terminated JSON and its digest are immutable
 inputs. The wrapper checks the raw bytes before the shared strict parser or any
