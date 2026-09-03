@@ -1,4 +1,4 @@
-"""S83.139 structural ratchet for near-threshold self-improvement services."""
+"""S83.139 structural ratchet for near-threshold service modules."""
 
 import runpy
 from collections.abc import Callable
