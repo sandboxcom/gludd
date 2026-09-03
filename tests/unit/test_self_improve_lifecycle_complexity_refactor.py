@@ -12,6 +12,7 @@ _SCOPED_MODULES = (
     _SOURCE_ROOT / "self_improve" / "model_candidate_planner.py",
     _SOURCE_ROOT / "self_improve" / "apply.py",
     _SOURCE_ROOT / "self_update" / "applier.py",
+    _SOURCE_ROOT / "self_update" / "apply.py",
 )
 
 

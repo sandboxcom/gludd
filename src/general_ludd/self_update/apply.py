@@ -114,6 +114,7 @@ class ApplyResult:
 
     @property
     def applied(self) -> bool:
+        """Return whether the plan was applied successfully."""
         return self.outcome == ApplyOutcome.APPLIED
 
 
@@ -150,6 +151,228 @@ def _any_protected(target_files: tuple[str, ...], role: str | None) -> str | Non
 #: when explicitly provided — see apply_plan's contract for code-tier.
 ValidateFn = Callable[[SelfUpdatePlan], tuple[bool, str]]
 AuditSink = Callable[[AuditRecord], None]
+
+
+def _audit_record(
+    plan: SelfUpdatePlan,
+    request: SelfUpdateRequest,
+    outcome: str,
+    tier: ApplyTier,
+    reason: str,
+    *,
+    approved: bool = False,
+) -> AuditRecord:
+    """Build one immutable decision record from the effective plan."""
+    return AuditRecord(
+        outcome=outcome,
+        subsystem=plan.subsystem.value,
+        change_kind=plan.change_kind.value,
+        apply_tier=tier.value,
+        target_files=plan.target_files,
+        requested_by=request.requested_by,
+        reason=reason,
+        approved=approved,
+    )
+
+
+def _emit_apply_result(
+    record: AuditRecord,
+    audit_sink: AuditSink | None,
+) -> ApplyResult:
+    """Publish one decision before returning its public result."""
+    if audit_sink is not None:
+        audit_sink(record)
+    landed = record.target_files if record.outcome == ApplyOutcome.APPLIED else ()
+    return ApplyResult(
+        outcome=record.outcome,
+        audit=record,
+        landed_files=landed,
+    )
+
+
+def _protected_path_decision(
+    plan: SelfUpdatePlan,
+    request: SelfUpdateRequest,
+    *,
+    role: str,
+    has_approval: bool,
+    audit_sink: AuditSink | None,
+) -> tuple[SelfUpdatePlan, ApplyResult | None]:
+    """Refuse protected targets or escalate an approved target to code tier."""
+    offending = _any_protected(plan.target_files, role)
+    if offending is None:
+        return plan, None
+    if _is_hard_denied(offending) or not has_approval:
+        result = _emit_apply_result(
+            _audit_record(
+                plan,
+                request,
+                ApplyOutcome.REFUSED,
+                ApplyTier.REFUSED,
+                f"refused: target {offending!r} is a protected "
+                f"guardrail/policy/security/settings path "
+                f"({'hard-deny' if _is_hard_denied(offending) else 'no approval token'})",
+            ),
+            audit_sink,
+        )
+        return plan, result
+    escalated = SelfUpdatePlan(
+        subsystem=plan.subsystem,
+        change_kind=ChangeKind.CODE_CHANGE,
+        target_files=plan.target_files,
+        apply_tier=ApplyTier.CODE,
+        requires_approval=True,
+        rationale=plan.rationale + " | escalated: approved protected-path edit",
+        confidence=plan.confidence,
+    )
+    return escalated, None
+
+
+def _routing_decision(
+    plan: SelfUpdatePlan,
+    request: SelfUpdateRequest,
+    *,
+    has_approval: bool,
+    audit_sink: AuditSink | None,
+) -> ApplyResult | None:
+    """Defer unknown or explicitly approval-bound plans before tier routing."""
+    if plan.subsystem.value == "unknown" or plan.change_kind is ChangeKind.UNKNOWN:
+        return _emit_apply_result(
+            _audit_record(
+                plan,
+                request,
+                ApplyOutcome.AWAITING_APPROVAL,
+                plan.apply_tier,
+                "deferred: unroutable request (unknown subsystem/change-kind) "
+                "— requires operator approval + manual targeting",
+            ),
+            audit_sink,
+        )
+    if plan.requires_approval and not has_approval:
+        return _emit_apply_result(
+            _audit_record(
+                plan,
+                request,
+                ApplyOutcome.AWAITING_APPROVAL,
+                plan.apply_tier,
+                "deferred: requires_approval and no valid approval token "
+                "(fail-closed)",
+            ),
+            audit_sink,
+        )
+    return None
+
+
+def _apply_config_tier(
+    plan: SelfUpdatePlan,
+    request: SelfUpdateRequest,
+    *,
+    validate: ValidateFn | None,
+    audit_sink: AuditSink | None,
+    auto_apply_config: bool,
+    has_approval: bool,
+) -> ApplyResult:
+    """Apply or defer one validated config/scaffold-tier plan."""
+    if not plan.target_files:
+        record = _audit_record(
+            plan,
+            request,
+            ApplyOutcome.AWAITING_APPROVAL,
+            plan.apply_tier,
+            "deferred: no concrete target file resolved — refusing to "
+            "auto-apply without a target",
+        )
+    elif validate is not None:
+        ok, detail = validate(plan)
+        if not ok:
+            record = _audit_record(
+                plan,
+                request,
+                ApplyOutcome.VALIDATION_FAILED,
+                plan.apply_tier,
+                f"validation failed before landing: {detail}",
+            )
+        elif not auto_apply_config:
+            record = _audit_record(
+                plan,
+                request,
+                ApplyOutcome.AWAITING_APPROVAL,
+                plan.apply_tier,
+                "deferred: auto-apply disabled by caller",
+            )
+        else:
+            record = _audit_record(
+                plan,
+                request,
+                ApplyOutcome.APPLIED,
+                plan.apply_tier,
+                f"auto-applied {plan.apply_tier.value}-tier change "
+                f"(hot-reloadable, no protected path involved)",
+                approved=has_approval,
+            )
+    elif not auto_apply_config:
+        record = _audit_record(
+            plan,
+            request,
+            ApplyOutcome.AWAITING_APPROVAL,
+            plan.apply_tier,
+            "deferred: auto-apply disabled by caller",
+        )
+    else:
+        record = _audit_record(
+            plan,
+            request,
+            ApplyOutcome.APPLIED,
+            plan.apply_tier,
+            f"auto-applied {plan.apply_tier.value}-tier change "
+            f"(hot-reloadable, no protected path involved)",
+            approved=has_approval,
+        )
+    return _emit_apply_result(record, audit_sink)
+
+
+def _apply_code_tier(
+    plan: SelfUpdatePlan,
+    request: SelfUpdateRequest,
+    *,
+    validate: ValidateFn | None,
+    audit_sink: AuditSink | None,
+    has_approval: bool,
+) -> ApplyResult:
+    """Apply approved validated code, otherwise return the fail-closed result."""
+    if not has_approval:
+        record = _audit_record(
+            plan,
+            request,
+            ApplyOutcome.AWAITING_APPROVAL,
+            ApplyTier.CODE,
+            "deferred: code-tier change requires explicit operator approval",
+        )
+    elif validate is None:
+        record = _audit_record(
+            plan,
+            request,
+            ApplyOutcome.VALIDATION_FAILED,
+            ApplyTier.CODE,
+            "refused: approved code change has no validate gate "
+            "(fail-closed — unverified code is never landed)",
+            approved=True,
+        )
+    else:
+        ok, detail = validate(plan)
+        record = _audit_record(
+            plan,
+            request,
+            ApplyOutcome.APPLIED if ok else ApplyOutcome.VALIDATION_FAILED,
+            ApplyTier.CODE,
+            (
+                "applied approved + validated code-tier change"
+                if ok
+                else f"validation failed before landing: {detail}"
+            ),
+            approved=True,
+        )
+    return _emit_apply_result(record, audit_sink)
 
 
 def apply_plan(
@@ -190,168 +413,43 @@ def apply_plan(
     The ``role`` is threaded into the capability lattice so a role lacking
     ``collections_self_modify`` cannot drive a collections write through here.
     """
-    role = role or request.requested_by
-    # SU-A: an approval token is honoured ONLY when it matches a configured
-    # secret under constant-time comparison. The previous ``bool(token)`` check
-    # let ANY non-empty string approve a protected/code-tier change. Fail-closed:
-    # ``verify_psk`` returns False when EITHER the presented token OR the expected
-    # secret is empty, so an unset secret (the default) makes approval impossible.
+    effective_role = role or request.requested_by
     expected_secret = (
         approval_secret
         if approval_secret is not None
         else os.environ.get("GLUDD_SELF_UPDATE_APPROVAL_SECRET", "")
     )
     has_approval = verify_psk(request.approval_token or "", expected_secret)
-
-    def _emit(record: AuditRecord) -> ApplyResult:
-        if audit_sink is not None:
-            audit_sink(record)
-        landed = (
-            record.target_files
-            if record.outcome == ApplyOutcome.APPLIED
-            else ()
+    effective_plan, protected_result = _protected_path_decision(
+        plan,
+        request,
+        role=effective_role,
+        has_approval=has_approval,
+        audit_sink=audit_sink,
+    )
+    if protected_result is not None:
+        return protected_result
+    routing_result = _routing_decision(
+        effective_plan,
+        request,
+        has_approval=has_approval,
+        audit_sink=audit_sink,
+    )
+    if routing_result is not None:
+        return routing_result
+    if effective_plan.apply_tier in (ApplyTier.CONFIG, ApplyTier.SCAFFOLD):
+        return _apply_config_tier(
+            effective_plan,
+            request,
+            validate=validate,
+            audit_sink=audit_sink,
+            auto_apply_config=auto_apply_config,
+            has_approval=has_approval,
         )
-        return ApplyResult(outcome=record.outcome, audit=record, landed_files=landed)
-
-    def _record(outcome: str, tier: ApplyTier, reason: str, approved: bool = False) -> AuditRecord:
-        return AuditRecord(
-            outcome=outcome,
-            subsystem=plan.subsystem.value,
-            change_kind=plan.change_kind.value,
-            apply_tier=tier.value,
-            target_files=plan.target_files,
-            requested_by=request.requested_by,
-            reason=reason,
-            approved=approved,
-        )
-
-    # --- 1. Protected-path / guard refusal (the critical gate) -------------
-    offending = _any_protected(plan.target_files, role)
-    if offending is not None:
-        if _is_hard_denied(offending) or not has_approval:
-            return _emit(
-                _record(
-                    ApplyOutcome.REFUSED,
-                    ApplyTier.REFUSED,
-                    f"refused: target {offending!r} is a protected "
-                    f"guardrail/policy/security/settings path "
-                    f"({'hard-deny' if _is_hard_denied(offending) else 'no approval token'})",
-                )
-            )
-        # A non-hard-deny protected path WITH an explicit approval token still
-        # routes through the code-tier approval gate below (never auto-applies).
-        plan = SelfUpdatePlan(
-            subsystem=plan.subsystem,
-            change_kind=ChangeKind.CODE_CHANGE,
-            target_files=plan.target_files,
-            apply_tier=ApplyTier.CODE,
-            requires_approval=True,
-            rationale=plan.rationale + " | escalated: approved protected-path edit",
-            confidence=plan.confidence,
-        )
-
-    # --- 2. Unknown / unroutable -> defer for approval ---------------------
-    if plan.subsystem.value == "unknown" or plan.change_kind is ChangeKind.UNKNOWN:
-        return _emit(
-            _record(
-                ApplyOutcome.AWAITING_APPROVAL,
-                plan.apply_tier,
-                "deferred: unroutable request (unknown subsystem/change-kind) "
-                "— requires operator approval + manual targeting",
-            )
-        )
-
-    # --- 2b. requires_approval gate (SU-B) ---------------------------------
-    # The classifier sets ``requires_approval`` on any plan a human must sign
-    # off before it can land — e.g. a SECURITY-subsystem CONFIG VALUE_EDIT.
-    # apply_plan previously never consulted this flag, so such a plan would fall
-    # through to the CONFIG/SCAFFOLD auto-apply branch and land WITHOUT approval.
-    # Fail-closed: if the plan requires approval and no VALID approval token was
-    # presented, defer for approval before reaching any auto-apply rung.
-    if plan.requires_approval and not has_approval:
-        return _emit(
-            _record(
-                ApplyOutcome.AWAITING_APPROVAL,
-                plan.apply_tier,
-                "deferred: requires_approval and no valid approval token "
-                "(fail-closed)",
-            )
-        )
-
-    # --- 3. Tier ladder ----------------------------------------------------
-    if plan.apply_tier in (ApplyTier.CONFIG, ApplyTier.SCAFFOLD):
-        if not plan.target_files:
-            return _emit(
-                _record(
-                    ApplyOutcome.AWAITING_APPROVAL,
-                    plan.apply_tier,
-                    "deferred: no concrete target file resolved — refusing to "
-                    "auto-apply without a target",
-                )
-            )
-        if validate is not None:
-            ok, detail = validate(plan)
-            if not ok:
-                return _emit(
-                    _record(
-                        ApplyOutcome.VALIDATION_FAILED,
-                        plan.apply_tier,
-                        f"validation failed before landing: {detail}",
-                    )
-                )
-        if not auto_apply_config:
-            return _emit(
-                _record(
-                    ApplyOutcome.AWAITING_APPROVAL,
-                    plan.apply_tier,
-                    "deferred: auto-apply disabled by caller",
-                )
-            )
-        return _emit(
-            _record(
-                ApplyOutcome.APPLIED,
-                plan.apply_tier,
-                f"auto-applied {plan.apply_tier.value}-tier change "
-                f"(hot-reloadable, no protected path involved)",
-                approved=has_approval,
-            )
-        )
-
-    # CODE tier: always requires approval.
-    if not has_approval:
-        return _emit(
-            _record(
-                ApplyOutcome.AWAITING_APPROVAL,
-                ApplyTier.CODE,
-                "deferred: code-tier change requires explicit operator approval",
-            )
-        )
-    # Approved code change: must pass validate; a missing validator fails closed.
-    if validate is None:
-        return _emit(
-            _record(
-                ApplyOutcome.VALIDATION_FAILED,
-                ApplyTier.CODE,
-                "refused: approved code change has no validate gate "
-                "(fail-closed — unverified code is never landed)",
-                approved=True,
-            )
-        )
-    ok, detail = validate(plan)
-    if not ok:
-        return _emit(
-            _record(
-                ApplyOutcome.VALIDATION_FAILED,
-                ApplyTier.CODE,
-                f"validation failed before landing: {detail}",
-                approved=True,
-            )
-        )
-    return _emit(
-        _record(
-            ApplyOutcome.APPLIED,
-            ApplyTier.CODE,
-            "applied approved + validated code-tier change",
-            approved=True,
-        )
+    return _apply_code_tier(
+        effective_plan,
+        request,
+        validate=validate,
+        audit_sink=audit_sink,
+        has_approval=has_approval,
     )
