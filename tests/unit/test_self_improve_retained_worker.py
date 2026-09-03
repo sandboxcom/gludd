@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -800,6 +801,656 @@ def test_parent_carries_repair_sampling_profile_through_owned_worker(
     assert all(not path.exists() for path in owned.exchange_paths)
 
 
+def test_parent_selects_first_syntax_valid_repair_candidate(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Reject a compact-valid syntax failure, then select the next bounded seed."""
+    plan = replace(
+        _v4_plan(),
+        sampling_profile=COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    )
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    contracts: list[ProposalContract] = []
+    candidate_prompts: list[tuple[int, str]] = []
+
+    class Gateway:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> CompactSpanProposal:
+            assert contract is not None
+            contracts.append(contract)
+            candidate_prompts.append((contract.sampling_candidate_index, prompt))
+            focus = next(
+                line.split("=", 1)[1]
+                for line in prompt.splitlines()
+                if line.startswith("GLUDD_SELF_IMPROVE_FOCUS_PATH=")
+            )
+            replacement = (
+                "if True print('rejected-secret')\n"
+                if contract.sampling_candidate_index == 0 and focus == "src/one.py"
+                else "after = 1\n"
+            )
+            return worker_module._decode_compact_span_proposal(
+                json.dumps({"e": [{"s": 1, "n": 1, "z": replacement}]}),
+                focus_path=focus,
+            )
+
+    owned = _InProcessOwnedRunner(Gateway)
+    task, reference = _task_and_reference()
+
+    generated = runner_module._generate_local_proposal_plan_result(
+        owned,
+        model_path,
+        plan,
+        task,
+        reference,
+    )
+
+    assert len(owned.calls) == 3
+    assert [contract.sampling_candidate_index for contract in contracts] == [0, 0, 1]
+    assert len({contract.sampling_seed for contract in contracts}) == 3
+    assert len({contract.sampling_context_sha256 for contract in contracts}) == 3
+    second_candidate_prompts = [
+        prompt for index, prompt in candidate_prompts if index == 1
+    ]
+    assert second_candidate_prompts
+    assert len(second_candidate_prompts) == 1
+    assert "GLUDD_SELF_IMPROVE_FOCUS_PATH=src/one.py" in second_candidate_prompts[0]
+    assert "src/two.py" not in second_candidate_prompts[0]
+    assert all("rejected-secret" in prompt for prompt in second_candidate_prompts)
+    assert all("\"category\":\"python_syntax\"" in prompt for prompt in second_candidate_prompts)
+    assert all("\"line\":1" in prompt for prompt in second_candidate_prompts)
+    assert all("\"path_sha256\":" in prompt for prompt in second_candidate_prompts)
+    assert all(edit.new_text == "after = 1\n" for edit in generated.proposal.edits)
+    output = capsys.readouterr().out
+    assert "candidate=1/3 result=syntax_rejected" in output
+    assert "failing_shards=1 frozen_shards=1" in output
+    assert "candidate=2/3 result=selected" in output
+    assert "type=python_syntax" in output
+    assert "rejected-secret" not in output
+    assert all(not path.exists() for path in owned.exchange_paths)
+
+
+def test_parent_freezes_syntax_valid_shard_from_rejected_initial_batch(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Carry valid initial compact material into repair without decoding it again."""
+    initial = _v4_plan()
+    rejected = (
+        worker_module._decode_compact_span_proposal(
+            '{"e":[{"s":1,"n":1,"z":"after = 1\\n"}]}',
+            focus_path="src/one.py",
+        ),
+        worker_module._decode_compact_span_proposal(
+            '{"e":[{"s":1,"n":1,"z":"if True print(1)\\n"}]}',
+            focus_path="src/two.py",
+        ),
+    )
+    diagnostic = runner_module._repair_candidate_syntax_diagnosis(
+        runner_module._syntax_diagnostic(
+            "src/two.py",
+            failure_type="python_syntax",
+            line=1,
+            column=9,
+        )
+    )
+    plan = runner_module.build_syntax_repair_prompt_plan(
+        initial,
+        rejected,
+        diagnostic,
+    )
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    calls: list[str] = []
+
+    class Gateway:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> CompactSpanProposal:
+            assert contract is not None
+            focus = next(
+                line.split("=", 1)[1]
+                for line in prompt.splitlines()
+                if line.startswith("GLUDD_SELF_IMPROVE_FOCUS_PATH=")
+            )
+            calls.append(focus)
+            return worker_module._decode_compact_span_proposal(
+                '{"e":[{"s":1,"n":1,"z":"after = 2\\n"}]}',
+                focus_path=focus,
+            )
+
+    owned = _InProcessOwnedRunner(Gateway)
+    task, reference = _task_and_reference()
+
+    generated = runner_module._generate_local_proposal_plan_result(
+        owned,
+        model_path,
+        plan,
+        task,
+        reference,
+    )
+
+    assert plan.repair_proposals == rejected
+    assert calls == ["src/two.py"]
+    assert [edit.new_text for edit in generated.proposal.edits] == [
+        "after = 1\n",
+        "after = 2\n",
+    ]
+    output = capsys.readouterr().out
+    assert "result=selected failing_shards=0 frozen_shards=2" in output
+    source_sha = hashlib.sha256(b"src/one.py").hexdigest()
+    test_sha = hashlib.sha256(b"src/two.py").hexdigest()
+    assert (
+        "SELF_IMPROVE_REPAIR_SHARD_STATE candidate=initial "
+        f"path_sha256={source_sha} state=frozen category=none line=0 column=0"
+        in output
+    )
+    assert (
+        "SELF_IMPROVE_REPAIR_SHARD_STATE candidate=initial "
+        f"path_sha256={test_sha} state=syntax_rejected "
+        "category=python_syntax line=1 column=9"
+        in output
+    )
+    shard_events = "\n".join(
+        line
+        for line in output.splitlines()
+        if line.startswith("SELF_IMPROVE_REPAIR_SHARD_STATE ")
+    )
+    assert "src/one.py" not in shard_events
+    assert "src/two.py" not in shard_events
+    assert all(not path.exists() for path in owned.exchange_paths)
+
+
+def test_parent_rejects_syntax_diagnosis_hash_mapped_to_wrong_shard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bind every parser result to its owning immutable shard before feedback."""
+    plan = replace(
+        _v4_plan(),
+        sampling_profile=COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    )
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+
+    class Gateway:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> CompactSpanProposal:
+            assert contract is not None
+            focus = next(
+                line.split("=", 1)[1]
+                for line in prompt.splitlines()
+                if line.startswith("GLUDD_SELF_IMPROVE_FOCUS_PATH=")
+            )
+            return worker_module._decode_compact_span_proposal(
+                '{"e":[{"s":1,"n":1,"z":"if True print(1)\\n"}]}',
+                focus_path=focus,
+            )
+
+    def wrong_path_diagnosis(proposal: ProposalManifest) -> dict[str, str]:
+        owning_path = proposal.edits[0].path
+        other_path = "src/two.py" if owning_path == "src/one.py" else "src/one.py"
+        return {
+            owning_path: runner_module._syntax_diagnostic(
+                other_path,
+                failure_type="python_syntax",
+                line=1,
+                column=9,
+            )
+        }
+
+    monkeypatch.setattr(
+        runner_module,
+        "_proposal_python_syntax_diagnostics",
+        wrong_path_diagnosis,
+    )
+    task, reference = _task_and_reference()
+
+    with pytest.raises(
+        RuntimeError,
+        match="repair syntax diagnosis does not match its owning shard",
+    ):
+        runner_module._generate_local_proposal_plan_result(
+            _InProcessOwnedRunner(Gateway),
+            model_path,
+            plan,
+            task,
+            reference,
+        )
+
+
+def test_syntax_line_provenance_maps_shifted_output_to_one_compact_span() -> None:
+    """Map parser lines after earlier expansion to the exact authored span."""
+    path = "src/example.py"
+    baseline = "one = 1\ntwo = 2\nthree = 3\nfour = 4\nfive = 5\n"
+    proposal = worker_module._decode_compact_span_proposal(
+        json.dumps(
+            {
+                "e": [
+                    {"s": 2, "n": 1, "z": "two_a = 2\ntwo_b = 2\n"},
+                    {"s": 4, "n": 1, "z": "if True print(4)\n"},
+                ]
+            }
+        ),
+        focus_path=path,
+    )
+    diagnostic = runner_module._syntax_diagnostic(
+        path,
+        failure_type="python_syntax",
+        line=5,
+        column=9,
+    )
+
+    assert (
+        runner_module._compact_v4_syntax_owning_span_index(
+            baseline,
+            proposal,
+            diagnostic,
+        )
+        == 1
+    )
+    untouched_diagnostic = runner_module._syntax_diagnostic(
+        path,
+        failure_type="python_syntax",
+        line=4,
+        column=1,
+    )
+    assert (
+        runner_module._compact_v4_syntax_owning_span_index(
+            baseline,
+            proposal,
+            untouched_diagnostic,
+        )
+        is None
+    )
+
+
+def test_parent_repairs_only_unique_syntax_owning_span_and_freezes_sibling_spans(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Preserve valid spans while regenerating one provenance-owned syntax span."""
+    path = "src/one.py"
+    baseline = "keep = 0\nvalue = 0\nuntouched = 0\n"
+    initial = PromptPlan(
+        shards=(
+            PromptShard(
+                focus_paths=(path,),
+                prompt=bind_compact_focus_path(
+                    "L1|keep = 0\nL2|value = 0\nL3|untouched = 0\n",
+                    path,
+                ),
+                editable_ranges=((1, 4),),
+            ),
+        ),
+        source_bytes=len(baseline),
+        baseline_files=((path, baseline),),
+        proposal_protocol="self-improve-compact-proposal-v4",
+    )
+    rejected = (
+        worker_module._decode_compact_span_proposal(
+            json.dumps(
+                {
+                    "e": [
+                        {"s": 1, "n": 1, "z": "keep = 1\n"},
+                        {"s": 2, "n": 1, "z": "if True print(2)\n"},
+                    ]
+                }
+            ),
+            focus_path=path,
+        ),
+    )
+    plan = runner_module.build_syntax_repair_prompt_plan(
+        initial,
+        rejected,
+        runner_module._repair_candidate_syntax_diagnosis(
+            runner_module._syntax_diagnostic(
+                path,
+                failure_type="python_syntax",
+                line=2,
+                column=9,
+            )
+        ),
+    )
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    prompts: list[str] = []
+
+    class Gateway:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> CompactSpanProposal:
+            assert contract is not None
+            prompts.append(prompt)
+            return worker_module._decode_compact_span_proposal(
+                '{"e":[{"s":2,"n":1,"z":"value = 2\\n"}]}',
+                focus_path=path,
+            )
+
+    task, reference = _task_and_reference()
+    generated = runner_module._generate_local_proposal_plan_result(
+        _InProcessOwnedRunner(Gateway),
+        model_path,
+        plan,
+        task,
+        reference,
+    )
+
+    assert len(prompts) == 1
+    assert "Repair exactly one compact span: s=2, n=1." in prompts[0]
+    assert "The parent froze 1 non-owning span in this shard" in prompts[0]
+    assert "TARGET_REPAIR_CONTEXT_BEGIN" in prompts[0]
+    assert "Only the exact target s/n is editable; surrounding lines are context" in (
+        prompts[0]
+    )
+    assert [
+        (edit.start_line, edit.old_line_count, edit.new_text)
+        for edit in generated.compact_proposals[0].edits
+    ] == [
+        (1, 1, "keep = 1\n"),
+        (2, 1, "value = 2\n"),
+    ]
+    assert generated.proposal.edits[0].new_text == (
+        "keep = 1\nvalue = 2\nuntouched = 0\n"
+    )
+    output = capsys.readouterr().out
+    assert "state=span_targeted category=python_syntax line=2 column=9 target_s=2 target_n=1" in output
+    assert "keep = 1" not in output
+
+
+def test_parent_stops_after_three_syntax_invalid_repair_candidates(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Bound repair decodes and clean every exchange when no candidate parses."""
+    plan = replace(
+        _v4_plan(),
+        sampling_profile=COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    )
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    contracts: list[ProposalContract] = []
+
+    class Gateway:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> CompactSpanProposal:
+            assert contract is not None
+            contracts.append(contract)
+            focus = next(
+                line.split("=", 1)[1]
+                for line in prompt.splitlines()
+                if line.startswith("GLUDD_SELF_IMPROVE_FOCUS_PATH=")
+            )
+            return worker_module._decode_compact_span_proposal(
+                '{"e":[{"s":1,"n":1,"z":"def broken(\\n"}]}',
+                focus_path=focus,
+            )
+
+    owned = _InProcessOwnedRunner(Gateway)
+    task, reference = _task_and_reference()
+
+    with pytest.raises(
+        ValueError,
+        match="compact-v4 syntax repair exhausted 3 bounded candidates",
+    ):
+        runner_module._generate_local_proposal_plan_result(
+            owned,
+            model_path,
+            plan,
+            task,
+            reference,
+        )
+
+    assert len(owned.calls) == 6
+    assert [contract.sampling_candidate_index for contract in contracts] == [
+        0,
+        0,
+        1,
+        1,
+        2,
+        2,
+    ]
+    assert len({contract.sampling_seed for contract in contracts}) == 6
+    assert capsys.readouterr().out.count("result=syntax_rejected") == 3
+    assert all(not path.exists() for path in owned.exchange_paths)
+
+
+def test_parent_advances_after_one_compact_invalid_repair_candidate(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Treat model-owned compact rejection as one candidate, never a new attempt."""
+    plan = replace(
+        _v4_plan(),
+        sampling_profile=COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    )
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    seen_indices: list[int] = []
+
+    class Gateway:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> CompactSpanProposal:
+            assert contract is not None
+            seen_indices.append(contract.sampling_candidate_index)
+            focus = next(
+                line.split("=", 1)[1]
+                for line in prompt.splitlines()
+                if line.startswith("GLUDD_SELF_IMPROVE_FOCUS_PATH=")
+            )
+            if (
+                contract.sampling_candidate_index == 0
+                and focus == "src/one.py"
+            ):
+                raise ValueError("compact span must change content")
+            return worker_module._decode_compact_span_proposal(
+                '{"e":[{"s":1,"n":1,"z":"after = 1\\n"}]}',
+                focus_path=focus,
+            )
+
+    owned = _InProcessOwnedRunner(Gateway)
+    task, reference = _task_and_reference()
+
+    generated = runner_module._generate_local_proposal_plan_result(
+        owned,
+        model_path,
+        plan,
+        task,
+        reference,
+    )
+
+    assert len(owned.calls) == 3
+    assert seen_indices == [0, 0, 1]
+    assert generated.proposal.edits
+    output = capsys.readouterr().out
+    assert "candidate=1/3 result=proposal_rejected" in output
+    assert "compact span must change content" not in output
+    assert all(not path.exists() for path in owned.exchange_paths)
+
+
+def test_parent_keeps_frozen_shard_across_compact_invalid_repair_candidate(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A later malformed shard must not discard an earlier syntax-valid shard."""
+    plan = replace(
+        _v4_plan(),
+        sampling_profile=COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    )
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    calls: list[tuple[int, str]] = []
+
+    class Gateway:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> CompactSpanProposal:
+            assert contract is not None
+            focus = next(
+                line.split("=", 1)[1]
+                for line in prompt.splitlines()
+                if line.startswith("GLUDD_SELF_IMPROVE_FOCUS_PATH=")
+            )
+            calls.append((contract.sampling_candidate_index, focus))
+            if contract.sampling_candidate_index == 1:
+                raise ValueError("compact span must change content")
+            replacement = (
+                "after = 1\n"
+                if focus == "src/one.py"
+                else (
+                    "if True print('hidden-draft')\n"
+                    if contract.sampling_candidate_index == 0
+                    else "after = 2\n"
+                )
+            )
+            return worker_module._decode_compact_span_proposal(
+                json.dumps({"e": [{"s": 1, "n": 1, "z": replacement}]}),
+                focus_path=focus,
+            )
+
+    owned = _InProcessOwnedRunner(Gateway)
+    task, reference = _task_and_reference()
+
+    generated = runner_module._generate_local_proposal_plan_result(
+        owned,
+        model_path,
+        plan,
+        task,
+        reference,
+    )
+
+    assert calls == [
+        (0, "src/one.py"),
+        (0, "src/two.py"),
+        (1, "src/two.py"),
+        (2, "src/two.py"),
+    ]
+    assert [edit.new_text for edit in generated.proposal.edits] == [
+        "after = 1\n",
+        "after = 2\n",
+    ]
+    output = capsys.readouterr().out
+    assert "candidate=2/3 result=proposal_rejected" in output
+    assert "hidden-draft" not in output
+    assert all(not path.exists() for path in owned.exchange_paths)
+
+
+def test_repair_worker_atomic_failure_does_not_discard_prior_valid_shard(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Publish repair shards separately so a later decode failure cannot erase one."""
+    plan = replace(
+        _v4_plan(),
+        sampling_profile=COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    )
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    calls: list[tuple[int, str]] = []
+
+    class Gateway:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> CompactSpanProposal:
+            assert contract is not None
+            focus = next(
+                line.split("=", 1)[1]
+                for line in prompt.splitlines()
+                if line.startswith("GLUDD_SELF_IMPROVE_FOCUS_PATH=")
+            )
+            calls.append((contract.sampling_candidate_index, focus))
+            if (
+                contract.sampling_candidate_index == 0
+                and focus == "src/two.py"
+            ):
+                raise ValueError("compact span must change content")
+            replacement = "after = 1\n" if focus == "src/one.py" else "after = 2\n"
+            return worker_module._decode_compact_span_proposal(
+                json.dumps({"e": [{"s": 1, "n": 1, "z": replacement}]}),
+                focus_path=focus,
+            )
+
+    owned = _InProcessOwnedRunner(Gateway)
+    task, reference = _task_and_reference()
+
+    generated = runner_module._generate_local_proposal_plan_result(
+        owned,
+        model_path,
+        plan,
+        task,
+        reference,
+    )
+
+    assert calls == [
+        (0, "src/one.py"),
+        (0, "src/two.py"),
+        (1, "src/two.py"),
+    ]
+    assert len(owned.calls) == 3
+    assert [edit.new_text for edit in generated.proposal.edits] == [
+        "after = 1\n",
+        "after = 2\n",
+    ]
+    output = capsys.readouterr().out
+    assert "candidate=1/3 result=proposal_rejected" in output
+    assert "failing_shards=1 frozen_shards=1" in output
+    assert all(not path.exists() for path in owned.exchange_paths)
+
+
 def test_repair_sampling_crosses_parent_cli_and_real_gateway_boundary(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -821,7 +1472,7 @@ def test_repair_sampling_crosses_parent_cli_and_real_gateway_boundary(
             chat_calls.append(kwargs)
             content = (
                 '{"ok":true}'
-                if len(chat_calls) == 1
+                if kwargs.get("max_tokens") == 32
                 else '{"e":[{"s":1,"n":1,"z":"after\\n"}]}'
             )
             return {
@@ -880,16 +1531,28 @@ def test_repair_sampling_crosses_parent_cli_and_real_gateway_boundary(
     )
 
     assert generated.proposal.edits
-    proposal_calls = chat_calls[1:]
+    proposal_calls = [call for call in chat_calls if call.get("max_tokens") == 4096]
     assert len(proposal_calls) == len(plan.shards)
     assert all(call["temperature"] == 0.8 for call in proposal_calls)
     assert all(call["top_p"] == 0.95 for call in proposal_calls)
     assert all(call["top_k"] == 40 for call in proposal_calls)
-    assert all(call["seed"] == 104729 for call in proposal_calls)
     output = capsys.readouterr().out
-    assert (
-        "profile=" + COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
-    ) in output
+    sampling_events = re.findall(
+        "profile="
+        + re.escape(COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID)
+        + r" candidate=1/3 seed=([1-9][0-9]{0,9}) "
+        + r"context_sha256=([0-9a-f]{64}) "
+        + r"repair_state_sha256=([0-9a-f]{64})(?:\s|$)",
+        output,
+    )
+    assert len(sampling_events) == len(plan.shards)
+    assert [call["seed"] for call in proposal_calls] == [
+        int(seed) for seed, _context, _state in sampling_events
+    ]
+    assert len({context for _seed, context, _state in sampling_events}) == len(
+        plan.shards
+    )
+    assert len({state for _seed, _context, state in sampling_events}) == len(plan.shards)
     assert re.search(r"output_sha256=[0-9a-f]{64}(?:\s|$)", output)
     assert owned.contract_paths and all(
         not path.exists() for path in owned.contract_paths

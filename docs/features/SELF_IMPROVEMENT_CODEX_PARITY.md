@@ -454,15 +454,14 @@ The first repair-enabled live run proved that lifecycle but not useful diversity
 Qwen-1.5B repeated the same 1,168-byte object and line 11/column 18 failure; Qwen-3B
 repeated the same 1,954-byte object and line 28/column 120 failure. Both repair calls
 were still greedy with seed zero, so identical prompt plus grammar selected the same
-tokens. Compact v4 now carries one parent-owned sampling profile through the
-ephemeral repair `PromptPlan` and confined worker contract. Only repair proposal
-decoding uses temperature 0.8, top-p 0.95, top-k 40, and seed 104729. The structured
-canary and every ordinary or legacy proposal retain their prior keyword arguments
-and serialized bytes.
+tokens. Compact v4 then added one parent-owned sampling profile through the ephemeral
+repair `PromptPlan` and confined worker contract. Only repair proposal decoding uses
+temperature 0.8, top-p 0.95, and top-k 40. The structured canary and every ordinary
+or legacy proposal retain their prior keyword arguments and serialized bytes.
 
-The fixed seed makes a given repair identity reproducible while nonzero temperature
-and finite top-k/top-p select a distinct bounded path from the rejected greedy decode.
-An explicit cached Qwen-1.5B process-boundary run proved that the original
+The first sampled profile used fixed seed 104729 to make repair reproducible while
+nonzero temperature and finite top-k/top-p selected a bounded path from the rejected
+greedy decode. An explicit cached Qwen-1.5B process-boundary run proved that the original
 temperature 0.25, top-p 0.9, and top-k 20 profile still reproduced the greedy
 1,168-byte output byte-for-byte (SHA-256 prefix `2d913257`). Repair profile v2 uses
 the stronger finite controls above and the same seed only after that concrete live
@@ -503,6 +502,68 @@ Both files were 1,168 bytes, but their differing digest proves repair sampling
 crossed the real Make/CLI/gateway boundary and selected different content. The
 second candidate still failed syntax at the same safe coordinate; normal bounded
 evaluation, cleanup, and rejection handled it without a third inference.
+
+That process-boundary proof did not make one global repair seed sufficient for every
+model. A later cached Qwen-3B trace carried the v2 profile correctly, yet greedy and
+repair both produced SHA-256 `8efa65b8…7166` and repeated line 28/column 120. Repair
+profile v3 therefore derives a nonzero 31-bit seed from canonical immutable context:
+the exact prompt-batch SHA-256 (which commits to the rejected compact proposal and
+safe parser diagnosis), trusted baseline/task/tests/Make-command contract, compact
+protocol, sampling profile, and named SHA-256 derivation policy. The parent serializes
+both the seed and context digest; the worker recomputes both from the received prompt
+and contract before constructing llama.cpp. A changed rejected proposal, model-facing
+prompt, or trusted contract changes the context, while the same context reproduces the
+same seed. A noncanonical prompt batch, missing or malformed control, mismatch, or old
+v2 profile fails closed before inference. Telemetry exposes only profile, seed, context
+SHA-256, output length, and output SHA-256—never prompt, rejected output, source, paths,
+or secrets. The derivation-policy identity is bound into compact-v4 attempt identity,
+so pre-v3 approvals require reapproval; ordinary greedy contract bytes and all v1-v3
+proposal identities remain unchanged.
+
+One derived seed was still only one bounded chance. Repair v6 therefore permits at
+most three deterministic candidates under the same approved attempt. Candidate
+`N+1` hashes and consumes candidate `N`'s validated compact object plus its newly
+computed source-free syntax diagnosis; it cannot consume mutable state or unbounded
+parser output. Each candidate is decoded with the same grammar and is independently
+revalidated against the immutable baseline, shown ranges, four-span cardinality,
+3,072-byte replacement budget, 96-line budget, and Python syntax preflight. The
+first fully valid aggregate wins. Exhaustion remains one failed approved attempt,
+not three additional model attempts, and every candidate exchange and model lease
+is cleaned on either outcome.
+
+Multi-file repair now freezes every syntax-valid shard before regeneration. Within
+an invalid shard, the parent maps the bounded parser line through the materialized
+snapshot to the unique model-authored replacement span. When ownership is unique,
+only that exact immutable `s`/`n` span is regenerated with bounded neighboring
+baseline lines; non-owning spans and sibling shards remain byte-identical. A returned
+coordinate change, overlap, duplicate, aggregate overflow, hidden-range edit, or
+syntax failure is rejected before aggregation. A parser line outside authored
+replacement text (including deleted text) has no provable owner, so Gludd retains
+the conservative whole-shard repair rather than guessing. Safe shard telemetry
+contains only path SHA-256, category, line, column, candidate ordinal, and target
+`s`/`n`; it never includes source or replacement text.
+
+The cached `self-improve-catalog-span-provenance-qwen3b-live-20260903` acceptance
+proved the bounds and cleanup but also recorded the present usefulness limit. Both
+initial shards were independently syntax-invalid, so neither could be frozen; the
+parent uniquely targeted their diagnosed spans, then all three deterministic repair
+candidates exhausted without a compact-and-syntax-valid aggregate. This is a clean,
+bounded rejection—not acceptance evidence. The mechanism deliberately stops there
+instead of tuning a seed to one task, widening the candidate count, weakening syntax,
+or leaking rejected source into telemetry. A future live acceptance must select a
+compact-valid, Python-syntax-valid aggregate within those three candidates; until
+then this policy improves isolation and diagnosis, not the model's demonstrated
+repair success rate.
+
+The terminal observer record was not deleted. This run's exact artifacts are
+`.gate-logs/observed/run-watched/self-improve-catalog-span-provenance-qwen3b-live-20260903.json`
+and `.gate-logs/self-improve-catalog-span-provenance-qwen3b-live-20260903.log`
+inside the `enhance-compact-v4-line-spans` worktree; its current pointer remains
+`.gate-logs/observed/run-watched/current.json`. `OBSERVED_ROOT` is resolved relative
+to the Make invocation's worktree, so querying the same relative spelling from the
+main checkout addresses a different directory and produced the reported `ENOENT`.
+The run-specific JSON and explicitly named log are the durable terminal artifacts;
+`current.json` is only the atomic latest-run pointer.
 
 A September 2026 DeepSeek catalog attempt then exposed a separate parent-side
 gap. Both compact-v3 shards completed and passed worker schema validation, but a

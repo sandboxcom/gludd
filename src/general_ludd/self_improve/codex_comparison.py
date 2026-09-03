@@ -126,12 +126,28 @@ _DETERMINISTIC_DECODE_TEMPERATURE = 0.0
 _DETERMINISTIC_DECODE_SEED = 0
 DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID = "deterministic-greedy-v1"
 COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID = (
-    "compact-v4-syntax-repair-seeded-sampling-v2"
+    "compact-v4-syntax-repair-span-provenance-v6"
+)
+COMPACT_V4_REPAIR_SEED_DERIVATION_POLICY_ID = (
+    "compact-v4-repair-seed-context-sha256-indexed-prefix31-v2"
+)
+COMPACT_V4_REPAIR_CANDIDATE_LIMIT = 3
+COMPACT_V4_REPAIR_CANDIDATE_FEEDBACK_POLICY_ID = (
+    "compact-v4-repair-chain-previous-compact-syntax-v1"
+)
+COMPACT_V4_REPAIR_SHARD_STATE_POLICY_ID = (
+    "compact-v4-repair-freeze-valid-shards-immutable-snapshot-v1"
+)
+COMPACT_V4_REPAIR_SHARD_PROMPT_POLICY_ID = (
+    "compact-v4-repair-one-path-role-frozen-siblings-v1"
+)
+COMPACT_V4_REPAIR_SPAN_PROVENANCE_POLICY_ID = (
+    "compact-v4-repair-output-line-unique-span-freeze-v1"
 )
 _COMPACT_V4_SYNTAX_REPAIR_TEMPERATURE = 0.8
 _COMPACT_V4_SYNTAX_REPAIR_TOP_P = 0.95
 _COMPACT_V4_SYNTAX_REPAIR_TOP_K = 40
-_COMPACT_V4_SYNTAX_REPAIR_SEED = 104729
+_COMPACT_V4_MAX_DERIVED_SEED = (2**31) - 1
 _STRUCTURED_OUTPUT_REQUIRE_STOP = True
 _LEGACY_STRUCTURED_DECODING_MODE = "llama-cpp-bounded-span-grammar-v3"
 _STRUCTURED_DECODING_MODE = "llama-cpp-bounded-span-grammar-v5"
@@ -572,10 +588,15 @@ def compact_v4_syntax_repair_sampling_identity() -> dict[str, object]:
     """Return the exact repair-only sampler policy bound into attempt identity."""
     return {
         "profile": COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
-        "seed": _COMPACT_V4_SYNTAX_REPAIR_SEED,
+        "seed_derivation": COMPACT_V4_REPAIR_SEED_DERIVATION_POLICY_ID,
+        "candidate_limit": COMPACT_V4_REPAIR_CANDIDATE_LIMIT,
+        "candidate_feedback": COMPACT_V4_REPAIR_CANDIDATE_FEEDBACK_POLICY_ID,
         "temperature": _COMPACT_V4_SYNTAX_REPAIR_TEMPERATURE,
         "top_k": _COMPACT_V4_SYNTAX_REPAIR_TOP_K,
         "top_p": _COMPACT_V4_SYNTAX_REPAIR_TOP_P,
+        "shard_state": COMPACT_V4_REPAIR_SHARD_STATE_POLICY_ID,
+        "shard_prompt": COMPACT_V4_REPAIR_SHARD_PROMPT_POLICY_ID,
+        "span_provenance": COMPACT_V4_REPAIR_SPAN_PROVENANCE_POLICY_ID,
     }
 
 
@@ -793,19 +814,31 @@ class _ProposalSamplingArguments(TypedDict):
     top_k: NotRequired[int]
 
 
-def _proposal_sampling_arguments(profile: str) -> _ProposalSamplingArguments:
+def _proposal_sampling_arguments(
+    profile: str,
+    *,
+    sampling_seed: int | None = None,
+) -> _ProposalSamplingArguments:
     """Resolve one trusted profile to finite llama.cpp sampler arguments."""
     if profile == DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID:
+        if sampling_seed is not None:
+            raise ValueError("greedy proposal contract must not carry a sampling seed")
         return {
             "temperature": _DETERMINISTIC_DECODE_TEMPERATURE,
             "seed": _DETERMINISTIC_DECODE_SEED,
         }
     if profile == COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID:
+        if (
+            isinstance(sampling_seed, bool)
+            or not isinstance(sampling_seed, int)
+            or not 1 <= sampling_seed <= _COMPACT_V4_MAX_DERIVED_SEED
+        ):
+            raise ValueError("repair proposal contract requires a derived sampling seed")
         return {
             "temperature": _COMPACT_V4_SYNTAX_REPAIR_TEMPERATURE,
             "top_p": _COMPACT_V4_SYNTAX_REPAIR_TOP_P,
             "top_k": _COMPACT_V4_SYNTAX_REPAIR_TOP_K,
-            "seed": _COMPACT_V4_SYNTAX_REPAIR_SEED,
+            "seed": sampling_seed,
         }
     raise ValueError("proposal contract sampling profile is unsupported")
 
@@ -960,6 +993,31 @@ class CompactSpanProposal:
         }
 
 
+def compact_v4_repair_shard_state_digest(
+    proposals: Sequence[CompactSpanProposal],
+) -> str:
+    """Hash bounded frozen proposal state without exposing model-authored text."""
+    if (
+        isinstance(proposals, (str, bytes))
+        or len(proposals) > _MAX_PROMPT_BATCH_SHARDS
+        or not all(isinstance(item, CompactSpanProposal) for item in proposals)
+    ):
+        raise ValueError("compact-v4 repair shard state is invalid or unbounded")
+    paths = tuple(item.focus_path for item in proposals)
+    if len(paths) != len(set(paths)):
+        raise ValueError("compact-v4 repair shard state paths must be unique")
+    encoded = json.dumps(
+        {
+            "frozen_proposals": [item._json_value() for item in proposals],
+            "protocol": COMPACT_V4_REPAIR_SHARD_STATE_POLICY_ID,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 @dataclass(frozen=True)
 class ProposalContract:
     """Trusted immutable fields omitted from the compact model response."""
@@ -970,6 +1028,10 @@ class ProposalContract:
     make_commands: tuple[str, ...]
     proposal_protocol: str = _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION
     sampling_profile: str = DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID
+    sampling_seed: int | None = None
+    sampling_context_sha256: str = ""
+    sampling_candidate_index: int = 0
+    repair_state_sha256: str = ""
 
     def __post_init__(self) -> None:
         """Reject malformed contract values before they reach local inference."""
@@ -1004,6 +1066,131 @@ class ProposalContract:
             and self.proposal_protocol != _COMPACT_PROPOSAL_PROTOCOL_VERSION
         ):
             raise ValueError("repair sampling profile requires compact-v4")
+        if (
+            isinstance(self.sampling_candidate_index, bool)
+            or not isinstance(self.sampling_candidate_index, int)
+            or not 0
+            <= self.sampling_candidate_index
+            < COMPACT_V4_REPAIR_CANDIDATE_LIMIT
+        ):
+            raise ValueError(
+                "proposal contract sampling candidate is outside its fixed bound"
+            )
+        if self.sampling_profile == DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID:
+            if self.sampling_candidate_index != 0:
+                raise ValueError(
+                    "greedy proposal contract sampling candidate must be zero"
+                )
+            if (
+                self.sampling_seed is not None
+                or self.sampling_context_sha256
+                or self.repair_state_sha256
+            ):
+                raise ValueError("greedy proposal contract must not carry repair context")
+        elif (
+            isinstance(self.sampling_seed, bool)
+            or not isinstance(self.sampling_seed, int)
+            or not 1 <= self.sampling_seed <= _COMPACT_V4_MAX_DERIVED_SEED
+            or not isinstance(self.sampling_context_sha256, str)
+            or _PROTOCOL_DIGEST_RE.fullmatch(self.sampling_context_sha256) is None
+            or not isinstance(self.repair_state_sha256, str)
+            or _PROTOCOL_DIGEST_RE.fullmatch(self.repair_state_sha256) is None
+        ):
+            raise ValueError("repair proposal contract requires derived sampling context")
+
+    @classmethod
+    def for_request(
+        cls,
+        *,
+        request: str,
+        baseline_sha: str,
+        task_id: str,
+        tests: tuple[str, ...],
+        make_commands: tuple[str, ...],
+        proposal_protocol: str = _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION,
+        sampling_profile: str = DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID,
+        sampling_candidate_index: int = 0,
+        repair_state_sha256: str = "",
+    ) -> ProposalContract:
+        """Construct a contract whose repair seed commits to canonical request bytes."""
+        if (
+            isinstance(sampling_candidate_index, bool)
+            or not isinstance(sampling_candidate_index, int)
+            or not 0
+            <= sampling_candidate_index
+            < COMPACT_V4_REPAIR_CANDIDATE_LIMIT
+        ):
+            raise ValueError(
+                "proposal contract sampling candidate is outside its fixed bound"
+            )
+        if (
+            sampling_profile == DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID
+            and sampling_candidate_index != 0
+        ):
+            raise ValueError("greedy proposal contract sampling candidate must be zero")
+        base = cls(
+            baseline_sha=baseline_sha,
+            task_id=task_id,
+            tests=tests,
+            make_commands=make_commands,
+            proposal_protocol=proposal_protocol,
+        )
+        if sampling_profile == DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID:
+            return base
+        if sampling_profile != COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID:
+            raise ValueError("proposal contract sampling profile is unsupported")
+        selected_repair_state_sha256 = (
+            repair_state_sha256
+            if repair_state_sha256
+            else compact_v4_repair_shard_state_digest(())
+        )
+        if _PROTOCOL_DIGEST_RE.fullmatch(selected_repair_state_sha256) is None:
+            raise ValueError("repair proposal contract requires canonical shard state")
+        context_sha256, seed = _derive_repair_sampling_context(
+            request,
+            baseline_sha=base.baseline_sha,
+            task_id=base.task_id,
+            tests=base.tests,
+            make_commands=base.make_commands,
+            proposal_protocol=base.proposal_protocol,
+            sampling_profile=sampling_profile,
+            sampling_candidate_index=sampling_candidate_index,
+            repair_state_sha256=selected_repair_state_sha256,
+        )
+        return cls(
+            baseline_sha=base.baseline_sha,
+            task_id=base.task_id,
+            tests=base.tests,
+            make_commands=base.make_commands,
+            proposal_protocol=base.proposal_protocol,
+            sampling_profile=sampling_profile,
+            sampling_seed=seed,
+            sampling_context_sha256=context_sha256,
+            sampling_candidate_index=sampling_candidate_index,
+            repair_state_sha256=selected_repair_state_sha256,
+        )
+
+    def verify_sampling_context(self, request: str) -> int:
+        """Recompute one transported repair context before local model creation."""
+        if self.sampling_profile == DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID:
+            return _DETERMINISTIC_DECODE_SEED
+        context_sha256, seed = _derive_repair_sampling_context(
+            request,
+            baseline_sha=self.baseline_sha,
+            task_id=self.task_id,
+            tests=self.tests,
+            make_commands=self.make_commands,
+            proposal_protocol=self.proposal_protocol,
+            sampling_profile=self.sampling_profile,
+            sampling_candidate_index=self.sampling_candidate_index,
+            repair_state_sha256=self.repair_state_sha256,
+        )
+        if (
+            self.sampling_context_sha256 != context_sha256
+            or self.sampling_seed != seed
+        ):
+            raise ValueError("proposal contract sampling context mismatch")
+        return seed
 
     def to_json(self) -> str:
         """Serialize the trusted contract for one confined worker exchange."""
@@ -1017,6 +1204,10 @@ class ProposalContract:
             value["proposal_protocol"] = self.proposal_protocol
         if self.sampling_profile != DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID:
             value["sampling_profile"] = self.sampling_profile
+            value["sampling_seed"] = self.sampling_seed
+            value["sampling_context_sha256"] = self.sampling_context_sha256
+            value["sampling_candidate_index"] = self.sampling_candidate_index
+            value["repair_state_sha256"] = self.repair_state_sha256
         return json.dumps(
             value,
             ensure_ascii=False,
@@ -1032,7 +1223,14 @@ class ProposalContract:
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ValueError(f"proposal contract is not valid JSON: {exc}") from exc
         required = {"baseline_sha", "task_id", "tests", "make_commands"}
-        allowed = required | {"proposal_protocol", "sampling_profile"}
+        allowed = required | {
+            "proposal_protocol",
+            "sampling_context_sha256",
+            "sampling_profile",
+            "sampling_seed",
+            "sampling_candidate_index",
+            "repair_state_sha256",
+        }
         if (
             not isinstance(value, dict)
             or not required.issubset(value)
@@ -1069,6 +1267,16 @@ class ProposalContract:
                 str,
                 value.get("sampling_profile", DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID),
             ),
+            sampling_seed=cast(int | None, value.get("sampling_seed")),
+            sampling_context_sha256=cast(
+                str,
+                value.get("sampling_context_sha256", ""),
+            ),
+            sampling_candidate_index=cast(
+                int,
+                value.get("sampling_candidate_index", 0),
+            ),
+            repair_state_sha256=cast(str, value.get("repair_state_sha256", "")),
         )
 
 
@@ -1299,6 +1507,56 @@ def decode_prompt_batch(raw: str) -> tuple[tuple[str, ...], str | None]:
     normalized = tuple(prompts)
     encode_prompt_batch(normalized, protocol_digest=digest)
     return normalized, digest
+
+
+def _derive_repair_sampling_context(
+    request: str,
+    *,
+    baseline_sha: str,
+    task_id: str,
+    tests: tuple[str, ...],
+    make_commands: tuple[str, ...],
+    proposal_protocol: str,
+    sampling_profile: str,
+    sampling_candidate_index: int,
+    repair_state_sha256: str,
+) -> tuple[str, int]:
+    """Commit a finite llama seed to canonical immutable repair inputs."""
+    if not isinstance(request, str):
+        raise ValueError("repair sampling requires a canonical prompt batch")
+    prompts, protocol_digest = decode_prompt_batch(request)
+    if (
+        protocol_digest is None
+        or encode_prompt_batch(prompts, protocol_digest=protocol_digest) != request
+    ):
+        raise ValueError("repair sampling requires a canonical prompt batch")
+    canonical_context = json.dumps(
+        {
+            "contract": {
+                "baseline_sha": baseline_sha,
+                "make_commands": list(make_commands),
+                "proposal_protocol": proposal_protocol,
+                "repair_state_sha256": repair_state_sha256,
+                "sampling_profile": sampling_profile,
+                "task_id": task_id,
+                "tests": list(tests),
+            },
+            "prompt_batch_sha256": hashlib.sha256(request.encode("utf-8")).hexdigest(),
+            "protocol": COMPACT_V4_REPAIR_SEED_DERIVATION_POLICY_ID,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    context_sha256 = hashlib.sha256(canonical_context).hexdigest()
+    seed_digest = hashlib.sha256(
+        f"{context_sha256}:{sampling_candidate_index}".encode("ascii")
+    ).digest()
+    seed = max(
+        int.from_bytes(seed_digest[:4], "big") & _COMPACT_V4_MAX_DERIVED_SEED,
+        1,
+    )
+    return context_sha256, seed
 
 
 def encode_proposal_batch(
@@ -1824,6 +2082,18 @@ def expand_compact_span_proposals(
         raise _parent_proposal_error("proposal shard count does not match the prompt plan")
     if not all(isinstance(proposal, CompactSpanProposal) for proposal in proposals):
         raise _parent_proposal_error("compact span batch contains an invalid proposal")
+    content_bytes = sum(
+        len(edit.new_text.encode("utf-8"))
+        for proposal in proposals
+        for edit in proposal.edits
+    )
+    if content_bytes > _COMPACT_MAX_CONTENT_BYTES:
+        raise _parent_proposal_error(
+            f"compact span new text exceeds {_COMPACT_MAX_CONTENT_BYTES} bytes; "
+            f"received_shards={len(proposals)} "
+            f"received_content_bytes=>{_COMPACT_MAX_CONTENT_BYTES} "
+            f"max_content_bytes={_COMPACT_MAX_CONTENT_BYTES}"
+        )
     changed_lines = sum(
         edit.old_line_count + len(edit.new_text.splitlines())
         for proposal in proposals
@@ -2708,6 +2978,13 @@ def _completion_text(
         text = message.get("content") if isinstance(message, Mapping) else None
     if not isinstance(text, str) or not text.strip():
         raise ValueError("local model response has no proposal text; " + diagnostic)
+    encoded_text = text.encode("utf-8")
+    print(
+        "SELF_IMPROVE_LOCAL_OUTPUT "
+        f"phase={phase} output_bytes={len(encoded_text)} "
+        f"output_sha256={hashlib.sha256(encoded_text).hexdigest()}",
+        flush=True,
+    )
     return text
 
 
@@ -2972,7 +3249,8 @@ class LocalProposalGateway:
                     )
                 )
                 sampling_arguments = _proposal_sampling_arguments(
-                    contract.sampling_profile
+                    contract.sampling_profile,
+                    sampling_seed=contract.sampling_seed,
                 )
                 output = chat_model.create_chat_completion(
                     messages=[
@@ -3178,6 +3456,12 @@ __all__ = [
     "COMPACT_PROPOSAL_CONTRACT_TRANSPORT_PROTOCOL",
     "COMPACT_PROPOSAL_PROTOCOL_V3",
     "COMPACT_PROPOSAL_PROTOCOL_V4",
+    "COMPACT_V4_REPAIR_CANDIDATE_FEEDBACK_POLICY_ID",
+    "COMPACT_V4_REPAIR_CANDIDATE_LIMIT",
+    "COMPACT_V4_REPAIR_SEED_DERIVATION_POLICY_ID",
+    "COMPACT_V4_REPAIR_SHARD_PROMPT_POLICY_ID",
+    "COMPACT_V4_REPAIR_SHARD_STATE_POLICY_ID",
+    "COMPACT_V4_REPAIR_SPAN_PROVENANCE_POLICY_ID",
     "COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID",
     "DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID",
     "EVALUATION_DIAGNOSIS_PROTOCOL",
@@ -3187,6 +3471,7 @@ __all__ = [
     "PlannerFeedbackExchange",
     "bind_compact_focus_path",
     "build_retry_prompt",
+    "compact_v4_repair_shard_state_digest",
     "compact_v4_syntax_repair_sampling_identity",
     "compare_with_codex",
     "decode_compact_span_batch",

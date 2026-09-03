@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Protocol
 
 from general_ludd.self_improve.codex_comparison import (
+    COMPACT_V4_REPAIR_CANDIDATE_LIMIT,
     DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID,
     CompactSpanProposal,
     LocalProposalGateway,
@@ -109,6 +110,33 @@ def run_worker(
         contract = ProposalContract.from_json(contract_raw)
 
     prompts, protocol_digest = decode_prompt_batch(request)
+    sampling_seed = (
+        contract.verify_sampling_context(request)
+        if contract is not None
+        else 0
+    )
+    sampling_context_sha256 = (
+        contract.sampling_context_sha256
+        if contract is not None and contract.sampling_context_sha256
+        else "none"
+    )
+    repair_state_sha256 = (
+        contract.repair_state_sha256
+        if contract is not None and contract.repair_state_sha256
+        else "none"
+    )
+    sampling_candidate = (
+        contract.sampling_candidate_index + 1
+        if contract is not None
+        and contract.sampling_profile != DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID
+        else 1
+    )
+    sampling_candidate_limit = (
+        COMPACT_V4_REPAIR_CANDIDATE_LIMIT
+        if contract is not None
+        and contract.sampling_profile != DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID
+        else 1
+    )
     gateway = gateway_factory(model_path)
     proposals: list[ProposalManifest | CompactSpanProposal] = []
     total = len(prompts)
@@ -126,7 +154,10 @@ def run_worker(
     for index, prompt in enumerate(prompts, start=1):
         print(
             "SELF_IMPROVE_LOCAL_PROPOSAL_SAMPLING "
-            f"shard={index}/{total} profile={sampling_profile}",
+            f"shard={index}/{total} profile={sampling_profile} "
+            f"candidate={sampling_candidate}/{sampling_candidate_limit} "
+            f"seed={sampling_seed} context_sha256={sampling_context_sha256} "
+            f"repair_state_sha256={repair_state_sha256}",
             flush=True,
         )
         print(
@@ -204,6 +235,10 @@ def run_worker(
     print(
         "SELF_IMPROVE_LOCAL_PROPOSAL_END "
         f"shards={total} sampling_profile={sampling_profile} "
+        f"sampling_candidate={sampling_candidate}/{sampling_candidate_limit} "
+        f"sampling_seed={sampling_seed} "
+        f"sampling_context_sha256={sampling_context_sha256} "
+        f"repair_state_sha256={repair_state_sha256} "
         f"output_bytes={proposal_path.stat().st_size} "
         f"output_sha256={hashlib.sha256((serialized + chr(10)).encode('utf-8')).hexdigest()}",
         flush=True,

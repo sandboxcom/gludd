@@ -1920,7 +1920,7 @@ def test_run_benchmark_default_sink_flushes_evaluation_and_retry_diagnosis(
     first_event = output_lines.index(evaluation_lines[0])
     retry_event = output_lines.index(retry_lines[0])
     rotated_attempt_identity = (
-        "e469ae479f429b135cb770814916b784b8b5b4234660aff6cf047b27785cf08b"
+        "b05cc2cb5ea4968303bf49f0006db5b5598e3588341d531ddf7fa650abd5ce01"
     )
     assert rotated_attempt_identity not in {
         "a954fb52b2c47704813156f2a16e610aa47addee2d1af1cf90061855ac9aa87c",
@@ -1928,6 +1928,7 @@ def test_run_benchmark_default_sink_flushes_evaluation_and_retry_diagnosis(
         "dcc582bce1bbe96c37efa9f0f452e12a528eb5aba2d9c78b7eafda7463ca1c5b",
         "52e0b8c3ecd1352d845d3ef17f1a07242940fc2b90b34f796976cf4d115a37a8",
         "afb1addd7caf3e80e20146f8479ae2d1e40548915e5ad8ce20c7884f577e3538",
+        "90d1dc7969c68c1e5a54b641c4904dc8943a0661f0c71b5af8542bf688f45ab5",
     }
     attempt_lines = [
         line

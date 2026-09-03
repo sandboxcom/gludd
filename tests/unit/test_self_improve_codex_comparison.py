@@ -168,6 +168,9 @@ def test_worker_protocol_entry_points_are_declared_public_exports() -> None:
         "COMPACT_PROPOSAL_CONTRACT_TRANSPORT_PROTOCOL",
         "COMPACT_PROPOSAL_PROTOCOL_V3",
         "COMPACT_PROPOSAL_PROTOCOL_V4",
+        "COMPACT_V4_REPAIR_SEED_DERIVATION_POLICY_ID",
+        "COMPACT_V4_REPAIR_SHARD_PROMPT_POLICY_ID",
+        "COMPACT_V4_REPAIR_SPAN_PROVENANCE_POLICY_ID",
         "COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID",
         "DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID",
         "CompactLineSpan",
@@ -540,8 +543,17 @@ def test_repair_sampling_profile_round_trips_without_changing_normal_v4_bytes() 
         '"proposal_protocol":"self-improve-compact-proposal-v4",'
         '"task_id":"S83.133","tests":["tests/unit/test_example.py"]}'
     )
-    repair = replace(
-        normal,
+    request = comparison_module.encode_prompt_batch(
+        ("bounded repair prompt",),
+        protocol_digest="f" * 64,
+    )
+    repair = ProposalContract.for_request(
+        request=request,
+        baseline_sha=normal.baseline_sha,
+        task_id=normal.task_id,
+        tests=normal.tests,
+        make_commands=normal.make_commands,
+        proposal_protocol=normal.proposal_protocol,
         sampling_profile=(
             comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
         ),
@@ -553,6 +565,290 @@ def test_repair_sampling_profile_round_trips_without_changing_normal_v4_bytes() 
     assert json.loads(repair.to_json())["sampling_profile"] == (
         comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
     )
+
+
+def test_repair_seed_is_reproducibly_derived_from_canonical_immutable_context() -> None:
+    """Bind each sampled repair to its prompt, rejected draft, and trusted contract."""
+    request = comparison_module.encode_prompt_batch(
+        ('bounded prompt\nRejected compact object: {"e":[]}',),
+        protocol_digest="f" * 64,
+    )
+    def contract_for(
+        candidate_request: str,
+        *,
+        task_id: str = "S83.133",
+    ) -> ProposalContract:
+        return ProposalContract.for_request(
+            request=candidate_request,
+            baseline_sha="a" * 40,
+            task_id=task_id,
+            tests=("tests/unit/test_example.py",),
+            make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+            proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+            sampling_profile=(
+                comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+            ),
+        )
+
+    first = contract_for(request)
+    repeated = contract_for(request)
+    changed_draft = contract_for(
+        comparison_module.encode_prompt_batch(
+            ('bounded prompt\nRejected compact object: {"e":[{"s":1,"n":0,"z":"x"}]}',),
+            protocol_digest="f" * 64,
+        )
+    )
+    changed_contract = contract_for(request, task_id="S83.134")
+    changed_model_context = contract_for(
+        comparison_module.encode_prompt_batch(
+            ('different bounded model context\nRejected compact object: {"e":[]}',),
+            protocol_digest="f" * 64,
+        )
+    )
+    changed_shard_state = ProposalContract.for_request(
+        request=request,
+        baseline_sha="a" * 40,
+        task_id="S83.133",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+        sampling_profile=(
+            comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+        ),
+        repair_state_sha256="b" * 64,
+    )
+
+    assert first.sampling_seed == repeated.sampling_seed
+    assert first.sampling_context_sha256 == repeated.sampling_context_sha256
+    assert isinstance(first.sampling_seed, int)
+    assert 1 <= first.sampling_seed <= (2**31 - 1)
+    assert len(first.sampling_context_sha256) == 64
+    expected_seed_digest = hashlib.sha256(
+        f"{first.sampling_context_sha256}:0".encode("ascii")
+    ).digest()
+    expected_seed = int.from_bytes(expected_seed_digest[:4], "big") & ((2**31) - 1)
+    assert first.sampling_seed == max(expected_seed, 1)
+    assert changed_draft.sampling_seed != first.sampling_seed
+    assert changed_contract.sampling_seed != first.sampling_seed
+    assert changed_model_context.sampling_seed != first.sampling_seed
+    assert changed_shard_state.sampling_seed != first.sampling_seed
+    assert first.verify_sampling_context(request) == first.sampling_seed
+
+
+def test_repair_seed_schedule_is_distinct_reproducible_and_round_trips() -> None:
+    """Derive a fixed three-candidate schedule from one immutable repair context."""
+    request = comparison_module.encode_prompt_batch(
+        ('bounded prompt\nRejected compact object: {"e":[]}',),
+        protocol_digest="f" * 64,
+    )
+
+    def candidate(index: int) -> ProposalContract:
+        return ProposalContract.for_request(
+            request=request,
+            baseline_sha="a" * 40,
+            task_id="S83.133",
+            tests=("tests/unit/test_example.py",),
+            make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+            proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+            sampling_profile=(
+                comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+            ),
+            sampling_candidate_index=index,
+        )
+
+    schedule = tuple(
+        candidate(index)
+        for index in range(comparison_module.COMPACT_V4_REPAIR_CANDIDATE_LIMIT)
+    )
+    repeated = tuple(
+        candidate(index)
+        for index in range(comparison_module.COMPACT_V4_REPAIR_CANDIDATE_LIMIT)
+    )
+
+    assert comparison_module.COMPACT_V4_REPAIR_CANDIDATE_LIMIT == 3
+    assert schedule == repeated
+    assert len({item.sampling_seed for item in schedule}) == len(schedule)
+    assert len({item.sampling_context_sha256 for item in schedule}) == 1
+    assert tuple(item.sampling_candidate_index for item in schedule) == (0, 1, 2)
+    assert all(ProposalContract.from_json(item.to_json()) == item for item in schedule)
+
+
+@pytest.mark.parametrize("candidate_index", [True, -1, 3, "1", None])
+def test_repair_seed_schedule_rejects_malformed_or_excess_candidates(
+    candidate_index: object,
+) -> None:
+    """Fail closed before decoding outside the identity-bound candidate cap."""
+    request = comparison_module.encode_prompt_batch(
+        ("bounded repair prompt",),
+        protocol_digest="f" * 64,
+    )
+
+    with pytest.raises(ValueError, match="sampling candidate"):
+        ProposalContract.for_request(
+            request=request,
+            baseline_sha="a" * 40,
+            task_id="S83.133",
+            tests=("tests/unit/test_example.py",),
+            make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+            proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+            sampling_profile=(
+                comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+            ),
+            sampling_candidate_index=cast(int, candidate_index),
+        )
+
+
+def test_greedy_contract_rejects_nonzero_sampling_candidate() -> None:
+    """Keep the ordinary first pass byte-stable and outside the repair schedule."""
+    request = comparison_module.encode_prompt_batch(
+        ("bounded ordinary prompt",),
+        protocol_digest="f" * 64,
+    )
+
+    with pytest.raises(ValueError, match=r"greedy.*sampling candidate"):
+        ProposalContract.for_request(
+            request=request,
+            baseline_sha="a" * 40,
+            task_id="S83.133",
+            tests=("tests/unit/test_example.py",),
+            make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+            proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+            sampling_candidate_index=1,
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "sampling_seed",
+        "sampling_context_sha256",
+        "sampling_candidate_index",
+        "repair_state_sha256",
+    ],
+)
+def test_repair_seed_context_tampering_fails_closed(field: str) -> None:
+    """Reject syntactically valid transport changes when recomputation disagrees."""
+    request = comparison_module.encode_prompt_batch(
+        ("bounded repair prompt",),
+        protocol_digest="f" * 64,
+    )
+    contract = ProposalContract.for_request(
+        request=request,
+        baseline_sha="a" * 40,
+        task_id="S83.133",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+        sampling_profile=comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    )
+    value = json.loads(contract.to_json())
+    assert isinstance(contract.sampling_seed, int)
+    if field == "sampling_seed":
+        value[field] = contract.sampling_seed + 1
+    elif field == "sampling_context_sha256":
+        value[field] = "b" * 64
+    elif field == "sampling_candidate_index":
+        value[field] = 1
+    else:
+        value[field] = "b" * 64
+    tampered = ProposalContract.from_json(json.dumps(value))
+
+    with pytest.raises(ValueError, match="sampling context mismatch"):
+        tampered.verify_sampling_context(request)
+
+
+def test_repair_seed_rejects_noncanonical_and_legacy_context_artifacts() -> None:
+    """Never reinterpret pre-derivation repair contracts or noncanonical batches."""
+    request = comparison_module.encode_prompt_batch(
+        ("bounded repair prompt",),
+        protocol_digest="f" * 64,
+    )
+    with pytest.raises(ValueError, match="canonical prompt batch"):
+        ProposalContract.for_request(
+            request=request + " ",
+            baseline_sha="a" * 40,
+            task_id="S83.133",
+            tests=("tests/unit/test_example.py",),
+            make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+            proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+            sampling_profile=(
+                comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+            ),
+        )
+    normal_v4 = replace(
+        _contract(), proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4
+    )
+    legacy = {
+        **json.loads(normal_v4.to_json()),
+        "sampling_profile": "compact-v4-syntax-repair-seeded-sampling-v2",
+        "sampling_seed": 104729,
+        "sampling_context_sha256": "b" * 64,
+    }
+    with pytest.raises(ValueError, match="sampling profile"):
+        ProposalContract.from_json(json.dumps(legacy))
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid"),
+    [
+        ("sampling_seed", True),
+        ("sampling_seed", 0),
+        ("sampling_seed", 2**31),
+        ("sampling_seed", "7"),
+        ("sampling_seed", None),
+        ("sampling_context_sha256", "B" * 64),
+        ("sampling_context_sha256", "b" * 63),
+        ("sampling_context_sha256", 7),
+    ],
+)
+def test_repair_sampling_context_rejects_malformed_controls(
+    field: str,
+    invalid: object,
+) -> None:
+    """Reject malformed derived controls before a local sampler can observe them."""
+    request = comparison_module.encode_prompt_batch(
+        ("bounded repair prompt",),
+        protocol_digest="f" * 64,
+    )
+    contract = ProposalContract.for_request(
+        request=request,
+        baseline_sha="a" * 40,
+        task_id="S83.133",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+        sampling_profile=comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    )
+    value = json.loads(contract.to_json())
+    value[field] = invalid
+
+    with pytest.raises(ValueError, match="derived sampling context"):
+        ProposalContract.from_json(json.dumps(value))
+
+
+@pytest.mark.parametrize("candidate_index", [True, -1, 3, "1"])
+def test_repair_contract_json_rejects_malformed_candidate_index(
+    candidate_index: object,
+) -> None:
+    """Reject a transported candidate index outside the immutable schedule."""
+    request = comparison_module.encode_prompt_batch(
+        ("bounded repair prompt",),
+        protocol_digest="f" * 64,
+    )
+    contract = ProposalContract.for_request(
+        request=request,
+        baseline_sha="a" * 40,
+        task_id="S83.133",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+        sampling_profile=comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    )
+    value = json.loads(contract.to_json())
+    value["sampling_candidate_index"] = candidate_index
+
+    with pytest.raises(ValueError, match="sampling candidate"):
+        ProposalContract.from_json(json.dumps(value))
 
 
 @pytest.mark.parametrize("profile", [True, 7, "unknown-profile", ""])
@@ -1680,8 +1976,17 @@ def test_compact_v4_repair_uses_reproducible_non_greedy_sampling_only(
         _contract(),
         proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
     )
-    repair_contract = replace(
-        normal_contract,
+    request = comparison_module.encode_prompt_batch(
+        (prompt,),
+        protocol_digest="f" * 64,
+    )
+    repair_contract = ProposalContract.for_request(
+        request=request,
+        baseline_sha=normal_contract.baseline_sha,
+        task_id=normal_contract.task_id,
+        tests=normal_contract.tests,
+        make_commands=normal_contract.make_commands,
+        proposal_protocol=normal_contract.proposal_protocol,
         sampling_profile=(
             comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
         ),
@@ -1736,7 +2041,7 @@ def test_compact_v4_repair_uses_reproducible_non_greedy_sampling_only(
         "temperature": 0.8,
         "top_p": 0.95,
         "top_k": 40,
-        "seed": 104729,
+        "seed": repair_contract.sampling_seed,
     }
     assert first_repair_calls[1] == second_repair_calls[1]
     assert first_repair_calls[1]["response_format"] == normal_calls[1]["response_format"]
@@ -2349,6 +2654,39 @@ def test_compact_v4_decoder_checks_aggregate_budget_before_input_order() -> None
 
     detail = str(captured.value)
     assert "received_edits=2" in detail
+    assert "received_content_bytes=>3072" in detail
+    assert "PRIVATE_SOURCE" not in detail
+    assert secret not in detail
+    assert len(detail.encode("utf-8")) <= 192
+
+
+def test_compact_v4_parent_rechecks_content_budget_across_shards() -> None:
+    """Frozen and regenerated shards must share the original aggregate byte cap."""
+    secret = "PRIVATE_SOURCE=" + ("x" * 1_590)
+    proposals = (
+        _span_proposal(
+            {"e": [{"s": 1, "n": 1, "z": secret}]},
+            path="src/general_ludd/one.py",
+        ),
+        _span_proposal(
+            {"e": [{"s": 1, "n": 1, "z": "y" * 1_600}]},
+            path="src/general_ludd/two.py",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="new text exceeds 3072 bytes") as captured:
+        _expand_span_proposals(
+            proposals,
+            paths=("src/general_ludd/one.py", "src/general_ludd/two.py"),
+            baselines={
+                "src/general_ludd/one.py": "old\n",
+                "src/general_ludd/two.py": "old\n",
+            },
+            editable_ranges=(((1, 2),), ((1, 2),)),
+        )
+
+    detail = str(captured.value)
+    assert "received_shards=2" in detail
     assert "received_content_bytes=>3072" in detail
     assert "PRIVATE_SOURCE" not in detail
     assert secret not in detail
@@ -2997,6 +3335,39 @@ def test_local_gateway_length_stop_reports_secret_safe_finish_and_usage(
     assert "total_tokens=4736" in diagnostic
     assert "do-not-log-this" not in diagnostic
     assert len(diagnostic.encode("utf-8")) <= 300
+
+
+def test_completion_telemetry_hashes_output_before_strict_decode(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Make invalid-but-complete model output auditable without revealing content."""
+    secret_output = '{"e":[{"s":1,"n":0,"z":"SECRET_TOKEN"}]}'
+    expected_sha256 = hashlib.sha256(secret_output.encode("utf-8")).hexdigest()
+
+    decoded = comparison_module._completion_text(
+        {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"content": secret_output},
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 12,
+                "total_tokens": 22,
+            },
+        },
+        phase="proposal",
+        budget=4096,
+        require_stop=True,
+    )
+
+    telemetry = capsys.readouterr().out
+    assert decoded == secret_output
+    assert f"output_bytes={len(secret_output.encode('utf-8'))}" in telemetry
+    assert f"output_sha256={expected_sha256}" in telemetry
+    assert "SECRET_TOKEN" not in telemetry
 
 
 def test_local_gateway_reports_bounded_incomplete_json_output(tmp_path: Path) -> None:

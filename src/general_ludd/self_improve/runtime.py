@@ -31,6 +31,8 @@ from general_ludd.planning.repo_map import RepoMapBuilder
 from general_ludd.self_improve.codex_comparison import (
     COMPACT_PROPOSAL_PROTOCOL_V3,
     COMPACT_PROPOSAL_PROTOCOL_V4,
+    COMPACT_V4_REPAIR_CANDIDATE_LIMIT,
+    COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
     EVALUATION_DIAGNOSIS_PROTOCOL,
     LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL,
     CandidateEvidence,
@@ -41,6 +43,7 @@ from general_ludd.self_improve.codex_comparison import (
     ProposalContract,
     ProposalManifest,
     bind_compact_focus_path,
+    compact_v4_repair_shard_state_digest,
     compare_with_codex,
     decode_compact_span_batch,
     decode_proposal_batch,
@@ -518,6 +521,499 @@ def generate_local_proposal(
     )
 
 
+def _one_shard_prompt_plan(plan: PromptPlan, shard: PromptShard) -> PromptPlan:
+    """Select one immutable shard without widening its baseline or edit scope."""
+    if len(shard.focus_paths) != 1:
+        raise ValueError("compact-v4 repair shard must bind exactly one focus path")
+    path = shard.focus_paths[0]
+    baseline_by_path = dict(plan.baseline_files)
+    if path not in baseline_by_path:
+        raise ValueError("compact-v4 repair shard is absent from the trusted baseline")
+    baseline = baseline_by_path[path]
+    return PromptPlan(
+        shards=(shard,),
+        source_bytes=len(baseline.encode("utf-8")) if baseline is not None else 0,
+        protocol_digest=plan.protocol_digest,
+        baseline_files=((path, baseline),),
+        proposal_protocol=plan.proposal_protocol,
+        sampling_profile=plan.sampling_profile,
+    )
+
+
+def _combine_shard_prompt_plans(
+    plans: tuple[PromptPlan, ...],
+    *,
+    protocol_digest: str,
+) -> PromptPlan:
+    """Combine disjoint single-shard plans without changing their trusted snapshots."""
+    if not plans:
+        raise ValueError("compact-v4 repair requires at least one failing shard")
+    return PromptPlan(
+        shards=tuple(shard for item in plans for shard in item.shards),
+        source_bytes=sum(item.source_bytes for item in plans),
+        protocol_digest=protocol_digest,
+        baseline_files=tuple(
+            baseline for item in plans for baseline in item.baseline_files
+        ),
+        proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+        sampling_profile=COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    )
+
+
+def _report_repair_shard_state(
+    relative_path: str,
+    *,
+    candidate: str,
+    state: str,
+    diagnostic: str | None = None,
+    target_span: tuple[int, int] | None = None,
+) -> None:
+    """Emit one bounded source-free state after binding diagnosis to its shard."""
+    if state not in {
+        "frozen",
+        "preflight_rejected",
+        "proposal_rejected",
+        "span_targeted",
+        "syntax_rejected",
+    }:
+        raise RuntimeError("compact-v4 repair shard state is unsupported")
+    fields = _syntax_diagnosis_fields(diagnostic)
+    path_sha256 = hashlib.sha256(relative_path.encode("utf-8")).hexdigest()
+    if diagnostic is not None and fields["path_sha256"] != path_sha256:
+        raise RuntimeError("repair syntax diagnosis does not match its owning shard")
+    if (state in {"preflight_rejected", "span_targeted", "syntax_rejected"}) != (
+        diagnostic is not None
+    ):
+        raise RuntimeError("compact-v4 repair shard state and diagnosis disagree")
+    if (state == "span_targeted") != (target_span is not None):
+        raise RuntimeError("compact-v4 repair target telemetry is inconsistent")
+    target_detail = ""
+    if target_span is not None:
+        start_line, old_line_count = target_span
+        if (
+            isinstance(start_line, bool)
+            or not isinstance(start_line, int)
+            or isinstance(old_line_count, bool)
+            or not isinstance(old_line_count, int)
+            or start_line < 1
+            or old_line_count < 0
+        ):
+            raise RuntimeError("compact-v4 repair target telemetry is invalid")
+        target_detail = f" target_s={start_line} target_n={old_line_count}"
+    category = fields["category"] if diagnostic is not None else "none"
+    event = (
+        "SELF_IMPROVE_REPAIR_SHARD_STATE "
+        f"candidate={candidate} path_sha256={path_sha256} state={state} "
+        f"category={category} line={fields['line']} column={fields['column']}"
+        f"{target_detail}"
+    )
+    if len(event.encode("ascii")) > 256:
+        raise RuntimeError("compact-v4 repair shard event exceeded 256 bytes")
+    _runtime_progress(event)
+
+
+def _repair_preflight_state(diagnostic: str | None) -> str:
+    """Classify a trusted per-file parser result without exposing its source."""
+    if diagnostic is None:
+        return "frozen"
+    return (
+        "syntax_rejected"
+        if _syntax_failure_class(diagnostic) == "python_syntax"
+        else "preflight_rejected"
+    )
+
+
+def _compact_v4_syntax_owning_span_index(
+    baseline: str | None,
+    proposal: CompactSpanProposal,
+    diagnostic: str,
+) -> int | None:
+    """Return the unique model-authored output span containing one parser line."""
+    fields = _syntax_diagnosis_fields(diagnostic)
+    expected_path_sha256 = hashlib.sha256(proposal.focus_path.encode("utf-8")).hexdigest()
+    if fields["path_sha256"] != expected_path_sha256:
+        raise RuntimeError("repair syntax diagnosis does not match its owning shard")
+    if fields["category"] != "python_syntax" or not isinstance(fields["line"], int):
+        return None
+    parser_line = fields["line"]
+    baseline_lines = [] if baseline is None else baseline.splitlines(keepends=True)
+    baseline_cursor = 0
+    output_lines = 0
+    owners: list[int] = []
+    for index, span in enumerate(proposal.edits):
+        start = span.start_line - 1
+        if start < baseline_cursor or start > len(baseline_lines):
+            return None
+        output_lines += start - baseline_cursor
+        replacement_lines = len(span.new_text.splitlines())
+        first_replacement_line = output_lines + 1
+        last_replacement_line = output_lines + replacement_lines
+        if replacement_lines and first_replacement_line <= parser_line <= last_replacement_line:
+            owners.append(index)
+        output_lines = last_replacement_line
+        baseline_cursor = start + span.old_line_count
+    return owners[0] if len(owners) == 1 else None
+
+
+def _proposal_with_repaired_span(
+    proposal: CompactSpanProposal,
+    replacement: CompactSpanProposal,
+    target_span: tuple[int, int],
+) -> CompactSpanProposal:
+    """Replace exactly one owned span while retaining every non-owning span."""
+    if proposal.focus_path != replacement.focus_path or len(replacement.edits) != 1:
+        raise ValueError("compact-v4 targeted repair must return exactly one owning span")
+    edit = replacement.edits[0]
+    if (edit.start_line, edit.old_line_count) != target_span:
+        raise ValueError("compact-v4 targeted repair changed immutable span coordinates")
+    matches = [
+        index
+        for index, prior in enumerate(proposal.edits)
+        if (prior.start_line, prior.old_line_count) == target_span
+    ]
+    if len(matches) != 1:
+        raise ValueError("compact-v4 targeted repair span is not uniquely owned")
+    edits = list(proposal.edits)
+    edits[matches[0]] = edit
+    return CompactSpanProposal(proposal.focus_path, tuple(edits))
+
+
+def _build_targeted_repair_prompt_plan(
+    plan: PromptPlan,
+    shard: PromptShard,
+    task: TaskSpec,
+    proposal: CompactSpanProposal,
+    diagnostic: str,
+    target_span: tuple[int, int],
+) -> PromptPlan:
+    """Render bounded local baseline context for one provenance-owned span."""
+    path = proposal.focus_path
+    baseline_by_path = dict(plan.baseline_files)
+    if shard.focus_paths != (path,) or path not in baseline_by_path:
+        raise ValueError("targeted syntax repair drifted from its immutable shard")
+    baseline = baseline_by_path[path]
+    if baseline is None:
+        context = "ABSENT FILE"
+    else:
+        lines = baseline.splitlines(keepends=True)
+        start = target_span[0] - 1
+        consumed_end = start + max(1, target_span[1])
+        if start > len(lines) or consumed_end > len(lines) + (target_span[1] == 0):
+            raise ValueError("targeted syntax repair span is outside its baseline")
+        context_start = max(0, start - _PROMPT_CONTEXT_LINES)
+        context_end = min(len(lines), consumed_end + _PROMPT_CONTEXT_LINES)
+        context = _render_selected_lines(lines, set(range(context_start, context_end)))
+    body = (
+        "EDIT_TASK_BEGIN\n"
+        f"{task.objective}\n"
+        "EDIT_TASK_END\n"
+        "TARGET_REPAIR_REQUIREMENTS_BEGIN\n"
+        f"Repair only {path}. Only the exact target s/n is editable; surrounding "
+        "lines are context, and every frozen sibling path and span remains immutable. "
+        "Return compact spans only.\n"
+        "TARGET_REPAIR_REQUIREMENTS_END\n"
+        "TARGET_REPAIR_CONTEXT_BEGIN\n"
+        f"{context}\n"
+        "TARGET_REPAIR_CONTEXT_END"
+    )
+    targeted_shard = PromptShard(
+        focus_paths=(path,),
+        prompt=bind_compact_focus_path(
+            body,
+            path,
+            editable_ranges=shard.editable_ranges,
+        ),
+        editable_ranges=shard.editable_ranges,
+    )
+    targeted = PromptPlan(
+        shards=(targeted_shard,),
+        source_bytes=(len(baseline.encode("utf-8")) if baseline is not None else 0),
+        protocol_digest=plan.protocol_digest,
+        baseline_files=((path, baseline),),
+        proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+        sampling_profile=COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    )
+    return build_syntax_repair_prompt_plan(
+        targeted,
+        (proposal,),
+        _repair_candidate_syntax_diagnosis(diagnostic),
+        target_span=target_span,
+    )
+
+
+def _generate_compact_v4_repair_plan_result(
+    runner: _ObservableRunner,
+    model_path: Path,
+    plan: PromptPlan,
+    task: TaskSpec,
+    reference: CodexReference,
+) -> GeneratedProposal:
+    """Generate bounded repair shards independently and freeze each valid result."""
+    required_tests = _required_prompt_tests(task, reference)
+    original_path_groups = tuple(shard.focus_paths for shard in plan.shards)
+    if any(len(paths) != 1 for paths in original_path_groups):
+        raise ValueError("compact-v4 prompt shards must bind exactly one focus path")
+    original_paths = tuple(paths[0] for paths in original_path_groups)
+    original_ranges = tuple(shard.editable_ranges for shard in plan.shards)
+    original_baselines = dict(plan.baseline_files)
+    active_plan = plan
+    frozen_proposals: dict[str, CompactSpanProposal] = {}
+    latest_proposals: dict[str, CompactSpanProposal] = {}
+    target_spans: dict[str, tuple[int, int]] = {}
+    if plan.repair_proposals:
+        validation_contract = ProposalContract(
+            baseline_sha=reference.baseline_sha,
+            task_id=task.task_id,
+            tests=required_tests,
+            make_commands=task.canonical_make_commands,
+            proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+        )
+        initial_failing_plans: list[PromptPlan] = []
+        for shard, span_proposal in zip(
+            plan.shards,
+            plan.repair_proposals,
+            strict=True,
+        ):
+            latest_proposals[span_proposal.focus_path] = span_proposal
+            shard_plan = _one_shard_prompt_plan(plan, shard)
+            shard_proposal = expand_compact_span_proposals(
+                (span_proposal,),
+                contract=validation_contract,
+                expected_path_groups=(shard.focus_paths,),
+                expected_baseline_files=dict(shard_plan.baseline_files),
+                expected_editable_ranges=(shard.editable_ranges,),
+            )
+            syntax_diagnostics = _proposal_python_syntax_diagnostics(shard_proposal)
+            syntax_diagnostic = syntax_diagnostics.get(span_proposal.focus_path)
+            _report_repair_shard_state(
+                span_proposal.focus_path,
+                candidate="initial",
+                state=_repair_preflight_state(syntax_diagnostic),
+                diagnostic=syntax_diagnostic,
+            )
+            if syntax_diagnostic is None:
+                frozen_proposals[span_proposal.focus_path] = span_proposal
+                continue
+            baseline = dict(shard_plan.baseline_files)[span_proposal.focus_path]
+            owning_index = _compact_v4_syntax_owning_span_index(
+                baseline,
+                span_proposal,
+                syntax_diagnostic,
+            )
+            target_span: tuple[int, int] | None = None
+            if owning_index is not None:
+                owning_edit = span_proposal.edits[owning_index]
+                target_span = (owning_edit.start_line, owning_edit.old_line_count)
+                target_spans[span_proposal.focus_path] = target_span
+                _report_repair_shard_state(
+                    span_proposal.focus_path,
+                    candidate="initial",
+                    state="span_targeted",
+                    diagnostic=syntax_diagnostic,
+                    target_span=target_span,
+                )
+            if target_span is not None:
+                shard_plan = _build_targeted_repair_prompt_plan(
+                    plan,
+                    shard,
+                    task,
+                    span_proposal,
+                    syntax_diagnostic,
+                    target_span,
+                )
+            elif (
+                hashlib.sha256(span_proposal.focus_path.encode("utf-8")).hexdigest()
+                != plan.repair_diagnosis_path_sha256
+                and _syntax_failure_class(syntax_diagnostic) == "python_syntax"
+            ):
+                shard_plan = build_syntax_repair_prompt_plan(
+                    shard_plan,
+                    (span_proposal,),
+                    _repair_candidate_syntax_diagnosis(syntax_diagnostic),
+                )
+            initial_failing_plans.append(shard_plan)
+        if not initial_failing_plans:
+            raise ValueError(
+                "compact-v4 repair state did not reproduce its parent syntax failure"
+            )
+        active_plan = _combine_shard_prompt_plans(
+            tuple(initial_failing_plans),
+            protocol_digest=plan.protocol_digest,
+        )
+
+    for candidate_index in range(COMPACT_V4_REPAIR_CANDIDATE_LIMIT):
+        next_plans: list[PromptPlan] = []
+        first_syntax_diagnostic: str | None = None
+        last_contract: ProposalContract | None = None
+        for shard in active_plan.shards:
+            shard_plan = _one_shard_prompt_plan(active_plan, shard)
+            request = encode_prompt_batch(
+                (shard.prompt,),
+                protocol_digest=plan.protocol_digest,
+            )
+            contract = ProposalContract.for_request(
+                request=request,
+                baseline_sha=reference.baseline_sha,
+                task_id=task.task_id,
+                tests=required_tests,
+                make_commands=task.canonical_make_commands,
+                proposal_protocol=plan.proposal_protocol,
+                sampling_profile=plan.sampling_profile,
+                sampling_candidate_index=candidate_index,
+                repair_state_sha256=compact_v4_repair_shard_state_digest(
+                    tuple(
+                        latest_proposals[path]
+                        for path in original_paths
+                        if path in latest_proposals
+                    )
+                ),
+            )
+            last_contract = contract
+            try:
+                raw_proposal = _run_local_proposal_request(
+                    runner,
+                    model_path,
+                    request,
+                    contract=contract,
+                )
+                span_proposals = decode_compact_span_batch(
+                    raw_proposal,
+                    expected_protocol_digest=plan.protocol_digest,
+                    expected_count=1,
+                )
+                span_proposal = span_proposals[0]
+                target_span = target_spans.get(span_proposal.focus_path)
+                if target_span is not None:
+                    prior = latest_proposals[span_proposal.focus_path]
+                    span_proposal = _proposal_with_repaired_span(
+                        prior,
+                        span_proposal,
+                        target_span,
+                    )
+                shard_proposal = expand_compact_span_proposals(
+                    (span_proposal,),
+                    contract=contract,
+                    expected_path_groups=(shard.focus_paths,),
+                    expected_baseline_files=dict(shard_plan.baseline_files),
+                    expected_editable_ranges=(shard.editable_ranges,),
+                )
+            except (RuntimeError, ValueError):
+                _report_repair_shard_state(
+                    shard.focus_paths[0],
+                    candidate=(
+                        f"{candidate_index + 1}/{COMPACT_V4_REPAIR_CANDIDATE_LIMIT}"
+                    ),
+                    state="proposal_rejected",
+                )
+                next_plans.append(shard_plan)
+                continue
+            latest_proposals[span_proposal.focus_path] = span_proposal
+            syntax_diagnostics = _proposal_python_syntax_diagnostics(shard_proposal)
+            syntax_diagnostic = syntax_diagnostics.get(span_proposal.focus_path)
+            _report_repair_shard_state(
+                span_proposal.focus_path,
+                candidate=(
+                    f"{candidate_index + 1}/{COMPACT_V4_REPAIR_CANDIDATE_LIMIT}"
+                ),
+                state=_repair_preflight_state(syntax_diagnostic),
+                diagnostic=syntax_diagnostic,
+            )
+            if syntax_diagnostic is None:
+                frozen_proposals[span_proposal.focus_path] = span_proposal
+                target_spans.pop(span_proposal.focus_path, None)
+                continue
+            if first_syntax_diagnostic is None:
+                first_syntax_diagnostic = syntax_diagnostic
+            next_plan = shard_plan
+            if _syntax_failure_class(syntax_diagnostic) == "python_syntax":
+                baseline = dict(shard_plan.baseline_files)[span_proposal.focus_path]
+                owning_index = _compact_v4_syntax_owning_span_index(
+                    baseline,
+                    span_proposal,
+                    syntax_diagnostic,
+                )
+                next_target: tuple[int, int] | None = None
+                if owning_index is not None:
+                    owning_edit = span_proposal.edits[owning_index]
+                    next_target = (owning_edit.start_line, owning_edit.old_line_count)
+                    target_spans[span_proposal.focus_path] = next_target
+                    _report_repair_shard_state(
+                        span_proposal.focus_path,
+                        candidate=(
+                            f"{candidate_index + 1}/"
+                            f"{COMPACT_V4_REPAIR_CANDIDATE_LIMIT}"
+                        ),
+                        state="span_targeted",
+                        diagnostic=syntax_diagnostic,
+                        target_span=next_target,
+                    )
+                else:
+                    target_spans.pop(span_proposal.focus_path, None)
+                next_plan = (
+                    _build_targeted_repair_prompt_plan(
+                        shard_plan,
+                        shard,
+                        task,
+                        span_proposal,
+                        syntax_diagnostic,
+                        next_target,
+                    )
+                    if next_target is not None
+                    else build_syntax_repair_prompt_plan(
+                        shard_plan,
+                        (span_proposal,),
+                        _repair_candidate_syntax_diagnosis(syntax_diagnostic),
+                    )
+                )
+            next_plans.append(next_plan)
+
+        if not next_plans:
+            if last_contract is None or set(frozen_proposals) != set(original_paths):
+                raise ValueError("compact-v4 repair did not cover the immutable shard set")
+            combined_span_proposals = tuple(
+                frozen_proposals[path] for path in original_paths
+            )
+            proposal = expand_compact_span_proposals(
+                combined_span_proposals,
+                contract=last_contract,
+                expected_path_groups=original_path_groups,
+                expected_baseline_files=original_baselines,
+                expected_editable_ranges=original_ranges,
+            )
+            if _proposal_python_syntax_preflight(proposal) is not None:
+                raise ValueError(
+                    "compact-v4 frozen repair aggregate failed immutable syntax revalidation"
+                )
+            _runtime_progress(
+                "SELF_IMPROVE_REPAIR_CANDIDATE "
+                f"candidate={candidate_index + 1}/"
+                f"{COMPACT_V4_REPAIR_CANDIDATE_LIMIT} result=selected "
+                f"failing_shards=0 frozen_shards={len(frozen_proposals)}"
+            )
+            return GeneratedProposal(proposal, combined_span_proposals)
+
+        result = "syntax_rejected" if first_syntax_diagnostic else "proposal_rejected"
+        diagnostic = (
+            f" {first_syntax_diagnostic}" if first_syntax_diagnostic is not None else ""
+        )
+        _runtime_progress(
+            "SELF_IMPROVE_REPAIR_CANDIDATE "
+            f"candidate={candidate_index + 1}/"
+            f"{COMPACT_V4_REPAIR_CANDIDATE_LIMIT} result={result} "
+            f"failing_shards={len(next_plans)} "
+            f"frozen_shards={len(frozen_proposals)}{diagnostic}"
+        )
+        if candidate_index + 1 < COMPACT_V4_REPAIR_CANDIDATE_LIMIT:
+            active_plan = _combine_shard_prompt_plans(
+                tuple(next_plans),
+                protocol_digest=plan.protocol_digest,
+            )
+    raise ValueError(
+        "compact-v4 syntax repair exhausted "
+        f"{COMPACT_V4_REPAIR_CANDIDATE_LIMIT} bounded candidates"
+    )
+
+
 def _generate_local_proposal_plan_result(
     runner: _ObservableRunner,
     model_path: Path,
@@ -526,12 +1022,87 @@ def _generate_local_proposal_plan_result(
     reference: CodexReference,
 ) -> GeneratedProposal:
     """Decode all shards and retain only validated compact-v4 repair material."""
+    required_tests = _required_prompt_tests(task, reference)
+    if plan.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
+        if not plan.baseline_files:
+            raise ValueError("compact-v4 prompt plan requires trusted baseline snapshots")
+        is_repair = (
+            plan.sampling_profile
+            == COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+        )
+        if is_repair:
+            return _generate_compact_v4_repair_plan_result(
+                runner,
+                model_path,
+                plan,
+                task,
+                reference,
+            )
+        candidate_plan = plan
+        original_path_groups = tuple(shard.focus_paths for shard in plan.shards)
+        if any(len(paths) != 1 for paths in original_path_groups):
+            raise ValueError("compact-v4 prompt shards must bind exactly one focus path")
+        original_paths = tuple(paths[0] for paths in original_path_groups)
+        original_ranges = tuple(shard.editable_ranges for shard in plan.shards)
+        original_baselines = dict(plan.baseline_files)
+        frozen_proposals: dict[str, CompactSpanProposal] = {}
+        for candidate_index in range(1):
+            request = encode_prompt_batch(
+                tuple(shard.prompt for shard in candidate_plan.shards),
+                protocol_digest=candidate_plan.protocol_digest,
+            )
+            contract = ProposalContract.for_request(
+                request=request,
+                baseline_sha=reference.baseline_sha,
+                task_id=task.task_id,
+                tests=required_tests,
+                make_commands=task.canonical_make_commands,
+                proposal_protocol=plan.proposal_protocol,
+                sampling_profile=plan.sampling_profile,
+                sampling_candidate_index=candidate_index,
+            )
+            try:
+                raw_proposals = _run_local_proposal_request(
+                    runner,
+                    model_path,
+                    request,
+                    contract=contract,
+                )
+                span_proposals = decode_compact_span_batch(
+                    raw_proposals,
+                    expected_protocol_digest=candidate_plan.protocol_digest,
+                    expected_count=len(candidate_plan.shards),
+                )
+                candidate_by_path = dict(frozen_proposals)
+                for span_proposal in span_proposals:
+                    if span_proposal.focus_path in candidate_by_path:
+                        raise ValueError("compact-v4 repair tried to replace a frozen shard")
+                    candidate_by_path[span_proposal.focus_path] = span_proposal
+                if set(candidate_by_path) != set(original_paths):
+                    raise ValueError("compact-v4 repair did not cover the immutable shard set")
+                combined_span_proposals = tuple(
+                    candidate_by_path[path] for path in original_paths
+                )
+                proposal = expand_compact_span_proposals(
+                    combined_span_proposals,
+                    contract=contract,
+                    expected_path_groups=original_path_groups,
+                    expected_baseline_files=original_baselines,
+                    expected_editable_ranges=original_ranges,
+                )
+            except (RuntimeError, ValueError):
+                raise
+            current_diagnostics: dict[str, str] = {}
+            for span_proposal in span_proposals:
+                if span_proposal.focus_path not in current_diagnostics:
+                    frozen_proposals[span_proposal.focus_path] = span_proposal
+            return GeneratedProposal(proposal, combined_span_proposals)
     request = encode_prompt_batch(
         tuple(shard.prompt for shard in plan.shards),
         protocol_digest=plan.protocol_digest,
     )
-    required_tests = _required_prompt_tests(task, reference)
-    contract = ProposalContract(
+    contract = ProposalContract.for_request(
+        request=request,
         baseline_sha=reference.baseline_sha,
         task_id=task.task_id,
         tests=required_tests,
@@ -545,24 +1116,6 @@ def _generate_local_proposal_plan_result(
         request,
         contract=contract,
     )
-    if plan.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
-        span_proposals = decode_compact_span_batch(
-            raw_proposals,
-            expected_protocol_digest=plan.protocol_digest,
-            expected_count=len(plan.shards),
-        )
-        if not plan.baseline_files:
-            raise ValueError("compact-v4 prompt plan requires trusted baseline snapshots")
-        proposal = expand_compact_span_proposals(
-            span_proposals,
-            contract=contract,
-            expected_path_groups=tuple(shard.focus_paths for shard in plan.shards),
-            expected_baseline_files=dict(plan.baseline_files),
-            expected_editable_ranges=tuple(
-                shard.editable_ranges for shard in plan.shards
-            ),
-        )
-        return GeneratedProposal(proposal, span_proposals)
     legacy_proposals = decode_proposal_batch(
         raw_proposals,
         expected_protocol_digest=plan.protocol_digest,
@@ -1405,6 +1958,70 @@ def _python_syntax_preflight(
                 column=exc.offset or 0,
             )
     return None
+
+
+def _proposal_python_syntax_preflight(proposal: ProposalManifest) -> str | None:
+    """Parse bounded full-snapshot Python edits before selecting a repair decode."""
+    diagnostics = _proposal_python_syntax_diagnostics(proposal)
+    return next(iter(diagnostics.values()), None)
+
+
+def _proposal_python_syntax_diagnostics(
+    proposal: ProposalManifest,
+) -> dict[str, str]:
+    """Return one source-free parser diagnosis for every failing Python snapshot."""
+    if proposal.schema_version != 2:
+        raise ValueError("repair syntax preflight requires snapshot proposal schema-v2")
+    diagnostics: dict[str, str] = {}
+    for edit in proposal.edits:
+        if Path(edit.path).suffix != ".py" or edit.operation == "delete":
+            continue
+        raw = edit.new_text.encode("utf-8")
+        if len(raw) > _MAX_CONTEXT_FILE_BYTES:
+            diagnostics[edit.path] = _syntax_diagnostic(
+                edit.path,
+                failure_type="python_size",
+            )
+            continue
+        try:
+            encoding, _ = tokenize.detect_encoding(io.BytesIO(raw).readline)
+            source = raw.decode(encoding)
+        except (LookupError, SyntaxError, UnicodeError):
+            diagnostics[edit.path] = _syntax_diagnostic(
+                edit.path,
+                failure_type="python_encoding",
+            )
+            continue
+        try:
+            ast.parse(source, filename="<parent-syntax-preflight>", mode="exec")
+        except SyntaxError as exc:
+            diagnostics[edit.path] = _syntax_diagnostic(
+                edit.path,
+                failure_type="python_syntax",
+                line=exc.lineno or 0,
+                column=exc.offset or 0,
+            )
+    return diagnostics
+
+
+def _repair_candidate_syntax_diagnosis(diagnostic: str) -> str:
+    """Build canonical source-free feedback for the next bounded repair decode."""
+    if _syntax_failure_class(diagnostic) != "python_syntax":
+        raise ValueError("repair candidate feedback requires Python syntax failure")
+    event = _EvaluationLifecycleEvent(
+        phase="syntax_preflight",
+        command_kind="syntax_preflight",
+        command_sha256=hashlib.sha256(
+            b"compact-v4-repair-candidate-syntax-preflight"
+        ).hexdigest(),
+        returncode=2,
+        duration_ms=0,
+        failure_class="python_syntax",
+    )
+    return _compact_evaluation_diagnosis(
+        event,
+        syntax_diagnostic=diagnostic,
+    )
 
 
 @dataclass(frozen=True, slots=True)

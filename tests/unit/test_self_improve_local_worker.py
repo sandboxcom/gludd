@@ -12,9 +12,12 @@ import scripts.self_improve_local_proposal as worker_module
 from scripts.self_improve_local_proposal import run_worker
 
 from general_ludd.self_improve.codex_comparison import (
+    COMPACT_PROPOSAL_PROTOCOL_V4,
+    COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
     DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID,
     ProposalContract,
     ProposalManifest,
+    encode_prompt_batch,
 )
 from general_ludd.self_improve.runtime import MakeResult, generate_local_proposal
 
@@ -77,6 +80,7 @@ def test_worker_writes_one_atomic_confined_proposal(
         "SELF_IMPROVE_LOCAL_PROPOSAL_SAMPLING "
         f"shard=1/1 profile={DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID}"
     ) in worker_output
+    assert "repair_state_sha256=none" in worker_output
     assert (
         "output_sha256=" + hashlib.sha256(output.read_bytes()).hexdigest()
     ) in worker_output
@@ -253,6 +257,59 @@ def test_worker_rejects_implicit_or_noncanonical_contract_transport(
             contract_path=outside,
             gateway_factory=_FakeGateway,
         )
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["sampling_seed", "sampling_context_sha256", "sampling_candidate_index"],
+)
+def test_worker_recomputes_repair_seed_context_before_model_construction(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    """Reject a modified repair seed or commitment at the owned CLI boundary."""
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"gguf")
+    exchange = tmp_path / "exchange"
+    exchange.mkdir()
+    request = encode_prompt_batch(("bounded repair prompt",), protocol_digest="f" * 64)
+    (exchange / "prompt.txt").write_text(request, encoding="utf-8")
+    contract = ProposalContract.for_request(
+        request=request,
+        baseline_sha="a" * 40,
+        task_id="S83.133",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+        proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+        sampling_profile=COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    )
+    value = json.loads(contract.to_json())
+    assert isinstance(contract.sampling_seed, int)
+    if field == "sampling_seed":
+        value[field] = contract.sampling_seed + 1
+    elif field == "sampling_context_sha256":
+        value[field] = "b" * 64
+    else:
+        value[field] = 1
+    contract_path = exchange / "contract.json"
+    contract_path.write_text(json.dumps(value), encoding="utf-8")
+    constructions = 0
+
+    def gateway_factory(_model_path: Path) -> _FakeGateway:
+        nonlocal constructions
+        constructions += 1
+        return _FakeGateway(_model_path)
+
+    with pytest.raises(ValueError, match="sampling context mismatch"):
+        run_worker(
+            exchange,
+            model,
+            contract_path=contract_path,
+            gateway_factory=gateway_factory,
+        )
+
+    assert constructions == 0
+    assert not (exchange / "proposal.json").exists()
 
 
 def test_worker_output_digest_telemetry_never_echoes_proposal_text(

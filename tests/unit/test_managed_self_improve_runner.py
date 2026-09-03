@@ -898,7 +898,27 @@ def test_compact_v4_attempt_identity_binds_explicit_contract_transport(
         ("_COMPACT_V4_SYNTAX_REPAIR_TEMPERATURE", 0.3),
         ("_COMPACT_V4_SYNTAX_REPAIR_TOP_P", 0.85),
         ("_COMPACT_V4_SYNTAX_REPAIR_TOP_K", 21),
-        ("_COMPACT_V4_SYNTAX_REPAIR_SEED", 104730),
+        (
+            "COMPACT_V4_REPAIR_SEED_DERIVATION_POLICY_ID",
+            "compact-v4-repair-seed-context-test-v2",
+        ),
+        ("COMPACT_V4_REPAIR_CANDIDATE_LIMIT", 2),
+        (
+            "COMPACT_V4_REPAIR_CANDIDATE_FEEDBACK_POLICY_ID",
+            "compact-v4-repair-feedback-test-v2",
+        ),
+        (
+            "COMPACT_V4_REPAIR_SHARD_STATE_POLICY_ID",
+            "compact-v4-repair-shard-state-test-v2",
+        ),
+        (
+            "COMPACT_V4_REPAIR_SHARD_PROMPT_POLICY_ID",
+            "compact-v4-repair-shard-prompt-test-v2",
+        ),
+        (
+            "COMPACT_V4_REPAIR_SPAN_PROVENANCE_POLICY_ID",
+            "compact-v4-repair-span-provenance-test-v2",
+        ),
     ],
 )
 def test_compact_v4_attempt_identity_binds_every_repair_sampling_control(
@@ -1729,6 +1749,12 @@ def test_compact_v4_syntax_repair_is_once_only_and_not_shared_with_next_model(
 
 def test_syntax_repair_material_is_repr_safe_and_strictly_bounded() -> None:
     """Keep draft text out of diagnostics and reject escape-expanded prompt payloads."""
+    retained = (_rejected_compact_proposal(),)
+    repair = managed_runner_module.build_syntax_repair_prompt_plan(
+        _compact_v4_prompt(),
+        retained,
+        _syntax_diagnosis(),
+    )
     oversized = CompactSpanProposal(
         focus_path="src/general_ludd/example.py",
         edits=(CompactLineSpan(1, 1, "\x01" * 700),),
@@ -1738,6 +1764,25 @@ def test_syntax_repair_material_is_repr_safe_and_strictly_bounded() -> None:
         compact_proposals=(oversized,),
     )
 
+    assert repair.repair_proposals == retained
+    assert "repair_proposals=" not in repr(repair)
+    repair_prompt = repair.shards[0].prompt
+    assert (
+        "Editable repair shard: src/general_ludd/example.py (this exact path only)."
+        in repair_prompt
+    )
+    assert "Other approved shards are immutable outside this call" in repair_prompt
+    assert "complete only this path's role in that objective" in repair_prompt
+    assert "Do not copy or patch the rejected z text" in repair_prompt
+    assert "Latest safe parser diagnosis for this exact path:" in repair_prompt
+    assert (
+        'Return exactly one complete compact {"e":[...]} object and nothing else.'
+        in repair_prompt
+    )
+    with pytest.raises(ValueError, match="repair state cannot be serialized"):
+        repair._json_value()
+    with pytest.raises(ValueError, match="must match every compact-v4 shard"):
+        replace(repair, repair_diagnosis_path_sha256="0" * 64)
     assert "SECRET_REJECTED_Z" not in repr(
         managed_runner_module.GeneratedProposal(
             proposal=_proposal(),
