@@ -1,7 +1,7 @@
 # Durable xdist Trace Summaries
 
 Status: implemented for the beta4 diagnostic workflow. Last reviewed:
-2026-08-20.
+2026-09-02.
 
 ## Purpose
 
@@ -9,6 +9,74 @@ Gludd's xdist trace is an append-only JSONL record designed to survive a worker
 exit or interrupted test run. The summary command reads that record without
 modifying it. A non-empty failure or unfinished-test result remains failure
 evidence; formatting options never turn an incomplete run into a passing one.
+
+## Parent-Readable Observed Commands
+
+Long coverage and collection commands use `scripts/stream_command.py` as their
+single observer. This reuses the runner already used by `gate-refresh`; it does
+not add a daemon, dependency, or second watchdog implementation. A delegated
+agent's terminal belongs to that agent's tool transcript, so its stdout is not
+routed into the parent agent's transcript while the tool is running. The shared
+filesystem is the durable cross-agent channel.
+
+Each invocation writes beneath `.gate-logs/observed/<label>/`:
+
+- `current.json` is the atomically replaced parent-facing snapshot.
+- `<run-id>.json` preserves that run's final and heartbeat state.
+- `<run-id>.log` holds complete combined child output.
+- `<run-id>.pytest.jsonl` holds pytest events when `--pytest-trace` is enabled.
+
+Status files are written beside their destination, flushed, fsynced, and moved
+with `os.replace`. The schema is versioned and always includes `kind`, `label`,
+`run_id`, `state`, owner and child PIDs, start/update/last-output timestamps,
+heartbeat sequence, elapsed and quiet seconds, byte and line counts, exit code,
+termination reason, log path, and optional trace path. States are `starting`,
+`running`, `passed`, `failed`, `timed_out`, or `interrupted`.
+
+The default heartbeat is 30 seconds and a reader treats an in-progress snapshot
+older than 90 seconds as stale. A dead owner is reported as orphaned; neither
+inference is presented as success. Status and log-write failures fail closed
+with exit 125. Runtime or quiet-output deadlines terminate the owned process
+group and return 124. Signals are forwarded to that group and return
+`128 + signal`; ordinary child exit codes are unchanged.
+
+The bounded readers never follow a log indefinitely:
+
+```console
+make run-watched CMD='make ci-repro-linux PYV=3.11' \
+  RUN_ID=ci-repro-311 STALL_SECS=180 MAX_SECS=3600 \
+  LOG=.gate-logs/observed/run-watched/ci-repro-311.log \
+  OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 \
+  OBSERVED_RETAIN_RUNS=20
+make observed-status OBSERVED_LABEL=coverage-files \
+  OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90
+make observed-tail OBSERVED_LABEL=coverage-files \
+  OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80
+```
+
+`coverage-files`, `test-count`, `collect-check`, and `run-watched` all use this
+contract. Quiet collection still updates its heartbeat while writing complete
+output to the run log; the former opaque `/tmp/gludd-collect-output.txt` file is
+gone. Coverage keeps its serial execution model and publishes the JSON report
+only after aggregate and per-file audits pass. On exit it removes only its
+namespaced basetemp, coverage-data fragments, and unpublished report fragment;
+durable status, logs, traces, and the last known-good report remain available.
+No service restart or deployment mutation is involved.
+After a terminal publish, the observer retains the newest 20 terminal runs per
+label and prunes only older run-owned status/log/trace triplets. Active runs,
+`current.json`, custom external logs, and malformed evidence are never pruned.
+
+Pytest-xdist documents that worker stdout and stderr
+[cannot be transferred live](https://pytest-xdist.readthedocs.io/en/stable/known-limitations.html#output-stdout-and-stderr-from-workers)
+because execnet does not support it. The pytest hook trace is the workaround: it
+records bounded lifecycle events rather than pretending worker output can cross
+that channel. Every event carries the observed run ID, collection records only
+its count, and summaries can select one run from an append-only log:
+
+```console
+make test-xdist-trace-summary LOG=/tmp/gludd-xdist-progress.log \
+  RUN_ID=20260902T120000Z-1234-abcd1234
+```
 
 The reporting modes are deliberately separate:
 
@@ -78,6 +146,13 @@ unfinished work rather than manufacturing a pass/fail verdict.
 
 These upstream reports were reviewed on 2026-08-20. They motivate durable,
 bounded diagnostics but do not establish the root cause of Gludd's worker exit.
+
+- pytest-xdist issue
+  [#110](https://github.com/pytest-dev/pytest-xdist/issues/110), opened
+  2017-01-11, records a practitioner finding workers stuck for more than 13
+  hours and using the last visible worker/test assignment to narrow the hang.
+  That long-lived report directly motivates a durable last-event trace and a
+  heartbeat that a separate parent can read.
 
 - pytest-xdist issue
   [#922](https://github.com/pytest-dev/pytest-xdist/issues/922), opened

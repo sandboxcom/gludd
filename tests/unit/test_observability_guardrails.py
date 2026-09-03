@@ -239,6 +239,44 @@ class TestNoSilentStalls:
         for token in ("STALL_SECS", "MAX_SECS", "RESULT=STALLED", "kill"):
             assert token in mk, f"run-watched watchdog is missing {token!r}"
 
+    def test_observed_commands_share_one_status_and_tail_mechanism(self) -> None:
+        coverage = _recipe("coverage-files")
+        test_count = _recipe("test-count")
+        collect = _recipe("collect-check")
+        watched = _recipe("run-watched")
+
+        for label, body in (
+            ("coverage-files", coverage),
+            ("test-count", test_count),
+            ("collect-check", collect),
+            ("run-watched", watched),
+        ):
+            assert "scripts/stream_command.py" in body
+            assert f"--label {label}" in body
+            assert "--root \"$(OBSERVED_ROOT)\"" in body
+            assert "--retain-runs \"$(OBSERVED_RETAIN_RUNS)\"" in body
+
+        assert "--pytest-trace" in coverage
+        assert "-p scripts.xdist_trace_plugin" in coverage
+        assert "-W error" in coverage
+        assert "$(COVERAGE_REPORT).tmp." in coverage
+        assert 'mv "$$GLUDD_COVERAGE_REPORT_WORK" "$(COVERAGE_REPORT)"' in coverage
+        assert "--quiet" in test_count
+        assert "--quiet" in collect
+        assert "scripts/collection_lock.py --run" in collect
+        assert "/tmp/gludd-collect-output.txt" not in collect
+        assert 'exit "$$RC"' in collect
+        assert "--quiet-secs \"$(STALL_SECS)\"" in watched
+        assert "--max-secs \"$(MAX_SECS)\"" in watched
+        assert '$(if $(RUN_ID),--run-id "$(RUN_ID)",)' in watched
+        assert "while kill -0" not in watched
+
+        status = _recipe("observed-status")
+        tail = _recipe("observed-tail")
+        assert "--status" in status
+        assert "--stale-secs \"$(OBSERVED_STALE_SECS)\"" in status
+        assert "--tail \"$(OBSERVED_TAIL_LINES)\"" in tail
+
     def test_every_ci_job_has_timeout_minutes(self) -> None:
         import yaml
 

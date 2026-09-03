@@ -812,9 +812,49 @@
         "COVERAGE_CONFIG",
         "COVERAGE_REPORT",
         "COVERAGE_AGGREGATE_MIN",
-        "COVERAGE_PER_FILE_MIN"
+        "COVERAGE_PER_FILE_MIN",
+        "OBSERVED_ROOT",
+        "OBSERVED_HEARTBEAT_SECS",
+        "OBSERVED_QUIET_SECS",
+        "OBSERVED_MAX_SECS",
+        "OBSERVED_RETAIN_RUNS"
       ],
-      "behavior": "make coverage-files COVERAGE_TESTFILES='scripts/test_hook_runtime.py tests/unit/test_floor_controller.py tests/unit/test_opencode_integrity.py tests/unit/test_w22_opencode_integrity.py' COVERAGE_CONFIG=config/coverage_gate_runtime.ini COVERAGE_REPORT=.gate-logs/coverage-files.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75"
+      "behavior": "make coverage-files COVERAGE_TESTFILES='tests/unit/test_observed_command.py tests/unit/test_xdist_trace_diagnostics.py tests/unit/test_gate_refresh_streaming.py tests/unit/test_observability_guardrails.py' COVERAGE_CONFIG=config/coverage_observed_command.ini COVERAGE_REPORT=.gate-logs/coverage-observed-command.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=1 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20"
+    },
+    {
+      "name": "observed-status",
+      "make_variables": ["OBSERVED_LABEL", "OBSERVED_ROOT", "OBSERVED_STALE_SECS"],
+      "behavior": "make observed-status OBSERVED_LABEL=run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90"
+    },
+    {
+      "name": "observed-tail",
+      "make_variables": ["OBSERVED_LABEL", "OBSERVED_ROOT", "OBSERVED_TAIL_LINES"],
+      "behavior": "make observed-tail OBSERVED_LABEL=run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80"
+    },
+    {
+      "name": "run-watched",
+      "make_variables": ["CMD", "RUN_ID", "STALL_SECS", "MAX_SECS", "LOG", "OBSERVED_ROOT", "OBSERVED_HEARTBEAT_SECS", "OBSERVED_RETAIN_RUNS"],
+      "behavior": "make run-watched CMD='printf observed-contract' RUN_ID=contract-run-watched STALL_SECS=180 MAX_SECS=3600 LOG=.gate-logs/observed/run-watched/contract.log OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_RETAIN_RUNS=20"
+    },
+    {
+      "name": "test-count",
+      "make_variables": ["OBSERVED_ROOT", "OBSERVED_HEARTBEAT_SECS", "OBSERVED_QUIET_SECS", "OBSERVED_MAX_SECS", "OBSERVED_RETAIN_RUNS"],
+      "behavior": "make test-count OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20"
+    },
+    {
+      "name": "collect-check",
+      "make_variables": ["OBSERVED_ROOT", "OBSERVED_HEARTBEAT_SECS", "OBSERVED_QUIET_SECS", "OBSERVED_MAX_SECS", "OBSERVED_RETAIN_RUNS", "OBSERVED_TAIL_LINES"],
+      "behavior": "make collect-check OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20 OBSERVED_TAIL_LINES=80"
+    },
+    {
+      "name": "test-xdist-trace",
+      "make_variables": ["LOG", "TESTPATH", "PYTEST_ARGS", "RUN_ID"],
+      "behavior": "make test-xdist-trace LOG=/tmp/gludd-xdist-contract.jsonl TESTPATH=tests/unit/test_xdist_trace_diagnostics.py PYTEST_ARGS='-k summary_filters_an_append_only_trace_by_run_id' RUN_ID=contract-run"
+    },
+    {
+      "name": "test-xdist-trace-summary",
+      "make_variables": ["LOG", "RUN_ID"],
+      "behavior": "make test-xdist-trace-summary LOG=/tmp/gludd-xdist-contract.jsonl RUN_ID=contract-run"
     },
     {
       "name": "validate-ansible-runtime-boundary",

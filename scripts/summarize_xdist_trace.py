@@ -1,3 +1,5 @@
+"""Summarize durable pytest trace events without discarding failure evidence."""
+
 from __future__ import annotations
 
 import argparse
@@ -15,9 +17,24 @@ _MEMORY_KEYS = (
     "memory_by_worker",
     "largest_rss_increases",
 )
+_RUN_ID_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-"
+)
 
 
-def _events(path: Path) -> list[dict[str, Any]]:
+def _validated_run_id(value: str) -> str:
+    """Accept only the safe path-component format emitted by the observer."""
+    if (
+        not value
+        or len(value) > 200
+        or value[0] in ".-"
+        or any(character not in _RUN_ID_CHARS for character in value)
+    ):
+        raise argparse.ArgumentTypeError("run ID must be a safe path component")
+    return value
+
+
+def _events(path: Path, *, run_id: str | None = None) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     parsed: list[dict[str, Any]] = []
@@ -27,9 +44,12 @@ def _events(path: Path) -> list[dict[str, Any]]:
         try:
             value = json.loads(line)
         except json.JSONDecodeError:
-            parsed.append({"event": "PARSE_ERROR", "line": line[:500]})
+            if run_id is None:
+                parsed.append({"event": "PARSE_ERROR", "line": line[:500]})
             continue
-        if isinstance(value, dict):
+        if isinstance(value, dict) and (
+            run_id is None or value.get("run_id") == run_id
+        ):
             parsed.append(value)
     return parsed
 
@@ -73,9 +93,13 @@ def _as_kib(value: int) -> int:
 
 
 def summarize_log(
-    path: Path, *, legacy_rss_unit: LegacyRssUnit = "auto"
+    path: Path,
+    *,
+    legacy_rss_unit: LegacyRssUnit = "auto",
+    run_id: str | None = None,
 ) -> dict[str, Any]:
-    events = _events(path)
+    """Summarize all events, or only events matching one validated run ID."""
+    events = _events(path, run_id=run_id)
     resolved_legacy_unit = _legacy_rss_input_unit(events, legacy_rss_unit)
     unfinished: dict[tuple[str, str], dict[str, str]] = {}
     failures: list[dict[str, Any]] = []
@@ -157,7 +181,7 @@ def summarize_log(
         key=lambda value: int(value["increase_rss_bytes"]), reverse=True
     )
 
-    return {
+    summary = {
         "path": str(path),
         "events": len(events),
         "started": started,
@@ -172,12 +196,17 @@ def summarize_log(
         "memory_by_worker": dict(sorted(memory_by_worker.items())),
         "largest_rss_increases": largest_rss_increases[:25],
     }
+    if run_id is not None:
+        summary["run_id"] = run_id
+    return summary
 
 
 def _selected_summary(
     summary: dict[str, Any], keys: tuple[str, ...], *, include_memory: bool
 ) -> dict[str, Any]:
     selected = {key: summary[key] for key in keys}
+    if "run_id" in summary:
+        selected["run_id"] = summary["run_id"]
     if include_memory:
         selected.update({key: summary[key] for key in _MEMORY_KEYS})
     return selected
@@ -216,11 +245,17 @@ def failures_only_summary(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Print the selected compact, failure-only, or verbose JSON summary."""
     parser = argparse.ArgumentParser(description="Summarize a Gludd xdist JSONL trace")
     output_mode = parser.add_mutually_exclusive_group()
     output_mode.add_argument("--verbose", action="store_true")
     output_mode.add_argument("--failures-only", action="store_true")
     parser.add_argument("--include-memory", action="store_true")
+    parser.add_argument(
+        "--run-id",
+        type=_validated_run_id,
+        help="include only events from this observed-command run",
+    )
     parser.add_argument(
         "--legacy-rss-unit",
         choices=("auto", "bytes", "kib"),
@@ -230,7 +265,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("path", nargs="?", default=DEFAULT_TRACE_LOG)
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     path = Path(args.path)
-    summary = summarize_log(path, legacy_rss_unit=args.legacy_rss_unit)
+    summary = summarize_log(
+        path,
+        legacy_rss_unit=args.legacy_rss_unit,
+        run_id=args.run_id,
+    )
     if args.verbose:
         output = summary
     elif args.failures_only:

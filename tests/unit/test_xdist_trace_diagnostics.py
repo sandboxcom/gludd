@@ -14,7 +14,10 @@ def test_trace_event_writes_jsonl_with_resource_fields(
     from scripts import xdist_trace_plugin as trace
 
     log_path = tmp_path / "trace.jsonl"
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_PATH", None)
+    monkeypatch.setattr(trace, "_ACTIVE_RUN_ID", None)
     monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(log_path))
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "observed-run-7")
     monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw7")
 
     trace.write_event("START", nodeid="tests/demo.py::test_demo")
@@ -23,11 +26,76 @@ def test_trace_event_writes_jsonl_with_resource_fields(
     assert payload["event"] == "START"
     assert payload["nodeid"] == "tests/demo.py::test_demo"
     assert payload["worker"] == "gw7"
+    assert payload["run_id"] == "observed-run-7"
     assert payload["pid"] > 0
     assert "timestamp" in payload
     assert "loadavg" in payload
     assert "disk_free_bytes" in payload
     assert "rss_kb" in payload
+
+
+def test_collection_finish_records_only_the_bounded_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    log_path = tmp_path / "trace.jsonl"
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_PATH", log_path)
+    monkeypatch.setattr(trace, "_ACTIVE_RUN_ID", "collect-run")
+    session = SimpleNamespace(items=[object(), object(), object()])
+
+    trace.pytest_collection_finish(cast(pytest.Session, session))
+
+    payload = json.loads(log_path.read_text(encoding="utf-8"))
+    assert payload["event"] == "COLLECTION_FINISH"
+    assert payload["run_id"] == "collect-run"
+    assert payload["collected"] == 3
+    assert "nodeids" not in payload
+
+
+def test_trace_resource_probes_degrade_to_bounded_empty_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    def unavailable(*_args: object, **_kwargs: object) -> None:
+        raise OSError("resource probe unavailable")
+
+    monkeypatch.setattr(trace.os, "getloadavg", unavailable)
+    monkeypatch.setattr(trace.resource, "getrusage", unavailable)
+    monkeypatch.setattr(trace.shutil, "disk_usage", unavailable)
+
+    assert trace._loadavg() == []
+    assert trace._rss_kb() == 0
+    assert trace._disk_free_bytes() == 0
+
+
+def test_trace_protocol_records_exception_and_ignores_passing_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    log_path = tmp_path / "trace.jsonl"
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_PATH", log_path)
+    monkeypatch.setattr(trace, "_ACTIVE_RUN_ID", "exception-run")
+    item = SimpleNamespace(nodeid="tests/demo.py::test_error")
+    protocol = trace.pytest_runtest_protocol(cast(pytest.Item, item), None)
+
+    next(protocol)
+    with pytest.raises(StopIteration):
+        protocol.send(
+            SimpleNamespace(excinfo=(ValueError, ValueError("broken protocol"), None))
+        )
+    trace.pytest_runtest_logreport(
+        cast(pytest.TestReport, SimpleNamespace(failed=False))
+    )
+
+    events = [
+        json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [event["event"] for event in events] == ["START", "FINISH"]
+    assert events[1]["outcome"] == "exception"
+    assert events[1]["exc_type"] == "ValueError"
 
 
 def test_controller_sessionstart_truncates_trace_once(
@@ -68,6 +136,71 @@ def test_summary_identifies_unfinished_nodeids(tmp_path: Path) -> None:
     assert summary["started"] == 2
     assert summary["finished"] == 1
     assert summary["unfinished"] == [{"worker": "gw1", "nodeid": "tests/b.py::test_b"}]
+
+
+def test_summary_filters_an_append_only_trace_by_run_id(tmp_path: Path) -> None:
+    from scripts.summarize_xdist_trace import summarize_log
+
+    log_path = tmp_path / "trace.jsonl"
+    log_path.write_text(
+        chr(10).join(
+            [
+                "not json from an unrelated historical run",
+                json.dumps(
+                    {
+                        "event": "START",
+                        "run_id": "old-run",
+                        "worker": "gw0",
+                        "nodeid": "tests/old.py::test_old",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event": "START",
+                        "run_id": "current-run",
+                        "worker": "gw1",
+                        "nodeid": "tests/current.py::test_current",
+                    }
+                ),
+            ]
+        )
+        + chr(10),
+        encoding="utf-8",
+    )
+
+    summary = summarize_log(log_path, run_id="current-run")
+
+    assert summary["run_id"] == "current-run"
+    assert summary["events"] == 1
+    assert summary["started"] == 1
+    assert summary["last_by_worker"] == {
+        "gw1": "tests/current.py::test_current"
+    }
+
+
+def test_summary_cli_accepts_run_id_filter(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from scripts.summarize_xdist_trace import main
+
+    log_path = tmp_path / "trace.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "event": "RUN_FINISH",
+                "run_id": "selected-run",
+                "worker": "controller",
+            }
+        )
+        + chr(10),
+        encoding="utf-8",
+    )
+
+    assert main(["--run-id", "selected-run", str(log_path)]) == 0
+    assert json.loads(capsys.readouterr().out)["run_id"] == "selected-run"
+
+    with pytest.raises(SystemExit):
+        main(["--run-id", "../other-run", str(log_path)])
 
 
 def test_compact_summary_keeps_every_unique_failure_without_tracebacks(tmp_path: Path) -> None:
@@ -343,7 +476,9 @@ def test_make_targets_run_traced_full_suite() -> None:
     assert "scripts/run_xdist_trace.py" in makefile
     assert "--max-worker-restart=0" in makefile
     assert "-p scripts.xdist_trace_plugin" in makefile
+    assert "GLUDD_XDIST_TRACE_RUN_ID" in makefile
     assert chr(10) + "test-xdist-trace-summary:" in makefile
+    assert '--run-id "$(RUN_ID)"' in makefile
 
 
 def test_runner_exports_repo_root_for_plugin_import(monkeypatch: pytest.MonkeyPatch) -> None:

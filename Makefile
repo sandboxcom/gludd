@@ -58,6 +58,15 @@ COVERAGE_CONFIG ?= config/coverage_gate_runtime.ini
 COVERAGE_REPORT ?= .gate-logs/coverage-files.json
 COVERAGE_AGGREGATE_MIN ?= 85
 COVERAGE_PER_FILE_MIN ?= 75
+OBSERVED_ROOT ?= .gate-logs/observed
+OBSERVED_HEARTBEAT_SECS ?= 30
+OBSERVED_STALE_SECS ?= 90
+OBSERVED_QUIET_SECS ?= 900
+OBSERVED_MAX_SECS ?= 3600
+OBSERVED_TAIL_LINES ?= 80
+OBSERVED_RETAIN_RUNS ?= 20
+OBSERVED_LABEL ?=
+RUN_ID ?=
 CLEAN_VALIDATE_ONLY ?= 0
 CLEAN_WORKTREE_VENVS_VALIDATE_ONLY ?= 0
 DISK_MIN_FREE_GIB ?= 8
@@ -157,7 +166,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         container-build container-run container-push \
          file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist-clean bundle-binaries bundle-ripgrep \
         sast sast-summary sbom pip-audit security security-backlog-gate \
-        audit-messages qa validate collect-check pre-commit-check coverage-files gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory check-generated-artifact-hygiene \
+        audit-messages qa validate collect-check pre-commit-check coverage-files observed-status observed-tail gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory check-generated-artifact-hygiene \
         status-snapshot audit-evidence deps-audit dogfood-features ruff-audit check-make-help \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
@@ -259,7 +268,10 @@ help:
 	@echo "  gate-refresh          Refresh fast phases; stream fallback test node IDs (GATE_REFRESH_VALIDATE_ONLY=0|1)"
 	@echo "  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM"
 	@echo "  gate-audit            Gate + coverage audit (85% per-file threshold)"
-	@echo "  coverage-files        Targeted branch coverage (COVERAGE_TESTFILES, COVERAGE_CONFIG, COVERAGE_REPORT, COVERAGE_AGGREGATE_MIN, COVERAGE_PER_FILE_MIN)"
+	@echo "  coverage-files        Observable targeted coverage (COVERAGE_* plus OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_QUIET_SECS, OBSERVED_MAX_SECS, OBSERVED_RETAIN_RUNS)"
+	@echo "  observed-status       Print atomic current command status (OBSERVED_LABEL, OBSERVED_ROOT, OBSERVED_STALE_SECS)"
+	@echo "  observed-tail         Print bounded current command log tail (OBSERVED_LABEL, OBSERVED_ROOT, OBSERVED_TAIL_LINES)"
+	@echo "  run-watched           Observe one bounded command (CMD, RUN_ID, STALL_SECS, MAX_SECS, LOG, OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_RETAIN_RUNS)"
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)"
@@ -268,8 +280,8 @@ help:
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  pre-commit-check      Fast lint + collection + typecheck commit preflight"
 	@echo "  test-nodeids          Print bounded pytest node-id slice (START/LIMIT/TESTPATH)"
-	@echo "  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace"
-	@echo "  test-xdist-trace-summary  Summarize /tmp/gludd-xdist-progress.log unfinished tests"
+	@echo "  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace (LOG, TESTPATH, PYTEST_ARGS, RUN_ID)"
+	@echo "  test-xdist-trace-summary  Summarize one durable trace/run (LOG, RUN_ID)"
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
 	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
 	@echo "  codemod-lean-enforcement-plugins Extract bulky enforcement implementations from counted plugin entrypoints"
@@ -962,34 +974,37 @@ test-files:
 	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
 coverage-files:
-	@if [ -z "$(COVERAGE_TESTFILES)" ]; then echo "Usage: make coverage-files COVERAGE_TESTFILES='tests/unit/test_a.py' COVERAGE_CONFIG=config/coverage.ini COVERAGE_REPORT=.gate-logs/coverage-files.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75"; exit 2; fi
+	@if [ -z "$(COVERAGE_TESTFILES)" ]; then echo "Usage: make coverage-files COVERAGE_TESTFILES='tests/unit/test_a.py' COVERAGE_CONFIG=config/coverage.ini COVERAGE_REPORT=.gate-logs/coverage-files.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20"; exit 2; fi
 	@test -f "$(COVERAGE_CONFIG)" || { echo "coverage-files: missing config $(COVERAGE_CONFIG)"; exit 2; }
 	@mkdir -p "$$(dirname "$(COVERAGE_REPORT)")"
 	@BT="/tmp/gludd-coverage-files-$${ID:-$$$$}"; \
 		COVERAGE_RC="$$(cd "$$(dirname "$(COVERAGE_CONFIG)")" && pwd)/$$(basename "$(COVERAGE_CONFIG)")"; \
-		DATA_FILE="$(CURDIR)/.gate-logs/coverage-files-data"; \
-		rm -rf "$$BT"; \
-		echo "=== COVERAGE FILES: execute aggregate>=$(COVERAGE_AGGREGATE_MIN)% per-file>=$(COVERAGE_PER_FILE_MIN)% ==="; \
-		COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage erase --rcfile="$$COVERAGE_RC"; \
-		COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage run --rcfile="$$COVERAGE_RC" \
-			-m pytest $(COVERAGE_TESTFILES) -v --basetemp="$$BT"; \
-		RC=$$?; \
-		if [ "$$RC" -eq 0 ]; then \
-			COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage combine --rcfile="$$COVERAGE_RC"; \
-			COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage report --rcfile="$$COVERAGE_RC" --fail-under="$(COVERAGE_AGGREGATE_MIN)"; \
-			RC=$$?; \
-		fi; \
-		if [ "$$RC" -eq 0 ]; then \
-			COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage json --rcfile="$$COVERAGE_RC" -o "$(COVERAGE_REPORT)"; \
-			RC=$$?; \
-		fi; \
-		if [ "$$RC" -eq 0 ]; then \
+		DATA_FILE="$(CURDIR)/.gate-logs/coverage-files-data-$${ID:-$$$$}"; \
+		REPORT_WORK="$(COVERAGE_REPORT).tmp.$${ID:-$$$$}"; \
+		rm -rf "$$BT"; rm -f "$$REPORT_WORK"; \
+		cleanup() { RC=$$?; trap - EXIT INT TERM; rm -rf "$$BT"; rm -f "$$REPORT_WORK" "$$DATA_FILE" "$$DATA_FILE".*; exit $$RC; }; \
+		trap cleanup EXIT INT TERM; \
+		export GLUDD_COVERAGE_RC="$$COVERAGE_RC" GLUDD_COVERAGE_DATA="$$DATA_FILE" GLUDD_COVERAGE_BT="$$BT" GLUDD_COVERAGE_REPORT_WORK="$$REPORT_WORK"; \
+		$(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label coverage-files \
+			--heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" \
+			--max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" --pytest-trace -- /bin/sh -c 'set -e; \
+			echo "=== COVERAGE FILES: execute aggregate>=$(COVERAGE_AGGREGATE_MIN)% per-file>=$(COVERAGE_PER_FILE_MIN)% ==="; \
+			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage erase --rcfile="$$GLUDD_COVERAGE_RC"; \
+			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage run --rcfile="$$GLUDD_COVERAGE_RC" -m pytest $(COVERAGE_TESTFILES) -v -W error --basetemp="$$GLUDD_COVERAGE_BT" -p scripts.xdist_trace_plugin; \
+			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage combine --rcfile="$$GLUDD_COVERAGE_RC"; \
+			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage report --rcfile="$$GLUDD_COVERAGE_RC" --fail-under="$(COVERAGE_AGGREGATE_MIN)"; \
+			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage json --rcfile="$$GLUDD_COVERAGE_RC" -o "$$GLUDD_COVERAGE_REPORT_WORK"; \
 			echo "=== COVERAGE FILES: verify every measured file >=$(COVERAGE_PER_FILE_MIN)% ==="; \
-			$(UV) run python scripts/audit_coverage.py --json-file="$(COVERAGE_REPORT)" --threshold="$(COVERAGE_AGGREGATE_MIN)" --per-file-threshold="$(COVERAGE_PER_FILE_MIN)" --source=.; \
-			RC=$$?; \
-		fi; \
-		rm -rf "$$BT"; \
-		exit "$$RC"
+			$(UV) run python scripts/audit_coverage.py --json-file="$$GLUDD_COVERAGE_REPORT_WORK" --threshold="$(COVERAGE_AGGREGATE_MIN)" --per-file-threshold="$(COVERAGE_PER_FILE_MIN)" --source=.; \
+			mv "$$GLUDD_COVERAGE_REPORT_WORK" "$(COVERAGE_REPORT)"'
+
+observed-status:
+	@if [ -z "$(OBSERVED_LABEL)" ]; then echo "Usage: make observed-status OBSERVED_LABEL=coverage-files OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90"; exit 2; fi
+	@$(UV) run python scripts/stream_command.py --status --root "$(OBSERVED_ROOT)" --label "$(OBSERVED_LABEL)" --stale-secs "$(OBSERVED_STALE_SECS)"
+
+observed-tail:
+	@if [ -z "$(OBSERVED_LABEL)" ]; then echo "Usage: make observed-tail OBSERVED_LABEL=coverage-files OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80"; exit 2; fi
+	@$(UV) run python scripts/stream_command.py --tail "$(OBSERVED_TAIL_LINES)" --root "$(OBSERVED_ROOT)" --label "$(OBSERVED_LABEL)"
 
 _ci-replica-clean-tree:
 	@if python3 scripts/worktree_state_guard.py --assert-clean --claim-token >/tmp/gludd-ci-replica-clean-tree.txt 2>&1; then \
@@ -1090,15 +1105,20 @@ task:
 	@EXIT=$$?; if [ $$EXIT -eq 124 ]; then echo "TASK TIMEOUT: $(CMD) exceeded $(GLUDD_TASK_TIMEOUT)s"; fi; exit $$EXIT
 
 test-count:
-	@$(UV) run python -m pytest tests/ --co -q 2>&1 | tail -3
+	@$(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label test-count \
+		--heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" \
+		--max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" --quiet --pytest-trace -- \
+		$(UV) run python -m pytest tests/ --co -q -p scripts.xdist_trace_plugin; RC=$$?; \
+		$(UV) run python scripts/stream_command.py --tail 3 --root "$(OBSERVED_ROOT)" --label test-count || TAIL_RC=$$?; \
+		if [ "$$RC" -ne 0 ]; then exit "$$RC"; fi; exit "$${TAIL_RC:-0}"
 test-nodeids:
 	@$(UV) run python scripts/collect_nodeids.py --start $(or $(START),1) --limit $(or $(LIMIT),120) $(or $(TESTPATH),tests/)
 
 test-xdist-trace:
-	@$(UV) run python scripts/run_xdist_trace.py --log "$(or $(LOG),/tmp/gludd-xdist-progress.log)" --basetemp "/tmp/gludd-xdist-trace-$${ID:-$$$$}" -- $(or $(TESTPATH),tests/) $(_XD) -q --max-worker-restart=0 -p scripts.xdist_trace_plugin $(PYTEST_ARGS)
+	@GLUDD_XDIST_TRACE_RUN_ID="$(or $(RUN_ID),xdist-$${ID:-$$$$})" $(UV) run python scripts/run_xdist_trace.py --log "$(or $(LOG),/tmp/gludd-xdist-progress.log)" --basetemp "/tmp/gludd-xdist-trace-$${ID:-$$$$}" -- $(or $(TESTPATH),tests/) $(_XD) -q --max-worker-restart=0 -p scripts.xdist_trace_plugin $(PYTEST_ARGS)
 
 test-xdist-trace-summary:
-	@$(UV) run python scripts/summarize_xdist_trace.py $(or $(LOG),/tmp/gludd-xdist-progress.log)
+	@$(UV) run python scripts/summarize_xdist_trace.py $(if $(RUN_ID),--run-id "$(RUN_ID)",) $(or $(LOG),/tmp/gludd-xdist-progress.log)
 
 test-count-e2e:
 	@find tests/e2e -name 'test_*.py' | wc -l | xargs echo "e2e test files:"
@@ -1114,11 +1134,14 @@ check-makefile-structure:
 	@$(UV) run python -m pytest tests/unit/test_makefile_syntax.py -q -n 0
 
 collect-check:
-	@$(UV) run python scripts/collection_lock.py --run $(UV) run python -m pytest tests/ --co -q > /tmp/gludd-collect-output.txt 2>&1; EXIT=$$?; \
-	if [ $$EXIT -ne 0 ]; then \
-		echo "COLLECTION ERRORS DETECTED"; \
-		grep -E "ERROR|error" /tmp/gludd-collect-output.txt | grep -vE '^\s+<(Function|Coroutine|Class)' | head -20; \
-		exit 1; \
+	@$(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label collect-check \
+		--heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" \
+		--max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" --quiet --pytest-trace -- \
+		$(UV) run python scripts/collection_lock.py --run $(UV) run python -m pytest tests/ --co -q -p scripts.xdist_trace_plugin; RC=$$?; \
+	if [ "$$RC" -ne 0 ]; then \
+		echo "COLLECTION ERRORS DETECTED (rc=$$RC; bounded tail follows)"; \
+		$(UV) run python scripts/stream_command.py --tail "$(OBSERVED_TAIL_LINES)" --root "$(OBSERVED_ROOT)" --label collect-check || true; \
+		exit "$$RC"; \
 	fi; \
 	echo "Collection OK"
 
@@ -1927,14 +1950,10 @@ kill-all-stale:
 ship-async:
 	@bash scripts/ship_async.sh $(REF) $(TARGET)
 
-# STALL WATCHDOG — run a long command under active no-progress + max-runtime
-# supervision so a hang can NEVER sit silently forever. Streams the command's
-# output to LOG; every 10s it checks (a) how long since LOG last grew (idle) and
-# (b) total elapsed. If idle >= STALL_SECS (no progress = stalled) or elapsed >=
-# MAX_SECS, it kills the whole process tree and exits non-zero (124) with a clear
-# RESULT= line — so the supervising task COMPLETES (and notifies) instead of
-# leaving anyone waiting on a dead run. Emits a heartbeat each cycle.
-#   Usage: make run-watched CMD='make ci-repro-linux PYV=3.11' STALL_SECS=180 MAX_SECS=3600
+# STALL WATCHDOG — use the same atomic observed-command state, heartbeat, owned
+# process-group cleanup, and RESULT=STALLED-compatible rc=124 semantics as
+# coverage and collection. No independent shell watchdog state machine remains.
+#   Usage: make run-watched CMD='make ci-repro-linux PYV=3.11' RUN_ID=ci-repro-311 STALL_SECS=180 MAX_SECS=3600
 BASE ?=
 BRANCHES ?=
 MERGE_STRATEGY ?= stop-on-conflict
@@ -1946,30 +1965,10 @@ gated-merge:
 STALL_SECS ?= 180
 MAX_SECS ?= 3600
 run-watched:
-	@if [ -z "$(CMD)" ]; then echo "Usage: make run-watched CMD='<command>' [STALL_SECS=180] [MAX_SECS=3600] [LOG=/tmp/gludd-watched.log]"; exit 1; fi
-	@LOGF="$${LOG:-/tmp/gludd-watched.log}"; : > "$$LOGF"; \
-	echo "[watchdog] CMD: $(CMD)"; \
-	echo "[watchdog] stall>$(STALL_SECS)s or total>$(MAX_SECS)s -> kill tree + RESULT; log=$$LOGF"; \
-	set -m; $(CMD) > "$$LOGF" 2>&1 & CMDPID=$$!; \
-	START=$$(date +%s); \
-	while kill -0 $$CMDPID 2>/dev/null; do \
-		sleep 10; \
-		NOW=$$(date +%s); \
-		MT=$$(stat -f %m "$$LOGF" 2>/dev/null || stat -c %Y "$$LOGF" 2>/dev/null || echo $$NOW); \
-		IDLE=$$((NOW - MT)); ELAPSED=$$((NOW - START)); \
-		echo "[watchdog $$(date +%H:%M:%S)] elapsed=$${ELAPSED}s idle=$${IDLE}s (last log line: $$(tail -1 "$$LOGF" 2>/dev/null | cut -c1-70))"; \
-		if [ "$$IDLE" -ge "$(STALL_SECS)" ]; then \
-			echo "[watchdog] STALL: no output for $${IDLE}s — killing tree"; \
-			kill -TERM -$$CMDPID 2>/dev/null || kill -TERM $$CMDPID 2>/dev/null; sleep 2; kill -KILL -$$CMDPID 2>/dev/null || kill -KILL $$CMDPID 2>/dev/null; pkill -9 -f gludd-gate-basetemp 2>/dev/null; \
-			echo "[watchdog] RESULT=STALLED idle=$${IDLE}s elapsed=$${ELAPSED}s"; exit 124; \
-		fi; \
-		if [ "$$ELAPSED" -ge "$(MAX_SECS)" ]; then \
-			echo "[watchdog] TIMEOUT: ran $${ELAPSED}s — killing tree"; \
-			kill -TERM -$$CMDPID 2>/dev/null || kill -TERM $$CMDPID 2>/dev/null; sleep 2; kill -KILL -$$CMDPID 2>/dev/null || kill -KILL $$CMDPID 2>/dev/null; pkill -9 -f gludd-gate-basetemp 2>/dev/null; \
-			echo "[watchdog] RESULT=TIMEOUT elapsed=$${ELAPSED}s"; exit 124; \
-		fi; \
-	done; \
-	wait $$CMDPID; RC=$$?; echo "[watchdog] RESULT=EXIT rc=$$RC elapsed=$$(($$(date +%s)-START))s"; exit $$RC
+	@if [ -z "$(CMD)" ]; then echo "Usage: make run-watched CMD='<command>' [RUN_ID=name] [STALL_SECS=180] [MAX_SECS=3600] [LOG=.gate-logs/observed/run-watched/name.log] [OBSERVED_RETAIN_RUNS=20]"; exit 1; fi
+	@$(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label run-watched \
+		$(if $(RUN_ID),--run-id "$(RUN_ID)",) $(if $(LOG),--log "$(LOG)",) --heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" \
+		--quiet-secs "$(STALL_SECS)" --max-secs "$(MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" -- $(CMD)
 
 test-integration:
 	@BT=$$(mktemp -d /tmp/gludd-test-integration-XXXXXX); \
