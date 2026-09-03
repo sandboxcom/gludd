@@ -630,6 +630,72 @@ def test_status_and_tail_address_retained_terminal_run_after_current_advances(
     assert capsys.readouterr().out == "run-1\n"
 
 
+def test_current_run_id_alias_resolves_payload_identity_and_preserves_exact_lookup(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The explicit current alias resolves the real run without weakening exact IDs."""
+
+    for run_id in ("run-1", "run-2"):
+        assert (
+            stream_command.stream_command(
+                [sys.executable, "-c", "pass"],
+                tmp_path / "observed" / "demo" / f"{run_id}.log",
+                observed_root=tmp_path / "observed",
+                label="demo",
+                run_id=run_id,
+                quiet=True,
+                retain_runs=2,
+            )
+            == 0
+        )
+
+    capsys.readouterr()
+    for requested_run_id, expected_run_id in (("current", "run-2"), ("run-1", "run-1")):
+        assert (
+            stream_command.main(
+                [
+                    "--status",
+                    "--root",
+                    str(tmp_path / "observed"),
+                    "--label",
+                    "demo",
+                    "--run-id",
+                    requested_run_id,
+                    "--stale-secs",
+                    "90",
+                ]
+            )
+            == 0
+        )
+        status = json.loads(capsys.readouterr().out)
+        assert status["run_id"] == expected_run_id
+
+
+def test_current_run_id_alias_rejects_unsafe_payload_run_identity(
+    tmp_path: Path,
+) -> None:
+    """A current pointer cannot use its payload to escape retained-run identity."""
+
+    label_dir = tmp_path / "observed" / "demo"
+    label_dir.mkdir(parents=True)
+    (label_dir / "current.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "observed_command",
+                "label": "demo",
+                "run_id": "../escape",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="run_id must be a safe"):
+        stream_command._load_status(
+            tmp_path / "observed", "demo", run_id="current"
+        )
+
+
 def test_exact_terminal_lookup_obeys_retention_rotation(tmp_path: Path) -> None:
     """Exact-run readers cannot resurrect artifacts pruned by the bounded policy."""
 

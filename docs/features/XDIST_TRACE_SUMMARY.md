@@ -56,9 +56,14 @@ make observed-tail OBSERVED_LABEL=ci-repro RUN_ID=ci-repro-311 \
 ```
 
 `OBSERVED_LABEL` names the bounded history directory; `RUN_ID` selects one
-immutable retained record within it. Omitting `RUN_ID` reads `current.json`.
-Keeping these identities explicit prevents a completed run ID from being
-mistaken for a label and reported as a missing `current.json` path.
+immutable retained record within it. Omitting `RUN_ID`, or setting
+`RUN_ID=current` when every Make variable must be explicit, reads
+`current.json`. The explicit alias validates the pointer's schema, kind, label,
+and safe payload `run_id`, then reports that real run identity; malformed
+pointers fail closed instead of being treated as a run literally named
+`current`. Other `RUN_ID` values keep selecting and validating the exact
+immutable record. Keeping these identities explicit prevents a completed run ID
+from being mistaken for a label and reported as a missing `current.json` path.
 
 `coverage-files`, `test-count`, `collect-check`, and `run-watched` all use this
 contract. Quiet collection still updates its heartbeat while writing complete

@@ -557,17 +557,29 @@ def _load_status(
     safe_label = _safe_name(label, field="label")
     safe_run_id = _safe_name(run_id, field="run_id") if run_id is not None else None
     directory = root.resolve() / safe_label
-    path = directory / (f"{safe_run_id}.json" if safe_run_id else "current.json")
+    current_alias = safe_run_id == "current"
+    path = directory / (
+        "current.json"
+        if safe_run_id is None or current_alias
+        else f"{safe_run_id}.json"
+    )
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError(f"observed status is not a JSON object: {path}")
-    if safe_run_id is not None and (
+    expected_run_id = safe_run_id
+    if current_alias:
+        payload_run_id = value.get("run_id")
+        if not isinstance(payload_run_id, str):
+            raise ValueError(f"current observed status has no string run_id: {path}")
+        expected_run_id = _safe_name(payload_run_id, field="run_id")
+    if expected_run_id is not None and (
         value.get("schema_version") != 1
         or value.get("kind") != "observed_command"
         or value.get("label") != safe_label
-        or value.get("run_id") != safe_run_id
+        or value.get("run_id") != expected_run_id
     ):
-        raise ValueError(f"retained observed status identity mismatch: {path}")
+        qualifier = "current" if current_alias else "retained"
+        raise ValueError(f"{qualifier} observed status identity mismatch: {path}")
     return value
 
 
