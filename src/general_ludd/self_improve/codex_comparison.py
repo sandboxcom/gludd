@@ -100,7 +100,12 @@ COMPACT_PROPOSAL_PROTOCOL_V4 = "self-improve-compact-proposal-v4"
 _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION = COMPACT_PROPOSAL_PROTOCOL_V3
 _COMPACT_PROPOSAL_PROTOCOL_VERSION = COMPACT_PROPOSAL_PROTOCOL_V4
 _COMPACT_PROPOSAL_TOKENS = 1024
+_COMPACT_SPAN_PROPOSAL_TOKENS = 4096
 _COMPACT_MAX_CONTENT_BYTES = 3072
+_COMPACT_MAX_UTF8_BYTES_PER_CODEPOINT = 4
+_COMPACT_MAX_STRING_CODEPOINTS = (
+    _COMPACT_MAX_CONTENT_BYTES // _COMPACT_MAX_UTF8_BYTES_PER_CODEPOINT
+)
 _COMPACT_FOCUS_PATH_MARKER = "GLUDD_SELF_IMPROVE_FOCUS_PATH="
 _COMPACT_EDITABLE_RANGES_MARKER = "GLUDD_SELF_IMPROVE_EDITABLE_RANGES="
 _COMPACT_MAX_SCOPE_MARKER_BYTES = _MAX_PROMPT_SHARD_BYTES
@@ -112,7 +117,7 @@ _STRUCTURED_CANARY_TOKENS = 32
 _DETERMINISTIC_DECODE_TEMPERATURE = 0.0
 _DETERMINISTIC_DECODE_SEED = 0
 _STRUCTURED_OUTPUT_REQUIRE_STOP = True
-_STRUCTURED_DECODING_MODE = "llama-cpp-parent-scope-enum-grammar-v2"
+_STRUCTURED_DECODING_MODE = "llama-cpp-bounded-span-grammar-v3"
 _MODEL_VISIBLE_PROMPT_POLICY = "validated-parent-metadata-stripped-v1"
 _STRUCTURED_CANARY_PROMPT = 'Return {"ok":true}.'
 _STRUCTURED_CANARY_EXPECTED: dict[str, object] = {"ok": True}
@@ -153,7 +158,10 @@ _COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
                 "properties": {
                     "s": {"type": "integer", "minimum": 1},
                     "n": {"type": "integer", "minimum": 0},
-                    "z": {"type": "string"},
+                    "z": {
+                        "type": "string",
+                        "maxLength": _COMPACT_MAX_STRING_CODEPOINTS,
+                    },
                 },
             },
         },
@@ -213,6 +221,8 @@ def _compact_proposal_schema_for_ranges(
     schema = copy.deepcopy(_COMPACT_PROPOSAL_JSON_SCHEMA)
     root_properties = cast(dict[str, object], schema["properties"])
     edits = cast(dict[str, object], root_properties["e"])
+    edit_slots = min(_COMPACT_MAX_EDITS, len(coordinates))
+    edits["maxItems"] = edit_slots
     item = cast(dict[str, object], edits["items"])
     properties = cast(dict[str, object], item["properties"])
     properties["s"] = {"type": "integer", "enum": coordinates}
@@ -221,17 +231,24 @@ def _compact_proposal_schema_for_ranges(
         "minimum": 0,
         "maximum": max_old_lines,
     }
+    properties["z"] = {
+        "type": "string",
+        "maxLength": _COMPACT_MAX_STRING_CODEPOINTS,
+    }
     return schema
+
+
 _COMPACT_SYSTEM_PROMPT = (
-    "Return exactly one compact JSON object with only e and no prose. "
-    "e is an array whose entries contain only s, n, and z. The trusted parent supplies "
-    "the one focus path, immutable baseline, and commit message; never emit them. s is "
-    "the 1-based numbered baseline line where the edit begins, n is the number of old "
-    "baseline lines consumed, and z is exact replacement text without line labels. "
-    "Choose s only from the per-shard integer enum in the JSON grammar. "
+    "Return one compact JSON object with only e; stop immediately after its closing }. "
+    "Each e item has only s, n, z. Emit the fewest complete edits with strictly increasing "
+    "s values; never repeat an edit, coordinate, or unchanged context. The parent owns path, "
+    "baseline, and commit metadata. s is the 1-based baseline start, n is old lines "
+    "consumed, and z is literal replacement text without labels. Choose s only from the "
+    "per-shard grammar enum. "
     "For a shown Lx..Ly section, n=0 may insert with s=x..y+1 only; never select a "
     "boundary wholly inside a hidden gap. Empty z deletes consumed lines; s=1, n=0 "
-    "creates an absent file. The edit must change content. Across all edits, z may "
+    "creates an absent file. The edit must change content. Each z may contain at most "
+    f"{_COMPACT_MAX_STRING_CODEPOINTS} Unicode code points; across all edits, z may "
     "contain at most 3,072 UTF-8 bytes total. Never copy protocol metadata, file "
     "markers, numbered-line labels, or shell/environment assignments into z. For a "
     "Python focus file, z must remain syntactically valid in its shown indentation."
@@ -497,7 +514,7 @@ def local_proposal_attempt_identity_digest(
             "proposal_schema_strategy": (
                 "static-v3"
                 if legacy
-                else "parent-marker-bounded-integer-enum-v1"
+                else "parent-enum-coordinate-items-per-item-length-v4"
             ),
             "max_scope_coordinates": (
                 None if legacy else _COMPACT_MAX_SCOPE_COORDINATES
@@ -531,7 +548,11 @@ def local_proposal_attempt_identity_digest(
         },
         "output_token_policy": {
             "canary_max_tokens": _STRUCTURED_CANARY_TOKENS,
-            "proposal_max_tokens": _COMPACT_PROPOSAL_TOKENS,
+            "proposal_max_tokens": (
+                _COMPACT_PROPOSAL_TOKENS
+                if legacy
+                else _COMPACT_SPAN_PROPOSAL_TOKENS
+            ),
             "require_stop": _STRUCTURED_OUTPUT_REQUIRE_STOP,
             "safe_finish_reasons": sorted(_SAFE_FINISH_REASONS),
             "seed": _DETERMINISTIC_DECODE_SEED,
@@ -2484,7 +2505,11 @@ class LocalProposalGateway:
                             "content": _model_visible_compact_prompt(prompt),
                         },
                     ],
-                    max_tokens=_COMPACT_PROPOSAL_TOKENS,
+                    max_tokens=(
+                        _COMPACT_PROPOSAL_TOKENS
+                        if legacy
+                        else _COMPACT_SPAN_PROPOSAL_TOKENS
+                    ),
                     temperature=_DETERMINISTIC_DECODE_TEMPERATURE,
                     seed=_DETERMINISTIC_DECODE_SEED,
                     response_format={
@@ -2496,7 +2521,11 @@ class LocalProposalGateway:
                 text = _completion_text(
                     output,
                     phase="proposal",
-                    budget=_COMPACT_PROPOSAL_TOKENS,
+                    budget=(
+                        _COMPACT_PROPOSAL_TOKENS
+                        if legacy
+                        else _COMPACT_SPAN_PROPOSAL_TOKENS
+                    ),
                     require_stop=_STRUCTURED_OUTPUT_REQUIRE_STOP,
                 )
                 focus_path = _trusted_compact_focus_path(prompt)

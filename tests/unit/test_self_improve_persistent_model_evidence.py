@@ -489,3 +489,37 @@ def test_persistent_sixty_point_failure_escalates_same_complex_attempt_identity(
     assert [candidate.config.name for candidate in candidates] == [
         "qwen2.5-coder-3b"
     ]
+
+
+def test_live_length_failures_escalate_past_both_models_for_same_identity(
+    tmp_path: object,
+) -> None:
+    """Never repeat either exact 1024-token live failure on the next plan."""
+    store = _store(tmp_path)
+    task_text = "Implement a focused Python product feature."
+    attempt_identity = "f" * 64
+    for model_id in ("qwen2.5-coder-1.5b", "smollm2-1.7b"):
+        _record(
+            store,
+            task_text=task_text,
+            model_id=model_id,
+            attempt_identity_digest=attempt_identity,
+        )
+
+    candidates = plan_model_candidates(
+        task_text,
+        4096,
+        (),
+        _hardware(),
+        store,
+        lambda _repo: "c" * 40,
+        input_tokens=2803,
+        attempt_identity_digest=attempt_identity,
+        task_shape=planner_module.CodeTaskShape(2, 1, 16_041),
+        max_candidates=2,
+    )
+
+    assert [candidate.config.name for candidate in candidates] == [
+        "qwen2.5-coder-3b",
+        "codellama-7b",
+    ]

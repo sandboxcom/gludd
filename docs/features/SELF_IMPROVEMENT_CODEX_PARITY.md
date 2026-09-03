@@ -52,11 +52,16 @@ failure, cancellation, timeout, or a native exit such as 139 becomes bounded
 evidence, reaps the owned process group when one exists, and cannot terminate the
 comparison orchestrator.
 
-The llama.cpp JSON grammar deliberately omits `minLength` and `maxLength`.
-Those keywords caused a native grammar-expansion crash with the one-megabyte
-legacy runtime text bound. Managed compact output is instead capped at 1,024
-decode tokens and Python rejects more than 3,072 total UTF-8 edit bytes. Python
-parsing remains authoritative for all count and byte limits.
+Legacy compact-v3 deliberately omits `minLength` and `maxLength`: applying those
+keywords to its former one-megabyte runtime text bound caused native grammar
+expansion to fail. Compact-v4 uses small, parent-derived bounds instead. Its
+grammar permits at most one edit per distinct allowed start coordinate, capped
+at sixteen, and caps each `z` at 768 code points so one item cannot exceed 3,072
+UTF-8 bytes. The v4 decode
+ceiling is 4,096 tokens; every generative grammar repetition is finite, and a
+non-`stop` finish is still rejected. Python parsing remains authoritative for
+all count, scope, decoded-byte, and exact-application limits. Compact-v3 retains
+its historical 1,024-token policy.
 
 ## Structured proposal decoding
 
@@ -69,12 +74,14 @@ to a sampler grammar and whose public chat signature also accepts `grammar`.
 The explicit argument is a backstop for chat handlers that forward grammar but
 do not perform the generic response-format conversion. A handler that honors
 `response_format` may replace it with the equivalent grammar; both inputs derive
-from the identical static schema. Gludd does not maintain another
+from the identical per-shard schema. Compact-v4 specializes that schema from the
+validated editable-range marker, while compact-v3 retains its static schema.
+Gludd does not maintain another
 JSON-Schema-to-GBNF converter or depend on private formatter helpers. Grammar
 construction failure aborts before inference rather than falling back to plain
-JSON. The attempt identity binds the decoding mode and separate SHA-256 digests
-of the canary and proposal grammar schemas, so constrained and unconstrained v4
-attempts cannot alias.
+JSON. The attempt identity binds the decoding mode, schema strategy, token
+policy, prompt digest, and separate SHA-256 digests of the canary and canonical
+proposal schemas, so constrained and unconstrained v4 attempts cannot alias.
 
 A schema is supplied through `response_format`, not merely
 `{"type": "json_object"}`; JSON-only mode proves syntax but cannot require the
@@ -231,6 +238,47 @@ below 900 MiB, model-visible prompts containing the objective and focus baseline
 but no parent Make/environment bindings, every applied Python candidate passing
 the syntax preflight before Make begins, a 60-point failure selecting a strictly
 larger next candidate, and unchanged exact-scope rejection and cleanup evidence.
+
+The `self-improve-catalog-quality-live-20260903` run verified the capability
+floor and grammar/scope controls but exposed two shared termination defects.
+Qwen2.5-Coder-1.5B and SmolLM2-1.7B each reached `finish=length` at exactly the
+inherited 1,024-token ceiling on shard one, so neither proposal was decoded or
+applied. The dynamic schema bounded `s`, but its fixed sixteen-item array and
+unbounded `z` still admitted runaway output. The per-attempt events correctly
+said retry-v4; the terminal handler then inspected only the wrapped generic
+decode error and regressed to retry-v3.
+
+Compact-v4 now uses a concise completion instruction, a 4,096-token ceiling,
+and a finite per-shard schema. Adjacent shown ranges are canonicalized and
+`maxItems` is the number of distinct allowed `s` coordinates, capped at sixteen;
+the parent already requires starts to increase strictly, so this does not remove
+any valid multi-edit proposal. Each `z.maxLength` is 768 code points, a useful
+single-edit ceiling that is no larger than 3,072 UTF-8 bytes even at four bytes
+per code point. A subprocess
+test against locked llama-cpp-python 0.3.24 calls
+`LlamaGrammar.from_json_schema` and verifies that `maxItems` and `maxLength`
+become finite nested GBNF optionals with no unbounded repetition. The unchanged
+parent decoder measures the aggregate actual decoded bytes across all items, so
+multiple strings, JSON escapes, and Unicode cannot bypass the authoritative
+3,072-byte total.
+
+Terminal failures now carry an internal, validated compact protocol through at
+most eight cause/context wrappers. Public feedback unwraps only that private
+typed carrier; model names, source, replacement text, and raw output remain
+absent. Arbitrary error text containing an old v4 digest remains retry-v3, so
+classification never guesses from strings. The prompt, schema strategy,
+decoding mode, and token policy rotate new v4 attempt identity. Compact-v3 keeps
+its 1,024-token and retry-v3 behavior without reinterpretation. Within one exact
+identity, persisted 60-point failures for both former candidates advance the
+next plan to Qwen2.5-Coder-3B and CodeLlama-7B; evidence is not migrated across
+the rotated identity.
+
+The next live acceptance must show both proposal shards ending with `stop`
+before 4,096 tokens, one strict object per shard, no scope or decoded-byte
+rejection, and either an exact atomic apply followed by syntax/full evaluation
+or bounded retry-v4 feedback. Repeating the same approved identity after both
+60-point failures must select only larger capable artifacts. Exchange cleanup
+and lease release must remain visible on every exit.
 
 A September 2026 DeepSeek catalog attempt then exposed a separate parent-side
 gap. Both compact-v3 shards completed and passed worker schema validation, but a
@@ -718,18 +766,21 @@ harness cleanup compensates for missing application ownership.
 
 ## Resource bounds and fail-closed cleanup
 
-- One to 16 compact spans and 3,072 combined replacement bytes per managed
-  shard; at most 32 expanded manifest edits, 64 tests, 32 Make commands, and
-  1 MiB of proposal edit text.
+- One compact span per distinct allowed start coordinate, at most 16 spans, and
+  3,072 combined replacement bytes per managed shard. The grammar caps each
+  string at 768 code points; the parent authoritatively checks aggregate decoded
+  bytes across all items. At most 32 expanded manifest edits, 64 tests, 32 Make
+  commands, and 1 MiB of proposal edit text remain available downstream.
 - 12,000-byte base prompt shards, exactly one focus path per shard, a
   16,384-byte hard retry boundary, 4,096 bytes of exact context per file, and a
   262,144-byte total request admission bound.
 - One owned worker and one lazily constructed `Llama` instance per candidate
   attempt; shards execute sequentially with no daemon, server, or explicit cache.
-- One 32-token same-instance canary, then 1,024 compact decode tokens per managed
-  shard and one 300-second total owned worker timeout per candidate attempt. The
-  legacy single-string compatibility path remains 4,096 tokens; the strict merged
-  proposal remains roughly 1.25 MiB at most.
+- One 32-token same-instance canary, then 4,096 compact-v4 decode tokens per
+  managed shard and one 300-second total owned worker timeout per candidate
+  attempt. Compact-v3 retains 1,024 tokens, the legacy single-string compatibility
+  path remains 4,096 tokens, and the strict merged proposal remains roughly
+  1.25 MiB at most.
 - At most 2,048 parent-derived integer `s` values in one per-shard grammar and at
   most four displayed ranges inside a 256-byte scope-telemetry field; complete
   typed retry feedback remains bounded to 512 bytes.
@@ -790,9 +841,15 @@ Official sources:
   rather than depending on combinator support, and tests the real locked 0.3.24
   `LlamaGrammar.from_json_schema` path.
 - [llama.cpp grammar documentation](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md)
-  defines the supported JSON Schema subset and warns that the schema constrains
-  output without being shown to the model, which is why Gludd also describes the
-  contract in the prompt and validates the result independently.
+  defines bounded `minLength`/`maxLength` and `minItems`/`maxItems` conversion and
+  warns that the schema constrains output without being shown to the model. Gludd
+  therefore keeps concise contract instructions in the prompt and validates the
+  result independently.
+- [llama.cpp issue 26596](https://github.com/ggml-org/llama.cpp/issues/26596)
+  reports an opaque grammar failure when a practitioner supplied a very large
+  `maxLength`. Gludd never feeds its parent megabyte bound to the converter: the
+  per-item v4 bound is 768 code points, and real locked-runtime tests cover the
+  generated finite grammar.
 - [llama-cpp-python 0.3.24](https://github.com/abetlen/llama-cpp-python/releases/tag/v0.3.24)
   is the exact pinned release at commit
   `26633bd1a2eaf7fd0567cc5eaec8b0165a7ea0bd`. Its

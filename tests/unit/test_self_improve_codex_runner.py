@@ -15,6 +15,7 @@ from typing import Any, cast
 
 import pytest
 
+import general_ludd.self_improve.codex_comparison as comparison_module
 import general_ludd.self_improve.runtime as runner_module
 from general_ludd.local_model import get_model
 from general_ludd.self_improve.codex_comparison import (
@@ -1624,6 +1625,68 @@ def test_main_preserves_compact_v4_identity_for_live_json_terminal_failure(
     )
 
 
+@pytest.mark.parametrize(
+    "model_name",
+    ("qwen2.5-coder-1.5b", "smollm2-1.7b"),
+)
+def test_main_preserves_structurally_bound_v4_for_live_length_failure(
+    model_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Keep shared decode-budget failures on retry-v4 through outer wrappers."""
+    args = argparse.Namespace(target="unit", validate_only=False)
+    raw_failure = RuntimeError(
+        "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR "
+        "local model exhausted the proposal token budget before completion; "
+        f"model={model_name} finish=length completion_tokens=1024 "
+        "TOKEN=do-not-publish"
+    )
+    bound = runner_module._bind_failure_protocol(
+        raw_failure,
+        "self-improve-compact-proposal-v4",
+    )
+    assert bound is raw_failure
+    outer = RuntimeError("managed runner boundary")
+    outer.__cause__ = bound
+
+    class Parser:
+        def parse_args(self) -> argparse.Namespace:
+            return args
+
+    monkeypatch.setattr(runner_module, "_parser", lambda: Parser())
+    monkeypatch.setattr(
+        runner_module,
+        "run_benchmark",
+        lambda _args: (_ for _ in ()).throw(outer),
+    )
+
+    assert runner_module.main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == (
+        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v4 "
+        "type=decode_budget source=proposal_error "
+        "detail=local model exhausted the proposal token budget before completion\n"
+    )
+    assert model_name not in captured.err
+    assert "TOKEN" not in captured.err
+
+
+def test_terminal_protocol_classification_never_guesses_from_attempt_digest() -> None:
+    """Treat an unbound shared failure as legacy even when text names a v4 digest."""
+    raw = RuntimeError(
+        "attempt_identity_digest=24363d727bcce62f7bb19c7dad7b3a557"
+        "30cbc4376813094af25aabf3e1311d0 "
+        "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR "
+        "local model exhausted the proposal token budget before completion"
+    )
+
+    assert runner_module._public_failure_feedback(raw).startswith(
+        "protocol=self-improve-validation-retry-v3 type=decode_budget "
+    )
+
+
 _CATALOG_BASELINE = "eac05dc88c03f14fbd7dd5f4c6d72943609d9e26"
 _CATALOG_REFERENCE = "80b381bd87f32487d784964ce93566e3b016b191"
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -1824,6 +1887,47 @@ def test_generate_local_proposal_rejects_missing_and_invalid_worker_output(
         runner_module.generate_local_proposal(NoOutputRunner(), model, "")
     with pytest.raises(RuntimeError, match="bounded regular file"):
         runner_module.generate_local_proposal(NoOutputRunner(), model, "prompt")
+
+
+def test_local_exchange_cleans_after_compact_parent_aggregate_rejection(
+    tmp_path: Path,
+) -> None:
+    """Remove the owned exchange when individually bounded strings exceed the total."""
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"gguf")
+    exchanges: list[Path] = []
+
+    class AggregateRejectRunner:
+        def run_observable(
+            self,
+            target: str,
+            variables: dict[str, str],
+            *,
+            timeout: int,
+        ) -> MakeResult:
+            del target, timeout
+            exchange = Path(variables["SELF_IMPROVE_PROMPT_FILE"]).parent
+            exchanges.append(exchange)
+            assert exchange.is_dir()
+            raw = json.dumps(
+                {
+                    "e": [
+                        {"s": 1, "n": 1, "z": "😀" * 385},
+                        {"s": 2, "n": 1, "z": "😀" * 385},
+                    ]
+                }
+            )
+            comparison_module._decode_compact_span_proposal(
+                raw,
+                focus_path="src/general_ludd/example.py",
+            )
+            return MakeResult(("make", "worker"), 0, "", "", 0.1)
+
+    with pytest.raises(ValueError, match="new text exceeds 3072 bytes"):
+        runner_module.generate_local_proposal(AggregateRejectRunner(), model, "prompt")
+
+    assert len(exchanges) == 1
+    assert not exchanges[0].exists()
 
 
 def test_evaluate_attempt_stops_on_first_failed_command_and_cleans(

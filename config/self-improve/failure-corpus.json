@@ -126,6 +126,70 @@
     },
     {
       "expected": {
+        "detail": "local model exhausted the proposal token budget before completion",
+        "forbidden_substrings": [
+          "qwen2.5-coder-1.5b",
+          "TOKEN",
+          "private-output"
+        ],
+        "source": "worker_tail",
+        "type": "decode_budget"
+      },
+      "id": "compact-v4-qwen-length-1024",
+      "input": {
+        "budget": 1024,
+        "phase": "proposal",
+        "require_stop": true,
+        "worker_response": {
+          "choices": [
+            {
+              "finish_reason": "length",
+              "text": "{\"e\":[{\"s\":1,\"n\":1,\"z\":\"private-output TOKEN=qwen2.5-coder-1.5b"
+            }
+          ],
+          "usage": {
+            "completion_tokens": 1024,
+            "prompt_tokens": 2333,
+            "total_tokens": 3357
+          }
+        }
+      },
+      "kind": "completion_decode"
+    },
+    {
+      "expected": {
+        "detail": "local model exhausted the proposal token budget before completion",
+        "forbidden_substrings": [
+          "smollm2-1.7b",
+          "PASSWORD",
+          "private-output"
+        ],
+        "source": "worker_tail",
+        "type": "decode_budget"
+      },
+      "id": "compact-v4-smollm-length-1024",
+      "input": {
+        "budget": 1024,
+        "phase": "proposal",
+        "require_stop": true,
+        "worker_response": {
+          "choices": [
+            {
+              "finish_reason": "length",
+              "text": "{\"e\":[{\"s\":1,\"n\":1,\"z\":\"private-output PASSWORD=smollm2-1.7b"
+            }
+          ],
+          "usage": {
+            "completion_tokens": 1024,
+            "prompt_tokens": 2803,
+            "total_tokens": 3827
+          }
+        }
+      },
+      "kind": "completion_decode"
+    },
+    {
+      "expected": {
         "detail": "proposal shard edits must cover the exact focus paths",
         "forbidden_substrings": [],
         "source": "worker_tail",

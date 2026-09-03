@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import difflib
 import hashlib
 import io
@@ -27,6 +28,7 @@ from general_ludd.hardware.model_fit import unified_probe
 from general_ludd.local_model import LocalModelConfig
 from general_ludd.planning.repo_map import RepoMapBuilder
 from general_ludd.self_improve.codex_comparison import (
+    COMPACT_PROPOSAL_PROTOCOL_V3,
     COMPACT_PROPOSAL_PROTOCOL_V4,
     LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL,
     CandidateEvidence,
@@ -568,20 +570,69 @@ def generate_local_proposal_plan(
     )
 
 
+@dataclass(frozen=True)
+class _ProtocolFailureBinding:
+    """Trusted structural metadata attached to an otherwise unchanged exception."""
 
+    proposal_protocol: str
+
+    def __post_init__(self) -> None:
+        """Reject bindings outside the two supported compact protocols."""
+        if self.proposal_protocol not in {
+            COMPACT_PROPOSAL_PROTOCOL_V3,
+            COMPACT_PROPOSAL_PROTOCOL_V4,
+        }:
+            raise ValueError("proposal failure protocol is unsupported")
+
+
+_PROTOCOL_FAILURE_BINDING_ATTR = "_gludd_self_improve_protocol_binding"
+
+
+def _bind_failure_protocol(
+    exc: BaseException,
+    proposal_protocol: str,
+) -> BaseException:
+    """Attach trusted protocol metadata without changing exception type or text."""
+    if not isinstance(exc, BaseException):
+        raise TypeError("proposal failure cause must be an exception")
+    binding = _ProtocolFailureBinding(proposal_protocol)
+    with contextlib.suppress(AttributeError, TypeError):
+        setattr(exc, _PROTOCOL_FAILURE_BINDING_ATTR, binding)
+    return exc
+
+
+def _protocol_bound_failure(
+    exc: BaseException,
+) -> tuple[str | None, BaseException]:
+    """Find one structural protocol binding through a bounded exception chain."""
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    for _depth in range(8):
+        if current is None or id(current) in seen:
+            break
+        seen.add(id(current))
+        binding = getattr(current, _PROTOCOL_FAILURE_BINDING_ATTR, None)
+        if isinstance(binding, _ProtocolFailureBinding):
+            return binding.proposal_protocol, current
+        current = current.__cause__ or current.__context__
+    return None, exc
 
 
 def _public_failure_feedback(exc: BaseException) -> str:
     """Return only a typed, bounded, model-text-free public failure marker."""
+    proposal_protocol, failure = _protocol_bound_failure(exc)
     typed_failure: str | None = None
     source = "runner"
-    if isinstance(exc, ModelPlanError):
-        typed_failure = exc.failure.value
-    elif isinstance(exc, ModelAcquisitionError):
-        typed_failure = exc.failure.value
+    if isinstance(failure, ModelPlanError):
+        typed_failure = failure.failure.value
+    elif isinstance(failure, ModelAcquisitionError):
+        typed_failure = failure.failure.value
         source = "model_lifecycle"
     if typed_failure is None:
-        return _validation_retry_feedback(exc)
+        return _validation_retry_feedback(
+            failure,
+            proposal_protocol=proposal_protocol,
+        )
 
     protocol = LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
     feedback = (
@@ -1915,7 +1966,16 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
         make_runner_factory=MakeRunner,
         attempt_evaluator=evaluate_attempt,
     )
-    return service.run(approved_plan).final_result
+    try:
+        return service.run(approved_plan).final_result
+    except (OSError, RuntimeError, ValueError) as exc:
+        proposal_protocol = (
+            approved_plan.prompt.proposal_protocol
+            if isinstance(approved_plan.prompt, PromptPlan)
+            else COMPACT_PROPOSAL_PROTOCOL_V3
+        )
+        _bind_failure_protocol(exc, proposal_protocol)
+        raise
 
 
 def _clean_environment() -> dict[str, str]:

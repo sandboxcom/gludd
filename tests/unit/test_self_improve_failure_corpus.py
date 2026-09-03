@@ -22,6 +22,8 @@ EXPECTED_CASES = (
     "compact-v4-hidden-line",
     "multiline-redundant-metadata",
     "token-exhaustion",
+    "compact-v4-qwen-length-1024",
+    "compact-v4-smollm-length-1024",
     "worker-success-parent-merge-rejection",
     "raw-native-log-leakage",
     "replace-precondition-mismatch",
@@ -247,6 +249,18 @@ def test_acquisition_trace_rejects_every_ambiguous_transition(
             "local model exhausted the proposal token budget before completion",
         ),
         (
+            "compact-v4-qwen-length-1024",
+            "decode_budget",
+            "worker_tail",
+            "local model exhausted the proposal token budget before completion",
+        ),
+        (
+            "compact-v4-smollm-length-1024",
+            "decode_budget",
+            "worker_tail",
+            "local model exhausted the proposal token budget before completion",
+        ),
+        (
             "worker-success-parent-merge-rejection",
             "proposal_scope",
             "worker_tail",
@@ -365,10 +379,12 @@ def test_cli_emits_deterministic_bounded_case_and_summary_evidence(
     captured = capsys.readouterr()
     lines = captured.out.splitlines()
 
-    assert len([line for line in lines if line.startswith("SELF_IMPROVE_FAILURE_CORPUS_CASE ")]) == 12
+    assert len(
+        [line for line in lines if line.startswith("SELF_IMPROVE_FAILURE_CORPUS_CASE ")]
+    ) == 14
     assert lines[-1] == (
         'SELF_IMPROVE_FAILURE_CORPUS_SUMMARY '
-        '{"cases":12,"failed":0,"passed":12,"protocol":"self-improve-failure-corpus-v4"}'
+        '{"cases":14,"failed":0,"passed":14,"protocol":"self-improve-failure-corpus-v4"}'
     )
     assert captured.err == ""
 

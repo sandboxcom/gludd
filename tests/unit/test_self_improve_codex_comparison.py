@@ -294,7 +294,7 @@ def test_attempt_identity_binds_complete_managed_output_protocol(
         ("_STRUCTURED_CANARY_SCHEMA", {"type": "boolean"}),
         ("_STRUCTURED_CANARY_PROMPT", "Return a different canary."),
         ("_STRUCTURED_CANARY_EXPECTED", {"ok": False}),
-        ("_COMPACT_PROPOSAL_TOKENS", 1025),
+        ("_COMPACT_SPAN_PROPOSAL_TOKENS", 4097),
         ("_COMPACT_MAX_CONTENT_BYTES", 3073),
         ("_COMPACT_FOCUS_PATH_MARKER", "CHANGED_FOCUS_PATH="),
         ("_COMPACT_EDITABLE_RANGES_MARKER", "CHANGED_EDITABLE_RANGES="),
@@ -333,6 +333,29 @@ def test_attempt_identity_binds_complete_managed_output_protocol(
             comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
             == baseline
         )
+
+
+def test_legacy_identity_keeps_its_historical_token_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rotate only v4 for the bounded-span budget while retaining v3 semantics."""
+    prompt_digest = "a" * 64
+    legacy = comparison_module.COMPACT_PROPOSAL_PROTOCOL_V3
+    baseline = comparison_module.local_proposal_attempt_identity_digest(
+        prompt_digest,
+        proposal_protocol=legacy,
+    )
+
+    monkeypatch.setattr(comparison_module, "_COMPACT_SPAN_PROPOSAL_TOKENS", 4097)
+    assert comparison_module.local_proposal_attempt_identity_digest(
+        prompt_digest,
+        proposal_protocol=legacy,
+    ) == baseline
+    monkeypatch.setattr(comparison_module, "_COMPACT_PROPOSAL_TOKENS", 1025)
+    assert comparison_module.local_proposal_attempt_identity_digest(
+        prompt_digest,
+        proposal_protocol=legacy,
+    ) != baseline
 
     with monkeypatch.context() as scoped:
         scoped.setattr(
@@ -1330,7 +1353,7 @@ def test_compact_v4_gateway_emits_only_bounded_line_span_fields(
     item = schema["schema"]["properties"]["e"]["items"]
     assert item["required"] == ["s", "n", "z"]
     assert set(item["properties"]) == {"s", "n", "z"}
-    assert calls[1]["max_tokens"] == 1024
+    assert calls[1]["max_tokens"] == 4096
 
 
 def test_compact_v4_gateway_passes_distinct_explicit_json_schema_grammars(
@@ -1651,6 +1674,97 @@ def test_compact_v4_scope_enum_is_sorted_and_deduplicates_adjacent_boundaries() 
         "minimum": 0,
         "maximum": 2,
     }
+    assert edits["maxItems"] == 7
+    assert item_properties["z"] == {"type": "string", "maxLength": 768}
+
+
+def test_compact_v4_schema_bounds_runaway_replacement_text() -> None:
+    """Bound each generated replacement while retaining the parent byte ceiling."""
+    schema = comparison_module._compact_proposal_schema_for_ranges(((3, 6),))
+    root_properties = cast(dict[str, object], schema["properties"])
+    edits = cast(dict[str, object], root_properties["e"])
+    item = cast(dict[str, object], edits["items"])
+    item_properties = cast(dict[str, object], item["properties"])
+
+    assert edits["minItems"] == 1
+    assert edits["maxItems"] == 4
+    assert item_properties["z"] == {
+        "type": "string",
+        "maxLength": 768,
+    }
+    assert comparison_module._COMPACT_MAX_CONTENT_BYTES == 3072
+
+
+def test_compact_v4_schema_preserves_multiple_edits_in_one_shown_section() -> None:
+    """Do not trade the line-span protocol's same-section multi-edit support for closure."""
+    schema = comparison_module._compact_proposal_schema_for_ranges(((3, 20),))
+    root_properties = cast(dict[str, object], schema["properties"])
+    edits = cast(dict[str, object], root_properties["e"])
+    item = cast(dict[str, object], edits["items"])
+    item_properties = cast(dict[str, object], item["properties"])
+
+    assert edits["maxItems"] == 16
+    assert item_properties["z"] == {"type": "string", "maxLength": 768}
+
+
+def test_compact_v4_multisection_schema_conservatively_bounds_unicode_bytes() -> None:
+    """Allocate the shared byte ceiling across sections at four bytes per codepoint."""
+    schema = comparison_module._compact_proposal_schema_for_ranges(
+        ((1, 3), (8, 10), (20, 21))
+    )
+    root_properties = cast(dict[str, object], schema["properties"])
+    edits = cast(dict[str, object], root_properties["e"])
+    item = cast(dict[str, object], edits["items"])
+    item_properties = cast(dict[str, object], item["properties"])
+    z_schema = cast(dict[str, object], item_properties["z"])
+
+    assert edits["maxItems"] == 8
+    assert z_schema["maxLength"] == 768
+    assert 768 * len("😀".encode()) == 3072
+
+
+def test_compact_v4_maximum_sections_have_a_finite_per_item_content_budget() -> None:
+    """Keep every grammar dimension finite at the sixteen-edit protocol limit."""
+    ranges = tuple((line, line + 1) for line in range(1, 48, 3))
+    schema = comparison_module._compact_proposal_schema_for_ranges(ranges)
+    root_properties = cast(dict[str, object], schema["properties"])
+    edits = cast(dict[str, object], root_properties["e"])
+    item = cast(dict[str, object], edits["items"])
+    item_properties = cast(dict[str, object], item["properties"])
+    start_schema = cast(dict[str, object], item_properties["s"])
+    length_schema = cast(dict[str, object], item_properties["n"])
+    content_schema = cast(dict[str, object], item_properties["z"])
+
+    assert edits["maxItems"] == 16
+    assert len(cast(list[int], start_schema["enum"])) == 32
+    assert length_schema["maximum"] == 1
+    assert content_schema["maxLength"] == 768
+    assert (
+        768 * comparison_module._COMPACT_MAX_UTF8_BYTES_PER_CODEPOINT
+        == comparison_module._COMPACT_MAX_CONTENT_BYTES
+    )
+    assert comparison_module._COMPACT_SPAN_PROPOSAL_TOKENS == 4096
+    assert comparison_module._STRUCTURED_OUTPUT_REQUIRE_STOP is True
+
+
+def test_compact_v4_parent_counts_decoded_utf8_not_json_escape_bytes() -> None:
+    """Keep the parent byte cap authoritative after JSON escape decoding."""
+    raw = json.dumps(
+        {
+            "e": [
+                {"s": 1, "n": 1, "z": "😀" * 257},
+                {"s": 8, "n": 1, "z": "😀" * 257},
+                {"s": 20, "n": 1, "z": "😀" * 257},
+            ]
+        }
+    )
+
+    assert len(raw.encode("utf-8")) > 3072
+    with pytest.raises(ValueError, match="new text exceeds 3072 bytes"):
+        comparison_module._decode_compact_span_proposal(
+            raw,
+            focus_path="src/general_ludd/example.py",
+        )
 
 
 def test_compact_v4_empty_scope_schema_allows_only_create_coordinate() -> None:
@@ -1661,12 +1775,14 @@ def test_compact_v4_empty_scope_schema_allows_only_create_coordinate() -> None:
     item = cast(dict[str, object], edits["items"])
     item_properties = cast(dict[str, object], item["properties"])
 
+    assert edits["maxItems"] == 1
     assert item_properties["s"] == {"type": "integer", "enum": [1]}
     assert item_properties["n"] == {
         "type": "integer",
         "minimum": 0,
         "maximum": 0,
     }
+    assert item_properties["z"] == {"type": "string", "maxLength": 768}
 
 
 def test_locked_llama_grammar_compiles_multirange_integer_enum() -> None:
@@ -1681,6 +1797,43 @@ def test_locked_llama_grammar_compiles_multirange_integer_enum() -> None:
         "from llama_cpp import LlamaGrammar, _utils\n"
         f"grammar = LlamaGrammar.from_json_schema({encoded_schema!r}, verbose=False)\n"
         "assert grammar is not None\n"
+        "_utils.outnull_file.close()\n"
+        "_utils.errnull_file.close()\n"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "ResourceWarning" not in completed.stderr
+
+
+def test_locked_llama_grammar_honors_small_string_and_array_bounds() -> None:
+    """Prove locked 0.3.24 turns maxLength/maxItems into bounded GBNF."""
+    if importlib.util.find_spec("llama_cpp") is None:
+        pytest.skip("locked optional local-inference extra is not materialized")
+    schema = comparison_module._compact_proposal_schema_for_ranges(((3, 6), (10, 12)))
+    properties = cast(dict[str, object], schema["properties"])
+    edits = cast(dict[str, object], properties["e"])
+    edits["maxItems"] = 2
+    item = cast(dict[str, object], edits["items"])
+    item_properties = cast(dict[str, object], item["properties"])
+    item_properties["z"] = {"type": "string", "maxLength": 8}
+    encoded_schema = json.dumps(schema, ensure_ascii=True, separators=(",", ":"))
+    script = (
+        "from llama_cpp import LlamaGrammar, _utils\n"
+        f"grammar = LlamaGrammar.from_json_schema({encoded_schema!r}, verbose=False)\n"
+        "rendered = grammar._grammar\n"
+        "array_rule = next(line for line in rendered.splitlines() if line.startswith('e ::='))\n"
+        "string_rule = next(line for line in rendered.splitlines() if line.startswith('e-item-z ::='))\n"
+        "assert array_rule.count('e-item') == 2, rendered\n"
+        "assert string_rule.count('char') == 8, rendered\n"
+        "assert '*' not in rendered and '+' not in rendered, rendered\n"
         "_utils.outnull_file.close()\n"
         "_utils.errnull_file.close()\n"
     )
