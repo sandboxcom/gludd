@@ -19,6 +19,7 @@ import general_ludd.self_improve.managed_runner as managed_runner_module
 import general_ludd.self_improve.model_candidate_planner as planner_module
 from general_ludd.local_model import LocalModelConfig, get_model
 from general_ludd.self_improve.codex_comparison import (
+    COMPACT_PROPOSAL_PROTOCOL_V4,
     CandidateEvidence,
     CodexReference,
     ComparisonResult,
@@ -1241,6 +1242,8 @@ def test_typed_evaluation_diagnosis_reaches_next_v4_model_without_scope_drift(
     """Feed persisted safe failure evidence forward without widening authority."""
     diagnosis = json.dumps(
         {
+            "category": "none",
+            "column": 0,
             "command_kind": "approved_make",
             "command_sha256": "a" * 64,
             "duration_ms": 1000,
@@ -1249,9 +1252,11 @@ def test_typed_evaluation_diagnosis_reaches_next_v4_model_without_scope_drift(
             "finish_reason": "unknown",
             "finished": True,
             "hypothesis": "approved evaluation failed; correct only the typed phase",
+            "line": 0,
+            "path_sha256": "",
             "phase": "approved_make",
-            "protocol": "self-improve-evaluation-diagnosis-v1",
-            "schema_version": 2,
+            "protocol": "self-improve-evaluation-diagnosis-v2",
+            "schema_version": 3,
         },
         ensure_ascii=True,
         separators=(",", ":"),
@@ -1346,6 +1351,56 @@ def test_model_and_plan_leases_release_when_proposal_generation_fails(
 
     with pytest.raises(RuntimeError, match="proposal rejected"):
         service.run(_plan(tmp_path, max_attempts=1))
+
+    assert manager.released == ["qwen2.5-coder-0.5b"]
+    assert manager.reservation_released is True
+    assert [(model, passed) for model, passed, _digest in outcomes.records] == [
+        ("qwen2.5-coder-0.5b", False)
+    ]
+
+
+def test_live_v4_line_budget_rejection_releases_every_owned_lease(
+    tmp_path: Path,
+) -> None:
+    """Treat a 360-line pre-apply rejection as a cleanup-bearing failed attempt."""
+    failure = (
+        "SELF_IMPROVE_PARENT_PROPOSAL_ERROR compact span changed lines exceed 96; "
+        "received_changed_lines=>96 max_changed_lines=96"
+    )
+
+    def reject(*_args: object) -> ProposalManifest:
+        raise ValueError(failure)
+
+    prompt = PromptPlan(
+        shards=(
+            PromptShard(
+                ("src/general_ludd/example.py",),
+                "bounded v4 prompt\nL1|return 0\n",
+                ((1, 2),),
+            ),
+        ),
+        source_bytes=len("return 0\n"),
+        baseline_files=(("src/general_ludd/example.py", "return 0\n"),),
+        proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    plan = ApprovedSelfImprovePlan.approve(
+        approval_id="approval-live-line-budget",
+        todo_id="todo-live-line-budget",
+        project_id="project-live-line-budget",
+        repo_root=tmp_path,
+        task=_task(),
+        reference=_reference(),
+        prompt=prompt,
+        required_output_tokens=1024,
+        max_attempts=1,
+    )
+    service, manager, outcomes, _merge_values = _runner(
+        tmp_path,
+        proposal_generator=reject,
+    )
+
+    with pytest.raises(ValueError, match="changed lines exceed 96"):
+        service.run(plan)
 
     assert manager.released == ["qwen2.5-coder-0.5b"]
     assert manager.reservation_released is True

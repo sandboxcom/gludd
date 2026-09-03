@@ -1315,15 +1315,15 @@ def _syntax_diagnostic(
     *,
     failure_type: str,
     line: int = 0,
-    offset: int = 0,
+    column: int = 0,
 ) -> str:
     """Render one bounded source-free syntax preflight result."""
-    bounded_line = max(0, min(line, _MAX_CONTEXT_FILE_BYTES + 1))
-    bounded_offset = max(0, min(offset, _MAX_CONTEXT_FILE_BYTES + 1))
+    bounded_line = max(0, min(line, EVALUATION_DIAGNOSIS_PROTOCOL.max_coordinate))
+    bounded_column = max(0, min(column, EVALUATION_DIAGNOSIS_PROTOCOL.max_coordinate))
     path_digest = hashlib.sha256(relative.encode("utf-8")).hexdigest()
     diagnostic = (
         f"{_PARENT_SYNTAX_ERROR_MARKER} type={failure_type} "
-        f"path_sha256={path_digest} line={bounded_line} offset={bounded_offset}"
+        f"path_sha256={path_digest} line={bounded_line} column={bounded_column}"
     )
     if len(diagnostic.encode("ascii")) > _MAX_SYNTAX_DIAGNOSTIC_BYTES:
         raise RuntimeError("parent syntax diagnostic exceeded its fixed byte bound")
@@ -1375,7 +1375,7 @@ def _python_syntax_preflight(
                 relative,
                 failure_type="python_syntax",
                 line=exc.lineno or 0,
-                offset=exc.offset or 0,
+                column=exc.offset or 0,
             )
     return None
 
@@ -1531,7 +1531,44 @@ def _syntax_failure_class(diagnostic: str | None) -> str:
     return match.group(1) if match is not None else "python_syntax"
 
 
-def _compact_evaluation_diagnosis(event: _EvaluationLifecycleEvent) -> str:
+def _syntax_diagnosis_fields(diagnostic: str | None) -> dict[str, object]:
+    """Parse only the parent-rendered syntax coordinates into fixed safe fields."""
+    empty: dict[str, object] = {
+        "category": "none",
+        "column": 0,
+        "line": 0,
+        "path_sha256": "",
+    }
+    if diagnostic is None:
+        return empty
+    match = re.fullmatch(
+        rf"{re.escape(_PARENT_SYNTAX_ERROR_MARKER)} "
+        r"type=(python_(?:encoding|path|read|size|syntax)) "
+        r"path_sha256=([0-9a-f]{64}) line=([0-9]+) column=([0-9]+)",
+        diagnostic,
+    )
+    if match is None:
+        raise RuntimeError("parent syntax diagnostic is not canonical")
+    line = int(match.group(3))
+    column = int(match.group(4))
+    if (
+        line > EVALUATION_DIAGNOSIS_PROTOCOL.max_coordinate
+        or column > EVALUATION_DIAGNOSIS_PROTOCOL.max_coordinate
+    ):
+        raise RuntimeError("parent syntax diagnostic coordinates exceed their bound")
+    return {
+        "category": match.group(1),
+        "column": column,
+        "line": line,
+        "path_sha256": match.group(2),
+    }
+
+
+def _compact_evaluation_diagnosis(
+    event: _EvaluationLifecycleEvent,
+    *,
+    syntax_diagnostic: str | None = None,
+) -> str:
     """Reuse the installed trace sanitizer, then add bounded lifecycle fields."""
     protocol = EVALUATION_DIAGNOSIS_PROTOCOL
     compact = compact_failure_diagnosis(
@@ -1552,6 +1589,7 @@ def _compact_evaluation_diagnosis(event: _EvaluationLifecycleEvent) -> str:
             "duration_ms": event.duration_ms,
             "protocol": protocol.version,
             "schema_version": protocol.schema_version,
+            **_syntax_diagnosis_fields(syntax_diagnostic),
         }
     )
     artifact = json.dumps(
@@ -1650,6 +1688,7 @@ def evaluate_attempt(
     commit_count = 0
     worktree_clean = False
     changed_lines = 0
+    syntax_diagnostic: str | None = None
     try:
         runner = runner_factory(worktree)
         apply_started = time.monotonic()
@@ -1689,7 +1728,7 @@ def evaluate_attempt(
                 progress_sink,
                 phase="syntax_preflight",
                 command_kind="syntax_preflight",
-                command_identity="parent-python-syntax-preflight-v1",
+                command_identity="parent-python-syntax-preflight-v2",
                 returncode=1,
                 elapsed_seconds=time.monotonic() - syntax_started,
                 failure_class="python_syntax",
@@ -1701,7 +1740,7 @@ def evaluate_attempt(
             progress_sink,
             phase="syntax_preflight",
             command_kind="syntax_preflight",
-            command_identity="parent-python-syntax-preflight-v1",
+            command_identity="parent-python-syntax-preflight-v2",
             returncode=0 if syntax_diagnostic is None else 2,
             elapsed_seconds=time.monotonic() - syntax_started,
             failure_class=syntax_failure,
@@ -1948,7 +1987,14 @@ def evaluate_attempt(
                 failure_class="quality_rejected",
             )
         diagnostics = (
-            _compact_evaluation_diagnosis(failed_event)
+            _compact_evaluation_diagnosis(
+                failed_event,
+                syntax_diagnostic=(
+                    syntax_diagnostic
+                    if failed_event.phase == "syntax_preflight"
+                    else None
+                ),
+            )
             if failed_event is not None
             else ""
         )

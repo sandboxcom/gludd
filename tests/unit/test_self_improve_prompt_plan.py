@@ -571,7 +571,7 @@ def test_compact_v4_live_json_retry_is_typed_bounded_and_actionable() -> None:
     suffix = retried.shards[0].prompt[len(plan.shards[0].prompt) :]
 
     assert (
-        "protocol=self-improve-validation-retry-v4 type=proposal_json_contract "
+        "protocol=self-improve-validation-retry-v5 type=proposal_json_contract "
         "source=proposal_error detail=compact-v4 proposal is not one complete JSON object"
         in suffix
     )
@@ -581,7 +581,7 @@ def test_compact_v4_live_json_retry_is_typed_bounded_and_actionable() -> None:
         secret not in suffix
         for secret in ("/Users/operator", "top-secret", "hunter2", "raw-model-fragment")
     )
-    assert len(suffix.encode("utf-8")) < 384
+    assert len(suffix.encode("utf-8")) <= 512
     assert retried.protocol_digest == plan.protocol_digest
     assert retried.proposal_protocol == runner_module.COMPACT_PROPOSAL_PROTOCOL_V4
 
@@ -796,6 +796,46 @@ def test_retry_plan_redacts_and_bounds_diagnostics_without_identity_drift(tmp_pa
     assert all("PSK=" not in s.prompt for s in retried.shards)
     assert all(
         '"failure_class":"diagnosis_unavailable"' in s.prompt
-        and '"protocol":"self-improve-evaluation-diagnosis-v1"' in s.prompt
+        and '"protocol":"self-improve-evaluation-diagnosis-v2"' in s.prompt
         for s in retried.shards
     )
+
+
+def test_compact_v4_retry_requests_an_independent_smallest_diff_only() -> None:
+    """Do not ask a later model to repair model output that it cannot safely inspect."""
+    comparison = ComparisonResult(
+        accepted=False,
+        score=60.0,
+        blockers=("tests",),
+        changed_file_precision=1.0,
+        changed_file_recall=1.0,
+    )
+    v4 = PromptPlan(
+        shards=(
+            PromptShard(
+                ("src/general_ludd/example.py",),
+                "bounded v4 task\nL1|return 0\n",
+                ((1, 2),),
+            ),
+        ),
+        source_bytes=len("return 0\n"),
+        baseline_files=(("src/general_ludd/example.py", "return 0\n"),),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+
+    retried = build_retry_prompt_plan(v4, comparison, diagnostics="untrusted output")
+    retry_prompt = retried.shards[0].prompt
+
+    assert "The prior candidate failed." in retry_prompt
+    assert "Solve the approved task independently from the trusted baseline" in retry_prompt
+    assert "do not repair or infer unseen candidate output" in retry_prompt
+    assert "Preserve the smallest correct diff." in retry_prompt
+    assert "untrusted output" not in retry_prompt
+
+    v3 = PromptPlan(
+        shards=(PromptShard(("src/general_ludd/example.py",), "bounded v3 task"),),
+        source_bytes=0,
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V3,
+    )
+    legacy_retry = build_retry_prompt_plan(v3, comparison, diagnostics="legacy evidence")
+    assert "The prior candidate failed." not in legacy_retry.shards[0].prompt

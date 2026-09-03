@@ -303,7 +303,7 @@ behavior.
 
 The next live acceptance must show each shard using at most four edits, completing
 as one strict object before the 4,096-token ceiling, and either applying the
-canonically sorted non-overlapping spans or returning bounded retry-v4 feedback.
+canonically sorted non-overlapping spans or returning bounded retry-v5 feedback.
 Duplicate or overlapping spans, aggregate content above 3,072 decoded bytes, and
 partial output must remain rejected with exchange cleanup and lease release.
 
@@ -322,7 +322,7 @@ allowlisted phase, command kind, SHA-256 command identity, bounded return code a
 duration, and a fixed failure class. They never contain replacement/source text,
 stdout, stderr, secrets, or absolute paths. The first actionable failure is run
 through `compact_failure_diagnosis` and persisted as canonical
-`self-improve-evaluation-diagnosis-v1` JSON. Only that exact bounded object may be
+`self-improve-evaluation-diagnosis-v2` JSON. Only that exact bounded object may be
 included in the next compact-v4 prompt; malformed or injected diagnostics become
 a fixed `diagnosis_unavailable` object. Approved paths, commands, and scope remain
 unchanged.
@@ -348,10 +348,43 @@ composition root emits exactly one bounded `SELF_IMPROVE_RETRY_DIAGNOSIS` line
 containing only protocol, phase, fixed failure class, return code, duration, and
 command SHA-256. Invalid input first becomes the fixed `diagnosis_unavailable`
 record; raw commands, output, authored text, secrets, and paths are never copied.
-This is output wiring only: compact-v4 protocol and attempt identity are unchanged,
-so durable diagnosis-aware failures from before the wiring fix remain applicable.
+That output wiring change alone left compact-v4 protocol and attempt identity
+unchanged, so durable diagnosis-aware failures from before the wiring fix remained
+applicable.
 The next live run must show evaluation lines before the retry record and the next
 attempt, with both attempts retaining the same approved identity.
+
+The flushed `self-improve-catalog-quality-live-20260903` follow-up exposed a
+different usefulness limit. StarCoder2 stopped at the syntax preflight. Qwen3B
+consumed the safe diagnosis but then proposed 360 changed lines, while the approved
+Codex reference `80b381bd87f32487d784964ce93566e3b016b191` changes only two files
+with 33 insertions and four deletions. Compact v4 now permits at most 64 consumed
+old lines and 64 replacement lines in one edit, and at most 96 changed lines across
+all shards, counting consumed plus replacement lines. Sixty-four is larger than
+the reference's complete 37-line change, and 96 provides more than 2.5 times that
+observed budget while rejecting the 360-line rewrite before anchor derivation,
+worktree creation, or syntax evaluation.
+
+The range-specialized llama.cpp schema binds `n.maximum` to the smaller of 64 and
+the shown section size. The existing 768-code-point `z` ceiling remains grammar
+bound; newline count and the cross-shard sum remain authoritative parent checks
+because JSON Schema does not express those relational limits. Retry-v5 tells the
+next model that the prior candidate failed and to solve independently from the
+trusted baseline, never to repair unseen output, while retaining the smallest-diff
+instruction. Syntax diagnosis schema 3 adds only an allowlisted category, path
+SHA-256, and bounded line and column; it omits parser message, source, and path.
+These prompt, schema, validation, and diagnosis-v2 semantics rotate compact-v4
+attempt identity and require reapproval. Legacy v1-v3 serialization and identity
+branches remain byte-stable.
+
+This keeps the strict-editor lesson from the long-lived
+[Aider issue 3651](https://github.com/Aider-AI/aider/issues/3651) and
+[Aider editing guidance](https://aider.chat/docs/troubleshooting/edit-errors.html):
+give a struggling editor a smaller, focused job. It does not copy or fuzzily repair
+the prior model's failed patch. The next live acceptance must admit a proposal no
+larger than the 37-line reference, reject any over-96-line proposal with only safe
+count telemetry, publish syntax coordinates without authored text, and release all
+leases and temporary worktrees on either path.
 
 A September 2026 DeepSeek catalog attempt then exposed a separate parent-side
 gap. Both compact-v3 shards completed and passed worker schema validation, but a

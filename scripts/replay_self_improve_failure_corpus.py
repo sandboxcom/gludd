@@ -31,7 +31,7 @@ from general_ludd.self_improve.codex_comparison import (
 )
 from general_ludd.self_improve.managed_runner import _validation_retry_feedback
 
-_PROTOCOL: Final = "self-improve-failure-corpus-v5"
+_PROTOCOL: Final = "self-improve-failure-corpus-v6"
 _MAX_CORPUS_BYTES: Final = 65_536
 _MAX_CASES: Final = 32
 _MAX_TEXT_BYTES: Final = 8_192
@@ -53,6 +53,9 @@ _INPUT_FIELDS: Final = {
     "compact_span_completion": frozenset({"focus_path", "worker_response"}),
     "compact_span_parent": frozenset(
         {"baseline", "editable_ranges", "focus_path", "model_output"}
+    ),
+    "compact_span_batch_parent": frozenset(
+        {"baseline_line_counts", "focus_paths", "model_outputs"}
     ),
     "completion_decode": frozenset(
         {"phase", "budget", "require_stop", "worker_response"}
@@ -329,6 +332,32 @@ def _validate_inputs(
             isinstance(item, list) and len(item) == 2 for item in raw_ranges
         ):
             raise ValueError(f"{case_id} editable_ranges must contain pairs")
+    elif kind == "compact_span_batch_parent":
+        raw_paths = inputs["focus_paths"]
+        raw_outputs = inputs["model_outputs"]
+        raw_counts = inputs["baseline_line_counts"]
+        if (
+            not isinstance(raw_paths, list)
+            or not isinstance(raw_outputs, list)
+            or not isinstance(raw_counts, list)
+            or not 1 <= len(raw_paths) <= 8
+            or len(raw_paths) != len(raw_outputs)
+            or len(raw_paths) != len(raw_counts)
+        ):
+            raise ValueError(f"{case_id} compact span batch lists must align")
+        paths = tuple(
+            _required_string(item, f"{case_id} focus path") for item in raw_paths
+        )
+        tuple(_required_string(item, f"{case_id} model output") for item in raw_outputs)
+        if len(set(paths)) != len(paths):
+            raise ValueError(f"{case_id} focus paths must be unique")
+        if any(
+            isinstance(item, bool)
+            or not isinstance(item, int)
+            or not 1 <= item <= 2048
+            for item in raw_counts
+        ):
+            raise ValueError(f"{case_id} baseline line counts must be bounded integers")
     elif kind == "completion_decode":
         _required_string(inputs["phase"], f"{case_id} phase", max_bytes=32)
         budget = inputs["budget"]
@@ -464,7 +493,7 @@ def load_corpus(path: Path) -> tuple[FailureCase, ...]:
     root = _required_object(decoded, "failure corpus")
     if set(root) != _ROOT_FIELDS:
         raise ValueError("failure corpus fields drifted")
-    if root["schema_version"] != 5 or root["protocol"] != _PROTOCOL:
+    if root["schema_version"] != 6 or root["protocol"] != _PROTOCOL:
         raise ValueError("failure corpus protocol is unsupported")
     raw_cases = root["cases"]
     if not isinstance(raw_cases, list) or not 1 <= len(raw_cases) <= _MAX_CASES:
@@ -611,6 +640,41 @@ def _replay_compact_span_parent(case: FailureCase) -> str:
     raise CorpusMismatch(case.case_id, "expected_parent_rejection_missing")
 
 
+def _replay_compact_span_batch_parent(case: FailureCase) -> str:
+    """Replay one multi-file aggregate span budget rejection before expansion."""
+    paths = tuple(
+        _required_string(item, "focus path")
+        for item in cast("list[object]", case.inputs["focus_paths"])
+    )
+    outputs = tuple(
+        _required_string(item, "model output")
+        for item in cast("list[object]", case.inputs["model_outputs"])
+    )
+    counts = tuple(cast("list[int]", case.inputs["baseline_line_counts"]))
+    proposals = tuple(
+        _decode_compact_span_proposal(output, focus_path=path)
+        for path, output in zip(paths, outputs, strict=True)
+    )
+    baselines = {
+        path: "".join(f"line-{index}\n" for index in range(count))
+        for path, count in zip(paths, counts, strict=True)
+    }
+    try:
+        expand_compact_span_proposals(
+            proposals,
+            contract=_SPAN_CONTRACT,
+            expected_path_groups=tuple((path,) for path in paths),
+            expected_baseline_files=baselines,
+            expected_editable_ranges=tuple(((1, count + 1),) for count in counts),
+        )
+    except (RuntimeError, ValueError) as exc:
+        return _validation_retry_feedback(
+            exc,
+            proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+        )
+    raise CorpusMismatch(case.case_id, "expected_parent_rejection_missing")
+
+
 def _actual_feedback(case: FailureCase) -> tuple[str, bool, str]:
     if case.kind == "acquisition_trace":
         raw_events = case.inputs["events"]
@@ -633,6 +697,8 @@ def _actual_feedback(case: FailureCase) -> tuple[str, bool, str]:
         return _replay_gateway_failure(case), False, ""
     if case.kind == "compact_span_parent":
         return _replay_compact_span_parent(case), True, "span_expand"
+    if case.kind == "compact_span_batch_parent":
+        return _replay_compact_span_batch_parent(case), True, "span_budget"
     if case.kind == "parent_merge":
         return _replay_parent_merge(case), True, "merge"
     error = _required_string(case.inputs["error"], "retry error")

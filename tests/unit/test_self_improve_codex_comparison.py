@@ -1316,6 +1316,126 @@ def test_compact_protocol_bounds_one_file_output_before_manifest_limits() -> Non
         )
 
 
+def test_compact_v4_binds_per_edit_line_limits_into_schema_and_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bound old and replacement lines without shrinking the UTF-8 byte authority."""
+    assert comparison_module._COMPACT_SPAN_MAX_OLD_LINES == 64
+    assert comparison_module._COMPACT_SPAN_MAX_NEW_LINES == 64
+    assert comparison_module._COMPACT_SPAN_MAX_CHANGED_LINES == 96
+    schema = comparison_module._compact_proposal_schema_for_ranges(((1, 130),))
+    properties = cast(dict[str, object], schema["properties"])
+    edits = cast(dict[str, object], properties["e"])
+    item = cast(dict[str, object], edits["items"])
+    item_properties = cast(dict[str, object], item["properties"])
+    old_line_count = cast(dict[str, object], item_properties["n"])
+    replacement = cast(dict[str, object], item_properties["z"])
+    assert old_line_count["maximum"] == 64
+    assert replacement["maxLength"] == 768
+    assert "at most 64 old lines" in comparison_module._COMPACT_SYSTEM_PROMPT
+    assert "at most 64 replacement lines" in comparison_module._COMPACT_SYSTEM_PROMPT
+    assert "96 changed lines" in comparison_module._COMPACT_SYSTEM_PROMPT
+
+    comparison_module.CompactLineSpan(
+        start_line=1,
+        old_line_count=64,
+        new_text="line\r\n" * 64,
+    )
+    with pytest.raises(ValueError, match="old lines exceed 64"):
+        comparison_module.CompactLineSpan(
+            start_line=1,
+            old_line_count=65,
+            new_text="replacement\n",
+        )
+    with pytest.raises(ValueError, match="new lines exceed 64"):
+        comparison_module.CompactLineSpan(
+            start_line=1,
+            old_line_count=1,
+            new_text="replacement\n" * 65,
+        )
+
+    baseline = comparison_module.local_proposal_attempt_identity_digest("a" * 64)
+    for name, changed in (
+        ("_COMPACT_SPAN_MAX_OLD_LINES", 63),
+        ("_COMPACT_SPAN_MAX_NEW_LINES", 63),
+        ("_COMPACT_SPAN_MAX_CHANGED_LINES", 95),
+    ):
+        with monkeypatch.context() as scoped:
+            scoped.setattr(comparison_module, name, changed)
+            assert comparison_module.local_proposal_attempt_identity_digest("a" * 64) != baseline
+
+
+def test_compact_v4_total_line_budget_admits_reference_and_rejects_live_rewrite() -> None:
+    """Admit the 33-add/4-delete reference but stop a 360-line rewrite pre-apply."""
+    source_path = "src/general_ludd/local_model/_local_model_configs.py"
+    test_path = "tests/unit/test_e2e_model_configs.py"
+    contract = replace(
+        _contract(),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    reference_proposals = (
+        comparison_module.CompactSpanProposal(
+            focus_path=source_path,
+            edits=(comparison_module.CompactLineSpan(1, 4, ""),),
+        ),
+        comparison_module.CompactSpanProposal(
+            focus_path=test_path,
+            edits=(
+                comparison_module.CompactLineSpan(
+                    2,
+                    0,
+                    "".join(f"assert catalog[{index}]\n" for index in range(33)),
+                ),
+            ),
+        ),
+    )
+
+    manifest = comparison_module.expand_compact_span_proposals(
+        reference_proposals,
+        contract=contract,
+        expected_path_groups=((source_path,), (test_path,)),
+        expected_baseline_files={
+            source_path: "one\ntwo\nthree\nfour\n",
+            test_path: "anchor\n",
+        },
+        expected_editable_ranges=(((1, 5),), ((1, 2),)),
+    )
+
+    assert len(manifest.edits) == 2
+    assert sum(
+        edit.old_line_count + len(edit.new_text.splitlines())
+        for proposal in reference_proposals
+        for edit in proposal.edits
+    ) == 37
+
+    live_rewrite = tuple(
+        comparison_module.CompactSpanProposal(
+            focus_path=path,
+            edits=tuple(
+                comparison_module.CompactLineSpan(start, 60, "")
+                for start in (1, 61, 121)
+            ),
+        )
+        for path in (source_path, test_path)
+    )
+    with pytest.raises(ValueError) as captured:
+        comparison_module.expand_compact_span_proposals(
+            live_rewrite,
+            contract=contract,
+            expected_path_groups=((source_path,), (test_path,)),
+            expected_baseline_files={source_path: "secret", test_path: "secret"},
+            expected_editable_ranges=(((1, 2),), ((1, 2),)),
+        )
+    assert str(captured.value) == (
+        "SELF_IMPROVE_PARENT_PROPOSAL_ERROR compact span changed lines exceed 96; "
+        "received_changed_lines=>96 max_changed_lines=96"
+    )
+    assert all(
+        value not in str(captured.value)
+        for value in (source_path, test_path, "secret")
+    )
+
+
 def test_compact_codec_rejects_noop_text_pair() -> None:
     raw = json.dumps({"e": [{"a": "", "z": ""}]})
 

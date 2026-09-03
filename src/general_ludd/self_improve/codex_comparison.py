@@ -106,6 +106,9 @@ _COMPACT_MAX_UTF8_BYTES_PER_CODEPOINT = 4
 _COMPACT_MAX_STRING_CODEPOINTS = (
     _COMPACT_MAX_CONTENT_BYTES // _COMPACT_MAX_UTF8_BYTES_PER_CODEPOINT
 )
+_COMPACT_SPAN_MAX_OLD_LINES = 64
+_COMPACT_SPAN_MAX_NEW_LINES = 64
+_COMPACT_SPAN_MAX_CHANGED_LINES = 96
 _COMPACT_FOCUS_PATH_MARKER = "GLUDD_SELF_IMPROVE_FOCUS_PATH="
 _COMPACT_EDITABLE_RANGES_MARKER = "GLUDD_SELF_IMPROVE_EDITABLE_RANGES="
 _COMPACT_MAX_SCOPE_MARKER_BYTES = _MAX_PROMPT_SHARD_BYTES
@@ -118,8 +121,9 @@ _DETERMINISTIC_DECODE_TEMPERATURE = 0.0
 _DETERMINISTIC_DECODE_SEED = 0
 _STRUCTURED_OUTPUT_REQUIRE_STOP = True
 _LEGACY_STRUCTURED_DECODING_MODE = "llama-cpp-bounded-span-grammar-v3"
-_STRUCTURED_DECODING_MODE = "llama-cpp-bounded-span-grammar-v4"
+_STRUCTURED_DECODING_MODE = "llama-cpp-bounded-span-grammar-v5"
 _MODEL_VISIBLE_PROMPT_POLICY = "validated-parent-metadata-stripped-v1"
+_COMPACT_COMPARISON_RETRY_POLICY = "independent-trusted-baseline-smallest-diff-v1"
 _STRUCTURED_CANARY_PROMPT = 'Return {"ok":true}.'
 _STRUCTURED_CANARY_EXPECTED: dict[str, object] = {"ok": True}
 _COMPACT_ROOT_FIELDS = frozenset({"e"})
@@ -133,7 +137,7 @@ _COMPACT_OPERATION_BY_EMPTY_TEXT = {
     (True, False): "create",
 }
 _LEGACY_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v3"
-_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v4-line-span-boundary-v4"
+_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v4-line-budget-v5"
 _COMPACT_MAX_ANCHOR_BYTES = 65_536
 _SAFE_FINISH_REASONS = frozenset(
     {"stop", "length", "tool_calls", "function_call", "content_filter"}
@@ -159,7 +163,11 @@ _COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
                 "required": ["s", "n", "z"],
                 "properties": {
                     "s": {"type": "integer", "minimum": 1},
-                    "n": {"type": "integer", "minimum": 0},
+                    "n": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": _COMPACT_SPAN_MAX_OLD_LINES,
+                    },
                     "z": {
                         "type": "string",
                         "maxLength": _COMPACT_MAX_STRING_CODEPOINTS,
@@ -219,7 +227,10 @@ def _compact_proposal_schema_for_ranges(
     coordinates = sorted(
         {coordinate for start, end in validated for coordinate in range(start, end + 1)}
     ) or [1]
-    max_old_lines = max((end - start for start, end in validated), default=0)
+    max_old_lines = min(
+        _COMPACT_SPAN_MAX_OLD_LINES,
+        max((end - start for start, end in validated), default=0),
+    )
     schema = copy.deepcopy(_COMPACT_PROPOSAL_JSON_SCHEMA)
     root_properties = cast(dict[str, object], schema["properties"])
     edits = cast(dict[str, object], root_properties["e"])
@@ -248,6 +259,10 @@ _COMPACT_SYSTEM_PROMPT = (
     "baseline, and commit metadata. s is the 1-based baseline start, n is old lines "
     "consumed, and z is literal replacement text without labels. Choose s only from the "
     "per-shard grammar enum. "
+    f"Each edit may consume at most {_COMPACT_SPAN_MAX_OLD_LINES} old lines and "
+    f"contain at most {_COMPACT_SPAN_MAX_NEW_LINES} replacement lines. Across every "
+    f"shard, emit at most {_COMPACT_SPAN_MAX_CHANGED_LINES} changed lines, counting "
+    "old lines consumed plus replacement lines. "
     "For a shown Lx..Ly section, n=0 may insert with s=x..y+1 only; never select a "
     "boundary wholly inside a hidden gap. Empty z deletes consumed lines; s=1, n=0 "
     "creates an absent file. The edit must change content. Each z may contain at most "
@@ -324,8 +339,10 @@ class EvaluationDiagnosisProtocol:
     max_event_bytes: int
     max_diagnosis_bytes: int
     max_duration_ms: int
+    max_coordinate: int
     phase_kinds: tuple[tuple[str, str], ...]
     diagnosis_failure_classes: tuple[str, ...]
+    syntax_categories: tuple[str, ...]
     failure_hypothesis: str
     unavailable_hypothesis: str
 
@@ -339,11 +356,12 @@ LOCAL_MODEL_ATTEMPT_OUTCOME_PROTOCOL = ModelAttemptOutcomeProtocol(
 
 
 EVALUATION_DIAGNOSIS_PROTOCOL = EvaluationDiagnosisProtocol(
-    version="self-improve-evaluation-diagnosis-v1",
-    schema_version=2,
+    version="self-improve-evaluation-diagnosis-v2",
+    schema_version=3,
     max_event_bytes=256,
-    max_diagnosis_bytes=512,
+    max_diagnosis_bytes=768,
     max_duration_ms=3_600_000,
+    max_coordinate=2_097_153,
     phase_kinds=(
         ("apply", "filesystem_apply"),
         ("syntax_preflight", "syntax_preflight"),
@@ -375,6 +393,13 @@ EVALUATION_DIAGNOSIS_PROTOCOL = EvaluationDiagnosisProtocol(
         "cleanup_failed",
         "quality_rejected",
         "diagnosis_unavailable",
+    ),
+    syntax_categories=(
+        "python_syntax",
+        "python_path",
+        "python_read",
+        "python_size",
+        "python_encoding",
     ),
     failure_hypothesis="approved evaluation failed; correct only the typed phase",
     unavailable_hypothesis="evaluation diagnosis was unavailable",
@@ -447,7 +472,7 @@ LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
 )
 
 LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
-    version="self-improve-validation-retry-v4",
+    version="self-improve-validation-retry-v5",
     error_marker=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.error_marker,
     marker_source=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.marker_source,
     parent_error_marker=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.parent_error_marker,
@@ -461,7 +486,9 @@ LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
     prompt_suffix=(
         "\nUse only an s value permitted by the per-shard JSON grammar. "
         "For shown Lx-Ly, use insertion s=x..y+1; never a hidden gap. "
-        f"Return at most {_COMPACT_SPAN_MAX_EDITS} non-overlapping edits."
+        f"Return at most {_COMPACT_SPAN_MAX_EDITS} non-overlapping edits, at most "
+        f"{_COMPACT_SPAN_MAX_OLD_LINES} old and {_COMPACT_SPAN_MAX_NEW_LINES} new "
+        f"lines per edit, and {_COMPACT_SPAN_MAX_CHANGED_LINES} changed lines total."
     ),
     safe_feedback=(
         *LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.safe_feedback,
@@ -483,6 +510,18 @@ LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
         ("each compact edit must contain exactly n, s, and z", "edit_span_shape"),
         ("compact span new text must be a string", "edit_span_text"),
         ("compact span new text exceeds 3072 bytes", "edit_content_budget"),
+        (
+            f"compact span old lines exceed {_COMPACT_SPAN_MAX_OLD_LINES}",
+            "edit_line_budget",
+        ),
+        (
+            f"compact span new lines exceed {_COMPACT_SPAN_MAX_NEW_LINES}",
+            "edit_line_budget",
+        ),
+        (
+            f"compact span changed lines exceed {_COMPACT_SPAN_MAX_CHANGED_LINES}",
+            "edit_line_budget",
+        ),
         ("compact span must change content", "edit_content_contract"),
         (
             "compact span is outside trusted baseline lines",
@@ -588,7 +627,7 @@ def local_proposal_attempt_identity_digest(
             "proposal_schema_strategy": (
                 "static-v3"
                 if legacy
-                else "parent-enum-coordinate-four-items-per-item-length-v5"
+                else "parent-enum-coordinate-four-items-line-and-codepoint-bounds-v6"
             ),
             "max_scope_coordinates": (
                 None if legacy else _COMPACT_MAX_SCOPE_COORDINATES
@@ -671,6 +710,11 @@ def local_proposal_attempt_identity_digest(
                 "anchor_max_bytes": _COMPACT_MAX_ANCHOR_BYTES,
                 "coordinate_base": 1,
                 "insertion_boundary_policy": "closed-boundaries-of-shown-half-open-range",
+                "comparison_retry_policy": _COMPACT_COMPARISON_RETRY_POLICY,
+                "line_count_policy": "python-splitlines-additions-plus-deletions-v1",
+                "max_changed_lines": _COMPACT_SPAN_MAX_CHANGED_LINES,
+                "max_new_lines_per_edit": _COMPACT_SPAN_MAX_NEW_LINES,
+                "max_old_lines_per_edit": _COMPACT_SPAN_MAX_OLD_LINES,
                 "span_order": "parent-canonical-start-nonoverlap-v2",
             }
         )
@@ -781,8 +825,21 @@ class CompactLineSpan:
             raise ValueError("compact span start line must be positive")
         if self.old_line_count < 0:
             raise ValueError("compact span old line count must be non-negative")
+        if self.old_line_count > _COMPACT_SPAN_MAX_OLD_LINES:
+            raise ValueError(
+                f"compact span old lines exceed {_COMPACT_SPAN_MAX_OLD_LINES}; "
+                f"received_old_lines=>{_COMPACT_SPAN_MAX_OLD_LINES} "
+                f"max_old_lines={_COMPACT_SPAN_MAX_OLD_LINES}"
+            )
         if not isinstance(self.new_text, str):
             raise ValueError("compact span new text must be a string")
+        new_lines = len(self.new_text.splitlines())
+        if new_lines > _COMPACT_SPAN_MAX_NEW_LINES:
+            raise ValueError(
+                f"compact span new lines exceed {_COMPACT_SPAN_MAX_NEW_LINES}; "
+                f"received_new_lines=>{_COMPACT_SPAN_MAX_NEW_LINES} "
+                f"max_new_lines={_COMPACT_SPAN_MAX_NEW_LINES}"
+            )
         if self.old_line_count == 0 and not self.new_text:
             raise ValueError("compact span must change content")
 
@@ -1356,6 +1413,32 @@ def _safe_compact_scope_telemetry(error: BaseException) -> str:
 
 def _safe_compact_policy_telemetry(detail: str) -> str:
     """Extract only fixed bounded count states from a compact-v4 rejection."""
+    line_budgets = (
+        (
+            f"compact span old lines exceed {_COMPACT_SPAN_MAX_OLD_LINES}; "
+            f"received_old_lines=>{_COMPACT_SPAN_MAX_OLD_LINES} "
+            f"max_old_lines={_COMPACT_SPAN_MAX_OLD_LINES}",
+            f"received_old_lines=>{_COMPACT_SPAN_MAX_OLD_LINES} "
+            f"max_old_lines={_COMPACT_SPAN_MAX_OLD_LINES}",
+        ),
+        (
+            f"compact span new lines exceed {_COMPACT_SPAN_MAX_NEW_LINES}; "
+            f"received_new_lines=>{_COMPACT_SPAN_MAX_NEW_LINES} "
+            f"max_new_lines={_COMPACT_SPAN_MAX_NEW_LINES}",
+            f"received_new_lines=>{_COMPACT_SPAN_MAX_NEW_LINES} "
+            f"max_new_lines={_COMPACT_SPAN_MAX_NEW_LINES}",
+        ),
+        (
+            f"compact span changed lines exceed {_COMPACT_SPAN_MAX_CHANGED_LINES}; "
+            f"received_changed_lines=>{_COMPACT_SPAN_MAX_CHANGED_LINES} "
+            f"max_changed_lines={_COMPACT_SPAN_MAX_CHANGED_LINES}",
+            f"received_changed_lines=>{_COMPACT_SPAN_MAX_CHANGED_LINES} "
+            f"max_changed_lines={_COMPACT_SPAN_MAX_CHANGED_LINES}",
+        ),
+    )
+    for expected, telemetry in line_budgets:
+        if detail == expected:
+            return telemetry
     count_detail = (
         "compact proposal edits must contain "
         f"1..{_COMPACT_SPAN_MAX_EDITS} entries; "
@@ -1641,6 +1724,19 @@ def expand_compact_span_proposals(
         or not proposals
     ):
         raise _parent_proposal_error("proposal shard count does not match the prompt plan")
+    if not all(isinstance(proposal, CompactSpanProposal) for proposal in proposals):
+        raise _parent_proposal_error("compact span batch contains an invalid proposal")
+    changed_lines = sum(
+        edit.old_line_count + len(edit.new_text.splitlines())
+        for proposal in proposals
+        for edit in proposal.edits
+    )
+    if changed_lines > _COMPACT_SPAN_MAX_CHANGED_LINES:
+        raise _parent_proposal_error(
+            f"compact span changed lines exceed {_COMPACT_SPAN_MAX_CHANGED_LINES}; "
+            f"received_changed_lines=>{_COMPACT_SPAN_MAX_CHANGED_LINES} "
+            f"max_changed_lines={_COMPACT_SPAN_MAX_CHANGED_LINES}"
+        )
     manifests: list[ProposalManifest] = []
     for proposal, focus_paths, editable_ranges in zip(
         proposals,
@@ -1648,8 +1744,6 @@ def expand_compact_span_proposals(
         expected_editable_ranges,
         strict=True,
     ):
-        if not isinstance(proposal, CompactSpanProposal):
-            raise _parent_proposal_error("compact span batch contains an invalid proposal")
         if len(focus_paths) != 1 or proposal.focus_path != focus_paths[0]:
             raise _parent_proposal_error(
                 "proposal shard edits must cover the exact focus paths"
@@ -2171,6 +2265,8 @@ def compare_with_codex(
 
 _EVALUATION_DIAGNOSIS_FIELDS = frozenset(
     {
+        "category",
+        "column",
         "command_kind",
         "command_sha256",
         "duration_ms",
@@ -2179,6 +2275,8 @@ _EVALUATION_DIAGNOSIS_FIELDS = frozenset(
         "finish_reason",
         "finished",
         "hypothesis",
+        "line",
+        "path_sha256",
         "phase",
         "protocol",
         "schema_version",
@@ -2191,6 +2289,8 @@ def _unavailable_evaluation_diagnosis() -> str:
     protocol = EVALUATION_DIAGNOSIS_PROTOCOL
     return json.dumps(
         {
+            "category": "none",
+            "column": 0,
             "command_kind": "unknown",
             "command_sha256": hashlib.sha256(protocol.version.encode("ascii")).hexdigest(),
             "duration_ms": 0,
@@ -2199,6 +2299,8 @@ def _unavailable_evaluation_diagnosis() -> str:
             "finish_reason": "unknown",
             "finished": True,
             "hypothesis": protocol.unavailable_hypothesis,
+            "line": 0,
+            "path_sha256": "",
             "phase": "evaluation",
             "protocol": protocol.version,
             "schema_version": protocol.schema_version,
@@ -2233,6 +2335,32 @@ def safe_evaluation_retry_diagnosis(diagnostics: object) -> str:
     duration_ms = value.get("duration_ms")
     exit_code = value.get("exit_code")
     failure_class = value.get("failure_class")
+    category = value.get("category")
+    path_digest = value.get("path_sha256")
+    line = value.get("line")
+    column = value.get("column")
+    syntax_categories = frozenset(protocol.syntax_categories)
+    no_syntax_context = (
+        category == "none"
+        and path_digest == ""
+        and line == 0
+        and column == 0
+        and isinstance(failure_class, str)
+        and failure_class not in syntax_categories
+    )
+    syntax_context = (
+        isinstance(category, str)
+        and category in syntax_categories
+        and category == failure_class
+        and isinstance(path_digest, str)
+        and _PROTOCOL_DIGEST_RE.fullmatch(path_digest) is not None
+        and not isinstance(line, bool)
+        and isinstance(line, int)
+        and 0 <= line <= protocol.max_coordinate
+        and not isinstance(column, bool)
+        and isinstance(column, int)
+        and 0 <= column <= protocol.max_coordinate
+    )
     expected_hypothesis = (
         protocol.unavailable_hypothesis
         if failure_class == "diagnosis_unavailable"
@@ -2250,6 +2378,7 @@ def safe_evaluation_retry_diagnosis(diagnostics: object) -> str:
         or exit_code == 0
         or not -255 <= exit_code <= 255
         or failure_class not in protocol.diagnosis_failure_classes
+        or not (no_syntax_context or syntax_context)
         or value.get("finish_reason") != "unknown"
         or value.get("finished") is not True
         or value.get("hypothesis") != expected_hypothesis
@@ -2272,6 +2401,7 @@ def build_retry_prompt(
     *,
     diagnostics: str = "",
     max_diagnostic_bytes: int = 4096,
+    independent_candidate: bool = False,
 ) -> str:
     """Build bounded, secret-redacted evidence for a subsequent local attempt."""
     if (
@@ -2280,6 +2410,8 @@ def build_retry_prompt(
         or not 1 <= max_diagnostic_bytes <= 4096
     ):
         raise ValueError("max_diagnostic_bytes must be an integer from 1 through 4096")
+    if not isinstance(independent_candidate, bool):
+        raise ValueError("independent_candidate must be a boolean")
     gaps = ", ".join(comparison.blockers) if comparison.blockers else "none"
     redacted = _SECRET_ASSIGNMENT_RE.sub(
         lambda match: f"{match.group(1)}=<redacted>",
@@ -2292,11 +2424,19 @@ def build_retry_prompt(
         if diagnostic_tail
         else ""
     )
+    retry_direction = (
+        "The prior candidate failed. Solve the approved task independently from the "
+        "trusted baseline; do not repair or infer unseen candidate output. Preserve the "
+        "smallest correct diff.\n"
+        if independent_candidate
+        else ""
+    )
     return (
         f"{task}\n\n"
         f"Previous proposal score: {comparison.score:.2f}/100.\n"
         f"Required corrections: {gaps}.\n"
         f"{failure_evidence}"
+        f"{retry_direction}"
         "Do not broaden the changed-file set beyond the Codex reference. "
         "Return only the strict proposal JSON object."
     )

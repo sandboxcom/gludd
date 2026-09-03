@@ -25,6 +25,7 @@ EXPECTED_CASES = (
     "compact-v4-qwen-length-1024",
     "compact-v4-smollm-length-1024",
     "compact-v4-qwen-stop-3217-overgeneration",
+    "compact-v4-qwen3b-total-360-lines",
     "worker-success-parent-merge-rejection",
     "raw-native-log-leakage",
     "replace-precondition-mismatch",
@@ -269,6 +270,13 @@ def test_acquisition_trace_rejects_every_ambiguous_transition(
             "telemetry=received_edits=>4 max_edits=4",
         ),
         (
+            "compact-v4-qwen3b-total-360-lines",
+            "edit_line_budget",
+            "parent_validation",
+            "compact span changed lines exceed 96 "
+            "telemetry=received_changed_lines=>96 max_changed_lines=96",
+        ),
+        (
             "worker-success-parent-merge-rejection",
             "proposal_scope",
             "worker_tail",
@@ -389,10 +397,10 @@ def test_cli_emits_deterministic_bounded_case_and_summary_evidence(
 
     assert len(
         [line for line in lines if line.startswith("SELF_IMPROVE_FAILURE_CORPUS_CASE ")]
-    ) == 15
+    ) == 16
     assert lines[-1] == (
         'SELF_IMPROVE_FAILURE_CORPUS_SUMMARY '
-        '{"cases":15,"failed":0,"passed":15,"protocol":"self-improve-failure-corpus-v5"}'
+        '{"cases":16,"failed":0,"passed":16,"protocol":"self-improve-failure-corpus-v6"}'
     )
     assert captured.err == ""
 
@@ -402,7 +410,7 @@ def test_cli_emits_deterministic_bounded_case_and_summary_evidence(
     (
         lambda value: value.update({"extra": True}),
         lambda value: value.pop("protocol"),
-        lambda value: value.update({"schema_version": 6}),
+        lambda value: value.update({"schema_version": 7}),
         lambda value: value.update({"protocol": "unknown"}),
         lambda value: value.update({"cases": []}),
         lambda value: value["cases"].append(copy.deepcopy(value["cases"][0])),

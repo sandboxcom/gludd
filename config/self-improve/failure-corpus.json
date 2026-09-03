@@ -221,6 +221,33 @@
     },
     {
       "expected": {
+        "detail": "compact span changed lines exceed 96 telemetry=received_changed_lines=>96 max_changed_lines=96",
+        "forbidden_substrings": [
+          "src/general_ludd/local_model/_local_model_configs.py",
+          "tests/unit/test_e2e_model_configs.py"
+        ],
+        "source": "parent_validation",
+        "type": "edit_line_budget"
+      },
+      "id": "compact-v4-qwen3b-total-360-lines",
+      "input": {
+        "baseline_line_counts": [
+          180,
+          180
+        ],
+        "focus_paths": [
+          "src/general_ludd/local_model/_local_model_configs.py",
+          "tests/unit/test_e2e_model_configs.py"
+        ],
+        "model_outputs": [
+          "{\"e\":[{\"n\":60,\"s\":1,\"z\":\"\"},{\"n\":60,\"s\":61,\"z\":\"\"},{\"n\":60,\"s\":121,\"z\":\"\"}]}",
+          "{\"e\":[{\"n\":60,\"s\":1,\"z\":\"\"},{\"n\":60,\"s\":61,\"z\":\"\"},{\"n\":60,\"s\":121,\"z\":\"\"}]}"
+        ]
+      },
+      "kind": "compact_span_batch_parent"
+    },
+    {
+      "expected": {
         "detail": "proposal shard edits must cover the exact focus paths",
         "forbidden_substrings": [],
         "source": "worker_tail",
@@ -344,6 +371,6 @@
       "kind": "compact_span_decode"
     }
   ],
-  "protocol": "self-improve-failure-corpus-v5",
-  "schema_version": 5
+  "protocol": "self-improve-failure-corpus-v6",
+  "schema_version": 6
 }

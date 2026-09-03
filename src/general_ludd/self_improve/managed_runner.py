@@ -1544,6 +1544,9 @@ def build_retry_prompt_plan(
                     comparison,
                     diagnostics=retry_diagnostics,
                     max_diagnostic_bytes=2_048,
+                    independent_candidate=(
+                        plan.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4
+                    ),
                 ),
                 editable_ranges=shard.editable_ranges,
             )

@@ -507,7 +507,7 @@ def test_live_deepseek_v4_rejection_releases_lease_and_reports_safe_retry(
     )
     assert rejected == (
         "SELF_IMPROVE_PROPOSAL_REJECTED attempt=1 "
-        "protocol=self-improve-validation-retry-v4 type=proposal_json_contract "
+        "protocol=self-improve-validation-retry-v5 type=proposal_json_contract "
         "source=proposal_error detail=compact-v4 proposal is not one complete JSON object"
     )
     assert all(
@@ -1674,6 +1674,8 @@ def test_run_benchmark_default_sink_flushes_evaluation_and_retry_diagnosis(
     command_sha256 = hashlib.sha256(b"approved-make").hexdigest()
     diagnosis = json.dumps(
         {
+            "category": "none",
+            "column": 0,
             "command_kind": "approved_make",
             "command_sha256": command_sha256,
             "duration_ms": 1000,
@@ -1682,9 +1684,11 @@ def test_run_benchmark_default_sink_flushes_evaluation_and_retry_diagnosis(
             "finish_reason": "unknown",
             "finished": True,
             "hypothesis": "approved evaluation failed; correct only the typed phase",
+            "line": 0,
+            "path_sha256": "",
             "phase": "approved_make",
-            "protocol": "self-improve-evaluation-diagnosis-v1",
-            "schema_version": 2,
+            "protocol": "self-improve-evaluation-diagnosis-v2",
+            "schema_version": 3,
         },
         ensure_ascii=True,
         separators=(",", ":"),
@@ -1762,13 +1766,16 @@ def test_run_benchmark_default_sink_flushes_evaluation_and_retry_diagnosis(
     assert len(evaluation_lines) == 2
     assert retry_lines == [
         "SELF_IMPROVE_RETRY_DIAGNOSIS "
-        "protocol=self-improve-evaluation-diagnosis-v1 "
+        "protocol=self-improve-evaluation-diagnosis-v2 "
         "phase=approved_make failure=make_failed rc=1 duration_ms=1000 "
         f"command_sha256={command_sha256}"
     ]
     first_event = output_lines.index(evaluation_lines[0])
     retry_event = output_lines.index(retry_lines[0])
-    stable_attempt_identity = (
+    rotated_attempt_identity = (
+        "d365837126948c7cde74959adc76ddcc28a1c8789fccc69b35ffe996ad00f65c"
+    )
+    assert rotated_attempt_identity != (
         "ee4671f30088b25acf380a6f3c53b1b518693439e99e7ed290e4986f5d85b82a"
     )
     attempt_lines = [
@@ -1778,9 +1785,9 @@ def test_run_benchmark_default_sink_flushes_evaluation_and_retry_diagnosis(
     ]
     assert attempt_lines == [
         "SELF_IMPROVE_ATTEMPT_START "
-        f"attempt=1 attempt_identity_digest={stable_attempt_identity}",
+        f"attempt=1 attempt_identity_digest={rotated_attempt_identity}",
         "SELF_IMPROVE_ATTEMPT_START "
-        f"attempt=2 attempt_identity_digest={stable_attempt_identity}",
+        f"attempt=2 attempt_identity_digest={rotated_attempt_identity}",
     ]
     second_attempt = next(
         index
@@ -1806,9 +1813,9 @@ def test_retry_diagnosis_event_sanitizes_invalid_injected_artifact() -> None:
 
     assert rendered == (
         "SELF_IMPROVE_RETRY_DIAGNOSIS "
-        "protocol=self-improve-evaluation-diagnosis-v1 phase=evaluation "
+        "protocol=self-improve-evaluation-diagnosis-v2 phase=evaluation "
         "failure=diagnosis_unavailable rc=1 duration_ms=0 "
-        f"command_sha256={hashlib.sha256(b'self-improve-evaluation-diagnosis-v1').hexdigest()}"
+        f"command_sha256={hashlib.sha256(b'self-improve-evaluation-diagnosis-v2').hexdigest()}"
     )
     assert len(rendered.encode("ascii")) <= 256
     for forbidden in ("MODEL_Z", "SECRET_TOKEN", "/absolute/private/repo", "make hidden"):

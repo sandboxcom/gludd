@@ -1632,7 +1632,7 @@ def test_main_preserves_compact_v4_identity_for_live_json_terminal_failure(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == (
-        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v4 "
+        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v5 "
         "type=proposal_json_contract source=proposal_error "
         "detail=compact-v4 proposal is not one complete JSON object\n"
     )
@@ -1689,7 +1689,7 @@ def test_main_preserves_structurally_bound_v4_for_live_length_failure(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == (
-        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v4 "
+        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v5 "
         "type=decode_budget source=proposal_error "
         "detail=local model exhausted the proposal token budget before completion\n"
     )
@@ -1714,7 +1714,7 @@ def test_finite_live_qwen_budget_feedback_is_typed_bounded_and_secret_free() -> 
     )
 
     assert feedback == (
-        "protocol=self-improve-validation-retry-v4 type=edit_content_budget "
+        "protocol=self-improve-validation-retry-v5 type=edit_content_budget "
         "source=proposal_error detail=compact span new text exceeds 3072 bytes "
         "telemetry=received_edits=2 received_content_bytes=>3072 "
         "max_edits=4 max_content_bytes=3072"
@@ -1754,6 +1754,57 @@ def test_finite_live_cardinality_feedback_rejects_telemetry_injection() -> None:
 
 
 @pytest.mark.parametrize(
+    ("detail", "telemetry"),
+    (
+        (
+            "compact span old lines exceed 64; "
+            "received_old_lines=>64 max_old_lines=64",
+            "received_old_lines=>64 max_old_lines=64",
+        ),
+        (
+            "compact span new lines exceed 64; "
+            "received_new_lines=>64 max_new_lines=64",
+            "received_new_lines=>64 max_new_lines=64",
+        ),
+        (
+            "compact span changed lines exceed 96; "
+            "received_changed_lines=>96 max_changed_lines=96",
+            "received_changed_lines=>96 max_changed_lines=96",
+        ),
+    ),
+)
+def test_compact_v4_line_budget_feedback_exposes_only_bounded_counts(
+    detail: str,
+    telemetry: str,
+) -> None:
+    """Classify pre-apply size rejection without copying path, source, or text."""
+    raw = f"SELF_IMPROVE_PARENT_PROPOSAL_ERROR {detail}"
+
+    feedback = managed_runner_module._validation_retry_feedback(
+        raw,
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+
+    assert feedback == (
+        "protocol=self-improve-validation-retry-v5 type=edit_line_budget "
+        f"source=parent_validation detail={detail.partition(';')[0]} "
+        f"telemetry={telemetry}"
+    )
+    assert len(feedback.encode("ascii")) <= 512
+
+    injected = raw + " path=src/private.py z=PASSWORD=hunter2"
+    redacted = managed_runner_module._validation_retry_feedback(
+        injected,
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    assert "telemetry=" not in redacted
+    assert all(
+        value not in redacted
+        for value in ("src/private.py", "PASSWORD", "hunter2")
+    )
+
+
+@pytest.mark.parametrize(
     ("detail", "feedback_type"),
     (
         ("compact spans must not overlap", "edit_span_overlap"),
@@ -1774,7 +1825,7 @@ def test_compact_v4_retry_feedback_distinguishes_overlap_from_duplicate(
     )
 
     assert feedback == (
-        "protocol=self-improve-validation-retry-v4 "
+        "protocol=self-improve-validation-retry-v5 "
         f"type={feedback_type} source=proposal_error detail={detail}"
     )
 
@@ -1809,7 +1860,7 @@ def test_main_redacts_finite_live_smollm_stop_framing_failure(
     assert runner_module.main() == 2
     captured = capsys.readouterr()
     assert captured.err == (
-        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v4 "
+        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v5 "
         "type=proposal_json_contract source=proposal_error "
         "detail=compact-v4 proposal is not one complete JSON object\n"
     )
@@ -2295,6 +2346,8 @@ def test_live_qwen_three_b_score_sixty_emits_safe_typed_evaluation_diagnosis(
     assert result.comparison.score == 60.0
     assert result.evidence.changed_lines == 5
     assert diagnosis == {
+        "category": "none",
+        "column": 0,
         "command_kind": "approved_make",
         "command_sha256": hashlib.sha256(command.encode("utf-8")).hexdigest(),
         "duration_ms": 1000,
@@ -2303,9 +2356,11 @@ def test_live_qwen_three_b_score_sixty_emits_safe_typed_evaluation_diagnosis(
         "finish_reason": "unknown",
         "finished": True,
         "hypothesis": "approved evaluation failed; correct only the typed phase",
+        "line": 0,
+        "path_sha256": "",
         "phase": "approved_make",
-        "protocol": "self-improve-evaluation-diagnosis-v1",
-        "schema_version": 2,
+        "protocol": "self-improve-evaluation-diagnosis-v2",
+        "schema_version": 3,
     }
     assert result.diagnostics == json.dumps(
         diagnosis,
@@ -2313,7 +2368,7 @@ def test_live_qwen_three_b_score_sixty_emits_safe_typed_evaluation_diagnosis(
         separators=(",", ":"),
         sort_keys=True,
     )
-    assert len(result.diagnostics.encode("ascii")) <= 512
+    assert len(result.diagnostics.encode("ascii")) <= 768
     persisted = ManagedSelfImproveResultArtifact.from_run_result(
         ManagedRunResult(
             final_result=replace(
@@ -2593,7 +2648,11 @@ def test_parent_syntax_preflight_rejects_exact_live_classes_with_safe_feedback(
     diagnosis = json.loads(result.diagnostics)
     assert diagnosis["phase"] == "syntax_preflight"
     assert diagnosis["failure_class"] == "python_syntax"
-    assert len(result.diagnostics.encode("ascii")) <= 512
+    assert diagnosis["category"] == "python_syntax"
+    assert diagnosis["path_sha256"] == hashlib.sha256(relative.encode()).hexdigest()
+    assert diagnosis["line"] == 1
+    assert isinstance(diagnosis["column"], int) and diagnosis["column"] > 0
+    assert len(result.diagnostics.encode("ascii")) <= 768
     assert replacement.strip() not in result.diagnostics
     assert relative not in result.diagnostics
     retry = build_retry_prompt(
