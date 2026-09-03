@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from scripts import stream_command
@@ -64,7 +64,7 @@ def _command(
 
 def _current_status(tmp_path: Path) -> dict[str, Any]:
     path = tmp_path / "observed" / "demo" / "current.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
 
 
 def test_observed_command_publishes_atomic_terminal_status_and_log(
@@ -109,7 +109,7 @@ def test_atomic_status_writer_fsyncs_then_replaces(
         replacements.append((Path(source), Path(destination)))
         original_replace(source, destination)
 
-    monkeypatch.setattr(stream_command.os, "replace", record_replace)
+    monkeypatch.setattr(os, "replace", record_replace)
 
     stream_command._atomic_write_json(target, {"state": "running"})
 
