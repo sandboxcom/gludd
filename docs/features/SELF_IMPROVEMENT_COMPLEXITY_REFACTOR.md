@@ -108,6 +108,24 @@ collection, the canonical self-improvement coverage run, and the full gate must
 all pass. Branch coverage remains at least 85 percent aggregate and at least
 75 percent in every measured file.
 
+## Gate-driven maintainability tranche
+
+The unchanged repository inventory exposed a second, independent regression:
+228 source files were below maintainability index 20 while the enforced ceiling
+was 220. The repair did not raise that ceiling. Failing-first structural tests
+selected eleven files immediately below the boundary, and production
+simplification removed duplicated branches, temporary state, and repeated
+normalization without adding a source module to absorb the debt.
+
+The tranche covers the self-update apply and applier paths, local-file connector,
+cross-conversation memory, SSRF validation, writer supervision, entropy coding,
+quadtree operations, two-phase commit, Unicode data handling, and semantic
+versioning. Each file moved from MI 19.25-19.96 to MI 20.03-21.32. The combined
+inventory fell to 217, leaving three files of headroom while the complete,
+unchanged complexity suite passed 19/19. The structural metric remains a
+regression signal rather than a substitute for the 1,095 focused behavior tests,
+strict typing, warnings-as-errors, and per-file coverage evidence.
+
 ## Zero-downtime rollout and rollback
 
 The rollout uses the existing facade as a compatibility seam:
