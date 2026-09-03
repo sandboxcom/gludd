@@ -2061,6 +2061,22 @@ def _runtime_progress(message: str) -> None:
     print(message, flush=True)
 
 
+def _render_retry_diagnosis_event(diagnostics: str) -> str:
+    """Render only allowlisted fields from the diagnosis consumed by a retry."""
+    validated = safe_evaluation_retry_diagnosis(diagnostics)
+    payload = cast(dict[str, object], json.loads(validated))
+    rendered = (
+        "SELF_IMPROVE_RETRY_DIAGNOSIS "
+        f"protocol={payload['protocol']} phase={payload['phase']} "
+        f"failure={payload['failure_class']} rc={payload['exit_code']} "
+        f"duration_ms={payload['duration_ms']} "
+        f"command_sha256={payload['command_sha256']}"
+    )
+    if len(rendered.encode("ascii")) > EVALUATION_DIAGNOSIS_PROTOCOL.max_event_bytes:
+        raise RuntimeError("retry diagnosis event exceeded its fixed byte bound")
+    return rendered
+
+
 class _RepositoryBoundManagedSelfImproveRunner(ManagedSelfImproveRunner):
     """Managed runner that rejects plans approved for a different repository."""
 
@@ -2152,6 +2168,20 @@ def build_managed_self_improve_runner(
             progress_sink=runtime_progress_sink,
         )
 
+    def build_comparison_retry(
+        plan: PromptPlan,
+        comparison: ComparisonResult,
+        diagnostics: str,
+    ) -> PromptPlan:
+        retry = build_retry_prompt_plan(
+            plan,
+            comparison,
+            diagnostics=diagnostics,
+        )
+        if plan.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
+            runtime_progress_sink(_render_retry_diagnosis_event(diagnostics))
+        return retry
+
     service = _RepositoryBoundManagedSelfImproveRunner(
         proposal_generator=generate_managed_proposal,
         attempt_evaluator=evaluate_managed_proposal,
@@ -2167,13 +2197,7 @@ def build_managed_self_improve_runner(
         release_sink=_report_model_release,
         progress_sink=runtime_progress_sink,
         model_acquisition_error=ModelAcquisitionError,
-        comparison_retry_builder=lambda plan, comparison, diagnostics: (
-            build_retry_prompt_plan(
-                plan,
-                comparison,
-                diagnostics=diagnostics,
-            )
-        ),
+        comparison_retry_builder=build_comparison_retry,
         validation_retry_builder=_build_validation_retry_prompt_plan,
     )
     service.bind_repository(canonical_root)
@@ -2389,7 +2413,6 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
         root,
         root_runner=root_runner,
         make_runner_factory=MakeRunner,
-        attempt_evaluator=evaluate_attempt,
     )
     try:
         return service.run(approved_plan).final_result

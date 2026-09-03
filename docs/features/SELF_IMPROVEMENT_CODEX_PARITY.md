@@ -336,6 +336,23 @@ live acceptance must show the exact failed phase and command hash after any
 60-point result, a bounded diagnosis in the next candidate prompt, cleanup on
 every exit, and no raw command output or authored text in logs or artifacts.
 
+The diagnosis-aware live run whose identifier begins `e190` then proved that the
+retry artifact was consumed—the SmolLM2 retry prompt grew by 560 bytes—but its
+parent `run-watched` stream contained zero `SELF_IMPROVE_EVALUATION_EVENT` lines.
+The CLI composition root had explicitly passed `evaluate_attempt` back into the
+factory. That selected the compatibility adapter, which intentionally lacks the
+new progress-sink parameter, instead of the factory's sink-bound default adapter.
+The CLI now uses that default adapter, whose sink flushes each lifecycle line to
+standard output. When a compact-v4 retry consumes a validated diagnosis, the same
+composition root emits exactly one bounded `SELF_IMPROVE_RETRY_DIAGNOSIS` line
+containing only protocol, phase, fixed failure class, return code, duration, and
+command SHA-256. Invalid input first becomes the fixed `diagnosis_unavailable`
+record; raw commands, output, authored text, secrets, and paths are never copied.
+This is output wiring only: compact-v4 protocol and attempt identity are unchanged,
+so durable diagnosis-aware failures from before the wiring fix remain applicable.
+The next live run must show evaluation lines before the retry record and the next
+attempt, with both attempts retaining the same approved identity.
+
 A September 2026 DeepSeek catalog attempt then exposed a separate parent-side
 gap. Both compact-v3 shards completed and passed worker schema validation, but a
 replacement precondition did not apply exactly to the immutable baseline. That

@@ -192,8 +192,12 @@ def test_plan_identity_is_single_source_through_execution_and_outcome(
         *,
         expected_attempt_identity_digest: str,
         merge: bool,
+        make_runner_factory: object | None = None,
+        progress_sink: Callable[[str], None] | None = None,
     ) -> AttemptResult:
+        del make_runner_factory
         assert merge is False
+        assert progress_sink is not None
         observed.append(("proposal", bound.attempt_identity_digest))
         observed.append(("execution", expected_attempt_identity_digest))
         return replace(
@@ -1634,3 +1638,178 @@ def test_consumed_managed_plan_exhausts_without_fake_second_attempt(
     assert "SELF_IMPROVE_ATTEMPT_START attempt=2" not in output
     assert output.count("SELF_IMPROVE_MODEL_OUTCOME") == 1
     assert output.count("SELF_IMPROVE_PROPOSAL_REJECTED") == 1
+
+
+def test_run_benchmark_default_sink_flushes_evaluation_and_retry_diagnosis(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Publish safe lifecycle evidence through the real CLI composition root."""
+    _wire_common(tmp_path, monkeypatch)
+    baseline_files = (
+        ("src/general_ludd/example.py", "return 0\n"),
+        ("tests/unit/test_example.py", "assert False\n"),
+    )
+    prompt = PromptPlan(
+        shards=(
+            PromptShard(
+                focus_paths=tuple(path for path, _content in baseline_files),
+                prompt="bounded compact-v4 prompt",
+                editable_ranges=((1, 2), (3, 4)),
+            ),
+        ),
+        source_bytes=sum(len(content.encode("utf-8")) for _path, content in baseline_files),
+        baseline_files=baseline_files,
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    first = get_model("qwen2.5-coder-1.5b")
+    second = get_model("qwen2.5-coder-3b")
+    assert first is not None
+    assert second is not None
+    candidates = (
+        PlannedModelCandidate(first, "a" * 40, 0.0, 0),
+        PlannedModelCandidate(second, "b" * 40, 0.0, 1),
+    )
+    command_sha256 = hashlib.sha256(b"approved-make").hexdigest()
+    diagnosis = json.dumps(
+        {
+            "command_kind": "approved_make",
+            "command_sha256": command_sha256,
+            "duration_ms": 1000,
+            "exit_code": 1,
+            "failure_class": "make_failed",
+            "finish_reason": "unknown",
+            "finished": True,
+            "hypothesis": "approved evaluation failed; correct only the typed phase",
+            "phase": "approved_make",
+            "protocol": "self-improve-evaluation-diagnosis-v1",
+            "schema_version": 2,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    attempts: list[int] = []
+
+    def evaluate(
+        _root_runner: object,
+        _task: object,
+        _reference: object,
+        _bound: object,
+        attempt: int,
+        *,
+        expected_attempt_identity_digest: str,
+        merge: bool,
+        make_runner_factory: object | None = None,
+        progress_sink: Callable[[str], None] | None = None,
+    ) -> AttemptResult:
+        del merge, make_runner_factory
+        attempts.append(attempt)
+        assert progress_sink is not None
+        runner._record_evaluation_event(
+            [],
+            progress_sink,
+            phase="approved_make",
+            command_kind="approved_make",
+            command_identity="make hidden SECRET_TOKEN=/absolute/private/repo",
+            returncode=1 if attempt == 1 else 0,
+            elapsed_seconds=1.0,
+            failure_class="make_failed",
+        )
+        result = replace(
+            _result(),
+            attempt_identity_digest=expected_attempt_identity_digest,
+        )
+        if attempt == 1:
+            return replace(
+                result,
+                comparison=ComparisonResult(
+                    accepted=False,
+                    score=60.0,
+                    blockers=("tests",),
+                    changed_file_precision=1.0,
+                    changed_file_recall=1.0,
+                ),
+                diagnostics=diagnosis,
+            )
+        return result
+
+    monkeypatch.setattr(runner, "build_prompt", lambda *_args: prompt)
+    monkeypatch.setattr(
+        runner,
+        "plan_model_candidates",
+        lambda *_args, **_kwargs: candidates,
+    )
+    monkeypatch.setattr(runner, "generate_local_proposal_plan", lambda *_args: _proposal())
+    monkeypatch.setattr(runner, "evaluate_attempt", evaluate)
+
+    result = runner.run_benchmark(_args(_task_file(tmp_path)))
+
+    assert result.comparison.accepted
+    assert attempts == [1, 2]
+    output_lines = capsys.readouterr().out.splitlines()
+    evaluation_lines = [
+        line
+        for line in output_lines
+        if line.startswith("SELF_IMPROVE_EVALUATION_EVENT ")
+    ]
+    retry_lines = [
+        line
+        for line in output_lines
+        if line.startswith("SELF_IMPROVE_RETRY_DIAGNOSIS ")
+    ]
+    assert len(evaluation_lines) == 2
+    assert retry_lines == [
+        "SELF_IMPROVE_RETRY_DIAGNOSIS "
+        "protocol=self-improve-evaluation-diagnosis-v1 "
+        "phase=approved_make failure=make_failed rc=1 duration_ms=1000 "
+        f"command_sha256={command_sha256}"
+    ]
+    first_event = output_lines.index(evaluation_lines[0])
+    retry_event = output_lines.index(retry_lines[0])
+    stable_attempt_identity = (
+        "ee4671f30088b25acf380a6f3c53b1b518693439e99e7ed290e4986f5d85b82a"
+    )
+    attempt_lines = [
+        line
+        for line in output_lines
+        if line.startswith("SELF_IMPROVE_ATTEMPT_START ")
+    ]
+    assert attempt_lines == [
+        "SELF_IMPROVE_ATTEMPT_START "
+        f"attempt=1 attempt_identity_digest={stable_attempt_identity}",
+        "SELF_IMPROVE_ATTEMPT_START "
+        f"attempt=2 attempt_identity_digest={stable_attempt_identity}",
+    ]
+    second_attempt = next(
+        index
+        for index, line in enumerate(output_lines)
+        if line.startswith("SELF_IMPROVE_ATTEMPT_START attempt=2 ")
+    )
+    assert first_event < retry_event < second_attempt
+    safe_telemetry = "\n".join((*evaluation_lines, *retry_lines))
+    for forbidden in ("make hidden", "SECRET_TOKEN", "/absolute/private/repo"):
+        assert forbidden not in safe_telemetry
+
+
+def test_retry_diagnosis_event_sanitizes_invalid_injected_artifact() -> None:
+    """Never reflect untrusted diagnosis fields into the parent-readable stream."""
+    injected = json.dumps(
+        {
+            "protocol": "self-improve-evaluation-diagnosis-v1",
+            "source": "MODEL_Z SECRET_TOKEN /absolute/private/repo make hidden",
+        }
+    )
+
+    rendered = runner._render_retry_diagnosis_event(injected)
+
+    assert rendered == (
+        "SELF_IMPROVE_RETRY_DIAGNOSIS "
+        "protocol=self-improve-evaluation-diagnosis-v1 phase=evaluation "
+        "failure=diagnosis_unavailable rc=1 duration_ms=0 "
+        f"command_sha256={hashlib.sha256(b'self-improve-evaluation-diagnosis-v1').hexdigest()}"
+    )
+    assert len(rendered.encode("ascii")) <= 256
+    for forbidden in ("MODEL_Z", "SECRET_TOKEN", "/absolute/private/repo", "make hidden"):
+        assert forbidden not in rendered
