@@ -23,7 +23,11 @@ from general_ludd.self_improve.codex_comparison import (
     ComparisonResult,
     ProposalManifest,
 )
-from general_ludd.self_improve.managed_runner import PromptPlan, PromptShard
+from general_ludd.self_improve.managed_runner import (
+    GeneratedProposal,
+    PromptPlan,
+    PromptShard,
+)
 from general_ludd.self_improve.model_candidate_planner import PlannedModelCandidate
 from general_ludd.self_improve.model_lifecycle import (
     ModelAcquisitionEvent,
@@ -493,7 +497,7 @@ def test_live_deepseek_v4_rejection_releases_lease_and_reports_safe_retry(
     def reject(*_args: object) -> ProposalManifest:
         raise ValueError(raw_failure)
 
-    monkeypatch.setattr(runner, "generate_local_proposal_plan", reject)
+    monkeypatch.setattr(runner, "_generate_local_proposal_plan_result", reject)
     args = _args(_task_file(tmp_path))
     args.max_attempts = 1
 
@@ -522,6 +526,144 @@ def test_live_deepseek_v4_rejection_releases_lease_and_reports_safe_retry(
         )
     )
     assert _LeaseManager.released == 1
+
+
+def test_production_factory_retains_compact_draft_for_one_syntax_repair(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Exercise the real factory seam for the live line-35/column-9 failure."""
+    _wire_common(tmp_path, monkeypatch)
+    path = "src/general_ludd/example.py"
+    prompt = PromptPlan(
+        shards=(
+            PromptShard(
+                (path,),
+                "bounded prompt\nL1|return 0\n",
+                ((1, 2),),
+            ),
+        ),
+        source_bytes=len("return 0\n"),
+        baseline_files=((path, "return 0\n"),),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    compact = comparison_module._decode_compact_span_proposal(
+        '{"e":[{"s":1,"n":1,"z":"return (\\n"}]}',
+        focus_path=path,
+    )
+    manifest = comparison_module.expand_compact_span_proposals(
+        (compact,),
+        contract=comparison_module.ProposalContract(
+            baseline_sha="a" * 40,
+            task_id="S83.133",
+            tests=("tests/unit/test_example.py",),
+            make_commands=(
+                "make test-files TESTFILES=tests/unit/test_example.py",
+            ),
+            proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+        ),
+        expected_path_groups=((path,),),
+        expected_baseline_files={path: "return 0\n"},
+        expected_editable_ranges=(((1, 2),),),
+    )
+    generated_prompts: list[PromptPlan] = []
+
+    def generate_result(
+        _operation_runner: object,
+        _model_path: Path,
+        candidate_prompt: PromptPlan,
+        _task: object,
+        _reference: object,
+    ) -> GeneratedProposal:
+        generated_prompts.append(candidate_prompt)
+        return GeneratedProposal(manifest, (compact,))
+
+    monkeypatch.setattr(runner, "build_prompt", lambda *_args: prompt)
+    monkeypatch.setattr(runner, "_generate_local_proposal_plan_result", generate_result)
+    monkeypatch.setattr(
+        runner,
+        "generate_local_proposal_plan",
+        lambda *_args: pytest.fail("factory discarded compact repair material"),
+    )
+    evaluations = 0
+    diagnosis = json.dumps(
+        {
+            "category": "python_syntax",
+            "column": 9,
+            "command_kind": "syntax_preflight",
+            "command_sha256": "c" * 64,
+            "duration_ms": 1000,
+            "exit_code": 2,
+            "failure_class": "python_syntax",
+            "finish_reason": "unknown",
+            "finished": True,
+            "hypothesis": "approved evaluation failed; correct only the typed phase",
+            "line": 35,
+            "path_sha256": hashlib.sha256(path.encode()).hexdigest(),
+            "phase": "syntax_preflight",
+            "protocol": "self-improve-evaluation-diagnosis-v2",
+            "schema_version": 3,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+    def evaluate(
+        _root_runner: object,
+        _task: object,
+        _reference: object,
+        bound: PlanBoundProposal,
+        _attempt: int,
+        *,
+        expected_attempt_identity_digest: str,
+        merge: bool,
+        make_runner_factory: object | None = None,
+        progress_sink: Callable[[str], None] | None = None,
+    ) -> AttemptResult:
+        nonlocal evaluations
+        del merge, make_runner_factory, progress_sink
+        evaluations += 1
+        result = replace(
+            _result(),
+            proposal=bound.proposal,
+            attempt_identity_digest=expected_attempt_identity_digest,
+        )
+        if evaluations == 1:
+            return replace(
+                result,
+                comparison=replace(
+                    result.comparison,
+                    accepted=False,
+                    score=60.0,
+                    blockers=("python_syntax",),
+                ),
+                evidence=replace(
+                    result.evidence,
+                    cleanup_passed=True,
+                    commit_count=0,
+                    worktree_clean=False,
+                    changed_lines=15,
+                ),
+                diagnostics=diagnosis,
+            )
+        return result
+
+    monkeypatch.setattr(runner, "evaluate_attempt", evaluate)
+    result = runner.run_benchmark(_args(_task_file(tmp_path)))
+
+    assert result.comparison.accepted
+    assert evaluations == 2
+    assert _LeaseManager.released == 2
+    assert len(generated_prompts) == 2
+    assert '"e":[{"n":1,"s":1,"z":"return (\\n"}]' in (
+        generated_prompts[1].shards[0].prompt
+    )
+    output = capsys.readouterr().out
+    assert "SELF_IMPROVE_SYNTAX_REPAIR_START attempt=2" in output
+    assert "SELF_IMPROVE_RETRY_DIAGNOSIS" in output
+    assert "return (" not in output
 
 
 def test_v4_scope_rejection_event_emits_bounded_coordinate_telemetry(
@@ -562,7 +704,7 @@ def test_v4_scope_rejection_event_emits_bounded_coordinate_telemetry(
             expected_editable_ranges=(((1, 3), (5, 7)),),
         )
 
-    monkeypatch.setattr(runner, "generate_local_proposal_plan", reject)
+    monkeypatch.setattr(runner, "_generate_local_proposal_plan_result", reject)
     args = _args(_task_file(tmp_path))
     args.max_attempts = 1
 
@@ -1565,7 +1707,7 @@ def test_prompt_plan_generation_failure_retries_with_next_reserved_candidate(
         "plan_model_candidates",
         lambda *_args, **_kwargs: candidates,
     )
-    monkeypatch.setattr(runner, "generate_local_proposal_plan", generate_plan)
+    monkeypatch.setattr(runner, "_generate_local_proposal_plan_result", generate_plan)
     monkeypatch.setattr(
         runner,
         "_build_validation_retry_prompt_plan",
@@ -1745,7 +1887,11 @@ def test_run_benchmark_default_sink_flushes_evaluation_and_retry_diagnosis(
         "plan_model_candidates",
         lambda *_args, **_kwargs: candidates,
     )
-    monkeypatch.setattr(runner, "generate_local_proposal_plan", lambda *_args: _proposal())
+    monkeypatch.setattr(
+        runner,
+        "_generate_local_proposal_plan_result",
+        lambda *_args: _proposal(),
+    )
     monkeypatch.setattr(runner, "evaluate_attempt", evaluate)
 
     result = runner.run_benchmark(_args(_task_file(tmp_path)))
@@ -1774,11 +1920,12 @@ def test_run_benchmark_default_sink_flushes_evaluation_and_retry_diagnosis(
     first_event = output_lines.index(evaluation_lines[0])
     retry_event = output_lines.index(retry_lines[0])
     rotated_attempt_identity = (
-        "a954fb52b2c47704813156f2a16e610aa47addee2d1af1cf90061855ac9aa87c"
+        "dcc582bce1bbe96c37efa9f0f452e12a528eb5aba2d9c78b7eafda7463ca1c5b"
     )
-    assert rotated_attempt_identity != (
-        "d365837126948c7cde74959adc76ddcc28a1c8789fccc69b35ffe996ad00f65c"
-    )
+    assert rotated_attempt_identity not in {
+        "a954fb52b2c47704813156f2a16e610aa47addee2d1af1cf90061855ac9aa87c",
+        "d365837126948c7cde74959adc76ddcc28a1c8789fccc69b35ffe996ad00f65c",
+    }
     attempt_lines = [
         line
         for line in output_lines

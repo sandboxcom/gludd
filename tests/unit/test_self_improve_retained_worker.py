@@ -701,7 +701,15 @@ def test_parent_expands_v4_multifile_spans_and_cleans_owned_exchange(
     owned = _InProcessOwnedRunner(Gateway)
     task, reference = _task_and_reference()
 
-    merged = runner_module.generate_local_proposal_plan(
+    generated = runner_module._generate_local_proposal_plan_result(
+        owned,
+        model_path,
+        plan,
+        task,
+        reference,
+    )
+    merged = generated.proposal
+    public_manifest = runner_module.generate_local_proposal_plan(
         owned,
         model_path,
         plan,
@@ -709,6 +717,8 @@ def test_parent_expands_v4_multifile_spans_and_cleans_owned_exchange(
         reference,
     )
 
+    assert type(public_manifest) is ProposalManifest
+    assert public_manifest == merged
     assert {edit.path for edit in merged.edits} == {"src/one.py", "src/two.py"}
     assert all(edit.old_text == "before\n" for edit in merged.edits)
     assert all(edit.new_text == "after\n" for edit in merged.edits)
@@ -716,6 +726,11 @@ def test_parent_expands_v4_multifile_spans_and_cleans_owned_exchange(
         contract.proposal_protocol == "self-improve-compact-proposal-v4"
         for contract in contracts
     )
+    assert tuple(item.focus_path for item in generated.compact_proposals) == (
+        "src/one.py",
+        "src/two.py",
+    )
+    assert all(item.edits[0].new_text == "after\n" for item in generated.compact_proposals)
     assert all(not path.exists() for path in owned.exchange_paths)
 
 

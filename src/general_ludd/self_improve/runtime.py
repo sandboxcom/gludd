@@ -35,6 +35,7 @@ from general_ludd.self_improve.codex_comparison import (
     LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL,
     CandidateEvidence,
     CodexReference,
+    CompactSpanProposal,
     ComparisonResult,
     PlannerFeedbackExchange,
     ProposalContract,
@@ -51,6 +52,7 @@ from general_ludd.self_improve.codex_comparison import (
 from general_ludd.self_improve.managed_runner import (
     ApprovedSelfImprovePlan,
     CapabilityEvidenceOutcomeAdapter,
+    GeneratedProposal,
     ManagedOutcomeAdapter,
     ManagedRunResult,
     ManagedSelfImproveRunner,
@@ -61,6 +63,7 @@ from general_ludd.self_improve.managed_runner import (
     _validate_attempt_identity_digest,
     _validation_retry_feedback,
     build_retry_prompt_plan,
+    build_syntax_repair_prompt_plan,
 )
 from general_ludd.self_improve.managed_runner import (
     AttemptResult as AttemptResult,
@@ -512,14 +515,14 @@ def generate_local_proposal(
     )
 
 
-def generate_local_proposal_plan(
+def _generate_local_proposal_plan_result(
     runner: _ObservableRunner,
     model_path: Path,
     plan: PromptPlan,
     task: TaskSpec,
     reference: CodexReference,
-) -> ProposalManifest:
-    """Decode all shards in one retained worker, then strictly merge them."""
+) -> GeneratedProposal:
+    """Decode all shards and retain only validated compact-v4 repair material."""
     request = encode_prompt_batch(
         tuple(shard.prompt for shard in plan.shards),
         protocol_digest=plan.protocol_digest,
@@ -546,7 +549,7 @@ def generate_local_proposal_plan(
         )
         if not plan.baseline_files:
             raise ValueError("compact-v4 prompt plan requires trusted baseline snapshots")
-        return expand_compact_span_proposals(
+        proposal = expand_compact_span_proposals(
             span_proposals,
             contract=contract,
             expected_path_groups=tuple(shard.focus_paths for shard in plan.shards),
@@ -555,22 +558,42 @@ def generate_local_proposal_plan(
                 shard.editable_ranges for shard in plan.shards
             ),
         )
+        return GeneratedProposal(proposal, span_proposals)
     legacy_proposals = decode_proposal_batch(
         raw_proposals,
         expected_protocol_digest=plan.protocol_digest,
         expected_count=len(plan.shards),
     )
-    return merge_proposal_manifests(
-        legacy_proposals,
-        expected_path_groups=tuple(shard.focus_paths for shard in plan.shards),
-        expected_baseline_sha=reference.baseline_sha,
-        expected_task_id=task.task_id,
-        expected_tests=required_tests,
-        expected_make_commands=task.canonical_make_commands,
-        expected_baseline_files=(
-            dict(plan.baseline_files) if plan.baseline_files else None
-        ),
+    return GeneratedProposal(
+        merge_proposal_manifests(
+            legacy_proposals,
+            expected_path_groups=tuple(shard.focus_paths for shard in plan.shards),
+            expected_baseline_sha=reference.baseline_sha,
+            expected_task_id=task.task_id,
+            expected_tests=required_tests,
+            expected_make_commands=task.canonical_make_commands,
+            expected_baseline_files=(
+                dict(plan.baseline_files) if plan.baseline_files else None
+            ),
+        )
     )
+
+
+def generate_local_proposal_plan(
+    runner: _ObservableRunner,
+    model_path: Path,
+    plan: PromptPlan,
+    task: TaskSpec,
+    reference: CodexReference,
+) -> ProposalManifest:
+    """Decode and merge a plan while preserving the legacy manifest-only API."""
+    return _generate_local_proposal_plan_result(
+        runner,
+        model_path,
+        plan,
+        task,
+        reference,
+    ).proposal
 
 
 @dataclass(frozen=True)
@@ -2173,9 +2196,9 @@ def build_managed_self_improve_runner(
         prompt: PromptPlan | str,
         task: TaskSpec,
         reference: CodexReference,
-    ) -> ProposalManifest:
+    ) -> ProposalManifest | GeneratedProposal:
         if isinstance(prompt, PromptPlan):
-            return generate_local_proposal_plan(
+            return _generate_local_proposal_plan_result(
                 operation_runner,
                 model_path,
                 prompt,
@@ -2231,6 +2254,19 @@ def build_managed_self_improve_runner(
             runtime_progress_sink(_render_retry_diagnosis_event(diagnostics))
         return retry
 
+    def build_syntax_repair(
+        plan: PromptPlan,
+        compact_proposals: tuple[CompactSpanProposal, ...],
+        diagnostics: str,
+    ) -> PromptPlan:
+        repair = build_syntax_repair_prompt_plan(
+            plan,
+            compact_proposals,
+            diagnostics,
+        )
+        runtime_progress_sink(_render_retry_diagnosis_event(diagnostics))
+        return repair
+
     service = _RepositoryBoundManagedSelfImproveRunner(
         proposal_generator=generate_managed_proposal,
         attempt_evaluator=evaluate_managed_proposal,
@@ -2248,6 +2284,7 @@ def build_managed_self_improve_runner(
         model_acquisition_error=ModelAcquisitionError,
         comparison_retry_builder=build_comparison_retry,
         validation_retry_builder=_build_validation_retry_prompt_plan,
+        syntax_repair_builder=build_syntax_repair,
     )
     service.bind_repository(canonical_root)
     return service

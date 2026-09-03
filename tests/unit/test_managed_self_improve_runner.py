@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from collections.abc import Callable, Iterator
@@ -22,6 +23,8 @@ from general_ludd.self_improve.codex_comparison import (
     COMPACT_PROPOSAL_PROTOCOL_V4,
     CandidateEvidence,
     CodexReference,
+    CompactLineSpan,
+    CompactSpanProposal,
     ComparisonResult,
     ProposalManifest,
     local_proposal_attempt_identity_digest,
@@ -134,6 +137,53 @@ def _plan(tmp_path: Path, *, max_attempts: int = 2) -> ApprovedSelfImprovePlan:
         prompt="bounded prompt",
         required_output_tokens=1024,
         max_attempts=max_attempts,
+    )
+
+
+def _compact_v4_prompt() -> PromptPlan:
+    return PromptPlan(
+        shards=(
+            PromptShard(
+                ("src/general_ludd/example.py",),
+                "bounded v4 prompt\nL1|return 0\n",
+                ((1, 2),),
+            ),
+        ),
+        source_bytes=len("return 0\n"),
+        baseline_files=(("src/general_ludd/example.py", "return 0\n"),),
+        proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+
+
+def _syntax_diagnosis(*, path: str = "src/general_ludd/example.py") -> str:
+    return json.dumps(
+        {
+            "category": "python_syntax",
+            "column": 9,
+            "command_kind": "syntax_preflight",
+            "command_sha256": "c" * 64,
+            "duration_ms": 1000,
+            "exit_code": 2,
+            "failure_class": "python_syntax",
+            "finish_reason": "unknown",
+            "finished": True,
+            "hypothesis": "approved evaluation failed; correct only the typed phase",
+            "line": 35,
+            "path_sha256": hashlib.sha256(path.encode()).hexdigest(),
+            "phase": "syntax_preflight",
+            "protocol": "self-improve-evaluation-diagnosis-v2",
+            "schema_version": 3,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def _rejected_compact_proposal() -> CompactSpanProposal:
+    return CompactSpanProposal(
+        focus_path="src/general_ludd/example.py",
+        edits=(CompactLineSpan(1, 1, "SECRET_REJECTED_Z(\n"),),
     )
 
 
@@ -803,6 +853,22 @@ def test_compact_v4_attempt_identity_binds_model_capability_policy(
     assert private_cli._attempt_identity_digest(prompt) != original
 
 
+def test_compact_v4_attempt_identity_binds_syntax_repair_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A repair lifecycle change must not alias durable pre-repair failures."""
+    prompt = _compact_v4_prompt()
+    original = managed_runner_module._attempt_identity_digest(prompt)
+
+    monkeypatch.setattr(
+        managed_runner_module,
+        "COMPACT_V4_SYNTAX_REPAIR_POLICY_ID",
+        "compact-v4-syntax-self-repair-test-v2",
+    )
+
+    assert managed_runner_module._attempt_identity_digest(prompt) != original
+
+
 def test_pre_policy_compact_v4_plan_requires_reapproval_after_identity_rotation(
     tmp_path: Path,
 ) -> None:
@@ -1421,6 +1487,274 @@ def test_typed_evaluation_diagnosis_reaches_next_v4_model_without_scope_drift(
     assert retried.baseline_files == prompt.baseline_files
     assert retried.protocol_digest == prompt.protocol_digest
     assert retried.proposal_protocol == prompt.proposal_protocol
+
+
+def test_compact_v4_syntax_repair_reuses_candidate_and_attempt_budget(
+    tmp_path: Path,
+) -> None:
+    """Regenerate once under the same lease plan after a cleaned syntax failure."""
+    prompt = _compact_v4_prompt()
+    plan = ApprovedSelfImprovePlan.approve(
+        approval_id="approval-syntax-repair",
+        todo_id="todo-syntax-repair",
+        project_id="project-syntax-repair",
+        repo_root=tmp_path,
+        task=_task(),
+        reference=_reference(),
+        prompt=prompt,
+        required_output_tokens=1024,
+        max_attempts=2,
+    )
+    observed_prompts: list[PromptPlan] = []
+    progress: list[str] = []
+
+    def generate(
+        _model_path: Path,
+        candidate_prompt: PromptPlan,
+        _task_spec: TaskSpec,
+        _reference_spec: CodexReference,
+    ) -> object:
+        observed_prompts.append(candidate_prompt)
+        return managed_runner_module.GeneratedProposal(
+            proposal=_proposal(),
+            compact_proposals=(_rejected_compact_proposal(),),
+        )
+
+    service, manager, outcomes, _merge_values = _runner(
+        tmp_path,
+        proposal_generator=cast(Any, generate),
+    )
+    service.progress_sink = progress.append
+    evaluations = iter((False, True))
+
+    def evaluate(
+        _task_spec: TaskSpec,
+        _reference_spec: CodexReference,
+        bound: PlanBoundProposal,
+        _attempt: int,
+        *,
+        expected_attempt_identity_digest: str,
+        merge: bool,
+    ) -> AttemptResult:
+        assert merge is False
+        accepted = next(evaluations)
+        result = _result(bound, accepted=accepted)
+        return result if accepted else replace(
+            result,
+            diagnostics=_syntax_diagnosis(),
+        )
+
+    service.attempt_evaluator = cast(Any, evaluate)
+    result = service.run(plan)
+
+    assert result.accepted is True
+    assert result.attempts == 2
+    assert manager.acquired == ["qwen2.5-coder-0.5b", "qwen2.5-coder-0.5b"]
+    assert manager.released == manager.acquired
+    assert outcomes.records == [
+        ("qwen2.5-coder-0.5b", True, result.attempt_identity_digest)
+    ]
+    assert len(observed_prompts) == 2
+    repaired = observed_prompts[1]
+    assert '"e":[{"n":1,"s":1,"z":"SECRET_REJECTED_Z(\\n"}]' in (
+        repaired.shards[0].prompt
+    )
+    assert _syntax_diagnosis() in repaired.shards[0].prompt
+    assert repaired.shards[0].focus_paths == prompt.shards[0].focus_paths
+    assert repaired.shards[0].editable_ranges == prompt.shards[0].editable_ranges
+    assert repaired.baseline_files == prompt.baseline_files
+    assert repaired.protocol_digest == prompt.protocol_digest
+    assert repaired.proposal_protocol == prompt.proposal_protocol
+    assert any(line.startswith("SELF_IMPROVE_SYNTAX_REPAIR_START ") for line in progress)
+    assert "SECRET_REJECTED_Z" not in "\n".join(progress)
+    assert manager.reservation_released is True
+
+
+def test_compact_v4_syntax_repair_is_once_only_and_not_shared_with_next_model(
+    tmp_path: Path,
+) -> None:
+    """A failed repair becomes one durable failure before an independent candidate."""
+    prompt = _compact_v4_prompt()
+    plan = ApprovedSelfImprovePlan.approve(
+        approval_id="approval-syntax-repair-once",
+        todo_id="todo-syntax-repair-once",
+        project_id="project-syntax-repair-once",
+        repo_root=tmp_path,
+        task=_task(),
+        reference=_reference(),
+        prompt=prompt,
+        required_output_tokens=1024,
+        max_attempts=3,
+    )
+    observed_prompts: list[PromptPlan] = []
+
+    def generate(
+        _model_path: Path,
+        candidate_prompt: PromptPlan,
+        _task_spec: TaskSpec,
+        _reference_spec: CodexReference,
+    ) -> object:
+        observed_prompts.append(candidate_prompt)
+        if len(observed_prompts) <= 2:
+            return managed_runner_module.GeneratedProposal(
+                proposal=_proposal(),
+                compact_proposals=(_rejected_compact_proposal(),),
+            )
+        return _proposal()
+
+    service, manager, outcomes, _merge_values = _runner(
+        tmp_path,
+        proposal_generator=cast(Any, generate),
+    )
+    evaluations = iter((False, False, True))
+
+    def evaluate(
+        _task_spec: TaskSpec,
+        _reference_spec: CodexReference,
+        bound: PlanBoundProposal,
+        _attempt: int,
+        *,
+        expected_attempt_identity_digest: str,
+        merge: bool,
+    ) -> AttemptResult:
+        del expected_attempt_identity_digest, merge
+        accepted = next(evaluations)
+        result = _result(bound, accepted=accepted)
+        return result if accepted else replace(
+            result,
+            diagnostics=_syntax_diagnosis(),
+        )
+
+    service.attempt_evaluator = cast(Any, evaluate)
+    result = service.run(plan)
+
+    assert result.accepted is True
+    assert manager.acquired == [
+        "qwen2.5-coder-0.5b",
+        "qwen2.5-coder-0.5b",
+        "deepseek-coder-1.3b",
+    ]
+    assert [(model, succeeded) for model, succeeded, _digest in outcomes.records] == [
+        ("qwen2.5-coder-0.5b", False),
+        ("deepseek-coder-1.3b", True),
+    ]
+    assert "SECRET_REJECTED_Z" in observed_prompts[1].shards[0].prompt
+    assert "SECRET_REJECTED_Z" not in observed_prompts[2].shards[0].prompt
+    assert "Solve the approved task independently" in observed_prompts[2].shards[0].prompt
+    assert manager.released == manager.acquired
+    assert manager.reservation_released is True
+
+
+def test_syntax_repair_material_is_repr_safe_and_strictly_bounded() -> None:
+    """Keep draft text out of diagnostics and reject escape-expanded prompt payloads."""
+    oversized = CompactSpanProposal(
+        focus_path="src/general_ludd/example.py",
+        edits=(CompactLineSpan(1, 1, "\x01" * 700),),
+    )
+    generated = managed_runner_module.GeneratedProposal(
+        proposal=_proposal(),
+        compact_proposals=(oversized,),
+    )
+
+    assert "SECRET_REJECTED_Z" not in repr(
+        managed_runner_module.GeneratedProposal(
+            proposal=_proposal(),
+            compact_proposals=(_rejected_compact_proposal(),),
+        )
+    )
+    with pytest.raises(ValueError, match="rejected compact object exceeds 4096"):
+        managed_runner_module.build_syntax_repair_prompt_plan(
+            _compact_v4_prompt(),
+            generated.compact_proposals,
+            _syntax_diagnosis(),
+        )
+
+
+def test_generated_repair_material_must_match_expanded_manifest_paths() -> None:
+    """Reject a carrier that could pair one file's draft with another manifest."""
+    drifted = CompactSpanProposal(
+        focus_path="tests/unit/test_example.py",
+        edits=(CompactLineSpan(1, 1, "assert True\n"),),
+    )
+
+    with pytest.raises(ValueError, match="must match manifest paths in order"):
+        managed_runner_module.GeneratedProposal(
+            proposal=_proposal(),
+            compact_proposals=(drifted,),
+        )
+
+
+@pytest.mark.parametrize(
+    ("max_attempts", "diagnostics", "cleanup_passed"),
+    [
+        (1, _syntax_diagnosis(), True),
+        (2, "quality gate failed", True),
+        (2, _syntax_diagnosis(), False),
+        (2, _syntax_diagnosis(path="tests/unit/test_example.py"), True),
+    ],
+)
+def test_compact_v4_syntax_repair_requires_budget_safe_diagnosis_and_cleanup(
+    tmp_path: Path,
+    max_attempts: int,
+    diagnostics: str,
+    cleanup_passed: bool,
+) -> None:
+    """Never repair unbound, unsafe, unclean, or out-of-budget failures."""
+    prompt = _compact_v4_prompt()
+    plan = ApprovedSelfImprovePlan.approve(
+        approval_id=f"approval-no-repair-{max_attempts}-{cleanup_passed}",
+        todo_id="todo-no-repair",
+        project_id="project-no-repair",
+        repo_root=tmp_path,
+        task=_task(),
+        reference=_reference(),
+        prompt=prompt,
+        required_output_tokens=1024,
+        max_attempts=max_attempts,
+    )
+    calls = 0
+
+    def generate(*_args: object) -> object:
+        nonlocal calls
+        calls += 1
+        return managed_runner_module.GeneratedProposal(
+            proposal=_proposal(),
+            compact_proposals=(_rejected_compact_proposal(),),
+        )
+
+    service, manager, outcomes, _merge_values = _runner(
+        tmp_path,
+        proposal_generator=cast(Any, generate),
+    )
+
+    def evaluate(
+        _task_spec: TaskSpec,
+        _reference_spec: CodexReference,
+        bound: PlanBoundProposal,
+        _attempt: int,
+        *,
+        expected_attempt_identity_digest: str,
+        merge: bool,
+    ) -> AttemptResult:
+        del expected_attempt_identity_digest, merge
+        result = _result(bound, accepted=False)
+        return replace(
+            result,
+            diagnostics=diagnostics,
+            evidence=replace(result.evidence, cleanup_passed=cleanup_passed),
+        )
+
+    service.attempt_evaluator = cast(Any, evaluate)
+    result = service.run(plan)
+
+    assert result.accepted is False
+    assert calls == max_attempts
+    assert manager.acquired == [
+        "qwen2.5-coder-0.5b",
+        *("deepseek-coder-1.3b" for _ in range(max_attempts - 1)),
+    ]
+    assert all(not succeeded for _model, succeeded, _digest in outcomes.records)
+    assert manager.released == manager.acquired
 
 
 def plan_digest(result: ManagedRunResult) -> str:

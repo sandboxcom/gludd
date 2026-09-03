@@ -420,6 +420,36 @@ must apply the 37-line reference-shaped change without token concatenation or a
 unique-anchor rejection, preserve LF/CRLF and final-newline state, expose only
 bounded safe syntax coordinates on failure, and clean every temporary worktree.
 
+That acceptance run reached a narrower recoverable state: Qwen3B proposed 15
+changed lines, exact apply returned zero, the parent parser reported line 35,
+column 9, and cleanup completed. Compact v4 now permits exactly one same-model
+syntax regeneration when an approved attempt remains. Eligibility requires the
+canonical diagnosis-v2 `syntax_preflight`/`python_syntax` tuple, a path SHA-256
+matching one compact focus path, and successful cleanup of the rejected attempt.
+The repair consumes the next approved attempt; it is never an extra inference.
+
+The parent retains the already validated compact objects only in a repr-hidden,
+in-memory carrier. Each repair shard receives its own canonical `{"e":[...]}`
+object, capped at 4,096 ASCII bytes after JSON escaping, plus the source-free
+diagnosis. The original baseline snapshots, focus paths, half-open shown ranges,
+prompt-protocol digest, four-edit ceiling, 3,072-byte aggregate replacement cap,
+and 96-line budget remain authoritative. The same artifact is reacquired and its
+lease released for regeneration. Candidate outcome persistence waits until the
+repair resolves; after a failed repair, a different model receives the original
+independent-candidate prompt and never the rejected `z` text.
+
+This follows the bounded-job lesson in the long-lived
+[Aider issue 3651](https://github.com/Aider-AI/aider/issues/3651): give the model
+the exact failed edit and actionable location without weakening exact matching or
+asking another model to infer unseen output. The repair policy is now part of the
+compact-v4 attempt identity, so stored pre-repair v4 approvals require reapproval
+and their outcomes cannot poison this lifecycle. Approved-plan storage and the
+manifest-only `generate_local_proposal_plan` API are unchanged; v1-v3 identities
+and serialized bytes remain unchanged. Live acceptance requires either a syntax-
+valid repair within the original attempt count or a clean bounded rejection, two
+balanced acquire/release events, one final candidate outcome, and no compact text,
+source, raw path, parser message, or secret in parent-readable telemetry.
+
 A September 2026 DeepSeek catalog attempt then exposed a separate parent-side
 gap. Both compact-v3 shards completed and passed worker schema validation, but a
 replacement precondition did not apply exactly to the immutable baseline. That
@@ -912,7 +942,7 @@ harness cleanup compensates for missing application ownership.
 
 ## Resource bounds and fail-closed cleanup
 
-- One compact span per distinct allowed start coordinate, at most 16 spans, and
+- One compact span per distinct allowed start coordinate, at most four spans, and
   3,072 combined replacement bytes per managed shard. The grammar caps each
   string at 768 code points; the parent authoritatively checks aggregate decoded
   bytes across all items. At most 32 expanded manifest edits, 64 tests, 32 Make
