@@ -307,6 +307,35 @@ canonically sorted non-overlapping spans or returning bounded retry-v4 feedback.
 Duplicate or overlapping spans, aggregate content above 3,072 decoded bytes, and
 partial output must remain rejected with exchange cleanup and lease release.
 
+A subsequent catalog live run showed that valid syntax-bounded output was still
+not operationally diagnosable. StarCoder2 and Qwen3B both produced valid compact
+proposals. Qwen3B changed the exact two approved files and five lines, but its
+first quality command failed in about one second; the parent reported only the
+derived 60-point score and generic blockers. The raw command tail was retained as
+retry diagnostics, which was simultaneously too opaque for operators and too
+broad to pass safely to another model.
+
+Evaluation now publishes one bounded `SELF_IMPROVE_EVALUATION_EVENT` after atomic
+apply, syntax preflight, every approved Make command, the parent-owned test-count,
+stage, commit, clean check, patch comparison, and cleanup. Events contain only an
+allowlisted phase, command kind, SHA-256 command identity, bounded return code and
+duration, and a fixed failure class. They never contain replacement/source text,
+stdout, stderr, secrets, or absolute paths. The first actionable failure is run
+through `compact_failure_diagnosis` and persisted as canonical
+`self-improve-evaluation-diagnosis-v1` JSON. Only that exact bounded object may be
+included in the next compact-v4 prompt; malformed or injected diagnostics become
+a fixed `diagnosis_unavailable` object. Approved paths, commands, and scope remain
+unchanged.
+
+This diagnosis/retry contract is bound only into compact-v4 attempt identity, so
+pre-observability v4 approvals require reapproval and opaque historical failures
+cannot alias the corrected retry behavior. Stored v1-v3 identities and retry
+semantics remain unchanged. Post-sort duplicate starts and genuine overlaps now
+have separate typed classes; neither is mislabeled as input ordering. The next
+live acceptance must show the exact failed phase and command hash after any
+60-point result, a bounded diagnosis in the next candidate prompt, cleanup on
+every exit, and no raw command output or authored text in logs or artifacts.
+
 A September 2026 DeepSeek catalog attempt then exposed a separate parent-side
 gap. Both compact-v3 shards completed and passed worker schema validation, but a
 replacement precondition did not apply exactly to the immutable baseline. That
@@ -327,7 +356,9 @@ and an
 from Aider 0.77.1 using GPT-4o-mini in architect/diff mode. The reporter said the
 model identified the intended repository changes but could not apply them
 because the emitted search block did not match the file exactly, including
-whitespace. Compact v4 removes that duplicated-baseline transcription from the
+whitespace. The follow-up lifecycle protocol also makes the parent application or
+quality phase attributable without exposing the model-authored block. Compact v4
+removes that duplicated-baseline transcription from the
 model response. It does not treat the report as justification for fuzzy
 matching: the parent resolves a bounded numeric span against the exact snapshot
 or rejects it with typed feedback.

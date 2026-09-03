@@ -786,9 +786,16 @@ def test_retry_plan_redacts_and_bounds_diagnostics_without_identity_drift(tmp_pa
     plan = build_prompt(_task(), _reference(), tmp_path)
     comparison = ComparisonResult(accepted=False, score=80.0, blockers=("tests",),
         changed_file_precision=1.0, changed_file_recall=1.0)
+    injected_path = "/Users/private/catalog.py"
     retried = build_retry_prompt_plan(plan, comparison,
-        diagnostics=("failure " * 3000) + "\nPSK=top-secret")
+        diagnostics=("failure " * 3000) + f"\n{injected_path}\nPSK=top-secret")
     assert tuple(s.focus_paths for s in retried.shards) == tuple(s.focus_paths for s in plan.shards)
     assert all(len(s.prompt.encode()) <= 16_384 for s in retried.shards)
     assert all("top-secret" not in s.prompt for s in retried.shards)
-    assert all("PSK=<redacted>" in s.prompt for s in retried.shards)
+    assert all(injected_path not in s.prompt for s in retried.shards)
+    assert all("PSK=" not in s.prompt for s in retried.shards)
+    assert all(
+        '"failure_class":"diagnosis_unavailable"' in s.prompt
+        and '"protocol":"self-improve-evaluation-diagnosis-v1"' in s.prompt
+        for s in retried.shards
+    )

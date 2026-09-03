@@ -21,6 +21,7 @@ import time
 import tokenize
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from functools import partial
 from pathlib import Path
 from typing import Final, Protocol, TextIO, cast
 
@@ -30,6 +31,7 @@ from general_ludd.planning.repo_map import RepoMapBuilder
 from general_ludd.self_improve.codex_comparison import (
     COMPACT_PROPOSAL_PROTOCOL_V3,
     COMPACT_PROPOSAL_PROTOCOL_V4,
+    EVALUATION_DIAGNOSIS_PROTOCOL,
     LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL,
     CandidateEvidence,
     CodexReference,
@@ -44,6 +46,7 @@ from general_ludd.self_improve.codex_comparison import (
     encode_prompt_batch,
     expand_compact_span_proposals,
     merge_proposal_manifests,
+    safe_evaluation_retry_diagnosis,
 )
 from general_ludd.self_improve.managed_runner import (
     ApprovedSelfImprovePlan,
@@ -1377,6 +1380,205 @@ def _python_syntax_preflight(
     return None
 
 
+@dataclass(frozen=True, slots=True)
+class _EvaluationLifecycleEvent:
+    """One bounded event whose fields cannot carry model-authored content."""
+
+    phase: str
+    command_kind: str
+    command_sha256: str
+    returncode: int
+    duration_ms: int
+    failure_class: str
+
+    def __post_init__(self) -> None:
+        """Reject any event outside the identity-bound telemetry vocabulary."""
+        protocol = EVALUATION_DIAGNOSIS_PROTOCOL
+        if (self.phase, self.command_kind) not in protocol.phase_kinds:
+            raise ValueError("evaluation event phase and command kind are unsupported")
+        if _ATTEMPT_IDENTITY_RE.fullmatch(self.command_sha256) is None:
+            raise ValueError("evaluation event command digest is not canonical")
+        if (
+            isinstance(self.returncode, bool)
+            or not isinstance(self.returncode, int)
+            or not -255 <= self.returncode <= 255
+        ):
+            raise ValueError("evaluation event return code is outside its bound")
+        if (
+            isinstance(self.duration_ms, bool)
+            or not isinstance(self.duration_ms, int)
+            or not 0 <= self.duration_ms <= protocol.max_duration_ms
+        ):
+            raise ValueError("evaluation event duration is outside its bound")
+        if self.failure_class != "none" and (
+            self.failure_class not in protocol.diagnosis_failure_classes
+        ):
+            raise ValueError("evaluation event failure class is unsupported")
+        if (self.returncode == 0) != (self.failure_class == "none"):
+            raise ValueError("evaluation event outcome fields are inconsistent")
+
+    def render(self) -> str:
+        """Render deterministic ASCII telemetry with no raw command or output."""
+        rendered = (
+            "SELF_IMPROVE_EVALUATION_EVENT "
+            f"phase={self.phase} command_kind={self.command_kind} "
+            f"command_sha256={self.command_sha256} rc={self.returncode} "
+            f"duration_ms={self.duration_ms} failure={self.failure_class}"
+        )
+        if len(rendered.encode("ascii")) > EVALUATION_DIAGNOSIS_PROTOCOL.max_event_bytes:
+            raise RuntimeError("evaluation event exceeded its fixed byte bound")
+        return rendered
+
+
+def _bounded_evaluation_duration_ms(value: object) -> int:
+    """Convert elapsed seconds to a finite non-negative protocol-bounded integer."""
+    maximum = EVALUATION_DIAGNOSIS_PROTOCOL.max_duration_ms
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not 0 <= value <= maximum / 1000
+    ):
+        return maximum
+    return min(maximum, round(value * 1000))
+
+
+def _bounded_evaluation_returncode(value: object) -> int:
+    """Return one bounded process status without forwarding malformed values."""
+    if isinstance(value, bool) or not isinstance(value, int) or not -255 <= value <= 255:
+        return 255
+    return value
+
+
+def _record_evaluation_event(
+    events: list[_EvaluationLifecycleEvent],
+    progress_sink: Callable[[str], None] | None,
+    *,
+    phase: str,
+    command_kind: str,
+    command_identity: str,
+    returncode: object,
+    elapsed_seconds: object,
+    failure_class: str,
+) -> _EvaluationLifecycleEvent:
+    """Record and optionally publish one sanitized lifecycle event."""
+    bounded_returncode = _bounded_evaluation_returncode(returncode)
+    event = _EvaluationLifecycleEvent(
+        phase=phase,
+        command_kind=command_kind,
+        command_sha256=hashlib.sha256(command_identity.encode("utf-8")).hexdigest(),
+        returncode=bounded_returncode,
+        duration_ms=_bounded_evaluation_duration_ms(elapsed_seconds),
+        failure_class="none" if bounded_returncode == 0 else failure_class,
+    )
+    rendered = event.render()
+    events.append(event)
+    if progress_sink is not None:
+        progress_sink(rendered)
+    return event
+
+
+def _run_evaluation_operation(
+    operation: Callable[[], MakeResult],
+    events: list[_EvaluationLifecycleEvent],
+    progress_sink: Callable[[str], None] | None,
+    *,
+    phase: str,
+    command_kind: str,
+    command_identity: str,
+    failure_class: str,
+) -> MakeResult:
+    """Run one Make boundary and emit a terminal event even when it raises."""
+    started = time.monotonic()
+    try:
+        result = operation()
+    except BaseException:
+        _record_evaluation_event(
+            events,
+            progress_sink,
+            phase=phase,
+            command_kind=command_kind,
+            command_identity=command_identity,
+            returncode=1,
+            elapsed_seconds=time.monotonic() - started,
+            failure_class=failure_class,
+        )
+        raise
+    elapsed = result.elapsed_seconds
+    if (
+        isinstance(elapsed, bool)
+        or not isinstance(elapsed, (int, float))
+        or not 0 <= elapsed <= EVALUATION_DIAGNOSIS_PROTOCOL.max_duration_ms / 1000
+    ):
+        elapsed = time.monotonic() - started
+    _record_evaluation_event(
+        events,
+        progress_sink,
+        phase=phase,
+        command_kind=command_kind,
+        command_identity=command_identity,
+        returncode=result.returncode,
+        elapsed_seconds=elapsed,
+        failure_class=failure_class,
+    )
+    return result
+
+
+def _syntax_failure_class(diagnostic: str | None) -> str:
+    """Map a trusted syntax marker to an allowlisted diagnosis class."""
+    if diagnostic is None:
+        return "none"
+    match = re.search(r"\btype=(python_(?:encoding|path|read|size|syntax))\b", diagnostic)
+    return match.group(1) if match is not None else "python_syntax"
+
+
+def _compact_evaluation_diagnosis(event: _EvaluationLifecycleEvent) -> str:
+    """Reuse the installed trace sanitizer, then add bounded lifecycle fields."""
+    protocol = EVALUATION_DIAGNOSIS_PROTOCOL
+    compact = compact_failure_diagnosis(
+        event.render()
+        + "\nSELF_IMPROVE_LOCAL_DECODE finish=unknown"
+        + f"\nSELF_IMPROVE_COMMAND_END rc={event.returncode}",
+        hypothesis=protocol.failure_hypothesis,
+        max_bytes=protocol.max_diagnosis_bytes,
+        max_tokens=protocol.max_diagnosis_bytes,
+    )
+    payload = json.loads(compact)
+    if not isinstance(payload, dict):
+        raise RuntimeError("evaluation diagnosis sanitizer returned a non-object")
+    payload.update(
+        {
+            "command_kind": event.command_kind,
+            "command_sha256": event.command_sha256,
+            "duration_ms": event.duration_ms,
+            "protocol": protocol.version,
+            "schema_version": protocol.schema_version,
+        }
+    )
+    artifact = json.dumps(
+        payload,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    validated = safe_evaluation_retry_diagnosis(artifact)
+    if validated != artifact:
+        raise RuntimeError("evaluation diagnosis failed its canonical validator")
+    return validated
+
+
+def _evaluation_target_identity(
+    target: str,
+    variables: dict[str, str] | None = None,
+) -> str:
+    """Return a canonical private preimage for one emitted target hash."""
+    return json.dumps(
+        {"target": target, "variables": variables or {}},
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
 def evaluate_attempt(
     root_runner: _TargetRunner,
     task: TaskSpec,
@@ -1387,6 +1589,7 @@ def evaluate_attempt(
     expected_attempt_identity_digest: str,
     merge: bool,
     make_runner_factory: _MakeRunnerFactory | None = None,
+    progress_sink: Callable[[str], None] | None = None,
 ) -> AttemptResult:
     """Apply, test, commit, compare, and clean one local proposal."""
     expected_identity = _validate_attempt_identity_digest(
@@ -1438,19 +1641,70 @@ def evaluate_attempt(
         )
     worktree, branch = create_worktree(root_runner, reference.baseline_sha, attempt)
     runner_factory = make_runner_factory or MakeRunner
-    runner = runner_factory(worktree)
     started = time.monotonic()
     results: list[MakeResult] = []
+    events: list[_EvaluationLifecycleEvent] = []
     patch_identity = ""
     cleanup_passed = False
+    cleanup_attempted = False
     commit_count = 0
     worktree_clean = False
     changed_lines = 0
     try:
-        changed_lines = apply_proposal(worktree, proposal)
-        syntax_diagnostic = _python_syntax_preflight(
-            worktree,
-            tuple(edit.path for edit in proposal.edits),
+        runner = runner_factory(worktree)
+        apply_started = time.monotonic()
+        try:
+            changed_lines = apply_proposal(worktree, proposal)
+        except BaseException:
+            _record_evaluation_event(
+                events,
+                progress_sink,
+                phase="apply",
+                command_kind="filesystem_apply",
+                command_identity="parent-atomic-proposal-apply-v1",
+                returncode=1,
+                elapsed_seconds=time.monotonic() - apply_started,
+                failure_class="apply_failed",
+            )
+            raise
+        _record_evaluation_event(
+            events,
+            progress_sink,
+            phase="apply",
+            command_kind="filesystem_apply",
+            command_identity="parent-atomic-proposal-apply-v1",
+            returncode=0,
+            elapsed_seconds=time.monotonic() - apply_started,
+            failure_class="apply_failed",
+        )
+        syntax_started = time.monotonic()
+        try:
+            syntax_diagnostic = _python_syntax_preflight(
+                worktree,
+                tuple(edit.path for edit in proposal.edits),
+            )
+        except BaseException:
+            _record_evaluation_event(
+                events,
+                progress_sink,
+                phase="syntax_preflight",
+                command_kind="syntax_preflight",
+                command_identity="parent-python-syntax-preflight-v1",
+                returncode=1,
+                elapsed_seconds=time.monotonic() - syntax_started,
+                failure_class="python_syntax",
+            )
+            raise
+        syntax_failure = _syntax_failure_class(syntax_diagnostic)
+        _record_evaluation_event(
+            events,
+            progress_sink,
+            phase="syntax_preflight",
+            command_kind="syntax_preflight",
+            command_identity="parent-python-syntax-preflight-v1",
+            returncode=0 if syntax_diagnostic is None else 2,
+            elapsed_seconds=time.monotonic() - syntax_started,
+            failure_class=syntax_failure,
         )
         if syntax_diagnostic:
             results.append(
@@ -1467,35 +1721,115 @@ def evaluate_attempt(
                 dict.fromkeys((*task.canonical_make_commands, *proposal.make_commands))
             )
             for command in commands:
-                result = runner.run_command(command)
+                result = _run_evaluation_operation(
+                    partial(runner.run_command, command),
+                    events,
+                    progress_sink,
+                    phase="approved_make",
+                    command_kind="approved_make",
+                    command_identity=command,
+                    failure_class="make_failed",
+                )
                 results.append(result)
                 if result.returncode != 0:
                     break
 
         commands_green = bool(results) and all(item.returncode == 0 for item in results)
         if commands_green:
-            count = runner.run_command("make test-count", timeout=600)
+            count = _run_evaluation_operation(
+                lambda: runner.run_command("make test-count", timeout=600),
+                events,
+                progress_sink,
+                phase="test_count",
+                command_kind="approved_test_count",
+                command_identity="make test-count",
+                failure_class="test_count_failed",
+            )
             results.append(count)
             commands_green = count.returncode == 0
         if commands_green:
             changed = " ".join(edit.path for edit in proposal.edits)
-            staged = runner.run("git-add", {"FILES": changed})
+            stage_variables = {"FILES": changed}
+            staged = _run_evaluation_operation(
+                lambda: runner.run("git-add", stage_variables),
+                events,
+                progress_sink,
+                phase="stage",
+                command_kind="repository_stage",
+                command_identity=_evaluation_target_identity(
+                    "git-add",
+                    stage_variables,
+                ),
+                failure_class="stage_failed",
+            )
             results.append(staged)
-            committed = runner.run("repo-commit", {"MSG": proposal.commit_message}, timeout=300)
+            commit_variables = {"MSG": proposal.commit_message}
+            committed = _run_evaluation_operation(
+                lambda: runner.run(
+                    "repo-commit",
+                    commit_variables,
+                    timeout=300,
+                ),
+                events,
+                progress_sink,
+                phase="commit",
+                command_kind="repository_commit",
+                command_identity=_evaluation_target_identity(
+                    "repo-commit",
+                    commit_variables,
+                ),
+                failure_class="commit_failed",
+            )
             results.append(committed)
             if staged.returncode == 0 and committed.returncode == 0:
                 commit_count = 1
-                status = runner.run("repo-status", read_only=True)
+                status_started = time.monotonic()
+                try:
+                    status = runner.run("repo-status", read_only=True)
+                except BaseException:
+                    _record_evaluation_event(
+                        events,
+                        progress_sink,
+                        phase="clean",
+                        command_kind="repository_clean",
+                        command_identity=_evaluation_target_identity("repo-status"),
+                        returncode=1,
+                        elapsed_seconds=time.monotonic() - status_started,
+                        failure_class="clean_failed",
+                    )
+                    raise
                 results.append(status)
                 worktree_clean = status.returncode == 0 and not status.stdout.strip()
-                patch = runner.run(
-                    "git-patch-equivalence",
-                    {
-                        "PATCH_UPSTREAM": reference.reference_sha,
-                        "PATCH_HEAD": branch,
-                        "PATCH_LIMIT": "1",
-                    },
-                    read_only=True,
+                _record_evaluation_event(
+                    events,
+                    progress_sink,
+                    phase="clean",
+                    command_kind="repository_clean",
+                    command_identity=_evaluation_target_identity("repo-status"),
+                    returncode=status.returncode if worktree_clean else 1,
+                    elapsed_seconds=status.elapsed_seconds,
+                    failure_class="clean_failed",
+                )
+                patch_variables = {
+                    "PATCH_UPSTREAM": reference.reference_sha,
+                    "PATCH_HEAD": branch,
+                    "PATCH_LIMIT": "1",
+                }
+                patch = _run_evaluation_operation(
+                    lambda: runner.run(
+                        "git-patch-equivalence",
+                        patch_variables,
+                        read_only=True,
+                    ),
+                    events,
+                    progress_sink,
+                    phase="patch_equivalence",
+                    command_kind="patch_equivalence",
+                    command_identity=_evaluation_target_identity(
+                        "git-patch-equivalence",
+                        patch_variables,
+                    ),
+                    failure_class="patch_equivalence_failed",
                 )
                 results.append(patch)
                 patch_identity = patch.stdout.strip()
@@ -1521,11 +1855,61 @@ def evaluate_attempt(
             )
         )
         if merge and commands_green and commit_count == 1 and worktree_clean:
-            merged = root_runner.run("agent-merge-dev", {"BRANCH": branch}, timeout=300)
-            cleanup = root_runner.run("agent-cleanup", {"BRANCH": branch}, timeout=180)
+            merge_variables = {"BRANCH": branch}
+            merged = _run_evaluation_operation(
+                lambda: root_runner.run(
+                    "agent-merge-dev",
+                    merge_variables,
+                    timeout=300,
+                ),
+                events,
+                progress_sink,
+                phase="merge",
+                command_kind="repository_merge",
+                command_identity=_evaluation_target_identity(
+                    "agent-merge-dev",
+                    merge_variables,
+                ),
+                failure_class="merge_failed",
+            )
+            cleanup_attempted = True
+            cleanup_variables = {"BRANCH": branch}
+            cleanup = _run_evaluation_operation(
+                lambda: root_runner.run(
+                    "agent-cleanup",
+                    cleanup_variables,
+                    timeout=180,
+                ),
+                events,
+                progress_sink,
+                phase="cleanup",
+                command_kind="worktree_cleanup",
+                command_identity=_evaluation_target_identity(
+                    "agent-cleanup",
+                    cleanup_variables,
+                ),
+                failure_class="cleanup_failed",
+            )
             cleanup_passed = merged.returncode == 0 and cleanup.returncode == 0
         else:
-            cleanup = root_runner.run("agent-cleanup", {"BRANCH": branch}, timeout=180)
+            cleanup_attempted = True
+            cleanup_variables = {"BRANCH": branch}
+            cleanup = _run_evaluation_operation(
+                lambda: root_runner.run(
+                    "agent-cleanup",
+                    cleanup_variables,
+                    timeout=180,
+                ),
+                events,
+                progress_sink,
+                phase="cleanup",
+                command_kind="worktree_cleanup",
+                command_identity=_evaluation_target_identity(
+                    "agent-cleanup",
+                    cleanup_variables,
+                ),
+                failure_class="cleanup_failed",
+            )
             cleanup_passed = cleanup.returncode == 0
 
         evidence = CandidateEvidence(
@@ -1547,17 +1931,56 @@ def evaluate_attempt(
             elapsed_seconds=time.monotonic() - started,
             changed_lines=changed_lines,
         )
+        comparison = compare_with_codex(proposal, evidence, reference)
+        failed_event = next(
+            (event for event in events if event.failure_class != "none"),
+            None,
+        )
+        if not comparison.accepted and failed_event is None:
+            failed_event = _record_evaluation_event(
+                events,
+                progress_sink,
+                phase="comparison",
+                command_kind="quality_comparison",
+                command_identity="codex-quality-comparison-v1",
+                returncode=1,
+                elapsed_seconds=time.monotonic() - started,
+                failure_class="quality_rejected",
+            )
+        diagnostics = (
+            _compact_evaluation_diagnosis(failed_event)
+            if failed_event is not None
+            else ""
+        )
         return AttemptResult(
-            comparison=compare_with_codex(proposal, evidence, reference),
+            comparison=comparison,
             evidence=evidence,
             patch_equivalence=patch_identity,
             proposal=proposal,
-            diagnostics=syntax_diagnostic or build_failure_diagnostic(results),
+            diagnostics=diagnostics,
             attempt_identity_digest=expected_identity,
         )
     except BaseException:
-        if not cleanup_passed:
-            root_runner.run("agent-cleanup", {"BRANCH": branch}, timeout=180)
+        if not cleanup_attempted:
+            cleanup_attempted = True
+            cleanup_variables = {"BRANCH": branch}
+            cleanup = _run_evaluation_operation(
+                lambda: root_runner.run(
+                    "agent-cleanup",
+                    cleanup_variables,
+                    timeout=180,
+                ),
+                events,
+                progress_sink,
+                phase="cleanup",
+                command_kind="worktree_cleanup",
+                command_identity=_evaluation_target_identity(
+                    "agent-cleanup",
+                    cleanup_variables,
+                ),
+                failure_class="cleanup_failed",
+            )
+            cleanup_passed = cleanup.returncode == 0
         raise
 
 
@@ -1678,6 +2101,7 @@ def build_managed_self_improve_runner(
         raise ValueError("repo_root must be an existing directory")
     runner_factory = make_runner_factory or MakeRunner
     operation_runner = root_runner or runner_factory(canonical_root)
+    runtime_progress_sink = progress_sink or _runtime_progress
 
     def generate_managed_proposal(
         model_path: Path,
@@ -1725,6 +2149,7 @@ def build_managed_self_improve_runner(
             expected_attempt_identity_digest=expected_attempt_identity_digest,
             merge=False,
             make_runner_factory=runner_factory,
+            progress_sink=runtime_progress_sink,
         )
 
     service = _RepositoryBoundManagedSelfImproveRunner(
@@ -1740,7 +2165,7 @@ def build_managed_self_improve_runner(
         acquisition_event_sink=_report_model_acquisition_event,
         resolution_failure_sink=_report_model_resolution_failure,
         release_sink=_report_model_release,
-        progress_sink=progress_sink or _runtime_progress,
+        progress_sink=runtime_progress_sink,
         model_acquisition_error=ModelAcquisitionError,
         comparison_retry_builder=lambda plan, comparison, diagnostics: (
             build_retry_prompt_plan(

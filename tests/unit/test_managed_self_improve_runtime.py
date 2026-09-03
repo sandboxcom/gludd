@@ -359,6 +359,28 @@ def test_serialized_plan_runs_through_package_factory_without_shell_or_merge(
     assert "agent-cleanup" in calls
     assert "agent-merge-dev" not in calls
     assert events[0].startswith("SELF_IMPROVE_ATTEMPT_START")
+    evaluation_events = [
+        event
+        for event in events
+        if event.startswith("SELF_IMPROVE_EVALUATION_EVENT ")
+    ]
+    assert [
+        event.split(" phase=", 1)[1].split()[0] for event in evaluation_events
+    ] == [
+        "apply",
+        "syntax_preflight",
+        "approved_make",
+        "test_count",
+        "stage",
+        "commit",
+        "clean",
+        "patch_equivalence",
+        "cleanup",
+        "comparison",
+    ]
+    assert all("command_sha256=" in event for event in evaluation_events)
+    assert str(repo_root) not in "\n".join(events)
+    assert str(attempt_root) not in "\n".join(events)
 
 
 def test_package_factory_fails_closed_for_repository_or_merge_authority(

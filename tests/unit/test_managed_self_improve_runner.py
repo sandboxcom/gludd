@@ -1235,6 +1235,99 @@ def test_retries_are_bounded_and_every_candidate_outcome_is_durable(
     assert all(digest == plan_digest(result) for _, _, digest in outcomes.records)
 
 
+def test_typed_evaluation_diagnosis_reaches_next_v4_model_without_scope_drift(
+    tmp_path: Path,
+) -> None:
+    """Feed persisted safe failure evidence forward without widening authority."""
+    diagnosis = json.dumps(
+        {
+            "command_kind": "approved_make",
+            "command_sha256": "a" * 64,
+            "duration_ms": 1000,
+            "exit_code": 1,
+            "failure_class": "make_failed",
+            "finish_reason": "unknown",
+            "finished": True,
+            "hypothesis": "approved evaluation failed; correct only the typed phase",
+            "phase": "approved_make",
+            "protocol": "self-improve-evaluation-diagnosis-v1",
+            "schema_version": 2,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    prompt = PromptPlan(
+        shards=(
+            PromptShard(
+                ("src/general_ludd/example.py",),
+                "L1|return 0\n",
+                ((1, 2),),
+            ),
+        ),
+        source_bytes=len("return 0\n"),
+        baseline_files=(("src/general_ludd/example.py", "return 0\n"),),
+        proposal_protocol="self-improve-compact-proposal-v4",
+    )
+    plan = ApprovedSelfImprovePlan.approve(
+        approval_id="approval-diagnosis",
+        todo_id="todo-diagnosis",
+        project_id="project-diagnosis",
+        repo_root=tmp_path,
+        task=_task(),
+        reference=_reference(),
+        prompt=prompt,
+        required_output_tokens=1024,
+        max_attempts=2,
+    )
+    observed_prompts: list[PromptPlan] = []
+
+    def generate(
+        _model_path: Path,
+        candidate_prompt: PromptPlan,
+        _task_spec: TaskSpec,
+        _reference_spec: CodexReference,
+    ) -> ProposalManifest:
+        observed_prompts.append(candidate_prompt)
+        return _proposal()
+
+    service, _manager, _outcomes, _merge_values = _runner(
+        tmp_path,
+        accepted=(False, True),
+        proposal_generator=cast(Any, generate),
+    )
+    accepted = iter((False, True))
+
+    def evaluate(
+        _task_spec: TaskSpec,
+        _reference_spec: CodexReference,
+        bound: PlanBoundProposal,
+        _attempt: int,
+        *,
+        expected_attempt_identity_digest: str,
+        merge: bool,
+    ) -> AttemptResult:
+        assert bound.attempt_identity_digest == expected_attempt_identity_digest
+        assert merge is False
+        is_accepted = next(accepted)
+        result = _result(bound, accepted=is_accepted)
+        return result if is_accepted else replace(result, diagnostics=diagnosis)
+
+    service.attempt_evaluator = cast(Any, evaluate)
+
+    result = service.run(plan)
+
+    assert result.accepted is True
+    assert len(observed_prompts) == 2
+    retried = observed_prompts[1]
+    assert diagnosis in retried.shards[0].prompt
+    assert retried.shards[0].focus_paths == prompt.shards[0].focus_paths
+    assert retried.shards[0].editable_ranges == prompt.shards[0].editable_ranges
+    assert retried.baseline_files == prompt.baseline_files
+    assert retried.protocol_digest == prompt.protocol_digest
+    assert retried.proposal_protocol == prompt.proposal_protocol
+
+
 def plan_digest(result: ManagedRunResult) -> str:
     """Return the attempt identity without widening the production result type."""
     return result.attempt_identity_digest

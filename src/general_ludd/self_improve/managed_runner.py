@@ -39,6 +39,7 @@ from general_ludd.self_improve.codex_comparison import (
     _safe_compact_scope_telemetry,
     build_retry_prompt,
     local_proposal_attempt_identity_digest,
+    safe_evaluation_retry_diagnosis,
 )
 from general_ludd.self_improve.model_candidate_planner import (
     CODE_TASK_CAPABILITY_POLICY_ID,
@@ -1529,6 +1530,11 @@ def build_retry_prompt_plan(
     diagnostics: str = "",
 ) -> PromptPlan:
     """Apply the same bounded retry evidence to every immutable prompt shard."""
+    retry_diagnostics = (
+        safe_evaluation_retry_diagnosis(diagnostics)
+        if plan.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4
+        else diagnostics
+    )
     return PromptPlan(
         shards=tuple(
             PromptShard(
@@ -1536,7 +1542,7 @@ def build_retry_prompt_plan(
                 prompt=build_retry_prompt(
                     shard.prompt,
                     comparison,
-                    diagnostics=diagnostics,
+                    diagnostics=retry_diagnostics,
                     max_diagnostic_bytes=2_048,
                 ),
                 editable_ranges=shard.editable_ranges,

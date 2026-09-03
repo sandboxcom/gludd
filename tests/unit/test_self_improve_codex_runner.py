@@ -942,6 +942,7 @@ def test_evaluate_attempt_covers_green_commit_and_cleanup(
             del variables, timeout, read_only
             return MakeResult(("make", target), 0, "", "", 0.1)
 
+    progress: list[str] = []
     result = runner_module.evaluate_attempt(
         RootRunner(),
         task,
@@ -950,6 +951,7 @@ def test_evaluate_attempt_covers_green_commit_and_cleanup(
         1,
         expected_attempt_identity_digest="c" * 64,
         merge=False,
+        progress_sink=progress.append,
     )
 
     assert result.comparison.accepted is True
@@ -957,6 +959,27 @@ def test_evaluate_attempt_covers_green_commit_and_cleanup(
     assert result.evidence.commit_count == 1
     assert "make test-count" in candidate.commands
     assert document.read_text(encoding="utf-8").endswith("Body\n")
+    phases = [event.split(" phase=", 1)[1].split()[0] for event in progress]
+    assert phases == [
+        "apply",
+        "syntax_preflight",
+        "approved_make",
+        "approved_make",
+        "test_count",
+        "stage",
+        "commit",
+        "clean",
+        "patch_equivalence",
+        "cleanup",
+    ]
+    assert all(event.startswith("SELF_IMPROVE_EVALUATION_EVENT ") for event in progress)
+    assert all(" failure=none" in event and " rc=0 " in event for event in progress)
+    assert all(len(event.encode("ascii")) <= 256 for event in progress)
+    for event in progress:
+        command_digest = event.split(" command_sha256=", 1)[1].split()[0]
+        assert len(command_digest) == 64
+        int(command_digest, 16)
+    assert relative not in "\n".join(progress)
 
 
 def test_evaluate_attempt_rejects_scope_before_worktree() -> None:
@@ -1730,6 +1753,32 @@ def test_finite_live_cardinality_feedback_rejects_telemetry_injection() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("detail", "feedback_type"),
+    (
+        ("compact spans must not overlap", "edit_span_overlap"),
+        (
+            "compact spans must use distinct start coordinates",
+            "edit_span_duplicate",
+        ),
+    ),
+)
+def test_compact_v4_retry_feedback_distinguishes_overlap_from_duplicate(
+    detail: str,
+    feedback_type: str,
+) -> None:
+    """Do not mislabel post-sort ambiguity as model ordering failure."""
+    feedback = managed_runner_module._validation_retry_feedback(
+        f"SELF_IMPROVE_LOCAL_PROPOSAL_ERROR {detail}",
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+
+    assert feedback == (
+        "protocol=self-improve-validation-retry-v4 "
+        f"type={feedback_type} source=proposal_error detail={detail}"
+    )
+
+
 def test_main_redacts_finite_live_smollm_stop_framing_failure(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -2115,8 +2164,333 @@ def test_evaluate_attempt_stops_on_first_failed_command_and_cleans(
     )
 
     assert result.evidence.tests_passed is False
-    assert "E failure" in result.diagnostics
+    assert json.loads(result.diagnostics)["failure_class"] == "make_failed"
+    assert "E failure" not in result.diagnostics
     assert root.targets == ["agent-cleanup"]
+
+
+def test_live_qwen_three_b_score_sixty_emits_safe_typed_evaluation_diagnosis(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Turn the exact two-file/five-line fast failure into actionable safe evidence."""
+    source_path = "src/general_ludd/catalog_truth.py"
+    test_path = "tests/unit/test_catalog_truth.py"
+    source = tmp_path / source_path
+    test = tmp_path / test_path
+    source.parent.mkdir(parents=True)
+    test.parent.mkdir(parents=True)
+    source.write_text("value = 0\n", encoding="utf-8")
+    test.write_text("assert False\n", encoding="utf-8")
+    command = "make test-specific TESTFILE=tests/unit/test_catalog_truth.py"
+    task = TaskSpec(
+        task_id="S83.134",
+        objective="Repair catalog truth in the exact source and focused test.",
+        canonical_make_commands=(command,),
+    )
+    reference = CodexReference(
+        baseline_sha="a" * 40,
+        reference_sha="b" * 40,
+        changed_files=frozenset({source_path, test_path}),
+        test_files=frozenset({test_path}),
+        changed_lines=5,
+        elapsed_seconds=300.0,
+    )
+    model_text = "MODEL_Z_NEVER_EMIT"
+    proposal = ProposalManifest.from_json(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "baseline_sha": "a" * 40,
+                "task_id": "S83.134",
+                "edits": [
+                    {
+                        "operation": "replace",
+                        "path": source_path,
+                        "old_text": "value = 0\n",
+                        "new_text": f"value = 1  # {model_text}\nextra = 2\n",
+                    },
+                    {
+                        "operation": "replace",
+                        "path": test_path,
+                        "old_text": "assert False\n",
+                        "new_text": "assert True\n",
+                    },
+                ],
+                "tests": [test_path],
+                "make_commands": [command],
+                "commit_message": "fix: repair catalog truth",
+            }
+        )
+    )
+    leaked_path = "/Users/private/catalog_truth.py"
+    leaked_secret = "AUTH_TOKEN=hunter2"
+
+    class FailedCandidate:
+        def run_command(self, approved_command: str, *, timeout: int = 900) -> MakeResult:
+            del timeout
+            assert approved_command == command
+            return MakeResult(
+                tuple(approved_command.split()),
+                1,
+                f"failed near {leaked_path}",
+                leaked_secret,
+                1.0,
+            )
+
+        def run(
+            self,
+            target_name: str,
+            variables: dict[str, str] | None = None,
+            *,
+            timeout: int = 120,
+            read_only: bool = False,
+        ) -> MakeResult:
+            del variables, timeout, read_only
+            return MakeResult(("make", target_name), 0, "", "", 0.1)
+
+    class RootRunner:
+        def __init__(self) -> None:
+            self.targets: list[str] = []
+
+        def run(
+            self,
+            target_name: str,
+            variables: dict[str, str] | None = None,
+            *,
+            timeout: int = 120,
+            read_only: bool = False,
+        ) -> MakeResult:
+            del variables, timeout, read_only
+            self.targets.append(target_name)
+            return MakeResult(
+                ("make", target_name),
+                0,
+                leaked_path,
+                leaked_secret,
+                0.1,
+            )
+
+    root = RootRunner()
+    progress: list[str] = []
+    monkeypatch.setattr(
+        runner_module,
+        "create_worktree",
+        lambda *_args: (tmp_path, "candidate"),
+    )
+    monkeypatch.setattr(runner_module, "MakeRunner", lambda _root: FailedCandidate())
+
+    result = runner_module.evaluate_attempt(
+        root,
+        task,
+        reference,
+        runner_module.PlanBoundProposal(proposal, "c" * 64),
+        1,
+        expected_attempt_identity_digest="c" * 64,
+        merge=False,
+        progress_sink=progress.append,
+    )
+
+    diagnosis = json.loads(result.diagnostics)
+    assert result.comparison.score == 60.0
+    assert result.evidence.changed_lines == 5
+    assert diagnosis == {
+        "command_kind": "approved_make",
+        "command_sha256": hashlib.sha256(command.encode("utf-8")).hexdigest(),
+        "duration_ms": 1000,
+        "exit_code": 1,
+        "failure_class": "make_failed",
+        "finish_reason": "unknown",
+        "finished": True,
+        "hypothesis": "approved evaluation failed; correct only the typed phase",
+        "phase": "approved_make",
+        "protocol": "self-improve-evaluation-diagnosis-v1",
+        "schema_version": 2,
+    }
+    assert result.diagnostics == json.dumps(
+        diagnosis,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    assert len(result.diagnostics.encode("ascii")) <= 512
+    persisted = ManagedSelfImproveResultArtifact.from_run_result(
+        ManagedRunResult(
+            final_result=replace(
+                result,
+                patch_equivalence="evaluation-not-committed",
+            ),
+            attempts=1,
+            plan_identity_digest="d" * 64,
+            attempted_model_ids=("qwen2.5-coder-3b",),
+            outcome_record_ids=(),
+        )
+    )
+    assert persisted.diagnostics == result.diagnostics
+    events = "\n".join(progress)
+    assert "phase=approved_make" in events
+    assert "phase=cleanup" in events
+    assert "duration_ms=1000" in events
+    assert root.targets == ["agent-cleanup"]
+    retry = build_retry_prompt(
+        "Repair catalog truth.",
+        result.comparison,
+        diagnostics=result.diagnostics,
+    )
+    for forbidden in (
+        model_text,
+        source_path,
+        test_path,
+        leaked_path,
+        leaked_secret,
+        "hunter2",
+    ):
+        assert forbidden not in events
+        assert forbidden not in result.diagnostics
+        assert forbidden not in persisted.diagnostics
+        assert forbidden not in retry
+
+
+def test_evaluation_apply_exception_emits_typed_failure_and_still_cleans(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An apply exception must retain cleanup and never publish exception content."""
+    secret = "MODEL_Z_OR_SECRET=hunter2"
+    progress: list[str] = []
+
+    class RootRunner:
+        def __init__(self) -> None:
+            self.targets: list[str] = []
+
+        def run(
+            self,
+            target_name: str,
+            variables: dict[str, str] | None = None,
+            *,
+            timeout: int = 120,
+            read_only: bool = False,
+        ) -> MakeResult:
+            del variables, timeout, read_only
+            self.targets.append(target_name)
+            return MakeResult(("make", target_name), 0, "", secret, 0.1)
+
+    root = RootRunner()
+    monkeypatch.setattr(
+        runner_module,
+        "create_worktree",
+        lambda *_args: (tmp_path, "candidate"),
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "apply_proposal",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError(secret)),
+    )
+
+    with pytest.raises(RuntimeError, match="MODEL_Z_OR_SECRET"):
+        runner_module.evaluate_attempt(
+            root,
+            TaskSpec(
+                task_id="S83.133",
+                objective="Repair exact Python code.",
+                canonical_make_commands=(
+                    "make test-files TESTFILES=tests/unit/test_example.py",
+                ),
+            ),
+            CodexReference(
+                baseline_sha="a" * 40,
+                reference_sha="b" * 40,
+                changed_files=frozenset(
+                    {
+                        "src/general_ludd/example.py",
+                        "tests/unit/test_example.py",
+                    }
+                ),
+                test_files=frozenset({"tests/unit/test_example.py"}),
+                changed_lines=4,
+                elapsed_seconds=1.0,
+            ),
+            runner_module.PlanBoundProposal(_manifest(), "c" * 64),
+            1,
+            expected_attempt_identity_digest="c" * 64,
+            merge=False,
+            progress_sink=progress.append,
+        )
+
+    assert root.targets == ["agent-cleanup"]
+    assert [event.split(" phase=", 1)[1].split()[0] for event in progress] == [
+        "apply",
+        "cleanup",
+    ]
+    assert "failure=apply_failed" in progress[0]
+    assert "failure=none" in progress[1]
+    assert secret not in "\n".join(progress)
+
+
+def test_evaluation_runner_factory_exception_still_cleans_created_worktree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Construction failure after worktree creation must not bypass cleanup."""
+    cleanup_targets: list[str] = []
+    progress: list[str] = []
+
+    class RootRunner:
+        def run(
+            self,
+            target_name: str,
+            variables: dict[str, str] | None = None,
+            *,
+            timeout: int = 120,
+            read_only: bool = False,
+        ) -> MakeResult:
+            del variables, timeout, read_only
+            cleanup_targets.append(target_name)
+            return MakeResult(("make", target_name), 0, "", "", 0.1)
+
+    monkeypatch.setattr(
+        runner_module,
+        "create_worktree",
+        lambda *_args: (tmp_path, "candidate"),
+    )
+
+    with pytest.raises(RuntimeError, match="factory failed"):
+        runner_module.evaluate_attempt(
+            RootRunner(),
+            TaskSpec(
+                task_id="S83.133",
+                objective="Repair exact Python code.",
+                canonical_make_commands=(
+                    "make test-files TESTFILES=tests/unit/test_example.py",
+                ),
+            ),
+            CodexReference(
+                baseline_sha="a" * 40,
+                reference_sha="b" * 40,
+                changed_files=frozenset(
+                    {
+                        "src/general_ludd/example.py",
+                        "tests/unit/test_example.py",
+                    }
+                ),
+                test_files=frozenset({"tests/unit/test_example.py"}),
+                changed_lines=4,
+                elapsed_seconds=1.0,
+            ),
+            runner_module.PlanBoundProposal(_manifest(), "c" * 64),
+            1,
+            expected_attempt_identity_digest="c" * 64,
+            merge=False,
+            make_runner_factory=lambda _root: (_ for _ in ()).throw(
+                RuntimeError("factory failed")
+            ),
+            progress_sink=progress.append,
+        )
+
+    assert cleanup_targets == ["agent-cleanup"]
+    assert len(progress) == 1
+    assert "phase=cleanup" in progress[0]
+    assert "failure=none" in progress[0]
 
 
 @pytest.mark.parametrize(
@@ -2215,13 +2589,11 @@ def test_parent_syntax_preflight_rejects_exact_live_classes_with_safe_feedback(
         merge=False,
     )
 
-    path_digest = hashlib.sha256(relative.encode("utf-8")).hexdigest()
     assert result.evidence.tests_passed is False
-    assert result.diagnostics.startswith(
-        "SELF_IMPROVE_PARENT_SYNTAX_ERROR "
-        f"type=python_syntax path_sha256={path_digest} line=1 offset="
-    )
-    assert len(result.diagnostics.encode("ascii")) <= 192
+    diagnosis = json.loads(result.diagnostics)
+    assert diagnosis["phase"] == "syntax_preflight"
+    assert diagnosis["failure_class"] == "python_syntax"
+    assert len(result.diagnostics.encode("ascii")) <= 512
     assert replacement.strip() not in result.diagnostics
     assert relative not in result.diagnostics
     retry = build_retry_prompt(
@@ -2229,7 +2601,7 @@ def test_parent_syntax_preflight_rejects_exact_live_classes_with_safe_feedback(
         result.comparison,
         diagnostics=result.diagnostics,
     )
-    assert "type=python_syntax" in retry
+    assert '"failure_class":"python_syntax"' in retry
     assert replacement.strip() not in retry
     assert relative not in retry
     assert root.targets == ["agent-cleanup"]

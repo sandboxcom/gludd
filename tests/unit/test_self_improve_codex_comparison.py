@@ -169,6 +169,7 @@ def test_worker_protocol_entry_points_are_declared_public_exports() -> None:
         "COMPACT_PROPOSAL_PROTOCOL_V4",
         "CompactLineSpan",
         "CompactSpanProposal",
+        "EVALUATION_DIAGNOSIS_PROTOCOL",
         "LocalProposalGateway",
         "bind_compact_focus_path",
         "build_retry_prompt",
@@ -181,6 +182,7 @@ def test_worker_protocol_entry_points_are_declared_public_exports() -> None:
         "expand_compact_span_proposals",
         "local_proposal_attempt_identity_digest",
         "merge_proposal_manifests",
+        "safe_evaluation_retry_diagnosis",
     }
 
     assert expected <= set(getattr(comparison_module, "__all__", ()))
@@ -405,6 +407,39 @@ def test_legacy_identity_keeps_its_historical_token_policy(
             )
             != baseline
         )
+
+
+def test_v4_identity_binds_evaluation_diagnosis_without_reinterpreting_v3(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A typed retry-evidence change rotates v4 while legacy v3 stays byte-stable."""
+    prompt_digest = "a" * 64
+    legacy = comparison_module.COMPACT_PROPOSAL_PROTOCOL_V3
+    v4_baseline = comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
+    v3_baseline = comparison_module.local_proposal_attempt_identity_digest(
+        prompt_digest,
+        proposal_protocol=legacy,
+    )
+
+    monkeypatch.setattr(
+        comparison_module,
+        "EVALUATION_DIAGNOSIS_PROTOCOL",
+        replace(
+            comparison_module.EVALUATION_DIAGNOSIS_PROTOCOL,
+            version="self-improve-evaluation-diagnosis-v-next",
+        ),
+    )
+
+    assert comparison_module.local_proposal_attempt_identity_digest(
+        prompt_digest
+    ) != v4_baseline
+    assert (
+        comparison_module.local_proposal_attempt_identity_digest(
+            prompt_digest,
+            proposal_protocol=legacy,
+        )
+        == v3_baseline
+    )
 
 
 def test_attempt_identity_binds_model_acquisition_and_outcome_protocol(
@@ -1924,11 +1959,11 @@ def test_locked_llama_grammar_honors_small_string_and_array_bounds() -> None:
         ({"e": [{"s": 1, "n": 1, "z": "x", "a": "old"}]}, "exactly n, s, and z"),
         (
             {"e": [{"s": 3, "n": 2, "z": "x"}, {"s": 4, "n": 1, "z": "y"}]},
-            "ordered and non-overlapping",
+            "must not overlap",
         ),
         (
             {"e": [{"s": 2, "n": 0, "z": "x"}, {"s": 2, "n": 0, "z": "y"}]},
-            "ordered and non-overlapping",
+            "distinct start coordinates",
         ),
     ],
 )
@@ -1957,23 +1992,30 @@ def test_compact_v4_decoder_canonicalizes_unordered_snapshot_spans() -> None:
 
 
 @pytest.mark.parametrize(
-    "edits",
+    ("edits", "match"),
     (
         (
-            {"s": 4, "n": 2, "z": "right\n"},
-            {"s": 3, "n": 2, "z": "left\n"},
+            (
+                {"s": 4, "n": 2, "z": "right\n"},
+                {"s": 3, "n": 2, "z": "left\n"},
+            ),
+            "must not overlap",
         ),
         (
-            {"s": 4, "n": 0, "z": "first\n"},
-            {"s": 4, "n": 0, "z": "second\n"},
+            (
+                {"s": 4, "n": 0, "z": "first\n"},
+                {"s": 4, "n": 0, "z": "second\n"},
+            ),
+            "distinct start coordinates",
         ),
     ),
 )
 def test_compact_v4_decoder_rejects_overlap_after_canonical_sort(
     edits: tuple[dict[str, object], ...],
+    match: str,
 ) -> None:
     """Canonical sorting must not turn duplicate or overlapping spans into authority."""
-    with pytest.raises(ValueError, match="ordered and non-overlapping"):
+    with pytest.raises(ValueError, match=match):
         _span_proposal({"e": list(edits)})
 
 

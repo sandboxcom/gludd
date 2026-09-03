@@ -315,11 +315,69 @@ class ModelAttemptOutcomeProtocol:
     outcome_eligibility: str
 
 
+@dataclass(frozen=True)
+class EvaluationDiagnosisProtocol:
+    """Identity-bearing bounded lifecycle and retry-evidence contract."""
+
+    version: str
+    schema_version: int
+    max_event_bytes: int
+    max_diagnosis_bytes: int
+    max_duration_ms: int
+    phase_kinds: tuple[tuple[str, str], ...]
+    diagnosis_failure_classes: tuple[str, ...]
+    failure_hypothesis: str
+    unavailable_hypothesis: str
+
+
 LOCAL_MODEL_ATTEMPT_OUTCOME_PROTOCOL = ModelAttemptOutcomeProtocol(
     version="self-improve-model-attempt-outcome-v2",
     acquisition_failure="terminal_typed_no_model_outcome",
     plan_exhaustion="terminal_typed_no_attempt_or_model_outcome",
     outcome_eligibility="candidate_reached_proposal_generation",
+)
+
+
+EVALUATION_DIAGNOSIS_PROTOCOL = EvaluationDiagnosisProtocol(
+    version="self-improve-evaluation-diagnosis-v1",
+    schema_version=2,
+    max_event_bytes=256,
+    max_diagnosis_bytes=512,
+    max_duration_ms=3_600_000,
+    phase_kinds=(
+        ("apply", "filesystem_apply"),
+        ("syntax_preflight", "syntax_preflight"),
+        ("approved_make", "approved_make"),
+        ("test_count", "approved_test_count"),
+        ("stage", "repository_stage"),
+        ("commit", "repository_commit"),
+        ("clean", "repository_clean"),
+        ("patch_equivalence", "patch_equivalence"),
+        ("merge", "repository_merge"),
+        ("cleanup", "worktree_cleanup"),
+        ("comparison", "quality_comparison"),
+        ("evaluation", "unknown"),
+    ),
+    diagnosis_failure_classes=(
+        "apply_failed",
+        "python_syntax",
+        "python_path",
+        "python_read",
+        "python_size",
+        "python_encoding",
+        "make_failed",
+        "test_count_failed",
+        "stage_failed",
+        "commit_failed",
+        "clean_failed",
+        "patch_equivalence_failed",
+        "merge_failed",
+        "cleanup_failed",
+        "quality_rejected",
+        "diagnosis_unavailable",
+    ),
+    failure_hypothesis="approved evaluation failed; correct only the typed phase",
+    unavailable_hypothesis="evaluation diagnosis was unavailable",
 )
 
 
@@ -417,7 +475,11 @@ LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
             f"compact proposal edits must contain 1..{_COMPACT_SPAN_MAX_EDITS} entries",
             "edit_span_count",
         ),
-        ("compact spans must be ordered and non-overlapping", "edit_span_order"),
+        ("compact spans must not overlap", "edit_span_overlap"),
+        (
+            "compact spans must use distinct start coordinates",
+            "edit_span_duplicate",
+        ),
         ("each compact edit must contain exactly n, s, and z", "edit_span_shape"),
         ("compact span new text must be a string", "edit_span_text"),
         ("compact span new text exceeds 3072 bytes", "edit_content_budget"),
@@ -602,6 +664,7 @@ def local_proposal_attempt_identity_digest(
         },
     }
     if not legacy:
+        payload["evaluation_diagnosis"] = asdict(EVALUATION_DIAGNOSIS_PROTOCOL)
         strict = cast(dict[str, object], payload["strict_decoder_semantics"])
         strict.update(
             {
@@ -768,10 +831,10 @@ class CompactSpanProposal:
         previous_end = 0
         for edit in self.edits:
             start = edit.start_line - 1
-            if previous_start is not None and (
-                start < previous_end or start <= previous_start
-            ):
-                raise ValueError("compact spans must be ordered and non-overlapping")
+            if previous_start is not None and start == previous_start:
+                raise ValueError("compact spans must use distinct start coordinates")
+            if previous_start is not None and start < previous_end:
+                raise ValueError("compact spans must not overlap")
             previous_start = start
             previous_end = start + edit.old_line_count
 
@@ -2106,6 +2169,103 @@ def compare_with_codex(
     )
 
 
+_EVALUATION_DIAGNOSIS_FIELDS = frozenset(
+    {
+        "command_kind",
+        "command_sha256",
+        "duration_ms",
+        "exit_code",
+        "failure_class",
+        "finish_reason",
+        "finished",
+        "hypothesis",
+        "phase",
+        "protocol",
+        "schema_version",
+    }
+)
+
+
+def _unavailable_evaluation_diagnosis() -> str:
+    """Return fixed fail-closed retry evidence without copying rejected input."""
+    protocol = EVALUATION_DIAGNOSIS_PROTOCOL
+    return json.dumps(
+        {
+            "command_kind": "unknown",
+            "command_sha256": hashlib.sha256(protocol.version.encode("ascii")).hexdigest(),
+            "duration_ms": 0,
+            "exit_code": 1,
+            "failure_class": "diagnosis_unavailable",
+            "finish_reason": "unknown",
+            "finished": True,
+            "hypothesis": protocol.unavailable_hypothesis,
+            "phase": "evaluation",
+            "protocol": protocol.version,
+            "schema_version": protocol.schema_version,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def safe_evaluation_retry_diagnosis(diagnostics: object) -> str:
+    """Return canonical typed evaluation evidence or one fixed redacted fallback."""
+    protocol = EVALUATION_DIAGNOSIS_PROTOCOL
+    fallback = _unavailable_evaluation_diagnosis()
+    if not isinstance(diagnostics, str):
+        return fallback
+    try:
+        encoded = diagnostics.encode("ascii")
+    except UnicodeEncodeError:
+        return fallback
+    if not encoded or len(encoded) > protocol.max_diagnosis_bytes:
+        return fallback
+    try:
+        value = json.loads(diagnostics)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return fallback
+    if not isinstance(value, dict) or set(value) != _EVALUATION_DIAGNOSIS_FIELDS:
+        return fallback
+    phase = value.get("phase")
+    command_kind = value.get("command_kind")
+    command_digest = value.get("command_sha256")
+    duration_ms = value.get("duration_ms")
+    exit_code = value.get("exit_code")
+    failure_class = value.get("failure_class")
+    expected_hypothesis = (
+        protocol.unavailable_hypothesis
+        if failure_class == "diagnosis_unavailable"
+        else protocol.failure_hypothesis
+    )
+    if (
+        (phase, command_kind) not in protocol.phase_kinds
+        or not isinstance(command_digest, str)
+        or _PROTOCOL_DIGEST_RE.fullmatch(command_digest) is None
+        or isinstance(duration_ms, bool)
+        or not isinstance(duration_ms, int)
+        or not 0 <= duration_ms <= protocol.max_duration_ms
+        or isinstance(exit_code, bool)
+        or not isinstance(exit_code, int)
+        or exit_code == 0
+        or not -255 <= exit_code <= 255
+        or failure_class not in protocol.diagnosis_failure_classes
+        or value.get("finish_reason") != "unknown"
+        or value.get("finished") is not True
+        or value.get("hypothesis") != expected_hypothesis
+        or value.get("protocol") != protocol.version
+        or value.get("schema_version") != protocol.schema_version
+    ):
+        return fallback
+    canonical = json.dumps(
+        value,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return canonical if canonical == diagnostics else fallback
+
+
 def build_retry_prompt(
     task: str,
     comparison: ComparisonResult,
@@ -2767,6 +2927,7 @@ def _default_model_factory(
 __all__ = [
     "COMPACT_PROPOSAL_PROTOCOL_V3",
     "COMPACT_PROPOSAL_PROTOCOL_V4",
+    "EVALUATION_DIAGNOSIS_PROTOCOL",
     "CompactLineSpan",
     "CompactSpanProposal",
     "LocalProposalGateway",
@@ -2782,4 +2943,5 @@ __all__ = [
     "expand_compact_span_proposals",
     "local_proposal_attempt_identity_digest",
     "merge_proposal_manifests",
+    "safe_evaluation_retry_diagnosis",
 ]
