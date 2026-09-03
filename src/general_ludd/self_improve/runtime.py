@@ -51,6 +51,32 @@ from general_ludd.self_improve.codex_comparison import (
     merge_proposal_manifests,
     safe_evaluation_retry_diagnosis,
 )
+from general_ludd.self_improve.evaluator import (
+    _PARENT_SYNTAX_ERROR_MARKER,
+    _compact_evaluation_diagnosis,
+    _evaluation_target_identity,
+    _EvaluationLifecycleEvent,
+    _record_evaluation_event,
+    _repair_candidate_syntax_diagnosis,
+    _run_evaluation_operation,
+    _syntax_diagnosis_fields,
+    _syntax_failure_class,
+)
+from general_ludd.self_improve.evaluator import (
+    _bounded_evaluation_duration_ms as _bounded_evaluation_duration_ms,
+)
+from general_ludd.self_improve.evaluator import (
+    _bounded_evaluation_returncode as _bounded_evaluation_returncode,
+)
+from general_ludd.self_improve.evaluator import (
+    _failure_diagnosis_trace_view as _failure_diagnosis_trace_view,
+)
+from general_ludd.self_improve.evaluator import (
+    _last_diagnosis_fact as _last_diagnosis_fact,
+)
+from general_ludd.self_improve.evaluator import (
+    compact_failure_diagnosis as compact_failure_diagnosis,
+)
 from general_ludd.self_improve.managed_runner import (
     ApprovedSelfImprovePlan,
     CapabilityEvidenceOutcomeAdapter,
@@ -126,33 +152,12 @@ _MAX_BASE_PROMPT_SHARD_BYTES: Final = 12_000
 _MAX_FILE_EXCERPT_BYTES: Final = 4_096
 _MAX_CONTEXT_FILE_BYTES: Final = 2_097_152
 _MAX_SYNTAX_DIAGNOSTIC_BYTES: Final = 192
-_PARENT_SYNTAX_ERROR_MARKER: Final = "SELF_IMPROVE_PARENT_SYNTAX_ERROR"
-_MAX_FAILURE_DIAGNOSIS_TRACE_BYTES: Final = 131_072
-_MAX_FAILURE_DIAGNOSIS_HYPOTHESIS_BYTES: Final = 160
 _PROMPT_CONTEXT_LINES: Final = 5
 _HEARTBEAT_SECONDS: Final = 15.0
 _FORBIDDEN_COMMAND_CHARS: Final = frozenset(";|&$()<>\n\r")
 _SHA_RE: Final = re.compile(r"^[0-9a-f]{40}$")
-_ATTEMPT_IDENTITY_RE: Final = re.compile(r"^[0-9a-f]{64}$")
 _TASK_RE: Final = re.compile(r"^S[0-9]+(?:\.[0-9]+)?$")
 _WORD_RE: Final = re.compile(r"[A-Za-z][A-Za-z0-9]+")
-_DIAGNOSIS_PHASE_RE: Final = re.compile(
-    r"(?m)^SELF_IMPROVE_[A-Z_]+\b[^\r\n]*\bphase=([a-z][a-z0-9_-]{0,63})\b"
-)
-_DIAGNOSIS_FAILURE_RE: Final = re.compile(
-    r"(?m)^SELF_IMPROVE_[A-Z_]+\b[^\r\n]*\bfailure=([a-z][a-z0-9_-]{0,63})\b"
-)
-_DIAGNOSIS_FINISH_RE: Final = re.compile(
-    r"(?m)^SELF_IMPROVE_LOCAL_DECODE\b[^\r\n]*\b"
-    r"finish=(stop|length|tool_calls|function_call|content_filter|unknown)\b"
-)
-_DIAGNOSIS_EXIT_RE: Final = re.compile(
-    r"(?m)^SELF_IMPROVE_COMMAND_END\b[^\r\n]*\brc=(-?[0-9]{1,3})\b"
-)
-_DIAGNOSIS_SECRET_RE: Final = re.compile(
-    r"(?i)(?:api[_-]?key|authorization|password|secret|token)\s*[:=]|"
-    r"-----BEGIN [A-Z ]+PRIVATE KEY-----"
-)
 _RELEVANCE_STOPWORDS: Final = frozenset(
     {
         "and", "cannot", "each", "every", "file", "five", "from", "full",
@@ -1390,96 +1395,6 @@ def parse_reference_files(output: str) -> frozenset[str]:
     return unique
 
 
-def compact_failure_diagnosis(
-    trace: str,
-    *,
-    hypothesis: str,
-    max_bytes: int = 512,
-    max_tokens: int = 512,
-) -> str:
-    """Convert a marker-bearing failure trace to bounded canonical JSON.
-
-    Only allowlisted execution facts are copied from the trace.  The output is
-    ASCII JSON, so its byte length is also a conservative upper bound for a
-    byte-fallback tokenizer's token count.
-    """
-    if not isinstance(trace, str) or not trace.strip():
-        raise ValueError("failure trace must be a non-empty string")
-    if not isinstance(hypothesis, str) or not hypothesis.strip():
-        raise ValueError("failure hypothesis must be a non-empty string")
-    if (
-        isinstance(max_bytes, bool)
-        or not isinstance(max_bytes, int)
-        or max_bytes <= 0
-        or isinstance(max_tokens, bool)
-        or not isinstance(max_tokens, int)
-        or max_tokens <= 0
-    ):
-        raise ValueError("diagnosis byte and token limits must be positive integers")
-
-    normalized_hypothesis = " ".join(hypothesis.split())
-    if (
-        len(normalized_hypothesis.encode("utf-8"))
-        > _MAX_FAILURE_DIAGNOSIS_HYPOTHESIS_BYTES
-    ):
-        raise ValueError("failure hypothesis exceeds its byte bound")
-    if _DIAGNOSIS_SECRET_RE.search(normalized_hypothesis):
-        raise ValueError("failure hypothesis contains secret-like material")
-
-    bounded_trace = _failure_diagnosis_trace_view(trace)
-    phase = _last_diagnosis_fact(_DIAGNOSIS_PHASE_RE, bounded_trace, "phase")
-    failure = _last_diagnosis_fact(
-        _DIAGNOSIS_FAILURE_RE, bounded_trace, "failure class"
-    )
-    finish = _last_diagnosis_fact(
-        _DIAGNOSIS_FINISH_RE, bounded_trace, "finish reason"
-    )
-    exit_text = _last_diagnosis_fact(_DIAGNOSIS_EXIT_RE, bounded_trace, "exit code")
-    exit_code = int(exit_text)
-    if not -255 <= exit_code <= 255:
-        raise ValueError("failure diagnosis exit code is outside the bounded range")
-
-    artifact = json.dumps(
-        {
-            "exit_code": exit_code,
-            "failure_class": failure,
-            "finish_reason": finish,
-            "finished": True,
-            "hypothesis": normalized_hypothesis,
-            "phase": phase,
-            "schema_version": 1,
-        },
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-    artifact_bytes = len(artifact.encode("ascii"))
-    if artifact_bytes > max_bytes:
-        raise ValueError("failure diagnosis exceeds its byte budget")
-    if artifact_bytes > max_tokens:
-        raise ValueError("failure diagnosis exceeds its conservative token budget")
-    return artifact
-
-
-def _failure_diagnosis_trace_view(trace: str) -> str:
-    """Retain only bounded head and tail windows for marker extraction."""
-    encoded = trace.encode("utf-8", errors="replace")
-    if len(encoded) <= _MAX_FAILURE_DIAGNOSIS_TRACE_BYTES:
-        return encoded.decode("utf-8", errors="replace")
-    half = _MAX_FAILURE_DIAGNOSIS_TRACE_BYTES // 2
-    head = encoded[:half].decode("utf-8", errors="replace")
-    tail = encoded[-half:].decode("utf-8", errors="replace")
-    return f"{head}\n{tail}"
-
-
-def _last_diagnosis_fact(pattern: re.Pattern[str], trace: str, label: str) -> str:
-    """Return the final allowlisted fact for one required trace field."""
-    matches = tuple(pattern.finditer(trace))
-    if not matches:
-        raise ValueError(f"failure trace is missing {label}")
-    return matches[-1].group(1)
-
-
 def parse_coverage_evidence(output: str) -> tuple[float, float]:
     """Parse aggregate and minimum-file percentages from canonical coverage output."""
     token = re.search(
@@ -2117,263 +2032,6 @@ def _proposal_python_syntax_diagnostics(
                 column=exc.offset or 0,
             )
     return diagnostics
-
-
-def _repair_candidate_syntax_diagnosis(diagnostic: str) -> str:
-    """Build canonical source-free feedback for the next bounded repair decode."""
-    if _syntax_failure_class(diagnostic) != "python_syntax":
-        raise ValueError("repair candidate feedback requires Python syntax failure")
-    event = _EvaluationLifecycleEvent(
-        phase="syntax_preflight",
-        command_kind="syntax_preflight",
-        command_sha256=hashlib.sha256(
-            b"compact-v4-repair-candidate-syntax-preflight"
-        ).hexdigest(),
-        returncode=2,
-        duration_ms=0,
-        failure_class="python_syntax",
-    )
-    return _compact_evaluation_diagnosis(
-        event,
-        syntax_diagnostic=diagnostic,
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class _EvaluationLifecycleEvent:
-    """One bounded event whose fields cannot carry model-authored content."""
-
-    phase: str
-    command_kind: str
-    command_sha256: str
-    returncode: int
-    duration_ms: int
-    failure_class: str
-
-    def __post_init__(self) -> None:
-        """Reject any event outside the identity-bound telemetry vocabulary."""
-        protocol = EVALUATION_DIAGNOSIS_PROTOCOL
-        if (self.phase, self.command_kind) not in protocol.phase_kinds:
-            raise ValueError("evaluation event phase and command kind are unsupported")
-        if _ATTEMPT_IDENTITY_RE.fullmatch(self.command_sha256) is None:
-            raise ValueError("evaluation event command digest is not canonical")
-        if (
-            isinstance(self.returncode, bool)
-            or not isinstance(self.returncode, int)
-            or not -255 <= self.returncode <= 255
-        ):
-            raise ValueError("evaluation event return code is outside its bound")
-        if (
-            isinstance(self.duration_ms, bool)
-            or not isinstance(self.duration_ms, int)
-            or not 0 <= self.duration_ms <= protocol.max_duration_ms
-        ):
-            raise ValueError("evaluation event duration is outside its bound")
-        if self.failure_class != "none" and (
-            self.failure_class not in protocol.diagnosis_failure_classes
-        ):
-            raise ValueError("evaluation event failure class is unsupported")
-        if (self.returncode == 0) != (self.failure_class == "none"):
-            raise ValueError("evaluation event outcome fields are inconsistent")
-
-    def render(self) -> str:
-        """Render deterministic ASCII telemetry with no raw command or output."""
-        rendered = (
-            "SELF_IMPROVE_EVALUATION_EVENT "
-            f"phase={self.phase} command_kind={self.command_kind} "
-            f"command_sha256={self.command_sha256} rc={self.returncode} "
-            f"duration_ms={self.duration_ms} failure={self.failure_class}"
-        )
-        if len(rendered.encode("ascii")) > EVALUATION_DIAGNOSIS_PROTOCOL.max_event_bytes:
-            raise RuntimeError("evaluation event exceeded its fixed byte bound")
-        return rendered
-
-
-def _bounded_evaluation_duration_ms(value: object) -> int:
-    """Convert elapsed seconds to a finite non-negative protocol-bounded integer."""
-    maximum = EVALUATION_DIAGNOSIS_PROTOCOL.max_duration_ms
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not 0 <= value <= maximum / 1000
-    ):
-        return maximum
-    return min(maximum, round(value * 1000))
-
-
-def _bounded_evaluation_returncode(value: object) -> int:
-    """Return one bounded process status without forwarding malformed values."""
-    if isinstance(value, bool) or not isinstance(value, int) or not -255 <= value <= 255:
-        return 255
-    return value
-
-
-def _record_evaluation_event(
-    events: list[_EvaluationLifecycleEvent],
-    progress_sink: Callable[[str], None] | None,
-    *,
-    phase: str,
-    command_kind: str,
-    command_identity: str,
-    returncode: object,
-    elapsed_seconds: object,
-    failure_class: str,
-) -> _EvaluationLifecycleEvent:
-    """Record and optionally publish one sanitized lifecycle event."""
-    bounded_returncode = _bounded_evaluation_returncode(returncode)
-    event = _EvaluationLifecycleEvent(
-        phase=phase,
-        command_kind=command_kind,
-        command_sha256=hashlib.sha256(command_identity.encode("utf-8")).hexdigest(),
-        returncode=bounded_returncode,
-        duration_ms=_bounded_evaluation_duration_ms(elapsed_seconds),
-        failure_class="none" if bounded_returncode == 0 else failure_class,
-    )
-    rendered = event.render()
-    events.append(event)
-    if progress_sink is not None:
-        progress_sink(rendered)
-    return event
-
-
-def _run_evaluation_operation(
-    operation: Callable[[], MakeResult],
-    events: list[_EvaluationLifecycleEvent],
-    progress_sink: Callable[[str], None] | None,
-    *,
-    phase: str,
-    command_kind: str,
-    command_identity: str,
-    failure_class: str,
-) -> MakeResult:
-    """Run one Make boundary and emit a terminal event even when it raises."""
-    started = time.monotonic()
-    try:
-        result = operation()
-    except BaseException:
-        _record_evaluation_event(
-            events,
-            progress_sink,
-            phase=phase,
-            command_kind=command_kind,
-            command_identity=command_identity,
-            returncode=1,
-            elapsed_seconds=time.monotonic() - started,
-            failure_class=failure_class,
-        )
-        raise
-    elapsed = result.elapsed_seconds
-    if (
-        isinstance(elapsed, bool)
-        or not isinstance(elapsed, (int, float))
-        or not 0 <= elapsed <= EVALUATION_DIAGNOSIS_PROTOCOL.max_duration_ms / 1000
-    ):
-        elapsed = time.monotonic() - started
-    _record_evaluation_event(
-        events,
-        progress_sink,
-        phase=phase,
-        command_kind=command_kind,
-        command_identity=command_identity,
-        returncode=result.returncode,
-        elapsed_seconds=elapsed,
-        failure_class=failure_class,
-    )
-    return result
-
-
-def _syntax_failure_class(diagnostic: str | None) -> str:
-    """Map a trusted syntax marker to an allowlisted diagnosis class."""
-    if diagnostic is None:
-        return "none"
-    match = re.search(r"\btype=(python_(?:encoding|path|read|size|syntax))\b", diagnostic)
-    return match.group(1) if match is not None else "python_syntax"
-
-
-def _syntax_diagnosis_fields(diagnostic: str | None) -> dict[str, object]:
-    """Parse only the parent-rendered syntax coordinates into fixed safe fields."""
-    empty: dict[str, object] = {
-        "category": "none",
-        "column": 0,
-        "line": 0,
-        "path_sha256": "",
-    }
-    if diagnostic is None:
-        return empty
-    match = re.fullmatch(
-        rf"{re.escape(_PARENT_SYNTAX_ERROR_MARKER)} "
-        r"type=(python_(?:encoding|path|read|size|syntax)) "
-        r"path_sha256=([0-9a-f]{64}) line=([0-9]+) column=([0-9]+)",
-        diagnostic,
-    )
-    if match is None:
-        raise RuntimeError("parent syntax diagnostic is not canonical")
-    line = int(match.group(3))
-    column = int(match.group(4))
-    if (
-        line > EVALUATION_DIAGNOSIS_PROTOCOL.max_coordinate
-        or column > EVALUATION_DIAGNOSIS_PROTOCOL.max_coordinate
-    ):
-        raise RuntimeError("parent syntax diagnostic coordinates exceed their bound")
-    return {
-        "category": match.group(1),
-        "column": column,
-        "line": line,
-        "path_sha256": match.group(2),
-    }
-
-
-def _compact_evaluation_diagnosis(
-    event: _EvaluationLifecycleEvent,
-    *,
-    syntax_diagnostic: str | None = None,
-) -> str:
-    """Reuse the installed trace sanitizer, then add bounded lifecycle fields."""
-    protocol = EVALUATION_DIAGNOSIS_PROTOCOL
-    compact = compact_failure_diagnosis(
-        event.render()
-        + "\nSELF_IMPROVE_LOCAL_DECODE finish=unknown"
-        + f"\nSELF_IMPROVE_COMMAND_END rc={event.returncode}",
-        hypothesis=protocol.failure_hypothesis,
-        max_bytes=protocol.max_diagnosis_bytes,
-        max_tokens=protocol.max_diagnosis_bytes,
-    )
-    payload = json.loads(compact)
-    if not isinstance(payload, dict):
-        raise RuntimeError("evaluation diagnosis sanitizer returned a non-object")
-    payload.update(
-        {
-            "command_kind": event.command_kind,
-            "command_sha256": event.command_sha256,
-            "duration_ms": event.duration_ms,
-            "protocol": protocol.version,
-            "schema_version": protocol.schema_version,
-            **_syntax_diagnosis_fields(syntax_diagnostic),
-        }
-    )
-    artifact = json.dumps(
-        payload,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-    validated = safe_evaluation_retry_diagnosis(artifact)
-    if validated != artifact:
-        raise RuntimeError("evaluation diagnosis failed its canonical validator")
-    return validated
-
-
-def _evaluation_target_identity(
-    target: str,
-    variables: dict[str, str] | None = None,
-) -> str:
-    """Return a canonical private preimage for one emitted target hash."""
-    return json.dumps(
-        {"target": target, "variables": variables or {}},
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
 
 
 @dataclass

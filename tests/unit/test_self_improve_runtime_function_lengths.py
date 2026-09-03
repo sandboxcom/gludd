@@ -11,6 +11,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _RUNTIME_FILES = (
     _PROJECT_ROOT / "src/general_ludd/self_improve/runtime.py",
     _PROJECT_ROOT / "src/general_ludd/self_improve/codex_comparison.py",
+    _PROJECT_ROOT / "src/general_ludd/self_improve/evaluator.py",
 )
 
 
@@ -43,3 +44,11 @@ def test_evaluate_attempt_stays_below_global_complexity_ceiling() -> None:
 
     assert evaluate.end_lineno is not None
     assert evaluate.end_lineno - evaluate.lineno + 1 <= 100
+
+
+def test_runtime_module_stays_below_3000_nonblank_lines() -> None:
+    """Keep the executable runtime below the repository's large-file ceiling."""
+    runtime_source = _RUNTIME_FILES[0].read_text(encoding="utf-8")
+    nonblank_lines = sum(bool(line.strip()) for line in runtime_source.splitlines())
+
+    assert nonblank_lines < 3000
