@@ -26,6 +26,8 @@ EXPECTED_CASES = (
     "raw-native-log-leakage",
     "replace-precondition-mismatch",
     "legacy-outcome-unchanged-identity-empty-plan",
+    "compact-v4-hidden-gap-insertion",
+    "compact-v4-prefaced-json-object",
 )
 
 
@@ -122,6 +124,19 @@ def test_tracked_corpus_replays_every_observed_failure_class() -> None:
             "parent_validation",
             "replace old_text must occur exactly once in trusted baseline",
         ),
+        (
+            "compact-v4-hidden-gap-insertion",
+            "edit_span_scope",
+            "parent_validation",
+            "compact insertion must use s from the first shown line through one past "
+            "the last shown line of one contiguous section",
+        ),
+        (
+            "compact-v4-prefaced-json-object",
+            "proposal_json_contract",
+            "worker_tail",
+            "compact-v4 proposal is not one complete JSON object",
+        ),
     ),
 )
 def test_failure_class_has_exact_typed_feedback(
@@ -206,10 +221,10 @@ def test_cli_emits_deterministic_bounded_case_and_summary_evidence(
     captured = capsys.readouterr()
     lines = captured.out.splitlines()
 
-    assert len([line for line in lines if line.startswith("SELF_IMPROVE_FAILURE_CORPUS_CASE ")]) == 10
+    assert len([line for line in lines if line.startswith("SELF_IMPROVE_FAILURE_CORPUS_CASE ")]) == 12
     assert lines[-1] == (
         'SELF_IMPROVE_FAILURE_CORPUS_SUMMARY '
-        '{"cases":10,"failed":0,"passed":10,"protocol":"self-improve-failure-corpus-v4"}'
+        '{"cases":12,"failed":0,"passed":12,"protocol":"self-improve-failure-corpus-v4"}'
     )
     assert captured.err == ""
 

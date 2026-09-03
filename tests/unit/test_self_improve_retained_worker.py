@@ -827,6 +827,66 @@ def test_worker_failure_publishes_no_partial_batch_or_stale_temp(
     assert not list(exchange.glob(".*.tmp"))
 
 
+def test_worker_cleans_live_deepseek_v4_framing_failure(
+    tmp_path: Path,
+) -> None:
+    """Publish no shard batch when strict v4 JSON decoding rejects live framing."""
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    exchange = tmp_path / "exchange-v4-invalid-json"
+    exchange.mkdir()
+    plan = _v4_plan()
+    (exchange / "prompt.txt").write_text(
+        encode_prompt_batch(
+            tuple(shard.prompt for shard in plan.shards),
+            protocol_digest=plan.protocol_digest,
+        ),
+        encoding="utf-8",
+    )
+    contract = ProposalContract(
+        baseline_sha="a" * 40,
+        task_id="S83.133",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+        proposal_protocol="self-improve-compact-proposal-v4",
+    )
+    (exchange / "contract.json").write_text(contract.to_json(), encoding="utf-8")
+    sensitive = (
+        "Reasoning TOKEN=do-not-publish\n"
+        '{"e":[{"s":1,"n":1,"z":"PASSWORD=hunter2"}]}\n'
+    )
+    raw = sensitive + ("x" * (2308 - len(sensitive.encode("utf-8"))))
+
+    class Gateway:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> CompactSpanProposal:
+            assert contract is not None
+            focus = next(
+                line.split("=", 1)[1]
+                for line in prompt.splitlines()
+                if line.startswith("GLUDD_SELF_IMPROVE_FOCUS_PATH=")
+            )
+            return worker_module._decode_compact_span_proposal(raw, focus_path=focus)
+
+    with pytest.raises(
+        ValueError,
+        match=r"compact-v4 proposal is not one complete JSON object; output_bytes=2308",
+    ) as error:
+        worker_module.run_worker(exchange, model_path, gateway_factory=Gateway)
+
+    assert all(secret not in str(error.value) for secret in ("TOKEN", "PASSWORD", "hunter2"))
+    assert not (exchange / "proposal.json").exists()
+    assert not list(exchange.glob("*.tmp"))
+    assert not list(exchange.glob(".*.tmp"))
+
+
 def test_worker_removes_temporary_output_when_fsync_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

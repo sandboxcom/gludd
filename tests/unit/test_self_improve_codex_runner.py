@@ -1577,6 +1577,51 @@ def test_main_publishes_bounded_terminal_error_without_traceback(
     assert "Traceback" not in captured.err
 
 
+def test_main_preserves_compact_v4_identity_for_live_json_terminal_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Do not relabel a terminal compact-v4 framing failure as retry-v3."""
+    args = argparse.Namespace(target="unit", validate_only=False)
+    raw_failure = (
+        "llama loader /Users/operator/private.gguf TOKEN=top-secret\n"
+        "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR "
+        "compact-v4 proposal is not one complete JSON object; output_bytes=2308\n"
+        "PASSWORD=hunter2 raw-model-fragment"
+    )
+
+    class Parser:
+        def parse_args(self) -> argparse.Namespace:
+            return args
+
+    monkeypatch.setattr(runner_module, "_parser", lambda: Parser())
+    monkeypatch.setattr(
+        runner_module,
+        "run_benchmark",
+        lambda _args: (_ for _ in ()).throw(RuntimeError(raw_failure)),
+    )
+
+    assert runner_module.main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == (
+        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v4 "
+        "type=proposal_json_contract source=proposal_error "
+        "detail=compact-v4 proposal is not one complete JSON object\n"
+    )
+    assert all(
+        secret not in captured.err
+        for secret in (
+            "/Users/operator",
+            "private.gguf",
+            "top-secret",
+            "hunter2",
+            "raw-model-fragment",
+            "output_bytes",
+        )
+    )
+
+
 _CATALOG_BASELINE = "eac05dc88c03f14fbd7dd5f4c6d72943609d9e26"
 _CATALOG_REFERENCE = "80b381bd87f32487d784964ce93566e3b016b191"
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]

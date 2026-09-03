@@ -201,6 +201,51 @@
         ]
       },
       "kind": "acquisition_trace"
+    },
+    {
+      "expected": {
+        "detail": "compact insertion must use s from the first shown line through one past the last shown line of one contiguous section",
+        "forbidden_substrings": [
+          "MODEL_SECRET"
+        ],
+        "source": "parent_validation",
+        "type": "edit_span_scope"
+      },
+      "id": "compact-v4-hidden-gap-insertion",
+      "input": {
+        "baseline": "shown-a\nshown-b\nhidden-c\nhidden-d\nshown-e\nshown-f\n",
+        "editable_ranges": [
+          [
+            1,
+            3
+          ],
+          [
+            5,
+            7
+          ]
+        ],
+        "focus_path": "src/general_ludd/self_improve/example.py",
+        "model_output": "{\"e\":[{\"n\":0,\"s\":4,\"z\":\"MODEL_SECRET=do-not-copy\\n\"}]}"
+      },
+      "kind": "compact_span_parent"
+    },
+    {
+      "expected": {
+        "detail": "compact-v4 proposal is not one complete JSON object",
+        "forbidden_substrings": [
+          "TOKEN",
+          "PASSWORD",
+          "hunter2"
+        ],
+        "source": "worker_tail",
+        "type": "proposal_json_contract"
+      },
+      "id": "compact-v4-prefaced-json-object",
+      "input": {
+        "focus_path": "src/general_ludd/self_improve/example.py",
+        "model_output": "Reasoning TOKEN=do-not-publish\n{\"e\":[{\"n\":1,\"s\":1,\"z\":\"PASSWORD=hunter2\"}]}"
+      },
+      "kind": "compact_span_decode"
     }
   ],
   "protocol": "self-improve-failure-corpus-v4",

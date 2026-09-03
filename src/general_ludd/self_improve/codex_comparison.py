@@ -7,7 +7,7 @@ import importlib
 import json
 import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 from typing import Protocol, cast
@@ -106,6 +106,7 @@ _STRUCTURED_CANARY_TOKENS = 32
 _DETERMINISTIC_DECODE_TEMPERATURE = 0.0
 _DETERMINISTIC_DECODE_SEED = 0
 _STRUCTURED_OUTPUT_REQUIRE_STOP = True
+_STRUCTURED_DECODING_MODE = "llama-cpp-explicit-json-schema-grammar-v1"
 _STRUCTURED_CANARY_PROMPT = 'Return {"ok":true}.'
 _STRUCTURED_CANARY_EXPECTED: dict[str, object] = {"ok": True}
 _COMPACT_ROOT_FIELDS = frozenset({"e"})
@@ -118,7 +119,7 @@ _COMPACT_OPERATION_BY_EMPTY_TEXT = {
     (True, False): "create",
 }
 _LEGACY_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v3"
-_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v4-line-span"
+_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v4-line-span-boundary-v2"
 _COMPACT_MAX_ANCHOR_BYTES = 65_536
 _SAFE_FINISH_REASONS = frozenset(
     {"stop", "length", "tool_calls", "function_call", "content_filter"}
@@ -157,8 +158,9 @@ _COMPACT_SYSTEM_PROMPT = (
     "the one focus path, immutable baseline, and commit message; never emit them. s is "
     "the 1-based numbered baseline line where the edit begins, n is the number of old "
     "baseline lines consumed, and z is exact replacement text without line labels. "
-    "Use n=0 only to insert at a shown boundary. Empty z deletes consumed lines; s=1, "
-    "n=0 creates an absent file. The edit must change content. Across all edits, z may "
+    "For a shown Lx..Ly section, n=0 may insert with s=x..y+1 only; never select a "
+    "boundary wholly inside a hidden gap. Empty z deletes consumed lines; s=1, n=0 "
+    "creates an absent file. The edit must change content. Across all edits, z may "
     "contain at most 3,072 UTF-8 bytes total."
 )
 
@@ -307,7 +309,7 @@ LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
     prompt_prefix=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.prompt_prefix,
     prompt_suffix=(
         "\nReturn a complete object satisfying every required field and numbered-line "
-        "boundary."
+        "boundary. For shown Lx-Ly, use insertion s=x..y+1; never a hidden gap."
     ),
     safe_feedback=(
         *LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.safe_feedback,
@@ -331,8 +333,13 @@ LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
             "edit_span_scope",
         ),
         (
-            "compact insertion must use an explicitly shown boundary",
+            "compact insertion must use s from the first shown line through one past "
+            "the last shown line of one contiguous section",
             "edit_span_scope",
+        ),
+        (
+            "compact-v4 proposal is not one complete JSON object",
+            "proposal_json_contract",
         ),
         ("compact absent file create must use s=1 and n=0", "edit_create_contract"),
         (
@@ -406,6 +413,29 @@ def local_proposal_attempt_identity_digest(
             "prompt": _STRUCTURED_CANARY_PROMPT,
             "schema": _STRUCTURED_CANARY_SCHEMA,
         },
+        "structured_decoding": {
+            "mode": _STRUCTURED_DECODING_MODE,
+            "canary_grammar_schema_sha256": hashlib.sha256(
+                json.dumps(
+                    _STRUCTURED_CANARY_SCHEMA,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")
+            ).hexdigest(),
+            "proposal_grammar_schema_sha256": hashlib.sha256(
+                json.dumps(
+                    (
+                        _LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA
+                        if legacy
+                        else _COMPACT_PROPOSAL_JSON_SCHEMA
+                    ),
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")
+            ).hexdigest(),
+        },
         "output_token_policy": {
             "canary_max_tokens": _STRUCTURED_CANARY_TOKENS,
             "proposal_max_tokens": _COMPACT_PROPOSAL_TOKENS,
@@ -449,7 +479,7 @@ def local_proposal_attempt_identity_digest(
             {
                 "anchor_max_bytes": _COMPACT_MAX_ANCHOR_BYTES,
                 "coordinate_base": 1,
-                "insertion_boundary_policy": "both-adjacent-lines-shown-or-file-edge",
+                "insertion_boundary_policy": "closed-boundaries-of-shown-half-open-range",
                 "span_order": "strict-start-nonoverlap",
             }
         )
@@ -486,6 +516,7 @@ class _ChatLocalModel(Protocol):
         temperature: float,
         seed: int,
         response_format: dict[str, object],
+        grammar: object | None = None,
     ) -> object: ...
 
 
@@ -502,10 +533,27 @@ class _ModelFactory(Protocol):
     ) -> _LocalModel: ...
 
 
+_GrammarFactory = Callable[[dict[str, object]], object]
+
+
+class _LlamaGrammarType(Protocol):
+    """Typed class-level JSON-schema grammar constructor."""
+
+    def from_json_schema(
+        self,
+        json_schema: str,
+        *,
+        verbose: bool = True,
+    ) -> object:
+        """Compile one JSON schema into a llama.cpp sampler grammar."""
+        ...
+
+
 class _LlamaCppRuntime(Protocol):
     """Typed optional llama.cpp module boundary."""
 
     Llama: _ModelFactory
+    LlamaGrammar: _LlamaGrammarType
 
     def llama_supports_gpu_offload(self) -> bool:
         """Return whether this exact runtime was built with GPU offload."""
@@ -1206,13 +1254,19 @@ def _manifest_from_compact_span_proposal(
                 if old_slice == span.new_text:
                     raise _parent_proposal_error("compact span must change content")
             else:
-                left_visible = span.start_line == 1 or span.start_line - 1 in shown
-                right_visible = (
-                    span.start_line == line_count + 1 or span.start_line in shown
+                boundary_is_shown = any(
+                    range_start <= span.start_line <= range_end
+                    for range_start, range_end in editable_ranges
                 )
-                if not left_visible or not right_visible:
+                empty_file_boundary = (
+                    line_count == 0
+                    and not editable_ranges
+                    and span.start_line == 1
+                )
+                if not boundary_is_shown and not empty_file_boundary:
                     raise _parent_proposal_error(
-                        "compact insertion must use an explicitly shown boundary"
+                        "compact insertion must use s from the first shown line through "
+                        "one past the last shown line of one contiguous section"
                     )
             if start == 0 and end == line_count and not span.new_text:
                 edits.append(
@@ -1933,7 +1987,7 @@ def _decode_compact_span_proposal(
         value = json.loads(stripped)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise ValueError(
-            "compact proposal is not one complete JSON object; "
+            "compact-v4 proposal is not one complete JSON object; "
             f"output_bytes={len(stripped.encode('utf-8'))}"
         ) from exc
     if not isinstance(value, dict) or set(value) != _COMPACT_ROOT_FIELDS:
@@ -2049,6 +2103,7 @@ class LocalProposalGateway:
         model_path: Path,
         *,
         model_factory: _ModelFactory | None = None,
+        grammar_factory: _GrammarFactory | None = None,
         n_gpu_layers: int | None = None,
     ) -> None:
         """Bind one GGUF and an optional hardware-derived GPU offload boundary."""
@@ -2062,6 +2117,9 @@ class LocalProposalGateway:
             raise ValueError("n_gpu_layers must be None or an integer of at least -1")
         self._model_path = model_path
         self._model_factory = model_factory or _default_model_factory
+        self._grammar_factory = grammar_factory
+        if self._grammar_factory is None and model_factory is None:
+            self._grammar_factory = _default_json_schema_grammar
         self._n_gpu_layers = n_gpu_layers
         self._model: _LocalModel | None = None
         self._structured_canary_protocols: set[str] = set()
@@ -2084,6 +2142,15 @@ class LocalProposalGateway:
                 )
         return self._model
 
+    def _grammar_for_schema(self, schema: dict[str, object]) -> object | None:
+        """Build a per-call grammar when the production or injected helper is bound."""
+        if self._grammar_factory is None:
+            return None
+        grammar = self._grammar_factory(schema)
+        if grammar is None:
+            raise RuntimeError("llama.cpp JSON-schema grammar construction returned no grammar")
+        return grammar
+
     def _run_structured_canary(
         self,
         model: _ChatLocalModel,
@@ -2097,6 +2164,7 @@ class LocalProposalGateway:
             if proposal_protocol == _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION
             else _COMPACT_SYSTEM_PROMPT
         )
+        schema = _STRUCTURED_CANARY_SCHEMA
         output = model.create_chat_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -2107,8 +2175,9 @@ class LocalProposalGateway:
             seed=_DETERMINISTIC_DECODE_SEED,
             response_format={
                 "type": "json_object",
-                "schema": _STRUCTURED_CANARY_SCHEMA,
+                "schema": schema,
             },
+            grammar=self._grammar_for_schema(schema),
         )
         try:
             text = _completion_text(
@@ -2142,6 +2211,11 @@ class LocalProposalGateway:
                     contract.proposal_protocol
                     == _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION
                 )
+                schema = (
+                    _LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA
+                    if legacy
+                    else _COMPACT_PROPOSAL_JSON_SCHEMA
+                )
                 output = chat_model.create_chat_completion(
                     messages=[
                         {
@@ -2159,12 +2233,9 @@ class LocalProposalGateway:
                     seed=_DETERMINISTIC_DECODE_SEED,
                     response_format={
                         "type": "json_object",
-                        "schema": (
-                            _LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA
-                            if legacy
-                            else _COMPACT_PROPOSAL_JSON_SCHEMA
-                        ),
+                        "schema": schema,
                     },
+                    grammar=self._grammar_for_schema(schema),
                 )
                 text = _completion_text(
                     output,
@@ -2201,6 +2272,7 @@ class LocalProposalGateway:
                     "type": "json_object",
                     "schema": _PROPOSAL_JSON_SCHEMA,
                 },
+                grammar=self._grammar_for_schema(_PROPOSAL_JSON_SCHEMA),
             )
         else:
             if contract is not None:
@@ -2295,6 +2367,21 @@ def _load_llama_cpp_runtime() -> _LlamaCppRuntime:
             "SYNC_LLAMA_CPP_VALIDATE_ONLY=0"
         ) from exc
     return cast("_LlamaCppRuntime", runtime)
+
+
+def _default_json_schema_grammar(schema: dict[str, object]) -> object:
+    """Compile trusted schema through llama-cpp-python's locked grammar helper."""
+    runtime = _load_llama_cpp_runtime()
+    encoded = json.dumps(
+        schema,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    try:
+        return runtime.LlamaGrammar.from_json_schema(encoded, verbose=False)
+    except (AttributeError, OSError, RuntimeError, ValueError) as exc:
+        raise RuntimeError("llama.cpp JSON-schema grammar construction failed") from exc
 
 
 def _default_model_factory(

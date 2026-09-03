@@ -9,12 +9,11 @@ from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import ClassVar
+from typing import Any, ClassVar, cast
 
 import pytest
-import scripts.run_self_improve_e2e as runner
-from scripts.run_self_improve_e2e import AttemptResult, MakeResult
 
+import general_ludd.self_improve.runtime as runtime_module
 from general_ludd.local_model import LocalModelConfig, get_model
 from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
@@ -22,12 +21,16 @@ from general_ludd.self_improve.codex_comparison import (
     ComparisonResult,
     ProposalManifest,
 )
+from general_ludd.self_improve.managed_runner import PromptPlan, PromptShard
 from general_ludd.self_improve.model_candidate_planner import PlannedModelCandidate
 from general_ludd.self_improve.model_lifecycle import (
     ModelAcquisitionEvent,
     ModelAcquisitionPhase,
     ModelArtifactIdentity,
 )
+from general_ludd.self_improve.runtime import AttemptResult, MakeResult, PlanBoundProposal
+
+runner = cast(Any, runtime_module)
 
 
 def _task_file(tmp_path: Path) -> Path:
@@ -182,7 +185,7 @@ def test_plan_identity_is_single_source_through_execution_and_outcome(
         _root: object,
         _task: object,
         _reference: object,
-        bound: runner.PlanBoundProposal,
+        bound: PlanBoundProposal,
         _attempt: int,
         *,
         expected_attempt_identity_digest: str,
@@ -452,6 +455,67 @@ def test_terminal_proposal_rejection_publishes_only_typed_safe_marker(
             "hunter2",
         )
     )
+
+
+def test_live_deepseek_v4_rejection_releases_lease_and_reports_safe_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Keep v4 identity, diagnostics, and cleanup on the exact live JSON class."""
+    _wire_common(tmp_path, monkeypatch)
+    plan = PromptPlan(
+        shards=(
+            PromptShard(
+                ("src/general_ludd/example.py",),
+                "LINES 1-1\nL1|before\n",
+                editable_ranges=((1, 2),),
+            ),
+        ),
+        source_bytes=7,
+        baseline_files=(("src/general_ludd/example.py", "before\n"),),
+        proposal_protocol="self-improve-compact-proposal-v4",
+    )
+    monkeypatch.setattr(runner, "build_prompt", lambda *_args: plan)
+    raw_failure = (
+        "llama loader /Users/operator/private.gguf TOKEN=top-secret\n"
+        "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR "
+        "compact-v4 proposal is not one complete JSON object; output_bytes=2308\n"
+        "PASSWORD=hunter2 raw-model-fragment"
+    )
+
+    def reject(*_args: object) -> ProposalManifest:
+        raise ValueError(raw_failure)
+
+    monkeypatch.setattr(runner, "generate_local_proposal_plan", reject)
+    args = _args(_task_file(tmp_path))
+    args.max_attempts = 1
+
+    with pytest.raises(ValueError):
+        runner.run_benchmark(args)
+
+    rejected = next(
+        line
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("SELF_IMPROVE_PROPOSAL_REJECTED")
+    )
+    assert rejected == (
+        "SELF_IMPROVE_PROPOSAL_REJECTED attempt=1 "
+        "protocol=self-improve-validation-retry-v4 type=proposal_json_contract "
+        "source=proposal_error detail=compact-v4 proposal is not one complete JSON object"
+    )
+    assert all(
+        secret not in rejected
+        for secret in (
+            "/Users/operator",
+            "private.gguf",
+            "top-secret",
+            "hunter2",
+            "raw-model-fragment",
+            "output_bytes",
+        )
+    )
+    assert _LeaseManager.released == 1
 
 
 def test_explicit_model_path_remains_an_operator_override(

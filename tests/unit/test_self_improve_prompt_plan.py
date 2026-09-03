@@ -547,6 +547,46 @@ def test_validation_retry_redacts_unrecognized_marker_detail() -> None:
     assert "raw-model-fragment" not in suffix
 
 
+def test_compact_v4_live_json_retry_is_typed_bounded_and_actionable() -> None:
+    """Turn the DeepSeek framing class into safe v4-specific retry guidance."""
+    plan = PromptPlan(
+        shards=(
+            PromptShard(
+                ("src/one.py",),
+                "LINES 3-5\nL3|one\nL4|two\nL5|three\n",
+                editable_ranges=((3, 6),),
+            ),
+        ),
+        source_bytes=14,
+        baseline_files=(("src/one.py", "one\ntwo\nthree\n"),),
+        proposal_protocol=runner_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    error = (
+        "llama loader /Users/operator/private.gguf TOKEN=top-secret\n"
+        "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR "
+        "compact-v4 proposal is not one complete JSON object; output_bytes=2308\n"
+        "PASSWORD=hunter2 raw-model-fragment"
+    )
+
+    retried = runner_module._build_validation_retry_prompt_plan(plan, error)
+    suffix = retried.shards[0].prompt[len(plan.shards[0].prompt) :]
+
+    assert (
+        "protocol=self-improve-validation-retry-v4 type=proposal_json_contract "
+        "source=proposal_error detail=compact-v4 proposal is not one complete JSON object"
+        in suffix
+    )
+    assert "For shown Lx-Ly, use insertion s=x..y+1" in suffix
+    assert "output_bytes=2308" not in suffix
+    assert all(
+        secret not in suffix
+        for secret in ("/Users/operator", "top-secret", "hunter2", "raw-model-fragment")
+    )
+    assert len(suffix.encode("utf-8")) < 384
+    assert retried.protocol_digest == plan.protocol_digest
+    assert retried.proposal_protocol == runner_module.COMPACT_PROPOSAL_PROTOCOL_V4
+
+
 def test_shard_merger_preserves_exact_scope_tests_and_commands() -> None:
     groups = (
         (_PATHS[0], _PATHS[3]),

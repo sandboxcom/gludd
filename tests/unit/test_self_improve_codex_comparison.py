@@ -328,6 +328,18 @@ def test_attempt_identity_binds_complete_managed_output_protocol(
             == baseline
         )
 
+    with monkeypatch.context() as scoped:
+        scoped.setattr(
+            comparison_module,
+            "_STRUCTURED_DECODING_MODE",
+            "unconstrained-response-format-only",
+            raising=False,
+        )
+        assert (
+            comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
+            != baseline
+        )
+
 
 def test_attempt_identity_binds_model_acquisition_and_outcome_protocol(
     monkeypatch: pytest.MonkeyPatch,
@@ -991,7 +1003,7 @@ def test_local_gateway_prefers_native_schema_constrained_chat_completion(
     assert calls["temperature"] == 0.0
     assert calls["max_tokens"] == 4096
     assert calls["seed"] == 0
-    assert "grammar" not in calls
+    assert calls["grammar"] is None
     response_format = calls["response_format"]
     assert isinstance(response_format, dict)
     assert response_format["type"] == "json_object"
@@ -1178,6 +1190,7 @@ def test_compact_protocol_bounds_one_file_output_before_manifest_limits() -> Non
     assert comparison_module._COMPACT_PROPOSAL_TOKENS == 1024
     assert comparison_module._COMPACT_MAX_CONTENT_BYTES == 3072
     assert "3,072 UTF-8 bytes total" in comparison_module._COMPACT_SYSTEM_PROMPT
+    assert "n=0 may insert with s=x..y+1" in comparison_module._COMPACT_SYSTEM_PROMPT
     assert (
         "distinct non-empty strings"
         in comparison_module._LEGACY_COMPACT_SYSTEM_PROMPT
@@ -1314,6 +1327,65 @@ def test_compact_v4_gateway_emits_only_bounded_line_span_fields(
     assert calls[1]["max_tokens"] == 1024
 
 
+def test_compact_v4_gateway_passes_distinct_explicit_json_schema_grammars(
+    tmp_path: Path,
+) -> None:
+    """Use llama.cpp grammar objects for both the canary and v4 proposal."""
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    calls: list[dict[str, object]] = []
+    grammar_schemas: list[dict[str, object]] = []
+    grammars: list[object] = []
+
+    def grammar_factory(schema: dict[str, object]) -> object:
+        grammar_schemas.append(schema)
+        grammar = object()
+        grammars.append(grammar)
+        return grammar
+
+    class SpanModel:
+        def __call__(self, prompt: str, **kwargs: object) -> object:
+            del prompt, kwargs
+            raise AssertionError("raw completion must not be used")
+
+        def create_chat_completion(self, **kwargs: object) -> dict[str, object]:
+            calls.append(dict(kwargs))
+            content = (
+                '{"ok":true}'
+                if len(calls) == 1
+                else '{"e":[{"s":1,"n":1,"z":"changed\\n"}]}'
+            )
+            return {
+                "choices": [
+                    {"finish_reason": "stop", "message": {"content": content}}
+                ]
+            }
+
+    contract = replace(
+        _contract(),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    prompt = comparison_module.bind_compact_focus_path(
+        "Use the numbered source lines.",
+        "src/general_ludd/example.py",
+    )
+
+    proposal = LocalProposalGateway(
+        model_path,
+        model_factory=lambda **_kwargs: SpanModel(),
+        grammar_factory=grammar_factory,
+    ).propose(prompt, contract=contract)
+
+    assert isinstance(proposal, comparison_module.CompactSpanProposal)
+    assert grammar_schemas == [
+        comparison_module._STRUCTURED_CANARY_SCHEMA,
+        comparison_module._COMPACT_PROPOSAL_JSON_SCHEMA,
+    ]
+    assert calls[0]["grammar"] is grammars[0]
+    assert calls[1]["grammar"] is grammars[1]
+    assert grammars[0] is not grammars[1]
+
+
 @pytest.mark.parametrize(
     ("raw", "match"),
     [
@@ -1367,7 +1439,11 @@ def test_compact_v4_parent_derives_unique_preimage_for_duplicate_source_text() -
     ("raw", "ranges", "match"),
     [
         ({"e": [{"s": 2, "n": 1, "z": "changed\n"}]}, ((1, 2),), "explicitly shown"),
-        ({"e": [{"s": 3, "n": 0, "z": "inserted\n"}]}, ((1, 3),), "explicitly shown boundary"),
+        (
+            {"e": [{"s": 4, "n": 0, "z": "inserted\n"}]},
+            ((1, 3),),
+            "first shown line through one past the last shown line",
+        ),
         ({"e": [{"s": 6, "n": 1, "z": "changed\n"}]}, ((1, 5),), "outside trusted baseline"),
         ({"e": [{"s": 2, "n": 1, "z": "same\n"}]}, ((1, 5),), "must change content"),
     ],
@@ -1381,6 +1457,63 @@ def test_compact_v4_parent_rejects_hidden_out_of_range_and_noop_spans(
 
     with pytest.raises(ValueError, match=match):
         _expand_span_proposals((proposal,), editable_ranges=(ranges,))
+
+
+def test_compact_v4_insertion_uses_closed_boundaries_of_each_shown_section() -> None:
+    """Admit shard-edge coordinates while rejecting a boundary in a hidden gap."""
+    path = "src/general_ludd/example.py"
+    baseline = "hidden-a\nshown-b\nshown-c\nhidden-d\nhidden-e\nshown-f\nshown-g\n"
+    ranges = (((2, 4), (6, 8)),)
+    expected_by_start = {
+        2: "hidden-a\ninserted\nshown-b\nshown-c\nhidden-d\nhidden-e\nshown-f\nshown-g\n",
+        4: "hidden-a\nshown-b\nshown-c\ninserted\nhidden-d\nhidden-e\nshown-f\nshown-g\n",
+    }
+
+    for start_line, expected in expected_by_start.items():
+        manifest = _expand_span_proposals(
+            (_span_proposal({"e": [{"s": start_line, "n": 0, "z": "inserted\n"}]}),),
+            baselines={path: baseline},
+            editable_ranges=ranges,
+        )
+        edit = manifest.edits[0]
+        assert baseline.replace(edit.old_text, edit.new_text, 1) == expected
+
+    hidden_gap = _span_proposal(
+        {"e": [{"s": 5, "n": 0, "z": "MODEL_SECRET=do-not-copy\n"}]}
+    )
+    with pytest.raises(
+        ValueError,
+        match="first shown line through one past the last shown line",
+    ) as error:
+        _expand_span_proposals(
+            (hidden_gap,),
+            baselines={path: baseline},
+            editable_ranges=ranges,
+        )
+    assert "MODEL_SECRET" not in str(error.value)
+
+
+def test_compact_v4_strict_decoder_redacts_live_deepseek_framing_failure() -> None:
+    """Reject the exact 2,308-byte live failure without echoing model output."""
+    sensitive = (
+        "Reasoning TOKEN=do-not-publish before object\n"
+        '{"e":[{"s":1,"n":1,"z":"PASSWORD=hunter2"}]}\n'
+    )
+    raw = sensitive + ("x" * (2308 - len(sensitive.encode("utf-8"))))
+    assert len(raw.encode("utf-8")) == 2308
+
+    with pytest.raises(
+        ValueError,
+        match=r"compact-v4 proposal is not one complete JSON object; output_bytes=2308",
+    ) as error:
+        comparison_module._decode_compact_span_proposal(
+            raw,
+            focus_path="src/general_ludd/example.py",
+        )
+
+    diagnostic = str(error.value)
+    assert all(secret not in diagnostic for secret in ("TOKEN", "PASSWORD", "hunter2"))
+    assert len(diagnostic.encode("utf-8")) < 160
 
 
 def test_compact_v4_parent_compiles_insert_partial_delete_and_whole_delete() -> None:
@@ -1929,3 +2062,90 @@ def test_optional_llama_runtime_gates_offload_through_native_support_probe(
         expected_gpu_layers,
     )
     assert imports == ["llama_cpp"]
+
+
+def test_locked_llama_runtime_compiles_canonical_schema_with_public_grammar_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Call the 0.3.24 public LlamaGrammar seam without a custom converter."""
+    calls: list[tuple[str, bool]] = []
+    grammar = object()
+    runtime = cast(Any, ModuleType("llama_cpp"))
+
+    class GrammarType:
+        @staticmethod
+        def from_json_schema(schema: str, *, verbose: bool = True) -> object:
+            calls.append((schema, verbose))
+            return grammar
+
+    runtime.LlamaGrammar = GrammarType
+    monkeypatch.setattr(comparison_module, "_load_llama_cpp_runtime", lambda: runtime)
+    schema: dict[str, object] = {"required": ["e"], "type": "object"}
+
+    assert comparison_module._default_json_schema_grammar(schema) is grammar
+    assert calls == [('{"required":["e"],"type":"object"}', False)]
+
+
+def test_locked_llama_grammar_construction_failure_is_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail closed without copying a native converter diagnostic."""
+    runtime = cast(Any, ModuleType("llama_cpp"))
+
+    class FailedGrammarType:
+        @staticmethod
+        def from_json_schema(_schema: str, *, verbose: bool = True) -> object:
+            del verbose
+            raise ValueError("TOKEN=do-not-publish native schema detail")
+
+    runtime.LlamaGrammar = FailedGrammarType
+    monkeypatch.setattr(comparison_module, "_load_llama_cpp_runtime", lambda: runtime)
+
+    with pytest.raises(
+        RuntimeError,
+        match="JSON-schema grammar construction failed",
+    ) as error:
+        comparison_module._default_json_schema_grammar({"type": "object"})
+
+    assert "TOKEN" not in str(error.value)
+
+
+def test_gateway_rejects_missing_injected_grammar_before_decode(tmp_path: Path) -> None:
+    """Treat an injected grammar factory returning no object as a hard failure."""
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    decode_calls = 0
+
+    class Model:
+        def __call__(self, prompt: str, **kwargs: object) -> object:
+            del prompt, kwargs
+            raise AssertionError("raw completion must not be used")
+
+        def create_chat_completion(self, **_kwargs: object) -> dict[str, object]:
+            nonlocal decode_calls
+            decode_calls += 1
+            return {"choices": []}
+
+    def missing_grammar(_schema: dict[str, object]) -> object:
+        return cast(object, None)
+
+    gateway = LocalProposalGateway(
+        model_path,
+        model_factory=lambda **_kwargs: Model(),
+        grammar_factory=missing_grammar,
+    )
+    contract = replace(
+        _contract(),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+
+    with pytest.raises(RuntimeError, match="returned no grammar"):
+        gateway.propose(
+            comparison_module.bind_compact_focus_path(
+                "bounded",
+                "src/general_ludd/example.py",
+            ),
+            contract=contract,
+        )
+
+    assert decode_calls == 0

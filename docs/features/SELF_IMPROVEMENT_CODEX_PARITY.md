@@ -60,16 +60,21 @@ parsing remains authoritative for all count and byte limits.
 
 ## Structured proposal decoding
 
-The implementation boundary is llama-cpp-python's documented chat
-`response_format` API, using `{"type": "json_object", "schema": ...}` with
-the existing proposal schema. The repository pins llama-cpp-python 0.3.24. Its
-chat formatter converts that public request shape to
-`LlamaGrammar.from_json_schema`, and its schema converter emits object rules
-from `required`, `additionalProperties`, `const`, `enum`, array bounds,
-and supported patterns. Gludd must not maintain another JSON-Schema-to-GBNF
-converter or depend on private formatter helpers. It also must not use the newer
-OpenAI `{"type": "json_schema"}` spelling unless the pinned runtime explicitly
-supports it.
+The implementation boundary is llama-cpp-python's documented public chat API.
+Gludd passes the same trusted schema through both
+`response_format={"type": "json_object", "schema": ...}` and an explicit
+`grammar=LlamaGrammar.from_json_schema(...)`. The repository pins
+llama-cpp-python 0.3.24, whose generic chat formatter converts `response_format`
+to a sampler grammar and whose public chat signature also accepts `grammar`.
+The explicit argument is a backstop for chat handlers that forward grammar but
+do not perform the generic response-format conversion. A handler that honors
+`response_format` may replace it with the equivalent grammar; both inputs derive
+from the identical static schema. Gludd does not maintain another
+JSON-Schema-to-GBNF converter or depend on private formatter helpers. Grammar
+construction failure aborts before inference rather than falling back to plain
+JSON. The attempt identity binds the decoding mode and separate SHA-256 digests
+of the canary and proposal grammar schemas, so constrained and unconstrained v4
+attempts cannot alias.
 
 A schema is supplied through `response_format`, not merely
 `{"type": "json_object"}`; JSON-only mode proves syntax but cannot require the
@@ -78,11 +83,13 @@ proposal fields. Managed `PromptPlan` requests put immutable
 0600 `contract.json` file. Every prompt carries one parent-authored, validated
 focus-path marker. Managed output uses compact protocol v4: the model emits only
 `e` (edits), and every edit contains exactly `s`, `n`, and `z`. `s` is a
-one-based line in the immutable baseline, `n` is the number of baseline lines
-consumed, and `z` is the replacement UTF-8 text. A zero count inserts before
-`s`; line count plus one is the only end-of-file insertion boundary. Every
-coordinate addresses the original snapshot, never the result of an earlier
-edit. The owned worker decodes one typed `CompactSpanProposal` per shard and
+one-based line boundary in the immutable baseline, `n` is the number of
+baseline lines consumed, and `z` is the replacement UTF-8 text. For each shown
+contiguous `Lx` through `Ly` section, a zero count may insert at any boundary
+`s=x` through `s=y+1`, including immediately before or after the section. A
+boundary wholly inside an omitted gap remains forbidden. Every coordinate
+addresses the original snapshot, never the result of an earlier edit. The owned
+worker decodes one typed `CompactSpanProposal` per shard and
 publishes the complete span batch atomically. The parent then resolves each span
 with `splitlines(keepends=True)` and deterministically widens its baseline slice
 only as far as needed to form a bounded unique old-text anchor. It preserves the
@@ -94,8 +101,9 @@ Path, old text, operation, and commit subject are not model-supplied. An absent
 file accepts only one non-empty insertion at `{s: 1, n: 0}`; deleting a file
 requires one span covering the complete shown file with empty `z`. Existing-file
 spans must be canonically ordered, non-overlapping, in range, and wholly inside
-content disclosed by that prompt shard; a zero-count edit also requires its
-insertion boundary to be explicitly shown. Duplicate insertion boundaries,
+content disclosed by that prompt shard; a zero-count edit requires one of the
+closed boundary intervals derived from a shown contiguous section. Duplicate
+insertion boundaries,
 Boolean or non-integral coordinates, edits into omitted regions, inability to
 derive a unique bounded anchor, and a final file identical to the baseline are
 rejected. An existing empty file is therefore not treated as an absent-file
@@ -139,6 +147,17 @@ from the wire shape, binds the trusted focus marker and fixed commit subject
 into attempt identity, states the distinct-text and 3,072-byte rules in the
 prompt, and keeps strict rejection for no-op edits. The canary rejects
 unsupported chat or grammar behavior before reading a task-sized completion.
+
+The 3 September 2026 compact-v4 catalog run exposed two narrower protocol
+failures. Qwen returned a valid span at the edge of a shown section, but the
+parent incorrectly required both adjacent baseline lines to be visible.
+Closed boundary intervals now admit the deterministic before-first and
+after-last coordinates while still rejecting boundaries inside hidden gaps.
+DeepSeek completed 2,308 bytes with `stop` but surrounded the object with text.
+Gludd still rejects that as not one complete JSON object and never extracts a
+fence or substring. Explicit upstream grammar constraining addresses generation;
+the strict decoder, bounded diagnostic, v4 retry classification, lease release,
+and atomic exchange cleanup remain the fail-closed backstops.
 
 A September 2026 DeepSeek catalog attempt then exposed a separate parent-side
 gap. Both compact-v3 shards completed and passed worker schema validation, but a
@@ -671,6 +690,14 @@ Official sources:
   [schema-converter source](https://github.com/abetlen/llama-cpp-python/blob/main/llama_cpp/llama_grammar.py)
   constructs the required-property and additional-property grammar rules. These
   are upstream seams Gludd reuses rather than reimplementing.
+- [llama-cpp-python discussion 1173](https://github.com/abetlen/llama-cpp-python/discussions/1173)
+  records the maintainer clarification that `response_format` selects sampler
+  grammar rather than adding schema text to the prompt.
+- [llama-cpp-python issue 1478](https://github.com/abetlen/llama-cpp-python/issues/1478)
+  records the practitioner limitation that `response_format` is absent from raw
+  `create_completion`. Gludd stays on `create_chat_completion` and supplies its
+  already-supported explicit `grammar` argument instead of accepting prose or
+  fenced output.
 - [llama.cpp grammar documentation](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md)
   defines the supported JSON Schema subset and warns that the schema constrains
   output without being shown to the model, which is why Gludd also describes the
