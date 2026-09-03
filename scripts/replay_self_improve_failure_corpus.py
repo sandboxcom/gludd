@@ -538,7 +538,7 @@ def _replay_gateway_failure(case: FailureCase) -> str:
         )
     except (RuntimeError, ValueError) as exc:
         return _validation_retry_feedback(
-            str(exc),
+            exc,
             proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
         )
     raise CorpusMismatch(case.case_id, "expected_rejection_missing")
@@ -573,7 +573,7 @@ def _replay_parent_merge(case: FailureCase) -> str:
         )
     except (RuntimeError, ValueError) as exc:
         return _validation_retry_feedback(
-            str(exc),
+            exc,
             proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
         )
     raise CorpusMismatch(case.case_id, "expected_parent_rejection_missing")
@@ -596,7 +596,7 @@ def _replay_compact_span_parent(case: FailureCase) -> str:
         )
     except (RuntimeError, ValueError) as exc:
         return _validation_retry_feedback(
-            str(exc),
+            exc,
             proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
         )
     raise CorpusMismatch(case.case_id, "expected_parent_rejection_missing")

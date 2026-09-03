@@ -719,6 +719,76 @@ def test_parent_expands_v4_multifile_spans_and_cleans_owned_exchange(
     assert all(not path.exists() for path in owned.exchange_paths)
 
 
+def test_parent_scope_rejection_cleans_owned_exchange(tmp_path: Path) -> None:
+    """Clean every request artifact after a typed hidden-gap insertion rejection."""
+    path = "src/one.py"
+    baseline = "shown-a\nhidden-b\nhidden-c\nshown-d\n"
+    prompt = bind_compact_focus_path(
+        "Use only the numbered source lines.",
+        path,
+        editable_ranges=((1, 2), (4, 5)),
+    )
+    plan = PromptPlan(
+        shards=(PromptShard((path,), prompt, ((1, 2), (4, 5))),),
+        source_bytes=len(baseline.encode()),
+        baseline_files=((path, baseline),),
+        proposal_protocol="self-improve-compact-proposal-v4",
+    )
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+
+    class Gateway:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> CompactSpanProposal:
+            assert contract is not None
+            focus = next(
+                line.split("=", 1)[1]
+                for line in prompt.splitlines()
+                if line.startswith("GLUDD_SELF_IMPROVE_FOCUS_PATH=")
+            )
+            return worker_module._decode_compact_span_proposal(
+                '{"e":[{"s":3,"n":0,"z":"PASSWORD=hunter2\\n"}]}',
+                focus_path=focus,
+            )
+
+    owned = _InProcessOwnedRunner(Gateway)
+    task = TaskSpec(
+        task_id="S83.133",
+        objective="Reject a hidden-gap insertion.",
+        canonical_make_commands=(
+            "make test-files TESTFILES=tests/unit/test_example.py",
+        ),
+    )
+    reference = CodexReference(
+        baseline_sha="a" * 40,
+        reference_sha="b" * 40,
+        changed_files=frozenset({path}),
+        test_files=frozenset({"tests/unit/test_example.py"}),
+        changed_lines=1,
+        elapsed_seconds=1.0,
+    )
+
+    with pytest.raises(ValueError, match="first shown line through one past") as error:
+        runner_module.generate_local_proposal_plan(
+            owned,
+            model_path,
+            plan,
+            task,
+            reference,
+        )
+
+    assert "PASSWORD" not in str(error.value)
+    assert owned.exchange_paths
+    assert all(not artifact.exists() for artifact in owned.exchange_paths)
+
+
 def test_parent_rejects_batch_scope_drift_after_worker_schema_validation(
     tmp_path: Path,
 ) -> None:

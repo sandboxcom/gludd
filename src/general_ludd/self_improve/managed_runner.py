@@ -35,6 +35,7 @@ from general_ludd.self_improve.codex_comparison import (
     CodexReference,
     ComparisonResult,
     ProposalManifest,
+    _safe_compact_scope_telemetry,
     build_retry_prompt,
     local_proposal_attempt_identity_digest,
 )
@@ -1250,11 +1251,11 @@ class ManagedSelfImproveRunner:
                     self.progress_sink(
                         "SELF_IMPROVE_PROPOSAL_REJECTED "
                         f"attempt={attempt} "
-                        f"{_validation_retry_feedback(str(exc), proposal_protocol=_proposal_protocol(prompt))}"
+                        f"{_validation_retry_feedback(exc, proposal_protocol=_proposal_protocol(prompt))}"
                     )
                     if attempt == plan.max_attempts:
                         raise
-                    prompt = self._validation_retry_prompt(prompt, str(exc))
+                    prompt = self._validation_retry_prompt(prompt, exc)
                     continue
 
                 bound = PlanBoundProposal(
@@ -1453,11 +1454,11 @@ class ManagedSelfImproveRunner:
     def _validation_retry_prompt(
         self,
         prompt: PromptPlan | str,
-        error: str,
+        error: str | BaseException,
     ) -> PromptPlan | str:
         if isinstance(prompt, PromptPlan):
             if self.validation_retry_builder is not None:
-                return self.validation_retry_builder(prompt, error)
+                return self.validation_retry_builder(prompt, str(error))
             return _build_validation_retry_prompt_plan(prompt, error)
         return prompt + _validation_retry_suffix(error)
 
@@ -1499,10 +1500,11 @@ def _proposal_protocol(prompt: PromptPlan | str) -> str:
 
 
 def _validation_retry_feedback(
-    error: str,
+    error: str | BaseException,
     *,
     proposal_protocol: str | None = None,
 ) -> str:
+    error_text = str(error)
     if proposal_protocol is None:
         legacy_details = {
             detail
@@ -1511,7 +1513,7 @@ def _validation_retry_feedback(
         proposal_protocol = (
             COMPACT_PROPOSAL_PROTOCOL_V4
             if any(
-                detail in error
+                detail in error_text
                 for detail, _kind in LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.safe_feedback
                 if detail not in legacy_details
             )
@@ -1522,7 +1524,7 @@ def _validation_retry_feedback(
         if proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V3
         else LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
     )
-    cleaned = error.replace("\x00", "")
+    cleaned = error_text.replace("\x00", "")
     marker_details = re.findall(
         rf"{re.escape(protocol.error_marker)}[ \t]+([^\r\n]+)",
         cleaned,
@@ -1550,14 +1552,27 @@ def _validation_retry_feedback(
             feedback_type = expected_type
             safe_detail = expected_detail
             break
-    return (
+    feedback = (
         f"protocol={protocol.version} type={feedback_type} "
         f"source={source} detail={safe_detail}"
     )
+    telemetry = (
+        _safe_compact_scope_telemetry(error)
+        if isinstance(error, BaseException)
+        else ""
+    )
+    if telemetry:
+        feedback += f" telemetry={telemetry}"
+    if len(feedback.encode("utf-8")) > protocol.max_feedback_bytes:
+        return (
+            f"protocol={protocol.version} type={feedback_type} "
+            f"source={source} detail={safe_detail}"
+        )
+    return feedback
 
 
 def _validation_retry_suffix(
-    error: str,
+    error: str | BaseException,
     *,
     proposal_protocol: str = COMPACT_PROPOSAL_PROTOCOL_V3,
 ) -> str:
@@ -1573,7 +1588,10 @@ def _validation_retry_suffix(
     )
 
 
-def _build_validation_retry_prompt_plan(plan: PromptPlan, error: str) -> PromptPlan:
+def _build_validation_retry_prompt_plan(
+    plan: PromptPlan,
+    error: str | BaseException,
+) -> PromptPlan:
     suffix = _validation_retry_suffix(
         error,
         proposal_protocol=plan.proposal_protocol,

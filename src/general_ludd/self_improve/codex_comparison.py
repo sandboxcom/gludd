@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib
 import json
@@ -101,12 +102,17 @@ _COMPACT_PROPOSAL_PROTOCOL_VERSION = COMPACT_PROPOSAL_PROTOCOL_V4
 _COMPACT_PROPOSAL_TOKENS = 1024
 _COMPACT_MAX_CONTENT_BYTES = 3072
 _COMPACT_FOCUS_PATH_MARKER = "GLUDD_SELF_IMPROVE_FOCUS_PATH="
+_COMPACT_EDITABLE_RANGES_MARKER = "GLUDD_SELF_IMPROVE_EDITABLE_RANGES="
+_COMPACT_MAX_SCOPE_MARKER_BYTES = _MAX_PROMPT_SHARD_BYTES
+_COMPACT_MAX_SCOPE_COORDINATES = 2048
+_COMPACT_MAX_DIAGNOSTIC_RANGES = 4
+_COMPACT_MAX_SCOPE_TELEMETRY_BYTES = 256
 _COMPACT_COMMIT_MESSAGE = "fix: apply bounded self-improvement proposal"
 _STRUCTURED_CANARY_TOKENS = 32
 _DETERMINISTIC_DECODE_TEMPERATURE = 0.0
 _DETERMINISTIC_DECODE_SEED = 0
 _STRUCTURED_OUTPUT_REQUIRE_STOP = True
-_STRUCTURED_DECODING_MODE = "llama-cpp-explicit-json-schema-grammar-v1"
+_STRUCTURED_DECODING_MODE = "llama-cpp-parent-scope-enum-grammar-v2"
 _STRUCTURED_CANARY_PROMPT = 'Return {"ok":true}.'
 _STRUCTURED_CANARY_EXPECTED: dict[str, object] = {"ok": True}
 _COMPACT_ROOT_FIELDS = frozenset({"e"})
@@ -119,7 +125,7 @@ _COMPACT_OPERATION_BY_EMPTY_TEXT = {
     (True, False): "create",
 }
 _LEGACY_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v3"
-_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v4-line-span-boundary-v2"
+_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v4-line-span-boundary-v3"
 _COMPACT_MAX_ANCHOR_BYTES = 65_536
 _SAFE_FINISH_REASONS = frozenset(
     {"stop", "length", "tool_calls", "function_call", "content_filter"}
@@ -152,12 +158,76 @@ _COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
         },
     },
 }
+
+
+def _validated_compact_editable_ranges(
+    ranges: tuple[tuple[int, int], ...],
+) -> tuple[tuple[int, int], ...]:
+    """Validate one bounded canonical set of 1-based half-open shown ranges."""
+    if not isinstance(ranges, tuple):
+        raise ValueError("compact editable ranges must be an immutable tuple")
+    previous_end = 1
+    coordinates: set[int] = set()
+    for item in ranges:
+        if (
+            not isinstance(item, tuple)
+            or len(item) != 2
+            or any(
+                isinstance(value, bool) or not isinstance(value, int)
+                for value in item
+            )
+        ):
+            raise ValueError("compact editable ranges must contain integer pairs")
+        start, end = item
+        if start > _MAX_CONTENT_BYTES + 1 or end > _MAX_CONTENT_BYTES + 1:
+            raise ValueError(
+                "compact editable ranges are outside bounded baseline coordinates"
+            )
+        if start < 1 or end <= start or start < previous_end:
+            raise ValueError("compact editable ranges must be ordered half-open ranges")
+        if end - start + 1 > _COMPACT_MAX_SCOPE_COORDINATES:
+            raise ValueError(
+                "compact scope coordinate enum exceeds "
+                f"{_COMPACT_MAX_SCOPE_COORDINATES} entries"
+            )
+        coordinates.update(range(start, end + 1))
+        if len(coordinates) > _COMPACT_MAX_SCOPE_COORDINATES:
+            raise ValueError(
+                "compact scope coordinate enum exceeds "
+                f"{_COMPACT_MAX_SCOPE_COORDINATES} entries"
+            )
+        previous_end = end
+    return ranges
+
+
+def _compact_proposal_schema_for_ranges(
+    ranges: tuple[tuple[int, int], ...],
+) -> dict[str, object]:
+    """Specialize compact-v4 s/n bounds from one trusted prompt shard."""
+    validated = _validated_compact_editable_ranges(ranges)
+    coordinates = sorted(
+        {coordinate for start, end in validated for coordinate in range(start, end + 1)}
+    ) or [1]
+    max_old_lines = max((end - start for start, end in validated), default=0)
+    schema = copy.deepcopy(_COMPACT_PROPOSAL_JSON_SCHEMA)
+    root_properties = cast(dict[str, object], schema["properties"])
+    edits = cast(dict[str, object], root_properties["e"])
+    item = cast(dict[str, object], edits["items"])
+    properties = cast(dict[str, object], item["properties"])
+    properties["s"] = {"type": "integer", "enum": coordinates}
+    properties["n"] = {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": max_old_lines,
+    }
+    return schema
 _COMPACT_SYSTEM_PROMPT = (
     "Return exactly one compact JSON object with only e and no prose. "
     "e is an array whose entries contain only s, n, and z. The trusted parent supplies "
     "the one focus path, immutable baseline, and commit message; never emit them. s is "
     "the 1-based numbered baseline line where the edit begins, n is the number of old "
     "baseline lines consumed, and z is exact replacement text without line labels. "
+    "Choose s only from the per-shard integer enum in the JSON grammar. "
     "For a shown Lx..Ly section, n=0 may insert with s=x..y+1 only; never select a "
     "boundary wholly inside a hidden gap. Empty z deletes consumed lines; s=1, n=0 "
     "creates an absent file. The edit must change content. Across all edits, z may "
@@ -303,13 +373,13 @@ LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
     parent_source=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.parent_source,
     fallback_source=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.fallback_source,
     fallback_tail_bytes=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.fallback_tail_bytes,
-    max_feedback_bytes=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.max_feedback_bytes,
+    max_feedback_bytes=512,
     fallback_type=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.fallback_type,
     redacted_detail=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.redacted_detail,
     prompt_prefix=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.prompt_prefix,
     prompt_suffix=(
-        "\nReturn a complete object satisfying every required field and numbered-line "
-        "boundary. For shown Lx-Ly, use insertion s=x..y+1; never a hidden gap."
+        "\nUse only an s value permitted by the per-shard JSON grammar. "
+        "For shown Lx-Ly, use insertion s=x..y+1; never a hidden gap."
     ),
     safe_feedback=(
         *LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.safe_feedback,
@@ -406,6 +476,9 @@ def local_proposal_attempt_identity_digest(
             ),
             "max_content_bytes": _COMPACT_MAX_CONTENT_BYTES,
             "trusted_focus_path_marker": _COMPACT_FOCUS_PATH_MARKER,
+            "trusted_editable_ranges_marker": (
+                None if legacy else _COMPACT_EDITABLE_RANGES_MARKER
+            ),
             "trusted_commit_message": _COMPACT_COMMIT_MESSAGE,
         },
         "structured_canary": {
@@ -415,6 +488,20 @@ def local_proposal_attempt_identity_digest(
         },
         "structured_decoding": {
             "mode": _STRUCTURED_DECODING_MODE,
+            "proposal_schema_strategy": (
+                "static-v3"
+                if legacy
+                else "parent-marker-bounded-integer-enum-v1"
+            ),
+            "max_scope_coordinates": (
+                None if legacy else _COMPACT_MAX_SCOPE_COORDINATES
+            ),
+            "max_scope_marker_bytes": (
+                None if legacy else _COMPACT_MAX_SCOPE_MARKER_BYTES
+            ),
+            "scope_marker_encoding": (
+                None if legacy else "canonical-ascii-json-v1"
+            ),
             "canary_grammar_schema_sha256": hashlib.sha256(
                 json.dumps(
                     _STRUCTURED_CANARY_SCHEMA,
@@ -1099,6 +1186,76 @@ def decode_compact_span_batch(
     return tuple(proposals)
 
 
+@dataclass(frozen=True)
+class _CompactSpanScopeEvidence:
+    """Parent-derived, model-text-free evidence for one rejected coordinate."""
+
+    path_sha256: str
+    start_line: int
+    old_line_count: int
+    editable_ranges: tuple[tuple[int, int], ...]
+
+
+class _CompactSpanScopeError(ValueError):
+    """Typed parent rejection that carries only safe coordinate evidence."""
+
+    def __init__(self, detail: str, evidence: _CompactSpanScopeEvidence) -> None:
+        super().__init__(
+            f"{LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.parent_error_marker} {detail}"
+        )
+        self.evidence = evidence
+
+
+def _bounded_scope_coordinate(value: int) -> str:
+    """Render feasible line coordinates exactly and classify impossible magnitudes."""
+    if value <= _MAX_CONTENT_BYTES + 1:
+        return str(value)
+    return f">{_MAX_CONTENT_BYTES + 1}"
+
+
+def _safe_compact_scope_telemetry(error: BaseException) -> str:
+    """Return bounded typed scope evidence, excluding path, source, z, and output."""
+    if not isinstance(error, _CompactSpanScopeError):
+        return ""
+    evidence = error.evidence
+    range_limit = min(_COMPACT_MAX_DIAGNOSTIC_RANGES, len(evidence.editable_ranges))
+    for displayed in range(range_limit, -1, -1):
+        selected = evidence.editable_ranges[:displayed]
+        remaining = len(evidence.editable_ranges) - displayed
+        omitted = f",+{remaining}" if remaining else ""
+        sections = ",".join(f"[{start},{end})" for start, end in selected)
+        boundaries = ",".join(f"[{start},{end}]" for start, end in selected)
+        value = (
+            f"path_sha256={evidence.path_sha256} "
+            f"received_s={_bounded_scope_coordinate(evidence.start_line)} "
+            f"received_n={_bounded_scope_coordinate(evidence.old_line_count)} "
+            f"sections={sections or '[]'}{omitted} "
+            f"boundaries={boundaries or '[]'}{omitted}"
+        )
+        if len(value.encode("utf-8")) <= _COMPACT_MAX_SCOPE_TELEMETRY_BYTES:
+            return value
+    raise RuntimeError("compact scope telemetry cannot fit its fixed protocol bound")
+
+
+def _parent_span_scope_error(
+    detail: str,
+    *,
+    focus_path: str,
+    span: CompactLineSpan,
+    editable_ranges: tuple[tuple[int, int], ...],
+) -> ValueError:
+    """Create one typed rejection using only trusted path/range and numeric fields."""
+    return _CompactSpanScopeError(
+        detail,
+        _CompactSpanScopeEvidence(
+            path_sha256=hashlib.sha256(focus_path.encode("utf-8")).hexdigest(),
+            start_line=span.start_line,
+            old_line_count=span.old_line_count,
+            editable_ranges=editable_ranges,
+        ),
+    )
+
+
 def _parent_proposal_error(detail: str) -> ValueError:
     """Create one path-free parent-validation error for typed retry feedback."""
     return ValueError(
@@ -1264,9 +1421,12 @@ def _manifest_from_compact_span_proposal(
                     and span.start_line == 1
                 )
                 if not boundary_is_shown and not empty_file_boundary:
-                    raise _parent_proposal_error(
+                    raise _parent_span_scope_error(
                         "compact insertion must use s from the first shown line through "
-                        "one past the last shown line of one contiguous section"
+                        "one past the last shown line of one contiguous section",
+                        focus_path=proposal.focus_path,
+                        span=span,
+                        editable_ranges=editable_ranges,
                     )
             if start == 0 and end == line_count and not span.new_text:
                 edits.append(
@@ -1908,15 +2068,80 @@ def _safe_token_count(output: Mapping[object, object], field: str) -> str:
     return "unknown"
 
 
-def bind_compact_focus_path(prompt: str, focus_path: str) -> str:
-    """Bind one parent-trusted path to a compact single-file prompt."""
+def _trusted_compact_editable_ranges(
+    prompt: str,
+) -> tuple[tuple[int, int], ...] | None:
+    """Read only one canonical leading parent scope marker, never source labels."""
+    first_line = prompt.partition("\n")[0]
+    if not first_line.startswith(_COMPACT_EDITABLE_RANGES_MARKER):
+        if _COMPACT_EDITABLE_RANGES_MARKER in prompt:
+            raise ValueError("compact editable-range marker must be the first prompt line")
+        return None
+    if prompt.count(_COMPACT_EDITABLE_RANGES_MARKER) != 1:
+        raise ValueError("compact prompt must contain exactly one editable-range marker")
+    if len(first_line.encode("utf-8")) > _COMPACT_MAX_SCOPE_MARKER_BYTES:
+        raise ValueError(
+            "compact editable-range marker exceeds "
+            f"{_COMPACT_MAX_SCOPE_MARKER_BYTES} bytes"
+        )
+    if not first_line.isascii():
+        raise ValueError("compact editable-range marker must be ASCII")
+    encoded = first_line.removeprefix(_COMPACT_EDITABLE_RANGES_MARKER)
+    try:
+        value = json.loads(encoded)
+    except (RecursionError, ValueError) as exc:
+        raise ValueError("compact editable-range marker is not canonical JSON") from exc
+    if not isinstance(value, list) or not all(
+        isinstance(item, list) and len(item) == 2 for item in value
+    ):
+        raise ValueError("compact editable-range marker must contain integer pairs")
+    ranges = tuple((item[0], item[1]) for item in value)
+    validated = _validated_compact_editable_ranges(ranges)
+    canonical = json.dumps(
+        [list(item) for item in validated],
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    if encoded != canonical:
+        raise ValueError("compact editable-range marker is not canonical JSON")
+    return validated
+
+
+def bind_compact_focus_path(
+    prompt: str,
+    focus_path: str,
+    *,
+    editable_ranges: tuple[tuple[int, int], ...] | None = None,
+) -> str:
+    """Bind one parent-trusted path and optional exact scope to a compact prompt."""
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("compact prompt must be non-empty")
     if _COMPACT_FOCUS_PATH_MARKER in prompt:
         raise ValueError("compact prompt already contains a focus-path marker")
     if not isinstance(focus_path, str) or not _safe_relative_path(focus_path):
         raise ValueError("compact focus path is not repository-relative and confined")
-    return f"{_COMPACT_FOCUS_PATH_MARKER}{focus_path}\n{prompt}"
+    path_bound = f"{_COMPACT_FOCUS_PATH_MARKER}{focus_path}\n{prompt}"
+    if editable_ranges is None:
+        return path_bound
+    if _COMPACT_EDITABLE_RANGES_MARKER in prompt:
+        raise ValueError("compact prompt already contains an editable-range marker")
+    validated = _validated_compact_editable_ranges(editable_ranges)
+    encoded = json.dumps(
+        [list(item) for item in validated],
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    marker_line = f"{_COMPACT_EDITABLE_RANGES_MARKER}{encoded}"
+    if len(marker_line.encode("ascii")) > _COMPACT_MAX_SCOPE_MARKER_BYTES:
+        raise ValueError(
+            "compact editable-range marker exceeds "
+            f"{_COMPACT_MAX_SCOPE_MARKER_BYTES} bytes"
+        )
+    return (
+        f"{marker_line}\n"
+        f"{_COMPACT_FOCUS_PATH_MARKER}{focus_path}\n"
+        f"{prompt}"
+    )
 
 
 def _trusted_compact_focus_path(prompt: str) -> str:
@@ -2214,7 +2439,14 @@ class LocalProposalGateway:
                 schema = (
                     _LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA
                     if legacy
-                    else _COMPACT_PROPOSAL_JSON_SCHEMA
+                    else (
+                        _COMPACT_PROPOSAL_JSON_SCHEMA
+                        if (
+                            scope_ranges := _trusted_compact_editable_ranges(prompt)
+                        )
+                        is None
+                        else _compact_proposal_schema_for_ranges(scope_ranges)
+                    )
                 )
                 output = chat_model.create_chat_completion(
                     messages=[

@@ -1,6 +1,7 @@
 """Regression tests for deterministic local proposal prompt decomposition."""
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -223,6 +224,7 @@ def test_multifile_plan_uses_singleton_focus_shards_in_one_worker_request(
     )
     assert all(
         shard.prompt.startswith(
+            "GLUDD_SELF_IMPROVE_EDITABLE_RANGES=[[1,3]]\n"
             f"GLUDD_SELF_IMPROVE_FOCUS_PATH={shard.focus_paths[0]}\n"
         )
         for shard in plan.shards
@@ -365,7 +367,7 @@ def test_51859_byte_multifile_context_is_decomposed_without_identity_loss(tmp_pa
     assert max(sizes) < 51_859 // 3
     assert {path for shard in plan.shards for path in shard.focus_paths} == set(_PATHS)
     shared_prefixes = {
-        shard.prompt.split("\n", 1)[1].split("\nShard-specific contract:", 1)[0]
+        shard.prompt.split("\n", 2)[2].split("\nShard-specific contract:", 1)[0]
         for shard in plan.shards
     }
     assert len(shared_prefixes) == 1
@@ -585,6 +587,53 @@ def test_compact_v4_live_json_retry_is_typed_bounded_and_actionable() -> None:
     assert len(suffix.encode("utf-8")) < 384
     assert retried.protocol_digest == plan.protocol_digest
     assert retried.proposal_protocol == runner_module.COMPACT_PROPOSAL_PROTOCOL_V4
+
+
+def test_compact_v4_scope_retry_preserves_only_safe_parent_telemetry() -> None:
+    """Make a rejected live coordinate actionable without echoing path or z."""
+    path = "src/private/TOKEN=path-secret.py"
+    baseline = "shown-a\nshown-b\nhidden-c\nhidden-d\nshown-e\nshown-f\n"
+    proposal = comparison_module._decode_compact_span_proposal(
+        '{"e":[{"s":4,"n":0,"z":"PASSWORD=hunter2\\n"}]}',
+        focus_path=path,
+    )
+    contract = ProposalContract(
+        baseline_sha="a" * 40,
+        task_id="S83.133",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    with pytest.raises(ValueError) as captured:
+        comparison_module.expand_compact_span_proposals(
+            (proposal,),
+            contract=contract,
+            expected_path_groups=((path,),),
+            expected_baseline_files={path: baseline},
+            expected_editable_ranges=(((1, 3), (5, 7)),),
+        )
+    plan = PromptPlan(
+        shards=(PromptShard((path,), "bounded prompt", ((1, 3), (5, 7))),),
+        source_bytes=len(baseline.encode()),
+        baseline_files=((path, baseline),),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+
+    retried = runner_module._build_validation_retry_prompt_plan(plan, captured.value)
+    suffix = retried.shards[0].prompt[len(plan.shards[0].prompt) :]
+
+    assert "type=edit_span_scope source=parent_validation" in suffix
+    assert (
+        f"telemetry=path_sha256={hashlib.sha256(path.encode()).hexdigest()} "
+        "received_s=4 received_n=0 sections=[1,3),[5,7) "
+        "boundaries=[1,3],[5,7]"
+    ) in suffix
+    assert "Use only an s value permitted by the per-shard JSON grammar" in suffix
+    assert all(
+        secret not in suffix
+        for secret in (path, "TOKEN", "path-secret", "PASSWORD", "hunter2", "shown-a")
+    )
+    assert len(suffix.encode("utf-8")) <= 768
 
 
 def test_shard_merger_preserves_exact_scope_tests_and_commands() -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -13,6 +14,7 @@ from typing import Any, ClassVar, cast
 
 import pytest
 
+import general_ludd.self_improve.codex_comparison as comparison_module
 import general_ludd.self_improve.runtime as runtime_module
 from general_ludd.local_model import LocalModelConfig, get_model
 from general_ludd.self_improve.codex_comparison import (
@@ -515,6 +517,70 @@ def test_live_deepseek_v4_rejection_releases_lease_and_reports_safe_retry(
             "output_bytes",
         )
     )
+    assert _LeaseManager.released == 1
+
+
+def test_v4_scope_rejection_event_emits_bounded_coordinate_telemetry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Publish only parent-derived scope evidence and still release the lease."""
+    _wire_common(tmp_path, monkeypatch)
+    path = "src/private/TOKEN=path-secret.py"
+    baseline = "shown-a\nshown-b\nhidden-c\nhidden-d\nshown-e\nshown-f\n"
+    plan = PromptPlan(
+        shards=(PromptShard((path,), "bounded prompt", ((1, 3), (5, 7))),),
+        source_bytes=len(baseline.encode()),
+        baseline_files=((path, baseline),),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    monkeypatch.setattr(runner, "build_prompt", lambda *_args: plan)
+    proposal = comparison_module._decode_compact_span_proposal(
+        '{"e":[{"s":4,"n":0,"z":"PASSWORD=hunter2\\n"}]}',
+        focus_path=path,
+    )
+
+    def reject(*_args: object) -> ProposalManifest:
+        return comparison_module.expand_compact_span_proposals(
+            (proposal,),
+            contract=comparison_module.ProposalContract(
+                baseline_sha="a" * 40,
+                task_id="S83.133",
+                tests=("tests/unit/test_example.py",),
+                make_commands=(
+                    "make test-files TESTFILES=tests/unit/test_example.py",
+                ),
+                proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+            ),
+            expected_path_groups=((path,),),
+            expected_baseline_files={path: baseline},
+            expected_editable_ranges=(((1, 3), (5, 7)),),
+        )
+
+    monkeypatch.setattr(runner, "generate_local_proposal_plan", reject)
+    args = _args(_task_file(tmp_path))
+    args.max_attempts = 1
+
+    with pytest.raises(ValueError):
+        runner.run_benchmark(args)
+
+    rejected = next(
+        line
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("SELF_IMPROVE_PROPOSAL_REJECTED")
+    )
+    assert "type=edit_span_scope source=parent_validation" in rejected
+    assert (
+        f"telemetry=path_sha256={hashlib.sha256(path.encode()).hexdigest()} "
+        "received_s=4 received_n=0 sections=[1,3),[5,7) "
+        "boundaries=[1,3],[5,7]"
+    ) in rejected
+    assert all(
+        secret not in rejected
+        for secret in (path, "TOKEN", "path-secret", "PASSWORD", "hunter2", "shown-a")
+    )
+    assert len(rejected.encode("utf-8")) <= 640
     assert _LeaseManager.released == 1
 
 

@@ -159,6 +159,32 @@ fence or substring. Explicit upstream grammar constraining addresses generation;
 the strict decoder, bounded diagnostic, v4 retry classification, lease release,
 and atomic exchange cleanup remain the fail-closed backstops.
 
+The subsequent `self-improve-catalog-v4-grammar-live-20260903` run proved that
+generic JSON grammar was necessary but insufficient: both Qwen and DeepSeek
+returned strict compact objects whose insertion coordinate was outside every
+shown section. New prompt shards therefore begin with one canonical,
+parent-authored editable-range marker. The worker reads only that leading marker,
+never `L...` source text or model output, and specializes `s` to a bounded integer
+enum containing the closed insertion boundaries of the trusted half-open ranges.
+Hidden-gap coordinates are absent from the grammar, while the unchanged parent
+validator still checks `n`, consumed lines, immutable snapshots, unique anchors,
+and exact application. More than 2,048 possible `s` values fails before grammar
+construction instead of widening the schema. The marker is canonical ASCII JSON,
+is independently capped at 16,384 bytes before parsing, rejects duplicate or
+overlapping sections, and deduplicates the shared boundary of adjacent half-open
+sections into an ordered enum. Coordinates beyond the maximum baseline byte space
+also fail before enum expansion, preventing sparse huge-integer markers. Markerless
+stored v4 prompts retain their prior static schema and strict parent validation
+without reinterpretation; the marker, encoding and size rules, enum strategy, cap,
+prompt digest, and decoder revision rotate attempt identity for new plans.
+
+An insertion-scope rejection now carries typed parent-only telemetry: SHA-256 of
+the focus path, received `s` and `n`, and a capped rendering of allowed half-open
+sections and closed boundaries. The model-authored `z`, baseline source, raw path,
+and raw completion are never fields. Events, terminal output, corpus replay, and
+retry prompts share the same 512-byte feedback ceiling; cleanup and atomic apply
+semantics are unchanged.
+
 A September 2026 DeepSeek catalog attempt then exposed a separate parent-side
 gap. Both compact-v3 shards completed and passed worker schema validation, but a
 replacement precondition did not apply exactly to the immutable baseline. That
@@ -657,6 +683,9 @@ harness cleanup compensates for missing application ownership.
   shard and one 300-second total owned worker timeout per candidate attempt. The
   legacy single-string compatibility path remains 4,096 tokens; the strict merged
   proposal remains roughly 1.25 MiB at most.
+- At most 2,048 parent-derived integer `s` values in one per-shard grammar and at
+  most four displayed ranges inside a 256-byte scope-telemetry field; complete
+  typed retry feedback remains bounded to 512 bytes.
 - 2 MiB observable command capture with 15-second heartbeats.
 - 128 Codex-reference files.
 - One candidate worktree per attempt; commands stop after the first failure.
@@ -698,6 +727,11 @@ Official sources:
   `create_completion`. Gludd stays on `create_chat_completion` and supplies its
   already-supported explicit `grammar` argument instead of accepting prose or
   fenced output.
+- [llama-cpp-python issue 1097](https://github.com/abetlen/llama-cpp-python/issues/1097)
+  records a long-lived practitioner failure where JSON-schema conversion rejected
+  `oneOf`/`anyOf`. Gludd therefore emits a bounded integer enum for disjoint scope
+  rather than depending on combinator support, and tests the real locked 0.3.24
+  `LlamaGrammar.from_json_schema` path.
 - [llama.cpp grammar documentation](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md)
   defines the supported JSON Schema subset and warns that the schema constrains
   output without being shown to the model, which is why Gludd also describes the

@@ -576,7 +576,7 @@ def _public_failure_feedback(exc: BaseException) -> str:
         typed_failure = exc.failure.value
         source = "model_lifecycle"
     if typed_failure is None:
-        return _validation_retry_feedback(str(exc))
+        return _validation_retry_feedback(exc)
 
     protocol = LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
     feedback = (
@@ -1130,6 +1130,7 @@ def _render_prompt_shard(
     required_tests: tuple[str, ...],
     focus_paths: tuple[str, ...],
     contexts: dict[str, str],
+    editable_ranges: tuple[tuple[int, int], ...],
     *,
     shard_index: int,
     shard_total: int,
@@ -1144,6 +1145,7 @@ def _render_prompt_shard(
         "is authoritative. The parent supplies path, operation, commit message, tests, "
         "and commands; never emit those fields. s is a 1-based L-number, n is the count "
         "of old numbered lines, and z is replacement text without L<number>| labels. "
+        "Choose s only from the per-shard integer enum in the JSON grammar. "
         "Use only explicitly shown lines and boundaries, keep z within 3,072 UTF-8 "
         "bytes total, and order non-overlapping edits. For each shown Lx-Ly section, "
         "n=0 may use s=x..y+1, including before its first or after its last line, but "
@@ -1165,7 +1167,11 @@ def _render_prompt_shard(
         + "\nExact baseline contexts for the focus paths:\n"
         + "\n\n".join(contexts[path] for path in focus_paths)
     )
-    return bind_compact_focus_path(body, focus_paths[0])
+    return bind_compact_focus_path(
+        body,
+        focus_paths[0],
+        editable_ranges=editable_ranges,
+    )
 
 
 def build_prompt(
@@ -1205,6 +1211,7 @@ def build_prompt(
             required_tests,
             group,
             contexts,
+            editable_ranges[group[0]],
             shard_index=1,
             shard_total=1,
         )
@@ -1223,6 +1230,7 @@ def build_prompt(
                 required_tests,
                 group,
                 contexts,
+                editable_ranges[group[0]],
                 shard_index=index,
                 shard_total=len(groups),
             ),

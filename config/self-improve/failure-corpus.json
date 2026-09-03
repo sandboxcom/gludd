@@ -204,9 +204,10 @@
     },
     {
       "expected": {
-        "detail": "compact insertion must use s from the first shown line through one past the last shown line of one contiguous section",
+        "detail": "compact insertion must use s from the first shown line through one past the last shown line of one contiguous section telemetry=path_sha256=9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 received_s=4 received_n=0 sections=[1,3),[5,7) boundaries=[1,3],[5,7]",
         "forbidden_substrings": [
-          "MODEL_SECRET"
+          "MODEL_SECRET",
+          "test"
         ],
         "source": "parent_validation",
         "type": "edit_span_scope"
@@ -224,7 +225,7 @@
             7
           ]
         ],
-        "focus_path": "src/general_ludd/self_improve/example.py",
+        "focus_path": "test",
         "model_output": "{\"e\":[{\"n\":0,\"s\":4,\"z\":\"MODEL_SECRET=do-not-copy\\n\"}]}"
       },
       "kind": "compact_span_parent"

@@ -70,7 +70,147 @@ def test_tracked_corpus_replays_every_observed_failure_class() -> None:
 
     assert tuple(result.case_id for result in results) == EXPECTED_CASES
     assert all(result.passed for result in results)
-    assert all(result.feedback_bytes <= 256 for result in results)
+    assert all(result.feedback_bytes <= 512 for result in results)
+
+
+def _trace_events(
+    phases: tuple[str, ...],
+    causes: tuple[object, ...],
+) -> list[dict[str, object]]:
+    """Build one explicit acquisition trace for state-machine branch tests."""
+    return [
+        {"phase": phase, "cause": cause}
+        for phase, cause in zip(phases, causes, strict=True)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("phases", "causes", "accepted", "outcome"),
+    (
+        (
+            corpus._COMPLETED_ACQUISITION_TRACE,
+            (None, None, None, None, None),
+            True,
+            "completed",
+        ),
+        (
+            corpus._ROTATED_LEGACY_TRACE,
+            ("proposal_validation", None, None),
+            True,
+            "replanned",
+        ),
+        (
+            corpus._EXHAUSTED_PLAN_TRACE,
+            ("proposal_validation", None, None, "model_plan_exhausted"),
+            True,
+            "model_plan_exhausted",
+        ),
+        (
+            corpus._TERMINAL_REFUSAL_TRACE,
+            (None, "timeout", "timeout"),
+            True,
+            "refused",
+        ),
+    ),
+)
+def test_acquisition_trace_accepts_each_canonical_terminal_shape(
+    phases: tuple[str, ...],
+    causes: tuple[object, ...],
+    accepted: bool,
+    outcome: str,
+) -> None:
+    """Cover each explicit successful terminal path without model execution."""
+    verdict = corpus.check_acquisition_trace(_trace_events(phases, causes))
+
+    assert verdict.accepted is accepted
+    assert verdict.outcome == outcome
+
+
+@pytest.mark.parametrize(
+    ("events", "match"),
+    (
+        ([], "1..16 events"),
+        (
+            [{"phase": "eviction_planned"}],
+            "event fields drifted",
+        ),
+        (
+            [{"phase": "unknown", "cause": None}],
+            "phase is unsupported",
+        ),
+        (
+            [{"phase": "eviction_planned", "cause": 7}],
+            "cause must be a string or null",
+        ),
+        (
+            _trace_events(
+                corpus._COMPLETED_ACQUISITION_TRACE,
+                ("timeout", None, None, None, None),
+            ),
+            "completed acquisition trace cannot contain a cause",
+        ),
+        (
+            _trace_events(
+                corpus._ROTATED_LEGACY_TRACE,
+                ("proposal_validation", None, "timeout"),
+            ),
+            "legacy outcome invalidation is not canonical",
+        ),
+        (
+            _trace_events(
+                corpus._LEGACY_EMPTY_PLAN_TRACE,
+                (None, None, None),
+            ),
+            "legacy outcome is not canonical",
+        ),
+        (
+            _trace_events(
+                corpus._EXHAUSTED_PLAN_TRACE,
+                ("proposal_validation", None, None, "timeout"),
+            ),
+            "terminal outcome is not typed",
+        ),
+        (
+            [{"phase": "eviction_planned", "cause": None}],
+            "unsupported transition",
+        ),
+        (
+            _trace_events(
+                corpus._TERMINAL_REFUSAL_TRACE,
+                (None, None, None),
+            ),
+            "typed safe acquisition cause",
+        ),
+        (
+            _trace_events(
+                corpus._TERMINAL_REFUSAL_TRACE,
+                (None, "timeout", "io"),
+            ),
+            "matching typed safe acquisition cause",
+        ),
+        (
+            _trace_events(
+                corpus._PHANTOM_PROPOSAL_TRACE,
+                (None, "timeout", "timeout", None),
+            ),
+            "matching typed safe acquisition cause",
+        ),
+        (
+            _trace_events(
+                corpus._TERMINAL_REFUSAL_TRACE,
+                (None, "unknown", "unknown"),
+            ),
+            "typed safe acquisition cause",
+        ),
+    ),
+)
+def test_acquisition_trace_rejects_every_ambiguous_transition(
+    events: list[dict[str, object]],
+    match: str,
+) -> None:
+    """Fail closed for malformed transitions and untyped or inconsistent causes."""
+    with pytest.raises(ValueError, match=match):
+        corpus.check_acquisition_trace(events)
 
 
 @pytest.mark.parametrize(
@@ -129,7 +269,11 @@ def test_tracked_corpus_replays_every_observed_failure_class() -> None:
             "edit_span_scope",
             "parent_validation",
             "compact insertion must use s from the first shown line through one past "
-            "the last shown line of one contiguous section",
+            "the last shown line of one contiguous section "
+            "telemetry=path_sha256="
+            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 "
+            "received_s=4 received_n=0 sections=[1,3),[5,7) "
+            "boundaries=[1,3],[5,7]",
         ),
         (
             "compact-v4-prefaced-json-object",

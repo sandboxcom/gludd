@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
@@ -294,6 +297,9 @@ def test_attempt_identity_binds_complete_managed_output_protocol(
         ("_COMPACT_PROPOSAL_TOKENS", 1025),
         ("_COMPACT_MAX_CONTENT_BYTES", 3073),
         ("_COMPACT_FOCUS_PATH_MARKER", "CHANGED_FOCUS_PATH="),
+        ("_COMPACT_EDITABLE_RANGES_MARKER", "CHANGED_EDITABLE_RANGES="),
+        ("_COMPACT_MAX_SCOPE_MARKER_BYTES", 16_383),
+        ("_COMPACT_MAX_SCOPE_COORDINATES", 2047),
         ("_COMPACT_COMMIT_MESSAGE", "fix: changed trusted commit message"),
         ("_STRUCTURED_CANARY_TOKENS", 33),
         ("_DETERMINISTIC_DECODE_SEED", 1),
@@ -1386,6 +1392,236 @@ def test_compact_v4_gateway_passes_distinct_explicit_json_schema_grammars(
     assert grammars[0] is not grammars[1]
 
 
+def test_compact_v4_gateway_compiles_parent_scope_into_integer_enum(
+    tmp_path: Path,
+) -> None:
+    """Constrain s to exact shown-section boundaries before model sampling."""
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    calls: list[dict[str, object]] = []
+    grammar_schemas: list[dict[str, object]] = []
+
+    class SpanModel:
+        def __call__(self, prompt: str, **kwargs: object) -> object:
+            del prompt, kwargs
+            raise AssertionError("raw completion must not be used")
+
+        def create_chat_completion(self, **kwargs: object) -> dict[str, object]:
+            calls.append(dict(kwargs))
+            content = (
+                '{"ok":true}'
+                if len(calls) == 1
+                else '{"e":[{"s":3,"n":1,"z":"changed\\n"}]}'
+            )
+            return {
+                "choices": [
+                    {"finish_reason": "stop", "message": {"content": content}}
+                ]
+            }
+
+    def grammar_factory(schema: dict[str, object]) -> object:
+        grammar_schemas.append(schema)
+        return object()
+
+    prompt = comparison_module.bind_compact_focus_path(
+        "Use only the numbered source lines.",
+        "src/general_ludd/example.py",
+        editable_ranges=((3, 6), (10, 12)),
+    )
+    proposal = LocalProposalGateway(
+        model_path,
+        model_factory=lambda **_kwargs: SpanModel(),
+        grammar_factory=grammar_factory,
+    ).propose(
+        prompt,
+        contract=replace(
+            _contract(),
+            proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+        ),
+    )
+
+    assert isinstance(proposal, comparison_module.CompactSpanProposal)
+    root_properties = cast(dict[str, object], grammar_schemas[1]["properties"])
+    edits = cast(dict[str, object], root_properties["e"])
+    item = cast(dict[str, object], edits["items"])
+    item_properties = cast(dict[str, object], item["properties"])
+    assert item_properties["s"] == {
+        "type": "integer",
+        "enum": [3, 4, 5, 6, 10, 11, 12],
+    }
+    assert item_properties["n"] == {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 3,
+    }
+    assert calls[1]["response_format"] == {
+        "type": "json_object",
+        "schema": grammar_schemas[1],
+    }
+
+
+def test_compact_v4_scope_marker_collision_and_enum_overflow_fail_closed() -> None:
+    """Trust only one parent-prepended scope and bound grammar construction."""
+    marker = "GLUDD_SELF_IMPROVE_EDITABLE_RANGES="
+    with pytest.raises(ValueError, match="already contains an editable-range marker"):
+        comparison_module.bind_compact_focus_path(
+            f"task text\n{marker}[[1,2]]",
+            "src/general_ludd/example.py",
+            editable_ranges=((1, 2),),
+        )
+
+    with pytest.raises(ValueError, match="scope coordinate enum exceeds 2048"):
+        comparison_module.bind_compact_focus_path(
+            "bounded task",
+            "src/general_ludd/example.py",
+            editable_ranges=((1, 2049),),
+        )
+
+
+@pytest.mark.parametrize(
+    ("encoded", "match"),
+    [
+        ("[[1,3],[1,3]]", "ordered half-open ranges"),
+        ("[[1,4],[3,5]]", "ordered half-open ranges"),
+        ("[[3,5],[1,3]]", "ordered half-open ranges"),
+        ("[[1, 3]]", "not canonical JSON"),
+        ("[[1,3]]\N{NO-BREAK SPACE}", "must be ASCII"),
+        (f"[[{'9' * 5000},1]]", "not canonical JSON"),
+    ],
+)
+def test_compact_v4_scope_marker_rejects_noncanonical_sections(
+    encoded: str,
+    match: str,
+) -> None:
+    """Reject duplicate, overlapping, unordered, or noncanonical scope markers."""
+    marker = "GLUDD_SELF_IMPROVE_EDITABLE_RANGES="
+    prompt = (
+        f"{marker}{encoded}\n"
+        "GLUDD_SELF_IMPROVE_FOCUS_PATH=src/general_ludd/example.py\n"
+        "bounded task"
+    )
+
+    with pytest.raises(ValueError, match=match):
+        comparison_module._trusted_compact_editable_ranges(prompt)
+
+
+def test_compact_v4_scope_marker_has_an_independent_byte_bound() -> None:
+    """Reject an oversized leading marker before JSON parsing or grammar work."""
+    marker = "GLUDD_SELF_IMPROVE_EDITABLE_RANGES="
+    oversized = marker + ("0" * (16_384 - len(marker) + 1))
+
+    with pytest.raises(ValueError, match="editable-range marker exceeds 16384 bytes"):
+        comparison_module._trusted_compact_editable_ranges(f"{oversized}\nbounded task")
+
+
+def test_compact_v4_scope_coordinates_cannot_exceed_baseline_byte_space() -> None:
+    """Reject sparse huge coordinates even when their enum cardinality is small."""
+    with pytest.raises(ValueError, match="outside bounded baseline coordinates"):
+        comparison_module._compact_proposal_schema_for_ranges(
+            ((1_048_577, 1_048_578),)
+        )
+
+
+@pytest.mark.parametrize(
+    ("prompt", "match"),
+    [
+        (
+            "bounded task\nGLUDD_SELF_IMPROVE_EDITABLE_RANGES=[[1,2]]",
+            "must be the first prompt line",
+        ),
+        (
+            "GLUDD_SELF_IMPROVE_EDITABLE_RANGES=[[1,2]]\n"
+            "GLUDD_SELF_IMPROVE_EDITABLE_RANGES=[[3,4]]",
+            "exactly one editable-range marker",
+        ),
+        (
+            "GLUDD_SELF_IMPROVE_EDITABLE_RANGES={\nbounded task",
+            "not canonical JSON",
+        ),
+        (
+            "GLUDD_SELF_IMPROVE_EDITABLE_RANGES=[1,2]\nbounded task",
+            "must contain integer pairs",
+        ),
+        (
+            "GLUDD_SELF_IMPROVE_EDITABLE_RANGES=[[true,2]]\nbounded task",
+            "must contain integer pairs",
+        ),
+    ],
+)
+def test_compact_v4_scope_marker_fail_closed_parser_paths(
+    prompt: str,
+    match: str,
+) -> None:
+    """Reject every ambiguous leading-marker shape without reading source labels."""
+    with pytest.raises(ValueError, match=match):
+        comparison_module._trusted_compact_editable_ranges(prompt)
+
+
+def test_compact_v4_scope_enum_is_sorted_and_deduplicates_adjacent_boundaries() -> None:
+    """Compile adjacent half-open sections to one ordered unique integer enum."""
+    schema = comparison_module._compact_proposal_schema_for_ranges(
+        ((8, 10), (10, 12), (15, 16))
+    )
+    root_properties = cast(dict[str, object], schema["properties"])
+    edits = cast(dict[str, object], root_properties["e"])
+    item = cast(dict[str, object], edits["items"])
+    item_properties = cast(dict[str, object], item["properties"])
+
+    assert item_properties["s"] == {
+        "type": "integer",
+        "enum": [8, 9, 10, 11, 12, 15, 16],
+    }
+    assert item_properties["n"] == {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2,
+    }
+
+
+def test_compact_v4_empty_scope_schema_allows_only_create_coordinate() -> None:
+    """Constrain an absent-file shard to the sole valid create coordinate."""
+    schema = comparison_module._compact_proposal_schema_for_ranges(())
+    root_properties = cast(dict[str, object], schema["properties"])
+    edits = cast(dict[str, object], root_properties["e"])
+    item = cast(dict[str, object], edits["items"])
+    item_properties = cast(dict[str, object], item["properties"])
+
+    assert item_properties["s"] == {"type": "integer", "enum": [1]}
+    assert item_properties["n"] == {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 0,
+    }
+
+
+def test_locked_llama_grammar_compiles_multirange_integer_enum() -> None:
+    """Exercise the locked 0.3.24 converter without fragile anyOf/oneOf."""
+    if importlib.util.find_spec("llama_cpp") is None:
+        pytest.skip("locked optional local-inference extra is not materialized")
+    schema = comparison_module._compact_proposal_schema_for_ranges(
+        ((3, 6), (10, 12))
+    )
+    encoded_schema = json.dumps(schema, ensure_ascii=True, separators=(",", ":"))
+    script = (
+        "from llama_cpp import LlamaGrammar, _utils\n"
+        f"grammar = LlamaGrammar.from_json_schema({encoded_schema!r}, verbose=False)\n"
+        "assert grammar is not None\n"
+        "_utils.outnull_file.close()\n"
+        "_utils.errnull_file.close()\n"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "ResourceWarning" not in completed.stderr
+
+
 @pytest.mark.parametrize(
     ("raw", "match"),
     [
@@ -1491,6 +1727,62 @@ def test_compact_v4_insertion_uses_closed_boundaries_of_each_shown_section() -> 
             editable_ranges=ranges,
         )
     assert "MODEL_SECRET" not in str(error.value)
+
+
+def test_compact_v4_scope_error_exposes_only_typed_bounded_parent_telemetry() -> None:
+    """Carry useful coordinates without model text, source, or the raw path."""
+    path = "src/private/TOKEN=path-secret.py"
+    baseline = "shown-a\nshown-b\nhidden-c\nhidden-d\nshown-e\nshown-f\n"
+    ranges = (((1, 3), (5, 7)),)
+    proposal = comparison_module._decode_compact_span_proposal(
+        '{"e":[{"s":4,"n":0,"z":"PASSWORD=hunter2\\n"}]}',
+        focus_path=path,
+    )
+
+    with pytest.raises(ValueError) as captured:
+        _expand_span_proposals(
+            (proposal,),
+            paths=(path,),
+            baselines={path: baseline},
+            editable_ranges=ranges,
+        )
+
+    feedback = comparison_module._safe_compact_scope_telemetry(captured.value)
+    assert feedback == (
+        f"path_sha256={hashlib.sha256(path.encode()).hexdigest()} "
+        "received_s=4 received_n=0 "
+        "sections=[1,3),[5,7) boundaries=[1,3],[5,7]"
+    )
+    assert all(
+        secret not in feedback
+        for secret in (path, "TOKEN", "path-secret", "PASSWORD", "hunter2", "shown-a")
+    )
+    assert len(feedback.encode("utf-8")) <= 256
+
+
+def test_compact_v4_scope_telemetry_bounds_many_sections() -> None:
+    """Truncate only trusted ranges while keeping received coordinates actionable."""
+    path = "src/private/TOKEN=path-secret.py"
+    ranges = ((1, 2), (4, 5), (7, 8), (10, 11), (13, 14))
+    baseline = "".join(f"line-{index}\n" for index in range(1, 14))
+    proposal = comparison_module._decode_compact_span_proposal(
+        '{"e":[{"s":3,"n":0,"z":"PASSWORD=hunter2\\n"}]}',
+        focus_path=path,
+    )
+
+    with pytest.raises(ValueError) as captured:
+        _expand_span_proposals(
+            (proposal,),
+            paths=(path,),
+            baselines={path: baseline},
+            editable_ranges=(ranges,),
+        )
+
+    feedback = comparison_module._safe_compact_scope_telemetry(captured.value)
+    assert "sections=[1,2),[4,5),[7,8),[10,11),+1" in feedback
+    assert "boundaries=[1,2],[4,5],[7,8],[10,11],+1" in feedback
+    assert all(secret not in feedback for secret in (path, "TOKEN", "PASSWORD", "hunter2"))
+    assert len(feedback.encode("utf-8")) <= 256
 
 
 def test_compact_v4_strict_decoder_redacts_live_deepseek_framing_failure() -> None:
