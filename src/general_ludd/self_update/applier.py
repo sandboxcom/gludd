@@ -107,6 +107,11 @@ class ApplyResult:
     evidence: str
 
 
+def _denied_result(target_paths: list[str], evidence: str) -> ApplyResult:
+    """Build the repeated fail-closed result shape in one place."""
+    return ApplyResult(status="denied", target_paths=target_paths, evidence=evidence)
+
+
 def _first_protected(
     target_paths: list[str], workspace_root: Path | None = None
 ) -> str | None:
@@ -277,20 +282,12 @@ class UpdateApplier:
             target_paths, self._workspace_root
         )
         if escapee is not None:
-            return ApplyResult(
-                status="denied",
-                target_paths=target_paths,
-                evidence=f"path escapes workspace root: {escapee}",
-            )
+            return _denied_result(target_paths, f"path escapes workspace root: {escapee}")
 
         # 3. Protected-path deny-list. Always wins over capability.
         protected = _first_protected(target_paths, self._workspace_root)
         if protected is not None:
-            return ApplyResult(
-                status="denied",
-                target_paths=target_paths,
-                evidence=f"protected path refused: {protected}",
-            )
+            return _denied_result(target_paths, f"protected path refused: {protected}")
 
         kind = plan.kind
 
@@ -306,10 +303,8 @@ class UpdateApplier:
         #     target paths must never report "applied" — nothing would be
         #     written.  Code changes exit above, so they are unaffected.
         if not target_paths:
-            return ApplyResult(
-                status="denied",
-                target_paths=target_paths,
-                evidence="no target paths specified — refusing to apply empty change",
+            return _denied_result(
+                target_paths, "no target paths specified — refusing to apply empty change"
             )
 
         # 5. YAML-shaped kinds: validate then write.
@@ -322,11 +317,7 @@ class UpdateApplier:
             )
 
         # 6. Unknown kind -> fail closed.
-        return ApplyResult(
-            status="denied",
-            target_paths=target_paths,
-            evidence=f"unsupported plan kind: {kind!r}",
-        )
+        return _denied_result(target_paths, f"unsupported plan kind: {kind!r}")
 
     def _signature_failure(
         self,
@@ -341,10 +332,9 @@ class UpdateApplier:
         if verify_signature is None:
             return None
         if not content_signature or not public_key:
-            return ApplyResult(
-                status="denied",
-                target_paths=target_paths,
-                evidence="signature verification configured but no "
+            return _denied_result(
+                target_paths,
+                "signature verification configured but no "
                 "content_signature or public_key provided — refusing to apply",
             )
         try:
@@ -354,17 +344,12 @@ class UpdateApplier:
                 public_key,
             )
         except Exception as exc:
-            return ApplyResult(
-                status="denied",
-                target_paths=target_paths,
-                evidence=f"signature verification raised: {exc}",
-            )
+            return _denied_result(target_paths, f"signature verification raised: {exc}")
         if verified:
             return None
-        return ApplyResult(
-            status="denied",
-            target_paths=target_paths,
-            evidence="signature verification failed — content may be "
+        return _denied_result(
+            target_paths,
+            "signature verification failed — content may be "
             "tampered, unsigned, or signed with a different key",
         )
 
@@ -379,17 +364,11 @@ class UpdateApplier:
                 self._capability_checker.allows(plan.capability_required)
             )
         except Exception as exc:
-            return ApplyResult(
-                status="denied",
-                target_paths=target_paths,
-                evidence=f"capability check raised: {exc}",
-            )
+            return _denied_result(target_paths, f"capability check raised: {exc}")
         if allowed:
             return None
-        return ApplyResult(
-            status="denied",
-            target_paths=target_paths,
-            evidence=f"capability not allowed: {plan.capability_required!r}",
+        return _denied_result(
+            target_paths, f"capability not allowed: {plan.capability_required!r}"
         )
 
     def _apply_yaml(
@@ -403,11 +382,7 @@ class UpdateApplier:
         try:
             yaml.safe_load(change_content)
         except yaml.YAMLError as exc:
-            return ApplyResult(
-                status="denied",
-                target_paths=target_paths,
-                evidence=f"invalid yaml: {exc}",
-            )
+            return _denied_result(target_paths, f"invalid yaml: {exc}")
         snapshots: list[tuple[Path, bytes | None]] = []
         for resolved in resolved_paths:
             try:
@@ -420,21 +395,15 @@ class UpdateApplier:
                 self._writer.write(str(resolved), change_content)
         except Exception as exc:
             _restore_snapshots(snapshots)
-            return ApplyResult(
-                status="denied",
-                target_paths=target_paths,
-                evidence=f"write failed: {exc}",
-            )
+            return _denied_result(target_paths, f"write failed: {exc}")
         try:
             for resolved in resolved_paths:
                 if resolved.exists():
                     yaml.safe_load(resolved.read_text(encoding="utf-8"))
         except Exception as exc:
             _restore_snapshots(snapshots)
-            return ApplyResult(
-                status="denied",
-                target_paths=target_paths,
-                evidence=f"post-write validation failed, rolled back: {exc}",
+            return _denied_result(
+                target_paths, f"post-write validation failed, rolled back: {exc}"
             )
         return ApplyResult(
             status="applied",

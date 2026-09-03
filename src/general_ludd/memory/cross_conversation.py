@@ -40,6 +40,7 @@ class CrossConversationStore:
     """
 
     def __init__(self, store: Any | None = _AUTO_STORE) -> None:
+        """Select the supplied, automatic, or ephemeral backing store."""
         if store is not _AUTO_STORE:
             self._store: Any = store
         elif _InMemoryStore is not None:
@@ -57,8 +58,6 @@ class CrossConversationStore:
         self._ephemeral: dict[str, dict[str, Any]] = {}
         self._ttl_registry: dict[str, float] = {}
 
-    # ------------------------------------------------------------------ helpers
-
     @staticmethod
     def _store_key(namespace: tuple[str, ...], key: str) -> str:
         return f"{':'.join(namespace)}:{key}"
@@ -68,17 +67,11 @@ class CrossConversationStore:
         namespace: tuple[str, ...], key: str, project_id: str | None,
     ) -> str:
         base = CrossConversationStore._store_key(namespace, key)
-        if project_id is None:
-            return base
-        return f"{base}:project:{project_id}"
+        return base if project_id is None else f"{base}:project:{project_id}"
 
     @staticmethod
     def _normalise_namespace(namespace: str | tuple[str, ...]) -> tuple[str, ...]:
-        if isinstance(namespace, str):
-            return (namespace,)
-        return namespace
-
-    # --------------------------------------------------------------------- put
+        return (namespace,) if isinstance(namespace, str) else namespace
 
     def put(
         self,
@@ -88,6 +81,7 @@ class CrossConversationStore:
         ttl: float | None = None,
         project_id: str | None = None,
     ) -> None:
+        """Store a value with optional namespace, project, and TTL isolation."""
         ns = self._normalise_namespace(namespace)
         sk = self._project_store_key(ns, key, project_id)
         legacy_sk = self._store_key(ns, key)
@@ -101,14 +95,7 @@ class CrossConversationStore:
                 if sk != key:
                     self._store.put(ns, key, entry_value)
             except NotImplementedError:
-                self._ephemeral[sk] = {
-                    "key": key,
-                    "value": entry_value,
-                    "namespace": ns,
-                    "project_id": project_id,
-                    "created_at": ts,
-                    "updated_at": ts,
-                }
+                self._ephemeral.pop(sk, None)
 
         if sk not in self._ephemeral:
             self._ephemeral[sk] = {
@@ -128,10 +115,8 @@ class CrossConversationStore:
 
         if ttl is not None:
             self._ttl_registry[sk] = ts + ttl
-        elif sk in self._ttl_registry:
-            del self._ttl_registry[sk]
-
-    # --------------------------------------------------------------------- get
+        else:
+            self._ttl_registry.pop(sk, None)
 
     def get(
         self,
@@ -139,6 +124,7 @@ class CrossConversationStore:
         namespace: str | tuple[str, ...] = ("default",),
         project_id: str | None = None,
     ) -> dict[str, Any] | None:
+        """Return an unexpired value visible to the requested project."""
         ns = self._normalise_namespace(namespace)
         sk = self._project_store_key(ns, key, project_id)
         global_sk = self._project_store_key(ns, key, None)
@@ -174,8 +160,6 @@ class CrossConversationStore:
             return self._filter_by_project(dict(entry), project_id)
         return None
 
-    # ------------------------------------------------------------------ search
-
     def search(
         self,
         namespace_prefix: str | tuple[str, ...] = ("default",),
@@ -184,6 +168,7 @@ class CrossConversationStore:
         limit: int = 10,
         project_id: str | None = None,
     ) -> list[dict[str, Any]]:
+        """Search visible values under a namespace prefix."""
         nsp = self._normalise_namespace(namespace_prefix)
 
         if self._store is not None:
@@ -232,7 +217,7 @@ class CrossConversationStore:
                 stored_ns = tuple(stored_ns)
             stored_ns_str = ":".join(stored_ns)
 
-            if not stored_ns_str.startswith(nsp_str) and stored_ns_str != nsp_str:
+            if not stored_ns_str.startswith(nsp_str):
                 continue
 
             if filter:
@@ -260,14 +245,13 @@ class CrossConversationStore:
 
         return matches[:limit]
 
-    # ------------------------------------------------------------------ delete
-
     def delete(
         self,
         key: str,
         namespace: str | tuple[str, ...] = ("default",),
         project_id: str | None = None,
     ) -> bool:
+        """Delete one project-scoped value and report whether it existed."""
         ns = self._normalise_namespace(namespace)
         sk = self._project_store_key(ns, key, project_id)
         raw_key = key
@@ -288,9 +272,8 @@ class CrossConversationStore:
         self._ttl_registry.pop(sk, None)
         return existed
 
-    # ------------------------------------------------------------------- purge
-
     def purge_expired(self) -> int:
+        """Delete expired values and return the number purged."""
         purged = 0
         now = _now()
         expired_sks = [sk for sk, deadline in self._ttl_registry.items() if now >= deadline]
@@ -308,9 +291,8 @@ class CrossConversationStore:
 
     @property
     def available(self) -> bool:
+        """Return whether the facade is available, including fallback mode."""
         return self._store is not None or bool(self._ephemeral) is not None
-
-    # ------------------------------------------------------------ private impl
 
     @staticmethod
     def _filter_by_project(
@@ -325,9 +307,7 @@ class CrossConversationStore:
 
     def _is_expired(self, stored_key: str) -> bool:
         deadline = self._ttl_registry.get(stored_key)
-        if deadline is None:
-            return False
-        return _now() >= deadline
+        return deadline is not None and _now() >= deadline
 
     def _evict(
         self,

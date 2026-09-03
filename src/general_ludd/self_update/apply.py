@@ -282,7 +282,9 @@ def _apply_config_tier(
             "deferred: no concrete target file resolved — refusing to "
             "auto-apply without a target",
         )
-    elif validate is not None:
+        return _emit_apply_result(record, audit_sink)
+
+    if validate is not None:
         ok, detail = validate(plan)
         if not ok:
             record = _audit_record(
@@ -292,25 +294,9 @@ def _apply_config_tier(
                 plan.apply_tier,
                 f"validation failed before landing: {detail}",
             )
-        elif not auto_apply_config:
-            record = _audit_record(
-                plan,
-                request,
-                ApplyOutcome.AWAITING_APPROVAL,
-                plan.apply_tier,
-                "deferred: auto-apply disabled by caller",
-            )
-        else:
-            record = _audit_record(
-                plan,
-                request,
-                ApplyOutcome.APPLIED,
-                plan.apply_tier,
-                f"auto-applied {plan.apply_tier.value}-tier change "
-                f"(hot-reloadable, no protected path involved)",
-                approved=has_approval,
-            )
-    elif not auto_apply_config:
+            return _emit_apply_result(record, audit_sink)
+
+    if not auto_apply_config:
         record = _audit_record(
             plan,
             request,
