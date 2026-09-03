@@ -168,6 +168,17 @@
       "owned": true
     },
     {
+      "path": "scripts/replay_self_improve_failure_corpus.py",
+      "line": 524,
+      "column": 9,
+      "kind": "temp-artifact",
+      "owner": "_fixture_gateway",
+      "acquisition": "tempfile.TemporaryDirectory(prefix='gludd-failure-corpus-')",
+      "teardown": "context-manager-exit",
+      "source_hash": "4d1e8b91061eb822d531adef412db7bea5163d36c83fdb5d30c2a7f53c0c1ee8",
+      "owned": true
+    },
+    {
       "path": "scripts/run_ci_shards_parallel.py",
       "line": 225,
       "column": 18,
@@ -311,6 +322,17 @@
       "owned": true
     },
     {
+      "path": "scripts/self_improve_local_proposal.py",
+      "line": 217,
+      "column": 13,
+      "kind": "temp-artifact",
+      "owner": "run_worker",
+      "acquisition": "tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=exchange, prefix='.proposal-', suffix='.tmp', delete=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "02fe2f74483d7b4ba3e54302c09915741ae8d9c3f041e8c6881de775600f150e",
+      "owned": true
+    },
+    {
       "path": "scripts/smoke_daemon.py",
       "line": 99,
       "column": 13,
@@ -345,13 +367,24 @@
     },
     {
       "path": "scripts/stream_command.py",
-      "line": 17,
+      "line": 56,
+      "column": 33,
+      "kind": "temp-artifact",
+      "owner": "_atomic_write_json",
+      "acquisition": "tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)",
+      "teardown": "temporary.unlink()",
+      "source_hash": "5c5830416f7e9237e69cd2139afe8d69e8efa474dc41b8fce1dcfeb115ef9e91",
+      "owned": true
+    },
+    {
+      "path": "scripts/stream_command.py",
+      "line": 311,
       "column": 18,
       "kind": "process",
       "owner": "stream_command",
-      "acquisition": "subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0)",
-      "teardown": "ownership-transfer:return process.wait()",
-      "source_hash": "bdf3ac62cba455bd6e7087309ab39f99f1fdc0d8d68e7a3cd1adf43168d392f9",
+      "acquisition": "subprocess.Popen(list(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0, start_new_session=True, env=environment)",
+      "teardown": "ownership-transfer:_terminate_process_group(process, termination_grace_seconds); ownership-transfer:persisted-detached-pid",
+      "source_hash": "a8159cae17bd1850d1e93f8175dab0f2808085c71c50c67a61ab5098707cce07",
       "owned": true
     },
     {
@@ -1137,7 +1170,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 1108,
+      "line": 1142,
       "column": 15,
       "kind": "async-task",
       "owner": "_build_self_update_audit_sink._sink",
@@ -1148,7 +1181,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 1164,
+      "line": 1198,
       "column": 15,
       "kind": "client",
       "owner": "_warm_start_local_models",
@@ -1159,7 +1192,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 1252,
+      "line": 1286,
       "column": 18,
       "kind": "service",
       "owner": "_lifespan",
@@ -1170,7 +1203,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 2372,
+      "line": 2406,
       "column": 15,
       "kind": "async-task",
       "owner": "_lifespan",
@@ -1181,7 +1214,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 2624,
+      "line": 2658,
       "column": 36,
       "kind": "async-task",
       "owner": "_lifespan",
@@ -1192,7 +1225,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 2721,
+      "line": 2755,
       "column": 39,
       "kind": "async-task",
       "owner": "_lifespan",
@@ -1203,7 +1236,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 2922,
+      "line": 3196,
       "column": 26,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1214,7 +1247,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 2980,
+      "line": 3254,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1225,7 +1258,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3639,
+      "line": 4372,
       "column": 40,
       "kind": "async-task",
       "owner": "EventLoop._phase_reconcile_completed_decisions",
@@ -1236,7 +1269,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3653,
+      "line": 4386,
       "column": 44,
       "kind": "async-task",
       "owner": "EventLoop._phase_reconcile_completed_decisions",
@@ -1958,6 +1991,39 @@
       "acquisition": "tempfile.mkstemp(dir=dir_name, suffix='.tmp')",
       "teardown": "atomic-replace-or-unlink",
       "source_hash": "fe7cb0ae69bc98d66a39f13dc12931836738eee9e2cbf15763e8ba90455a73ad",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/self_improve/managed_runner.py",
+      "line": 207,
+      "column": 9,
+      "kind": "temp-artifact",
+      "owner": "_write_atomic_temp",
+      "acquisition": "tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=destination.parent, prefix='.gludd-self-improve-', suffix=suffix, delete=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "19c015f5daba50d123c0969497f4430a520ff93062fd933c406af06f03c4c01f",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/self_improve/runtime.py",
+      "line": 362,
+      "column": 15,
+      "kind": "process",
+      "owner": "MakeRunner._run_observable_argv",
+      "acquisition": "subprocess.Popen(argv, cwd=str(self.repo_root), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=False, start_new_session=True, env=_clean_environment())",
+      "teardown": "ownership-transfer:_terminate_process_group(proc); ownership-transfer:persisted-detached-pid",
+      "source_hash": "48b1f11a5b044a1629f50c06daa21dbf3ff3272f20156e9cbca0329934358952",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/self_improve/runtime.py",
+      "line": 456,
+      "column": 9,
+      "kind": "temp-artifact",
+      "owner": "_run_local_proposal_request",
+      "acquisition": "tempfile.TemporaryDirectory(prefix='gludd-self-improve-proposal-')",
+      "teardown": "context-manager-exit",
+      "source_hash": "9c387e7e31398d1cc17c16ef2789954d4aad833ebc582dc5a9100caef29fe489",
       "owned": true
     },
     {
