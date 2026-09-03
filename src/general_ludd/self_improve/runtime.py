@@ -534,6 +534,7 @@ def _generate_local_proposal_plan_result(
         tests=required_tests,
         make_commands=task.canonical_make_commands,
         proposal_protocol=plan.proposal_protocol,
+        sampling_profile=plan.sampling_profile,
     )
     raw_proposals = _run_local_proposal_request(
         runner,

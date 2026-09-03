@@ -167,6 +167,8 @@ def test_worker_protocol_entry_points_are_declared_public_exports() -> None:
     expected = {
         "COMPACT_PROPOSAL_PROTOCOL_V3",
         "COMPACT_PROPOSAL_PROTOCOL_V4",
+        "COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID",
+        "DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID",
         "CompactLineSpan",
         "CompactSpanProposal",
         "EVALUATION_DIAGNOSIS_PROTOCOL",
@@ -174,6 +176,7 @@ def test_worker_protocol_entry_points_are_declared_public_exports() -> None:
         "bind_compact_focus_path",
         "build_retry_prompt",
         "compare_with_codex",
+        "compact_v4_syntax_repair_sampling_identity",
         "decode_prompt_batch",
         "decode_compact_span_batch",
         "decode_proposal_batch",
@@ -521,6 +524,62 @@ def test_proposal_contract_round_trips_only_trusted_immutable_fields() -> None:
         "tests",
         "make_commands",
     }
+
+
+def test_repair_sampling_profile_round_trips_without_changing_normal_v4_bytes() -> None:
+    """Keep ordinary v4 requests byte-stable while carrying one trusted repair profile."""
+    normal = replace(
+        _contract(),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    expected_normal = (
+        '{"baseline_sha":"'
+        + ("a" * 40)
+        + '","make_commands":["make test-files TESTFILES=tests/unit/test_example.py"],'
+        '"proposal_protocol":"self-improve-compact-proposal-v4",'
+        '"task_id":"S83.133","tests":["tests/unit/test_example.py"]}'
+    )
+    repair = replace(
+        normal,
+        sampling_profile=(
+            comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+        ),
+    )
+
+    assert normal.to_json() == expected_normal
+    assert ProposalContract.from_json(normal.to_json()) == normal
+    assert ProposalContract.from_json(repair.to_json()) == repair
+    assert json.loads(repair.to_json())["sampling_profile"] == (
+        comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+    )
+
+
+@pytest.mark.parametrize("profile", [True, 7, "unknown-profile", ""])
+def test_proposal_contract_rejects_malformed_repair_sampling_controls(
+    profile: object,
+) -> None:
+    """Reject untrusted scalar controls instead of forwarding them to llama.cpp."""
+    value = json.loads(
+        replace(
+            _contract(),
+            proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+        ).to_json()
+    )
+    value["sampling_profile"] = profile
+
+    with pytest.raises(ValueError, match="sampling profile"):
+        ProposalContract.from_json(json.dumps(value))
+
+
+def test_legacy_contract_rejects_repair_sampling_profile() -> None:
+    """Never reinterpret a legacy compact request as a sampled repair."""
+    with pytest.raises(ValueError, match="compact-v4"):
+        replace(
+            _contract(),
+            sampling_profile=(
+                comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+            ),
+        )
 
 
 @pytest.mark.parametrize(
@@ -1603,6 +1662,84 @@ def test_compact_v4_gateway_emits_only_bounded_line_span_fields(
     assert item["required"] == ["s", "n", "z"]
     assert set(item["properties"]) == {"s", "n", "z"}
     assert calls[1]["max_tokens"] == 4096
+
+
+def test_compact_v4_repair_uses_reproducible_non_greedy_sampling_only(
+    tmp_path: Path,
+) -> None:
+    """Diversify a repair deterministically without changing canary or first-pass decode."""
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    prompt = comparison_module.bind_compact_focus_path(
+        "Use the numbered source lines.",
+        "src/general_ludd/example.py",
+        editable_ranges=((1, 3),),
+    )
+    normal_contract = replace(
+        _contract(),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    repair_contract = replace(
+        normal_contract,
+        sampling_profile=(
+            comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+        ),
+    )
+
+    def run(contract: ProposalContract) -> list[dict[str, object]]:
+        calls: list[dict[str, object]] = []
+
+        class SpanModel:
+            def create_chat_completion(self, **kwargs: object) -> dict[str, object]:
+                calls.append(dict(kwargs))
+                content = (
+                    '{"ok":true}'
+                    if len(calls) == 1
+                    else '{"e":[{"s":1,"n":1,"z":"changed\\n"}]}'
+                )
+                return {
+                    "choices": [
+                        {"finish_reason": "stop", "message": {"content": content}}
+                    ]
+                }
+
+            def __call__(self, prompt: str, **kwargs: object) -> object:
+                del prompt, kwargs
+                raise AssertionError("compact mode must use chat completion")
+
+        proposal = LocalProposalGateway(
+            model_path,
+            model_factory=lambda **_kwargs: SpanModel(),
+        ).propose(prompt, contract=contract)
+        assert isinstance(proposal, comparison_module.CompactSpanProposal)
+        return calls
+
+    normal_calls = run(normal_contract)
+    first_repair_calls = run(repair_contract)
+    second_repair_calls = run(repair_contract)
+
+    assert normal_calls[0]["temperature"] == 0.0
+    assert normal_calls[0]["seed"] == 0
+    assert normal_calls[1]["temperature"] == 0.0
+    assert normal_calls[1]["seed"] == 0
+    assert "top_p" not in normal_calls[1]
+    assert "top_k" not in normal_calls[1]
+    assert first_repair_calls[0]["temperature"] == 0.0
+    assert first_repair_calls[0]["seed"] == 0
+    assert "top_p" not in first_repair_calls[0]
+    assert "top_k" not in first_repair_calls[0]
+    assert {
+        key: first_repair_calls[1][key]
+        for key in ("temperature", "top_p", "top_k", "seed")
+    } == {
+        "temperature": 0.25,
+        "top_p": 0.9,
+        "top_k": 20,
+        "seed": 104729,
+    }
+    assert first_repair_calls[1] == second_repair_calls[1]
+    assert first_repair_calls[1]["response_format"] == normal_calls[1]["response_format"]
+    assert first_repair_calls[1]["max_tokens"] == normal_calls[1]["max_tokens"]
 
 
 def test_compact_v4_gateway_passes_distinct_explicit_json_schema_grammars(

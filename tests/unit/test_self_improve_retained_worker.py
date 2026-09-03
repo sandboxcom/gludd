@@ -8,6 +8,7 @@ import os
 import selectors
 import subprocess
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -16,6 +17,7 @@ import scripts.self_improve_local_proposal as worker_module
 
 import general_ludd.self_improve.runtime as runtime_module
 from general_ludd.self_improve.codex_comparison import (
+    COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
     CodexReference,
     CompactSpanProposal,
     LocalProposalGateway,
@@ -731,6 +733,58 @@ def test_parent_expands_v4_multifile_spans_and_cleans_owned_exchange(
         "src/two.py",
     )
     assert all(item.edits[0].new_text == "after\n" for item in generated.compact_proposals)
+    assert all(not path.exists() for path in owned.exchange_paths)
+
+
+def test_parent_carries_repair_sampling_profile_through_owned_worker(
+    tmp_path: Path,
+) -> None:
+    """Bind the parent-selected repair profile into every shard contract."""
+    plan = replace(
+        _v4_plan(),
+        sampling_profile=COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    )
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    contracts: list[ProposalContract] = []
+
+    class Gateway:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> CompactSpanProposal:
+            assert contract is not None
+            contracts.append(contract)
+            focus = next(
+                line.split("=", 1)[1]
+                for line in prompt.splitlines()
+                if line.startswith("GLUDD_SELF_IMPROVE_FOCUS_PATH=")
+            )
+            return worker_module._decode_compact_span_proposal(
+                '{"e":[{"s":1,"n":1,"z":"after\\n"}]}',
+                focus_path=focus,
+            )
+
+    owned = _InProcessOwnedRunner(Gateway)
+    task, reference = _task_and_reference()
+
+    runner_module._generate_local_proposal_plan_result(
+        owned,
+        model_path,
+        plan,
+        task,
+        reference,
+    )
+
+    assert contracts and all(
+        contract.sampling_profile == COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+        for contract in contracts
+    )
     assert all(not path.exists() for path in owned.exchange_paths)
 
 

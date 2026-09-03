@@ -16,6 +16,7 @@ import pytest
 import scripts.run_self_improve_e2e as cli_runner
 
 import general_ludd.self_improve as self_improve_package
+import general_ludd.self_improve.codex_comparison as comparison_module
 import general_ludd.self_improve.managed_runner as managed_runner_module
 import general_ludd.self_improve.model_candidate_planner as planner_module
 from general_ludd.local_model import LocalModelConfig, get_model
@@ -869,6 +870,56 @@ def test_compact_v4_attempt_identity_binds_syntax_repair_policy(
     assert managed_runner_module._attempt_identity_digest(prompt) != original
 
 
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("_COMPACT_V4_SYNTAX_REPAIR_TEMPERATURE", 0.3),
+        ("_COMPACT_V4_SYNTAX_REPAIR_TOP_P", 0.85),
+        ("_COMPACT_V4_SYNTAX_REPAIR_TOP_K", 21),
+        ("_COMPACT_V4_SYNTAX_REPAIR_SEED", 104730),
+    ],
+)
+def test_compact_v4_attempt_identity_binds_every_repair_sampling_control(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    value: object,
+) -> None:
+    """Any repair sampling change rotates v4 evidence while leaving v3 byte-stable."""
+    v4_prompt = _compact_v4_prompt()
+    v3_prompt = PromptPlan(
+        shards=(PromptShard(("src/general_ludd/example.py",), "bounded prompt"),),
+        source_bytes=0,
+    )
+    v4_identity = managed_runner_module._attempt_identity_digest(v4_prompt)
+    v3_identity = managed_runner_module._attempt_identity_digest(v3_prompt)
+
+    monkeypatch.setattr(comparison_module, name, value)
+
+    assert managed_runner_module._attempt_identity_digest(v4_prompt) != v4_identity
+    assert managed_runner_module._attempt_identity_digest(v3_prompt) == v3_identity
+
+
+def test_prompt_plan_round_trips_repair_profile_without_changing_normal_shape() -> None:
+    """Persist the named v4 profile exactly while omitting it from ordinary plans."""
+    normal = _compact_v4_prompt()
+    repair = replace(
+        normal,
+        sampling_profile=(
+            comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+        ),
+    )
+
+    assert "sampling_profile" not in normal._json_value()
+    assert PromptPlan._from_json_value(repair._json_value()) == repair
+
+
+@pytest.mark.parametrize("profile", [True, 1, "", "unbounded-custom-profile"])
+def test_prompt_plan_rejects_malformed_sampling_profile(profile: object) -> None:
+    """Fail before worker launch when an internal caller supplies arbitrary controls."""
+    with pytest.raises(ValueError, match="sampling profile"):
+        replace(_compact_v4_prompt(), sampling_profile=cast(str, profile))
+
+
 def test_pre_policy_compact_v4_plan_requires_reapproval_after_identity_rotation(
     tmp_path: Path,
 ) -> None:
@@ -1565,6 +1616,9 @@ def test_compact_v4_syntax_repair_reuses_candidate_and_attempt_budget(
     assert repaired.baseline_files == prompt.baseline_files
     assert repaired.protocol_digest == prompt.protocol_digest
     assert repaired.proposal_protocol == prompt.proposal_protocol
+    assert repaired.sampling_profile == (
+        comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+    )
     assert any(line.startswith("SELF_IMPROVE_SYNTAX_REPAIR_START ") for line in progress)
     assert "SECRET_REJECTED_Z" not in "\n".join(progress)
     assert manager.reservation_released is True
@@ -1641,6 +1695,12 @@ def test_compact_v4_syntax_repair_is_once_only_and_not_shared_with_next_model(
     assert "SECRET_REJECTED_Z" in observed_prompts[1].shards[0].prompt
     assert "SECRET_REJECTED_Z" not in observed_prompts[2].shards[0].prompt
     assert "Solve the approved task independently" in observed_prompts[2].shards[0].prompt
+    assert observed_prompts[1].sampling_profile == (
+        comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+    )
+    assert observed_prompts[2].sampling_profile == (
+        comparison_module.DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID
+    )
     assert manager.released == manager.acquired
     assert manager.reservation_released is True
 

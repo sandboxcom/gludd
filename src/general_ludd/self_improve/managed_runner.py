@@ -29,6 +29,8 @@ from general_ludd.local_model import LocalModelConfig
 from general_ludd.self_improve.codex_comparison import (
     COMPACT_PROPOSAL_PROTOCOL_V3,
     COMPACT_PROPOSAL_PROTOCOL_V4,
+    COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID,
     LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL,
     LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL,
     CandidateEvidence,
@@ -39,6 +41,7 @@ from general_ludd.self_improve.codex_comparison import (
     _safe_compact_policy_telemetry,
     _safe_compact_scope_telemetry,
     build_retry_prompt,
+    compact_v4_syntax_repair_sampling_identity,
     local_proposal_attempt_identity_digest,
     safe_evaluation_retry_diagnosis,
 )
@@ -69,7 +72,7 @@ _TASK_RE: Final = re.compile(r"^S[0-9]+(?:\.[0-9]+)?$")
 _LEGACY_PLAN_SCHEMA_VERSION: Final = 1
 _LEGACY_BOUND_PLAN_SCHEMA_VERSION: Final = 2
 _PLAN_SCHEMA_VERSION: Final = 3
-COMPACT_V4_SYNTAX_REPAIR_POLICY_ID: Final = "compact-v4-syntax-self-repair-v1"
+COMPACT_V4_SYNTAX_REPAIR_POLICY_ID: Final = "compact-v4-syntax-self-repair-v2"
 _MAX_SYNTAX_REPAIR_DRAFT_BYTES: Final = 4_096
 
 
@@ -362,6 +365,7 @@ class PromptPlan:
         repr=False,
     )
     proposal_protocol: str = COMPACT_PROPOSAL_PROTOCOL_V3
+    sampling_profile: str = DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID
 
     def __post_init__(self) -> None:
         """Require immutable non-overlapping shards and stable protocol identity."""
@@ -379,6 +383,16 @@ class PromptPlan:
             COMPACT_PROPOSAL_PROTOCOL_V4,
         }:
             raise ValueError("prompt plan compact proposal protocol is unsupported")
+        if not isinstance(self.sampling_profile, str) or self.sampling_profile not in {
+            DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID,
+            COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+        }:
+            raise ValueError("prompt plan sampling profile is unsupported")
+        if (
+            self.sampling_profile != DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID
+            and self.proposal_protocol != COMPACT_PROPOSAL_PROTOCOL_V4
+        ):
+            raise ValueError("repair sampling profile requires compact-v4")
         if self.baseline_files:
             baseline_paths: list[str] = []
             baseline_bytes = 0
@@ -413,7 +427,7 @@ class PromptPlan:
                 ],
                 "source_bytes": self.source_bytes,
             }
-        return {
+        value: dict[str, object] = {
             "proposal_protocol": self.proposal_protocol,
             "protocol": "self-improve-prompt-plan-v2",
             "shards": [
@@ -426,6 +440,9 @@ class PromptPlan:
             ],
             "source_bytes": self.source_bytes,
         }
+        if self.sampling_profile != DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID:
+            value["sampling_profile"] = self.sampling_profile
+        return value
 
     def _json_value(self) -> dict[str, object]:
         value: dict[str, object] = {
@@ -447,6 +464,8 @@ class PromptPlan:
                 }
                 for shard in self.shards
             ]
+            if self.sampling_profile != DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID:
+                value["sampling_profile"] = self.sampling_profile
         return value
 
     @classmethod
@@ -461,7 +480,11 @@ class PromptPlan:
         mapping = _exact_mapping(
             value,
             required=required_fields,
-            optional=set(),
+            optional=(
+                {"sampling_profile"}
+                if proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4
+                else set()
+            ),
             label="prompt plan",
         )
         if mapping.get("proposal_protocol", proposal_protocol) != proposal_protocol:
@@ -516,6 +539,13 @@ class PromptPlan:
             protocol_digest=_required_string(mapping, "protocol_digest"),
             baseline_files=tuple(baseline),
             proposal_protocol=proposal_protocol,
+            sampling_profile=cast(
+                str,
+                mapping.get(
+                    "sampling_profile",
+                    DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID,
+                ),
+            ),
         )
 
     def __contains__(self, value: object) -> bool:
@@ -550,6 +580,9 @@ def _attempt_identity_digest(prompt: PromptPlan | str) -> str:
                 "local_proposal_attempt_identity_digest": proposal_identity,
                 "model_candidate_policy": CODE_TASK_CAPABILITY_POLICY_ID,
                 "syntax_repair_policy": COMPACT_V4_SYNTAX_REPAIR_POLICY_ID,
+                "syntax_repair_sampling": (
+                    compact_v4_syntax_repair_sampling_identity()
+                ),
                 "protocol": "self-improve-attempt-selection-binding-v1",
             }
         )
@@ -1771,6 +1804,7 @@ def build_syntax_repair_prompt_plan(
         protocol_digest=plan.protocol_digest,
         baseline_files=plan.baseline_files,
         proposal_protocol=plan.proposal_protocol,
+        sampling_profile=COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
     )
 
 

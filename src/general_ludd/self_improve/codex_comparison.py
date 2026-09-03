@@ -11,7 +11,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
-from typing import Protocol, cast
+from typing import NotRequired, Protocol, TypedDict, cast
 
 from general_ludd.self_improve.model_lifecycle import ModelArtifactIdentity
 
@@ -121,6 +121,14 @@ _COMPACT_COMMIT_MESSAGE = "fix: apply bounded self-improvement proposal"
 _STRUCTURED_CANARY_TOKENS = 32
 _DETERMINISTIC_DECODE_TEMPERATURE = 0.0
 _DETERMINISTIC_DECODE_SEED = 0
+DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID = "deterministic-greedy-v1"
+COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID = (
+    "compact-v4-syntax-repair-seeded-sampling-v1"
+)
+_COMPACT_V4_SYNTAX_REPAIR_TEMPERATURE = 0.25
+_COMPACT_V4_SYNTAX_REPAIR_TOP_P = 0.9
+_COMPACT_V4_SYNTAX_REPAIR_TOP_K = 20
+_COMPACT_V4_SYNTAX_REPAIR_SEED = 104729
 _STRUCTURED_OUTPUT_REQUIRE_STOP = True
 _LEGACY_STRUCTURED_DECODING_MODE = "llama-cpp-bounded-span-grammar-v3"
 _STRUCTURED_DECODING_MODE = "llama-cpp-bounded-span-grammar-v5"
@@ -557,6 +565,17 @@ LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
 )
 
 
+def compact_v4_syntax_repair_sampling_identity() -> dict[str, object]:
+    """Return the exact repair-only sampler policy bound into attempt identity."""
+    return {
+        "profile": COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+        "seed": _COMPACT_V4_SYNTAX_REPAIR_SEED,
+        "temperature": _COMPACT_V4_SYNTAX_REPAIR_TEMPERATURE,
+        "top_k": _COMPACT_V4_SYNTAX_REPAIR_TOP_K,
+        "top_p": _COMPACT_V4_SYNTAX_REPAIR_TOP_P,
+    }
+
+
 def local_proposal_attempt_identity_digest(
     prompt_protocol_digest: str,
     *,
@@ -757,7 +776,35 @@ class _ChatLocalModel(Protocol):
         seed: int,
         response_format: dict[str, object],
         grammar: object | None = None,
+        top_p: float = 0.95,
+        top_k: int = 40,
     ) -> object: ...
+
+
+class _ProposalSamplingArguments(TypedDict):
+    """Exact optional llama.cpp proposal sampler keyword arguments."""
+
+    temperature: float
+    seed: int
+    top_p: NotRequired[float]
+    top_k: NotRequired[int]
+
+
+def _proposal_sampling_arguments(profile: str) -> _ProposalSamplingArguments:
+    """Resolve one trusted profile to finite llama.cpp sampler arguments."""
+    if profile == DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID:
+        return {
+            "temperature": _DETERMINISTIC_DECODE_TEMPERATURE,
+            "seed": _DETERMINISTIC_DECODE_SEED,
+        }
+    if profile == COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID:
+        return {
+            "temperature": _COMPACT_V4_SYNTAX_REPAIR_TEMPERATURE,
+            "top_p": _COMPACT_V4_SYNTAX_REPAIR_TOP_P,
+            "top_k": _COMPACT_V4_SYNTAX_REPAIR_TOP_K,
+            "seed": _COMPACT_V4_SYNTAX_REPAIR_SEED,
+        }
+    raise ValueError("proposal contract sampling profile is unsupported")
 
 
 class _ModelFactory(Protocol):
@@ -919,6 +966,7 @@ class ProposalContract:
     tests: tuple[str, ...]
     make_commands: tuple[str, ...]
     proposal_protocol: str = _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION
+    sampling_profile: str = DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID
 
     def __post_init__(self) -> None:
         """Reject malformed contract values before they reach local inference."""
@@ -943,6 +991,16 @@ class ProposalContract:
             _COMPACT_PROPOSAL_PROTOCOL_VERSION,
         }:
             raise ValueError("proposal contract compact protocol is unsupported")
+        if not isinstance(self.sampling_profile, str) or self.sampling_profile not in {
+            DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID,
+            COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+        }:
+            raise ValueError("proposal contract sampling profile is unsupported")
+        if (
+            self.sampling_profile != DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID
+            and self.proposal_protocol != _COMPACT_PROPOSAL_PROTOCOL_VERSION
+        ):
+            raise ValueError("repair sampling profile requires compact-v4")
 
     def to_json(self) -> str:
         """Serialize the trusted contract for one confined worker exchange."""
@@ -954,6 +1012,8 @@ class ProposalContract:
         }
         if self.proposal_protocol != _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION:
             value["proposal_protocol"] = self.proposal_protocol
+        if self.sampling_profile != DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID:
+            value["sampling_profile"] = self.sampling_profile
         return json.dumps(
             value,
             ensure_ascii=False,
@@ -969,7 +1029,7 @@ class ProposalContract:
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ValueError(f"proposal contract is not valid JSON: {exc}") from exc
         required = {"baseline_sha", "task_id", "tests", "make_commands"}
-        allowed = required | {"proposal_protocol"}
+        allowed = required | {"proposal_protocol", "sampling_profile"}
         if (
             not isinstance(value, dict)
             or not required.issubset(value)
@@ -1001,6 +1061,10 @@ class ProposalContract:
                     "proposal_protocol",
                     _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION,
                 ),
+            ),
+            sampling_profile=cast(
+                str,
+                value.get("sampling_profile", DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID),
             ),
         )
 
@@ -2904,6 +2968,9 @@ class LocalProposalGateway:
                         else _compact_proposal_schema_for_ranges(scope_ranges)
                     )
                 )
+                sampling_arguments = _proposal_sampling_arguments(
+                    contract.sampling_profile
+                )
                 output = chat_model.create_chat_completion(
                     messages=[
                         {
@@ -2924,13 +2991,12 @@ class LocalProposalGateway:
                         if legacy
                         else _COMPACT_SPAN_PROPOSAL_TOKENS
                     ),
-                    temperature=_DETERMINISTIC_DECODE_TEMPERATURE,
-                    seed=_DETERMINISTIC_DECODE_SEED,
                     response_format={
                         "type": "json_object",
                         "schema": schema,
                     },
                     grammar=self._grammar_for_schema(schema),
+                    **sampling_arguments,
                 )
                 text = _completion_text(
                     output,
@@ -3108,6 +3174,8 @@ def _default_model_factory(
 __all__ = [
     "COMPACT_PROPOSAL_PROTOCOL_V3",
     "COMPACT_PROPOSAL_PROTOCOL_V4",
+    "COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID",
+    "DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID",
     "EVALUATION_DIAGNOSIS_PROTOCOL",
     "CompactLineSpan",
     "CompactSpanProposal",
@@ -3115,6 +3183,7 @@ __all__ = [
     "PlannerFeedbackExchange",
     "bind_compact_focus_path",
     "build_retry_prompt",
+    "compact_v4_syntax_repair_sampling_identity",
     "compare_with_codex",
     "decode_compact_span_batch",
     "decode_prompt_batch",

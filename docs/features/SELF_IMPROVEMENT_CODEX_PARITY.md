@@ -450,6 +450,27 @@ valid repair within the original attempt count or a clean bounded rejection, two
 balanced acquire/release events, one final candidate outcome, and no compact text,
 source, raw path, parser message, or secret in parent-readable telemetry.
 
+The first repair-enabled live run proved that lifecycle but not useful diversity.
+Qwen-1.5B repeated the same 1,168-byte object and line 11/column 18 failure; Qwen-3B
+repeated the same 1,954-byte object and line 28/column 120 failure. Both repair calls
+were still greedy with seed zero, so identical prompt plus grammar selected the same
+tokens. Compact v4 now carries one parent-owned sampling profile through the
+ephemeral repair `PromptPlan` and confined worker contract. Only repair proposal
+decoding uses temperature 0.25, top-p 0.9, top-k 20, and seed 104729. The structured
+canary and every ordinary or legacy proposal retain their prior keyword arguments
+and serialized bytes.
+
+The fixed seed makes a given repair identity reproducible while nonzero temperature
+and finite top-k/top-p materially differ from the rejected greedy decode. Grammar,
+the 4,096-token stop requirement, four-edit limit, 3,072 replacement-byte cap, line
+budgets, immutable scope, lease release, and total approved-attempt count are
+unchanged. The profile name and all four controls are hashed into the compact-v4
+attempt identity; changing any one requires reapproval, while v1-v3 identity remains
+byte-stable. Unknown, non-string, or legacy-bound profile values fail before model
+construction. Live acceptance requires two runs of the same identity to select the
+same repair sampler arguments, a repair decode that is not the greedy profile, and
+no additional inference beyond the approved attempt ceiling.
+
 A September 2026 DeepSeek catalog attempt then exposed a separate parent-side
 gap. Both compact-v3 shards completed and passed worker schema validation, but a
 replacement precondition did not apply exactly to the immutable baseline. That
@@ -1045,6 +1066,17 @@ Official sources:
   of inferring support from an unrelated framework. The
   [versioned server settings](https://github.com/abetlen/llama-cpp-python/blob/26633bd1a2eaf7fd0567cc5eaec8b0165a7ea0bd/llama_cpp/server/settings.py)
   define `n_gpu_layers=0` as CPU and `-1` as moving all layers to the GPU.
+- The same locked
+  [`create_chat_completion` path](https://github.com/abetlen/llama-cpp-python/blob/26633bd1a2eaf7fd0567cc5eaec8b0165a7ea0bd/llama_cpp/llama.py)
+  accepts `temperature`, `top_p`, `top_k`, and `seed`, and forwards them through
+  its chat formatter to constrained completion. Its sampler uses greedy selection
+  at temperature zero and a seeded distribution after finite filters at positive
+  temperature, which is the maintained mechanism used for repair diversity.
+- [llama.cpp issue 7381](https://github.com/ggml-org/llama.cpp/issues/7381)
+  records a long-lived practitioner failure where the HTTP server ignored a custom
+  seed while the direct `llama-cpp-python` binding honored it. Gludd therefore keeps
+  this policy in its existing single retained in-process binding and tests the exact
+  call arguments; it does not move repair generation to the affected server path.
 - The
   [0.3.24 changelog](https://github.com/abetlen/llama-cpp-python/blob/26633bd1a2eaf7fd0567cc5eaec8b0165a7ea0bd/CHANGELOG.md)
   pins bundled llama.cpp commit `af6528e6d`. That commit's
