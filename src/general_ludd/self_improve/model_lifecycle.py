@@ -173,6 +173,14 @@ class _ActivePlanReservations:
     failure_hints: frozenset[ModelArtifactIdentity]
 
 
+@dataclass(frozen=True, slots=True)
+class _PersistedPlanReservation:
+    pid: int
+    process_started: float
+    candidates: tuple[tuple[ModelArtifactIdentity, _ReservationState], ...]
+    failure_hints: tuple[ModelArtifactIdentity, ...]
+
+
 class ModelPlanReservation:
     """Mutable atomic state for one bounded candidate retry plan."""
 
@@ -486,8 +494,58 @@ def _run_bounded_process(
     raise RuntimeError("model acquisition worker returned an invalid result")
 
 
-class ModelLeaseManager:
-    """Own self-improvement model acquisition and reclaim only safe cache entries."""
+def _validated_cache_limits(
+    quota_bytes: int | None,
+    reserve_bytes: int | None,
+) -> tuple[int, int]:
+    """Resolve and validate the managed-cache quota and reserve."""
+    quota = (
+        quota_bytes
+        if quota_bytes is not None
+        else int(
+            os.environ.get(
+                "GLUDD_SELF_IMPROVE_MODEL_QUOTA_BYTES",
+                _DEFAULT_QUOTA_BYTES,
+            )
+        )
+    )
+    reserve = (
+        reserve_bytes
+        if reserve_bytes is not None
+        else int(
+            os.environ.get(
+                "GLUDD_SELF_IMPROVE_MODEL_RESERVE_BYTES",
+                _DEFAULT_RESERVE_BYTES,
+            )
+        )
+    )
+    if (
+        isinstance(quota, bool)
+        or quota <= 0
+        or isinstance(reserve, bool)
+        or reserve < 0
+    ):
+        raise ValueError("model cache quota must be positive and reserve non-negative")
+    return quota, reserve
+
+
+def _validated_acquisition_timeout(value: object) -> float:
+    """Normalize one finite positive acquisition deadline."""
+    if isinstance(value, bool):
+        raise ValueError("model acquisition deadline must be positive and finite")
+    try:
+        normalized = float(cast(str | float, value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "model acquisition deadline must be positive and finite"
+        ) from exc
+    if not math.isfinite(normalized) or normalized <= 0:
+        raise ValueError("model acquisition deadline must be positive and finite")
+    return normalized
+
+
+class _ModelLeaseConfiguration:
+    """Initialize and observe one owned model-cache lifecycle."""
 
     def __init__(
         self,
@@ -512,23 +570,10 @@ class ModelLeaseManager:
         if selected_root.is_symlink():
             raise RuntimeError("self-improvement model cache root must not be a symlink")
         self.cache_root = selected_root.resolve(strict=True)
-        self.quota_bytes = (
-            quota_bytes
-            if quota_bytes is not None
-            else int(os.environ.get("GLUDD_SELF_IMPROVE_MODEL_QUOTA_BYTES", _DEFAULT_QUOTA_BYTES))
+        self.quota_bytes, self.reserve_bytes = _validated_cache_limits(
+            quota_bytes,
+            reserve_bytes,
         )
-        self.reserve_bytes = (
-            reserve_bytes
-            if reserve_bytes is not None
-            else int(os.environ.get("GLUDD_SELF_IMPROVE_MODEL_RESERVE_BYTES", _DEFAULT_RESERVE_BYTES))
-        )
-        if (
-            isinstance(self.quota_bytes, bool)
-            or self.quota_bytes <= 0
-            or isinstance(self.reserve_bytes, bool)
-            or self.reserve_bytes < 0
-        ):
-            raise ValueError("model cache quota must be positive and reserve non-negative")
         if event_sink is not None and not callable(event_sink):
             raise TypeError("model acquisition event sink must be callable")
         if hf_token_required is not None and not isinstance(hf_token_required, bool):
@@ -553,19 +598,11 @@ class ModelLeaseManager:
                 _DEFAULT_ACQUISITION_TIMEOUT_SECONDS,
             )
         )
-        if isinstance(timeout_value, bool):
-            raise ValueError("model acquisition deadline must be positive and finite")
-        try:
-            normalized_timeout = float(cast(str | float, timeout_value))
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "model acquisition deadline must be positive and finite"
-            ) from exc
-        if not math.isfinite(normalized_timeout) or normalized_timeout <= 0:
-            raise ValueError("model acquisition deadline must be positive and finite")
         self._event_sink = event_sink
         self._heartbeat_interval_seconds = float(heartbeat_interval_seconds)
-        self._acquisition_timeout_seconds = normalized_timeout
+        self._acquisition_timeout_seconds = _validated_acquisition_timeout(
+            timeout_value
+        )
         self._event_sink_lock = threading.Lock()
 
         self._models_dir = self.cache_root / ".gludd" / "models"
@@ -907,6 +944,10 @@ class ModelLeaseManager:
             stop_observer()
             self._emit_event(event(completed_phase))
 
+
+class _ModelLeasePlanOperations(_ModelLeaseConfiguration):
+    """Own lease acquisition and candidate-plan reservations."""
+
     @contextmanager
     def acquire(
         self,
@@ -917,6 +958,7 @@ class ModelLeaseManager:
         resolved_revision: str | None = None,
     ) -> Iterator[AcquiredModel]:
         """Acquire one explicit or planned model and always release its lease."""
+        manager = cast("ModelLeaseManager", self)
         if not task_description.strip():
             raise ValueError("task description must not be empty")
         if (model_config is None) != (resolved_revision is None):
@@ -924,9 +966,9 @@ class ModelLeaseManager:
         if explicit_path is not None and model_config is not None:
             raise ValueError("explicit model path cannot combine with a planned candidate")
         model = (
-            self._acquire_explicit(explicit_path)
+            manager._acquire_explicit(explicit_path)
             if explicit_path is not None
-            else self._acquire_managed(
+            else manager._acquire_managed(
                 task_description,
                 model_config=model_config,
                 resolved_revision=resolved_revision,
@@ -940,7 +982,7 @@ class ModelLeaseManager:
             raise
         finally:
             try:
-                self._release_lease(model.lease_path)
+                manager._release_lease(model.lease_path)
             except RuntimeError as cleanup_error:
                 if primary_error is None:
                     raise
@@ -948,7 +990,7 @@ class ModelLeaseManager:
                     f"model lease cleanup also failed: {str(cleanup_error)[:1000]}"
                 )
             if primary_error is None:
-                self.reclaim(required_bytes=0)
+                manager.reclaim(required_bytes=0)
 
     @staticmethod
     def _identity_sort_key(
@@ -1024,7 +1066,7 @@ class ModelLeaseManager:
             f"{os.getpid()}-{uuid.uuid4().hex}.json"
         )
         reservation = ModelPlanReservation(
-            self,
+            cast("ModelLeaseManager", self),
             reservation_path,
             protected,
             failures,
@@ -1100,9 +1142,10 @@ class ModelLeaseManager:
         ):
             raise ValueError("failed model identifiers must be non-empty strings")
         requested = set(model_ids)
+        manager = cast("ModelLeaseManager", self)
         identities = {
             self._owned_identity(item)
-            for item in self._load_manifests()
+            for item in manager._load_manifests()
             if item.model_id in requested
         }
         return tuple(sorted(identities, key=self._identity_sort_key))
@@ -1133,6 +1176,9 @@ class ModelLeaseManager:
         plan.dry_run()
         plan.execute_and_verify()
 
+class _ModelLeaseReclamationOperations(_ModelLeasePlanOperations):
+    """Diagnose pressure and reclaim only verified, unleased artifacts."""
+
     def diagnose_reclaim(self, *, required_bytes: int) -> ModelCacheDiagnostic:
         """Report whether owned unleased artifacts can satisfy cache pressure."""
         if (
@@ -1141,9 +1187,10 @@ class ModelLeaseManager:
             or required_bytes < 0
         ):
             raise ValueError("required_bytes must be a non-negative integer")
-        manifests = self._load_manifests()
-        active = self._active_digests()
-        reservation = self._active_plan_reservation()
+        manager = cast("ModelLeaseManager", self)
+        manifests = manager._load_manifests()
+        active = manager._active_digests()
+        reservation = manager._active_plan_reservation()
         try:
             free = self._disk_free(self.cache_root)
         except OSError as exc:
@@ -1193,24 +1240,14 @@ class ModelLeaseManager:
             or required_bytes < 0
         ):
             raise ValueError("required_bytes must be a non-negative integer")
-        manifests = self._load_manifests()
-        active = self._active_digests()
-        reservation = self._active_plan_reservation()
+        manager = cast("ModelLeaseManager", self)
+        manifests = manager._load_manifests()
+        active = manager._active_digests()
+        reservation = manager._active_plan_reservation()
         removed: list[Path] = []
         operation_id = uuid.uuid4().hex
         started_at = time.monotonic()
-
-        def under_pressure() -> bool:
-            try:
-                free = self._disk_free(self.cache_root)
-            except OSError as exc:
-                raise RuntimeError("cannot inspect model cache disk headroom") from exc
-            return (
-                self._cache_payload_bytes() + required_bytes > self.quota_bytes
-                or free < self.reserve_bytes + required_bytes
-            )
-
-        if not under_pressure():
+        if not self._under_pressure(required_bytes):
             return ()
 
         candidates = sorted(
@@ -1227,64 +1264,14 @@ class ModelLeaseManager:
             ),
         )
         for item in candidates:
-            self._emit_eviction_event(
-                ModelAcquisitionPhase.EVICTION_PLANNED,
-                operation_id=operation_id,
-                started_at=started_at,
-                artifact=item,
+            removed.append(
+                self._reclaim_candidate(
+                    item,
+                    operation_id=operation_id,
+                    started_at=started_at,
+                )
             )
-            try:
-                self._delete_owned_artifact(item)
-            except (KeyboardInterrupt, SystemExit):
-                self._emit_eviction_event(
-                    ModelAcquisitionPhase.EVICTION_REFUSED,
-                    operation_id=operation_id,
-                    started_at=started_at,
-                    artifact=item,
-                    failure=ModelAcquisitionFailure.INTERRUPTED,
-                )
-                raise
-            except Exception:
-                self._emit_eviction_event(
-                    ModelAcquisitionPhase.EVICTION_REFUSED,
-                    operation_id=operation_id,
-                    started_at=started_at,
-                    artifact=item,
-                    failure=ModelAcquisitionFailure.CACHE_RECLAIM,
-                )
-                raise
-            if item.path.exists():
-                self._emit_eviction_event(
-                    ModelAcquisitionPhase.EVICTION_REFUSED,
-                    operation_id=operation_id,
-                    started_at=started_at,
-                    artifact=item,
-                    failure=ModelAcquisitionFailure.CACHE_RECLAIM,
-                )
-                raise RuntimeError(
-                    f"model revision eviction did not remove owned artifact: {item.path}"
-                )
-            try:
-                item.manifest_path.unlink()
-            except OSError as exc:
-                self._emit_eviction_event(
-                    ModelAcquisitionPhase.EVICTION_REFUSED,
-                    operation_id=operation_id,
-                    started_at=started_at,
-                    artifact=item,
-                    failure=ModelAcquisitionFailure.CACHE_RECLAIM,
-                )
-                raise RuntimeError(
-                    f"model ownership manifest cleanup failed: {item.manifest_path}"
-                ) from exc
-            removed.append(item.path)
-            self._emit_eviction_event(
-                ModelAcquisitionPhase.EVICTION_COMPLETED,
-                operation_id=operation_id,
-                started_at=started_at,
-                artifact=item,
-            )
-            if not under_pressure():
+            if not self._under_pressure(required_bytes):
                 return tuple(removed)
 
         self._emit_eviction_event(
@@ -1297,15 +1284,96 @@ class ModelLeaseManager:
             ModelAcquisitionFailure.CACHE_HEADROOM
         )
 
+    def _under_pressure(self, required_bytes: int) -> bool:
+        """Return whether quota or disk reserve requires cache reclamation."""
+        try:
+            free = self._disk_free(self.cache_root)
+        except OSError as exc:
+            raise RuntimeError("cannot inspect model cache disk headroom") from exc
+        return (
+            self._cache_payload_bytes() + required_bytes > self.quota_bytes
+            or free < self.reserve_bytes + required_bytes
+        )
+
+    def _reclaim_candidate(
+        self,
+        item: _OwnedArtifact,
+        *,
+        operation_id: str,
+        started_at: float,
+    ) -> Path:
+        """Delete one selected artifact and emit the exact lifecycle events."""
+        self._emit_eviction_event(
+            ModelAcquisitionPhase.EVICTION_PLANNED,
+            operation_id=operation_id,
+            started_at=started_at,
+            artifact=item,
+        )
+        try:
+            self._delete_owned_artifact(item)
+        except (KeyboardInterrupt, SystemExit):
+            self._emit_eviction_event(
+                ModelAcquisitionPhase.EVICTION_REFUSED,
+                operation_id=operation_id,
+                started_at=started_at,
+                artifact=item,
+                failure=ModelAcquisitionFailure.INTERRUPTED,
+            )
+            raise
+        except Exception:
+            self._emit_eviction_event(
+                ModelAcquisitionPhase.EVICTION_REFUSED,
+                operation_id=operation_id,
+                started_at=started_at,
+                artifact=item,
+                failure=ModelAcquisitionFailure.CACHE_RECLAIM,
+            )
+            raise
+        if item.path.exists():
+            self._emit_eviction_event(
+                ModelAcquisitionPhase.EVICTION_REFUSED,
+                operation_id=operation_id,
+                started_at=started_at,
+                artifact=item,
+                failure=ModelAcquisitionFailure.CACHE_RECLAIM,
+            )
+            raise RuntimeError(
+                f"model revision eviction did not remove owned artifact: {item.path}"
+            )
+        try:
+            item.manifest_path.unlink()
+        except OSError as exc:
+            self._emit_eviction_event(
+                ModelAcquisitionPhase.EVICTION_REFUSED,
+                operation_id=operation_id,
+                started_at=started_at,
+                artifact=item,
+                failure=ModelAcquisitionFailure.CACHE_RECLAIM,
+            )
+            raise RuntimeError(
+                f"model ownership manifest cleanup failed: {item.manifest_path}"
+            ) from exc
+        self._emit_eviction_event(
+            ModelAcquisitionPhase.EVICTION_COMPLETED,
+            operation_id=operation_id,
+            started_at=started_at,
+            artifact=item,
+        )
+        return item.path
+
+class _ModelLeaseAcquisitionOperations(_ModelLeaseReclamationOperations):
+    """Resolve and acquire immutable model artifacts."""
+
     def resolve_revision(self, repo_id: str) -> str:
         """Resolve one repository to a normalized immutable model commit."""
         if not isinstance(repo_id, str) or not repo_id.strip():
             raise ValueError("model repository identifier must be non-empty")
         normalized_repo = repo_id.strip()
+        manager = cast("ModelLeaseManager", self)
         owned = sorted(
             (
                 item
-                for item in self._load_manifests()
+                for item in manager._load_manifests()
                 if item.repo_id == normalized_repo
             ),
             key=lambda item: (item.last_used_ns, item.revision),
@@ -1358,6 +1426,7 @@ class ModelLeaseManager:
         model_config: LocalModelConfig | None = None,
         resolved_revision: str | None = None,
     ) -> AcquiredModel:
+        manager = cast("ModelLeaseManager", self)
         config = model_config if model_config is not None else self._selector(task_description)
         if not isinstance(config, LocalModelConfig) or config.category != "coding":
             raise RuntimeError("self-improvement selector must return a coding model")
@@ -1382,8 +1451,8 @@ class ModelLeaseManager:
                 raise ModelAcquisitionError(
                     ModelAcquisitionFailure.CACHE_RECLAIM
                 ) from error
-            lock_path = self._acquisition_lock_path(config.repo, revision)
-            descriptor = self._claim_acquisition(lock_path)
+            lock_path = manager._acquisition_lock_path(config.repo, revision)
+            descriptor = manager._claim_acquisition(lock_path)
             try:
                 cached = self._find_owned(config, revision)
                 if cached is not None:
@@ -1484,7 +1553,7 @@ class ModelLeaseManager:
             last_used_ns=now,
             manifest_path=manifest_path,
         )
-        self._write_manifest(artifact)
+        cast("ModelLeaseManager", self)._write_manifest(artifact)
         return artifact
 
     def _find_owned(
@@ -1492,7 +1561,8 @@ class ModelLeaseManager:
         config: LocalModelConfig,
         revision: str,
     ) -> _OwnedArtifact | None:
-        for item in self._load_manifests():
+        manager = cast("ModelLeaseManager", self)
+        for item in manager._load_manifests():
             if (
                 item.model_id != config.name
                 or item.repo_id != config.repo
@@ -1514,7 +1584,7 @@ class ModelLeaseManager:
                     "last_used_ns": time.time_ns(),
                 }
             )
-            self._write_manifest(refreshed)
+            manager._write_manifest(refreshed)
             return refreshed
         return None
 
@@ -1554,6 +1624,9 @@ class ModelLeaseManager:
             return
         except OSError as exc:
             raise RuntimeError(f"model lease cleanup failed: {lease_path}") from exc
+
+class _ModelLeasePersistenceOperations(_ModelLeaseAcquisitionOperations):
+    """Persist and validate owned manifests, reservations, and leases."""
 
     def _load_manifests(self) -> list[_OwnedArtifact]:
         manifests: list[_OwnedArtifact] = []
@@ -1640,107 +1713,128 @@ class ModelLeaseManager:
         protected: set[ModelArtifactIdentity] = set()
         failure_hints: set[ModelArtifactIdentity] = set()
         for path in sorted(self._reservations_dir.glob("*.json")):
-            value = _read_json(path, "model plan reservation")
-            expected = {
-                "schema_version",
-                "pid",
-                "process_started",
-                "created_ns",
-                "candidates",
-                "failure_hints",
-            }
-            pid = value.get("pid")
-            started = value.get("process_started")
-            created = value.get("created_ns")
-            candidate_values = value.get("candidates")
-            failure_values = value.get("failure_hints")
-            if (
-                set(value) != expected
-                or value.get("schema_version") != _RESERVATION_SCHEMA
-                or isinstance(pid, bool)
-                or not isinstance(pid, int)
-                or pid <= 0
-                or isinstance(started, bool)
-                or not isinstance(started, (int, float))
-                or not math.isfinite(float(started))
-                or float(started) <= 0
-                or isinstance(created, bool)
-                or not isinstance(created, int)
-                or created <= 0
-                or not isinstance(candidate_values, list)
-                or not candidate_values
-                or not isinstance(failure_values, list)
-            ):
-                raise RuntimeError(f"model plan reservation is invalid: {path}")
-            parsed_candidates: list[
-                tuple[ModelArtifactIdentity, _ReservationState]
-            ] = []
-            for item in candidate_values:
-                if not isinstance(item, dict) or set(item) != {"identity", "state"}:
-                    raise RuntimeError(
-                        f"model plan reservation is invalid: {path}"
-                    )
-                identity = self._identity_from_payload(
-                    item.get("identity"),
-                    reservation_path=path,
-                )
-                state_value = item.get("state")
-                if not isinstance(state_value, str):
-                    raise RuntimeError(
-                        f"model plan reservation is invalid: {path}"
-                    )
-                try:
-                    state = _ReservationState(state_value)
-                except ValueError as exc:
-                    raise RuntimeError(
-                        f"model plan reservation is invalid: {path}"
-                    ) from exc
-                parsed_candidates.append((identity, state))
-            parsed_failures = tuple(
-                self._identity_from_payload(item, reservation_path=path)
-                for item in failure_values
-            )
-            candidate_identities = [item[0] for item in parsed_candidates]
-            if (
-                len(set(candidate_identities)) != len(candidate_identities)
-                or len(set(parsed_failures)) != len(parsed_failures)
-            ):
-                raise RuntimeError(f"model plan reservation is invalid: {path}")
-            observed = self._process_started(pid)
-            if observed is not None and (
-                isinstance(observed, bool)
-                or not isinstance(observed, (int, float))
-                or not math.isfinite(float(observed))
-                or float(observed) <= 0
-            ):
-                raise RuntimeError(
-                    f"model plan reservation process birth is invalid: {path}"
-                )
-            if observed is None or abs(float(started) - float(observed)) > 0.001:
-                try:
-                    path.unlink()
-                except FileNotFoundError:
-                    pass
-                except OSError as exc:
-                    raise RuntimeError(
-                        f"stale model plan reservation cleanup failed: {path}"
-                    ) from exc
+            reservation = self._parse_plan_reservation(path)
+            if not self._reservation_process_is_live(path, reservation):
                 continue
             protected.update(
                 identity
-                for identity, state in parsed_candidates
+                for identity, state in reservation.candidates
                 if state is _ReservationState.PLANNED
             )
-            failure_hints.update(parsed_failures)
+            failure_hints.update(reservation.failure_hints)
             failure_hints.update(
                 identity
-                for identity, state in parsed_candidates
+                for identity, state in reservation.candidates
                 if state is _ReservationState.FAILED
             )
         return _ActivePlanReservations(
             protected=frozenset(protected),
             failure_hints=frozenset(failure_hints),
         )
+
+    def _parse_plan_reservation(self, path: Path) -> _PersistedPlanReservation:
+        """Validate and parse one bounded reservation artifact."""
+        value = _read_json(path, "model plan reservation")
+        expected = {
+            "schema_version",
+            "pid",
+            "process_started",
+            "created_ns",
+            "candidates",
+            "failure_hints",
+        }
+        pid = value.get("pid")
+        started = value.get("process_started")
+        created = value.get("created_ns")
+        candidate_values = value.get("candidates")
+        failure_values = value.get("failure_hints")
+        if (
+            set(value) != expected
+            or value.get("schema_version") != _RESERVATION_SCHEMA
+            or isinstance(pid, bool)
+            or not isinstance(pid, int)
+            or pid <= 0
+            or isinstance(started, bool)
+            or not isinstance(started, (int, float))
+            or not math.isfinite(float(started))
+            or float(started) <= 0
+            or isinstance(created, bool)
+            or not isinstance(created, int)
+            or created <= 0
+            or not isinstance(candidate_values, list)
+            or not candidate_values
+            or not isinstance(failure_values, list)
+        ):
+            raise RuntimeError(f"model plan reservation is invalid: {path}")
+        candidates = tuple(
+            self._parse_reserved_candidate(item, path)
+            for item in candidate_values
+        )
+        failures = tuple(
+            self._identity_from_payload(item, reservation_path=path)
+            for item in failure_values
+        )
+        identities = [item[0] for item in candidates]
+        if len(set(identities)) != len(identities) or len(set(failures)) != len(
+            failures
+        ):
+            raise RuntimeError(f"model plan reservation is invalid: {path}")
+        return _PersistedPlanReservation(
+            pid=pid,
+            process_started=float(started),
+            candidates=candidates,
+            failure_hints=failures,
+        )
+
+    def _parse_reserved_candidate(
+        self,
+        item: object,
+        path: Path,
+    ) -> tuple[ModelArtifactIdentity, _ReservationState]:
+        """Validate one candidate entry from a persisted reservation."""
+        if not isinstance(item, dict) or set(item) != {"identity", "state"}:
+            raise RuntimeError(f"model plan reservation is invalid: {path}")
+        identity = self._identity_from_payload(
+            item.get("identity"),
+            reservation_path=path,
+        )
+        state_value = item.get("state")
+        if not isinstance(state_value, str):
+            raise RuntimeError(f"model plan reservation is invalid: {path}")
+        try:
+            return identity, _ReservationState(state_value)
+        except ValueError as exc:
+            raise RuntimeError(f"model plan reservation is invalid: {path}") from exc
+
+    def _reservation_process_is_live(
+        self,
+        path: Path,
+        reservation: _PersistedPlanReservation,
+    ) -> bool:
+        """Keep exact live owners and atomically reap stale reservation files."""
+        observed = self._process_started(reservation.pid)
+        if observed is not None and (
+            isinstance(observed, bool)
+            or not isinstance(observed, (int, float))
+            or not math.isfinite(float(observed))
+            or float(observed) <= 0
+        ):
+            raise RuntimeError(
+                f"model plan reservation process birth is invalid: {path}"
+            )
+        if observed is not None and abs(
+            reservation.process_started - float(observed)
+        ) <= 0.001:
+            return True
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            raise RuntimeError(
+                f"stale model plan reservation cleanup failed: {path}"
+            ) from exc
+        return False
 
     def _active_digests(self) -> set[str]:
         active: set[str] = set()
@@ -1794,6 +1888,10 @@ class ModelLeaseManager:
             raise RuntimeError(
                 "model acquisition is already owned by another Gludd process"
             ) from exc
+
+
+class ModelLeaseManager(_ModelLeasePersistenceOperations):
+    """Own self-improvement model acquisition and safe cache reclamation."""
 
 
 def _print_operator_event(event: ModelAcquisitionEvent) -> None:

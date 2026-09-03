@@ -53,7 +53,9 @@ _YAML_KINDS: frozenset[str] = frozenset({"config", "yaml", "role"})
 class CapabilityChecker(Protocol):
     """Decides whether a required capability is granted. Injected at integration."""
 
-    def allows(self, capability: str) -> bool: ...
+    def allows(self, capability: str) -> bool:
+        """Return whether the named capability is explicitly granted."""
+        ...
 
 
 @runtime_checkable
@@ -67,7 +69,9 @@ class SafeWriter(Protocol):
     type covariance.
     """
 
-    def write(self, path: str, content: str) -> str | None: ...
+    def write(self, path: str, content: str) -> str | None:
+        """Write content through the implementation's safety boundary."""
+        ...
 
 
 @runtime_checkable
@@ -79,13 +83,19 @@ class UpdatePlan(Protocol):
     """
 
     @property
-    def kind(self) -> str: ...
+    def kind(self) -> str:
+        """Return the update kind used to select the apply path."""
+        ...
 
     @property
-    def capability_required(self) -> str: ...
+    def capability_required(self) -> str:
+        """Return the capability that must be granted before applying."""
+        ...
 
     @property
-    def target_paths(self) -> list[str]: ...
+    def target_paths(self) -> list[str]:
+        """Return repository-relative paths targeted by the update."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -229,6 +239,7 @@ class UpdateApplier:
         capability_checker: CapabilityChecker,
         workspace_root: Path,
     ) -> None:
+        """Bind explicit write, capability, and workspace safety boundaries."""
         self._writer = writer
         self._capability_checker = capability_checker
         self._workspace_root = workspace_root
@@ -242,56 +253,20 @@ class UpdateApplier:
         public_key: str = "",
         verify_signature: Callable[[str, str, str], bool] | None = None,
     ) -> ApplyResult:
+        """Apply one validated update plan or return fail-closed evidence."""
         target_paths = list(plan.target_paths)
-
-        # 0. H.17 cryptographic signature verification (runs BEFORE any gate).
-        #    A missing signature / key / verifier when the verifier is supplied
-        #    → fail closed immediately. No content is ever written without
-        #    a valid Ed25519 detached signature over the exact payload.
-        if verify_signature is not None:
-            if not content_signature or not public_key:
-                return ApplyResult(
-                    status="denied",
-                    target_paths=target_paths,
-                    evidence="signature verification configured but no "
-                    "content_signature or public_key provided — refusing to apply",
-                )
-            try:
-                ok = verify_signature(change_content, content_signature, public_key)
-            except Exception as exc:
-                return ApplyResult(
-                    status="denied",
-                    target_paths=target_paths,
-                    evidence=f"signature verification raised: {exc}",
-                )
-            if not ok:
-                return ApplyResult(
-                    status="denied",
-                    target_paths=target_paths,
-                    evidence="signature verification failed — content may be "
-                    "tampered, unsigned, or signed with a different key",
-                )
-
-        # 1. Capability gate. Fail closed on anything not explicitly allowed
-        #    (including a checker that itself raises).
-        try:
-            allowed = bool(
-                self._capability_checker.allows(plan.capability_required)
-            )
-        except Exception as exc:  # uncertainty must fail closed
-            return ApplyResult(
-                status="denied",
-                target_paths=target_paths,
-                evidence=f"capability check raised: {exc}",
-            )
-        if not allowed:
-            return ApplyResult(
-                status="denied",
-                target_paths=target_paths,
-                evidence=(
-                    f"capability not allowed: {plan.capability_required!r}"
-                ),
-            )
+        signature_failure = self._signature_failure(
+            change_content,
+            target_paths,
+            content_signature=content_signature,
+            public_key=public_key,
+            verify_signature=verify_signature,
+        )
+        if signature_failure is not None:
+            return signature_failure
+        capability_failure = self._capability_failure(plan, target_paths)
+        if capability_failure is not None:
+            return capability_failure
 
         # 2. Workspace-confinement gate. Every target path must resolve INSIDE
         #    the workspace root. ``../`` traversal, percent-encoded escapes, and
@@ -339,65 +314,11 @@ class UpdateApplier:
 
         # 5. YAML-shaped kinds: validate then write.
         if kind in _YAML_KINDS:
-            try:
-                yaml.safe_load(change_content)
-            except yaml.YAMLError as exc:
-                return ApplyResult(
-                    status="denied",
-                    target_paths=target_paths,
-                    evidence=f"invalid yaml: {exc}",
-                )
-
-            # Snapshot each resolved target's PRIOR bytes before writing so a
-            # post-write validation failure can be rolled back — a broken config
-            # is never left on disk. ``None`` marks a file that did not exist.
-            snapshots: list[tuple[Path, bytes | None]] = []
-            for resolved in resolved_paths:
-                try:
-                    prior = resolved.read_bytes() if resolved.exists() else None
-                except OSError:
-                    prior = None
-                snapshots.append((resolved, prior))
-
-            try:
-                # TOCTOU fix (applier-C): write the RESOLVED paths computed by
-                # the confinement gate, NOT the raw target strings. A symlink
-                # swapped between the check and this write cannot redirect the
-                # write outside the confined, already-resolved location.
-                for resolved in resolved_paths:
-                    self._writer.write(str(resolved), change_content)
-            except Exception as exc:  # write failure fails closed
-                # Roll back anything already swapped before failing closed.
-                _restore_snapshots(snapshots)
-                return ApplyResult(
-                    status="denied",
-                    target_paths=target_paths,
-                    evidence=f"write failed: {exc}",
-                )
-
-            # Post-write validation (recoverability): re-read the on-disk result
-            # and confirm it still parses as YAML. If a target materialised on
-            # disk but no longer parses (or cannot be read), restore EVERY
-            # snapshot and deny — the config is rolled back to its prior state.
-            # A writer that does not materialise a file leaves nothing on disk to
-            # validate, so its absence is not treated as a failure.
-            try:
-                for resolved in resolved_paths:
-                    if not resolved.exists():
-                        continue
-                    yaml.safe_load(resolved.read_text(encoding="utf-8"))
-            except Exception as exc:
-                _restore_snapshots(snapshots)
-                return ApplyResult(
-                    status="denied",
-                    target_paths=target_paths,
-                    evidence=f"post-write validation failed, rolled back: {exc}",
-                )
-
-            return ApplyResult(
-                status="applied",
-                target_paths=target_paths,
-                evidence=f"applied {kind} change to {len(target_paths)} path(s)",
+            return self._apply_yaml(
+                kind,
+                target_paths,
+                resolved_paths,
+                change_content,
             )
 
         # 6. Unknown kind -> fail closed.
@@ -405,4 +326,118 @@ class UpdateApplier:
             status="denied",
             target_paths=target_paths,
             evidence=f"unsupported plan kind: {kind!r}",
+        )
+
+    def _signature_failure(
+        self,
+        change_content: str,
+        target_paths: list[str],
+        *,
+        content_signature: str,
+        public_key: str,
+        verify_signature: Callable[[str, str, str], bool] | None,
+    ) -> ApplyResult | None:
+        """Return a fail-closed signature result, or allow the next gate."""
+        if verify_signature is None:
+            return None
+        if not content_signature or not public_key:
+            return ApplyResult(
+                status="denied",
+                target_paths=target_paths,
+                evidence="signature verification configured but no "
+                "content_signature or public_key provided — refusing to apply",
+            )
+        try:
+            verified = verify_signature(
+                change_content,
+                content_signature,
+                public_key,
+            )
+        except Exception as exc:
+            return ApplyResult(
+                status="denied",
+                target_paths=target_paths,
+                evidence=f"signature verification raised: {exc}",
+            )
+        if verified:
+            return None
+        return ApplyResult(
+            status="denied",
+            target_paths=target_paths,
+            evidence="signature verification failed — content may be "
+            "tampered, unsigned, or signed with a different key",
+        )
+
+    def _capability_failure(
+        self,
+        plan: UpdatePlan,
+        target_paths: list[str],
+    ) -> ApplyResult | None:
+        """Return a fail-closed capability result, or allow the path gates."""
+        try:
+            allowed = bool(
+                self._capability_checker.allows(plan.capability_required)
+            )
+        except Exception as exc:
+            return ApplyResult(
+                status="denied",
+                target_paths=target_paths,
+                evidence=f"capability check raised: {exc}",
+            )
+        if allowed:
+            return None
+        return ApplyResult(
+            status="denied",
+            target_paths=target_paths,
+            evidence=f"capability not allowed: {plan.capability_required!r}",
+        )
+
+    def _apply_yaml(
+        self,
+        kind: str,
+        target_paths: list[str],
+        resolved_paths: list[Path],
+        change_content: str,
+    ) -> ApplyResult:
+        """Validate, write, revalidate, and roll back YAML-shaped changes."""
+        try:
+            yaml.safe_load(change_content)
+        except yaml.YAMLError as exc:
+            return ApplyResult(
+                status="denied",
+                target_paths=target_paths,
+                evidence=f"invalid yaml: {exc}",
+            )
+        snapshots: list[tuple[Path, bytes | None]] = []
+        for resolved in resolved_paths:
+            try:
+                prior = resolved.read_bytes() if resolved.exists() else None
+            except OSError:
+                prior = None
+            snapshots.append((resolved, prior))
+        try:
+            for resolved in resolved_paths:
+                self._writer.write(str(resolved), change_content)
+        except Exception as exc:
+            _restore_snapshots(snapshots)
+            return ApplyResult(
+                status="denied",
+                target_paths=target_paths,
+                evidence=f"write failed: {exc}",
+            )
+        try:
+            for resolved in resolved_paths:
+                if resolved.exists():
+                    yaml.safe_load(resolved.read_text(encoding="utf-8"))
+        except Exception as exc:
+            _restore_snapshots(snapshots)
+            return ApplyResult(
+                status="denied",
+                target_paths=target_paths,
+                evidence=f"post-write validation failed, rolled back: {exc}",
+            )
+        return ApplyResult(
+            status="applied",
+            target_paths=target_paths,
+            evidence=f"applied {kind} change to {len(target_paths)} path(s)",
         )

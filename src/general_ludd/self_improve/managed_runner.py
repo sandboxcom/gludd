@@ -36,6 +36,7 @@ from general_ludd.self_improve.codex_comparison import (
     LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL,
     CandidateEvidence,
     CodexReference,
+    CompactLineSpan,
     CompactSpanProposal,
     ComparisonResult,
     ProposalManifest,
@@ -681,6 +682,41 @@ class AttemptResult:
         _validate_digest("attempt identity", self.attempt_identity_digest)
 
 
+def _approved_plan_required_fields(
+    value: dict[str, object],
+    schema_version: object,
+) -> set[str]:
+    """Select the exact serialized-plan fields for one supported schema."""
+    common_fields = {
+        "approval_id",
+        "approved",
+        "approved_plan_digest",
+        "attempt_identity_digest",
+        "explicit_model_path",
+        "max_attempts",
+        "mechanical_proposal",
+        "project_id",
+        "prompt",
+        "reference",
+        "required_output_tokens",
+        "schema_version",
+        "task",
+        "todo_id",
+    }
+    if schema_version == _LEGACY_PLAN_SCHEMA_VERSION:
+        return common_fields | {"repo_root"}
+    if schema_version == _LEGACY_BOUND_PLAN_SCHEMA_VERSION:
+        return common_fields | {"repository_binding_digest"}
+    if schema_version == _PLAN_SCHEMA_VERSION:
+        repository_fields = {"repo_root", "repository_binding_digest"} & set(value)
+        return common_fields | (
+            {"repo_root"}
+            if repository_fields == {"repo_root"}
+            else {"repository_binding_digest"}
+        )
+    raise ValueError("approved plan schema_version is unsupported")
+
+
 @dataclass(frozen=True, slots=True)
 class ApprovedSelfImprovePlan:
     """Strict immutable execution artifact bound to one recorded approval."""
@@ -887,38 +923,9 @@ class ApprovedSelfImprovePlan:
         if not isinstance(value, dict):
             raise ValueError("approved plan must be a JSON object")
         schema_version = value.get("schema_version")
-        common_fields = {
-                "approval_id",
-                "approved",
-                "approved_plan_digest",
-                "attempt_identity_digest",
-                "explicit_model_path",
-                "max_attempts",
-                "mechanical_proposal",
-                "project_id",
-                "prompt",
-                "reference",
-                "required_output_tokens",
-                "schema_version",
-                "task",
-                "todo_id",
-        }
-        if schema_version == _LEGACY_PLAN_SCHEMA_VERSION:
-            required_fields = common_fields | {"repo_root"}
-        elif schema_version == _LEGACY_BOUND_PLAN_SCHEMA_VERSION:
-            required_fields = common_fields | {"repository_binding_digest"}
-        elif schema_version == _PLAN_SCHEMA_VERSION:
-            repository_fields = {"repo_root", "repository_binding_digest"} & set(value)
-            required_fields = common_fields | (
-                {"repo_root"}
-                if repository_fields == {"repo_root"}
-                else {"repository_binding_digest"}
-            )
-        else:
-            raise ValueError("approved plan schema_version is unsupported")
         mapping = _exact_mapping(
             value,
-            required=required_fields,
+            required=_approved_plan_required_fields(value, schema_version),
             optional=set(),
             label="approved plan",
         )
@@ -1253,6 +1260,34 @@ class _PendingSyntaxRepair:
     candidate_identity: ModelArtifactIdentity | None
 
 
+@dataclass(slots=True)
+class _ManagedRunState:
+    """Mutable orchestration state shared by bounded attempt helpers."""
+
+    prompt: PromptPlan | str
+    final: AttemptResult | None = None
+    model_manager: _LeaseManager | None = None
+    outcomes: ManagedOutcomeAdapter | None = None
+    candidates: tuple[PlannedModelCandidate, ...] | None = None
+    reservation: _Reservation | None = None
+    candidate_index: int = 0
+    attempted_models: list[str] = field(default_factory=list)
+    outcome_ids: list[str] = field(default_factory=list)
+    pending_repair: _PendingSyntaxRepair | None = None
+    syntax_repair_used: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _ManagedAttemptContext:
+    """Resolved model and prompt inputs for one bounded attempt."""
+
+    prompt: PromptPlan | str
+    candidate: PlannedModelCandidate | None
+    candidate_identity: ModelArtifactIdentity | None
+    repairing: bool
+    use_mechanical: bool
+
+
 def _default_outcome_adapter(cache_root: Path) -> ManagedOutcomeAdapter:
     evidence_path = cache_root / ".gludd" / "capability-evidence.json"
     return CapabilityEvidenceOutcomeAdapter(CapabilityEvidenceStore(str(evidence_path)))
@@ -1339,196 +1374,255 @@ class ManagedSelfImproveRunner:
         if not isinstance(plan, ApprovedSelfImprovePlan):
             raise ValueError("plan must be an ApprovedSelfImprovePlan")
         plan.verify_approval()
-        prompt = plan.prompt
-        final: AttemptResult | None = None
-        model_manager: _LeaseManager | None = None
-        outcomes: ManagedOutcomeAdapter | None = None
-        candidates: tuple[PlannedModelCandidate, ...] | None = None
-        reservation: _Reservation | None = None
-        candidate_index = 0
-        attempted_models: list[str] = []
-        outcome_ids: list[str] = []
-        pending_repair: _PendingSyntaxRepair | None = None
-        syntax_repair_used = False
-
+        state = _ManagedRunState(prompt=plan.prompt)
         with ExitStack() as stack:
             for attempt in range(1, plan.max_attempts + 1):
-                repair_state = pending_repair
-                pending_repair = None
-                repairing = repair_state is not None
-                use_mechanical = (
-                    not repairing
-                    and attempt == 1
-                    and plan.mechanical_proposal is not None
+                context = self._prepare_attempt(plan, state, stack, attempt)
+                generated = self._generate_attempt(
+                    plan,
+                    state,
+                    context,
+                    attempt,
                 )
-                attempt_prompt: PromptPlan | str = (
-                    repair_state.prompt if repair_state is not None else prompt
-                )
-                candidate = (
-                    repair_state.candidate if repair_state is not None else None
-                )
-                candidate_identity = (
-                    repair_state.candidate_identity
-                    if repair_state is not None
-                    else None
-                )
-                if not use_mechanical:
-                    if model_manager is None:
-                        model_manager = self.model_manager_factory(
-                            event_sink=self.acquisition_event_sink
-                        )
-                    if plan.explicit_model_path is None and not repairing:
-                        if outcomes is None:
-                            outcomes = self.outcome_adapter_factory(model_manager.cache_root)
-                        if candidates is None:
-                            candidates, reservation = self._plan_candidates(
-                                plan,
-                                prompt,
-                                model_manager,
-                                outcomes,
-                                stack,
-                            )
-                        if candidate_index >= len(candidates):
-                            raise ModelPlanError(ModelPlanFailure.EXHAUSTED)
-                        candidate = candidates[candidate_index]
-                        candidate_index += 1
-                        candidate_identity = self.artifact_identity(candidate)
-                    if candidate is not None:
-                        attempted_models.append(candidate.config.name)
-
-                if repairing:
-                    self.progress_sink(
-                        "SELF_IMPROVE_SYNTAX_REPAIR_START "
-                        f"attempt={attempt} "
-                        f"policy={COMPACT_V4_SYNTAX_REPAIR_POLICY_ID}"
-                    )
-
-                self.progress_sink(
-                    "SELF_IMPROVE_ATTEMPT_START "
-                    f"attempt={attempt} "
-                    f"attempt_identity_digest={plan.attempt_identity_digest}"
-                )
-
-                try:
-                    generated = self._generate_proposal(
-                        plan,
-                        attempt_prompt,
-                        candidate,
-                        model_manager,
-                        use_mechanical,
-                        reservation,
-                        candidate_identity,
-                    )
-                except self.model_acquisition_error as exc:
-                    failure = getattr(getattr(exc, "failure", None), "value", "unknown")
-                    self.progress_sink(
-                        "SELF_IMPROVE_MODEL_ACQUISITION_REJECTED "
-                        f"attempt={attempt} failure={failure}"
-                    )
-                    raise
-                except BaseException as exc:
-                    if reservation is not None and candidate_identity is not None:
-                        reservation.mark_failed(candidate_identity)
-                    if not isinstance(exc, (RuntimeError, ValueError)):
-                        raise
-                    self._record_candidate_outcome(
-                        plan,
-                        candidate,
-                        outcomes,
-                        False,
-                        outcome_ids,
-                    )
-                    self.progress_sink(
-                        "SELF_IMPROVE_PROPOSAL_REJECTED "
-                        f"attempt={attempt} "
-                        f"{_validation_retry_feedback(exc, proposal_protocol=_proposal_protocol(attempt_prompt))}"
-                    )
-                    if attempt == plan.max_attempts:
-                        raise
-                    prompt = self._validation_retry_prompt(prompt, exc)
+                if generated is None:
                     continue
-
-                bound = PlanBoundProposal(
-                    proposal=generated.proposal,
-                    attempt_identity_digest=plan.attempt_identity_digest,
-                )
-                try:
-                    final = self.attempt_evaluator(
-                        plan.task,
-                        plan.reference,
-                        bound,
-                        attempt,
-                        expected_attempt_identity_digest=plan.attempt_identity_digest,
-                        merge=False,
-                    )
-                    approved_identity = _validate_approved_result_identity(
-                        final,
-                        bound,
-                        plan.attempt_identity_digest,
-                    )
-                except BaseException:
-                    if reservation is not None and candidate_identity is not None:
-                        reservation.mark_failed(candidate_identity)
-                    raise
-                repair_prompt = self._syntax_repair_prompt(
-                    prompt,
+                final, approved_identity, repair_prompt = self._evaluate_attempt(
+                    plan,
+                    state,
+                    context,
                     generated,
+                    attempt,
+                )
+                completed = self._complete_attempt(
+                    plan,
+                    state,
+                    context,
                     final,
-                    repair_used=syntax_repair_used,
-                    attempts_remaining=plan.max_attempts - attempt,
+                    approved_identity,
+                    repair_prompt,
+                    attempt,
                 )
-                if final.comparison.accepted or repair_prompt is None:
-                    if (
-                        reservation is not None
-                        and candidate_identity is not None
-                        and not final.comparison.accepted
-                    ):
-                        reservation.mark_failed(candidate_identity)
-                    self._record_candidate_outcome(
-                        plan,
-                        candidate,
-                        outcomes,
-                        final.comparison.accepted,
-                        outcome_ids,
-                        approved_identity=approved_identity,
-                    )
-                self.progress_sink(
-                    "SELF_IMPROVE_ATTEMPT_END "
-                    f"attempt={attempt} score={final.comparison.score:.2f} "
-                    f"accepted={final.comparison.accepted} "
-                    f"blockers={json.dumps(final.comparison.blockers)} "
-                    f"attempt_identity_digest={approved_identity}"
-                )
-                if final.comparison.accepted:
-                    return ManagedRunResult(
-                        final_result=final,
-                        attempts=attempt,
-                        plan_identity_digest=plan.identity_digest,
-                        attempted_model_ids=tuple(attempted_models),
-                        outcome_record_ids=tuple(outcome_ids),
-                    )
-                if repair_prompt is not None:
-                    syntax_repair_used = True
-                    pending_repair = _PendingSyntaxRepair(
-                        prompt=repair_prompt,
-                        candidate=candidate,
-                        candidate_identity=candidate_identity,
-                    )
-                    continue
-                prompt = self._comparison_retry_prompt(
-                    prompt,
-                    final.comparison,
-                    final.diagnostics,
-                )
+                if completed is not None:
+                    return completed
+        if state.final is None:
+            raise RuntimeError("no local-model attempt was executed")
+        return self._run_result(plan, state, plan.max_attempts)
 
-        if final is None:
+    def _prepare_attempt(
+        self,
+        plan: ApprovedSelfImprovePlan,
+        state: _ManagedRunState,
+        stack: ExitStack,
+        attempt: int,
+    ) -> _ManagedAttemptContext:
+        """Resolve the prompt and model ownership for one attempt."""
+        repair = state.pending_repair
+        state.pending_repair = None
+        repairing = repair is not None
+        use_mechanical = (
+            not repairing
+            and attempt == 1
+            and plan.mechanical_proposal is not None
+        )
+        prompt = repair.prompt if repair is not None else state.prompt
+        candidate = repair.candidate if repair is not None else None
+        identity = repair.candidate_identity if repair is not None else None
+        if not use_mechanical:
+            if state.model_manager is None:
+                state.model_manager = self.model_manager_factory(
+                    event_sink=self.acquisition_event_sink
+                )
+            if plan.explicit_model_path is None and not repairing:
+                if state.outcomes is None:
+                    state.outcomes = self.outcome_adapter_factory(
+                        state.model_manager.cache_root
+                    )
+                if state.candidates is None:
+                    state.candidates, state.reservation = self._plan_candidates(
+                        plan,
+                        state.prompt,
+                        state.model_manager,
+                        state.outcomes,
+                        stack,
+                    )
+                if state.candidate_index >= len(state.candidates):
+                    raise ModelPlanError(ModelPlanFailure.EXHAUSTED)
+                candidate = state.candidates[state.candidate_index]
+                state.candidate_index += 1
+                identity = self.artifact_identity(candidate)
+            if candidate is not None:
+                state.attempted_models.append(candidate.config.name)
+        return _ManagedAttemptContext(
+            prompt=prompt,
+            candidate=candidate,
+            candidate_identity=identity,
+            repairing=repairing,
+            use_mechanical=use_mechanical,
+        )
+
+    def _generate_attempt(
+        self,
+        plan: ApprovedSelfImprovePlan,
+        state: _ManagedRunState,
+        context: _ManagedAttemptContext,
+        attempt: int,
+    ) -> GeneratedProposal | None:
+        """Generate one proposal or schedule a bounded validation retry."""
+        if context.repairing:
+            self.progress_sink(
+                "SELF_IMPROVE_SYNTAX_REPAIR_START "
+                f"attempt={attempt} policy={COMPACT_V4_SYNTAX_REPAIR_POLICY_ID}"
+            )
+        self.progress_sink(
+            "SELF_IMPROVE_ATTEMPT_START "
+            f"attempt={attempt} "
+            f"attempt_identity_digest={plan.attempt_identity_digest}"
+        )
+        try:
+            return self._generate_proposal(
+                plan,
+                context.prompt,
+                context.candidate,
+                state.model_manager,
+                context.use_mechanical,
+                state.reservation,
+                context.candidate_identity,
+            )
+        except self.model_acquisition_error as exc:
+            failure = getattr(getattr(exc, "failure", None), "value", "unknown")
+            self.progress_sink(
+                "SELF_IMPROVE_MODEL_ACQUISITION_REJECTED "
+                f"attempt={attempt} failure={failure}"
+            )
+            raise
+        except BaseException as exc:
+            if state.reservation is not None and context.candidate_identity is not None:
+                state.reservation.mark_failed(context.candidate_identity)
+            if not isinstance(exc, (RuntimeError, ValueError)):
+                raise
+            self._record_candidate_outcome(
+                plan,
+                context.candidate,
+                state.outcomes,
+                False,
+                state.outcome_ids,
+            )
+            self.progress_sink(
+                "SELF_IMPROVE_PROPOSAL_REJECTED "
+                f"attempt={attempt} "
+                f"{_validation_retry_feedback(exc, proposal_protocol=_proposal_protocol(context.prompt))}"
+            )
+            if attempt == plan.max_attempts:
+                raise
+            state.prompt = self._validation_retry_prompt(state.prompt, exc)
+            return None
+
+    def _evaluate_attempt(
+        self,
+        plan: ApprovedSelfImprovePlan,
+        state: _ManagedRunState,
+        context: _ManagedAttemptContext,
+        generated: GeneratedProposal,
+        attempt: int,
+    ) -> tuple[AttemptResult, str, PromptPlan | None]:
+        """Evaluate one generated proposal and derive an optional syntax repair."""
+        bound = PlanBoundProposal(
+            proposal=generated.proposal,
+            attempt_identity_digest=plan.attempt_identity_digest,
+        )
+        try:
+            final = self.attempt_evaluator(
+                plan.task,
+                plan.reference,
+                bound,
+                attempt,
+                expected_attempt_identity_digest=plan.attempt_identity_digest,
+                merge=False,
+            )
+            approved_identity = _validate_approved_result_identity(
+                final,
+                bound,
+                plan.attempt_identity_digest,
+            )
+        except BaseException:
+            if state.reservation is not None and context.candidate_identity is not None:
+                state.reservation.mark_failed(context.candidate_identity)
+            raise
+        state.final = final
+        repair_prompt = self._syntax_repair_prompt(
+            state.prompt,
+            generated,
+            final,
+            repair_used=state.syntax_repair_used,
+            attempts_remaining=plan.max_attempts - attempt,
+        )
+        return final, approved_identity, repair_prompt
+
+    def _complete_attempt(
+        self,
+        plan: ApprovedSelfImprovePlan,
+        state: _ManagedRunState,
+        context: _ManagedAttemptContext,
+        final: AttemptResult,
+        approved_identity: str,
+        repair_prompt: PromptPlan | None,
+        attempt: int,
+    ) -> ManagedRunResult | None:
+        """Record one evaluated attempt and prepare its bounded successor."""
+        if final.comparison.accepted or repair_prompt is None:
+            if (
+                state.reservation is not None
+                and context.candidate_identity is not None
+                and not final.comparison.accepted
+            ):
+                state.reservation.mark_failed(context.candidate_identity)
+            self._record_candidate_outcome(
+                plan,
+                context.candidate,
+                state.outcomes,
+                final.comparison.accepted,
+                state.outcome_ids,
+                approved_identity=approved_identity,
+            )
+        self.progress_sink(
+            "SELF_IMPROVE_ATTEMPT_END "
+            f"attempt={attempt} score={final.comparison.score:.2f} "
+            f"accepted={final.comparison.accepted} "
+            f"blockers={json.dumps(final.comparison.blockers)} "
+            f"attempt_identity_digest={approved_identity}"
+        )
+        if final.comparison.accepted:
+            return self._run_result(plan, state, attempt)
+        if repair_prompt is not None:
+            state.syntax_repair_used = True
+            state.pending_repair = _PendingSyntaxRepair(
+                prompt=repair_prompt,
+                candidate=context.candidate,
+                candidate_identity=context.candidate_identity,
+            )
+        else:
+            state.prompt = self._comparison_retry_prompt(
+                state.prompt,
+                final.comparison,
+                final.diagnostics,
+            )
+        return None
+
+    @staticmethod
+    def _run_result(
+        plan: ApprovedSelfImprovePlan,
+        state: _ManagedRunState,
+        attempts: int,
+    ) -> ManagedRunResult:
+        """Build the immutable service result from verified attempt state."""
+        if state.final is None:
             raise RuntimeError("no local-model attempt was executed")
         return ManagedRunResult(
-            final_result=final,
-            attempts=plan.max_attempts,
+            final_result=state.final,
+            attempts=attempts,
             plan_identity_digest=plan.identity_digest,
-            attempted_model_ids=tuple(attempted_models),
-            outcome_record_ids=tuple(outcome_ids),
+            attempted_model_ids=tuple(state.attempted_models),
+            outcome_record_ids=tuple(state.outcome_ids),
         )
 
     def _plan_candidates(
@@ -1766,14 +1860,12 @@ def build_retry_prompt_plan(
     )
 
 
-def build_syntax_repair_prompt_plan(
+def _validated_syntax_repair_diagnosis(
     plan: PromptPlan,
     compact_proposals: tuple[CompactSpanProposal, ...],
     diagnostics: str,
-    *,
-    target_span: tuple[int, int] | None = None,
-) -> PromptPlan:
-    """Build one scope-preserving v4 regeneration from a rejected compact object."""
+) -> tuple[str, str]:
+    """Validate repair scope and return canonical diagnosis identity."""
     if (
         not isinstance(plan, PromptPlan)
         or plan.proposal_protocol != COMPACT_PROPOSAL_PROTOCOL_V4
@@ -1786,10 +1878,10 @@ def build_syntax_repair_prompt_plan(
         or not all(isinstance(item, CompactSpanProposal) for item in compact_proposals)
     ):
         raise ValueError("syntax repair compact proposals must match every prompt shard")
-    canonical_diagnosis = safe_evaluation_retry_diagnosis(diagnostics)
-    diagnosis = cast(dict[str, object], json.loads(canonical_diagnosis))
+    canonical = safe_evaluation_retry_diagnosis(diagnostics)
+    diagnosis = cast(dict[str, object], json.loads(canonical))
     if (
-        canonical_diagnosis != diagnostics
+        canonical != diagnostics
         or diagnosis.get("phase") != "syntax_preflight"
         or diagnosis.get("command_kind") != "syntax_preflight"
         or diagnosis.get("failure_class") != "python_syntax"
@@ -1800,98 +1892,133 @@ def build_syntax_repair_prompt_plan(
         hashlib.sha256(item.focus_path.encode("utf-8")).hexdigest()
         for item in compact_proposals
     }
-    if diagnosis.get("path_sha256") not in trusted_path_digests:
+    diagnosed_path = diagnosis.get("path_sha256")
+    if diagnosed_path not in trusted_path_digests:
         raise ValueError("syntax repair diagnosis path is outside the compact proposal")
+    return canonical, diagnosed_path
 
-    repaired_shards: list[PromptShard] = []
-    diagnosed_path_sha256 = cast(str, diagnosis["path_sha256"])
-    for shard, proposal in zip(plan.shards, compact_proposals, strict=True):
-        if shard.focus_paths != (proposal.focus_path,) or not shard.editable_ranges:
-            raise ValueError("syntax repair compact proposal drifted from its prompt shard")
-        if hashlib.sha256(proposal.focus_path.encode("utf-8")).hexdigest() != diagnosed_path_sha256:
-            repaired_shards.append(shard)
-            continue
-        selected_edits = proposal.edits
-        target_instruction = ""
-        if target_span is not None:
-            if (
-                not isinstance(target_span, tuple)
-                or len(target_span) != 2
-                or any(
-                    isinstance(value, bool) or not isinstance(value, int)
-                    for value in target_span
-                )
-            ):
-                raise ValueError("syntax repair target span must be an integer pair")
-            matching = tuple(
-                edit
-                for edit in proposal.edits
-                if (edit.start_line, edit.old_line_count) == target_span
-            )
-            if len(matching) != 1:
-                raise ValueError(
-                    "syntax repair target span must identify exactly one rejected edit"
-                )
-            selected_edits = matching
-            frozen_count = len(proposal.edits) - 1
-            target_instruction = (
-                f"Repair exactly one compact span: s={target_span[0]}, "
-                f"n={target_span[1]}. The parent froze {frozen_count} non-owning "
-                f"span{'s' if frozen_count != 1 else ''} in this shard"
-                "; return exactly one e item with those unchanged s and n values.\n"
-            )
-        rejected = json.dumps(
-            {
-                "e": [
-                    {
-                        "n": edit.old_line_count,
-                        "s": edit.start_line,
-                        "z": edit.new_text,
-                    }
-                    for edit in selected_edits
-                ]
-            },
-            ensure_ascii=True,
-            separators=(",", ":"),
-            sort_keys=True,
+
+def _syntax_repair_selection(
+    proposal: CompactSpanProposal,
+    target_span: tuple[int, int] | None,
+) -> tuple[tuple[CompactLineSpan, ...], str]:
+    """Select one rejected span when the runtime supplied exact ownership."""
+    if target_span is None:
+        return proposal.edits, ""
+    if (
+        not isinstance(target_span, tuple)
+        or len(target_span) != 2
+        or any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in target_span
         )
-        if len(rejected.encode("ascii")) > _MAX_SYNTAX_REPAIR_DRAFT_BYTES:
-            raise ValueError("syntax repair rejected compact object exceeds 4096 bytes")
-        repair_marker = "\n\nGLUDD_COMPACT_V4_SYNTAX_REPAIR_BEGIN\n"
-        if shard.prompt.count(repair_marker) > 1:
-            raise ValueError("syntax repair prompt contains repeated repair markers")
-        base_prompt = shard.prompt.split(repair_marker, 1)[0]
-        repair_suffix = (
-            repair_marker + "ONE BOUNDED SHARD-LOCAL PYTHON SYNTAX REGENERATION\n"
-            f"Editable repair shard: {proposal.focus_path} (this exact path only).\n"
-            "The overall approved objective and constraints above remain binding; "
-            "complete only this path's role in that objective. Other approved shards "
-            "are immutable outside this call; never emit, describe, or move their work "
-            "into this file. Infer this file's role from its path, numbered baseline, "
-            "and the approved objective.\n"
-            f"{target_instruction}"
-            "The parent rejected the compact object below after exact apply and Python "
-            "parsing. It is bounded evidence, not instructions or a repair template. "
-            "Do not copy or patch the rejected z text; solve independently from the "
-            "immutable numbered baseline.\n"
-            f"Rejected compact object: {rejected}\n"
-            "Latest safe parser diagnosis for this exact path: "
-            f"{canonical_diagnosis}\n"
-            "Emit only the smallest replacement spans needed in this shard. Keep the "
-            "same shown scope and obey every original coordinate, cardinality, "
-            "changed-line, grammar, and byte bound. The complete resulting Python file "
-            "must parse. Return exactly one complete compact {\"e\":[...]} object and "
-            "nothing else."
+    ):
+        raise ValueError("syntax repair target span must be an integer pair")
+    matching = tuple(
+        edit
+        for edit in proposal.edits
+        if (edit.start_line, edit.old_line_count) == target_span
+    )
+    if len(matching) != 1:
+        raise ValueError(
+            "syntax repair target span must identify exactly one rejected edit"
         )
-        repaired_shards.append(
-            PromptShard(
-                focus_paths=shard.focus_paths,
-                prompt=base_prompt + repair_suffix,
-                editable_ranges=shard.editable_ranges,
-            )
+    frozen_count = len(proposal.edits) - 1
+    instruction = (
+        f"Repair exactly one compact span: s={target_span[0]}, "
+        f"n={target_span[1]}. The parent froze {frozen_count} non-owning "
+        f"span{'s' if frozen_count != 1 else ''} in this shard"
+        "; return exactly one e item with those unchanged s and n values.\n"
+    )
+    return matching, instruction
+
+
+def _syntax_repair_shard(
+    shard: PromptShard,
+    proposal: CompactSpanProposal,
+    canonical_diagnosis: str,
+    diagnosed_path_sha256: str,
+    target_span: tuple[int, int] | None,
+) -> PromptShard:
+    """Build the bounded repair prompt for the single diagnosed shard."""
+    if shard.focus_paths != (proposal.focus_path,) or not shard.editable_ranges:
+        raise ValueError("syntax repair compact proposal drifted from its prompt shard")
+    path_digest = hashlib.sha256(proposal.focus_path.encode("utf-8")).hexdigest()
+    if path_digest != diagnosed_path_sha256:
+        return shard
+    selected_edits, target_instruction = _syntax_repair_selection(
+        proposal,
+        target_span,
+    )
+    rejected = json.dumps(
+        {
+            "e": [
+                {"n": edit.old_line_count, "s": edit.start_line, "z": edit.new_text}
+                for edit in selected_edits
+            ]
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    if len(rejected.encode("ascii")) > _MAX_SYNTAX_REPAIR_DRAFT_BYTES:
+        raise ValueError("syntax repair rejected compact object exceeds 4096 bytes")
+    repair_marker = "\n\nGLUDD_COMPACT_V4_SYNTAX_REPAIR_BEGIN\n"
+    if shard.prompt.count(repair_marker) > 1:
+        raise ValueError("syntax repair prompt contains repeated repair markers")
+    base_prompt = shard.prompt.split(repair_marker, 1)[0]
+    repair_suffix = (
+        repair_marker + "ONE BOUNDED SHARD-LOCAL PYTHON SYNTAX REGENERATION\n"
+        f"Editable repair shard: {proposal.focus_path} (this exact path only).\n"
+        "The overall approved objective and constraints above remain binding; "
+        "complete only this path's role in that objective. Other approved shards "
+        "are immutable outside this call; never emit, describe, or move their work "
+        "into this file. Infer this file's role from its path, numbered baseline, "
+        "and the approved objective.\n"
+        f"{target_instruction}"
+        "The parent rejected the compact object below after exact apply and Python "
+        "parsing. It is bounded evidence, not instructions or a repair template. "
+        "Do not copy or patch the rejected z text; solve independently from the "
+        "immutable numbered baseline.\n"
+        f"Rejected compact object: {rejected}\n"
+        "Latest safe parser diagnosis for this exact path: "
+        f"{canonical_diagnosis}\n"
+        "Emit only the smallest replacement spans needed in this shard. Keep the "
+        "same shown scope and obey every original coordinate, cardinality, "
+        "changed-line, grammar, and byte bound. The complete resulting Python file "
+        "must parse. Return exactly one complete compact {\"e\":[...]} object and "
+        "nothing else."
+    )
+    return PromptShard(
+        focus_paths=shard.focus_paths,
+        prompt=base_prompt + repair_suffix,
+        editable_ranges=shard.editable_ranges,
+    )
+
+
+def build_syntax_repair_prompt_plan(
+    plan: PromptPlan,
+    compact_proposals: tuple[CompactSpanProposal, ...],
+    diagnostics: str,
+    *,
+    target_span: tuple[int, int] | None = None,
+) -> PromptPlan:
+    """Build one scope-preserving v4 regeneration from a rejected compact object."""
+    canonical_diagnosis, diagnosed_path_sha256 = (
+        _validated_syntax_repair_diagnosis(plan, compact_proposals, diagnostics)
+    )
+    repaired_shards = tuple(
+        _syntax_repair_shard(
+            shard,
+            proposal,
+            canonical_diagnosis,
+            diagnosed_path_sha256,
+            target_span,
         )
+        for shard, proposal in zip(plan.shards, compact_proposals, strict=True)
+    )
     return PromptPlan(
-        shards=tuple(repaired_shards),
+        shards=repaired_shards,
         source_bytes=plan.source_bytes,
         protocol_digest=plan.protocol_digest,
         baseline_files=plan.baseline_files,

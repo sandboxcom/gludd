@@ -318,6 +318,38 @@ def _ordered_shortlist(
     return tuple([anchor, *larger[: max_candidates - 1]])
 
 
+def _validate_candidate_plan_request(
+    task_text: str,
+    output_tokens: int,
+    input_tokens: int | None,
+    task_shape: CodeTaskShape | None,
+    max_candidates: int,
+) -> None:
+    """Validate bounded planner inputs before reading evidence or hardware."""
+    if not isinstance(task_text, str) or not task_text.strip():
+        raise ValueError("task_text must be a non-empty string")
+    if (
+        isinstance(output_tokens, bool)
+        or not isinstance(output_tokens, int)
+        or output_tokens <= 0
+    ):
+        raise ValueError("output_tokens must be a positive integer")
+    if input_tokens is not None and (
+        isinstance(input_tokens, bool)
+        or not isinstance(input_tokens, int)
+        or input_tokens <= 0
+    ):
+        raise ValueError("input_tokens must be a positive integer when provided")
+    if (
+        isinstance(max_candidates, bool)
+        or not isinstance(max_candidates, int)
+        or not 1 <= max_candidates <= _MAX_CANDIDATES
+    ):
+        raise ValueError(f"max_candidates must be between 1 and {_MAX_CANDIDATES}")
+    if task_shape is not None and not isinstance(task_shape, CodeTaskShape):
+        raise ValueError("task_shape must be a CodeTaskShape when provided")
+
+
 def plan_model_candidates(
     task_text: str,
     output_tokens: int,
@@ -342,27 +374,13 @@ def plan_model_candidates(
     escalation floor. Without matching evidence, the maintained quality ladder
     provides a stable fallback before larger catalog models are considered.
     """
-    if not isinstance(task_text, str) or not task_text.strip():
-        raise ValueError("task_text must be a non-empty string")
-    if isinstance(output_tokens, bool) or not isinstance(output_tokens, int) or output_tokens <= 0:
-        raise ValueError("output_tokens must be a positive integer")
-    if (
-        input_tokens is not None
-        and (
-            isinstance(input_tokens, bool)
-            or not isinstance(input_tokens, int)
-            or input_tokens <= 0
-        )
-    ):
-        raise ValueError("input_tokens must be a positive integer when provided")
-    if (
-        isinstance(max_candidates, bool)
-        or not isinstance(max_candidates, int)
-        or not 1 <= max_candidates <= _MAX_CANDIDATES
-    ):
-        raise ValueError(f"max_candidates must be between 1 and {_MAX_CANDIDATES}")
-    if task_shape is not None and not isinstance(task_shape, CodeTaskShape):
-        raise ValueError("task_shape must be a CodeTaskShape when provided")
+    _validate_candidate_plan_request(
+        task_text,
+        output_tokens,
+        input_tokens,
+        task_shape,
+        max_candidates,
+    )
 
     coding_models = _coding_models()
     failed_names, failed_size_floor = _failed_names_and_floor(
