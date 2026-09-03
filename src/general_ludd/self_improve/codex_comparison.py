@@ -11,7 +11,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
-from typing import NotRequired, Protocol, TypedDict, cast
+from typing import NotRequired, Protocol, TypedDict, cast, runtime_checkable
 
 from general_ludd.self_improve.model_lifecycle import ModelArtifactIdentity
 
@@ -775,6 +775,7 @@ def local_proposal_attempt_identity_digest(
     return hashlib.sha256(canonical).hexdigest()
 
 
+@runtime_checkable
 class _LocalModel(Protocol):
     """Minimal llama.cpp-compatible inference protocol."""
 
@@ -788,6 +789,7 @@ class _LocalModel(Protocol):
     ) -> object: ...
 
 
+@runtime_checkable
 class _ChatLocalModel(Protocol):
     """llama.cpp chat-completion interface used for constrained JSON."""
 
@@ -843,6 +845,7 @@ def _proposal_sampling_arguments(
     raise ValueError("proposal contract sampling profile is unsupported")
 
 
+@runtime_checkable
 class _ModelFactory(Protocol):
     """Typed constructor boundary for one local model."""
 
@@ -859,6 +862,7 @@ class _ModelFactory(Protocol):
 _GrammarFactory = Callable[[dict[str, object]], object]
 
 
+@runtime_checkable
 class _LlamaGrammarType(Protocol):
     """Typed class-level JSON-schema grammar constructor."""
 

@@ -23,7 +23,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from functools import partial
 from pathlib import Path
-from typing import Final, Protocol, TextIO, cast
+from typing import Final, Protocol, TextIO, cast, runtime_checkable
 
 from general_ludd.hardware.model_fit import unified_probe
 from general_ludd.local_model import LocalModelConfig
@@ -219,6 +219,7 @@ class MakeResult:
     elapsed_seconds: float
 
 
+@runtime_checkable
 class _ObservableRunner(Protocol):
     """Make-mediated observable process boundary used by local inference."""
 
@@ -232,6 +233,7 @@ class _ObservableRunner(Protocol):
         """Run an owned Make target and return bounded evidence."""
 
 
+@runtime_checkable
 class _CommandRunner(Protocol):
     """Make-only tool execution boundary used by mechanical repair routing."""
 
@@ -239,6 +241,7 @@ class _CommandRunner(Protocol):
         """Run one observable Make command."""
 
 
+@runtime_checkable
 class _TargetRunner(Protocol):
     """Minimal Make-target interface shared by root runners and test doubles."""
 
@@ -253,10 +256,12 @@ class _TargetRunner(Protocol):
         """Run one bounded Make target."""
 
 
+@runtime_checkable
 class _RuntimeMakeRunner(_ObservableRunner, _CommandRunner, _TargetRunner, Protocol):
     """Complete Make-mediated boundary used by the production composition root."""
 
 
+@runtime_checkable
 class _MakeRunnerFactory(Protocol):
     """Construct a repository-bound Make operation adapter."""
 
@@ -264,6 +269,7 @@ class _MakeRunnerFactory(Protocol):
         """Return a runner bound to one canonical repository root."""
 
 
+@runtime_checkable
 class _AttemptEvaluationAdapter(Protocol):
     """Historical evaluation callable retained as an injectable CLI seam."""
 

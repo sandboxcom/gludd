@@ -59,6 +59,7 @@ COVERAGE_SOURCES = (
     "*/src/general_ludd/self_improve/runtime.py",
     "*/src/general_ludd/self_improve/result_artifact.py",
     "*/src/general_ludd/self_improve/staging.py",
+    "*/src/general_ludd/self_improve/apply.py",
     "*/src/general_ludd/self_improve/approval.py",
     "*/src/general_ludd/self_improve/promotion.py",
     "*/src/general_ludd/db/promotion_repository.py",

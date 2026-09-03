@@ -10,7 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +35,7 @@ _LEASE_DURATION = timedelta(hours=2)
 _MARKER_TARGET = "self-improve-promotion-marker"
 
 
+@runtime_checkable
 class _RootRunner(Protocol):
     """Make-only interface for canonical repository operations."""
 
@@ -49,6 +50,7 @@ class _RootRunner(Protocol):
         """Run one bounded Make target."""
 
 
+@runtime_checkable
 class _WorktreeRunner(_RootRunner, Protocol):
     """Make-only interface for checks inside a candidate worktree."""
 
@@ -56,6 +58,7 @@ class _WorktreeRunner(_RootRunner, Protocol):
         """Run one validated Make command."""
 
 
+@runtime_checkable
 class _PromotionRepository(Protocol):
     """Durable saga boundary used by the promotion coordinator."""
 

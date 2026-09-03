@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from general_ludd.schemas.todo import Todo, TodoStatus, validate_transition
 from general_ludd.self_improve.staging import (
@@ -42,6 +42,7 @@ from general_ludd.self_improve.staging import (
 SELF_IMPROVE_WORK_TYPE = "self_improve"
 
 
+@runtime_checkable
 class _TodoStore(Protocol):
     """Structural type for the subset of ``TodoRepository`` the release path uses."""
 

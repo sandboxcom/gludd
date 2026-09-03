@@ -21,7 +21,7 @@ from contextlib import AbstractContextManager, ExitStack
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
-from typing import Final, Protocol, cast
+from typing import Final, Protocol, cast, runtime_checkable
 
 from general_ludd.hardware.model_fit import unified_probe
 from general_ludd.hardware.survey import HardwareInventory
@@ -1051,6 +1051,7 @@ class ManagedOutcomeAdapter(Protocol):
         """Durably record one candidate result and return its identity."""
 
 
+@runtime_checkable
 class _FailureLoader(Protocol):
     def __call__(
         self,
@@ -1061,6 +1062,7 @@ class _FailureLoader(Protocol):
     ) -> tuple[str, ...]: ...
 
 
+@runtime_checkable
 class _OutcomeRecorder(Protocol):
     def __call__(
         self,
@@ -1120,6 +1122,7 @@ class CapabilityEvidenceOutcomeAdapter:
         )
 
 
+@runtime_checkable
 class _Reservation(Protocol):
     def mark_eligible(self, identity: ModelArtifactIdentity) -> None: ...
 
@@ -1153,6 +1156,7 @@ class _LeaseManager(Protocol):
     ) -> AbstractContextManager[AcquiredModel]: ...
 
 
+@runtime_checkable
 class _ModelManagerFactory(Protocol):
     def __call__(
         self,
@@ -1161,10 +1165,12 @@ class _ModelManagerFactory(Protocol):
     ) -> _LeaseManager: ...
 
 
+@runtime_checkable
 class _OutcomeAdapterFactory(Protocol):
     def __call__(self, cache_root: Path) -> ManagedOutcomeAdapter: ...
 
 
+@runtime_checkable
 class _CandidatePlanner(Protocol):
     def __call__(
         self,
@@ -1182,6 +1188,7 @@ class _CandidatePlanner(Protocol):
     ) -> tuple[PlannedModelCandidate, ...]: ...
 
 
+@runtime_checkable
 class _ProposalGenerator(Protocol):
     def __call__(
         self,
@@ -1192,6 +1199,7 @@ class _ProposalGenerator(Protocol):
     ) -> ProposalManifest | GeneratedProposal: ...
 
 
+@runtime_checkable
 class _SyntaxRepairBuilder(Protocol):
     def __call__(
         self,
@@ -1201,6 +1209,7 @@ class _SyntaxRepairBuilder(Protocol):
     ) -> PromptPlan: ...
 
 
+@runtime_checkable
 class _AttemptEvaluator(Protocol):
     def __call__(
         self,

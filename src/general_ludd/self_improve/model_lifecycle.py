@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from multiprocessing.connection import Connection
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol, cast, runtime_checkable
 
 from general_ludd.local_model._local_model_configs import _LOCAL_MODELS, LocalModelConfig
 from general_ludd.self_improve.hf_cache_delete import (
@@ -220,6 +220,7 @@ class ModelPlanReservation:
             raise
 
 
+@runtime_checkable
 class _Downloader(Protocol):
     def download_gguf(
         self,
