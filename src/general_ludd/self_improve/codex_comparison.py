@@ -113,6 +113,7 @@ _DETERMINISTIC_DECODE_TEMPERATURE = 0.0
 _DETERMINISTIC_DECODE_SEED = 0
 _STRUCTURED_OUTPUT_REQUIRE_STOP = True
 _STRUCTURED_DECODING_MODE = "llama-cpp-parent-scope-enum-grammar-v2"
+_MODEL_VISIBLE_PROMPT_POLICY = "validated-parent-metadata-stripped-v1"
 _STRUCTURED_CANARY_PROMPT = 'Return {"ok":true}.'
 _STRUCTURED_CANARY_EXPECTED: dict[str, object] = {"ok": True}
 _COMPACT_ROOT_FIELDS = frozenset({"e"})
@@ -231,7 +232,9 @@ _COMPACT_SYSTEM_PROMPT = (
     "For a shown Lx..Ly section, n=0 may insert with s=x..y+1 only; never select a "
     "boundary wholly inside a hidden gap. Empty z deletes consumed lines; s=1, n=0 "
     "creates an absent file. The edit must change content. Across all edits, z may "
-    "contain at most 3,072 UTF-8 bytes total."
+    "contain at most 3,072 UTF-8 bytes total. Never copy protocol metadata, file "
+    "markers, numbered-line labels, or shell/environment assignments into z. For a "
+    "Python focus file, z must remain syntactically valid in its shown indentation."
 )
 
 _LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
@@ -480,6 +483,9 @@ def local_proposal_attempt_identity_digest(
                 None if legacy else _COMPACT_EDITABLE_RANGES_MARKER
             ),
             "trusted_commit_message": _COMPACT_COMMIT_MESSAGE,
+            "model_visible_prompt_policy": (
+                None if legacy else _MODEL_VISIBLE_PROMPT_POLICY
+            ),
         },
         "structured_canary": {
             "expected": _STRUCTURED_CANARY_EXPECTED,
@@ -2156,6 +2162,21 @@ def _trusted_compact_focus_path(prompt: str) -> str:
     return candidates[0]
 
 
+def _model_visible_compact_prompt(prompt: str) -> str:
+    """Remove validated parent-only bindings before sending a prompt to the model."""
+    _trusted_compact_editable_ranges(prompt)
+    focus_path = _trusted_compact_focus_path(prompt)
+    first_line, separator, remainder = prompt.partition("\n")
+    if first_line.startswith(_COMPACT_EDITABLE_RANGES_MARKER):
+        if not separator:
+            raise ValueError("compact prompt has no model-visible task")
+        first_line, separator, remainder = remainder.partition("\n")
+    expected_focus = f"{_COMPACT_FOCUS_PATH_MARKER}{focus_path}"
+    if first_line != expected_focus or not separator or not remainder.strip():
+        raise ValueError("compact parent bindings are not in canonical leading order")
+    return remainder
+
+
 def _completion_text(
     output: object,
     *,
@@ -2458,7 +2479,10 @@ class LocalProposalGateway:
                                 else _COMPACT_SYSTEM_PROMPT
                             ),
                         },
-                        {"role": "user", "content": prompt},
+                        {
+                            "role": "user",
+                            "content": _model_visible_compact_prompt(prompt),
+                        },
                     ],
                     max_tokens=_COMPACT_PROPOSAL_TOKENS,
                     temperature=_DETERMINISTIC_DECODE_TEMPERATURE,

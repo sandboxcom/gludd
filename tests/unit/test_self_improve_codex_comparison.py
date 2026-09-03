@@ -1460,6 +1460,81 @@ def test_compact_v4_gateway_compiles_parent_scope_into_integer_enum(
     }
 
 
+def test_compact_v4_gateway_hides_parent_bindings_from_model_visible_prompt(
+    tmp_path: Path,
+) -> None:
+    """Keep trusted decoder metadata out of model-authored replacement text."""
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    calls: list[dict[str, object]] = []
+
+    class SpanModel:
+        def __call__(
+            self,
+            prompt: str,
+            *,
+            max_tokens: int,
+            temperature: float,
+            echo: bool,
+        ) -> object:
+            del prompt, max_tokens, temperature, echo
+            raise AssertionError("compact v4 must use chat completion")
+
+        def create_chat_completion(self, **kwargs: object) -> dict[str, object]:
+            calls.append(dict(kwargs))
+            content = (
+                '{"ok":true}'
+                if len(calls) == 1
+                else '{"e":[{"s":3,"n":1,"z":"value = 2\\n"}]}'
+            )
+            return {
+                "choices": [
+                    {"finish_reason": "stop", "message": {"content": content}}
+                ]
+            }
+
+    def model_factory(
+        *,
+        model_path: str,
+        n_ctx: int,
+        verbose: bool,
+        n_gpu_layers: int = 0,
+    ) -> SpanModel:
+        del model_path, n_ctx, verbose, n_gpu_layers
+        return SpanModel()
+
+    visible = (
+        "EDIT_TASK_BEGIN\nRepair the catalog mapping.\nEDIT_TASK_END\n"
+        "FOCUS_BASELINE_BEGIN\n"
+        "FILE src/general_ludd/example.py state=present\n"
+        "LINES 3-3\nL3|value = 1\n"
+        "FOCUS_BASELINE_END"
+    )
+    bound = comparison_module.bind_compact_focus_path(
+        visible,
+        "src/general_ludd/example.py",
+        editable_ranges=((3, 4),),
+    )
+
+    LocalProposalGateway(
+        model_path,
+        model_factory=model_factory,
+        grammar_factory=lambda _schema: object(),
+    ).propose(
+        bound,
+        contract=replace(
+            _contract(),
+            proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+        ),
+    )
+
+    messages = cast(list[dict[str, str]], calls[1]["messages"])
+    assert messages[-1] == {"role": "user", "content": visible}
+    assert "Repair the catalog mapping." in messages[-1]["content"]
+    assert "FILE src/general_ludd/example.py" in messages[-1]["content"]
+    assert "GLUDD_SELF_IMPROVE_" not in messages[-1]["content"]
+
+
 def test_compact_v4_scope_marker_collision_and_enum_overflow_fail_closed() -> None:
     """Trust only one parent-prepended scope and bound grammar construction."""
     marker = "GLUDD_SELF_IMPROVE_EDITABLE_RANGES="
@@ -2095,7 +2170,13 @@ def test_compact_gateway_rejects_non_stop_even_when_json_looks_complete(
     )
 
     with pytest.raises(ValueError, match="token budget") as error:
-        gateway.propose("Repair the example.", contract=contract)
+        gateway.propose(
+            comparison_module.bind_compact_focus_path(
+                "Repair the example.",
+                "src/general_ludd/example.py",
+            ),
+            contract=contract,
+        )
 
     assert "budget=1024" in str(error.value)
     assert "completion_tokens=1024" in str(error.value)

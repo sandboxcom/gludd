@@ -231,7 +231,7 @@ def test_multifile_plan_uses_singleton_focus_shards_in_one_worker_request(
     )
     assert all(shard.editable_ranges == ((1, 3),) for shard in plan.shards)
     assert all("L1|" in shard.prompt and "L2|" in shard.prompt for shard in plan.shards)
-    assert all('only integer keys s and n and string key z' in shard.prompt for shard in plan.shards)
+    assert all("Return only the grammar-bound e array" in shard.prompt for shard in plan.shards)
     assert all('\"p\"' not in shard.prompt and '\"c\"' not in shard.prompt for shard in plan.shards)
     comparison = ComparisonResult(
         accepted=False,
@@ -366,21 +366,18 @@ def test_51859_byte_multifile_context_is_decomposed_without_identity_loss(tmp_pa
     assert max(sizes) <= 16_384
     assert max(sizes) < 51_859 // 3
     assert {path for shard in plan.shards for path in shard.focus_paths} == set(_PATHS)
-    shared_prefixes = {
-        shard.prompt.split("\n", 2)[2].split("\nShard-specific contract:", 1)[0]
-        for shard in plan.shards
-    }
-    assert len(shared_prefixes) == 1
-    shared_prefix = shared_prefixes.pop()
-    assert all(path in shared_prefix for path in _PATHS)
-    assert all(test in shared_prefix for test in _TESTS)
-    assert all(command in shared_prefix for command in _COMMANDS)
     for shard in plan.shards:
-        assert "Global immutable Codex reference paths:" in shard.prompt
-        assert "Exact focus paths for this shard:" in shard.prompt
-        assert all(path in shard.prompt for path in _PATHS)
-        assert all(test in shard.prompt for test in _TESTS)
-        assert all(command in shard.prompt for command in _COMMANDS)
+        assert "EDIT_TASK_BEGIN\n" in shard.prompt
+        assert f"\n{_OBJECTIVE}\nEDIT_TASK_END" in shard.prompt
+        assert "FOCUS_BASELINE_BEGIN\n" in shard.prompt
+        assert shard.prompt.endswith("FOCUS_BASELINE_END")
+        assert shard.focus_paths[0] in shard.prompt
+        assert all(
+            path not in shard.prompt
+            for path in _PATHS
+            if path != shard.focus_paths[0]
+        )
+        assert all(command not in shard.prompt for command in _COMMANDS)
         assert "sha256=" in shard.prompt
     for path in _PATHS:
         owning = next(shard for shard in plan.shards if path in shard.focus_paths)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import signal
@@ -22,6 +23,7 @@ from general_ludd.self_improve.codex_comparison import (
     ComparisonResult,
     PlannerFeedbackExchange,
     ProposalManifest,
+    build_retry_prompt,
 )
 from general_ludd.self_improve.managed_runner import (
     ApprovedSelfImprovePlan,
@@ -1915,6 +1917,142 @@ def test_evaluate_attempt_stops_on_first_failed_command_and_cleans(
     assert result.evidence.tests_passed is False
     assert "E failure" in result.diagnostics
     assert root.targets == ["agent-cleanup"]
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        "smollm2-135M)\n",
+        (
+            "GLUDD_SELF_IMPROVE_FOCUS_PATH="
+            "tests/unit/test_e2e_model_configs.py        assert len(models) == 1\n"
+        ),
+    ],
+)
+def test_parent_syntax_preflight_rejects_exact_live_classes_with_safe_feedback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    replacement: str,
+) -> None:
+    """Reject malformed Python before pytest without echoing model-authored text."""
+    relative = "tests/unit/test_e2e_model_configs.py"
+    baseline = "def test_catalog() -> None:\n    assert True\n"
+    target = tmp_path / relative
+    target.parent.mkdir(parents=True)
+    target.write_text(baseline, encoding="utf-8")
+    task = TaskSpec(
+        task_id="S83.134",
+        objective="Repair the catalog mappings and their focused tests.",
+        canonical_make_commands=(
+            "make test-specific TESTFILE=tests/unit/test_e2e_model_configs.py",
+        ),
+    )
+    reference = CodexReference(
+        baseline_sha="a" * 40,
+        reference_sha="b" * 40,
+        changed_files=frozenset({relative}),
+        test_files=frozenset({relative}),
+        changed_lines=2,
+        elapsed_seconds=1.0,
+    )
+    proposal = ProposalManifest.from_json(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "baseline_sha": "a" * 40,
+                "task_id": "S83.134",
+                "edits": [
+                    {
+                        "operation": "replace",
+                        "path": relative,
+                        "old_text": baseline,
+                        "new_text": replacement,
+                    }
+                ],
+                "tests": [relative],
+                "make_commands": list(task.canonical_make_commands),
+                "commit_message": "fix: repair catalog truth",
+            }
+        )
+    )
+
+    class CandidateRunner:
+        def run_command(self, _command: str, *, timeout: int = 900) -> MakeResult:
+            del timeout
+            raise AssertionError("syntax-invalid Python must not reach a Make command")
+
+    class RootRunner:
+        def __init__(self) -> None:
+            self.targets: list[str] = []
+
+        def run(
+            self,
+            target_name: str,
+            variables: dict[str, str] | None = None,
+            *,
+            timeout: int = 120,
+            read_only: bool = False,
+        ) -> MakeResult:
+            del variables, timeout, read_only
+            self.targets.append(target_name)
+            return MakeResult(("make", target_name), 0, "", "", 0.1)
+
+    root = RootRunner()
+    monkeypatch.setattr(
+        runner_module,
+        "create_worktree",
+        lambda *_args: (tmp_path, "candidate"),
+    )
+    monkeypatch.setattr(runner_module, "MakeRunner", lambda _root: CandidateRunner())
+
+    result = runner_module.evaluate_attempt(
+        root,
+        task,
+        reference,
+        runner_module.PlanBoundProposal(proposal, "c" * 64),
+        1,
+        expected_attempt_identity_digest="c" * 64,
+        merge=False,
+    )
+
+    path_digest = hashlib.sha256(relative.encode("utf-8")).hexdigest()
+    assert result.evidence.tests_passed is False
+    assert result.diagnostics.startswith(
+        "SELF_IMPROVE_PARENT_SYNTAX_ERROR "
+        f"type=python_syntax path_sha256={path_digest} line=1 offset="
+    )
+    assert len(result.diagnostics.encode("ascii")) <= 192
+    assert replacement.strip() not in result.diagnostics
+    assert relative not in result.diagnostics
+    retry = build_retry_prompt(
+        "Repair the catalog mappings.",
+        result.comparison,
+        diagnostics=result.diagnostics,
+    )
+    assert "type=python_syntax" in retry
+    assert replacement.strip() not in retry
+    assert relative not in retry
+    assert root.targets == ["agent-cleanup"]
+
+
+def test_parent_syntax_preflight_is_tokenize_aware_and_skips_non_python(
+    tmp_path: Path,
+) -> None:
+    """Honor Python coding cookies and ignore unrelated file types."""
+    python_path = tmp_path / "src/example.py"
+    python_path.parent.mkdir(parents=True)
+    python_path.write_bytes(b"# coding: latin-1\nname = 'caf\xe9'\n")
+    text_path = tmp_path / "docs/example.txt"
+    text_path.parent.mkdir(parents=True)
+    text_path.write_text("not Python )", encoding="utf-8")
+
+    assert (
+        runner_module._python_syntax_preflight(
+            tmp_path,
+            ("docs/example.txt", "src/example.py"),
+        )
+        is None
+    )
 
 
 def test_terminate_process_group_escalates_and_tolerates_gone_child(

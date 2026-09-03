@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import difflib
 import hashlib
+import io
 import json
 import os
 import re
@@ -15,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tokenize
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -110,6 +113,8 @@ _MAX_PROMPT_SHARD_BYTES: Final = 16_384
 _MAX_BASE_PROMPT_SHARD_BYTES: Final = 12_000
 _MAX_FILE_EXCERPT_BYTES: Final = 4_096
 _MAX_CONTEXT_FILE_BYTES: Final = 2_097_152
+_MAX_SYNTAX_DIAGNOSTIC_BYTES: Final = 192
+_PARENT_SYNTAX_ERROR_MARKER: Final = "SELF_IMPROVE_PARENT_SYNTAX_ERROR"
 _MAX_FAILURE_DIAGNOSIS_TRACE_BYTES: Final = 131_072
 _MAX_FAILURE_DIAGNOSIS_HYPOTHESIS_BYTES: Final = 160
 _PROMPT_CONTEXT_LINES: Final = 5
@@ -1126,8 +1131,6 @@ def _required_prompt_tests(
 
 def _render_prompt_shard(
     task: TaskSpec,
-    reference: CodexReference,
-    required_tests: tuple[str, ...],
     focus_paths: tuple[str, ...],
     contexts: dict[str, str],
     editable_ranges: tuple[tuple[int, int], ...],
@@ -1138,34 +1141,21 @@ def _render_prompt_shard(
     if len(focus_paths) != 1:
         raise ValueError("compact prompt shards must have exactly one focus path")
     body = (
-        "Produce one shard of a Codex-quality repository patch proposal. You have "
-        "no shell, Git, or tool authority. Return one compact JSON object and no "
-        "prose: its only root key is e, whose array items have only integer keys s "
-        "and n and string key z. The separately supplied JSON grammar "
-        "is authoritative. The parent supplies path, operation, commit message, tests, "
-        "and commands; never emit those fields. s is a 1-based L-number, n is the count "
-        "of old numbered lines, and z is replacement text without L<number>| labels. "
-        "Choose s only from the per-shard integer enum in the JSON grammar. "
-        "Use only explicitly shown lines and boundaries, keep z within 3,072 UTF-8 "
-        "bytes total, and order non-overlapping edits. For each shown Lx-Ly section, "
-        "n=0 may use s=x..y+1, including before its first or after its last line, but "
-        "never a boundary wholly inside a hidden gap. For an absent focus path only "
-        "s=1,n=0 creates. Empty z deletes n>0 shown lines.\n"
-        f"Task: {task.objective}\n"
-        f"Baseline: {reference.baseline_sha}\n"
-        f"Task ID: {task.task_id}\n"
-        "Global immutable Codex reference paths:\n"
-        + "\n".join(sorted(reference.changed_files))
-        + "\nRequired test paths (copy all exactly):\n"
-        + "\n".join(required_tests)
-        + "\nRequired canonical evidence commands (copy exactly and in order):\n"
-        + "\n".join(task.canonical_make_commands)
-        + "\nShard-specific contract:\n"
-        f"Shard: {shard_index}/{shard_total}\n"
-        "Exact focus paths for this shard:\nEdit every and only these paths:\n"
-        + "\n".join(focus_paths)
-        + "\nExact baseline contexts for the focus paths:\n"
-        + "\n\n".join(contexts[path] for path in focus_paths)
+        "EDIT_TASK_BEGIN\n"
+        f"{task.objective}\n"
+        "EDIT_TASK_END\n"
+        "EDIT_REQUIREMENTS_BEGIN\n"
+        "Edit only this shard's focus file. Make the smallest complete change needed "
+        "for the task and preserve unrelated content. Return only the grammar-bound "
+        "e array; the parent owns paths, tests, commands, and commit metadata. Use s "
+        "and n only against shown L<number>| lines. z is literal replacement content "
+        "without labels or prompt metadata. Python replacement text must be valid in "
+        "the surrounding indentation.\n"
+        "EDIT_REQUIREMENTS_END\n"
+        f"SHARD {shard_index}/{shard_total}\n"
+        "FOCUS_BASELINE_BEGIN\n"
+        + contexts[focus_paths[0]]
+        + "\nFOCUS_BASELINE_END"
     )
     return bind_compact_focus_path(
         body,
@@ -1187,7 +1177,7 @@ def build_prompt(
         raise ValueError(
             f"Codex reference exceeds the {_MAX_PROMPT_PATHS}-path prompt boundary"
         )
-    required_tests = _required_prompt_tests(task, reference)
+    _required_prompt_tests(task, reference)
     contexts: dict[str, str] = {}
     editable_ranges: dict[str, tuple[tuple[int, int], ...]] = {}
     baseline_files: list[tuple[str, str | None]] = []
@@ -1207,8 +1197,6 @@ def build_prompt(
     for relative, group in zip(paths, groups, strict=True):
         single = _render_prompt_shard(
             task,
-            reference,
-            required_tests,
             group,
             contexts,
             editable_ranges[group[0]],
@@ -1226,8 +1214,6 @@ def build_prompt(
             focus_paths=group,
             prompt=_render_prompt_shard(
                 task,
-                reference,
-                required_tests,
                 group,
                 contexts,
                 editable_ranges[group[0]],
@@ -1268,6 +1254,76 @@ def create_worktree(
         raise RuntimeError("worktree creation did not publish WORKTREE_PATH")
     path = Path(marker.split("=", 1)[1]).resolve(strict=True)
     return path, branch
+
+
+def _syntax_diagnostic(
+    relative: str,
+    *,
+    failure_type: str,
+    line: int = 0,
+    offset: int = 0,
+) -> str:
+    """Render one bounded source-free syntax preflight result."""
+    bounded_line = max(0, min(line, _MAX_CONTEXT_FILE_BYTES + 1))
+    bounded_offset = max(0, min(offset, _MAX_CONTEXT_FILE_BYTES + 1))
+    path_digest = hashlib.sha256(relative.encode("utf-8")).hexdigest()
+    diagnostic = (
+        f"{_PARENT_SYNTAX_ERROR_MARKER} type={failure_type} "
+        f"path_sha256={path_digest} line={bounded_line} offset={bounded_offset}"
+    )
+    if len(diagnostic.encode("ascii")) > _MAX_SYNTAX_DIAGNOSTIC_BYTES:
+        raise RuntimeError("parent syntax diagnostic exceeded its fixed byte bound")
+    return diagnostic
+
+
+def _python_syntax_preflight(
+    root: Path,
+    relative_paths: tuple[str, ...],
+) -> str | None:
+    """Parse bounded changed Python files without exposing their authored source."""
+    resolved_root = root.resolve(strict=True)
+    for relative in sorted(set(relative_paths)):
+        path = Path(relative)
+        if (
+            not relative
+            or "\\" in relative
+            or "\x00" in relative
+            or path.is_absolute()
+            or ".." in path.parts
+            or path.as_posix() != relative
+        ):
+            raise ValueError("syntax preflight path must be repository-relative")
+        if path.suffix != ".py":
+            continue
+        candidate = root / path
+        if not candidate.exists():
+            continue
+        if candidate.is_symlink() or not candidate.is_file():
+            return _syntax_diagnostic(relative, failure_type="python_path")
+        resolved = candidate.resolve(strict=True)
+        if not resolved.is_relative_to(resolved_root):
+            return _syntax_diagnostic(relative, failure_type="python_path")
+        try:
+            raw = candidate.read_bytes()
+        except OSError:
+            return _syntax_diagnostic(relative, failure_type="python_read")
+        if len(raw) > _MAX_CONTEXT_FILE_BYTES:
+            return _syntax_diagnostic(relative, failure_type="python_size")
+        try:
+            encoding, _ = tokenize.detect_encoding(io.BytesIO(raw).readline)
+            source = raw.decode(encoding)
+        except (LookupError, SyntaxError, UnicodeError):
+            return _syntax_diagnostic(relative, failure_type="python_encoding")
+        try:
+            ast.parse(source, filename="<parent-syntax-preflight>", mode="exec")
+        except SyntaxError as exc:
+            return _syntax_diagnostic(
+                relative,
+                failure_type="python_syntax",
+                line=exc.lineno or 0,
+                offset=exc.offset or 0,
+            )
+    return None
 
 
 def evaluate_attempt(
@@ -1341,14 +1397,29 @@ def evaluate_attempt(
     changed_lines = 0
     try:
         changed_lines = apply_proposal(worktree, proposal)
-        commands = tuple(
-            dict.fromkeys((*task.canonical_make_commands, *proposal.make_commands))
+        syntax_diagnostic = _python_syntax_preflight(
+            worktree,
+            tuple(edit.path for edit in proposal.edits),
         )
-        for command in commands:
-            result = runner.run_command(command)
-            results.append(result)
-            if result.returncode != 0:
-                break
+        if syntax_diagnostic:
+            results.append(
+                MakeResult(
+                    ("parent-syntax-preflight",),
+                    2,
+                    "",
+                    syntax_diagnostic,
+                    0.0,
+                )
+            )
+        else:
+            commands = tuple(
+                dict.fromkeys((*task.canonical_make_commands, *proposal.make_commands))
+            )
+            for command in commands:
+                result = runner.run_command(command)
+                results.append(result)
+                if result.returncode != 0:
+                    break
 
         commands_green = bool(results) and all(item.returncode == 0 for item in results)
         if commands_green:
@@ -1430,7 +1501,7 @@ def evaluate_attempt(
             evidence=evidence,
             patch_equivalence=patch_identity,
             proposal=proposal,
-            diagnostics=build_failure_diagnostic(results),
+            diagnostics=syntax_diagnostic or build_failure_diagnostic(results),
             attempt_identity_digest=expected_identity,
         )
     except BaseException:
