@@ -600,6 +600,99 @@ def compact_v4_syntax_repair_sampling_identity() -> dict[str, object]:
     }
 
 
+def _compact_output_identity(selected_protocol: str, *, legacy: bool) -> dict[str, object]:
+    """Describe the model-visible compact output contract."""
+    return {
+        "protocol_version": selected_protocol,
+        "schema": (
+            _LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA if legacy else _COMPACT_PROPOSAL_JSON_SCHEMA
+        ),
+        "system_prompt": _LEGACY_COMPACT_SYSTEM_PROMPT if legacy else _COMPACT_SYSTEM_PROMPT,
+        "max_content_bytes": _COMPACT_MAX_CONTENT_BYTES,
+        "trusted_focus_path_marker": _COMPACT_FOCUS_PATH_MARKER,
+        "trusted_editable_ranges_marker": None if legacy else _COMPACT_EDITABLE_RANGES_MARKER,
+        "trusted_commit_message": _COMPACT_COMMIT_MESSAGE,
+        "model_visible_prompt_policy": None if legacy else _MODEL_VISIBLE_PROMPT_POLICY,
+    }
+
+
+def _structured_decoding_identity(*, legacy: bool) -> dict[str, object]:
+    """Describe grammar-bound decoding without changing digest material."""
+    proposal_schema = (
+        _LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA if legacy else _COMPACT_PROPOSAL_JSON_SCHEMA
+    )
+    return {
+        "mode": _LEGACY_STRUCTURED_DECODING_MODE if legacy else _STRUCTURED_DECODING_MODE,
+        "proposal_schema_strategy": (
+            "static-v3" if legacy else "parent-enum-coordinate-four-items-line-and-codepoint-bounds-v6"
+        ),
+        "max_scope_coordinates": None if legacy else _COMPACT_MAX_SCOPE_COORDINATES,
+        "max_scope_marker_bytes": None if legacy else _COMPACT_MAX_SCOPE_MARKER_BYTES,
+        "scope_marker_encoding": None if legacy else "canonical-ascii-json-v1",
+        "canary_grammar_schema_sha256": hashlib.sha256(
+            json.dumps(
+                _STRUCTURED_CANARY_SCHEMA,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest(),
+        "proposal_grammar_schema_sha256": hashlib.sha256(
+            json.dumps(
+                proposal_schema,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def _strict_decoder_identity(*, legacy: bool) -> dict[str, object]:
+    """Describe parent-side validation and materialization semantics."""
+    operation_policy = [
+        {"new_text_empty": new, "old_text_empty": old, "operation": operation}
+        for (old, new), operation in sorted(_COMPACT_OPERATION_BY_EMPTY_TEXT.items())
+    ]
+    identity: dict[str, object] = {
+        "authoritative_manifest_schema": _PROPOSAL_JSON_SCHEMA,
+        "batch_protocol": _PROPOSAL_BATCH_PROTOCOL if legacy else _COMPACT_SPAN_BATCH_PROTOCOL,
+        "command_max_bytes": _MAX_COMMAND_BYTES,
+        "content_max_bytes": _MAX_CONTENT_BYTES,
+        "edit_fields": sorted(_LEGACY_COMPACT_EDIT_FIELDS if legacy else _COMPACT_EDIT_FIELDS),
+        "max_commands": _MAX_COMMANDS,
+        "max_compact_edits": _COMPACT_MAX_EDITS if legacy else _COMPACT_SPAN_MAX_EDITS,
+        "max_manifest_edits": _MAX_EDITS,
+        "max_tests": _MAX_TESTS,
+        "operation_by_empty_text": operation_policy if legacy else None,
+        "parent_decoder_version": (
+            _LEGACY_STRICT_PARENT_DECODER_VERSION if legacy else _STRICT_PARENT_DECODER_VERSION
+        ),
+        "path_policy": "confined-pure-posix-v1",
+        "precondition_policy": (
+            "sequential-exact-trusted-baseline-v1"
+            if legacy
+            else "numbered-shown-lines-to-complete-exact-snapshot-v2"
+        ),
+        "root_fields": sorted(_COMPACT_ROOT_FIELDS),
+    }
+    if not legacy:
+        identity.update(
+            coordinate_base=1,
+            insertion_boundary_policy="closed-boundaries-of-shown-half-open-range",
+            comparison_retry_policy=_COMPACT_COMPARISON_RETRY_POLICY,
+            line_materialization_policy=_COMPACT_LINE_MATERIALIZATION_POLICY,
+            line_count_policy="python-splitlines-additions-plus-deletions-v1",
+            max_changed_lines=_COMPACT_SPAN_MAX_CHANGED_LINES,
+            max_new_lines_per_edit=_COMPACT_SPAN_MAX_NEW_LINES,
+            max_old_lines_per_edit=_COMPACT_SPAN_MAX_OLD_LINES,
+            max_snapshot_content_bytes=_MAX_SNAPSHOT_CONTENT_BYTES,
+            parent_manifest_schema_version=_SNAPSHOT_MANIFEST_SCHEMA_VERSION,
+            span_order="parent-canonical-start-nonoverlap-v2",
+        )
+    return identity
+
+
 def local_proposal_attempt_identity_digest(
     prompt_protocol_digest: str,
     *,
@@ -610,9 +703,7 @@ def local_proposal_attempt_identity_digest(
         not isinstance(prompt_protocol_digest, str)
         or _PROTOCOL_DIGEST_RE.fullmatch(prompt_protocol_digest) is None
     ):
-        raise ValueError(
-            "prompt protocol digest must be a lowercase 64-character SHA-256"
-        )
+        raise ValueError("prompt protocol digest must be a lowercase 64-character SHA-256")
     selected_protocol = proposal_protocol or _COMPACT_PROPOSAL_PROTOCOL_VERSION
     if selected_protocol not in {
         _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION,
@@ -620,16 +711,6 @@ def local_proposal_attempt_identity_digest(
     }:
         raise ValueError("compact proposal protocol is unsupported")
     legacy = selected_protocol == _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION
-    operation_policy = [
-        {
-            "new_text_empty": new_empty,
-            "old_text_empty": old_empty,
-            "operation": operation,
-        }
-        for (old_empty, new_empty), operation in sorted(
-            _COMPACT_OPERATION_BY_EMPTY_TEXT.items()
-        )
-    ]
     payload: dict[str, object] = {
         "attempt_protocol": "self-improve-local-attempt-v1",
         "prompt_protocol_digest": prompt_protocol_digest,
@@ -639,133 +720,25 @@ def local_proposal_attempt_identity_digest(
             else LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
         ),
         "model_attempt_outcome": asdict(LOCAL_MODEL_ATTEMPT_OUTCOME_PROTOCOL),
-        "compact_output": {
-            "protocol_version": selected_protocol,
-            "schema": (
-                _LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA
-                if legacy
-                else _COMPACT_PROPOSAL_JSON_SCHEMA
-            ),
-            "system_prompt": (
-                _LEGACY_COMPACT_SYSTEM_PROMPT if legacy else _COMPACT_SYSTEM_PROMPT
-            ),
-            "max_content_bytes": _COMPACT_MAX_CONTENT_BYTES,
-            "trusted_focus_path_marker": _COMPACT_FOCUS_PATH_MARKER,
-            "trusted_editable_ranges_marker": (
-                None if legacy else _COMPACT_EDITABLE_RANGES_MARKER
-            ),
-            "trusted_commit_message": _COMPACT_COMMIT_MESSAGE,
-            "model_visible_prompt_policy": (
-                None if legacy else _MODEL_VISIBLE_PROMPT_POLICY
-            ),
-        },
+        "compact_output": _compact_output_identity(selected_protocol, legacy=legacy),
         "structured_canary": {
             "expected": _STRUCTURED_CANARY_EXPECTED,
             "prompt": _STRUCTURED_CANARY_PROMPT,
             "schema": _STRUCTURED_CANARY_SCHEMA,
         },
-        "structured_decoding": {
-            "mode": (
-                _LEGACY_STRUCTURED_DECODING_MODE
-                if legacy
-                else _STRUCTURED_DECODING_MODE
-            ),
-            "proposal_schema_strategy": (
-                "static-v3"
-                if legacy
-                else "parent-enum-coordinate-four-items-line-and-codepoint-bounds-v6"
-            ),
-            "max_scope_coordinates": (
-                None if legacy else _COMPACT_MAX_SCOPE_COORDINATES
-            ),
-            "max_scope_marker_bytes": (
-                None if legacy else _COMPACT_MAX_SCOPE_MARKER_BYTES
-            ),
-            "scope_marker_encoding": (
-                None if legacy else "canonical-ascii-json-v1"
-            ),
-            "canary_grammar_schema_sha256": hashlib.sha256(
-                json.dumps(
-                    _STRUCTURED_CANARY_SCHEMA,
-                    ensure_ascii=True,
-                    separators=(",", ":"),
-                    sort_keys=True,
-                ).encode("utf-8")
-            ).hexdigest(),
-            "proposal_grammar_schema_sha256": hashlib.sha256(
-                json.dumps(
-                    (
-                        _LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA
-                        if legacy
-                        else _COMPACT_PROPOSAL_JSON_SCHEMA
-                    ),
-                    ensure_ascii=True,
-                    separators=(",", ":"),
-                    sort_keys=True,
-                ).encode("utf-8")
-            ).hexdigest(),
-        },
+        "structured_decoding": _structured_decoding_identity(legacy=legacy),
         "output_token_policy": {
             "canary_max_tokens": _STRUCTURED_CANARY_TOKENS,
-            "proposal_max_tokens": (
-                _COMPACT_PROPOSAL_TOKENS
-                if legacy
-                else _COMPACT_SPAN_PROPOSAL_TOKENS
-            ),
+            "proposal_max_tokens": _COMPACT_PROPOSAL_TOKENS if legacy else _COMPACT_SPAN_PROPOSAL_TOKENS,
             "require_stop": _STRUCTURED_OUTPUT_REQUIRE_STOP,
             "safe_finish_reasons": sorted(_SAFE_FINISH_REASONS),
             "seed": _DETERMINISTIC_DECODE_SEED,
             "temperature": _DETERMINISTIC_DECODE_TEMPERATURE,
         },
-        "strict_decoder_semantics": {
-            "authoritative_manifest_schema": _PROPOSAL_JSON_SCHEMA,
-            "batch_protocol": (
-                _PROPOSAL_BATCH_PROTOCOL if legacy else _COMPACT_SPAN_BATCH_PROTOCOL
-            ),
-            "command_max_bytes": _MAX_COMMAND_BYTES,
-            "content_max_bytes": _MAX_CONTENT_BYTES,
-            "edit_fields": sorted(
-                _LEGACY_COMPACT_EDIT_FIELDS if legacy else _COMPACT_EDIT_FIELDS
-            ),
-            "max_commands": _MAX_COMMANDS,
-            "max_compact_edits": (
-                _COMPACT_MAX_EDITS if legacy else _COMPACT_SPAN_MAX_EDITS
-            ),
-            "max_manifest_edits": _MAX_EDITS,
-            "max_tests": _MAX_TESTS,
-            "operation_by_empty_text": operation_policy if legacy else None,
-            "parent_decoder_version": (
-                _LEGACY_STRICT_PARENT_DECODER_VERSION
-                if legacy
-                else _STRICT_PARENT_DECODER_VERSION
-            ),
-            "path_policy": "confined-pure-posix-v1",
-            "precondition_policy": (
-                "sequential-exact-trusted-baseline-v1"
-                if legacy
-                else "numbered-shown-lines-to-complete-exact-snapshot-v2"
-            ),
-            "root_fields": sorted(_COMPACT_ROOT_FIELDS),
-        },
+        "strict_decoder_semantics": _strict_decoder_identity(legacy=legacy),
     }
     if not legacy:
         payload["evaluation_diagnosis"] = asdict(EVALUATION_DIAGNOSIS_PROTOCOL)
-        strict = cast(dict[str, object], payload["strict_decoder_semantics"])
-        strict.update(
-            {
-                "coordinate_base": 1,
-                "insertion_boundary_policy": "closed-boundaries-of-shown-half-open-range",
-                "comparison_retry_policy": _COMPACT_COMPARISON_RETRY_POLICY,
-                "line_materialization_policy": _COMPACT_LINE_MATERIALIZATION_POLICY,
-                "line_count_policy": "python-splitlines-additions-plus-deletions-v1",
-                "max_changed_lines": _COMPACT_SPAN_MAX_CHANGED_LINES,
-                "max_new_lines_per_edit": _COMPACT_SPAN_MAX_NEW_LINES,
-                "max_old_lines_per_edit": _COMPACT_SPAN_MAX_OLD_LINES,
-                "max_snapshot_content_bytes": _MAX_SNAPSHOT_CONTENT_BYTES,
-                "parent_manifest_schema_version": _SNAPSHOT_MANIFEST_SCHEMA_VERSION,
-                "span_order": "parent-canonical-start-nonoverlap-v2",
-            }
-        )
     canonical = json.dumps(
         payload,
         ensure_ascii=True,
@@ -1284,6 +1257,104 @@ class ProposalContract:
         )
 
 
+def _validated_proposal_identity(value: dict[str, object]) -> tuple[int, str, str]:
+    """Validate the fixed proposal envelope and return its trusted identity."""
+    required = {
+        "schema_version",
+        "baseline_sha",
+        "task_id",
+        "edits",
+        "tests",
+        "make_commands",
+        "commit_message",
+    }
+    unknown = set(value) - required
+    missing = required - set(value)
+    if unknown:
+        raise ValueError(f"proposal has unknown fields: {sorted(unknown)}")
+    if missing:
+        raise ValueError(f"proposal is missing fields: {sorted(missing)}")
+    schema_version = value["schema_version"]
+    if (
+        isinstance(schema_version, bool)
+        or not isinstance(schema_version, int)
+        or schema_version not in {1, _SNAPSHOT_MANIFEST_SCHEMA_VERSION}
+    ):
+        raise ValueError("schema_version must be 1 or 2")
+    baseline_sha = value["baseline_sha"]
+    if not isinstance(baseline_sha, str) or not _SHA_RE.fullmatch(baseline_sha):
+        raise ValueError("baseline_sha must be exactly 40 lowercase hex characters")
+    task_id = value["task_id"]
+    if not isinstance(task_id, str) or not _TASK_RE.fullmatch(task_id):
+        raise ValueError("task_id must use the canonical S<number>[.<number>] form")
+    return schema_version, baseline_sha, task_id
+
+
+def _validated_proposal_edits(
+    edits_raw: object,
+    *,
+    schema_version: int,
+) -> tuple[ProposalEdit, ...]:
+    """Parse bounded proposal edits while preserving their input order."""
+    if not isinstance(edits_raw, list) or not edits_raw or len(edits_raw) > _MAX_EDITS:
+        raise ValueError(f"edits must contain 1..{_MAX_EDITS} entries")
+    edits: list[ProposalEdit] = []
+    seen_edits: set[tuple[str, str, str, str]] = set()
+    content_bytes = 0
+    for item in edits_raw:
+        required_fields = {"operation", "path", "old_text", "new_text"}
+        if not isinstance(item, dict) or set(item) != required_fields:
+            raise ValueError(
+                "each edit must contain exactly operation, path, old_text, and new_text"
+            )
+        operation, path = item["operation"], item["path"]
+        old_text, new_text = item["old_text"], item["new_text"]
+        if operation not in {"replace", "create", "delete"}:
+            raise ValueError(f"unsupported edit operation: {operation!r}")
+        if not isinstance(path, str) or not _safe_relative_path(path):
+            raise ValueError(
+                f"edit path is not canonical, repository-relative, and confined: {path!r}"
+            )
+        if not isinstance(old_text, str) or not isinstance(new_text, str):
+            raise ValueError(f"edit text must be UTF-8 text: {path}")
+        if operation == "replace" and schema_version == 1 and (
+            not old_text or old_text == new_text
+        ):
+            raise ValueError("replace requires distinct non-empty old_text")
+        if (
+            operation == "replace"
+            and schema_version == _SNAPSHOT_MANIFEST_SCHEMA_VERSION
+            and old_text == new_text
+        ):
+            raise ValueError("snapshot replace requires distinct complete file text")
+        if operation == "create" and (old_text or not new_text):
+            raise ValueError("create requires empty old_text and non-empty new_text")
+        if operation == "delete" and (not old_text or new_text):
+            raise ValueError("delete requires non-empty old_text and empty new_text")
+        identity = (operation, path, old_text, new_text)
+        if identity in seen_edits:
+            raise ValueError(f"duplicate edit operation: {path}")
+        seen_edits.add(identity)
+        content_bytes += len(old_text.encode("utf-8")) + len(new_text.encode("utf-8"))
+        edits.append(ProposalEdit(operation, path, old_text, new_text))
+    content_limit = _MAX_CONTENT_BYTES if schema_version == 1 else _MAX_SNAPSHOT_CONTENT_BYTES
+    if content_bytes > content_limit:
+        raise ValueError(f"proposal edit content exceeds {content_limit} bytes")
+    return tuple(edits)
+
+
+def _validated_commit_message(value: object) -> str:
+    """Return one normalized bounded commit subject."""
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or "\n" in value
+        or len(value.encode("utf-8")) > 200
+    ):
+        raise ValueError("commit_message must be one bounded non-empty line")
+    return value.strip()
+
+
 @dataclass(frozen=True)
 class ProposalManifest:
     """Strict, bounded local-model proposal with no direct tool authority."""
@@ -1330,117 +1401,21 @@ class ProposalManifest:
             raise ValueError(f"proposal is not valid JSON: {exc}") from exc
         if not isinstance(value, dict):
             raise ValueError("proposal must be a JSON object")
-
-        required = {
-            "schema_version",
-            "baseline_sha",
-            "task_id",
-            "edits",
-            "tests",
-            "make_commands",
-            "commit_message",
-        }
-        unknown = set(value) - required
-        missing = required - set(value)
-        if unknown:
-            raise ValueError(f"proposal has unknown fields: {sorted(unknown)}")
-        if missing:
-            raise ValueError(f"proposal is missing fields: {sorted(missing)}")
-        schema_version = value["schema_version"]
-        if (
-            isinstance(schema_version, bool)
-            or not isinstance(schema_version, int)
-            or schema_version not in {1, _SNAPSHOT_MANIFEST_SCHEMA_VERSION}
-        ):
-            raise ValueError("schema_version must be 1 or 2")
-
-        baseline_sha = value["baseline_sha"]
-        if not isinstance(baseline_sha, str) or not _SHA_RE.fullmatch(baseline_sha):
-            raise ValueError("baseline_sha must be exactly 40 lowercase hex characters")
-        task_id = value["task_id"]
-        if not isinstance(task_id, str) or not _TASK_RE.fullmatch(task_id):
-            raise ValueError("task_id must use the canonical S<number>[.<number>] form")
-
-        edits_raw = value["edits"]
-        if not isinstance(edits_raw, list) or not edits_raw or len(edits_raw) > _MAX_EDITS:
-            raise ValueError(f"edits must contain 1..{_MAX_EDITS} entries")
-        edits: list[ProposalEdit] = []
-        seen_edits: set[tuple[str, str, str, str]] = set()
-        content_bytes = 0
-        for item in edits_raw:
-            required_edit_fields = {"operation", "path", "old_text", "new_text"}
-            if not isinstance(item, dict) or set(item) != required_edit_fields:
-                raise ValueError(
-                    "each edit must contain exactly operation, path, old_text, and new_text"
-                )
-            operation = item["operation"]
-            path = item["path"]
-            old_text = item["old_text"]
-            new_text = item["new_text"]
-            if operation not in {"replace", "create", "delete"}:
-                raise ValueError(f"unsupported edit operation: {operation!r}")
-            if not isinstance(path, str) or not _safe_relative_path(path):
-                raise ValueError(
-                    f"edit path is not canonical, repository-relative, and confined: {path!r}"
-                )
-            if not isinstance(old_text, str) or not isinstance(new_text, str):
-                raise ValueError(f"edit text must be UTF-8 text: {path}")
-            if operation == "replace" and schema_version == 1 and (
-                not old_text or old_text == new_text
-            ):
-                raise ValueError("replace requires distinct non-empty old_text")
-            if (
-                operation == "replace"
-                and schema_version == _SNAPSHOT_MANIFEST_SCHEMA_VERSION
-                and old_text == new_text
-            ):
-                raise ValueError("snapshot replace requires distinct complete file text")
-            if operation == "create" and (old_text or not new_text):
-                raise ValueError("create requires empty old_text and non-empty new_text")
-            if operation == "delete" and (not old_text or new_text):
-                raise ValueError("delete requires non-empty old_text and empty new_text")
-            identity = (operation, path, old_text, new_text)
-            if identity in seen_edits:
-                raise ValueError(f"duplicate edit operation: {path}")
-            seen_edits.add(identity)
-            content_bytes += len(old_text.encode("utf-8"))
-            content_bytes += len(new_text.encode("utf-8"))
-            edits.append(
-                ProposalEdit(
-                    operation=operation,
-                    path=path,
-                    old_text=old_text,
-                    new_text=new_text,
-                )
-            )
-        content_limit = (
-            _MAX_CONTENT_BYTES
-            if schema_version == 1
-            else _MAX_SNAPSHOT_CONTENT_BYTES
+        schema_version, baseline_sha, task_id = _validated_proposal_identity(value)
+        edits = _validated_proposal_edits(
+            value["edits"],
+            schema_version=schema_version,
         )
-        if content_bytes > content_limit:
-            raise ValueError(f"proposal edit content exceeds {content_limit} bytes")
-
         tests = _parse_path_list(value["tests"], "test path", _MAX_TESTS)
         commands = _parse_make_commands(value["make_commands"])
-
-        commit_message = value["commit_message"]
-        if (
-            not isinstance(commit_message, str)
-            or not commit_message.strip()
-            or "\n" in commit_message
-            or len(commit_message.encode("utf-8")) > 200
-        ):
-            raise ValueError("commit_message must be one bounded non-empty line")
-
         return cls(
             schema_version=schema_version,
             baseline_sha=baseline_sha,
             task_id=task_id,
-            edits=tuple(edits),
+            edits=edits,
             tests=tests,
             make_commands=tuple(commands),
-            commit_message=commit_message.strip(),
+            commit_message=_validated_commit_message(value["commit_message"]),
         )
 
     def validate_paths(self, repo_root: Path) -> None:
@@ -1949,6 +1924,86 @@ def _materialize_compact_snapshot(
     return materialized
 
 
+def _compact_create_edit(
+    proposal: CompactSpanProposal,
+    editable_ranges: tuple[tuple[int, int], ...],
+) -> dict[str, str]:
+    """Validate and materialize a compact proposal for an absent file."""
+    if editable_ranges:
+        raise _parent_proposal_error(
+            "compact absent file must not advertise editable baseline ranges"
+        )
+    if (
+        len(proposal.edits) != 1
+        or proposal.edits[0].start_line != 1
+        or proposal.edits[0].old_line_count != 0
+        or not proposal.edits[0].new_text
+    ):
+        raise _parent_proposal_error("compact absent file create must use s=1 and n=0")
+    return {
+        "operation": "create",
+        "path": proposal.focus_path,
+        "old_text": "",
+        "new_text": proposal.edits[0].new_text,
+    }
+
+
+def _compact_snapshot_edit(
+    proposal: CompactSpanProposal,
+    baseline: str,
+    editable_ranges: tuple[tuple[int, int], ...],
+) -> dict[str, str]:
+    """Validate compact spans and materialize one trusted baseline snapshot."""
+    lines = baseline.splitlines(keepends=True)
+    line_count = len(lines)
+    shown = _shown_line_numbers(editable_ranges, line_count=line_count)
+    line_ending = _trusted_line_ending(lines)
+    baseline_has_final_newline = _line_ending(baseline) is not None
+    for span in proposal.edits:
+        start = span.start_line - 1
+        end = start + span.old_line_count
+        if start > line_count or end > line_count:
+            raise _parent_proposal_error("compact span is outside trusted baseline lines")
+        if span.old_line_count:
+            consumed = frozenset(
+                range(span.start_line, span.start_line + span.old_line_count)
+            )
+            if not consumed.issubset(shown):
+                raise _parent_proposal_error(
+                    "compact span must consume only explicitly shown baseline lines"
+                )
+            normalized = _normalized_compact_replacement(
+                span.new_text,
+                line_ending=line_ending,
+                terminal_line=end < line_count or baseline_has_final_newline,
+            )
+            if "".join(lines[start:end]) == normalized:
+                raise _parent_proposal_error("compact span must change content")
+            continue
+        boundary_is_shown = any(
+            range_start <= span.start_line <= range_end
+            for range_start, range_end in editable_ranges
+        )
+        empty_file_boundary = line_count == 0 and not editable_ranges and span.start_line == 1
+        if not boundary_is_shown and not empty_file_boundary:
+            raise _parent_span_scope_error(
+                "compact insertion must use s from the first shown line through "
+                "one past the last shown line of one contiguous section",
+                focus_path=proposal.focus_path,
+                span=span,
+                editable_ranges=editable_ranges,
+            )
+    materialized = _materialize_compact_snapshot(baseline, lines, proposal.edits)
+    if materialized == baseline:
+        raise _parent_proposal_error("compact span must change content")
+    return {
+        "operation": "replace" if materialized else "delete",
+        "path": proposal.focus_path,
+        "old_text": baseline,
+        "new_text": materialized,
+    }
+
+
 def _manifest_from_compact_span_proposal(
     proposal: CompactSpanProposal,
     *,
@@ -1957,106 +2012,18 @@ def _manifest_from_compact_span_proposal(
     editable_ranges: tuple[tuple[int, int], ...],
 ) -> ProposalManifest:
     """Compile one trusted-path v4 shard into the unchanged exact manifest schema."""
-    edits: list[dict[str, str]] = []
-    if baseline is None:
-        if editable_ranges:
-            raise _parent_proposal_error(
-                "compact absent file must not advertise editable baseline ranges"
-            )
-        if (
-            len(proposal.edits) != 1
-            or proposal.edits[0].start_line != 1
-            or proposal.edits[0].old_line_count != 0
-            or not proposal.edits[0].new_text
-        ):
-            raise _parent_proposal_error(
-                "compact absent file create must use s=1 and n=0"
-            )
-        edits.append(
-            {
-                "operation": "create",
-                "path": proposal.focus_path,
-                "old_text": "",
-                "new_text": proposal.edits[0].new_text,
-            }
-        )
-    else:
-        lines = baseline.splitlines(keepends=True)
-        line_count = len(lines)
-        shown = _shown_line_numbers(editable_ranges, line_count=line_count)
-        line_ending = _trusted_line_ending(lines)
-        baseline_has_final_newline = _line_ending(baseline) is not None
-        for span in proposal.edits:
-            start = span.start_line - 1
-            end = start + span.old_line_count
-            if start > line_count or end > line_count:
-                raise _parent_proposal_error(
-                    "compact span is outside trusted baseline lines"
-                )
-            if span.old_line_count:
-                consumed = frozenset(range(span.start_line, span.start_line + span.old_line_count))
-                if not consumed.issubset(shown):
-                    raise _parent_proposal_error(
-                        "compact span must consume only explicitly shown baseline lines"
-                    )
-                old_slice = "".join(lines[start:end])
-                normalized_replacement = _normalized_compact_replacement(
-                    span.new_text,
-                    line_ending=line_ending,
-                    terminal_line=end < line_count or baseline_has_final_newline,
-                )
-                if old_slice == normalized_replacement:
-                    raise _parent_proposal_error("compact span must change content")
-            else:
-                boundary_is_shown = any(
-                    range_start <= span.start_line <= range_end
-                    for range_start, range_end in editable_ranges
-                )
-                empty_file_boundary = (
-                    line_count == 0
-                    and not editable_ranges
-                    and span.start_line == 1
-                )
-                if not boundary_is_shown and not empty_file_boundary:
-                    raise _parent_span_scope_error(
-                        "compact insertion must use s from the first shown line through "
-                        "one past the last shown line of one contiguous section",
-                        focus_path=proposal.focus_path,
-                        span=span,
-                        editable_ranges=editable_ranges,
-                    )
-        materialized = _materialize_compact_snapshot(
-            baseline,
-            lines,
-            proposal.edits,
-        )
-        if materialized == baseline:
-            raise _parent_proposal_error("compact span must change content")
-        if materialized:
-            edits.append(
-                {
-                    "operation": "replace",
-                    "path": proposal.focus_path,
-                    "old_text": baseline,
-                    "new_text": materialized,
-                }
-            )
-        else:
-            edits.append(
-                {
-                    "operation": "delete",
-                    "path": proposal.focus_path,
-                    "old_text": baseline,
-                    "new_text": "",
-                }
-            )
+    edit = (
+        _compact_create_edit(proposal, editable_ranges)
+        if baseline is None
+        else _compact_snapshot_edit(proposal, baseline, editable_ranges)
+    )
     return ProposalManifest.from_json(
         json.dumps(
             {
                 "schema_version": _SNAPSHOT_MANIFEST_SCHEMA_VERSION,
                 "baseline_sha": contract.baseline_sha,
                 "task_id": contract.task_id,
-                "edits": edits,
+                "edits": [edit],
                 "tests": list(contract.tests),
                 "make_commands": list(contract.make_commands),
                 "commit_message": _COMPACT_COMMIT_MESSAGE,
@@ -3224,87 +3191,59 @@ class LocalProposalGateway:
             )
         self._structured_canary_protocols.add(proposal_protocol)
 
-    def propose(
+    def _propose_compact(
         self,
+        model: _ChatLocalModel,
         prompt: str,
-        *,
-        contract: ProposalContract | None = None,
+        contract: ProposalContract,
     ) -> ProposalManifest | CompactSpanProposal:
-        """Run deterministic decode and parse one bounded proposal."""
-        model = self._load_model()
+        """Decode one contract-bound compact proposal through chat completion."""
+        self._run_structured_canary(model, contract.proposal_protocol)
+        legacy = contract.proposal_protocol == _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION
+        if legacy:
+            schema = _LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA
+        else:
+            scope_ranges = _trusted_compact_editable_ranges(prompt)
+            schema = (
+                _COMPACT_PROPOSAL_JSON_SCHEMA
+                if scope_ranges is None
+                else _compact_proposal_schema_for_ranges(scope_ranges)
+            )
+        sampling_arguments = _proposal_sampling_arguments(
+            contract.sampling_profile,
+            sampling_seed=contract.sampling_seed,
+        )
+        output = model.create_chat_completion(
+            messages=[
+                {
+                    "role": "system",
+                    "content": _LEGACY_COMPACT_SYSTEM_PROMPT if legacy else _COMPACT_SYSTEM_PROMPT,
+                },
+                {"role": "user", "content": _model_visible_compact_prompt(prompt)},
+            ],
+            max_tokens=_COMPACT_PROPOSAL_TOKENS if legacy else _COMPACT_SPAN_PROPOSAL_TOKENS,
+            response_format={"type": "json_object", "schema": schema},
+            grammar=self._grammar_for_schema(schema),
+            **sampling_arguments,
+        )
+        budget = _COMPACT_PROPOSAL_TOKENS if legacy else _COMPACT_SPAN_PROPOSAL_TOKENS
+        text = _completion_text(
+            output,
+            phase="proposal",
+            budget=budget,
+            require_stop=_STRUCTURED_OUTPUT_REQUIRE_STOP,
+        )
+        focus_path = _trusted_compact_focus_path(prompt)
+        if not legacy:
+            return _decode_compact_span_proposal(text, focus_path=focus_path)
+        return _decode_compact_proposal(text, contract, focus_path=focus_path)
+
+    def _uncontracted_output(self, model: _LocalModel, prompt: str) -> object:
+        """Run the historical unconstrained proposal adapter."""
         if hasattr(model, "create_chat_completion"):
             chat_model = cast("_ChatLocalModel", model)
-            if contract is not None:
-                self._run_structured_canary(chat_model, contract.proposal_protocol)
-                legacy = (
-                    contract.proposal_protocol
-                    == _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION
-                )
-                schema = (
-                    _LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA
-                    if legacy
-                    else (
-                        _COMPACT_PROPOSAL_JSON_SCHEMA
-                        if (
-                            scope_ranges := _trusted_compact_editable_ranges(prompt)
-                        )
-                        is None
-                        else _compact_proposal_schema_for_ranges(scope_ranges)
-                    )
-                )
-                sampling_arguments = _proposal_sampling_arguments(
-                    contract.sampling_profile,
-                    sampling_seed=contract.sampling_seed,
-                )
-                output = chat_model.create_chat_completion(
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                _LEGACY_COMPACT_SYSTEM_PROMPT
-                                if legacy
-                                else _COMPACT_SYSTEM_PROMPT
-                            ),
-                        },
-                        {
-                            "role": "user",
-                            "content": _model_visible_compact_prompt(prompt),
-                        },
-                    ],
-                    max_tokens=(
-                        _COMPACT_PROPOSAL_TOKENS
-                        if legacy
-                        else _COMPACT_SPAN_PROPOSAL_TOKENS
-                    ),
-                    response_format={
-                        "type": "json_object",
-                        "schema": schema,
-                    },
-                    grammar=self._grammar_for_schema(schema),
-                    **sampling_arguments,
-                )
-                text = _completion_text(
-                    output,
-                    phase="proposal",
-                    budget=(
-                        _COMPACT_PROPOSAL_TOKENS
-                        if legacy
-                        else _COMPACT_SPAN_PROPOSAL_TOKENS
-                    ),
-                    require_stop=_STRUCTURED_OUTPUT_REQUIRE_STOP,
-                )
-                focus_path = _trusted_compact_focus_path(prompt)
-                if not legacy:
-                    return _decode_compact_span_proposal(
-                        text,
-                        focus_path=focus_path,
-                    )
-                return _decode_compact_proposal(
-                    text,
-                    contract,
-                    focus_path=focus_path,
-                )
-            output = chat_model.create_chat_completion(
+            schema = _PROPOSAL_JSON_SCHEMA
+            return chat_model.create_chat_completion(
                 messages=[
                     {
                         "role": "system",
@@ -3318,23 +3257,26 @@ class LocalProposalGateway:
                 max_tokens=4096,
                 temperature=0.0,
                 seed=0,
-                response_format={
-                    "type": "json_object",
-                    "schema": _PROPOSAL_JSON_SCHEMA,
-                },
-                grammar=self._grammar_for_schema(_PROPOSAL_JSON_SCHEMA),
+                response_format={"type": "json_object", "schema": schema},
+                grammar=self._grammar_for_schema(schema),
             )
-        else:
-            if contract is not None:
+        return model(prompt, max_tokens=4096, temperature=0.0, echo=False)
+
+    def propose(
+        self,
+        prompt: str,
+        *,
+        contract: ProposalContract | None = None,
+    ) -> ProposalManifest | CompactSpanProposal:
+        """Run deterministic decode and parse one bounded proposal."""
+        model = self._load_model()
+        if contract is not None:
+            if not hasattr(model, "create_chat_completion"):
                 raise ValueError(
                     "compact structured proposal requires chat-completion support"
                 )
-            output = model(
-                prompt,
-                max_tokens=4096,
-                temperature=0.0,
-                echo=False,
-            )
+            return self._propose_compact(cast("_ChatLocalModel", model), prompt, contract)
+        output = self._uncontracted_output(model, prompt)
         text = _completion_text(
             output,
             phase="proposal",

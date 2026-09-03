@@ -89,6 +89,9 @@ from general_ludd.self_improve.managed_runner import (
     _OutcomeAdapterFactory as _OutcomeAdapterFactory,
 )
 from general_ludd.self_improve.managed_runner import (
+    _SyntaxRepairBuilder as _SyntaxRepairBuilder,
+)
+from general_ludd.self_improve.managed_runner import (
     _validate_approved_result_identity as _validate_approved_result_identity,
 )
 from general_ludd.self_improve.managed_runner import (
@@ -745,6 +748,356 @@ def _build_targeted_repair_prompt_plan(
     )
 
 
+@dataclass
+class _CompactRepairState:
+    """Mutable parent-owned state for bounded compact repair candidates."""
+
+    active_plan: PromptPlan
+    original_path_groups: tuple[tuple[str, ...], ...]
+    original_paths: tuple[str, ...]
+    original_ranges: tuple[tuple[tuple[int, int], ...], ...]
+    original_baselines: dict[str, str | None]
+    frozen: dict[str, CompactSpanProposal]
+    latest: dict[str, CompactSpanProposal]
+    targets: dict[str, tuple[int, int]]
+
+
+@dataclass(frozen=True)
+class _RepairCandidateOutcome:
+    """One candidate pass over every currently failing repair shard."""
+
+    next_plans: tuple[PromptPlan, ...]
+    first_diagnostic: str | None
+    last_contract: ProposalContract | None
+
+
+def _initial_repair_shard_plan(
+    state: _CompactRepairState,
+    plan: PromptPlan,
+    shard: PromptShard,
+    span_proposal: CompactSpanProposal,
+    task: TaskSpec,
+    contract: ProposalContract,
+) -> PromptPlan | None:
+    """Validate one inherited repair shard and return its next failing plan."""
+    path = span_proposal.focus_path
+    state.latest[path] = span_proposal
+    shard_plan = _one_shard_prompt_plan(plan, shard)
+    proposal = expand_compact_span_proposals(
+        (span_proposal,),
+        contract=contract,
+        expected_path_groups=(shard.focus_paths,),
+        expected_baseline_files=dict(shard_plan.baseline_files),
+        expected_editable_ranges=(shard.editable_ranges,),
+    )
+    diagnostic = _proposal_python_syntax_diagnostics(proposal).get(path)
+    _report_repair_shard_state(
+        path,
+        candidate="initial",
+        state=_repair_preflight_state(diagnostic),
+        diagnostic=diagnostic,
+    )
+    if diagnostic is None:
+        state.frozen[path] = span_proposal
+        return None
+    baseline = dict(shard_plan.baseline_files)[path]
+    owning_index = _compact_v4_syntax_owning_span_index(
+        baseline,
+        span_proposal,
+        diagnostic,
+    )
+    if owning_index is not None:
+        owning_edit = span_proposal.edits[owning_index]
+        target = (owning_edit.start_line, owning_edit.old_line_count)
+        state.targets[path] = target
+        _report_repair_shard_state(
+            path,
+            candidate="initial",
+            state="span_targeted",
+            diagnostic=diagnostic,
+            target_span=target,
+        )
+        return _build_targeted_repair_prompt_plan(
+            plan,
+            shard,
+            task,
+            span_proposal,
+            diagnostic,
+            target,
+        )
+    if (
+        hashlib.sha256(path.encode("utf-8")).hexdigest()
+        != plan.repair_diagnosis_path_sha256
+        and _syntax_failure_class(diagnostic) == "python_syntax"
+    ):
+        return build_syntax_repair_prompt_plan(
+            shard_plan,
+            (span_proposal,),
+            _repair_candidate_syntax_diagnosis(diagnostic),
+        )
+    return shard_plan
+
+
+def _prepare_compact_repair_state(
+    plan: PromptPlan,
+    task: TaskSpec,
+    reference: CodexReference,
+    required_tests: tuple[str, ...],
+) -> _CompactRepairState:
+    """Validate immutable shard identity and prepare inherited repair state."""
+    path_groups = tuple(shard.focus_paths for shard in plan.shards)
+    if any(len(paths) != 1 for paths in path_groups):
+        raise ValueError("compact-v4 prompt shards must bind exactly one focus path")
+    state = _CompactRepairState(
+        active_plan=plan,
+        original_path_groups=path_groups,
+        original_paths=tuple(paths[0] for paths in path_groups),
+        original_ranges=tuple(shard.editable_ranges for shard in plan.shards),
+        original_baselines=dict(plan.baseline_files),
+        frozen={},
+        latest={},
+        targets={},
+    )
+    if not plan.repair_proposals:
+        return state
+    contract = ProposalContract(
+        baseline_sha=reference.baseline_sha,
+        task_id=task.task_id,
+        tests=required_tests,
+        make_commands=task.canonical_make_commands,
+        proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    failing = tuple(
+        next_plan
+        for shard, proposal in zip(plan.shards, plan.repair_proposals, strict=True)
+        if (next_plan := _initial_repair_shard_plan(state, plan, shard, proposal, task, contract))
+        is not None
+    )
+    if not failing:
+        raise ValueError("compact-v4 repair state did not reproduce its parent syntax failure")
+    state.active_plan = _combine_shard_prompt_plans(
+        failing,
+        protocol_digest=plan.protocol_digest,
+    )
+    return state
+
+
+def _repair_shard_contract(
+    plan: PromptPlan,
+    task: TaskSpec,
+    reference: CodexReference,
+    required_tests: tuple[str, ...],
+    state: _CompactRepairState,
+    shard: PromptShard,
+    candidate_index: int,
+) -> tuple[str, ProposalContract, PromptPlan]:
+    """Bind one repair request before entering the rejectable model boundary."""
+    shard_plan = _one_shard_prompt_plan(state.active_plan, shard)
+    request = encode_prompt_batch((shard.prompt,), protocol_digest=plan.protocol_digest)
+    contract = ProposalContract.for_request(
+        request=request,
+        baseline_sha=reference.baseline_sha,
+        task_id=task.task_id,
+        tests=required_tests,
+        make_commands=task.canonical_make_commands,
+        proposal_protocol=plan.proposal_protocol,
+        sampling_profile=plan.sampling_profile,
+        sampling_candidate_index=candidate_index,
+        repair_state_sha256=compact_v4_repair_shard_state_digest(
+            tuple(state.latest[path] for path in state.original_paths if path in state.latest)
+        ),
+    )
+    return request, contract, shard_plan
+
+
+def _decode_repair_shard(
+    runner: _ObservableRunner,
+    model_path: Path,
+    plan: PromptPlan,
+    state: _CompactRepairState,
+    shard: PromptShard,
+    request: str,
+    contract: ProposalContract,
+    shard_plan: PromptPlan,
+) -> tuple[CompactSpanProposal, ProposalManifest]:
+    """Request and expand one independently bounded repair shard."""
+    raw = _run_local_proposal_request(runner, model_path, request, contract=contract)
+    span = decode_compact_span_batch(
+        raw,
+        expected_protocol_digest=plan.protocol_digest,
+        expected_count=1,
+    )[0]
+    target = state.targets.get(span.focus_path)
+    if target is not None:
+        span = _proposal_with_repaired_span(state.latest[span.focus_path], span, target)
+    proposal = expand_compact_span_proposals(
+        (span,),
+        contract=contract,
+        expected_path_groups=(shard.focus_paths,),
+        expected_baseline_files=dict(shard_plan.baseline_files),
+        expected_editable_ranges=(shard.editable_ranges,),
+    )
+    return span, proposal
+
+
+def _advance_repair_shard(
+    state: _CompactRepairState,
+    shard_plan: PromptPlan,
+    shard: PromptShard,
+    span: CompactSpanProposal,
+    proposal: ProposalManifest,
+    task: TaskSpec,
+    candidate: str,
+) -> tuple[PromptPlan | None, str | None]:
+    """Freeze one valid shard or build its next syntax-repair plan."""
+    path = span.focus_path
+    state.latest[path] = span
+    diagnostic = _proposal_python_syntax_diagnostics(proposal).get(path)
+    _report_repair_shard_state(
+        path,
+        candidate=candidate,
+        state=_repair_preflight_state(diagnostic),
+        diagnostic=diagnostic,
+    )
+    if diagnostic is None:
+        state.frozen[path] = span
+        state.targets.pop(path, None)
+        return None, None
+    next_plan = shard_plan
+    if _syntax_failure_class(diagnostic) == "python_syntax":
+        baseline = dict(shard_plan.baseline_files)[path]
+        owning_index = _compact_v4_syntax_owning_span_index(baseline, span, diagnostic)
+        target: tuple[int, int] | None = None
+        if owning_index is not None:
+            edit = span.edits[owning_index]
+            target = (edit.start_line, edit.old_line_count)
+            state.targets[path] = target
+            _report_repair_shard_state(
+                path,
+                candidate=candidate,
+                state="span_targeted",
+                diagnostic=diagnostic,
+                target_span=target,
+            )
+        else:
+            state.targets.pop(path, None)
+        next_plan = (
+            _build_targeted_repair_prompt_plan(
+                shard_plan,
+                shard,
+                task,
+                span,
+                diagnostic,
+                target,
+            )
+            if target is not None
+            else build_syntax_repair_prompt_plan(
+                shard_plan,
+                (span,),
+                _repair_candidate_syntax_diagnosis(diagnostic),
+            )
+        )
+    return next_plan, diagnostic
+
+
+def _run_repair_candidate(
+    runner: _ObservableRunner,
+    model_path: Path,
+    plan: PromptPlan,
+    task: TaskSpec,
+    reference: CodexReference,
+    required_tests: tuple[str, ...],
+    state: _CompactRepairState,
+    candidate_index: int,
+) -> _RepairCandidateOutcome:
+    """Evaluate one candidate number across all currently failing shards."""
+    next_plans: list[PromptPlan] = []
+    first_diagnostic: str | None = None
+    last_contract: ProposalContract | None = None
+    candidate = f"{candidate_index + 1}/{COMPACT_V4_REPAIR_CANDIDATE_LIMIT}"
+    for shard in state.active_plan.shards:
+        request, contract, shard_plan = _repair_shard_contract(
+            plan,
+            task,
+            reference,
+            required_tests,
+            state,
+            shard,
+            candidate_index,
+        )
+        last_contract = contract
+        try:
+            span, proposal = _decode_repair_shard(
+                runner,
+                model_path,
+                plan,
+                state,
+                shard,
+                request,
+                contract,
+                shard_plan,
+            )
+        except (RuntimeError, ValueError):
+            _report_repair_shard_state(
+                shard.focus_paths[0],
+                candidate=candidate,
+                state="proposal_rejected",
+            )
+            next_plans.append(shard_plan)
+            continue
+        next_plan, diagnostic = _advance_repair_shard(
+            state,
+            shard_plan,
+            shard,
+            span,
+            proposal,
+            task,
+            candidate,
+        )
+        if diagnostic is not None and first_diagnostic is None:
+            first_diagnostic = diagnostic
+        if next_plan is not None:
+            next_plans.append(next_plan)
+    return _RepairCandidateOutcome(tuple(next_plans), first_diagnostic, last_contract)
+
+
+def _finalize_repair_candidate(
+    state: _CompactRepairState,
+    outcome: _RepairCandidateOutcome,
+    candidate_index: int,
+) -> GeneratedProposal | None:
+    """Return a completely frozen aggregate or report the bounded rejection."""
+    candidate = f"{candidate_index + 1}/{COMPACT_V4_REPAIR_CANDIDATE_LIMIT}"
+    if outcome.next_plans:
+        result = "syntax_rejected" if outcome.first_diagnostic else "proposal_rejected"
+        diagnostic = f" {outcome.first_diagnostic}" if outcome.first_diagnostic else ""
+        _runtime_progress(
+            "SELF_IMPROVE_REPAIR_CANDIDATE "
+            f"candidate={candidate} result={result} "
+            f"failing_shards={len(outcome.next_plans)} "
+            f"frozen_shards={len(state.frozen)}{diagnostic}"
+        )
+        return None
+    if outcome.last_contract is None or set(state.frozen) != set(state.original_paths):
+        raise ValueError("compact-v4 repair did not cover the immutable shard set")
+    spans = tuple(state.frozen[path] for path in state.original_paths)
+    proposal = expand_compact_span_proposals(
+        spans,
+        contract=outcome.last_contract,
+        expected_path_groups=state.original_path_groups,
+        expected_baseline_files=state.original_baselines,
+        expected_editable_ranges=state.original_ranges,
+    )
+    if _proposal_python_syntax_preflight(proposal) is not None:
+        raise ValueError("compact-v4 frozen repair aggregate failed immutable syntax revalidation")
+    _runtime_progress(
+        "SELF_IMPROVE_REPAIR_CANDIDATE "
+        f"candidate={candidate} result=selected "
+        f"failing_shards=0 frozen_shards={len(state.frozen)}"
+    )
+    return GeneratedProposal(proposal, spans)
+
+
 def _generate_compact_v4_repair_plan_result(
     runner: _ObservableRunner,
     model_path: Path,
@@ -754,262 +1107,24 @@ def _generate_compact_v4_repair_plan_result(
 ) -> GeneratedProposal:
     """Generate bounded repair shards independently and freeze each valid result."""
     required_tests = _required_prompt_tests(task, reference)
-    original_path_groups = tuple(shard.focus_paths for shard in plan.shards)
-    if any(len(paths) != 1 for paths in original_path_groups):
-        raise ValueError("compact-v4 prompt shards must bind exactly one focus path")
-    original_paths = tuple(paths[0] for paths in original_path_groups)
-    original_ranges = tuple(shard.editable_ranges for shard in plan.shards)
-    original_baselines = dict(plan.baseline_files)
-    active_plan = plan
-    frozen_proposals: dict[str, CompactSpanProposal] = {}
-    latest_proposals: dict[str, CompactSpanProposal] = {}
-    target_spans: dict[str, tuple[int, int]] = {}
-    if plan.repair_proposals:
-        validation_contract = ProposalContract(
-            baseline_sha=reference.baseline_sha,
-            task_id=task.task_id,
-            tests=required_tests,
-            make_commands=task.canonical_make_commands,
-            proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
-        )
-        initial_failing_plans: list[PromptPlan] = []
-        for shard, span_proposal in zip(
-            plan.shards,
-            plan.repair_proposals,
-            strict=True,
-        ):
-            latest_proposals[span_proposal.focus_path] = span_proposal
-            shard_plan = _one_shard_prompt_plan(plan, shard)
-            shard_proposal = expand_compact_span_proposals(
-                (span_proposal,),
-                contract=validation_contract,
-                expected_path_groups=(shard.focus_paths,),
-                expected_baseline_files=dict(shard_plan.baseline_files),
-                expected_editable_ranges=(shard.editable_ranges,),
-            )
-            syntax_diagnostics = _proposal_python_syntax_diagnostics(shard_proposal)
-            syntax_diagnostic = syntax_diagnostics.get(span_proposal.focus_path)
-            _report_repair_shard_state(
-                span_proposal.focus_path,
-                candidate="initial",
-                state=_repair_preflight_state(syntax_diagnostic),
-                diagnostic=syntax_diagnostic,
-            )
-            if syntax_diagnostic is None:
-                frozen_proposals[span_proposal.focus_path] = span_proposal
-                continue
-            baseline = dict(shard_plan.baseline_files)[span_proposal.focus_path]
-            owning_index = _compact_v4_syntax_owning_span_index(
-                baseline,
-                span_proposal,
-                syntax_diagnostic,
-            )
-            target_span: tuple[int, int] | None = None
-            if owning_index is not None:
-                owning_edit = span_proposal.edits[owning_index]
-                target_span = (owning_edit.start_line, owning_edit.old_line_count)
-                target_spans[span_proposal.focus_path] = target_span
-                _report_repair_shard_state(
-                    span_proposal.focus_path,
-                    candidate="initial",
-                    state="span_targeted",
-                    diagnostic=syntax_diagnostic,
-                    target_span=target_span,
-                )
-            if target_span is not None:
-                shard_plan = _build_targeted_repair_prompt_plan(
-                    plan,
-                    shard,
-                    task,
-                    span_proposal,
-                    syntax_diagnostic,
-                    target_span,
-                )
-            elif (
-                hashlib.sha256(span_proposal.focus_path.encode("utf-8")).hexdigest()
-                != plan.repair_diagnosis_path_sha256
-                and _syntax_failure_class(syntax_diagnostic) == "python_syntax"
-            ):
-                shard_plan = build_syntax_repair_prompt_plan(
-                    shard_plan,
-                    (span_proposal,),
-                    _repair_candidate_syntax_diagnosis(syntax_diagnostic),
-                )
-            initial_failing_plans.append(shard_plan)
-        if not initial_failing_plans:
-            raise ValueError(
-                "compact-v4 repair state did not reproduce its parent syntax failure"
-            )
-        active_plan = _combine_shard_prompt_plans(
-            tuple(initial_failing_plans),
-            protocol_digest=plan.protocol_digest,
-        )
-
+    state = _prepare_compact_repair_state(plan, task, reference, required_tests)
     for candidate_index in range(COMPACT_V4_REPAIR_CANDIDATE_LIMIT):
-        next_plans: list[PromptPlan] = []
-        first_syntax_diagnostic: str | None = None
-        last_contract: ProposalContract | None = None
-        for shard in active_plan.shards:
-            shard_plan = _one_shard_prompt_plan(active_plan, shard)
-            request = encode_prompt_batch(
-                (shard.prompt,),
-                protocol_digest=plan.protocol_digest,
-            )
-            contract = ProposalContract.for_request(
-                request=request,
-                baseline_sha=reference.baseline_sha,
-                task_id=task.task_id,
-                tests=required_tests,
-                make_commands=task.canonical_make_commands,
-                proposal_protocol=plan.proposal_protocol,
-                sampling_profile=plan.sampling_profile,
-                sampling_candidate_index=candidate_index,
-                repair_state_sha256=compact_v4_repair_shard_state_digest(
-                    tuple(
-                        latest_proposals[path]
-                        for path in original_paths
-                        if path in latest_proposals
-                    )
-                ),
-            )
-            last_contract = contract
-            try:
-                raw_proposal = _run_local_proposal_request(
-                    runner,
-                    model_path,
-                    request,
-                    contract=contract,
-                )
-                span_proposals = decode_compact_span_batch(
-                    raw_proposal,
-                    expected_protocol_digest=plan.protocol_digest,
-                    expected_count=1,
-                )
-                span_proposal = span_proposals[0]
-                target_span = target_spans.get(span_proposal.focus_path)
-                if target_span is not None:
-                    prior = latest_proposals[span_proposal.focus_path]
-                    span_proposal = _proposal_with_repaired_span(
-                        prior,
-                        span_proposal,
-                        target_span,
-                    )
-                shard_proposal = expand_compact_span_proposals(
-                    (span_proposal,),
-                    contract=contract,
-                    expected_path_groups=(shard.focus_paths,),
-                    expected_baseline_files=dict(shard_plan.baseline_files),
-                    expected_editable_ranges=(shard.editable_ranges,),
-                )
-            except (RuntimeError, ValueError):
-                _report_repair_shard_state(
-                    shard.focus_paths[0],
-                    candidate=(
-                        f"{candidate_index + 1}/{COMPACT_V4_REPAIR_CANDIDATE_LIMIT}"
-                    ),
-                    state="proposal_rejected",
-                )
-                next_plans.append(shard_plan)
-                continue
-            latest_proposals[span_proposal.focus_path] = span_proposal
-            syntax_diagnostics = _proposal_python_syntax_diagnostics(shard_proposal)
-            syntax_diagnostic = syntax_diagnostics.get(span_proposal.focus_path)
-            _report_repair_shard_state(
-                span_proposal.focus_path,
-                candidate=(
-                    f"{candidate_index + 1}/{COMPACT_V4_REPAIR_CANDIDATE_LIMIT}"
-                ),
-                state=_repair_preflight_state(syntax_diagnostic),
-                diagnostic=syntax_diagnostic,
-            )
-            if syntax_diagnostic is None:
-                frozen_proposals[span_proposal.focus_path] = span_proposal
-                target_spans.pop(span_proposal.focus_path, None)
-                continue
-            if first_syntax_diagnostic is None:
-                first_syntax_diagnostic = syntax_diagnostic
-            next_plan = shard_plan
-            if _syntax_failure_class(syntax_diagnostic) == "python_syntax":
-                baseline = dict(shard_plan.baseline_files)[span_proposal.focus_path]
-                owning_index = _compact_v4_syntax_owning_span_index(
-                    baseline,
-                    span_proposal,
-                    syntax_diagnostic,
-                )
-                next_target: tuple[int, int] | None = None
-                if owning_index is not None:
-                    owning_edit = span_proposal.edits[owning_index]
-                    next_target = (owning_edit.start_line, owning_edit.old_line_count)
-                    target_spans[span_proposal.focus_path] = next_target
-                    _report_repair_shard_state(
-                        span_proposal.focus_path,
-                        candidate=(
-                            f"{candidate_index + 1}/"
-                            f"{COMPACT_V4_REPAIR_CANDIDATE_LIMIT}"
-                        ),
-                        state="span_targeted",
-                        diagnostic=syntax_diagnostic,
-                        target_span=next_target,
-                    )
-                else:
-                    target_spans.pop(span_proposal.focus_path, None)
-                next_plan = (
-                    _build_targeted_repair_prompt_plan(
-                        shard_plan,
-                        shard,
-                        task,
-                        span_proposal,
-                        syntax_diagnostic,
-                        next_target,
-                    )
-                    if next_target is not None
-                    else build_syntax_repair_prompt_plan(
-                        shard_plan,
-                        (span_proposal,),
-                        _repair_candidate_syntax_diagnosis(syntax_diagnostic),
-                    )
-                )
-            next_plans.append(next_plan)
-
-        if not next_plans:
-            if last_contract is None or set(frozen_proposals) != set(original_paths):
-                raise ValueError("compact-v4 repair did not cover the immutable shard set")
-            combined_span_proposals = tuple(
-                frozen_proposals[path] for path in original_paths
-            )
-            proposal = expand_compact_span_proposals(
-                combined_span_proposals,
-                contract=last_contract,
-                expected_path_groups=original_path_groups,
-                expected_baseline_files=original_baselines,
-                expected_editable_ranges=original_ranges,
-            )
-            if _proposal_python_syntax_preflight(proposal) is not None:
-                raise ValueError(
-                    "compact-v4 frozen repair aggregate failed immutable syntax revalidation"
-                )
-            _runtime_progress(
-                "SELF_IMPROVE_REPAIR_CANDIDATE "
-                f"candidate={candidate_index + 1}/"
-                f"{COMPACT_V4_REPAIR_CANDIDATE_LIMIT} result=selected "
-                f"failing_shards=0 frozen_shards={len(frozen_proposals)}"
-            )
-            return GeneratedProposal(proposal, combined_span_proposals)
-
-        result = "syntax_rejected" if first_syntax_diagnostic else "proposal_rejected"
-        diagnostic = (
-            f" {first_syntax_diagnostic}" if first_syntax_diagnostic is not None else ""
+        outcome = _run_repair_candidate(
+            runner,
+            model_path,
+            plan,
+            task,
+            reference,
+            required_tests,
+            state,
+            candidate_index,
         )
-        _runtime_progress(
-            "SELF_IMPROVE_REPAIR_CANDIDATE "
-            f"candidate={candidate_index + 1}/"
-            f"{COMPACT_V4_REPAIR_CANDIDATE_LIMIT} result={result} "
-            f"failing_shards={len(next_plans)} "
-            f"frozen_shards={len(frozen_proposals)}{diagnostic}"
-        )
+        result = _finalize_repair_candidate(state, outcome, candidate_index)
+        if result is not None:
+            return result
         if candidate_index + 1 < COMPACT_V4_REPAIR_CANDIDATE_LIMIT:
-            active_plan = _combine_shard_prompt_plans(
-                tuple(next_plans),
+            state.active_plan = _combine_shard_prompt_plans(
+                outcome.next_plans,
                 protocol_digest=plan.protocol_digest,
             )
     raise ValueError(
@@ -1018,89 +1133,76 @@ def _generate_compact_v4_repair_plan_result(
     )
 
 
-def _generate_local_proposal_plan_result(
+def _generate_compact_v4_plan_result(
     runner: _ObservableRunner,
     model_path: Path,
     plan: PromptPlan,
     task: TaskSpec,
     reference: CodexReference,
+    required_tests: tuple[str, ...],
 ) -> GeneratedProposal:
-    """Decode all shards and retain only validated compact-v4 repair material."""
-    required_tests = _required_prompt_tests(task, reference)
-    if plan.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
-        if not plan.baseline_files:
-            raise ValueError("compact-v4 prompt plan requires trusted baseline snapshots")
-        is_repair = (
-            plan.sampling_profile
-            == COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+    """Decode one initial compact-v4 candidate against trusted snapshots."""
+    if not plan.baseline_files:
+        raise ValueError("compact-v4 prompt plan requires trusted baseline snapshots")
+    if plan.sampling_profile == COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID:
+        return _generate_compact_v4_repair_plan_result(
+            runner,
+            model_path,
+            plan,
+            task,
+            reference,
         )
-        if is_repair:
-            return _generate_compact_v4_repair_plan_result(
-                runner,
-                model_path,
-                plan,
-                task,
-                reference,
-            )
-        candidate_plan = plan
-        original_path_groups = tuple(shard.focus_paths for shard in plan.shards)
-        if any(len(paths) != 1 for paths in original_path_groups):
-            raise ValueError("compact-v4 prompt shards must bind exactly one focus path")
-        original_paths = tuple(paths[0] for paths in original_path_groups)
-        original_ranges = tuple(shard.editable_ranges for shard in plan.shards)
-        original_baselines = dict(plan.baseline_files)
-        frozen_proposals: dict[str, CompactSpanProposal] = {}
-        for candidate_index in range(1):
-            request = encode_prompt_batch(
-                tuple(shard.prompt for shard in candidate_plan.shards),
-                protocol_digest=candidate_plan.protocol_digest,
-            )
-            contract = ProposalContract.for_request(
-                request=request,
-                baseline_sha=reference.baseline_sha,
-                task_id=task.task_id,
-                tests=required_tests,
-                make_commands=task.canonical_make_commands,
-                proposal_protocol=plan.proposal_protocol,
-                sampling_profile=plan.sampling_profile,
-                sampling_candidate_index=candidate_index,
-            )
-            try:
-                raw_proposals = _run_local_proposal_request(
-                    runner,
-                    model_path,
-                    request,
-                    contract=contract,
-                )
-                span_proposals = decode_compact_span_batch(
-                    raw_proposals,
-                    expected_protocol_digest=candidate_plan.protocol_digest,
-                    expected_count=len(candidate_plan.shards),
-                )
-                candidate_by_path = dict(frozen_proposals)
-                for span_proposal in span_proposals:
-                    if span_proposal.focus_path in candidate_by_path:
-                        raise ValueError("compact-v4 repair tried to replace a frozen shard")
-                    candidate_by_path[span_proposal.focus_path] = span_proposal
-                if set(candidate_by_path) != set(original_paths):
-                    raise ValueError("compact-v4 repair did not cover the immutable shard set")
-                combined_span_proposals = tuple(
-                    candidate_by_path[path] for path in original_paths
-                )
-                proposal = expand_compact_span_proposals(
-                    combined_span_proposals,
-                    contract=contract,
-                    expected_path_groups=original_path_groups,
-                    expected_baseline_files=original_baselines,
-                    expected_editable_ranges=original_ranges,
-                )
-            except (RuntimeError, ValueError):
-                raise
-            current_diagnostics: dict[str, str] = {}
-            for span_proposal in span_proposals:
-                if span_proposal.focus_path not in current_diagnostics:
-                    frozen_proposals[span_proposal.focus_path] = span_proposal
-            return GeneratedProposal(proposal, combined_span_proposals)
+    path_groups = tuple(shard.focus_paths for shard in plan.shards)
+    if any(len(paths) != 1 for paths in path_groups):
+        raise ValueError("compact-v4 prompt shards must bind exactly one focus path")
+    paths = tuple(group[0] for group in path_groups)
+    request = encode_prompt_batch(
+        tuple(shard.prompt for shard in plan.shards),
+        protocol_digest=plan.protocol_digest,
+    )
+    contract = ProposalContract.for_request(
+        request=request,
+        baseline_sha=reference.baseline_sha,
+        task_id=task.task_id,
+        tests=required_tests,
+        make_commands=task.canonical_make_commands,
+        proposal_protocol=plan.proposal_protocol,
+        sampling_profile=plan.sampling_profile,
+        sampling_candidate_index=0,
+    )
+    raw = _run_local_proposal_request(runner, model_path, request, contract=contract)
+    spans = decode_compact_span_batch(
+        raw,
+        expected_protocol_digest=plan.protocol_digest,
+        expected_count=len(plan.shards),
+    )
+    by_path: dict[str, CompactSpanProposal] = {}
+    for span in spans:
+        if span.focus_path in by_path:
+            raise ValueError("compact-v4 repair tried to replace a frozen shard")
+        by_path[span.focus_path] = span
+    if set(by_path) != set(paths):
+        raise ValueError("compact-v4 repair did not cover the immutable shard set")
+    ordered = tuple(by_path[path] for path in paths)
+    proposal = expand_compact_span_proposals(
+        ordered,
+        contract=contract,
+        expected_path_groups=path_groups,
+        expected_baseline_files=dict(plan.baseline_files),
+        expected_editable_ranges=tuple(shard.editable_ranges for shard in plan.shards),
+    )
+    return GeneratedProposal(proposal, ordered)
+
+
+def _generate_legacy_plan_result(
+    runner: _ObservableRunner,
+    model_path: Path,
+    plan: PromptPlan,
+    task: TaskSpec,
+    reference: CodexReference,
+    required_tests: tuple[str, ...],
+) -> GeneratedProposal:
+    """Decode and merge legacy proposal shards."""
     request = encode_prompt_batch(
         tuple(shard.prompt for shard in plan.shards),
         protocol_digest=plan.protocol_digest,
@@ -1114,20 +1216,15 @@ def _generate_local_proposal_plan_result(
         proposal_protocol=plan.proposal_protocol,
         sampling_profile=plan.sampling_profile,
     )
-    raw_proposals = _run_local_proposal_request(
-        runner,
-        model_path,
-        request,
-        contract=contract,
-    )
-    legacy_proposals = decode_proposal_batch(
-        raw_proposals,
+    raw = _run_local_proposal_request(runner, model_path, request, contract=contract)
+    proposals = decode_proposal_batch(
+        raw,
         expected_protocol_digest=plan.protocol_digest,
         expected_count=len(plan.shards),
     )
     return GeneratedProposal(
         merge_proposal_manifests(
-            legacy_proposals,
+            proposals,
             expected_path_groups=tuple(shard.focus_paths for shard in plan.shards),
             expected_baseline_sha=reference.baseline_sha,
             expected_task_id=task.task_id,
@@ -1137,6 +1234,34 @@ def _generate_local_proposal_plan_result(
                 dict(plan.baseline_files) if plan.baseline_files else None
             ),
         )
+    )
+
+
+def _generate_local_proposal_plan_result(
+    runner: _ObservableRunner,
+    model_path: Path,
+    plan: PromptPlan,
+    task: TaskSpec,
+    reference: CodexReference,
+) -> GeneratedProposal:
+    """Decode all shards and retain only validated compact-v4 repair material."""
+    required_tests = _required_prompt_tests(task, reference)
+    if plan.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
+        return _generate_compact_v4_plan_result(
+            runner,
+            model_path,
+            plan,
+            task,
+            reference,
+            required_tests,
+        )
+    return _generate_legacy_plan_result(
+        runner,
+        model_path,
+        plan,
+        task,
+        reference,
+        required_tests,
     )
 
 
@@ -2251,6 +2376,431 @@ def _evaluation_target_identity(
     )
 
 
+@dataclass
+class _AttemptState:
+    """Mutable evidence accumulated by one isolated evaluation transaction."""
+
+    started: float
+    results: list[MakeResult]
+    events: list[_EvaluationLifecycleEvent]
+    patch_identity: str = ""
+    cleanup_passed: bool = False
+    cleanup_attempted: bool = False
+    commit_count: int = 0
+    worktree_clean: bool = False
+    changed_lines: int = 0
+    syntax_diagnostic: str | None = None
+
+
+@dataclass(frozen=True)
+class _AttemptQuality:
+    """Derived quality fields retained while the worktree is released."""
+
+    aggregate: float
+    minimum: float
+    ruff_passed: bool
+    mypy_passed: bool
+    docstrings_passed: bool
+    warnings: int
+    targets: frozenset[str]
+
+
+def _scope_rejected_attempt(
+    proposal: ProposalManifest,
+    reference: CodexReference,
+    expected_identity: str,
+) -> AttemptResult:
+    """Return fail-closed evidence before creating an out-of-scope worktree."""
+    edited_paths = [edit.path for edit in proposal.edits]
+    aggregate, minimum, ruff_passed, mypy_passed, docstrings_passed = (
+        quality_defaults_for_paths(
+            edited_paths,
+            aggregate=0.0,
+            minimum=0.0,
+            targets=set(),
+        )
+    )
+    evidence = CandidateEvidence(
+        changed_files=frozenset(edited_paths),
+        tests_passed=False,
+        warnings=0,
+        coverage_aggregate=aggregate,
+        coverage_min_file=minimum,
+        ruff_passed=ruff_passed,
+        mypy_passed=mypy_passed,
+        docstrings_passed=docstrings_passed,
+        markdown_passed=False,
+        cleanup_passed=True,
+        commit_count=0,
+        worktree_clean=True,
+        elapsed_seconds=0.0,
+        changed_lines=0,
+    )
+    return AttemptResult(
+        comparison=compare_with_codex(proposal, evidence, reference),
+        evidence=evidence,
+        patch_equivalence="scope-preflight-rejected",
+        proposal=proposal,
+        diagnostics=(
+            "proposal changed paths outside the exact Codex reference: "
+            + ", ".join(sorted(edit.path for edit in proposal.edits))
+        ),
+        attempt_identity_digest=expected_identity,
+    )
+
+
+def _apply_and_preflight_candidate(
+    worktree: Path,
+    proposal: ProposalManifest,
+    state: _AttemptState,
+    progress_sink: Callable[[str], None] | None,
+) -> None:
+    """Apply one proposal and record its parent-side syntax preflight."""
+    apply_started = time.monotonic()
+    try:
+        state.changed_lines = apply_proposal(worktree, proposal)
+    except BaseException:
+        _record_evaluation_event(
+            state.events,
+            progress_sink,
+            phase="apply",
+            command_kind="filesystem_apply",
+            command_identity="parent-atomic-proposal-apply-v1",
+            returncode=1,
+            elapsed_seconds=time.monotonic() - apply_started,
+            failure_class="apply_failed",
+        )
+        raise
+    _record_evaluation_event(
+        state.events,
+        progress_sink,
+        phase="apply",
+        command_kind="filesystem_apply",
+        command_identity="parent-atomic-proposal-apply-v1",
+        returncode=0,
+        elapsed_seconds=time.monotonic() - apply_started,
+        failure_class="apply_failed",
+    )
+    syntax_started = time.monotonic()
+    try:
+        state.syntax_diagnostic = _python_syntax_preflight(
+            worktree,
+            tuple(edit.path for edit in proposal.edits),
+        )
+    except BaseException:
+        _record_evaluation_event(
+            state.events,
+            progress_sink,
+            phase="syntax_preflight",
+            command_kind="syntax_preflight",
+            command_identity="parent-python-syntax-preflight-v2",
+            returncode=1,
+            elapsed_seconds=time.monotonic() - syntax_started,
+            failure_class="python_syntax",
+        )
+        raise
+    _record_evaluation_event(
+        state.events,
+        progress_sink,
+        phase="syntax_preflight",
+        command_kind="syntax_preflight",
+        command_identity="parent-python-syntax-preflight-v2",
+        returncode=0 if state.syntax_diagnostic is None else 2,
+        elapsed_seconds=time.monotonic() - syntax_started,
+        failure_class=_syntax_failure_class(state.syntax_diagnostic),
+    )
+    if state.syntax_diagnostic:
+        state.results.append(
+            MakeResult(
+                ("parent-syntax-preflight",),
+                2,
+                "",
+                state.syntax_diagnostic,
+                0.0,
+            )
+        )
+
+
+def _run_approved_candidate_commands(
+    runner: _RuntimeMakeRunner,
+    task: TaskSpec,
+    proposal: ProposalManifest,
+    state: _AttemptState,
+    progress_sink: Callable[[str], None] | None,
+) -> bool:
+    """Run approved Make commands and the collection guard in order."""
+    if state.syntax_diagnostic is None:
+        commands = tuple(
+            dict.fromkeys((*task.canonical_make_commands, *proposal.make_commands))
+        )
+        for command in commands:
+            result = _run_evaluation_operation(
+                partial(runner.run_command, command),
+                state.events,
+                progress_sink,
+                phase="approved_make",
+                command_kind="approved_make",
+                command_identity=command,
+                failure_class="make_failed",
+            )
+            state.results.append(result)
+            if result.returncode != 0:
+                break
+    commands_green = bool(state.results) and all(
+        item.returncode == 0 for item in state.results
+    )
+    if not commands_green:
+        return False
+    count = _run_evaluation_operation(
+        lambda: runner.run_command("make test-count", timeout=600),
+        state.events,
+        progress_sink,
+        phase="test_count",
+        command_kind="approved_test_count",
+        command_identity="make test-count",
+        failure_class="test_count_failed",
+    )
+    state.results.append(count)
+    return count.returncode == 0
+
+
+def _inspect_committed_candidate(
+    runner: _RuntimeMakeRunner,
+    reference: CodexReference,
+    branch: str,
+    state: _AttemptState,
+    progress_sink: Callable[[str], None] | None,
+) -> None:
+    """Record clean-tree and patch-equivalence evidence after one commit."""
+    status_started = time.monotonic()
+    try:
+        status = runner.run("repo-status", read_only=True)
+    except BaseException:
+        _record_evaluation_event(
+            state.events,
+            progress_sink,
+            phase="clean",
+            command_kind="repository_clean",
+            command_identity=_evaluation_target_identity("repo-status"),
+            returncode=1,
+            elapsed_seconds=time.monotonic() - status_started,
+            failure_class="clean_failed",
+        )
+        raise
+    state.results.append(status)
+    state.worktree_clean = status.returncode == 0 and not status.stdout.strip()
+    _record_evaluation_event(
+        state.events,
+        progress_sink,
+        phase="clean",
+        command_kind="repository_clean",
+        command_identity=_evaluation_target_identity("repo-status"),
+        returncode=status.returncode if state.worktree_clean else 1,
+        elapsed_seconds=status.elapsed_seconds,
+        failure_class="clean_failed",
+    )
+    variables = {
+        "PATCH_UPSTREAM": reference.reference_sha,
+        "PATCH_HEAD": branch,
+        "PATCH_LIMIT": "1",
+    }
+    patch = _run_evaluation_operation(
+        lambda: runner.run("git-patch-equivalence", variables, read_only=True),
+        state.events,
+        progress_sink,
+        phase="patch_equivalence",
+        command_kind="patch_equivalence",
+        command_identity=_evaluation_target_identity("git-patch-equivalence", variables),
+        failure_class="patch_equivalence_failed",
+    )
+    state.results.append(patch)
+    state.patch_identity = patch.stdout.strip()
+
+
+def _commit_candidate(
+    runner: _RuntimeMakeRunner,
+    proposal: ProposalManifest,
+    reference: CodexReference,
+    branch: str,
+    state: _AttemptState,
+    progress_sink: Callable[[str], None] | None,
+) -> None:
+    """Stage, commit, and inspect one command-green proposal."""
+    stage_variables = {"FILES": " ".join(edit.path for edit in proposal.edits)}
+    staged = _run_evaluation_operation(
+        lambda: runner.run("git-add", stage_variables),
+        state.events,
+        progress_sink,
+        phase="stage",
+        command_kind="repository_stage",
+        command_identity=_evaluation_target_identity("git-add", stage_variables),
+        failure_class="stage_failed",
+    )
+    state.results.append(staged)
+    commit_variables = {"MSG": proposal.commit_message}
+    committed = _run_evaluation_operation(
+        lambda: runner.run("repo-commit", commit_variables, timeout=300),
+        state.events,
+        progress_sink,
+        phase="commit",
+        command_kind="repository_commit",
+        command_identity=_evaluation_target_identity("repo-commit", commit_variables),
+        failure_class="commit_failed",
+    )
+    state.results.append(committed)
+    if staged.returncode == 0 and committed.returncode == 0:
+        state.commit_count = 1
+        _inspect_committed_candidate(runner, reference, branch, state, progress_sink)
+
+
+def _derive_attempt_quality(
+    proposal: ProposalManifest,
+    state: _AttemptState,
+) -> _AttemptQuality:
+    """Derive bounded coverage and static-analysis evidence from command output."""
+    output = "\n".join(item.stdout + "\n" + item.stderr for item in state.results)
+    try:
+        aggregate, minimum = parse_coverage_evidence(output)
+    except ValueError:
+        aggregate, minimum = 0.0, 0.0
+    targets = frozenset(
+        item.argv[1]
+        for item in state.results
+        if item.returncode == 0 and len(item.argv) > 1
+    )
+    aggregate, minimum, ruff_passed, mypy_passed, docstrings_passed = (
+        quality_defaults_for_paths(
+            [edit.path for edit in proposal.edits],
+            aggregate=aggregate,
+            minimum=minimum,
+            targets=set(targets),
+        )
+    )
+    return _AttemptQuality(
+        aggregate,
+        minimum,
+        ruff_passed,
+        mypy_passed,
+        docstrings_passed,
+        _warning_count(output),
+        targets,
+    )
+
+
+def _cleanup_candidate(
+    root_runner: _TargetRunner,
+    branch: str,
+    state: _AttemptState,
+    progress_sink: Callable[[str], None] | None,
+) -> MakeResult:
+    """Release one candidate worktree and record its terminal event."""
+    state.cleanup_attempted = True
+    variables = {"BRANCH": branch}
+    cleanup = _run_evaluation_operation(
+        lambda: root_runner.run("agent-cleanup", variables, timeout=180),
+        state.events,
+        progress_sink,
+        phase="cleanup",
+        command_kind="worktree_cleanup",
+        command_identity=_evaluation_target_identity("agent-cleanup", variables),
+        failure_class="cleanup_failed",
+    )
+    state.cleanup_passed = cleanup.returncode == 0
+    return cleanup
+
+
+def _finish_candidate_worktree(
+    root_runner: _TargetRunner,
+    branch: str,
+    state: _AttemptState,
+    progress_sink: Callable[[str], None] | None,
+    *,
+    merge: bool,
+    commands_green: bool,
+) -> None:
+    """Optionally merge an eligible candidate, then always release its worktree."""
+    if not (merge and commands_green and state.commit_count == 1 and state.worktree_clean):
+        _cleanup_candidate(root_runner, branch, state, progress_sink)
+        return
+    variables = {"BRANCH": branch}
+    merged = _run_evaluation_operation(
+        lambda: root_runner.run("agent-merge-dev", variables, timeout=300),
+        state.events,
+        progress_sink,
+        phase="merge",
+        command_kind="repository_merge",
+        command_identity=_evaluation_target_identity("agent-merge-dev", variables),
+        failure_class="merge_failed",
+    )
+    cleanup = _cleanup_candidate(root_runner, branch, state, progress_sink)
+    state.cleanup_passed = merged.returncode == 0 and cleanup.returncode == 0
+
+
+def _build_attempt_result(
+    proposal: ProposalManifest,
+    reference: CodexReference,
+    expected_identity: str,
+    state: _AttemptState,
+    quality: _AttemptQuality,
+    commands_green: bool,
+    progress_sink: Callable[[str], None] | None,
+) -> AttemptResult:
+    """Compare final evidence and bind one safe retry diagnosis if rejected."""
+    evidence = CandidateEvidence(
+        changed_files=frozenset(edit.path for edit in proposal.edits),
+        tests_passed=commands_green,
+        warnings=quality.warnings,
+        coverage_aggregate=quality.aggregate,
+        coverage_min_file=quality.minimum,
+        ruff_passed=quality.ruff_passed,
+        mypy_passed=quality.mypy_passed,
+        docstrings_passed=quality.docstrings_passed,
+        markdown_passed=(
+            not any(edit.path.endswith((".md", ".mdx")) for edit in proposal.edits)
+            or "lint-markdown" in quality.targets
+        ),
+        cleanup_passed=state.cleanup_passed,
+        commit_count=state.commit_count,
+        worktree_clean=state.worktree_clean,
+        elapsed_seconds=time.monotonic() - state.started,
+        changed_lines=state.changed_lines,
+    )
+    comparison = compare_with_codex(proposal, evidence, reference)
+    failed_event = next(
+        (event for event in state.events if event.failure_class != "none"),
+        None,
+    )
+    if not comparison.accepted and failed_event is None:
+        failed_event = _record_evaluation_event(
+            state.events,
+            progress_sink,
+            phase="comparison",
+            command_kind="quality_comparison",
+            command_identity="codex-quality-comparison-v1",
+            returncode=1,
+            elapsed_seconds=time.monotonic() - state.started,
+            failure_class="quality_rejected",
+        )
+    diagnostics = ""
+    if failed_event is not None:
+        diagnostics = _compact_evaluation_diagnosis(
+            failed_event,
+            syntax_diagnostic=(
+                state.syntax_diagnostic
+                if failed_event.phase == "syntax_preflight"
+                else None
+            ),
+        )
+    return AttemptResult(
+        comparison=comparison,
+        evidence=evidence,
+        patch_equivalence=state.patch_identity,
+        proposal=proposal,
+        diagnostics=diagnostics,
+        attempt_identity_digest=expected_identity,
+    )
+
+
 def evaluate_attempt(
     root_runner: _TargetRunner,
     task: TaskSpec,
@@ -2275,392 +2825,50 @@ def evaluate_attempt(
     if proposal.task_id != task.task_id:
         raise ValueError("proposal task_id does not match the benchmark task")
     if not proposal_scope_matches(proposal, reference.changed_files):
-        edited_paths = [edit.path for edit in proposal.edits]
-        aggregate, minimum, ruff_passed, mypy_passed, docstrings_passed = (
-            quality_defaults_for_paths(
-                edited_paths,
-                aggregate=0.0,
-                minimum=0.0,
-                targets=set(),
-            )
-        )
-        evidence = CandidateEvidence(
-            changed_files=frozenset(edited_paths),
-            tests_passed=False,
-            warnings=0,
-            coverage_aggregate=aggregate,
-            coverage_min_file=minimum,
-            ruff_passed=ruff_passed,
-            mypy_passed=mypy_passed,
-            docstrings_passed=docstrings_passed,
-            markdown_passed=False,
-            cleanup_passed=True,
-            commit_count=0,
-            worktree_clean=True,
-            elapsed_seconds=0.0,
-            changed_lines=0,
-        )
-        return AttemptResult(
-            comparison=compare_with_codex(proposal, evidence, reference),
-            evidence=evidence,
-            patch_equivalence="scope-preflight-rejected",
-            proposal=proposal,
-            diagnostics=(
-                "proposal changed paths outside the exact Codex reference: "
-                + ", ".join(sorted(edit.path for edit in proposal.edits))
-            ),
-            attempt_identity_digest=expected_identity,
-        )
+        return _scope_rejected_attempt(proposal, reference, expected_identity)
     worktree, branch = create_worktree(root_runner, reference.baseline_sha, attempt)
+    state = _AttemptState(time.monotonic(), [], [])
     runner_factory = make_runner_factory or MakeRunner
-    started = time.monotonic()
-    results: list[MakeResult] = []
-    events: list[_EvaluationLifecycleEvent] = []
-    patch_identity = ""
-    cleanup_passed = False
-    cleanup_attempted = False
-    commit_count = 0
-    worktree_clean = False
-    changed_lines = 0
-    syntax_diagnostic: str | None = None
     try:
         runner = runner_factory(worktree)
-        apply_started = time.monotonic()
-        try:
-            changed_lines = apply_proposal(worktree, proposal)
-        except BaseException:
-            _record_evaluation_event(
-                events,
-                progress_sink,
-                phase="apply",
-                command_kind="filesystem_apply",
-                command_identity="parent-atomic-proposal-apply-v1",
-                returncode=1,
-                elapsed_seconds=time.monotonic() - apply_started,
-                failure_class="apply_failed",
-            )
-            raise
-        _record_evaluation_event(
-            events,
+        _apply_and_preflight_candidate(worktree, proposal, state, progress_sink)
+        commands_green = _run_approved_candidate_commands(
+            runner,
+            task,
+            proposal,
+            state,
             progress_sink,
-            phase="apply",
-            command_kind="filesystem_apply",
-            command_identity="parent-atomic-proposal-apply-v1",
-            returncode=0,
-            elapsed_seconds=time.monotonic() - apply_started,
-            failure_class="apply_failed",
         )
-        syntax_started = time.monotonic()
-        try:
-            syntax_diagnostic = _python_syntax_preflight(
-                worktree,
-                tuple(edit.path for edit in proposal.edits),
-            )
-        except BaseException:
-            _record_evaluation_event(
-                events,
+        if commands_green:
+            _commit_candidate(
+                runner,
+                proposal,
+                reference,
+                branch,
+                state,
                 progress_sink,
-                phase="syntax_preflight",
-                command_kind="syntax_preflight",
-                command_identity="parent-python-syntax-preflight-v2",
-                returncode=1,
-                elapsed_seconds=time.monotonic() - syntax_started,
-                failure_class="python_syntax",
             )
-            raise
-        syntax_failure = _syntax_failure_class(syntax_diagnostic)
-        _record_evaluation_event(
-            events,
+        quality = _derive_attempt_quality(proposal, state)
+        _finish_candidate_worktree(
+            root_runner,
+            branch,
+            state,
             progress_sink,
-            phase="syntax_preflight",
-            command_kind="syntax_preflight",
-            command_identity="parent-python-syntax-preflight-v2",
-            returncode=0 if syntax_diagnostic is None else 2,
-            elapsed_seconds=time.monotonic() - syntax_started,
-            failure_class=syntax_failure,
+            merge=merge,
+            commands_green=commands_green,
         )
-        if syntax_diagnostic:
-            results.append(
-                MakeResult(
-                    ("parent-syntax-preflight",),
-                    2,
-                    "",
-                    syntax_diagnostic,
-                    0.0,
-                )
-            )
-        else:
-            commands = tuple(
-                dict.fromkeys((*task.canonical_make_commands, *proposal.make_commands))
-            )
-            for command in commands:
-                result = _run_evaluation_operation(
-                    partial(runner.run_command, command),
-                    events,
-                    progress_sink,
-                    phase="approved_make",
-                    command_kind="approved_make",
-                    command_identity=command,
-                    failure_class="make_failed",
-                )
-                results.append(result)
-                if result.returncode != 0:
-                    break
-
-        commands_green = bool(results) and all(item.returncode == 0 for item in results)
-        if commands_green:
-            count = _run_evaluation_operation(
-                lambda: runner.run_command("make test-count", timeout=600),
-                events,
-                progress_sink,
-                phase="test_count",
-                command_kind="approved_test_count",
-                command_identity="make test-count",
-                failure_class="test_count_failed",
-            )
-            results.append(count)
-            commands_green = count.returncode == 0
-        if commands_green:
-            changed = " ".join(edit.path for edit in proposal.edits)
-            stage_variables = {"FILES": changed}
-            staged = _run_evaluation_operation(
-                lambda: runner.run("git-add", stage_variables),
-                events,
-                progress_sink,
-                phase="stage",
-                command_kind="repository_stage",
-                command_identity=_evaluation_target_identity(
-                    "git-add",
-                    stage_variables,
-                ),
-                failure_class="stage_failed",
-            )
-            results.append(staged)
-            commit_variables = {"MSG": proposal.commit_message}
-            committed = _run_evaluation_operation(
-                lambda: runner.run(
-                    "repo-commit",
-                    commit_variables,
-                    timeout=300,
-                ),
-                events,
-                progress_sink,
-                phase="commit",
-                command_kind="repository_commit",
-                command_identity=_evaluation_target_identity(
-                    "repo-commit",
-                    commit_variables,
-                ),
-                failure_class="commit_failed",
-            )
-            results.append(committed)
-            if staged.returncode == 0 and committed.returncode == 0:
-                commit_count = 1
-                status_started = time.monotonic()
-                try:
-                    status = runner.run("repo-status", read_only=True)
-                except BaseException:
-                    _record_evaluation_event(
-                        events,
-                        progress_sink,
-                        phase="clean",
-                        command_kind="repository_clean",
-                        command_identity=_evaluation_target_identity("repo-status"),
-                        returncode=1,
-                        elapsed_seconds=time.monotonic() - status_started,
-                        failure_class="clean_failed",
-                    )
-                    raise
-                results.append(status)
-                worktree_clean = status.returncode == 0 and not status.stdout.strip()
-                _record_evaluation_event(
-                    events,
-                    progress_sink,
-                    phase="clean",
-                    command_kind="repository_clean",
-                    command_identity=_evaluation_target_identity("repo-status"),
-                    returncode=status.returncode if worktree_clean else 1,
-                    elapsed_seconds=status.elapsed_seconds,
-                    failure_class="clean_failed",
-                )
-                patch_variables = {
-                    "PATCH_UPSTREAM": reference.reference_sha,
-                    "PATCH_HEAD": branch,
-                    "PATCH_LIMIT": "1",
-                }
-                patch = _run_evaluation_operation(
-                    lambda: runner.run(
-                        "git-patch-equivalence",
-                        patch_variables,
-                        read_only=True,
-                    ),
-                    events,
-                    progress_sink,
-                    phase="patch_equivalence",
-                    command_kind="patch_equivalence",
-                    command_identity=_evaluation_target_identity(
-                        "git-patch-equivalence",
-                        patch_variables,
-                    ),
-                    failure_class="patch_equivalence_failed",
-                )
-                results.append(patch)
-                patch_identity = patch.stdout.strip()
-
-        output = "\n".join(item.stdout + "\n" + item.stderr for item in results)
-        try:
-            aggregate, minimum = parse_coverage_evidence(output)
-        except ValueError:
-            aggregate, minimum = 0.0, 0.0
-        targets = {
-            item.argv[1]
-            for item in results
-            if item.returncode == 0 and len(item.argv) > 1
-        }
-        warning_count = _warning_count(output)
-        edited_paths = [edit.path for edit in proposal.edits]
-        aggregate, minimum, ruff_passed, mypy_passed, docstrings_passed = (
-            quality_defaults_for_paths(
-                edited_paths,
-                aggregate=aggregate,
-                minimum=minimum,
-                targets=targets,
-            )
-        )
-        if merge and commands_green and commit_count == 1 and worktree_clean:
-            merge_variables = {"BRANCH": branch}
-            merged = _run_evaluation_operation(
-                lambda: root_runner.run(
-                    "agent-merge-dev",
-                    merge_variables,
-                    timeout=300,
-                ),
-                events,
-                progress_sink,
-                phase="merge",
-                command_kind="repository_merge",
-                command_identity=_evaluation_target_identity(
-                    "agent-merge-dev",
-                    merge_variables,
-                ),
-                failure_class="merge_failed",
-            )
-            cleanup_attempted = True
-            cleanup_variables = {"BRANCH": branch}
-            cleanup = _run_evaluation_operation(
-                lambda: root_runner.run(
-                    "agent-cleanup",
-                    cleanup_variables,
-                    timeout=180,
-                ),
-                events,
-                progress_sink,
-                phase="cleanup",
-                command_kind="worktree_cleanup",
-                command_identity=_evaluation_target_identity(
-                    "agent-cleanup",
-                    cleanup_variables,
-                ),
-                failure_class="cleanup_failed",
-            )
-            cleanup_passed = merged.returncode == 0 and cleanup.returncode == 0
-        else:
-            cleanup_attempted = True
-            cleanup_variables = {"BRANCH": branch}
-            cleanup = _run_evaluation_operation(
-                lambda: root_runner.run(
-                    "agent-cleanup",
-                    cleanup_variables,
-                    timeout=180,
-                ),
-                events,
-                progress_sink,
-                phase="cleanup",
-                command_kind="worktree_cleanup",
-                command_identity=_evaluation_target_identity(
-                    "agent-cleanup",
-                    cleanup_variables,
-                ),
-                failure_class="cleanup_failed",
-            )
-            cleanup_passed = cleanup.returncode == 0
-
-        evidence = CandidateEvidence(
-            changed_files=frozenset(edit.path for edit in proposal.edits),
-            tests_passed=commands_green,
-            warnings=warning_count,
-            coverage_aggregate=aggregate,
-            coverage_min_file=minimum,
-            ruff_passed=ruff_passed,
-            mypy_passed=mypy_passed,
-            docstrings_passed=docstrings_passed,
-            markdown_passed=(
-                not any(edit.path.endswith((".md", ".mdx")) for edit in proposal.edits)
-                or "lint-markdown" in targets
-            ),
-            cleanup_passed=cleanup_passed,
-            commit_count=commit_count,
-            worktree_clean=worktree_clean,
-            elapsed_seconds=time.monotonic() - started,
-            changed_lines=changed_lines,
-        )
-        comparison = compare_with_codex(proposal, evidence, reference)
-        failed_event = next(
-            (event for event in events if event.failure_class != "none"),
-            None,
-        )
-        if not comparison.accepted and failed_event is None:
-            failed_event = _record_evaluation_event(
-                events,
-                progress_sink,
-                phase="comparison",
-                command_kind="quality_comparison",
-                command_identity="codex-quality-comparison-v1",
-                returncode=1,
-                elapsed_seconds=time.monotonic() - started,
-                failure_class="quality_rejected",
-            )
-        diagnostics = (
-            _compact_evaluation_diagnosis(
-                failed_event,
-                syntax_diagnostic=(
-                    syntax_diagnostic
-                    if failed_event.phase == "syntax_preflight"
-                    else None
-                ),
-            )
-            if failed_event is not None
-            else ""
-        )
-        return AttemptResult(
-            comparison=comparison,
-            evidence=evidence,
-            patch_equivalence=patch_identity,
-            proposal=proposal,
-            diagnostics=diagnostics,
-            attempt_identity_digest=expected_identity,
+        return _build_attempt_result(
+            proposal,
+            reference,
+            expected_identity,
+            state,
+            quality,
+            commands_green,
+            progress_sink,
         )
     except BaseException:
-        if not cleanup_attempted:
-            cleanup_attempted = True
-            cleanup_variables = {"BRANCH": branch}
-            cleanup = _run_evaluation_operation(
-                lambda: root_runner.run(
-                    "agent-cleanup",
-                    cleanup_variables,
-                    timeout=180,
-                ),
-                events,
-                progress_sink,
-                phase="cleanup",
-                command_kind="worktree_cleanup",
-                command_identity=_evaluation_target_identity(
-                    "agent-cleanup",
-                    cleanup_variables,
-                ),
-                failure_class="cleanup_failed",
-            )
-            cleanup_passed = cleanup.returncode == 0
+        if not state.cleanup_attempted:
+            _cleanup_candidate(root_runner, branch, state, progress_sink)
         raise
 
 
@@ -2716,6 +2924,41 @@ class _RepositoryBoundManagedSelfImproveRunner(ManagedSelfImproveRunner):
         if plan.repo_root != self._runtime_repo_root:
             raise ValueError("approved plan belongs to a different repository")
         return super().run(plan)
+
+
+def _managed_comparison_retry_builder(
+    progress_sink: Callable[[str], None],
+) -> Callable[[PromptPlan, ComparisonResult, str], PromptPlan]:
+    """Bind comparison retry construction to one progress sink."""
+
+    def build(
+        plan: PromptPlan,
+        comparison: ComparisonResult,
+        diagnostics: str,
+    ) -> PromptPlan:
+        retry = build_retry_prompt_plan(plan, comparison, diagnostics=diagnostics)
+        if plan.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
+            progress_sink(_render_retry_diagnosis_event(diagnostics))
+        return retry
+
+    return build
+
+
+def _managed_syntax_retry_builder(
+    progress_sink: Callable[[str], None],
+) -> _SyntaxRepairBuilder:
+    """Bind syntax repair construction to one progress sink."""
+
+    def build(
+        plan: PromptPlan,
+        compact_proposals: tuple[CompactSpanProposal, ...],
+        diagnostics: str,
+    ) -> PromptPlan:
+        repair = build_syntax_repair_prompt_plan(plan, compact_proposals, diagnostics)
+        progress_sink(_render_retry_diagnosis_event(diagnostics))
+        return repair
+
+    return build
 
 
 def build_managed_self_improve_runner(
@@ -2791,33 +3034,6 @@ def build_managed_self_improve_runner(
             progress_sink=runtime_progress_sink,
         )
 
-    def build_comparison_retry(
-        plan: PromptPlan,
-        comparison: ComparisonResult,
-        diagnostics: str,
-    ) -> PromptPlan:
-        retry = build_retry_prompt_plan(
-            plan,
-            comparison,
-            diagnostics=diagnostics,
-        )
-        if plan.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
-            runtime_progress_sink(_render_retry_diagnosis_event(diagnostics))
-        return retry
-
-    def build_syntax_repair(
-        plan: PromptPlan,
-        compact_proposals: tuple[CompactSpanProposal, ...],
-        diagnostics: str,
-    ) -> PromptPlan:
-        repair = build_syntax_repair_prompt_plan(
-            plan,
-            compact_proposals,
-            diagnostics,
-        )
-        runtime_progress_sink(_render_retry_diagnosis_event(diagnostics))
-        return repair
-
     service = _RepositoryBoundManagedSelfImproveRunner(
         proposal_generator=generate_managed_proposal,
         attempt_evaluator=evaluate_managed_proposal,
@@ -2833,9 +3049,11 @@ def build_managed_self_improve_runner(
         release_sink=_report_model_release,
         progress_sink=runtime_progress_sink,
         model_acquisition_error=ModelAcquisitionError,
-        comparison_retry_builder=build_comparison_retry,
+        comparison_retry_builder=_managed_comparison_retry_builder(
+            runtime_progress_sink
+        ),
         validation_retry_builder=_build_validation_retry_prompt_plan,
-        syntax_repair_builder=build_syntax_repair,
+        syntax_repair_builder=_managed_syntax_retry_builder(runtime_progress_sink),
     )
     service.bind_repository(canonical_root)
     return service
@@ -2937,6 +3155,82 @@ def prepare_managed_self_improve_plan(
     return ApprovedSelfImprovePlan.from_json(plan.to_json())
 
 
+def _validate_only_benchmark(
+    args: argparse.Namespace,
+    root_runner: _TargetRunner,
+    task: TaskSpec,
+) -> AttemptResult:
+    """Render and return the historical side-effect-free benchmark plan."""
+    reference = build_reference(
+        root_runner,
+        args.baseline_ref,
+        args.reference_ref,
+        task.reference_elapsed_seconds,
+    )
+    required_output_tokens = estimate_required_output_tokens(
+        reference.changed_lines,
+        len(reference.changed_files),
+    )
+    print(
+        "SELF_IMPROVE_CODEX_PLAN "
+        f"task={task.task_id} baseline={reference.baseline_sha} "
+        f"reference={reference.reference_sha} files={len(reference.changed_files)} "
+        f"tests={len(reference.test_files)} "
+        f"estimated_output_tokens={required_output_tokens} "
+        f"model={Path(args.local_model_path) if args.local_model_path else 'auto'}"
+    )
+    proposal = ProposalManifest.from_json(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "baseline_sha": reference.baseline_sha,
+                "task_id": task.task_id,
+                "edits": [
+                    {
+                        "operation": "create",
+                        "path": sorted(reference.changed_files)[0],
+                        "old_text": "",
+                        "new_text": "validate-only",
+                    }
+                ],
+                "tests": sorted(reference.test_files)
+                or ["tests/unit/test_placeholder.py"],
+                "make_commands": list(task.canonical_make_commands),
+                "commit_message": "test: validate self-improvement plan",
+            }
+        )
+    )
+    evidence = CandidateEvidence(
+        changed_files=frozenset(),
+        tests_passed=False,
+        warnings=0,
+        coverage_aggregate=0.0,
+        coverage_min_file=0.0,
+        ruff_passed=False,
+        mypy_passed=False,
+        docstrings_passed=False,
+        markdown_passed=False,
+        cleanup_passed=True,
+        commit_count=0,
+        worktree_clean=True,
+        elapsed_seconds=0.0,
+    )
+    return AttemptResult(
+        comparison=ComparisonResult(
+            accepted=False,
+            score=0.0,
+            blockers=("validate-only",),
+            changed_file_precision=0.0,
+            changed_file_recall=0.0,
+        ),
+        evidence=evidence,
+        patch_equivalence="validate-only",
+        proposal=proposal,
+        diagnostics="validate-only",
+        attempt_identity_digest=_attempt_identity_digest(proposal.to_json()),
+    )
+
+
 def run_benchmark(args: argparse.Namespace) -> AttemptResult:
     """Run bounded local attempts until Codex parity or the attempt limit."""
     root = Path(__file__).resolve().parents[3]
@@ -2947,75 +3241,7 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
             "automatic local model task must match a mapped coding capability"
         )
     if args.validate_only:
-        reference = build_reference(
-            root_runner,
-            args.baseline_ref,
-            args.reference_ref,
-            task.reference_elapsed_seconds,
-        )
-        required_output_tokens = estimate_required_output_tokens(
-            reference.changed_lines,
-            len(reference.changed_files),
-        )
-        print(
-            "SELF_IMPROVE_CODEX_PLAN "
-            f"task={task.task_id} baseline={reference.baseline_sha} "
-            f"reference={reference.reference_sha} files={len(reference.changed_files)} "
-            f"tests={len(reference.test_files)} "
-            f"estimated_output_tokens={required_output_tokens} "
-            f"model={Path(args.local_model_path) if args.local_model_path else 'auto'}"
-        )
-        validation_proposal = ProposalManifest.from_json(
-            json.dumps(
-                {
-                    "schema_version": 1,
-                    "baseline_sha": reference.baseline_sha,
-                    "task_id": task.task_id,
-                    "edits": [
-                        {
-                            "operation": "create",
-                            "path": sorted(reference.changed_files)[0],
-                            "old_text": "",
-                            "new_text": "validate-only",
-                        }
-                    ],
-                    "tests": sorted(reference.test_files)
-                    or ["tests/unit/test_placeholder.py"],
-                    "make_commands": list(task.canonical_make_commands),
-                    "commit_message": "test: validate self-improvement plan",
-                }
-            )
-        )
-        return AttemptResult(
-            comparison=ComparisonResult(
-                accepted=False,
-                score=0.0,
-                blockers=("validate-only",),
-                changed_file_precision=0.0,
-                changed_file_recall=0.0,
-            ),
-            evidence=CandidateEvidence(
-                changed_files=frozenset(),
-                tests_passed=False,
-                warnings=0,
-                coverage_aggregate=0.0,
-                coverage_min_file=0.0,
-                ruff_passed=False,
-                mypy_passed=False,
-                docstrings_passed=False,
-                markdown_passed=False,
-                cleanup_passed=True,
-                commit_count=0,
-                worktree_clean=True,
-                elapsed_seconds=0.0,
-            ),
-            patch_equivalence="validate-only",
-            proposal=validation_proposal,
-            diagnostics="validate-only",
-            attempt_identity_digest=_attempt_identity_digest(
-                validation_proposal.to_json()
-            ),
-        )
+        return _validate_only_benchmark(args, root_runner, task)
 
     explicit_model_path = (
         Path(args.local_model_path).expanduser() if args.local_model_path else None
