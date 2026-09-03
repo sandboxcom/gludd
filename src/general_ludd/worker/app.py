@@ -22,6 +22,11 @@ from general_ludd.models.job_invocation import (
     is_generation_work_type,
 )
 from general_ludd.observability.timing import default_tracker
+from general_ludd.projects.repository_binding import (
+    ProjectRepositoryBindingStale,
+    ProjectRepositoryRegistry,
+    ProjectRepositoryUnavailable,
+)
 from general_ludd.schemas.job import JobSpec
 
 if TYPE_CHECKING:
@@ -277,6 +282,7 @@ def create_app(
     permission_spec: Any = None,
     self_improve_runner_factory: _ManagedSelfImproveFactory | None = None,
     self_improve_repo_resolver: _SelfImproveRepoResolver | None = None,
+    self_improve_repository_registry: ProjectRepositoryRegistry | None = None,
 ) -> FastAPI:
     """Create the worker FastAPI app with PSK auth and gateway/dispatcher wiring."""
     application = FastAPI(
@@ -302,6 +308,11 @@ def create_app(
         resolve_worker_self_improve_repo_root
         if self_improve_repo_resolver is None
         else self_improve_repo_resolver
+    )
+    application.state.self_improve_repository_registry = (
+        ProjectRepositoryRegistry.from_environment()
+        if self_improve_repository_registry is None
+        else self_improve_repository_registry
     )
     application.state.self_improve_model_lock = asyncio.Lock()
 
@@ -394,9 +405,14 @@ def create_app(
                 ManagedSelfImproveResultArtifact,
             )
 
-            def reject(reason: str, description: str) -> HTTPException:
+            def reject(
+                reason: str,
+                description: str,
+                *,
+                status_code: int = 400,
+            ) -> HTTPException:
                 return HTTPException(
-                    status_code=400,
+                    status_code=status_code,
                     detail={"reason": reason, "description": description},
                 )
 
@@ -422,25 +438,66 @@ def create_app(
                     "self_improve_identity_mismatch",
                     "approved plan identity does not match the dispatched job",
                 )
-            try:
-                resolved_root = application.state.self_improve_repo_resolver(
-                    job.project_id
-                )
-                if not isinstance(resolved_root, Path):
-                    raise TypeError("repository resolver must return pathlib.Path")
-                canonical_root = resolved_root.resolve(strict=True)
-                if not canonical_root.is_dir():
-                    raise ValueError("resolved repository is not a directory")
-            except (OSError, TypeError, ValueError, LookupError):
-                raise reject(
-                    "self_improve_repository_unavailable",
-                    "managed self-improvement repository mapping is unavailable",
-                ) from None
-            if plan.repo_root != canonical_root:
-                raise reject(
-                    "self_improve_identity_mismatch",
-                    "approved plan repository does not match the configured project",
-                )
+            if plan.repository_binding_digest:
+                if job.repository_binding_digest != plan.repository_binding_digest:
+                    raise reject(
+                        "self_improve_repository_binding_stale",
+                        "managed self-improvement repository binding is stale",
+                        status_code=409,
+                    )
+                try:
+                    canonical_root = (
+                        application.state.self_improve_repository_registry.resolve(
+                            job.project_id,
+                            plan.repository_binding_digest,
+                        )
+                    )
+                    plan = plan.bind_execution_repository(
+                        canonical_root,
+                        repository_binding_digest=plan.repository_binding_digest,
+                    )
+                except ProjectRepositoryBindingStale:
+                    raise reject(
+                        "self_improve_repository_binding_stale",
+                        "managed self-improvement repository binding is stale",
+                        status_code=409,
+                    ) from None
+                except ProjectRepositoryUnavailable:
+                    raise reject(
+                        "self_improve_repository_unavailable",
+                        "managed self-improvement repository mapping is unavailable",
+                    ) from None
+                except (OSError, TypeError, ValueError, LookupError):
+                    raise reject(
+                        "self_improve_repository_unavailable",
+                        "managed self-improvement repository mapping is unavailable",
+                    ) from None
+            else:
+                if job.repository_binding_digest is not None:
+                    raise reject(
+                        "self_improve_repository_binding_stale",
+                        "managed self-improvement repository binding is stale",
+                        status_code=409,
+                    )
+                try:
+                    resolved_root = application.state.self_improve_repo_resolver(
+                        job.project_id
+                    )
+                    if not isinstance(resolved_root, Path):
+                        raise TypeError("repository resolver must return pathlib.Path")
+                    canonical_root = resolved_root.resolve(strict=True)
+                    if not canonical_root.is_dir():
+                        raise ValueError("resolved repository is not a directory")
+                except (OSError, TypeError, ValueError, LookupError):
+                    raise reject(
+                        "self_improve_repository_unavailable",
+                        "managed self-improvement repository mapping is unavailable",
+                    ) from None
+                if plan.repo_root != canonical_root:
+                    raise reject(
+                        "self_improve_identity_mismatch",
+                        "approved plan repository does not match the configured project",
+                    )
 
             try:
                 managed_runner = application.state.self_improve_runner_factory(

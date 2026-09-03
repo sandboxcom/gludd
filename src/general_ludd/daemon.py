@@ -726,12 +726,46 @@ def _init_project_workspaces(project_manager: Any) -> dict[str, Any]:
     workspaces: dict[str, Any] = {}
     if project_manager is not None:
         try:
-            for p in project_manager.list_active():
-                pid = getattr(p, "project_id", str(p))
-                workspaces[pid] = ProjectWorkspace(project_id=pid)
-                workspaces[pid].ensure_dirs()
+            projects = project_manager.list_active()
         except Exception as exc:
             logger.warning("Failed to initialize project workspaces: %s", exc)
+            return workspaces
+        from general_ludd.projects.repository_binding import (
+            ProjectRepositoryBinding,
+        )
+        from general_ludd.projects.workspace import (
+            confine_workspace_path,
+            default_workspace_base,
+        )
+
+        for project in projects:
+            pid = getattr(project, "project_id", str(project))
+            try:
+                binding = ProjectRepositoryBinding.for_project(
+                    project_id=pid,
+                    workspace_path=(
+                        getattr(project, "workspace_path", "") or pid
+                    ),
+                    repo_url=getattr(project, "repo_url", "") or "",
+                )
+                workspace_base = default_workspace_base()
+                workspace_root = confine_workspace_path(
+                    workspace_base,
+                    binding.workspace_key,
+                )
+                workspace = ProjectWorkspace(
+                    project_id=pid,
+                    base_dir=workspace_base,
+                    workspace_path=workspace_root,
+                )
+                workspace.ensure_dirs()
+                workspaces[pid] = workspace
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                logger.warning(
+                    "Failed to initialize project workspace %s: %s",
+                    pid,
+                    exc,
+                )
     return workspaces
 
 

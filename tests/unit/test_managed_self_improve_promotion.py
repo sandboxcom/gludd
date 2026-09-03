@@ -33,12 +33,17 @@ from general_ludd.self_improve.result_artifact import ManagedSelfImproveResultAr
 from general_ludd.self_improve.runtime import MakeResult
 
 
-def _plan(repo_root: Path) -> ApprovedSelfImprovePlan:
+def _plan(
+    repo_root: Path,
+    *,
+    repository_binding_digest: str = "",
+) -> ApprovedSelfImprovePlan:
     return ApprovedSelfImprovePlan.approve(
         approval_id="approval-promotion",
         todo_id="TODO-PROMOTION",
         project_id="project-promotion",
         repo_root=repo_root,
+        repository_binding_digest=repository_binding_digest,
         task=TaskSpec(
             task_id="S83.204",
             objective="Promote one accepted proposal.",
@@ -367,6 +372,34 @@ def test_validation_rejects_recomputed_comparison_drift(tmp_path: Path) -> None:
             repo_root=repo_root,
             return_id="RETURN-PROMOTION",
         )
+
+
+def test_validation_rebinds_path_independent_plan_for_local_promotion(
+    tmp_path: Path,
+) -> None:
+    controller_root = tmp_path / "controller"
+    promotion_root = tmp_path / "promotion-host"
+    controller_root.mkdir()
+    promotion_root.mkdir()
+    binding_digest = "d" * 64
+    plan = _plan(
+        controller_root,
+        repository_binding_digest=binding_digest,
+    )
+    artifact = _artifact(plan)
+
+    inputs = validate_managed_promotion_inputs(
+        plan_artifact=plan.to_json(),
+        result_artifact=artifact.to_json(),
+        todo_id=plan.todo_id,
+        project_id=plan.project_id,
+        repo_root=promotion_root,
+        repository_binding_digest=binding_digest,
+        return_id="RETURN-PROMOTION",
+    )
+
+    assert inputs.plan.repo_root == promotion_root.resolve()
+    assert inputs.plan.identity_digest == plan.identity_digest
 
 
 @pytest.mark.parametrize("field", ["todo", "project", "repo"])

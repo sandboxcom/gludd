@@ -1501,6 +1501,8 @@ def build_managed_self_improve_runner(
     if not isinstance(repo_root, Path):
         raise ValueError("repo_root must be a pathlib.Path")
     canonical_root = repo_root.resolve(strict=True)
+    if not canonical_root.is_dir():
+        raise ValueError("repo_root must be an existing directory")
     runner_factory = make_runner_factory or MakeRunner
     operation_runner = root_runner or runner_factory(canonical_root)
 
@@ -1586,6 +1588,7 @@ def prepare_managed_self_improve_plan(
     approval_id: str,
     todo_id: str,
     project_id: str,
+    repository_binding_digest: str = "",
     baseline_ref: str,
     reference_ref: str,
     task: TaskSpec,
@@ -1606,6 +1609,8 @@ def prepare_managed_self_improve_plan(
     if not isinstance(task, TaskSpec):
         raise ValueError("task must be a TaskSpec")
     canonical_root = repo_root.resolve(strict=True)
+    if not canonical_root.is_dir():
+        raise ValueError("repo_root must be an existing directory")
     runner_factory = make_runner_factory or MakeRunner
     operation_runner = root_runner or runner_factory(canonical_root)
     reference = build_reference(
@@ -1661,6 +1666,7 @@ def prepare_managed_self_improve_plan(
         todo_id=todo_id,
         project_id=project_id,
         repo_root=canonical_root,
+        repository_binding_digest=repository_binding_digest,
         task=task,
         reference=reference,
         prompt=prompt,

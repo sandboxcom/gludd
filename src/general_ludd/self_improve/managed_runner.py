@@ -18,7 +18,7 @@ import shlex
 import tempfile
 from collections.abc import Callable
 from contextlib import AbstractContextManager, ExitStack
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Final, Protocol, cast
@@ -57,7 +57,8 @@ _FORBIDDEN_COMMAND_CHARS: Final = frozenset(";|&$()<>\n\r")
 _SHA_RE: Final = re.compile(r"^[0-9a-f]{40}$")
 _DIGEST_RE: Final = re.compile(r"^[0-9a-f]{64}$")
 _TASK_RE: Final = re.compile(r"^S[0-9]+(?:\.[0-9]+)?$")
-_PLAN_SCHEMA_VERSION: Final = 1
+_LEGACY_PLAN_SCHEMA_VERSION: Final = 1
+_PLAN_SCHEMA_VERSION: Final = 2
 
 
 class ModelPlanFailure(StrEnum):
@@ -492,13 +493,14 @@ class ApprovedSelfImprovePlan:
     approval_id: str
     todo_id: str
     project_id: str
-    repo_root: Path
+    repo_root: Path | None
     task: TaskSpec
     reference: CodexReference
     prompt: PromptPlan | str
     required_output_tokens: int
     max_attempts: int
     approved: bool
+    repository_binding_digest: str = ""
     attempt_identity_digest: str = ""
     approved_plan_digest: str = ""
     explicit_model_path: Path | None = None
@@ -513,9 +515,23 @@ class ApprovedSelfImprovePlan:
         ):
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{label} must be non-empty text")
-        if not isinstance(self.repo_root, Path):
-            raise ValueError("repo_root must be a pathlib.Path")
-        object.__setattr__(self, "repo_root", self.repo_root.resolve(strict=False))
+        if self.repo_root is not None:
+            if not isinstance(self.repo_root, Path):
+                raise ValueError("repo_root must be a pathlib.Path or None")
+            object.__setattr__(self, "repo_root", self.repo_root.resolve(strict=False))
+        if self.repository_binding_digest:
+            _validate_digest(
+                "repository_binding_digest",
+                self.repository_binding_digest,
+            )
+            if self.explicit_model_path is not None:
+                raise ValueError(
+                    "repository-bound plans cannot transport an explicit model path"
+                )
+        elif self.repo_root is None:
+            raise ValueError(
+                "plan requires a legacy repository root or repository binding digest"
+            )
         if self.explicit_model_path is not None:
             if not isinstance(self.explicit_model_path, Path):
                 raise ValueError("explicit_model_path must be a pathlib.Path")
@@ -567,6 +583,7 @@ class ApprovedSelfImprovePlan:
         todo_id: str,
         project_id: str,
         repo_root: Path,
+        repository_binding_digest: str = "",
         task: TaskSpec,
         reference: CodexReference,
         prompt: PromptPlan | str,
@@ -587,9 +604,35 @@ class ApprovedSelfImprovePlan:
             required_output_tokens=required_output_tokens,
             max_attempts=max_attempts,
             approved=True,
+            repository_binding_digest=repository_binding_digest,
             explicit_model_path=explicit_model_path,
             mechanical_proposal=mechanical_proposal,
         )
+
+    def bind_execution_repository(
+        self,
+        repo_root: Path,
+        *,
+        repository_binding_digest: str,
+    ) -> ApprovedSelfImprovePlan:
+        """Attach a host-local root after validating the approved logical binding."""
+        self.verify_approval()
+        if not self.repository_binding_digest or not hmac.compare_digest(
+            self.repository_binding_digest,
+            repository_binding_digest,
+        ):
+            raise ValueError("approved repository binding does not match execution")
+        if not isinstance(repo_root, Path):
+            raise ValueError("execution repo_root must be a pathlib.Path")
+        try:
+            canonical_root = repo_root.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise ValueError("execution repository is unavailable") from exc
+        if not canonical_root.is_dir():
+            raise ValueError("execution repository is unavailable")
+        bound = replace(self, repo_root=canonical_root)
+        bound.verify_approval()
+        return bound
 
     @property
     def identity_digest(self) -> str:
@@ -630,9 +673,10 @@ class ApprovedSelfImprovePlan:
             value = json.loads(raw)
         except json.JSONDecodeError as exc:
             raise ValueError(f"approved plan is not valid JSON: {exc}") from exc
-        mapping = _exact_mapping(
-            value,
-            required={
+        if not isinstance(value, dict):
+            raise ValueError("approved plan must be a JSON object")
+        schema_version = value.get("schema_version")
+        common_fields = {
                 "approval_id",
                 "approved",
                 "approved_plan_digest",
@@ -643,17 +687,23 @@ class ApprovedSelfImprovePlan:
                 "project_id",
                 "prompt",
                 "reference",
-                "repo_root",
                 "required_output_tokens",
                 "schema_version",
                 "task",
                 "todo_id",
-            },
+        }
+        if schema_version == _LEGACY_PLAN_SCHEMA_VERSION:
+            required_fields = common_fields | {"repo_root"}
+        elif schema_version == _PLAN_SCHEMA_VERSION:
+            required_fields = common_fields | {"repository_binding_digest"}
+        else:
+            raise ValueError("approved plan schema_version is unsupported")
+        mapping = _exact_mapping(
+            value,
+            required=required_fields,
             optional=set(),
             label="approved plan",
         )
-        if mapping["schema_version"] != _PLAN_SCHEMA_VERSION:
-            raise ValueError("approved plan schema_version is unsupported")
         if mapping["approved"] is not True:
             raise ValueError("approved plan artifact must carry approved=true")
         prompt = _prompt_from_json_value(mapping["prompt"])
@@ -673,7 +723,11 @@ class ApprovedSelfImprovePlan:
             approval_id=_required_string(mapping, "approval_id"),
             todo_id=_required_string(mapping, "todo_id"),
             project_id=_required_string(mapping, "project_id"),
-            repo_root=_canonical_path(mapping["repo_root"], "repo_root"),
+            repo_root=(
+                _canonical_path(mapping["repo_root"], "repo_root")
+                if schema_version == _LEGACY_PLAN_SCHEMA_VERSION
+                else None
+            ),
             task=TaskSpec._from_json_value(mapping["task"]),
             reference=_reference_from_json_value(mapping["reference"]),
             prompt=prompt,
@@ -683,6 +737,14 @@ class ApprovedSelfImprovePlan:
             ),
             max_attempts=_positive_integer(mapping["max_attempts"], "max_attempts"),
             approved=True,
+            repository_binding_digest=(
+                ""
+                if schema_version == _LEGACY_PLAN_SCHEMA_VERSION
+                else _required_string(
+                    mapping,
+                    "repository_binding_digest",
+                )
+            ),
             attempt_identity_digest=_required_string(mapping, "attempt_identity_digest"),
             approved_plan_digest=_required_string(mapping, "approved_plan_digest"),
             explicit_model_path=explicit_path,
@@ -700,7 +762,7 @@ class ApprovedSelfImprovePlan:
         mechanical: object = None
         if self.mechanical_proposal is not None:
             mechanical = json.loads(self.mechanical_proposal.to_json())
-        return {
+        identity = {
             "approval_id": self.approval_id,
             "attempt_identity_digest": self.attempt_identity_digest,
             "explicit_model_path": (
@@ -711,12 +773,19 @@ class ApprovedSelfImprovePlan:
             "project_id": self.project_id,
             "prompt": prompt_value,
             "reference": _reference_json_value(self.reference),
-            "repo_root": str(self.repo_root),
             "required_output_tokens": self.required_output_tokens,
-            "schema_version": _PLAN_SCHEMA_VERSION,
             "task": self.task._json_value(),
             "todo_id": self.todo_id,
         }
+        if self.repository_binding_digest:
+            identity["repository_binding_digest"] = self.repository_binding_digest
+            identity["schema_version"] = _PLAN_SCHEMA_VERSION
+        else:
+            if self.repo_root is None:
+                raise ValueError("legacy plan repository root is unavailable")
+            identity["repo_root"] = str(self.repo_root)
+            identity["schema_version"] = _LEGACY_PLAN_SCHEMA_VERSION
+        return identity
 
 
 class ManagedOutcomeAdapter(Protocol):

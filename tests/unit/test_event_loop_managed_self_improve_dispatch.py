@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from general_ludd.event_loop.loop import EventLoop
+from general_ludd.projects.repository_binding import ProjectRepositoryBinding
 from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
     CodexReference,
@@ -36,12 +37,14 @@ def _approved_plan(
     *,
     todo_id: str = "TODO-SELF-IMPROVE",
     project_id: str = "project-managed",
+    repository_binding_digest: str = "",
 ) -> ApprovedSelfImprovePlan:
     return ApprovedSelfImprovePlan.approve(
         approval_id="approval-managed-daemon",
         todo_id=todo_id,
         project_id=project_id,
         repo_root=repo_root,
+        repository_binding_digest=repository_binding_digest,
         task=TaskSpec(
             task_id="S83.203",
             objective="Exercise the daemon managed self-improvement boundary.",
@@ -190,6 +193,103 @@ def _make_loop(
     }
 
 
+def _make_bound_worker_loop(
+    tmp_path: Path,
+    response: object,
+) -> tuple[ApprovedSelfImprovePlan, EventLoop, dict[str, Any]]:
+    binding = ProjectRepositoryBinding.for_project(
+        project_id="project-managed",
+        workspace_path="tenant/project-managed",
+        repo_url="https://example.com/org/managed.git",
+    )
+    controller_repo = tmp_path / "controller-host" / "repo"
+    controller_repo.mkdir(parents=True)
+    plan = _approved_plan(
+        controller_repo,
+        repository_binding_digest=binding.digest,
+    )
+    task_return_repo = AsyncMock()
+    session = AsyncMock()
+    managed_factory = MagicMock()
+    http_client = AsyncMock()
+    if isinstance(response, Exception):
+        http_client.post.side_effect = response
+    else:
+        http_client.post.return_value = response
+    project_manager = MagicMock()
+    project_manager.get_project.return_value = SimpleNamespace(
+        project_id=binding.project_id,
+        workspace_path=binding.workspace_key,
+        repo_url="https://example.com/org/managed.git",
+    )
+    loop = EventLoop(
+        config={"self_improve": {"execution_mode": "worker"}},
+        session=session,
+        task_return_repo=task_return_repo,
+        http_client=http_client,
+        project_manager=project_manager,
+        self_improve_runner_factory=managed_factory,
+    )
+    return plan, loop, {
+        "http_client": http_client,
+        "managed_factory": managed_factory,
+        "session": session,
+        "task_return_repo": task_return_repo,
+    }
+
+
+@pytest.mark.parametrize(
+    "manager",
+    [
+        None,
+        SimpleNamespace(),
+        SimpleNamespace(get_project=lambda _project_id: None),
+        SimpleNamespace(
+            get_project=lambda _project_id: SimpleNamespace(active=False)
+        ),
+        SimpleNamespace(
+            get_project=lambda _project_id: SimpleNamespace(
+                active=True,
+                workspace_path="../escape",
+                repo_url="https://example.com/org/escape.git",
+            )
+        ),
+    ],
+)
+def test_managed_binding_resolver_rejects_untrusted_manager_state(
+    manager: object,
+) -> None:
+    loop = EventLoop(config={}, project_manager=manager)
+    assert loop._resolve_managed_self_improve_binding("project-managed") is None
+
+
+def test_managed_repository_resolver_rejects_every_non_directory_shape(
+    tmp_path: Path,
+) -> None:
+    loop = EventLoop(config={})
+    loop._project_workspace = None
+    assert loop._resolve_managed_self_improve_repo("project-managed") is None
+
+    loop._project_workspace = {}
+    assert loop._resolve_managed_self_improve_repo("project-managed") is None
+
+    loop._project_workspace = {"project-managed": SimpleNamespace()}
+    assert loop._resolve_managed_self_improve_repo("project-managed") is None
+
+    missing = tmp_path / "missing"
+    loop._project_workspace = {
+        "project-managed": SimpleNamespace(repo_dir=missing)
+    }
+    assert loop._resolve_managed_self_improve_repo("project-managed") is None
+
+    regular_file = tmp_path / "regular-file"
+    regular_file.write_text("not a repository")
+    loop._project_workspace = {
+        "project-managed": SimpleNamespace(repo_dir=regular_file)
+    }
+    assert loop._resolve_managed_self_improve_repo("project-managed") is None
+
+
 @pytest.mark.asyncio
 async def test_valid_plan_runs_managed_service_and_persists_reviewable_return(
     tmp_path: Path,
@@ -223,6 +323,403 @@ async def test_valid_plan_runs_managed_service_and_persists_reviewable_return(
     assert artifact.evidence.tests_passed is True
     assert artifact.comparison.score == 100.0
     collaborators["session"].flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_bound_local_plan_rebinds_to_current_trusted_repository(
+    tmp_path: Path,
+) -> None:
+    binding = ProjectRepositoryBinding.for_project(
+        project_id="project-managed",
+        workspace_path="tenant/project-managed",
+        repo_url="https://example.com/org/managed.git",
+    )
+    controller_repo = tmp_path / "controller" / "repo"
+    controller_repo.mkdir(parents=True)
+    local_repo = tmp_path / "local" / "repo"
+    local_repo.mkdir(parents=True)
+    plan = _approved_plan(
+        controller_repo,
+        repository_binding_digest=binding.digest,
+    )
+    managed_runner = MagicMock()
+    managed_runner.run.return_value = _managed_result(plan)
+    loop, collaborators = _make_loop(local_repo, managed_runner)
+    loop._project_manager = SimpleNamespace(
+        get_project=lambda _project_id: SimpleNamespace(
+            active=True,
+            workspace_path=binding.workspace_key,
+            repo_url="https://example.com/org/managed.git",
+        )
+    )
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    collaborators["factory"].assert_called_once_with(local_repo.resolve())
+    rebound = managed_runner.run.call_args.args[0]
+    assert rebound.repo_root == local_repo.resolve()
+    assert rebound.identity_digest == plan.identity_digest
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert persisted["exit_code"] == 0
+
+
+@pytest.mark.asyncio
+async def test_bound_local_plan_rebind_failure_is_typed_and_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding = ProjectRepositoryBinding.for_project(
+        project_id="project-managed",
+        workspace_path="tenant/project-managed",
+        repo_url="https://example.com/org/managed.git",
+    )
+    controller_repo = tmp_path / "controller" / "repo"
+    controller_repo.mkdir(parents=True)
+    local_repo = tmp_path / "local" / "repo"
+    local_repo.mkdir(parents=True)
+    plan = _approved_plan(
+        controller_repo,
+        repository_binding_digest=binding.digest,
+    )
+    managed_runner = MagicMock()
+    loop, collaborators = _make_loop(local_repo, managed_runner)
+    loop._project_manager = SimpleNamespace(
+        get_project=lambda _project_id: SimpleNamespace(
+            active=True,
+            workspace_path=binding.workspace_key,
+            repo_url="https://example.com/org/managed.git",
+        )
+    )
+
+    def reject_rebind(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("private path detail")
+
+    monkeypatch.setattr(
+        ApprovedSelfImprovePlan,
+        "bind_execution_repository",
+        reject_rebind,
+    )
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    collaborators["factory"].assert_not_called()
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert json.loads(persisted["result_summary"])["reason"] == (
+        "repository_binding_stale"
+    )
+    assert "private path detail" not in persisted["result_summary"]
+
+
+@pytest.mark.asyncio
+async def test_worker_mode_dispatches_path_independent_repository_binding(
+    tmp_path: Path,
+) -> None:
+    binding = ProjectRepositoryBinding.for_project(
+        project_id="project-managed",
+        workspace_path="tenant/project-managed",
+        repo_url="https://example.com/org/managed.git",
+    )
+    controller_repo = tmp_path / "controller-host" / "repo"
+    controller_repo.mkdir(parents=True)
+    plan = _approved_plan(
+        controller_repo,
+        repository_binding_digest=binding.digest,
+    )
+    task_return_repo = AsyncMock()
+    session = AsyncMock()
+    managed_factory = MagicMock()
+    http_client = AsyncMock()
+    result_artifact = ManagedSelfImproveResultArtifact.from_run_result(
+        _managed_result(plan)
+    )
+    http_client.post.return_value = {
+        "return_id": f"RET-EXEC-{plan.todo_id}",
+        "exit_code": 0,
+        "result_summary": result_artifact.to_json(),
+    }
+    project_manager = MagicMock()
+    project_manager.get_project.return_value = SimpleNamespace(
+        project_id=binding.project_id,
+        workspace_path=binding.workspace_key,
+        repo_url="https://example.com/org/managed.git",
+    )
+    loop = EventLoop(
+        config={"self_improve": {"execution_mode": "worker"}},
+        session=session,
+        task_return_repo=task_return_repo,
+        http_client=http_client,
+        project_manager=project_manager,
+        self_improve_runner_factory=managed_factory,
+    )
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    managed_factory.assert_not_called()
+    http_client.post.assert_awaited_once()
+    url = http_client.post.await_args.args[0]
+    payload = http_client.post.await_args.kwargs["json"]
+    assert url.endswith("/jobs/execute")
+    assert payload["repository_binding_digest"] == binding.digest
+    assert payload["plan_artifact"] == plan.to_json()
+    assert str(controller_repo.resolve()) not in json.dumps(payload)
+    persisted = task_return_repo.create.await_args.kwargs["data"]
+    assert persisted["exit_code"] == 0
+    assert persisted["result_summary"] == result_artifact.to_json()
+
+
+@pytest.mark.asyncio
+async def test_worker_mode_without_http_client_fails_closed(tmp_path: Path) -> None:
+    plan, loop, collaborators = _make_bound_worker_loop(
+        tmp_path,
+        {"result_summary": "unused"},
+    )
+    loop._http_client = None
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert json.loads(persisted["result_summary"])["reason"] == (
+        "worker_unavailable"
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_non_integer_status_and_non_mapping_detail_are_rejected(
+    tmp_path: Path,
+) -> None:
+    response = SimpleNamespace(
+        status_code="200",
+        json=lambda: {"detail": "untrusted detail"},
+    )
+    plan, loop, collaborators = _make_bound_worker_loop(tmp_path, response)
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert json.loads(persisted["result_summary"])["reason"] == "worker_rejected"
+
+
+@pytest.mark.asyncio
+async def test_worker_status_below_success_range_is_rejected(tmp_path: Path) -> None:
+    response = SimpleNamespace(
+        status_code=199,
+        json=lambda: {"detail": {"reason": "unrecognized_worker_reason"}},
+    )
+    plan, loop, collaborators = _make_bound_worker_loop(tmp_path, response)
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    collaborators["managed_factory"].assert_not_called()
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert json.loads(persisted["result_summary"])["reason"] == "worker_rejected"
+
+
+@pytest.mark.asyncio
+async def test_worker_result_for_another_plan_is_rejected(tmp_path: Path) -> None:
+    other_repo = tmp_path / "other"
+    other_repo.mkdir()
+    other_plan = _approved_plan(other_repo, todo_id="TODO-OTHER")
+    response = {
+        "result_summary": ManagedSelfImproveResultArtifact.from_run_result(
+            _managed_result(other_plan)
+        ).to_json()
+    }
+    plan, loop, collaborators = _make_bound_worker_loop(tmp_path, response)
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert json.loads(persisted["result_summary"])["reason"] == (
+        "managed_result_invalid"
+    )
+
+
+@pytest.mark.asyncio
+async def test_changed_project_mapping_rejects_stale_bound_plan_before_dispatch(
+    tmp_path: Path,
+) -> None:
+    approved_binding = ProjectRepositoryBinding.for_project(
+        project_id="project-managed",
+        workspace_path="tenant/project-managed",
+        repo_url="https://example.com/org/managed.git",
+    )
+    plan = _approved_plan(
+        tmp_path,
+        repository_binding_digest=approved_binding.digest,
+    )
+    managed_factory = MagicMock()
+    http_client = AsyncMock()
+    task_return_repo = AsyncMock()
+    project_manager = MagicMock()
+    project_manager.get_project.return_value = SimpleNamespace(
+        project_id=approved_binding.project_id,
+        workspace_path="tenant/project-managed",
+        repo_url="https://example.com/org/replaced.git",
+    )
+    loop = EventLoop(
+        config={"self_improve": {"execution_mode": "worker"}},
+        session=AsyncMock(),
+        task_return_repo=task_return_repo,
+        http_client=http_client,
+        project_manager=project_manager,
+        self_improve_runner_factory=managed_factory,
+    )
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    managed_factory.assert_not_called()
+    http_client.post.assert_not_awaited()
+    persisted = task_return_repo.create.await_args.kwargs["data"]
+    assert json.loads(persisted["result_summary"])["reason"] == (
+        "repository_binding_stale"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("remote_reason", "expected_reason"),
+    [
+        (
+            "self_improve_repository_binding_stale",
+            "repository_binding_stale",
+        ),
+        (
+            "self_improve_repository_unavailable",
+            "repository_unavailable",
+        ),
+        ("unrecognized_worker_reason", "worker_rejected"),
+        (None, "worker_rejected"),
+    ],
+)
+async def test_worker_rejection_is_mapped_to_bounded_local_reason(
+    tmp_path: Path,
+    remote_reason: str | None,
+    expected_reason: str,
+) -> None:
+    response = SimpleNamespace(
+        status_code=409,
+        json=lambda: {"detail": {"reason": remote_reason}},
+    )
+    plan, loop, collaborators = _make_bound_worker_loop(tmp_path, response)
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    collaborators["managed_factory"].assert_not_called()
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert json.loads(persisted["result_summary"])["reason"] == expected_reason
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        RuntimeError("private transport detail"),
+        SimpleNamespace(status_code=200),
+        SimpleNamespace(status_code=200, json=lambda: []),
+    ],
+)
+async def test_worker_transport_or_response_shape_failure_is_secret_safe(
+    tmp_path: Path,
+    response: object,
+) -> None:
+    plan, loop, collaborators = _make_bound_worker_loop(tmp_path, response)
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    summary = json.loads(persisted["result_summary"])
+    assert summary["reason"] == "worker_dispatch_failed"
+    assert "private transport detail" not in persisted["result_summary"]
+
+
+@pytest.mark.asyncio
+async def test_worker_response_decoder_failure_is_secret_safe(tmp_path: Path) -> None:
+    def reject_response_body() -> None:
+        raise RuntimeError("private response body detail")
+
+    response = SimpleNamespace(status_code=200, json=reject_response_body)
+    plan, loop, collaborators = _make_bound_worker_loop(tmp_path, response)
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert json.loads(persisted["result_summary"])["reason"] == (
+        "worker_dispatch_failed"
+    )
+    assert "private response body detail" not in persisted["result_summary"]
+
+
+@pytest.mark.asyncio
+async def test_worker_async_response_body_is_accepted(tmp_path: Path) -> None:
+    seed_plan = _approved_plan(tmp_path)
+    artifact = ManagedSelfImproveResultArtifact.from_run_result(
+        _managed_result(seed_plan)
+    )
+
+    async def response_json() -> dict[str, object]:
+        return {"result_summary": artifact.to_json()}
+
+    response = SimpleNamespace(status_code=200, json=response_json)
+    plan, loop, collaborators = _make_bound_worker_loop(tmp_path, response)
+    rebound_artifact = ManagedSelfImproveResultArtifact.from_run_result(
+        _managed_result(plan)
+    )
+    response.json = AsyncMock(
+        return_value={"result_summary": rebound_artifact.to_json()}
+    )
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    response.json.assert_awaited_once()
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert persisted["result_summary"] == rebound_artifact.to_json()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("result_summary", [None, "not-json"])
+async def test_worker_invalid_result_artifact_fails_closed(
+    tmp_path: Path,
+    result_summary: object,
+) -> None:
+    plan, loop, collaborators = _make_bound_worker_loop(
+        tmp_path,
+        {"result_summary": result_summary},
+    )
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert json.loads(persisted["result_summary"])["reason"] == (
+        "managed_result_invalid"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "expected_reason"),
+    [
+        ("untrusted", "invalid_execution_mode"),
+        ("worker", "repository_binding_required"),
+    ],
+)
+async def test_invalid_or_legacy_worker_mode_fails_closed_before_dispatch(
+    tmp_path: Path,
+    mode: str,
+    expected_reason: str,
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    plan = _approved_plan(repo_root)
+    managed_runner = MagicMock()
+    loop, collaborators = _make_loop(repo_root, managed_runner)
+    loop.config = {"self_improve": {"execution_mode": mode}}
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    collaborators["factory"].assert_not_called()
+    collaborators["http_client"].post.assert_not_awaited()
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert json.loads(persisted["result_summary"])["reason"] == expected_reason
 
 
 @pytest.mark.asyncio
@@ -321,7 +818,9 @@ async def test_oversized_approved_artifact_fails_closed_before_parsing(
 
     managed_runner.run.assert_not_called()
     persist.assert_awaited_once()
-    assert persist.await_args.kwargs["reason"] == (
+    awaited = persist.await_args
+    assert awaited is not None
+    assert awaited.kwargs["reason"] == (
         "approval_artifact_digest_mismatch"
     )
 
@@ -522,6 +1021,57 @@ async def test_managed_result_identity_mismatch_fails_closed(tmp_path: Path) -> 
         plan_identity_digest="f" * 64,
     )
     loop, collaborators = _make_loop(repo_root, managed_runner)
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert persisted["exit_code"] == 1
+    assert json.loads(persisted["result_summary"])["reason"] == (
+        "managed_result_invalid"
+    )
+
+
+@pytest.mark.asyncio
+async def test_local_attempt_identity_mismatch_fails_closed(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    plan = _approved_plan(repo_root)
+    result = _managed_result(plan)
+    managed_runner = MagicMock()
+    managed_runner.run.return_value = replace(
+        result,
+        final_result=replace(
+            result.final_result,
+            attempt_identity_digest="f" * 64,
+        ),
+    )
+    loop, collaborators = _make_loop(repo_root, managed_runner)
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert persisted["exit_code"] == 1
+    assert json.loads(persisted["result_summary"])["reason"] == (
+        "managed_result_invalid"
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_attempt_identity_mismatch_fails_closed(tmp_path: Path) -> None:
+    plan, loop, collaborators = _make_bound_worker_loop(tmp_path, {})
+    result = _managed_result(plan)
+    mismatched = replace(
+        result,
+        final_result=replace(
+            result.final_result,
+            attempt_identity_digest="f" * 64,
+        ),
+    )
+    collaborators["http_client"].post.return_value = {
+        "result_summary": ManagedSelfImproveResultArtifact.from_run_result(
+            mismatched
+        ).to_json()
+    }
 
     await loop._dispatch_execute_job(_todo(plan.to_json()))
 

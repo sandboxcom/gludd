@@ -433,6 +433,7 @@ def validate_bound_managed_plan(
     todo_id: str,
     project_id: str,
     repo_root: Path,
+    repository_binding_digest: str = "",
     expected_task: TaskSpec | None = None,
     baseline_ref: str | None = None,
     reference_ref: str | None = None,
@@ -449,10 +450,39 @@ def validate_bound_managed_plan(
         raise ValueError("managed self-improve project identity drifted")
     try:
         canonical_root = repo_root.resolve(strict=True)
-        plan_root = plan.repo_root.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
         raise ValueError("managed self-improve repository is unavailable") from exc
-    if not canonical_root.is_dir() or plan_root != canonical_root:
+    if not canonical_root.is_dir():
+        raise ValueError("managed self-improve repository is unavailable")
+    if plan.repository_binding_digest:
+        if not repository_binding_digest:
+            raise ValueError(
+                "managed self-improve repository binding is unavailable"
+            )
+        try:
+            plan = plan.bind_execution_repository(
+                canonical_root,
+                repository_binding_digest=repository_binding_digest,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "managed self-improve repository binding drifted"
+            ) from exc
+    else:
+        legacy_root = plan.repo_root
+        if legacy_root is None:
+            raise ValueError("managed self-improve repository is unavailable")
+        try:
+            plan_root = legacy_root.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise ValueError(
+                "managed self-improve repository is unavailable"
+            ) from exc
+        if repository_binding_digest:
+            raise ValueError("managed self-improve repository binding drifted")
+        if plan_root != canonical_root:
+            raise ValueError("managed self-improve repository identity drifted")
+    if plan.repo_root != canonical_root:
         raise ValueError("managed self-improve repository identity drifted")
     if expected_task is not None and plan.task != expected_task:
         raise ValueError("managed self-improve task identity drifted")

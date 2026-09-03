@@ -18,6 +18,10 @@ import general_ludd.projects.workspace as workspace_module
 import general_ludd.self_improve as self_improve_package
 import general_ludd.worker.app as worker_app
 from general_ludd.models.gateway import ModelProfile
+from general_ludd.projects.repository_binding import (
+    ProjectRepositoryBinding,
+    ProjectRepositoryRegistry,
+)
 from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
     CodexReference,
@@ -73,12 +77,18 @@ class _FailingRunner:
         raise RuntimeError("secret-token")
 
 
-def _plan(repo_root: Path, *, project_id: str = "project-worker") -> ApprovedSelfImprovePlan:
+def _plan(
+    repo_root: Path,
+    *,
+    project_id: str = "project-worker",
+    repository_binding_digest: str = "",
+) -> ApprovedSelfImprovePlan:
     return ApprovedSelfImprovePlan.approve(
         approval_id="approval-worker",
         todo_id="TODO-WORKER-SI",
         project_id=project_id,
         repo_root=repo_root,
+        repository_binding_digest=repository_binding_digest,
         task=TaskSpec(
             task_id="S83.301",
             objective="Exercise the worker-managed runtime boundary.",
@@ -165,7 +175,7 @@ def _managed_result(
 
 
 def _payload(plan: ApprovedSelfImprovePlan, *, job_id: str = "JOB-WORKER-SI") -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "job_id": job_id,
         "todo_id": plan.todo_id,
         "project_id": plan.project_id,
@@ -174,6 +184,9 @@ def _payload(plan: ApprovedSelfImprovePlan, *, job_id: str = "JOB-WORKER-SI") ->
         "work_type": "self_improve",
         "plan_artifact": plan.to_json(),
     }
+    if plan.repository_binding_digest:
+        payload["repository_binding_digest"] = plan.repository_binding_digest
+    return payload
 
 
 def _build_app(
@@ -401,6 +414,81 @@ async def test_self_improve_executes_approved_plan_without_playbook_fallback(
     }]
     assert factory.roots == [tmp_path.resolve()]
     assert runner.plans == [ApprovedSelfImprovePlan.from_json(plan.to_json())]
+
+
+@pytest.mark.asyncio
+async def test_worker_registry_rebinds_cross_host_plan_without_transporting_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding = ProjectRepositoryBinding.for_project(
+        project_id="project-worker",
+        workspace_path="projects/worker",
+        repo_url="https://example.com/org/worker.git",
+    )
+    controller_repo = tmp_path / "controller" / "repository"
+    controller_repo.mkdir(parents=True)
+    worker_base = tmp_path / "worker-host"
+    worker_repo = worker_base / binding.workspace_key / "repo"
+    worker_repo.mkdir(parents=True)
+    (worker_repo / ".git").mkdir()
+    plan = _plan(
+        controller_repo,
+        repository_binding_digest=binding.digest,
+    )
+    runner = _Runner(_managed_result(plan))
+    factory = _Factory(runner)
+    registry = ProjectRepositoryRegistry((binding,), base_dir=worker_base)
+    monkeypatch.setenv("GLUDD_PSK_DISABLE", "1")
+    app = worker_app.create_app(
+        gateway=None,
+        dispatcher=None,
+        self_improve_runner_factory=factory,
+        self_improve_repository_registry=registry,
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/jobs/execute", json=_payload(plan))
+
+    assert response.status_code == 200
+    assert str(controller_repo.resolve()) not in plan.to_json()
+    assert factory.roots == [worker_repo.resolve()]
+    assert runner.plans[0].repo_root == worker_repo.resolve()
+    assert runner.plans[0].identity_digest == plan.identity_digest
+
+
+@pytest.mark.asyncio
+async def test_worker_rejects_stale_repository_binding_before_runner_construction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding = ProjectRepositoryBinding.for_project(
+        project_id="project-worker",
+        workspace_path="projects/worker",
+        repo_url="https://example.com/org/worker.git",
+    )
+    worker_repo = tmp_path / binding.workspace_key / "repo"
+    worker_repo.mkdir(parents=True)
+    (worker_repo / ".git").mkdir()
+    plan = _plan(tmp_path / "controller", repository_binding_digest=binding.digest)
+    factory = _Factory(_Runner(_managed_result(plan)))
+    registry = ProjectRepositoryRegistry((binding,), base_dir=tmp_path)
+    monkeypatch.setenv("GLUDD_PSK_DISABLE", "1")
+    app = worker_app.create_app(
+        gateway=None,
+        dispatcher=None,
+        self_improve_runner_factory=factory,
+        self_improve_repository_registry=registry,
+    )
+    payload = _payload(plan)
+    payload["repository_binding_digest"] = "0" * 64
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/jobs/execute", json=payload)
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "self_improve_repository_binding_stale"
+    assert factory.roots == []
 
 
 @pytest.mark.asyncio

@@ -178,6 +178,7 @@ def validate_managed_promotion_inputs(
     todo_id: str,
     project_id: str,
     repo_root: str | Path,
+    repository_binding_digest: str = "",
     return_id: str,
 ) -> ManagedPromotionInputs:
     """Load and cross-check every authority, scope, and comparison identity."""
@@ -189,8 +190,20 @@ def validate_managed_promotion_inputs(
         raise ValueError("todo identity does not match the approved plan")
     if project_id != plan.project_id:
         raise ValueError("project identity does not match the approved plan")
-    if resolved_root != plan.repo_root.resolve(strict=True):
-        raise ValueError("repo identity does not match the approved plan")
+    if plan.repository_binding_digest:
+        try:
+            plan = plan.bind_execution_repository(
+                resolved_root,
+                repository_binding_digest=repository_binding_digest,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "repo binding does not match the approved plan"
+            ) from exc
+    else:
+        plan_root = plan.repo_root
+        if plan_root is None or resolved_root != plan_root.resolve(strict=True):
+            raise ValueError("repo identity does not match the approved plan")
     if not hmac.compare_digest(result.plan_identity_digest, plan.identity_digest):
         raise ValueError("result plan identity does not match the approved plan")
     if not hmac.compare_digest(
@@ -249,6 +262,7 @@ class ManagedSelfImprovePromotionCoordinator:
         todo_id: str,
         project_id: str,
         repo_root: str | Path,
+        repository_binding_digest: str = "",
         return_id: str,
     ) -> ManagedPromotionReceipt:
         """Promote exactly once, recovering a post-merge crash from its marker."""
@@ -258,6 +272,7 @@ class ManagedSelfImprovePromotionCoordinator:
             todo_id=todo_id,
             project_id=project_id,
             repo_root=repo_root,
+            repository_binding_digest=repository_binding_digest,
             return_id=return_id,
         )
         acquired = await self._repository.acquire(

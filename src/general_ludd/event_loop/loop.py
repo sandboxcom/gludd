@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hmac
+import inspect
 import json
 import logging
 import queue as _stdqueue
@@ -59,6 +60,7 @@ from general_ludd.planning.debt_evaluator import (
     DebtEvaluator,
     make_debt_evaluate_fn,
 )
+from general_ludd.projects.repository_binding import ProjectRepositoryBinding
 from general_ludd.reload.self_improve import SelfImprovementWorkflow
 from general_ludd.rules.engine import Rule, apply_rule_actions, evaluate_rules
 from general_ludd.schemas.benchmark import TaskType
@@ -1478,14 +1480,34 @@ class EventLoop(EventLoopHandlers):
             Path(repo_root),
             owner,
         )
-        receipt = await coordinator.promote(
-            plan_artifact=plan_artifact,
-            result_artifact=result_artifact,
-            todo_id=todo_id,
-            project_id=project_id,
-            repo_root=Path(repo_root),
-            return_id=return_id,
-        )
+        try:
+            plan = ApprovedSelfImprovePlan.from_json(plan_artifact)
+        except (TypeError, ValueError):
+            plan = None
+        if plan is not None and plan.repository_binding_digest:
+            binding = self._resolve_managed_self_improve_binding(project_id)
+            if binding is None:
+                raise ValueError(
+                    "managed promotion requires a current repository binding"
+                )
+            receipt = await coordinator.promote(
+                plan_artifact=plan_artifact,
+                result_artifact=result_artifact,
+                todo_id=todo_id,
+                project_id=project_id,
+                repo_root=Path(repo_root),
+                return_id=return_id,
+                repository_binding_digest=binding.digest,
+            )
+        else:
+            receipt = await coordinator.promote(
+                plan_artifact=plan_artifact,
+                result_artifact=result_artifact,
+                todo_id=todo_id,
+                project_id=project_id,
+                repo_root=Path(repo_root),
+                return_id=return_id,
+            )
         if not isinstance(receipt, ManagedPromotionReceipt):
             raise ValueError("managed promotion returned an invalid receipt")
         return receipt
@@ -3432,6 +3454,70 @@ class EventLoop(EventLoopHandlers):
             )
             return
 
+        self_improve_config = (
+            self.config.get("self_improve", {})
+            if isinstance(self.config, dict)
+            else {}
+        )
+        execution_mode = (
+            self_improve_config.get("execution_mode", "local")
+            if isinstance(self_improve_config, dict)
+            else "local"
+        )
+        if execution_mode not in {"local", "worker"}:
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=project_id,
+                reason="invalid_execution_mode",
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+
+        binding: ProjectRepositoryBinding | None = None
+        if plan.repository_binding_digest:
+            binding = self._resolve_managed_self_improve_binding(project_id)
+            if binding is None:
+                await self._persist_managed_self_improve_return(
+                    todo,
+                    project_id=project_id,
+                    reason="repository_unavailable",
+                    task_return_repo=task_return_repo,
+                    session=session,
+                )
+                return
+            if not hmac.compare_digest(
+                plan.repository_binding_digest,
+                binding.digest,
+            ):
+                await self._persist_managed_self_improve_return(
+                    todo,
+                    project_id=project_id,
+                    reason="repository_binding_stale",
+                    task_return_repo=task_return_repo,
+                    session=session,
+                )
+                return
+        elif execution_mode == "worker":
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=project_id,
+                reason="repository_binding_required",
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+
+        if execution_mode == "worker":
+            await self._dispatch_managed_self_improve_to_worker(
+                todo,
+                plan=plan,
+                binding=binding,
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+
         repo_root = self._resolve_managed_self_improve_repo(project_id)
         if repo_root is None:
             await self._persist_managed_self_improve_return(
@@ -3442,7 +3528,22 @@ class EventLoop(EventLoopHandlers):
                 session=session,
             )
             return
-        if plan.repo_root != repo_root:
+        if binding is not None:
+            try:
+                plan = plan.bind_execution_repository(
+                    repo_root,
+                    repository_binding_digest=binding.digest,
+                )
+            except (OSError, TypeError, ValueError):
+                await self._persist_managed_self_improve_return(
+                    todo,
+                    project_id=project_id,
+                    reason="repository_binding_stale",
+                    task_return_repo=task_return_repo,
+                    session=session,
+                )
+                return
+        elif plan.repo_root != repo_root:
             await self._persist_managed_self_improve_return(
                 todo,
                 project_id=project_id,
@@ -3502,6 +3603,141 @@ class EventLoop(EventLoopHandlers):
             task_return_repo=task_return_repo,
             session=session,
         )
+
+    async def _dispatch_managed_self_improve_to_worker(
+        self,
+        todo: Any,
+        *,
+        plan: ApprovedSelfImprovePlan,
+        binding: ProjectRepositoryBinding | None,
+        task_return_repo: TaskReturnRepository | None,
+        session: AsyncSession | None,
+    ) -> None:
+        """Dispatch one path-independent approved plan to a configured worker."""
+        if self._http_client is None or binding is None:
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=plan.project_id,
+                reason="worker_unavailable",
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+        job = JobSpec(
+            job_id=f"EXEC-{todo.todo_id}",
+            todo_id=todo.todo_id,
+            playbook=_WORK_TYPE_PLAYBOOK_MAP["self_improve"],
+            queue=_safe_str(todo, "queue", "core") or "core",
+            work_type="self_improve",
+            resource_profile=(
+                _safe_str(todo, "resource_profile", "local_heavy")
+                or "local_heavy"
+            ),
+            plan_artifact=plan.to_json(),
+            project_id=plan.project_id,
+            repository_binding_digest=binding.digest,
+        )
+        try:
+            response = await self._http_client.post(
+                f"{self.worker_base_url}/jobs/execute",
+                json=job.model_dump(mode="json"),
+            )
+            if isinstance(response, dict):
+                data: object = response
+                status_code = 200
+            else:
+                response_json = getattr(response, "json", None)
+                if not callable(response_json):
+                    raise ValueError("worker response has no JSON body")
+                data = response_json()
+                if inspect.isawaitable(data):
+                    data = await data
+                status_code = getattr(response, "status_code", 200)
+            if not isinstance(data, dict):
+                raise ValueError("worker response body is not a mapping")
+        except Exception as exc:
+            logger.warning(
+                "Managed self-improvement worker dispatch failed for todo %s (%s)",
+                todo.todo_id,
+                type(exc).__name__,
+            )
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=plan.project_id,
+                reason="worker_dispatch_failed",
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+
+        if not isinstance(status_code, int) or status_code < 200 or status_code >= 300:
+            detail = data.get("detail")
+            remote_reason_value = (
+                detail.get("reason") if isinstance(detail, dict) else None
+            )
+            remote_reason = (
+                remote_reason_value if isinstance(remote_reason_value, str) else ""
+            )
+            reason = {
+                "self_improve_repository_binding_stale": "repository_binding_stale",
+                "self_improve_repository_unavailable": "repository_unavailable",
+            }.get(remote_reason, "worker_rejected")
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=plan.project_id,
+                reason=reason,
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+
+        result_summary = data.get("result_summary")
+        try:
+            if not isinstance(result_summary, str):
+                raise TypeError("worker result summary must be serialized JSON")
+            artifact = ManagedSelfImproveResultArtifact.from_json(result_summary)
+            if (
+                artifact.plan_identity_digest != plan.identity_digest
+                or artifact.attempt_identity_digest != plan.attempt_identity_digest
+            ):
+                raise ValueError("worker result identity does not match approved plan")
+        except (TypeError, ValueError):
+            await self._persist_managed_self_improve_return(
+                todo,
+                project_id=plan.project_id,
+                reason="managed_result_invalid",
+                task_return_repo=task_return_repo,
+                session=session,
+            )
+            return
+        await self._persist_task_return(
+            todo,
+            job,
+            data,
+            _task_return_repo_override=task_return_repo,
+            _session_override=session,
+        )
+
+    def _resolve_managed_self_improve_binding(
+        self,
+        project_id: str,
+    ) -> ProjectRepositoryBinding | None:
+        """Build a trusted path-independent binding from current project state."""
+        manager = self._project_manager
+        getter = getattr(manager, "get_project", None)
+        if not callable(getter):
+            return None
+        try:
+            project = getter(project_id)
+            if project is None or not getattr(project, "active", True):
+                return None
+            return ProjectRepositoryBinding.for_project(
+                project_id=project_id,
+                workspace_path=getattr(project, "workspace_path", "") or project_id,
+                repo_url=getattr(project, "repo_url", "") or "",
+            )
+        except (TypeError, ValueError):
+            return None
 
     def _resolve_managed_self_improve_repo(self, project_id: str) -> Path | None:
         """Resolve one project-owned canonical repository without fallbacks."""

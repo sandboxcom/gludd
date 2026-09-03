@@ -86,6 +86,7 @@ class SelfImproveApprovalManager:
     def __init__(
         self,
         managed_repo_resolver: Callable[[str], Path] | None = None,
+        managed_binding_resolver: Callable[[str], str] | None = None,
     ) -> None:
         """Bind the optional trusted project-to-repository resolver.
 
@@ -94,6 +95,7 @@ class SelfImproveApprovalManager:
         execution plan cannot be safely released into the scheduler.
         """
         self._managed_repo_resolver = managed_repo_resolver
+        self._managed_binding_resolver = managed_binding_resolver
 
     def is_pending_approval(self, todo: Todo) -> bool:
         """True when ``todo`` is awaiting a human approve/reject decision."""
@@ -317,11 +319,17 @@ class SelfImproveApprovalManager:
             )
         try:
             repo_root = self._managed_repo_resolver(project_id)
+            binding_digest = (
+                self._managed_binding_resolver(project_id)
+                if self._managed_binding_resolver is not None
+                else ""
+            )
             validate_bound_managed_plan(
                 raw,
                 todo_id=todo_id,
                 project_id=project_id,
                 repo_root=repo_root,
+                repository_binding_digest=binding_digest,
             )
         except ApprovalError:
             raise

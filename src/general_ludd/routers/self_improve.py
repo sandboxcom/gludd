@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from general_ludd.cli_core_changes import _excluded
 from general_ludd.db.repository import ConcurrencyError, TodoRepository
 from general_ludd.integrity.change_log import ChangeRecordStore
+from general_ludd.projects.repository_binding import ProjectRepositoryBinding
 from general_ludd.schemas.todo import TodoStatus
 from general_ludd.self_improve.approval import (
     SELF_IMPROVE_WORK_TYPE,
@@ -263,12 +264,32 @@ def _resolve_non_config_project_repo(app: FastAPI, project_id: str) -> Path:
         workspace_path = getattr(project, "workspace_path", "") if project else ""
         if not isinstance(workspace_path, str) or not workspace_path:
             raise ValueError("project workspace is missing")
-        from general_ludd.projects.workspace import ProjectWorkspace
-
-        workspace = ProjectWorkspace(
-            project_id=project_id,
-            workspace_path=workspace_path,
+        from general_ludd.projects.workspace import (
+            ProjectWorkspace,
+            confine_workspace_path,
+            default_workspace_base,
         )
+
+        if Path(workspace_path).expanduser().is_absolute():
+            workspace = ProjectWorkspace(
+                project_id=project_id,
+                workspace_path=workspace_path,
+            )
+        else:
+            binding = ProjectRepositoryBinding.for_project(
+                project_id=project_id,
+                workspace_path=workspace_path,
+                repo_url=getattr(project, "repo_url", "") or "",
+            )
+            workspace_base = default_workspace_base()
+            workspace = ProjectWorkspace(
+                project_id=project_id,
+                base_dir=workspace_base,
+                workspace_path=confine_workspace_path(
+                    workspace_base,
+                    binding.workspace_key,
+                ),
+            )
         repo_root = workspace.repo_dir.resolve(strict=True)
         if not repo_root.is_dir():
             raise ValueError("project repository is not a directory")
@@ -278,6 +299,33 @@ def _resolve_non_config_project_repo(app: FastAPI, project_id: str) -> Path:
             detail="non-config self-improve project workspace is unavailable",
         ) from exc
     return repo_root
+
+
+def _resolve_project_repository_binding(
+    app: FastAPI,
+    project_id: str,
+) -> ProjectRepositoryBinding:
+    """Build a confined path-independent binding from trusted project state."""
+    manager = getattr(app.state, "_project_manager", None)
+    if manager is None:
+        raise HTTPException(
+            status_code=422,
+            detail="managed self-improve project binding is unavailable",
+        )
+    try:
+        project = manager.get_project(project_id)
+        if project is None or not getattr(project, "active", True):
+            raise ValueError("project is unavailable")
+        return ProjectRepositoryBinding.for_project(
+            project_id=project_id,
+            workspace_path=getattr(project, "workspace_path", "") or project_id,
+            repo_url=getattr(project, "repo_url", "") or "",
+        )
+    except (LookupError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="managed self-improve project binding is unavailable",
+        ) from exc
 
 
 def _confine_non_config_worktree(raw: object, repo_root: Path) -> str:
@@ -822,6 +870,7 @@ async def _prepare_managed_approval(
                 detail=f"approval {todo_id} managed request project identity drifted",
             )
         repo_root = _resolve_non_config_project_repo(app, project_id)
+        binding = _resolve_project_repository_binding(app, project_id)
         try:
             plan = await asyncio.to_thread(
                 prepare_managed_self_improve_plan,
@@ -829,6 +878,7 @@ async def _prepare_managed_approval(
                 approval_id=todo_id,
                 todo_id=todo_id,
                 project_id=project_id,
+                repository_binding_digest=binding.digest,
                 baseline_ref=baseline_ref,
                 reference_ref=reference_ref,
                 task=request.task,
@@ -839,6 +889,7 @@ async def _prepare_managed_approval(
                 todo_id=todo_id,
                 project_id=project_id,
                 repo_root=repo_root,
+                repository_binding_digest=binding.digest,
                 expected_task=request.task,
                 baseline_ref=baseline_ref,
                 reference_ref=reference_ref,
@@ -1014,7 +1065,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         manager = SelfImproveApprovalManager(
             managed_repo_resolver=lambda project_id: _resolve_non_config_project_repo(
                 app, project_id
-            )
+            ),
+            managed_binding_resolver=lambda project_id: (
+                _resolve_project_repository_binding(app, project_id).digest
+            ),
         )
         async with factory() as session:
             repo = TodoRepository(session)

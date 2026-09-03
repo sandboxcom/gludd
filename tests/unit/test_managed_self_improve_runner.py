@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import FrozenInstanceError, replace
@@ -14,7 +15,6 @@ import pytest
 import scripts.run_self_improve_e2e as cli_runner
 
 import general_ludd.self_improve as self_improve_package
-import general_ludd.self_improve.managed_runner as managed_runner_module
 from general_ludd.local_model import LocalModelConfig, get_model
 from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
@@ -35,6 +35,13 @@ from general_ludd.self_improve.managed_runner import (
 )
 from general_ludd.self_improve.model_candidate_planner import PlannedModelCandidate
 from general_ludd.self_improve.model_lifecycle import ModelArtifactIdentity
+from general_ludd.self_improve.runtime import (
+    MakeResult,
+    build_managed_self_improve_runner,
+    prepare_managed_self_improve_plan,
+)
+
+_REPOSITORY_BINDING_DIGEST = "e" * 64
 
 
 def _task() -> TaskSpec:
@@ -122,6 +129,51 @@ def _plan(tmp_path: Path, *, max_attempts: int = 2) -> ApprovedSelfImprovePlan:
         required_output_tokens=1024,
         max_attempts=max_attempts,
     )
+
+
+def _repository_bound_plan(repo_root: Path) -> ApprovedSelfImprovePlan:
+    return ApprovedSelfImprovePlan.approve(
+        approval_id="approval-repository-bound",
+        todo_id="todo-repository-bound",
+        project_id="project-repository-bound",
+        repo_root=repo_root,
+        repository_binding_digest=_REPOSITORY_BINDING_DIGEST,
+        task=_task(),
+        reference=_reference(),
+        prompt="bounded repository prompt",
+        required_output_tokens=1024,
+        max_attempts=1,
+        mechanical_proposal=_proposal(),
+    )
+
+
+class _NoopRuntimeMakeRunner:
+    """Make boundary that proves a mechanical binding test performs no I/O."""
+
+    def run(
+        self,
+        target: str,
+        variables: dict[str, str] | None = None,
+        *,
+        timeout: int = 120,
+        read_only: bool = False,
+    ) -> MakeResult:
+        del target, variables, timeout, read_only
+        raise AssertionError("repository binding unexpectedly invoked a Make target")
+
+    def run_command(self, command: str, *, timeout: int = 900) -> MakeResult:
+        del command, timeout
+        raise AssertionError("repository binding unexpectedly invoked a Make command")
+
+    def run_observable(
+        self,
+        target: str,
+        variables: dict[str, str],
+        *,
+        timeout: int,
+    ) -> MakeResult:
+        del target, variables, timeout
+        raise AssertionError("repository binding unexpectedly started a process")
 
 
 class _Outcomes:
@@ -267,12 +319,15 @@ def _runner(
         return candidates
 
     service = ManagedSelfImproveRunner(
-        model_manager_factory=lambda **_kwargs: manager,
+        model_manager_factory=cast(Any, lambda **_kwargs: manager),
         outcome_adapter_factory=lambda _cache_root: outcomes,
-        proposal_generator=proposal_generator or (lambda *_args: _proposal()),
-        attempt_evaluator=evaluate,
+        proposal_generator=cast(
+            Any,
+            proposal_generator or (lambda *_args: _proposal()),
+        ),
+        attempt_evaluator=cast(Any, evaluate),
         candidate_planner=plan_candidates,
-        hardware_probe=lambda: object(),
+        hardware_probe=cast(Any, lambda: object()),
     )
     return service, manager, outcomes, merge_values
 
@@ -303,6 +358,181 @@ def test_approved_plan_json_round_trip_is_canonical_and_verified(tmp_path: Path)
     assert restored == plan
     assert restored.to_json() == encoded
     assert json.loads(encoded)["approved_plan_digest"] == plan.identity_digest
+
+
+def test_repository_bound_plan_round_trip_requires_exact_execution_binding(
+    tmp_path: Path,
+) -> None:
+    encoded = _repository_bound_plan(tmp_path).to_json()
+    payload = json.loads(encoded)
+
+    assert payload["repository_binding_digest"] == _REPOSITORY_BINDING_DIGEST
+    assert "repo_root" not in payload
+
+    hydrated = ApprovedSelfImprovePlan.from_json(encoded)
+    assert hydrated.repo_root is None
+    with pytest.raises(ValueError, match="binding does not match"):
+        hydrated.bind_execution_repository(
+            tmp_path,
+            repository_binding_digest="f" * 64,
+        )
+
+    bound = hydrated.bind_execution_repository(
+        tmp_path,
+        repository_binding_digest=_REPOSITORY_BINDING_DIGEST,
+    )
+    assert bound.repo_root == tmp_path.resolve()
+    assert bound.approved_plan_digest == hydrated.approved_plan_digest
+    assert bound.identity_digest == hydrated.identity_digest
+    assert bound.to_json() == encoded
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        (
+            lambda value: value.__setitem__("repo_root", "/untrusted/repository"),
+            "unknown fields",
+        ),
+        (
+            lambda value: value.__setitem__(
+                "repository_binding_digest",
+                "f" * 64,
+            ),
+            "approved plan identity",
+        ),
+        (
+            lambda value: value.pop("repository_binding_digest"),
+            "missing fields",
+        ),
+    ],
+)
+def test_repository_bound_json_rejects_unknown_or_stale_identity(
+    tmp_path: Path,
+    mutation: Callable[[dict[str, Any]], object],
+    match: str,
+) -> None:
+    payload = json.loads(_repository_bound_plan(tmp_path).to_json())
+    mutation(payload)
+
+    with pytest.raises(ValueError, match=match):
+        ApprovedSelfImprovePlan.from_json(json.dumps(payload))
+
+
+def test_execution_repository_binding_rejects_stale_plan_and_unsafe_paths(
+    tmp_path: Path,
+) -> None:
+    hydrated = ApprovedSelfImprovePlan.from_json(
+        _repository_bound_plan(tmp_path).to_json()
+    )
+    stale = replace(hydrated, repository_binding_digest="f" * 64)
+    with pytest.raises(ValueError, match="approved plan identity"):
+        stale.bind_execution_repository(
+            tmp_path,
+            repository_binding_digest="f" * 64,
+        )
+
+    with pytest.raises(ValueError, match=r"pathlib\.Path"):
+        hydrated.bind_execution_repository(
+            cast(Path, "not-a-path"),
+            repository_binding_digest=_REPOSITORY_BINDING_DIGEST,
+        )
+    with pytest.raises(ValueError, match="repository is unavailable"):
+        hydrated.bind_execution_repository(
+            tmp_path / "missing",
+            repository_binding_digest=_REPOSITORY_BINDING_DIGEST,
+        )
+
+    regular_file = tmp_path / "repository.txt"
+    regular_file.write_text("not a directory", encoding="utf-8")
+    with pytest.raises(ValueError, match="repository is unavailable"):
+        hydrated.bind_execution_repository(
+            regular_file,
+            repository_binding_digest=_REPOSITORY_BINDING_DIGEST,
+        )
+
+
+def test_repository_bound_runtime_rejects_unbound_and_wrong_path_identity(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    other_root = tmp_path / "other"
+    other_root.mkdir()
+    alias_root = tmp_path / "repo-alias"
+    alias_root.symlink_to(repo_root, target_is_directory=True)
+    operation_runner = _NoopRuntimeMakeRunner()
+    evaluated: list[Path] = []
+
+    def evaluate(
+        root_runner: object,
+        task: TaskSpec,
+        reference: CodexReference,
+        bound_proposal: PlanBoundProposal,
+        attempt: int,
+        *,
+        expected_attempt_identity_digest: str,
+        merge: bool,
+    ) -> AttemptResult:
+        assert root_runner is operation_runner
+        assert task == _task()
+        assert reference == _reference()
+        assert attempt == 1
+        assert bound_proposal.attempt_identity_digest == expected_attempt_identity_digest
+        assert merge is False
+        evaluated.append(repo_root.resolve())
+        return _result(bound_proposal, accepted=True)
+
+    service = build_managed_self_improve_runner(
+        repo_root,
+        root_runner=operation_runner,
+        attempt_evaluator=cast(Any, evaluate),
+        progress_sink=lambda _message: None,
+    )
+    hydrated = ApprovedSelfImprovePlan.from_json(
+        _repository_bound_plan(repo_root).to_json()
+    )
+
+    with pytest.raises(ValueError, match="different repository"):
+        service.run(hydrated)
+
+    wrong_root = hydrated.bind_execution_repository(
+        other_root,
+        repository_binding_digest=_REPOSITORY_BINDING_DIGEST,
+    )
+    with pytest.raises(ValueError, match="different repository"):
+        service.run(wrong_root)
+
+    canonical = hydrated.bind_execution_repository(
+        alias_root,
+        repository_binding_digest=_REPOSITORY_BINDING_DIGEST,
+    )
+    result = service.run(canonical)
+    assert canonical.repo_root == repo_root.resolve()
+    assert result.accepted is True
+    assert evaluated == [repo_root.resolve()]
+
+
+def test_runtime_composition_rejects_existing_regular_file_repository(
+    tmp_path: Path,
+) -> None:
+    regular_file = tmp_path / "repository.txt"
+    regular_file.write_text("not a repository", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="existing directory"):
+        build_managed_self_improve_runner(regular_file)
+    with pytest.raises(ValueError, match="existing directory"):
+        prepare_managed_self_improve_plan(
+            regular_file,
+            approval_id="approval-invalid-root",
+            todo_id="todo-invalid-root",
+            project_id="project-invalid-root",
+            repository_binding_digest=_REPOSITORY_BINDING_DIGEST,
+            baseline_ref="a" * 40,
+            reference_ref="b" * 40,
+            task=_task(),
+            max_attempts=1,
+        )
 
 
 def test_complete_approved_plan_json_round_trip_preserves_immutable_components(
@@ -345,7 +575,7 @@ def test_complete_approved_plan_json_round_trip_preserves_immutable_components(
     ("mutation", "match"),
     [
         (lambda value: value.pop("todo_id"), "missing fields"),
-        (lambda value: value.__setitem__("schema_version", 2), "unsupported"),
+        (lambda value: value.__setitem__("schema_version", 3), "unsupported"),
         (lambda value: value.__setitem__("approved", False), "approved=true"),
         (
             lambda value: value["prompt"].__setitem__("kind", "mutable"),
@@ -413,7 +643,7 @@ def test_proposal_apply_rolls_back_every_path_after_publish_failure(
     source.parent.mkdir(parents=True)
     source.write_text("return 0", encoding="utf-8")
     proposal = _proposal()
-    real_replace = managed_runner_module.os.replace
+    real_replace = os.replace
     publish_calls = 0
 
     def fail_first_publish(source_path: Path, destination_path: Path) -> None:
@@ -423,7 +653,7 @@ def test_proposal_apply_rolls_back_every_path_after_publish_failure(
             raise OSError("publish interrupted")
         real_replace(source_path, destination_path)
 
-    monkeypatch.setattr(managed_runner_module.os, "replace", fail_first_publish)
+    monkeypatch.setattr(os, "replace", fail_first_publish)
 
     with pytest.raises(OSError, match="publish interrupted"):
         apply_proposal(tmp_path, proposal)
@@ -606,27 +836,28 @@ def test_approved_plan_constructor_rejects_mutable_or_invalid_fields(
 
 
 def test_cli_context_selection_helpers_cover_bounded_and_relevant_paths() -> None:
+    private_cli = cast(Any, cli_runner)
     task = TaskSpec(
         "S83.200",
         "The coded tests are running through fixed classes.",
         ("make test-count",),
     )
-    terms = cli_runner._relevance_terms(task, "bindings.py")
+    terms = private_cli._relevance_terms(task, "bindings.py")
 
     assert "the" not in terms
     assert {"cod", "runn", "class", "binding"} & terms
-    assert cli_runner._merge_selected_lines(set()) == ()
-    assert cli_runner._merge_selected_lines({0, 1, 4}) == ((0, 2), (4, 5))
-    assert cli_runner._render_selected_lines(["one\n", "two\n"], {0}) == (
+    assert private_cli._merge_selected_lines(set()) == ()
+    assert private_cli._merge_selected_lines({0, 1, 4}) == ((0, 2), (4, 5))
+    assert private_cli._render_selected_lines(["one\n", "two\n"], {0}) == (
         "LINES 1-1\none\n"
     )
-    assert cli_runner._select_python_excerpt("src/empty.py", "", terms, budget=64) == (
+    assert private_cli._select_python_excerpt("src/empty.py", "", terms, budget=64) == (
         "",
         0,
     )
 
     content = "def running_binding() -> int:\n" + "    running = 1\n" * 80
-    excerpt, selected = cli_runner._select_python_excerpt(
+    excerpt, selected = private_cli._select_python_excerpt(
         "src/bindings.py",
         content,
         terms,
@@ -639,24 +870,25 @@ def test_cli_context_selection_helpers_cover_bounded_and_relevant_paths() -> Non
 def test_cli_file_context_fails_closed_and_handles_absent_and_large_files(
     tmp_path: Path,
 ) -> None:
+    private_cli = cast(Any, cli_runner)
     task = _task()
-    absent = cli_runner._build_file_context(tmp_path, "src/absent.py", task)
+    absent = private_cli._build_file_context(tmp_path, "src/absent.py", task)
     assert absent == ("FILE src/absent.py state=absent bytes=0 sha256=none", 0, None)
 
     directory = tmp_path / "src/directory.py"
     directory.mkdir(parents=True)
     with pytest.raises(ValueError, match="regular file"):
-        cli_runner._build_file_context(tmp_path, "src/directory.py", task)
+        private_cli._build_file_context(tmp_path, "src/directory.py", task)
 
     binary = tmp_path / "src/binary.py"
     binary.write_bytes(b"\xff")
     with pytest.raises(ValueError, match="UTF-8"):
-        cli_runner._build_file_context(tmp_path, "src/binary.py", task)
+        private_cli._build_file_context(tmp_path, "src/binary.py", task)
 
     large = tmp_path / "src/large.py"
     content = "def focused_feature() -> int:\n" + "    value = 1\n" * 400
     large.write_text(content, encoding="utf-8")
-    rendered, size, baseline = cli_runner._build_file_context(
+    rendered, size, baseline = private_cli._build_file_context(
         tmp_path,
         "src/large.py",
         task,

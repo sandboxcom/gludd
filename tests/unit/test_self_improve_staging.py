@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
+from general_ludd.projects.repository_binding import ProjectRepositoryBinding
 from general_ludd.schemas.todo import Todo, TodoStatus
 from general_ludd.self_improve.approval import (
     ApprovalError,
@@ -28,6 +29,7 @@ from general_ludd.self_improve.staging import (
     ManagedSelfImprovePlanRequest,
     build_managed_plan_request_payload,
     classify_self_improve_artifact,
+    validate_bound_managed_plan,
 )
 
 _BASELINE = "a" * 40
@@ -61,6 +63,7 @@ def _approved_plan(
     *,
     todo_id: str = "TODO-SI-1",
     project_id: str = "proj-managed",
+    repository_binding_digest: str = "",
 ) -> ApprovedSelfImprovePlan:
     request = _request(project_id)
     return ApprovedSelfImprovePlan.approve(
@@ -68,6 +71,7 @@ def _approved_plan(
         todo_id=todo_id,
         project_id=project_id,
         repo_root=repo_root,
+        repository_binding_digest=repository_binding_digest,
         task=request.task,
         reference=CodexReference(
             baseline_sha=_BASELINE,
@@ -81,6 +85,43 @@ def _approved_plan(
         required_output_tokens=256,
         max_attempts=2,
     )
+
+
+def test_bound_plan_validation_rebinds_same_identity_to_host_local_repository(
+    tmp_path: Path,
+) -> None:
+    binding = ProjectRepositoryBinding.for_project(
+        project_id="proj-managed",
+        workspace_path="org/proj-managed",
+        repo_url="https://example.com/org/proj-managed.git",
+    )
+    controller_root = tmp_path / "controller"
+    worker_root = tmp_path / "worker"
+    controller_root.mkdir()
+    worker_root.mkdir()
+    plan = _approved_plan(
+        controller_root,
+        repository_binding_digest=binding.digest,
+    )
+
+    rebound = validate_bound_managed_plan(
+        plan.to_json(),
+        todo_id=plan.todo_id,
+        project_id=plan.project_id,
+        repo_root=worker_root,
+        repository_binding_digest=binding.digest,
+    )
+
+    assert rebound.repo_root == worker_root.resolve()
+    assert rebound.identity_digest == plan.identity_digest
+    with pytest.raises(ValueError, match="binding"):
+        validate_bound_managed_plan(
+            plan.to_json(),
+            todo_id=plan.todo_id,
+            project_id=plan.project_id,
+            repo_root=worker_root,
+            repository_binding_digest="0" * 64,
+        )
 
 
 def test_plan_request_payload_preserves_exact_gap_source_and_task_identity() -> None:
@@ -353,13 +394,21 @@ def test_in_process_approval_cannot_bypass_managed_plan_preparation() -> None:
 async def test_only_bound_canonical_managed_plan_can_queue(tmp_path: Path) -> None:
     repo_root = tmp_path / "project" / "repo"
     repo_root.mkdir(parents=True)
+    binding = ProjectRepositoryBinding.for_project(
+        project_id="proj-managed",
+        workspace_path="org/proj-managed",
+        repo_url="https://example.com/org/proj-managed.git",
+    )
     row = SimpleNamespace(
         todo_id="TODO-SI-1",
         project_id="proj-managed",
         status=TodoStatus.APPROVAL_REQUIRED.value,
         work_type="self_improve",
         approval_policy=MANAGED_SELF_IMPROVE_APPROVAL_POLICY,
-        plan_artifact=_approved_plan(repo_root).to_json(),
+        plan_artifact=_approved_plan(
+            repo_root,
+            repository_binding_digest=binding.digest,
+        ).to_json(),
         version=4,
     )
     digested_values = vars(row).copy()
@@ -375,7 +424,10 @@ async def test_only_bound_canonical_managed_plan_can_queue(tmp_path: Path) -> No
     manager = SelfImproveApprovalManager(
         managed_repo_resolver=lambda project_id: (
             repo_root if project_id == "proj-managed" else tmp_path / "wrong"
-        )
+        ),
+        managed_binding_resolver=lambda project_id: (
+            binding.digest if project_id == "proj-managed" else "0" * 64
+        ),
     )
 
     assert await manager.approve_by_id(store, row.todo_id) is released
@@ -550,7 +602,12 @@ def test_authenticated_prepare_seam_stores_exact_plan_and_keeps_human_gate(
         return row
 
     repository.update.side_effect = update
-    plan = _approved_plan(repo_root)
+    binding = ProjectRepositoryBinding.for_project(
+        project_id="proj-managed",
+        workspace_path="org/proj-managed",
+        repo_url="https://example.com/org/proj-managed.git",
+    )
+    plan = _approved_plan(repo_root, repository_binding_digest=binding.digest)
 
     def setup(app: FastAPI) -> None:
         app.state._session_factory = _Factory()
@@ -564,6 +621,12 @@ def test_authenticated_prepare_seam_stores_exact_plan_and_keeps_human_gate(
     with (
         patch.object(router, "TodoRepository", return_value=repository),
         patch.object(router, "prepare_managed_self_improve_plan", return_value=plan) as prepare,
+        patch.object(router, "_resolve_non_config_project_repo", return_value=repo_root),
+        patch.object(
+            router,
+            "_resolve_project_repository_binding",
+            return_value=binding,
+        ),
     ):
         unauthenticated = TestClient(app).post(
             "/admin/self-improve/approvals/TODO-SI-1/prepare",
@@ -580,12 +643,16 @@ def test_authenticated_prepare_seam_stores_exact_plan_and_keeps_human_gate(
     assert response.json()["status"] == TodoStatus.APPROVAL_REQUIRED.value
     assert row.status == TodoStatus.APPROVAL_REQUIRED.value
     assert stored_updates == [{"plan_artifact": plan.to_json()}]
-    assert ApprovedSelfImprovePlan.from_json(str(row.plan_artifact)) == plan
+    hydrated = ApprovedSelfImprovePlan.from_json(str(row.plan_artifact))
+    assert hydrated.repo_root is None
+    assert hydrated.identity_digest == plan.identity_digest
+    assert hydrated.repository_binding_digest == binding.digest
     prepare.assert_called_once_with(
         repo_root.resolve(),
         approval_id="TODO-SI-1",
         todo_id="TODO-SI-1",
         project_id="proj-managed",
+        repository_binding_digest=binding.digest,
         baseline_ref=_BASELINE,
         reference_ref=_REFERENCE,
         task=request.task,

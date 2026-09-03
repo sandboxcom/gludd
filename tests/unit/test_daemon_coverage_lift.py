@@ -6,7 +6,10 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+import asyncio
+import inspect
+from types import SimpleNamespace
+from typing import Any, ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -80,6 +83,61 @@ class TestLoadStartupConfigMcpAndTasks:
         assert cfg["user_config"].model_routing is not None
         assert cfg["user_config"].model_routing.default_profile == "fast"
 
+    def test_embedded_model_routing_falls_back_when_user_model_omits_it(self, tmp_path):
+        from general_ludd.daemon import load_startup_config
+
+        (tmp_path / "general-ludd.yml").write_text(
+            "model_routing:\n  default_profile: fast\n"
+        )
+        user_config = SimpleNamespace(model_routing=None, rules=[], connectors=[])
+        with patch("general_ludd.daemon.UserConfig", return_value=user_config):
+            cfg = load_startup_config(str(tmp_path))
+
+        assert cfg["model_routing"].default_profile == "fast"
+
+    def test_mcp_list_inventory_accepts_only_named_mappings(self, tmp_path):
+        from general_ludd.daemon import load_startup_config
+
+        mcp_dir = tmp_path / "mcp_servers"
+        mcp_dir.mkdir()
+        (mcp_dir / "servers.yml").write_text("servers: []\n")
+        inventory = [
+            {"name": "trusted", "command": ["safe"]},
+            {"command": ["unnamed"]},
+            "not-a-mapping",
+        ]
+        with patch("general_ludd.daemon.load_mcp_config", return_value=inventory):
+            cfg = load_startup_config(str(tmp_path))
+
+        assert cfg["mcp_servers"] == {"trusted": inventory[0]}
+
+    def test_connector_inventory_ignores_non_list_payload(self, tmp_path):
+        from general_ludd.daemon import load_startup_config
+
+        (tmp_path / "connectors.yml").write_text("connectors: invalid\n")
+        cfg = load_startup_config(str(tmp_path))
+        assert cfg["connectors"] == []
+
+    def test_invalid_project_overlay_preserves_last_valid_user_config(self, tmp_path):
+        from general_ludd.daemon import load_startup_config
+
+        overlay = tmp_path / "project.yml"
+        overlay.write_text("rules:\n  - name: project-rule\n")
+        base = SimpleNamespace(
+            model_dump=lambda: {},
+            rules=[],
+            connectors=[],
+        )
+        missing_config_dir = tmp_path / "missing-config"
+        with (
+            patch("general_ludd.daemon.UserConfig", side_effect=[base, ValueError("invalid overlay")]),
+            patch("general_ludd.daemon.find_project_gludd_dir", return_value=tmp_path),
+            patch("general_ludd.daemon.project_config_path", return_value=overlay),
+        ):
+            cfg = load_startup_config(str(missing_config_dir))
+
+        assert cfg["user_config"] is base
+
 
 class TestBuildSecretsResolver:
     def test_build_secrets_resolver_openbao_external(self):
@@ -138,6 +196,62 @@ class TestBuildSecretsResolver:
         resolver = build_secrets_resolver(env_overrides={"TEST_KEY": "test_val"}, projects_active=True)
         assert resolver.resolve("TEST_KEY") is not None
 
+    def test_unknown_openbao_mode_fails_soft_to_environment(self):
+        from general_ludd.daemon import build_secrets_resolver
+
+        cfg = SimpleNamespace(mode="future-mode", external_url=None)
+        result = build_secrets_resolver(openbao_config=cfg)
+        assert isinstance(result, EnvSecretsManager)
+
+    def test_project_wrapper_scopes_resolves_and_closes(self):
+        from general_ludd.daemon import build_secrets_resolver
+
+        base = MagicMock()
+        scoped = MagicMock()
+        scoped.resolve.return_value = "project-secret"
+        with (
+            patch("general_ludd.daemon.EnvSecretsManager", return_value=base),
+            patch("general_ludd.daemon.ProjectSecretsManager", return_value=scoped),
+        ):
+            resolver = build_secrets_resolver(projects_active=True)
+            assert resolver.resolve("TOKEN", project_id="proj-a") == "project-secret"
+            base.resolve.return_value = "global-secret"
+            assert resolver.resolve("TOKEN") == "global-secret"
+            base.resolve.return_value = object()
+            assert resolver.resolve("TOKEN") is None
+            resolver.close()
+
+        base.close.assert_called_once_with()
+
+    def test_sts_claim_builds_narrow_scoped_resolver(self):
+        from general_ludd.daemon import resolve_secret_manager_for_call
+
+        resolver = SimpleNamespace(_client=object(), _config=object())
+        claim = SimpleNamespace(spec=object())
+        registry = SimpleNamespace(resolve=lambda _token: claim)
+        app = SimpleNamespace(
+            state=SimpleNamespace(
+                _secrets_resolver=resolver,
+                _sts_registry=registry,
+            )
+        )
+        narrowed = object()
+        with patch("general_ludd.secrets.manager.SecretsManager", return_value=narrowed) as cls:
+            assert resolve_secret_manager_for_call(app, "Bearer scoped-token") is narrowed
+        cls.assert_called_once_with(
+            client=resolver._client,
+            config=resolver._config,
+            permission_spec=claim.spec,
+        )
+
+    def test_project_wrapper_close_tolerates_base_without_close(self):
+        from general_ludd.daemon import build_secrets_resolver
+
+        base = SimpleNamespace(resolve=lambda _alias: None)
+        with patch("general_ludd.daemon.EnvSecretsManager", return_value=base):
+            resolver = build_secrets_resolver(projects_active=True)
+            resolver.close()
+
 
 class TestInitProjectWorkspaces:
     def test_init_project_workspaces_with_projects(self):
@@ -146,6 +260,8 @@ class TestInitProjectWorkspaces:
         mock_pm = MagicMock()
         mock_project = MagicMock()
         mock_project.project_id = "test-proj"
+        mock_project.workspace_path = "test-proj"
+        mock_project.repo_url = "https://example.com/test-proj.git"
         mock_pm.list_active.return_value = [mock_project]
         with patch("general_ludd.projects.workspace.ProjectWorkspace") as MockWS:
             ws = MagicMock()
@@ -166,6 +282,54 @@ class TestInitProjectWorkspaces:
 
         result = _init_project_workspaces(None)
         assert result == {}
+
+
+class TestPersistedStartupRestoration:
+    @pytest.mark.asyncio
+    async def test_project_restore_noops_without_both_dependencies(self):
+        from general_ludd.daemon import _restore_persisted_projects
+
+        await _restore_persisted_projects(None, object())
+        await _restore_persisted_projects(object(), None)
+
+    @pytest.mark.asyncio
+    async def test_project_restore_merges_new_binding_and_materializes_repo(self):
+        from general_ludd.daemon import _restore_persisted_projects
+
+        session = MagicMock()
+        factory = MagicMock()
+        factory.return_value.__aenter__ = AsyncMock(return_value=session)
+        factory.return_value.__aexit__ = AsyncMock(return_value=False)
+        configured = SimpleNamespace(project_id="proj-configured", repo_url="")
+        restored = SimpleNamespace(
+            project_id="proj-restored",
+            repo_url="https://example.com/org/restored.git",
+            workspace_path="team/restored",
+        )
+        db_manager = SimpleNamespace(list_active=lambda: [configured, restored])
+        manager = SimpleNamespace(
+            _projects={configured.project_id: configured},
+            list_projects=lambda *, active_only: [configured],
+        )
+        rebuild = AsyncMock(return_value=db_manager)
+        with (
+            patch("general_ludd.projects.manager.rebuild_manager_from_db", rebuild),
+            patch("general_ludd.projects.manager.materialize_project_workspace") as materialize,
+        ):
+            await _restore_persisted_projects(manager, factory)
+
+        assert manager._projects[restored.project_id] is restored
+        materialize.assert_called_once_with(
+            repo_url=restored.repo_url,
+            workspace_path=restored.workspace_path,
+        )
+
+    @pytest.mark.asyncio
+    async def test_spend_restore_noops_without_both_dependencies(self):
+        from general_ludd.daemon import _restore_persisted_spend
+
+        await _restore_persisted_spend(None, object(), window_seconds=60.0)
+        await _restore_persisted_spend(object(), None, window_seconds=60.0)
 
 
 class TestLoadModelProfiles:
@@ -189,6 +353,607 @@ class TestLoadModelProfiles:
         result = load_model_profiles(str(tmp_path))
         assert result == []
 
+    def test_load_model_profiles_skips_explicitly_disabled_profile(self, tmp_path):
+        from general_ludd.daemon import load_model_profiles
+
+        (tmp_path / "disabled.yml").write_text(
+            "model_profile_id: disabled\nprovider: openai\nmodel_name: ignored\nenabled: false\n"
+        )
+        assert load_model_profiles(str(tmp_path)) == []
+
+
+class TestDaemonHelperBranches:
+    @pytest.mark.asyncio
+    async def test_factory_lazy_dispatch_handlers_rebind_or_fail_closed(self, tmp_path):
+        app = create_daemon_app(config_dir=str(tmp_path))
+        route = next(
+            candidate
+            for candidate in app.routes
+            if getattr(candidate, "path", None) == "/api/dispatch"
+        )
+        dispatcher = inspect.getclosurevars(route.endpoint).nonlocals["dispatcher"]
+        handlers = dispatcher._handlers
+
+        with pytest.raises(RuntimeError, match="MCP client"):
+            await handlers["mcp"]("server/tool", {})
+        with pytest.raises(RuntimeError, match="SkillRegistry"):
+            handlers["skill"]("skill", {})
+        with pytest.raises(RuntimeError, match="AgentDispatcher"):
+            await handlers["role"]("coder", {})
+        with pytest.raises(RuntimeError, match="AnsibleRunnerAdapter"):
+            await handlers["collection"]("general_ludd.agent.local_model_stop", {})
+
+        mcp_client = SimpleNamespace(call_tool=AsyncMock(return_value={"ok": True}))
+        skill_registry = SimpleNamespace(
+            get=MagicMock(return_value=SimpleNamespace(body="trusted skill"))
+        )
+        agent_dispatcher = SimpleNamespace(
+            dispatch_one=AsyncMock(return_value=SimpleNamespace(output="role output"))
+        )
+        runner = SimpleNamespace(
+            private_data_dir=str(tmp_path),
+            register_playbook=MagicMock(),
+            unregister_playbook=MagicMock(),
+            run_playbook=MagicMock(return_value={"rc": 0}),
+        )
+        app.state._mcp_client = mcp_client
+        app.state._skill_registry = skill_registry
+        app.state._agent_dispatcher = agent_dispatcher
+        app.state._runner = runner
+
+        assert await handlers["mcp"]("server/tool", {"value": 1}) == {"ok": True}
+        assert handlers["skill"]("skill", {}) == "trusted skill"
+        assert await handlers["role"]("coder", {"prompt": "bounded"}) == "role output"
+        assert await handlers["collection"](
+            "general_ludd.agent.local_model_stop",
+            {"model": "small"},
+        ) == {"rc": 0}
+        mcp_client.call_tool.assert_awaited_once_with("server", "tool", {"value": 1})
+        skill_registry.get.assert_called_once_with("skill")
+        agent_dispatcher.dispatch_one.assert_awaited_once()
+        dispatched_task = agent_dispatcher.dispatch_one.await_args.args[0]
+        assert dispatched_task.agent_name == "coder"
+        assert dispatched_task.prompt == "bounded"
+        runner.run_playbook.assert_called_once_with(
+            "local_model_stop.yml",
+            extravars={"model": "small"},
+            timeout=None,
+        )
+
+    def test_factory_preserves_explicit_runtime_paths_and_repairs_state_proxy(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        import general_ludd.daemon as daemon_module
+
+        monkeypatch.setattr(daemon_module, "_daemon_state", {})
+        templates = tmp_path / "templates"
+        playbooks = tmp_path / "playbooks"
+        app = daemon_module.create_daemon_app(
+            tick_interval=2.0,
+            log_level="warning",
+            config_dir=str(tmp_path),
+            templates_dir=str(templates),
+            playbooks_dir=str(playbooks),
+        )
+        assert app.state.tick_interval == 2.0
+        assert app.state.log_level == "warning"
+        assert app.state._config_dir == str(tmp_path)
+        assert app.state._templates_dir == str(templates)
+        assert app.state._playbooks_dir == str(playbooks)
+        assert isinstance(daemon_module._daemon_state, daemon_module._DaemonStateProxy)
+
+    def test_factory_passes_dedicated_connector_inventory_to_observability(
+        self,
+        monkeypatch,
+    ):
+        connector = {"type": "bounded-test"}
+        startup = {
+            "connectors": [connector],
+            "project_gludd_dir": None,
+            "user_config": SimpleNamespace(connectors=[{"type": "embedded"}]),
+        }
+        wired = MagicMock()
+        monkeypatch.setattr(
+            "general_ludd.daemon.load_startup_config",
+            lambda _config_dir: startup,
+        )
+        monkeypatch.setattr(
+            "general_ludd.routers.observe.wire_observability",
+            wired,
+        )
+        app = create_daemon_app()
+        wired.assert_called_once_with(app, app.state.daemon_state, [connector])
+
+    def test_startup_config_surfaces_empty_lists_when_loader_returns_none(self, tmp_path):
+        from general_ludd.daemon import load_startup_config
+
+        with patch("general_ludd.daemon.load_user_config", return_value=None):
+            config = load_startup_config(str(tmp_path))
+        assert config["user_config"] is None
+        assert config["rules"] == []
+        assert config["connectors"] == []
+
+    def test_dynamic_dispatcher_is_absent_without_handlers(self):
+        from general_ludd.daemon import build_event_loop_mcp_dispatcher
+
+        assert (
+            build_event_loop_mcp_dispatcher(
+                mcp_client=None,
+                mcp_tool_registry=None,
+                skill_registry=None,
+                agent_dispatcher=None,
+            )
+            is None
+        )
+
+    @pytest.mark.asyncio
+    async def test_warm_start_noops_when_profiles_are_remote(self):
+        from general_ludd.daemon import _warm_start_local_models
+
+        gateway = SimpleNamespace(
+            _profiles={
+                "remote": SimpleNamespace(resource_profile="medium", provider="openai")
+            }
+        )
+        await _warm_start_local_models(gateway)
+
+    @pytest.mark.asyncio
+    async def test_lifespan_shutdown_closes_all_optional_owned_resources(self):
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _lifespan
+        from tests.unit.test_daemon import _lifespan_patches
+
+        event_loop = MagicMock()
+        event_loop.run_forever = AsyncMock()
+        event_loop.shutdown = AsyncMock()
+        app = FastAPI()
+        app.state.tick_interval = 0.01
+        app.state.event_loop = None
+        app.state._receiver_buffer = MagicMock()
+
+        session = MagicMock()
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=session)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
+        session_factory = MagicMock(return_value=session_cm)
+        slurm_repo = MagicMock()
+        slurm_repo.list_orphans = AsyncMock(return_value=[])
+        job = SimpleNamespace(job_id="job-owned")
+        slurm_repo.list_active = AsyncMock(return_value=[job])
+        slurm_repo.update_status = AsyncMock()
+        slurm_adapter = MagicMock()
+
+        off_peak_task = asyncio.get_running_loop().create_future()
+        off_peak_stop = MagicMock()
+        off_peak_scheduler = SimpleNamespace(
+            savings=SimpleNamespace(total_deferred=2, total_savings=1.25)
+        )
+        monitor = MagicMock()
+        pipeline = SimpleNamespace(stop=AsyncMock())
+        mcp_client = SimpleNamespace(stop_all=AsyncMock())
+        terraform_bridge = SimpleNamespace(aclose=AsyncMock())
+        event_bus = SimpleNamespace(drain=AsyncMock())
+        deployment_router = SimpleNamespace(aclose=AsyncMock())
+        credit_tracker = SimpleNamespace(close=MagicMock())
+        secrets_resolver = SimpleNamespace(close=MagicMock())
+        searx_client = SimpleNamespace(close=AsyncMock())
+        model_gateway = SimpleNamespace(close=MagicMock())
+        cache_owners = [SimpleNamespace(close=MagicMock()) for _ in range(4)]
+        web_cache = SimpleNamespace(close=MagicMock())
+        stall_watchdog = SimpleNamespace(stop_sweeper=MagicMock())
+        write_queue = SimpleNamespace(clear=MagicMock())
+        writer_process = SimpleNamespace(stop=MagicMock())
+        embedding_session = SimpleNamespace(close=AsyncMock())
+        otel_bridge = SimpleNamespace(shutdown=MagicMock())
+        ornith_process = SimpleNamespace(
+            terminate=MagicMock(),
+            wait=AsyncMock(return_value=0),
+            kill=MagicMock(),
+        )
+        searx_server = SimpleNamespace(stop=MagicMock())
+        quantization_monitor = SimpleNamespace(stop=AsyncMock())
+
+        with (
+            _lifespan_patches(event_loop),
+            patch("general_ludd.daemon.SlurmJobRepository", return_value=slurm_repo),
+            patch("general_ludd.infra.slurm.SlurmAdapter", return_value=slurm_adapter),
+        ):
+            async with _lifespan(app):
+                app.state._off_peak_stop = off_peak_stop
+                app.state._off_peak_task = off_peak_task
+                app.state._off_peak_scheduler = off_peak_scheduler
+                app.state._session_factory = session_factory
+                app.state._slurm_monitors = {job.job_id: monitor}
+                app.state._pipeline_controller = pipeline
+                app.state._mcp_client = mcp_client
+                app.state._terraform_event_bridge = terraform_bridge
+                app.state._event_bus = event_bus
+                app.state._deployment_health_router = deployment_router
+                app.state._credit_tracker = credit_tracker
+                app.state._secrets_resolver = secrets_resolver
+                app.state._searx_client = searx_client
+                app.state._model_gateway = model_gateway
+                (
+                    app.state._codebase_indexer,
+                    app.state._research_index,
+                    app.state._local_memory,
+                    app.state._semantic_searcher,
+                ) = cache_owners
+                app.state._web_retriever = SimpleNamespace(_cache=web_cache)
+                app.state._stall_watchdog = stall_watchdog
+                app.state._write_queue = write_queue
+                app.state._writer_process = writer_process
+                app.state._embedding_session = embedding_session
+                app.state._otel_bridge = otel_bridge
+                app.state._ornith_mcp_proc = ornith_process
+                app.state._searx_server = searx_server
+                app.state._quantization_monitor = quantization_monitor
+
+        off_peak_stop.set.assert_called_once_with()
+        assert off_peak_task.cancelled()
+        slurm_adapter.cancel.assert_called_once_with(job.job_id)
+        slurm_repo.update_status.assert_awaited_once_with(job.job_id, "cancelled")
+        monitor.stop.assert_called_once_with()
+        pipeline.stop.assert_awaited_once_with()
+        mcp_client.stop_all.assert_awaited_once_with()
+        terraform_bridge.aclose.assert_awaited_once_with()
+        event_bus.drain.assert_awaited_once_with()
+        deployment_router.aclose.assert_awaited_once_with()
+        credit_tracker.close.assert_called_once_with()
+        secrets_resolver.close.assert_called_once_with()
+        searx_client.close.assert_awaited_once_with()
+        model_gateway.close.assert_called_once_with()
+        for owner in cache_owners:
+            owner.close.assert_called_once_with()
+        web_cache.close.assert_called_once_with()
+        stall_watchdog.stop_sweeper.assert_called_once_with()
+        write_queue.clear.assert_called_once_with()
+        writer_process.stop.assert_called_once_with()
+        embedding_session.close.assert_awaited_once_with()
+        otel_bridge.shutdown.assert_called_once_with()
+        ornith_process.terminate.assert_called_once_with()
+        ornith_process.kill.assert_not_called()
+        searx_server.stop.assert_called_once_with()
+        quantization_monitor.stop.assert_awaited_once_with()
+
+    @pytest.mark.asyncio
+    async def test_lifespan_shutdown_isolates_failures_and_reports_group(self):
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _lifespan
+        from tests.unit.test_daemon import _lifespan_patches
+
+        event_loop = MagicMock()
+        event_loop.run_forever = AsyncMock()
+        event_loop.shutdown = AsyncMock(side_effect=RuntimeError("loop shutdown"))
+        app = FastAPI()
+        app.state.tick_interval = 0.01
+        app.state.event_loop = None
+        app.state._receiver_buffer = MagicMock()
+        bad_engine = MagicMock()
+        bad_engine.url = "sqlite+aiosqlite:///test.db"
+        bad_engine.dispose = AsyncMock(side_effect=RuntimeError("engine dispose"))
+        ornith_process = SimpleNamespace(
+            terminate=MagicMock(),
+            wait=AsyncMock(side_effect=[TimeoutError(), 0]),
+            kill=MagicMock(),
+        )
+
+        with (
+            _lifespan_patches(event_loop),
+            patch("general_ludd.daemon.init_engine_from_config", return_value=bad_engine),
+            pytest.raises(ExceptionGroup) as exc_info,
+        ):
+            async with _lifespan(app):
+                app.state._pipeline_controller = SimpleNamespace(
+                    stop=AsyncMock(side_effect=RuntimeError("pipeline"))
+                )
+                app.state._mcp_client = SimpleNamespace(
+                    stop_all=AsyncMock(side_effect=RuntimeError("mcp"))
+                )
+                app.state._terraform_event_bridge = SimpleNamespace(
+                    aclose=AsyncMock(side_effect=RuntimeError("terraform"))
+                )
+                app.state._event_bus = SimpleNamespace(
+                    drain=AsyncMock(side_effect=RuntimeError("event bus"))
+                )
+                app.state._deployment_health_router = SimpleNamespace(
+                    aclose=AsyncMock(side_effect=RuntimeError("deployment"))
+                )
+                app.state._credit_tracker = SimpleNamespace(
+                    close=MagicMock(side_effect=RuntimeError("credit"))
+                )
+                app.state._secrets_resolver = SimpleNamespace(
+                    close=MagicMock(side_effect=RuntimeError("secrets"))
+                )
+                app.state._searx_client = SimpleNamespace(
+                    close=AsyncMock(side_effect=RuntimeError("searx client"))
+                )
+                app.state._model_gateway = SimpleNamespace(
+                    close=MagicMock(side_effect=RuntimeError("gateway"))
+                )
+                app.state._codebase_indexer = SimpleNamespace(
+                    close=MagicMock(side_effect=RuntimeError("cache"))
+                )
+                app.state._web_retriever = SimpleNamespace(
+                    _cache=SimpleNamespace(
+                        close=MagicMock(side_effect=RuntimeError("web cache"))
+                    )
+                )
+                app.state._write_queue = SimpleNamespace(
+                    clear=MagicMock(side_effect=RuntimeError("queue"))
+                )
+                app.state._writer_process = SimpleNamespace(
+                    stop=MagicMock(side_effect=RuntimeError("writer"))
+                )
+                app.state._embedding_session = SimpleNamespace(
+                    close=AsyncMock(side_effect=RuntimeError("embedding"))
+                )
+                app.state._otel_bridge = SimpleNamespace(
+                    shutdown=MagicMock(side_effect=RuntimeError("otel"))
+                )
+                app.state._ornith_mcp_proc = ornith_process
+                app.state._searx_server = SimpleNamespace(
+                    stop=MagicMock(side_effect=RuntimeError("searx server"))
+                )
+                app.state._quantization_monitor = SimpleNamespace(
+                    stop=AsyncMock(side_effect=RuntimeError("quantization"))
+                )
+
+        assert len(exc_info.value.exceptions) == 5
+        ornith_process.kill.assert_called_once_with()
+        assert ornith_process.wait.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_lifespan_preserves_body_failure_with_and_without_cleanup_failure(self):
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _lifespan
+        from tests.unit.test_daemon import _lifespan_patches
+
+        def app_and_loop() -> tuple[FastAPI, MagicMock]:
+            app = FastAPI()
+            app.state.tick_interval = 0.01
+            app.state.event_loop = None
+            app.state._receiver_buffer = MagicMock()
+            loop = MagicMock()
+            loop.run_forever = AsyncMock()
+            loop.shutdown = AsyncMock()
+            return app, loop
+
+        app, event_loop = app_and_loop()
+        with _lifespan_patches(event_loop), pytest.raises(LookupError, match="body"):
+            async with _lifespan(app):
+                raise LookupError("body")
+
+        app, event_loop = app_and_loop()
+        with _lifespan_patches(event_loop), pytest.raises(BaseExceptionGroup) as exc_info:
+            async with _lifespan(app):
+                app.state._pipeline_controller = SimpleNamespace(
+                    stop=AsyncMock(side_effect=RuntimeError("cleanup"))
+                )
+                raise LookupError("body")
+        assert len(exc_info.value.exceptions) == 2
+
+    @pytest.mark.asyncio
+    async def test_warm_start_skips_missing_url_and_bounds_success_and_failure(
+        self,
+        monkeypatch,
+    ):
+        from general_ludd.daemon import _warm_start_local_models
+
+        monkeypatch.setenv("GLUDD_LOCAL_ONE", "http://127.0.0.1:8101/")
+        monkeypatch.setenv("GLUDD_LOCAL_TWO", "http://127.0.0.1:8102")
+        profiles = {
+            "missing": SimpleNamespace(
+                model_profile_id="missing",
+                resource_profile="local_heavy",
+                provider="openai",
+                api_base_alias=None,
+            ),
+            "success": SimpleNamespace(
+                model_profile_id="success",
+                resource_profile="medium",
+                provider="llamacpp",
+                api_base_alias="GLUDD_LOCAL_ONE",
+            ),
+            "failure": SimpleNamespace(
+                model_profile_id="failure",
+                resource_profile="medium",
+                provider="vllm",
+                api_base_alias="GLUDD_LOCAL_TWO",
+            ),
+        }
+        client = MagicMock()
+        client.get = AsyncMock(
+            side_effect=[SimpleNamespace(status_code=204), RuntimeError("offline")]
+        )
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=client)
+        context.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=context):
+            await _warm_start_local_models(SimpleNamespace(_profiles=profiles))
+
+        assert client.get.await_args_list[0].args == ("http://127.0.0.1:8101/health",)
+        assert client.get.await_args_list[1].args == ("http://127.0.0.1:8102/health",)
+
+    @pytest.mark.asyncio
+    async def test_self_update_audit_sink_persists_and_contains_failure(self):
+        from general_ludd.daemon import _build_self_update_audit_sink
+
+        session = MagicMock()
+        session.commit = AsyncMock()
+        factory = MagicMock()
+        factory.return_value.__aenter__ = AsyncMock(return_value=session)
+        factory.return_value.__aexit__ = AsyncMock(return_value=False)
+        record = SimpleNamespace(
+            outcome="applied",
+            requested_by="operator",
+            as_dict=lambda: {"outcome": "applied"},
+        )
+        tasks: set[asyncio.Task[Any]] = set()
+        repo = MagicMock()
+        repo.create = AsyncMock()
+
+        with patch("general_ludd.daemon.AuditEventRepository", return_value=repo):
+            sink = _build_self_update_audit_sink(factory, task_registry=tasks)
+            sink(record)
+            pending = tuple(tasks)
+            assert pending
+            await asyncio.gather(*pending)
+        repo.create.assert_awaited_once()
+        session.commit.assert_awaited_once()
+
+        failing_repo = MagicMock()
+        failing_repo.create = AsyncMock(side_effect=RuntimeError("db unavailable"))
+        with patch("general_ludd.daemon.AuditEventRepository", return_value=failing_repo):
+            sink = _build_self_update_audit_sink(factory, task_registry=tasks)
+            sink(record)
+            pending = tuple(tasks)
+            assert pending
+            await asyncio.gather(*pending)
+
+    def test_self_update_audit_sink_skips_without_running_loop(self):
+        from general_ludd.daemon import _build_self_update_audit_sink
+
+        factory = MagicMock()
+        sink = _build_self_update_audit_sink(factory)
+        sink(SimpleNamespace(outcome="applied"))
+        factory.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sts_audit_logger_handles_missing_row_and_corrupt_history(self):
+        from general_ludd.daemon import _build_sts_audit_logger
+
+        session = MagicMock()
+        session.execute = AsyncMock()
+        session.commit = AsyncMock()
+        query_result = SimpleNamespace(scalar_one_or_none=MagicMock(return_value=None))
+        session.execute.return_value = query_result
+        factory = MagicMock()
+        factory.return_value.__aenter__ = AsyncMock(return_value=session)
+        factory.return_value.__aexit__ = AsyncMock(return_value=False)
+        audit = _build_sts_audit_logger(factory)
+
+        await audit("missing", "use", "agent")
+        session.commit.assert_not_awaited()
+
+        row = SimpleNamespace(use_count=None, events="not-json", last_used_at=None)
+        query_result.scalar_one_or_none.return_value = row
+        await audit("present", "use", "agent")
+        assert row.use_count == 1
+        assert row.events == '["use"]'
+        assert row.last_used_at is not None
+        session.commit.assert_awaited_once_with()
+
+        row.events = '["use"]'
+        await audit("present", "refresh", "agent")
+        assert row.use_count == 2
+        assert row.events == '["use", "refresh"]'
+
+    def test_extended_subsystems_register_global_and_project_skills(self, tmp_path):
+        from general_ludd.daemon import _get_or_create_extended_subsystems
+
+        project_gludd = tmp_path / ".gludd"
+        (project_gludd / "skills").mkdir(parents=True)
+        state = SimpleNamespace(
+            _metrics_collector=object(),
+            _recent_traces=object(),
+            _receiver_buffer=object(),
+            _project_manager=object(),
+            _utilization_tracker=object(),
+            _model_registry=object(),
+            _skill_registry=None,
+            _config_dir=str(tmp_path),
+            _project_gludd_dir=str(project_gludd),
+        )
+        app = SimpleNamespace(state=state)
+        registry = MagicMock()
+        skills = [object(), object()]
+        with (
+            patch("general_ludd.daemon.SkillRegistry", return_value=registry),
+            patch("general_ludd.daemon.discover_skills", return_value=skills),
+        ):
+            result = _get_or_create_extended_subsystems(app)
+
+        assert result["skill_registry"] is registry
+        assert [call.args[0] for call in registry.register.call_args_list] == skills
+        registry.refresh.assert_called_once_with(
+            search_paths=[str(project_gludd / "skills")]
+        )
+
+    def test_extended_subsystems_builds_router_from_relationship_policy(self):
+        import general_ludd.daemon as daemon_module
+
+        rr = SimpleNamespace(
+            enable_cross_project_borrowing=True,
+            edge_decay=0.7,
+            external_penalty=0.4,
+            min_borrow_weight=0.2,
+        )
+        tracker = SimpleNamespace(
+            _data={"model": SimpleNamespace(precision="int8", confidence=0.9)}
+        )
+        state = SimpleNamespace(
+            _metrics_collector=object(),
+            _recent_traces=object(),
+            _receiver_buffer=object(),
+            _project_manager=object(),
+            _utilization_tracker=object(),
+            _model_registry=object(),
+            _skill_registry=object(),
+            _adaptive_router=daemon_module._STARTUP_UNSET,
+            _startup_config={
+                "user_config": SimpleNamespace(relationship_routing=rr)
+            },
+            _quantization_tracker=tracker,
+            _health_tracker=object(),
+            _embedding_store=object(),
+        )
+        app = SimpleNamespace(state=state)
+        built_router = object()
+        with (
+            patch("general_ludd.daemon.BenchmarkRepository"),
+            patch("general_ludd.daemon.ParetoRouter"),
+            patch("general_ludd.daemon.AdaptiveRouter", return_value=built_router) as cls,
+        ):
+            result = daemon_module._get_or_create_extended_subsystems(
+                app,
+                session_factory=object(),
+            )
+
+        assert result["adaptive_router"] is built_router
+        assert state._adaptive_router is built_router
+        assert cls.call_args.kwargs["quantization_map"] == {"model": ("int8", 0.9)}
+        assert cls.call_args.kwargs["enable_cross_project_borrowing"] is True
+        assert cls.call_args.kwargs["edge_decay"] == 0.7
+        assert cls.call_args.kwargs["external_penalty"] == 0.4
+        assert cls.call_args.kwargs["min_borrow_weight"] == 0.2
+
+    def test_extended_subsystems_reuses_existing_router(self):
+        import general_ludd.daemon as daemon_module
+
+        existing = object()
+        state = SimpleNamespace(
+            _metrics_collector=object(),
+            _recent_traces=object(),
+            _receiver_buffer=object(),
+            _project_manager=object(),
+            _utilization_tracker=object(),
+            _model_registry=object(),
+            _skill_registry=object(),
+            _adaptive_router=existing,
+        )
+        result = daemon_module._get_or_create_extended_subsystems(
+            SimpleNamespace(state=state),
+            session_factory=object(),
+        )
+        assert result["adaptive_router"] is existing
+
 
 class TestApiStatusWithConfigDir:
     @pytest.mark.asyncio
@@ -204,6 +969,268 @@ class TestApiStatusWithConfigDir:
             assert resp.status_code == 200
             data = resp.json()
             assert data["config_file_count"] == 2
+
+
+class TestDaemonStatusEndpointBranches:
+    @pytest.mark.asyncio
+    async def test_dashboard_provider_absent_and_available(self, app, transport):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            missing = await client.get("/admin/dashboard/overview")
+            assert missing.json() == {
+                "error": "Dashboard data provider not initialized"
+            }
+
+            provider = SimpleNamespace(
+                get_overview=AsyncMock(return_value={"status": "ready"})
+            )
+            app.state._dashboard_data = provider
+            ready = await client.get("/admin/dashboard/overview")
+            assert ready.json() == {"status": "ready"}
+            provider.get_overview.assert_awaited_once_with()
+
+    @pytest.mark.asyncio
+    async def test_eval_and_execution_status_absent_and_available(self, app, transport):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            missing_eval = await client.get("/admin/eval/status")
+            assert missing_eval.json() == {"status": "not_configured", "ready": False}
+            app.state.eval_harness = SimpleNamespace(ready=True, model="judge")
+            configured_eval = await client.get("/admin/eval/status")
+            assert configured_eval.json() == {
+                "status": "configured",
+                "ready": True,
+                "model": "judge",
+            }
+
+            missing_engine = await client.get("/admin/execution/engine-status")
+            assert missing_engine.json()["status"] == "not_configured"
+            app.state._execution_engine = SimpleNamespace(
+                workspace_path="trusted/workspace",
+                _model_gateway=object(),
+                _budget_guard=None,
+                _metrics_collector=object(),
+            )
+            configured_engine = await client.get("/admin/execution/engine-status")
+            assert configured_engine.json() == {
+                "status": "configured",
+                "workspace_path": "trusted/workspace",
+                "has_model_gateway": True,
+                "has_budget_guard": False,
+                "has_metrics_collector": True,
+            }
+
+    @pytest.mark.asyncio
+    async def test_plan_critique_status_and_execution_branches(self, app, transport):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            app.state.plan_critique = None
+            missing_status = await client.get("/admin/plan/critique-status")
+            assert missing_status.json() == {"wired": False, "class": None}
+            missing_run = await client.post("/admin/plan/critique", json={})
+            assert missing_run.json() == {
+                "status": "not_configured",
+                "findings": [],
+            }
+
+            critique = SimpleNamespace(
+                critique_plan=MagicMock(return_value=[{"severity": "info"}])
+            )
+            app.state.plan_critique = critique
+            ready_status = await client.get("/admin/plan/critique-status")
+            assert ready_status.json() == {
+                "wired": True,
+                "class": "SimpleNamespace",
+            }
+            ready_run = await client.post(
+                "/admin/plan/critique",
+                json={"title": "Bound plan"},
+            )
+            assert ready_run.json()["finding_count"] == 1
+            critique.critique_plan.assert_called_once_with({"title": "Bound plan"})
+
+    @pytest.mark.asyncio
+    async def test_compaction_and_connector_status_branches(self, app, transport):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            empty_compaction = await client.get("/admin/compaction/eval-status")
+            assert empty_compaction.json() == {
+                "wired": False,
+                "champion": None,
+                "metrics": None,
+            }
+            app.state._compaction_compactor = SimpleNamespace(
+                champion=SimpleNamespace(name="bounded")
+            )
+            app.state._compaction_metrics = SimpleNamespace(
+                model_dump=lambda: {"score": 0.9}
+            )
+            ready_compaction = await client.get("/admin/compaction/eval-status")
+            assert ready_compaction.json() == {
+                "wired": True,
+                "champion": "bounded",
+                "metrics": {"score": 0.9},
+            }
+
+            app.state._connector_registry = None
+            empty_connectors = await client.get("/admin/connectors/health")
+            assert empty_connectors.json() == {
+                "health": {},
+                "count": 0,
+                "errors": [],
+            }
+            registry = SimpleNamespace(
+                health_all=MagicMock(return_value={"source": {"ok": True}}),
+                errors=MagicMock(return_value=[]),
+            )
+            app.state._connector_registry = registry
+            ready_connectors = await client.get("/admin/connectors/health")
+            assert ready_connectors.json() == {
+                "health": {"source": {"ok": True}},
+                "count": 1,
+                "errors": [],
+            }
+            registry.health_all.assert_called_once_with()
+            registry.errors.assert_called_once_with()
+
+    @pytest.mark.asyncio
+    async def test_healthz_contains_local_probe_failure_and_dead_loop(self, app, transport):
+        class DeadTask:
+            def __init__(self, *, cancelled: bool) -> None:
+                self._cancelled = cancelled
+
+            def done(self) -> bool:
+                return True
+
+            def cancelled(self) -> bool:
+                return self._cancelled
+
+        with patch(
+            "general_ludd.daemon.local_model_health_check",
+            new=AsyncMock(side_effect=RuntimeError("probe failed")),
+        ):
+            app.state._event_loop_task = DeadTask(cancelled=True)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                cancelled = await client.get("/healthz")
+                app.state._event_loop_task = DeadTask(cancelled=False)
+                finished = await client.get("/healthz")
+
+        assert cancelled.status_code == 200
+        assert cancelled.json()["reason"] == "event_loop_cancelled"
+        assert cancelled.json()["local_model"] == {
+            "model_exists": False,
+            "llama_cpp_available": False,
+        }
+        assert finished.status_code == 200
+        assert finished.json()["reason"] == "event_loop_done"
+
+
+class TestDaemonAuthenticationAndCidrBranches:
+    @staticmethod
+    def _authenticated_app(monkeypatch):
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret")
+        monkeypatch.delenv("GLUDD_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_PSK_DISABLE", raising=False)
+        monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
+        monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
+        return create_daemon_app()
+
+    @pytest.mark.asyncio
+    async def test_method_path_and_project_claim_auth_matrix(self, monkeypatch):
+        app = self._authenticated_app(monkeypatch)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            assert (await client.get("/healthz")).status_code == 200
+            assert (await client.get("/v1/not-a-route")).status_code != 401
+            assert (await client.get("/render/not-found")).status_code != 401
+            assert (await client.post("/healthz")).status_code == 401
+            assert (await client.get("/docs_evil")).status_code == 401
+
+            plain = await client.get(
+                "/admin/plan/critique-status",
+                headers={"Authorization": "Bearer test-secret"},
+            )
+            assert plain.status_code == 200
+            claimed = await client.get(
+                "/admin/plan/critique-status",
+                headers={"Authorization": "Bearer project-a:test-secret"},
+            )
+            assert claimed.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_cidr_denies_outside_and_accepts_inside_network(self, monkeypatch):
+        app = self._authenticated_app(monkeypatch)
+        headers = {"Authorization": "Bearer test-secret"}
+        app.state._allowed_cidr = ["10.0.0.0/8"]
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            denied = await client.get("/admin/plan/critique-status", headers=headers)
+            assert denied.status_code == 403
+
+        app.state._allowed_cidr = ["127.0.0.0/8"]
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            accepted = await client.get("/admin/plan/critique-status", headers=headers)
+            assert accepted.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_cidr_rejects_unparseable_client_address(self, monkeypatch):
+        app = self._authenticated_app(monkeypatch)
+        app.state._allowed_cidr = ["127.0.0.0/8"]
+        transport = ASGITransport(app=app, client=("not-an-ip", 1234))
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/admin/plan/critique-status",
+                headers={"Authorization": "Bearer test-secret"},
+            )
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_cidr_normalizes_testclient_to_loopback(self, monkeypatch):
+        app = self._authenticated_app(monkeypatch)
+        app.state._allowed_cidr = ["127.0.0.0/8"]
+        transport = ASGITransport(app=app, client=("testclient", 1234))
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/admin/plan/critique-status",
+                headers={"Authorization": "Bearer test-secret"},
+            )
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_required_auth_without_psk_fails_closed(self, monkeypatch):
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_PSK_DISABLE", raising=False)
+        monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
+        monkeypatch.setenv("GLUDD_REQUIRE_AUTH", "1")
+        app = create_daemon_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            blocked = await client.get("/admin/plan/critique-status")
+            public = await client.get("/healthz")
+        assert blocked.status_code == 503
+        assert blocked.json()["error"] == "auth_required"
+        assert public.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_degraded_state_guards_mutating_dispatch_surface(self, monkeypatch):
+        app = self._authenticated_app(monkeypatch)
+        app.state._degraded = "startup failed"
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/dispatch",
+                json={},
+                headers={"Authorization": "Bearer test-secret"},
+            )
+        assert response.status_code == 503
+        assert response.json() == {
+            "error": "degraded",
+            "reason": "startup failed",
+        }
 
 
 class TestApiListTodosWithStatusFilter:
