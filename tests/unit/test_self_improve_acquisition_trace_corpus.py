@@ -28,7 +28,7 @@ def test_refused_eviction_cannot_fall_through_to_a_phantom_proposal() -> None:
     assert verdict.accepted is False
     assert verdict.outcome == "refused"
     assert verdict.feedback == (
-        "protocol=self-improve-validation-retry-v3 "
+        "protocol=self-improve-validation-retry-v4 "
         "type=acquisition_refused source=acquisition_trace "
         "detail=model cache has no safe reclaim candidate"
     )
@@ -155,7 +155,7 @@ def test_legacy_outcome_with_unchanged_identity_cannot_empty_the_plan() -> None:
     assert verdict.accepted is False
     assert verdict.outcome == "invalid"
     assert verdict.feedback == (
-        "protocol=self-improve-validation-retry-v3 "
+        "protocol=self-improve-validation-retry-v4 "
         "type=acquisition_trace_invalid source=acquisition_trace "
         "detail=empty model plan reused a legacy outcome without rotating "
         "the attempt identity"
@@ -190,7 +190,7 @@ def test_empty_plan_can_end_only_with_typed_model_plan_exhausted() -> None:
     assert verdict.accepted is True
     assert verdict.outcome == "model_plan_exhausted"
     assert verdict.feedback == (
-        "protocol=self-improve-validation-retry-v3 "
+        "protocol=self-improve-validation-retry-v4 "
         "type=model_plan_exhausted source=acquisition_trace "
         "detail=no eligible local model candidates remain for this attempt protocol"
     )

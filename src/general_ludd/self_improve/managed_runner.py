@@ -27,6 +27,9 @@ from general_ludd.hardware.model_fit import unified_probe
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.local_model import LocalModelConfig
 from general_ludd.self_improve.codex_comparison import (
+    COMPACT_PROPOSAL_PROTOCOL_V3,
+    COMPACT_PROPOSAL_PROTOCOL_V4,
+    LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL,
     LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL,
     CandidateEvidence,
     CodexReference,
@@ -58,7 +61,8 @@ _SHA_RE: Final = re.compile(r"^[0-9a-f]{40}$")
 _DIGEST_RE: Final = re.compile(r"^[0-9a-f]{64}$")
 _TASK_RE: Final = re.compile(r"^S[0-9]+(?:\.[0-9]+)?$")
 _LEGACY_PLAN_SCHEMA_VERSION: Final = 1
-_PLAN_SCHEMA_VERSION: Final = 2
+_LEGACY_BOUND_PLAN_SCHEMA_VERSION: Final = 2
+_PLAN_SCHEMA_VERSION: Final = 3
 
 
 class ModelPlanFailure(StrEnum):
@@ -297,6 +301,7 @@ class PromptShard:
 
     focus_paths: tuple[str, ...]
     prompt: str
+    editable_ranges: tuple[tuple[int, int], ...] = ()
 
     def __post_init__(self) -> None:
         """Reject empty, mutable, duplicate, or oversized shard state."""
@@ -311,6 +316,23 @@ class PromptShard:
             raise ValueError("prompt shard must not be empty")
         if len(self.prompt.encode("utf-8")) > _MAX_PROMPT_SHARD_BYTES:
             raise ValueError(f"prompt shard exceeds {_MAX_PROMPT_SHARD_BYTES} bytes")
+        if not isinstance(self.editable_ranges, tuple):
+            raise ValueError("prompt shard editable ranges must be an immutable tuple")
+        previous_end = 1
+        for item in self.editable_ranges:
+            if (
+                not isinstance(item, tuple)
+                or len(item) != 2
+                or any(
+                    isinstance(value, bool) or not isinstance(value, int)
+                    for value in item
+                )
+            ):
+                raise ValueError("prompt shard editable ranges must contain integer pairs")
+            start, end = item
+            if start < 1 or end <= start or start < previous_end:
+                raise ValueError("prompt shard editable ranges must be ordered half-open ranges")
+            previous_end = end
 
 
 @dataclass(frozen=True, slots=True)
@@ -324,6 +346,7 @@ class PromptPlan:
         default=(),
         repr=False,
     )
+    proposal_protocol: str = COMPACT_PROPOSAL_PROTOCOL_V3
 
     def __post_init__(self) -> None:
         """Require immutable non-overlapping shards and stable protocol identity."""
@@ -336,6 +359,11 @@ class PromptPlan:
             raise ValueError("prompt plan focus paths must be disjoint")
         if not isinstance(self.baseline_files, tuple):
             raise ValueError("prompt plan baseline files must be an immutable tuple")
+        if not isinstance(self.proposal_protocol, str) or self.proposal_protocol not in {
+            COMPACT_PROPOSAL_PROTOCOL_V3,
+            COMPACT_PROPOSAL_PROTOCOL_V4,
+        }:
+            raise ValueError("prompt plan compact proposal protocol is unsupported")
         if self.baseline_files:
             baseline_paths: list[str] = []
             baseline_bytes = 0
@@ -361,17 +389,31 @@ class PromptPlan:
         object.__setattr__(self, "protocol_digest", _stable_digest(self._identity_value()))
 
     def _identity_value(self) -> dict[str, object]:
+        if self.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V3:
+            return {
+                "protocol": "self-improve-prompt-plan-v1",
+                "shards": [
+                    {"focus_paths": list(shard.focus_paths), "prompt": shard.prompt}
+                    for shard in self.shards
+                ],
+                "source_bytes": self.source_bytes,
+            }
         return {
-            "protocol": "self-improve-prompt-plan-v1",
+            "proposal_protocol": self.proposal_protocol,
+            "protocol": "self-improve-prompt-plan-v2",
             "shards": [
-                {"focus_paths": list(shard.focus_paths), "prompt": shard.prompt}
+                {
+                    "editable_ranges": [list(item) for item in shard.editable_ranges],
+                    "focus_paths": list(shard.focus_paths),
+                    "prompt": shard.prompt,
+                }
                 for shard in self.shards
             ],
             "source_bytes": self.source_bytes,
         }
 
     def _json_value(self) -> dict[str, object]:
-        return {
+        value: dict[str, object] = {
             "baseline_files": [list(item) for item in self.baseline_files],
             "protocol_digest": self.protocol_digest,
             "shards": [
@@ -380,23 +422,46 @@ class PromptPlan:
             ],
             "source_bytes": self.source_bytes,
         }
+        if self.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
+            value["proposal_protocol"] = self.proposal_protocol
+            value["shards"] = [
+                {
+                    "editable_ranges": [list(item) for item in shard.editable_ranges],
+                    "focus_paths": list(shard.focus_paths),
+                    "prompt": shard.prompt,
+                }
+                for shard in self.shards
+            ]
+        return value
 
     @classmethod
     def _from_json_value(cls, value: object) -> PromptPlan:
+        legacy_fields = {"baseline_files", "protocol_digest", "shards", "source_bytes"}
+        if isinstance(value, dict) and set(value) == legacy_fields:
+            proposal_protocol = COMPACT_PROPOSAL_PROTOCOL_V3
+            required_fields = legacy_fields
+        else:
+            proposal_protocol = COMPACT_PROPOSAL_PROTOCOL_V4
+            required_fields = legacy_fields | {"proposal_protocol"}
         mapping = _exact_mapping(
             value,
-            required={"baseline_files", "protocol_digest", "shards", "source_bytes"},
+            required=required_fields,
             optional=set(),
             label="prompt plan",
         )
+        if mapping.get("proposal_protocol", proposal_protocol) != proposal_protocol:
+            raise ValueError("prompt plan compact proposal protocol is unsupported")
         raw_shards = mapping["shards"]
         if not isinstance(raw_shards, list):
             raise ValueError("prompt plan shards must be a JSON array")
         shards: list[PromptShard] = []
         for raw_shard in raw_shards:
+            shard_fields = {"focus_paths", "prompt"}
+            if proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
+                shard_fields.add("editable_ranges")
             shard = _exact_mapping(
                 raw_shard,
-                required={"focus_paths", "prompt"},
+                required=shard_fields,
                 optional=set(),
                 label="prompt shard",
             )
@@ -405,8 +470,17 @@ class PromptPlan:
                 isinstance(path, str) for path in raw_paths
             ):
                 raise ValueError("prompt shard focus_paths must be a JSON string array")
+            raw_ranges = shard.get("editable_ranges", [])
+            if not isinstance(raw_ranges, list) or not all(
+                isinstance(item, list) and len(item) == 2 for item in raw_ranges
+            ):
+                raise ValueError("prompt shard editable_ranges must be a JSON pair array")
             shards.append(
-                PromptShard(tuple(raw_paths), _required_string(shard, "prompt"))
+                PromptShard(
+                    tuple(raw_paths),
+                    _required_string(shard, "prompt"),
+                    tuple((item[0], item[1]) for item in raw_ranges),
+                )
             )
         raw_baseline = mapping["baseline_files"]
         if not isinstance(raw_baseline, list):
@@ -426,6 +500,7 @@ class PromptPlan:
             source_bytes=_non_negative_integer(mapping["source_bytes"], "source_bytes"),
             protocol_digest=_required_string(mapping, "protocol_digest"),
             baseline_files=tuple(baseline),
+            proposal_protocol=proposal_protocol,
         )
 
     def __contains__(self, value: object) -> bool:
@@ -442,13 +517,18 @@ def _attempt_identity_digest(prompt: PromptPlan | str) -> str:
     """Bind prompt identity to the complete managed proposal protocol."""
     if isinstance(prompt, PromptPlan):
         prompt_protocol_digest = prompt.protocol_digest
+        proposal_protocol = prompt.proposal_protocol
     elif isinstance(prompt, str) and prompt.strip():
         prompt_protocol_digest = _stable_digest(
             {"prompt": prompt, "protocol": "self-improve-string-prompt-v1"}
         )
+        proposal_protocol = COMPACT_PROPOSAL_PROTOCOL_V3
     else:
         raise ValueError("prompt must be a non-empty string or PromptPlan")
-    return local_proposal_attempt_identity_digest(prompt_protocol_digest)
+    return local_proposal_attempt_identity_digest(
+        prompt_protocol_digest,
+        proposal_protocol=proposal_protocol,
+    )
 
 
 def _validate_attempt_identity_digest(value: object) -> str:
@@ -505,6 +585,7 @@ class ApprovedSelfImprovePlan:
     approved_plan_digest: str = ""
     explicit_model_path: Path | None = None
     mechanical_proposal: ProposalManifest | None = None
+    _schema_version: int = field(default=_PLAN_SCHEMA_VERSION, repr=False)
 
     def __post_init__(self) -> None:
         """Normalize paths and initialize identities without accepting mutable state."""
@@ -515,6 +596,12 @@ class ApprovedSelfImprovePlan:
         ):
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{label} must be non-empty text")
+        if self._schema_version not in {
+            _LEGACY_PLAN_SCHEMA_VERSION,
+            _LEGACY_BOUND_PLAN_SCHEMA_VERSION,
+            _PLAN_SCHEMA_VERSION,
+        }:
+            raise ValueError("approved plan schema_version is unsupported")
         if self.repo_root is not None:
             if not isinstance(self.repo_root, Path):
                 raise ValueError("repo_root must be a pathlib.Path or None")
@@ -607,6 +694,15 @@ class ApprovedSelfImprovePlan:
             repository_binding_digest=repository_binding_digest,
             explicit_model_path=explicit_model_path,
             mechanical_proposal=mechanical_proposal,
+            _schema_version=(
+                _PLAN_SCHEMA_VERSION
+                if repository_binding_digest
+                or (
+                    isinstance(prompt, PromptPlan)
+                    and prompt.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4
+                )
+                else _LEGACY_PLAN_SCHEMA_VERSION
+            ),
         )
 
     def bind_execution_repository(
@@ -694,8 +790,15 @@ class ApprovedSelfImprovePlan:
         }
         if schema_version == _LEGACY_PLAN_SCHEMA_VERSION:
             required_fields = common_fields | {"repo_root"}
-        elif schema_version == _PLAN_SCHEMA_VERSION:
+        elif schema_version == _LEGACY_BOUND_PLAN_SCHEMA_VERSION:
             required_fields = common_fields | {"repository_binding_digest"}
+        elif schema_version == _PLAN_SCHEMA_VERSION:
+            repository_fields = {"repo_root", "repository_binding_digest"} & set(value)
+            required_fields = common_fields | (
+                {"repo_root"}
+                if repository_fields == {"repo_root"}
+                else {"repository_binding_digest"}
+            )
         else:
             raise ValueError("approved plan schema_version is unsupported")
         mapping = _exact_mapping(
@@ -707,6 +810,13 @@ class ApprovedSelfImprovePlan:
         if mapping["approved"] is not True:
             raise ValueError("approved plan artifact must carry approved=true")
         prompt = _prompt_from_json_value(mapping["prompt"])
+        if (
+            schema_version
+            in {_LEGACY_PLAN_SCHEMA_VERSION, _LEGACY_BOUND_PLAN_SCHEMA_VERSION}
+            and isinstance(prompt, PromptPlan)
+            and prompt.proposal_protocol != COMPACT_PROPOSAL_PROTOCOL_V3
+        ):
+            raise ValueError("legacy approved plan cannot carry compact-v4 prompt state")
         explicit_path = _optional_canonical_path(
             mapping["explicit_model_path"],
             "explicit_model_path",
@@ -726,6 +836,10 @@ class ApprovedSelfImprovePlan:
             repo_root=(
                 _canonical_path(mapping["repo_root"], "repo_root")
                 if schema_version == _LEGACY_PLAN_SCHEMA_VERSION
+                or (
+                    schema_version == _PLAN_SCHEMA_VERSION
+                    and "repo_root" in mapping
+                )
                 else None
             ),
             task=TaskSpec._from_json_value(mapping["task"]),
@@ -740,6 +854,10 @@ class ApprovedSelfImprovePlan:
             repository_binding_digest=(
                 ""
                 if schema_version == _LEGACY_PLAN_SCHEMA_VERSION
+                or (
+                    schema_version == _PLAN_SCHEMA_VERSION
+                    and "repo_root" in mapping
+                )
                 else _required_string(
                     mapping,
                     "repository_binding_digest",
@@ -749,6 +867,7 @@ class ApprovedSelfImprovePlan:
             approved_plan_digest=_required_string(mapping, "approved_plan_digest"),
             explicit_model_path=explicit_path,
             mechanical_proposal=mechanical,
+            _schema_version=cast(int, schema_version),
         )
         plan.verify_approval()
         return plan
@@ -777,14 +896,19 @@ class ApprovedSelfImprovePlan:
             "task": self.task._json_value(),
             "todo_id": self.todo_id,
         }
-        if self.repository_binding_digest:
+        if self._schema_version == _LEGACY_BOUND_PLAN_SCHEMA_VERSION or (
+            self._schema_version == _PLAN_SCHEMA_VERSION
+            and self.repository_binding_digest
+        ):
+            if not self.repository_binding_digest:
+                raise ValueError("repository-bound plan requires its binding digest")
             identity["repository_binding_digest"] = self.repository_binding_digest
-            identity["schema_version"] = _PLAN_SCHEMA_VERSION
+            identity["schema_version"] = self._schema_version
         else:
             if self.repo_root is None:
-                raise ValueError("legacy plan repository root is unavailable")
+                raise ValueError("local plan repository root is unavailable")
             identity["repo_root"] = str(self.repo_root)
-            identity["schema_version"] = _LEGACY_PLAN_SCHEMA_VERSION
+            identity["schema_version"] = self._schema_version
         return identity
 
 
@@ -1125,7 +1249,8 @@ class ManagedSelfImproveRunner:
                     )
                     self.progress_sink(
                         "SELF_IMPROVE_PROPOSAL_REJECTED "
-                        f"attempt={attempt} {_validation_retry_feedback(str(exc))}"
+                        f"attempt={attempt} "
+                        f"{_validation_retry_feedback(str(exc), proposal_protocol=_proposal_protocol(prompt))}"
                     )
                     if attempt == plan.max_attempts:
                         raise
@@ -1354,17 +1479,49 @@ def build_retry_prompt_plan(
                     diagnostics=diagnostics,
                     max_diagnostic_bytes=2_048,
                 ),
+                editable_ranges=shard.editable_ranges,
             )
             for shard in plan.shards
         ),
         source_bytes=plan.source_bytes,
         protocol_digest=plan.protocol_digest,
         baseline_files=plan.baseline_files,
+        proposal_protocol=plan.proposal_protocol,
     )
 
 
-def _validation_retry_feedback(error: str) -> str:
-    protocol = LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
+def _proposal_protocol(prompt: PromptPlan | str) -> str:
+    return (
+        prompt.proposal_protocol
+        if isinstance(prompt, PromptPlan)
+        else COMPACT_PROPOSAL_PROTOCOL_V3
+    )
+
+
+def _validation_retry_feedback(
+    error: str,
+    *,
+    proposal_protocol: str | None = None,
+) -> str:
+    if proposal_protocol is None:
+        legacy_details = {
+            detail
+            for detail, _kind in LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.safe_feedback
+        }
+        proposal_protocol = (
+            COMPACT_PROPOSAL_PROTOCOL_V4
+            if any(
+                detail in error
+                for detail, _kind in LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.safe_feedback
+                if detail not in legacy_details
+            )
+            else COMPACT_PROPOSAL_PROTOCOL_V3
+        )
+    protocol = (
+        LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
+        if proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V3
+        else LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
+    )
     cleaned = error.replace("\x00", "")
     marker_details = re.findall(
         rf"{re.escape(protocol.error_marker)}[ \t]+([^\r\n]+)",
@@ -1399,21 +1556,41 @@ def _validation_retry_feedback(error: str) -> str:
     )
 
 
-def _validation_retry_suffix(error: str) -> str:
-    protocol = LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
-    return protocol.prompt_prefix + _validation_retry_feedback(error) + protocol.prompt_suffix
+def _validation_retry_suffix(
+    error: str,
+    *,
+    proposal_protocol: str = COMPACT_PROPOSAL_PROTOCOL_V3,
+) -> str:
+    protocol = (
+        LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
+        if proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V3
+        else LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
+    )
+    return (
+        protocol.prompt_prefix
+        + _validation_retry_feedback(error, proposal_protocol=proposal_protocol)
+        + protocol.prompt_suffix
+    )
 
 
 def _build_validation_retry_prompt_plan(plan: PromptPlan, error: str) -> PromptPlan:
-    suffix = _validation_retry_suffix(error)
+    suffix = _validation_retry_suffix(
+        error,
+        proposal_protocol=plan.proposal_protocol,
+    )
     return PromptPlan(
         shards=tuple(
-            PromptShard(focus_paths=shard.focus_paths, prompt=shard.prompt + suffix)
+            PromptShard(
+                focus_paths=shard.focus_paths,
+                prompt=shard.prompt + suffix,
+                editable_ranges=shard.editable_ranges,
+            )
             for shard in plan.shards
         ),
         source_bytes=plan.source_bytes,
         protocol_digest=plan.protocol_digest,
         baseline_files=plan.baseline_files,
+        proposal_protocol=plan.proposal_protocol,
     )
 
 

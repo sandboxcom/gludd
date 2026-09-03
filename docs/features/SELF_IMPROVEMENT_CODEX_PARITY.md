@@ -76,29 +76,47 @@ A schema is supplied through `response_format`, not merely
 proposal fields. Managed `PromptPlan` requests put immutable
 `baseline_sha`, `task_id`, tests, and Make commands in a separate atomic
 0600 `contract.json` file. Every prompt carries one parent-authored, validated
-focus-path marker. The model emits only compact `e` (edits), and every edit
-contains only `a/z` for old and new text. Path and commit subject are no longer
-model-supplied; the worker derives the path from the original trusted prompt and
-uses one bounded parent-owned commit subject. Operation is likewise inferred:
-create from empty/non-empty text, delete from non-empty/empty text, and replace
-from distinct non-empty text. Both-empty edits and any extra path, commit, or
-operation field are rejected. The worker expands those fields with the trusted
-contract and then calls `ProposalManifest.from_json`, so output compaction does
-not make model text authoritative. Legacy single-string callers retain the
-complete manifest schema. The prompt names the compact shape because llama.cpp
-documents that a schema constrains sampling but is not injected into the model
-prompt.
+focus-path marker. Managed output uses compact protocol v4: the model emits only
+`e` (edits), and every edit contains exactly `s`, `n`, and `z`. `s` is a
+one-based line in the immutable baseline, `n` is the number of baseline lines
+consumed, and `z` is the replacement UTF-8 text. A zero count inserts before
+`s`; line count plus one is the only end-of-file insertion boundary. Every
+coordinate addresses the original snapshot, never the result of an earlier
+edit. The owned worker decodes one typed `CompactSpanProposal` per shard and
+publishes the complete span batch atomically. The parent then resolves each span
+with `splitlines(keepends=True)` and deterministically widens its baseline slice
+only as far as needed to form a bounded unique old-text anchor. It preserves the
+canonical span order and infers create, delete, or replace from the trusted
+before/after state. Anchor widening cannot leave the same disclosed editable
+range, and neither the anchor nor snapshot is copied into retry diagnostics.
+
+Path, old text, operation, and commit subject are not model-supplied. An absent
+file accepts only one non-empty insertion at `{s: 1, n: 0}`; deleting a file
+requires one span covering the complete shown file with empty `z`. Existing-file
+spans must be canonically ordered, non-overlapping, in range, and wholly inside
+content disclosed by that prompt shard; a zero-count edit also requires its
+insertion boundary to be explicitly shown. Duplicate insertion boundaries,
+Boolean or non-integral coordinates, edits into omitted regions, inability to
+derive a unique bounded anchor, and a final file identical to the baseline are
+rejected. An existing empty file is therefore not treated as an absent-file
+create. Compact v4 accepts one to 16 spans, and the existing 3,072 UTF-8-byte
+limit applies to their combined `z` text. The parent expands the validated spans
+to the complete trusted manifest and calls `ProposalManifest.from_json`, so the
+line coordinate is a compact addressing mechanism rather than new authority.
+The prompt names the compact shape because llama.cpp documents that a schema
+constrains sampling but is not injected into the model prompt.
 
 Grammar acceptance is not promotion evidence. Gludd checks that the 32-token
 canary and each compact proposal finish with `stop`, parses one complete object,
-expands trusted fields, and validates it again through
-`ProposalManifest.from_json`. A length stop, missing closing object, absent or
-extra compact field, wrong baseline, unsafe path, oversized value, or invalid
-Make command remains a failed proposal. A complete-looking object carrying a
-`length` finish reason is still rejected. The runner must classify and record
-that bounded failure against the immutable model identity before trying a
-different eligible candidate; it must not silently retry unconstrained output
-or weaken required fields.
+resolves every span against the hash-bound snapshot, expands trusted fields, and
+validates the result again through `ProposalManifest.from_json`. A length stop,
+missing closing object, absent or extra compact field, invalid span, wrong
+baseline, unsafe path, oversized value, or invalid Make command remains a failed
+proposal. A complete-looking object carrying a `length` finish reason is still
+rejected. The runner must classify and record that bounded failure against the
+immutable model identity before trying a different eligible candidate; it must
+not silently retry unconstrained output, search for a nearby match, or weaken
+required fields.
 
 The managed proposal budget is 1,024 tokens per single-file shard, versus
 the legacy 4,096-token compatibility path. A July 2026 managed acceptance
@@ -131,18 +149,76 @@ The prompt plan now retains an in-memory parent snapshot for every focus path.
 After decoding and identity checks, strict merge simulates all edits in order
 against those snapshots. A missing or repeated replacement, create of an
 existing file, or delete whose old text is not the complete file fails before
-an attempt worktree is created. Validation-retry v3 reports only a path-free
+an attempt worktree is created. Validation-retry v4 reports only a path-free
 typed precondition and never the model text.
 
 This behavior matches long-lived practitioner reports rather than treating
 valid JSON as an applicable patch. Aider users have reported
 [exact SEARCH/REPLACE mismatches since July 2024](https://github.com/Aider-AI/aider/issues/770)
 and an
-[open March 2025 report](https://github.com/Aider-AI/aider/issues/3651)
-where the model identified the intended change but its search text still failed
-character-for-character matching. Gludd therefore makes baseline applicability
-a deterministic parent contract and uses the typed result for the next bounded
-candidate instead of weakening exact replacement.
+[open 26 March 2025 report](https://github.com/Aider-AI/aider/issues/3651)
+from Aider 0.77.1 using GPT-4o-mini in architect/diff mode. The reporter said the
+model identified the intended repository changes but could not apply them
+because the emitted search block did not match the file exactly, including
+whitespace. Compact v4 removes that duplicated-baseline transcription from the
+model response. It does not treat the report as justification for fuzzy
+matching: the parent resolves a bounded numeric span against the exact snapshot
+or rejects it with typed feedback.
+
+### Rejected patch-format alternatives
+
+The repository's existing `general_ludd.diff_engine.DiffEngine` remains useful
+for computing and presenting differences after both versions are trusted, but
+it is not the managed model protocol. Its `EditOp` carries positions and counts
+without replacement text, while its text-bearing route parses unified hunks and
+searches for matching context, optionally with fuzz. Putting either route on the
+model boundary would require another adapter and would weaken the simple rule
+that one coordinate selects one immutable baseline slice.
+
+Invoking the platform `patch` program was also rejected. Unified patches give
+the model filename headers, hunk grammar, context, offsets, and newline markers
+to reproduce, and common implementations may relocate a hunk or apply fuzzy
+context. Disabling those conveniences still leaves a platform-dependent
+subprocess and reject-file lifecycle before Gludd can construct and validate its
+authoritative manifest.
+
+The mature Python `unidiff` package was considered rather than inventing another
+unified-diff parser. It parses patch syntax but does not supply Gludd's trusted
+path policy, immutable-snapshot applicability, operation inference, or
+transactional application. Adopting it would add a direct runtime dependency
+and still require a security-sensitive applier. The three-field JSON span reuses
+the already pinned schema decoder and strict manifest executor, has fewer tokens
+and grammar states, and adds no package or system-tool owner.
+
+### Compatibility, rollout, and rollback
+
+Compact v4 is a managed-proposal wire migration, not a manifest or database
+migration. Each accepted span is expanded to the same complete
+`ProposalManifest` consumed by comparison and application. Legacy single-string
+callers continue to submit that complete manifest on their separate path.
+Managed compact-v3 `{a,z}` objects are not guessed into v4 coordinates and v4
+objects are not accepted by a v3 decoder; the versioned schema, prompt, decoder,
+and span rules all rotate the complete attempt digest. Historical v3 outcome
+records remain immutable but cannot exclude a model under v4.
+
+New compact-v4 approvals write approved-plan schema 3. That schema carries
+exactly one repository identity: a host-independent binding digest for managed
+storage, or the canonical repository root for the local CLI form (which alone
+may retain an explicit local-model path). Readers still accept schema-1 local
+and schema-2 repository-bound artifacts only with compact v3, reserialize them
+without reinterpretation, and reject compact-v4 fields in either legacy schema.
+The retained worker publishes only
+`self-improve-local-proposal-batch-v2`; the parent rejects a v1 batch for a v4
+attempt rather than probing both decoders.
+
+Rollout occurs inside the owned proposal worker and unpromoted attempt worktree.
+All shards are decoded and simulated against their parent snapshots before a
+candidate file changes, and no partial batch is published. The running daemon,
+database, admitted model artifact, and development branch remain available if a
+span is rejected or the worker exits. Rollback restores the v3 protocol
+descriptor and decoder; its digest naturally selects the earlier compatible
+evidence without rewriting records or restarting a data service. This preserves
+zero downtime while making the migration fail closed in both directions.
 
 Snapshots are bounded by the existing 2 MiB-per-file and 32-path limits, are
 excluded from diagnostics and dataclass representations, and live only for the
@@ -154,10 +230,12 @@ protocol digest that produced it, preserving ZDD during either version.
 Grammar construction and inference remain inside the owned proposal worker. The
 model factory runs once after request admission. Each shard then invokes the
 documented `create_chat_completion` method on that same live model and validates
-one `ProposalManifest` before it can join the batch. Observability emits only
-an allowlisted finish classification, non-negative token counts, phase, and
-budget; it never includes completion text. Public proposal-rejection and
-terminal-error events contain only the final bounded typed classification;
+one `CompactSpanProposal` before it can join the atomic worker batch. The parent
+accepts only the expected v4 batch protocol, digest, and shard count, then
+expands it against snapshots that never cross into worker output. Observability
+emits only an allowlisted finish classification, non-negative token counts,
+phase, and budget; it never includes completion text. Public proposal-rejection
+and terminal-error events contain only the final bounded typed classification;
 they never replay Metal initialization, model paths, child logs, or model text.
 A converter exception, native crash,
 cancellation, or timeout therefore tears down the same process group, exchange
@@ -182,9 +260,10 @@ The runner therefore hashes one canonical JSON descriptor containing the exact
 - canary request, expected object, schema, and token bound;
 - proposal token bound, deterministic temperature and seed, required stop
   policy, and allowlisted finish classifications; and
-- exact compact root/edit fields, edit bounds, empty-text operation mapping,
-  authoritative manifest schema and limits, path policy, batch protocol, and
-  strict parent-decoder version.
+- exact compact root/edit fields, one-based span convention, insertion boundary,
+  ordering and overlap policy, snapshot/excerpt authorization, unique-anchor
+  derivation, operation mapping, authoritative manifest schema and limits, path
+  policy, batch protocol, and strict parent-decoder version.
 
 Sorted-key serialization makes retry-identical inputs stable. Per-attempt
 diagnostic content, model path, cache path, hardware details, process
@@ -311,21 +390,24 @@ Worse, lexicographic truncation spent the source budget on the first path and
 did not show later required files. Larger-model escalation cannot correct that
 input-boundary defect.
 
-Gludd now decomposes a reference into deterministic, disjoint prompt shards of
-at most three focus paths. A base shard is at most 12,000 bytes and any
-diagnostic retry remains at most 16,384 bytes. Every shard repeats the exact
+Gludd now decomposes a reference into deterministic prompt shards with exactly
+one focus path each. A base shard is at most 12,000 bytes and any diagnostic
+retry remains at most 16,384 bytes. Every shard repeats the exact
 task ID, baseline SHA, complete global changed-path list, complete test list,
 and ordered canonical Make commands. Each focus file includes its full byte
 count and SHA-256 identity. Files of at most 4,096 bytes are included in full.
 For larger Python files, the existing
 `general_ludd.planning.repo_map.RepoMapBuilder` Tree-sitter parser supplies
 syntax boundaries and Gludd selects exact numbered symbol and task-relevant
-line windows. Omission is explicit, digest-bound, and never presented as full
-source. A shard may edit every and only its focus paths; the merger rejects
+line windows. Every disclosed source line is rendered with an unambiguous
+`L<one-based>|` prefix, and the prompt plan retains the corresponding half-open
+editable line ranges outside model-controlled output. Omission is explicit,
+digest-bound, and never presented as full source. A shard may edit every and
+only its focus path; the parent expands only authorized spans and rejects
 missing, duplicate, broadened, wrong-baseline, wrong-task, wrong-test, or
-reordered-command output through the original strict `ProposalManifest`
-parser before candidate worktree creation. The immutable task, baseline, global
-paths, tests, and commands precede a named shard-specific suffix, so every
+reordered-command output through the original strict `ProposalManifest` parser
+before candidate worktree creation. The immutable task, baseline, global paths,
+tests, and commands precede a named shard-specific suffix, so every
 inference shares a long byte-identical prefix. The single retained model receives
 those prompts in canonical order, enabling the pinned runtime's live longest-
 prefix reuse without another cache owner. Tests pin exact prefix bytes and order;
@@ -341,9 +423,9 @@ protocol's failures from this bounded protocol without guessing from timestamps.
 
 This decomposition preserves the comparison rather than summarizing it. Gludd's
 conversation `ContextCompactor` was considered but is intentionally not used:
-its lossy summary cannot supply verbatim unique `old_text`. If exact excerpts
-are insufficient, the generated replacement cannot validate against the
-baseline and the attempt fails closed. It never silently guesses omitted patch
+its lossy summary cannot authorize an exact baseline line span. If numbered
+excerpts are insufficient, the model cannot address omitted content and the
+attempt fails closed. It never silently guesses an omitted coordinate or patch
 text. The model candidate preflight uses the largest individual rendered shard,
 not the old aggregate/truncated prompt.
 
@@ -544,13 +626,15 @@ harness cleanup compensates for missing application ownership.
 
 ## Resource bounds and fail-closed cleanup
 
-- 32 edits, 64 tests, 32 Make commands, and 1 MiB of proposal edit text.
-- 12,000-byte base prompt shards, at most three focus paths per shard, a
+- One to 16 compact spans and 3,072 combined replacement bytes per managed
+  shard; at most 32 expanded manifest edits, 64 tests, 32 Make commands, and
+  1 MiB of proposal edit text.
+- 12,000-byte base prompt shards, exactly one focus path per shard, a
   16,384-byte hard retry boundary, 4,096 bytes of exact context per file, and a
   262,144-byte total request admission bound.
 - One owned worker and one lazily constructed `Llama` instance per candidate
   attempt; shards execute sequentially with no daemon, server, or explicit cache.
-- One 32-token same-instance canary, then 1,536 compact decode tokens per managed
+- One 32-token same-instance canary, then 1,024 compact decode tokens per managed
   shard and one 300-second total owned worker timeout per candidate attempt. The
   legacy single-string compatibility path remains 4,096 tokens; the strict merged
   proposal remains roughly 1.25 MiB at most.
@@ -627,8 +711,9 @@ Official sources:
 - [Aider's repository-map documentation](https://aider.chat/docs/repomap.html)
   documents budgeted source maps built from important classes, functions,
   signatures, and exact critical lines. Gludd reuses its existing Tree-sitter
-  repository-map boundary, but preserves file digests and exact replacement
-  validation because its output is an executable patch proposal.
+  repository-map boundary, but preserves file digests and exact
+  span-to-snapshot validation because its output is an executable patch
+  proposal.
 - [Tree-sitter query syntax](https://tree-sitter.github.io/tree-sitter/using-parsers/queries/1-syntax.html)
   documents typed syntax-node matching and explicit `ERROR` nodes. Gludd uses
   the maintained parser already locked by the project instead of inventing a
@@ -731,6 +816,12 @@ Practitioner evidence:
   records a missing cache reference surfacing as `FileNotFoundError` in 2023.
   Gludd consequently requires its own complete immutable manifest and fails
   closed on an offline cache miss instead of treating cache presence as enough.
+- [Aider issue 3651](https://github.com/Aider-AI/aider/issues/3651)
+  remains an open practitioner report from March 2025: Aider 0.77.1 with
+  GPT-4o-mini identified the requested change in architect/diff mode, but the
+  emitted search text did not exactly match the file. Compact v4 removes that
+  redundant old-text transcription while retaining exact parent-side snapshot
+  validation.
 - [Aider issue 3010](https://github.com/Aider-AI/aider/issues/3010)
   records January 2025 reports from local Ollama/DeepSeek users whose model
   denied seeing a file already added to the coding chat. Gludd therefore derives

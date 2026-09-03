@@ -366,6 +366,7 @@ def test_repository_bound_plan_round_trip_requires_exact_execution_binding(
     encoded = _repository_bound_plan(tmp_path).to_json()
     payload = json.loads(encoded)
 
+    assert payload["schema_version"] == 3
     assert payload["repository_binding_digest"] == _REPOSITORY_BINDING_DIGEST
     assert "repo_root" not in payload
 
@@ -571,11 +572,115 @@ def test_complete_approved_plan_json_round_trip_preserves_immutable_components(
     assert restored.explicit_model_path == (tmp_path / "model.gguf").resolve()
 
 
+def test_approved_plan_v3_round_trip_binds_compact_v4_ranges_and_identity(
+    tmp_path: Path,
+) -> None:
+    prompt = PromptPlan(
+        shards=(
+            PromptShard(
+                focus_paths=("src/general_ludd/example.py",),
+                prompt="L1|return 0\n",
+                editable_ranges=((1, 2),),
+            ),
+        ),
+        source_bytes=len("return 0\n"),
+        baseline_files=(("src/general_ludd/example.py", "return 0\n"),),
+        proposal_protocol="self-improve-compact-proposal-v4",
+    )
+    plan = ApprovedSelfImprovePlan.approve(
+        approval_id="approval-v4",
+        todo_id="todo-v4",
+        project_id="project-v4",
+        repo_root=tmp_path,
+        repository_binding_digest=_REPOSITORY_BINDING_DIGEST,
+        task=_task(),
+        reference=_reference(),
+        prompt=prompt,
+        required_output_tokens=1024,
+        max_attempts=2,
+    )
+
+    payload = json.loads(plan.to_json())
+    restored = ApprovedSelfImprovePlan.from_json(plan.to_json())
+
+    assert payload["schema_version"] == 3
+    assert payload["prompt"]["value"]["proposal_protocol"] == (
+        "self-improve-compact-proposal-v4"
+    )
+    assert payload["prompt"]["value"]["shards"][0]["editable_ranges"] == [[1, 2]]
+    assert restored == replace(plan, repo_root=None)
+    assert restored.attempt_identity_digest == plan.attempt_identity_digest
+
+
+def test_approved_plan_dual_reads_v2_compact_v3_without_reinterpretation(
+    tmp_path: Path,
+) -> None:
+    legacy_prompt = PromptPlan(
+        shards=(
+            PromptShard(
+                focus_paths=("src/general_ludd/example.py",),
+                prompt="legacy a/z compact prompt",
+            ),
+        ),
+        source_bytes=len("return 0\n"),
+        baseline_files=(("src/general_ludd/example.py", "return 0\n"),),
+        proposal_protocol="self-improve-compact-proposal-v3",
+    )
+    legacy = ApprovedSelfImprovePlan(
+        approval_id="approval-v2",
+        todo_id="todo-v2",
+        project_id="project-v2",
+        repo_root=None,
+        repository_binding_digest=_REPOSITORY_BINDING_DIGEST,
+        task=_task(),
+        reference=_reference(),
+        prompt=legacy_prompt,
+        required_output_tokens=1024,
+        max_attempts=2,
+        approved=True,
+        _schema_version=2,
+    )
+
+    encoded = legacy.to_json()
+    payload = json.loads(encoded)
+    restored = ApprovedSelfImprovePlan.from_json(encoded)
+
+    assert payload["schema_version"] == 2
+    assert "proposal_protocol" not in payload["prompt"]["value"]
+    assert "editable_ranges" not in payload["prompt"]["value"]["shards"][0]
+    assert restored.to_json() == encoded
+    assert restored.prompt == legacy_prompt
+    assert restored.attempt_identity_digest == legacy.attempt_identity_digest
+
+
+def test_compact_v4_attempt_identity_rotates_from_legacy_v3() -> None:
+    private_cli = cast(Any, cli_runner)
+    shard = PromptShard(
+        focus_paths=("src/general_ludd/example.py",),
+        prompt="same visible prompt bytes",
+    )
+    legacy = PromptPlan(
+        shards=(shard,),
+        source_bytes=0,
+        proposal_protocol="self-improve-compact-proposal-v3",
+    )
+    current = PromptPlan(
+        shards=(replace(shard, editable_ranges=((1, 2),)),),
+        source_bytes=0,
+        proposal_protocol="self-improve-compact-proposal-v4",
+    )
+
+    assert legacy.protocol_digest != current.protocol_digest
+    assert private_cli._attempt_identity_digest(legacy) != private_cli._attempt_identity_digest(
+        current
+    )
+
+
 @pytest.mark.parametrize(
     ("mutation", "match"),
     [
         (lambda value: value.pop("todo_id"), "missing fields"),
-        (lambda value: value.__setitem__("schema_version", 3), "unsupported"),
+        (lambda value: value.__setitem__("schema_version", 4), "unsupported"),
         (lambda value: value.__setitem__("approved", False), "approved=true"),
         (
             lambda value: value["prompt"].__setitem__("kind", "mutable"),
@@ -849,15 +954,16 @@ def test_cli_context_selection_helpers_cover_bounded_and_relevant_paths() -> Non
     assert private_cli._merge_selected_lines(set()) == ()
     assert private_cli._merge_selected_lines({0, 1, 4}) == ((0, 2), (4, 5))
     assert private_cli._render_selected_lines(["one\n", "two\n"], {0}) == (
-        "LINES 1-1\none\n"
+        "LINES 1-1\nL1|one\n"
     )
     assert private_cli._select_python_excerpt("src/empty.py", "", terms, budget=64) == (
         "",
         0,
+        (),
     )
 
     content = "def running_binding() -> int:\n" + "    running = 1\n" * 80
-    excerpt, selected = private_cli._select_python_excerpt(
+    excerpt, selected, editable_ranges = private_cli._select_python_excerpt(
         "src/bindings.py",
         content,
         terms,
@@ -865,6 +971,7 @@ def test_cli_context_selection_helpers_cover_bounded_and_relevant_paths() -> Non
     )
     assert "LINES" in excerpt
     assert 0 < selected < len(content.splitlines())
+    assert editable_ranges
 
 
 def test_cli_file_context_fails_closed_and_handles_absent_and_large_files(
@@ -873,7 +980,12 @@ def test_cli_file_context_fails_closed_and_handles_absent_and_large_files(
     private_cli = cast(Any, cli_runner)
     task = _task()
     absent = private_cli._build_file_context(tmp_path, "src/absent.py", task)
-    assert absent == ("FILE src/absent.py state=absent bytes=0 sha256=none", 0, None)
+    assert absent == (
+        "FILE src/absent.py state=absent bytes=0 sha256=none",
+        0,
+        None,
+        (),
+    )
 
     directory = tmp_path / "src/directory.py"
     directory.mkdir(parents=True)
@@ -888,7 +1000,7 @@ def test_cli_file_context_fails_closed_and_handles_absent_and_large_files(
     large = tmp_path / "src/large.py"
     content = "def focused_feature() -> int:\n" + "    value = 1\n" * 400
     large.write_text(content, encoding="utf-8")
-    rendered, size, baseline = private_cli._build_file_context(
+    rendered, size, baseline, editable_ranges = private_cli._build_file_context(
         tmp_path,
         "src/large.py",
         task,
@@ -897,6 +1009,7 @@ def test_cli_file_context_fails_closed_and_handles_absent_and_large_files(
     assert "OMITTED" in rendered
     assert size == len(content.encode())
     assert baseline == content
+    assert editable_ranges
 
 
 @pytest.mark.parametrize(

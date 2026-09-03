@@ -107,6 +107,37 @@ def _contract() -> ProposalContract:
     )
 
 
+def _span_proposal(
+    raw: object,
+    *,
+    path: str = "src/general_ludd/example.py",
+) -> comparison_module.CompactSpanProposal:
+    return comparison_module._decode_compact_span_proposal(
+        json.dumps(raw),
+        focus_path=path,
+    )
+
+
+def _expand_span_proposals(
+    proposals: tuple[comparison_module.CompactSpanProposal, ...],
+    *,
+    paths: tuple[str, ...] = ("src/general_ludd/example.py",),
+    baselines: dict[str, str | None] | None = None,
+    editable_ranges: tuple[tuple[tuple[int, int], ...], ...] = (((1, 5),),),
+) -> ProposalManifest:
+    return comparison_module.expand_compact_span_proposals(
+        proposals,
+        contract=_contract(),
+        expected_path_groups=tuple((path,) for path in paths),
+        expected_baseline_files=(
+            baselines
+            if baselines is not None
+            else {"src/general_ludd/example.py": "same\nsame\nunique\ntail\n"}
+        ),
+        expected_editable_ranges=editable_ranges,
+    )
+
+
 def test_proposal_contract_rejects_mutable_identity_collections() -> None:
     """Keep trusted tests and commands immutable across the worker boundary."""
     with pytest.raises(ValueError, match="tests must be a tuple"):
@@ -131,13 +162,20 @@ def test_proposal_contract_rejects_mutable_identity_collections() -> None:
 def test_worker_protocol_entry_points_are_declared_public_exports() -> None:
     """Keep script consumers explicit so dead-code checks see the real API seam."""
     expected = {
+        "COMPACT_PROPOSAL_PROTOCOL_V3",
+        "COMPACT_PROPOSAL_PROTOCOL_V4",
+        "CompactLineSpan",
+        "CompactSpanProposal",
         "LocalProposalGateway",
         "bind_compact_focus_path",
         "build_retry_prompt",
         "compare_with_codex",
         "decode_prompt_batch",
+        "decode_compact_span_batch",
         "decode_proposal_batch",
+        "encode_compact_span_batch",
         "encode_proposal_batch",
+        "expand_compact_span_proposals",
         "local_proposal_attempt_identity_digest",
         "merge_proposal_manifests",
     }
@@ -263,8 +301,8 @@ def test_attempt_identity_binds_complete_managed_output_protocol(
         ("_STRUCTURED_OUTPUT_REQUIRE_STOP", False),
         ("_COMPACT_ROOT_FIELDS", frozenset({"c", "e", "unexpected"})),
         (
-            "_COMPACT_OPERATION_BY_EMPTY_TEXT",
-            {(False, False): "replace", (False, True): "delete"},
+            "_COMPACT_MAX_ANCHOR_BYTES",
+            65_535,
         ),
         ("_STRICT_PARENT_DECODER_VERSION", "proposal-manifest-strict-v-next"),
     )
@@ -485,6 +523,20 @@ def test_proposal_contract_round_trips_only_trusted_immutable_fields() -> None:
                 }
             ),
             "make command",
+        ),
+        (
+            json.dumps(
+                {
+                    "baseline_sha": "a" * 40,
+                    "task_id": "S83.133",
+                    "tests": ["tests/unit/test_example.py"],
+                    "make_commands": [
+                        "make test-files TESTFILES=tests/unit/test_example.py"
+                    ],
+                    "proposal_protocol": {"untrusted": "mapping"},
+                }
+            ),
+            "protocol",
         ),
     ],
 )
@@ -861,6 +913,7 @@ def test_local_gateway_uses_explicit_model_and_deterministic_decode(
     )
     proposal = gateway.propose("Repair the example.")
 
+    assert isinstance(proposal, ProposalManifest)
     assert proposal.task_id == "S83.133"
     assert calls["factory"] == {
         "model_path": str(model_path),
@@ -933,6 +986,7 @@ def test_local_gateway_prefers_native_schema_constrained_chat_completion(
     )
     proposal = gateway.propose("Repair the example.")
 
+    assert isinstance(proposal, ProposalManifest)
     assert proposal.commit_message == "fix: local chat proposal"
     assert calls["temperature"] == 0.0
     assert calls["max_tokens"] == 4096
@@ -1032,6 +1086,8 @@ def test_compact_gateway_uses_one_fast_canary_and_expands_trusted_contract(
     proposal = gateway.propose(first_prompt, contract=contract)
     second = gateway.propose(second_prompt, contract=contract)
 
+    assert isinstance(proposal, ProposalManifest)
+    assert isinstance(second, ProposalManifest)
     assert factory_calls == 1
     assert second == proposal
     assert proposal.baseline_sha == contract.baseline_sha
@@ -1122,7 +1178,10 @@ def test_compact_protocol_bounds_one_file_output_before_manifest_limits() -> Non
     assert comparison_module._COMPACT_PROPOSAL_TOKENS == 1024
     assert comparison_module._COMPACT_MAX_CONTENT_BYTES == 3072
     assert "3,072 UTF-8 bytes total" in comparison_module._COMPACT_SYSTEM_PROMPT
-    assert "distinct non-empty strings" in comparison_module._COMPACT_SYSTEM_PROMPT
+    assert (
+        "distinct non-empty strings"
+        in comparison_module._LEGACY_COMPACT_SYSTEM_PROMPT
+    )
 
     raw = json.dumps(
         {
@@ -1193,6 +1252,314 @@ def test_compact_codec_rejects_untrusted_or_duplicate_focus_marker() -> None:
         comparison_module.bind_compact_focus_path(
             prompt,
             "src/general_ludd/example.py",
+        )
+
+
+def test_compact_v4_gateway_emits_only_bounded_line_span_fields(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    calls: list[dict[str, object]] = []
+
+    class SpanModel:
+        def __call__(
+            self,
+            prompt: str,
+            *,
+            max_tokens: int,
+            temperature: float,
+            echo: bool,
+        ) -> object:
+            del prompt, max_tokens, temperature, echo
+            raise AssertionError("compact mode must use chat completion")
+
+        def create_chat_completion(self, **kwargs: object) -> dict[str, object]:
+            calls.append(dict(kwargs))
+            content = (
+                '{"ok":true}'
+                if len(calls) == 1
+                else '{"e":[{"s":2,"n":1,"z":"changed\\n"}]}'
+            )
+            return {
+                "choices": [
+                    {"finish_reason": "stop", "message": {"content": content}}
+                ]
+            }
+
+    contract = replace(
+        _contract(),
+        proposal_protocol="self-improve-compact-proposal-v4",
+    )
+    prompt = comparison_module.bind_compact_focus_path(
+        "Use the numbered source lines.",
+        "src/general_ludd/example.py",
+    )
+
+    proposal = LocalProposalGateway(
+        model_path,
+        model_factory=lambda **_kwargs: SpanModel(),
+    ).propose(prompt, contract=contract)
+
+    assert isinstance(proposal, comparison_module.CompactSpanProposal)
+    assert proposal.focus_path == "src/general_ludd/example.py"
+    assert proposal.edits == (
+        comparison_module.CompactLineSpan(start_line=2, old_line_count=1, new_text="changed\n"),
+    )
+    schema = calls[1]["response_format"]
+    assert isinstance(schema, dict)
+    item = schema["schema"]["properties"]["e"]["items"]
+    assert item["required"] == ["s", "n", "z"]
+    assert set(item["properties"]) == {"s", "n", "z"}
+    assert calls[1]["max_tokens"] == 1024
+
+
+@pytest.mark.parametrize(
+    ("raw", "match"),
+    [
+        ({"e": []}, "1..16"),
+        ({"e": [{"s": True, "n": 1, "z": "x"}]}, "integers, not booleans"),
+        ({"e": [{"s": 1, "n": False, "z": "x"}]}, "integers, not booleans"),
+        ({"e": [{"s": 0, "n": 1, "z": "x"}]}, "positive"),
+        ({"e": [{"s": 1, "n": -1, "z": "x"}]}, "non-negative"),
+        ({"e": [{"s": 1, "n": 0, "z": ""}]}, "must change content"),
+        ({"e": [{"s": 1, "n": 1, "z": 7}]}, "new text must be a string"),
+        ({"e": [{"s": 1, "n": 1, "z": "x", "a": "old"}]}, "exactly n, s, and z"),
+        (
+            {"e": [{"s": 3, "n": 2, "z": "x"}, {"s": 4, "n": 1, "z": "y"}]},
+            "ordered and non-overlapping",
+        ),
+        (
+            {"e": [{"s": 2, "n": 0, "z": "x"}, {"s": 2, "n": 0, "z": "y"}]},
+            "ordered and non-overlapping",
+        ),
+    ],
+)
+def test_compact_v4_decoder_rejects_ambiguous_spans(raw: object, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        _span_proposal(raw)
+
+
+def test_compact_v4_decoder_enforces_new_text_byte_budget() -> None:
+    with pytest.raises(ValueError, match="exceeds 3072 bytes"):
+        _span_proposal({"e": [{"s": 1, "n": 1, "z": "x" * 3073}]})
+
+
+def test_compact_v4_parent_derives_unique_preimage_for_duplicate_source_text() -> None:
+    baseline = "header\nsame\nsame\ntail\n"
+    proposal = _span_proposal({"e": [{"s": 3, "n": 1, "z": "changed\n"}]})
+
+    manifest = _expand_span_proposals(
+        (proposal,),
+        baselines={"src/general_ludd/example.py": baseline},
+        editable_ranges=(((1, 5),),),
+    )
+
+    edit = manifest.edits[0]
+    assert edit.operation == "replace"
+    assert baseline.count(edit.old_text) == 1
+    assert baseline.replace(edit.old_text, edit.new_text, 1) == (
+        "header\nsame\nchanged\ntail\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "ranges", "match"),
+    [
+        ({"e": [{"s": 2, "n": 1, "z": "changed\n"}]}, ((1, 2),), "explicitly shown"),
+        ({"e": [{"s": 3, "n": 0, "z": "inserted\n"}]}, ((1, 3),), "explicitly shown boundary"),
+        ({"e": [{"s": 6, "n": 1, "z": "changed\n"}]}, ((1, 5),), "outside trusted baseline"),
+        ({"e": [{"s": 2, "n": 1, "z": "same\n"}]}, ((1, 5),), "must change content"),
+    ],
+)
+def test_compact_v4_parent_rejects_hidden_out_of_range_and_noop_spans(
+    raw: object,
+    ranges: tuple[tuple[int, int], ...],
+    match: str,
+) -> None:
+    proposal = _span_proposal(raw)
+
+    with pytest.raises(ValueError, match=match):
+        _expand_span_proposals((proposal,), editable_ranges=(ranges,))
+
+
+def test_compact_v4_parent_compiles_insert_partial_delete_and_whole_delete() -> None:
+    path = "src/general_ludd/example.py"
+    baseline = "first\nsecond\nthird\n"
+    cases = (
+        ({"e": [{"s": 2, "n": 0, "z": "inserted\n"}]}, "first\ninserted\nsecond\nthird\n", "replace"),
+        ({"e": [{"s": 2, "n": 1, "z": ""}]}, "first\nthird\n", "replace"),
+        ({"e": [{"s": 1, "n": 3, "z": ""}]}, "", "delete"),
+    )
+
+    for raw, expected, operation in cases:
+        manifest = _expand_span_proposals(
+            (_span_proposal(raw),),
+            baselines={path: baseline},
+            editable_ranges=(((1, 4),),),
+        )
+        edit = manifest.edits[0]
+        assert edit.operation == operation
+        actual = "" if operation == "delete" else baseline.replace(
+            edit.old_text, edit.new_text, 1
+        )
+        assert actual == expected
+
+
+def test_compact_v4_parent_accepts_only_canonical_absent_file_create() -> None:
+    path = "src/general_ludd/example.py"
+    manifest = _expand_span_proposals(
+        (_span_proposal({"e": [{"s": 1, "n": 0, "z": "created = True\n"}]}),),
+        baselines={path: None},
+        editable_ranges=((),),
+    )
+    assert manifest.edits[0].operation == "create"
+
+    for raw in (
+        {"e": [{"s": 2, "n": 0, "z": "created = True\n"}]},
+        {"e": [{"s": 1, "n": 1, "z": "created = True\n"}]},
+    ):
+        with pytest.raises(ValueError, match="absent file create"):
+            _expand_span_proposals(
+                (_span_proposal(raw),),
+                baselines={path: None},
+                editable_ranges=((),),
+            )
+
+    with pytest.raises(ValueError, match=r"absent file.*editable baseline ranges"):
+        _expand_span_proposals(
+            (_span_proposal({"e": [{"s": 1, "n": 0, "z": "created = True\n"}]}),),
+            baselines={path: None},
+            editable_ranges=(((1, 2),),),
+        )
+
+
+def test_compact_v4_parent_rejects_empty_existing_file_without_unique_anchor() -> None:
+    with pytest.raises(ValueError, match="unique bounded baseline anchor"):
+        _expand_span_proposals(
+            (_span_proposal({"e": [{"s": 1, "n": 0, "z": "created = True\n"}]}),),
+            baselines={"src/general_ludd/example.py": ""},
+            editable_ranges=((),),
+        )
+
+
+def test_compact_v4_parent_preserves_two_ordered_edits_in_one_file() -> None:
+    path = "src/general_ludd/example.py"
+    baseline = "alpha = 1\nbetween = 0\nomega = 1\n"
+    proposal = _span_proposal(
+        {
+            "e": [
+                {"s": 1, "n": 1, "z": "alpha = 2\n"},
+                {"s": 3, "n": 1, "z": "omega = 2\n"},
+            ]
+        }
+    )
+
+    manifest = _expand_span_proposals(
+        (proposal,),
+        baselines={path: baseline},
+        editable_ranges=(((1, 4),),),
+    )
+
+    current = baseline
+    for edit in manifest.edits:
+        assert current.count(edit.old_text) == 1
+        current = current.replace(edit.old_text, edit.new_text, 1)
+    assert current == "alpha = 2\nbetween = 0\nomega = 2\n"
+
+
+def test_compact_v4_multi_edit_coordinates_stay_bound_to_immutable_snapshot() -> None:
+    path = "src/general_ludd/example.py"
+    baseline = "alpha = 1\nbetween = 0\nomega = 1\n"
+    proposal = _span_proposal(
+        {
+            "e": [
+                {"s": 1, "n": 1, "z": "alpha = 2\ninserted = True\n"},
+                {"s": 3, "n": 1, "z": "omega = 2\n"},
+            ]
+        }
+    )
+
+    manifest = _expand_span_proposals(
+        (proposal,),
+        baselines={path: baseline},
+        editable_ranges=(((1, 4),),),
+    )
+
+    current = baseline
+    for edit in manifest.edits:
+        assert current.count(edit.old_text) == 1
+        current = current.replace(edit.old_text, edit.new_text, 1)
+    assert current == "alpha = 2\ninserted = True\nbetween = 0\nomega = 2\n"
+
+
+@pytest.mark.parametrize(
+    ("baseline", "replacement", "expected"),
+    [
+        (
+            "first\r\nsecond\r\nthird",
+            "changed\r\n",
+            "first\r\nchanged\r\nthird",
+        ),
+        (
+            "first\r\nsecond\r\n",
+            "changed\r\n",
+            "first\r\nchanged\r\n",
+        ),
+    ],
+)
+def test_compact_v4_parent_preserves_crlf_and_final_newline_state(
+    baseline: str,
+    replacement: str,
+    expected: str,
+) -> None:
+    path = "src/general_ludd/example.py"
+    manifest = _expand_span_proposals(
+        (_span_proposal({"e": [{"s": 2, "n": 1, "z": replacement}]}),),
+        baselines={path: baseline},
+        editable_ranges=(((1, len(baseline.splitlines()) + 1),),),
+    )
+
+    edit = manifest.edits[0]
+    assert baseline.replace(edit.old_text, edit.new_text, 1) == expected
+
+
+@pytest.mark.parametrize(
+    ("start_line", "new_text", "expected"),
+    [
+        (1, "before\n", "before\nfirst\nsecond\nthird\n"),
+        (4, "after\n", "first\nsecond\nthird\nafter\n"),
+    ],
+)
+def test_compact_v4_parent_accepts_shown_zero_width_edge_boundaries(
+    start_line: int,
+    new_text: str,
+    expected: str,
+) -> None:
+    path = "src/general_ludd/example.py"
+    baseline = "first\nsecond\nthird\n"
+    manifest = _expand_span_proposals(
+        (_span_proposal({"e": [{"s": start_line, "n": 0, "z": new_text}]}),),
+        baselines={path: baseline},
+        editable_ranges=(((1, 4),),),
+    )
+
+    edit = manifest.edits[0]
+    assert baseline.replace(edit.old_text, edit.new_text, 1) == expected
+
+
+def test_compact_v4_parent_fails_when_unique_anchor_exceeds_byte_bound() -> None:
+    path = "src/general_ludd/example.py"
+    baseline = "same\n" * 30_000
+    proposal = _span_proposal(
+        {"e": [{"s": 15_000, "n": 1, "z": "changed\n"}]}
+    )
+
+    with pytest.raises(ValueError, match="unique bounded baseline anchor"):
+        _expand_span_proposals(
+            (proposal,),
+            baselines={path: baseline},
+            editable_ranges=(((1, 30_001),),),
         )
 
 

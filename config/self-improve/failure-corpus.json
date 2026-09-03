@@ -49,6 +49,41 @@
     },
     {
       "expected": {
+        "detail": "compact span coordinates must be integers, not booleans",
+        "forbidden_substrings": [],
+        "source": "worker_tail",
+        "type": "edit_span_coordinate"
+      },
+      "id": "compact-v4-boolean-coordinate",
+      "input": {
+        "focus_path": "src/general_ludd/self_improve/example.py",
+        "model_output": "{\"e\":[{\"n\":1,\"s\":true,\"z\":\"changed\\n\"}]}"
+      },
+      "kind": "compact_span_decode"
+    },
+    {
+      "expected": {
+        "detail": "compact span must consume only explicitly shown baseline lines",
+        "forbidden_substrings": [],
+        "source": "parent_validation",
+        "type": "edit_span_scope"
+      },
+      "id": "compact-v4-hidden-line",
+      "input": {
+        "baseline": "shown\nhidden\n",
+        "editable_ranges": [
+          [
+            1,
+            2
+          ]
+        ],
+        "focus_path": "src/general_ludd/self_improve/example.py",
+        "model_output": "{\"e\":[{\"n\":1,\"s\":2,\"z\":\"changed\\n\"}]}"
+      },
+      "kind": "compact_span_parent"
+    },
+    {
+      "expected": {
         "detail": "compact proposal must contain exactly e",
         "forbidden_substrings": [],
         "source": "worker_tail",
@@ -168,6 +203,6 @@
       "kind": "acquisition_trace"
     }
   ],
-  "protocol": "self-improve-failure-corpus-v3",
-  "schema_version": 3
+  "protocol": "self-improve-failure-corpus-v4",
+  "schema_version": 4
 }

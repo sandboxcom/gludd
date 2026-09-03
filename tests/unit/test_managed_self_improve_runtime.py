@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ast
 import inspect
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import NoReturn, cast
@@ -220,6 +221,13 @@ def test_prepare_plan_binds_identity_round_trips_and_cleans_context(
     assert plan.max_attempts == 2
     assert plan.explicit_model_path == explicit_model.resolve()
     assert isinstance(plan.prompt, PromptPlan)
+    payload = json.loads(plan.to_json())
+    assert payload["schema_version"] == 3
+    assert payload["repo_root"] == str(repo_root.resolve())
+    assert "repository_binding_digest" not in payload
+    assert payload["prompt"]["value"]["proposal_protocol"] == (
+        "self-improve-compact-proposal-v4"
+    )
     assert plan.required_output_tokens > 0
     assert ApprovedSelfImprovePlan.from_json(plan.to_json()) == plan
     assert calls == [

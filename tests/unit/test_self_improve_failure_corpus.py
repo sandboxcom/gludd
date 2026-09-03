@@ -18,6 +18,8 @@ TRACKED_CORPUS = ROOT / "config/self-improve/failure-corpus.json"
 EXPECTED_CASES = (
     "eviction-refused-phantom-proposal",
     "no-op-replace",
+    "compact-v4-boolean-coordinate",
+    "compact-v4-hidden-line",
     "multiline-redundant-metadata",
     "token-exhaustion",
     "worker-success-parent-merge-rejection",
@@ -72,6 +74,18 @@ def test_tracked_corpus_replays_every_observed_failure_class() -> None:
 @pytest.mark.parametrize(
     ("case_id", "feedback_type", "source", "detail"),
     (
+        (
+            "compact-v4-boolean-coordinate",
+            "edit_span_coordinate",
+            "worker_tail",
+            "compact span coordinates must be integers, not booleans",
+        ),
+        (
+            "compact-v4-hidden-line",
+            "edit_span_scope",
+            "parent_validation",
+            "compact span must consume only explicitly shown baseline lines",
+        ),
         (
             "no-op-replace",
             "edit_replace_contract",
@@ -192,10 +206,10 @@ def test_cli_emits_deterministic_bounded_case_and_summary_evidence(
     captured = capsys.readouterr()
     lines = captured.out.splitlines()
 
-    assert len([line for line in lines if line.startswith("SELF_IMPROVE_FAILURE_CORPUS_CASE ")]) == 8
+    assert len([line for line in lines if line.startswith("SELF_IMPROVE_FAILURE_CORPUS_CASE ")]) == 10
     assert lines[-1] == (
         'SELF_IMPROVE_FAILURE_CORPUS_SUMMARY '
-        '{"cases":8,"failed":0,"passed":8,"protocol":"self-improve-failure-corpus-v3"}'
+        '{"cases":10,"failed":0,"passed":10,"protocol":"self-improve-failure-corpus-v4"}'
     )
     assert captured.err == ""
 
@@ -205,7 +219,7 @@ def test_cli_emits_deterministic_bounded_case_and_summary_evidence(
     (
         lambda value: value.update({"extra": True}),
         lambda value: value.pop("protocol"),
-        lambda value: value.update({"schema_version": 4}),
+        lambda value: value.update({"schema_version": 5}),
         lambda value: value.update({"protocol": "unknown"}),
         lambda value: value.update({"cases": []}),
         lambda value: value["cases"].append(copy.deepcopy(value["cases"][0])),
@@ -223,6 +237,71 @@ def test_loader_rejects_schema_drift(
 
     with pytest.raises(ValueError):
         corpus.load_corpus(_write_fixture(tmp_path, value))
+
+
+@pytest.mark.parametrize(
+    ("case_id", "container_name", "field", "replacement", "match"),
+    (
+        ("no-op-replace", "expected", "detail", "", "UTF-8 bytes"),
+        ("no-op-replace", "expected", "type", "bad type", "not canonical"),
+        ("no-op-replace", "expected", "source", "bad source", "not canonical"),
+        (
+            "no-op-replace",
+            "expected",
+            "forbidden_substrings",
+            "not-a-list",
+            "bounded list",
+        ),
+        (
+            "no-op-replace",
+            "expected",
+            "forbidden_substrings",
+            ["duplicate", "duplicate"],
+            "unique",
+        ),
+        ("no-op-replace", "case", "id", "Bad ID", "not canonical"),
+        (
+            "compact-v4-hidden-line",
+            "input",
+            "editable_ranges",
+            [1],
+            "contain pairs",
+        ),
+        ("token-exhaustion", "input", "budget", True, "positive integer"),
+        ("token-exhaustion", "input", "require_stop", 1, "must be boolean"),
+        (
+            "worker-success-parent-merge-rejection",
+            "input",
+            "protocol_digest",
+            "x" * 64,
+            "not canonical",
+        ),
+    ),
+)
+def test_loader_rejects_noncanonical_nested_values(
+    tmp_path: Path,
+    case_id: str,
+    container_name: str,
+    field: str,
+    replacement: object,
+    match: str,
+) -> None:
+    value = _raw_fixture()
+    case = next(item for item in _fixture_cases(value) if item["id"] == case_id)
+    container = (
+        case
+        if container_name == "case"
+        else cast("dict[str, object]", case[container_name])
+    )
+    container[field] = replacement
+
+    with pytest.raises(ValueError, match=match):
+        corpus.load_corpus(_write_fixture(tmp_path, value))
+
+
+def test_loader_rejects_non_object_root(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="failure corpus must be a JSON object"):
+        corpus.load_corpus(_write_fixture(tmp_path, []))
 
 
 def test_loader_rejects_invalid_or_oversized_input(tmp_path: Path) -> None:

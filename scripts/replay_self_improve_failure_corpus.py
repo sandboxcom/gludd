@@ -15,20 +15,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, cast
 
-from scripts import run_self_improve_e2e as runner_module
-
 from general_ludd.self_improve.codex_comparison import (
+    COMPACT_PROPOSAL_PROTOCOL_V4,
     LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL,
+    CompactSpanProposal,
     LocalProposalGateway,
     ProposalContract,
     ProposalManifest,
+    _decode_compact_span_proposal,
     bind_compact_focus_path,
     decode_proposal_batch,
     encode_proposal_batch,
+    expand_compact_span_proposals,
     merge_proposal_manifests,
 )
+from general_ludd.self_improve.managed_runner import _validation_retry_feedback
 
-_PROTOCOL: Final = "self-improve-failure-corpus-v3"
+_PROTOCOL: Final = "self-improve-failure-corpus-v4"
 _MAX_CORPUS_BYTES: Final = 65_536
 _MAX_CASES: Final = 32
 _MAX_TEXT_BYTES: Final = 8_192
@@ -46,6 +49,10 @@ _EXPECTED_FIELDS: Final = frozenset(
 _INPUT_FIELDS: Final = {
     "acquisition_trace": frozenset({"events"}),
     "compact_decode": frozenset({"focus_path", "model_output"}),
+    "compact_span_decode": frozenset({"focus_path", "model_output"}),
+    "compact_span_parent": frozenset(
+        {"baseline", "editable_ranges", "focus_path", "model_output"}
+    ),
     "completion_decode": frozenset(
         {"phase", "budget", "require_stop", "worker_response"}
     ),
@@ -131,6 +138,13 @@ _CONTRACT: Final = ProposalContract(
         "SELF_IMPROVE_FAILURE_CORPUS_FILE=config/self-improve/failure-corpus.json",
     ),
 )
+_SPAN_CONTRACT: Final = ProposalContract(
+    baseline_sha=_CONTRACT.baseline_sha,
+    task_id=_CONTRACT.task_id,
+    tests=_CONTRACT.tests,
+    make_commands=_CONTRACT.make_commands,
+    proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+)
 _CANARY_RESPONSE: Final = {
     "choices": [
         {
@@ -195,6 +209,7 @@ class CorpusMismatch(ValueError):
     """A replay no longer matches its pinned typed expectation."""
 
     def __init__(self, case_id: str, reason: str) -> None:
+        """Retain only bounded case identity and mismatch classification."""
         super().__init__(reason)
         self.case_id = case_id
         self.reason = reason
@@ -298,9 +313,18 @@ def _validate_inputs(
 ) -> None:
     if kind == "acquisition_trace":
         _parse_acquisition_trace(inputs["events"])
-    elif kind == "compact_decode":
+    elif kind in {"compact_decode", "compact_span_decode"}:
         _required_string(inputs["focus_path"], f"{case_id} focus path")
         _required_string(inputs["model_output"], f"{case_id} model output")
+    elif kind == "compact_span_parent":
+        _required_string(inputs["focus_path"], f"{case_id} focus path")
+        _required_string(inputs["model_output"], f"{case_id} model output")
+        _required_string(inputs["baseline"], f"{case_id} baseline")
+        raw_ranges = inputs["editable_ranges"]
+        if not isinstance(raw_ranges, list) or not all(
+            isinstance(item, list) and len(item) == 2 for item in raw_ranges
+        ):
+            raise ValueError(f"{case_id} editable_ranges must contain pairs")
     elif kind == "completion_decode":
         _required_string(inputs["phase"], f"{case_id} phase", max_bytes=32)
         budget = inputs["budget"]
@@ -436,7 +460,7 @@ def load_corpus(path: Path) -> tuple[FailureCase, ...]:
     root = _required_object(decoded, "failure corpus")
     if set(root) != _ROOT_FIELDS:
         raise ValueError("failure corpus fields drifted")
-    if root["schema_version"] != 3 or root["protocol"] != _PROTOCOL:
+    if root["schema_version"] != 4 or root["protocol"] != _PROTOCOL:
         raise ValueError("failure corpus protocol is unsupported")
     raw_cases = root["cases"]
     if not isinstance(raw_cases, list) or not 1 <= len(raw_cases) <= _MAX_CASES:
@@ -450,8 +474,8 @@ def load_corpus(path: Path) -> tuple[FailureCase, ...]:
 
 def _fixture_gateway(
     proposal_response: Mapping[str, object],
-    operation: Callable[[LocalProposalGateway], ProposalManifest],
-) -> ProposalManifest:
+    operation: Callable[[LocalProposalGateway], ProposalManifest | CompactSpanProposal],
+) -> ProposalManifest | CompactSpanProposal:
     model = _FixtureChatModel((_CANARY_RESPONSE, proposal_response))
 
     def factory(
@@ -491,7 +515,7 @@ def _compact_response(model_output: str) -> Mapping[str, object]:
 def _replay_gateway_failure(case: FailureCase) -> str:
     inputs = case.inputs
     focus_path = cast("str", inputs.get("focus_path", "src/offline.py"))
-    if case.kind == "compact_decode":
+    if case.kind in {"compact_decode", "compact_span_decode"}:
         output = _required_string(inputs["model_output"], "model output")
         response = _compact_response(output)
     else:
@@ -503,10 +527,20 @@ def _replay_gateway_failure(case: FailureCase) -> str:
     try:
         _fixture_gateway(
             response,
-            lambda gateway: gateway.propose(prompt, contract=_CONTRACT),
+            lambda gateway: gateway.propose(
+                prompt,
+                contract=(
+                    _SPAN_CONTRACT
+                    if case.kind == "compact_span_decode"
+                    else _CONTRACT
+                ),
+            ),
         )
     except (RuntimeError, ValueError) as exc:
-        return runner_module._validation_retry_feedback(str(exc))
+        return _validation_retry_feedback(
+            str(exc),
+            proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+        )
     raise CorpusMismatch(case.case_id, "expected_rejection_missing")
 
 
@@ -515,10 +549,13 @@ def _replay_parent_merge(case: FailureCase) -> str:
     expected_path = _required_string(case.inputs["expected_path"], "expected path")
     digest = _required_string(case.inputs["protocol_digest"], "protocol digest")
     prompt = bind_compact_focus_path("Apply the exact offline fixture.", worker_path)
-    manifest = _fixture_gateway(
+    raw_manifest = _fixture_gateway(
         _compact_response('{"e":[{"a":"old","z":"new"}]}'),
         lambda gateway: gateway.propose(prompt, contract=_CONTRACT),
     )
+    if not isinstance(raw_manifest, ProposalManifest):
+        raise CorpusMismatch(case.case_id, "legacy_manifest_missing")
+    manifest = raw_manifest
     encoded = encode_proposal_batch((manifest,), protocol_digest=digest)
     decoded = decode_proposal_batch(
         encoded,
@@ -535,7 +572,33 @@ def _replay_parent_merge(case: FailureCase) -> str:
             expected_make_commands=_CONTRACT.make_commands,
         )
     except (RuntimeError, ValueError) as exc:
-        return runner_module._validation_retry_feedback(str(exc))
+        return _validation_retry_feedback(
+            str(exc),
+            proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+        )
+    raise CorpusMismatch(case.case_id, "expected_parent_rejection_missing")
+
+
+def _replay_compact_span_parent(case: FailureCase) -> str:
+    focus_path = _required_string(case.inputs["focus_path"], "focus path")
+    output = _required_string(case.inputs["model_output"], "model output")
+    baseline = _required_string(case.inputs["baseline"], "baseline")
+    raw_ranges = cast("list[list[object]]", case.inputs["editable_ranges"])
+    ranges = tuple((cast(int, item[0]), cast(int, item[1])) for item in raw_ranges)
+    proposal = _decode_compact_span_proposal(output, focus_path=focus_path)
+    try:
+        expand_compact_span_proposals(
+            (proposal,),
+            contract=_SPAN_CONTRACT,
+            expected_path_groups=((focus_path,),),
+            expected_baseline_files={focus_path: baseline},
+            expected_editable_ranges=(ranges,),
+        )
+    except (RuntimeError, ValueError) as exc:
+        return _validation_retry_feedback(
+            str(exc),
+            proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+        )
     raise CorpusMismatch(case.case_id, "expected_parent_rejection_missing")
 
 
@@ -552,12 +615,21 @@ def _actual_feedback(case: FailureCase) -> tuple[str, bool, str]:
                 "expected_acquisition_rejection_missing",
             )
         return verdict.feedback, False, "acquisition"
-    if case.kind in {"compact_decode", "completion_decode"}:
+    if case.kind in {"compact_decode", "compact_span_decode", "completion_decode"}:
         return _replay_gateway_failure(case), False, ""
+    if case.kind == "compact_span_parent":
+        return _replay_compact_span_parent(case), True, "span_expand"
     if case.kind == "parent_merge":
         return _replay_parent_merge(case), True, "merge"
     error = _required_string(case.inputs["error"], "retry error")
-    return runner_module._validation_retry_feedback(error), False, ""
+    return (
+        _validation_retry_feedback(
+            error,
+            proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+        ),
+        False,
+        "",
+    )
 
 
 def replay_case(case: FailureCase) -> ReplayResult:

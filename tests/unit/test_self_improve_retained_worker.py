@@ -9,22 +9,29 @@ import selectors
 import subprocess
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
-import scripts.run_self_improve_e2e as runner_module
 import scripts.self_improve_local_proposal as worker_module
 
+import general_ludd.self_improve.runtime as runtime_module
 from general_ludd.self_improve.codex_comparison import (
     CodexReference,
+    CompactSpanProposal,
     LocalProposalGateway,
     ProposalContract,
     ProposalManifest,
+    bind_compact_focus_path,
+    decode_compact_span_batch,
     decode_prompt_batch,
     decode_proposal_batch,
     encode_prompt_batch,
     encode_proposal_batch,
 )
+from general_ludd.self_improve.managed_runner import PromptPlan, PromptShard
+from general_ludd.self_improve.runtime import MakeResult, TaskSpec
+
+runner_module = cast(Any, runtime_module)
 
 
 def _manifest(path: str) -> ProposalManifest:
@@ -52,23 +59,40 @@ def _manifest(path: str) -> ProposalManifest:
     )
 
 
-def _plan() -> runner_module.PromptPlan:
+def _plan() -> PromptPlan:
     common = (
         "Immutable task identity and complete Codex file/test/Make contract.\n"
         "Global immutable Codex reference paths: src/one.py, src/two.py\n"
     )
-    return runner_module.PromptPlan(
+    return PromptPlan(
         shards=(
-            runner_module.PromptShard(
+            PromptShard(
                 focus_paths=("src/one.py",),
                 prompt=common + "Shard-specific contract: edit src/one.py",
             ),
-            runner_module.PromptShard(
+            PromptShard(
                 focus_paths=("src/two.py",),
                 prompt=common + "Shard-specific contract: edit src/two.py",
             ),
         ),
         source_bytes=2048,
+    )
+
+
+def _v4_plan() -> PromptPlan:
+    paths = ("src/one.py", "src/two.py")
+    return PromptPlan(
+        shards=tuple(
+            PromptShard(
+                focus_paths=(path,),
+                prompt=bind_compact_focus_path("L1|before\n", path),
+                editable_ranges=((1, 2),),
+            )
+            for path in paths
+        ),
+        source_bytes=14,
+        baseline_files=tuple((path, "before\n") for path in paths),
+        proposal_protocol="self-improve-compact-proposal-v4",
     )
 
 
@@ -160,6 +184,73 @@ def test_worker_retains_one_model_for_ordered_common_prefix_shards(
         "src/one.py",
         "src/two.py",
     ]
+    assert not list(exchange.glob("*.tmp"))
+    assert not list(exchange.glob(".*.tmp"))
+
+
+def test_worker_publishes_compact_v4_span_batch_without_model_owned_paths(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    exchange = tmp_path / "exchange-v4"
+    exchange.mkdir()
+    prompts = tuple(
+        comparison_prompt
+        for comparison_prompt in (
+            runner_module.bind_compact_focus_path("L1|before\n", "src/one.py"),
+            runner_module.bind_compact_focus_path("L1|before\n", "src/two.py"),
+        )
+    )
+    digest = "a" * 64
+    (exchange / "prompt.txt").write_text(
+        encode_prompt_batch(prompts, protocol_digest=digest),
+        encoding="utf-8",
+    )
+    contract = ProposalContract(
+        baseline_sha="a" * 40,
+        task_id="S83.133",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+        proposal_protocol="self-improve-compact-proposal-v4",
+    )
+    (exchange / "contract.json").write_text(contract.to_json(), encoding="utf-8")
+
+    class Gateway:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> CompactSpanProposal:
+            assert contract is not None
+            focus = next(
+                line.split("=", 1)[1]
+                for line in prompt.splitlines()
+                if line.startswith("GLUDD_SELF_IMPROVE_FOCUS_PATH=")
+            )
+            return worker_module._decode_compact_span_proposal(
+                '{"e":[{"s":1,"n":1,"z":"after\\n"}]}',
+                focus_path=focus,
+            )
+
+    output = worker_module.run_worker(exchange, model_path, gateway_factory=Gateway)
+    proposals = decode_compact_span_batch(
+        output.read_text(encoding="utf-8"),
+        expected_protocol_digest=digest,
+        expected_count=2,
+    )
+
+    assert tuple(proposal.focus_path for proposal in proposals) == (
+        "src/one.py",
+        "src/two.py",
+    )
+    assert json.loads(output.read_text(encoding="utf-8"))["protocol"] == (
+        "self-improve-local-proposal-batch-v2"
+    )
     assert not list(exchange.glob("*.tmp"))
     assert not list(exchange.glob(".*.tmp"))
 
@@ -491,7 +582,7 @@ class _InProcessOwnedRunner:
         variables: dict[str, str],
         *,
         timeout: int,
-    ) -> runner_module.MakeResult:
+    ) -> MakeResult:
         self.calls.append((target, variables, timeout))
         prompt = Path(variables["SELF_IMPROVE_PROMPT_FILE"])
         self.exchange_paths.extend(
@@ -508,11 +599,11 @@ class _InProcessOwnedRunner:
             Path(variables["SELF_IMPROVE_MODEL_PATH"]),
             gateway_factory=self.gateway_factory,
         )
-        return runner_module.MakeResult(("make", target), 0, "complete", "", 0.1)
+        return MakeResult(("make", target), 0, "complete", "", 0.1)
 
 
-def _task_and_reference() -> tuple[runner_module.TaskSpec, CodexReference]:
-    task = runner_module.TaskSpec(
+def _task_and_reference() -> tuple[TaskSpec, CodexReference]:
+    task = TaskSpec(
         task_id="S83.133",
         objective="Fix both exact files.",
         canonical_make_commands=(
@@ -574,6 +665,57 @@ def test_parent_runs_one_owned_worker_then_strictly_merges_all_shards(
     assert all(contract.task_id == task.task_id for contract in contracts)
     assert all(contract.tests == ("tests/unit/test_example.py",) for contract in contracts)
     assert {edit.path for edit in merged.edits} == {"src/one.py", "src/two.py"}
+    assert all(not path.exists() for path in owned.exchange_paths)
+
+
+def test_parent_expands_v4_multifile_spans_and_cleans_owned_exchange(
+    tmp_path: Path,
+) -> None:
+    plan = _v4_plan()
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    contracts: list[ProposalContract] = []
+
+    class Gateway:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> CompactSpanProposal:
+            assert contract is not None
+            contracts.append(contract)
+            focus = next(
+                line.split("=", 1)[1]
+                for line in prompt.splitlines()
+                if line.startswith("GLUDD_SELF_IMPROVE_FOCUS_PATH=")
+            )
+            return worker_module._decode_compact_span_proposal(
+                '{"e":[{"s":1,"n":1,"z":"after\\n"}]}',
+                focus_path=focus,
+            )
+
+    owned = _InProcessOwnedRunner(Gateway)
+    task, reference = _task_and_reference()
+
+    merged = runner_module.generate_local_proposal_plan(
+        owned,
+        model_path,
+        plan,
+        task,
+        reference,
+    )
+
+    assert {edit.path for edit in merged.edits} == {"src/one.py", "src/two.py"}
+    assert all(edit.old_text == "before\n" for edit in merged.edits)
+    assert all(edit.new_text == "after\n" for edit in merged.edits)
+    assert contracts and all(
+        contract.proposal_protocol == "self-improve-compact-proposal-v4"
+        for contract in contracts
+    )
     assert all(not path.exists() for path in owned.exchange_paths)
 
 

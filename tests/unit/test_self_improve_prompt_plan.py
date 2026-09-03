@@ -3,29 +3,30 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
-import scripts.run_self_improve_e2e as runner_module
-from scripts.run_self_improve_e2e import (
-    PromptPlan,
-    PromptShard,
-    TaskSpec,
-    build_prompt,
-    build_retry_prompt_plan,
-    generate_local_proposal_plan,
-)
 
+import general_ludd.self_improve.codex_comparison as comparison_module
+import general_ludd.self_improve.runtime as runtime_module
 from general_ludd.self_improve.codex_comparison import (
     CodexReference,
     ComparisonResult,
     ProposalContract,
     ProposalManifest,
     decode_prompt_batch,
-    encode_proposal_batch,
+    encode_compact_span_batch,
     local_proposal_attempt_identity_digest,
     merge_proposal_manifests,
 )
+from general_ludd.self_improve.managed_runner import (
+    PromptPlan,
+    PromptShard,
+    build_retry_prompt_plan,
+)
+from general_ludd.self_improve.runtime import TaskSpec, build_prompt, generate_local_proposal_plan
+
+runner_module = cast(Any, runtime_module)
 
 _OBJECTIVE = ("Fix the local-model self-improvement runner so it rejects model candidates "
 "whose native context cannot hold the full rendered prompt and required proposal, "
@@ -65,7 +66,8 @@ def test_attempt_identity_uses_exact_prompt_protocol_and_is_legacy_sensitive() -
     attempt_identity = runner_module._attempt_identity_digest(plan)
     assert attempt_identity != plan.protocol_digest
     assert attempt_identity == local_proposal_attempt_identity_digest(
-        plan.protocol_digest
+        plan.protocol_digest,
+        proposal_protocol=plan.proposal_protocol,
     )
     legacy = runner_module._attempt_identity_digest("bounded prompt")
     assert len(legacy) == 64
@@ -107,6 +109,12 @@ def test_prompt_plan_rejects_mutable_or_drifted_baseline_identity() -> None:
             shards=(shard,),
             source_bytes=1,
             baseline_files=(("src/one.py", "xx"),),
+        )
+    with pytest.raises(ValueError, match="proposal protocol"):
+        PromptPlan(
+            shards=(shard,),
+            source_bytes=0,
+            proposal_protocol=cast(str, {"untrusted": "mapping"}),
         )
 
 
@@ -204,6 +212,7 @@ def test_multifile_plan_uses_singleton_focus_shards_in_one_worker_request(
         for path, content in sorted(zip(paths, contents, strict=True))
     )
     assert plan.baseline_files == expected_baseline_files
+    assert plan.proposal_protocol == "self-improve-compact-proposal-v4"
     assert "baseline_files=" not in repr(plan)
     assert tuple(shard.focus_paths for shard in plan.shards) == expected_groups
     assert len(plan.shards) == len(paths)
@@ -218,6 +227,9 @@ def test_multifile_plan_uses_singleton_focus_shards_in_one_worker_request(
         )
         for shard in plan.shards
     )
+    assert all(shard.editable_ranges == ((1, 3),) for shard in plan.shards)
+    assert all("L1|" in shard.prompt and "L2|" in shard.prompt for shard in plan.shards)
+    assert all('only integer keys s and n and string key z' in shard.prompt for shard in plan.shards)
     assert all('\"p\"' not in shard.prompt and '\"c\"' not in shard.prompt for shard in plan.shards)
     comparison = ComparisonResult(
         accepted=False,
@@ -244,12 +256,13 @@ def test_multifile_plan_uses_singleton_focus_shards_in_one_worker_request(
     ) -> str:
         assert contract is not None
         requests.append(request)
-        return encode_proposal_batch(
+        return encode_compact_span_batch(
             tuple(
-                _manifest(
-                    shard.focus_paths,
-                    tests=(paths[1],),
-                    commands=commands,
+                comparison_module._decode_compact_span_proposal(
+                    '{"e":[{"s":2,"n":1,"z":"    assert 1 == 1\\n"}]}'
+                    if shard.focus_paths[0].startswith("tests/")
+                    else '{"e":[{"s":2,"n":1,"z":"assert 1 == 1\\n"}]}',
+                    focus_path=shard.focus_paths[0],
                 )
                 for shard in plan.shards
             ),
@@ -300,25 +313,9 @@ def test_parent_rejects_inapplicable_batch_before_attempt_worktree(
     )
     plan = build_prompt(task, reference, tmp_path)
     secret_old_text = "MODEL_SECRET=must-not-escape"
-    manifest = ProposalManifest.from_json(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "baseline_sha": reference.baseline_sha,
-                "task_id": task.task_id,
-                "edits": [
-                    {
-                        "operation": "replace",
-                        "path": relative,
-                        "old_text": secret_old_text,
-                        "new_text": "after = 2\n",
-                    }
-                ],
-                "tests": ["tests/unit/test_one.py"],
-                "make_commands": list(commands),
-                "commit_message": "fix(self-improve): apply exact replacement",
-            }
-        )
+    span_proposal = comparison_module._decode_compact_span_proposal(
+        json.dumps({"e": [{"s": 2, "n": 1, "z": secret_old_text}]}),
+        focus_path=relative,
     )
 
     def propose(
@@ -329,8 +326,8 @@ def test_parent_rejects_inapplicable_batch_before_attempt_worktree(
         contract: ProposalContract | None = None,
     ) -> str:
         assert contract is not None
-        return encode_proposal_batch(
-            (manifest,),
+        return encode_compact_span_batch(
+            (span_proposal,),
             protocol_digest=plan.protocol_digest,
         )
 
@@ -340,7 +337,7 @@ def test_parent_rejects_inapplicable_batch_before_attempt_worktree(
 
     with pytest.raises(
         ValueError,
-        match="replace old_text must occur exactly once in trusted baseline",
+        match="compact span is outside trusted baseline lines",
     ) as error:
         generate_local_proposal_plan(
             runner_module.MakeRunner(tmp_path),
@@ -351,7 +348,7 @@ def test_parent_rejects_inapplicable_batch_before_attempt_worktree(
         )
 
     feedback = runner_module._validation_retry_feedback(str(error.value))
-    assert "type=edit_replace_precondition" in feedback
+    assert "type=edit_span_precondition" in feedback
     assert "source=parent_validation" in feedback
     assert secret_old_text not in str(error.value)
     assert secret_old_text not in feedback
@@ -658,36 +655,30 @@ def test_local_plan_runs_one_retained_worker_then_merges_once(
         assert contract is not None
         calls.append(request)
         contracts.append(contract)
-        manifests: list[ProposalManifest] = []
+        span_proposals: list[comparison_module.CompactSpanProposal] = []
         for shard in plan.shards:
             path = shard.focus_paths[0]
             content = (tmp_path / path).read_text(encoding="utf-8")
             old_text = content.splitlines(keepends=True)[0]
             assert content.count(old_text) == 1
-            manifests.append(
-                ProposalManifest.from_json(
+            span_proposals.append(
+                comparison_module._decode_compact_span_proposal(
                     json.dumps(
                         {
-                            "schema_version": 1,
-                            "baseline_sha": _reference().baseline_sha,
-                            "task_id": _task().task_id,
-                            "edits": [
+                            "e": [
                                 {
-                                    "operation": "replace",
-                                    "path": path,
-                                    "old_text": old_text,
-                                    "new_text": old_text + "# exact change\n",
+                                    "s": 1,
+                                    "n": 1,
+                                    "z": old_text + "# exact change\n",
                                 }
-                            ],
-                            "tests": list(_TESTS),
-                            "make_commands": list(_COMMANDS),
-                            "commit_message": "fix(self-improve): exact shard",
+                            ]
                         }
-                    )
+                    ),
+                    focus_path=path,
                 )
             )
-        return encode_proposal_batch(
-            tuple(manifests),
+        return encode_compact_span_batch(
+            tuple(span_proposals),
             protocol_digest=plan.protocol_digest,
         )
 

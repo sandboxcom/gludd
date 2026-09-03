@@ -24,6 +24,7 @@ from general_ludd.hardware.model_fit import unified_probe
 from general_ludd.local_model import LocalModelConfig
 from general_ludd.planning.repo_map import RepoMapBuilder
 from general_ludd.self_improve.codex_comparison import (
+    COMPACT_PROPOSAL_PROTOCOL_V4,
     LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL,
     CandidateEvidence,
     CodexReference,
@@ -33,8 +34,10 @@ from general_ludd.self_improve.codex_comparison import (
     ProposalManifest,
     bind_compact_focus_path,
     compare_with_codex,
+    decode_compact_span_batch,
     decode_proposal_batch,
     encode_prompt_batch,
+    expand_compact_span_proposals,
     merge_proposal_manifests,
 )
 from general_ludd.self_improve.managed_runner import (
@@ -517,19 +520,38 @@ def generate_local_proposal_plan(
         task_id=task.task_id,
         tests=required_tests,
         make_commands=task.canonical_make_commands,
+        proposal_protocol=plan.proposal_protocol,
     )
-    proposals = decode_proposal_batch(
-        _run_local_proposal_request(
-            runner,
-            model_path,
-            request,
+    raw_proposals = _run_local_proposal_request(
+        runner,
+        model_path,
+        request,
+        contract=contract,
+    )
+    if plan.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
+        span_proposals = decode_compact_span_batch(
+            raw_proposals,
+            expected_protocol_digest=plan.protocol_digest,
+            expected_count=len(plan.shards),
+        )
+        if not plan.baseline_files:
+            raise ValueError("compact-v4 prompt plan requires trusted baseline snapshots")
+        return expand_compact_span_proposals(
+            span_proposals,
             contract=contract,
-        ),
+            expected_path_groups=tuple(shard.focus_paths for shard in plan.shards),
+            expected_baseline_files=dict(plan.baseline_files),
+            expected_editable_ranges=tuple(
+                shard.editable_ranges for shard in plan.shards
+            ),
+        )
+    legacy_proposals = decode_proposal_batch(
+        raw_proposals,
         expected_protocol_digest=plan.protocol_digest,
         expected_count=len(plan.shards),
     )
     return merge_proposal_manifests(
-        proposals,
+        legacy_proposals,
         expected_path_groups=tuple(shard.focus_paths for shard in plan.shards),
         expected_baseline_sha=reference.baseline_sha,
         expected_task_id=task.task_id,
@@ -949,10 +971,16 @@ def _merge_selected_lines(selected: set[int]) -> tuple[tuple[int, int], ...]:
 def _render_selected_lines(lines: list[str], selected: set[int]) -> str:
     sections: list[str] = []
     for start, end in _merge_selected_lines(selected):
-        sections.append(
-            f"LINES {start + 1}-{end}\n" + "".join(lines[start:end])
+        numbered = "".join(
+            f"L{number + 1}|{lines[number]}" for number in range(start, end)
         )
+        sections.append(f"LINES {start + 1}-{end}\n{numbered}")
     return "\n".join(sections)
+
+
+def _editable_line_ranges(selected: set[int]) -> tuple[tuple[int, int], ...]:
+    """Return selected lines as immutable 1-based half-open ranges."""
+    return tuple((start + 1, end + 1) for start, end in _merge_selected_lines(selected))
 
 
 def _select_python_excerpt(
@@ -961,10 +989,10 @@ def _select_python_excerpt(
     terms: frozenset[str],
     *,
     budget: int,
-) -> tuple[str, int]:
+) -> tuple[str, int, tuple[tuple[int, int], ...]]:
     lines = content.splitlines(keepends=True)
     if not lines:
-        return "", 0
+        return "", 0, ()
     candidates: list[tuple[int, int, int]] = []
     header_end = min(len(lines), 24)
     candidates.append((2, 0, header_end))
@@ -1017,19 +1045,23 @@ def _select_python_excerpt(
             if len(rendered_candidate.encode("utf-8")) <= budget:
                 selected.add(number)
                 break
-    return _render_selected_lines(lines, selected), len(selected)
+    return (
+        _render_selected_lines(lines, selected),
+        len(selected),
+        _editable_line_ranges(selected),
+    )
 
 
 def _build_file_context(
     baseline_root: Path,
     relative: str,
     task: TaskSpec,
-) -> tuple[str, int, str | None]:
+) -> tuple[str, int, str | None, tuple[tuple[int, int], ...]]:
     path = baseline_root / relative
     if path.is_symlink():
         raise ValueError(f"baseline context path must not be a symlink: {relative}")
     if not path.exists():
-        return f"FILE {relative} state=absent bytes=0 sha256=none", 0, None
+        return f"FILE {relative} state=absent bytes=0 sha256=none", 0, None, ()
     if not path.is_file():
         raise ValueError(f"baseline context path is not a regular file: {relative}")
     raw = path.read_bytes()
@@ -1044,11 +1076,13 @@ def _build_file_context(
     digest = hashlib.sha256(raw).hexdigest()
     lines = content.splitlines(keepends=True)
     if len(raw) <= _MAX_FILE_EXCERPT_BYTES:
-        excerpt = content
+        selected = set(range(len(lines)))
+        excerpt = _render_selected_lines(lines, selected)
         selected_lines = len(lines)
+        ranges = _editable_line_ranges(selected)
         complete = True
     elif relative.endswith(".py"):
-        excerpt, selected_lines = _select_python_excerpt(
+        excerpt, selected_lines, ranges = _select_python_excerpt(
             relative,
             content,
             _relevance_terms(task, relative),
@@ -1056,10 +1090,13 @@ def _build_file_context(
         )
         complete = False
     else:
-        excerpt = "".join(lines[: min(len(lines), 40)])
+        selected = set(range(min(len(lines), 40)))
+        excerpt = _render_selected_lines(lines, selected)
         if len(excerpt.encode("utf-8")) > _MAX_FILE_EXCERPT_BYTES:
             excerpt = ""
+            selected = set()
         selected_lines = min(len(lines), 40) if excerpt else 0
+        ranges = _editable_line_ranges(selected)
         complete = selected_lines == len(lines)
     if not excerpt and raw:
         raise ValueError(f"no bounded exact context could be selected: {relative}")
@@ -1070,9 +1107,9 @@ def _build_file_context(
     if not complete:
         marker += (
             "\nOMITTED content remains bound by the published sha256; "
-            "do not invent old_text outside the exact numbered excerpts."
+            "do not select lines outside the exact numbered excerpts."
         )
-    return f"{marker}\n{excerpt}", len(raw), content
+    return f"{marker}\n{excerpt}", len(raw), content, ranges
 
 
 def _required_prompt_tests(
@@ -1102,14 +1139,14 @@ def _render_prompt_shard(
     body = (
         "Produce one shard of a Codex-quality repository patch proposal. You have "
         "no shell, Git, or tool authority. Return one compact JSON object and no "
-        "prose: its only root key is e, whose array items have only string keys a and "
-        "z. The separately supplied JSON grammar "
+        "prose: its only root key is e, whose array items have only integer keys s "
+        "and n and string key z. The separately supplied JSON grammar "
         "is authoritative. The parent supplies path, operation, commit message, tests, "
-        "and commands; never emit those fields. For replace, copy the shortest unique "
-        "old text verbatim and make old/new distinct. Never regenerate a whole existing "
-        "file. Keep all edit text within 3,072 UTF-8 bytes total. Do not invent old_text "
-        "from explicitly omitted content. Use empty old text only for an absent focus "
-        "path and empty new text only when deleting a complete shown file.\n"
+        "and commands; never emit those fields. s is a 1-based L-number, n is the count "
+        "of old numbered lines, and z is replacement text without L<number>| labels. "
+        "Use only explicitly shown lines and boundaries, keep z within 3,072 UTF-8 "
+        "bytes total, and order non-overlapping edits. Use n=0 to insert; for an absent "
+        "focus path only s=1,n=0 creates. Empty z deletes n>0 shown lines.\n"
         f"Task: {task.objective}\n"
         f"Baseline: {reference.baseline_sha}\n"
         f"Task ID: {task.task_id}\n"
@@ -1144,15 +1181,17 @@ def build_prompt(
         )
     required_tests = _required_prompt_tests(task, reference)
     contexts: dict[str, str] = {}
+    editable_ranges: dict[str, tuple[tuple[int, int], ...]] = {}
     baseline_files: list[tuple[str, str | None]] = []
     source_bytes = 0
     for relative in paths:
-        context, size, baseline_text = _build_file_context(
+        context, size, baseline_text, ranges = _build_file_context(
             baseline_root,
             relative,
             task,
         )
         contexts[relative] = context
+        editable_ranges[relative] = ranges
         baseline_files.append((relative, baseline_text))
         source_bytes += size
 
@@ -1185,6 +1224,7 @@ def build_prompt(
                 shard_index=index,
                 shard_total=len(groups),
             ),
+            editable_ranges=editable_ranges[group[0]],
         )
         for index, group in enumerate(groups, start=1)
     )
@@ -1192,6 +1232,7 @@ def build_prompt(
         shards=shards,
         source_bytes=source_bytes,
         baseline_files=tuple(baseline_files),
+        proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
     )
 
 

@@ -26,6 +26,7 @@ _SECRET_ASSIGNMENT_RE = re.compile(r"(?i)\b(token|psk|password|secret)=([^\s]+)"
 _PROMPT_BATCH_MARKER = "GLUDD_SELF_IMPROVE_PROMPT_BATCH_V1\n"
 _PROMPT_BATCH_PROTOCOL = "self-improve-local-prompt-batch-v1"
 _PROPOSAL_BATCH_PROTOCOL = "self-improve-local-proposal-batch-v1"
+_COMPACT_SPAN_BATCH_PROTOCOL = "self-improve-local-proposal-batch-v2"
 _MAX_PROMPT_BATCH_SHARDS = 32
 _MAX_PROMPT_BATCH_BYTES = 262_144
 _MAX_PROMPT_SHARD_BYTES = 16_384
@@ -93,7 +94,10 @@ _PROPOSAL_JSON_SCHEMA: dict[str, object] = {
     },
 }
 
-_COMPACT_PROPOSAL_PROTOCOL_VERSION = "self-improve-compact-proposal-v3"
+COMPACT_PROPOSAL_PROTOCOL_V3 = "self-improve-compact-proposal-v3"
+COMPACT_PROPOSAL_PROTOCOL_V4 = "self-improve-compact-proposal-v4"
+_LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION = COMPACT_PROPOSAL_PROTOCOL_V3
+_COMPACT_PROPOSAL_PROTOCOL_VERSION = COMPACT_PROPOSAL_PROTOCOL_V4
 _COMPACT_PROPOSAL_TOKENS = 1024
 _COMPACT_MAX_CONTENT_BYTES = 3072
 _COMPACT_FOCUS_PATH_MARKER = "GLUDD_SELF_IMPROVE_FOCUS_PATH="
@@ -105,14 +109,17 @@ _STRUCTURED_OUTPUT_REQUIRE_STOP = True
 _STRUCTURED_CANARY_PROMPT = 'Return {"ok":true}.'
 _STRUCTURED_CANARY_EXPECTED: dict[str, object] = {"ok": True}
 _COMPACT_ROOT_FIELDS = frozenset({"e"})
-_COMPACT_EDIT_FIELDS = frozenset({"a", "z"})
+_LEGACY_COMPACT_EDIT_FIELDS = frozenset({"a", "z"})
+_COMPACT_EDIT_FIELDS = frozenset({"s", "n", "z"})
 _COMPACT_MAX_EDITS = 16
 _COMPACT_OPERATION_BY_EMPTY_TEXT = {
     (False, False): "replace",
     (False, True): "delete",
     (True, False): "create",
 }
-_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v3"
+_LEGACY_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v3"
+_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v4-line-span"
+_COMPACT_MAX_ANCHOR_BYTES = 65_536
 _SAFE_FINISH_REASONS = frozenset(
     {"stop", "length", "tool_calls", "function_call", "content_filter"}
 )
@@ -134,9 +141,10 @@ _COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["a", "z"],
+                "required": ["s", "n", "z"],
                 "properties": {
-                    "a": {"type": "string"},
+                    "s": {"type": "integer", "minimum": 1},
+                    "n": {"type": "integer", "minimum": 0},
                     "z": {"type": "string"},
                 },
             },
@@ -144,6 +152,35 @@ _COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
     },
 }
 _COMPACT_SYSTEM_PROMPT = (
+    "Return exactly one compact JSON object with only e and no prose. "
+    "e is an array whose entries contain only s, n, and z. The trusted parent supplies "
+    "the one focus path, immutable baseline, and commit message; never emit them. s is "
+    "the 1-based numbered baseline line where the edit begins, n is the number of old "
+    "baseline lines consumed, and z is exact replacement text without line labels. "
+    "Use n=0 only to insert at a shown boundary. Empty z deletes consumed lines; s=1, "
+    "n=0 creates an absent file. The edit must change content. Across all edits, z may "
+    "contain at most 3,072 UTF-8 bytes total."
+)
+
+_LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["e"],
+    "properties": {
+        "e": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": _COMPACT_MAX_EDITS,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["a", "z"],
+                "properties": {"a": {"type": "string"}, "z": {"type": "string"}},
+            },
+        }
+    },
+}
+_LEGACY_COMPACT_SYSTEM_PROMPT = (
     "Return exactly one compact JSON object with only e and no prose. "
     "e is an array whose entries contain only a and z. The trusted parent supplies "
     "the one focus path and commit message; never emit either. a is exact old text and "
@@ -191,7 +228,7 @@ LOCAL_MODEL_ATTEMPT_OUTCOME_PROTOCOL = ModelAttemptOutcomeProtocol(
 )
 
 
-LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
+LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
     version="self-improve-validation-retry-v3",
     error_marker="SELF_IMPROVE_LOCAL_PROPOSAL_ERROR",
     marker_source="proposal_error",
@@ -256,8 +293,66 @@ LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
     ),
 )
 
+LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
+    version="self-improve-validation-retry-v4",
+    error_marker=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.error_marker,
+    marker_source=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.marker_source,
+    parent_error_marker=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.parent_error_marker,
+    parent_source=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.parent_source,
+    fallback_source=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.fallback_source,
+    fallback_tail_bytes=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.fallback_tail_bytes,
+    max_feedback_bytes=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.max_feedback_bytes,
+    fallback_type=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.fallback_type,
+    redacted_detail=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.redacted_detail,
+    prompt_prefix=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.prompt_prefix,
+    prompt_suffix=(
+        "\nReturn a complete object satisfying every required field and numbered-line "
+        "boundary."
+    ),
+    safe_feedback=(
+        *LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.safe_feedback,
+        (
+            "compact span coordinates must be integers, not booleans",
+            "edit_span_coordinate",
+        ),
+        ("compact span start line must be positive", "edit_span_coordinate"),
+        ("compact span old line count must be non-negative", "edit_span_coordinate"),
+        ("compact spans must be ordered and non-overlapping", "edit_span_order"),
+        ("each compact edit must contain exactly n, s, and z", "edit_span_shape"),
+        ("compact span new text must be a string", "edit_span_text"),
+        ("compact span new text exceeds 3072 bytes", "edit_content_budget"),
+        ("compact span must change content", "edit_content_contract"),
+        (
+            "compact span is outside trusted baseline lines",
+            "edit_span_precondition",
+        ),
+        (
+            "compact span must consume only explicitly shown baseline lines",
+            "edit_span_scope",
+        ),
+        (
+            "compact insertion must use an explicitly shown boundary",
+            "edit_span_scope",
+        ),
+        ("compact absent file create must use s=1 and n=0", "edit_create_contract"),
+        (
+            "compact absent file must not advertise editable baseline ranges",
+            "edit_create_contract",
+        ),
+        (
+            "compact span has no unique bounded baseline anchor",
+            "edit_span_precondition",
+        ),
+        ("compact derived anchors must not overlap", "edit_span_precondition"),
+    ),
+)
 
-def local_proposal_attempt_identity_digest(prompt_protocol_digest: str) -> str:
+
+def local_proposal_attempt_identity_digest(
+    prompt_protocol_digest: str,
+    *,
+    proposal_protocol: str | None = None,
+) -> str:
     """Bind one prompt plan to the complete managed local-output protocol."""
     if (
         not isinstance(prompt_protocol_digest, str)
@@ -266,6 +361,13 @@ def local_proposal_attempt_identity_digest(prompt_protocol_digest: str) -> str:
         raise ValueError(
             "prompt protocol digest must be a lowercase 64-character SHA-256"
         )
+    selected_protocol = proposal_protocol or _COMPACT_PROPOSAL_PROTOCOL_VERSION
+    if selected_protocol not in {
+        _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION,
+        _COMPACT_PROPOSAL_PROTOCOL_VERSION,
+    }:
+        raise ValueError("compact proposal protocol is unsupported")
+    legacy = selected_protocol == _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION
     operation_policy = [
         {
             "new_text_empty": new_empty,
@@ -279,12 +381,22 @@ def local_proposal_attempt_identity_digest(prompt_protocol_digest: str) -> str:
     payload: dict[str, object] = {
         "attempt_protocol": "self-improve-local-attempt-v1",
         "prompt_protocol_digest": prompt_protocol_digest,
-        "validation_retry": asdict(LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL),
+        "validation_retry": asdict(
+            LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
+            if legacy
+            else LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL
+        ),
         "model_attempt_outcome": asdict(LOCAL_MODEL_ATTEMPT_OUTCOME_PROTOCOL),
         "compact_output": {
-            "protocol_version": _COMPACT_PROPOSAL_PROTOCOL_VERSION,
-            "schema": _COMPACT_PROPOSAL_JSON_SCHEMA,
-            "system_prompt": _COMPACT_SYSTEM_PROMPT,
+            "protocol_version": selected_protocol,
+            "schema": (
+                _LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA
+                if legacy
+                else _COMPACT_PROPOSAL_JSON_SCHEMA
+            ),
+            "system_prompt": (
+                _LEGACY_COMPACT_SYSTEM_PROMPT if legacy else _COMPACT_SYSTEM_PROMPT
+            ),
             "max_content_bytes": _COMPACT_MAX_CONTENT_BYTES,
             "trusted_focus_path_marker": _COMPACT_FOCUS_PATH_MARKER,
             "trusted_commit_message": _COMPACT_COMMIT_MESSAGE,
@@ -304,21 +416,43 @@ def local_proposal_attempt_identity_digest(prompt_protocol_digest: str) -> str:
         },
         "strict_decoder_semantics": {
             "authoritative_manifest_schema": _PROPOSAL_JSON_SCHEMA,
-            "batch_protocol": _PROPOSAL_BATCH_PROTOCOL,
+            "batch_protocol": (
+                _PROPOSAL_BATCH_PROTOCOL if legacy else _COMPACT_SPAN_BATCH_PROTOCOL
+            ),
             "command_max_bytes": _MAX_COMMAND_BYTES,
             "content_max_bytes": _MAX_CONTENT_BYTES,
-            "edit_fields": sorted(_COMPACT_EDIT_FIELDS),
+            "edit_fields": sorted(
+                _LEGACY_COMPACT_EDIT_FIELDS if legacy else _COMPACT_EDIT_FIELDS
+            ),
             "max_commands": _MAX_COMMANDS,
             "max_compact_edits": _COMPACT_MAX_EDITS,
             "max_manifest_edits": _MAX_EDITS,
             "max_tests": _MAX_TESTS,
-            "operation_by_empty_text": operation_policy,
-            "parent_decoder_version": _STRICT_PARENT_DECODER_VERSION,
+            "operation_by_empty_text": operation_policy if legacy else None,
+            "parent_decoder_version": (
+                _LEGACY_STRICT_PARENT_DECODER_VERSION
+                if legacy
+                else _STRICT_PARENT_DECODER_VERSION
+            ),
             "path_policy": "confined-pure-posix-v1",
-            "precondition_policy": "sequential-exact-trusted-baseline-v1",
+            "precondition_policy": (
+                "sequential-exact-trusted-baseline-v1"
+                if legacy
+                else "numbered-shown-lines-to-unique-exact-preimage-v1"
+            ),
             "root_fields": sorted(_COMPACT_ROOT_FIELDS),
         },
     }
+    if not legacy:
+        strict = cast(dict[str, object], payload["strict_decoder_semantics"])
+        strict.update(
+            {
+                "anchor_max_bytes": _COMPACT_MAX_ANCHOR_BYTES,
+                "coordinate_base": 1,
+                "insertion_boundary_policy": "both-adjacent-lines-shown-or-file-edge",
+                "span_order": "strict-start-nonoverlap",
+            }
+        )
     canonical = json.dumps(
         payload,
         ensure_ascii=True,
@@ -389,6 +523,80 @@ class ProposalEdit:
 
 
 @dataclass(frozen=True)
+class CompactLineSpan:
+    """One model-selected range over parent-numbered immutable baseline lines."""
+
+    start_line: int
+    old_line_count: int
+    new_text: str
+
+    def __post_init__(self) -> None:
+        """Reject ambiguous coordinates and unbounded model-authored text."""
+        if isinstance(self.start_line, bool) or isinstance(self.old_line_count, bool):
+            raise ValueError("compact span coordinates must be integers, not booleans")
+        if not isinstance(self.start_line, int) or not isinstance(
+            self.old_line_count, int
+        ):
+            raise ValueError("compact span coordinates must be integers, not booleans")
+        if self.start_line < 1:
+            raise ValueError("compact span start line must be positive")
+        if self.old_line_count < 0:
+            raise ValueError("compact span old line count must be non-negative")
+        if not isinstance(self.new_text, str):
+            raise ValueError("compact span new text must be a string")
+        if self.old_line_count == 0 and not self.new_text:
+            raise ValueError("compact span must change content")
+
+
+@dataclass(frozen=True)
+class CompactSpanProposal:
+    """Strict v4 model output with one parent-derived focus path."""
+
+    focus_path: str
+    edits: tuple[CompactLineSpan, ...]
+
+    def __post_init__(self) -> None:
+        """Validate one bounded, ordered, single-file span proposal."""
+        if not isinstance(self.focus_path, str) or not _safe_relative_path(
+            self.focus_path
+        ):
+            raise ValueError("compact focus path is not repository-relative and confined")
+        if (
+            not isinstance(self.edits, tuple)
+            or not 1 <= len(self.edits) <= _COMPACT_MAX_EDITS
+            or not all(isinstance(edit, CompactLineSpan) for edit in self.edits)
+        ):
+            raise ValueError(
+                f"compact proposal edits must contain 1..{_COMPACT_MAX_EDITS} entries"
+            )
+        previous_start: int | None = None
+        previous_end = 0
+        content_bytes = 0
+        for edit in self.edits:
+            start = edit.start_line - 1
+            if previous_start is not None and (
+                start < previous_end or start <= previous_start
+            ):
+                raise ValueError("compact spans must be ordered and non-overlapping")
+            previous_start = start
+            previous_end = start + edit.old_line_count
+            content_bytes += len(edit.new_text.encode("utf-8"))
+        if content_bytes > _COMPACT_MAX_CONTENT_BYTES:
+            raise ValueError(
+                f"compact span new text exceeds {_COMPACT_MAX_CONTENT_BYTES} bytes"
+            )
+
+    def _json_value(self) -> dict[str, object]:
+        return {
+            "focus_path": self.focus_path,
+            "e": [
+                {"s": edit.start_line, "n": edit.old_line_count, "z": edit.new_text}
+                for edit in self.edits
+            ],
+        }
+
+
+@dataclass(frozen=True)
 class ProposalContract:
     """Trusted immutable fields omitted from the compact model response."""
 
@@ -396,6 +604,7 @@ class ProposalContract:
     task_id: str
     tests: tuple[str, ...]
     make_commands: tuple[str, ...]
+    proposal_protocol: str = _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION
 
     def __post_init__(self) -> None:
         """Reject malformed contract values before they reach local inference."""
@@ -415,16 +624,24 @@ class ProposalContract:
             raise ValueError("proposal contract tests are not canonical")
         if _parse_make_commands(list(self.make_commands)) != self.make_commands:
             raise ValueError("proposal contract make_commands are not canonical")
+        if not isinstance(self.proposal_protocol, str) or self.proposal_protocol not in {
+            _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION,
+            _COMPACT_PROPOSAL_PROTOCOL_VERSION,
+        }:
+            raise ValueError("proposal contract compact protocol is unsupported")
 
     def to_json(self) -> str:
         """Serialize the trusted contract for one confined worker exchange."""
+        value: dict[str, object] = {
+            "baseline_sha": self.baseline_sha,
+            "task_id": self.task_id,
+            "tests": list(self.tests),
+            "make_commands": list(self.make_commands),
+        }
+        if self.proposal_protocol != _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION:
+            value["proposal_protocol"] = self.proposal_protocol
         return json.dumps(
-            {
-                "baseline_sha": self.baseline_sha,
-                "task_id": self.task_id,
-                "tests": list(self.tests),
-                "make_commands": list(self.make_commands),
-            },
+            value,
             ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=True,
@@ -438,7 +655,12 @@ class ProposalContract:
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ValueError(f"proposal contract is not valid JSON: {exc}") from exc
         required = {"baseline_sha", "task_id", "tests", "make_commands"}
-        if not isinstance(value, dict) or set(value) != required:
+        allowed = required | {"proposal_protocol"}
+        if (
+            not isinstance(value, dict)
+            or not required.issubset(value)
+            or not set(value).issubset(allowed)
+        ):
             raise ValueError("proposal contract fields are incomplete or unknown")
         baseline_sha = value["baseline_sha"]
         task_id = value["task_id"]
@@ -459,6 +681,13 @@ class ProposalContract:
             task_id=task_id,
             tests=tuple(tests),
             make_commands=tuple(make_commands),
+            proposal_protocol=cast(
+                str,
+                value.get(
+                    "proposal_protocol",
+                    _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION,
+                ),
+            ),
         )
 
 
@@ -742,10 +971,343 @@ def decode_proposal_batch(
     )
 
 
+def encode_compact_span_batch(
+    proposals: Sequence[CompactSpanProposal],
+    *,
+    protocol_digest: str,
+) -> str:
+    """Serialize strict compact-v4 spans without expanding trusted preimages."""
+    if (
+        isinstance(proposals, (str, bytes))
+        or not 1 <= len(proposals) <= _MAX_PROMPT_BATCH_SHARDS
+        or any(not isinstance(proposal, CompactSpanProposal) for proposal in proposals)
+    ):
+        raise ValueError(
+            f"compact span batch must contain 1..{_MAX_PROMPT_BATCH_SHARDS} proposals"
+        )
+    if _PROTOCOL_DIGEST_RE.fullmatch(protocol_digest) is None:
+        raise ValueError("compact span batch protocol digest must be lowercase SHA-256")
+    return json.dumps(
+        {
+            "protocol": _COMPACT_SPAN_BATCH_PROTOCOL,
+            "protocol_digest": protocol_digest,
+            "proposals": [proposal._json_value() for proposal in proposals],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def decode_compact_span_batch(
+    raw: str,
+    *,
+    expected_protocol_digest: str,
+    expected_count: int,
+) -> tuple[CompactSpanProposal, ...]:
+    """Validate an atomic compact-v4 worker batch before parent expansion."""
+    if (
+        isinstance(expected_count, bool)
+        or not isinstance(expected_count, int)
+        or not 1 <= expected_count <= _MAX_PROMPT_BATCH_SHARDS
+    ):
+        raise ValueError("expected compact span count is outside the batch bound")
+    if _PROTOCOL_DIGEST_RE.fullmatch(expected_protocol_digest) is None:
+        raise ValueError("expected compact span protocol digest must be lowercase SHA-256")
+    try:
+        value = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError(f"compact span batch is not valid JSON: {exc}") from exc
+    required = {"protocol", "protocol_digest", "proposals"}
+    if not isinstance(value, dict) or set(value) != required:
+        raise ValueError(
+            "compact span batch must contain exactly protocol, digest, and proposals"
+        )
+    if value["protocol"] != _COMPACT_SPAN_BATCH_PROTOCOL:
+        raise ValueError("compact span batch protocol is unsupported")
+    if value["protocol_digest"] != expected_protocol_digest:
+        raise ValueError("proposal batch protocol identity drifted")
+    raw_proposals = value["proposals"]
+    if not isinstance(raw_proposals, list) or len(raw_proposals) != expected_count:
+        raise ValueError("proposal batch count does not match the prompt plan")
+    proposals: list[CompactSpanProposal] = []
+    for item in raw_proposals:
+        if not isinstance(item, dict) or set(item) != {"focus_path", "e"}:
+            raise ValueError("compact span batch proposal fields are incomplete or unknown")
+        focus_path = item["focus_path"]
+        if not isinstance(focus_path, str):
+            raise ValueError("compact span batch focus path must be text")
+        proposals.append(
+            _decode_compact_span_proposal(
+                json.dumps(
+                    {"e": item["e"]},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+                focus_path=focus_path,
+            )
+        )
+    return tuple(proposals)
+
+
 def _parent_proposal_error(detail: str) -> ValueError:
     """Create one path-free parent-validation error for typed retry feedback."""
     return ValueError(
         f"{LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.parent_error_marker} {detail}"
+    )
+
+
+def _shown_line_numbers(
+    ranges: tuple[tuple[int, int], ...],
+    *,
+    line_count: int,
+) -> frozenset[int]:
+    """Validate and expand bounded 1-based half-open shown-line ranges."""
+    if not isinstance(ranges, tuple):
+        raise _parent_proposal_error("trusted editable ranges must be immutable")
+    shown: set[int] = set()
+    previous_end = 1
+    for item in ranges:
+        if (
+            not isinstance(item, tuple)
+            or len(item) != 2
+            or any(isinstance(value, bool) or not isinstance(value, int) for value in item)
+        ):
+            raise _parent_proposal_error("trusted editable ranges are malformed")
+        start, end = item
+        if start < 1 or end <= start or end > line_count + 1 or start < previous_end:
+            raise _parent_proposal_error("trusted editable ranges are malformed")
+        shown.update(range(start, end))
+        previous_end = end
+    return frozenset(shown)
+
+
+def _span_replacement_within_anchor(
+    lines: list[str],
+    span: CompactLineSpan,
+    *,
+    anchor_start: int,
+    anchor_end: int,
+) -> str:
+    """Replace one zero-based line slice inside one trusted anchor."""
+    start = span.start_line - 1
+    end = start + span.old_line_count
+    return (
+        "".join(lines[anchor_start:start])
+        + span.new_text
+        + "".join(lines[end:anchor_end])
+    )
+
+
+def _bounded_unique_anchor(
+    content: str,
+    lines: list[str],
+    span: CompactLineSpan,
+) -> tuple[int, int, str, str]:
+    """Derive a deterministic line-aligned unique preimage around one exact span."""
+    line_count = len(lines)
+    start = span.start_line - 1
+    end = start + span.old_line_count
+    base_start = start
+    base_end = end
+    if base_start == base_end:
+        if base_end < line_count:
+            base_end += 1
+        elif base_start > 0:
+            base_start -= 1
+    radii = [0]
+    radius = 1
+    while radius < line_count:
+        radii.append(radius)
+        radius *= 2
+    radii.append(line_count)
+    visited: set[tuple[int, int]] = set()
+    for amount in radii:
+        candidates = (
+            (max(0, base_start - amount), base_end),
+            (base_start, min(line_count, base_end + amount)),
+            (
+                max(0, base_start - amount),
+                min(line_count, base_end + amount),
+            ),
+        )
+        for anchor_start, anchor_end in candidates:
+            bounds = (anchor_start, anchor_end)
+            if bounds in visited or anchor_start == anchor_end:
+                continue
+            visited.add(bounds)
+            old_text = "".join(lines[anchor_start:anchor_end])
+            if len(old_text.encode("utf-8")) > _COMPACT_MAX_ANCHOR_BYTES:
+                continue
+            new_text = _span_replacement_within_anchor(
+                lines,
+                span,
+                anchor_start=anchor_start,
+                anchor_end=anchor_end,
+            )
+            if old_text and old_text != new_text and new_text and content.count(old_text) == 1:
+                return anchor_start, anchor_end, old_text, new_text
+    raise _parent_proposal_error(
+        "compact span has no unique bounded baseline anchor"
+    )
+
+
+def _manifest_from_compact_span_proposal(
+    proposal: CompactSpanProposal,
+    *,
+    contract: ProposalContract,
+    baseline: str | None,
+    editable_ranges: tuple[tuple[int, int], ...],
+) -> ProposalManifest:
+    """Compile one trusted-path v4 shard into the unchanged exact manifest schema."""
+    edits: list[dict[str, str]] = []
+    if baseline is None:
+        if editable_ranges:
+            raise _parent_proposal_error(
+                "compact absent file must not advertise editable baseline ranges"
+            )
+        if (
+            len(proposal.edits) != 1
+            or proposal.edits[0].start_line != 1
+            or proposal.edits[0].old_line_count != 0
+            or not proposal.edits[0].new_text
+        ):
+            raise _parent_proposal_error(
+                "compact absent file create must use s=1 and n=0"
+            )
+        edits.append(
+            {
+                "operation": "create",
+                "path": proposal.focus_path,
+                "old_text": "",
+                "new_text": proposal.edits[0].new_text,
+            }
+        )
+    else:
+        lines = baseline.splitlines(keepends=True)
+        line_count = len(lines)
+        shown = _shown_line_numbers(editable_ranges, line_count=line_count)
+        anchors: list[tuple[int, int]] = []
+        for span in proposal.edits:
+            start = span.start_line - 1
+            end = start + span.old_line_count
+            if start > line_count or end > line_count:
+                raise _parent_proposal_error(
+                    "compact span is outside trusted baseline lines"
+                )
+            if span.old_line_count:
+                consumed = frozenset(range(span.start_line, span.start_line + span.old_line_count))
+                if not consumed.issubset(shown):
+                    raise _parent_proposal_error(
+                        "compact span must consume only explicitly shown baseline lines"
+                    )
+                old_slice = "".join(lines[start:end])
+                if old_slice == span.new_text:
+                    raise _parent_proposal_error("compact span must change content")
+            else:
+                left_visible = span.start_line == 1 or span.start_line - 1 in shown
+                right_visible = (
+                    span.start_line == line_count + 1 or span.start_line in shown
+                )
+                if not left_visible or not right_visible:
+                    raise _parent_proposal_error(
+                        "compact insertion must use an explicitly shown boundary"
+                    )
+            if start == 0 and end == line_count and not span.new_text:
+                edits.append(
+                    {
+                        "operation": "delete",
+                        "path": proposal.focus_path,
+                        "old_text": baseline,
+                        "new_text": "",
+                    }
+                )
+                anchors.append((0, line_count))
+                continue
+            anchor_start, anchor_end, old_text, new_text = _bounded_unique_anchor(
+                baseline,
+                lines,
+                span,
+            )
+            if any(anchor_start < used_end and anchor_end > used_start for used_start, used_end in anchors):
+                raise _parent_proposal_error("compact derived anchors must not overlap")
+            anchors.append((anchor_start, anchor_end))
+            edits.append(
+                {
+                    "operation": "replace",
+                    "path": proposal.focus_path,
+                    "old_text": old_text,
+                    "new_text": new_text,
+                }
+            )
+    return ProposalManifest.from_json(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "baseline_sha": contract.baseline_sha,
+                "task_id": contract.task_id,
+                "edits": edits,
+                "tests": list(contract.tests),
+                "make_commands": list(contract.make_commands),
+                "commit_message": _COMPACT_COMMIT_MESSAGE,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    )
+
+
+def expand_compact_span_proposals(
+    proposals: Sequence[CompactSpanProposal],
+    *,
+    contract: ProposalContract,
+    expected_path_groups: tuple[tuple[str, ...], ...],
+    expected_baseline_files: Mapping[str, str | None],
+    expected_editable_ranges: tuple[tuple[tuple[int, int], ...], ...],
+) -> ProposalManifest:
+    """Expand every v4 shard against trusted snapshots, then use the strict merger."""
+    if (
+        isinstance(proposals, (str, bytes))
+        or len(proposals) != len(expected_path_groups)
+        or len(proposals) != len(expected_editable_ranges)
+        or not proposals
+    ):
+        raise _parent_proposal_error("proposal shard count does not match the prompt plan")
+    manifests: list[ProposalManifest] = []
+    for proposal, focus_paths, editable_ranges in zip(
+        proposals,
+        expected_path_groups,
+        expected_editable_ranges,
+        strict=True,
+    ):
+        if not isinstance(proposal, CompactSpanProposal):
+            raise _parent_proposal_error("compact span batch contains an invalid proposal")
+        if len(focus_paths) != 1 or proposal.focus_path != focus_paths[0]:
+            raise _parent_proposal_error(
+                "proposal shard edits must cover the exact focus paths"
+            )
+        if proposal.focus_path not in expected_baseline_files:
+            raise _parent_proposal_error(
+                "trusted baseline files must cover the exact proposal paths"
+            )
+        manifests.append(
+            _manifest_from_compact_span_proposal(
+                proposal,
+                contract=contract,
+                baseline=expected_baseline_files[proposal.focus_path],
+                editable_ranges=editable_ranges,
+            )
+        )
+    return merge_proposal_manifests(
+        tuple(manifests),
+        expected_path_groups=expected_path_groups,
+        expected_baseline_sha=contract.baseline_sha,
+        expected_task_id=contract.task_id,
+        expected_tests=contract.tests,
+        expected_make_commands=contract.make_commands,
+        expected_baseline_files=expected_baseline_files,
     )
 
 
@@ -1358,6 +1920,55 @@ def _completion_text(
     return text
 
 
+def _decode_compact_span_proposal(
+    raw: str,
+    *,
+    focus_path: str,
+) -> CompactSpanProposal:
+    """Parse one strict compact-v4 response without trusting model coordinates."""
+    if not isinstance(focus_path, str) or not _safe_relative_path(focus_path):
+        raise ValueError("compact focus path is not repository-relative and confined")
+    stripped = raw.strip()
+    try:
+        value = json.loads(stripped)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError(
+            "compact proposal is not one complete JSON object; "
+            f"output_bytes={len(stripped.encode('utf-8'))}"
+        ) from exc
+    if not isinstance(value, dict) or set(value) != _COMPACT_ROOT_FIELDS:
+        raise ValueError("compact proposal must contain exactly e")
+    edits_raw = value["e"]
+    if (
+        not isinstance(edits_raw, list)
+        or not 1 <= len(edits_raw) <= _COMPACT_MAX_EDITS
+    ):
+        raise ValueError(
+            f"compact proposal edits must contain 1..{_COMPACT_MAX_EDITS} entries"
+        )
+    edits: list[CompactLineSpan] = []
+    for item in edits_raw:
+        if not isinstance(item, dict) or set(item) != _COMPACT_EDIT_FIELDS:
+            raise ValueError("each compact edit must contain exactly n, s, and z")
+        start_line = item["s"]
+        old_line_count = item["n"]
+        new_text = item["z"]
+        if isinstance(start_line, bool) or isinstance(old_line_count, bool):
+            raise ValueError("compact span coordinates must be integers, not booleans")
+        if not isinstance(start_line, int) or not isinstance(old_line_count, int):
+            raise ValueError("compact span coordinates must be integers, not booleans")
+        if not isinstance(new_text, str):
+            raise ValueError("compact span new text must be a string")
+        edits.append(
+            CompactLineSpan(
+                start_line=start_line,
+                old_line_count=old_line_count,
+                new_text=new_text,
+            )
+        )
+    return CompactSpanProposal(focus_path=focus_path, edits=tuple(edits))
+
+
 def _decode_compact_proposal(
     raw: str,
     contract: ProposalContract,
@@ -1388,7 +1999,7 @@ def _decode_compact_proposal(
     edits: list[dict[str, object]] = []
     content_bytes = 0
     for item in edits_raw:
-        if not isinstance(item, dict) or set(item) != _COMPACT_EDIT_FIELDS:
+        if not isinstance(item, dict) or set(item) != _LEGACY_COMPACT_EDIT_FIELDS:
             raise ValueError("each compact edit must contain exactly a and z")
         old_text = item["a"]
         new_text = item["z"]
@@ -1453,7 +2064,7 @@ class LocalProposalGateway:
         self._model_factory = model_factory or _default_model_factory
         self._n_gpu_layers = n_gpu_layers
         self._model: _LocalModel | None = None
-        self._structured_canary_passed = False
+        self._structured_canary_protocols: set[str] = set()
 
     def _load_model(self) -> _LocalModel:
         """Lazily construct exactly one retained model instance."""
@@ -1473,13 +2084,22 @@ class LocalProposalGateway:
                 )
         return self._model
 
-    def _run_structured_canary(self, model: _ChatLocalModel) -> None:
+    def _run_structured_canary(
+        self,
+        model: _ChatLocalModel,
+        proposal_protocol: str,
+    ) -> None:
         """Prove the retained model can finish a tiny schema before task decoding."""
-        if self._structured_canary_passed:
+        if proposal_protocol in self._structured_canary_protocols:
             return
+        system_prompt = (
+            _LEGACY_COMPACT_SYSTEM_PROMPT
+            if proposal_protocol == _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION
+            else _COMPACT_SYSTEM_PROMPT
+        )
         output = model.create_chat_completion(
             messages=[
-                {"role": "system", "content": _COMPACT_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": _STRUCTURED_CANARY_PROMPT},
             ],
             max_tokens=_STRUCTURED_CANARY_TOKENS,
@@ -1504,23 +2124,34 @@ class LocalProposalGateway:
             raise ValueError(
                 "local structured-output canary failed: response did not match contract"
             )
-        self._structured_canary_passed = True
+        self._structured_canary_protocols.add(proposal_protocol)
 
     def propose(
         self,
         prompt: str,
         *,
         contract: ProposalContract | None = None,
-    ) -> ProposalManifest:
+    ) -> ProposalManifest | CompactSpanProposal:
         """Run deterministic decode and parse one bounded proposal."""
         model = self._load_model()
         if hasattr(model, "create_chat_completion"):
             chat_model = cast("_ChatLocalModel", model)
             if contract is not None:
-                self._run_structured_canary(chat_model)
+                self._run_structured_canary(chat_model, contract.proposal_protocol)
+                legacy = (
+                    contract.proposal_protocol
+                    == _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION
+                )
                 output = chat_model.create_chat_completion(
                     messages=[
-                        {"role": "system", "content": _COMPACT_SYSTEM_PROMPT},
+                        {
+                            "role": "system",
+                            "content": (
+                                _LEGACY_COMPACT_SYSTEM_PROMPT
+                                if legacy
+                                else _COMPACT_SYSTEM_PROMPT
+                            ),
+                        },
                         {"role": "user", "content": prompt},
                     ],
                     max_tokens=_COMPACT_PROPOSAL_TOKENS,
@@ -1528,7 +2159,11 @@ class LocalProposalGateway:
                     seed=_DETERMINISTIC_DECODE_SEED,
                     response_format={
                         "type": "json_object",
-                        "schema": _COMPACT_PROPOSAL_JSON_SCHEMA,
+                        "schema": (
+                            _LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA
+                            if legacy
+                            else _COMPACT_PROPOSAL_JSON_SCHEMA
+                        ),
                     },
                 )
                 text = _completion_text(
@@ -1537,10 +2172,16 @@ class LocalProposalGateway:
                     budget=_COMPACT_PROPOSAL_TOKENS,
                     require_stop=_STRUCTURED_OUTPUT_REQUIRE_STOP,
                 )
+                focus_path = _trusted_compact_focus_path(prompt)
+                if not legacy:
+                    return _decode_compact_span_proposal(
+                        text,
+                        focus_path=focus_path,
+                    )
                 return _decode_compact_proposal(
                     text,
                     contract,
-                    focus_path=_trusted_compact_focus_path(prompt),
+                    focus_path=focus_path,
                 )
             output = chat_model.create_chat_completion(
                 messages=[
@@ -1679,14 +2320,21 @@ def _default_model_factory(
 
 
 __all__ = [
+    "COMPACT_PROPOSAL_PROTOCOL_V3",
+    "COMPACT_PROPOSAL_PROTOCOL_V4",
+    "CompactLineSpan",
+    "CompactSpanProposal",
     "LocalProposalGateway",
     "PlannerFeedbackExchange",
     "bind_compact_focus_path",
     "build_retry_prompt",
     "compare_with_codex",
+    "decode_compact_span_batch",
     "decode_prompt_batch",
     "decode_proposal_batch",
+    "encode_compact_span_batch",
     "encode_proposal_batch",
+    "expand_compact_span_proposals",
     "local_proposal_attempt_identity_digest",
     "merge_proposal_manifests",
 ]

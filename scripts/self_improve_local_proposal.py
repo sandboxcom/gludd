@@ -12,11 +12,15 @@ from pathlib import Path
 from typing import Protocol
 
 from general_ludd.self_improve.codex_comparison import (
+    CompactSpanProposal,
     LocalProposalGateway,
     ProposalContract,
     ProposalManifest,
+    _decode_compact_span_proposal,
+    decode_compact_span_batch,
     decode_prompt_batch,
     decode_proposal_batch,
+    encode_compact_span_batch,
     encode_prompt_batch,
     encode_proposal_batch,
 )
@@ -25,7 +29,15 @@ _MAX_PROMPT_BYTES = 262_144
 _MAX_CONTRACT_BYTES = 196_608
 _MAX_PROPOSAL_BYTES = 1_310_720
 
-__all__ = ("decode_proposal_batch", "encode_prompt_batch", "main", "run_worker")
+__all__ = (
+    "_decode_compact_span_proposal",
+    "decode_compact_span_batch",
+    "decode_proposal_batch",
+    "encode_compact_span_batch",
+    "encode_prompt_batch",
+    "main",
+    "run_worker",
+)
 
 
 class _ProposalGateway(Protocol):
@@ -36,7 +48,7 @@ class _ProposalGateway(Protocol):
         prompt: str,
         *,
         contract: ProposalContract | None = None,
-    ) -> ProposalManifest:
+    ) -> ProposalManifest | CompactSpanProposal:
         """Generate one validated proposal."""
 
 
@@ -85,7 +97,7 @@ def run_worker(
 
     prompts, protocol_digest = decode_prompt_batch(request)
     gateway = gateway_factory(model_path)
-    proposals: list[ProposalManifest] = []
+    proposals: list[ProposalManifest | CompactSpanProposal] = []
     total = len(prompts)
     print(
         f"SELF_IMPROVE_LOCAL_PROPOSAL_START model={model_path.name} "
@@ -119,14 +131,30 @@ def run_worker(
             flush=True,
         )
 
-    serialized = (
-        proposals[0].to_json()
-        if protocol_digest is None
-        else encode_proposal_batch(
-            proposals,
+    if contract is not None and contract.proposal_protocol.endswith("-v4"):
+        if protocol_digest is None or not all(
+            isinstance(proposal, CompactSpanProposal) for proposal in proposals
+        ):
+            raise ValueError("compact-v4 worker result does not match its batch contract")
+        serialized = encode_compact_span_batch(
+            [
+                proposal
+                for proposal in proposals
+                if isinstance(proposal, CompactSpanProposal)
+            ],
             protocol_digest=protocol_digest,
         )
-    )
+    elif protocol_digest is None:
+        if len(proposals) != 1 or not isinstance(proposals[0], ProposalManifest):
+            raise ValueError("legacy worker result does not match its request contract")
+        serialized = proposals[0].to_json()
+    else:
+        if not all(isinstance(proposal, ProposalManifest) for proposal in proposals):
+            raise ValueError("compact-v3 worker result does not match its batch contract")
+        serialized = encode_proposal_batch(
+            [proposal for proposal in proposals if isinstance(proposal, ProposalManifest)],
+            protocol_digest=protocol_digest,
+        )
     if len(serialized.encode("utf-8")) > _MAX_PROPOSAL_BYTES:
         raise ValueError(f"proposal output exceeds {_MAX_PROPOSAL_BYTES} bytes")
 
