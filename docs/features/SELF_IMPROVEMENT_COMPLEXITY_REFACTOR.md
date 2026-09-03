@@ -189,6 +189,17 @@ or promotion checks.
   wake-up from external cancellation. Gludd therefore pins nested cancellation,
   exception precedence, and caller-cancellation propagation rather than treating
   every `CancelledError` as an interchangeable stage failure.
+- The open [pipreqs issue #127](https://github.com/bndr/pipreqs/issues/127) has
+  recorded since 2018 that source import names such as `cv2` do not necessarily
+  identify their distribution (`opencv-python`). A generated dependency list is
+  therefore not sufficient ownership evidence: Gludd keeps the reviewed
+  distribution-to-import-root mapping and compares its consumer paths exactly.
+- The recurring reports in [pipreqs issue #360](https://github.com/bndr/pipreqs/issues/360)
+  show both sides of the same ambiguity: one import can resolve to the wrong
+  public distribution, while a private module can be mistaken for an unrelated
+  package. Gludd responds by refreshing only mechanically observed consumers for
+  an already reviewed dependency; helper extraction cannot silently broaden a
+  package mapping or turn an indirect dependency into a direct one.
 
 Together these reports show why lowering line count alone is not success. The
 refactor is complete only when smaller units preserve lexical resource lifetime,

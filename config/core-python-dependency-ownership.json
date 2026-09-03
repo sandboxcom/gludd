@@ -390,6 +390,8 @@
       "core_import_paths": [
         "src/general_ludd/cloud/model_sources.py",
         "src/general_ludd/models/model_registry.py",
+        "src/general_ludd/self_improve/hf_cache_delete.py",
+        "src/general_ludd/self_improve/model_lifecycle.py",
         "src/general_ludd/small_models/download.py",
         "src/general_ludd/small_models/model_hash_db.py"
       ],
@@ -587,7 +589,8 @@
         "src/general_ludd/hardware/survey.py",
         "src/general_ludd/health/local_model_check.py",
         "src/general_ludd/process/registry.py",
-        "src/general_ludd/routers/processes.py"
+        "src/general_ludd/routers/processes.py",
+        "src/general_ludd/self_improve/model_lifecycle.py"
       ],
       "disposition": "retain-core",
       "import_roots": [
@@ -867,6 +870,7 @@
         "src/general_ludd/db/deployment_repository.py",
         "src/general_ludd/db/migrations.py",
         "src/general_ludd/db/models.py",
+        "src/general_ludd/db/promotion_repository.py",
         "src/general_ludd/db/repository.py",
         "src/general_ludd/db/session.py",
         "src/general_ludd/db/task_decisions_retention.py",
@@ -897,6 +901,7 @@
         "src/general_ludd/scoring/task_embeddings.py",
         "src/general_ludd/security/sandboxes/attestation.py",
         "src/general_ludd/security/vacuum_schedule.py",
+        "src/general_ludd/self_improve/promotion.py",
         "src/general_ludd/sts/audit.py",
         "src/general_ludd/sts/dashboard.py",
         "src/general_ludd/sts/store.py",
