@@ -54,9 +54,10 @@
         "SELF_IMPROVE_MODEL_PATH",
         "SELF_IMPROVE_PROMPT_FILE",
         "SELF_IMPROVE_PROPOSAL_FILE",
+        "SELF_IMPROVE_CONTRACT_FILE",
         "SELF_IMPROVE_WORKER_VALIDATE_ONLY"
       ],
-      "behavior": "make self-improve-local-proposal SELF_IMPROVE_MODEL_PATH=/tmp/gludd-qwen-e2e-model/example.gguf SELF_IMPROVE_PROMPT_FILE=/tmp/gludd-self-improve-example/prompt.txt SELF_IMPROVE_PROPOSAL_FILE=/tmp/gludd-self-improve-example/proposal.json SELF_IMPROVE_WORKER_VALIDATE_ONLY=1"
+      "behavior": "make self-improve-local-proposal SELF_IMPROVE_MODEL_PATH=/tmp/gludd-qwen-e2e-model/example.gguf SELF_IMPROVE_PROMPT_FILE=/tmp/gludd-self-improve-example/prompt.txt SELF_IMPROVE_PROPOSAL_FILE=/tmp/gludd-self-improve-example/proposal.json SELF_IMPROVE_CONTRACT_FILE=/tmp/gludd-self-improve-example/contract.json SELF_IMPROVE_WORKER_VALIDATE_ONLY=1"
     },
     {
       "name": "test-specific",

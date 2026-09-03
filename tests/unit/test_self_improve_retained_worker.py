@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import selectors
 import subprocess
 import time
@@ -216,7 +217,8 @@ def test_worker_publishes_compact_v4_span_batch_without_model_owned_paths(
         make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
         proposal_protocol="self-improve-compact-proposal-v4",
     )
-    (exchange / "contract.json").write_text(contract.to_json(), encoding="utf-8")
+    contract_path = exchange / "contract.json"
+    contract_path.write_text(contract.to_json(), encoding="utf-8")
 
     class Gateway:
         def __init__(self, _path: Path) -> None:
@@ -239,7 +241,12 @@ def test_worker_publishes_compact_v4_span_batch_without_model_owned_paths(
                 focus_path=focus,
             )
 
-    output = worker_module.run_worker(exchange, model_path, gateway_factory=Gateway)
+    output = worker_module.run_worker(
+        exchange,
+        model_path,
+        contract_path=contract_path,
+        gateway_factory=Gateway,
+    )
     proposals = decode_compact_span_batch(
         output.read_text(encoding="utf-8"),
         expected_protocol_digest=digest,
@@ -599,6 +606,11 @@ class _InProcessOwnedRunner:
         worker_module.run_worker(
             prompt.parent,
             Path(variables["SELF_IMPROVE_MODEL_PATH"]),
+            contract_path=(
+                Path(variables["SELF_IMPROVE_CONTRACT_FILE"])
+                if "SELF_IMPROVE_CONTRACT_FILE" in variables
+                else None
+            ),
             gateway_factory=self.gateway_factory,
         )
         return MakeResult(("make", target), 0, "complete", "", 0.1)
@@ -786,6 +798,102 @@ def test_parent_carries_repair_sampling_profile_through_owned_worker(
         for contract in contracts
     )
     assert all(not path.exists() for path in owned.exchange_paths)
+
+
+def test_repair_sampling_crosses_parent_cli_and_real_gateway_boundary(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Prove explicit parent transport reaches the real gateway sampler call."""
+    plan = replace(
+        _v4_plan(),
+        sampling_profile=COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
+    )
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    chat_calls: list[dict[str, object]] = []
+
+    class FakeChatModel:
+        def __call__(self, *_args: object, **_kwargs: object) -> object:
+            raise AssertionError("compact mode must use chat completion")
+
+        def create_chat_completion(self, **kwargs: object) -> dict[str, object]:
+            chat_calls.append(kwargs)
+            content = (
+                '{"ok":true}'
+                if len(chat_calls) == 1
+                else '{"e":[{"s":1,"n":1,"z":"after\\n"}]}'
+            )
+            return {
+                "choices": [
+                    {"finish_reason": "stop", "message": {"content": content}}
+                ]
+            }
+
+    model = FakeChatModel()
+
+    def gateway_factory(path: Path) -> LocalProposalGateway:
+        return LocalProposalGateway(
+            path,
+            model_factory=lambda **_kwargs: model,
+            grammar_factory=lambda _schema: object(),
+        )
+
+    class CliBoundaryRunner:
+        def __init__(self) -> None:
+            self.contract_paths: list[Path] = []
+
+        def run_observable(
+            self,
+            target: str,
+            variables: dict[str, str],
+            *,
+            timeout: int,
+        ) -> MakeResult:
+            assert target == "self-improve-local-proposal"
+            assert timeout == 300
+            contract_path = Path(variables["SELF_IMPROVE_CONTRACT_FILE"])
+            self.contract_paths.append(contract_path)
+            returncode = worker_module.main(
+                [
+                    "--model-path",
+                    variables["SELF_IMPROVE_MODEL_PATH"],
+                    "--prompt-file",
+                    variables["SELF_IMPROVE_PROMPT_FILE"],
+                    "--proposal-file",
+                    variables["SELF_IMPROVE_PROPOSAL_FILE"],
+                    "--contract-file",
+                    str(contract_path),
+                ],
+                gateway_factory=gateway_factory,
+            )
+            return MakeResult(("make", target), returncode, "", "", 0.1)
+
+    owned = CliBoundaryRunner()
+    task, reference = _task_and_reference()
+    generated = runner_module._generate_local_proposal_plan_result(
+        owned,
+        model_path,
+        plan,
+        task,
+        reference,
+    )
+
+    assert generated.proposal.edits
+    proposal_calls = chat_calls[1:]
+    assert len(proposal_calls) == len(plan.shards)
+    assert all(call["temperature"] == 0.8 for call in proposal_calls)
+    assert all(call["top_p"] == 0.95 for call in proposal_calls)
+    assert all(call["top_k"] == 40 for call in proposal_calls)
+    assert all(call["seed"] == 104729 for call in proposal_calls)
+    output = capsys.readouterr().out
+    assert (
+        "profile=" + COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID
+    ) in output
+    assert re.search(r"output_sha256=[0-9a-f]{64}(?:\s|$)", output)
+    assert owned.contract_paths and all(
+        not path.exists() for path in owned.contract_paths
+    )
 
 
 def test_parent_scope_rejection_cleans_owned_exchange(tmp_path: Path) -> None:
@@ -989,7 +1097,8 @@ def test_worker_cleans_live_deepseek_v4_framing_failure(
         make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
         proposal_protocol="self-improve-compact-proposal-v4",
     )
-    (exchange / "contract.json").write_text(contract.to_json(), encoding="utf-8")
+    contract_path = exchange / "contract.json"
+    contract_path.write_text(contract.to_json(), encoding="utf-8")
     sensitive = (
         "Reasoning TOKEN=do-not-publish\n"
         '{"e":[{"s":1,"n":1,"z":"PASSWORD=hunter2"}]}\n'
@@ -1018,7 +1127,12 @@ def test_worker_cleans_live_deepseek_v4_framing_failure(
         ValueError,
         match=r"compact-v4 proposal is not one complete JSON object; output_bytes=2308",
     ) as error:
-        worker_module.run_worker(exchange, model_path, gateway_factory=Gateway)
+        worker_module.run_worker(
+            exchange,
+            model_path,
+            contract_path=contract_path,
+            gateway_factory=Gateway,
+        )
 
     assert all(secret not in str(error.value) for secret in ("TOKEN", "PASSWORD", "hunter2"))
     assert not (exchange / "proposal.json").exists()

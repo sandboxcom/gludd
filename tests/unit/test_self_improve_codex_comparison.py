@@ -165,6 +165,7 @@ def test_proposal_contract_rejects_mutable_identity_collections() -> None:
 def test_worker_protocol_entry_points_are_declared_public_exports() -> None:
     """Keep script consumers explicit so dead-code checks see the real API seam."""
     expected = {
+        "COMPACT_PROPOSAL_CONTRACT_TRANSPORT_PROTOCOL",
         "COMPACT_PROPOSAL_PROTOCOL_V3",
         "COMPACT_PROPOSAL_PROTOCOL_V4",
         "COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID",
@@ -1732,9 +1733,9 @@ def test_compact_v4_repair_uses_reproducible_non_greedy_sampling_only(
         key: first_repair_calls[1][key]
         for key in ("temperature", "top_p", "top_k", "seed")
     } == {
-        "temperature": 0.25,
-        "top_p": 0.9,
-        "top_k": 20,
+        "temperature": 0.8,
+        "top_p": 0.95,
+        "top_k": 40,
         "seed": 104729,
     }
     assert first_repair_calls[1] == second_repair_calls[1]
@@ -3037,6 +3038,7 @@ def test_make_contract_forwards_local_comparison_inputs() -> None:
     makefile = Path("Makefile").read_text(encoding="utf-8")
     contract = Path("config/make_target_contract.json").read_text(encoding="utf-8")
     for token in (
+        "SELF_IMPROVE_CONTRACT_FILE",
         "SELF_IMPROVE_MODEL_PATH",
         "SELF_IMPROVE_BASELINE_REF",
         "SELF_IMPROVE_REFERENCE_REF",
@@ -3044,6 +3046,7 @@ def test_make_contract_forwards_local_comparison_inputs() -> None:
     ):
         assert token in makefile
         assert token in contract
+    assert '--contract-file "$(SELF_IMPROVE_CONTRACT_FILE)"' in makefile
 
 
 def test_gateway_fails_closed_for_each_malformed_model_response(tmp_path: Path) -> None:

@@ -474,13 +474,16 @@ def _run_local_proposal_request(
                 ".contract-tmp",
             )
             os.replace(contract_temporary, contract_path)
+        worker_variables = {
+            "SELF_IMPROVE_MODEL_PATH": str(model_path),
+            "SELF_IMPROVE_PROMPT_FILE": str(prompt_path),
+            "SELF_IMPROVE_PROPOSAL_FILE": str(proposal_path),
+        }
+        if contract is not None:
+            worker_variables["SELF_IMPROVE_CONTRACT_FILE"] = str(contract_path)
         result = runner.run_observable(
             "self-improve-local-proposal",
-            {
-                "SELF_IMPROVE_MODEL_PATH": str(model_path),
-                "SELF_IMPROVE_PROMPT_FILE": str(prompt_path),
-                "SELF_IMPROVE_PROPOSAL_FILE": str(proposal_path),
-            },
+            worker_variables,
             timeout=300,
         )
         if result.returncode != 0:

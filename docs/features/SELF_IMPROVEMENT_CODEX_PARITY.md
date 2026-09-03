@@ -456,12 +456,17 @@ repeated the same 1,954-byte object and line 28/column 120 failure. Both repair 
 were still greedy with seed zero, so identical prompt plus grammar selected the same
 tokens. Compact v4 now carries one parent-owned sampling profile through the
 ephemeral repair `PromptPlan` and confined worker contract. Only repair proposal
-decoding uses temperature 0.25, top-p 0.9, top-k 20, and seed 104729. The structured
+decoding uses temperature 0.8, top-p 0.95, top-k 40, and seed 104729. The structured
 canary and every ordinary or legacy proposal retain their prior keyword arguments
 and serialized bytes.
 
 The fixed seed makes a given repair identity reproducible while nonzero temperature
-and finite top-k/top-p materially differ from the rejected greedy decode. Grammar,
+and finite top-k/top-p select a distinct bounded path from the rejected greedy decode.
+An explicit cached Qwen-1.5B process-boundary run proved that the original
+temperature 0.25, top-p 0.9, and top-k 20 profile still reproduced the greedy
+1,168-byte output byte-for-byte (SHA-256 prefix `2d913257`). Repair profile v2 uses
+the stronger finite controls above and the same seed only after that concrete live
+evidence; ordinary decoding remains unchanged. Grammar,
 the 4,096-token stop requirement, four-edit limit, 3,072 replacement-byte cap, line
 budgets, immutable scope, lease release, and total approved-attempt count are
 unchanged. The profile name and all four controls are hashed into the compact-v4
@@ -470,6 +475,34 @@ byte-stable. Unknown, non-string, or legacy-bound profile values fail before mod
 construction. Live acceptance requires two runs of the same identity to select the
 same repair sampler arguments, a repair decode that is not the greedy profile, and
 no additional inference beyond the approved attempt ceiling.
+
+A follow-up Qwen-3B run still repeated the rejected 1,954-byte object and the exact
+line 28/column 120 syntax failure; Qwen-1.5B likewise retained the earlier
+1,168-byte, line 11/column 18 repetition. The worker trace contained neither a
+sampling-profile marker nor an output digest. Inspection found that the parent
+wrote `contract.json`, but its Make request carried only model, prompt, and proposal
+paths. The CLI had no contract argument and implicitly searched beside the prompt.
+That ambient sidecar convention made the process boundary unverifiable and allowed
+transport drift to look like sampler behavior.
+
+Contract transport v2 adds one explicit `SELF_IMPROVE_CONTRACT_FILE` Make variable
+and one canonical `--contract-file` CLI argument. The worker accepts only the
+regular `contract.json` in the same resolved exchange directory as `prompt.txt` and
+`proposal.json`; an unannounced sibling, symlink, missing file, different name, or
+outside path fails before model construction. Every shard emits only its validated
+profile name. Final publication emits that name, byte count, and SHA-256 of the
+bounded output file—never model text, source, paths, controls, or secrets. Ordinary
+and legacy calls explicitly report `deterministic-greedy-v1`. The transport protocol
+is attempt-identity-bound, so pre-v2 approvals require reapproval; proposal schema,
+grammar, scope, line/byte/cardinality limits, cleanup, lease lifecycle, and attempt
+count do not change. The cached Qwen-1.5B process-boundary acceptance emitted
+`deterministic-greedy-v1` with output SHA-256 `2d913257ed1c62c5b8aac377c15bcf28651310cc08b6d8d1de9d9b61f0cf1903`, then
+`compact-v4-syntax-repair-seeded-sampling-v2` with output SHA-256
+`680adc5d04086b58f9d8168d7ed92c88898ff6dd1e0920313ba06443bd1c55ce`.
+Both files were 1,168 bytes, but their differing digest proves repair sampling
+crossed the real Make/CLI/gateway boundary and selected different content. The
+second candidate still failed syntax at the same safe coordinate; normal bounded
+evaluation, cleanup, and rejection handled it without a third inference.
 
 A September 2026 DeepSeek catalog attempt then exposed a separate parent-side
 gap. Both compact-v3 shards completed and passed worker schema validation, but a

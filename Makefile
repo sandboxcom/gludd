@@ -34,6 +34,7 @@ RELEASE_FAILURE_LEDGER ?= docs/releases/beta-release-failures.json
 SELF_IMPROVE_MODEL_PATH ?=
 SELF_IMPROVE_PROMPT_FILE ?=
 SELF_IMPROVE_PROPOSAL_FILE ?=
+SELF_IMPROVE_CONTRACT_FILE ?=
 SELF_IMPROVE_WORKER_VALIDATE_ONLY ?= 0
 SELF_IMPROVE_BASELINE_REF ?=
 SELF_IMPROVE_REFERENCE_REF ?=
@@ -5623,12 +5624,16 @@ agent-worktree-list:
 # Isolated inference worker: the parent owns its process group and exchange files.
 self-improve-local-proposal:
 	@if [ "$(SELF_IMPROVE_WORKER_VALIDATE_ONLY)" = "1" ]; then \
-		echo "SELF_IMPROVE_LOCAL_PROPOSAL_PLAN model=$(SELF_IMPROVE_MODEL_PATH) prompt=$(SELF_IMPROVE_PROMPT_FILE) proposal=$(SELF_IMPROVE_PROPOSAL_FILE)"; \
+		echo "SELF_IMPROVE_LOCAL_PROPOSAL_PLAN model=$(SELF_IMPROVE_MODEL_PATH) prompt=$(SELF_IMPROVE_PROMPT_FILE) proposal=$(SELF_IMPROVE_PROPOSAL_FILE) contract=$(SELF_IMPROVE_CONTRACT_FILE)"; \
 	else \
 		[ -n "$(SELF_IMPROVE_MODEL_PATH)" ] || { echo "SELF_IMPROVE_MODEL_PATH is required"; exit 2; }; \
 		[ -n "$(SELF_IMPROVE_PROMPT_FILE)" ] || { echo "SELF_IMPROVE_PROMPT_FILE is required"; exit 2; }; \
 		[ -n "$(SELF_IMPROVE_PROPOSAL_FILE)" ] || { echo "SELF_IMPROVE_PROPOSAL_FILE is required"; exit 2; }; \
-		$(UV) run --extra local-inference python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)"; \
+		if [ -n "$(SELF_IMPROVE_CONTRACT_FILE)" ]; then \
+			$(UV) run --extra local-inference python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)" --contract-file "$(SELF_IMPROVE_CONTRACT_FILE)"; \
+		else \
+			$(UV) run --extra local-inference python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)"; \
+		fi; \
 	fi
 
 # Local self-improvement benchmark — compares every proposed edit with Codex.

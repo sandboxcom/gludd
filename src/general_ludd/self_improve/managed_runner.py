@@ -27,6 +27,7 @@ from general_ludd.hardware.model_fit import unified_probe
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.local_model import LocalModelConfig
 from general_ludd.self_improve.codex_comparison import (
+    COMPACT_PROPOSAL_CONTRACT_TRANSPORT_PROTOCOL,
     COMPACT_PROPOSAL_PROTOCOL_V3,
     COMPACT_PROPOSAL_PROTOCOL_V4,
     COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
@@ -578,6 +579,9 @@ def _attempt_identity_digest(prompt: PromptPlan | str) -> str:
         return _stable_digest(
             {
                 "local_proposal_attempt_identity_digest": proposal_identity,
+                "local_proposal_contract_transport": (
+                    COMPACT_PROPOSAL_CONTRACT_TRANSPORT_PROTOCOL
+                ),
                 "model_candidate_policy": CODE_TASK_CAPABILITY_POLICY_ID,
                 "syntax_repair_policy": COMPACT_V4_SYNTAX_REPAIR_POLICY_ID,
                 "syntax_repair_sampling": (

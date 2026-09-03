@@ -870,6 +870,28 @@ def test_compact_v4_attempt_identity_binds_syntax_repair_policy(
     assert managed_runner_module._attempt_identity_digest(prompt) != original
 
 
+def test_compact_v4_attempt_identity_binds_explicit_contract_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rotate v4 approval identity without reinterpreting the legacy v3 protocol."""
+    v4_prompt = _compact_v4_prompt()
+    v3_prompt = PromptPlan(
+        shards=(PromptShard(("src/general_ludd/example.py",), "bounded prompt"),),
+        source_bytes=0,
+    )
+    v4_identity = managed_runner_module._attempt_identity_digest(v4_prompt)
+    v3_identity = managed_runner_module._attempt_identity_digest(v3_prompt)
+
+    monkeypatch.setattr(
+        managed_runner_module,
+        "COMPACT_PROPOSAL_CONTRACT_TRANSPORT_PROTOCOL",
+        "self-improve-local-proposal-contract-file-test-v3",
+    )
+
+    assert managed_runner_module._attempt_identity_digest(v4_prompt) != v4_identity
+    assert managed_runner_module._attempt_identity_digest(v3_prompt) == v3_identity
+
+
 @pytest.mark.parametrize(
     ("name", "value"),
     [

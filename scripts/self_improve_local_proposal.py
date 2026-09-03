@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import sys
 import tempfile
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Protocol
 
 from general_ludd.self_improve.codex_comparison import (
+    DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID,
     CompactSpanProposal,
     LocalProposalGateway,
     ProposalContract,
@@ -59,6 +61,7 @@ def run_worker(
     exchange_dir: Path,
     model_path: Path,
     *,
+    contract_path: Path | None = None,
     gateway_factory: _GatewayFactory = LocalProposalGateway,
 ) -> Path:
     """Decode one request or an ordered batch and atomically publish its result."""
@@ -82,9 +85,19 @@ def run_worker(
     if not request.strip():
         raise ValueError("prompt must not be empty")
 
-    contract_path = exchange / "contract.json"
+    expected_contract_path = exchange / "contract.json"
     contract: ProposalContract | None = None
-    if contract_path.is_symlink() or contract_path.exists():
+    if contract_path is None:
+        if expected_contract_path.exists() or expected_contract_path.is_symlink():
+            raise ValueError("proposal contract requires explicit canonical transport")
+    else:
+        if not isinstance(contract_path, Path):
+            raise ValueError("proposal contract path must be a pathlib.Path")
+        if (
+            contract_path.name != "contract.json"
+            or contract_path.parent.resolve(strict=True) != exchange
+        ):
+            raise ValueError("proposal contract path is not canonical")
         if contract_path.is_symlink() or not contract_path.is_file():
             raise ValueError("proposal contract must be one regular confined file")
         if contract_path.stat().st_size > _MAX_CONTRACT_BYTES:
@@ -99,6 +112,11 @@ def run_worker(
     gateway = gateway_factory(model_path)
     proposals: list[ProposalManifest | CompactSpanProposal] = []
     total = len(prompts)
+    sampling_profile = (
+        contract.sampling_profile
+        if contract is not None
+        else DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID
+    )
     print(
         f"SELF_IMPROVE_LOCAL_PROPOSAL_START model={model_path.name} "
         f"shards={total} mode={'compact' if contract is not None else 'legacy'} "
@@ -106,6 +124,11 @@ def run_worker(
         flush=True,
     )
     for index, prompt in enumerate(prompts, start=1):
+        print(
+            "SELF_IMPROVE_LOCAL_PROPOSAL_SAMPLING "
+            f"shard={index}/{total} profile={sampling_profile}",
+            flush=True,
+        )
         print(
             "SELF_IMPROVE_PROMPT_SHARD_START "
             f"shard={index}/{total} "
@@ -180,7 +203,9 @@ def run_worker(
             temporary.unlink(missing_ok=True)
     print(
         "SELF_IMPROVE_LOCAL_PROPOSAL_END "
-        f"shards={total} output_bytes={proposal_path.stat().st_size}",
+        f"shards={total} sampling_profile={sampling_profile} "
+        f"output_bytes={proposal_path.stat().st_size} "
+        f"output_sha256={hashlib.sha256((serialized + chr(10)).encode('utf-8')).hexdigest()}",
         flush=True,
     )
     return proposal_path
@@ -192,19 +217,32 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--prompt-file", required=True, type=Path)
     parser.add_argument("--proposal-file", required=True, type=Path)
+    parser.add_argument("--contract-file", type=Path)
     parser.add_argument("--model-path", required=True, type=Path)
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    gateway_factory: _GatewayFactory = LocalProposalGateway,
+) -> int:
     """Run the worker CLI with bounded, observable failure diagnostics."""
     args = _parser().parse_args(argv)
     prompt_file = args.prompt_file
     proposal_file = args.proposal_file
+    contract_file = args.contract_file
     if (
         prompt_file.name != "prompt.txt"
         or proposal_file.name != "proposal.json"
         or prompt_file.parent.resolve() != proposal_file.parent.resolve()
+        or (
+            contract_file is not None
+            and (
+                contract_file.name != "contract.json"
+                or contract_file.parent.resolve() != prompt_file.parent.resolve()
+            )
+        )
     ):
         print(
             "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR exchange paths are not canonical",
@@ -213,7 +251,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 2
     try:
-        run_worker(prompt_file.parent, args.model_path)
+        if contract_file is None and gateway_factory is LocalProposalGateway:
+            run_worker(prompt_file.parent, args.model_path)
+        elif contract_file is None:
+            run_worker(
+                prompt_file.parent,
+                args.model_path,
+                gateway_factory=gateway_factory,
+            )
+        elif gateway_factory is LocalProposalGateway:
+            run_worker(
+                prompt_file.parent,
+                args.model_path,
+                contract_path=contract_file,
+            )
+        else:
+            run_worker(
+                prompt_file.parent,
+                args.model_path,
+                contract_path=contract_file,
+                gateway_factory=gateway_factory,
+            )
     except (OSError, RuntimeError, ValueError) as exc:
         print(
             f"SELF_IMPROVE_LOCAL_PROPOSAL_ERROR {str(exc)[:2000]}",

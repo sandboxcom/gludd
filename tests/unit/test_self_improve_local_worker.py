@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
 
 import pytest
 import scripts.self_improve_local_proposal as worker_module
-from scripts.run_self_improve_e2e import MakeResult, generate_local_proposal
 from scripts.self_improve_local_proposal import run_worker
 
-from general_ludd.self_improve.codex_comparison import ProposalContract, ProposalManifest
+from general_ludd.self_improve.codex_comparison import (
+    DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID,
+    ProposalContract,
+    ProposalManifest,
+)
+from general_ludd.self_improve.runtime import MakeResult, generate_local_proposal
 
 
 def _proposal_json() -> str:
@@ -52,7 +57,10 @@ class _FakeGateway:
         return ProposalManifest.from_json(_proposal_json())
 
 
-def test_worker_writes_one_atomic_confined_proposal(tmp_path: Path) -> None:
+def test_worker_writes_one_atomic_confined_proposal(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     model = tmp_path / "model.gguf"
     model.write_bytes(b"gguf")
     exchange = tmp_path / "exchange"
@@ -64,6 +72,14 @@ def test_worker_writes_one_atomic_confined_proposal(tmp_path: Path) -> None:
     assert output == exchange / "proposal.json"
     assert ProposalManifest.from_json(output.read_text(encoding="utf-8")).task_id == "S83.133"
     assert not list(exchange.glob("*.tmp"))
+    worker_output = capsys.readouterr().out
+    assert (
+        "SELF_IMPROVE_LOCAL_PROPOSAL_SAMPLING "
+        f"shard=1/1 profile={DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID}"
+    ) in worker_output
+    assert (
+        "output_sha256=" + hashlib.sha256(output.read_bytes()).hexdigest()
+    ) in worker_output
 
 
 def test_worker_rejects_symlinked_exchange_input(tmp_path: Path) -> None:
@@ -203,9 +219,72 @@ def test_worker_rejects_invalid_compact_contract_before_model_construction(
         contract.write_bytes(contract_bytes)
 
     with pytest.raises(ValueError, match=match):
-        run_worker(exchange, model, gateway_factory=_FakeGateway)
+        run_worker(
+            exchange,
+            model,
+            contract_path=contract,
+            gateway_factory=_FakeGateway,
+        )
 
     assert not (exchange / "proposal.json").exists()
+
+
+def test_worker_rejects_implicit_or_noncanonical_contract_transport(
+    tmp_path: Path,
+) -> None:
+    """Reject sibling discovery and every contract path outside the exchange."""
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"gguf")
+    exchange = tmp_path / "exchange"
+    exchange.mkdir()
+    (exchange / "prompt.txt").write_text("repair", encoding="utf-8")
+    contract = exchange / "contract.json"
+    contract.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="requires explicit canonical transport"):
+        run_worker(exchange, model, gateway_factory=_FakeGateway)
+
+    outside = tmp_path / "contract.json"
+    outside.write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="path is not canonical"):
+        run_worker(
+            exchange,
+            model,
+            contract_path=outside,
+            gateway_factory=_FakeGateway,
+        )
+
+
+def test_worker_output_digest_telemetry_never_echoes_proposal_text(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Expose only a digest even when the proposal contains credential-like text."""
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"gguf")
+    exchange = tmp_path / "exchange"
+    exchange.mkdir()
+    (exchange / "prompt.txt").write_text("repair", encoding="utf-8")
+    secret = "TOKEN=never-publish-this"
+
+    class SecretGateway(_FakeGateway):
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> ProposalManifest:
+            del prompt, contract
+            return ProposalManifest.from_json(
+                _proposal_json().replace("before  ", secret)
+            )
+
+    output = run_worker(exchange, model, gateway_factory=SecretGateway)
+    worker_output = capsys.readouterr().out
+
+    assert secret in output.read_text(encoding="utf-8")
+    assert secret not in worker_output
+    assert "output_sha256=" in worker_output
 
 
 def test_worker_main_validates_paths_and_surfaces_owned_errors(
@@ -266,6 +345,49 @@ def test_worker_main_validates_paths_and_surfaces_owned_errors(
         ]
     ) == 2
     assert "bounded failure" in capsys.readouterr().err
+
+
+def test_worker_main_passes_one_explicit_canonical_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Carry the immutable contract through the CLI instead of sibling discovery."""
+    exchange = tmp_path / "exchange"
+    exchange.mkdir()
+    prompt = exchange / "prompt.txt"
+    proposal = exchange / "proposal.json"
+    contract = exchange / "contract.json"
+    model = tmp_path / "model.gguf"
+    prompt.write_text("repair", encoding="utf-8")
+    contract.write_text("{}", encoding="utf-8")
+    model.write_bytes(b"gguf")
+    calls: list[tuple[Path, Path, Path | None]] = []
+
+    def fake_worker(
+        exchange_dir: Path,
+        model_path: Path,
+        *,
+        contract_path: Path | None = None,
+        gateway_factory: object = None,
+    ) -> Path:
+        del gateway_factory
+        calls.append((exchange_dir, model_path, contract_path))
+        return proposal
+
+    monkeypatch.setattr(worker_module, "run_worker", fake_worker)
+    assert worker_module.main(
+        [
+            "--prompt-file",
+            str(prompt),
+            "--proposal-file",
+            str(proposal),
+            "--contract-file",
+            str(contract),
+            "--model-path",
+            str(model),
+        ]
+    ) == 0
+    assert calls == [(exchange, model, contract)]
 
 
 def test_worker_rejects_exchange_that_is_not_a_directory(tmp_path: Path) -> None:
