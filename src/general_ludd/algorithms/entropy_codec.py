@@ -99,13 +99,9 @@ def huffman_decode(bitstring: str, root: HuffmanNode[T]) -> list[T]:
 
 
 def _bitstring_to_bytes(bitstring: str) -> bytes:
-    byte_count = (len(bitstring) + 7) // 8
-    padding = byte_count * 8 - len(bitstring)
+    padding = (-len(bitstring)) % 8
     padded = bitstring + "0" * padding
-    result = bytearray(byte_count)
-    for i in range(byte_count):
-        result[i] = int(padded[i * 8 : (i + 1) * 8], 2)
-    return bytes(result)
+    return bytes(int(padded[start : start + 8], 2) for start in range(0, len(padded), 8))
 
 
 def _bytes_to_bitstring(data: bytes) -> str:
@@ -142,20 +138,13 @@ class CanonicalCode(Generic[T]):
 
     def encode(self, symbols: list[T]) -> bytes:
         """Encode the value."""
-        if not symbols:
-            return b""
-        out_bits: list[str] = []
-        for sym in symbols:
-            width = self.bit_widths[sym]
-            code = self.base_codes[sym]
-            out_bits.append(format(code, f"0{width}b"))
-        return _bitstring_to_bytes("".join(out_bits))
+        bits = (format(self.base_codes[sym], f"0{self.bit_widths[sym]}b") for sym in symbols)
+        return _bitstring_to_bytes("".join(bits))
 
     def decode(self, data: bytes, num_symbols: int) -> list[T]:
         """Decode the value."""
         if num_symbols == 0:
             return []
-        max(self.lengths) if self.lengths else 1
         length_sorted = sorted(
             [(s, w) for s, w in self.bit_widths.items() if w > 0],
             key=lambda x: x[1],
