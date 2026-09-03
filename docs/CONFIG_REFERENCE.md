@@ -246,6 +246,8 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_POST_RESULTS_STATE_FILE` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:48` |
 | `GLUDD_PROJECT_ALLOW_ANY_EXEC` | Auto-indexed (see source) | — | optional | `src/general_ludd/project_runner/dast.py:42` |
 | `GLUDD_PROJECT_NAMESPACE` | Auto-indexed (see source) | `gludd` | optional | `src/general_ludd/cli.py:1997` |
+| `GLUDD_PROJECT_REPOSITORY_BINDINGS` | Canonical, bounded JSON snapshot binding stable project IDs to confined workspace keys and repository fingerprints. Empty selects an empty registry; malformed, duplicate, non-canonical, oversized, or unsupported snapshots fail closed. | `""` (empty registry) | optional | `src/general_ludd/projects/repository_binding.py:307` |
+| `GLUDD_PROJECT_WORKSPACE_BASE` | Override the owner-controlled base beneath which repository-binding workspace keys resolve. Paths remain confined below this base; when unset, the project-state `workspaces/` directory is used. | project-state `workspaces/` | optional | `src/general_ludd/projects/repository_binding.py:304` |
 | `GLUDD_PSK_DISABLE` | Auto-indexed (see source) | — | optional | `src/general_ludd/security/auth.py:67` |
 | `GLUDD_PSK_IDENTITY_TTL_SECONDS` | Auto-indexed (see source) | `3600` | optional | `src/general_ludd/security/psk_rotation.py:255` |
 | `GLUDD_PSK_ROTATION_OVERLAP_SECONDS` | Auto-indexed (see source) | `300` | optional | `src/general_ludd/security/psk_rotation.py:254` |
@@ -268,6 +270,12 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_SEARX_RATE_LIMIT` | Auto-indexed (see source) | `2.0` | optional | `src/general_ludd/retrieval/searx_client.py:20` |
 | `GLUDD_SEARX_TIMEOUT` | Auto-indexed (see source) | `30.0` | optional | `src/general_ludd/retrieval/searx_client.py:22` |
 | `GLUDD_SEARX_URL` | Auto-indexed (see source) | `http://localhost:8888` | optional | `src/general_ludd/cli_service_commands.py:31` |
+| `GLUDD_SELF_IMPROVE_HF_TOKEN_REQUIRED` | Require an explicit `HF_TOKEN` or `HUGGING_FACE_HUB_TOKEN` for managed model acquisition instead of allowing anonymous public access. This boolean policy never contains or logs the token; invalid boolean text fails closed. | `false` | optional | `src/general_ludd/self_improve/model_lifecycle.py:313` |
+| `GLUDD_SELF_IMPROVE_MODEL` | Select exactly one coding model by canonical name, repository, or alias. An ambiguous or unknown value fails closed; when unset, Gludd tries `qwen2.5-coder-1.5b`, `qwen2.5-coder-3b`, then `codellama-7b`, falling back to the smallest configured coding model. | priority-selected coding model | optional | `src/general_ludd/self_improve/model_lifecycle.py:279` |
+| `GLUDD_SELF_IMPROVE_MODEL_ACQUISITION_TIMEOUT_SECONDS` | Finite positive wall-clock deadline for isolated model revision resolution and download. Invalid, non-finite, zero, or negative values fail closed. | `600` | optional | `src/general_ludd/self_improve/model_lifecycle.py:597` |
+| `GLUDD_SELF_IMPROVE_MODEL_CACHE` | Relocate the dedicated Gludd-owned self-improvement model cache. The resolved cache root must not be a symlink; ambient Hugging Face cache content does not become Gludd-owned. | `~/.cache/general-ludd/models/self-improve` | optional | `src/general_ludd/self_improve/model_lifecycle.py:272` |
+| `GLUDD_SELF_IMPROVE_MODEL_QUOTA_BYTES` | Positive byte ceiling for artifacts admitted to the managed self-improvement cache. The lease-aware lifecycle refuses acquisition when owned usage plus the requested artifact exceeds this quota. | `8589934592` (8 GiB) | optional | `src/general_ludd/self_improve/model_lifecycle.py:507` |
+| `GLUDD_SELF_IMPROVE_MODEL_RESERVE_BYTES` | Non-negative filesystem free-space reserve retained after model acquisition. Gludd refuses acquisition when independent disk-free evidence cannot preserve it. | `2147483648` (2 GiB) | optional | `src/general_ludd/self_improve/model_lifecycle.py:517` |
 | `GLUDD_SELF_UPDATE_PUBLIC_KEY` | Auto-indexed (see source) | — | optional | `src/general_ludd/self_update/signing.py:92` |
 | `GLUDD_SELF_UPDATE_PUBLIC_KEY_FILE` | Auto-indexed (see source) | — | optional | `src/general_ludd/self_update/signing.py:96` |
 | `GLUDD_SESSION_ABSOLUTE_TTL` | Auto-indexed (see source) | — | optional | `src/general_ludd/security/session_ttl.py:82` |
@@ -346,6 +354,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_WORKTREE_ENFORCE` | Auto-indexed (see source) | — | optional | `scripts/verify_enforcement.py:107` |
 | `GLUDD_XAI_API_KEY` | Auto-indexed (see source) | — | optional | `src/general_ludd/ansible/credential_proxy.py:403` |
 | `GLUDD_XDIST_TRACE_LOG` | Auto-indexed (see source) | — | optional | `scripts/run_xdist_trace.py:35` |
+| `GLUDD_XDIST_TRACE_RUN_ID` | Correlation identity written into append-only xdist progress events. The retained-command observer injects its authenticated exact run ID; direct plugin use falls back to `legacy`. | observer run ID or `legacy` | optional | `scripts/stream_command.py:307`, `scripts/xdist_trace_plugin.py:29` |
 | `GLUDD_XDIST_TRACE_TRUNCATE` | Auto-indexed (see source) | — | optional | `scripts/run_xdist_trace.py:36` |
 | `GLUDD_XDIST_WORKERS` | Auto-indexed (see source) | — | optional | `scripts/adaptive_test.py:117` |
 
