@@ -585,6 +585,77 @@ def test_observer_prunes_to_retention_bound_after_terminal_publish(
     assert _current_status(tmp_path)["run_id"] == "run-3"
 
 
+def test_status_and_tail_address_retained_terminal_run_after_current_advances(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An immutable run ID keeps terminal evidence queryable until rotation."""
+
+    for run_id in ("run-1", "run-2"):
+        log_path = (
+            tmp_path / "custom-retained.log"
+            if run_id == "run-1"
+            else tmp_path / "observed" / "demo" / f"{run_id}.log"
+        )
+        returncode = stream_command.stream_command(
+            [sys.executable, "-c", f"print('{run_id}', flush=True)"],
+            log_path,
+            observed_root=tmp_path / "observed",
+            label="demo",
+            run_id=run_id,
+            quiet=True,
+            retain_runs=2,
+        )
+        assert returncode == 0
+
+    capsys.readouterr()
+    assert (
+        stream_command.observed_status(
+            tmp_path / "observed",
+            "demo",
+            run_id="run-1",
+            stale_seconds=90,
+        )
+        == 0
+    )
+    retained = json.loads(capsys.readouterr().out)
+    assert retained["run_id"] == "run-1"
+    assert retained["state"] == "passed"
+
+    assert (
+        stream_command.observed_tail(
+            tmp_path / "observed", "demo", run_id="run-1", lines=1
+        )
+        == 0
+    )
+    assert capsys.readouterr().out == "run-1\n"
+
+
+def test_exact_terminal_lookup_obeys_retention_rotation(tmp_path: Path) -> None:
+    """Exact-run readers cannot resurrect artifacts pruned by the bounded policy."""
+
+    for run_id in ("run-1", "run-2"):
+        assert (
+            stream_command.stream_command(
+                [sys.executable, "-c", "pass"],
+                tmp_path / "observed" / "demo" / f"{run_id}.log",
+                observed_root=tmp_path / "observed",
+                label="demo",
+                run_id=run_id,
+                quiet=True,
+                retain_runs=1,
+            )
+            == 0
+        )
+
+    with pytest.raises(FileNotFoundError):
+        stream_command.observed_status(
+            tmp_path / "observed",
+            "demo",
+            run_id="run-1",
+            stale_seconds=90,
+        )
+
+
 def test_retention_failure_after_child_exit_fails_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

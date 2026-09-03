@@ -25,6 +25,16 @@ is not sufficient evidence of ownership.
 | `reclaimed_worker_pids` | Gate-refresh PIDs excluded because they do not hold the live project lease. This makes stale orphan trees auditable without counting them as active work. |
 | `leased_workers` | Auditable `{pid, task, lease}` records for admitted top-level leases. |
 
+The same JSON document includes a bounded top-level `observed_processes` list.
+Each record is a live OS process proven to belong to an atomic observed-command
+tree and carries `pid`, `ppid`, `task`, `observer_label`, and `observer_role`.
+`make ps` renders those same processes, including `self-improve-observer`,
+`self-improve`, and `self-improve-model-worker` roles. The observer status is
+not trusted as a PID source by itself: Gludd verifies the owner command and
+label against the live process table, verifies the child relationship, follows
+only real descendants, ignores unknown fields such as `agent_pid`, and caps the
+snapshot. Model-agent activity still has no fabricated OS PID.
+
 The namespace is part of every lock identity. `project.lock`, `model.lock`,
 `searx.lock`, `terraform.lock`, `gate.lock`, `async-gate.lock`, and `e2e.lock`
 in one project must not collide with the same logical lock in a second project.
@@ -43,7 +53,10 @@ stabilizing after assigning independent project names ([parallel Compose
 execution discussion](https://forums.docker.com/t/parallel-execution-of-docker-compose-up-commands-with-same-configuration/136142)).
 Gludd applies that lesson to local locks and worker admission: project identity
 is explicit, lease paths are namespaced, and the worker ceiling is visible in
-the status evidence.
+the status evidence. Observer discovery follows the same project boundary by
+reading only registered worktrees' `.gate-logs/observed` trees; the forum's
+long-lived collision report is why a global observer directory or unqualified
+PID match is not accepted.
 
 ## Verification
 

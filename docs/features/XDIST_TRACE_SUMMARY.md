@@ -1,7 +1,7 @@
 # Durable xdist Trace Summaries
 
 Status: implemented for the beta4 diagnostic workflow. Last reviewed:
-2026-09-02.
+2026-09-03.
 
 ## Purpose
 
@@ -44,15 +44,21 @@ The bounded readers never follow a log indefinitely:
 
 ```console
 make run-watched CMD='make ci-repro-linux PYV=3.11' \
+  OBSERVED_LABEL=ci-repro \
   RUN_ID=ci-repro-311 STALL_SECS=180 MAX_SECS=3600 \
-  LOG=.gate-logs/observed/run-watched/ci-repro-311.log \
+  LOG=.gate-logs/observed/ci-repro/ci-repro-311.log \
   OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 \
   OBSERVED_RETAIN_RUNS=20
-make observed-status OBSERVED_LABEL=coverage-files \
+make observed-status OBSERVED_LABEL=ci-repro RUN_ID=ci-repro-311 \
   OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90
-make observed-tail OBSERVED_LABEL=coverage-files \
+make observed-tail OBSERVED_LABEL=ci-repro RUN_ID=ci-repro-311 \
   OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80
 ```
+
+`OBSERVED_LABEL` names the bounded history directory; `RUN_ID` selects one
+immutable retained record within it. Omitting `RUN_ID` reads `current.json`.
+Keeping these identities explicit prevents a completed run ID from being
+mistaken for a label and reported as a missing `current.json` path.
 
 `coverage-files`, `test-count`, `collect-check`, and `run-watched` all use this
 contract. Quiet collection still updates its heartbeat while writing complete
@@ -65,6 +71,18 @@ No service restart or deployment mutation is involved.
 After a terminal publish, the observer retains the newest 20 terminal runs per
 label and prunes only older run-owned status/log/trace triplets. Active runs,
 `current.json`, custom external logs, and malformed evidence are never pruned.
+Exact-run status and tail requests remain available after `current.json`
+advances, until that terminal triplet reaches the configured rotation bound.
+
+While a run is live, `make ps` and `make active-work-status` also inspect atomic
+`current.json` pointers in every registered worktree. A status document cannot
+invent a process: the recorded owner must be a live `stream_command.py` process
+with the same label, and a running child must be its direct OS child. Only that
+verified tree is reported. Discovery reads at most the 64 most recently updated
+label pointers and reports at most 128 observer-owned processes. The JSON view
+places their PID, PPID, task, label, and tree role in `observed_processes`;
+delegated model-agent names remain logical status and are never presented as OS
+PIDs.
 
 Pytest-xdist documents that worker stdout and stderr
 [cannot be transferred live](https://pytest-xdist.readthedocs.io/en/stable/known-limitations.html#output-stdout-and-stderr-from-workers)

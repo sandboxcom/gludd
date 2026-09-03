@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import heapq
 import json
 import os
 import re
@@ -40,12 +41,20 @@ _WORKER_TASKS = frozenset(
         "ci-shard-supervisor",
         "test-supervisor",
         "python-worker",
+        "self-improve",
+        "self-improve-model-worker",
     }
 )
 _SINGLETON_WORKER_LEASES = frozenset({"gate-refresh"})
 _PROCESS_DISPLAY_LIMIT = 512
 _COMMAND_DISPLAY_LIMIT = 240
+_OBSERVER_STATUS_LIMIT = 64
+_OBSERVER_PROCESS_LIMIT = 128
 _LOCAL_INFERENCE_PROCESS_TOKENS = ("llama_cpp.server", "llama-server")
+_SELF_IMPROVE_PROCESS_TOKENS = (
+    "self-improve",
+    "self_improve",
+)
 _TRACKED_PROCESS_TOKENS = (
     "adaptive_test.py",
     "agent_watchdog.py",
@@ -68,6 +77,14 @@ _TRACKED_PROCESS_TOKENS = (
 
 
 def _task_label(command: str) -> str:
+    if "self_improve_local_proposal.py" in command:
+        return "self-improve-model-worker"
+    if any(token in command for token in _LOCAL_INFERENCE_PROCESS_TOKENS):
+        return "local-inference"
+    if any(token in command for token in _SELF_IMPROVE_PROCESS_TOKENS):
+        return "self-improve"
+    if "stream_command.py" in command:
+        return "observed-command"
     if "task_watchdog.py" in command or "agent_watchdog.py" in command:
         return "watchdog"
     if "audit_coverage.py" in command:
@@ -76,8 +93,6 @@ def _task_label(command: str) -> str:
         return "coverage-audit-support"
     if "multiprocessing" in command:
         return "python-worker"
-    if any(token in command for token in _LOCAL_INFERENCE_PROCESS_TOKENS):
-        return "local-inference"
     if "test_hook_runtime.py" in command:
         return "hook-runtime"
     if any(
@@ -110,7 +125,6 @@ def _task_label(command: str) -> str:
 
 def _parse_worktree_roots(payload: str) -> tuple[Path, ...]:
     """Parse Git's stable porcelain worktree inventory, failing closed."""
-
     roots: list[Path] = []
     for line in payload.splitlines():
         if not line.startswith("worktree "):
@@ -128,7 +142,6 @@ def _parse_worktree_roots(payload: str) -> tuple[Path, ...]:
 
 def _repository_roots() -> tuple[Path, ...]:
     """Return every checkout registered in this repository's Git common dir."""
-
     result = subprocess.run(
         ["git", "worktree", "list", "--porcelain"],
         cwd=ROOT,
@@ -142,7 +155,6 @@ def _repository_roots() -> tuple[Path, ...]:
 
 def _path_forms(path: Path) -> frozenset[str]:
     """Return textual and canonical spellings for one ownership root."""
-
     expanded = path.expanduser()
     forms = {str(expanded)}
     with suppress(OSError):
@@ -152,7 +164,6 @@ def _path_forms(path: Path) -> frozenset[str]:
 
 def _command_mentions_path(command: str, path: Path) -> bool:
     """Match a complete path component, never a checkout-name prefix."""
-
     for form in _path_forms(path):
         pattern = rf"(?<![A-Za-z0-9_./-]){re.escape(form)}(?=$|[\s/'\"=,:])"
         if re.search(pattern, command):
@@ -162,7 +173,6 @@ def _command_mentions_path(command: str, path: Path) -> bool:
 
 def _owned_resource_roots(repository_roots: tuple[Path, ...]) -> tuple[Path, ...]:
     """Derive the resource namespace for each registered checkout."""
-
     roots: list[Path] = []
     for repository_root in repository_roots:
         candidate = resource_root(repository_root)
@@ -178,7 +188,6 @@ def _owned_processes_from_output(
     resource_roots: tuple[Path, ...],
 ) -> list[dict[str, str]]:
     """Filter a process table to tracked commands with repository ownership."""
-
     candidates: list[dict[str, str]] = []
     for line in output.splitlines():
         fields = line.strip().split(None, 2)
@@ -220,6 +229,149 @@ def _owned_processes_from_output(
     return [process for process in candidates if process["pid"] in owned_pids]
 
 
+def _process_rows(output: str) -> list[dict[str, str]]:
+    """Parse the platform-neutral PID, PPID, command process-table projection."""
+    rows: list[dict[str, str]] = []
+    for line in output.splitlines():
+        fields = line.strip().split(None, 2)
+        if len(fields) != 3 or not fields[0].isdigit() or not fields[1].isdigit():
+            continue
+        rows.append({"pid": fields[0], "ppid": fields[1], "command": fields[2]})
+    return rows
+
+
+def _observer_status_paths(repository_roots: tuple[Path, ...]) -> tuple[Path, ...]:
+    """Return a bounded inventory of regular atomic observer pointers."""
+    recent: list[tuple[int, str, Path]] = []
+    for repository_root in repository_roots:
+        observed_root = repository_root / ".gate-logs" / "observed"
+        try:
+            candidates = observed_root.glob("*/current.json")
+        except OSError:
+            continue
+        for candidate in candidates:
+            try:
+                if candidate.is_symlink() or not candidate.is_file():
+                    continue
+                modified_ns = candidate.stat().st_mtime_ns
+            except OSError:
+                continue
+            entry = (modified_ns, str(candidate), candidate)
+            if len(recent) < _OBSERVER_STATUS_LIMIT:
+                heapq.heappush(recent, entry)
+            else:
+                heapq.heappushpop(recent, entry)
+    return tuple(entry[2] for entry in sorted(recent, reverse=True))
+
+
+def _command_has_label(command: str, label: str) -> bool:
+    """Require the status label to appear as the observer's argv value."""
+    pattern = rf"(?:^|\s)--label(?:=|\s+){re.escape(label)}(?=$|\s)"
+    return re.search(pattern, command) is not None
+
+
+def _observer_owned_processes_from_output(
+    output: str,
+    *,
+    repository_roots: tuple[Path, ...],
+) -> list[dict[str, str]]:
+    """Discover live OS processes proven to descend from an atomic observer.
+
+    Observer documents are evidence about an existing process tree, never a PID
+    authority by themselves.  The recorded owner must still exist in ``ps``,
+    execute this project's observer, and carry the same label in argv.  A
+    running child's recorded PID must be its real direct child.  Unknown fields
+    (including model-agent identifiers) are deliberately ignored.
+    """
+    rows = _process_rows(output)
+    by_pid = {row["pid"]: row for row in rows}
+    discovered: dict[str, dict[str, str]] = {}
+    for status_path in _observer_status_paths(repository_roots):
+        try:
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        label = status_path.parent.name
+        owner_value = status.get("owner_pid") if isinstance(status, dict) else None
+        child_value = status.get("child_pid") if isinstance(status, dict) else None
+        if (
+            not isinstance(status, dict)
+            or status.get("schema_version") != 1
+            or status.get("kind") != "observed_command"
+            or status.get("label") != label
+            or status.get("state") not in {"starting", "running"}
+            or not isinstance(owner_value, int)
+            or owner_value <= 0
+        ):
+            continue
+        owner_pid = str(owner_value)
+        owner = by_pid.get(owner_pid)
+        if (
+            owner is None
+            or "stream_command.py" not in owner["command"]
+            or not _command_has_label(owner["command"], label)
+        ):
+            continue
+
+        child_pid: str | None = None
+        if status.get("state") == "running":
+            if not isinstance(child_value, int) or child_value <= 0:
+                continue
+            child_pid = str(child_value)
+            child = by_pid.get(child_pid)
+            if child is None or child["ppid"] != owner_pid:
+                continue
+
+        tree_pids = {owner_pid}
+        if child_pid is not None:
+            descendant_pids = {child_pid}
+            changed = True
+            while changed and len(descendant_pids) + 1 < _OBSERVER_PROCESS_LIMIT:
+                changed = False
+                for row in rows:
+                    if (
+                        row["pid"] not in descendant_pids
+                        and row["ppid"] in descendant_pids
+                    ):
+                        descendant_pids.add(row["pid"])
+                        changed = True
+                        if len(descendant_pids) + 1 >= _OBSERVER_PROCESS_LIMIT:
+                            break
+            tree_pids.update(descendant_pids)
+
+        self_improve = any(
+            any(token in by_pid[pid]["command"] for token in _SELF_IMPROVE_PROCESS_TOKENS)
+            for pid in tree_pids
+        )
+        for row in rows:
+            pid = row["pid"]
+            if pid not in tree_pids or len(discovered) >= _OBSERVER_PROCESS_LIMIT:
+                continue
+            if pid == owner_pid:
+                role = "owner"
+                task = "self-improve-observer" if self_improve else "observed-command"
+            elif pid == child_pid:
+                role = "child"
+                task = _task_label(row["command"])
+                if task == "other" and self_improve:
+                    task = "self-improve"
+            else:
+                role = "descendant"
+                task = _task_label(row["command"])
+                if task == "other" and self_improve:
+                    task = "self-improve"
+            discovered[pid] = {
+                **row,
+                "task": task,
+                "observer_label": label,
+                "observer_role": role,
+                "process_source": "observed-command",
+            }
+    return [discovered[row["pid"]] for row in rows if row["pid"] in discovered][
+        :_OBSERVER_PROCESS_LIMIT
+    ]
+
+
 def _processes() -> list[dict[str, str]]:
     repository_roots = _repository_roots()
     result = subprocess.run(
@@ -230,19 +382,30 @@ def _processes() -> list[dict[str, str]]:
         timeout=10,
         check=True,
     )
-    return _owned_processes_from_output(
+    tracked = _owned_processes_from_output(
         result.stdout,
         repository_roots=repository_roots,
         resource_roots=_owned_resource_roots(repository_roots),
     )
+    observed = _observer_owned_processes_from_output(
+        result.stdout,
+        repository_roots=repository_roots,
+    )
+    merged = {process["pid"]: process for process in tracked}
+    for process in observed:
+        merged[process["pid"]] = {**merged.get(process["pid"], {}), **process}
+    return [
+        merged[row["pid"]]
+        for row in _process_rows(result.stdout)
+        if row["pid"] in merged
+    ]
 
 
 def _render_process_table(processes: list[dict[str, str]]) -> str:
     """Render a bounded, auditable human-readable process inventory."""
-
     if not processes:
         return "No matching project processes\n"
-    lines = [f"{'PID':>7} {'PPID':>7} {'TASK':<22} COMMAND"]
+    lines = [f"{'PID':>7} {'PPID':>7} {'TASK':<27} COMMAND"]
     displayed = processes[:_PROCESS_DISPLAY_LIMIT]
     for process in displayed:
         command = process["command"]
@@ -250,7 +413,7 @@ def _render_process_table(processes: list[dict[str, str]]) -> str:
             command = f"{command[: _COMMAND_DISPLAY_LIMIT - 3]}..."
         lines.append(
             f"{process['pid']:>7} {process['ppid']:>7} "
-            f"{process['task']:<22} {command}"
+            f"{process['task']:<27} {command}"
         )
     remaining = len(processes) - len(displayed)
     if remaining:
@@ -319,7 +482,6 @@ def _worker_limit() -> int:
 
 def _active_gate_refresh_owner(_namespace: str) -> str | None:
     """Return the PID holding this project's gate-refresh lease, if any."""
-
     lock_path = resource_path("gate-refresh", ROOT)
     try:
         with lock_path.open("a+", encoding="utf-8") as handle:
@@ -348,7 +510,6 @@ def _worker_accounting(
     lease.  Gate refresh is a singleton lease per project; duplicate roots are
     reported and collapsed so a process-tree fan-out cannot inflate admission.
     """
-
     tracked = [process for process in processes if process["task"] in _WORKER_TASKS]
     tracked_pids = {process["pid"] for process in tracked}
     top_level = [process for process in tracked if process["ppid"] not in tracked_pids]
@@ -418,6 +579,7 @@ def _resource_observability(processes: list[dict[str, str]]) -> dict[str, object
 
 
 def collect_status() -> dict[str, object]:
+    """Collect one bounded cross-terminal process and resource snapshot."""
     tasks = (ROOT / "TASKS.md").read_text(encoding="utf-8")
     processes = _processes()
     gate = _gate()
@@ -430,6 +592,20 @@ def collect_status() -> dict[str, object]:
         "pid": os.getpid(),
         "processes": processes,
         "workstreams": _workstreams(processes),
+        "observed_processes": [
+            {
+                key: process[key]
+                for key in (
+                    "pid",
+                    "ppid",
+                    "task",
+                    "observer_label",
+                    "observer_role",
+                )
+            }
+            for process in processes
+            if process.get("process_source") == "observed-command"
+        ][:_OBSERVER_PROCESS_LIMIT],
         "gate": gate,
         "resource_observability": _resource_observability(processes),
         "git": _git(),
@@ -437,7 +613,10 @@ def collect_status() -> dict[str, object]:
         "audit_contract": {
             "ps_command": "make ps",
             "agent_pids": False,
-            "note": "Model-agent execution is reported by agent name/status, never as an OS PID.",
+            "note": (
+                "Observer-owned subprocess PIDs are verified against the live OS tree; "
+                "model-agent execution is reported by agent name/status, never as an OS PID."
+            ),
         },
     }
 
@@ -454,7 +633,6 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     """Emit the JSON status or the shared human-readable process view."""
-
     args = _parser().parse_args(argv)
     if args.process_table:
         print(_render_process_table(_processes()), end="")

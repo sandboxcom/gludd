@@ -270,9 +270,9 @@ help:
 	@echo "  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM"
 	@echo "  gate-audit            Gate + coverage audit (85% per-file threshold)"
 	@echo "  coverage-files        Observable targeted coverage (COVERAGE_* plus OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_QUIET_SECS, OBSERVED_MAX_SECS, OBSERVED_RETAIN_RUNS)"
-	@echo "  observed-status       Print atomic current command status (OBSERVED_LABEL, OBSERVED_ROOT, OBSERVED_STALE_SECS)"
-	@echo "  observed-tail         Print bounded current command log tail (OBSERVED_LABEL, OBSERVED_ROOT, OBSERVED_TAIL_LINES)"
-	@echo "  run-watched           Observe one bounded command (CMD, RUN_ID, STALL_SECS, MAX_SECS, LOG, OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_RETAIN_RUNS)"
+	@echo "  observed-status       Print current/exact retained command status (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_STALE_SECS)"
+	@echo "  observed-tail         Print bounded current/exact retained log tail (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_TAIL_LINES)"
+	@echo "  run-watched           Observe one bounded command (CMD, OBSERVED_LABEL, RUN_ID, STALL_SECS, MAX_SECS, LOG, OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_RETAIN_RUNS)"
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)"
@@ -1000,12 +1000,12 @@ coverage-files:
 			mv "$$GLUDD_COVERAGE_REPORT_WORK" "$(COVERAGE_REPORT)"'
 
 observed-status:
-	@if [ -z "$(OBSERVED_LABEL)" ]; then echo "Usage: make observed-status OBSERVED_LABEL=coverage-files OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90"; exit 2; fi
-	@$(UV) run python scripts/stream_command.py --status --root "$(OBSERVED_ROOT)" --label "$(OBSERVED_LABEL)" --stale-secs "$(OBSERVED_STALE_SECS)"
+	@if [ -z "$(OBSERVED_LABEL)" ]; then echo "Usage: make observed-status OBSERVED_LABEL=coverage-files [RUN_ID=exact-run] OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90"; exit 2; fi
+	@$(UV) run python scripts/stream_command.py --status --root "$(OBSERVED_ROOT)" --label "$(OBSERVED_LABEL)" $(if $(RUN_ID),--run-id "$(RUN_ID)",) --stale-secs "$(OBSERVED_STALE_SECS)"
 
 observed-tail:
-	@if [ -z "$(OBSERVED_LABEL)" ]; then echo "Usage: make observed-tail OBSERVED_LABEL=coverage-files OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80"; exit 2; fi
-	@$(UV) run python scripts/stream_command.py --tail "$(OBSERVED_TAIL_LINES)" --root "$(OBSERVED_ROOT)" --label "$(OBSERVED_LABEL)"
+	@if [ -z "$(OBSERVED_LABEL)" ]; then echo "Usage: make observed-tail OBSERVED_LABEL=coverage-files [RUN_ID=exact-run] OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80"; exit 2; fi
+	@$(UV) run python scripts/stream_command.py --tail "$(OBSERVED_TAIL_LINES)" --root "$(OBSERVED_ROOT)" --label "$(OBSERVED_LABEL)" $(if $(RUN_ID),--run-id "$(RUN_ID)",)
 
 _ci-replica-clean-tree:
 	@if python3 scripts/worktree_state_guard.py --assert-clean --claim-token >/tmp/gludd-ci-replica-clean-tree.txt 2>&1; then \
@@ -1966,8 +1966,8 @@ gated-merge:
 STALL_SECS ?= 180
 MAX_SECS ?= 3600
 run-watched:
-	@if [ -z "$(CMD)" ]; then echo "Usage: make run-watched CMD='<command>' [RUN_ID=name] [STALL_SECS=180] [MAX_SECS=3600] [LOG=.gate-logs/observed/run-watched/name.log] [OBSERVED_RETAIN_RUNS=20]"; exit 1; fi
-	@$(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label run-watched \
+	@if [ -z "$(CMD)" ]; then echo "Usage: make run-watched CMD='<command>' [OBSERVED_LABEL=run-watched] [RUN_ID=name] [STALL_SECS=180] [MAX_SECS=3600] [LOG=.gate-logs/observed/run-watched/name.log] [OBSERVED_RETAIN_RUNS=20]"; exit 1; fi
+	@$(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label "$(if $(strip $(OBSERVED_LABEL)),$(OBSERVED_LABEL),run-watched)" \
 		$(if $(RUN_ID),--run-id "$(RUN_ID)",) $(if $(LOG),--log "$(LOG)",) --heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" \
 		--quiet-secs "$(STALL_SECS)" --max-secs "$(MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" -- $(CMD)
 

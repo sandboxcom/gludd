@@ -550,13 +550,30 @@ def stream_command(
     return requested_code
 
 
-def _load_current(root: Path, label: str) -> dict[str, Any]:
-    """Load and minimally validate one label's current status document."""
-    path = root.resolve() / _safe_name(label, field="label") / "current.json"
+def _load_status(
+    root: Path, label: str, *, run_id: str | None = None
+) -> dict[str, Any]:
+    """Load current status or one immutable retained run, failing closed."""
+    safe_label = _safe_name(label, field="label")
+    safe_run_id = _safe_name(run_id, field="run_id") if run_id is not None else None
+    directory = root.resolve() / safe_label
+    path = directory / (f"{safe_run_id}.json" if safe_run_id else "current.json")
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError(f"observed status is not a JSON object: {path}")
+    if safe_run_id is not None and (
+        value.get("schema_version") != 1
+        or value.get("kind") != "observed_command"
+        or value.get("label") != safe_label
+        or value.get("run_id") != safe_run_id
+    ):
+        raise ValueError(f"retained observed status identity mismatch: {path}")
     return value
+
+
+def _load_current(root: Path, label: str) -> dict[str, Any]:
+    """Load one label's atomic current pointer for compatibility."""
+    return _load_status(root, label)
 
 
 def _pid_alive(value: object) -> bool:
@@ -585,9 +602,15 @@ def _age_seconds(value: object) -> float:
     return max(0.0, (datetime.now(UTC) - timestamp).total_seconds())
 
 
-def observed_status(root: Path, label: str, *, stale_seconds: float) -> int:
+def observed_status(
+    root: Path,
+    label: str,
+    *,
+    stale_seconds: float,
+    run_id: str | None = None,
+) -> int:
     """Print current JSON with inferred live/stale/orphaned state."""
-    status = _load_current(root, label)
+    status = _load_status(root, label, run_id=run_id)
     recorded_state = str(status.get("state") or "unknown")
     in_progress = recorded_state in {"starting", "running"}
     owner_alive = _pid_alive(status.get("owner_pid")) if in_progress else False
@@ -612,15 +635,18 @@ def observed_status(root: Path, label: str, *, stale_seconds: float) -> int:
     return 3 if effective_state in {"orphaned", "stale"} else 0
 
 
-def observed_tail(root: Path, label: str, *, lines: int) -> int:
+def observed_tail(
+    root: Path, label: str, *, lines: int, run_id: str | None = None
+) -> int:
     """Print at most ``lines`` from the current run's durable output log."""
     if lines <= 0 or lines > 1000:
         raise ValueError("tail lines must be between 1 and 1000")
-    status = _load_current(root, label)
+    status = _load_status(root, label, run_id=run_id)
     raw_path = status.get("log_path")
     if not isinstance(raw_path, str) or not raw_path:
         raise ValueError("observed status does not contain log_path")
-    with Path(raw_path).open(encoding="utf-8", errors="replace") as handle:
+    log_path = Path(raw_path).resolve()
+    with log_path.open(encoding="utf-8", errors="replace") as handle:
         snapshot = deque(handle, maxlen=lines)
     sys.stdout.writelines(snapshot)
     return 0
@@ -665,9 +691,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
         if args.status:
-            return observed_status(args.root, args.label, stale_seconds=args.stale_secs)
+            return observed_status(
+                args.root,
+                args.label,
+                stale_seconds=args.stale_secs,
+                run_id=args.run_id,
+            )
         if args.tail is not None:
-            return observed_tail(args.root, args.label, lines=args.tail)
+            return observed_tail(
+                args.root,
+                args.label,
+                lines=args.tail,
+                run_id=args.run_id,
+            )
         label = args.label
         run_id = args.run_id or (_new_run_id() if label else None)
         log_path = args.log

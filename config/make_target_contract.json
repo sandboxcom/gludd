@@ -820,22 +820,22 @@
         "OBSERVED_MAX_SECS",
         "OBSERVED_RETAIN_RUNS"
       ],
-      "behavior": "make coverage-files COVERAGE_TESTFILES='tests/unit/test_observed_command.py tests/unit/test_xdist_trace_diagnostics.py tests/unit/test_gate_refresh_streaming.py tests/unit/test_observability_guardrails.py' COVERAGE_CONFIG=config/coverage_observed_command.ini COVERAGE_REPORT=.gate-logs/coverage-observed-command.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=1 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20"
+      "behavior": "make coverage-files COVERAGE_TESTFILES='tests/unit/test_observed_command.py tests/unit/test_xdist_trace_diagnostics.py tests/unit/test_gate_refresh_streaming.py tests/unit/test_observability_guardrails.py tests/unit/test_active_work_status.py tests/unit/test_active_work_resource_observability.py' COVERAGE_CONFIG=config/coverage_observed_command.ini COVERAGE_REPORT=.gate-logs/coverage-observed-command.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=1 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20"
     },
     {
       "name": "observed-status",
-      "make_variables": ["OBSERVED_LABEL", "OBSERVED_ROOT", "OBSERVED_STALE_SECS"],
-      "behavior": "make observed-status OBSERVED_LABEL=run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90"
+      "make_variables": ["OBSERVED_LABEL", "RUN_ID", "OBSERVED_ROOT", "OBSERVED_STALE_SECS"],
+      "behavior": "make observed-status OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90"
     },
     {
       "name": "observed-tail",
-      "make_variables": ["OBSERVED_LABEL", "OBSERVED_ROOT", "OBSERVED_TAIL_LINES"],
-      "behavior": "make observed-tail OBSERVED_LABEL=run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80"
+      "make_variables": ["OBSERVED_LABEL", "RUN_ID", "OBSERVED_ROOT", "OBSERVED_TAIL_LINES"],
+      "behavior": "make observed-tail OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80"
     },
     {
       "name": "run-watched",
-      "make_variables": ["CMD", "RUN_ID", "STALL_SECS", "MAX_SECS", "LOG", "OBSERVED_ROOT", "OBSERVED_HEARTBEAT_SECS", "OBSERVED_RETAIN_RUNS"],
-      "behavior": "make run-watched CMD='printf observed-contract' RUN_ID=contract-run-watched STALL_SECS=180 MAX_SECS=3600 LOG=.gate-logs/observed/run-watched/contract.log OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_RETAIN_RUNS=20"
+      "make_variables": ["CMD", "OBSERVED_LABEL", "RUN_ID", "STALL_SECS", "MAX_SECS", "LOG", "OBSERVED_ROOT", "OBSERVED_HEARTBEAT_SECS", "OBSERVED_RETAIN_RUNS"],
+      "behavior": "make run-watched CMD='printf observed-contract' OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched STALL_SECS=180 MAX_SECS=3600 LOG=.gate-logs/observed/run-watched/contract.log OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_RETAIN_RUNS=20"
     },
     {
       "name": "test-count",

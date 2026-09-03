@@ -252,7 +252,11 @@ class TestNoSilentStalls:
             ("run-watched", watched),
         ):
             assert "scripts/stream_command.py" in body
-            assert f"--label {label}" in body
+            if label == "run-watched":
+                assert "$(OBSERVED_LABEL)" in body
+                assert "run-watched" in body
+            else:
+                assert f"--label {label}" in body
             assert "--root \"$(OBSERVED_ROOT)\"" in body
             assert "--retain-runs \"$(OBSERVED_RETAIN_RUNS)\"" in body
 
@@ -275,7 +279,9 @@ class TestNoSilentStalls:
         tail = _recipe("observed-tail")
         assert "--status" in status
         assert "--stale-secs \"$(OBSERVED_STALE_SECS)\"" in status
+        assert '$(if $(RUN_ID),--run-id "$(RUN_ID)",)' in status
         assert "--tail \"$(OBSERVED_TAIL_LINES)\"" in tail
+        assert '$(if $(RUN_ID),--run-id "$(RUN_ID)",)' in tail
 
     def test_every_ci_job_has_timeout_minutes(self) -> None:
         import yaml
