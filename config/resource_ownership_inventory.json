@@ -1995,7 +1995,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/managed_runner.py",
-      "line": 207,
+      "line": 208,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_write_atomic_temp",
@@ -2006,7 +2006,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 368,
+      "line": 376,
       "column": 15,
       "kind": "process",
       "owner": "MakeRunner._run_observable_argv",
@@ -2017,7 +2017,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 462,
+      "line": 470,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_run_local_proposal_request",
