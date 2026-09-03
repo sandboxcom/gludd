@@ -31,7 +31,7 @@ from general_ludd.self_improve.codex_comparison import (
 )
 from general_ludd.self_improve.managed_runner import _validation_retry_feedback
 
-_PROTOCOL: Final = "self-improve-failure-corpus-v4"
+_PROTOCOL: Final = "self-improve-failure-corpus-v5"
 _MAX_CORPUS_BYTES: Final = 65_536
 _MAX_CASES: Final = 32
 _MAX_TEXT_BYTES: Final = 8_192
@@ -50,6 +50,7 @@ _INPUT_FIELDS: Final = {
     "acquisition_trace": frozenset({"events"}),
     "compact_decode": frozenset({"focus_path", "model_output"}),
     "compact_span_decode": frozenset({"focus_path", "model_output"}),
+    "compact_span_completion": frozenset({"focus_path", "worker_response"}),
     "compact_span_parent": frozenset(
         {"baseline", "editable_ranges", "focus_path", "model_output"}
     ),
@@ -316,6 +317,9 @@ def _validate_inputs(
     elif kind in {"compact_decode", "compact_span_decode"}:
         _required_string(inputs["focus_path"], f"{case_id} focus path")
         _required_string(inputs["model_output"], f"{case_id} model output")
+    elif kind == "compact_span_completion":
+        _required_string(inputs["focus_path"], f"{case_id} focus path")
+        _required_object(inputs["worker_response"], f"{case_id} worker response")
     elif kind == "compact_span_parent":
         _required_string(inputs["focus_path"], f"{case_id} focus path")
         _required_string(inputs["model_output"], f"{case_id} model output")
@@ -460,7 +464,7 @@ def load_corpus(path: Path) -> tuple[FailureCase, ...]:
     root = _required_object(decoded, "failure corpus")
     if set(root) != _ROOT_FIELDS:
         raise ValueError("failure corpus fields drifted")
-    if root["schema_version"] != 4 or root["protocol"] != _PROTOCOL:
+    if root["schema_version"] != 5 or root["protocol"] != _PROTOCOL:
         raise ValueError("failure corpus protocol is unsupported")
     raw_cases = root["cases"]
     if not isinstance(raw_cases, list) or not 1 <= len(raw_cases) <= _MAX_CASES:
@@ -518,6 +522,11 @@ def _replay_gateway_failure(case: FailureCase) -> str:
     if case.kind in {"compact_decode", "compact_span_decode"}:
         output = _required_string(inputs["model_output"], "model output")
         response = _compact_response(output)
+    elif case.kind == "compact_span_completion":
+        response = cast(
+            "Mapping[str, object]",
+            _required_object(inputs["worker_response"], "worker response"),
+        )
     else:
         response = cast(
             "Mapping[str, object]",
@@ -531,7 +540,7 @@ def _replay_gateway_failure(case: FailureCase) -> str:
                 prompt,
                 contract=(
                     _SPAN_CONTRACT
-                    if case.kind == "compact_span_decode"
+                    if case.kind in {"compact_span_decode", "compact_span_completion"}
                     else _CONTRACT
                 ),
             ),
@@ -615,7 +624,12 @@ def _actual_feedback(case: FailureCase) -> tuple[str, bool, str]:
                 "expected_acquisition_rejection_missing",
             )
         return verdict.feedback, False, "acquisition"
-    if case.kind in {"compact_decode", "compact_span_decode", "completion_decode"}:
+    if case.kind in {
+        "compact_decode",
+        "compact_span_decode",
+        "compact_span_completion",
+        "completion_decode",
+    }:
         return _replay_gateway_failure(case), False, ""
     if case.kind == "compact_span_parent":
         return _replay_compact_span_parent(case), True, "span_expand"

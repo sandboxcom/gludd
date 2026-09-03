@@ -190,6 +190,37 @@
     },
     {
       "expected": {
+        "detail": "compact proposal edits must contain 1..4 entries telemetry=received_edits=>4 max_edits=4",
+        "forbidden_substrings": [
+          "PRIVATE_SOURCE",
+          "3217",
+          "2142",
+          "5359"
+        ],
+        "source": "worker_tail",
+        "type": "edit_span_count"
+      },
+      "id": "compact-v4-qwen-stop-3217-overgeneration",
+      "input": {
+        "focus_path": "src/general_ludd/self_improve/example.py",
+        "worker_response": {
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "text": "{\"e\":[{\"n\":1,\"s\":9,\"z\":\"PRIVATE_SOURCE=fifth\\n\"},{\"n\":1,\"s\":7,\"z\":\"fourth\\n\"},{\"n\":1,\"s\":5,\"z\":\"third\\n\"},{\"n\":1,\"s\":3,\"z\":\"second\\n\"},{\"n\":1,\"s\":1,\"z\":\"first\\n\"}]}"
+            }
+          ],
+          "usage": {
+            "completion_tokens": 3217,
+            "prompt_tokens": 2142,
+            "total_tokens": 5359
+          }
+        }
+      },
+      "kind": "compact_span_completion"
+    },
+    {
+      "expected": {
         "detail": "proposal shard edits must cover the exact focus paths",
         "forbidden_substrings": [],
         "source": "worker_tail",
@@ -313,6 +344,6 @@
       "kind": "compact_span_decode"
     }
   ],
-  "protocol": "self-improve-failure-corpus-v4",
-  "schema_version": 4
+  "protocol": "self-improve-failure-corpus-v5",
+  "schema_version": 5
 }

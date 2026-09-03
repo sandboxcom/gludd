@@ -16,6 +16,7 @@ from typing import Any, cast
 import pytest
 
 import general_ludd.self_improve.codex_comparison as comparison_module
+import general_ludd.self_improve.managed_runner as managed_runner_module
 import general_ludd.self_improve.runtime as runner_module
 from general_ludd.local_model import get_model
 from general_ludd.self_improve.codex_comparison import (
@@ -1673,6 +1674,99 @@ def test_main_preserves_structurally_bound_v4_for_live_length_failure(
     assert "TOKEN" not in captured.err
 
 
+def test_finite_live_qwen_budget_feedback_is_typed_bounded_and_secret_free() -> None:
+    """Report the stop/3217 overgeneration class without the model-authored text."""
+    raw = (
+        "native TOKEN=do-not-publish finish=stop completion_tokens=3217\n"
+        "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR "
+        "compact span new text exceeds 3072 bytes; "
+        "received_edits=2 received_content_bytes=>3072 "
+        "max_edits=4 max_content_bytes=3072\n"
+        "PRIVATE_SOURCE=hunter2"
+    )
+
+    feedback = managed_runner_module._validation_retry_feedback(
+        raw,
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+
+    assert feedback == (
+        "protocol=self-improve-validation-retry-v4 type=edit_content_budget "
+        "source=proposal_error detail=compact span new text exceeds 3072 bytes "
+        "telemetry=received_edits=2 received_content_bytes=>3072 "
+        "max_edits=4 max_content_bytes=3072"
+    )
+    assert len(feedback.encode("utf-8")) <= 512
+    assert all(
+        secret not in feedback
+        for secret in ("TOKEN", "PRIVATE_SOURCE", "hunter2", "3217")
+    )
+
+
+def test_finite_live_cardinality_feedback_rejects_telemetry_injection() -> None:
+    """Expose only the fixed count state from an over-limit compact-v4 shard."""
+    valid = (
+        "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR "
+        "compact proposal edits must contain 1..4 entries; "
+        "received_edits=>4 max_edits=4"
+    )
+    injected = valid + " path=src/private.py z=PASSWORD=hunter2"
+
+    assert managed_runner_module._validation_retry_feedback(
+        valid,
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    ).endswith(
+        "detail=compact proposal edits must contain 1..4 entries "
+        "telemetry=received_edits=>4 max_edits=4"
+    )
+    redacted = managed_runner_module._validation_retry_feedback(
+        injected,
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    assert redacted.endswith("detail=compact proposal edits must contain 1..4 entries")
+    assert all(
+        secret not in redacted
+        for secret in ("src/private.py", "PASSWORD", "hunter2", "telemetry=")
+    )
+
+
+def test_main_redacts_finite_live_smollm_stop_framing_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Pin stop/3850 and 12,629-byte evidence without publishing raw completion data."""
+    args = argparse.Namespace(target="unit", validate_only=False)
+    raw = RuntimeError(
+        "SELF_IMPROVE_LOCAL_DECODE phase=proposal finish=stop completion_tokens=3850\n"
+        "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR compact-v4 proposal is not one complete "
+        "JSON object; output_bytes=12629\nPASSWORD=hunter2"
+    )
+    bound = runner_module._bind_failure_protocol(
+        raw,
+        comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+
+    class Parser:
+        def parse_args(self) -> argparse.Namespace:
+            return args
+
+    monkeypatch.setattr(runner_module, "_parser", lambda: Parser())
+    monkeypatch.setattr(
+        runner_module,
+        "run_benchmark",
+        lambda _args: (_ for _ in ()).throw(bound),
+    )
+
+    assert runner_module.main() == 2
+    captured = capsys.readouterr()
+    assert captured.err == (
+        "SELF_IMPROVE_ERROR protocol=self-improve-validation-retry-v4 "
+        "type=proposal_json_contract source=proposal_error "
+        "detail=compact-v4 proposal is not one complete JSON object\n"
+    )
+    assert all(value not in captured.err for value in ("3850", "12629", "PASSWORD"))
+
+
 def test_terminal_protocol_classification_never_guesses_from_attempt_digest() -> None:
     """Treat an unbound shared failure as legacy even when text names a v4 digest."""
     raw = RuntimeError(
@@ -1912,8 +2006,8 @@ def test_local_exchange_cleans_after_compact_parent_aggregate_rejection(
             raw = json.dumps(
                 {
                     "e": [
+                        {"s": 2, "n": 1, "z": "PRIVATE_SOURCE=" + "😀" * 385},
                         {"s": 1, "n": 1, "z": "😀" * 385},
-                        {"s": 2, "n": 1, "z": "😀" * 385},
                     ]
                 }
             )
@@ -1923,11 +2017,13 @@ def test_local_exchange_cleans_after_compact_parent_aggregate_rejection(
             )
             return MakeResult(("make", "worker"), 0, "", "", 0.1)
 
-    with pytest.raises(ValueError, match="new text exceeds 3072 bytes"):
+    with pytest.raises(ValueError, match="new text exceeds 3072 bytes") as captured:
         runner_module.generate_local_proposal(AggregateRejectRunner(), model, "prompt")
 
     assert len(exchanges) == 1
     assert not exchanges[0].exists()
+    assert "received_content_bytes=>3072" in str(captured.value)
+    assert "PRIVATE_SOURCE" not in str(captured.value)
 
 
 def test_evaluate_attempt_stops_on_first_failed_command_and_cleans(

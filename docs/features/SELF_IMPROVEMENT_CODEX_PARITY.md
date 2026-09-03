@@ -56,7 +56,7 @@ Legacy compact-v3 deliberately omits `minLength` and `maxLength`: applying those
 keywords to its former one-megabyte runtime text bound caused native grammar
 expansion to fail. Compact-v4 uses small, parent-derived bounds instead. Its
 grammar permits at most one edit per distinct allowed start coordinate, capped
-at sixteen, and caps each `z` at 768 code points so one item cannot exceed 3,072
+at four, and caps each `z` at 768 code points so one item cannot exceed 3,072
 UTF-8 bytes. The v4 decode
 ceiling is 4,096 tokens; every generative grammar repetition is finite, and a
 non-`stop` finish is still rejected. Python parsing remains authoritative for
@@ -107,14 +107,15 @@ range, and neither the anchor nor snapshot is copied into retry diagnostics.
 Path, old text, operation, and commit subject are not model-supplied. An absent
 file accepts only one non-empty insertion at `{s: 1, n: 0}`; deleting a file
 requires one span covering the complete shown file with empty `z`. Existing-file
-spans must be canonically ordered, non-overlapping, in range, and wholly inside
-content disclosed by that prompt shard; a zero-count edit requires one of the
+spans may arrive in any order; the parent sorts them by immutable snapshot
+coordinate before requiring distinct, non-overlapping, in-range spans wholly
+inside content disclosed by that prompt shard. A zero-count edit requires one of the
 closed boundary intervals derived from a shown contiguous section. Duplicate
 insertion boundaries,
 Boolean or non-integral coordinates, edits into omitted regions, inability to
 derive a unique bounded anchor, and a final file identical to the baseline are
 rejected. An existing empty file is therefore not treated as an absent-file
-create. Compact v4 accepts one to 16 spans, and the existing 3,072 UTF-8-byte
+create. Compact v4 accepts one to four spans per shard, and the existing 3,072 UTF-8-byte
 limit applies to their combined `z` text. The parent expands the validated spans
 to the complete trusted manifest and calls `ProposalManifest.from_json`, so the
 line coordinate is a compact addressing mechanism rather than new authority.
@@ -250,9 +251,9 @@ decode error and regressed to retry-v3.
 
 Compact-v4 now uses a concise completion instruction, a 4,096-token ceiling,
 and a finite per-shard schema. Adjacent shown ranges are canonicalized and
-`maxItems` is the number of distinct allowed `s` coordinates, capped at sixteen;
-the parent already requires starts to increase strictly, so this does not remove
-any valid multi-edit proposal. Each `z.maxLength` is 768 code points, a useful
+`maxItems` is the number of distinct allowed `s` coordinates, capped at four.
+This preserves several independent changes in one shard without exposing the
+sixteen-item overgeneration surface. Each `z.maxLength` is 768 code points, a useful
 single-edit ceiling that is no larger than 3,072 UTF-8 bytes even at four bytes
 per code point. A subprocess
 test against locked llama-cpp-python 0.3.24 calls
@@ -279,6 +280,32 @@ rejection, and either an exact atomic apply followed by syntax/full evaluation
 or bounded retry-v4 feedback. Repeating the same approved identity after both
 60-point failures must select only larger capable artifacts. Exchange cleanup
 and lease release must remain visible on every exit.
+
+The follow-up `self-improve-catalog-finite-live-20260903` run proved that finite
+was not yet small enough. Qwen stopped normally after 3,217 completion tokens,
+then its valid object was rejected only because spans arrived out of order.
+SmolLM2 stopped after 3,850 tokens but returned 12,629 bytes that were not one
+complete object. Both failures occurred under a grammar that still admitted up
+to sixteen edits. Compact v4 now caps a shard at four edits in both the static
+and range-specialized schemas. Locked llama-cpp-python 0.3.24 tests compile that
+exact four-item bound; v3 retains its historical sixteen-item schema and decoder.
+
+The parent accepts unordered input only by sorting parsed spans against the same
+immutable snapshot. It then rejects duplicate starts and overlaps exactly as
+before; no fuzzy or relative interpretation is introduced. Decoded aggregate
+UTF-8 size is checked before canonical ordering, so an oversized response cannot
+produce the misleading order diagnosis seen in the Qwen run. Count and byte
+failures expose only fixed bounded states such as `received_edits=>4` and
+`received_content_bytes=>3072`; model text, source, raw paths, and token payloads
+remain absent. The changed schema, prompt, decoder ordering, and grammar strategy
+rotate v4 attempt identity without changing v1-v3 storage or public exception
+behavior.
+
+The next live acceptance must show each shard using at most four edits, completing
+as one strict object before the 4,096-token ceiling, and either applying the
+canonically sorted non-overlapping spans or returning bounded retry-v4 feedback.
+Duplicate or overlapping spans, aggregate content above 3,072 decoded bytes, and
+partial output must remain rejected with exchange cleanup and lease release.
 
 A September 2026 DeepSeek catalog attempt then exposed a separate parent-side
 gap. Both compact-v3 shards completed and passed worker schema validation, but a
@@ -848,8 +875,9 @@ Official sources:
 - [llama.cpp issue 26596](https://github.com/ggml-org/llama.cpp/issues/26596)
   reports an opaque grammar failure when a practitioner supplied a very large
   `maxLength`. Gludd never feeds its parent megabyte bound to the converter: the
-  per-item v4 bound is 768 code points, and real locked-runtime tests cover the
-  generated finite grammar.
+  per-item v4 bound is 768 code points, the array bound is four items, and real
+  locked-runtime tests cover the generated finite grammar rather than assuming
+  every nominally finite schema is operationally useful.
 - [llama-cpp-python 0.3.24](https://github.com/abetlen/llama-cpp-python/releases/tag/v0.3.24)
   is the exact pinned release at commit
   `26633bd1a2eaf7fd0567cc5eaec8b0165a7ea0bd`. Its

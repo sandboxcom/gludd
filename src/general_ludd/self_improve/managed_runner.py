@@ -35,6 +35,7 @@ from general_ludd.self_improve.codex_comparison import (
     CodexReference,
     ComparisonResult,
     ProposalManifest,
+    _safe_compact_policy_telemetry,
     _safe_compact_scope_telemetry,
     build_retry_prompt,
     local_proposal_attempt_identity_digest,
@@ -1621,6 +1622,9 @@ def _validation_retry_feedback(
     )
     if telemetry:
         feedback += f" telemetry={telemetry}"
+    policy_telemetry = _safe_compact_policy_telemetry(candidate)
+    if policy_telemetry:
+        feedback += f" telemetry={policy_telemetry}"
     if len(feedback.encode("utf-8")) > protocol.max_feedback_bytes:
         return (
             f"protocol={protocol.version} type={feedback_type} "

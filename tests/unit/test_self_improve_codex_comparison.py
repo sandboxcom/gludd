@@ -295,6 +295,7 @@ def test_attempt_identity_binds_complete_managed_output_protocol(
         ("_STRUCTURED_CANARY_PROMPT", "Return a different canary."),
         ("_STRUCTURED_CANARY_EXPECTED", {"ok": False}),
         ("_COMPACT_SPAN_PROPOSAL_TOKENS", 4097),
+        ("_COMPACT_SPAN_MAX_EDITS", 5),
         ("_COMPACT_MAX_CONTENT_BYTES", 3073),
         ("_COMPACT_FOCUS_PATH_MARKER", "CHANGED_FOCUS_PATH="),
         ("_COMPACT_EDITABLE_RANGES_MARKER", "CHANGED_EDITABLE_RANGES="),
@@ -345,27 +346,63 @@ def test_legacy_identity_keeps_its_historical_token_policy(
         prompt_digest,
         proposal_protocol=legacy,
     )
+    v4_baseline = comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
 
-    monkeypatch.setattr(comparison_module, "_COMPACT_SPAN_PROPOSAL_TOKENS", 4097)
-    assert comparison_module.local_proposal_attempt_identity_digest(
-        prompt_digest,
-        proposal_protocol=legacy,
-    ) == baseline
-    monkeypatch.setattr(comparison_module, "_COMPACT_PROPOSAL_TOKENS", 1025)
-    assert comparison_module.local_proposal_attempt_identity_digest(
-        prompt_digest,
-        proposal_protocol=legacy,
-    ) != baseline
+    with monkeypatch.context() as scoped:
+        scoped.setattr(comparison_module, "_COMPACT_SPAN_MAX_EDITS", 5)
+        assert comparison_module.local_proposal_attempt_identity_digest(
+            prompt_digest,
+            proposal_protocol=legacy,
+        ) == baseline
+        assert (
+            comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
+            != v4_baseline
+        )
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(comparison_module, "_COMPACT_SPAN_PROPOSAL_TOKENS", 4097)
+        assert comparison_module.local_proposal_attempt_identity_digest(
+            prompt_digest,
+            proposal_protocol=legacy,
+        ) == baseline
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(comparison_module, "_COMPACT_PROPOSAL_TOKENS", 1025)
+        assert comparison_module.local_proposal_attempt_identity_digest(
+            prompt_digest,
+            proposal_protocol=legacy,
+        ) != baseline
 
     with monkeypatch.context() as scoped:
         scoped.setattr(
             comparison_module,
             "_STRUCTURED_DECODING_MODE",
             "unconstrained-response-format-only",
-            raising=False,
         )
         assert (
             comparison_module.local_proposal_attempt_identity_digest(prompt_digest)
+            != v4_baseline
+        )
+        assert (
+            comparison_module.local_proposal_attempt_identity_digest(
+                prompt_digest,
+                proposal_protocol=legacy,
+            )
+            == baseline
+        )
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(
+            comparison_module,
+            "_LEGACY_STRUCTURED_DECODING_MODE",
+            "unconstrained-response-format-only",
+            raising=False,
+        )
+        assert (
+            comparison_module.local_proposal_attempt_identity_digest(
+                prompt_digest,
+                proposal_protocol=legacy,
+            )
             != baseline
         )
 
@@ -1674,7 +1711,7 @@ def test_compact_v4_scope_enum_is_sorted_and_deduplicates_adjacent_boundaries() 
         "minimum": 0,
         "maximum": 2,
     }
-    assert edits["maxItems"] == 7
+    assert edits["maxItems"] == 4
     assert item_properties["z"] == {"type": "string", "maxLength": 768}
 
 
@@ -1703,7 +1740,7 @@ def test_compact_v4_schema_preserves_multiple_edits_in_one_shown_section() -> No
     item = cast(dict[str, object], edits["items"])
     item_properties = cast(dict[str, object], item["properties"])
 
-    assert edits["maxItems"] == 16
+    assert edits["maxItems"] == 4
     assert item_properties["z"] == {"type": "string", "maxLength": 768}
 
 
@@ -1718,13 +1755,13 @@ def test_compact_v4_multisection_schema_conservatively_bounds_unicode_bytes() ->
     item_properties = cast(dict[str, object], item["properties"])
     z_schema = cast(dict[str, object], item_properties["z"])
 
-    assert edits["maxItems"] == 8
+    assert edits["maxItems"] == 4
     assert z_schema["maxLength"] == 768
     assert 768 * len("😀".encode()) == 3072
 
 
 def test_compact_v4_maximum_sections_have_a_finite_per_item_content_budget() -> None:
-    """Keep every grammar dimension finite at the sixteen-edit protocol limit."""
+    """Keep every grammar dimension finite at the four-edit shard limit."""
     ranges = tuple((line, line + 1) for line in range(1, 48, 3))
     schema = comparison_module._compact_proposal_schema_for_ranges(ranges)
     root_properties = cast(dict[str, object], schema["properties"])
@@ -1735,7 +1772,7 @@ def test_compact_v4_maximum_sections_have_a_finite_per_item_content_budget() -> 
     length_schema = cast(dict[str, object], item_properties["n"])
     content_schema = cast(dict[str, object], item_properties["z"])
 
-    assert edits["maxItems"] == 16
+    assert edits["maxItems"] == 4
     assert len(cast(list[int], start_schema["enum"])) == 32
     assert length_schema["maximum"] == 1
     assert content_schema["maxLength"] == 768
@@ -1745,6 +1782,31 @@ def test_compact_v4_maximum_sections_have_a_finite_per_item_content_budget() -> 
     )
     assert comparison_module._COMPACT_SPAN_PROPOSAL_TOKENS == 4096
     assert comparison_module._STRUCTURED_OUTPUT_REQUIRE_STOP is True
+
+
+def test_compact_v3_retains_its_historical_sixteen_edit_limit() -> None:
+    """Keep stored v3 schema and decoder semantics unchanged by the v4 cap."""
+    root = cast(
+        dict[str, object],
+        comparison_module._LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA["properties"],
+    )
+    edits_schema = cast(dict[str, object], root["e"])
+    raw = json.dumps(
+        {
+            "e": [
+                {"a": f"old-{index}", "z": f"new-{index}"}
+                for index in range(16)
+            ]
+        }
+    )
+
+    assert edits_schema["maxItems"] == 16
+    manifest = comparison_module._decode_compact_proposal(
+        raw,
+        _contract(),
+        focus_path="src/general_ludd/example.py",
+    )
+    assert len(manifest.edits) == 16
 
 
 def test_compact_v4_parent_counts_decoded_utf8_not_json_escape_bytes() -> None:
@@ -1820,7 +1882,6 @@ def test_locked_llama_grammar_honors_small_string_and_array_bounds() -> None:
     schema = comparison_module._compact_proposal_schema_for_ranges(((3, 6), (10, 12)))
     properties = cast(dict[str, object], schema["properties"])
     edits = cast(dict[str, object], properties["e"])
-    edits["maxItems"] = 2
     item = cast(dict[str, object], edits["items"])
     item_properties = cast(dict[str, object], item["properties"])
     item_properties["z"] = {"type": "string", "maxLength": 8}
@@ -1831,7 +1892,7 @@ def test_locked_llama_grammar_honors_small_string_and_array_bounds() -> None:
         "rendered = grammar._grammar\n"
         "array_rule = next(line for line in rendered.splitlines() if line.startswith('e ::='))\n"
         "string_rule = next(line for line in rendered.splitlines() if line.startswith('e-item-z ::='))\n"
-        "assert array_rule.count('e-item') == 2, rendered\n"
+        "assert array_rule.count('e-item') == 4, rendered\n"
         "assert string_rule.count('char') == 8, rendered\n"
         "assert '*' not in rendered and '+' not in rendered, rendered\n"
         "_utils.outnull_file.close()\n"
@@ -1853,7 +1914,7 @@ def test_locked_llama_grammar_honors_small_string_and_array_bounds() -> None:
 @pytest.mark.parametrize(
     ("raw", "match"),
     [
-        ({"e": []}, "1..16"),
+        ({"e": []}, "1..4"),
         ({"e": [{"s": True, "n": 1, "z": "x"}]}, "integers, not booleans"),
         ({"e": [{"s": 1, "n": False, "z": "x"}]}, "integers, not booleans"),
         ({"e": [{"s": 0, "n": 1, "z": "x"}]}, "positive"),
@@ -1879,6 +1940,78 @@ def test_compact_v4_decoder_rejects_ambiguous_spans(raw: object, match: str) -> 
 def test_compact_v4_decoder_enforces_new_text_byte_budget() -> None:
     with pytest.raises(ValueError, match="exceeds 3072 bytes"):
         _span_proposal({"e": [{"s": 1, "n": 1, "z": "x" * 3073}]})
+
+
+def test_compact_v4_decoder_canonicalizes_unordered_snapshot_spans() -> None:
+    """Sort valid model spans by immutable baseline coordinate before expansion."""
+    proposal = _span_proposal(
+        {
+            "e": [
+                {"s": 4, "n": 1, "z": "delta = 2\n"},
+                {"s": 1, "n": 1, "z": "alpha = 2\n"},
+            ]
+        }
+    )
+
+    assert tuple(edit.start_line for edit in proposal.edits) == (1, 4)
+
+
+@pytest.mark.parametrize(
+    "edits",
+    (
+        (
+            {"s": 4, "n": 2, "z": "right\n"},
+            {"s": 3, "n": 2, "z": "left\n"},
+        ),
+        (
+            {"s": 4, "n": 0, "z": "first\n"},
+            {"s": 4, "n": 0, "z": "second\n"},
+        ),
+    ),
+)
+def test_compact_v4_decoder_rejects_overlap_after_canonical_sort(
+    edits: tuple[dict[str, object], ...],
+) -> None:
+    """Canonical sorting must not turn duplicate or overlapping spans into authority."""
+    with pytest.raises(ValueError, match="ordered and non-overlapping"):
+        _span_proposal({"e": list(edits)})
+
+
+def test_compact_v4_decoder_checks_aggregate_budget_before_input_order() -> None:
+    """Classify the Qwen overgeneration class before any harmless input ordering."""
+    secret = "PRIVATE_SOURCE=" + ("😀" * 768)
+    raw = {
+        "e": [
+            {"s": 7, "n": 1, "z": secret},
+            {"s": 1, "n": 1, "z": "😀" * 768},
+        ]
+    }
+
+    with pytest.raises(ValueError, match="new text exceeds 3072 bytes") as captured:
+        _span_proposal(raw)
+
+    detail = str(captured.value)
+    assert "received_edits=2" in detail
+    assert "received_content_bytes=>3072" in detail
+    assert "PRIVATE_SOURCE" not in detail
+    assert secret not in detail
+    assert len(detail.encode("utf-8")) <= 192
+
+
+def test_compact_v4_decoder_rejects_fifth_edit_with_bounded_telemetry() -> None:
+    """Keep one shard useful while preventing the observed sixteen-edit runaway."""
+    edits = [
+        {"s": index * 2 + 1, "n": 1, "z": f"value_{index} = True\n"}
+        for index in range(5)
+    ]
+
+    with pytest.raises(ValueError, match=r"1\.\.4 entries") as captured:
+        _span_proposal({"e": edits})
+
+    detail = str(captured.value)
+    assert "received_edits=>4 max_edits=4" in detail
+    assert "value_" not in detail
+    assert len(detail.encode("utf-8")) <= 192
 
 
 def test_compact_v4_parent_derives_unique_preimage_for_duplicate_source_text() -> None:

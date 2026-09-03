@@ -117,7 +117,8 @@ _STRUCTURED_CANARY_TOKENS = 32
 _DETERMINISTIC_DECODE_TEMPERATURE = 0.0
 _DETERMINISTIC_DECODE_SEED = 0
 _STRUCTURED_OUTPUT_REQUIRE_STOP = True
-_STRUCTURED_DECODING_MODE = "llama-cpp-bounded-span-grammar-v3"
+_LEGACY_STRUCTURED_DECODING_MODE = "llama-cpp-bounded-span-grammar-v3"
+_STRUCTURED_DECODING_MODE = "llama-cpp-bounded-span-grammar-v4"
 _MODEL_VISIBLE_PROMPT_POLICY = "validated-parent-metadata-stripped-v1"
 _STRUCTURED_CANARY_PROMPT = 'Return {"ok":true}.'
 _STRUCTURED_CANARY_EXPECTED: dict[str, object] = {"ok": True}
@@ -125,13 +126,14 @@ _COMPACT_ROOT_FIELDS = frozenset({"e"})
 _LEGACY_COMPACT_EDIT_FIELDS = frozenset({"a", "z"})
 _COMPACT_EDIT_FIELDS = frozenset({"s", "n", "z"})
 _COMPACT_MAX_EDITS = 16
+_COMPACT_SPAN_MAX_EDITS = 4
 _COMPACT_OPERATION_BY_EMPTY_TEXT = {
     (False, False): "replace",
     (False, True): "delete",
     (True, False): "create",
 }
 _LEGACY_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v3"
-_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v4-line-span-boundary-v3"
+_STRICT_PARENT_DECODER_VERSION = "proposal-manifest-strict-v4-line-span-boundary-v4"
 _COMPACT_MAX_ANCHOR_BYTES = 65_536
 _SAFE_FINISH_REASONS = frozenset(
     {"stop", "length", "tool_calls", "function_call", "content_filter"}
@@ -150,7 +152,7 @@ _COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
         "e": {
             "type": "array",
             "minItems": 1,
-            "maxItems": _COMPACT_MAX_EDITS,
+            "maxItems": _COMPACT_SPAN_MAX_EDITS,
             "items": {
                 "type": "object",
                 "additionalProperties": False,
@@ -221,7 +223,7 @@ def _compact_proposal_schema_for_ranges(
     schema = copy.deepcopy(_COMPACT_PROPOSAL_JSON_SCHEMA)
     root_properties = cast(dict[str, object], schema["properties"])
     edits = cast(dict[str, object], root_properties["e"])
-    edit_slots = min(_COMPACT_MAX_EDITS, len(coordinates))
+    edit_slots = min(_COMPACT_SPAN_MAX_EDITS, len(coordinates))
     edits["maxItems"] = edit_slots
     item = cast(dict[str, object], edits["items"])
     properties = cast(dict[str, object], item["properties"])
@@ -240,8 +242,9 @@ def _compact_proposal_schema_for_ranges(
 
 _COMPACT_SYSTEM_PROMPT = (
     "Return one compact JSON object with only e; stop immediately after its closing }. "
-    "Each e item has only s, n, z. Emit the fewest complete edits with strictly increasing "
-    "s values; never repeat an edit, coordinate, or unchanged context. The parent owns path, "
+    f"Each e item has only s, n, z. Emit the fewest complete edits, at most "
+    f"{_COMPACT_SPAN_MAX_EDITS}; never repeat an edit, coordinate, or unchanged context. "
+    "Prefer increasing s; the parent sorts valid non-overlapping snapshot spans. It owns path, "
     "baseline, and commit metadata. s is the 1-based baseline start, n is old lines "
     "consumed, and z is literal replacement text without labels. Choose s only from the "
     "per-shard grammar enum. "
@@ -399,7 +402,8 @@ LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
     prompt_prefix=LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.prompt_prefix,
     prompt_suffix=(
         "\nUse only an s value permitted by the per-shard JSON grammar. "
-        "For shown Lx-Ly, use insertion s=x..y+1; never a hidden gap."
+        "For shown Lx-Ly, use insertion s=x..y+1; never a hidden gap. "
+        f"Return at most {_COMPACT_SPAN_MAX_EDITS} non-overlapping edits."
     ),
     safe_feedback=(
         *LEGACY_LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.safe_feedback,
@@ -409,6 +413,10 @@ LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL = ValidationRetryProtocol(
         ),
         ("compact span start line must be positive", "edit_span_coordinate"),
         ("compact span old line count must be non-negative", "edit_span_coordinate"),
+        (
+            f"compact proposal edits must contain 1..{_COMPACT_SPAN_MAX_EDITS} entries",
+            "edit_span_count",
+        ),
         ("compact spans must be ordered and non-overlapping", "edit_span_order"),
         ("each compact edit must contain exactly n, s, and z", "edit_span_shape"),
         ("compact span new text must be a string", "edit_span_text"),
@@ -510,11 +518,15 @@ def local_proposal_attempt_identity_digest(
             "schema": _STRUCTURED_CANARY_SCHEMA,
         },
         "structured_decoding": {
-            "mode": _STRUCTURED_DECODING_MODE,
+            "mode": (
+                _LEGACY_STRUCTURED_DECODING_MODE
+                if legacy
+                else _STRUCTURED_DECODING_MODE
+            ),
             "proposal_schema_strategy": (
                 "static-v3"
                 if legacy
-                else "parent-enum-coordinate-items-per-item-length-v4"
+                else "parent-enum-coordinate-four-items-per-item-length-v5"
             ),
             "max_scope_coordinates": (
                 None if legacy else _COMPACT_MAX_SCOPE_COORDINATES
@@ -569,7 +581,9 @@ def local_proposal_attempt_identity_digest(
                 _LEGACY_COMPACT_EDIT_FIELDS if legacy else _COMPACT_EDIT_FIELDS
             ),
             "max_commands": _MAX_COMMANDS,
-            "max_compact_edits": _COMPACT_MAX_EDITS,
+            "max_compact_edits": (
+                _COMPACT_MAX_EDITS if legacy else _COMPACT_SPAN_MAX_EDITS
+            ),
             "max_manifest_edits": _MAX_EDITS,
             "max_tests": _MAX_TESTS,
             "operation_by_empty_text": operation_policy if legacy else None,
@@ -594,7 +608,7 @@ def local_proposal_attempt_identity_digest(
                 "anchor_max_bytes": _COMPACT_MAX_ANCHOR_BYTES,
                 "coordinate_base": 1,
                 "insertion_boundary_policy": "closed-boundaries-of-shown-half-open-range",
-                "span_order": "strict-start-nonoverlap",
+                "span_order": "parent-canonical-start-nonoverlap-v2",
             }
         )
     canonical = json.dumps(
@@ -718,22 +732,40 @@ class CompactSpanProposal:
     edits: tuple[CompactLineSpan, ...]
 
     def __post_init__(self) -> None:
-        """Validate one bounded, ordered, single-file span proposal."""
+        """Validate one bounded, canonical, single-file span proposal."""
         if not isinstance(self.focus_path, str) or not _safe_relative_path(
             self.focus_path
         ):
             raise ValueError("compact focus path is not repository-relative and confined")
         if (
             not isinstance(self.edits, tuple)
-            or not 1 <= len(self.edits) <= _COMPACT_MAX_EDITS
+            or not 1 <= len(self.edits) <= _COMPACT_SPAN_MAX_EDITS
             or not all(isinstance(edit, CompactLineSpan) for edit in self.edits)
         ):
+            detail = (
+                ""
+                if not isinstance(self.edits, tuple)
+                or len(self.edits) <= _COMPACT_SPAN_MAX_EDITS
+                else (
+                    f"; received_edits=>{_COMPACT_SPAN_MAX_EDITS} "
+                    f"max_edits={_COMPACT_SPAN_MAX_EDITS}"
+                )
+            )
             raise ValueError(
-                f"compact proposal edits must contain 1..{_COMPACT_MAX_EDITS} entries"
+                "compact proposal edits must contain "
+                f"1..{_COMPACT_SPAN_MAX_EDITS} entries{detail}"
+            )
+        content_bytes = sum(len(edit.new_text.encode("utf-8")) for edit in self.edits)
+        if content_bytes > _COMPACT_MAX_CONTENT_BYTES:
+            raise ValueError(
+                f"compact span new text exceeds {_COMPACT_MAX_CONTENT_BYTES} bytes; "
+                f"received_edits={len(self.edits)} "
+                f"received_content_bytes=>{_COMPACT_MAX_CONTENT_BYTES} "
+                f"max_edits={_COMPACT_SPAN_MAX_EDITS} "
+                f"max_content_bytes={_COMPACT_MAX_CONTENT_BYTES}"
             )
         previous_start: int | None = None
         previous_end = 0
-        content_bytes = 0
         for edit in self.edits:
             start = edit.start_line - 1
             if previous_start is not None and (
@@ -742,11 +774,6 @@ class CompactSpanProposal:
                 raise ValueError("compact spans must be ordered and non-overlapping")
             previous_start = start
             previous_end = start + edit.old_line_count
-            content_bytes += len(edit.new_text.encode("utf-8"))
-        if content_bytes > _COMPACT_MAX_CONTENT_BYTES:
-            raise ValueError(
-                f"compact span new text exceeds {_COMPACT_MAX_CONTENT_BYTES} bytes"
-            )
 
     def _json_value(self) -> dict[str, object]:
         return {
@@ -1262,6 +1289,41 @@ def _safe_compact_scope_telemetry(error: BaseException) -> str:
         if len(value.encode("utf-8")) <= _COMPACT_MAX_SCOPE_TELEMETRY_BYTES:
             return value
     raise RuntimeError("compact scope telemetry cannot fit its fixed protocol bound")
+
+
+def _safe_compact_policy_telemetry(detail: str) -> str:
+    """Extract only fixed bounded count states from a compact-v4 rejection."""
+    count_detail = (
+        "compact proposal edits must contain "
+        f"1..{_COMPACT_SPAN_MAX_EDITS} entries; "
+        f"received_edits=>{_COMPACT_SPAN_MAX_EDITS} "
+        f"max_edits={_COMPACT_SPAN_MAX_EDITS}"
+    )
+    if detail == count_detail:
+        return (
+            f"received_edits=>{_COMPACT_SPAN_MAX_EDITS} "
+            f"max_edits={_COMPACT_SPAN_MAX_EDITS}"
+        )
+    content_prefix = (
+        f"compact span new text exceeds {_COMPACT_MAX_CONTENT_BYTES} bytes; "
+        "received_edits="
+    )
+    content_suffix = (
+        f" received_content_bytes=>{_COMPACT_MAX_CONTENT_BYTES} "
+        f"max_edits={_COMPACT_SPAN_MAX_EDITS} "
+        f"max_content_bytes={_COMPACT_MAX_CONTENT_BYTES}"
+    )
+    if not detail.startswith(content_prefix) or not detail.endswith(content_suffix):
+        return ""
+    received = detail[len(content_prefix) : -len(content_suffix)]
+    if received not in {str(value) for value in range(1, _COMPACT_SPAN_MAX_EDITS + 1)}:
+        return ""
+    return (
+        f"received_edits={received} "
+        f"received_content_bytes=>{_COMPACT_MAX_CONTENT_BYTES} "
+        f"max_edits={_COMPACT_SPAN_MAX_EDITS} "
+        f"max_content_bytes={_COMPACT_MAX_CONTENT_BYTES}"
+    )
 
 
 def _parent_span_scope_error(
@@ -2262,10 +2324,20 @@ def _decode_compact_span_proposal(
     edits_raw = value["e"]
     if (
         not isinstance(edits_raw, list)
-        or not 1 <= len(edits_raw) <= _COMPACT_MAX_EDITS
+        or not 1 <= len(edits_raw) <= _COMPACT_SPAN_MAX_EDITS
     ):
+        detail = (
+            ""
+            if not isinstance(edits_raw, list)
+            or len(edits_raw) <= _COMPACT_SPAN_MAX_EDITS
+            else (
+                f"; received_edits=>{_COMPACT_SPAN_MAX_EDITS} "
+                f"max_edits={_COMPACT_SPAN_MAX_EDITS}"
+            )
+        )
         raise ValueError(
-            f"compact proposal edits must contain 1..{_COMPACT_MAX_EDITS} entries"
+            "compact proposal edits must contain "
+            f"1..{_COMPACT_SPAN_MAX_EDITS} entries{detail}"
         )
     edits: list[CompactLineSpan] = []
     for item in edits_raw:
@@ -2287,7 +2359,8 @@ def _decode_compact_span_proposal(
                 new_text=new_text,
             )
         )
-    return CompactSpanProposal(focus_path=focus_path, edits=tuple(edits))
+    canonical_edits = tuple(sorted(edits, key=lambda edit: edit.start_line))
+    return CompactSpanProposal(focus_path=focus_path, edits=canonical_edits)
 
 
 def _decode_compact_proposal(
