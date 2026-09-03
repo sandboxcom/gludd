@@ -40,6 +40,8 @@ from general_ludd.self_improve.codex_comparison import (
     local_proposal_attempt_identity_digest,
 )
 from general_ludd.self_improve.model_candidate_planner import (
+    CODE_TASK_CAPABILITY_POLICY_ID,
+    CodeTaskShape,
     PlannedModelCandidate,
     load_latest_failed_model_ids,
     plan_model_candidates,
@@ -526,10 +528,19 @@ def _attempt_identity_digest(prompt: PromptPlan | str) -> str:
         proposal_protocol = COMPACT_PROPOSAL_PROTOCOL_V3
     else:
         raise ValueError("prompt must be a non-empty string or PromptPlan")
-    return local_proposal_attempt_identity_digest(
+    proposal_identity = local_proposal_attempt_identity_digest(
         prompt_protocol_digest,
         proposal_protocol=proposal_protocol,
     )
+    if proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
+        return _stable_digest(
+            {
+                "local_proposal_attempt_identity_digest": proposal_identity,
+                "model_candidate_policy": CODE_TASK_CAPABILITY_POLICY_ID,
+                "protocol": "self-improve-attempt-selection-binding-v1",
+            }
+        )
+    return proposal_identity
 
 
 def _validate_attempt_identity_digest(value: object) -> str:
@@ -1062,6 +1073,7 @@ class _CandidatePlanner(Protocol):
         revision_resolver: Callable[[str], str],
         *,
         input_tokens: int | None = None,
+        task_shape: CodeTaskShape | None = None,
         max_candidates: int = 3,
         on_resolution_failure: Callable[[LocalModelConfig, str], None] | None = None,
     ) -> tuple[PlannedModelCandidate, ...]: ...
@@ -1131,6 +1143,26 @@ def _print_progress(message: str) -> None:
 
 _DEFAULT_MODEL_MANAGER_FACTORY = cast(_ModelManagerFactory, ModelLeaseManager)
 _DEFAULT_CANDIDATE_PLANNER = cast(_CandidatePlanner, plan_model_candidates)
+
+
+def _compact_v4_code_task_shape(
+    plan: ApprovedSelfImprovePlan,
+    prompt: PromptPlan | str,
+) -> CodeTaskShape | None:
+    """Derive trusted capability evidence without interpreting task prose."""
+    if (
+        not isinstance(prompt, PromptPlan)
+        or prompt.proposal_protocol != COMPACT_PROPOSAL_PROTOCOL_V4
+    ):
+        return None
+    focus_paths = tuple(path for shard in prompt.shards for path in shard.focus_paths)
+    return CodeTaskShape(
+        changed_files=len(focus_paths),
+        changed_test_files=sum(
+            path in plan.reference.test_files for path in focus_paths
+        ),
+        source_bytes=prompt.source_bytes,
+    )
 
 
 class ManagedSelfImproveRunner:
@@ -1335,20 +1367,46 @@ class ManagedSelfImproveRunner:
         )
         model_budget = plan.max_attempts - (1 if plan.mechanical_proposal is not None else 0)
         input_tokens = max(1, (_prompt_bytes(prompt) + 3) // 4)
-        candidates = self.candidate_planner(
-            plan.task.objective,
-            plan.required_output_tokens,
-            prior_failed,
-            self.hardware_probe(),
-            cast(CapabilityEvidenceStore, outcomes.planner_store),
-            manager.resolve_revision,
-            input_tokens=input_tokens,
-            max_candidates=min(3, max(1, model_budget)),
-            on_resolution_failure=self.resolution_failure_sink,
+        task_shape = _compact_v4_code_task_shape(plan, prompt)
+        if task_shape is None:
+            candidates = self.candidate_planner(
+                plan.task.objective,
+                plan.required_output_tokens,
+                prior_failed,
+                self.hardware_probe(),
+                cast(CapabilityEvidenceStore, outcomes.planner_store),
+                manager.resolve_revision,
+                input_tokens=input_tokens,
+                max_candidates=min(3, max(1, model_budget)),
+                on_resolution_failure=self.resolution_failure_sink,
+            )
+        else:
+            candidates = self.candidate_planner(
+                plan.task.objective,
+                plan.required_output_tokens,
+                prior_failed,
+                self.hardware_probe(),
+                cast(CapabilityEvidenceStore, outcomes.planner_store),
+                manager.resolve_revision,
+                input_tokens=input_tokens,
+                task_shape=task_shape,
+                max_candidates=min(3, max(1, model_budget)),
+                on_resolution_failure=self.resolution_failure_sink,
+            )
+        shape_telemetry = (
+            ""
+            if task_shape is None
+            else (
+                f" capability_floor_mb={task_shape.minimum_model_size_mb}"
+                f" changed_files={task_shape.changed_files}"
+                f" changed_test_files={task_shape.changed_test_files}"
+                f" source_bytes={task_shape.source_bytes}"
+            )
         )
         self.progress_sink(
             "SELF_IMPROVE_MODEL_PLAN "
             f"candidates={json.dumps([candidate.config.name for candidate in candidates])}"
+            + shape_telemetry
         )
         if not candidates:
             raise ModelPlanError(ModelPlanFailure.EXHAUSTED)

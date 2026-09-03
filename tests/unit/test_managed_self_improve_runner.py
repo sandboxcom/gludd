@@ -15,12 +15,15 @@ import pytest
 import scripts.run_self_improve_e2e as cli_runner
 
 import general_ludd.self_improve as self_improve_package
+import general_ludd.self_improve.managed_runner as managed_runner_module
+import general_ludd.self_improve.model_candidate_planner as planner_module
 from general_ludd.local_model import LocalModelConfig, get_model
 from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
     CodexReference,
     ComparisonResult,
     ProposalManifest,
+    local_proposal_attempt_identity_digest,
 )
 from general_ludd.self_improve.managed_runner import (
     ApprovedSelfImprovePlan,
@@ -58,6 +61,8 @@ def test_managed_runner_is_available_from_the_self_improve_package() -> None:
     assert self_improve_package.ApprovedSelfImprovePlan is ApprovedSelfImprovePlan
     assert self_improve_package.ManagedRunResult is ManagedRunResult
     assert self_improve_package.ManagedSelfImproveRunner is ManagedSelfImproveRunner
+    assert self_improve_package.CodeTaskShape is planner_module.CodeTaskShape
+    assert "CodeTaskShape" in self_improve_package.__all__
 
 
 def _reference() -> CodexReference:
@@ -330,6 +335,99 @@ def _runner(
         hardware_probe=cast(Any, lambda: object()),
     )
     return service, manager, outcomes, merge_values
+
+
+def test_managed_runner_derives_complex_task_shape_from_immutable_prompt_plan(
+    tmp_path: Path,
+) -> None:
+    """Bind model selection to trusted files and bytes, never objective wording."""
+    observed: list[object] = []
+    progress: list[str] = []
+    manager = _LeaseManager(tmp_path)
+    outcomes = _Outcomes()
+    candidate = _candidate("qwen2.5-coder-1.5b")
+
+    def plan_candidates(
+        _task_text: str,
+        _output_tokens: int,
+        _prior_failed_model_ids: tuple[str, ...],
+        _hardware: object,
+        _evidence_store: object,
+        _revision_resolver: object,
+        *,
+        input_tokens: int | None,
+        task_shape: object,
+        max_candidates: int,
+        on_resolution_failure: object,
+    ) -> tuple[PlannedModelCandidate, ...]:
+        del input_tokens, max_candidates, on_resolution_failure
+        observed.append(task_shape)
+        return (candidate,)
+
+    service = ManagedSelfImproveRunner(
+        model_manager_factory=cast(Any, lambda **_kwargs: manager),
+        outcome_adapter_factory=lambda _cache_root: outcomes,
+        proposal_generator=cast(Any, lambda *_args: _proposal()),
+        attempt_evaluator=cast(
+            Any,
+            lambda _task, _reference, bound, _attempt, **_kwargs: _result(
+                bound,
+                accepted=True,
+            ),
+        ),
+        candidate_planner=cast(Any, plan_candidates),
+        hardware_probe=cast(Any, lambda: object()),
+        progress_sink=progress.append,
+    )
+    source = "return 0\n"
+    test_source = "assert value == 1\n"
+    prompt = PromptPlan(
+        shards=(
+            PromptShard(
+                ("src/general_ludd/example.py",),
+                "L1|return 0\n",
+                ((1, 2),),
+            ),
+            PromptShard(
+                ("tests/unit/test_example.py",),
+                "L1|assert value == 1\n",
+                ((1, 2),),
+            ),
+        ),
+        source_bytes=len(source.encode()) + len(test_source.encode()),
+        baseline_files=(
+            ("src/general_ludd/example.py", source),
+            ("tests/unit/test_example.py", test_source),
+        ),
+        proposal_protocol="self-improve-compact-proposal-v4",
+    )
+    plan = ApprovedSelfImprovePlan.approve(
+        approval_id="approval-complex-shape",
+        todo_id="todo-complex-shape",
+        project_id="project-complex-shape",
+        repo_root=tmp_path,
+        task=_task(),
+        reference=_reference(),
+        prompt=prompt,
+        required_output_tokens=1024,
+        max_attempts=1,
+    )
+
+    result = service.run(plan)
+
+    assert result.accepted
+    assert observed == [
+        planner_module.CodeTaskShape(
+            2,
+            1,
+            len(source.encode()) + len(test_source.encode()),
+        )
+    ]
+    assert manager.acquired == ["qwen2.5-coder-1.5b"]
+    assert progress[0] == (
+        'SELF_IMPROVE_MODEL_PLAN candidates=["qwen2.5-coder-1.5b"] '
+        "capability_floor_mb=900 changed_files=2 changed_test_files=1 source_bytes=27"
+    )
 
 
 def test_approved_plan_is_frozen_and_digest_detects_post_approval_change(
@@ -674,6 +772,72 @@ def test_compact_v4_attempt_identity_rotates_from_legacy_v3() -> None:
     assert private_cli._attempt_identity_digest(legacy) != private_cli._attempt_identity_digest(
         current
     )
+
+
+def test_compact_v4_attempt_identity_binds_model_capability_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Planner threshold changes must not alias prior compact-v4 evidence."""
+    private_cli = cast(Any, cli_runner)
+    prompt = PromptPlan(
+        shards=(
+            PromptShard(
+                ("src/general_ludd/example.py",),
+                "L1|return 0\n",
+                ((1, 2),),
+            ),
+        ),
+        source_bytes=len("return 0\n"),
+        baseline_files=(("src/general_ludd/example.py", "return 0\n"),),
+        proposal_protocol="self-improve-compact-proposal-v4",
+    )
+    original = private_cli._attempt_identity_digest(prompt)
+
+    monkeypatch.setattr(
+        managed_runner_module,
+        "CODE_TASK_CAPABILITY_POLICY_ID",
+        "self-improve-code-task-capability-floor-test-v2",
+    )
+
+    assert private_cli._attempt_identity_digest(prompt) != original
+
+
+def test_pre_policy_compact_v4_plan_requires_reapproval_after_identity_rotation(
+    tmp_path: Path,
+) -> None:
+    """Fail closed instead of aliasing stored v4 evidence under the new planner."""
+    prompt = PromptPlan(
+        shards=(
+            PromptShard(
+                ("src/general_ludd/example.py",),
+                "L1|return 0\n",
+                ((1, 2),),
+            ),
+        ),
+        source_bytes=len("return 0\n"),
+        baseline_files=(("src/general_ludd/example.py", "return 0\n"),),
+        proposal_protocol="self-improve-compact-proposal-v4",
+    )
+    pre_policy_identity = local_proposal_attempt_identity_digest(
+        prompt.protocol_digest,
+        proposal_protocol=prompt.proposal_protocol,
+    )
+    stale = ApprovedSelfImprovePlan(
+        approval_id="approval-pre-policy-v4",
+        todo_id="todo-pre-policy-v4",
+        project_id="project-pre-policy-v4",
+        repo_root=tmp_path,
+        task=_task(),
+        reference=_reference(),
+        prompt=prompt,
+        required_output_tokens=1024,
+        max_attempts=1,
+        approved=True,
+        attempt_identity_digest=pre_policy_identity,
+    )
+
+    with pytest.raises(ValueError, match="attempt identity"):
+        stale.verify_approval()
 
 
 @pytest.mark.parametrize(

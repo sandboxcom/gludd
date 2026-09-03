@@ -7,7 +7,7 @@ import json
 import re
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Final, cast
 
 from general_ludd.hardware.model_fit import can_run_model
 from general_ludd.hardware.survey import HardwareInventory
@@ -77,6 +77,13 @@ _FEEDBACK_OUTCOME_FIELDS = frozenset(
 )
 _FEEDBACK_OUTCOME_RECORD_KEYS = _OUTCOME_RECORD_KEYS | _FEEDBACK_OUTCOME_FIELDS
 _FEEDBACK_SCHEMA_VERSION = 1
+CODE_TASK_CAPABILITY_POLICY_ID: Final = (
+    "self-improve-code-task-capability-floor-v1"
+)
+_COMPLEX_CODE_MIN_MODEL_SIZE_MB: Final = 900
+_COMPLEX_CODE_SOURCE_BYTES: Final = 8_192
+_MAX_CODE_TASK_FILES: Final = 32
+_MAX_CODE_TASK_SOURCE_BYTES: Final = 67_108_864
 
 
 def _stable_digest(payload: Mapping[str, object]) -> str:
@@ -129,6 +136,53 @@ class PlannedModelCandidate:
             or self.escalation_level < 0
         ):
             raise ValueError("escalation_level must be a non-negative integer")
+
+
+@dataclass(frozen=True, slots=True)
+class CodeTaskShape:
+    """Bounded immutable evidence used to set a code-model capability floor."""
+
+    changed_files: int
+    changed_test_files: int
+    source_bytes: int
+
+    def __post_init__(self) -> None:
+        """Reject ambiguous or unbounded task-shape evidence."""
+        if (
+            isinstance(self.changed_files, bool)
+            or not isinstance(self.changed_files, int)
+            or not 1 <= self.changed_files <= _MAX_CODE_TASK_FILES
+        ):
+            raise ValueError(
+                f"changed_files must be between 1 and {_MAX_CODE_TASK_FILES}"
+            )
+        if (
+            isinstance(self.changed_test_files, bool)
+            or not isinstance(self.changed_test_files, int)
+            or not 0 <= self.changed_test_files <= self.changed_files
+        ):
+            raise ValueError(
+                "changed_test_files must be between zero and changed_files"
+            )
+        if (
+            isinstance(self.source_bytes, bool)
+            or not isinstance(self.source_bytes, int)
+            or not 0 <= self.source_bytes <= _MAX_CODE_TASK_SOURCE_BYTES
+        ):
+            raise ValueError(
+                "source_bytes must be between zero and "
+                f"{_MAX_CODE_TASK_SOURCE_BYTES}"
+            )
+
+    @property
+    def minimum_model_size_mb(self) -> int:
+        """Return the deterministic floor for this exact trusted task shape."""
+        complex_task = (
+            self.changed_files > 1
+            or self.changed_test_files > 0
+            or self.source_bytes > _COMPLEX_CODE_SOURCE_BYTES
+        )
+        return _COMPLEX_CODE_MIN_MODEL_SIZE_MB if complex_task else 0
 
 
 def _estimated_required_context(
@@ -274,6 +328,7 @@ def plan_model_candidates(
     *,
     input_tokens: int | None = None,
     attempt_identity_digest: str | None = None,
+    task_shape: CodeTaskShape | None = None,
     max_candidates: int = _MAX_CANDIDATES,
     on_resolution_failure: Callable[[LocalModelConfig, str], None] | None = None,
 ) -> tuple[PlannedModelCandidate, ...]:
@@ -306,6 +361,8 @@ def plan_model_candidates(
         or not 1 <= max_candidates <= _MAX_CANDIDATES
     ):
         raise ValueError(f"max_candidates must be between 1 and {_MAX_CANDIDATES}")
+    if task_shape is not None and not isinstance(task_shape, CodeTaskShape):
+        raise ValueError("task_shape must be a CodeTaskShape when provided")
 
     coding_models = _coding_models()
     failed_names, failed_size_floor = _failed_names_and_floor(
@@ -328,11 +385,13 @@ def plan_model_candidates(
         output_tokens,
         input_tokens,
     )
+    capability_floor = 0 if task_shape is None else task_shape.minimum_model_size_mb
     eligible = [
         model
         for model in coding_models
         if model.name not in failed_names
         and model.size_mb > failed_size_floor
+        and model.size_mb >= capability_floor
         and model.context_size >= required_context
         and can_run_model(hardware, model.name).can_run
     ]
@@ -719,6 +778,8 @@ def load_latest_failed_model_ids(
 
 
 __all__ = [
+    "CODE_TASK_CAPABILITY_POLICY_ID",
+    "CodeTaskShape",
     "PlannedModelCandidate",
     "load_latest_failed_model_ids",
     "plan_model_candidates",

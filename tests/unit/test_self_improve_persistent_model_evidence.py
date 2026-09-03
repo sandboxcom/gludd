@@ -8,6 +8,7 @@ from typing import cast
 import pytest
 
 import general_ludd.self_improve.codex_comparison as comparison_module
+import general_ludd.self_improve.model_candidate_planner as planner_module
 from general_ludd.hardware.survey import GpuInfo, HardwareInventory
 from general_ludd.local_model import get_model
 from general_ludd.schemas.benchmark import TaskRole, TaskType
@@ -15,8 +16,10 @@ from general_ludd.self_improve.model_candidate_planner import (
     PlannedModelCandidate,
     load_latest_failed_model_ids,
     plan_model_candidates,
+    record_self_improve_feedback,
     record_self_improve_outcome,
 )
+from general_ludd.self_improve.model_lifecycle import ModelArtifactIdentity
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 from general_ludd.small_models.recommender import map_task_to_capabilities
 
@@ -437,3 +440,52 @@ def test_outcome_history_drives_deterministic_next_larger_candidate_only_for_sha
         next_plan("Fix a defect in Python code.", attempt_identity)[0].config.name
         == "qwen2.5-coder-1.5b"
     )
+
+
+def test_persistent_sixty_point_failure_escalates_same_complex_attempt_identity(
+    tmp_path: object,
+) -> None:
+    """Use the exact live-quality outcome to avoid retrying an under-capable model."""
+    store = _store(tmp_path)
+    task_text = "Implement a focused Python product feature."
+    attempt_identity = "e" * 64
+    failed = _candidate("qwen2.5-coder-1.5b")
+    feedback = comparison_module.PlannerFeedbackExchange(
+        plan_identity_digest="d" * 64,
+        attempt_identity_digest=attempt_identity,
+        attempt_number=1,
+        model_identity=ModelArtifactIdentity(
+            model_id=failed.config.name,
+            repo_id=failed.config.repo,
+            filename=failed.config.filename,
+            revision=failed.resolved_revision,
+        ),
+        task_id="S83.133",
+        task_objective=task_text,
+        outcome=comparison_module.ComparisonResult(
+            accepted=False,
+            score=60.0,
+            blockers=("tests failed",),
+            changed_file_precision=1.0,
+            changed_file_recall=1.0,
+        ),
+        source_artifact_digest="c" * 64,
+    )
+
+    assert record_self_improve_feedback(store, feedback=feedback) == 1
+    candidates = plan_model_candidates(
+        task_text,
+        1024,
+        (),
+        _hardware(),
+        store,
+        lambda _repo: "b" * 40,
+        input_tokens=1024,
+        attempt_identity_digest=attempt_identity,
+        task_shape=planner_module.CodeTaskShape(2, 1, 12_000),
+        max_candidates=1,
+    )
+
+    assert [candidate.config.name for candidate in candidates] == [
+        "qwen2.5-coder-3b"
+    ]

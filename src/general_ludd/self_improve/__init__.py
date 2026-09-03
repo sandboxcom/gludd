@@ -2,6 +2,7 @@
 
 __all__ = (
     "ApprovedSelfImprovePlan",
+    "CodeTaskShape",
     "ExternalApply",
     "GateDecision",
     "ManagedRunResult",
@@ -22,6 +23,7 @@ from general_ludd.self_improve.managed_runner import (
     ManagedRunResult,
     ManagedSelfImproveRunner,
 )
+from general_ludd.self_improve.model_candidate_planner import CodeTaskShape
 from general_ludd.self_improve.result_artifact import ManagedSelfImproveResultArtifact
 from general_ludd.self_improve.runtime import (
     build_managed_self_improve_runner,

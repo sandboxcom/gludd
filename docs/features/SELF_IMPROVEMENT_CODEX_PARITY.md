@@ -185,6 +185,53 @@ and raw completion are never fields. Events, terminal output, corpus replay, and
 retry prompts share the same 512-byte feedback ceiling; cleanup and atomic apply
 semantics are unchanged.
 
+The following `self-improve-catalog-v4-scoped-live-20260903` run proved that
+protocol compliance was not yet code quality. Both candidates produced strict,
+in-scope manifests that applied exactly, then failed Python collection with a
+syntax error: Qwen emitted a fragment ending in `smollm2-135M)`, while DeepSeek
+copied a parent environment assignment into an assertion. The generic cause was
+an overloaded editor prompt. It repeated parent-only range and focus bindings,
+canonical Make commands, and repository-wide metadata beside the source that the
+model was asked to emit.
+
+New compact-v4 inference keeps the task objective and exact focus path visible,
+but sends a deliberately small editor body between explicit task, requirements,
+and baseline delimiters. The worker validates and removes the canonical parent
+range/focus prefix before chat; that prefix still derives the grammar and strict
+decoder scope. Make commands, environment-style bindings, tests, baseline IDs,
+and unrelated paths never enter model-visible content. The existing
+`create_chat_completion` path remains responsible for applying each GGUF's native
+`tokenizer.chat_template`; Gludd does not guess or duplicate a model-specific chat
+format.
+
+After exact atomic apply, changed `.py` files receive a parent syntax preflight
+before any Make command. `tokenize.detect_encoding` selects the declared Python
+source encoding and `ast.parse` performs the language check; non-Python paths and
+whole-file deletes are skipped safely. Failure produces at most 192 ASCII bytes:
+a stable type, SHA-256 path identity, and bounded line/offset. Replacement text,
+source, raw model output, paths, and environment values are never included. The
+normal comparison, persistent failed-outcome recording, retry path, and worktree
+cleanup remain authoritative; successful preflight does not replace the full
+test and static evaluation.
+
+Model planning now derives a bounded `CodeTaskShape` only from the immutable
+prompt plan. A multi-file change, any changed test file, or more than 8,192 source
+bytes requires a coding artifact of at least 900 MiB, so the maintained catalog
+starts this class at Qwen2.5-Coder-1.5B (936 MiB) instead of allowing positive
+historical evidence to anchor Qwen2.5-Coder-0.5B. A single non-test file of at
+most 8,192 bytes may still use a smaller evidence-backed candidate. An exact
+60-point failure remains persistent same-identity evidence and raises the next
+plan above the failed artifact size. The capability policy is part of compact-v4
+attempt identity. Pre-policy compact-v4 approvals therefore require reapproval;
+stored v1/v2 plans and compact-v3 prompts retain their prior identity and model
+selection semantics without reinterpretation.
+
+The next live acceptance must show the scoped catalog task selecting no artifact
+below 900 MiB, model-visible prompts containing the objective and focus baseline
+but no parent Make/environment bindings, every applied Python candidate passing
+the syntax preflight before Make begins, a 60-point failure selecting a strictly
+larger next candidate, and unchanged exact-scope rejection and cleanup evidence.
+
 A September 2026 DeepSeek catalog attempt then exposed a separate parent-side
 gap. Both compact-v3 shards completed and passed worker schema validation, but a
 replacement precondition did not apply exactly to the immutable baseline. That
@@ -686,6 +733,9 @@ harness cleanup compensates for missing application ownership.
 - At most 2,048 parent-derived integer `s` values in one per-shard grammar and at
   most four displayed ranges inside a 256-byte scope-telemetry field; complete
   typed retry feedback remains bounded to 512 bytes.
+- Code-task shape is capped at 32 files and 64 MiB of source evidence. Complex
+  shapes require a coding artifact of at least 900 MiB. Python syntax diagnostics
+  are ASCII and capped at 192 bytes.
 - 2 MiB observable command capture with 15-second heartbeats.
 - 128 Codex-reference files.
 - One candidate worktree per attempt; commands stop after the first failure.
@@ -719,6 +769,13 @@ Official sources:
   [schema-converter source](https://github.com/abetlen/llama-cpp-python/blob/main/llama_cpp/llama_grammar.py)
   constructs the required-property and additional-property grammar rules. These
   are upstream seams Gludd reuses rather than reimplementing.
+- [llama-cpp-python chat completion](https://github.com/abetlen/llama-cpp-python#chat-completion)
+  documents the formatter precedence: explicit handler, explicit format, the
+  GGUF `tokenizer.chat_template`, then a llama-2 fallback. Gludd supplies neither
+  override, preserving the model artifact's native instruction template.
+- Python's [`tokenize.detect_encoding`](https://docs.python.org/3/library/tokenize.html#tokenize.detect_encoding)
+  and [`ast.parse`](https://docs.python.org/3/library/ast.html#ast.parse) provide
+  the maintained encoding-aware syntax preflight; no source parser is added.
 - [llama-cpp-python discussion 1173](https://github.com/abetlen/llama-cpp-python/discussions/1173)
   records the maintainer clarification that `response_format` selects sampler
   grammar rather than adding schema text to the prompt.
@@ -882,7 +939,14 @@ Practitioner evidence:
   GPT-4o-mini identified the requested change in architect/diff mode, but the
   emitted search text did not exactly match the file. Compact v4 removes that
   redundant old-text transcription while retaining exact parent-side snapshot
-  validation.
+  validation. The report also demonstrates that a model can identify the right
+  change yet fail the mechanical editor step, supporting Gludd's smaller
+  model-visible editor prompt and independent syntax preflight rather than a
+  relaxed apply rule.
+- [Aider's file-editing troubleshooting guide](https://aider.chat/docs/troubleshooting/edit-errors.html)
+  recommends separating planning from a focused editor request when a model has
+  difficulty following edit instructions. Gludd adopts the bounded prompt
+  separation, but not another unconstrained model call or fuzzy interpretation.
 - [Aider issue 3010](https://github.com/Aider-AI/aider/issues/3010)
   records January 2025 reports from local Ollama/DeepSeek users whose model
   denied seeing a file already added to the coding chat. Gludd therefore derives

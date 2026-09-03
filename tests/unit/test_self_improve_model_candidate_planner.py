@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
+import general_ludd.self_improve.model_candidate_planner as planner_module
 from general_ludd.hardware.survey import GpuInfo, HardwareInventory
 from general_ludd.local_model import get_model
 from general_ludd.schemas.benchmark import TaskType
@@ -33,6 +34,11 @@ def _store(tmp_path: object) -> CapabilityEvidenceStore:
 
 def _revision(_repo_id: str) -> str:
     return "A" * 40
+
+
+def test_code_task_shape_is_public_planner_contract() -> None:
+    assert "CodeTaskShape" in planner_module.__all__
+    assert "CODE_TASK_CAPABILITY_POLICY_ID" in planner_module.__all__
 
 
 def _register_failure_evidence(
@@ -136,6 +142,122 @@ def test_capability_evidence_selects_anchor_then_escalates_by_size(tmp_path: obj
     assert [item.config.size_mb for item in candidates] == sorted(
         item.config.size_mb for item in candidates
     )
+
+
+@pytest.mark.parametrize(
+    "task_shape",
+    [
+        pytest.param((2, 0, 200), id="multiple-files"),
+        pytest.param((1, 1, 200), id="test-file"),
+        pytest.param((1, 0, 8_193), id="large-source"),
+    ],
+)
+def test_complex_code_shape_overrides_tiny_model_evidence_with_capability_floor(
+    tmp_path: object,
+    task_shape: tuple[int, int, int],
+) -> None:
+    """Do not repeat the live under-capacity candidate class for complex edits."""
+    store = _store(tmp_path)
+    _register_failure_evidence(
+        store,
+        "qwen2.5-coder-0.5b",
+        passed=10,
+        copies=3,
+    )
+    shape = planner_module.CodeTaskShape(
+        changed_files=task_shape[0],
+        changed_test_files=task_shape[1],
+        source_bytes=task_shape[2],
+    )
+    calls: list[str] = []
+
+    def resolver(repo_id: str) -> str:
+        calls.append(repo_id)
+        return _revision(repo_id)
+
+    candidates = plan_model_candidates(
+        "classify this failure and root cause",
+        1024,
+        (),
+        _hardware(),
+        store,
+        resolver,
+        task_shape=shape,
+        max_candidates=3,
+    )
+
+    assert [item.config.name for item in candidates] == [
+        "qwen2.5-coder-1.5b",
+        "qwen2.5-coder-3b",
+        "codellama-7b",
+    ]
+    assert all(item.config.size_mb >= 900 for item in candidates)
+    assert calls == [item.config.repo for item in candidates]
+
+
+def test_tiny_single_file_non_test_task_retains_evidence_backed_small_model(
+    tmp_path: object,
+) -> None:
+    """Keep the cheap proven candidate for a genuinely bounded task shape."""
+    store = _store(tmp_path)
+    _register_failure_evidence(
+        store,
+        "qwen2.5-coder-0.5b",
+        passed=10,
+        copies=3,
+    )
+
+    candidates = plan_model_candidates(
+        "classify this failure and root cause",
+        512,
+        (),
+        _hardware(),
+        store,
+        _revision,
+        task_shape=planner_module.CodeTaskShape(1, 0, 8_192),
+        max_candidates=1,
+    )
+
+    assert candidates[0].config.name == "qwen2.5-coder-0.5b"
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ((True, 0, 0), "changed_files"),
+        ((0, 0, 0), "changed_files"),
+        ((33, 0, 0), "changed_files"),
+        ((1, True, 0), "changed_test_files"),
+        ((1, -1, 0), "changed_test_files"),
+        ((1, 2, 0), "changed_test_files"),
+        ((1, 0, True), "source_bytes"),
+        ((1, 0, -1), "source_bytes"),
+        ((1, 0, 67_108_865), "source_bytes"),
+    ],
+)
+def test_code_task_shape_fails_closed_on_unbounded_or_ambiguous_values(
+    values: tuple[int, int, int],
+    message: str,
+) -> None:
+    """Task-shape policy inputs are typed and bounded before model lookup."""
+    with pytest.raises(ValueError, match=message):
+        planner_module.CodeTaskShape(*values)
+
+
+def test_planner_rejects_non_task_shape_before_revision_resolution(
+    tmp_path: object,
+) -> None:
+    """Never reinterpret an arbitrary object as trusted planner policy input."""
+    with pytest.raises(ValueError, match="task_shape"):
+        plan_model_candidates(
+            "implement a change",
+            100,
+            (),
+            _hardware(),
+            _store(tmp_path),
+            lambda _repo: pytest.fail("invalid task shape must not resolve a model"),
+            task_shape=cast(Any, {"changed_files": 2}),
+        )
 
 
 def test_prior_failure_alias_is_excluded_and_sets_escalation_floor(tmp_path: object) -> None:
