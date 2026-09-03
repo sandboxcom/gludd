@@ -293,6 +293,23 @@ class TestDirectCheckerContracts:
         assert baseline.read_bytes() == original
         assert "stale=1" in capsys.readouterr().out
 
+    def test_compact_runtime_baseline_keeps_only_reviewed_compatibility_api(self) -> None:
+        """Pin the reviewed runtime API while production wiring removes stale debt."""
+        repo = SCRIPT.parents[1]
+        entries = set(
+            (repo / "config" / "dead_code_baseline.txt")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        )
+
+        assert (
+            "src/general_ludd/self_improve/runtime.py:generate_local_proposal_plan"
+            in entries
+        )
+        assert "src/general_ludd/self_improve/runtime.py:build_failure_diagnostic" not in entries
+        assert "src/general_ludd/self_improve/runtime.py:evaluate_attempt_feedback" not in entries
+        assert "src/general_ludd/hardware/model_fit.py:unified_probe" not in entries
+
     def test_static_export_parser_is_conservative(self, tmp_path: Path) -> None:
         static_file = tmp_path / "static.py"
         static_file.write_text('__all__: tuple[str, ...] = ("public",)\n')

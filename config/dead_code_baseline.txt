@@ -409,7 +409,6 @@ src/general_ludd/git_automation/worktree_lease.py:verify_worktree_lease
 src/general_ludd/git_automation/worktree_lease.py:worktree_lease_info
 src/general_ludd/git_automation/worktree_lease.py:write_worktree_lease
 src/general_ludd/hardware/model_fit.py:gpu_info_to_gpu_table
-src/general_ludd/hardware/model_fit.py:unified_probe
 src/general_ludd/hardware_memory_policy.py:classify_memory_kind
 src/general_ludd/hardware_memory_policy.py:evaluate_model_fit
 src/general_ludd/hardware_memory_policy.py:model_guidance
@@ -575,6 +574,7 @@ src/general_ludd/security/xmss.py:xmss_verify
 src/general_ludd/self_improve/evaluator.py:print_report
 src/general_ludd/self_improve/evaluator.py:run_all_self_improve
 src/general_ludd/self_improve/outcomes.py:analyze_eval_results
+src/general_ludd/self_improve/runtime.py:generate_local_proposal_plan
 src/general_ludd/self_update/classifier.py:llm_route
 src/general_ludd/self_update/grinding_detector.py:GrindingDetector
 src/general_ludd/self_update/module_snapshot.py:find_live_references

@@ -39,7 +39,6 @@ from general_ludd.self_improve.codex_comparison import (
     CodexReference,
     CompactSpanProposal,
     ComparisonResult,
-    PlannerFeedbackExchange,
     ProposalContract,
     ProposalManifest,
     bind_compact_focus_path,
@@ -111,7 +110,6 @@ from general_ludd.self_improve.model_lifecycle import (
     ModelArtifactIdentity,
     ModelLeaseManager,
 )
-from general_ludd.self_improve.result_artifact import ManagedSelfImproveResultArtifact
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 from general_ludd.small_models.recommender import map_task_to_capabilities
 
@@ -1259,20 +1257,6 @@ def parse_reference_files(output: str) -> frozenset[str]:
     if len(unique) > _MAX_REFERENCE_FILES:
         raise ValueError(f"reference exceeds {_MAX_REFERENCE_FILES} files")
     return unique
-
-
-def build_failure_diagnostic(results: list[MakeResult]) -> str:
-    """Return the first failed Make command and its bounded output tail."""
-    for result in results:
-        if result.returncode == 0:
-            continue
-        output = (result.stdout + "\n" + result.stderr).replace("\x00", "")
-        tail = output.encode("utf-8")[-4096:].decode("utf-8", errors="replace")
-        return (
-            f"command={shlex.join(result.argv)} rc={result.returncode}\n"
-            f"{tail}"
-        )
-    return ""
 
 
 def compact_failure_diagnosis(
@@ -2672,66 +2656,6 @@ def evaluate_attempt(
             )
             cleanup_passed = cleanup.returncode == 0
         raise
-
-
-def evaluate_attempt_feedback(
-    root_runner: _TargetRunner,
-    plan: ApprovedSelfImprovePlan,
-    candidate: PlannedModelCandidate,
-    bound_proposal: PlanBoundProposal,
-    attempt: int,
-    *,
-    merge: bool,
-    make_runner_factory: _MakeRunnerFactory | None = None,
-) -> tuple[AttemptResult, PlannerFeedbackExchange]:
-    """Evaluate once and emit one source-traceable planner exchange."""
-    if not isinstance(plan, ApprovedSelfImprovePlan):
-        raise ValueError("planner feedback requires an ApprovedSelfImprovePlan")
-    plan.verify_approval()
-    if not isinstance(candidate, PlannedModelCandidate):
-        raise ValueError("planner feedback requires a PlannedModelCandidate")
-    if (
-        isinstance(attempt, bool)
-        or not isinstance(attempt, int)
-        or not 1 <= attempt <= plan.max_attempts
-    ):
-        raise ValueError("planner feedback attempt exceeds the approved plan")
-    model_identity = _planned_artifact_identity(candidate)
-    result = evaluate_attempt(
-        root_runner,
-        plan.task,
-        plan.reference,
-        bound_proposal,
-        attempt,
-        expected_attempt_identity_digest=plan.attempt_identity_digest,
-        merge=merge,
-        make_runner_factory=make_runner_factory,
-    )
-    _validate_approved_result_identity(
-        result,
-        bound_proposal,
-        plan.attempt_identity_digest,
-    )
-    source = ManagedSelfImproveResultArtifact.from_run_result(
-        ManagedRunResult(
-            final_result=result,
-            attempts=attempt,
-            plan_identity_digest=plan.approved_plan_digest,
-            attempted_model_ids=(model_identity.model_id,),
-            outcome_record_ids=(),
-        )
-    )
-    exchange = PlannerFeedbackExchange(
-        plan_identity_digest=plan.approved_plan_digest,
-        attempt_identity_digest=result.attempt_identity_digest,
-        attempt_number=attempt,
-        model_identity=model_identity,
-        task_id=plan.task.task_id,
-        task_objective=plan.task.objective,
-        outcome=result.comparison,
-        source_artifact_digest=source.artifact_digest,
-    )
-    return result, exchange
 
 
 def _default_runtime_outcome_adapter(cache_root: Path) -> ManagedOutcomeAdapter:
