@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import inspect
+import warnings
 from types import SimpleNamespace
 from typing import Any, ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -363,6 +365,44 @@ class TestLoadModelProfiles:
 
 
 class TestDaemonHelperBranches:
+    @pytest.mark.asyncio
+    async def test_mocked_lifespan_does_not_orphan_sqlite_connections(self):
+        """Mocked lifecycle tests must not construct real persistent caches."""
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _lifespan
+        from tests.unit.test_daemon import _lifespan_patches
+
+        event_loop = MagicMock()
+        event_loop.run_forever = AsyncMock()
+        event_loop.shutdown = AsyncMock()
+        gc.collect()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", ResourceWarning)
+            with _lifespan_patches(event_loop):
+                app = FastAPI()
+                app.state.tick_interval = 0.01
+                app.state.event_loop = None
+                app.state._receiver_buffer = MagicMock()
+                async with _lifespan(app):
+                    for attribute in (
+                        "_codebase_indexer",
+                        "_research_index",
+                        "_local_memory",
+                    ):
+                        setattr(app.state, attribute, SimpleNamespace(close=MagicMock()))
+                    app.state._searx_client = SimpleNamespace(close=AsyncMock())
+            del app
+            gc.collect()
+
+        leaked = [
+            warning
+            for warning in caught
+            if warning.category is ResourceWarning
+            and "unclosed database" in str(warning.message)
+        ]
+        assert not leaked, [str(warning.message) for warning in leaked]
+
     @pytest.mark.asyncio
     async def test_factory_lazy_dispatch_handlers_rebind_or_fail_closed(self, tmp_path):
         app = create_daemon_app(config_dir=str(tmp_path))
