@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -24,7 +27,8 @@ def _make_target_body(name: str) -> str:
 def test_clean_hf_cache_delegates_to_the_lifecycle_manager() -> None:
     body = _make_target_body("clean-hf-cache")
 
-    assert "python -m general_ludd.self_improve.model_lifecycle" in body
+    assert "python scripts/clean_hf_cache.py" in body
+    assert "python -m general_ludd.self_improve.model_lifecycle" not in body
     assert "CLEAN_HF_CACHE_ROOT" in body
     makefile = (_REPO_ROOT / "Makefile").read_text(encoding="utf-8")
     assert (
@@ -36,6 +40,32 @@ def test_clean_hf_cache_delegates_to_the_lifecycle_manager() -> None:
     assert "rm -rf" not in body
     assert "bartowski" not in body
     assert "|| true" not in body
+
+
+def test_clean_hf_cache_entrypoint_is_warning_strict_and_machine_readable(
+    tmp_path: Path,
+) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_REPO_ROOT / "scripts" / "clean_hf_cache.py"),
+            "--cache-root",
+            str(tmp_path / "owned-cache"),
+            "--required-bytes",
+            "0",
+            "--validate-only",
+            "1",
+        ],
+        cwd=_REPO_ROOT,
+        env={**os.environ, "PYTHONWARNINGS": "error"},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert json.loads(result.stdout)["status"] == "validated"
 
 
 def test_clean_hf_cache_has_a_complete_make_target_contract() -> None:

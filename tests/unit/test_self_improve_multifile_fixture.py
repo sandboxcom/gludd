@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "config/self-improve/context-budget-lifecycle.json"
 DOCUMENT = ROOT / "docs/features/SELF_IMPROVEMENT_MULTIFILE_FIXTURE.md"
 COVERAGE_CONFIG = ROOT / "config/coverage_self_improve.ini"
-FIXTURE_SHA256 = "33e86fabb8514219b463ee3e95e45656dcf8b069b33f180f09ea566dbff52f35"
+FIXTURE_SHA256 = "cb1ae6a252cedc2b337d84fd02e7ca36935709c30bb0e8be9060401cba8d1f04"
 COVERAGE_TEST_SELECTOR = (
     "tests/unit/test_project*.py",
     "tests/unit/test_daemon*.py",
@@ -45,8 +45,10 @@ COVERAGE_TEST_SELECTOR = (
     "tests/unit/test_task48_debt_eval_seam.py",
     "tests/unit/test_floor_controller_wiring.py",
     "tests/unit/test_run_recorder_daemon_wiring.py",
+    "tests/unit/test_clean_hf_cache_target.py",
 )
 COVERAGE_SOURCES = (
+    "*/scripts/clean_hf_cache.py",
     "*/scripts/run_self_improve_e2e.py",
     "*/scripts/self_improve_local_proposal.py",
     "*/src/general_ludd/self_improve/codex_comparison.py",

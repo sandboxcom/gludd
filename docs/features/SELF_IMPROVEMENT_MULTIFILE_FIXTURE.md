@@ -8,7 +8,7 @@ Status: tracked, deterministic sentinel for the managed self-improvement path.
 | --- | --- |
 | Task | `S83.133` (`multifile-context-lifecycle`) |
 | Fixture | `config/self-improve/context-budget-lifecycle.json` |
-| Fixture SHA-256 | `33e86fabb8514219b463ee3e95e45656dcf8b069b33f180f09ea566dbff52f35` |
+| Fixture SHA-256 | `cb1ae6a252cedc2b337d84fd02e7ca36935709c30bb0e8be9060401cba8d1f04` |
 | Baseline | `80b381bd87f32487d784964ce93566e3b016b191` |
 | Independent Codex reference | `6463324cfcf6db9b9a2f9ec203e0bd3862a1e80e` |
 | Candidate limit | Two attempts, stopped after the first accepted candidate |
@@ -23,7 +23,7 @@ Its six canonical Make commands preserve the same exact protocol, test, static,
 and branch-coverage obligations given to the independent Codex reference. The
 coverage command reuses the deterministic repository-binding selector, including
 all self-improvement contracts and the adjacent project, job, router, EventLoop,
-worker, promotion, and daemon seams. It measures all 20 managed-lifecycle sources
+worker, promotion, and daemon seams. It measures all 21 managed-lifecycle sources
 in `config/coverage_self_improve.ini`.
 
 The compact, sorted-key, newline-terminated JSON and its digest are immutable
@@ -66,6 +66,14 @@ Exact leases prevent eviction during inference. A valid cached GGUF may persist
 for reuse, but an owned worker, lease, reservation, proposal exchange file, or
 rejected worktree surviving completion is a failed cleanup result.
 
+`clean-hf-cache` invokes the lifecycle CLI through the dedicated
+`scripts/clean_hf_cache.py` process entry point. This avoids executing a module
+that the `general_ludd.self_improve` package has already imported, so diagnostic
+JSON stays free of `runpy` warnings and remains safe for machine consumers. The
+wrapper delegates directly to the same lifecycle `main()` function; it does not
+fork cleanup policy or weaken lease, ownership, quota, reserve, or validate-only
+checks.
+
 Acceptance requires all canonical tests and static checks, at least 85% aggregate
 branch-aware coverage, and at least 75% line-and-branch coverage in each measured
 file. Warnings and incomplete model output fail the candidate.
@@ -94,6 +102,16 @@ as proof of a Gludd defect:
   opened in November 2023, reports same-seed output variation across GPU-offload
   and hardware settings. It supports treating backend and hardware identity as a
   result stratum rather than demanding cross-platform byte equality.
+- [CPython issue 27487](https://bugs.python.org/issue27487), opened in July 2016,
+  documents why `python -m package.module` warns when package initialization has
+  already imported the target module. The warning explicitly signals potentially
+  unpredictable execution, so Gludd uses an unambiguous script entry point rather
+  than suppressing it.
+- [PySceneDetect issue 181](https://github.com/Breakthrough/PySceneDetect/issues/181),
+  opened in September 2020, is a long-lived user report of the same warning
+  polluting an otherwise successful CLI. Its maintainers treated the warning as a
+  refactoring defect, supporting Gludd's warning-strict process regression rather
+  than stderr filtering.
 
 The broader rationale remains centralized in the
 [acceptance matrix evidence](../SELF_IMPROVEMENT_ACCEPTANCE_MATRIX.md#evaluation-practice-and-practitioner-evidence).

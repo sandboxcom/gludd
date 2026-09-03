@@ -5669,7 +5669,7 @@ test-self-improve-failure-corpus:
 test-self-improve-multifile:
 	@case "$(SELF_IMPROVE_MULTIFILE_LIVE)" in 0|1) ;; *) echo "SELF_IMPROVE_MULTIFILE_LIVE must be 0 or 1"; exit 2;; esac
 	@ACTUAL_FIXTURE_SHA256="$$($(PYTHON) -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "config/self-improve/context-budget-lifecycle.json")"; \
-		[ "$$ACTUAL_FIXTURE_SHA256" = "33e86fabb8514219b463ee3e95e45656dcf8b069b33f180f09ea566dbff52f35" ] || { echo "multifile fixture drift: expected=33e86fabb8514219b463ee3e95e45656dcf8b069b33f180f09ea566dbff52f35 actual=$$ACTUAL_FIXTURE_SHA256"; exit 2; }
+		[ "$$ACTUAL_FIXTURE_SHA256" = "cb1ae6a252cedc2b337d84fd02e7ca36935709c30bb0e8be9060401cba8d1f04" ] || { echo "multifile fixture drift: expected=cb1ae6a252cedc2b337d84fd02e7ca36935709c30bb0e8be9060401cba8d1f04 actual=$$ACTUAL_FIXTURE_SHA256"; exit 2; }
 	@$(MAKE) --no-print-directory test-self-improve TARGET=multifile-context-lifecycle SELF_IMPROVE_MODEL_PATH= SELF_IMPROVE_BASELINE_REF=80b381bd87f32487d784964ce93566e3b016b191 SELF_IMPROVE_REFERENCE_REF=6463324cfcf6db9b9a2f9ec203e0bd3862a1e80e SELF_IMPROVE_TASK_FILE=config/self-improve/context-budget-lifecycle.json SELF_IMPROVE_MAX_ATTEMPTS=2 SELF_IMPROVE_VALIDATE_ONLY="$(if $(filter 1,$(SELF_IMPROVE_MULTIFILE_LIVE)),0,1)"
 
 # Verify an immutable managed-promotion marker only on development history.
@@ -7890,7 +7890,7 @@ CLEAN_HF_CACHE_VALIDATE_ONLY ?= 1
 
 .PHONY: clean-hf-cache
 clean-hf-cache: ## Diagnose or reclaim only Gludd-owned unleased model artifacts
-	@$(UV) run python -m general_ludd.self_improve.model_lifecycle \
+	@$(UV) run python scripts/clean_hf_cache.py \
 		--cache-root "$(CLEAN_HF_CACHE_ROOT)" \
 		--required-bytes "$(CLEAN_HF_CACHE_REQUIRED_BYTES)" \
 		--validate-only "$(CLEAN_HF_CACHE_VALIDATE_ONLY)"
