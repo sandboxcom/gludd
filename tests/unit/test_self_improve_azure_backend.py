@@ -72,6 +72,27 @@ class _ExplodingStatusError(Exception):
         raise RuntimeError(_PROVIDER_DETAIL)
 
 
+class _LeakyBackendError(BackendInfrastructureError):
+    def __str__(self) -> str:
+        return _PROVIDER_DETAIL
+
+
+class _ExplodingSecret(str):
+    def encode(self, *_args: object, **_kwargs: object) -> bytes:
+        raise RuntimeError(_SECRET)
+
+
+class _ExplodingMapping(Mapping[str, object]):
+    def __getitem__(self, _key: str) -> object:
+        raise RuntimeError(_PROVIDER_DETAIL)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(("output_text",))
+
+    def __len__(self) -> int:
+        return 1
+
+
 class _ExplodingEnvironment(Mapping[str, str]):
     def __getitem__(self, _key: str) -> str:
         raise RuntimeError(_PROVIDER_DETAIL)
@@ -378,6 +399,23 @@ def test_configuration_is_frozen_explicit_and_secret_free() -> None:
             value,
             endpoint="https://project.openai.azure.com?api-key=secret",
         ),
+        lambda value: replace(
+            value,
+            endpoint="https://project.openai.azure.com.evil.example",
+        ),
+        lambda value: replace(
+            value,
+            endpoint="https://project.openai.azure.com@127.0.0.1",
+        ),
+        lambda value: replace(value, endpoint="https://127.0.0.1"),
+        lambda value: replace(
+            value,
+            endpoint="https://project.openai.azure.com:443",
+        ),
+        lambda value: replace(
+            value,
+            endpoint="https://project.openai.azure.com#fragment",
+        ),
         lambda value: replace(value, endpoint="https://other.openai.azure.com"),
         lambda value: replace(
             value,
@@ -465,6 +503,18 @@ def test_secret_mapping_failure_is_censored_as_authentication() -> None:
 
     assert captured.value.failure is BackendFailure.AUTHENTICATION
     assert _PROVIDER_DETAIL not in str(captured.value)
+    assert captured.value.__context__ is None
+
+
+def test_secret_value_validation_failure_is_censored_as_authentication() -> None:
+    with pytest.raises(BackendInfrastructureError) as captured:
+        _credential().resolve_api_key(
+            {"AZURE_INFERENCE_CREDENTIAL": _ExplodingSecret(_SECRET)}
+        )
+
+    assert captured.value.failure is BackendFailure.AUTHENTICATION
+    assert _SECRET not in str(captured.value)
+    assert captured.value.__context__ is None
 
 
 def test_disabled_azure_fails_before_credential_or_discovery() -> None:
@@ -558,6 +608,7 @@ def test_private_path_cannot_construct_provider_request(tmp_path: Path) -> None:
 
     assert "private" not in str(captured.value).lower()
     assert "business rule" not in str(captured.value)
+    assert captured.value.__context__ is None
 
 
 def test_approval_capability_cannot_be_forged(tmp_path: Path) -> None:
@@ -609,6 +660,23 @@ def test_approval_rejects_malformed_prompt_or_scope_without_detail(
         )
 
     assert _PROMPT not in str(captured.value)
+
+
+def test_approval_censors_hostile_string_subclass(tmp_path: Path) -> None:
+    guard = SelfImproveRuntimePolicyGuard.load(
+        tmp_path,
+        cast(Callable[[str], None], lambda _event: None),
+        AzurePromptApprovalError,
+    )
+
+    with pytest.raises(AzurePromptApprovalError) as captured:
+        AzureApprovedPrompt.approve(
+            prompt=_ExplodingSecret(_PROMPT),
+            source_paths=("src/approved.py",),
+            policy_guard=guard,
+        )
+
+    assert _SECRET not in str(captured.value)
 
 
 def test_approval_object_repr_redacts_prompt_and_source_paths(tmp_path: Path) -> None:
@@ -713,6 +781,7 @@ def test_remote_identity_drift_fails_before_secret_resolution_or_inference(
         (TimeoutError(_PROVIDER_DETAIL), BackendFailure.TIMEOUT),
         (RuntimeError(_PROVIDER_DETAIL), BackendFailure.INTERNAL),
         (_ExplodingStatusError(_PROVIDER_DETAIL), BackendFailure.INTERNAL),
+        (_LeakyBackendError(BackendFailure.AUTHENTICATION), BackendFailure.AUTHENTICATION),
     ],
 )
 def test_discovery_failures_are_classified_and_censored(
@@ -727,6 +796,7 @@ def test_discovery_failures_are_classified_and_censored(
     assert captured.value.failure is failure
     assert _PROVIDER_DETAIL not in str(captured.value)
     assert captured.value.__cause__ is None
+    assert captured.value.__context__ is None
     assert harness.openai_calls == []
 
 
@@ -944,6 +1014,7 @@ def test_inference_failure_has_one_accounted_request_and_no_fallback(
 
     assert captured.value.failure is failure
     assert _PROVIDER_DETAIL not in str(captured.value)
+    assert captured.value.__context__ is None
     assert len(harness.responses.calls) == 1
     assert backend.accounting.requests_started == 1
     assert backend.accounting.requests_failed == 1
@@ -978,6 +1049,27 @@ def test_invalid_response_is_accounted_but_never_accepted(
         )
 
     assert captured.value.failure is BackendFailure.INVALID_RESPONSE
+    assert backend.accounting.requests_started == 1
+    assert backend.accounting.responses_received == 1
+    assert backend.accounting.responses_accepted == 0
+    assert backend.accounting.requests_failed == 1
+
+
+def test_provider_mapping_failure_is_censored_and_accounted_as_invalid_response(
+    tmp_path: Path,
+) -> None:
+    harness = _FactoryHarness(responses=_FakeResponses(_ExplodingMapping()))
+    backend = _build(harness)
+
+    with pytest.raises(BackendInfrastructureError) as captured:
+        backend.generate(
+            _approved_prompt(tmp_path),
+            max_output_tokens=100,
+            timeout_seconds=2.0,
+        )
+
+    assert captured.value.failure is BackendFailure.INVALID_RESPONSE
+    assert _PROVIDER_DETAIL not in str(captured.value)
     assert backend.accounting.requests_started == 1
     assert backend.accounting.responses_received == 1
     assert backend.accounting.responses_accepted == 0
@@ -1128,6 +1220,7 @@ def test_openai_client_construction_failure_is_censored_and_unaccounted(
 
     assert captured.value.failure is BackendFailure.AUTHENTICATION
     assert _SECRET not in str(captured.value)
+    assert captured.value.__context__ is None
     assert backend.accounting == AzureBackendAccounting()
 
 
@@ -1137,12 +1230,14 @@ def test_default_credential_and_management_construction_failures_are_censored() 
     with pytest.raises(BackendInfrastructureError) as credential_error:
         _build(credential_failure)
     assert credential_error.value.failure is BackendFailure.AUTHENTICATION
+    assert credential_error.value.__context__ is None
 
     management_failure = _FactoryHarness()
     management_failure.management_failure = ServiceRequestError(_SECRET)
     with pytest.raises(BackendInfrastructureError) as management_error:
         _build(management_failure)
     assert management_error.value.failure is BackendFailure.TRANSPORT
+    assert management_error.value.__context__ is None
     assert management_failure.credential.close_calls == 1
 
 
@@ -1213,6 +1308,7 @@ def test_trace_sink_failure_blocks_effect_without_leaking_sink_text(tmp_path: Pa
 
     assert captured.value.failure is BackendFailure.INTERNAL
     assert _SECRET not in str(captured.value)
+    assert captured.value.__context__ is None
     assert harness.responses.calls == []
 
 
@@ -1289,6 +1385,7 @@ def test_azure_extras_declare_maintained_management_sdk_not_retired_inference() 
     optional = project["optional-dependencies"]
     expected = "azure-mgmt-cognitiveservices>=14.1.0,<15"
 
+    assert "openai>=1.66.0" in project["dependencies"]
     assert expected in optional["azure"]
     assert expected in optional["e2e-all"]
     assert all(

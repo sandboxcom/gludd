@@ -76,19 +76,25 @@ class AzureCredentialReference:
         if self.source is not AzureCredentialSource.API_KEY_ENV:
             raise ValueError("credential reference is not an API-key pointer")
         variable = cast(str, self.environment_variable)
+        value: object = None
+        invalid = True
         try:
             value = environment.get(variable)
+            invalid = (
+                type(value) is not str
+                or len(value) < 8
+                or len(value.encode("utf-8", errors="surrogatepass")) > 16_384
+                or value != value.strip()
+                or any(
+                    ord(character) < 0x20 or ord(character) == 0x7F
+                    for character in value
+                )
+            )
         except Exception:
-            value = None
-        if (
-            not isinstance(value, str)
-            or len(value) < 8
-            or len(value.encode("utf-8", errors="surrogatepass")) > 16_384
-            or value != value.strip()
-            or any(ord(character) < 0x20 or ord(character) == 0x7F for character in value)
-        ):
+            invalid = True
+        if invalid:
             raise BackendInfrastructureError(BackendFailure.AUTHENTICATION)
-        return value
+        return cast(str, value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,12 +209,15 @@ class AzureApprovedPrompt:
         policy_guard: SelfImproveRuntimePolicyGuard,
     ) -> AzureApprovedPrompt:
         """Create a capability only for one complete, currently public scope."""
-        if not isinstance(prompt, str):
+        if type(prompt) is not str:
             raise AzurePromptApprovalError
+        prompt_bytes: bytes | None = None
         try:
             prompt_bytes = prompt.encode("utf-8")
         except UnicodeEncodeError:
-            raise AzurePromptApprovalError from None
+            prompt_bytes = None
+        if prompt_bytes is None:
+            raise AzurePromptApprovalError
         if (
             not prompt.strip()
             or len(prompt_bytes) > _MAX_PROMPT_BYTES
@@ -216,14 +225,17 @@ class AzureApprovedPrompt:
             or not isinstance(source_paths, tuple)
             or not source_paths
             or len(set(source_paths)) != len(source_paths)
-            or not all(isinstance(path, str) and path for path in source_paths)
+            or not all(type(path) is str and path for path in source_paths)
             or not isinstance(policy_guard, SelfImproveRuntimePolicyGuard)
         ):
             raise AzurePromptApprovalError
+        policy = None
         try:
             policy = policy_guard.require(source_paths)
         except Exception:
-            raise AzurePromptApprovalError from None
+            policy = None
+        if policy is None:
+            raise AzurePromptApprovalError
         approval_digest = _stable_digest(
             {
                 "policy_digest": policy.digest,
@@ -244,10 +256,13 @@ class AzureApprovedPrompt:
         )
 
     def _reveal_after_recheck(self) -> str:
+        policy = None
         try:
             policy = self._policy_guard.require(self._source_paths)
         except Exception:
-            raise AzurePromptApprovalError from None
+            policy = None
+        if policy is None:
+            raise AzurePromptApprovalError
         if policy.digest != self.policy_digest:
             raise AzurePromptApprovalError
         return self._prompt
@@ -535,7 +550,13 @@ def _classify_sdk_error(error: BaseException) -> BackendFailure:
 
 def _censored_sdk_error(error: BaseException) -> BackendInfrastructureError:
     if isinstance(error, BackendInfrastructureError):
-        return error
+        try:
+            failure = error.failure
+        except Exception:
+            failure = BackendFailure.INTERNAL
+        if not isinstance(failure, BackendFailure):
+            failure = BackendFailure.INTERNAL
+        return BackendInfrastructureError(failure)
     return BackendInfrastructureError(_classify_sdk_error(error))
 
 
@@ -543,22 +564,30 @@ def _member(value: object, *names: str) -> object | None:
     if isinstance(value, Mapping):
         mapping = cast(Mapping[object, object], value)
         for name in names:
-            if name in mapping:
-                return mapping[name]
+            try:
+                if name in mapping:
+                    return mapping[name]
+            except Exception:
+                return None
         return None
     for name in names:
         try:
             return cast(object, getattr(value, name))
-        except (AttributeError, RuntimeError, TypeError, ValueError):
+        except AttributeError:
             continue
+        except Exception:
+            return None
     return None
 
 
 def _emit(trace_sink: Callable[[AzureBackendTrace], None], trace: AzureBackendTrace) -> None:
+    failed = False
     try:
         trace_sink(trace)
     except Exception:
-        raise BackendInfrastructureError(BackendFailure.INTERNAL) from None
+        failed = True
+    if failed:
+        raise BackendInfrastructureError(BackendFailure.INTERNAL)
 
 
 def _emit_failure(
@@ -587,6 +616,8 @@ def _deployment_identity(
             candidate_digest=known_digest,
         ),
     )
+    discovery_error: BackendInfrastructureError | None = None
+    deployment: object = None
     try:
         deployment = deployments.get(
             resource_group_name=config.resource_group,
@@ -598,31 +629,32 @@ def _deployment_identity(
             logging_enable=False,
         )
     except Exception as error:
-        censored = _censored_sdk_error(error)
+        discovery_error = _censored_sdk_error(error)
+    if discovery_error is not None:
         _emit_failure(
             trace_sink,
             AzureBackendTrace(
                 event=AzureTraceEvent.DISCOVERY_FAILED,
                 candidate_digest=known_digest,
-                failure=censored.failure,
+                failure=discovery_error.failure,
             ),
         )
-        raise censored from None
+        raise discovery_error
 
-    name = _member(deployment, "name")
-    etag = _member(deployment, "etag")
-    properties = _member(deployment, "properties")
-    state = _member(properties, "provisioning_state", "provisioningState")
-    state = _member(state, "value") or state
-    model = _member(properties, "model")
-    version = _member(model, "version", "model_version", "modelVersion")
     try:
+        name = _member(deployment, "name")
+        etag = _member(deployment, "etag")
+        properties = _member(deployment, "properties")
+        state = _member(properties, "provisioning_state", "provisioningState")
+        state = _member(state, "value") or state
+        model = _member(properties, "model")
+        version = _member(model, "version", "model_version", "modelVersion")
         if (
             name != config.deployment
             or state != "Succeeded"
-            or not isinstance(etag, str)
+            or type(etag) is not str
             or etag.casefold() in _MUTABLE_DISCOVERY_ALIASES
-            or not isinstance(version, str)
+            or type(version) is not str
             or version.casefold() in _MUTABLE_DISCOVERY_ALIASES
         ):
             raise ValueError
@@ -634,7 +666,7 @@ def _deployment_identity(
             model_version=version,
             etag=etag,
         )
-    except (TypeError, ValueError):
+    except Exception:
         censored = BackendInfrastructureError(BackendFailure.INVALID_RESPONSE)
         _emit_failure(
             trace_sink,
@@ -739,6 +771,8 @@ class AzureOpenAICandidateBackend:
         environment = self._environment
         if environment is None:
             raise BackendInfrastructureError(BackendFailure.UNAVAILABLE)
+        candidate_client: _OpenAIClient | None = None
+        construction_error: BackendInfrastructureError | None = None
         try:
             if self._config.credential.source is AzureCredentialSource.ENTRA_ID:
                 api_key: str | Callable[[], str] = (
@@ -761,7 +795,11 @@ class AzureOpenAICandidateBackend:
             ):
                 raise TypeError
         except Exception as error:
-            raise _censored_sdk_error(error) from None
+            construction_error = _censored_sdk_error(error)
+        if construction_error is not None:
+            raise construction_error
+        if candidate_client is None:
+            raise BackendInfrastructureError(BackendFailure.INTERNAL)
         self._openai_client = candidate_client
         self._environment = None
         return self._openai_client
@@ -826,6 +864,8 @@ class AzureOpenAICandidateBackend:
             ),
         )
         self._requests_started += 1
+        response: object = None
+        request_error: BackendInfrastructureError | None = None
         try:
             response = client.responses.create(
                 model=self._config.deployment,
@@ -836,21 +876,22 @@ class AzureOpenAICandidateBackend:
             )
         except Exception as error:
             self._requests_failed += 1
-            censored = _censored_sdk_error(error)
+            request_error = _censored_sdk_error(error)
             _emit_failure(
                 self._trace_sink,
                 AzureBackendTrace(
                     event=AzureTraceEvent.REQUEST_FAILED,
                     candidate_digest=self._identity.identity_digest,
                     request_number=request_number,
-                    failure=censored.failure,
+                    failure=request_error.failure,
                 ),
             )
-            raise censored from None
+        if request_error is not None:
+            raise request_error
         self._responses_received += 1
         try:
             accepted = _validated_response(response, max_output_tokens=max_output_tokens)
-        except (AttributeError, TypeError, UnicodeEncodeError, ValueError):
+        except Exception:
             self._requests_failed += 1
             failure = BackendFailure.INVALID_RESPONSE
             _emit_failure(
@@ -977,6 +1018,8 @@ def build_azure_openai_candidate_backend(
 
     credential: object | None = None
     management: object | None = None
+    identity: AzureFoundryCandidateIdentity | None = None
+    construction_error: BackendInfrastructureError | None = None
     try:
         credential = selected_factories.create_default_credential()
         management = selected_factories.create_management_client(
@@ -997,14 +1040,20 @@ def build_azure_openai_candidate_backend(
             selected_sink,
             known_digest=None,
         )
-    except BackendInfrastructureError:
+    except BackendInfrastructureError as error:
         _close_quietly(management)
         _close_quietly(credential)
-        raise
+        construction_error = _censored_sdk_error(error)
     except Exception as error:
         _close_quietly(management)
         _close_quietly(credential)
-        raise _censored_sdk_error(error) from None
+        construction_error = _censored_sdk_error(error)
+    if construction_error is not None:
+        raise construction_error
+    if identity is None:
+        _close_quietly(management)
+        _close_quietly(credential)
+        raise BackendInfrastructureError(BackendFailure.INTERNAL)
     return AzureOpenAICandidateBackend(
         config=config,
         identity=identity,

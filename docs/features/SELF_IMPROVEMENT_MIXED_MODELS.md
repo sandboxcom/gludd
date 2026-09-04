@@ -116,6 +116,10 @@ fallback branch. Azure/SDK exceptions are reduced to the existing typed categori
 without copying response bodies or exception strings. Its trace objects contain
 only phase, candidate digest, call ordinal, typed failure, and accepted token
 counts. Prompt and response text are excluded from representations and traces.
+Exception-chain context is also removed at credential, policy, discovery, client,
+request, and trace boundaries, so provider or secret text cannot be recovered by
+introspecting a censored exception. Hostile mapping and string subclasses fail
+closed rather than running provider-controlled accessors during validation.
 
 The cumulative accounting snapshot separately records provider requests started,
 responses received, responses accepted, failed requests, and exact provider-
@@ -210,7 +214,7 @@ identity changes invalidate Azure evidence without interrupting local work.
 ## Test strategy
 
 Standard local and GitHub Actions tests use deterministic in-process fakes. The
-live-adapter suite adds 111 warning-strict cases and requires no Azure import,
+live-adapter suite adds 120 warning-strict cases and requires no Azure import,
 subscription, network, or secret. Together the tests cover both identity types,
 every identity field, invalid endpoint families,
 immutable versions, URL credential injection, opt-in denial before input reaches
@@ -284,6 +288,11 @@ Research checked on 2026-09-04 before the adapter was implemented:
   custom HTTP because they own Azure authentication, token refresh, service API
   shape, and deployment-model decoding while Gludd keeps retry, privacy, identity,
   and accounting policy explicit.
+- The official OpenAI Python
+  [v1.66.0 release](https://github.com/openai/openai-python/releases/tag/v1.66.0)
+  introduced `/v1/responses`. The project dependency therefore requires
+  `openai>=1.66.0`; the prior `>=1.0.0` floor did not guarantee the documented
+  `client.responses.create` boundary used by this adapter.
 - Exactly one long-lived user report was used for live-path operational evidence:
   [Azure SDK for Python issue #42361](https://github.com/Azure/azure-sdk-for-python/issues/42361),
   opened 2025-08-05 and still inactive without a product resolution at research
