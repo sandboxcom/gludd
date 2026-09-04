@@ -459,8 +459,26 @@ class BoundedCandidateSession(Generic[_RequestT, _ResponseT]):
         except Exception:
             raise BackendInfrastructureError(BackendFailure.INTERNAL) from None
 
+    def authorize(
+        self,
+        *,
+        input_tokens: int,
+        max_output_tokens: int,
+        estimated_cost_microusd: int,
+    ) -> None:
+        """Check one call against current identity and budget without reserving it."""
+        self._validate_identity_and_provider()
+        self._validated_reservation(
+            input_tokens=input_tokens,
+            max_output_tokens=max_output_tokens,
+            estimated_cost_microusd=estimated_cost_microusd,
+        )
+
     def _validate_identity_and_provider(self) -> None:
-        current = self._backend.candidate_identity
+        try:
+            current = self._backend.candidate_identity
+        except Exception:
+            raise BackendPolicyError(BackendPolicyFailure.IDENTITY_DRIFT) from None
         if (
             not isinstance(current, (LocalGGUFCandidateIdentity, AzureFoundryCandidateIdentity))
             or current.identity_digest != self._identity_digest
@@ -479,6 +497,24 @@ class BoundedCandidateSession(Generic[_RequestT, _ResponseT]):
         max_output_tokens: int,
         estimated_cost_microusd: int,
     ) -> None:
+        input_tokens, max_output_tokens, estimated_cost_microusd, tokens = (
+            self._validated_reservation(
+                input_tokens=input_tokens,
+                max_output_tokens=max_output_tokens,
+                estimated_cost_microusd=estimated_cost_microusd,
+            )
+        )
+        self._calls_started += 1
+        self._reserved_tokens += tokens
+        self._reserved_cost_microusd += estimated_cost_microusd
+
+    def _validated_reservation(
+        self,
+        *,
+        input_tokens: int,
+        max_output_tokens: int,
+        estimated_cost_microusd: int,
+    ) -> tuple[int, int, int, int]:
         input_tokens = _bounded_integer(
             input_tokens,
             "input_tokens",
@@ -515,9 +551,7 @@ class BoundedCandidateSession(Generic[_RequestT, _ResponseT]):
             > self._budget.max_cost_microusd
         ):
             raise BackendPolicyError(BackendPolicyFailure.COST_BUDGET_EXCEEDED)
-        self._calls_started += 1
-        self._reserved_tokens += tokens
-        self._reserved_cost_microusd += estimated_cost_microusd
+        return input_tokens, max_output_tokens, estimated_cost_microusd, tokens
 
 
 __all__ = (

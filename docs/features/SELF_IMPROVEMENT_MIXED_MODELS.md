@@ -1,8 +1,9 @@
 # Mixed-model self-improvement candidate boundary
 
-Status: provider-neutral identity, live Azure OpenAI discovery and inference, and
-content-free calibrated ranking/trial-planning primitives are implemented;
-managed-runner mixed execution and automatic work classification remain disabled.
+Status: provider-neutral identity, live Azure OpenAI discovery and inference,
+content-free calibrated ranking/trial-planning, and bounded execution of an
+already-approved plan are implemented; automatic candidate-set assembly and
+managed-runner selection remain disabled.
 
 ## Outcome
 
@@ -15,12 +16,13 @@ existing local-only managed runner.
 The opt-in `AzureOpenAICandidateBackend` can now discover one exact deployment
 through Azure Resource Manager and invoke that deployment through Azure's unified
 OpenAI v1 endpoint. Provider-neutral routing primitives can rank immutable local
-and Azure predictions, deliberately challenge a preferred model, and measure
-pre-call calibration. The adapter and planner remain separate from execution: the
-managed runner still selects and acquires only local GGUF candidates. Its legacy
-proposal callback is transported through `LocalProposalBackendAdapter` with the
-same four objects, return object, exception identity, progress events, and lease
-lifecycle. Therefore this tranche does **not** claim end-to-end mixed-provider
+and Azure predictions, deliberately challenge a preferred model, measure pre-call
+calibration, and execute a caller-approved local-only, Azure-only, or mixed plan
+through explicitly supplied bounded sessions. The managed runner still selects
+and acquires only local GGUF candidates. Its legacy proposal callback is
+transported through `LocalProposalBackendAdapter` with the same four objects,
+return object, exception identity, progress events, and lease lifecycle.
+Therefore this tranche does **not** claim automatic end-to-end mixed-provider
 self-improvement.
 
 ## Candidate identities
@@ -80,6 +82,12 @@ not reach the backend and do not consume budget. Once a provider call starts, it
 reserved tokens, cost, and call count remain consumed even if infrastructure
 fails. That conservative accounting prevents retry storms from escaping an
 approval.
+
+`BoundedCandidateSession.authorize` exposes the same identity, provider-opt-in,
+and budget checks without consuming a reservation. Plan execution uses it to
+preflight the complete call set before any backend can observe a request.
+`generate` repeats those checks and reserves immediately before the real call,
+closing the check-to-use boundary without weakening direct session callers.
 
 The session never catches `BaseException`, so cancellation and process shutdown
 retain their normal control flow. A typed `BackendInfrastructureError` preserves
@@ -160,8 +168,44 @@ self-confirming routing loop.
 Calibration is reported prequentially with Brier skill against the causal empirical
 base rate for one exact task stratum. Later evidence cannot rewrite an earlier
 baseline. These facilities are implemented and tested, but automatic task-kind
-classification, live candidate-set assembly, managed-runner execution of the plan,
-and promotion policy based on calibration remain pending.
+classification, live candidate-set assembly, managed-runner construction of the
+execution inputs, and promotion policy based on calibration remain pending.
+
+## Approved plan execution
+
+`general_ludd.self_improve.candidate_execution` accepts one immutable
+`CandidateTrialPlan`, its externally recorded `plan_digest`, and exactly one
+`CandidateTrialCall` for every plan ordinal. Before the first call it validates
+the whole plan, rejects missing, duplicate, extra, or identity-mismatched
+sessions, and non-destructively authorizes every session against the token, cost,
+timeout, provider-opt-in, and call budgets already bound into the plan. The
+executor never discovers another candidate, changes an output ceiling, retries a
+call, or creates a fallback route.
+
+Serial plans execute each preapproved ordinal once. Concurrent plans use a
+namespaced thread pool capped by the plan's existing 16-trial hard limit, while
+returning results in stable plan order. A failure in one explicitly planned call
+becomes that candidate's censored infrastructure attempt; it does not synthesize
+a replacement call. Local-only and Azure-only plans use the same path as mixed
+plans, so provider composition does not create a second policy implementation.
+
+`CandidateExecutionBoundary` combines the existing
+`SelfImproveRuntimePolicyGuard` with a caller-supplied project-binding identity
+probe. It rechecks both identities during complete-plan authorization and again
+immediately before backend invocation, deterministic evaluation, and calibration
+persistence. Drift before evaluation discards the opaque response and fails with
+a fixed category. Drift at the learning boundary records a private-scope skip
+instead of writing evidence. This preserves a useful content-free operational
+trace without attributing behavior to the wrong project or privacy policy.
+
+Execution traces contain only plan/candidate digests, ordinals, provider and
+outcome enums, bounded counts, and fixed failure/skip categories. Requests,
+responses, paths, credentials, evaluator exceptions, and provider text are not
+trace fields. Responses remain available to the explicit caller but are excluded
+from result representations. Both private-scope results and infrastructure
+attempts go through the existing calibration contract and are excluded from
+quality learning; accepted and deterministically rejected public attempts remain
+eligible evidence.
 
 ## Explicit Azure opt-in and credentials
 
@@ -233,9 +277,9 @@ The integration sequence preserves the current local service throughout:
 2. **Single-candidate live adapter:** discover an explicitly configured Azure
    deployment and expose an opt-in, policy-gated backend without wiring it into
    local selection.
-3. **Fake mixed execution:** exercise local and Azure-shaped deterministic fakes
-   in standard CI with the same budget, no-fallback, and failure-censoring
-   assertions.
+3. **Fake mixed execution (implemented):** exercise local and Azure-shaped
+   deterministic fakes in standard CI with the same budget, no-fallback, project
+   binding, privacy, and failure-censoring assertions.
 4. **Live canary:** require a protected environment, explicit opt-in, least
    privilege, cost ceiling, and one non-production deployment. Keep the local
    production path active.
@@ -253,8 +297,10 @@ identity changes invalidate Azure evidence without interrupting local work.
 ## Test strategy
 
 Standard local and GitHub Actions tests use deterministic in-process fakes. The
-live-adapter suite adds 120 warning-strict cases and the routing/calibration suite
-adds 40 cases; neither requires an Azure subscription, network, or secret. The
+live-adapter suite adds 120 warning-strict cases, the routing/calibration suite
+adds 40 cases, and the focused execution suite covers local-only, Azure-only,
+mixed serial, and mixed concurrent plans; none requires an Azure subscription,
+network, or secret. The
 canonical integrated self-improvement run passes 6,641 tests with six intentional
 skips and one expected failure at 90% aggregate branch-aware coverage; all 33
 measured files exceed 75%, including the Azure adapter at 95% and every routing
@@ -271,6 +317,14 @@ cleanup. Routing cases additionally cover exact-stratum persistence, tamper
 rejection, accepted and rejected labels, private/infrastructure censoring,
 prequential calibration, deterministic resource tie-breakers, least-tested
 challenges, serial/concurrent plans, and hard trial bounds.
+
+The focused execution/routing/backend replay passes 127 tests. Its three measured
+files reach 97.2% aggregate line coverage and 95.4% aggregate branch coverage;
+`candidate_execution.py` reaches 95.7% line and 92.6% branch coverage, with no
+measured file below the 75% per-file floor. It additionally proves complete-set
+preflight before the first effect, non-consuming authorization, stable result
+order, bounded concurrency, policy and project drift checks at later boundaries,
+fixed-message error censorship, and calibration-store failure handling.
 
 No standard CI job needs an Azure subscription or secret. A later live job must
 be opt-in, protected, serialized, cost capped, and skipped when its explicit
@@ -310,6 +364,11 @@ Research checked on 2026-09-04:
 The forum reports are operational anecdotes rather than normative API contracts.
 They support the strictness decision; Microsoft documentation defines the actual
 endpoint and credential requirements.
+
+The bounded executor carries those operational lessons forward: because endpoint
+and deployment mistakes have historically surfaced as ambiguous provider errors,
+an execution-time failure is retained only as a typed infrastructure observation.
+It never becomes a negative quality label or a reason to try a different provider.
 
 ### S83.150 live-adapter research
 
