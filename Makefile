@@ -552,6 +552,7 @@ help:
 	@echo "  ci-greenness           CI reliability ratio (green / total completed)"
 	@echo "  ci-trigger-committed-head [REF=<b>]  Idempotently signal + return exact-SHA GHA run URL"
 	@echo "  ci-record-verdict      Record a known CI verdict directly, bypassing cooldown (VERDICT=success|failure|pending, SHA=<sha>)"
+	@echo "  deploy-and-forget      Single guarded push + cooldown record (BRANCH, DEPLOY_AND_FORGET_VALIDATE_ONLY=0|1)"
 	@echo ""
 	@echo "  --- Git Remote ---"
 	@echo "  git-remote-sandboxcom Configure sandboxcom GitHub remote with SSH key"
@@ -3589,6 +3590,7 @@ git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard _sta
 push-dev: check-clean-tree ci-busy-check _push-rate-guard _stash-before-push-guard _ci-restart-cap _pull-before-push-guard
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom development
 	@echo "Pushed development to sandboxcom/gludd"
+	@$(MAKE) --no-print-directory _record-push-verdict
 	@$(PYTHON) scripts/ci_check_cooldown.py deploy
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
@@ -3605,6 +3607,7 @@ git-push-sandboxcom-nv: check-clean-tree _push-rate-guard _stash-before-push-gua
 	@BRANCH=$$(git branch --show-current); \
 	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom HEAD:$$BRANCH
 	@echo "Pushed $$(git branch --show-current) to sandboxcom/gludd (--no-verify)"
+	@$(MAKE) --no-print-directory _record-push-verdict
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 # Push only the committed HEAD for the current branch. This is for CI candidate
@@ -3814,15 +3817,22 @@ ci-diagnose:
 	@$(PYTHON) scripts/ci_diagnose.py $(or $(BRANCH),master)
 
 # deploy-and-forget: push + record timestamp + print checkback time. This is
-# the fire-and-forget deployment pattern. Supports BRANCH= for development pushes.
+# the fire-and-forget deployment pattern. Supports BRANCH= and a hermetic
+# DEPLOY_AND_FORGET_VALIDATE_ONLY=1 routing check for local/GHA validation.
 # After running this, RESUME REAL WORK — do not poll CI.
-deploy-and-forget: ci-busy-check
-	@if [ "$(BRANCH)" = "development" ] || [ "$(BRANCH)" = "dev" ]; then \
-		$(MAKE) --no-print-directory push-dev; \
+deploy-and-forget:
+	@if [ "$(DEPLOY_AND_FORGET_VALIDATE_ONLY)" = "1" ]; then \
+		if [ "$(BRANCH)" = "development" ] || [ "$(BRANCH)" = "dev" ]; then ROUTE=development; else ROUTE=current-branch; fi; \
+		echo "DEPLOY-AND-FORGET-VALID: branch=$(BRANCH) route=$$ROUTE; no network, push, or state mutation"; \
 	else \
-		$(MAKE) --no-print-directory batch-push COMMIT_THRESHOLD=1 || $(MAKE) --no-print-directory git-push-sandboxcom; \
+		$(MAKE) --no-print-directory ci-busy-check BRANCH="$(BRANCH)" || exit $$?; \
+		if [ "$(BRANCH)" = "development" ] || [ "$(BRANCH)" = "dev" ]; then \
+			$(MAKE) --no-print-directory push-dev || exit $$?; \
+		else \
+			$(MAKE) --no-print-directory git-push-sandboxcom || exit $$?; \
+			$(PYTHON) scripts/ci_check_cooldown.py deploy; \
+		fi; \
 	fi
-	@$(PYTHON) scripts/ci_check_cooldown.py deploy
 
 # ci-cooldown-status: show how long until the next ci-verdict-safe is allowed.
 # Read-only. Use this to decide whether to dispatch real work or check CI.
@@ -6321,13 +6331,15 @@ _stash-before-push-guard:
 	fi
 	@echo "_stash-before-push-guard: PASS"
 
-# AA023 — _ci-restart-cap: limits CI restarts to 3 per session.
+# AA023 — check-only limit of 3 CI restarts per session.
 # Agent pushed incremental fixes 7+ times, each triggering a new CI run.
 # State file /tmp/gludd-ci-restart-count records restart count; resets
 # when CI reports GREEN. After 3rd restart, pushes are BLOCKED until
-# CI goes GREEN or RED. FORCE=1 bypasses.
+# CI goes GREEN or RED. Successful pushes increment in _record-push-verdict;
+# rejected preflight attempts never consume the budget. FORCE=1 bypasses.
 _ci-restart-cap:
-	@CI_RESTART_COUNT=$$(cat /tmp/gludd-ci-restart-count 2>/dev/null || echo 0); \
+	@CI_RESTART_FILE="$${GLUDD_CI_RESTART_COUNT_FILE:-/tmp/gludd-ci-restart-count}"; \
+	CI_RESTART_COUNT=$$(cat "$$CI_RESTART_FILE" 2>/dev/null || echo 0); \
 	if [ "$$CI_RESTART_COUNT" -ge 3 ]; then \
 		if [ "$$FORCE" = "1" ]; then \
 			echo "CI-RESTART-CAP: $$CI_RESTART_COUNT restarts (at limit) but FORCE=1 active."; \
@@ -6335,14 +6347,9 @@ _ci-restart-cap:
 			echo "BLOCKED: $$CI_RESTART_COUNT CI restarts this session. Max is 3."; \
 			echo "Wait for CI to report GREEN or RED, then fix ALL failures in ONE commit."; \
 			echo "Use FORCE=1 to bypass (emergency only). See AA023."; \
-			echo '{"last_push_blocked":true,"block_reason":"_ci-restart-cap:limit","restart_count":'$$CI_RESTART_COUNT',"max_allowed":3,"epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
+			$(PYTHON) scripts/ci_check_cooldown.py record-restart-block "$$CI_RESTART_COUNT" || exit $$?; \
 			exit 1; \
 		fi; \
-	else \
-		CI_NEW=$$((CI_RESTART_COUNT + 1)); \
-		echo "$$CI_NEW" > /tmp/gludd-ci-restart-count; \
-		echo "CI-RESTART-CAP: restart $$CI_NEW/3 recorded."; \
-		echo '{"last_push_blocked":false,"ci_restart_count":'$$CI_NEW',"max_allowed":3,"epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
 	fi
 	@echo "_ci-restart-cap: PASS"
 
@@ -6440,10 +6447,7 @@ _ci-verdict-history-guard:
 # every FAILED push attempt (pre-push hook rejections, rate-limit blocks),
 # forcing a fresh 10-minute cooldown verdict for a push that never happened.
 _record-push-verdict:
-	@CUR_SHA=$$(git rev-parse HEAD); \
-	STATE_FILE=/tmp/gludd-ci-verdict-history.json; \
-	echo "{\"last_push_sha\": \"$$CUR_SHA\", \"last_checked_sha\": \"\", \"ts\": $$(date +%s)}" > "$$STATE_FILE"; \
-	echo "recorded push verdict history for $$CUR_SHA"
+	@$(PYTHON) scripts/ci_check_cooldown.py record-push
 
 # AA034 — _pre-commit-stash-audit: detects pre-commit auto-fix stash conflicts.
 # Pre-commit hooks auto-fix files (trailing whitespace, eof) via stash/unstash.

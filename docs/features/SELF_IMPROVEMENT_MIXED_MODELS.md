@@ -410,3 +410,32 @@ Research checked on 2026-09-04 before the adapter was implemented:
   design implication is to disable SDK retries, classify 429 separately from
   transport failures, count each started request once, and leave any retry to the
   already bounded outer session.
+
+### S83.150 hosted-CI push reliability research
+
+Research checked on 2026-09-04 after the first hosted-CI handoff exposed a local
+push-orchestration regression:
+
+- GitHub's long-lived community report
+  [#26566](https://github.com/orgs/community/discussions/26566), opened in 2021,
+  records workflow-level `cancel-in-progress` behaving differently from operator
+  expectations. Report [#33948](https://github.com/orgs/community/discussions/33948),
+  opened in 2022, records an in-progress run receiving `SIGTERM` despite
+  `cancel-in-progress` not being enabled, with another user reproducing it while
+  explicitly setting the option false. These are practitioner reports, not API
+  guarantees, but they show why an orchestrator must not infer durable CI progress
+  merely because one push command returned.
+- Discussion [#55027](https://github.com/orgs/community/discussions/55027) has
+  continued since 2023 and documents the less obvious pending-run behavior: under
+  the default single concurrency queue, newer arrivals can replace older pending
+  runs even when the active run is retained. The normative
+  [GitHub concurrency documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+  now states that replacement behavior explicitly.
+
+The resulting boundary is intentionally conservative. `deploy-and-forget` selects
+exactly one guarded push target, never retries through a second target, propagates
+every guard or push failure, and records cooldown/restart state only after the push
+lands. Its hermetic validation mode exercises branch routing in local and hosted CI
+without contacting GitHub, resolving credentials, mutating Git state, or touching
+operator state. Exact-SHA hosted evidence remains a separate acceptance condition;
+a local push attempt is never presented as proof that a workflow started.

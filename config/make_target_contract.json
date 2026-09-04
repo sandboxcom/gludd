@@ -642,6 +642,11 @@
       "behavior": "make ci-record-verdict VERDICT=failure SHA=<40-hex-sha>"
     },
     {
+      "name": "deploy-and-forget",
+      "make_variables": ["BRANCH", "DEPLOY_AND_FORGET_VALIDATE_ONLY"],
+      "behavior": "make deploy-and-forget BRANCH=feature/hermetic-ci DEPLOY_AND_FORGET_VALIDATE_ONLY=1"
+    },
+    {
       "name": "_record-push-verdict",
       "make_variables": [],
       "not_for_direct_use": true,

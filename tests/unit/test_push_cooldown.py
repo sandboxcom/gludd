@@ -252,10 +252,10 @@ class TestStatePathConfigurability:
         )
 
     def test_env_var_not_yet_honored(self) -> None:
-        """GLUDD_PUSH_STATE_FILE is the desired override knob (not yet wired)."""
-        src = _makefile_src()
-        assert "GLUDD_PUSH_STATE_FILE" not in src, (
-            "GLUDD_PUSH_STATE_FILE is not yet honored by the Makefile — "
+        """The inline timestamp cooldown still lacks its own override knob."""
+        section = _cooldown_section()
+        assert "GLUDD_PUSH_STATE_FILE" not in section, (
+            "GLUDD_PUSH_STATE_FILE is not yet honored by the cooldown section — "
             "this is the configurability gap (TDD red). Extract cooldown into "
             "scripts/push_cooldown.py mirroring ci_check_cooldown.py."
         )
