@@ -68,6 +68,7 @@ COVERAGE_SOURCES = (
     "*/src/general_ludd/projects/manager.py",
     "*/src/general_ludd/routers/self_improve.py",
     "*/src/general_ludd/schemas/job.py",
+    "*/src/general_ludd/schemas/self_improve_artifact.py",
     "*/src/general_ludd/event_loop/loop.py",
     "*/src/general_ludd/worker/app.py",
     "*/src/general_ludd/daemon.py",
