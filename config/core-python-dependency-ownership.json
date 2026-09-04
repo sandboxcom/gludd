@@ -532,6 +532,7 @@
       "core_import_paths": [
         "src/general_ludd/models/gateway.py",
         "src/general_ludd/models/timeout_detector.py",
+        "src/general_ludd/self_improve/azure_backend.py",
         "src/general_ludd/skills/embeddings.py"
       ],
       "disposition": "retain-core",

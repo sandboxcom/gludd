@@ -1,8 +1,8 @@
 # Mixed-model self-improvement candidate boundary
 
-Status: provider-neutral identity plus the first live Azure OpenAI discovery and
-inference adapter are implemented; managed-runner mixed routing and empirical
-prediction calibration remain disabled.
+Status: provider-neutral identity, live Azure OpenAI discovery and inference, and
+content-free calibrated ranking/trial-planning primitives are implemented;
+managed-runner mixed execution and automatic work classification remain disabled.
 
 ## Outcome
 
@@ -14,12 +14,14 @@ existing local-only managed runner.
 
 The opt-in `AzureOpenAICandidateBackend` can now discover one exact deployment
 through Azure Resource Manager and invoke that deployment through Azure's unified
-OpenAI v1 endpoint. It is a provider adapter, not a router: the managed runner still
-selects and acquires only local GGUF candidates. Its legacy proposal callback is
-transported through `LocalProposalBackendAdapter` with the same four objects,
-return object, exception identity, progress events, and lease lifecycle. Therefore
-this tranche does **not** claim that mixed-model self-improvement, comparative
-ranking, or prediction calibration is complete.
+OpenAI v1 endpoint. Provider-neutral routing primitives can rank immutable local
+and Azure predictions, deliberately challenge a preferred model, and measure
+pre-call calibration. The adapter and planner remain separate from execution: the
+managed runner still selects and acquires only local GGUF candidates. Its legacy
+proposal callback is transported through `LocalProposalBackendAdapter` with the
+same four objects, return object, exception identity, progress events, and lease
+lifecycle. Therefore this tranche does **not** claim end-to-end mixed-provider
+self-improvement.
 
 ## Candidate identities
 
@@ -128,6 +130,39 @@ request; a returned malformed response also records one received response but no
 accepted response. This makes retries a deliberate outer-policy decision instead
 of invisible SDK behavior.
 
+## Calibrated routing boundary
+
+`general_ludd.self_improve.candidate_routing` now exposes a content-free decision
+boundary. A `CandidatePrediction` binds one immutable candidate digest to a typed
+task category, bounded categorical task kind, evaluator and sampling protocols,
+privacy policy, and evaluation stratum. It records pre-call estimates for
+acceptance probability, latency, input/output tokens, and cost without accepting
+source text, paths, endpoints, deployment names, or credentials.
+
+Each completed call becomes one `CandidateAttempt` with exactly one disposition:
+accepted, deterministically rejected, or infrastructure failure. Both accepted and
+rejected public evaluations are necessary binary labels and may update the exact-
+stratum capability evidence. Private-scope attempts and infrastructure failures
+emit a content-free `SELF_IMPROVE_MODEL_CALIBRATION_SKIPPED` trace and never become
+model-quality evidence. Persisted records carry canonical evidence, prediction,
+and attempt digests; loading rejects malformed, foreign-stratum, or tampered
+records.
+
+Ranking uses a conservative beta-posterior lower bound for acceptance, then cost,
+latency, token estimate, and immutable identity as deterministic tie-breakers.
+`plan_bounded_candidate_trials` authorizes at most 16 explicit calls, labels each
+as preferred, challenge, or ranked, and makes concurrent versus serial execution a
+required boolean. A plan contains no fallback: an infrastructure failure ends that
+candidate attempt. Challengers are least-tested candidates selected within the
+caller-provided bound, so predictions can be falsified rather than becoming a
+self-confirming routing loop.
+
+Calibration is reported prequentially with Brier skill against the causal empirical
+base rate for one exact task stratum. Later evidence cannot rewrite an earlier
+baseline. These facilities are implemented and tested, but automatic task-kind
+classification, live candidate-set assembly, managed-runner execution of the plan,
+and promotion policy based on calibration remain pending.
+
 ## Explicit Azure opt-in and credentials
 
 Azure is denied unless the caller constructs the bounded session with
@@ -162,8 +197,9 @@ authorization.
 ## Discovery and prediction verification
 
 Provider-neutral identities do not by themselves make a model discoverable. The
-live Azure adapter now produces one immutable Azure OpenAI candidate snapshot as
-follows, while broader mixed-provider discovery remains future work:
+live Azure adapter now produces one immutable Azure OpenAI candidate snapshot, and
+the existing local planner resolves immutable GGUF artifacts. Candidate-set
+assembly in the managed runner remains future work:
 
 1. Discover local catalog entries and resolve every Hugging Face revision to a
    commit, as the current planner already does.
@@ -173,12 +209,15 @@ follows, while broader mixed-provider discovery remains future work:
 3. Read deployment name, model version, provisioning state, and ETag from one
    management-plane snapshot; reject partial data or subsequent drift.
 4. Build typed identities before any project source is sent to a provider.
-5. Predict fitness using capability evidence keyed by candidate digest and task
-   shape, not by a friendly model name.
-6. Run bounded canaries through deterministic evaluation and compare measured
-   behavior with the prediction.
-7. Persist success or failure only for the exact candidate, prompt protocol,
-   project privacy policy, and baseline identities.
+5. Construct a pre-call prediction keyed by candidate digest and exact task stratum,
+   not by a friendly model name.
+6. Build an explicit bounded plan containing the preferred candidate and configured
+   least-tested challengers; no candidate is inferred after execution starts.
+7. Run deterministic evaluation and persist both accepted and rejected public
+   labels only for the exact candidate, prompt protocol, project privacy policy,
+   evaluator, sampling protocol, and stratum identities.
+8. Measure prequential Brier skill; censor infrastructure and private-scope outcomes
+   from model-quality learning.
 
 An Azure deployment that is updated in place gets a new ETag or model version and
 therefore a new candidate digest. Its old behavior evidence must not be treated as
@@ -214,9 +253,13 @@ identity changes invalidate Azure evidence without interrupting local work.
 ## Test strategy
 
 Standard local and GitHub Actions tests use deterministic in-process fakes. The
-live-adapter suite adds 120 warning-strict cases and requires no Azure import,
-subscription, network, or secret. Together the tests cover both identity types,
-every identity field, invalid endpoint families,
+live-adapter suite adds 120 warning-strict cases and the routing/calibration suite
+adds 40 cases; neither requires an Azure subscription, network, or secret. The
+canonical integrated self-improvement run passes 6,641 tests with six intentional
+skips and one expected failure at 90% aggregate branch-aware coverage; all 33
+measured files exceed 75%, including the Azure adapter at 95% and every routing
+module at 88% or higher. Together the tests cover both identity types, every
+identity field, invalid endpoint families,
 immutable versions, URL credential injection, opt-in denial before input reaches
 the backend, per-call and aggregate budgets, call consumption on failure,
 identity drift, typed and untyped infrastructure failures, absence of fallback,
@@ -224,7 +267,10 @@ exact local callback compatibility, malformed live configuration, lazy API-key a
 Entra authentication, private-policy denial/drift, ARM discovery failures,
 auth/quota/timeout/transport classification, exact OpenAI request parameters,
 response validation, redacted traces, cumulative token accounting, and SDK resource
-cleanup.
+cleanup. Routing cases additionally cover exact-stratum persistence, tamper
+rejection, accepted and rejected labels, private/infrastructure censoring,
+prequential calibration, deterministic resource tie-breakers, least-tested
+challenges, serial/concurrent plans, and hard trial bounds.
 
 No standard CI job needs an Azure subscription or secret. A later live job must
 be opt-in, protected, serialized, cost capped, and skipped when its explicit

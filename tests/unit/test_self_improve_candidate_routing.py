@@ -193,6 +193,50 @@ def test_attempt_rejects_incoherent_quality_and_infrastructure_states(
         )
 
 
+def test_attempt_rejects_untyped_identity_and_outcome() -> None:
+    values = (
+        {"prediction": cast(Any, "not-a-prediction")},
+        {"outcome": cast(Any, "accepted")},
+    )
+
+    for overrides in values:
+        fields: dict[str, object] = {
+            "prediction": _prediction("typed-attempt"),
+            "outcome": CandidateAttemptOutcome.ACCEPTED,
+            "evaluation_score": 1.0,
+            "blocker_count": 0,
+            "observed_latency_ms": 1,
+            "observed_input_tokens": 0,
+            "observed_output_tokens": 0,
+            "observed_cost_microusd": 0,
+        }
+        fields.update(overrides)
+        with pytest.raises(ValueError):
+            CandidateAttempt(**cast(Any, fields))
+
+
+def test_accepted_attempt_rejects_blockers_and_infrastructure_has_no_label() -> None:
+    with pytest.raises(ValueError, match="blockers"):
+        CandidateAttempt(
+            prediction=_prediction("blocked-acceptance"),
+            outcome=CandidateAttemptOutcome.ACCEPTED,
+            evaluation_score=1.0,
+            blocker_count=1,
+            observed_latency_ms=1,
+            observed_input_tokens=0,
+            observed_output_tokens=0,
+            observed_cost_microusd=0,
+        )
+    infrastructure = _attempt(
+        _prediction("unlabelled-infrastructure"),
+        CandidateAttemptOutcome.INFRASTRUCTURE_FAILURE,
+        failure=BackendFailure.TIMEOUT,
+    )
+
+    with pytest.raises(ValueError, match="acceptance label"):
+        _ = infrastructure.accepted
+
+
 def test_private_and_infrastructure_attempts_emit_censored_traces_but_do_not_learn(
     tmp_path: Any,
 ) -> None:
@@ -344,6 +388,22 @@ def test_ranking_rejects_duplicate_candidates_and_mixed_prediction_strata() -> N
         )
 
 
+def test_ranking_and_planning_reject_untyped_sequences_and_empty_plan() -> None:
+    prediction = _prediction("typed-sequence")
+    with pytest.raises(ValueError, match="predictions"):
+        rank_candidate_predictions(cast(Any, (prediction, "not-a-prediction")), ())
+    with pytest.raises(ValueError, match="attempts"):
+        rank_candidate_predictions((prediction,), cast(Any, ("not-an-attempt",)))
+    with pytest.raises(ValueError, match="at least one"):
+        plan_bounded_candidate_trials(
+            (),
+            (),
+            max_trials=1,
+            challenge_trials=0,
+            concurrent=False,
+        )
+
+
 def test_bounded_plan_explicitly_combines_local_and_azure_with_one_challenge() -> None:
     local = _prediction("local", probability=0.7, cost=100, latency=100)
     azure = _prediction(
@@ -404,6 +464,37 @@ def test_mixed_plan_can_select_an_explicit_azure_challenge_without_fallback() ->
         ModelCandidateProvider.AZURE_FOUNDRY,
     ]
     assert [trial.ordinal for trial in plan.trials] == [0, 1]
+
+
+def test_plan_fills_remaining_slots_in_empirical_rank_order() -> None:
+    predictions = tuple(
+        _prediction(
+            label,
+            probability=probability,
+            cost=cost,
+            latency=latency,
+        )
+        for label, probability, cost, latency in (
+            ("first", 0.9, 300, 300),
+            ("second", 0.7, 200, 200),
+            ("third", 0.5, 100, 100),
+        )
+    )
+
+    plan = plan_bounded_candidate_trials(
+        predictions,
+        (),
+        max_trials=3,
+        challenge_trials=0,
+        concurrent=False,
+    )
+
+    assert [trial.purpose for trial in plan.trials] == [
+        CandidateTrialPurpose.PREFERRED,
+        CandidateTrialPurpose.RANKED,
+        CandidateTrialPurpose.RANKED,
+    ]
+    assert [trial.prediction for trial in plan.trials] == list(predictions)
 
 
 @pytest.mark.parametrize(
