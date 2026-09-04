@@ -15,6 +15,7 @@ import time
 import uuid
 from collections import deque
 from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from types import FrameType
@@ -377,7 +378,8 @@ def stream_command(
             if selector.get_map():
                 ready = selector.select(timeout=0.05)
             else:
-                time.sleep(0.05)
+                with suppress(subprocess.TimeoutExpired):
+                    process.wait(timeout=0.05)
                 ready = []
             for key, _mask in ready:
                 try:
