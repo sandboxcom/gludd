@@ -690,11 +690,14 @@ class TestColumnDefaults:
 
 class TestModelCount:
     def test_model_count_matches_expected(self):
-        expected = 33
+        expected = 34
         actual = len(_all_model_classes())
         assert actual == expected, (
             f"Expected {expected} model classes, found {actual}. Update this test if models were added/removed."
         )
+
+    def test_managed_self_improve_promotion_model_is_discovered(self):
+        assert m.ManagedSelfImprovePromotionModel in _all_model_classes()
 
 
 # ── 13. Versioned model (optimistic concurrency) ────────────────────────────

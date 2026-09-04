@@ -125,6 +125,13 @@ collection, the canonical self-improvement coverage run, and the full gate must
 all pass. Branch coverage remains at least 85 percent aggregate and at least
 75 percent in every measured file.
 
+The exact ORM inventory is also part of this proof. It contains 34 mapped
+classes and explicitly includes `ManagedSelfImprovePromotionModel`, the durable
+fenced receipt used to make promotion idempotent across restarts. That count may
+advance only with a reviewed additive schema and named discovery assertion; a
+rolling deployment creates the table before new workers write receipts, and
+rollback leaves existing receipt rows readable rather than deleting evidence.
+
 ## Gate-driven maintainability tranche
 
 The unchanged repository inventory exposed a second, independent regression:
