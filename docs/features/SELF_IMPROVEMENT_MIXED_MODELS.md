@@ -301,10 +301,10 @@ live-adapter suite adds 120 warning-strict cases, the routing/calibration suite
 adds 40 cases, and the focused execution suite covers local-only, Azure-only,
 mixed serial, and mixed concurrent plans; none requires an Azure subscription,
 network, or secret. The
-canonical integrated self-improvement run passes 6,641 tests with six intentional
-skips and one expected failure at 90% aggregate branch-aware coverage; all 33
+canonical integrated self-improvement run passes 6,660 tests with six intentional
+skips and one expected failure at 91% aggregate branch-aware coverage; all 37
 measured files exceed 75%, including the Azure adapter at 95% and every routing
-module at 88% or higher. Together the tests cover both identity types, every
+or execution module at 88% or higher. Together the tests cover both identity types, every
 identity field, invalid endpoint families,
 immutable versions, URL credential injection, opt-in denial before input reaches
 the backend, per-call and aggregate budgets, call consumption on failure,
@@ -318,10 +318,10 @@ rejection, accepted and rejected labels, private/infrastructure censoring,
 prequential calibration, deterministic resource tie-breakers, least-tested
 challenges, serial/concurrent plans, and hard trial bounds.
 
-The focused execution/routing/backend replay passes 127 tests. Its three measured
-files reach 97.2% aggregate line coverage and 95.4% aggregate branch coverage;
-`candidate_execution.py` reaches 95.7% line and 92.6% branch coverage, with no
-measured file below the 75% per-file floor. It additionally proves complete-set
+The focused execution/routing/backend replay passes 247 warning-strict tests. In
+the canonical branch report, `candidate_execution.py` reaches 97%, its three
+internal execution modules reach 90% to 99%, candidate routing reaches 100%,
+model candidates reach 99%, and the Azure adapter reaches 95%. It additionally proves complete-set
 preflight before the first effect, non-consuming authorization, stable result
 order, bounded concurrency, policy and project drift checks at later boundaries,
 fixed-message error censorship, and calibration-store failure handling.
