@@ -79,6 +79,30 @@ class _FakeBackend:
         return f"proposal:{request}"
 
 
+class _IdentityFailureBackend:
+    def __init__(self, identity: LocalGGUFCandidateIdentity) -> None:
+        self._identity = identity
+        self.fail_identity = False
+        self.calls: list[str] = []
+
+    @property
+    def candidate_identity(self) -> LocalGGUFCandidateIdentity:
+        if self.fail_identity:
+            raise RuntimeError("PRIVATE-IDENTITY-ERROR")
+        return self._identity
+
+    def generate(
+        self,
+        request: str,
+        *,
+        max_output_tokens: int,
+        timeout_seconds: float,
+    ) -> str:
+        del max_output_tokens, timeout_seconds
+        self.calls.append(request)
+        return request
+
+
 def test_candidate_identities_are_frozen_typed_and_secret_free() -> None:
     local = _local_identity()
     azure = _azure_identity()
@@ -444,6 +468,24 @@ def test_backend_identity_drift_fails_closed_before_second_call() -> None:
         )
 
     assert captured.value.failure is BackendPolicyFailure.IDENTITY_DRIFT
+    assert backend.calls == []
+
+
+def test_backend_identity_probe_failure_is_censored_during_authorization() -> None:
+    backend = _IdentityFailureBackend(_local_identity())
+    session = BoundedCandidateSession(backend, _budget(), azure_enabled=False)
+    backend.fail_identity = True
+
+    with pytest.raises(BackendPolicyError) as captured:
+        session.authorize(
+            input_tokens=1,
+            max_output_tokens=1,
+            estimated_cost_microusd=0,
+        )
+
+    assert captured.value.failure is BackendPolicyFailure.IDENTITY_DRIFT
+    assert "PRIVATE-IDENTITY-ERROR" not in repr(captured.value)
+    assert captured.value.__cause__ is None
     assert backend.calls == []
 
 
