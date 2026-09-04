@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from general_ludd.security.state import project_state
-from general_ludd.small_models.download_types import DownloadSource
+from general_ludd.small_models.download_types import DownloadSource as DownloadSource
 
 if TYPE_CHECKING:
     from general_ludd.cloud.model_sources import ModelSource
