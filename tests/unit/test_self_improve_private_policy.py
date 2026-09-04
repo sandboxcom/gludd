@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -238,3 +239,10 @@ def test_unencodable_surrogate_paths_fail_with_policy_error() -> None:
         parse_self_improve_policy(_policy_json(private_paths=[surrogate]))
     with pytest.raises(SelfImprovePolicyError, match="invalid repository path"):
         policy.is_private(surrogate)
+
+
+def test_pathspec_is_a_direct_bounded_runtime_dependency() -> None:
+    pyproject_path = Path(__file__).parents[2] / "pyproject.toml"
+    project = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))["project"]
+
+    assert "pathspec>=1.0.4,<2" in project["dependencies"]
