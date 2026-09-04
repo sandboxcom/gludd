@@ -325,6 +325,10 @@ model candidates reach 99%, and the Azure adapter reaches 95%. It additionally p
 preflight before the first effect, non-consuming authorization, stable result
 order, bounded concurrency, policy and project drift checks at later boundaries,
 fixed-message error censorship, and calibration-store failure handling.
+Two filename-matched internal boundary suites add 11 direct validation, timing,
+trace-censorship, invocation, typed-failure, and evidence-failure contracts; the
+repository-wide coverage-gap audit consequently reports 1,060 covered modules
+and zero untested modules.
 
 No standard CI job needs an Azure subscription or secret. A later live job must
 be opt-in, protected, serialized, cost capped, and skipped when its explicit
