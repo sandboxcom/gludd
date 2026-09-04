@@ -367,7 +367,7 @@
     },
     {
       "path": "scripts/stream_command.py",
-      "line": 56,
+      "line": 57,
       "column": 33,
       "kind": "temp-artifact",
       "owner": "_atomic_write_json",
@@ -378,7 +378,7 @@
     },
     {
       "path": "scripts/stream_command.py",
-      "line": 311,
+      "line": 312,
       "column": 18,
       "kind": "process",
       "owner": "stream_command",
