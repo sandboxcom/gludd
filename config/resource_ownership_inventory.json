@@ -1984,7 +1984,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/harness.py",
-      "line": 704,
+      "line": 707,
       "column": 27,
       "kind": "temp-artifact",
       "owner": "SelfImprovementHarness.write_config_value",

@@ -49,8 +49,8 @@ def _rec_get(rec: Any, key: str, default: Any) -> Any:
     return getattr(rec, key, default)
 
 
-class SelfImprovementHarness:
-    """Discover project gaps and turn policy-approved findings into todos."""
+class _HarnessPolicySupport:
+    """Own repository binding and privacy-policy decisions for the harness."""
 
     # Profile used for the model-driven gap-analysis call against the real
     # ModelGateway.call_model(profile_id, messages) interface. Overridable per
@@ -256,6 +256,9 @@ class SelfImprovementHarness:
             # Adapter / test-fake path.
             response = gw.complete(prompt)
         return str(response.content)
+
+class SelfImprovementHarness(_HarnessPolicySupport):
+    """Discover project gaps and turn policy-approved findings into todos."""
 
     def run_gap_analysis(
         self, recurring_failures: list[Any] | None = None

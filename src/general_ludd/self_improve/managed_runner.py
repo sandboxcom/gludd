@@ -1537,8 +1537,8 @@ def _compact_v4_code_task_shape(
     )
 
 
-class ManagedSelfImproveRunner:
-    """Execute one verified plan through bounded managed model attempts."""
+class _ManagedRunnerPolicySupport:
+    """Own injected runner boundaries and project-privacy enforcement."""
 
     def __init__(
         self,
@@ -1645,6 +1645,9 @@ class ManagedSelfImproveRunner:
                 blocked_hashes=(),
             )
         return policy
+
+class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
+    """Execute one verified plan through bounded managed model attempts."""
 
     def run(self, plan: ApprovedSelfImprovePlan) -> ManagedRunResult:
         """Run approved attempts without ever merging into a live branch."""
