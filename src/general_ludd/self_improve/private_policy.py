@@ -9,14 +9,16 @@ public access, allowing every caller to disable self-improvement fail closed.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
 import stat
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
-from typing import Final
+from typing import Final, Protocol, cast
 
 from pathspec import GitIgnoreSpec
 
@@ -290,3 +292,375 @@ def load_self_improve_policy(repository_root: Path) -> SelfImprovePrivacyPolicy:
     finally:
         os.close(descriptor)
     return parse_self_improve_policy(raw)
+
+
+_DIGEST_RE: Final = re.compile(r"^[0-9a-f]{64}$")
+_UNAVAILABLE_POLICY_DIGEST: Final = hashlib.sha256(
+    b"self-improve-policy-unavailable-v1"
+).hexdigest()
+
+
+def _safe_policy_digest(value: object) -> str:
+    if isinstance(value, str) and _DIGEST_RE.fullmatch(value):
+        return value
+    return _UNAVAILABLE_POLICY_DIGEST
+
+
+@dataclass(frozen=True, slots=True)
+class SelfImprovePolicyDecision:
+    """One source-free policy decision suitable for events and enforcement."""
+
+    policy: SelfImprovePrivacyPolicy | None
+    policy_digest: str
+    allowed_count: int
+    blocked_hashes: tuple[str, ...]
+    reason: str
+
+    @property
+    def allowed(self) -> bool:
+        """Return whether the complete scope is public and stable."""
+        return self.policy is not None and self.reason == "matched"
+
+
+def is_empty_public_policy(policy: SelfImprovePrivacyPolicy) -> bool:
+    """Return whether a policy preserves the historical public behavior."""
+    return (
+        policy.default_access is PolicyAccess.PUBLIC
+        and not policy.private_paths
+        and not policy.public_paths
+    )
+
+
+def _path_sha256(path: str) -> str:
+    return hashlib.sha256(path.encode("utf-8", errors="surrogatepass")).hexdigest()
+
+
+def _path_is_public(
+    repository_root: Path,
+    path: str,
+    policy: SelfImprovePrivacyPolicy,
+) -> bool:
+    if policy.access_for(path) is PolicyAccess.PRIVATE:
+        return False
+    try:
+        canonical_root = repository_root.resolve(strict=True)
+        lexical = canonical_root / path
+        resolved = lexical.resolve(strict=False)
+        if not resolved.is_relative_to(canonical_root) or resolved != lexical:
+            return False
+        relative = resolved.relative_to(canonical_root).as_posix()
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return policy.access_for(relative) is PolicyAccess.PUBLIC
+
+
+def decide_self_improve_policy(
+    policy_root: Path,
+    path_root: Path,
+    paths: tuple[str, ...],
+    *,
+    expected_digest: str | None,
+) -> SelfImprovePolicyDecision:
+    """Load and classify one complete effect scope without exposing raw inputs."""
+    safe_expected = _safe_policy_digest(expected_digest)
+    try:
+        if not policy_root.resolve(strict=True).is_dir():
+            raise OSError
+        policy = load_self_improve_policy(policy_root)
+    except Exception:
+        return SelfImprovePolicyDecision(
+            None, safe_expected, 0, (), "policy_unavailable"
+        )
+    if expected_digest is not None:
+        legacy_public = expected_digest == "" and is_empty_public_policy(policy)
+        digest_matches = bool(
+            _DIGEST_RE.fullmatch(expected_digest)
+            and hmac.compare_digest(expected_digest, policy.digest)
+        )
+        if not legacy_public and not digest_matches:
+            return SelfImprovePolicyDecision(
+                None, safe_expected, 0, (), "policy_drift"
+            )
+    allowed = 0
+    blocked: list[str] = []
+    for path in sorted(set(paths)):
+        try:
+            public = _path_is_public(path_root, path, policy)
+        except Exception:
+            public = False
+        if public:
+            allowed += 1
+        else:
+            blocked.append(_path_sha256(path))
+    if blocked:
+        return SelfImprovePolicyDecision(
+            None, policy.digest, allowed, tuple(blocked), "private_path"
+        )
+    return SelfImprovePolicyDecision(policy, policy.digest, allowed, (), "matched")
+
+
+def emit_self_improve_policy_event(
+    sink: Callable[[str], None],
+    event: str,
+    decision: SelfImprovePolicyDecision,
+) -> None:
+    """Publish only reason codes, counts, digests, and one-way path identities."""
+    sink(
+        f"{event} policy_digest={decision.policy_digest} "
+        f"allowed_count={decision.allowed_count} "
+        f"blocked_count={len(decision.blocked_hashes)} "
+        f"reason={decision.reason} "
+        f"path_hashes={json.dumps(decision.blocked_hashes)}"
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class SelfImproveRuntimePolicyGuard:
+    """Reusable loader and fail-closed effect-boundary policy guard."""
+
+    policy_root: Path
+    expected_digest: str
+    progress_sink: Callable[[str], None] = field(repr=False, compare=False)
+    violation_factory: Callable[[], Exception] = field(repr=False, compare=False)
+
+    @classmethod
+    def load(
+        cls,
+        policy_root: Path,
+        progress_sink: Callable[[str], None],
+        violation_factory: Callable[[], Exception],
+    ) -> SelfImproveRuntimePolicyGuard:
+        """Load the initial policy before any repository observation."""
+        decision = decide_self_improve_policy(
+            policy_root, policy_root, (), expected_digest=None
+        )
+        if not decision.allowed:
+            emit_self_improve_policy_event(
+                progress_sink, "SELF_IMPROVE_POLICY_BLOCKED", decision
+            )
+            raise violation_factory()
+        return cls(
+            policy_root,
+            decision.policy_digest,
+            progress_sink,
+            violation_factory,
+        )
+
+    @classmethod
+    def bound(
+        cls,
+        policy_root: Path,
+        expected_digest: str,
+        progress_sink: Callable[[str], None],
+        violation_factory: Callable[[], Exception],
+    ) -> SelfImproveRuntimePolicyGuard:
+        """Create a guard for an existing approval-bound policy digest."""
+        return cls(
+            policy_root,
+            expected_digest,
+            progress_sink,
+            violation_factory,
+        )
+
+    def decision(
+        self,
+        paths: tuple[str, ...],
+        *,
+        path_root: Path | None = None,
+    ) -> SelfImprovePolicyDecision:
+        """Re-load and classify paths against this guard's approved digest."""
+        return decide_self_improve_policy(
+            self.policy_root,
+            path_root or self.policy_root,
+            paths,
+            expected_digest=self.expected_digest,
+        )
+
+    def require(
+        self,
+        paths: tuple[str, ...],
+        *,
+        path_root: Path | None = None,
+        emit_loaded: bool = False,
+    ) -> SelfImprovePrivacyPolicy:
+        """Require a stable public scope and optionally publish its load event."""
+        decision = self.decision(paths, path_root=path_root)
+        if not decision.allowed:
+            emit_self_improve_policy_event(
+                self.progress_sink,
+                "SELF_IMPROVE_POLICY_BLOCKED",
+                decision,
+            )
+            raise self.violation_factory()
+        if emit_loaded:
+            emit_self_improve_policy_event(
+                self.progress_sink,
+                "SELF_IMPROVE_POLICY_LOADED",
+                decision,
+            )
+        return cast(SelfImprovePrivacyPolicy, decision.policy)
+
+    def require_learning(
+        self,
+        task_text: str,
+        expected_task_digest: str,
+        paths: tuple[str, ...],
+    ) -> None:
+        """Require public learning input and emit a distinct skipped event."""
+        actual_task_digest = hashlib.sha256(
+            task_text.encode("utf-8", errors="surrogatepass")
+        ).hexdigest()
+        if not hmac.compare_digest(actual_task_digest, expected_task_digest):
+            decision = SelfImprovePolicyDecision(
+                None,
+                _safe_policy_digest(self.expected_digest),
+                0,
+                (),
+                "task_drift",
+            )
+        else:
+            decision = self.decision(paths)
+        if decision.allowed:
+            return
+        emit_self_improve_policy_event(
+            self.progress_sink,
+            "SELF_IMPROVE_LEARNING_SKIPPED",
+            decision,
+        )
+        emit_self_improve_policy_event(
+            self.progress_sink,
+            "SELF_IMPROVE_POLICY_BLOCKED",
+            decision,
+        )
+        raise self.violation_factory()
+@dataclass(frozen=True, slots=True)
+class SelfImproveLearningScope:
+    """One-way namespace binding durable learning to a protected project."""
+
+    digest: str
+    isolated: bool
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        project_id: str,
+        repository_identity: str,
+        baseline_sha: str,
+        policy: SelfImprovePrivacyPolicy,
+    ) -> SelfImproveLearningScope:
+        """Derive a scope without persisting a project identifier or path."""
+        payload = {
+            "baseline_sha": baseline_sha,
+            "policy_digest": policy.digest,
+            "project_identity": hashlib.sha256(
+                project_id.encode("utf-8", errors="surrogatepass")
+            ).hexdigest(),
+            "protocol": "self-improve-runtime-learning-scope-v1",
+            "repository_identity": repository_identity,
+        }
+        encoded = json.dumps(
+            payload,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+        return cls(
+            hashlib.sha256(encoded).hexdigest(),
+            not is_empty_public_policy(policy),
+        )
+
+    def bind_attempt(self, attempt_identity_digest: str) -> str:
+        """Bind protected-project outcomes while preserving public compatibility."""
+        if _DIGEST_RE.fullmatch(attempt_identity_digest) is None:
+            raise ValueError("attempt identity must be a lowercase SHA-256 digest")
+        if not self.isolated:
+            return attempt_identity_digest
+        encoded = json.dumps(
+            {
+                "attempt_identity_digest": attempt_identity_digest,
+                "runtime_learning_scope_digest": self.digest,
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+        return hashlib.sha256(encoded).hexdigest()
+
+
+class SelfImproveOutcomeDelegate(Protocol):
+    """Minimal durable learning interface wrapped by project privacy."""
+
+    planner_store: object
+
+    def load_failed_model_ids(
+        self,
+        *,
+        task_text: str,
+        attempt_identity_digest: str,
+    ) -> tuple[str, ...]:
+        """Load failures for one already-scoped attempt identity."""
+        ...
+
+    def record_outcome(
+        self,
+        *,
+        task_text: str,
+        candidate: object,
+        succeeded: bool,
+        attempt_identity_digest: str,
+    ) -> object:
+        """Record one result for one already-scoped attempt identity."""
+        ...
+
+
+class SelfImprovePolicyBoundOutcomeAdapter:
+    """Recheck policy and isolate every protected-project learning operation."""
+
+    def __init__(
+        self,
+        delegate: SelfImproveOutcomeDelegate,
+        scope: SelfImproveLearningScope,
+        guard: Callable[[str], None],
+    ) -> None:
+        """Bind a delegate to one immutable scope and effect guard."""
+        self._delegate = delegate
+        self._scope = scope
+        self._guard = guard
+        self.planner_store = delegate.planner_store
+
+    def load_failed_model_ids(
+        self,
+        *,
+        task_text: str,
+        attempt_identity_digest: str,
+    ) -> tuple[str, ...]:
+        """Load only failures from this exact public project scope."""
+        self._guard(task_text)
+        failures = self._delegate.load_failed_model_ids(
+            task_text=task_text,
+            attempt_identity_digest=self._scope.bind_attempt(
+                attempt_identity_digest
+            ),
+        )
+        self._guard(task_text)
+        return failures
+
+    def record_outcome(
+        self,
+        *,
+        task_text: str,
+        candidate: object,
+        succeeded: bool,
+        attempt_identity_digest: str,
+    ) -> object:
+        """Persist one public outcome under the project-scoped identity."""
+        self._guard(task_text)
+        return self._delegate.record_outcome(
+            task_text=task_text,
+            candidate=candidate,
+            succeeded=succeeded,
+            attempt_identity_digest=self._scope.bind_attempt(
+                attempt_identity_digest
+            ),
+        )
