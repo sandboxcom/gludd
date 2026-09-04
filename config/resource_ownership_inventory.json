@@ -1984,7 +1984,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/harness.py",
-      "line": 430,
+      "line": 704,
       "column": 27,
       "kind": "temp-artifact",
       "owner": "SelfImprovementHarness.write_config_value",
@@ -1995,7 +1995,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/managed_runner.py",
-      "line": 208,
+      "line": 222,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_write_atomic_temp",
@@ -2006,7 +2006,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 376,
+      "line": 383,
       "column": 15,
       "kind": "process",
       "owner": "MakeRunner._run_observable_argv",
@@ -2017,7 +2017,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 470,
+      "line": 477,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_run_local_proposal_request",
