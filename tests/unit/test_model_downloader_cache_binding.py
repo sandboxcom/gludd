@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -265,3 +267,24 @@ def test_configured_cache_never_falls_back_to_or_mutates_ambient_hf_cache(
     assert hub_download.call_args.kwargs["cache_dir"] == str(configured_cache)
     assert ambient_blob.read_bytes() == before
     assert list(configured_cache.iterdir()) == []
+
+
+def test_download_source_identity_survives_implementation_reload() -> None:
+    """Keep public enum members stable when hot code reloads the downloader."""
+    code = (
+        "import importlib\n"
+        "from general_ludd.small_models import download\n"
+        "before = download.DownloadSource\n"
+        "after = importlib.reload(download).DownloadSource\n"
+        "raise SystemExit(0 if before is after else 1)\n"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr

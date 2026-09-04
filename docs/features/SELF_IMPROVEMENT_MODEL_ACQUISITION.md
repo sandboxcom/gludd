@@ -299,3 +299,37 @@ Long-lived practitioner evidence:
   documents cache scans under-reporting data when repositories are corrupted.
   Gludd therefore treats scan warnings or incomplete metadata as a deletion
   blocker rather than assuming unseen files are safe to remove.
+
+## Reload-stable download contracts
+
+`DownloadSource` is a public identity-bearing enum. It is defined in the small,
+side-effect-free `small_models.download_types` contract module and re-exported
+from `small_models.download`, so existing imports remain compatible. Reloading
+the downloader implementation can replace functions and classes without
+creating a second enum class whose visually equal members fail identity checks.
+
+This extraction is additive and requires no daemon restart, stored-data
+migration, cache rewrite, or caller change. Old and new workers serialize the
+same string values. Rollback restores the in-module definition without touching
+model artifacts, manifests, leases, or reservations; operators should first
+drain any process that has performed an in-place code reload so one interpreter
+does not retain both class identities.
+
+The regression matrix runs the environment-sensitive downloader reload before
+all cache-binding checks in one interpreter. It proves the public enum class and
+members retain identity, exact cache hits still skip auth and network I/O, and
+GGUF results still report the correct source. The isolated reload regression
+also runs in a child interpreter so its state cannot contaminate neighboring
+tests. The complete former gate batch passes under warnings-as-errors.
+
+Upstream evidence explains the boundary:
+
+- The [Python `importlib.reload` documentation](https://docs.python.org/3/library/importlib.html#importlib.reload)
+  states that module-level code is re-executed and notes that references held
+  outside the module are not rebound automatically. A public class defined in
+  the reloaded module can therefore diverge from an earlier imported reference.
+- [CPython issue 126548](https://github.com/python/cpython/issues/126548)
+  records practitioner reproductions of reload hazards across Python 3.9
+  through 3.14 and led to an explicit thread-safety warning. Gludd does not add
+  concurrent reloads here; it instead keeps identity-bearing contracts outside
+  the implementation reload boundary.

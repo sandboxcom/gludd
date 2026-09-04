@@ -9,11 +9,11 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from general_ludd.security.state import project_state
+from general_ludd.small_models.download_types import DownloadSource
 
 if TYPE_CHECKING:
     from general_ludd.cloud.model_sources import ModelSource
@@ -29,15 +29,6 @@ DEFAULT_DOWNLOAD_TIMEOUT = float(os.environ.get("GLUDD_HF_DOWNLOAD_TIMEOUT", "30
 _LARGE_DOWNLOAD_GB = 1.0
 _HF_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 _HF_BLOB_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$", re.IGNORECASE)
-
-
-class DownloadSource(StrEnum):
-    """Where a model file was fetched from."""
-
-    HUGGINGFACE = "huggingface"
-    GGUF = "gguf"
-    OLLAMA = "ollama"
-    CACHE = "cache"
 
 
 class ModelCacheIntegrityError(RuntimeError):
