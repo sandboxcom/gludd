@@ -55,6 +55,7 @@ from general_ludd.self_improve.model_candidate_planner import (
     plan_model_candidates,
     record_self_improve_outcome,
 )
+from general_ludd.self_improve.model_candidates import LocalGGUFCandidateIdentity
 from general_ludd.self_improve.model_lifecycle import (
     AcquiredModel,
     ModelAcquisitionError,
@@ -1344,6 +1345,52 @@ class _ProposalGenerator(Protocol):
     ) -> ProposalManifest | GeneratedProposal: ...
 
 
+@dataclass(frozen=True, slots=True)
+class LocalProposalInvocation:
+    """Exact legacy local-generator arguments transported through a backend seam."""
+
+    model_path: Path
+    prompt: PromptPlan | str
+    task: TaskSpec
+    reference: CodexReference
+
+
+class LocalProposalBackendAdapter:
+    """Expose the established local generator as one exact-candidate backend."""
+
+    def __init__(
+        self,
+        identity: LocalGGUFCandidateIdentity,
+        generator: _ProposalGenerator,
+    ) -> None:
+        """Bind one acquired identity without changing the generator callback."""
+        if not isinstance(identity, LocalGGUFCandidateIdentity):
+            raise ValueError("identity must be a LocalGGUFCandidateIdentity")
+        self._identity = identity
+        self._generator = generator
+
+    @property
+    def candidate_identity(self) -> LocalGGUFCandidateIdentity:
+        """Return the exact acquired local artifact identity."""
+        return self._identity
+
+    def generate(
+        self,
+        request: LocalProposalInvocation,
+        *,
+        max_output_tokens: int,
+        timeout_seconds: float,
+    ) -> ProposalManifest | GeneratedProposal:
+        """Forward the legacy four arguments byte-for-byte and preserve failures."""
+        del max_output_tokens, timeout_seconds
+        return self._generator(
+            request.model_path,
+            request.prompt,
+            request.task,
+            request.reference,
+        )
+
+
 @runtime_checkable
 class _SyntaxRepairBuilder(Protocol):
     def __call__(
@@ -1437,6 +1484,28 @@ def _default_artifact_identity(candidate: PlannedModelCandidate) -> ModelArtifac
         repo_id=candidate.config.repo,
         filename=candidate.config.filename,
         revision=candidate.resolved_revision,
+    )
+
+
+def _local_backend_identity(
+    acquired: AcquiredModel,
+    candidate: PlannedModelCandidate | None,
+) -> LocalGGUFCandidateIdentity:
+    """Translate acquired local truth into the provider-neutral identity contract."""
+    if candidate is not None:
+        repo_id: str | None = candidate.config.repo
+        revision: str | None = candidate.resolved_revision
+        filename = candidate.config.filename
+    else:
+        repo_id = getattr(acquired, "repo_id", None)
+        revision = getattr(acquired, "resolved_revision", None) if repo_id else None
+        filename = getattr(acquired, "filename", acquired.path.name)
+    return LocalGGUFCandidateIdentity(
+        model_id=acquired.model_id,
+        repo_id=repo_id,
+        filename=filename,
+        revision=revision,
+        artifact_sha256=acquired.artifact_sha256,
     )
 
 
@@ -1947,11 +2016,19 @@ class ManagedSelfImproveRunner:
                     f"revision={acquired.resolved_revision or 'explicit'} "
                     f"sha256={acquired.artifact_sha256}"
                 )
-                proposal = self.proposal_generator(
-                    acquired.path,
-                    prompt,
-                    plan.task,
-                    plan.reference,
+                backend = LocalProposalBackendAdapter(
+                    _local_backend_identity(acquired, candidate),
+                    self.proposal_generator,
+                )
+                proposal = backend.generate(
+                    LocalProposalInvocation(
+                        acquired.path,
+                        prompt,
+                        plan.task,
+                        plan.reference,
+                    ),
+                    max_output_tokens=plan.required_output_tokens,
+                    timeout_seconds=600.0,
                 )
                 generated = (
                     proposal
@@ -2559,6 +2636,8 @@ __all__ = (
     "ApprovedSelfImprovePlan",
     "AttemptResult",
     "CapabilityEvidenceOutcomeAdapter",
+    "LocalProposalBackendAdapter",
+    "LocalProposalInvocation",
     "ManagedOutcomeAdapter",
     "ManagedRunResult",
     "ManagedSelfImproveRunner",
