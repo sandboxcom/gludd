@@ -1695,10 +1695,11 @@ class _CompactSpanScopeEvidence:
     editable_ranges: tuple[tuple[int, int], ...]
 
 
-class _CompactSpanScopeError(ValueError):
+class CompactSpanScopeError(ValueError):
     """Typed parent rejection that carries only safe coordinate evidence."""
 
     def __init__(self, detail: str, evidence: _CompactSpanScopeEvidence) -> None:
+        """Initialize one bounded rejection with private trusted evidence."""
         super().__init__(
             f"{LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.parent_error_marker} {detail}"
         )
@@ -1714,7 +1715,7 @@ def _bounded_scope_coordinate(value: int) -> str:
 
 def _safe_compact_scope_telemetry(error: BaseException) -> str:
     """Return bounded typed scope evidence, excluding path, source, z, and output."""
-    if not isinstance(error, _CompactSpanScopeError):
+    if not isinstance(error, CompactSpanScopeError):
         return ""
     evidence = error.evidence
     range_limit = min(_COMPACT_MAX_DIAGNOSTIC_RANGES, len(evidence.editable_ranges))
@@ -1805,7 +1806,7 @@ def _parent_span_scope_error(
     editable_ranges: tuple[tuple[int, int], ...],
 ) -> ValueError:
     """Create one typed rejection using only trusted path/range and numeric fields."""
-    return _CompactSpanScopeError(
+    return CompactSpanScopeError(
         detail,
         _CompactSpanScopeEvidence(
             path_sha256=hashlib.sha256(focus_path.encode("utf-8")).hexdigest(),
@@ -3413,6 +3414,7 @@ __all__ = [
     "EVALUATION_DIAGNOSIS_PROTOCOL",
     "CompactLineSpan",
     "CompactSpanProposal",
+    "CompactSpanScopeError",
     "LocalProposalGateway",
     "PlannerFeedbackExchange",
     "bind_compact_focus_path",

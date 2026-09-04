@@ -43,6 +43,23 @@ migration is part of this change. A private helper is not a new extension
 surface. Callers continue to use the facade instead of importing an internal
 stage directly.
 
+### Public compact-span rejection boundary
+
+The gate-driven exception inventory found one compatibility defect introduced
+at the compact-span extraction seam: `_CompactSpanScopeError` carried typed
+parent-validation evidence but its private name prevented external callers from
+catching that specific rejection. The catch point is now the explicitly exported
+`CompactSpanScopeError`. It remains a `ValueError`, so existing broad handlers
+continue to work while new callers can handle the precise rejection without
+parsing text.
+
+Only the exception name is public. Its evidence object remains an internal,
+model-text-free carrier: paths are represented by SHA-256, coordinates and shown
+ranges are bounded, and retry telemetry remains capped at 256 bytes. The parent
+error marker, message, validation order, safe-telemetry rendering, and failure
+behavior are unchanged. This additive export needs no drain or schema migration,
+so rolling old and new processes remains safe under the ZDD contract.
+
 ## Stateful and asynchronous invariants
 
 One owner remains responsible for each resource from acquisition through
