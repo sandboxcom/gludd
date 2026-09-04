@@ -2,6 +2,11 @@
   "version": 1,
   "targets": [
     {
+      "name": "test-self-improve-private-policy",
+      "make_variables": [],
+      "behavior": "make test-self-improve-private-policy"
+    },
+    {
       "name": "test-self-improve-acceptance-matrix",
       "make_variables": [
         "SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE",
