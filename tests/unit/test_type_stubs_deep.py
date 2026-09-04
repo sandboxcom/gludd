@@ -41,6 +41,15 @@ def _ast_parse_safe(path: Path) -> ast.Module:
     return ast.parse(path.read_text(), filename=str(path))
 
 
+def _is_protocol_base(base: ast.expr) -> bool:
+    """Recognize plain, qualified, and parameterized Protocol bases."""
+    if isinstance(base, ast.Subscript):
+        return _is_protocol_base(base.value)
+    if isinstance(base, ast.Name):
+        return base.id == "Protocol"
+    return isinstance(base, ast.Attribute) and base.attr == "Protocol"
+
+
 def _import_safehttpx_stub() -> types.ModuleType | None:
     path = str(TYPINGS / "safehttpx" / "__init__.pyi")
     spec = importlib.util.spec_from_file_location(
@@ -209,16 +218,40 @@ def test_runtime_checkable_protocols_are_importable():
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef):
                 for dec in node.decorator_list:
-                    if isinstance(dec, ast.Name) and dec.id == "runtime_checkable":
-                        for base in node.bases:
-                            if isinstance(base, ast.Name) and base.id == "Protocol":
-                                break
-                        else:
-                            if not any(isinstance(b, ast.Attribute) and b.attr == "Protocol" for b in node.bases):
-                                failures.append(
-                                    f"{path}:{node.lineno} {node.name} has @runtime_checkable but no Protocol base"
-                                )
+                    if (
+                        isinstance(dec, ast.Name)
+                        and dec.id == "runtime_checkable"
+                        and not any(_is_protocol_base(base) for base in node.bases)
+                    ):
+                        failures.append(
+                            f"{path}:{node.lineno} {node.name} has @runtime_checkable but no Protocol base"
+                        )
     assert not failures, f"{len(failures)} @runtime_checkable classes missing Protocol base:\n" + "\n".join(failures)
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    (
+        "class Example(Protocol): ...",
+        "class Example(typing.Protocol): ...",
+        "class Example(Protocol[T]): ...",
+        "class Example(typing.Protocol[T]): ...",
+    ),
+)
+def test_protocol_base_detection_accepts_valid_spellings(declaration: str) -> None:
+    """The structural audit must accept every standard Protocol base spelling."""
+    tree = ast.parse(declaration)
+    node = tree.body[0]
+    assert isinstance(node, ast.ClassDef)
+    assert any(_is_protocol_base(base) for base in node.bases)
+
+
+def test_protocol_base_detection_rejects_non_protocol_base() -> None:
+    """Generic classes without Protocol remain invalid for runtime_checkable."""
+    tree = ast.parse("class Example(Generic[T]): ...")
+    node = tree.body[0]
+    assert isinstance(node, ast.ClassDef)
+    assert not any(_is_protocol_base(base) for base in node.bases)
 
 
 def test_shared_protocols_module_imports():
