@@ -28,6 +28,8 @@ _MAX_CALLS = 16
 _MAX_TOKENS = 100_000_000
 _MAX_COST_MICROUSD = 1_000_000_000_000
 _MAX_TIMEOUT_SECONDS = 3_600.0
+_MAX_FILENAME_BYTES = 2_048
+_MUTABLE_MODEL_VERSION_ALIASES = frozenset({"default", "latest", "preview", "stable"})
 
 
 class ModelCandidateProvider(StrEnum):
@@ -75,12 +77,21 @@ class LocalGGUFCandidateIdentity:
         _strict_label(self.model_id, "model_id")
         if not isinstance(self.filename, str) or self.filename != self.filename.strip():
             raise ValueError("filename must be one canonical GGUF path")
+        try:
+            filename_bytes = len(self.filename.encode("utf-8"))
+        except UnicodeEncodeError as exc:
+            raise ValueError("filename must be one canonical GGUF path") from exc
         filename = PurePosixPath(self.filename)
         if (
             not self.filename
+            or filename_bytes > _MAX_FILENAME_BYTES
             or "\\" in self.filename
+            or "//" in self.filename
+            or self.filename.startswith("./")
+            or any(ord(character) < 0x20 or ord(character) == 0x7F for character in self.filename)
             or filename.is_absolute()
             or any(part in {"", ".", ".."} for part in filename.parts)
+            or filename.as_posix() != self.filename
             or filename.suffix.lower() != ".gguf"
         ):
             raise ValueError("filename must be one confined GGUF path")
@@ -163,7 +174,9 @@ class AzureFoundryCandidateIdentity:
         )
         if not valid_api_version:
             raise ValueError("api_version does not match the selected Azure API family")
-        _strict_label(self.model_version, "model_version")
+        model_version = _strict_label(self.model_version, "model_version")
+        if model_version.casefold() in _MUTABLE_MODEL_VERSION_ALIASES:
+            raise ValueError("model_version must identify one immutable deployment")
         if (
             not isinstance(self.etag, str)
             or not self.etag
