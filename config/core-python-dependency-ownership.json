@@ -540,6 +540,18 @@
       ],
       "runtime_evidence": []
     },
+    "pathspec": {
+      "collection_import_paths": [],
+      "collection_requirement_paths": [],
+      "core_import_paths": [
+        "src/general_ludd/self_improve/private_policy.py"
+      ],
+      "disposition": "retain-core",
+      "import_roots": [
+        "pathspec"
+      ],
+      "runtime_evidence": []
+    },
     "pqcrypto": {
       "collection_import_paths": [],
       "collection_requirement_paths": [],
