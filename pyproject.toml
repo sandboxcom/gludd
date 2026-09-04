@@ -118,6 +118,7 @@ gcp = [
 ]
 azure = [
     "azure-identity>=1.16.0",
+    "azure-mgmt-cognitiveservices>=14.1.0,<15",
     "azure-mgmt-costmanagement==5.0.0b1",
     "azure-mgmt-compute>=31.0.0",
     "azure-mgmt-authorization>=4.0.0",
@@ -148,6 +149,7 @@ e2e-all = [
     "yt-dlp>=2025.1.15",
     "langchain-openai>=0.3.0",
     "azure-identity>=1.16.0",
+    "azure-mgmt-cognitiveservices>=14.1.0,<15",
     "azure-mgmt-costmanagement==5.0.0b1",
     "azure-mgmt-compute>=31.0.0",
     "azure-mgmt-authorization>=4.0.0",
@@ -309,6 +311,7 @@ known_first_party = ["ansible_collections"]
 "annotated-types" = "annotated_types"
 "azure-identity" = "azure"
 "azure-mgmt-authorization" = "azure"
+"azure-mgmt-cognitiveservices" = "azure"
 "azure-mgmt-compute" = "azure"
 "azure-mgmt-costmanagement" = "azure"
 "azure-mgmt-resource" = "azure"

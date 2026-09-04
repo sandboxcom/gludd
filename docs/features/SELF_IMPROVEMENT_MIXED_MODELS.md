@@ -1,7 +1,8 @@
 # Mixed-model self-improvement candidate boundary
 
-Status: provider-neutral identity and backend boundary implemented; live Azure
-construction and model discovery intentionally remain disabled.
+Status: provider-neutral identity plus the first live Azure OpenAI discovery and
+inference adapter are implemented; managed-runner mixed routing and empirical
+prediction calibration remain disabled.
 
 ## Outcome
 
@@ -11,11 +12,14 @@ execution policy, and provider credentials stay separate. This separation is the
 prerequisite for testing local and Azure candidates without silently changing the
 existing local-only managed runner.
 
-This tranche does **not** claim that Azure-backed self-improvement is enabled.
-There is no Azure SDK client construction and no live cloud request. The managed
-runner still selects and acquires only local GGUF candidates. Its legacy proposal
-callback is transported through `LocalProposalBackendAdapter` with the same four
-objects, return object, exception identity, progress events, and lease lifecycle.
+The opt-in `AzureOpenAICandidateBackend` can now discover one exact deployment
+through Azure Resource Manager and invoke that deployment through Azure's unified
+OpenAI v1 endpoint. It is a provider adapter, not a router: the managed runner still
+selects and acquires only local GGUF candidates. Its legacy proposal callback is
+transported through `LocalProposalBackendAdapter` with the same four objects,
+return object, exception identity, progress events, and lease lifecycle. Therefore
+this tranche does **not** claim that mixed-model self-improvement, comparative
+ranking, or prediction calibration is complete.
 
 ## Candidate identities
 
@@ -39,8 +43,9 @@ Azure has two non-interchangeable API families:
   `https://<resource>.services.ai.azure.com/models` endpoint and an explicit
   dated API version.
 - `azure_openai` requires a canonical
-  `https://<resource>.openai.azure.com` root and the `v1` API marker. A later
-  concrete backend will append the documented `/openai/v1/` route.
+  `https://<resource>.openai.azure.com` root and the `v1` API marker. The live
+  adapter appends the documented `/openai/v1/` route and never accepts a complete
+  target URL, query string, or deployment route as its configured root.
 
 The Azure identity rejects HTTP, credentials embedded in URLs, ports, query
 strings, fragments, wrong Azure DNS families, mismatched paths, mutable version
@@ -86,6 +91,39 @@ rate limited, timeout, transport, unavailable, invalid response, and internal.
 Concrete providers must translate SDK exceptions at their boundary and may not
 copy SDK text into the typed exception.
 
+## Live Azure OpenAI adapter
+
+`general_ludd.self_improve.azure_backend` implements one synchronous live path:
+
+1. Require an explicit `azure_enabled=True` config before constructing any Azure
+   credential or client.
+2. Use `CognitiveServicesManagementClient.deployments.get` with retries disabled,
+   bounded connection/read timeouts, and SDK logging disabled.
+3. Require the requested deployment name, `Succeeded` provisioning state,
+   immutable model version, and server-provided ETag; absent, partial, mutable, or
+   malformed snapshots fail as `invalid_response`.
+4. Re-read the deployment before every inference and reject version/ETag drift
+   before resolving the inference secret or revealing a prompt.
+5. Accept only `AzureApprovedPrompt`, which is created and revalidated through
+   `SelfImproveRuntimePolicyGuard`; a raw string or a private/drifted path scope
+   cannot reach the SDK.
+6. Lazily construct the maintained `openai.OpenAI` client with `max_retries=0`,
+   then call `responses.create` exactly once with the deployment name,
+   `store=False`, the approved output ceiling, and the bounded call timeout.
+
+The adapter has no local-backend field, retry callback, alternate deployment, or
+fallback branch. Azure/SDK exceptions are reduced to the existing typed categories
+without copying response bodies or exception strings. Its trace objects contain
+only phase, candidate digest, call ordinal, typed failure, and accepted token
+counts. Prompt and response text are excluded from representations and traces.
+
+The cumulative accounting snapshot separately records provider requests started,
+responses received, responses accepted, failed requests, and exact provider-
+reported input/output/total tokens. A provider exception consumes one started
+request; a returned malformed response also records one received response but no
+accepted response. This makes retries a deliberate outer-policy decision instead
+of invisible SDK behavior.
+
 ## Explicit Azure opt-in and credentials
 
 Azure is denied unless the caller constructs the bounded session with
@@ -93,33 +131,43 @@ Azure is denied unless the caller constructs the bounded session with
 Azure identity alone is not opt-in. There is no local-to-Azure or Azure-to-local
 fallback after a rejection or provider failure.
 
-A future live backend needs these values from an approved secret store or
-environment indirection:
+The live backend needs these explicit values from configuration plus an approved
+secret store or environment indirection:
 
-- either `AZURE_INFERENCE_CREDENTIAL` for key authentication or a supported
-  `TokenCredential`/managed identity;
+- an Entra credential available to the Azure management SDK for deployment
+  discovery;
+- either an `AZURE_INFERENCE_CREDENTIAL` environment pointer for key-based
+  inference or the same supported `TokenCredential`/managed identity;
 - the canonical endpoint for the selected API family;
 - the exact deployment name, not the underlying catalog model name;
 - the API family and API version marker;
-- the deployed model version; and
-- the current management-plane deployment ETag.
+- subscription ID, resource group, and account name for the exact management-plane
+  lookup; and
+- the deployed model version and current management-plane deployment ETag returned
+  by that lookup.
 
 The credential value must be resolved only inside the backend immediately before
 client construction. It must never be copied into a candidate, plan, prompt,
 event, exception, capability record, retry message, or test artifact. Credential
 references and identity metadata must be revalidated at every effect boundary.
+For Entra inference, the adapter uses the documented
+`https://ai.azure.com/.default` token scope. An API key alone is insufficient for
+this discovery-backed path because the ARM lookup still requires Entra
+authorization.
 
 ## Discovery and prediction verification
 
-Provider-neutral identities do not by themselves make a model discoverable. A
-future discovery layer should produce immutable candidate snapshots as follows:
+Provider-neutral identities do not by themselves make a model discoverable. The
+live Azure adapter now produces one immutable Azure OpenAI candidate snapshot as
+follows, while broader mixed-provider discovery remains future work:
 
 1. Discover local catalog entries and resolve every Hugging Face revision to a
    commit, as the current planner already does.
-2. When Azure has been explicitly enabled, list only deployments from the
-   approved Foundry resource and API family.
-3. Read deployment name, model version, and ETag from one management-plane
-   snapshot; reject partial or paginated drift.
+2. When Azure has been explicitly enabled, get only the explicitly configured
+   deployment from the approved Cognitive Services account; it does not enumerate
+   or guess deployments.
+3. Read deployment name, model version, provisioning state, and ETag from one
+   management-plane snapshot; reject partial data or subsequent drift.
 4. Build typed identities before any project source is sent to a provider.
 5. Predict fitness using capability evidence keyed by candidate digest and task
    shape, not by a friendly model name.
@@ -139,8 +187,9 @@ The integration sequence preserves the current local service throughout:
 
 1. **Identity-only:** ship the frozen types, fake backends, and local adapter. No
    live configuration is read and no network path exists.
-2. **Shadow discovery:** emit only counts and candidate digests. Do not send
-   prompts and do not affect local selection.
+2. **Single-candidate live adapter:** discover an explicitly configured Azure
+   deployment and expose an opt-in, policy-gated backend without wiring it into
+   local selection.
 3. **Fake mixed execution:** exercise local and Azure-shaped deterministic fakes
    in standard CI with the same budget, no-fallback, and failure-censoring
    assertions.
@@ -160,12 +209,18 @@ identity changes invalidate Azure evidence without interrupting local work.
 
 ## Test strategy
 
-Standard local and GitHub Actions tests use deterministic in-process fakes. They
-cover both identity types, every identity field, invalid endpoint families,
+Standard local and GitHub Actions tests use deterministic in-process fakes. The
+live-adapter suite adds 111 warning-strict cases and requires no Azure import,
+subscription, network, or secret. Together the tests cover both identity types,
+every identity field, invalid endpoint families,
 immutable versions, URL credential injection, opt-in denial before input reaches
 the backend, per-call and aggregate budgets, call consumption on failure,
 identity drift, typed and untyped infrastructure failures, absence of fallback,
-and exact local callback compatibility.
+exact local callback compatibility, malformed live configuration, lazy API-key and
+Entra authentication, private-policy denial/drift, ARM discovery failures,
+auth/quota/timeout/transport classification, exact OpenAI request parameters,
+response validation, redacted traces, cumulative token accounting, and SDK resource
+cleanup.
 
 No standard CI job needs an Azure subscription or secret. A later live job must
 be opt-in, protected, serialized, cost capped, and skipped when its explicit
@@ -205,3 +260,35 @@ Research checked on 2026-09-04:
 The forum reports are operational anecdotes rather than normative API contracts.
 They support the strictness decision; Microsoft documentation defines the actual
 endpoint and credential requirements.
+
+### S83.150 live-adapter research
+
+Research checked on 2026-09-04 before the adapter was implemented:
+
+- Microsoft's current
+  [Foundry SDK and endpoint overview](https://learn.microsoft.com/en-us/azure/foundry/how-to/develop/sdk-overview)
+  identifies `azure-ai-projects` 2.x as the stable project SDK and the standard
+  `openai` client as the lowest-latency, maximum-compatibility inference path. The
+  [classic-to-current migration guide](https://learn.microsoft.com/en-us/azure/foundry/how-to/navigate-from-classic)
+  says `azure-ai-inference` retired on 2026-08-26 and maps model inference to
+  `OpenAI()` with `base_url`. This ruled out adding the retired inference package.
+- The official
+  [Azure OpenAI endpoint reference](https://learn.microsoft.com/en-us/azure/ai-studio/ai-services/concepts/endpoints)
+  documents `/openai/v1/`, deployment name in the `model` field, implicit API
+  versioning, `store=False`-compatible Responses calls, API-key authentication,
+  and Entra token providers. The official
+  [Cognitive Services management SDK](https://learn.microsoft.com/en-us/python/api/overview/azure/mgmt-cognitiveservices-readme?view=azure-python)
+  and [Deployment model reference](https://learn.microsoft.com/en-us/python/api/azure-mgmt-cognitiveservices/azure.mgmt.cognitiveservices.models.deployment?view=azure-python)
+  expose the ARM client and server-populated ETag; `DeploymentModel.version`
+  supplies the immutable model version. These maintained clients are preferred to
+  custom HTTP because they own Azure authentication, token refresh, service API
+  shape, and deployment-model decoding while Gludd keeps retry, privacy, identity,
+  and accounting policy explicit.
+- Exactly one long-lived user report was used for live-path operational evidence:
+  [Azure SDK for Python issue #42361](https://github.com/Azure/azure-sdk-for-python/issues/42361),
+  opened 2025-08-05 and still inactive without a product resolution at research
+  time, describes high-rate evaluation producing connection-labelled failures and
+  repeated 60-second quota retries. It is anecdotal rather than normative. The
+  design implication is to disable SDK retries, classify 429 separately from
+  transport failures, count each started request once, and leave any retry to the
+  already bounded outer session.
