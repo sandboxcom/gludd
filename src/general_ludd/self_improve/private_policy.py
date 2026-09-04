@@ -46,15 +46,15 @@ class SelfImprovePolicyError(ValueError):
     """Raised when policy data or a candidate path is unsafe or ambiguous."""
 
 
-class _DuplicateObjectKeyError(ValueError):
-    """Internal signal used by the strict JSON object decoder."""
+class DuplicateObjectKeyError(ValueError):
+    """Signal that strict JSON decoding found a duplicate object key."""
 
 
 def _strict_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
-            raise _DuplicateObjectKeyError
+            raise DuplicateObjectKeyError
         result[key] = value
     return result
 
@@ -193,7 +193,7 @@ def parse_self_improve_policy(raw: str | bytes) -> SelfImprovePrivacyPolicy:
 
     try:
         payload = json.loads(text, object_pairs_hook=_strict_object)
-    except _DuplicateObjectKeyError as exc:
+    except DuplicateObjectKeyError as exc:
         raise SelfImprovePolicyError("policy contains a duplicate object key") from exc
     except (json.JSONDecodeError, RecursionError) as exc:
         raise SelfImprovePolicyError("policy must be valid JSON") from exc
