@@ -1,0 +1,207 @@
+# Mixed-model self-improvement candidate boundary
+
+Status: provider-neutral identity and backend boundary implemented; live Azure
+construction and model discovery intentionally remain disabled.
+
+## Outcome
+
+Gludd can represent an acquired local GGUF and a deployed Azure Foundry model as
+different typed candidates under one backend protocol. Candidate identity,
+execution policy, and provider credentials stay separate. This separation is the
+prerequisite for testing local and Azure candidates without silently changing the
+existing local-only managed runner.
+
+This tranche does **not** claim that Azure-backed self-improvement is enabled.
+There is no Azure SDK client construction and no live cloud request. The managed
+runner still selects and acquires only local GGUF candidates. Its legacy proposal
+callback is transported through `LocalProposalBackendAdapter` with the same four
+objects, return object, exception identity, progress events, and lease lifecycle.
+
+## Candidate identities
+
+Both candidate types are frozen values with a canonical SHA-256
+`identity_digest`. The digest uses sorted, compact JSON with a versioned protocol
+tag. It is safe to put the digest in events; raw routing fields are not event
+fields.
+
+| Provider | Fields bound into identity | Fields deliberately excluded |
+| --- | --- | --- |
+| Local GGUF | model ID, repository, immutable commit, confined GGUF filename, acquired artifact SHA-256 | cache path, lease path, Hugging Face token |
+| Azure Foundry | canonical endpoint, API family, deployment name, API version, deployed model version, deployment ETag | API key, bearer token, tenant credential, subscription credential |
+
+A repository and commit are optional only for an operator-supplied local file;
+the acquired artifact digest remains mandatory. Repository-managed GGUFs require
+both fields together and require a 40-character commit SHA.
+
+Azure has two non-interchangeable API families:
+
+- `azure_ai_model_inference` requires a canonical
+  `https://<resource>.services.ai.azure.com/models` endpoint and an explicit
+  dated API version.
+- `azure_openai` requires a canonical
+  `https://<resource>.openai.azure.com` root and the `v1` API marker. A later
+  concrete backend will append the documented `/openai/v1/` route.
+
+The Azure identity rejects HTTP, credentials embedded in URLs, ports, query
+strings, fragments, wrong Azure DNS families, mismatched paths, mutable version
+aliases, control characters, and incomplete deployment evidence. In particular,
+an API key can never be supplied as an identity field.
+
+Changing any routing or deployment field changes the digest. A backend whose
+identity changes after session construction is rejected before it sees another
+request. This prevents evidence learned for one deployment revision from being
+attributed to a replacement behind the same friendly deployment name.
+
+## Backend and budget contract
+
+`CandidateBackend[Request, Response]` exposes exactly one candidate identity and
+one `generate` operation. A backend implementation must call only that candidate;
+it is not a router. `BoundedCandidateSession` snapshots the identity and binds one
+backend for its entire lifetime, so it has no automatic fallback surface.
+
+Before every call, the session reserves the worst-case amount rather than relying
+on provider-reported usage after the fact:
+
+- one of at most 16 explicitly approved calls;
+- per-call input and output token ceilings;
+- a total input-plus-requested-output token ceiling;
+- a total estimated cost ceiling in micro-US-dollars; and
+- one positive timeout no greater than one hour.
+
+Calls rejected for identity drift, missing Azure opt-in, or budget exhaustion do
+not reach the backend and do not consume budget. Once a provider call starts, its
+reserved tokens, cost, and call count remain consumed even if infrastructure
+fails. That conservative accounting prevents retry storms from escaping an
+approval.
+
+The session never catches `BaseException`, so cancellation and process shutdown
+retain their normal control flow. A typed `BackendInfrastructureError` preserves
+only its enumerated category. Any other backend exception is translated to
+`internal` with exception chaining suppressed. Endpoints, SDK response bodies,
+credentials, and exception messages therefore cannot escape through the shared
+error contract.
+
+Current infrastructure categories are authentication, authorization, not found,
+rate limited, timeout, transport, unavailable, invalid response, and internal.
+Concrete providers must translate SDK exceptions at their boundary and may not
+copy SDK text into the typed exception.
+
+## Explicit Azure opt-in and credentials
+
+Azure is denied unless the caller constructs the bounded session with
+`azure_enabled=True`. Supplying credentials alone is not opt-in. Selecting an
+Azure identity alone is not opt-in. There is no local-to-Azure or Azure-to-local
+fallback after a rejection or provider failure.
+
+A future live backend needs these values from an approved secret store or
+environment indirection:
+
+- either `AZURE_INFERENCE_CREDENTIAL` for key authentication or a supported
+  `TokenCredential`/managed identity;
+- the canonical endpoint for the selected API family;
+- the exact deployment name, not the underlying catalog model name;
+- the API family and API version marker;
+- the deployed model version; and
+- the current management-plane deployment ETag.
+
+The credential value must be resolved only inside the backend immediately before
+client construction. It must never be copied into a candidate, plan, prompt,
+event, exception, capability record, retry message, or test artifact. Credential
+references and identity metadata must be revalidated at every effect boundary.
+
+## Discovery and prediction verification
+
+Provider-neutral identities do not by themselves make a model discoverable. A
+future discovery layer should produce immutable candidate snapshots as follows:
+
+1. Discover local catalog entries and resolve every Hugging Face revision to a
+   commit, as the current planner already does.
+2. When Azure has been explicitly enabled, list only deployments from the
+   approved Foundry resource and API family.
+3. Read deployment name, model version, and ETag from one management-plane
+   snapshot; reject partial or paginated drift.
+4. Build typed identities before any project source is sent to a provider.
+5. Predict fitness using capability evidence keyed by candidate digest and task
+   shape, not by a friendly model name.
+6. Run bounded canaries through deterministic evaluation and compare measured
+   behavior with the prediction.
+7. Persist success or failure only for the exact candidate, prompt protocol,
+   project privacy policy, and baseline identities.
+
+An Azure deployment that is updated in place gets a new ETag or model version and
+therefore a new candidate digest. Its old behavior evidence must not be treated as
+proof for the new deployment. Infrastructure failures are censored operational
+signals, not negative model-quality evidence.
+
+## Zero-downtime rollout
+
+The integration sequence preserves the current local service throughout:
+
+1. **Identity-only:** ship the frozen types, fake backends, and local adapter. No
+   live configuration is read and no network path exists.
+2. **Shadow discovery:** emit only counts and candidate digests. Do not send
+   prompts and do not affect local selection.
+3. **Fake mixed execution:** exercise local and Azure-shaped deterministic fakes
+   in standard CI with the same budget, no-fallback, and failure-censoring
+   assertions.
+4. **Live canary:** require a protected environment, explicit opt-in, least
+   privilege, cost ceiling, and one non-production deployment. Keep the local
+   production path active.
+5. **Shadow comparison:** run an approved small task against both providers,
+   evaluate independently, and record digest-bound prediction accuracy. Do not
+   promote automatically.
+6. **Bounded selection:** allow Azure into a specific approved candidate plan only
+   after canaries and rollback tests pass. A provider failure ends that attempt;
+   it never causes an implicit cross-provider call.
+
+Rollback is configuration-only until phase six: disable Azure opt-in and the
+existing local runner continues through the compatibility adapter. Deployment
+identity changes invalidate Azure evidence without interrupting local work.
+
+## Test strategy
+
+Standard local and GitHub Actions tests use deterministic in-process fakes. They
+cover both identity types, every identity field, invalid endpoint families,
+immutable versions, URL credential injection, opt-in denial before input reaches
+the backend, per-call and aggregate budgets, call consumption on failure,
+identity drift, typed and untyped infrastructure failures, absence of fallback,
+and exact local callback compatibility.
+
+No standard CI job needs an Azure subscription or secret. A later live job must
+be opt-in, protected, serialized, cost capped, and skipped when its explicit
+credential pointers are absent. It must use a disposable non-production
+deployment and always emit visible cleanup progress.
+
+## Field evidence and design implications
+
+Research checked on 2026-09-04:
+
+- [Azure SDK for Python issue #39835](https://github.com/Azure/azure-sdk-for-python/issues/39835)
+  was opened on 2025-02-23 after code copied from the Foundry **Consume** tab
+  returned a 404 from `ChatCompletionsClient.complete`. The issue was closed with
+  its title changed to identify the missing `/models` path in code samples.
+  Design implication: API family and canonical endpoint shape are identity data,
+  not interchangeable configuration decoration.
+- The official
+  [Foundry Models classic quickstart](https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/how-to/quickstart-ai-project?view=foundry-classic)
+  shows the model-inference endpoint with `/models` and key authentication through
+  `AZURE_INFERENCE_CREDENTIAL`. Design implication: the credential is runtime
+  authorization, while `/models` belongs to validated routing identity.
+- The official
+  [Foundry endpoint reference](https://learn.microsoft.com/en-us/azure/ai-studio/ai-services/concepts/endpoints)
+  distinguishes Azure OpenAI from model-inference endpoints, requires the
+  deployment name in requests, and documents implicit versioning for
+  `/openai/v1/`. Design implication: an explicit API-family enum prevents an SDK
+  or route migration from silently reinterpreting one stored endpoint.
+- A long-lived Microsoft Q&A thread,
+  ["Open AI error: Resource not found"](https://learn.microsoft.com/en-us/answers/questions/1187169/open-ai-error-invalidrequesterror-resource-not-fou),
+  records 404s caused by a trailing slash, copied whitespace, and API-version
+  mismatch beginning in 2023. Another community report,
+  ["Batch API calls ... OperationNotSupported"](https://learn.microsoft.com/en-us/answers/questions/2108663/batch-api-calls-in-azure-openai-yield-operationnot),
+  describes a misleading failure after using the portal's complete target URI as
+  the SDK base endpoint. Design implication: fail on noncanonical values instead
+  of trimming or guessing, because silent repair can target a different route.
+
+The forum reports are operational anecdotes rather than normative API contracts.
+They support the strictness decision; Microsoft documentation defines the actual
+endpoint and credential requirements.
