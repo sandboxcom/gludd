@@ -1,11 +1,25 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.models import Base
 from general_ludd.db.repository import BenchmarkRepository, ModelPerformanceRepository
+
+
+def test_db_repository_has_no_self_improve_business_import() -> None:
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "general_ludd"
+        / "db"
+        / "repository.py"
+    ).read_text(encoding="utf-8")
+
+    assert "general_ludd.self_improve" not in source
 
 
 def test_benchmark_repository_equivalence():

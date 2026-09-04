@@ -39,6 +39,7 @@ from general_ludd.db.models import (
     VariableNamespaceModel,
     VariableValueModel,
 )
+from general_ludd.schemas import self_improve_artifact as artifact_contract
 from general_ludd.schemas.todo import TodoStatus
 
 # Hard upper bound applied to unbounded ``list_*`` reads (P12). Callers that
@@ -517,12 +518,6 @@ class TodoRepository:
         """
         from sqlalchemy import update
 
-        from general_ludd.self_improve.staging import (
-            ManagedSelfImproveArtifactKind,
-            classify_self_improve_artifact,
-            self_improve_artifact_digest,
-        )
-
         bounded_limit = min(max(limit, 0), _DEFAULT_LIST_LIMIT)
         if bounded_limit == 0:
             return []
@@ -532,7 +527,8 @@ class TodoRepository:
             .where(
                 TodoModel.status == TodoStatus.QUEUED.value,
                 TodoModel.work_type == "self_improve",
-                TodoModel.approval_policy != "managed_self_improve_plan",
+                TodoModel.approval_policy
+                != artifact_contract.MANAGED_SELF_IMPROVE_APPROVAL_POLICY,
             )
             .order_by(TodoModel.id)
             .limit(bounded_limit)
@@ -544,8 +540,8 @@ class TodoRepository:
         result = await self._session.execute(stmt)
         candidates = list(result.scalars().all())
         legacy_kinds = {
-            ManagedSelfImproveArtifactKind.LEGACY_CONFIG,
-            ManagedSelfImproveArtifactKind.LEGACY_NON_CONFIG,
+            artifact_contract.LegacySelfImproveArtifactKind.CONFIG,
+            artifact_contract.LegacySelfImproveArtifactKind.NON_CONFIG,
         }
         now = datetime.now(UTC)
         recovered: list[TodoModel] = []
@@ -554,16 +550,17 @@ class TodoRepository:
             "approved executable schema"
         )
         for todo in candidates:
-            artifact_kind = classify_self_improve_artifact(
-                todo.plan_artifact,
-                todo.approval_policy,
+            artifact_kind = artifact_contract.classify_legacy_self_improve_artifact(
+                todo.plan_artifact
             )
             next_status = TodoStatus.MANUAL_HOLD
             digest: str | None = None
             reason = quarantine_reason
             if artifact_kind in legacy_kinds:
                 try:
-                    digest = self_improve_artifact_digest(todo.plan_artifact)
+                    digest = artifact_contract.self_improve_artifact_digest(
+                        todo.plan_artifact
+                    )
                 except ValueError:
                     pass
                 else:

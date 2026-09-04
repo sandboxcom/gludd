@@ -482,7 +482,7 @@ async def test_legacy_queue_recovery_quarantines_digest_failure() -> None:
     repo = TodoRepository(cast(AsyncSession, session), project_id="project-1")
 
     with patch(
-        "general_ludd.self_improve.staging.self_improve_artifact_digest",
+        "general_ludd.schemas.self_improve_artifact.self_improve_artifact_digest",
         side_effect=ValueError("digest unavailable"),
     ):
         recovered = await repo.recover_queued_legacy_self_improve(limit=1)

@@ -45,6 +45,23 @@ code while the candidate runs warnings-strict tests, branch coverage, lint,
 and strict typing. Rollback is a normal commit revert because no schema,
 serialized artifact, daemon lifecycle, or external state changes.
 
+## Persisted Artifact Layer Ownership
+
+The database repository depends only on the side-effect-free core artifact
+schema. It does not import the self-improvement staging workflow, even from a
+function-local scope. The core schema owns the managed approval-policy value,
+the exact legacy artifact discriminator, and bounded SHA-256 binding. Staging
+re-exports the established digest API and maps core legacy kinds into its
+workflow-facing enum, preserving callers and stored values during a ZDD
+rollout.
+
+This boundary makes operations observable rather than merely importable. A
+module-graph contract rejects every database-to-business-layer edge, while
+focused recovery tests prove the same legacy rows receive the same fail-closed
+classification. No event payload, database row, or migration changes, so
+rollback is a normal commit revert. Classification parses at most one bounded
+approval artifact and starts no process, worker, network request, or model.
+
 ## Practitioner Evidence
 
 - The long-running [Python typing protocol design thread #11](https://github.com/python/typing/issues/11)
@@ -60,6 +77,16 @@ serialized artifact, daemon lifecycle, or external state changes.
   documents the property-evaluation debate that led to static attribute lookup
   in newer Python versions. It reinforces the method-only boundary and the
   rule that runtime checks establish presence, not semantic validity.
+- The open [CPython import-audit issue #116840](https://github.com/python/cpython/issues/116840)
+  reports that repeated imports already present in `sys.modules` do not emit
+  the documented audit event. A function-local import can therefore appear
+  harmless in one process while hiding a real architecture edge from an
+  event-only observer. Gludd enforces the dependency direction from source and
+  tests in addition to runtime traces.
+- The [Python programming FAQ](https://docs.python.org/3/faq/programming.html#what-are-the-best-practices-for-using-import-in-a-module)
+  recommends restructuring modules so recursive imports are unnecessary.
+  Moving the shared artifact contract down into the core schema follows that
+  advice instead of retaining a local import as a permanent workaround.
 
 The normative behavior and version notes come from the
 [Python `typing.runtime_checkable` documentation](https://docs.python.org/3/library/typing.html#typing.runtime_checkable).

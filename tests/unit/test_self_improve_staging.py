@@ -16,6 +16,12 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from general_ludd.projects.repository_binding import ProjectRepositoryBinding
+from general_ludd.schemas.self_improve_artifact import (
+    MANAGED_SELF_IMPROVE_APPROVAL_POLICY as SCHEMA_APPROVAL_POLICY,
+)
+from general_ludd.schemas.self_improve_artifact import (
+    self_improve_artifact_digest as schema_artifact_digest,
+)
 from general_ludd.schemas.todo import Todo, TodoStatus
 from general_ludd.self_improve.approval import (
     ApprovalError,
@@ -29,6 +35,7 @@ from general_ludd.self_improve.staging import (
     ManagedSelfImprovePlanRequest,
     build_managed_plan_request_payload,
     classify_self_improve_artifact,
+    self_improve_artifact_digest,
     validate_bound_managed_plan,
 )
 
@@ -251,6 +258,12 @@ def test_plan_request_defaults_are_explicit_and_stable() -> None:
     assert request.work_type == "code"
     assert request.task.objective == "Repair the bounded gap"
     assert request.task.canonical_make_commands == ("make gate",)
+
+
+def test_staging_reexports_core_artifact_contract() -> None:
+    raw = _request().to_json()
+    assert MANAGED_SELF_IMPROVE_APPROVAL_POLICY == SCHEMA_APPROVAL_POLICY
+    assert self_improve_artifact_digest(raw) == schema_artifact_digest(raw)
 
 
 def test_artifact_classifier_explicitly_separates_managed_and_legacy_types(
