@@ -2,11 +2,30 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
-from typing import Any, cast
+import stat
+from pathlib import Path
+from typing import Any, TypedDict, cast
+
+from general_ludd.self_improve.private_policy import (
+    PolicyAccess,
+    SelfImprovePolicyError,
+    SelfImprovePrivacyPolicy,
+    load_self_improve_policy,
+)
 
 logger = logging.getLogger(__name__)
+
+
+class SelfImprovePolicyDecision(TypedDict):
+    """Persistable privacy evidence that cannot disclose repository paths."""
+
+    policy_digest: str | None
+    allowed_count: int
+    blocked_count: int
+    path_hashes: tuple[str, ...]
 
 
 def _strip_json_fences(text: str) -> str:
@@ -21,18 +40,30 @@ def _strip_json_fences(text: str) -> str:
 
 
 def _rec_get(rec: Any, key: str, default: Any) -> Any:
-    """Read *key* from a recurring-failure record that may be a dict OR an
-    object (e.g. a ``ChronicBlocker`` dataclass returned by BlockerDetector)."""
+    """Read *key* from a recurring-failure mapping or object.
+
+    Objects include ``ChronicBlocker`` instances returned by BlockerDetector.
+    """
     if isinstance(rec, dict):
         return rec.get(key, default)
     return getattr(rec, key, default)
 
 
 class SelfImprovementHarness:
+    """Discover project gaps and turn policy-approved findings into todos."""
+
     # Profile used for the model-driven gap-analysis call against the real
     # ModelGateway.call_model(profile_id, messages) interface. Overridable per
     # instance so an operator can point gap-analysis at a cheaper/analysis model.
     DEFAULT_MODEL_PROFILE: str = "default"
+    MAX_GAP_SOURCE_BYTES: int = 262_144
+    _PATH_FIELDS: tuple[str, ...] = ("file", "path", "source_file")
+    _PATH_LIST_FIELDS: tuple[str, ...] = (
+        "files",
+        "paths",
+        "affected_files",
+        "affected_paths",
+    )
 
     def __init__(
         self,
@@ -42,6 +73,7 @@ class SelfImprovementHarness:
         project_id: str | None = None,
         project_base_dir: str | None = None,
     ) -> None:
+        """Bind the harness to one repository and optional model gateway."""
         if repo_root is not None:
             self.repo_root = repo_root
         elif project_id is not None:
@@ -54,6 +86,146 @@ class SelfImprovementHarness:
         self._todos: list[dict[str, Any]] = []
         self._model_gateway = model_gateway
         self._model_profile_id = model_profile_id or self.DEFAULT_MODEL_PROFILE
+        self._decision_digest: str | None = None
+        self._decision_allowed_count = 0
+        self._decision_blocked_count = 0
+        self._decision_path_hashes: set[str] = set()
+
+    @property
+    def last_policy_decision(self) -> SelfImprovePolicyDecision:
+        """Return redacted evidence for the most recent privacy decision.
+
+        Repository paths and policy errors are deliberately excluded.  A caller
+        may persist this mapping because it contains only a canonical policy
+        digest, counters, and one-way path hashes.
+        """
+        return {
+            "policy_digest": self._decision_digest,
+            "allowed_count": self._decision_allowed_count,
+            "blocked_count": self._decision_blocked_count,
+            "path_hashes": tuple(sorted(self._decision_path_hashes)),
+        }
+
+    def _reset_policy_decision(self, digest: str | None) -> None:
+        self._decision_digest = digest
+        self._decision_allowed_count = 0
+        self._decision_blocked_count = 0
+        self._decision_path_hashes.clear()
+
+    def _record_path_decision(self, path: str | None, *, allowed: bool) -> None:
+        if allowed:
+            self._decision_allowed_count += 1
+            return
+        self._decision_blocked_count += 1
+        if path is not None:
+            self._decision_path_hashes.add(
+                hashlib.sha256(path.encode("utf-8")).hexdigest()
+            )
+
+    def _load_policy(self, *, reset: bool) -> SelfImprovePrivacyPolicy | None:
+        try:
+            policy = load_self_improve_policy(Path(self.repo_root))
+        except Exception:
+            if reset:
+                self._reset_policy_decision(None)
+            else:
+                self._decision_digest = None
+            self._record_path_decision(None, allowed=False)
+            logger.warning("project privacy policy is invalid; self-improvement disabled")
+            return None
+        if reset:
+            self._reset_policy_decision(policy.digest)
+        return policy
+
+    def _repository_path(self, value: object) -> str | None:
+        if isinstance(value, os.PathLike):
+            value = os.fspath(value)
+        if not isinstance(value, str) or not value:
+            return None
+        if os.path.isabs(value):
+            root = os.path.abspath(self.repo_root)
+            candidate = os.path.abspath(value)
+            try:
+                if os.path.commonpath((root, candidate)) != root:
+                    return None
+            except ValueError:
+                return None
+            value = os.path.relpath(candidate, root)
+        return Path(value).as_posix()
+
+    def _path_is_public(
+        self,
+        value: object,
+        policy: SelfImprovePrivacyPolicy,
+    ) -> bool:
+        path = self._repository_path(value)
+        if path is None:
+            self._record_path_decision(None, allowed=False)
+            return False
+        try:
+            allowed = policy.access_for(path) is PolicyAccess.PUBLIC
+        except SelfImprovePolicyError:
+            self._record_path_decision(None, allowed=False)
+            return False
+        self._record_path_decision(path, allowed=allowed)
+        return allowed
+
+    def _record_paths(self, record: Any) -> tuple[object, ...]:
+        paths: list[object] = []
+        missing = object()
+        for field_name in self._PATH_FIELDS:
+            value = _rec_get(record, field_name, missing)
+            if value is not missing and value not in (None, ""):
+                paths.append(value)
+        for field_name in self._PATH_LIST_FIELDS:
+            values = _rec_get(record, field_name, missing)
+            if values is missing or values in (None, ""):
+                continue
+            if isinstance(values, (list, tuple, set, frozenset)):
+                paths.extend(values)
+            else:
+                paths.append(values)
+        return tuple(paths)
+
+    def _records_are_public(
+        self,
+        records: list[Any] | None,
+        policy: SelfImprovePrivacyPolicy,
+    ) -> bool:
+        if not records:
+            return True
+        try:
+            return all(
+                self._path_is_public(path, policy)
+                for record in records
+                for path in self._record_paths(record)
+            )
+        except Exception:
+            self._record_path_decision(None, allowed=False)
+            return False
+
+    def _filter_public_records(
+        self,
+        records: list[dict[str, Any]],
+        policy: SelfImprovePrivacyPolicy,
+    ) -> list[dict[str, Any]]:
+        public: list[dict[str, Any]] = []
+        for record in records:
+            paths = self._record_paths(record)
+            if not paths or all(self._path_is_public(path, policy) for path in paths):
+                public.append(record)
+        return public
+
+    def _policy_is_stable(self, original: SelfImprovePrivacyPolicy) -> bool:
+        current = self._load_policy(reset=False)
+        if current is None:
+            return False
+        if current.digest == original.digest:
+            return True
+        self._decision_digest = current.digest
+        self._record_path_decision(None, allowed=False)
+        logger.warning("project privacy policy changed; self-improvement disabled")
+        return False
 
     _GAP_PROMPT: str = (
         "Analyze this codebase for gaps and return a JSON array of findings.\n"
@@ -100,12 +272,29 @@ class SelfImprovementHarness:
              records are injected (dict or ``ChronicBlocker`` object) so the
              harness stays decoupled from the DB and unit-testable.
         """
+        policy = self._load_policy(reset=True)
+        if policy is None or not self._records_are_public(recurring_failures, policy):
+            return []
+
         findings: list[dict[str, Any]] = []
         used_model = False
         if self._model_gateway is not None:
             try:
                 import json
-                content = self._invoke_gateway(self._GAP_PROMPT)
+
+                public_source = self._read_all_src(policy)
+                if self._decision_blocked_count and not public_source:
+                    return []
+                if not self._policy_is_stable(policy):
+                    return []
+                prompt = self._GAP_PROMPT
+                if public_source:
+                    prompt = (
+                        f"{prompt}\n\nPolicy-approved project source follows. "
+                        "Analyze only this snapshot:\n"
+                        f"{public_source}"
+                    )
+                content = self._invoke_gateway(prompt)
                 parsed = json.loads(_strip_json_fences(content))
                 if isinstance(parsed, list):
                     # Return raw model findings unchanged (callers/tests rely on
@@ -114,28 +303,29 @@ class SelfImprovementHarness:
                     # Filter to dict items only: a JSON list may contain non-object
                     # elements (str/int/None) that would crash the downstream
                     # generate_fix_todos/_normalize_finding .get() calls.
-                    findings = [f for f in parsed if isinstance(f, dict)]
+                    findings = self._filter_public_records(
+                        [f for f in parsed if isinstance(f, dict)], policy
+                    )
                     used_model = True
                 else:
                     logger.warning(
                         "model gateway returned non-list JSON; falling back to static analysis"
                     )
-            except Exception as exc:
+            except Exception:
                 logger.warning(
-                    "model gateway gap-analysis failed (%s); falling back to static analysis",
-                    exc,
+                    "model gateway gap-analysis failed; falling back to static analysis"
                 )
 
         if not used_model:
             # Static fallback (or when model_gateway is None)
-            self._check_missing_tests(findings)
+            self._check_missing_tests(findings, policy)
             self._check_completion_audit(findings)
-            self._check_coverage_gaps(findings)
+            self._check_coverage_gaps(findings, policy)
 
         # Real-execution signal — folded in for BOTH branches.
         self._check_recurring_failures(findings, recurring_failures)
 
-        return findings
+        return self._filter_public_records(findings, policy)
 
     def _check_recurring_failures(
         self, findings: list[dict[str, Any]], records: list[Any] | None
@@ -216,9 +406,17 @@ class SelfImprovementHarness:
             for marker in ("pyproject.toml", "setup.cfg", "setup.py")
         )
 
-    def _check_missing_tests(self, findings: list[dict[str, Any]]) -> None:
+    def _check_missing_tests(
+        self,
+        findings: list[dict[str, Any]],
+        policy: SelfImprovePrivacyPolicy | None = None,
+    ) -> None:
         if not self._looks_like_python_project():
             return
+        if policy is None:
+            policy = self._load_policy(reset=True)
+            if policy is None:
+                return
         src_dir = os.path.join(self.repo_root, "src", "general_ludd")
         tests_dir = os.path.join(self.repo_root, "tests")
         if not os.path.isdir(src_dir) or not os.path.isdir(tests_dir):
@@ -233,11 +431,14 @@ class SelfImprovementHarness:
         for root, _dirs, files in os.walk(src_dir):
             for f in files:
                 if f.endswith(".py") and f != "__init__.py":
+                    source_path = os.path.join(root, f)
+                    if not self._path_is_public(source_path, policy):
+                        continue
                     test_name = f"test_{f}"
                     if test_name not in test_files:
                         findings.append({
                             "type": "missing_tests",
-                            "file": os.path.join(root, f),
+                            "file": source_path,
                             "severity": "high",
                             "message": f"{os.path.relpath(os.path.join(root, f), self.repo_root)} has no test file",
                         })
@@ -248,11 +449,21 @@ class SelfImprovementHarness:
         # dynamic dispatch). Re-enable with a proper AST-based caller graph.
         pass
 
-    def _check_coverage_gaps(self, findings: list[dict[str, Any]]) -> None:
+    def _check_coverage_gaps(
+        self,
+        findings: list[dict[str, Any]],
+        policy: SelfImprovePrivacyPolicy | None = None,
+    ) -> None:
         if not self._looks_like_python_project():
             return
+        if policy is None:
+            policy = self._load_policy(reset=True)
+            if policy is None:
+                return
         coverage_xml = os.path.join(self.repo_root, "coverage.xml")
         if not os.path.isfile(coverage_xml):
+            return
+        if not self._path_is_public(coverage_xml, policy):
             return
 
         try:
@@ -263,7 +474,11 @@ class SelfImprovementHarness:
                 for cls in pkg.findall("classes/class"):
                     filename = cls.get("filename", "")
                     rate = float(cls.get("line-rate", "1.0"))
-                    if rate < 0.85 and filename:
+                    if (
+                        rate < 0.85
+                        and filename
+                        and self._path_is_public(filename, policy)
+                    ):
                         findings.append({
                             "type": "low_coverage",
                             "file": filename,
@@ -274,22 +489,75 @@ class SelfImprovementHarness:
         except Exception:
             pass
 
-    def _read_all_src(self) -> str:
+    def _read_all_src(
+        self,
+        policy: SelfImprovePrivacyPolicy | None = None,
+    ) -> str:
+        if policy is None:
+            policy = self._load_policy(reset=True)
+            if policy is None:
+                return ""
         src_dir = os.path.join(self.repo_root, "src")
-        all_text: list[str] = []
-        for root, _dirs, files in os.walk(src_dir):
-            for f in files:
+        source_bytes = bytearray()
+        for root, dirs, files in os.walk(src_dir):
+            safe_directories: list[str] = []
+            for directory in sorted(dirs):
+                directory_path = os.path.join(root, directory)
+                if os.path.islink(directory_path):
+                    relative = self._repository_path(directory_path)
+                    self._record_path_decision(relative, allowed=False)
+                else:
+                    safe_directories.append(directory)
+            dirs[:] = safe_directories
+            for f in sorted(files):
                 if f.endswith(".py"):
+                    source_path = os.path.join(root, f)
+                    if os.path.islink(source_path):
+                        relative = self._repository_path(source_path)
+                        self._record_path_decision(relative, allowed=False)
+                        continue
+                    if not self._path_is_public(source_path, policy):
+                        continue
                     try:
-                        with open(os.path.join(root, f)) as fh:
-                            all_text.append(fh.read())
+                        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                        descriptor = os.open(source_path, flags)
+                        try:
+                            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                                raise OSError
+                            with os.fdopen(
+                                descriptor,
+                                "r",
+                                encoding="utf-8",
+                                closefd=False,
+                            ) as fh:
+                                text = fh.read(self.MAX_GAP_SOURCE_BYTES + 1)
+                        finally:
+                            os.close(descriptor)
                     except (OSError, UnicodeDecodeError):
-                        pass
-        return "\n".join(all_text)
+                        relative = self._repository_path(source_path)
+                        self._record_path_decision(relative, allowed=False)
+                        continue
+                    relative = self._repository_path(source_path)
+                    header = f"## {relative}\n".encode()
+                    remaining = self.MAX_GAP_SOURCE_BYTES - len(source_bytes)
+                    if remaining <= len(header):
+                        return source_bytes.decode("utf-8", errors="ignore")
+                    source_bytes.extend(header)
+                    remaining = self.MAX_GAP_SOURCE_BYTES - len(source_bytes)
+                    encoded = text.encode("utf-8")
+                    source_bytes.extend(encoded[:remaining])
+                    if len(encoded) >= remaining:
+                        return source_bytes.decode("utf-8", errors="ignore")
+                    source_bytes.extend(b"\n")
+        return source_bytes.decode("utf-8", errors="strict")
 
     def generate_fix_todos(self, findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Convert policy-approved gap findings into actionable todo mappings."""
+        policy = self._load_policy(reset=True)
+        if policy is None:
+            return []
         todos: list[dict[str, Any]] = []
-        for raw in findings:
+        for raw in self._filter_public_records(findings, policy):
             finding = self._normalize_finding(raw)
             ftype = finding.get("type", "")
             title = self._build_title(finding)
@@ -337,10 +605,16 @@ class SelfImprovementHarness:
         return f"Fix: {finding.get('message', 'unknown gap')}"
 
     def enqueue_todos(self, todos: list[dict[str, Any]]) -> int:
-        self._todos.extend(todos)
-        return len(todos)
+        """Retain policy-approved todos and return the accepted count."""
+        policy = self._load_policy(reset=True)
+        if policy is None:
+            return 0
+        public_todos = self._filter_public_records(todos, policy)
+        self._todos.extend(public_todos)
+        return len(public_todos)
 
     def run_full_cycle(self, daemon_url: str = "http://localhost:8000") -> dict[str, Any]:
+        """Run discovery, todo generation, and the in-memory enqueue boundary."""
         findings = self.run_gap_analysis()
         todos = self.generate_fix_todos(findings)
         enqueued = self.enqueue_todos(todos)

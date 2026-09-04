@@ -62,6 +62,11 @@ from general_ludd.self_improve.model_lifecycle import (
     ModelArtifactIdentity,
     ModelLeaseManager,
 )
+from general_ludd.self_improve.private_policy import (
+    PolicyAccess,
+    SelfImprovePrivacyPolicy,
+    load_self_improve_policy,
+)
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
 _MAX_TASK_BYTES: Final = 262_144
@@ -93,6 +98,14 @@ class ModelPlanError(RuntimeError):
             raise ValueError("unsupported typed model plan failure")
         super().__init__("managed model candidate plan failed: model_plan_exhausted")
         self.failure = failure
+
+
+class SelfImprovePolicyViolation(ValueError):
+    """Secret-safe rejection raised when project privacy cannot be proven."""
+
+    def __init__(self) -> None:
+        """Use one fixed message so paths, source, and parser errors never escape."""
+        super().__init__("self-improvement blocked by project privacy policy")
 
 
 def _is_safe_make_command(command: str) -> bool:
@@ -606,7 +619,7 @@ def _attempt_identity_digest(prompt: PromptPlan | str) -> str:
         proposal_protocol=proposal_protocol,
     )
     if proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
-        return _stable_digest(
+        proposal_identity = _stable_digest(
             {
                 "local_proposal_attempt_identity_digest": proposal_identity,
                 "local_proposal_contract_transport": (
@@ -634,12 +647,15 @@ class PlanBoundProposal:
 
     proposal: ProposalManifest
     attempt_identity_digest: str
+    policy_digest: str = ""
 
     def __post_init__(self) -> None:
         """Reject unvalidated manifests and non-canonical plan identities."""
         if not isinstance(self.proposal, ProposalManifest):
             raise ValueError("plan-bound proposal must contain a proposal manifest")
         _validate_digest("attempt identity", self.attempt_identity_digest)
+        if self.policy_digest:
+            _validate_digest("policy_digest", self.policy_digest)
 
 
 @dataclass(frozen=True, slots=True)
@@ -732,6 +748,7 @@ class ApprovedSelfImprovePlan:
     max_attempts: int
     approved: bool
     repository_binding_digest: str = ""
+    policy_digest: str = ""
     attempt_identity_digest: str = ""
     approved_plan_digest: str = ""
     explicit_model_path: Path | None = None
@@ -770,6 +787,8 @@ class ApprovedSelfImprovePlan:
             raise ValueError(
                 "plan requires a legacy repository root or repository binding digest"
             )
+        if self.policy_digest:
+            _validate_digest("policy_digest", self.policy_digest)
         if self.explicit_model_path is not None:
             if not isinstance(self.explicit_model_path, Path):
                 raise ValueError("explicit_model_path must be a pathlib.Path")
@@ -805,7 +824,11 @@ class ApprovedSelfImprovePlan:
         if not isinstance(self.approved, bool):
             raise ValueError("approved must be a boolean")
         if not self.attempt_identity_digest:
-            object.__setattr__(self, "attempt_identity_digest", _attempt_identity_digest(self.prompt))
+            object.__setattr__(
+                self,
+                "attempt_identity_digest",
+                _attempt_identity_digest(self.prompt),
+            )
         else:
             _validate_digest("attempt_identity_digest", self.attempt_identity_digest)
         if not self.approved_plan_digest and self.approved:
@@ -831,7 +854,11 @@ class ApprovedSelfImprovePlan:
         mechanical_proposal: ProposalManifest | None = None,
     ) -> ApprovedSelfImprovePlan:
         """Create one approval-bound artifact at the human release boundary."""
-        return cls(
+        try:
+            policy = load_self_improve_policy(repo_root)
+        except Exception:
+            raise SelfImprovePolicyViolation from None
+        plan = cls(
             approval_id=approval_id,
             todo_id=todo_id,
             project_id=project_id,
@@ -843,18 +870,13 @@ class ApprovedSelfImprovePlan:
             max_attempts=max_attempts,
             approved=True,
             repository_binding_digest=repository_binding_digest,
+            policy_digest=policy.digest,
             explicit_model_path=explicit_model_path,
             mechanical_proposal=mechanical_proposal,
-            _schema_version=(
-                _PLAN_SCHEMA_VERSION
-                if repository_binding_digest
-                or (
-                    isinstance(prompt, PromptPlan)
-                    and prompt.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4
-                )
-                else _LEGACY_PLAN_SCHEMA_VERSION
-            ),
+            _schema_version=_PLAN_SCHEMA_VERSION,
         )
+        _validate_policy_scope(plan, policy)
+        return plan
 
     def bind_execution_repository(
         self,
@@ -879,6 +901,13 @@ class ApprovedSelfImprovePlan:
             raise ValueError("execution repository is unavailable")
         bound = replace(self, repo_root=canonical_root)
         bound.verify_approval()
+        try:
+            policy = load_self_improve_policy(canonical_root)
+        except Exception:
+            raise SelfImprovePolicyViolation from None
+        if not _policy_matches_plan(bound, policy):
+            raise SelfImprovePolicyViolation
+        _validate_policy_scope(bound, policy)
         return bound
 
     @property
@@ -926,7 +955,11 @@ class ApprovedSelfImprovePlan:
         mapping = _exact_mapping(
             value,
             required=_approved_plan_required_fields(value, schema_version),
-            optional=set(),
+            optional=(
+                {"policy_digest"}
+                if schema_version == _PLAN_SCHEMA_VERSION
+                else set()
+            ),
             label="approved plan",
         )
         if mapping["approved"] is not True:
@@ -985,6 +1018,7 @@ class ApprovedSelfImprovePlan:
                     "repository_binding_digest",
                 )
             ),
+            policy_digest=cast(str, mapping.get("policy_digest", "")),
             attempt_identity_digest=_required_string(mapping, "attempt_identity_digest"),
             approved_plan_digest=_required_string(mapping, "approved_plan_digest"),
             explicit_model_path=explicit_path,
@@ -1018,6 +1052,8 @@ class ApprovedSelfImprovePlan:
             "task": self.task._json_value(),
             "todo_id": self.todo_id,
         }
+        if self.policy_digest:
+            identity["policy_digest"] = self.policy_digest
         if self._schema_version == _LEGACY_BOUND_PLAN_SCHEMA_VERSION or (
             self._schema_version == _PLAN_SCHEMA_VERSION
             and self.repository_binding_digest
@@ -1032,6 +1068,108 @@ class ApprovedSelfImprovePlan:
             identity["repo_root"] = str(self.repo_root)
             identity["schema_version"] = self._schema_version
         return identity
+
+
+def _is_empty_public_policy(policy: SelfImprovePrivacyPolicy) -> bool:
+    """Return whether a policy is the canonical backward-compatible default."""
+    return (
+        policy.default_access is PolicyAccess.PUBLIC
+        and not policy.private_paths
+        and not policy.public_paths
+    )
+
+
+def _policy_matches_plan(
+    plan: ApprovedSelfImprovePlan,
+    policy: SelfImprovePrivacyPolicy,
+) -> bool:
+    """Match current policy identity, restricting legacy plans to empty-public."""
+    if plan.policy_digest:
+        return hmac.compare_digest(plan.policy_digest, policy.digest)
+    return _is_empty_public_policy(policy)
+
+
+def _scope_paths(
+    plan: ApprovedSelfImprovePlan,
+    proposal: ProposalManifest | None = None,
+) -> tuple[str, ...]:
+    """Collect every declared observation, edit, and test path without contents."""
+    paths: list[str] = [*plan.reference.changed_files, *plan.reference.test_files]
+    if isinstance(plan.prompt, PromptPlan):
+        paths.extend(path for shard in plan.prompt.shards for path in shard.focus_paths)
+        paths.extend(path for path, _content in plan.prompt.baseline_files)
+    for manifest in (plan.mechanical_proposal, proposal):
+        if manifest is None:
+            continue
+        paths.extend(edit.path for edit in manifest.edits)
+        paths.extend(manifest.tests)
+    return tuple(sorted(set(paths)))
+
+
+def _path_sha256(path: str) -> str:
+    """Return a one-way audit identity without exposing a repository path."""
+    return hashlib.sha256(path.encode("utf-8", errors="surrogatepass")).hexdigest()
+
+
+def _path_is_policy_public(
+    repo_root: Path,
+    path: str,
+    policy: SelfImprovePrivacyPolicy,
+) -> bool:
+    """Reject private, escaping, invalid, and symlink-substituted repository paths."""
+    if policy.access_for(path) is PolicyAccess.PRIVATE:
+        return False
+    try:
+        canonical_root = repo_root.resolve(strict=True)
+    except FileNotFoundError:
+        return True
+    try:
+        lexical = canonical_root / path
+        resolved = lexical.resolve(strict=False)
+        if not resolved.is_relative_to(canonical_root) or resolved != lexical:
+            return False
+        resolved_path = resolved.relative_to(canonical_root).as_posix()
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return policy.access_for(resolved_path) is PolicyAccess.PUBLIC
+
+
+def _policy_scope_decision(
+    plan: ApprovedSelfImprovePlan,
+    policy: SelfImprovePrivacyPolicy,
+    proposal: ProposalManifest | None = None,
+) -> tuple[int, tuple[str, ...]]:
+    """Return allowed count and hashed blocked paths for a complete scope."""
+    if plan.repo_root is None:
+        return 0, ()
+    if isinstance(plan.prompt, str) and not _is_empty_public_policy(policy):
+        return 0, ()
+    allowed = 0
+    blocked: list[str] = []
+    for path in _scope_paths(plan, proposal):
+        try:
+            public = _path_is_policy_public(plan.repo_root, path, policy)
+        except Exception:
+            public = False
+        if public:
+            allowed += 1
+        else:
+            blocked.append(_path_sha256(path))
+    return allowed, tuple(sorted(blocked))
+
+
+def _validate_policy_scope(
+    plan: ApprovedSelfImprovePlan,
+    policy: SelfImprovePrivacyPolicy,
+    proposal: ProposalManifest | None = None,
+) -> int:
+    """Validate all declared paths and return the secret-safe allowed count."""
+    allowed, blocked_hashes = _policy_scope_decision(plan, policy, proposal)
+    if plan.repo_root is None or blocked_hashes or (
+        isinstance(plan.prompt, str) and not _is_empty_public_policy(policy)
+    ):
+        raise SelfImprovePolicyViolation
+    return allowed
 
 
 class ManagedOutcomeAdapter(Protocol):
@@ -1369,11 +1507,82 @@ class ManagedSelfImproveRunner:
         self.validation_retry_builder = validation_retry_builder
         self.syntax_repair_builder = syntax_repair_builder
 
+    def _emit_policy_decision(
+        self,
+        event: str,
+        *,
+        policy_digest: str,
+        allowed_count: int,
+        blocked_hashes: tuple[str, ...],
+    ) -> None:
+        """Emit bounded policy evidence containing no repository text."""
+        self.progress_sink(
+            f"{event} policy_digest={policy_digest} "
+            f"allowed_count={allowed_count} blocked_count={len(blocked_hashes)} "
+            f"path_hashes={json.dumps(blocked_hashes)}"
+        )
+
+    def _execution_policy(
+        self,
+        plan: ApprovedSelfImprovePlan,
+        proposal: ProposalManifest | None = None,
+        *,
+        emit_loaded: bool = False,
+    ) -> SelfImprovePrivacyPolicy:
+        """Re-load and enforce the approval-bound policy at an effect boundary."""
+        expected_digest = plan.policy_digest or "legacy-empty-public"
+        if plan.repo_root is None or not plan.repo_root.is_dir():
+            self._emit_policy_decision(
+                "SELF_IMPROVE_POLICY_BLOCKED",
+                policy_digest=expected_digest,
+                allowed_count=0,
+                blocked_hashes=(),
+            )
+            raise SelfImprovePolicyViolation
+        try:
+            policy = load_self_improve_policy(plan.repo_root)
+        except Exception:
+            self._emit_policy_decision(
+                "SELF_IMPROVE_POLICY_BLOCKED",
+                policy_digest=expected_digest,
+                allowed_count=0,
+                blocked_hashes=(),
+            )
+            raise SelfImprovePolicyViolation from None
+        if not _policy_matches_plan(plan, policy):
+            self._emit_policy_decision(
+                "SELF_IMPROVE_POLICY_BLOCKED",
+                policy_digest=expected_digest,
+                allowed_count=0,
+                blocked_hashes=(),
+            )
+            raise SelfImprovePolicyViolation
+        allowed, blocked_hashes = _policy_scope_decision(plan, policy, proposal)
+        if blocked_hashes or (
+            isinstance(plan.prompt, str) and not _is_empty_public_policy(policy)
+        ):
+            self._emit_policy_decision(
+                "SELF_IMPROVE_POLICY_BLOCKED",
+                policy_digest=policy.digest,
+                allowed_count=allowed,
+                blocked_hashes=blocked_hashes,
+            )
+            raise SelfImprovePolicyViolation
+        if emit_loaded:
+            self._emit_policy_decision(
+                "SELF_IMPROVE_POLICY_LOADED",
+                policy_digest=policy.digest,
+                allowed_count=allowed,
+                blocked_hashes=(),
+            )
+        return policy
+
     def run(self, plan: ApprovedSelfImprovePlan) -> ManagedRunResult:
         """Run approved attempts without ever merging into a live branch."""
         if not isinstance(plan, ApprovedSelfImprovePlan):
             raise ValueError("plan must be an ApprovedSelfImprovePlan")
         plan.verify_approval()
+        self._execution_policy(plan)
         state = _ManagedRunState(prompt=plan.prompt)
         with ExitStack() as stack:
             for attempt in range(1, plan.max_attempts + 1):
@@ -1416,6 +1625,7 @@ class ManagedSelfImproveRunner:
         attempt: int,
     ) -> _ManagedAttemptContext:
         """Resolve the prompt and model ownership for one attempt."""
+        self._execution_policy(plan)
         repair = state.pending_repair
         state.pending_repair = None
         repairing = repair is not None
@@ -1526,9 +1736,15 @@ class ManagedSelfImproveRunner:
         attempt: int,
     ) -> tuple[AttemptResult, str, PromptPlan | None]:
         """Evaluate one generated proposal and derive an optional syntax repair."""
+        policy = self._execution_policy(
+            plan,
+            generated.proposal,
+            emit_loaded=True,
+        )
         bound = PlanBoundProposal(
             proposal=generated.proposal,
             attempt_identity_digest=plan.attempt_identity_digest,
+            policy_digest=policy.digest,
         )
         try:
             final = self.attempt_evaluator(
@@ -1544,6 +1760,7 @@ class ManagedSelfImproveRunner:
                 bound,
                 plan.attempt_identity_digest,
             )
+            self._execution_policy(plan, generated.proposal)
         except BaseException:
             if state.reservation is not None and context.candidate_identity is not None:
                 state.reservation.mark_failed(context.candidate_identity)

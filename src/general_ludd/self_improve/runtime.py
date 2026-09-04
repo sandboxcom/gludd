@@ -87,6 +87,7 @@ from general_ludd.self_improve.managed_runner import (
     ModelPlanError,
     PromptPlan,
     PromptShard,
+    SelfImprovePolicyViolation,
     _build_validation_retry_prompt_plan,
     _validate_attempt_identity_digest,
     _validation_retry_feedback,
@@ -139,6 +140,13 @@ from general_ludd.self_improve.model_lifecycle import (
     ModelArtifactIdentity,
     ModelLeaseManager,
 )
+from general_ludd.self_improve.private_policy import (
+    SelfImproveLearningScope,
+    SelfImproveOutcomeDelegate,
+    SelfImprovePolicyBoundOutcomeAdapter,
+    SelfImprovePrivacyPolicy,
+    SelfImproveRuntimePolicyGuard,
+)
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 from general_ludd.small_models.recommender import map_task_to_capabilities
 
@@ -156,6 +164,7 @@ _PROMPT_CONTEXT_LINES: Final = 5
 _HEARTBEAT_SECONDS: Final = 15.0
 _FORBIDDEN_COMMAND_CHARS: Final = frozenset(";|&$()<>\n\r")
 _SHA_RE: Final = re.compile(r"^[0-9a-f]{40}$")
+_DIGEST_RE: Final = re.compile(r"^[0-9a-f]{64}$")
 _TASK_RE: Final = re.compile(r"^S[0-9]+(?:\.[0-9]+)?$")
 _WORD_RE: Final = re.compile(r"[A-Za-z][A-Za-z0-9]+")
 _RELEVANCE_STOPWORDS: Final = frozenset(
@@ -165,8 +174,6 @@ _RELEVANCE_STOPWORDS: Final = frozenset(
         "that", "the", "this", "uses", "with", "without",
     }
 )
-
-
 def _report_model_resolution_failure(
     model: LocalModelConfig,
     reason: str,
@@ -1578,6 +1585,7 @@ def build_reference(
     baseline_ref: str,
     reference_ref: str,
     elapsed_seconds: float,
+    path_guard: Callable[[frozenset[str]], None] | None = None,
 ) -> CodexReference:
     """Load the independent Codex patch boundary through bounded Make targets."""
     _validate_sha("baseline_ref", baseline_ref)
@@ -1587,10 +1595,12 @@ def build_reference(
     )
     if names.returncode != 0:
         raise RuntimeError(f"cannot inspect Codex reference: {names.stderr or names.stdout}")
+    changed_files = parse_reference_files(names.stdout)
+    if path_guard is not None:
+        path_guard(changed_files)
     patch = runner.run("git-show-full", {"SHA": reference_ref}, read_only=True)
     if patch.returncode != 0:
         raise RuntimeError(f"cannot inspect Codex patch: {patch.stderr or patch.stdout}")
-    changed_files = parse_reference_files(names.stdout)
     return CodexReference(
         baseline_sha=baseline_ref,
         reference_sha=reference_ref,
@@ -2530,16 +2540,94 @@ def evaluate_attempt(
         raise
 
 
-def _default_runtime_outcome_adapter(cache_root: Path) -> ManagedOutcomeAdapter:
-    """Build the canonical durable evidence adapter for one model cache."""
-    store = CapabilityEvidenceStore(
-        str(cache_root / ".gludd" / "capability-evidence.json")
-    )
+def _runtime_plan_paths(
+    plan: ApprovedSelfImprovePlan,
+    proposal: ProposalManifest | None = None,
+) -> tuple[str, ...]:
+    """Collect declared observation, edit, and test paths without their content."""
+    paths: list[str] = [
+        *plan.reference.changed_files,
+        *plan.reference.test_files,
+        *canonical_test_paths(plan.task.canonical_make_commands),
+    ]
+    if isinstance(plan.prompt, PromptPlan):
+        paths.extend(path for shard in plan.prompt.shards for path in shard.focus_paths)
+        paths.extend(path for path, _content in plan.prompt.baseline_files)
+    for manifest in (plan.mechanical_proposal, proposal):
+        if manifest is None:
+            continue
+        paths.extend(edit.path for edit in manifest.edits)
+        paths.extend(manifest.tests)
+    return tuple(sorted(set(paths)))
+
+
+def _default_runtime_outcome_adapter(
+    cache_root: Path,
+    *,
+    scope_digest: str | None = None,
+) -> ManagedOutcomeAdapter:
+    """Build the canonical durable evidence adapter for one model cache scope."""
+    if scope_digest is None:
+        filename = "capability-evidence.json"
+    else:
+        if _DIGEST_RE.fullmatch(scope_digest) is None:
+            raise ValueError("learning scope must be a lowercase SHA-256 digest")
+        filename = f"capability-evidence-{scope_digest}.json"
+    store = CapabilityEvidenceStore(str(cache_root / ".gludd" / filename))
     return CapabilityEvidenceOutcomeAdapter(
         store,
         failure_loader=load_latest_failed_model_ids,
         outcome_recorder=record_self_improve_outcome,
     )
+
+
+class _RuntimeOutcomeAdapterFactory:
+    """Construct policy-guarded adapters for one active approved plan."""
+
+    def __init__(
+        self,
+        delegate_factory: _OutcomeAdapterFactory,
+        plan: ApprovedSelfImprovePlan,
+        policy: SelfImprovePrivacyPolicy,
+        progress_sink: Callable[[str], None],
+    ) -> None:
+        """Retain one factory and its immutable runtime learning scope."""
+        if plan.repo_root is None:
+            raise SelfImprovePolicyViolation
+        self._delegate_factory = delegate_factory
+        repository_identity = plan.repository_binding_digest or hashlib.sha256(
+            str(plan.repo_root).encode("utf-8", errors="surrogatepass")
+        ).hexdigest()
+        self._scope = SelfImproveLearningScope.build(
+            project_id=plan.project_id, repository_identity=repository_identity,
+            baseline_sha=plan.reference.baseline_sha, policy=policy,
+        )
+        self._guard = SelfImproveRuntimePolicyGuard.bound(
+            plan.repo_root, plan.policy_digest, progress_sink,
+            SelfImprovePolicyViolation,
+        )
+        self._task_digest = hashlib.sha256(
+            plan.task.objective.encode("utf-8", errors="surrogatepass")
+        ).hexdigest()
+        self._paths = _runtime_plan_paths(plan)
+
+    def __call__(self, cache_root: Path) -> ManagedOutcomeAdapter:
+        """Create one isolated delegate only after policy remains valid."""
+        self._guard.require(self._paths)
+        if self._delegate_factory is _default_runtime_outcome_adapter:
+            delegate = _default_runtime_outcome_adapter(
+                cache_root, scope_digest=self._scope.digest if self._scope.isolated else None,
+            )
+        else:
+            delegate = self._delegate_factory(cache_root)
+        guarded = SelfImprovePolicyBoundOutcomeAdapter(
+            cast(SelfImproveOutcomeDelegate, delegate),
+            self._scope,
+            lambda task_text: self._guard.require_learning(
+                task_text, self._task_digest, self._paths
+            ),
+        )
+        return cast(ManagedOutcomeAdapter, guarded)
 
 
 def _runtime_progress(message: str) -> None:
@@ -2581,7 +2669,20 @@ class _RepositoryBoundManagedSelfImproveRunner(ManagedSelfImproveRunner):
             raise ValueError("plan must be an ApprovedSelfImprovePlan")
         if plan.repo_root != self._runtime_repo_root:
             raise ValueError("approved plan belongs to a different repository")
-        return super().run(plan)
+        plan.verify_approval()
+        policy_guard = SelfImproveRuntimePolicyGuard.bound(
+            self._runtime_repo_root, plan.policy_digest, self.progress_sink,
+            SelfImprovePolicyViolation,
+        )
+        policy = policy_guard.require(_runtime_plan_paths(plan))
+        original_factory = self.outcome_adapter_factory
+        self.outcome_adapter_factory = _RuntimeOutcomeAdapterFactory(
+            original_factory, plan, policy, self.progress_sink
+        )
+        try:
+            return super().run(plan)
+        finally:
+            self.outcome_adapter_factory = original_factory
 
 
 def _managed_comparison_retry_builder(
@@ -2617,6 +2718,43 @@ def _managed_syntax_retry_builder(
         return repair
 
     return build
+
+
+def _evaluate_policy_bound_managed_proposal(
+    canonical_root: Path,
+    operation_runner: _RuntimeMakeRunner,
+    runner_factory: _MakeRunnerFactory,
+    attempt_evaluator: _AttemptEvaluationAdapter | None,
+    progress_sink: Callable[[str], None],
+    task: TaskSpec,
+    reference: CodexReference,
+    bound_proposal: PlanBoundProposal,
+    attempt: int,
+    *,
+    expected_attempt_identity_digest: str,
+    merge: bool,
+) -> AttemptResult:
+    """Recheck policy immediately around one managed proposal evaluation."""
+    if merge:
+        raise ValueError("managed self-improvement cannot merge a live branch")
+    proposal_paths = _manifest_paths(bound_proposal.proposal)
+    policy_guard = SelfImproveRuntimePolicyGuard.bound(
+        canonical_root, bound_proposal.policy_digest, progress_sink,
+        SelfImprovePolicyViolation,
+    )
+    policy_guard.require(proposal_paths, emit_loaded=True)
+    evaluator = attempt_evaluator or partial(
+        evaluate_attempt,
+        make_runner_factory=runner_factory,
+        progress_sink=progress_sink,
+    )
+    result = evaluator(
+        operation_runner, task, reference, bound_proposal, attempt,
+        expected_attempt_identity_digest=expected_attempt_identity_digest,
+        merge=False,
+    )
+    policy_guard.require(proposal_paths)
+    return result
 
 
 def build_managed_self_improve_runner(
@@ -2668,28 +2806,18 @@ def build_managed_self_improve_runner(
         expected_attempt_identity_digest: str,
         merge: bool,
     ) -> AttemptResult:
-        if merge:
-            raise ValueError("managed self-improvement cannot merge a live branch")
-        if attempt_evaluator is not None:
-            return attempt_evaluator(
-                operation_runner,
-                task,
-                reference,
-                bound_proposal,
-                attempt,
-                expected_attempt_identity_digest=expected_attempt_identity_digest,
-                merge=False,
-            )
-        return evaluate_attempt(
+        return _evaluate_policy_bound_managed_proposal(
+            canonical_root,
             operation_runner,
+            runner_factory,
+            attempt_evaluator,
+            runtime_progress_sink,
             task,
             reference,
             bound_proposal,
             attempt,
             expected_attempt_identity_digest=expected_attempt_identity_digest,
-            merge=False,
-            make_runner_factory=runner_factory,
-            progress_sink=runtime_progress_sink,
+            merge=merge,
         )
 
     service = _RepositoryBoundManagedSelfImproveRunner(
@@ -2717,6 +2845,68 @@ def build_managed_self_improve_runner(
     return service
 
 
+def _required_managed_output_tokens(
+    reference: CodexReference,
+    output_token_limit: int | None,
+) -> int:
+    """Validate the optional decode budget and return the reference estimate."""
+    required = estimate_required_output_tokens(
+        reference.changed_lines, len(reference.changed_files)
+    )
+    if output_token_limit is None:
+        return required
+    if not isinstance(output_token_limit, int) or isinstance(
+        output_token_limit, bool
+    ) or output_token_limit <= 0:
+        raise ValueError("output_token_limit must be a positive integer")
+    if required > output_token_limit:
+        raise ValueError(
+            "Codex reference exceeds the local decode budget: "
+            f"estimated={required} available={output_token_limit}; "
+            "select a larger local model/context or a smaller atomic task"
+        )
+    return required
+
+
+def _manifest_paths(proposal: ProposalManifest | None) -> tuple[str, ...]:
+    """Return declared proposal paths without accessing their content."""
+    if proposal is None:
+        return ()
+    return tuple(sorted({*(edit.path for edit in proposal.edits), *proposal.tests}))
+
+
+def _prepare_policy_bound_context(
+    operation_runner: _RuntimeMakeRunner,
+    runner_factory: _MakeRunnerFactory,
+    policy_guard: SelfImproveRuntimePolicyGuard,
+    task: TaskSpec,
+    reference: CodexReference,
+    runtime_paths: tuple[str, ...],
+) -> tuple[PromptPlan, ProposalManifest | None, tuple[str, ...]]:
+    """Build baseline context while guarding every observation and output path."""
+    context_root, context_branch = create_worktree(
+        operation_runner, reference.baseline_sha, 0
+    )
+    try:
+        policy_guard.require(runtime_paths, path_root=context_root)
+        prompt = build_prompt(task, reference, context_root)
+        mechanical_proposal = generate_mechanical_proposal(
+            runner_factory(context_root), task, reference, context_root
+        )
+        all_paths = tuple(sorted({*runtime_paths, *_manifest_paths(mechanical_proposal)}))
+        policy_guard.require(all_paths, path_root=context_root)
+        return prompt, mechanical_proposal, all_paths
+    finally:
+        context_cleanup = operation_runner.run(
+            "agent-cleanup", {"BRANCH": context_branch}, timeout=180
+        )
+        if context_cleanup.returncode != 0:
+            raise RuntimeError(
+                "baseline context worktree cleanup failed: "
+                + (context_cleanup.stderr or context_cleanup.stdout)
+            )
+
+
 def prepare_managed_self_improve_plan(
     repo_root: Path,
     *,
@@ -2732,6 +2922,7 @@ def prepare_managed_self_improve_plan(
     output_token_limit: int | None = None,
     root_runner: _RuntimeMakeRunner | None = None,
     make_runner_factory: _MakeRunnerFactory | None = None,
+    progress_sink: Callable[[str], None] | None = None,
 ) -> ApprovedSelfImprovePlan:
     """Prepare one immutable, repository-bound plan without inference or merge.
 
@@ -2748,53 +2939,38 @@ def prepare_managed_self_improve_plan(
         raise ValueError("repo_root must be an existing directory")
     runner_factory = make_runner_factory or MakeRunner
     operation_runner = root_runner or runner_factory(canonical_root)
+    runtime_progress_sink = progress_sink or _runtime_progress
+    policy_guard = SelfImproveRuntimePolicyGuard.load(
+        canonical_root,
+        runtime_progress_sink,
+        SelfImprovePolicyViolation,
+    )
+
+    def guard_reference_paths(paths: frozenset[str]) -> None:
+        policy_guard.require(tuple(sorted(paths)), emit_loaded=True)
+
     reference = build_reference(
         operation_runner,
         baseline_ref,
         reference_ref,
         task.reference_elapsed_seconds,
+        guard_reference_paths,
     )
-    required_output_tokens = estimate_required_output_tokens(
-        reference.changed_lines,
-        len(reference.changed_files),
+    required_output_tokens = _required_managed_output_tokens(
+        reference, output_token_limit
     )
-    if output_token_limit is not None:
-        if (
-            isinstance(output_token_limit, bool)
-            or not isinstance(output_token_limit, int)
-            or output_token_limit <= 0
-        ):
-            raise ValueError("output_token_limit must be a positive integer")
-        if required_output_tokens > output_token_limit:
-            raise ValueError(
-                "Codex reference exceeds the local decode budget: "
-                f"estimated={required_output_tokens} available={output_token_limit}; "
-                "select a larger local model/context or a smaller atomic task"
-            )
-    context_root, context_branch = create_worktree(
-        operation_runner,
-        reference.baseline_sha,
-        0,
-    )
-    try:
-        prompt = build_prompt(task, reference, context_root)
-        mechanical_proposal = generate_mechanical_proposal(
-            runner_factory(context_root),
-            task,
-            reference,
-            context_root,
+    runtime_paths = tuple(
+        sorted(
+            reference.changed_files
+            | reference.test_files
+            | frozenset(canonical_test_paths(task.canonical_make_commands))
         )
-    finally:
-        context_cleanup = operation_runner.run(
-            "agent-cleanup",
-            {"BRANCH": context_branch},
-            timeout=180,
-        )
-        if context_cleanup.returncode != 0:
-            raise RuntimeError(
-                "baseline context worktree cleanup failed: "
-                + (context_cleanup.stderr or context_cleanup.stdout)
-            )
+    )
+    policy_guard.require(runtime_paths)
+    prompt, mechanical_proposal, all_paths = _prepare_policy_bound_context(
+        operation_runner, runner_factory, policy_guard, task, reference, runtime_paths
+    )
+    policy_guard.require(all_paths)
 
     plan = ApprovedSelfImprovePlan.approve(
         approval_id=approval_id,
