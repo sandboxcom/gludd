@@ -8,7 +8,7 @@ This guide covers three topics:
 
 ## 1. Role Definition
 
-The custom role `General Ludd Container App Deployer` is defined in
+The custom role `General Ludd Accelerator Deployer` is defined in
 `config/infra/azure-iam-policy.json`. It grants the minimum permissions needed
 to deploy and destroy Container Apps (with GPU inference), Container Registries,
 Virtual Networks, Subnets, and Resource Groups via Terraform/OpenTofu.
@@ -38,6 +38,45 @@ Virtual Networks, Subnets, and Resource Groups via Terraform/OpenTofu.
 - No ACR build queueing
 - No VM run commands (prevents arbitrary script execution on VMs)
 
+### One-line Terraform accelerator role creation
+
+This is the role used by Gludd's Terraform/OpenTofu paths for Azure Container
+Apps and VM-backed GPU workers. It does not grant any Cognitive Services or
+Azure OpenAI permission. Replace the example subscription ID, then run this
+single line from the repository root:
+
+```bash
+make --no-print-directory azure-accelerator-role-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 | xargs -0 az
+```
+
+The Make target validates the UUID, reads the checked-in
+`config/infra/azure-iam-policy.json`, verifies that its canonical name is
+`General Ludd Accelerator Deployer`, rejects any Cognitive Services action,
+materializes the exact subscription scope, and emits one NUL-delimited
+`az role definition create` argument vector. Make never authenticates to Azure
+and Azure CLI receives the role JSON as one argument, avoiding the long-lived
+shell quoting and newline failures reported in [Azure CLI #16940][azure-cli-16940].
+
+After Azure reports that role creation succeeded, create a unique test service
+principal and write its one-time credential JSON directly to a private file:
+
+```bash
+(umask 077; make --no-print-directory azure-accelerator-auth-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_SP_NAME=gludd-accelerator-20260905 | xargs -0 az > /tmp/gludd-azure-accelerator-auth.json)
+```
+
+The second target assigns only `General Ludd Accelerator Deployer` at the
+subscription scope required for Gludd to create and remove its own resource
+groups. The JSON file contains the one-time Entra credential and must remain
+outside the repository. It is not a sourceable dotenv file; an operator or
+secret-injection workflow maps its `clientId`, `tenantId`, and `clientSecret`
+fields to `ARM_CLIENT_ID`, `ARM_TENANT_ID`, and `ARM_CLIENT_SECRET`, alongside
+the explicit `ARM_SUBSCRIPTION_ID`.
+
+Role definition creation uses Azure Resource Manager, while application and
+service-principal creation uses Microsoft Graph. Azure CLI cannot perform both
+mutations in one invocation, so these remain two explicit, independently
+auditable one-line commands. Neither target accepts or logs a credential.
+
 ### Updating an existing role
 
 If the custom role already exists and you need to update its permissions,
@@ -49,7 +88,7 @@ az role definition update --role-definition "$(sed "s/{subscription_id}/$SUBSCRI
 ```
 
 This uses the same `config/infra/azure-iam-policy.json` file (PascalCase keys)
-as the `create` command. The role name (`"General Ludd Container App Deployer"`)
+as the `create` command. The role name (`"General Ludd Accelerator Deployer"`)
 must match the existing role exactly.
 
 ### Azure OpenAI self-improvement identity
@@ -225,14 +264,14 @@ az role definition create --role-definition "$(sed "s/{subscription_id}/$SUBSCRI
 az ad sp create-for-rbac \
   --name "gludd-deployer" \
   --create-cert \
-  --role "General Ludd Container App Deployer" \
+  --role "General Ludd Accelerator Deployer" \
   --scopes "/subscriptions/$SUBSCRIPTION_ID"
 
 # Or with a client secret:
 az ad sp create-for-rbac \
   --name "gludd-deployer" \
   --sdk-auth \
-  --role "General Ludd Container App Deployer" \
+  --role "General Ludd Accelerator Deployer" \
   --scopes "/subscriptions/$SUBSCRIPTION_ID"
 ```
 
@@ -241,7 +280,7 @@ az ad sp create-for-rbac \
 1. In the Azure Portal, go to **Subscriptions** → your subscription.
 2. Click **Access control (IAM)**.
 3. Click **+ Add** → **Add role assignment**.
-4. Search for **General Ludd Container App Deployer** and select it.
+4. Search for **General Ludd Accelerator Deployer** and select it.
 5. Under **Members**, click **+ Select members**.
 6. Search for your managed identity or service principal and select it.
 7. Click **Review + assign**.
@@ -255,7 +294,7 @@ PRINCIPAL_ID=$(az ad sp list --display-name "gludd-deployer" --query '[].id' -o 
 # Assign the role
 az role assignment create \
   --assignee "$PRINCIPAL_ID" \
-  --role "General Ludd Container App Deployer" \
+  --role "General Ludd Accelerator Deployer" \
   --scope "/subscriptions/$SUBSCRIPTION_ID"
 ```
 
@@ -288,7 +327,7 @@ TENANT_ID=$(az account show --query tenantId -o tsv)
 
 az ad sp create-for-rbac \
   --name "gludd-deployer" \
-  --role "General Ludd Container App Deployer" \
+  --role "General Ludd Accelerator Deployer" \
   --scopes "/subscriptions/$SUBSCRIPTION_ID" \
   --output json \
   | sudo tee -a /tmp/gludd-sp-credentials.tmp > /dev/null
@@ -494,7 +533,7 @@ config = ComputeConfig(
 )
 ```
 
-The managed identity must have the **General Ludd Container App Deployer** role
+The managed identity must have the **General Ludd Accelerator Deployer** role
 assigned (see Step 3 above).
 
 ### Deploying
@@ -543,7 +582,7 @@ on Azure GPU resources.
 ### Prerequisites
 
 - Azure subscription with GPU quota (NCasT4_v3, NC_A100_v4, or ND_H100_v5)
-- `General Ludd Container App Deployer` custom role created and assigned
+- `General Ludd Accelerator Deployer` custom role created and assigned
 - `/tmp/general-ludd.env` (or another explicit `AZURE_E2E_ENV_FILE`) readable
   with Azure credentials; keep this file outside the repository
 

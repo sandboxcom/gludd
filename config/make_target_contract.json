@@ -2,6 +2,21 @@
   "version": 1,
   "targets": [
     {
+      "name": "azure-accelerator-role-args",
+      "make_variables": [
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID"
+      ],
+      "behavior": "make azure-accelerator-role-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555"
+    },
+    {
+      "name": "azure-accelerator-auth-args",
+      "make_variables": [
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_ACCELERATOR_SP_NAME"
+      ],
+      "behavior": "make azure-accelerator-auth-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_SP_NAME=gludd-accelerator-contract"
+    },
+    {
       "name": "azure-self-improve-auth-args",
       "make_variables": [
         "AZURE_SELF_IMPROVE_SUBSCRIPTION_ID",

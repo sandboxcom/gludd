@@ -330,8 +330,13 @@ SUB_ID="00000000-0000-0000-0000-000000000000"
 RG="gludd-prod"
 
 # Create the custom Terraform deployer role (one-time)
-# Use inline JSON (not @file) — the CLI expects PascalCase keys for --role-definition
-az role definition create --role-definition "$(sed "s/{subscription_id}/$SUB_ID/" config/infra/azure-iam-policy.json)"
+# Make emits one validated NUL-delimited argv; Azure CLI receives the
+# PascalCase policy as one argument and creates the subscription-scoped role.
+make --no-print-directory azure-accelerator-role-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000 | xargs -0 az
+
+# For local/GHA Terraform testing, create a unique principal assigned only the
+# custom deployer role and keep Azure's one-time credential output private.
+(umask 077; make --no-print-directory azure-accelerator-auth-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000 AZURE_ACCELERATOR_SP_NAME=gludd-accelerator-test-20260905 | xargs -0 az > /tmp/gludd-azure-accelerator-auth.json)
 
 # Create user-assigned managed identities
 az identity create --name gludd-terraform-deploy --resource-group "${RG}"

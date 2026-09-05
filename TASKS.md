@@ -6,6 +6,12 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ---
 
+## Active Azure accelerator access work (2026-09-05)
+
+- [ ] S83.151 - **Expose one fail-closed Azure CLI pipeline for the Terraform/OpenTofu accelerator role and one separate least-privilege test identity pipeline** across `.gitignore`, `Makefile`, `config/coverage_azure_accelerator_auth_args.ini`, `config/infra/IAM_README.md`, `config/make_target_contract.json`, `docs/azure-iam-setup.md`, `scripts/render_azure_accelerator_auth_args.py`, and `tests/unit/test_azure_accelerator_auth_args.py`: materialize the checked-in `General Ludd Accelerator Deployer` policy at one validated subscription scope, reject Cognitive Services permissions and malformed inputs before emitting bytes, pass exact NUL-delimited arguments to a single operator-owned Azure CLI invocation, keep credential output outside Make and the repository, and distinguish the accelerator control plane from the optional Azure OpenAI self-improvement data plane. | evidence: failing-first collection proved the renderer was absent; the final warning-strict focused suite passes 28/28, the wider Azure/IAM regression passes 351/351, branch-aware renderer coverage is 95% with aggregate and per-file floors satisfied, both byte-exact behavioral examples pass, Azure IAM validation reports 92 actions with zero errors or warnings, Make target/help/duplicate validation and scoped Ruff/mypy/docstrings/Markdown are green, current Microsoft Learn CLI references confirm `az role definition create` and scoped `az ad sp create-for-rbac`, and Azure CLI issue #16940 is documented as the long-lived inline-JSON quoting failure avoided by this protocol; full gate, guarded commit, and hosted GHA proof pending | priority: critical | effort: S | status: in_progress
+
+---
+
 ## Session 86 — v0.1.0-beta4 completion (2026-08-20)
 
 Session 86 final release evidence: candidate `8f9eddfc9f9f8035e96754b9d35d47c4a26fe52c`; GHA run `33349948067` completed 23/23 jobs GREEN; canonical local producer completed 8/8 shards with zero failures, aggregate coverage at least 85%, and all 1,150 files at least 75%; exact dual-track verification passed all eight hosted shard pairs; the immutable full gate passed with attestation `e2579098f6cb3efb6e2eb829ae4fcbafa76017345bdf3c2575dde3e9047d84fd`; `make release-dry-run TAG=v0.1.0-beta.4` passed AC013/AC015/AC016/AC005. S86.10 is complete: master fast-forwarded to the exact tested development commit, and the immutable published prerelease passed artifact, completeness, and signed-bundle verification.
