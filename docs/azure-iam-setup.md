@@ -45,6 +45,26 @@ Apps and VM-backed GPU workers. It does not grant any Cognitive Services or
 Azure OpenAI permission. Replace the example subscription ID, then run this
 single line from the repository root:
 
+The Azure CLI session running this one-time bootstrap must already have
+`Microsoft.Authorization/roleDefinitions/write` at the subscription scope.
+Of Azure's built-in roles, `Owner` and `User Access Administrator` provide that
+permission; `Contributor` and `Role Based Access Control Administrator` do not.
+An existing subscription administrator can run the Gludd command directly, or
+temporarily grant the operator `User Access Administrator`:
+
+```bash
+az role assignment create --assignee-object-id <operator-object-id> --assignee-principal-type User --role "User Access Administrator" --scope "/subscriptions/<subscription-id>"
+```
+
+That grant command must itself be run by an identity that can write role
+assignments. If Azure reports `AuthorizationFailed` for
+`Microsoft.Authorization/roleDefinitions/write`, the rendered role reached
+Azure correctly but the current identity lacks this prerequisite. Activate an
+eligible privileged role if PIM is in use, refresh the Azure CLI login if
+needed, wait for RBAC propagation, and retry. See Microsoft's
+[custom-role troubleshooting guidance][azure-rbac-troubleshoot] and current
+[privileged built-in role definitions][azure-privileged-roles].
+
 ```bash
 make --no-print-directory azure-accelerator-role-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 | xargs -0 az
 ```
@@ -76,6 +96,14 @@ Role definition creation uses Azure Resource Manager, while application and
 service-principal creation uses Microsoft Graph. Azure CLI cannot perform both
 mutations in one invocation, so these remain two explicit, independently
 auditable one-line commands. Neither target accepts or logs a credential.
+
+After the role and test principal have been created, an administrator should
+remove any temporary bootstrap grant; this does not remove the new limited
+Gludd role or its assignment:
+
+```bash
+az role assignment delete --assignee-object-id <operator-object-id> --role "User Access Administrator" --scope "/subscriptions/<subscription-id>"
+```
 
 ### Updating an existing role
 
@@ -668,3 +696,5 @@ src/general_ludd/cloud/game_e2e.py          # 561-line orchestrator
 [azure-cli-31995]: https://github.com/Azure/azure-cli/issues/31995
 [azure-cli-31579]: https://github.com/Azure/azure-cli/issues/31579
 [azure-cli-16940]: https://github.com/Azure/azure-cli/issues/16940
+[azure-privileged-roles]: https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/privileged
+[azure-rbac-troubleshoot]: https://learn.microsoft.com/en-us/azure/role-based-access-control/troubleshooting

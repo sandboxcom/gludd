@@ -323,6 +323,10 @@ def test_help_contract_docs_and_gitignore_pin_accelerator_workflow() -> None:
         "| xargs -0 az"
     )
     assert role_command in docs
+    for guide in (docs, iam_docs):
+        assert "Microsoft.Authorization/roleDefinitions/write" in guide
+        assert 'role "User Access Administrator"' in guide
+        assert "az role assignment delete --assignee-object-id" in guide
     assert "azure-accelerator-role-args" in iam_docs
     assert "azure-accelerator-auth-args" in iam_docs
     assert "gludd-azure-accelerator-auth.*" in gitignore

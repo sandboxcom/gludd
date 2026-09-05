@@ -323,6 +323,29 @@ gcloud logging read \
 
 ## Azure — Apply Roles
 
+### Bootstrap authority prerequisite
+
+Creating the custom role is an administrator bootstrap operation. The active
+Azure CLI identity must have
+`Microsoft.Authorization/roleDefinitions/write` at the subscription scope.
+Use an existing `Owner` or `User Access Administrator`; `Contributor` and
+`Role Based Access Control Administrator` are insufficient. An administrator
+may run the Gludd role-creation command directly, or temporarily grant the
+operator `User Access Administrator`:
+
+```bash
+az role assignment create --assignee-object-id <operator-object-id> --assignee-principal-type User --role "User Access Administrator" --scope "/subscriptions/<subscription-id>"
+```
+
+An `AuthorizationFailed` response naming
+`Microsoft.Authorization/roleDefinitions/write` means Azure received the role
+definition but rejected the current identity. After creating the limited Gludd
+role and principal, remove any temporary bootstrap grant:
+
+```bash
+az role assignment delete --assignee-object-id <operator-object-id> --role "User Access Administrator" --scope "/subscriptions/<subscription-id>"
+```
+
 ### Create managed identity + assign roles
 
 ```bash
