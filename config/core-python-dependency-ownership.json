@@ -884,6 +884,7 @@
         "src/general_ludd/db/migrations.py",
         "src/general_ludd/db/models.py",
         "src/general_ludd/db/promotion_repository.py",
+        "src/general_ludd/db/promotion_repository_support.py",
         "src/general_ludd/db/repository.py",
         "src/general_ludd/db/session.py",
         "src/general_ludd/db/task_decisions_retention.py",
