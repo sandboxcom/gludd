@@ -50,6 +50,8 @@ STATUS_OPEN = "OPEN"
 
 @dataclass
 class SecurityBacklogResult:
+    """Describe the verification status of one security backlog guard."""
+
     item_id: str
     title: str
     passed: bool
@@ -58,6 +60,7 @@ class SecurityBacklogResult:
     status: str = ""
 
     def __post_init__(self) -> None:
+        """Derive the public status when the checker did not set one."""
         # Derive status from passed when the caller didn't supply one
         # explicitly, so existing call sites that only ever set
         # item_id/title/passed/detail/deferred keep working unchanged.
@@ -123,6 +126,7 @@ _PROBE_ITEM_IDS: frozenset[str] = frozenset(
 
 
 def run_backlog_checks() -> list[SecurityBacklogResult]:
+    """Run every registered security probe and return ordered results."""
     results: list[SecurityBacklogResult] = []
     for item_id, info in sorted(BACKLOG_ITEMS.items()):
         checker = _BACKLOG_CHECKERS.get(item_id, _default_check)
@@ -204,7 +208,6 @@ def _check_d07_input_validation() -> tuple[bool, str]:
 
 def _check_d08_ansible_extravars() -> tuple[bool, str]:
     """Static probe: extra vars are bounded before execution or rendering."""
-
     try:
         import general_ludd.ansible.runner as runner_mod
         import general_ludd.ansible.templating as templating_mod
@@ -222,10 +225,20 @@ def _check_d08_ansible_extravars() -> tuple[bool, str]:
         "max_items",
         "max_string_bytes",
         "max_bytes_value",
-        "max_total_bytes",
     ):
         if limit_name not in validation_source:
             return False, f"OPEN — extra-vars validation no longer enforces {limit_name}"
+
+    byte_budget = getattr(unsafe_mod, "_ExtraVarsByteBudget", None)
+    if byte_budget is None:
+        return False, "OPEN — extra-vars aggregate byte-budget guard is missing"
+    byte_budget_source = _read_module_source(byte_budget)
+    if (
+        "_ExtraVarsByteBudget(limits)" not in validation_source
+        or "byte_budget.add" not in validation_source
+        or "max_total_bytes" not in byte_budget_source
+    ):
+        return False, "OPEN — extra-vars validation no longer enforces max_total_bytes"
 
     parse_source = _read_module_source(unsafe_mod.parse_extravars)
     if "yaml.safe_load" not in parse_source:
@@ -438,7 +451,6 @@ def _check_d18_audit_log() -> tuple[bool, str]:
 
 def _check_d24_mcp_stderr_limit() -> tuple[bool, str]:
     """Static probe: MCP stderr is drained, redacted, bounded, and fail-closed."""
-
     try:
         import general_ludd.mcp.transport as transport_mod
     except ImportError as exc:
