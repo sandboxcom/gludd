@@ -21,8 +21,11 @@ from general_ludd.self_improve.candidate_classification import (
 
 
 def test_classification_composes_existing_classifiers_without_retaining_text() -> None:
-    secret = "credential-super-secret-do-not-retain"
-    task_text = f"{CANONICAL_TASK_DESCRIPTIONS[TaskType.FEATURE]} {secret}"
+    private_business_marker = "confidential-project-rule-do-not-retain"
+    task_text = (
+        f"{CANONICAL_TASK_DESCRIPTIONS[TaskType.FEATURE]} "
+        f"{private_business_marker}"
+    )
 
     classification = classify_candidate_task(task_text)
 
@@ -34,8 +37,8 @@ def test_classification_composes_existing_classifiers_without_retaining_text() -
     ).hexdigest()
     assert classification.protocol == CANDIDATE_CLASSIFICATION_PROTOCOL
     assert classification.precedence_version == CAPABILITY_PRECEDENCE_VERSION
-    assert secret not in repr(classification)
-    assert secret not in repr(classification.payload())
+    assert private_business_marker not in repr(classification)
+    assert private_business_marker not in repr(classification.payload())
     assert "task_text" not in classification.payload()
 
 

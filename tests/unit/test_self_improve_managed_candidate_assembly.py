@@ -157,8 +157,10 @@ def _assemble(
 
 
 def test_mixed_assembly_is_canonical_immutable_and_content_free() -> None:
-    task_secret = "implement feature using password=never-retain-this"
-    classification = _classification(task_secret)
+    private_business_marker = (
+        "implement feature containing confidential-project-rule-marker-do-not-retain"
+    )
+    classification = _classification(private_business_marker)
     local = _source(_local_identity())
     azure = _source(_azure_identity())
 
@@ -192,7 +194,7 @@ def test_mixed_assembly_is_canonical_immutable_and_content_free() -> None:
     )
     assert tuple(candidate.ordinal for candidate in reverse_order.candidates) == (0, 1)
     serialized = repr(reverse_order.payload()) + repr(reverse_order.event_payloads())
-    assert task_secret not in serialized
+    assert private_business_marker not in serialized
     assert "unit-test.openai.azure.com" not in serialized
     assert "local-coder.Q4_K_M.gguf" not in serialized
     assert "credential" not in serialized

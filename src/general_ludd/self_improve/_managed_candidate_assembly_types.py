@@ -384,4 +384,3 @@ class ManagedCandidateAssembly:
             "task_text_digest": self.task_text_digest,
         }
         return (*admitted, completed)
-
