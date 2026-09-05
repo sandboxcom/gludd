@@ -26,6 +26,10 @@ from typing import Final, Protocol, cast, runtime_checkable
 from general_ludd.hardware.model_fit import unified_probe
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.local_model import LocalModelConfig
+from general_ludd.self_improve.candidate_classification import (
+    CandidateTaskClassification,
+    classify_candidate_task,
+)
 from general_ludd.self_improve.codex_comparison import (
     COMPACT_PROPOSAL_CONTRACT_TRANSPORT_PROTOCOL,
     COMPACT_PROPOSAL_PROTOCOL_V3,
@@ -47,6 +51,10 @@ from general_ludd.self_improve.codex_comparison import (
     local_proposal_attempt_identity_digest,
     safe_evaluation_retry_diagnosis,
 )
+from general_ludd.self_improve.live_candidate_wiring import (
+    LiveManagedCandidateWiring,
+)
+from general_ludd.self_improve.managed_candidate_assembly import CandidatePrivacyState
 from general_ludd.self_improve.model_candidate_planner import (
     CODE_TASK_CAPABILITY_POLICY_ID,
     CodeTaskShape,
@@ -1558,6 +1566,7 @@ class _ManagedRunnerPolicySupport:
         comparison_retry_builder: Callable[[PromptPlan, ComparisonResult, str], PromptPlan] | None = None,
         validation_retry_builder: Callable[[PromptPlan, str], PromptPlan] | None = None,
         syntax_repair_builder: _SyntaxRepairBuilder | None = None,
+        live_candidate_wiring: LiveManagedCandidateWiring | None = None,
     ) -> None:
         """Inject side-effecting boundaries while retaining orchestration centrally."""
         self.proposal_generator = proposal_generator
@@ -1575,6 +1584,19 @@ class _ManagedRunnerPolicySupport:
         self.comparison_retry_builder = comparison_retry_builder
         self.validation_retry_builder = validation_retry_builder
         self.syntax_repair_builder = syntax_repair_builder
+        if live_candidate_wiring is not None and not isinstance(
+            live_candidate_wiring,
+            LiveManagedCandidateWiring,
+        ):
+            raise ValueError(
+                "live_candidate_wiring must be a LiveManagedCandidateWiring"
+            )
+        self.live_candidate_wiring = live_candidate_wiring
+
+    @property
+    def live_candidate_wiring_enabled(self) -> bool:
+        """Return whether explicit live discovery was installed at construction."""
+        return self.live_candidate_wiring is not None
 
     def _emit_policy_decision(
         self,
@@ -1996,6 +2018,10 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
             return GeneratedProposal(plan.mechanical_proposal)
         if manager is None:
             raise RuntimeError("local model manager was not initialized")
+        classification: CandidateTaskClassification | None = None
+        if self.live_candidate_wiring is not None:
+            self._execution_policy(plan)
+            classification = classify_candidate_task(plan.task.objective)
         if plan.explicit_model_path is not None:
             acquisition = manager.acquire(
                 plan.task.objective,
@@ -2023,16 +2049,40 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
                     _local_backend_identity(acquired, candidate),
                     self.proposal_generator,
                 )
-                proposal = backend.generate(
-                    LocalProposalInvocation(
-                        acquired.path,
-                        prompt,
-                        plan.task,
-                        plan.reference,
-                    ),
-                    max_output_tokens=plan.required_output_tokens,
-                    timeout_seconds=600.0,
+                invocation = LocalProposalInvocation(
+                    acquired.path,
+                    prompt,
+                    plan.task,
+                    plan.reference,
                 )
+                wiring = self.live_candidate_wiring
+                if wiring is None:
+                    proposal = backend.generate(
+                        invocation,
+                        max_output_tokens=plan.required_output_tokens,
+                        timeout_seconds=600.0,
+                    )
+                else:
+                    self._execution_policy(plan)
+                    if classification is None:
+                        raise RuntimeError("live candidate classification was not created")
+                    input_tokens = max(1, (_prompt_bytes(prompt) + 3) // 4)
+                    with wiring.assemble(
+                        classification,
+                        expected_classification_digest=(
+                            classification.classification_digest
+                        ),
+                        local_backend=backend,
+                        privacy_state=CandidatePrivacyState.APPROVED_PUBLIC,
+                        input_tokens=input_tokens,
+                        max_output_tokens=plan.required_output_tokens,
+                    ) as candidate_set:
+                        proposal = candidate_set.local_session.generate(
+                            invocation,
+                            input_tokens=input_tokens,
+                            max_output_tokens=plan.required_output_tokens,
+                            estimated_cost_microusd=0,
+                        )
                 generated = (
                     proposal
                     if isinstance(proposal, GeneratedProposal)

@@ -77,6 +77,11 @@ from general_ludd.self_improve.evaluator import (
 from general_ludd.self_improve.evaluator import (
     compact_failure_diagnosis as compact_failure_diagnosis,
 )
+from general_ludd.self_improve.live_candidate_wiring import (
+    AzureCandidateBackendFactory,
+    LiveCandidateWiringPolicy,
+    build_live_managed_candidate_wiring,
+)
 from general_ludd.self_improve.managed_runner import (
     ApprovedSelfImprovePlan,
     CapabilityEvidenceOutcomeAdapter,
@@ -2765,12 +2770,15 @@ def build_managed_self_improve_runner(
     attempt_evaluator: _AttemptEvaluationAdapter | None = None,
     progress_sink: Callable[[str], None] | None = None,
     outcome_adapter_factory: _OutcomeAdapterFactory | None = None,
+    live_candidate_policy: LiveCandidateWiringPolicy | None = None,
+    azure_backend_factory: AzureCandidateBackendFactory | None = None,
 ) -> ManagedSelfImproveRunner:
     """Compose the production managed service from installed package adapters.
 
     The returned service is repository-bound, uses Make-only execution adapters,
     never merges an evaluated attempt, and retains injectable progress and durable
-    outcome seams for daemon integrations.
+    outcome seams for daemon integrations. Live candidate assembly is default-off
+    and never changes the legacy local proposal provider or adds a fallback.
     """
     if not isinstance(repo_root, Path):
         raise ValueError("repo_root must be a pathlib.Path")
@@ -2780,6 +2788,11 @@ def build_managed_self_improve_runner(
     runner_factory = make_runner_factory or MakeRunner
     operation_runner = root_runner or runner_factory(canonical_root)
     runtime_progress_sink = progress_sink or _runtime_progress
+    live_candidate_wiring = build_live_managed_candidate_wiring(
+        live_candidate_policy,
+        azure_backend_factory=azure_backend_factory,
+        progress_sink=runtime_progress_sink,
+    )
 
     def generate_managed_proposal(
         model_path: Path,
@@ -2840,6 +2853,7 @@ def build_managed_self_improve_runner(
         ),
         validation_retry_builder=_build_validation_retry_prompt_plan,
         syntax_repair_builder=_managed_syntax_retry_builder(runtime_progress_sink),
+        live_candidate_wiring=live_candidate_wiring,
     )
     service.bind_repository(canonical_root)
     return service

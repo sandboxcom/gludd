@@ -5,6 +5,7 @@ __all__ = (
     "CodeTaskShape",
     "ExternalApply",
     "GateDecision",
+    "LiveCandidateWiringPolicy",
     "ManagedRunResult",
     "ManagedSelfImproveResultArtifact",
     "ManagedSelfImproveRunner",
@@ -18,6 +19,7 @@ __all__ = (
 from general_ludd.self_improve.apply import ExternalApply, SelfApply
 from general_ludd.self_improve.gate import GateDecision, SelfImproveGate
 from general_ludd.self_improve.harness import SelfImprovementHarness
+from general_ludd.self_improve.live_candidate_wiring import LiveCandidateWiringPolicy
 from general_ludd.self_improve.managed_runner import (
     ApprovedSelfImprovePlan,
     ManagedRunResult,
