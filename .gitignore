@@ -100,6 +100,8 @@ infra/terraform/.plugin-cache/*
 zai.key
 zai.api
 sandboxcom_github_rsa
+# Azure CLI output from the self-improvement service-principal bootstrap.
+gludd-azure-self-improve-auth.*
 
 /tmp/
 web_retriever/*

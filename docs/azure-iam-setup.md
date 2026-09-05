@@ -52,6 +52,106 @@ This uses the same `config/infra/azure-iam-policy.json` file (PascalCase keys)
 as the `create` command. The role name (`"General Ludd Container App Deployer"`)
 must match the existing role exactly.
 
+### Azure OpenAI self-improvement identity
+
+The deployment role above is deliberately not the role used for model
+self-improvement. Before issuing a credential, install or update one custom role
+named `Gludd Azure OpenAI Self Improvement - <account>` at the exact Cognitive
+Services account resource ID. The canonical
+`config/infra/azure-self-improve-role.json` template must be materialized
+outside the repository with all three brace-delimited identifiers replaced
+before following the create/update procedure. Its permission document is
+intentionally only:
+
+```json
+{
+  "Actions": [
+    "Microsoft.CognitiveServices/accounts/read",
+    "Microsoft.CognitiveServices/accounts/deployments/read"
+  ],
+  "NotActions": [],
+  "DataActions": [
+    "Microsoft.CognitiveServices/accounts/OpenAI/responses/write"
+  ],
+  "NotDataActions": []
+}
+```
+
+The assignable and assignment scope must both be exactly:
+
+```text
+/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>
+```
+
+This role cannot list or regenerate account keys, change or delete deployments,
+read or delete Responses API objects, read stored completions, or administer
+RBAC. Microsoft lists `accounts/read`, `accounts/deployments/read`, and
+`accounts/OpenAI/responses/write` separately in the
+[Azure AI permission catalog][azure-ai-permissions]. Follow Microsoft's
+[custom-role create/update procedure][azure-custom-role-cli] to install this
+role before running the credential pipeline below. Role installation requires
+an operator identity with role-definition administration; that privilege is
+never granted to the generated identity.
+
+#### One Azure invocation that writes the private credential
+
+Use a new, unique service-principal name. The Make target validates all values
+and writes only NUL-delimited Azure CLI arguments. `xargs -0` preserves spaces
+as data and invokes Azure CLI once. Azure creates the Entra application/service
+principal, assigns the already-installed custom role at the exact account
+scope, and writes its credential JSON directly to a mode-0600-capable file.
+This follows Microsoft's warning that
+[`az ad sp create-for-rbac` output must be protected][azure-cli-ad-sp]; the
+command receives both the custom role and exact resource scope explicitly.
+
+```bash
+(umask 077; make --no-print-directory azure-self-improve-auth-args AZURE_SELF_IMPROVE_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_SELF_IMPROVE_RESOURCE_GROUP=gludd-models AZURE_SELF_IMPROVE_ACCOUNT=gludd-self-improve AZURE_SELF_IMPROVE_SP_NAME=gludd-self-improve-20260905 | xargs -0 az > /tmp/gludd-azure-self-improve-auth.json)
+```
+
+Replace all four example values. Keep the output outside the repository and
+send only its path through an approved private channel. The JSON is not a shell
+file and must not be sourced. It contains the Azure CLI `--json-auth` fields;
+Gludd maps `clientId`, `tenantId`, and `clientSecret` to `AZURE_CLIENT_ID`,
+`AZURE_TENANT_ID`, and `AZURE_CLIENT_SECRET`. The non-secret live-candidate
+configuration remains the endpoint
+`https://<account>.openai.azure.com`, API family `azure_openai`, API version
+`v1`, subscription, resource group, account, and deployment name.
+
+A literal `make ... | az ad sp create-for-rbac ...` cannot work: that Azure CLI
+command ignores stdin and accepts its role, scope, and name as argv. The
+NUL-delimited target emits the complete `ad sp create-for-rbac` argv, including
+`--json-auth true`; the `xargs` bridge is the closest safe single-pipeline form.
+If validation fails before output, `xargs` can at most invoke bare `az`, never an
+unscoped principal-creation command. One Azure
+CLI invocation also cannot create or update a custom role and create an Entra
+application/service principal: role definitions and assignments use Azure
+Resource Manager while application creation uses Microsoft Graph. Combining
+those mutations behind Make would hide authority and rollback boundaries, so
+the custom role is an explicit prerequisite.
+
+#### ZDD, rollback, and operational bounds
+
+- Wait until `az role definition list --name "Gludd Azure OpenAI Self
+  Improvement - <account>" --scope <exact-account-resource-id>` returns exactly
+  one role before issuing a credential. The pipeline starts no background work
+  and runs one foreground Azure CLI process against the explicit subscription.
+- Never rerun with the same service-principal name after an ambiguous failure.
+  First inspect that exact display name and scope. Delete only the newly created
+  application with `az ad app delete --id <clientId>` before retrying with a new
+  name. Removing the application revokes the generated credential and its role
+  assignment; deleting or rolling back the custom role remains a separate,
+  operator-visible change.
+- Azure CLI issue [#31995][azure-cli-31995] records `role assignment create`
+  returning `RoleAssignmentExists` instead of behaving idempotently. Issue
+  [#31579][azure-cli-31579] records an unexpected Microsoft Graph lookup after
+  that collision, even with an object ID and principal type. A unique principal
+  per attempt and inspect-before-retry policy avoids treating a failed retry as
+  harmless.
+- Azure CLI issue [#16940][azure-cli-16940] shows long-lived quoting and newline
+  failures around inline role JSON. NUL-delimited argv prevents shell word
+  splitting, while role creation/update stays in the documented file-based
+  custom-role workflow.
+
 ## 2. Creating and Assigning the Role in Azure Portal
 
 Two policy files exist because the Azure Portal JSON editor and the Azure CLI
@@ -507,3 +607,9 @@ src/general_ludd/cloud/game_e2e.py          # 561-line orchestrator
 ```
 
 [fps-game-runbook]: research/FPS_GAME_E2E_RELIABILITY.md#operator-runbook-preflight-paid-run-and-cleanup
+[azure-ai-permissions]: https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/ai-machine-learning
+[azure-custom-role-cli]: https://learn.microsoft.com/en-us/azure/role-based-access-control/custom-roles-cli
+[azure-cli-ad-sp]: https://learn.microsoft.com/en-us/cli/azure/ad/sp#az-ad-sp-create-for-rbac
+[azure-cli-31995]: https://github.com/Azure/azure-cli/issues/31995
+[azure-cli-31579]: https://github.com/Azure/azure-cli/issues/31579
+[azure-cli-16940]: https://github.com/Azure/azure-cli/issues/16940

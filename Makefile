@@ -47,6 +47,30 @@ SELF_IMPROVE_FAILURE_CORPUS_FILE ?= config/self-improve/failure-corpus.json
 SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE ?= config/self-improve/acceptance-matrix.json
 SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH ?=
 SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE ?= 0
+AZURE_SELF_IMPROVE_SUBSCRIPTION_ID ?=
+AZURE_SELF_IMPROVE_RESOURCE_GROUP ?=
+AZURE_SELF_IMPROVE_ACCOUNT ?=
+AZURE_SELF_IMPROVE_SP_NAME ?=
+ifneq (,$(findstring $$,$(value AZURE_SELF_IMPROVE_SUBSCRIPTION_ID)))
+$(error AZURE_SELF_IMPROVE_SUBSCRIPTION_ID contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_SELF_IMPROVE_RESOURCE_GROUP)))
+$(error AZURE_SELF_IMPROVE_RESOURCE_GROUP contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_SELF_IMPROVE_ACCOUNT)))
+$(error AZURE_SELF_IMPROVE_ACCOUNT contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_SELF_IMPROVE_SP_NAME)))
+$(error AZURE_SELF_IMPROVE_SP_NAME contains forbidden input)
+endif
+override _GLUDD_AZURE_SELF_IMPROVE_SUBSCRIPTION_ID_RAW := $(value AZURE_SELF_IMPROVE_SUBSCRIPTION_ID)
+override _GLUDD_AZURE_SELF_IMPROVE_RESOURCE_GROUP_RAW := $(value AZURE_SELF_IMPROVE_RESOURCE_GROUP)
+override _GLUDD_AZURE_SELF_IMPROVE_ACCOUNT_RAW := $(value AZURE_SELF_IMPROVE_ACCOUNT)
+override _GLUDD_AZURE_SELF_IMPROVE_SP_NAME_RAW := $(value AZURE_SELF_IMPROVE_SP_NAME)
+export _GLUDD_AZURE_SELF_IMPROVE_SUBSCRIPTION_ID_RAW
+export _GLUDD_AZURE_SELF_IMPROVE_RESOURCE_GROUP_RAW
+export _GLUDD_AZURE_SELF_IMPROVE_ACCOUNT_RAW
+export _GLUDD_AZURE_SELF_IMPROVE_SP_NAME_RAW
 RECONCILE_QUIET_PROGRESS ?= 0
 MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
@@ -112,7 +136,7 @@ _NO_UV_SYNC_GOALS := \
     check-disk check-disk-classification disk disk-check disk-guard cache-disk cache-clean disk-user-caches audit-home-tmp \
     cache-resource-inventory cache-resource-remove tmp-gludd-usage tmp-gludd-worktree-usage \
     tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
-    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base \
+    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base azure-self-improve-auth-args \
     development-merge-forward development-merge-forward-batch
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
@@ -151,7 +175,7 @@ PYTEST_VERBOSITY ?= -v
         feature-start feature-done test-and-commit preflight \
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
-        self-improve-local-proposal test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
+        self-improve-local-proposal azure-self-improve-auth-args test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
           development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key workstream-register workstream-unregister wt-prune-safe \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
@@ -430,6 +454,7 @@ help:
 	@echo "  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge"
 	@echo "  agent-worktree-list           List active git worktrees"
 	@echo "  self-improve-local-proposal  Owned local GGUF proposal worker (SELF_IMPROVE_MODEL_PATH/PROMPT_FILE/PROPOSAL_FILE)"
+	@echo "  azure-self-improve-auth-args  Emit validated NUL arguments for one least-privilege Azure SP command"
 	@echo "  test-self-improve TARGET=<name>  Compare an auto-managed local model with Codex (optional SELF_IMPROVE_MODEL_PATH override)"
 	@echo "  test-self-improve-catalog-truth  Replay pinned catalog fixture (SELF_IMPROVE_CATALOG_LIVE=0|1)"
 	@echo "  test-self-improve-multifile      Replay pinned multi-file fixture (SELF_IMPROVE_MULTIFILE_LIVE=0|1)"
@@ -5635,6 +5660,13 @@ clean-stale-worktrees:
 # List active worktrees (read-only diagnostic).
 agent-worktree-list:
 	@git worktree list
+
+# Stdout is a NUL-delimited argv stream for exactly one Azure CLI process.
+# The named custom role must already exist; this target never calls Azure and
+# never receives, writes, or logs the credential returned by Azure CLI.
+azure-self-improve-auth-args:
+	@# Inputs: AZURE_SELF_IMPROVE_SUBSCRIPTION_ID AZURE_SELF_IMPROVE_RESOURCE_GROUP AZURE_SELF_IMPROVE_ACCOUNT AZURE_SELF_IMPROVE_SP_NAME
+	@$(SYSTEM_PYTHON) scripts/render_azure_self_improve_auth_args.py
 
 # Isolated inference worker: the parent owns its process group and exchange files.
 self-improve-local-proposal:

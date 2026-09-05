@@ -2,6 +2,16 @@
   "version": 1,
   "targets": [
     {
+      "name": "azure-self-improve-auth-args",
+      "make_variables": [
+        "AZURE_SELF_IMPROVE_SUBSCRIPTION_ID",
+        "AZURE_SELF_IMPROVE_RESOURCE_GROUP",
+        "AZURE_SELF_IMPROVE_ACCOUNT",
+        "AZURE_SELF_IMPROVE_SP_NAME"
+      ],
+      "behavior": "make azure-self-improve-auth-args AZURE_SELF_IMPROVE_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_SELF_IMPROVE_RESOURCE_GROUP=gludd-models AZURE_SELF_IMPROVE_ACCOUNT=gludd-self-improve AZURE_SELF_IMPROVE_SP_NAME=gludd-self-improve-contract"
+    },
+    {
       "name": "test-self-improve-private-policy",
       "make_variables": [],
       "behavior": "make test-self-improve-private-policy"

@@ -14,9 +14,10 @@ permissions required** for the named gludd operation to function.
 
 ## File Map
 
-Two Azure policy files exist because the Portal JSON editor and the Azure CLI
+Two Azure deployment-policy files exist because the Portal JSON editor and the Azure CLI
 expect different JSON structures for the same role definition. Both files
-contain identical permissions — only the shape differs.
+contain identical permissions — only the shape differs. The self-improvement
+role is a separate, account-scoped inference persona.
 
 | File | Format | Use with |
 |------|--------|----------|
@@ -25,6 +26,7 @@ contain identical permissions — only the shape differs.
 | `azure-iam-roles.yml` | Azure RBAC role assignments scoped to resource group | az CLI |
 | `azure-iam-policy.json` | Azure custom role — **PascalCase flat keys** (`Name`, `Actions`, `NotActions`, `AssignableScopes`) | Azure CLI: `az role definition create --role-definition "$(cat ...)"` (inline JSON, not `@file`) |
 | `azure-iam-policy-cli.json` | Azure custom role — **REST API format** (`properties` wrapper: `roleName`, `permissions[].actions`, `assignableScopes`) | Azure Portal Web UI: paste into JSON tab |
+| `azure-self-improve-role.json` | Azure OpenAI self-improvement custom-role template with exact account scope and `responses/write` only | Materialize an external copy, replace every brace-delimited identifier, then use Azure CLI custom-role create/update |
 
 ### When to use which Azure file
 
