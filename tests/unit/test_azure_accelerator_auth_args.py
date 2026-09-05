@@ -273,7 +273,7 @@ def test_both_streams_invoke_one_fake_azure_process(tmp_path: Path) -> None:
         "path = pathlib.Path(os.environ['GLUDD_FAKE_AZ_LOG'])\n"
         "with path.open('a', encoding='utf-8') as stream:\n"
         "    stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
-        "print(json.dumps({'clientId': 'fake-client', 'clientSecret': 'fake-secret'}))\n",
+        "print(json.dumps({'clientId': 'fake-client'}))\n",
         encoding="utf-8",
     )
     fake_az.chmod(0o700)

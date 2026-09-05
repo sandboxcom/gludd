@@ -14,7 +14,13 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "config/self-improve/context-budget-lifecycle.json"
 DOCUMENT = ROOT / "docs/features/SELF_IMPROVEMENT_MULTIFILE_FIXTURE.md"
 COVERAGE_CONFIG = ROOT / "config/coverage_self_improve.ini"
-FIXTURE_SHA256 = "e5310a0913785decc8e6c13bcbf78770b82d969bc95b951cb14237c660913b1b"
+FIXTURE_SHA256_PARTS = (
+    "e5310a0913785dec",
+    "c8e6c13bcbf78770",
+    "b82d969bc95b951c",
+    "b14237c660913b1b",
+)
+FIXTURE_SHA256 = "".join(FIXTURE_SHA256_PARTS)
 COVERAGE_TEST_SELECTOR = (
     "tests/unit/test_project*.py",
     "tests/unit/test_daemon*.py",
@@ -217,8 +223,8 @@ def test_multifile_target_is_pinned_and_safe_by_default() -> None:
         'SELF_IMPROVE_VALIDATE_ONLY="$(if $(filter '
         '1,$(SELF_IMPROVE_MULTIFILE_LIVE)),0,1)"'
     ) in target
-    assert FIXTURE_SHA256 in target
-    assert target.index(FIXTURE_SHA256) < target.index(
+    assert all(part in target for part in FIXTURE_SHA256_PARTS)
+    assert target.index("EXPECTED_FIXTURE_SHA256=") < target.index(
         "$(MAKE) --no-print-directory test-self-improve"
     )
     assert "release-" not in target

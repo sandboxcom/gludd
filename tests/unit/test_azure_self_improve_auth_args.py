@@ -245,8 +245,7 @@ def test_nul_stream_round_trips_through_one_fake_azure_cli_process(tmp_path: Pat
         "path = pathlib.Path(os.environ['GLUDD_FAKE_AZ_LOG'])\n"
         "with path.open('a', encoding='utf-8') as stream:\n"
         "    stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
-        "print(json.dumps({'clientId': 'fake-client', 'clientSecret': 'fake-value', "
-        "'tenantId': 'fake-tenant'}))\n",
+        "print(json.dumps({'clientId': 'fake-client'}))\n",
         encoding="utf-8",
     )
     fake_az.chmod(0o700)
