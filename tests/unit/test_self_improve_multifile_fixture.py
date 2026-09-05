@@ -14,12 +14,12 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "config/self-improve/context-budget-lifecycle.json"
 DOCUMENT = ROOT / "docs/features/SELF_IMPROVEMENT_MULTIFILE_FIXTURE.md"
 COVERAGE_CONFIG = ROOT / "config/coverage_self_improve.ini"
-FIXTURE_SHA256 = "cb1ae6a252cedc2b337d84fd02e7ca36935709c30bb0e8be9060401cba8d1f04"
+FIXTURE_SHA256 = "e5310a0913785decc8e6c13bcbf78770b82d969bc95b951cb14237c660913b1b"
 COVERAGE_TEST_SELECTOR = (
     "tests/unit/test_project*.py",
     "tests/unit/test_daemon*.py",
     "tests/unit/test_event_loop*.py",
-    "tests/unit/test_self_improve*.py",
+    "tests/unit/test_*self_improve*.py",
     "tests/unit/test_managed_self_improve*.py",
     "tests/unit/test_worker*.py",
     "tests/unit/test_job*.py",
