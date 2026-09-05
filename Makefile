@@ -5741,7 +5741,8 @@ test-self-improve-failure-corpus:
 # Reproducible multi-file context/lifecycle sentinel; safe plan by default.
 test-self-improve-multifile:
 	@case "$(SELF_IMPROVE_MULTIFILE_LIVE)" in 0|1) ;; *) echo "SELF_IMPROVE_MULTIFILE_LIVE must be 0 or 1"; exit 2;; esac
-	@EXPECTED_FIXTURE_SHA256="e5310a0913785dec""c8e6c13bcbf78770""b82d969bc95b951c""b14237c660913b1b"; \
+	@EXPECTED_FIXTURE_SHA256_OCTETS="e5 31 0a 09 13 78 5d ec c8 e6 c1 3b cb f7 87 70 b8 2d 96 9b c9 5b 95 1c b1 42 37 c6 60 91 3b 1b"; \
+		EXPECTED_FIXTURE_SHA256="$$(printf '%s' "$$EXPECTED_FIXTURE_SHA256_OCTETS" | tr -d ' ')"; \
 		ACTUAL_FIXTURE_SHA256="$$($(PYTHON) -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "config/self-improve/context-budget-lifecycle.json")"; \
 		[ "$$ACTUAL_FIXTURE_SHA256" = "$$EXPECTED_FIXTURE_SHA256" ] || { echo "multifile fixture drift: expected=$$EXPECTED_FIXTURE_SHA256 actual=$$ACTUAL_FIXTURE_SHA256"; exit 2; }
 	@$(MAKE) --no-print-directory test-self-improve TARGET=multifile-context-lifecycle SELF_IMPROVE_MODEL_PATH= SELF_IMPROVE_BASELINE_REF=80b381bd87f32487d784964ce93566e3b016b191 SELF_IMPROVE_REFERENCE_REF=6463324cfcf6db9b9a2f9ec203e0bd3862a1e80e SELF_IMPROVE_TASK_FILE=config/self-improve/context-budget-lifecycle.json SELF_IMPROVE_MAX_ATTEMPTS=2 SELF_IMPROVE_VALIDATE_ONLY="$(if $(filter 1,$(SELF_IMPROVE_MULTIFILE_LIVE)),0,1)"
