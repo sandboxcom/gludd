@@ -1629,6 +1629,10 @@ gate: _gate-run-lock-acquire check-generated-artifact-hygiene _dead-code-baselin
 	else \
 		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-status.next && touch .gate-failed; \
 	fi
+	@echo "=== GATE PHASE: verify-feature-claims ==="
+	@printf "verify-feature-claims " >> .gate-status.next
+	@mkdir -p .gate-logs
+	@$(MAKE) --no-print-directory verify-feature-claims > .gate-logs/verify-feature-claims.log 2>&1 && echo "PASS" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed && tail -30 .gate-logs/verify-feature-claims.log)
 	@echo "=== GATE PHASE: dead-code ==="
 	@printf "dead-code " >> .gate-status.next
 	@$(MAKE) --no-print-directory check-dead-code-quiet > /dev/null 2>&1 && echo "PASS 0" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed)

@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-05 — (resolved) Full local gate omitted hosted feature-claim freshness check
+
+- **What happened**: Exact-SHA local gate candidate `0373c04ad9eba117f4ad7497467ac92f46cb59db` passed all eight test shards at 94% aggregate branch coverage with all 1,179 files above the per-file floor, but hosted run `33955585614` failed both Python 3.11 and 3.12 gates before tests because `README.md`'s generated status table was stale.
+- **Root cause**: `_gate-refresh-body` ran `verify-feature-claims`, while the full `gate` recipe did not. GitHub Actions invoked `playbooks/verify_feature_claims.yml` independently, so local and hosted gates enforced different pre-test claims.
+- **Fix applied**: Regenerated the canonical README table, added a visible fail-closed `verify-feature-claims` phase to the full gate, persisted its output in `.gate-logs/verify-feature-claims.log`, and added `test_gate_feature_claim_parity.py` to pin the marker, status attestation, invocation, and failure propagation.
+- **Lesson**: A full local gate is not authoritative unless it includes every hosted assertion that can stop the workflow. Hosted-only checks create false-green candidate SHAs and must have an explicit local parity pin.
+
 ### 2026-08-31 — (resolved) Local beta4 shard exhausted disk during Terraform provider installation
 
 - **What happened**: Candidate `a9372f33b52dd942f09b72331572393b58a55643` passed both hosted workflows, but the canonical local exact-SHA lane reached `unit-3b:batch-007` and failed `test_module_fmt_and_validate[network]` when Terraform could not install `hashicorp/azurerm v5.3.0`: the filesystem returned `no space left on device`.
