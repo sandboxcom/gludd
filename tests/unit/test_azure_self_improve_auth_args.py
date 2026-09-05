@@ -19,6 +19,9 @@ SCOPE = (
     f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/{RESOURCE_GROUP}"
     f"/providers/Microsoft.CognitiveServices/accounts/{ACCOUNT}"
 )
+ROLE_ASSIGNABLE_SCOPE = (
+    f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/{RESOURCE_GROUP}"
+)
 ROLE_NAME = f"Gludd Azure OpenAI Self Improvement - {ACCOUNT}"
 EXPECTED_ARGS = (
     "ad",
@@ -329,6 +332,7 @@ def test_help_contract_docs_and_gitignore_pin_the_one_azure_call_workflow() -> N
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     contract = json.loads((ROOT / "config/make_target_contract.json").read_text(encoding="utf-8"))
     docs = (ROOT / "docs/azure-iam-setup.md").read_text(encoding="utf-8")
+    normalized_docs = " ".join(docs.split())
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     entry = next(item for item in contract["targets"] if item["name"] == "azure-self-improve-auth-args")
 
@@ -354,6 +358,12 @@ def test_help_contract_docs_and_gitignore_pin_the_one_azure_call_workflow() -> N
     assert "#31995" in docs
     assert "#31579" in docs
     assert "responses/write" in docs
+    assert "management-group or subscription-level resource" in normalized_docs
+    assert "custom role is assignable at the exact resource-group scope" in normalized_docs
+    assert "role assignment remains narrowed to the exact account resource" in normalized_docs
+    assert "[Azure custom-role scope rules][azure-custom-role-scope]" in docs
+    assert "Gludd maps `clientId`" not in docs
+    assert "The operator or secret-injection workflow must read" in normalized_docs
     assert "gludd-azure-self-improve-auth.*" in gitignore
 
 
@@ -374,8 +384,15 @@ def test_checked_in_custom_role_template_matches_the_emitted_role_and_scope() ->
     assert role["NotDataActions"] == []
     assert role["AssignableScopes"] == [
         "/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
-        "/providers/Microsoft.CognitiveServices/accounts/{account_name}"
     ]
+    assert (
+        role["AssignableScopes"][0].format(
+            subscription_id=SUBSCRIPTION_ID,
+            resource_group=RESOURCE_GROUP,
+        )
+        == ROLE_ASSIGNABLE_SCOPE
+    )
+    assert SCOPE.startswith(f"{ROLE_ASSIGNABLE_SCOPE}/providers/")
 
 
 def test_target_and_renderer_never_contain_or_accept_a_credential() -> None:

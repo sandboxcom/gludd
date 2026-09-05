@@ -56,8 +56,8 @@ must match the existing role exactly.
 
 The deployment role above is deliberately not the role used for model
 self-improvement. Before issuing a credential, install or update one custom role
-named `Gludd Azure OpenAI Self Improvement - <account>` at the exact Cognitive
-Services account resource ID. The canonical
+named `Gludd Azure OpenAI Self Improvement - <account>` with an assignable scope
+limited to the resource group that owns the account. The canonical
 `config/infra/azure-self-improve-role.json` template must be materialized
 outside the repository with all three brace-delimited identifiers replaced
 before following the create/update procedure. Its permission document is
@@ -77,7 +77,20 @@ intentionally only:
 }
 ```
 
-The assignable and assignment scope must both be exactly:
+Azure represents a role definition as a management-group or subscription-level
+resource; it does not store a role definition on an individual Azure OpenAI
+account. The [Azure custom-role scope rules][azure-custom-role-scope] permit
+custom-role assignments at management-group, subscription, and resource-group
+scopes. Because this role includes a `DataActions` permission, it must not be
+assigned at management-group scope. The custom role is assignable at the exact
+resource-group scope:
+
+```text
+/subscriptions/<subscription-id>/resourceGroups/<resource-group>
+```
+
+That definition boundary does not broaden the generated identity. The service
+principal role assignment remains narrowed to the exact account resource:
 
 ```text
 /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>
@@ -110,10 +123,12 @@ command receives both the custom role and exact resource scope explicitly.
 
 Replace all four example values. Keep the output outside the repository and
 send only its path through an approved private channel. The JSON is not a shell
-file and must not be sourced. It contains the Azure CLI `--json-auth` fields;
-Gludd maps `clientId`, `tenantId`, and `clientSecret` to `AZURE_CLIENT_ID`,
-`AZURE_TENANT_ID`, and `AZURE_CLIENT_SECRET`. The non-secret live-candidate
-configuration remains the endpoint
+file and must not be sourced. It contains the Azure CLI `--json-auth` fields.
+The operator or secret-injection workflow must read `clientId`, `tenantId`, and
+`clientSecret` from that protected JSON and provide them to Gludd as
+`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_CLIENT_SECRET`. The current
+runtime does not load this JSON file directly. The non-secret live-candidate
+configuration must also provide the endpoint
 `https://<account>.openai.azure.com`, API family `azure_openai`, API version
 `v1`, subscription, resource group, account, and deployment name.
 
@@ -608,6 +623,7 @@ src/general_ludd/cloud/game_e2e.py          # 561-line orchestrator
 
 [fps-game-runbook]: research/FPS_GAME_E2E_RELIABILITY.md#operator-runbook-preflight-paid-run-and-cleanup
 [azure-ai-permissions]: https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/ai-machine-learning
+[azure-custom-role-scope]: https://learn.microsoft.com/en-us/azure/role-based-access-control/custom-roles#custom-role-properties
 [azure-custom-role-cli]: https://learn.microsoft.com/en-us/azure/role-based-access-control/custom-roles-cli
 [azure-cli-ad-sp]: https://learn.microsoft.com/en-us/cli/azure/ad/sp#az-ad-sp-create-for-rbac
 [azure-cli-31995]: https://github.com/Azure/azure-cli/issues/31995
