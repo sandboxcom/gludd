@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-06 — (resolved locally) Azure Container Apps module missed canonical Terraform formatting
+
+- **What happened**: The exact-head gate cleared the repaired self-improvement coverage contract, then Terraform binary validation rejected the Azure Container Apps vLLM module while every adjacent module passed.
+- **Root cause**: The `tags` assignment retained column-alignment whitespace that the pinned `terraform fmt -check -diff` binary canonicalizes to a single space.
+- **Fix applied**: The production module now uses the canonical formatter output; no resource, permission, provider, or lifecycle semantics changed.
+- **Evidence**: The exact parameterized Terraform binary format-and-validate test now passes for `azure-container-app-vllm`.
+- **Lesson**: New Terraform modules must be validated by the real pinned formatter, not only by HCL parsing or structural assertions.
+
 ### 2026-09-06 — (resolved locally) Azure live-proof boundaries failed global gate contracts
 
 - **What happened**: The exact-head gate cleared every earlier Azure regression and the fresh-process Make audit, then stopped on two global checks: strict mypy identified the Azure SDK bearer-token factory as `Any`, and the no-sleep guard found the live-proof ARM readiness loop without an explicit lifecycle classification.

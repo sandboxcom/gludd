@@ -18,6 +18,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 S83.157 exact changed-surface registration (from the active gate):
 
+- `infra/terraform/modules/azure-container-app-vllm/main.tf`
+
 - `Makefile`
 - `.github/workflows/build.yml`
 - `BUGS.md`

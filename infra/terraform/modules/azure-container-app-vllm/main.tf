@@ -161,7 +161,7 @@ resource "azapi_resource" "vllm" {
     }
   }
 
-  tags                    = local.tags
+  tags = local.tags
   response_export_values = [
     "properties.configuration.ingress.fqdn",
     "properties.latestReadyRevisionName",
