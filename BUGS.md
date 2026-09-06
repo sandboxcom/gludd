@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-06 — (resolved locally) Azure Container App stack interface obscured runtime-only outputs
+
+- **What happened**: After the real Terraform formatter passed, the exact-head gate found that the Azure Container App vLLM stack omitted descriptions from its input variables and that the generic vLLM/llama.cpp mirror assertion treated two real Container App outputs as unexplained drift.
+- **Root cause**: The stack wrapper forwarded documented module inputs without preserving their descriptions. The cross-stack contract also had only a global exception set, so it could not distinguish a materialized Container App's revision and app-only cleanup boundary from the paired llama.cpp stack's provider-neutral server configuration.
+- **Fix applied**: Every stack input now documents its trust, sizing, or lifecycle meaning; the module's vLLM tuning inputs received the same documentation. The mirror contract names the two stack-specific outputs explicitly and separately requires the live Container App stack to expose both, rather than fabricating meaningless revision or cleanup values in the llama.cpp configuration stack.
+- **Evidence**: The failing-first gate identified both assertions after 817 neighboring tests passed. Focused stack and module validation now exercise descriptions, exact output asymmetry, real Terraform formatting, and validation without relaxing shared-output parity.
+- **Lesson**: Paired infrastructure stacks should share portable outputs, while provider-owned runtime identities must be modeled as explicit, positively asserted differences rather than hidden in a global allowlist or faked on an unmaterialized peer.
+
 ### 2026-09-06 — (resolved locally) Azure Container Apps module missed canonical Terraform formatting
 
 - **What happened**: The exact-head gate cleared the repaired self-improvement coverage contract, then Terraform binary validation rejected the Azure Container Apps vLLM module while every adjacent module passed.

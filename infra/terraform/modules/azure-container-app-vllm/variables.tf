@@ -177,8 +177,9 @@ variable "trace_id" {
 }
 
 variable "vllm_context_length" {
-  type    = number
-  default = 4096
+  description = "Maximum token context selected by the immutable model-fit plan."
+  type        = number
+  default     = 4096
 
   validation {
     condition     = var.vllm_context_length >= 512 && var.vllm_context_length <= 32768
@@ -187,8 +188,9 @@ variable "vllm_context_length" {
 }
 
 variable "vllm_max_num_seqs" {
-  type    = number
-  default = 8
+  description = "Maximum concurrent vLLM sequences selected for the GPU profile."
+  type        = number
+  default     = 8
 
   validation {
     condition     = var.vllm_max_num_seqs >= 1 && var.vllm_max_num_seqs <= 64
@@ -197,8 +199,9 @@ variable "vllm_max_num_seqs" {
 }
 
 variable "vllm_gpu_memory_utilization" {
-  type    = number
-  default = 0.9
+  description = "Fraction of GPU memory vLLM may reserve for weights and KV cache."
+  type        = number
+  default     = 0.9
 
   validation {
     condition     = var.vllm_gpu_memory_utilization >= 0.5 && var.vllm_gpu_memory_utilization <= 0.95
@@ -207,26 +210,31 @@ variable "vllm_gpu_memory_utilization" {
 }
 
 variable "vllm_enforce_eager" {
-  type    = bool
-  default = false
+  description = "Whether vLLM must disable CUDA graph execution for this candidate."
+  type        = bool
+  default     = false
 }
 
 variable "vllm_enable_prefix_caching" {
-  type    = bool
-  default = true
+  description = "Whether vLLM may reuse matching prompt-prefix cache blocks."
+  type        = bool
+  default     = true
 }
 
 variable "vllm_enable_chunked_prefill" {
-  type    = bool
-  default = true
+  description = "Whether vLLM may split long prompt prefills into bounded chunks."
+  type        = bool
+  default     = true
 }
 
 variable "vllm_kv_cache_dtype" {
-  type    = string
-  default = "auto"
+  description = "KV-cache data type selected by the immutable model-fit plan."
+  type        = string
+  default     = "auto"
 }
 
 variable "vllm_quantization" {
-  type    = string
-  default = ""
+  description = "Optional vLLM quantization backend selected for the pinned model."
+  type        = string
+  default     = ""
 }
