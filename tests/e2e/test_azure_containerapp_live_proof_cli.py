@@ -845,6 +845,10 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     )[0]
     assert "coverage-files" in recipe
     assert "config/coverage_azure_containerapp.ini" in recipe
+    assert "tests/unit/test_azure_containerapp_environment_lifecycle.py" in recipe
+    assert "tests/unit/test_azure_containerapp_environment_make_runtime.py" in recipe
+    assert "tests/unit/test_azure_containerapp_environment_terraform.py" in recipe
+    assert "tests/unit/test_azure_containerapp_topology.py" in recipe
     assert "tests/unit/test_azure_containerapp_tfvars.py" in recipe
     assert "tests/unit/test_deployment_telemetry.py" in recipe
     assert "tests/unit/test_provider_auth.py" in recipe
@@ -867,3 +871,9 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     assert "matrix.python-version == '3.11'" in hosted
     assert "make test-azure-containerapp-coverage" in hosted
     assert "secrets.AZURE" not in hosted
+    coverage_config = (
+        root / "config/coverage_azure_containerapp.ini"
+    ).read_text(encoding="utf-8")
+    assert "azure_containerapp_environment_lifecycle.py" in coverage_config
+    assert "azure_containerapp_environment_make_runtime.py" in coverage_config
+    assert "azure_containerapp_topology.py" in coverage_config

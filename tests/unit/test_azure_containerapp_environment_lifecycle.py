@@ -259,6 +259,74 @@ def test_missing_profile_is_added_without_removing_existing_owned_profile() -> N
     }
 
 
+def test_platform_consumption_profile_is_accepted_but_not_managed_by_gludd() -> None:
+    policy = _policy()
+    document = _document(policy)
+    properties = cast(dict[str, object], document["properties"])
+    profiles = cast(list[object], properties["workloadProfiles"])
+    profiles.insert(
+        0,
+        {"name": "Consumption", "workloadProfileType": "Consumption"},
+    )
+    runtime = _Runtime(policy, document=document)
+
+    result = ensure_azure_containerapp_environment(policy, runtime=runtime)
+
+    assert result.disposition is EnvironmentLifecycleDisposition.REUSED
+    planned_policy = runtime.policies[runtime.calls.index("plan")]
+    assert planned_policy.profiles == (_t4(),)
+
+
+def test_platform_only_environment_can_be_reconciled_with_required_gpu_profile() -> None:
+    policy = _policy()
+    document = _document(policy)
+    properties = cast(dict[str, object], document["properties"])
+    properties["workloadProfiles"] = [
+        {"name": "Consumption", "workloadProfileType": "Consumption"}
+    ]
+    runtime = _Runtime(policy, document=document, plan_actions=["update"])
+
+    result = ensure_azure_containerapp_environment(policy, runtime=runtime)
+
+    assert result.disposition is EnvironmentLifecycleDisposition.RECONCILED
+    assert result.effective_profiles == (_t4(),)
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        {"name": "Consumption", "workloadProfileType": "Dedicated-D4"},
+        {"name": "foreign", "workloadProfileType": "Consumption"},
+        {"name": "foreign", "workloadProfileType": "D4"},
+    ],
+)
+def test_unrecognized_observed_profiles_refuse_before_terraform(
+    profile: dict[str, str],
+) -> None:
+    policy = _policy()
+    document = _document(policy)
+    properties = cast(dict[str, object], document["properties"])
+    properties["workloadProfiles"] = [profile]
+    runtime = _Runtime(policy, document=document)
+
+    with pytest.raises(AzureEnvironmentLifecycleError, match="ownership"):
+        ensure_azure_containerapp_environment(policy, runtime=runtime)
+
+    assert runtime.calls == ["read"]
+
+
+def test_state_digest_is_stable_only_for_the_same_owner_and_resource() -> None:
+    policy = _policy()
+
+    assert policy.state_digest == _policy(
+        profiles=(_a100(),),
+        plan_digest="d" * 64,
+        expires_at_utc="2026-09-06T21:00:00Z",
+    ).state_digest
+    assert policy.state_digest != _policy(owner_digest="e" * 64).state_digest
+    assert policy.state_digest != _policy(environment_name="other-environment").state_digest
+
+
 @pytest.mark.parametrize(
     "mutation",
     [

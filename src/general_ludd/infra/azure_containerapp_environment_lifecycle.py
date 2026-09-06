@@ -32,6 +32,7 @@ _PROFILE_PAIRS = {
     "gpu-t4": T4_PROFILE.workload_profile_type,
     "gpu-a100": A100_PROFILE.workload_profile_type,
 }
+_PLATFORM_CONSUMPTION_PROFILE = ("Consumption", "Consumption")
 _MANAGED_BY = "general-ludd"
 _LIFECYCLE_VERSION = "1"
 
@@ -135,6 +136,18 @@ class AzureEnvironmentLifecyclePolicy:
             "gludd-plan-digest": self.plan_digest,
             "gludd-expires-at": self.expires_at_utc,
         }
+
+    @property
+    def state_digest(self) -> str:
+        """Return the stable owner/resource identity for persistent Terraform state."""
+        payload = {
+            "environment_id": self.environment_id.casefold(),
+            "owner_digest": self.owner_digest,
+        }
+        encoded = json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode()
+        return hashlib.sha256(encoded).hexdigest()
 
     @property
     def operation_digest(self) -> str:
@@ -280,17 +293,23 @@ def _string_member(value: Mapping[str, object], key: str) -> str:
 
 
 def _profile_tuple(value: object) -> tuple[AzureEnvironmentProfile, ...]:
-    if not isinstance(value, list) or not 1 <= len(value) <= len(_PROFILE_PAIRS):
+    if not isinstance(value, list) or not 1 <= len(value) <= len(_PROFILE_PAIRS) + 1:
         raise ValueError
     profiles: list[AzureEnvironmentProfile] = []
+    platform_consumption_seen = False
     for raw_profile in value:
         profile = _mapping(raw_profile)
+        name = _string_member(profile, "name")
+        profile_type = _string_member(profile, "workloadProfileType")
+        if (name, profile_type) == _PLATFORM_CONSUMPTION_PROFILE:
+            if platform_consumption_seen:
+                raise ValueError
+            platform_consumption_seen = True
+            continue
         profiles.append(
             AzureEnvironmentProfile(
-                profile_name=_string_member(profile, "name"),
-                workload_profile_type=_string_member(
-                    profile, "workloadProfileType"
-                ),
+                profile_name=name,
+                workload_profile_type=profile_type,
             )
         )
     result = tuple(sorted(profiles))
