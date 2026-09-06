@@ -18,7 +18,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 S83.157 latest exact-head evidence: the gate cleared every earlier Azure repair before `unit-3b:batch-031` exposed missing stack input descriptions and two unexplained Container App runtime outputs after 817 neighboring tests passed. Every vLLM stack input now documents its trust, sizing, or lifecycle meaning; module tuning inputs carry the same contract; and the strengthened mirror test explicitly requires the real app's revision and cleanup boundary without fabricating either for the generic llama.cpp configuration stack. Focused stack validation passes 514/514 and module validation passes 103/103, including the pinned real Terraform binary. Exact-head gate and hosted proof remain pending.
 
-S83.157 autonomous-lifecycle evidence: the user clarified that a pre-created environment is not an acceptable runtime boundary. A new pure topology planner now derives the smallest shared runner fleet from immutable model facts, dependency batches, simultaneous demand, per-replica capacity, available T4/A100 profiles, quota, hourly spend, and TTL ceilings. Its 36 failing-first tests prove serial-stage capacity reuse, parallel-stage aggregation, mixed-profile planning, deterministic gateway-only wiring, zero idle replicas, empty-demand teardown intent, and fail-closed graph/budget behavior; focused line and branch coverage is 100%. Terraform environment ownership, reconciliation, and teardown wiring remain in progress.
+S83.157 autonomous-lifecycle evidence: the user clarified that a pre-created environment is not an acceptable runtime boundary. A new pure topology planner now derives the smallest shared runner fleet from immutable model facts, dependency batches, simultaneous demand, per-replica capacity, available T4/A100 profiles, quota, hourly spend, and TTL ceilings. Its 36 failing-first tests prove serial-stage capacity reuse, parallel-stage aggregation, mixed-profile planning, deterministic gateway-only wiring, zero idle replicas, empty-demand teardown intent, and fail-closed graph/budget behavior; focused line and branch coverage is 100%. A Terraform-authoritative environment lifecycle now proves ownership before planning, accepts only one exact create/update/no-op, merges required profiles without removing an existing owned profile, independently verifies ARM readiness, retains environments with live apps, destroys idle owned environments, proves absence, and recovers partial creates; 49 tests pass at 93% focused line/branch coverage, including a failing-first correction that prevents a retained partial environment from being misreported as recovered. The concrete Terraform stack/runtime and live-proof wiring remain in progress.
 
 S83.157 exact changed-surface registration (from the active gate):
 
@@ -46,6 +46,7 @@ S83.157 exact changed-surface registration (from the active gate):
 - `scripts/ci_named_shard_files.py`
 - `src/general_ludd/azure/accelerator_credentials.py`
 - `src/general_ludd/infra/azure_containerapp_arm.py`
+- `src/general_ludd/infra/azure_containerapp_environment_lifecycle.py`
 - `src/general_ludd/infra/azure_containerapp_gpu.py`
 - `src/general_ludd/infra/azure_containerapp_live_proof.py`
 - `src/general_ludd/infra/azure_containerapp_live_trace.py`
@@ -78,6 +79,7 @@ S83.157 exact changed-surface registration (from the active gate):
 - `tests/unit/test_azure_accelerator_least_privilege.py`
 - `tests/unit/test_azure_containerapp_arm.py`
 - `tests/unit/test_azure_containerapp_environment_bootstrap.py`
+- `tests/unit/test_azure_containerapp_environment_lifecycle.py`
 - `tests/unit/test_azure_containerapp_environment_preflight.py`
 - `tests/unit/test_azure_containerapp_gpu.py`
 - `tests/unit/test_azure_containerapp_live_proof.py`
