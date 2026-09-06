@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from collections.abc import Mapping
 from typing import Final
 
 import httpx
@@ -16,6 +17,7 @@ _MAX_RESPONSE_BYTES: Final = 1024 * 1024
 _MAX_TOKEN_CHARS: Final = 8192
 _RESOURCE_GROUP_PATTERN = re.compile(r"(?=.{1,90}\Z)[A-Za-z0-9_().-]+(?<!\.)")
 _RESOURCE_NAME_PATTERN = re.compile(r"(?=.{1,64}\Z)[A-Za-z0-9_.-]+")
+_MAX_INVENTORY_ITEMS: Final = 256
 
 
 class AzureContainerAppARMError(RuntimeError):
@@ -85,6 +87,14 @@ def _container_app_path(
         f"{prefix}/containerApps/{app_name}"
         f"?api-version={_CONTAINER_APP_API_VERSION}"
     )
+
+
+def _container_app_list_path(resource_root: str) -> str:
+    environment_marker = "/managedEnvironments/"
+    if environment_marker not in resource_root:
+        raise ValueError("container app inventory path could not be constructed")
+    prefix, _separator, _name = resource_root.partition(environment_marker)
+    return f"{prefix}/containerApps?api-version={_CONTAINER_APP_API_VERSION}"
 
 
 def _validate_request(
@@ -286,8 +296,148 @@ class HttpxContainerAppARMTransport:
         self.close()
 
 
+def _inventory_app_ids(
+    document: object,
+    *,
+    environment_id: str,
+    app_id_prefix: str,
+) -> tuple[str, ...]:
+    try:
+        if not isinstance(document, Mapping):
+            raise ValueError
+        if set(document) - {"value", "nextLink"}:
+            raise ValueError
+        if document.get("nextLink") not in (None, ""):
+            raise ValueError
+        items = document["value"]
+        if not isinstance(items, list) or len(items) > _MAX_INVENTORY_ITEMS:
+            raise ValueError
+        seen: set[str] = set()
+        matching: list[str] = []
+        for item in items:
+            if not isinstance(item, Mapping):
+                raise ValueError
+            resource_id = item.get("id")
+            properties = item.get("properties")
+            if not isinstance(resource_id, str) or not isinstance(properties, Mapping):
+                raise ValueError
+            normalized_id = resource_id.casefold()
+            if not normalized_id.startswith(app_id_prefix.casefold()):
+                raise ValueError
+            app_name = resource_id[len(app_id_prefix) :]
+            if _RESOURCE_NAME_PATTERN.fullmatch(app_name) is None:
+                raise ValueError
+            if normalized_id in seen:
+                raise ValueError
+            seen.add(normalized_id)
+            observed_environment = properties.get("managedEnvironmentId")
+            if not isinstance(observed_environment, str):
+                raise ValueError
+            if observed_environment.casefold() == environment_id.casefold():
+                matching.append(resource_id)
+        return tuple(sorted(matching, key=str.casefold))
+    except (KeyError, TypeError, ValueError):
+        raise AzureContainerAppARMError(
+            "Azure Resource Manager app inventory is incomplete or ambiguous"
+        ) from None
+
+
+class HttpxContainerAppEnvironmentLifecycleTransport:
+    """Read one environment and its resource-group app inventory, never mutate."""
+
+    def __init__(
+        self,
+        *,
+        subscription_id: str,
+        resource_group: str,
+        environment_name: str,
+        client: httpx.Client | None = None,
+    ) -> None:
+        """Bind both reads to one exact resource group and environment."""
+        self._environment_id = _resource_root(
+            subscription_id,
+            resource_group,
+            environment_name,
+        )
+        self._environment_path = f"{self._environment_id}?api-version={_API_VERSION}"
+        self._inventory_path = _container_app_list_path(self._environment_id)
+        self._approved_paths = frozenset(
+            {self._environment_path, self._inventory_path}
+        )
+        inventory_suffix = f"?api-version={_CONTAINER_APP_API_VERSION}"
+        self._app_id_prefix = self._inventory_path.removesuffix(inventory_suffix) + "/"
+        self._owns_client = client is None
+        self._client = client or httpx.Client(
+            base_url=_ARM_ORIGIN,
+            follow_redirects=False,
+            timeout=httpx.Timeout(10.0),
+            limits=httpx.Limits(max_connections=2, max_keepalive_connections=1),
+            trust_env=False,
+            headers={"accept": "application/json"},
+        )
+
+    def _get(self, path: str, bearer_token: str, *, absent_on_404: bool) -> object | None:
+        _validate_request(path, bearer_token, self._approved_paths)
+        try:
+            with self._client.stream(
+                "GET",
+                path,
+                headers={"authorization": f"Bearer {bearer_token}"},
+                follow_redirects=False,
+            ) as response:
+                if absent_on_404 and response.status_code == 404:
+                    return None
+                return _decode_json(_read_response(response))
+        except AzureContainerAppARMError:
+            raise
+        except httpx.HTTPError:
+            raise AzureContainerAppARMError(
+                "Azure Resource Manager lifecycle read failed"
+            ) from None
+
+    def get_environment(self, bearer_token: str) -> object | None:
+        """Return the exact environment document, or ``None`` only on 404."""
+        return self._get(
+            self._environment_path,
+            bearer_token,
+            absent_on_404=True,
+        )
+
+    def list_environment_app_ids(self, bearer_token: str) -> tuple[str, ...]:
+        """Return bounded app IDs that independently reference this environment."""
+        document = self._get(
+            self._inventory_path,
+            bearer_token,
+            absent_on_404=False,
+        )
+        return _inventory_app_ids(
+            document,
+            environment_id=self._environment_id,
+            app_id_prefix=self._app_id_prefix,
+        )
+
+    def close(self) -> None:
+        """Close only a client allocated by this transport."""
+        if self._owns_client:
+            self._client.close()
+
+    def __enter__(self) -> HttpxContainerAppEnvironmentLifecycleTransport:
+        """Return this transport as an owned context resource."""
+        return self
+
+    def __exit__(
+        self,
+        _exception_type: object,
+        _exception: object,
+        _traceback: object,
+    ) -> None:
+        """Close the owned transport when its context exits."""
+        self.close()
+
+
 __all__ = [
     "AzureContainerAppARMError",
     "HttpxARMJSONTransport",
     "HttpxContainerAppARMTransport",
+    "HttpxContainerAppEnvironmentLifecycleTransport",
 ]

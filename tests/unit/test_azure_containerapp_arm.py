@@ -12,6 +12,7 @@ from general_ludd.infra.azure_containerapp_arm import (
     AzureContainerAppARMError,
     HttpxARMJSONTransport,
     HttpxContainerAppARMTransport,
+    HttpxContainerAppEnvironmentLifecycleTransport,
 )
 
 SUBSCRIPTION_ID = "11111111-2222-3333-4444-555555555555"
@@ -34,6 +35,10 @@ APP_RESOURCE_ID = (
     "providers/Microsoft.App/containerApps/gludd-vllm-proof-abc123"
 )
 APP_PATH = f"{APP_RESOURCE_ID}?api-version=2025-01-01"
+APP_LIST_PATH = (
+    f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/gludd-models-eastus/"
+    "providers/Microsoft.App/containerApps?api-version=2025-01-01"
+)
 
 
 def _client(handler: httpx.MockTransport) -> httpx.Client:
@@ -317,3 +322,175 @@ def test_app_transport_rejects_ambiguous_resource_identifiers(
 
     with pytest.raises(ValueError):
         HttpxContainerAppARMTransport(**values)
+
+
+def _lifecycle_subject(
+    client: httpx.Client,
+) -> HttpxContainerAppEnvironmentLifecycleTransport:
+    return HttpxContainerAppEnvironmentLifecycleTransport(
+        subscription_id=SUBSCRIPTION_ID,
+        resource_group="gludd-models-eastus",
+        environment_name="gludd-gpu-environment",
+        client=client,
+    )
+
+
+def test_lifecycle_transport_reads_only_environment_and_group_app_inventory() -> None:
+    requests: list[httpx.Request] = []
+    second_id = APP_RESOURCE_ID.replace("abc123", "def456")
+    foreign_environment = RESOURCE_ROOT.replace("gludd-gpu-environment", "foreign")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/containerApps"):
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {
+                            "id": second_id,
+                            "properties": {"managedEnvironmentId": RESOURCE_ROOT.upper()},
+                        },
+                        {
+                            "id": APP_RESOURCE_ID,
+                            "properties": {"managedEnvironmentId": RESOURCE_ROOT},
+                        },
+                        {
+                            "id": APP_RESOURCE_ID.replace("abc123", "foreign"),
+                            "properties": {"managedEnvironmentId": foreign_environment},
+                        },
+                    ]
+                },
+            )
+        return httpx.Response(200, json={"id": RESOURCE_ROOT})
+
+    subject = _lifecycle_subject(_client(httpx.MockTransport(handler)))
+
+    assert subject.get_environment(TOKEN) == {"id": RESOURCE_ROOT}
+    assert subject.list_environment_app_ids(TOKEN) == tuple(
+        sorted((APP_RESOURCE_ID, second_id))
+    )
+    assert [request.method for request in requests] == ["GET", "GET"]
+    assert [str(request.url) for request in requests] == [
+        f"https://management.azure.com{ENVIRONMENT_PATHS[0]}",
+        f"https://management.azure.com{APP_LIST_PATH}",
+    ]
+    assert all(request.headers["authorization"] == f"Bearer {TOKEN}" for request in requests)
+
+
+def test_lifecycle_transport_represents_only_exact_environment_404_as_absent() -> None:
+    subject = _lifecycle_subject(
+        _client(httpx.MockTransport(lambda _request: httpx.Response(404)))
+    )
+
+    assert subject.get_environment(TOKEN) is None
+    with pytest.raises(AzureContainerAppARMError, match="status 404"):
+        subject.list_environment_app_ids(TOKEN)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        [],
+        {},
+        {"value": {}},
+        {"value": [], "nextLink": "https://management.azure.com/next"},
+        {"value": [{"id": APP_RESOURCE_ID}]},
+        {
+            "value": [
+                {
+                    "id": APP_RESOURCE_ID,
+                    "properties": {"managedEnvironmentId": 7},
+                }
+            ]
+        },
+        {
+            "value": [
+                {
+                    "id": "/subscriptions/other/containerApps/foreign",
+                    "properties": {"managedEnvironmentId": RESOURCE_ROOT},
+                }
+            ]
+        },
+        {
+            "value": [
+                {
+                    "id": APP_RESOURCE_ID,
+                    "properties": {"managedEnvironmentId": RESOURCE_ROOT},
+                },
+                {
+                    "id": APP_RESOURCE_ID.upper(),
+                    "properties": {"managedEnvironmentId": RESOURCE_ROOT},
+                },
+            ]
+        },
+    ],
+    ids=(
+        "not-object",
+        "missing-value",
+        "value-not-list",
+        "pagination",
+        "missing-properties",
+        "environment-not-string",
+        "foreign-id",
+        "duplicate-id",
+    ),
+)
+def test_lifecycle_inventory_fails_closed_on_incomplete_or_ambiguous_truth(
+    payload: object,
+) -> None:
+    subject = _lifecycle_subject(
+        _client(httpx.MockTransport(lambda _request: httpx.Response(200, json=payload)))
+    )
+
+    with pytest.raises(AzureContainerAppARMError, match="inventory"):
+        subject.list_environment_app_ids(TOKEN)
+
+
+@pytest.mark.parametrize("operation", ["environment", "inventory"])
+def test_lifecycle_transport_never_follows_redirects_or_renders_private_body(
+    operation: str,
+) -> None:
+    requests: list[httpx.Request] = []
+    private = f"private {TOKEN} {SUBSCRIPTION_ID}"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            302,
+            text=private,
+            headers={"location": "https://attacker.invalid/capture"},
+        )
+
+    subject = _lifecycle_subject(_client(httpx.MockTransport(handler)))
+    call = (
+        subject.get_environment
+        if operation == "environment"
+        else subject.list_environment_app_ids
+    )
+
+    with pytest.raises(AzureContainerAppARMError) as captured:
+        call(TOKEN)
+
+    assert len(requests) == 1
+    assert TOKEN not in repr(captured.value)
+    assert private not in repr(captured.value)
+
+
+@pytest.mark.parametrize(
+    "token",
+    ["", "line\nbreak", pytest.param("x" * 8193, id="oversized")],
+)
+def test_lifecycle_transport_rejects_invalid_tokens_before_network(token: str) -> None:
+    subject = _lifecycle_subject(
+        _client(
+            httpx.MockTransport(
+                lambda _request: pytest.fail("network must not be reached")
+            )
+        )
+    )
+
+    with pytest.raises(ValueError, match="bearer token"):
+        subject.get_environment(token)
+    with pytest.raises(ValueError, match="bearer token"):
+        subject.list_environment_app_ids(token)
