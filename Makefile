@@ -8506,7 +8506,7 @@ tf-init: tf-cache-setup
 # removes test-generated tfvars carrying its marker; operator files and state
 # are preserved. Validate-only proves routing without downloading providers.
 tf-init-local: tf-cache-setup
-	@case "$(STACK)" in stacks/azure-vllm|stacks/azure-llamacpp|stacks/azure-container-app-vllm) ;; *) echo "Usage: make tf-init-local STACK=stacks/azure-vllm|stacks/azure-llamacpp|stacks/azure-container-app-vllm TF_INIT_LOCAL_VALIDATE_ONLY=0|1"; exit 2;; esac
+	@case "$(STACK)" in stacks/azure-vllm|stacks/azure-llamacpp|stacks/azure-container-app-vllm|stacks/azure-container-app-environment) ;; *) echo "Usage: make tf-init-local STACK=stacks/azure-vllm|stacks/azure-llamacpp|stacks/azure-container-app-vllm|stacks/azure-container-app-environment TF_INIT_LOCAL_VALIDATE_ONLY=0|1"; exit 2;; esac
 	@$(UV) run python scripts/clean_terraform_test_artifacts.py "$(TF_ROOT)/$(STACK)"
 	@if [ "$(TF_INIT_LOCAL_VALIDATE_ONLY)" = "1" ]; then echo "tf-init-local validate-only stack=$(STACK)"; exit 0; fi; \
 		RESOURCE_ROOT="$$( $(UV) run python scripts/resource_arbiter.py root )"; \

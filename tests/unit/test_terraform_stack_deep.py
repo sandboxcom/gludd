@@ -91,6 +91,13 @@ STACK_SPECIFIC_VLLM_ONLY_OUTPUTS: dict[str, frozenset[str]] = {
     "azure-container-app-vllm": frozenset({"cleanup_boundary", "revision_name"}),
 }
 
+# Lifecycle roots own control-plane resources, not inference instances. They
+# retain the common stack safety checks while using lifecycle-specific outputs
+# and no replica cost watchdog.
+LIFECYCLE_STACKS: frozenset[str] = frozenset(
+    {"azure-container-app-environment"}
+)
+
 
 def _stack_path(stack_name: str, *parts: str) -> Path:
     return STACKS_DIR.joinpath(stack_name, *parts)
@@ -302,7 +309,7 @@ class TestVariableDefinitions:
 
     @pytest.mark.parametrize("stack_name", STACK_NAMES)
     def test_common_variables_present(self, stack_name: str) -> None:
-        if stack_name.startswith("kubernetes-"):
+        if stack_name.startswith("kubernetes-") or stack_name in LIFECYCLE_STACKS:
             return
         vars_tf = _read_tf(stack_name, "variables.tf")
         variables = _parse_variable_blocks(vars_tf)
@@ -347,6 +354,9 @@ class TestOutputDefinitions:
         main_tf = _read_tf(stack_name, "main.tf")
         parsed = _parse_output_blocks(outputs_tf)
         parsed.update(_parse_output_blocks(main_tf))
+        if stack_name in LIFECYCLE_STACKS:
+            assert set(parsed) == {"environment_id", "cleanup_boundary"}
+            return
         id_match = set(OUTPUT_ID_VARIANTS) & set(parsed)
         url_match = set(OUTPUT_URL_VARIANTS) & set(parsed)
         assert id_match, f"{stack_name}: missing an instance-id-type output ({OUTPUT_ID_VARIANTS})"
@@ -439,7 +449,7 @@ class TestModuleReferences:
     @pytest.mark.parametrize("stack_name", STACK_NAMES)
     def test_non_vast_stacks_have_gpu_watchdog_module(self, stack_name: str) -> None:
         content = _read_tf(stack_name, "main.tf")
-        if stack_name.startswith("vast-"):
+        if stack_name.startswith("vast-") or stack_name in LIFECYCLE_STACKS:
             return
         assert 'source = "../../modules/gpu-cost-watchdog"' in content, (
             f"{stack_name}: must reference gpu-cost-watchdog module"
