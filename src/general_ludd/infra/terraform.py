@@ -25,11 +25,18 @@ from general_ludd.infra.azure_accelerator import (
 from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType, InferenceEngine
 from general_ludd.infra.terraform_state import StateBackendSelector, render_backend_block
 
-_AZURE_CONTAINER_APP_GPUS = {GPUType.T4, GPUType.A100_80}
+_AZURE_CONTAINER_APP_GPUS = {GPUType.T4, GPUType.A100_40, GPUType.A100_80}
 _AZURE_CONTAINER_APP_MODULES = (
     "azure-container-app-vllm",
     "gpu-cost-watchdog",
 )
+_AZURE_CONTAINER_APP_PROFILE_GPU = {
+    GPUType.T4: GPUType.T4,
+    # Container Apps exposes one A100 shape.  A 40 GiB requirement therefore
+    # uses the smallest available A100 profile, whose physical GPU has 80 GiB.
+    GPUType.A100_40: GPUType.A100_80,
+    GPUType.A100_80: GPUType.A100_80,
+}
 _AZURE_CONTAINER_APP_PROFILE_TYPES = {
     GPUType.T4: "Consumption-GPU-NC8as-T4",
     GPUType.A100_80: "Consumption-GPU-NC24-A100",
@@ -201,6 +208,7 @@ def _render_azure_containerapp_tfvars(
     config: ComputeConfig,
     values: _AzureContainerAppTfvars,
 ) -> str:
+    profile_gpu = _AZURE_CONTAINER_APP_PROFILE_GPU[config.gpu_type]
     resource_group_id = (
         f"/subscriptions/{values.subscription_id}/resourceGroups/{values.resource_group}"
     )
@@ -214,12 +222,12 @@ def _render_azure_containerapp_tfvars(
         f"managed_environment_id = {escape_tfvar_value(environment_id)}",
         f"workload_profile_name = {escape_tfvar_value(values.workload_profile_name)}",
         "workload_profile_type = "
-        f"{escape_tfvar_value(_AZURE_CONTAINER_APP_PROFILE_TYPES[config.gpu_type])}",
+        f"{escape_tfvar_value(_AZURE_CONTAINER_APP_PROFILE_TYPES[profile_gpu])}",
         f"region = {escape_tfvar_value(config.region or 'eastus')}",
         f"container_image = {escape_tfvar_value(values.container_image)}",
         f"model_name = {escape_tfvar_value(config.model_name)}",
         f"model_revision = {escape_tfvar_value(values.model_revision)}",
-        f"gpu_type = {escape_tfvar_value(config.gpu_type.value)}",
+        f"gpu_type = {escape_tfvar_value(profile_gpu.value)}",
         f"gpu_count = {config.gpu_count}",
         f"allowed_cidr = {escape_tfvar_value(config.allowed_cidr)}",
         f"max_cost_usd = {config.max_cost_usd}",

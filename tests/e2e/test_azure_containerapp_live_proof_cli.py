@@ -845,6 +845,7 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     )[0]
     assert "coverage-files" in recipe
     assert "config/coverage_azure_containerapp.ini" in recipe
+    assert "tests/unit/test_azure_containerapp_tfvars.py" in recipe
     assert "COVERAGE_AGGREGATE_MIN=85" in recipe
     assert "COVERAGE_PER_FILE_MIN=75" in recipe
     entry = next(

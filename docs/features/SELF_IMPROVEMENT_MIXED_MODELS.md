@@ -373,7 +373,7 @@ credential pointers are absent. It must use a disposable non-production
 deployment and always emit visible cleanup progress.
 
 The same `make test-azure-containerapp-coverage` command now runs locally and on
-the Python 3.11 GitHub Actions gate leg. It executes 362 credential-free unit/E2E
+the Python 3.11 GitHub Actions gate leg. It executes 376 credential-free unit/E2E
 cases and enforces branch-aware coverage across the three orchestration scripts
 and 16 source modules. The observed 2026-09-06 run reached 93% aggregate coverage;
 all 19 files were at or above 75%. The private-policy target separately executes

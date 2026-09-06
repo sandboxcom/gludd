@@ -114,3 +114,14 @@ def test_a100_80_maps_to_the_only_a100_serverless_profile() -> None:
     )
 
     assert 'workload_profile_type = "Consumption-GPU-NC24-A100"' in tfvars
+
+
+def test_a100_40_requirement_upscales_to_the_available_a100_80_profile() -> None:
+    tfvars = TerraformGenerator().build_azure_containerapp_tfvars(
+        _config(gpu_type=GPUType.A100_40),
+        deployment_name="gludd-proof-a100",
+    )
+
+    assert 'workload_profile_type = "Consumption-GPU-NC24-A100"' in tfvars
+    assert 'gpu_type = "a100_80"' in tfvars
+    assert 'gpu_type = "a100_40"' not in tfvars
