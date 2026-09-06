@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import sys
 import tomllib
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
+from general_ludd.self_improve import azure_backend as azure_backend_module
 from general_ludd.self_improve.azure_backend import (
     AZURE_AI_TOKEN_SCOPE,
     AzureApprovedPrompt,
@@ -1343,6 +1345,46 @@ def test_official_factory_bundle_is_lazy_and_complete() -> None:
     assert callable(factories.create_management_client)
     assert callable(factories.create_bearer_token_provider)
     assert callable(factories.create_openai_client)
+
+
+def test_official_bearer_factory_preserves_callable_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = object()
+    calls: list[tuple[object, str]] = []
+
+    def provider() -> str:
+        return "access-token"
+
+    def fake_factory(received_credential: object, scope: str) -> Callable[[], str]:
+        calls.append((received_credential, scope))
+        return provider
+
+    azure_module = ModuleType("azure")
+    core_module = ModuleType("azure.core")
+    credentials_module = ModuleType("azure.core.credentials")
+    identity_module = ModuleType("azure.identity")
+    credentials_module.TokenCredential = object
+    identity_module.get_bearer_token_provider = fake_factory
+    azure_module.core = core_module
+    azure_module.identity = identity_module
+    core_module.credentials = credentials_module
+    for name, module in (
+        ("azure", azure_module),
+        ("azure.core", core_module),
+        ("azure.core.credentials", credentials_module),
+        ("azure.identity", identity_module),
+    ):
+        monkeypatch.setitem(sys.modules, name, module)
+
+    result = azure_backend_module._official_bearer_token_provider(
+        credential=credential,
+        scope=AZURE_AI_TOKEN_SCOPE,
+    )
+
+    assert result is provider
+    assert result() == "access-token"
+    assert calls == [(credential, AZURE_AI_TOKEN_SCOPE)]
 
 
 def test_factory_contract_rejects_noncallable_sdk_hooks() -> None:

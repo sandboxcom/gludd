@@ -35,6 +35,10 @@ ALLOWLIST = frozenset({
     # Bounded service-readiness loop; it never occupies a delegated agent slot.
     "smoke_daemon.py",
     # Bounded infrastructure readiness/locking loops surface attempt heartbeats.
+    # The explicitly authorized Azure live proof supervises ARM readiness/absence
+    # for at most 15/10 minutes and emits a visible heartbeat before every wait;
+    # it is a foreground resource-lifecycle runner, never delegated agent work.
+    "azure_containerapp_live_proof.py",
     "collection_lock.py",
     "postgres_e2e_runner.py",
     # Background lifecycle supervisors are signal-stoppable and continuously observable.

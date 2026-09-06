@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-06 — (resolved locally) Azure live-proof boundaries failed global gate contracts
+
+- **What happened**: The exact-head gate cleared every earlier Azure regression and the fresh-process Make audit, then stopped on two global checks: strict mypy identified the Azure SDK bearer-token factory as `Any`, and the no-sleep guard found the live-proof ARM readiness loop without an explicit lifecycle classification.
+- **Root cause**: The maintained Azure SDK's untyped callback boundary was returned without narrowing it to Gludd's `Callable[[], str]` contract. Separately, the foreground live resource supervisor met the guardrail's bounded, observable infrastructure exception but had not been registered alongside the existing readiness supervisors.
+- **Fix applied**: The SDK result is now explicitly cast at its boundary, leaving runtime behavior unchanged. The live-proof runner is documented in the guard's allowlist as a foreground-only 15/10-minute readiness/absence supervisor that emits a heartbeat before each wait and is never delegated as agent work; the scanner itself and its thresholds remain unchanged.
+- **Evidence**: Full mypy is clean across 1,228 production files plus the script boundary, the Azure backend suite passes 121/121 including the optional-SDK callable adapter, and the no-sleep guard passes 7/7.
+- **Lesson**: A bounded infrastructure poller must be visibly classified when introduced, and dynamically typed SDK factories must be narrowed at the adapter boundary rather than leaking `Any` into typed application code.
+
 ### 2026-09-06 — (resolved locally) Make audit shared a long-lived CI shard process
 
 - **What happened**: A clean full gate passed the earlier Azure regressions, then `unit-2:batch-030` timed out the unchanged 15-second `make -n help` assertion after 29 coverage batches had run in the same shard plan. The exact test passed alone in 2.94 seconds, and the exact 16-file batch then passed 136/136 in 18.78 seconds.

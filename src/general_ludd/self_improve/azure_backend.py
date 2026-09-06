@@ -476,7 +476,10 @@ def _official_bearer_token_provider(
     from azure.core.credentials import TokenCredential
     from azure.identity import get_bearer_token_provider
 
-    return get_bearer_token_provider(cast(TokenCredential, credential), scope)
+    return cast(
+        Callable[[], str],
+        get_bearer_token_provider(cast(TokenCredential, credential), scope),
+    )
 
 
 def _official_openai_client(
