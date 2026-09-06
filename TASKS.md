@@ -18,6 +18,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 S83.157 latest exact-head evidence: the gate cleared every earlier Azure repair before `unit-3b:batch-031` exposed missing stack input descriptions and two unexplained Container App runtime outputs after 817 neighboring tests passed. Every vLLM stack input now documents its trust, sizing, or lifecycle meaning; module tuning inputs carry the same contract; and the strengthened mirror test explicitly requires the real app's revision and cleanup boundary without fabricating either for the generic llama.cpp configuration stack. Focused stack validation passes 514/514 and module validation passes 103/103, including the pinned real Terraform binary. Exact-head gate and hosted proof remain pending.
 
+S83.157 autonomous-lifecycle evidence: the user clarified that a pre-created environment is not an acceptable runtime boundary. A new pure topology planner now derives the smallest shared runner fleet from immutable model facts, dependency batches, simultaneous demand, per-replica capacity, available T4/A100 profiles, quota, hourly spend, and TTL ceilings. Its 36 failing-first tests prove serial-stage capacity reuse, parallel-stage aggregation, mixed-profile planning, deterministic gateway-only wiring, zero idle replicas, empty-demand teardown intent, and fail-closed graph/budget behavior; focused line and branch coverage is 100%. Terraform environment ownership, reconciliation, and teardown wiring remain in progress.
+
 S83.157 exact changed-surface registration (from the active gate):
 
 - `infra/terraform/modules/azure-container-app-vllm/main.tf`
@@ -55,6 +57,7 @@ S83.157 exact changed-surface registration (from the active gate):
 - `src/general_ludd/infra/azure_containerapp_preflight.py`
 - `src/general_ludd/infra/azure_containerapp_preflight_parsing.py`
 - `src/general_ludd/infra/azure_containerapp_preflight_types.py`
+- `src/general_ludd/infra/azure_containerapp_topology.py`
 - `src/general_ludd/infra/azure_cost_reconciliation.py`
 - `src/general_ludd/infra/compute.py`
 - `src/general_ludd/infra/terraform.py`
@@ -83,6 +86,7 @@ S83.157 exact changed-surface registration (from the active gate):
 - `tests/unit/test_azure_containerapp_preflight_cli.py`
 - `tests/unit/test_azure_containerapp_terraform_least_privilege.py`
 - `tests/unit/test_azure_containerapp_terraform_phase.py`
+- `tests/unit/test_azure_containerapp_topology.py`
 - `tests/unit/test_azure_containerapp_tfvars.py`
 - `tests/unit/test_deployment_telemetry.py`
 - `tests/unit/test_iam_policy_deep.py`
