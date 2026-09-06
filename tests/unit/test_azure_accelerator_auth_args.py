@@ -44,8 +44,6 @@ AUTH_ARGS = (
     SCOPE,
     "--json-auth",
     "true",
-    "--subscription",
-    SUBSCRIPTION_ID,
     "--only-show-errors",
     "--output",
     "json",
@@ -89,6 +87,7 @@ def test_auth_arguments_assign_the_accelerator_role_at_subscription_scope() -> N
     assert arguments.count("--scopes") == 1
     assert "--skip-assignment" not in arguments
     assert "--json-auth" in arguments
+    assert "--subscription" not in arguments
 
 
 def test_role_and_auth_streams_are_byte_exact_nul_delimited() -> None:
@@ -368,6 +367,8 @@ def test_help_contract_docs_and_gitignore_pin_accelerator_workflow() -> None:
         assert "az role assignment delete --assignee-object-id" in guide
     assert "azure-accelerator-role-args" in iam_docs
     assert "azure-accelerator-auth-args" in iam_docs
+    assert "does not emit `--subscription`" in docs
+    assert "[scope-only service-principal thread][forum-sp-scope-only]" in docs
     assert "gludd-azure-accelerator-auth.*" in gitignore
 
 

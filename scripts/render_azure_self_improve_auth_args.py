@@ -78,8 +78,6 @@ def build_arguments(
         scope,
         "--json-auth",
         "true",
-        "--subscription",
-        subscription_id,
         "--only-show-errors",
         "--output",
         "json",

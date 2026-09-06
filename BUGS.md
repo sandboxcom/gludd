@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-05 — (resolved locally) Azure credential argv used an unsupported subscription option
+
+- **What happened**: After the accelerator role was created successfully, the operator's one-line `azure-accelerator-auth-args` pipeline reached `az ad sp create-for-rbac`, which rejected `--subscription` as an unrecognized argument. No credential JSON was produced.
+- **Root cause**: Gludd correctly embedded the subscription in the absolute `--scopes` resource ID but redundantly emitted `--subscription`, which this Azure CLI command does not support. The exact-argv tests and fake CLI consumer repeated the renderer's mistaken contract instead of independently pinning the real parser boundary. The Azure OpenAI self-improvement credential renderer carried the same defect.
+- **Fix applied**: Both renderers now omit `--subscription`, retain their exact subscription/account scopes, and have failing-first regressions that explicitly prohibit the option. The setup guide records the supported option boundary from Microsoft's current command reference and a long-lived community scope example.
+- **Lesson**: A fake command consumer proves quoting and process cardinality, not compatibility with an external CLI parser. Each rendered command needs an independent supported-option contract sourced from the real CLI documentation and confirmed by live operator feedback.
+
 ### 2026-09-05 — (resolved locally) Azure accelerator role used an unsupported generic provider-registration action
 
 - **What happened**: The operator's one-line `azure-accelerator-role-args` pipeline reached Azure, but `az role definition create` rejected `Microsoft.Resources/subscriptions/providers/register/action` with `InvalidActionOrNotAction`.

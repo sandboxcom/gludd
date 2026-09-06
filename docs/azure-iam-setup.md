@@ -110,6 +110,16 @@ principal and write its one-time credential JSON directly to a private file:
 (umask 077; make --no-print-directory azure-accelerator-auth-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_SP_NAME=gludd-accelerator-20260905 | xargs -0 az > /tmp/gludd-azure-accelerator-auth.json)
 ```
 
+The credential renderer deliberately does not emit `--subscription` because
+`az ad sp create-for-rbac` does not support that option. The subscription is
+already unambiguously encoded in the absolute value passed to `--scopes`.
+Microsoft's current command reference lists `--role` and `--scopes`, but no
+command-specific or global `--subscription` option. A long-lived operator
+example likewise uses the absolute resource ID under `--scopes`
+([scope-only service-principal thread][forum-sp-scope-only]). Both Gludd
+credential renderers pin this boundary so a fake argv consumer cannot bless an
+option that the real Azure CLI parser rejects.
+
 The second target assigns only `General Ludd Accelerator Deployer` at the
 subscription scope required for Gludd to create and remove its own resource
 groups. The JSON file contains the one-time Entra credential and must remain
@@ -324,7 +334,7 @@ az ad sp create-for-rbac \
 # Or with a client secret:
 az ad sp create-for-rbac \
   --name "gludd-deployer" \
-  --sdk-auth \
+  --json-auth true \
   --role "General Ludd Accelerator Deployer" \
   --scopes "/subscriptions/$SUBSCRIPTION_ID"
 ```
@@ -731,3 +741,4 @@ src/general_ludd/cloud/game_e2e.py          # 561-line orchestrator
 [azure-provider-operations]: https://learn.microsoft.com/en-us/azure/role-based-access-control/resource-provider-operations
 [forum-network-register]: https://learn.microsoft.com/en-us/answers/questions/524560/load-balancer-access-problem
 [forum-generic-register]: https://learn.microsoft.com/en-us/answers/questions/5903482/trying-to-create-custom-role
+[forum-sp-scope-only]: https://learn.microsoft.com/en-us/answers/questions/1337773/how-to-create-service-principal

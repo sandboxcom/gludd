@@ -35,8 +35,6 @@ EXPECTED_ARGS = (
     SCOPE,
     "--json-auth",
     "true",
-    "--subscription",
-    SUBSCRIPTION_ID,
     "--only-show-errors",
     "--output",
     "json",
@@ -86,6 +84,7 @@ def test_arguments_create_one_new_principal_and_one_exact_role_assignment() -> N
     assert arguments[arguments.index("--role") + 1] == ROLE_NAME
     assert "--json-auth" in arguments
     assert "--only-show-errors" in arguments
+    assert "--subscription" not in arguments
 
 
 @pytest.mark.parametrize(
