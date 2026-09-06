@@ -28,6 +28,7 @@ class AzureContainerAppLiveProofFailure(StrEnum):
     """Fixed failure categories that cannot expose provider or project data."""
 
     POLICY = "policy"
+    ENVIRONMENT = "environment"
     PLAN_SCOPE = "plan_scope"
     PREFLIGHT = "preflight"
     APPLY = "apply"

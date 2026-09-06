@@ -128,6 +128,59 @@ def _plan_payload(
     }
 
 
+def _provider_v2_plan_payload(
+    policy: AzureEnvironmentLifecyclePolicy,
+) -> dict[str, object]:
+    plan = _plan_payload(policy, ["create"])
+    resources = cast(list[dict[str, object]], plan["resource_changes"])
+    change = cast(dict[str, object], resources[0]["change"])
+    after = cast(dict[str, object], change["after"])
+    after.update(
+        {
+            "create_headers": None,
+            "create_query_parameters": None,
+            "delete_headers": None,
+            "delete_query_parameters": None,
+            "id": None,
+            "identity": None,
+            "ignore_body_changes": None,
+            "ignore_casing": False,
+            "ignore_missing_property": True,
+            "ignore_null_property": False,
+            "ignore_other_items_in_list": None,
+            "list_unique_id_property": None,
+            "locks": None,
+            "output": None,
+            "read_headers": None,
+            "read_query_parameters": None,
+            "replace_triggers_external_values": None,
+            "replace_triggers_refs": None,
+            "response_export_values": [
+                "id",
+                "name",
+                "properties.provisioningState",
+                "properties.workloadProfiles",
+                "tags",
+            ],
+            "retry": None,
+            "schema_validation_enabled": True,
+            "sensitive_body_version": None,
+            "timeouts": None,
+            "update_headers": None,
+            "update_query_parameters": None,
+        }
+    )
+    change.update(
+        {
+            "after_unknown": {"id": True, "output": True},
+            "after_sensitive": {},
+            "before_sensitive": False,
+            "replace_paths": [],
+        }
+    )
+    return plan
+
+
 class _Runtime:
     def __init__(
         self,
@@ -393,6 +446,68 @@ def test_plan_audit_rejects_every_scope_ownership_or_profile_widening(
         audit_environment_plan(plan, policy, existed_before=False)
 
     assert captured.value.phase == "plan"
+
+
+def test_plan_audit_accepts_documented_azapi_v2_provider_bookkeeping() -> None:
+    policy = _policy()
+
+    assert (
+        audit_environment_plan(
+            _provider_v2_plan_payload(policy),
+            policy,
+            existed_before=False,
+        )
+        is True
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda plan: plan["resource_changes"][0]["change"]["after"].update(
+            sensitive_body={"properties": {"private": _SECRET}}
+        ),
+        lambda plan: plan["resource_changes"][0]["change"]["after"].update(
+            identity=[{"type": "SystemAssigned"}]
+        ),
+        lambda plan: plan["resource_changes"][0]["change"]["after"].update(
+            create_headers={"Authorization": _SECRET}
+        ),
+        lambda plan: plan["resource_changes"][0]["change"]["after"].update(
+            update_query_parameters={"unsafe": ["true"]}
+        ),
+        lambda plan: plan["resource_changes"][0]["change"]["after"].update(
+            locks=["/subscriptions/other"]
+        ),
+        lambda plan: plan["resource_changes"][0]["change"]["after"].update(
+            response_export_values=["*"]
+        ),
+        lambda plan: plan["resource_changes"][0]["change"]["after"].update(
+            schema_validation_enabled=False
+        ),
+        lambda plan: plan["resource_changes"][0]["change"]["after"].update(
+            future_write_channel={"target": "/subscriptions/other"}
+        ),
+        lambda plan: plan["resource_changes"][0]["change"].update(
+            after_unknown={"sensitive_body": True}
+        ),
+        lambda plan: plan["resource_changes"][0]["change"].update(
+            after_sensitive={"sensitive_body": True}
+        ),
+        lambda plan: plan["resource_changes"][0]["change"].update(
+            importing={"id": "/subscriptions/other"}
+        ),
+    ],
+)
+def test_plan_audit_rejects_hidden_azapi_mutation_or_exposure_channels(
+    mutation: Any,
+) -> None:
+    policy = _policy()
+    plan = _provider_v2_plan_payload(policy)
+    mutation(plan)
+
+    with pytest.raises(AzureEnvironmentLifecycleError, match="plan"):
+        audit_environment_plan(plan, policy, existed_before=False)
 
 
 @pytest.mark.parametrize(

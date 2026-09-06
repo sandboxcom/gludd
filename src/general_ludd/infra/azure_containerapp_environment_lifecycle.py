@@ -35,6 +35,89 @@ _PROFILE_PAIRS = {
 _PLATFORM_CONSUMPTION_PROFILE = ("Consumption", "Consumption")
 _MANAGED_BY = "general-ludd"
 _LIFECYCLE_VERSION = "1"
+_RESPONSE_EXPORT_VALUES = (
+    "id",
+    "name",
+    "properties.provisioningState",
+    "properties.workloadProfiles",
+    "tags",
+)
+_PROVIDER_AFTER_FIELDS = frozenset(
+    {
+        "body",
+        "create_headers",
+        "create_query_parameters",
+        "delete_headers",
+        "delete_query_parameters",
+        "id",
+        "identity",
+        "ignore_body_changes",
+        "ignore_casing",
+        "ignore_missing_property",
+        "ignore_null_property",
+        "ignore_other_items_in_list",
+        "list_unique_id_property",
+        "location",
+        "locks",
+        "name",
+        "output",
+        "parent_id",
+        "read_headers",
+        "read_query_parameters",
+        "replace_triggers_external_values",
+        "replace_triggers_refs",
+        "response_export_values",
+        "retry",
+        "schema_validation_enabled",
+        "sensitive_body",
+        "sensitive_body_version",
+        "tags",
+        "timeouts",
+        "type",
+        "update_headers",
+        "update_query_parameters",
+    }
+)
+_EMPTY_PROVIDER_FIELDS = frozenset(
+    {
+        "create_headers",
+        "create_query_parameters",
+        "delete_headers",
+        "delete_query_parameters",
+        "identity",
+        "ignore_body_changes",
+        "ignore_other_items_in_list",
+        "list_unique_id_property",
+        "locks",
+        "read_headers",
+        "read_query_parameters",
+        "replace_triggers_external_values",
+        "replace_triggers_refs",
+        "sensitive_body",
+        "sensitive_body_version",
+        "update_headers",
+        "update_query_parameters",
+    }
+)
+_PROVIDER_BOOLEAN_DEFAULTS = {
+    "ignore_casing": False,
+    "ignore_missing_property": True,
+    "ignore_null_property": False,
+    "schema_validation_enabled": True,
+}
+_CHANGE_FIELDS = frozenset(
+    {
+        "actions",
+        "after",
+        "after_sensitive",
+        "after_unknown",
+        "before",
+        "before_sensitive",
+        "generated_config",
+        "importing",
+        "replace_paths",
+    }
+)
 
 
 class AzureEnvironmentLifecycleError(RuntimeError):
@@ -378,6 +461,69 @@ def _expected_plan_after(policy: AzureEnvironmentLifecyclePolicy) -> dict[str, o
     }
 
 
+def _empty_provider_value(value: object) -> bool:
+    return value is None or value == {} or value == []
+
+
+def _null_mapping(value: object) -> bool:
+    return value is None or (
+        isinstance(value, Mapping) and all(item is None for item in value.values())
+    )
+
+
+def _validate_plan_after(
+    value: object,
+    policy: AzureEnvironmentLifecyclePolicy,
+) -> None:
+    after = _mapping(value)
+    expected = _expected_plan_after(policy)
+    if set(after) - _PROVIDER_AFTER_FIELDS:
+        raise ValueError
+    if any(after.get(key) != expected_value for key, expected_value in expected.items()):
+        raise ValueError
+    for key in _EMPTY_PROVIDER_FIELDS:
+        if key in after and not _empty_provider_value(after[key]):
+            raise ValueError
+    for key, expected_value in _PROVIDER_BOOLEAN_DEFAULTS.items():
+        if key in after and after[key] is not expected_value:
+            raise ValueError
+    resource_id = after.get("id")
+    if resource_id is not None and (
+        not isinstance(resource_id, str)
+        or resource_id.casefold() != policy.environment_id.casefold()
+    ):
+        raise ValueError
+    response_exports = after.get("response_export_values")
+    if response_exports is not None and (
+        not isinstance(response_exports, list)
+        or tuple(response_exports) != _RESPONSE_EXPORT_VALUES
+    ):
+        raise ValueError
+    if not _null_mapping(after.get("retry")) or not _null_mapping(
+        after.get("timeouts")
+    ):
+        raise ValueError
+
+
+def _validate_plan_metadata(change: Mapping[str, object]) -> None:
+    if set(change) - _CHANGE_FIELDS:
+        raise ValueError
+    after_unknown = change.get("after_unknown")
+    if after_unknown not in ({}, None):
+        unknown = _mapping(after_unknown)
+        if set(unknown) - {"id", "output"} or any(
+            item is not True for item in unknown.values()
+        ):
+            raise ValueError
+    for field in ("after_sensitive", "before_sensitive"):
+        if change.get(field) not in (None, False, {}):
+            raise ValueError
+    if change.get("replace_paths") not in (None, []):
+        raise ValueError
+    if change.get("importing") is not None or change.get("generated_config") is not None:
+        raise ValueError
+
+
 def audit_environment_plan(
     plan: object,
     policy: AzureEnvironmentLifecyclePolicy,
@@ -410,11 +556,10 @@ def audit_environment_plan(
         allowed = ({("no-op",), ("update",)} if existed_before else {("create",)})
         if not isinstance(actions, list) or tuple(actions) not in allowed:
             raise ValueError
-        if change.get("after") != _expected_plan_after(policy):
+        if not existed_before and change.get("before") is not None:
             raise ValueError
-        after_unknown = change.get("after_unknown")
-        if after_unknown not in ({}, None):
-            raise ValueError
+        _validate_plan_after(change.get("after"), policy)
+        _validate_plan_metadata(change)
         return tuple(actions) != ("no-op",)
     except (KeyError, TypeError, ValueError):
         raise AzureEnvironmentLifecycleError("plan") from None

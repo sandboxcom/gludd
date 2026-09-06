@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, cast
@@ -13,6 +14,9 @@ from scripts import azure_containerapp_live_proof as live_cli
 from scripts.azure_containerapp_live_proof import main
 
 from general_ludd.azure.accelerator_credentials import AzureAcceleratorCredentials
+from general_ludd.infra.azure_containerapp_environment_lifecycle import (
+    AzureEnvironmentLifecyclePolicy,
+)
 from general_ludd.infra.azure_containerapp_live_proof import (
     AzureContainerAppDeploymentEvidence,
     AzureContainerAppLiveProofPolicy,
@@ -195,6 +199,102 @@ class _Runtime:
         return self.remains
 
 
+def _environment_plan(
+    policy: AzureEnvironmentLifecyclePolicy,
+) -> dict[str, object]:
+    return {
+        "resource_changes": [
+            {
+                "address": "module.environment.azapi_resource.managed_environment",
+                "mode": "managed",
+                "type": "azapi_resource",
+                "name": "managed_environment",
+                "provider_name": "registry.terraform.io/azure/azapi",
+                "change": {
+                    "actions": ["create"],
+                    "after": {
+                        "type": "Microsoft.App/managedEnvironments@2025-07-01",
+                        "name": policy.environment_name,
+                        "parent_id": policy.resource_group_id,
+                        "location": policy.location,
+                        "tags": policy.ownership_tags,
+                        "body": {
+                            "properties": {
+                                "workloadProfiles": [
+                                    {
+                                        "name": profile.profile_name,
+                                        "workloadProfileType": (
+                                            profile.workload_profile_type
+                                        ),
+                                    }
+                                    for profile in policy.profiles
+                                ]
+                            }
+                        },
+                    },
+                    "after_unknown": {},
+                },
+            }
+        ]
+    }
+
+
+class _EnvironmentRuntime:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.document: object | None = None
+
+    def read_environment(
+        self,
+        policy: AzureEnvironmentLifecyclePolicy,
+        *,
+        expect_absent: bool,
+    ) -> object | None:
+        del policy, expect_absent
+        self.calls.append("read")
+        return self.document
+
+    def plan(self, policy: AzureEnvironmentLifecyclePolicy) -> object:
+        self.calls.append("plan")
+        return _environment_plan(policy)
+
+    def apply(self, policy: AzureEnvironmentLifecyclePolicy) -> None:
+        self.calls.append("apply")
+        self.document = {
+            "id": policy.environment_id,
+            "name": policy.environment_name,
+            "type": "Microsoft.App/managedEnvironments",
+            "location": policy.location,
+            "tags": policy.ownership_tags,
+            "properties": {
+                "provisioningState": "Succeeded",
+                "workloadProfiles": [
+                    {"name": "Consumption", "workloadProfileType": "Consumption"},
+                    *[
+                        {
+                            "name": profile.profile_name,
+                            "workloadProfileType": profile.workload_profile_type,
+                        }
+                        for profile in policy.profiles
+                    ],
+                ],
+            },
+        }
+
+    def list_environment_apps(
+        self,
+        policy: AzureEnvironmentLifecyclePolicy,
+    ) -> tuple[str, ...]:
+        del policy
+        self.calls.append("inventory")
+        return ()
+
+    def destroy(self, policy: AzureEnvironmentLifecyclePolicy) -> None:
+        del policy
+        self.calls.append("destroy")
+        self.document = None
+
+
 class _Backend:
     def __init__(
         self,
@@ -231,6 +331,7 @@ class _Backend:
 class _Resources:
     def __init__(self, runtime: _Runtime) -> None:
         self.runtime = runtime
+        self.environment_runtime = _EnvironmentRuntime()
         self.backend: _Backend | None = None
         self.close_calls = 0
 
@@ -267,6 +368,40 @@ def test_hermetic_dry_run_needs_no_credential_or_live_factory(
     assert PROMPT_TEXT not in captured.out + captured.err
 
 
+def test_environment_policy_binds_owner_without_exposing_project_path(
+    tmp_path: Path,
+) -> None:
+    project = _project(tmp_path)
+    args, app_policy, _requirement = _live_inputs(project)
+    del args, _requirement
+    guard = live_cli.SelfImproveRuntimePolicyGuard.load(
+        project,
+        lambda _event: None,
+        live_cli.AzurePromptApprovalError,
+    )
+
+    policy = live_cli._environment_policy(
+        app_policy,
+        guard=guard,
+        project_root=project,
+        now=datetime(2026, 9, 6, 19, 5, 7, 987654, tzinfo=UTC),
+    )
+    repeated = live_cli._environment_policy(
+        app_policy,
+        guard=guard,
+        project_root=project,
+        now=datetime(2026, 9, 6, 19, 5, 7, 987654, tzinfo=UTC),
+    )
+
+    assert policy == repeated
+    assert policy.profiles[0].profile_name == app_policy.workload_profile_name
+    assert policy.profiles[0].workload_profile_type == app_policy.workload_profile_type
+    assert policy.plan_digest == app_policy.operation_digest
+    assert policy.expires_at_utc == "2026-09-06T20:05:07Z"
+    assert len(policy.owner_digest) == 64
+    assert str(project) not in repr(policy)
+
+
 def test_injected_live_cli_runs_one_request_then_verified_cleanup(
     tmp_path: Path,
     capsys: Any,
@@ -293,12 +428,24 @@ def test_injected_live_cli_runs_one_request_then_verified_cleanup(
         "destroy",
         "exists",
     ]
+    assert resources.environment_runtime.calls == [
+        "read",
+        "plan",
+        "apply",
+        "read",
+        "read",
+        "inventory",
+        "destroy",
+        "read",
+    ]
     assert resources.backend is not None
     assert resources.backend.calls == 1
     assert resources.backend.close_calls == 1
     assert resources.close_calls == 1
     assert "work_completed=true" in captured.out
     assert "cleanup_verified=true" in captured.out
+    assert "environment_managed=true" in captured.out
+    assert "AZURE_CONTAINERAPP_ENVIRONMENT_LIFECYCLE_TRACE" in captured.out
     assert "Exercise the empty-string branch" not in captured.out
     assert SUBSCRIPTION not in captured.out + captured.err
 
@@ -492,6 +639,7 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
     transport_arguments: list[tuple[str, dict[str, object]]] = []
     preflight_checks: list[dict[str, object]] = []
     runtime_arguments: dict[str, object] = {}
+    environment_runtime_arguments: dict[str, object] = {}
     backend_arguments: dict[str, object] = {}
     sleep_seconds: list[float] = []
     ready_document = {
@@ -505,6 +653,28 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
         ready_document,
         ready_document,
         None,
+    ]
+    environment_policy = live_cli._environment_policy(
+        policy,
+        guard=cast(Any, SimpleNamespace(expected_digest="d" * 64)),
+        project_root=project,
+        now=datetime(2026, 9, 6, 19, 0, tzinfo=UTC),
+    )
+    environment_documents: list[object | None] = [
+        None,
+        {"properties": {"provisioningState": "Updating"}},
+        {"properties": {"provisioningState": "Succeeded"}},
+        {"properties": {"provisioningState": "Succeeded"}},
+        None,
+    ]
+    expected_app_id = policy.expected_resource_id
+    foreign_app_id = (
+        f"{policy.resource_group_id}/providers/Microsoft.App/containerApps/foreign-app"
+    )
+    environment_inventories: list[tuple[str, ...]] = [
+        (expected_app_id,),
+        (),
+        (foreign_app_id,),
     ]
 
     class FakeCredential:
@@ -534,6 +704,21 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
 
         def close(self) -> None:
             lifecycle.append("app.close")
+
+    class FakeLifecycleTransport:
+        def __init__(self, **kwargs: object) -> None:
+            transport_arguments.append(("lifecycle", dict(kwargs)))
+
+        def get_environment(self, token: str) -> object | None:
+            assert token == "unit-token"
+            return environment_documents.pop(0)
+
+        def list_environment_app_ids(self, token: str) -> tuple[str, ...]:
+            assert token == "unit-token"
+            return environment_inventories.pop(0)
+
+        def close(self) -> None:
+            lifecycle.append("lifecycle.close")
 
     class FakePreflight:
         def __init__(
@@ -567,6 +752,17 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
                 )
             )
 
+    class FakeEnvironmentRuntime:
+        def __init__(self, **kwargs: object) -> None:
+            environment_runtime_arguments.update(kwargs)
+            kwargs["trace_sink"](
+                MakeRuntimeEvent(
+                    phase="init",
+                    state=MakeRuntimeState.STARTED,
+                    operation_digest="b" * 64,
+                )
+            )
+
     backend = object()
 
     def build_backend(
@@ -597,8 +793,18 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
     monkeypatch.setattr(live_cli, "_credential_client", lambda value: credential)
     monkeypatch.setattr(live_cli, "HttpxARMJSONTransport", FakeEnvironmentTransport)
     monkeypatch.setattr(live_cli, "HttpxContainerAppARMTransport", FakeAppTransport)
+    monkeypatch.setattr(
+        live_cli,
+        "HttpxContainerAppEnvironmentLifecycleTransport",
+        FakeLifecycleTransport,
+    )
     monkeypatch.setattr(live_cli, "AzureContainerAppReadOnlyPreflight", FakePreflight)
     monkeypatch.setattr(live_cli, "AzureContainerAppMakeRuntime", FakeRuntime)
+    monkeypatch.setattr(
+        live_cli,
+        "AzureContainerAppEnvironmentMakeRuntime",
+        FakeEnvironmentRuntime,
+    )
     monkeypatch.setattr(live_cli, "build_azure_containerapp_candidate_backend", build_backend)
     monkeypatch.setattr(live_cli.time, "monotonic", lambda: 0.0)
     monkeypatch.setattr(
@@ -611,6 +817,21 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
     runtime_arguments["preflight_check"](policy, requirement)
     assert runtime_arguments["read_app"](policy, False) == ready_document
     assert runtime_arguments["read_app"](policy, True) is None
+    assert environment_runtime_arguments["read_environment"](
+        environment_policy, False
+    ) is None
+    assert environment_runtime_arguments["read_environment"](
+        environment_policy, False
+    ) == {"properties": {"provisioningState": "Succeeded"}}
+    assert environment_runtime_arguments["read_environment"](
+        environment_policy, True
+    ) is None
+    assert environment_runtime_arguments["list_environment_apps"](
+        environment_policy
+    ) == ()
+    assert environment_runtime_arguments["list_environment_apps"](
+        environment_policy
+    ) == (foreign_app_id,)
     timeout_clock = iter((0.0, 901.0))
     app_documents.append({"properties": {"provisioningState": "Updating"}})
     monkeypatch.setattr(live_cli.time, "monotonic", lambda: next(timeout_clock))
@@ -651,6 +872,14 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
             },
         ),
         (
+            "lifecycle",
+            {
+                "subscription_id": SUBSCRIPTION,
+                "resource_group": policy.resource_group,
+                "environment_name": policy.environment_name,
+            },
+        ),
+        (
             "app",
             {
                 "subscription_id": SUBSCRIPTION,
@@ -673,13 +902,24 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
     assert runtime_arguments["work_root"] == live_cli._WORK_ROOT
     assert runtime_arguments["credentials"] is credentials
     assert runtime_arguments["requirement"] is requirement
-    assert token_scopes == [(live_cli.ARM_SCOPE,)] * 5
-    assert sleep_seconds == [10.0, 10.0]
+    assert environment_runtime_arguments["repo_root"] == live_cli._REPO_ROOT
+    assert (
+        environment_runtime_arguments["work_root"]
+        == live_cli._ENVIRONMENT_WORK_ROOT
+    )
+    assert environment_runtime_arguments["credentials"] is credentials
+    assert token_scopes == [(live_cli.ARM_SCOPE,)] * 13
+    assert sleep_seconds == [10.0] * 5
     assert backend_arguments == {
         "identity": identity,
         "discovery_timeout_seconds": 120.0,
     }
-    assert lifecycle == ["app.close", "environment.close", "credential.close"]
+    assert lifecycle == [
+        "app.close",
+        "lifecycle.close",
+        "environment.close",
+        "credential.close",
+    ]
 
 
 def test_default_resource_construction_failure_closes_every_created_client(
@@ -715,6 +955,13 @@ def test_default_resource_construction_failure_closes_every_created_client(
         def close(self) -> None:
             lifecycle.append("app.close")
 
+    class FakeLifecycleTransport:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def close(self) -> None:
+            lifecycle.append("lifecycle.close")
+
     monkeypatch.setattr(
         live_cli,
         "load_azure_accelerator_credentials",
@@ -725,6 +972,11 @@ def test_default_resource_construction_failure_closes_every_created_client(
     monkeypatch.setattr(live_cli, "HttpxContainerAppARMTransport", FakeAppTransport)
     monkeypatch.setattr(
         live_cli,
+        "HttpxContainerAppEnvironmentLifecycleTransport",
+        FakeLifecycleTransport,
+    )
+    monkeypatch.setattr(
+        live_cli,
         "AzureContainerAppMakeRuntime",
         lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("constructor failed")),
     )
@@ -732,7 +984,12 @@ def test_default_resource_construction_failure_closes_every_created_client(
     with pytest.raises(RuntimeError, match="constructor failed"):
         live_cli._default_live_resources(args, policy, requirement)
 
-    assert lifecycle == ["app.close", "environment.close", "credential.close"]
+    assert lifecycle == [
+        "app.close",
+        "lifecycle.close",
+        "environment.close",
+        "credential.close",
+    ]
 
 
 def test_default_resource_cleanup_is_idempotent_and_reports_any_close_failure() -> None:
@@ -750,8 +1007,10 @@ def test_default_resource_cleanup_is_idempotent_and_reports_any_close_failure() 
 
     resources = live_cli._DefaultResources(
         runtime=cast(Any, object()),
+        environment_runtime=cast(Any, object()),
         credential=cast(Any, Client("credential")),
         environment_transport=cast(Any, Client("environment", fail=True)),
+        lifecycle_transport=cast(Any, Client("lifecycle")),
         app_transport=cast(Any, Client("app")),
     )
 
@@ -759,7 +1018,7 @@ def test_default_resource_cleanup_is_idempotent_and_reports_any_close_failure() 
         resources.close()
     resources.close()
 
-    assert lifecycle == ["app", "environment", "credential"]
+    assert lifecycle == ["app", "lifecycle", "environment", "credential"]
 
 
 def test_live_cli_treats_client_cleanup_failure_as_terminal_and_censors_detail(
@@ -848,6 +1107,7 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     assert "tests/unit/test_azure_containerapp_environment_lifecycle.py" in recipe
     assert "tests/unit/test_azure_containerapp_environment_make_runtime.py" in recipe
     assert "tests/unit/test_azure_containerapp_environment_terraform.py" in recipe
+    assert "tests/unit/test_azure_containerapp_owned_lifecycle.py" in recipe
     assert "tests/unit/test_azure_containerapp_topology.py" in recipe
     assert "tests/unit/test_azure_containerapp_tfvars.py" in recipe
     assert "tests/unit/test_deployment_telemetry.py" in recipe
@@ -876,4 +1136,5 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     ).read_text(encoding="utf-8")
     assert "azure_containerapp_environment_lifecycle.py" in coverage_config
     assert "azure_containerapp_environment_make_runtime.py" in coverage_config
+    assert "azure_containerapp_owned_lifecycle.py" in coverage_config
     assert "azure_containerapp_topology.py" in coverage_config

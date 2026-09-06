@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import secrets
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import asdict
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -20,10 +23,19 @@ from general_ludd.azure.accelerator_credentials import (
 from general_ludd.infra.azure_containerapp_arm import (
     HttpxARMJSONTransport,
     HttpxContainerAppARMTransport,
+    HttpxContainerAppEnvironmentLifecycleTransport,
+)
+from general_ludd.infra.azure_containerapp_environment_lifecycle import (
+    AzureContainerAppEnvironmentRuntime,
+    AzureEnvironmentLifecyclePolicy,
+    AzureEnvironmentProfile,
+    EnvironmentLifecycleTrace,
+)
+from general_ludd.infra.azure_containerapp_environment_make_runtime import (
+    AzureContainerAppEnvironmentMakeRuntime,
 )
 from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
 from general_ludd.infra.azure_containerapp_live_proof import (
-    LIVE_PROOF_ACKNOWLEDGEMENT,
     AzureContainerAppLiveProofError,
     AzureContainerAppLiveProofPolicy,
     AzureContainerAppProofRuntime,
@@ -33,6 +45,9 @@ from general_ludd.infra.azure_containerapp_live_proof import (
 from general_ludd.infra.azure_containerapp_make_runtime import (
     AzureContainerAppMakeRuntime,
     MakeRuntimeEvent,
+)
+from general_ludd.infra.azure_containerapp_owned_lifecycle import (
+    run_owned_azure_containerapp_live_proof,
 )
 from general_ludd.infra.azure_containerapp_preflight import (
     ARM_SCOPE,
@@ -64,6 +79,7 @@ _IMAGE = (
 _PARAMETER_COUNT = 494_032_768
 _PROMPT = "Suggest one deterministic edge-case test for a public Python function."
 _WORK_ROOT = Path("/tmp/gludd-azure-containerapp-live-proof")
+_ENVIRONMENT_WORK_ROOT = Path("/tmp/gludd-azure-containerapp-environments")
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _AZURE_AUTHORITY = "login.microsoftonline.com"
 
@@ -76,6 +92,7 @@ class _ClosableCredential(Protocol):
 
 class _LiveResources(Protocol):
     runtime: AzureContainerAppProofRuntime
+    environment_runtime: AzureContainerAppEnvironmentRuntime
 
     def backend_factory(
         self,
@@ -97,7 +114,10 @@ LiveResourcesFactory = Callable[
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Prove one right-sized Azure GPU candidate and app-only cleanup.",
+        description=(
+            "Prove one right-sized Azure GPU candidate with Terraform-owned "
+            "environment and app cleanup."
+        ),
         allow_abbrev=False,
     )
     parser.add_argument("--auth-file", required=True)
@@ -116,7 +136,16 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _trace(prefix: str, value: object) -> None:
+def _trace(
+    prefix: str,
+    value: (
+        ContainerAppBackendTrace
+        | EnvironmentLifecycleTrace
+        | LiveProofTrace
+        | MakeRuntimeEvent
+        | PreflightTrace
+    ),
+) -> None:
     fields = {
         key: item
         for key, item in asdict(value).items()
@@ -180,6 +209,51 @@ def _policy(
         acknowledgement=(
             cast(str, args.acknowledgement) if bool(args.live) else None
         ),
+    )
+
+
+def _environment_policy(
+    app_policy: AzureContainerAppLiveProofPolicy,
+    *,
+    guard: SelfImproveRuntimePolicyGuard,
+    project_root: Path,
+    now: datetime,
+) -> AzureEnvironmentLifecyclePolicy:
+    """Bind stable project ownership and a bounded expiry to one environment."""
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("now must be timezone-aware")
+    owner_payload = {
+        "environment_id": app_policy.environment_id.casefold(),
+        "policy_digest": guard.expected_digest,
+        "project_root": str(project_root.resolve()),
+        "protocol": "gludd-owned-azure-containerapp-environment-v1",
+    }
+    owner_digest = hashlib.sha256(
+        json.dumps(
+            owner_payload,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    ).hexdigest()
+    expires_at = (
+        now.astimezone(UTC) + timedelta(minutes=app_policy.ttl_minutes)
+    ).replace(microsecond=0)
+    return AzureEnvironmentLifecyclePolicy(
+        subscription_id=app_policy.subscription_id,
+        resource_group=app_policy.resource_group,
+        environment_name=app_policy.environment_name,
+        location=app_policy.location,
+        profiles=(
+            AzureEnvironmentProfile(
+                app_policy.workload_profile_name,
+                app_policy.workload_profile_type,
+            ),
+        ),
+        owner_digest=owner_digest,
+        plan_digest=app_policy.operation_digest,
+        expires_at_utc=expires_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        teardown_when_idle=True,
     )
 
 
@@ -272,13 +346,19 @@ class _DefaultResources:
         self,
         *,
         runtime: AzureContainerAppMakeRuntime,
+        environment_runtime: AzureContainerAppEnvironmentMakeRuntime,
         credential: _ClosableCredential,
         environment_transport: HttpxARMJSONTransport,
+        lifecycle_transport: HttpxContainerAppEnvironmentLifecycleTransport,
         app_transport: HttpxContainerAppARMTransport,
     ) -> None:
-        self.runtime = runtime
+        self.runtime: AzureContainerAppProofRuntime = runtime
+        self.environment_runtime: AzureContainerAppEnvironmentRuntime = (
+            environment_runtime
+        )
         self._credential = credential
         self._environment_transport = environment_transport
+        self._lifecycle_transport = lifecycle_transport
         self._app_transport = app_transport
         self._closed = False
 
@@ -291,7 +371,7 @@ class _DefaultResources:
             discovery_timeout_seconds=120.0,
             trace_sink=lambda event: _trace(
                 "AZURE_CONTAINERAPP_BACKEND_TRACE",
-                cast(ContainerAppBackendTrace, event),
+                event,
             ),
         )
 
@@ -302,6 +382,7 @@ class _DefaultResources:
         failed = False
         for client in (
             self._app_transport,
+            self._lifecycle_transport,
             self._environment_transport,
             self._credential,
         ):
@@ -343,6 +424,16 @@ def _ready(document: object | None) -> bool:
     )
 
 
+def _environment_ready(document: object | None) -> bool:
+    if not isinstance(document, Mapping):
+        return False
+    properties = document.get("properties")
+    return bool(
+        isinstance(properties, Mapping)
+        and properties.get("provisioningState") == "Succeeded"
+    )
+
+
 def _default_live_resources(
     args: argparse.Namespace,
     policy: AzureContainerAppLiveProofPolicy,
@@ -354,10 +445,16 @@ def _default_live_resources(
     )
     credential: _ClosableCredential | None = None
     environment_transport: HttpxARMJSONTransport | None = None
+    lifecycle_transport: HttpxContainerAppEnvironmentLifecycleTransport | None = None
     app_transport: HttpxContainerAppARMTransport | None = None
     try:
         credential = _credential_client(credentials)
         environment_transport = HttpxARMJSONTransport(
+            subscription_id=policy.subscription_id,
+            resource_group=policy.resource_group,
+            environment_name=policy.environment_name,
+        )
+        lifecycle_transport = HttpxContainerAppEnvironmentLifecycleTransport(
             subscription_id=policy.subscription_id,
             resource_group=policy.resource_group,
             environment_name=policy.environment_name,
@@ -377,7 +474,7 @@ def _default_live_resources(
                 cast(Any, environment_transport),
                 trace_sink=lambda event: _trace(
                     "AZURE_CONTAINERAPP_PREFLIGHT_TRACE",
-                    cast(PreflightTrace, event),
+                    event,
                 ),
             ).check(
                 subscription_id=active_policy.subscription_id,
@@ -412,6 +509,55 @@ def _default_live_resources(
                 )
                 time.sleep(10.0)
 
+        def read_environment(
+            active_policy: AzureEnvironmentLifecyclePolicy,
+            expect_absent: bool,
+        ) -> object | None:
+            if active_policy.environment_id.casefold() != policy.environment_id.casefold():
+                raise RuntimeError("environment policy escaped the bound resource")
+            deadline = time.monotonic() + (900.0 if expect_absent else 1_200.0)
+            last_document: object | None = None
+            while True:
+                token = credential.get_token(ARM_SCOPE).token
+                last_document = lifecycle_transport.get_environment(token)
+                if expect_absent:
+                    if last_document is None:
+                        return None
+                elif last_document is None or _environment_ready(last_document):
+                    return last_document
+                if time.monotonic() >= deadline:
+                    return last_document
+                print(
+                    "AZURE_CONTAINERAPP_ENVIRONMENT_ARM_TRACE phase="
+                    f"{'absence' if expect_absent else 'readiness'} "
+                    "state=heartbeat secret_output=false",
+                    flush=True,
+                )
+                time.sleep(10.0)
+
+        def list_environment_apps(
+            active_policy: AzureEnvironmentLifecyclePolicy,
+        ) -> tuple[str, ...]:
+            if active_policy.environment_id.casefold() != policy.environment_id.casefold():
+                raise RuntimeError("environment policy escaped the bound resource")
+            expected_app_id = policy.expected_resource_id.casefold()
+            deadline = time.monotonic() + 300.0
+            while True:
+                token = credential.get_token(ARM_SCOPE).token
+                app_ids = lifecycle_transport.list_environment_app_ids(token)
+                if not app_ids or any(
+                    app_id.casefold() != expected_app_id for app_id in app_ids
+                ):
+                    return app_ids
+                if time.monotonic() >= deadline:
+                    return app_ids
+                print(
+                    "AZURE_CONTAINERAPP_ENVIRONMENT_ARM_TRACE "
+                    "phase=inventory state=heartbeat secret_output=false",
+                    flush=True,
+                )
+                time.sleep(10.0)
+
         runtime = AzureContainerAppMakeRuntime(
             repo_root=_REPO_ROOT,
             work_root=_WORK_ROOT,
@@ -421,22 +567,38 @@ def _default_live_resources(
             read_app=read_app,
             trace_sink=lambda event: _trace(
                 "AZURE_CONTAINERAPP_MAKE_TRACE",
-                cast(MakeRuntimeEvent, event),
+                event,
+            ),
+        )
+        environment_runtime = AzureContainerAppEnvironmentMakeRuntime(
+            repo_root=_REPO_ROOT,
+            work_root=_ENVIRONMENT_WORK_ROOT,
+            credentials=credentials,
+            read_environment=read_environment,
+            list_environment_apps=list_environment_apps,
+            trace_sink=lambda event: _trace(
+                "AZURE_CONTAINERAPP_ENVIRONMENT_MAKE_TRACE",
+                event,
             ),
         )
         return _DefaultResources(
             runtime=runtime,
+            environment_runtime=environment_runtime,
             credential=credential,
             environment_transport=environment_transport,
+            lifecycle_transport=lifecycle_transport,
             app_transport=app_transport,
         )
     except BaseException:
-        for client in (app_transport, environment_transport, credential):
+        for client in (
+            app_transport,
+            lifecycle_transport,
+            environment_transport,
+            credential,
+        ):
             if client is not None:
-                try:
+                with suppress(Exception):
                     client.close()
-                except Exception:
-                    pass
         raise
 
 
@@ -469,9 +631,29 @@ def main(
         )
         requirement = _requirement()
         if policy.live:
+            environment_policy = _environment_policy(
+                policy,
+                guard=guard,
+                project_root=project_root,
+                now=datetime.now(UTC),
+            )
             resources = live_resources_factory(args, policy, requirement)
-            runtime = resources.runtime
-            backend_factory = resources.backend_factory
+            result = run_owned_azure_containerapp_live_proof(
+                policy,
+                environment_policy=environment_policy,
+                environment_runtime=resources.environment_runtime,
+                app_runtime=resources.runtime,
+                approved_prompt=approved_prompt,
+                backend_factory=resources.backend_factory,
+                environment_trace_sink=lambda event: _trace(
+                    "AZURE_CONTAINERAPP_ENVIRONMENT_LIFECYCLE_TRACE",
+                    event,
+                ),
+                app_trace_sink=lambda event: _trace(
+                    "AZURE_CONTAINERAPP_LIVE_PROOF_TRACE",
+                    event,
+                ),
+            )
         else:
             runtime = _HermeticRuntime()
 
@@ -481,16 +663,16 @@ def main(
                 raise RuntimeError("dry-run backend is unreachable")
 
             backend_factory = unreachable_backend
-        result = run_azure_containerapp_live_proof(
-            policy,
-            runtime=runtime,
-            approved_prompt=approved_prompt,
-            backend_factory=backend_factory,
-            trace_sink=lambda event: _trace(
-                "AZURE_CONTAINERAPP_LIVE_PROOF_TRACE",
-                cast(LiveProofTrace, event),
-            ),
-        )
+            result = run_azure_containerapp_live_proof(
+                policy,
+                runtime=runtime,
+                approved_prompt=approved_prompt,
+                backend_factory=backend_factory,
+                trace_sink=lambda event: _trace(
+                    "AZURE_CONTAINERAPP_LIVE_PROOF_TRACE",
+                    event,
+                ),
+            )
     except AzureContainerAppLiveProofError as exc:
         failure = exc.failure.value
     except Exception:
@@ -511,6 +693,7 @@ def main(
     print(
         "AZURE_CONTAINERAPP_LIVE_PROOF_RESULT "
         f"live={str(bool(args.live)).lower()} "
+        f"environment_managed={str(bool(args.live)).lower()} "
         f"plan_audited={str(result.plan_audited).lower()} "
         f"deployment_created={str(result.deployment_created).lower()} "
         f"work_completed={str(result.work_completed).lower()} "

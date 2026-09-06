@@ -22,6 +22,8 @@ S83.157 autonomous-lifecycle evidence: the user clarified that a pre-created env
 
 S83.157 independent ARM lifecycle evidence: the fixed-origin transport now reads exactly one managed environment and one resource-group Container App inventory endpoint, treats only the named environment's 404 as absence, filters apps by exact `managedEnvironmentId`, refuses pagination rather than returning incomplete cleanup evidence, and rejects malformed, duplicate, foreign-scope, redirected, oversized, or secret-bearing provider responses. All 48 transport tests pass under the existing credential-free local/GHA Azure suite. End-to-end lifecycle wiring remains in progress.
 
+S83.157 owned command lifecycle evidence: the public live proof now derives a stable one-way project/environment owner identity, creates or reconciles the managed environment through the existing Terraform/AzAPI phase runner, independently waits for ARM readiness, runs and destroys the bounded model app, retries only the expected eventually-consistent app inventory entry, retains on every foreign app, then destroys the idle environment through the same owner-bound Terraform state and independently proves absence. Environment lifecycle, Terraform phase, ARM heartbeat, app proof, and backend events use distinct content-free trace prefixes; dry-run constructs no credential, ARM client, or environment runtime. The local/GHA Azure profile now covers the composite orchestrator and passes 563/563 tests at 93% aggregate branch coverage with all 23 measured files above 75% and the new composite at 100%. Its documented AzAPI v2 plan fixture accepts only provider bookkeeping defaults while rejecting hidden bodies, identities, headers, query parameters, locks, broad response exports, disabled schema validation, importing, unknown fields, and sensitive metadata. Least-privilege role migration, paid live proof, exact-head gate, and hosted proof remain in progress.
+
 S83.157 exact changed-surface registration (from the active gate):
 
 - `infra/terraform/modules/azure-container-app-vllm/main.tf`
@@ -34,6 +36,7 @@ S83.157 exact changed-surface registration (from the active gate):
 - `BUGS.md`
 - `config/coverage_azure_accelerator_credentials.ini`
 - `config/coverage_azure_containerapp.ini`
+- `config/resource_ownership_inventory.json`
 - `config/coverage_managed_candidate_routing.ini`
 - `config/infra/azure-containerapp-environment.json`
 - `config/opa/iam_policy.rego`
@@ -48,6 +51,8 @@ S83.157 exact changed-surface registration (from the active gate):
 - `infra/terraform/stacks/azure-container-app-environment/outputs.tf`
 - `infra/terraform/stacks/azure-container-app-environment/variables.tf`
 - `tests/unit/test_terraform_stack_deep.py`
+- `tests/integration/test_bill4_terraform_watchdog_wiring.py`
+- `tests/integration/test_bill_terraform_watchdog_e2e.py`
 - `scripts/azure_containerapp_live_proof.py`
 - `scripts/azure_containerapp_preflight.py`
 - `scripts/azure_containerapp_terraform_phase.py`
@@ -61,6 +66,7 @@ S83.157 exact changed-surface registration (from the active gate):
 - `src/general_ludd/infra/azure_containerapp_live_proof.py`
 - `src/general_ludd/infra/azure_containerapp_live_trace.py`
 - `src/general_ludd/infra/azure_containerapp_live_types.py`
+- `src/general_ludd/infra/azure_containerapp_owned_lifecycle.py`
 - `src/general_ludd/infra/azure_containerapp_make_runtime.py`
 - `src/general_ludd/infra/azure_containerapp_make_types.py`
 - `src/general_ludd/infra/azure_containerapp_make_validation.py`
@@ -96,6 +102,7 @@ S83.157 exact changed-surface registration (from the active gate):
 - `tests/unit/test_azure_containerapp_gpu.py`
 - `tests/unit/test_azure_containerapp_live_proof.py`
 - `tests/unit/test_azure_containerapp_make_runtime.py`
+- `tests/unit/test_azure_containerapp_owned_lifecycle.py`
 - `tests/unit/test_azure_containerapp_preflight.py`
 - `tests/unit/test_azure_containerapp_preflight_cli.py`
 - `tests/unit/test_azure_containerapp_terraform_least_privilege.py`
