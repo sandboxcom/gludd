@@ -89,6 +89,7 @@ S83.157 exact changed-surface registration (from the active gate):
 - `tests/unit/test_opa_policy_deep.py`
 - `tests/unit/test_provider_auth.py`
 - `tests/unit/test_self_improve_azure_backend.py`
+- `tests/unit/test_self_improve_multifile_fixture.py`
 - `tests/unit/test_self_improve_azure_containerapp_backend.py`
 - `tests/unit/test_self_improve_candidate_execution.py`
 - `tests/unit/test_self_improve_live_candidate_wiring.py`
