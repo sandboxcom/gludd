@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-06 — (resolved locally) Make audit shared a long-lived CI shard process
+
+- **What happened**: A clean full gate passed the earlier Azure regressions, then `unit-2:batch-030` timed out the unchanged 15-second `make -n help` assertion after 29 coverage batches had run in the same shard plan. The exact test passed alone in 2.94 seconds, and the exact 16-file batch then passed 136/136 in 18.78 seconds.
+- **Root cause**: The subprocess-heavy Makefile audit was treated as an ordinary coverage-batch member even though the canonical runner already provides a fresh-process lane for tests whose subprocess state must not accumulate with a shard. This made a strict parser timeout sensitive to long-lived gate load while adding no source-coverage value.
+- **Fix applied**: `test_makefile_audit_deep.py` now has exactly one fresh-process lane in the canonical shard registry; `unit-2` excludes it, and the GitHub Actions `unit-1a1` job runs the same isolated-test tuple. The timeout, assertions, and fail-closed behavior remain unchanged.
+- **Lesson**: Subprocess-isolation requirements belong in the shared local/hosted shard registry. Do not hide resource-history failures by extending timeouts, retrying tests, or weakening assertions.
+
 ### 2026-09-06 — (blocked externally) Valid accelerator credential has no shared Container Apps GPU environment
 
 - **What happened**: The supplied private Azure JSON passed Gludd's live authentication check, then the traced read-only Container Apps preflight returned the fixed reason `environment_not_found` before any mutation. No app, GPU replica, role assignment, or other paid resource was created.

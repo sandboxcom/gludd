@@ -421,9 +421,9 @@ jobs:
           # every shard's paths and exclusions.  Keeping duplicate testpaths or
           # exclude data here lets hosted and local release plans drift even
           # when their shard labels match.  The only workflow-local addition is
-          # the isolated fresh-process suite owned by unit-1a1.
+          # the isolated fresh-process suites owned by unit-1a1.
           - shard: unit-1a1
-            isolated_testpaths: "tests/unit/test_all_plugins_runtime.py"
+            isolated_testpaths: "tests/unit/test_all_plugins_runtime.py tests/unit/test_makefile_audit_deep.py"
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
@@ -469,11 +469,11 @@ jobs:
         run: |
           echo "=== CI PHASE: install ==="
           uv sync --python ${{ matrix.python-version }}
-      - name: Run isolated Node plugin syntax in fresh process
+      - name: Run isolated subprocess suites in fresh process
         if: matrix.shard == 'unit-1a1'
         timeout-minutes: 5
         run: |
-          echo "=== CI PHASE: isolated-node-plugin-syntax ==="
+          echo "=== CI PHASE: isolated-subprocess-suites ==="
           uv run python -m pytest ${{ matrix.isolated_testpaths }} -q -W error
       - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         id: test-run

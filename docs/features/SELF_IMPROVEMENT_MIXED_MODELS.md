@@ -383,6 +383,15 @@ private-policy target separately executes 28 fake-local/fake-Azure E2E cases and
 is structurally pinned to the hosted `other` shard with warnings treated as
 errors.
 
+The clean full gate also exercised the shared local/hosted shard plan. After all
+earlier Azure regressions passed, the strict 15-second `make -n help` assertion
+timed out in `unit-2:batch-030` after 29 accumulated coverage batches. The exact
+test passed alone in 2.94 seconds and the unchanged 16-file batch passed 136/136
+in 18.78 seconds. Rather than extending the timeout or retrying a failed test,
+the canonical registry now gives the subprocess-heavy Make audit one
+fresh-process execution lane: local serial gates and the GitHub Actions
+`unit-1a1` job consume the same isolated tuple, while `unit-2` excludes it.
+
 ## Field evidence and design implications
 
 Research checked on 2026-09-04:

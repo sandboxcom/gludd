@@ -62,7 +62,7 @@ def test_workflow_matrix_delegates_shard_plans_to_canonical_registry() -> None:
     assert all("testpaths" not in item and "exclude" not in item for item in include)
 
 
-def test_local_unit_1a1_excludes_isolated_node_runtime_suite() -> None:
+def test_local_shards_exclude_fresh_process_suites() -> None:
     module = _load_script("ci_named_shard_files")
     workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "build.yml").read_text())
     unit_1a1 = next(
@@ -73,7 +73,12 @@ def test_local_unit_1a1_excludes_isolated_node_runtime_suite() -> None:
 
     assert "tests/unit/test_all_plugins_runtime.py" not in module.expand_shard("unit-1a1")
     assert "*/test_all_plugins_runtime.py" in module.SHARDS["unit-1a1"][1]
-    assert module.ISOLATED_TESTS == ("tests/unit/test_all_plugins_runtime.py",)
+    assert "tests/unit/test_makefile_audit_deep.py" not in module.expand_shard("unit-2")
+    assert "*/test_makefile_audit_deep.py" in module.SHARDS["unit-2"][1]
+    assert module.ISOLATED_TESTS == (
+        "tests/unit/test_all_plugins_runtime.py",
+        "tests/unit/test_makefile_audit_deep.py",
+    )
     assert tuple(str(unit_1a1["isolated_testpaths"]).split()) == module.ISOLATED_TESTS
 
 
@@ -1333,6 +1338,7 @@ def test_serial_runner_uses_a_fresh_non_coverage_process_for_isolated_tests() ->
         "-m",
         "pytest",
         "tests/unit/test_all_plugins_runtime.py",
+        "tests/unit/test_makefile_audit_deep.py",
         "-v",
     ]
     assert all(not argument.startswith("--cov") for argument in command)
