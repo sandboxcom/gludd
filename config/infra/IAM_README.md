@@ -348,6 +348,14 @@ az role assignment delete --assignee-object-id <operator-object-id> --role "User
 
 ### Create managed identity + assign roles
 
+The generated role uses provider-owned registration permissions such as
+`Microsoft.App/register/action` and `Microsoft.Network/register/action`. Do not
+replace them with `Microsoft.Resources/subscriptions/providers/register/action`:
+that generic string is not an Azure RBAC operation and makes role creation fail
+with `InvalidActionOrNotAction`. The rationale, current Microsoft catalogs, and
+long-lived operator reports are recorded in
+[`docs/azure-iam-setup.md`](../../docs/azure-iam-setup.md#provider-registration-actions).
+
 ```bash
 SUB_ID="00000000-0000-0000-0000-000000000000"
 RG="gludd-prod"

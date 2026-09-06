@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-05 — (resolved locally) Azure accelerator role used an unsupported generic provider-registration action
+
+- **What happened**: The operator's one-line `azure-accelerator-role-args` pipeline reached Azure, but `az role definition create` rejected `Microsoft.Resources/subscriptions/providers/register/action` with `InvalidActionOrNotAction`.
+- **Root cause**: Gludd checked the action's syntactic shape and internal catalog membership but did not verify that registration is owned by each deployed resource provider. The stale generic string also appeared in both policy formats and the Terraform onboarding role.
+- **Fix applied**: The deployment policies now enumerate only the six provider-owned registration operations they need; the VM-only Terraform role enumerates Compute and Network. Both the argument renderer and IAM validator reject the generic string before Azure is invoked, and regression tests pin the policies, catalog, renderer, and Terraform module.
+- **Practitioner evidence**: Azure's current compute, container, network, and monitor catalogs list provider-specific operations. A 2021 Microsoft Q&A deployment names `Microsoft.Network/register/action`, while a 2026 Q&A answer still recommends the generic string that Azure rejected; the conflict and source links are documented in `docs/azure-iam-setup.md`.
+- **Lesson**: An RBAC action can match Azure's path grammar and still be nonexistent. Every operational role generator must pin provider-owned registration actions and reject known-stale aliases before emitting a command.
+
 ### 2026-09-05 — (resolved) Full local gate omitted hosted feature-claim freshness check
 
 - **What happened**: Exact-SHA local gate candidate `0373c04ad9eba117f4ad7497467ac92f46cb59db` passed all eight test shards at 94% aggregate branch coverage with all 1,179 files above the per-file floor, but hosted run `33955585614` failed both Python 3.11 and 3.12 gates before tests because `README.md`'s generated status table was stale.

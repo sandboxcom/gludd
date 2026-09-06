@@ -13,7 +13,6 @@
           "Microsoft.Resources/subscriptions/resourceGroups/delete",
           "Microsoft.Resources/subscriptions/locations/read",
           "Microsoft.Resources/subscriptions/providers/read",
-          "Microsoft.Resources/subscriptions/providers/register/action",
           "Microsoft.Resources/deployments/read",
           "Microsoft.Resources/deployments/write",
           "Microsoft.Resources/deployments/delete",
@@ -21,6 +20,7 @@
           "Microsoft.Resources/tags/read",
           "Microsoft.Resources/tags/write",
 
+          "Microsoft.ContainerRegistry/register/action",
           "Microsoft.ContainerRegistry/registries/read",
           "Microsoft.ContainerRegistry/registries/write",
           "Microsoft.ContainerRegistry/registries/delete",
@@ -29,6 +29,7 @@
           "Microsoft.ContainerRegistry/registries/pull/read",
           "Microsoft.ContainerRegistry/registries/push/write",
 
+          "Microsoft.App/register/action",
           "Microsoft.App/managedEnvironments/read",
           "Microsoft.App/managedEnvironments/write",
           "Microsoft.App/managedEnvironments/delete",
@@ -49,6 +50,7 @@
           "Microsoft.App/locations/containerAppOperationResults/read",
           "Microsoft.App/locations/containerAppOperationStatuses/read",
 
+          "Microsoft.Network/register/action",
           "Microsoft.Network/virtualNetworks/read",
           "Microsoft.Network/virtualNetworks/write",
           "Microsoft.Network/virtualNetworks/delete",
@@ -73,6 +75,7 @@
           "Microsoft.Network/networkInterfaces/delete",
           "Microsoft.Network/networkInterfaces/join/action",
 
+          "Microsoft.Compute/register/action",
           "Microsoft.Compute/skus/read",
           "Microsoft.Compute/locations/usages/read",
           "Microsoft.Compute/locations/vmSizes/read",
@@ -93,9 +96,11 @@
           "Microsoft.Authorization/roleAssignments/read",
           "Microsoft.Authorization/roleDefinitions/read",
 
+          "Microsoft.OperationalInsights/register/action",
           "Microsoft.OperationalInsights/workspaces/read",
           "Microsoft.OperationalInsights/workspaces/sharedKeys/read",
 
+          "Microsoft.Insights/register/action",
           "Microsoft.Insights/diagnosticSettings/read",
           "Microsoft.Insights/diagnosticSettings/write"
         ],

@@ -24,6 +24,11 @@ REQUIRED_ACCELERATOR_ACTIONS = (
     "Microsoft.Compute/virtualMachines/extensions/write",
     "Microsoft.Compute/virtualMachines/extensions/delete",
 )
+OBSOLETE_PROVIDER_REGISTRATION = "Microsoft.Resources/subscriptions/providers/register/action"
+REQUIRED_TERRAFORM_PROVIDER_REGISTRATIONS = (
+    "Microsoft.Compute/register/action",
+    "Microsoft.Network/register/action",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +280,13 @@ class TestTerraformModuleLeastPriv:
         for action in REQUIRED_ACCELERATOR_ACTIONS:
             assert action in main_tf
             assert action in policy["Actions"]
+
+    def test_role_uses_supported_provider_registration_actions(self) -> None:
+        main_tf = (AZURE_MODULE_DIR / "main.tf").read_text()
+
+        assert OBSOLETE_PROVIDER_REGISTRATION not in main_tf
+        for action in REQUIRED_TERRAFORM_PROVIDER_REGISTRATIONS:
+            assert action in main_tf
 
     def test_role_can_target_service_principal_or_managed_identity(self) -> None:
         main_tf = (AZURE_MODULE_DIR / "main.tf").read_text()

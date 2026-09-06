@@ -169,7 +169,6 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
             "Microsoft.Resources/subscriptions/resourceGroups/moveResources/action",
             "Microsoft.Resources/subscriptions/locations/read",
             "Microsoft.Resources/subscriptions/providers/read",
-            "Microsoft.Resources/subscriptions/providers/register/action",
             "Microsoft.Resources/deployments/read",
             "Microsoft.Resources/deployments/write",
             "Microsoft.Resources/deployments/delete",
@@ -189,6 +188,7 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
     ),
     "Microsoft.ContainerRegistry": frozenset(
         {
+            "Microsoft.ContainerRegistry/register/action",
             "Microsoft.ContainerRegistry/registries/read",
             "Microsoft.ContainerRegistry/registries/write",
             "Microsoft.ContainerRegistry/registries/delete",
@@ -207,6 +207,7 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
     ),
     "Microsoft.App": frozenset(
         {
+            "Microsoft.App/register/action",
             "Microsoft.App/managedEnvironments/read",
             "Microsoft.App/managedEnvironments/write",
             "Microsoft.App/managedEnvironments/delete",
@@ -234,6 +235,7 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
     ),
     "Microsoft.Network": frozenset(
         {
+            "Microsoft.Network/register/action",
             "Microsoft.Network/virtualNetworks/read",
             "Microsoft.Network/virtualNetworks/write",
             "Microsoft.Network/virtualNetworks/delete",
@@ -282,6 +284,7 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
     ),
     "Microsoft.Compute": frozenset(
         {
+            "Microsoft.Compute/register/action",
             "Microsoft.Compute/skus/read",
             "Microsoft.Compute/locations/usages/read",
             "Microsoft.Compute/locations/vmSizes/read",
@@ -331,6 +334,7 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
     ),
     "Microsoft.OperationalInsights": frozenset(
         {
+            "Microsoft.OperationalInsights/register/action",
             "Microsoft.OperationalInsights/workspaces/read",
             "Microsoft.OperationalInsights/workspaces/write",
             "Microsoft.OperationalInsights/workspaces/delete",
@@ -340,6 +344,7 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
     ),
     "Microsoft.Insights": frozenset(
         {
+            "Microsoft.Insights/register/action",
             "Microsoft.Insights/diagnosticSettings/read",
             "Microsoft.Insights/diagnosticSettings/write",
             "Microsoft.Insights/diagnosticSettings/delete",

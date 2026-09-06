@@ -9,7 +9,7 @@ import re
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 ROLE_NAME: Final = "General Ludd Accelerator Deployer"
 ROLE_TEMPLATE_PATH: Final = (
@@ -20,6 +20,20 @@ _UUID_RE: Final = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
 _PRINCIPAL_NAME_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._()\-]{0,119}$")
+_OBSOLETE_PROVIDER_REGISTRATION: Final = (
+    "Microsoft.Resources/subscriptions/providers/register/action".casefold()
+)
+_REQUIRED_PROVIDER_REGISTRATIONS: Final = frozenset(
+    action.casefold()
+    for action in (
+        "Microsoft.App/register/action",
+        "Microsoft.Compute/register/action",
+        "Microsoft.ContainerRegistry/register/action",
+        "Microsoft.Insights/register/action",
+        "Microsoft.Network/register/action",
+        "Microsoft.OperationalInsights/register/action",
+    )
+)
 
 
 def _validate_subscription(value: object) -> str:
@@ -53,6 +67,12 @@ def _materialize_role(template_path: Path, subscription_id: str) -> str:
         or not isinstance(actions, list)
         or not all(isinstance(action, str) for action in actions)
         or any("Microsoft.CognitiveServices/" in action for action in actions)
+    ):
+        raise ValueError("invalid accelerator role template")
+    normalized_actions = frozenset(action.casefold() for action in cast(list[str], actions))
+    if (
+        _OBSOLETE_PROVIDER_REGISTRATION in normalized_actions
+        or not normalized_actions >= _REQUIRED_PROVIDER_REGISTRATIONS
     ):
         raise ValueError("invalid accelerator role template")
     role = dict(raw)

@@ -15,6 +15,17 @@ SUBSCRIPTION_ID = "11111111-2222-3333-4444-555555555555"
 SP_NAME = "gludd accelerator 20260905"
 ROLE_NAME = "General Ludd Accelerator Deployer"
 SCOPE = f"/subscriptions/{SUBSCRIPTION_ID}"
+OBSOLETE_PROVIDER_REGISTRATION = "Microsoft.Resources/subscriptions/providers/register/action"
+REQUIRED_PROVIDER_REGISTRATIONS = frozenset(
+    {
+        "Microsoft.App/register/action",
+        "Microsoft.Compute/register/action",
+        "Microsoft.ContainerRegistry/register/action",
+        "Microsoft.Insights/register/action",
+        "Microsoft.Network/register/action",
+        "Microsoft.OperationalInsights/register/action",
+    }
+)
 ROLE_ARGS_PREFIX = (
     "role",
     "definition",
@@ -62,6 +73,8 @@ def test_role_arguments_materialize_the_checked_in_subscription_scope() -> None:
     assert role["AssignableScopes"] == [SCOPE]
     assert role["DataActions"] == []
     assert not any("CognitiveServices" in action for action in role["Actions"])
+    assert OBSOLETE_PROVIDER_REGISTRATION not in role["Actions"]
+    assert frozenset(role["Actions"]) >= REQUIRED_PROVIDER_REGISTRATIONS
     assert "{subscription_id}" not in arguments[4]
 
 
@@ -153,6 +166,32 @@ def test_missing_or_malformed_role_template_fails_closed(tmp_path: Path) -> None
                 subscription_id=SUBSCRIPTION_ID,
                 template_path=template,
             )
+
+
+def test_role_template_rejects_obsolete_generic_provider_registration(tmp_path: Path) -> None:
+    role = json.loads(subject.ROLE_TEMPLATE_PATH.read_text(encoding="utf-8"))
+    role["Actions"].append(OBSOLETE_PROVIDER_REGISTRATION)
+    template = tmp_path / "obsolete-provider-registration.json"
+    template.write_text(json.dumps(role), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid accelerator role template"):
+        subject.build_role_arguments(
+            subscription_id=SUBSCRIPTION_ID,
+            template_path=template,
+        )
+
+
+def test_role_template_requires_each_provider_registration(tmp_path: Path) -> None:
+    role = json.loads(subject.ROLE_TEMPLATE_PATH.read_text(encoding="utf-8"))
+    role["Actions"].remove("Microsoft.Network/register/action")
+    template = tmp_path / "missing-provider-registration.json"
+    template.write_text(json.dumps(role), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid accelerator role template"):
+        subject.build_role_arguments(
+            subscription_id=SUBSCRIPTION_ID,
+            template_path=template,
+        )
 
 
 def test_main_modes_emit_only_the_requested_argument_stream(

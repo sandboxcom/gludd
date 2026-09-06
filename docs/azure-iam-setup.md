@@ -77,6 +77,32 @@ materializes the exact subscription scope, and emits one NUL-delimited
 and Azure CLI receives the role JSON as one argument, avoiding the long-lived
 shell quoting and newline failures reported in [Azure CLI #16940][azure-cli-16940].
 
+#### Provider-registration actions
+
+Azure validates every custom-role action against its current provider-operation
+catalog during role creation. The generic-looking
+`Microsoft.Resources/subscriptions/providers/register/action` is not a supported
+operation and Azure rejects the entire role with `InvalidActionOrNotAction`.
+Gludd instead grants only the provider-owned registration actions needed by its
+deployment paths: `Microsoft.App/register/action`,
+`Microsoft.ContainerRegistry/register/action`, `Microsoft.Compute/register/action`,
+`Microsoft.Network/register/action`, `Microsoft.OperationalInsights/register/action`,
+and `Microsoft.Insights/register/action`. These are listed in Microsoft's current
+[compute][azure-compute-permissions], [container][azure-container-permissions],
+[network][azure-network-permissions], and [monitor][azure-monitor-permissions]
+permission catalogs.
+
+This distinction has caused years of operator confusion. A 2021 Azure Q&A report
+shows a real deployment requesting `Microsoft.Network/register/action` at
+subscription scope ([network registration thread][forum-network-register]), while
+a 2026 answer still recommends the unsupported generic Microsoft.Resources action
+([generic registration thread][forum-generic-register]). The checked-in validator
+and renderer therefore pin the provider-specific operations and reject the generic
+string before emitting any Azure CLI arguments. When Azure introduces another
+deployment dependency, verify its exact operation in the
+[provider-operation catalog][azure-provider-operations] rather than generalizing
+the resource path.
+
 After Azure reports that role creation succeeded, create a unique test service
 principal and write its one-time credential JSON directly to a private file:
 
@@ -698,3 +724,10 @@ src/general_ludd/cloud/game_e2e.py          # 561-line orchestrator
 [azure-cli-16940]: https://github.com/Azure/azure-cli/issues/16940
 [azure-privileged-roles]: https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/privileged
 [azure-rbac-troubleshoot]: https://learn.microsoft.com/en-us/azure/role-based-access-control/troubleshooting
+[azure-compute-permissions]: https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/compute
+[azure-container-permissions]: https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/containers
+[azure-network-permissions]: https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/networking
+[azure-monitor-permissions]: https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/monitor
+[azure-provider-operations]: https://learn.microsoft.com/en-us/azure/role-based-access-control/resource-provider-operations
+[forum-network-register]: https://learn.microsoft.com/en-us/answers/questions/524560/load-balancer-access-problem
+[forum-generic-register]: https://learn.microsoft.com/en-us/answers/questions/5903482/trying-to-create-custom-role
