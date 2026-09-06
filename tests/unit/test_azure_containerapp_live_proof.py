@@ -19,6 +19,7 @@ from general_ludd.infra.azure_containerapp_live_proof import (
     audit_containerapp_plan,
     run_azure_containerapp_live_proof,
 )
+from general_ludd.infra.azure_containerapp_live_trace import build_live_proof_trace
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
     AzureCandidateResponse,
@@ -73,6 +74,26 @@ def _policy(*, live: bool = True, **overrides: object) -> AzureContainerAppLiveP
     }
     values.update(overrides)
     return AzureContainerAppLiveProofPolicy(**cast(Any, values))
+
+
+def test_trace_builder_keeps_usage_but_never_response_content() -> None:
+    """Keep operational accounting observable without leaking model output."""
+    response = AzureCandidateResponse(
+        text="private response",
+        input_tokens=3,
+        output_tokens=5,
+        total_tokens=8,
+    )
+
+    trace = build_live_proof_trace(
+        LiveProofEvent.WORK_REQUEST_SUCCEEDED,
+        _policy(),
+        candidate_digest="a" * 64,
+        response=response,
+    )
+
+    assert (trace.input_tokens, trace.output_tokens, trace.total_tokens) == (3, 5, 8)
+    assert "private response" not in repr(trace)
 
 
 def _plan(policy: AzureContainerAppLiveProofPolicy) -> dict[str, object]:

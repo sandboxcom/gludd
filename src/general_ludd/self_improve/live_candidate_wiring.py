@@ -15,8 +15,12 @@ import json
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Generic, Protocol, TypeVar, cast, runtime_checkable
 
+from general_ludd.self_improve._candidate_execution_types import (
+    CandidateExecutionBoundary,
+)
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
     AzureCandidateResponse,
@@ -47,6 +51,7 @@ from general_ludd.self_improve.model_candidates import (
     CandidateBackend,
     ModelCandidateProvider,
 )
+from general_ludd.self_improve.private_policy import SelfImproveRuntimePolicyGuard
 
 LIVE_CANDIDATE_WIRING_PROTOCOL = "gludd-live-candidate-wiring-v1"
 _MAX_COST_MICROUSD = 1_000_000_000_000
@@ -356,6 +361,47 @@ class LiveManagedCandidateSet(Generic[_RequestT, _ResponseT]):
     ) -> None:
         """Release Azure resources while the outer owner retains the local lease."""
         self.close()
+
+
+def bind_managed_candidate_execution_boundary(
+    *,
+    repo_root: Path | None,
+    policy_digest: str,
+    progress_sink: Callable[[str], None],
+    violation_factory: Callable[[], Exception],
+    request_text: str,
+    source_paths: tuple[str, ...],
+    expected_project_identity_digest: str,
+    project_identity_probe: Callable[[], str],
+    remote_enabled: bool,
+) -> tuple[CandidateExecutionBoundary, AzureApprovedPrompt | None]:
+    """Bind project identity, privacy policy, and optional remote prompt authority."""
+    if repo_root is None:
+        raise violation_factory()
+    policy_guard = SelfImproveRuntimePolicyGuard.bound(
+        repo_root,
+        policy_digest,
+        progress_sink,
+        violation_factory,
+    )
+    approved_prompt = (
+        AzureApprovedPrompt.approve(
+            prompt=request_text,
+            source_paths=source_paths,
+            policy_guard=policy_guard,
+        )
+        if remote_enabled
+        else None
+    )
+    return (
+        CandidateExecutionBoundary(
+            policy_guard=policy_guard,
+            source_paths=source_paths,
+            expected_project_identity_digest=expected_project_identity_digest,
+            project_identity_probe=project_identity_probe,
+        ),
+        approved_prompt,
+    )
 
 
 @dataclass(slots=True)
@@ -752,5 +798,6 @@ __all__ = (
     "LiveCandidateWiringPolicy",
     "LiveManagedCandidateSet",
     "LiveManagedCandidateWiring",
+    "bind_managed_candidate_execution_boundary",
     "build_live_managed_candidate_wiring",
 )

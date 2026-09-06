@@ -28,7 +28,6 @@ from general_ludd.hardware.model_fit import unified_probe
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.local_model import LocalModelConfig
 from general_ludd.self_improve._candidate_execution_types import (
-    CandidateExecutionBoundary,
     CandidateExecutionTrace,
 )
 from general_ludd.self_improve._candidate_prediction import stable_digest
@@ -64,6 +63,7 @@ from general_ludd.self_improve.codex_comparison import (
 from general_ludd.self_improve.live_candidate_wiring import (
     LiveManagedCandidateSet,
     LiveManagedCandidateWiring,
+    bind_managed_candidate_execution_boundary,
 )
 from general_ludd.self_improve.managed_candidate_assembly import CandidatePrivacyState
 from general_ludd.self_improve.managed_candidate_routing import (
@@ -99,7 +99,6 @@ from general_ludd.self_improve.model_lifecycle import (
 from general_ludd.self_improve.private_policy import (
     PolicyAccess,
     SelfImprovePrivacyPolicy,
-    SelfImproveRuntimePolicyGuard,
     load_self_improve_policy,
 )
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
@@ -2323,46 +2322,6 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
         self._execution_policy(plan, generated.proposal)
         return result
 
-    def _managed_candidate_boundary(
-        self,
-        plan: ApprovedSelfImprovePlan,
-        candidate_set: LiveManagedCandidateSet[LocalProposalInvocation, object],
-        codec: ManagedCandidateProposalCodec[GeneratedProposal],
-    ) -> tuple[CandidateExecutionBoundary, AzureApprovedPrompt | None]:
-        """Bind provider calls to the approved project and privacy identities."""
-        if plan.repo_root is None:
-            raise SelfImprovePolicyViolation
-        policy_guard = SelfImproveRuntimePolicyGuard.bound(
-            plan.repo_root,
-            plan.policy_digest,
-            self.progress_sink,
-            SelfImprovePolicyViolation,
-        )
-        source_paths = _scope_paths(plan)
-        has_remote = (
-            candidate_set.azure_session is not None
-            or candidate_set.containerapp_session is not None
-        )
-        approved_prompt = (
-            AzureApprovedPrompt.approve(
-                prompt=codec.request_text,
-                source_paths=source_paths,
-                policy_guard=policy_guard,
-            )
-            if has_remote
-            else None
-        )
-        expected_project_identity = _managed_project_identity(plan)
-        return (
-            CandidateExecutionBoundary(
-                policy_guard=policy_guard,
-                source_paths=source_paths,
-                expected_project_identity_digest=expected_project_identity,
-                project_identity_probe=lambda: _managed_project_identity(plan),
-            ),
-            approved_prompt,
-        )
-
     def _managed_candidate_trial_specs(
         self,
         plan: ApprovedSelfImprovePlan,
@@ -2471,8 +2430,19 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
         attempt: int,
     ) -> GeneratedProposal:
         """Run and fully evaluate every explicit local/cloud candidate once."""
-        boundary, approved_prompt = self._managed_candidate_boundary(
-            plan, candidate_set, codec
+        boundary, approved_prompt = bind_managed_candidate_execution_boundary(
+            repo_root=plan.repo_root,
+            policy_digest=plan.policy_digest,
+            progress_sink=self.progress_sink,
+            violation_factory=SelfImprovePolicyViolation,
+            request_text=codec.request_text,
+            source_paths=_scope_paths(plan),
+            expected_project_identity_digest=_managed_project_identity(plan),
+            project_identity_probe=lambda: _managed_project_identity(plan),
+            remote_enabled=(
+                candidate_set.azure_session is not None
+                or candidate_set.containerapp_session is not None
+            ),
         )
         evaluated: dict[str, AttemptResult] = {}
         evaluated_lock = threading.Lock()

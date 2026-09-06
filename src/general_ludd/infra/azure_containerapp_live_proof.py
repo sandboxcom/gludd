@@ -5,6 +5,18 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from general_ludd.infra.azure_containerapp_live_trace import (
+    build_live_proof_trace as _trace,
+)
+from general_ludd.infra.azure_containerapp_live_trace import (
+    cleanup_emit_live_proof_trace as _cleanup_emit,
+)
+from general_ludd.infra.azure_containerapp_live_trace import (
+    discard_live_proof_trace as _discard_trace,
+)
+from general_ludd.infra.azure_containerapp_live_trace import (
+    emit_live_proof_trace as _emit,
+)
 from general_ludd.infra.azure_containerapp_live_types import (
     LIVE_PROOF_ACKNOWLEDGEMENT,
     AzureContainerAppDeploymentEvidence,
@@ -26,55 +38,6 @@ from general_ludd.self_improve.model_candidates import (
     BoundedCandidateSession,
     CandidateBackend,
 )
-
-
-def _emit(
-    sink: Callable[[LiveProofTrace], None],
-    trace: LiveProofTrace,
-) -> None:
-    try:
-        sink(trace)
-    except Exception:
-        raise AzureContainerAppLiveProofError(
-            AzureContainerAppLiveProofFailure.TRACE
-        ) from None
-
-
-def _cleanup_emit(
-    sink: Callable[[LiveProofTrace], None],
-    trace: LiveProofTrace,
-) -> bool:
-    try:
-        _emit(sink, trace)
-    except AzureContainerAppLiveProofError:
-        return False
-    return True
-
-
-def _trace(
-    event: LiveProofEvent,
-    policy: AzureContainerAppLiveProofPolicy,
-    *,
-    candidate_digest: str | None = None,
-    failure: AzureContainerAppLiveProofFailure | None = None,
-    resource_change_count: int = 0,
-    response: AzureCandidateResponse | None = None,
-) -> LiveProofTrace:
-    return LiveProofTrace(
-        event=event,
-        operation_digest=policy.operation_digest,
-        candidate_identity_digest=candidate_digest,
-        failure=failure,
-        resource_change_count=resource_change_count,
-        input_tokens=0 if response is None else response.input_tokens,
-        output_tokens=0 if response is None else response.output_tokens,
-        total_tokens=0 if response is None else response.total_tokens,
-    )
-
-
-def _discard_trace(_trace_record: LiveProofTrace) -> None:
-    return None
-
 
 _ModelBackend = CandidateBackend[AzureApprovedPrompt, AzureCandidateResponse]
 _BackendFactory = Callable[[AzureContainerAppCandidateIdentity], _ModelBackend]

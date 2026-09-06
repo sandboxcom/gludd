@@ -364,7 +364,7 @@ order, bounded concurrency, policy and project drift checks at later boundaries,
 fixed-message error censorship, and calibration-store failure handling.
 Two filename-matched internal boundary suites add 11 direct validation, timing,
 trace-censorship, invocation, typed-failure, and evidence-failure contracts; the
-repository-wide coverage-gap audit consequently reports 1,084 covered modules
+repository-wide coverage-gap audit consequently reports 1,085 covered modules
 and zero untested modules.
 
 No standard CI job needs an Azure subscription or secret. A later live job must
@@ -373,10 +373,10 @@ credential pointers are absent. It must use a disposable non-production
 deployment and always emit visible cleanup progress.
 
 The same `make test-azure-containerapp-coverage` command now runs locally and on
-the Python 3.11 GitHub Actions gate leg. It executes 361 credential-free unit/E2E
+the Python 3.11 GitHub Actions gate leg. It executes 362 credential-free unit/E2E
 cases and enforces branch-aware coverage across the three orchestration scripts
-and 15 source modules. The observed 2026-09-06 run reached 93% aggregate coverage;
-all 18 files were at or above 75%. The private-policy target separately executes
+and 16 source modules. The observed 2026-09-06 run reached 93% aggregate coverage;
+all 19 files were at or above 75%. The private-policy target separately executes
 28 fake-local/fake-Azure E2E cases and is structurally pinned to the hosted
 `other` shard with warnings treated as errors.
 

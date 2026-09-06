@@ -2028,7 +2028,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/managed_runner.py",
-      "line": 259,
+      "line": 258,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_write_atomic_temp",
