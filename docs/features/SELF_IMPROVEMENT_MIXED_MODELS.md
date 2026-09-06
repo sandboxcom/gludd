@@ -1,33 +1,32 @@
 # Mixed-model self-improvement candidate boundary
 
-Status: provider-neutral identity, live Azure OpenAI discovery and inference,
-content-free calibrated ranking/trial-planning, and bounded execution of an
-already-approved plan are implemented; automatic candidate-set assembly and
-managed-runner selection remain disabled.
+Status: provider-neutral identity, deterministic task classification, live local,
+Azure OpenAI, and Azure Container Apps discovery/inference, candidate-set
+assembly, content-free calibrated routing, and managed-runner selection are
+implemented behind explicit policy. A paid Azure Container Apps canary remains
+blocked until its operator-owned managed environment exists.
 
 ## Outcome
 
-Gludd can represent an acquired local GGUF and a deployed Azure Foundry model as
-different typed candidates under one backend protocol. Candidate identity,
-execution policy, and provider credentials stay separate. This separation is the
-prerequisite for testing local and Azure candidates without silently changing the
-existing local-only managed runner.
+Gludd represents an acquired local GGUF, an explicitly named Azure OpenAI
+deployment, and an explicitly named model served by Azure Container Apps as typed
+candidates under one backend protocol. Candidate identity, execution policy,
+project privacy, and provider credentials stay separate. The legacy local-only
+path remains the default when live candidate wiring or the remote proposal codec
+is omitted.
 
-The opt-in `AzureOpenAICandidateBackend` can now discover one exact deployment
-through Azure Resource Manager and invoke that deployment through Azure's unified
-OpenAI v1 endpoint. Provider-neutral routing primitives can rank immutable local
-and Azure predictions, deliberately challenge a preferred model, measure pre-call
-calibration, and execute a caller-approved local-only, Azure-only, or mixed plan
-through explicitly supplied bounded sessions. The managed runner still selects
-and acquires only local GGUF candidates. Its legacy proposal callback is
-transported through `LocalProposalBackendAdapter` with the same four objects,
-return object, exception identity, progress events, and lease lifecycle.
-Therefore this tranche does **not** claim automatic end-to-end mixed-provider
-self-improvement.
+The opt-in Azure backends discover one exact deployment or Container App model,
+revalidate its immutable identity before inference, and expose it through the
+same bounded-session protocol as the local adapter. The managed runner classifies
+the approved task, assembles the explicit local/cloud set, derives evidence-bound
+predictions, deliberately challenges under-tested candidates, executes every
+approved trial once, evaluates each result deterministically, and selects from the
+observed results. It persists only eligible public quality evidence. Private work
+and infrastructure failures remain observable but cannot train the selector.
 
 ## Candidate identities
 
-Both candidate types are frozen values with a canonical SHA-256
+All candidate types are frozen values with a canonical SHA-256
 `identity_digest`. The digest uses sorted, compact JSON with a versioned protocol
 tag. It is safe to put the digest in events; raw routing fields are not event
 fields.
@@ -36,6 +35,7 @@ fields.
 | --- | --- | --- |
 | Local GGUF | model ID, repository, immutable commit, confined GGUF filename, acquired artifact SHA-256 | cache path, lease path, Hugging Face token |
 | Azure Foundry | canonical endpoint, API family, deployment name, API version, deployed model version, deployment ETag | API key, bearer token, tenant credential, subscription credential |
+| Azure Container App | canonical endpoint/resource ID, exact app revision, image SHA-256, model repository/commit, GPU profile type | client secret, bearer token, Terraform directory, response content |
 
 A repository and commit are optional only for an operator-supplied local file;
 the acquired artifact digest remains mandatory. Repository-managed GGUFs require
@@ -167,9 +167,11 @@ self-confirming routing loop.
 
 Calibration is reported prequentially with Brier skill against the causal empirical
 base rate for one exact task stratum. Later evidence cannot rewrite an earlier
-baseline. These facilities are implemented and tested, but automatic task-kind
-classification, live candidate-set assembly, managed-runner construction of the
-execution inputs, and promotion policy based on calibration remain pending.
+baseline. Deterministic task-kind classification, live candidate-set assembly,
+managed-runner construction of execution inputs, exact-once evaluation, and
+evidence-based selection are implemented. Automatic promotion of a model into an
+unbounded or default production policy is deliberately not implemented; every run
+still requires the caller's bounded policy and explicit provider opt-in.
 
 ## Approved plan execution
 
@@ -207,6 +209,29 @@ attempts go through the existing calibration contract and are excluded from
 quality learning; accepted and deterministically rejected public attempts remain
 eligible evidence.
 
+## Managed-runner selection
+
+When live wiring and a `ManagedCandidateProposalCodec` are present, the managed
+runner no longer treats assembly as shadow-only. It builds a complete
+`ManagedCandidateTrialSpec` for the local session and each explicitly configured
+remote session, authorizes the complete set before the first provider effect, and
+passes it to `route_managed_candidate_proposals()`.
+
+Every candidate is invoked exactly once in the approved plan. The same evaluator
+that guards ordinary self-improvement assesses decoded local and remote proposals,
+and its completed `AttemptResult` is rebound to the selected proposal rather than
+being recomputed. Selection favors the first accepted calibrated result and falls
+back only to an already-evaluated result when none passed; a provider failure never
+creates an unplanned cross-provider call. The returned proposal records the
+selected provider, immutable candidate digest, plan digest, and the local trial's
+acceptance state without exposing source or response content in traces.
+
+The runner rechecks project identity and privacy before acquisition, discovery,
+provider invocation, evaluation, and evidence persistence. A project-private path
+therefore stops before either local or Azure proposal generation and cannot enter
+the calibration store. The inverse policies of two projects remain isolated even
+when their relative source paths are identical.
+
 ## Explicit Azure opt-in and credentials
 
 Azure is denied unless the caller constructs the bounded session with
@@ -238,29 +263,38 @@ For Entra inference, the adapter uses the documented
 this discovery-backed path because the ARM lookup still requires Entra
 authorization.
 
+The Container Apps path uses a separate resource-group-scoped accelerator
+identity. Its private Azure CLI JSON is parsed directly by the credential loader;
+it is never sourced into a shell. That identity may read/join the existing managed
+environment and create/read/delete only Container Apps in the dedicated resource
+group. It has no Cognitive Services, registry, network, secret, provider-
+registration, resource-group, or IAM authority. The exact role and operator
+bootstrap are documented in `docs/azure-iam-setup.md`.
+
 ## Discovery and prediction verification
 
 Provider-neutral identities do not by themselves make a model discoverable. The
-live Azure adapter now produces one immutable Azure OpenAI candidate snapshot, and
-the existing local planner resolves immutable GGUF artifacts. Candidate-set
-assembly in the managed runner remains future work:
+managed path now performs this bounded sequence:
 
 1. Discover local catalog entries and resolve every Hugging Face revision to a
    commit, as the current planner already does.
-2. When Azure has been explicitly enabled, get only the explicitly configured
-   deployment from the approved Cognitive Services account; it does not enumerate
-   or guess deployments.
-3. Read deployment name, model version, provisioning state, and ETag from one
-   management-plane snapshot; reject partial data or subsequent drift.
-4. Build typed identities before any project source is sent to a provider.
-5. Construct a pre-call prediction keyed by candidate digest and exact task stratum,
+2. When Azure OpenAI has been explicitly enabled, get only the configured
+   deployment from the approved account; it does not enumerate or guess
+   deployments.
+3. When Azure Container Apps has been explicitly enabled, read only the configured
+   app and exact `/v1/models` inventory; require one expected model and reject app,
+   revision, endpoint, or inventory drift.
+4. Read deployment name, model version, provisioning state, and ETag from one
+   Azure OpenAI management-plane snapshot; reject partial data or subsequent drift.
+5. Build typed identities before any project source is sent to a provider.
+6. Construct a pre-call prediction keyed by candidate digest and exact task stratum,
    not by a friendly model name.
-6. Build an explicit bounded plan containing the preferred candidate and configured
+7. Build an explicit bounded plan containing the preferred candidate and configured
    least-tested challengers; no candidate is inferred after execution starts.
-7. Run deterministic evaluation and persist both accepted and rejected public
+8. Run deterministic evaluation and persist both accepted and rejected public
    labels only for the exact candidate, prompt protocol, project privacy policy,
    evaluator, sampling protocol, and stratum identities.
-8. Measure prequential Brier skill; censor infrastructure and private-scope outcomes
+9. Measure prequential Brier skill; censor infrastructure and private-scope outcomes
    from model-quality learning.
 
 An Azure deployment that is updated in place gets a new ETag or model version and
@@ -277,20 +311,23 @@ The integration sequence preserves the current local service throughout:
 2. **Single-candidate live adapter:** discover an explicitly configured Azure
    deployment and expose an opt-in, policy-gated backend without wiring it into
    local selection.
-3. **Fake mixed execution (implemented):** exercise local and Azure-shaped
+3. **Hermetic mixed execution (implemented):** exercise local and Azure-shaped
    deterministic fakes in standard CI with the same budget, no-fallback, project
    binding, privacy, and failure-censoring assertions.
-4. **Live canary:** require a protected environment, explicit opt-in, least
+4. **Managed routing (implemented, default-off):** classify work, assemble the
+   configured set, execute bounded trials, and select from exact evaluation and
+   calibration evidence while retaining the unchanged local default.
+5. **Live canary:** require a protected environment, explicit opt-in, least
    privilege, cost ceiling, and one non-production deployment. Keep the local
    production path active.
-5. **Shadow comparison:** run an approved small task against both providers,
+6. **Shadow comparison:** run an approved small task against both providers,
    evaluate independently, and record digest-bound prediction accuracy. Do not
    promote automatically.
-6. **Bounded selection:** allow Azure into a specific approved candidate plan only
-   after canaries and rollback tests pass. A provider failure ends that attempt;
-   it never causes an implicit cross-provider call.
+7. **Bounded live selection:** admit the live Azure candidate only after the canary
+   and cleanup evidence pass. A provider failure ends that attempt; it never causes
+   an implicit cross-provider call.
 
-Rollback is configuration-only until phase six: disable Azure opt-in and the
+Rollback remains configuration-only: disable Azure opt-in and the
 existing local runner continues through the compatibility adapter. Deployment
 identity changes invalidate Azure evidence without interrupting local work.
 
@@ -327,13 +364,21 @@ order, bounded concurrency, policy and project drift checks at later boundaries,
 fixed-message error censorship, and calibration-store failure handling.
 Two filename-matched internal boundary suites add 11 direct validation, timing,
 trace-censorship, invocation, typed-failure, and evidence-failure contracts; the
-repository-wide coverage-gap audit consequently reports 1,060 covered modules
+repository-wide coverage-gap audit consequently reports 1,084 covered modules
 and zero untested modules.
 
 No standard CI job needs an Azure subscription or secret. A later live job must
 be opt-in, protected, serialized, cost capped, and skipped when its explicit
 credential pointers are absent. It must use a disposable non-production
 deployment and always emit visible cleanup progress.
+
+The same `make test-azure-containerapp-coverage` command now runs locally and on
+the Python 3.11 GitHub Actions gate leg. It executes 361 credential-free unit/E2E
+cases and enforces branch-aware coverage across the three orchestration scripts
+and 15 source modules. The observed 2026-09-06 run reached 93% aggregate coverage;
+all 18 files were at or above 75%. The private-policy target separately executes
+28 fake-local/fake-Azure E2E cases and is structurally pinned to the hosted
+`other` shard with warnings treated as errors.
 
 ## Field evidence and design implications
 

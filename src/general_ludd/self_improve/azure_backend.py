@@ -457,10 +457,11 @@ def _official_management_client(
     retry_total: int,
     logging_enable: bool,
 ) -> object:
+    from azure.core.credentials import TokenCredential
     from azure.mgmt.cognitiveservices import CognitiveServicesManagementClient
 
     return CognitiveServicesManagementClient(
-        credential=credential,
+        credential=cast(TokenCredential, credential),
         subscription_id=subscription_id,
         retry_total=retry_total,
         logging_enable=logging_enable,
@@ -472,9 +473,10 @@ def _official_bearer_token_provider(
     credential: object,
     scope: str,
 ) -> Callable[[], str]:
+    from azure.core.credentials import TokenCredential
     from azure.identity import get_bearer_token_provider
 
-    return cast(Callable[[], str], get_bearer_token_provider(credential, scope))
+    return get_bearer_token_provider(cast(TokenCredential, credential), scope)
 
 
 def _official_openai_client(
@@ -804,14 +806,14 @@ class AzureOpenAICandidateBackend:
         self._environment = None
         return self._openai_client
 
-    def generate(
+    def _approved_generation_prompt(
         self,
         request: AzureApprovedPrompt,
         *,
         max_output_tokens: int,
         timeout_seconds: float,
-    ) -> AzureCandidateResponse:
-        """Recheck identity/privacy, call once, and return validated accounting."""
+    ) -> str:
+        """Validate bounds and recheck immutable deployment and privacy state."""
         if self._closed:
             raise BackendInfrastructureError(BackendFailure.UNAVAILABLE)
         if not isinstance(request, AzureApprovedPrompt):
@@ -825,7 +827,6 @@ class AzureOpenAICandidateBackend:
             or not 0.0 < float(timeout_seconds) <= 3_600.0
         ):
             raise ValueError("Azure generation limits are invalid")
-
         discovered = _deployment_identity(
             self._config,
             self._management_client.deployments,
@@ -842,7 +843,7 @@ class AzureOpenAICandidateBackend:
             )
             raise BackendPolicyError(BackendPolicyFailure.IDENTITY_DRIFT)
         try:
-            prompt = request._reveal_after_recheck()
+            return request._reveal_after_recheck()
         except AzurePromptApprovalError:
             _emit(
                 self._trace_sink,
@@ -853,17 +854,16 @@ class AzureOpenAICandidateBackend:
             )
             raise
 
-        client = self._ensure_openai_client()
-        request_number = self._requests_started + 1
-        _emit(
-            self._trace_sink,
-            AzureBackendTrace(
-                event=AzureTraceEvent.REQUEST_STARTED,
-                candidate_digest=self._identity.identity_digest,
-                request_number=request_number,
-            ),
-        )
-        self._requests_started += 1
+    def _invoke_generation(
+        self,
+        client: _OpenAIClient,
+        prompt: str,
+        request_number: int,
+        *,
+        max_output_tokens: int,
+        timeout_seconds: float,
+    ) -> object:
+        """Invoke one request and censor every SDK failure."""
         response: object = None
         request_error: BackendInfrastructureError | None = None
         try:
@@ -888,6 +888,16 @@ class AzureOpenAICandidateBackend:
             )
         if request_error is not None:
             raise request_error
+        return response
+
+    def _accept_generation(
+        self,
+        response: object,
+        request_number: int,
+        *,
+        max_output_tokens: int,
+    ) -> AzureCandidateResponse:
+        """Validate provider accounting and publish one accepted response event."""
         self._responses_received += 1
         try:
             accepted = _validated_response(response, max_output_tokens=max_output_tokens)
@@ -920,6 +930,43 @@ class AzureOpenAICandidateBackend:
             ),
         )
         return accepted
+
+    def generate(
+        self,
+        request: AzureApprovedPrompt,
+        *,
+        max_output_tokens: int,
+        timeout_seconds: float,
+    ) -> AzureCandidateResponse:
+        """Recheck identity/privacy, call once, and return validated accounting."""
+        prompt = self._approved_generation_prompt(
+            request,
+            max_output_tokens=max_output_tokens,
+            timeout_seconds=timeout_seconds,
+        )
+        client = self._ensure_openai_client()
+        request_number = self._requests_started + 1
+        _emit(
+            self._trace_sink,
+            AzureBackendTrace(
+                event=AzureTraceEvent.REQUEST_STARTED,
+                candidate_digest=self._identity.identity_digest,
+                request_number=request_number,
+            ),
+        )
+        self._requests_started += 1
+        response = self._invoke_generation(
+            client,
+            prompt,
+            request_number,
+            max_output_tokens=max_output_tokens,
+            timeout_seconds=timeout_seconds,
+        )
+        return self._accept_generation(
+            response,
+            request_number,
+            max_output_tokens=max_output_tokens,
+        )
 
     def close(self) -> None:
         """Idempotently release every SDK resource, even after one close fails."""

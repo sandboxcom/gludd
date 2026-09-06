@@ -1,0 +1,293 @@
+"""Fixed-origin HTTP transport for named-environment Container Apps ARM reads."""
+
+from __future__ import annotations
+
+import json
+import re
+import uuid
+from typing import Final
+
+import httpx
+
+_ARM_ORIGIN: Final = "https://management.azure.com"
+_API_VERSION: Final = "2025-07-01"
+_CONTAINER_APP_API_VERSION: Final = "2025-01-01"
+_MAX_RESPONSE_BYTES: Final = 1024 * 1024
+_MAX_TOKEN_CHARS: Final = 8192
+_RESOURCE_GROUP_PATTERN = re.compile(r"(?=.{1,90}\Z)[A-Za-z0-9_().-]+(?<!\.)")
+_RESOURCE_NAME_PATTERN = re.compile(r"(?=.{1,64}\Z)[A-Za-z0-9_.-]+")
+
+
+class AzureContainerAppARMError(RuntimeError):
+    """Report a fixed-context ARM refusal without response or credential data."""
+
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        """Initialize a censored error with an optional HTTP status code."""
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class _DuplicateJSONField(ValueError):
+    pass
+
+
+def _reject_duplicate_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise _DuplicateJSONField
+        result[key] = value
+    return result
+
+
+def _resource_root(
+    subscription_id: str,
+    resource_group: str,
+    environment_name: str,
+) -> str:
+    try:
+        canonical_subscription = str(uuid.UUID(subscription_id))
+    except (ValueError, AttributeError):
+        canonical_subscription = ""
+    if subscription_id != canonical_subscription:
+        raise ValueError("subscription_id must be a canonical UUID")
+    if _RESOURCE_GROUP_PATTERN.fullmatch(resource_group) is None:
+        raise ValueError("resource_group must be a safe Azure resource name")
+    if _RESOURCE_NAME_PATTERN.fullmatch(environment_name) is None:
+        raise ValueError("environment_name must be a safe Azure resource name")
+    return (
+        f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}/"
+        f"providers/Microsoft.App/managedEnvironments/{environment_name}"
+    )
+
+
+def _approved_paths(root: str) -> frozenset[str]:
+    return frozenset(
+        {
+            f"{root}?api-version={_API_VERSION}",
+            f"{root}/usages?api-version={_API_VERSION}",
+            f"{root}/workloadProfileStates?api-version={_API_VERSION}",
+        }
+    )
+
+
+def _container_app_path(
+    subscription_id: str,
+    resource_group: str,
+    app_name: str,
+) -> str:
+    root = _resource_root(subscription_id, resource_group, app_name)
+    environment_marker = "/managedEnvironments/"
+    if environment_marker not in root:
+        raise ValueError("container app path could not be constructed")
+    prefix, _separator, _name = root.partition(environment_marker)
+    return (
+        f"{prefix}/containerApps/{app_name}"
+        f"?api-version={_CONTAINER_APP_API_VERSION}"
+    )
+
+
+def _validate_request(
+    path: str,
+    bearer_token: str,
+    approved_paths: frozenset[str],
+) -> None:
+    if not isinstance(path, str) or path not in approved_paths:
+        raise ValueError("path must be an approved read-only ARM path")
+    if (
+        not isinstance(bearer_token, str)
+        or not bearer_token
+        or len(bearer_token) > _MAX_TOKEN_CHARS
+        or any(character.isspace() or ord(character) < 32 for character in bearer_token)
+    ):
+        raise ValueError("bearer token has an invalid shape")
+
+
+def _read_response(response: httpx.Response) -> bytes:
+    if response.status_code != 200:
+        raise AzureContainerAppARMError(
+            f"Azure Resource Manager read returned status {response.status_code}",
+            status_code=response.status_code,
+        )
+    content_type = response.headers.get("content-type", "").partition(";")[0].strip()
+    if content_type.casefold() != "application/json":
+        raise AzureContainerAppARMError(
+            "Azure Resource Manager response must use a JSON content type"
+        )
+    raw_length = response.headers.get("content-length")
+    if raw_length is not None:
+        try:
+            content_length = int(raw_length)
+        except ValueError:
+            raise AzureContainerAppARMError(
+                "Azure Resource Manager response has an invalid content length"
+            ) from None
+        if content_length < 0 or content_length > _MAX_RESPONSE_BYTES:
+            raise AzureContainerAppARMError(
+                "Azure Resource Manager response is too large"
+            )
+
+    chunks: list[bytes] = []
+    received = 0
+    for chunk in response.iter_bytes():
+        received += len(chunk)
+        if received > _MAX_RESPONSE_BYTES:
+            raise AzureContainerAppARMError(
+                "Azure Resource Manager response is too large"
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _decode_json(raw: bytes) -> object:
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise AzureContainerAppARMError(
+            "Azure Resource Manager response must contain valid UTF-8 JSON"
+        ) from None
+    try:
+        return json.loads(text, object_pairs_hook=_reject_duplicate_fields)
+    except _DuplicateJSONField:
+        raise AzureContainerAppARMError(
+            "Azure Resource Manager response contains a duplicate JSON field"
+        ) from None
+    except (json.JSONDecodeError, ValueError, TypeError):
+        raise AzureContainerAppARMError(
+            "Azure Resource Manager response must contain valid JSON"
+        ) from None
+
+
+class HttpxARMJSONTransport:
+    """Issue bounded GETs for one named environment at the fixed ARM origin."""
+
+    def __init__(
+        self,
+        *,
+        subscription_id: str,
+        resource_group: str,
+        environment_name: str,
+        client: httpx.Client | None = None,
+    ) -> None:
+        """Bind the transport to one exact managed environment."""
+        root = _resource_root(subscription_id, resource_group, environment_name)
+        self._approved_paths = _approved_paths(root)
+        self._owns_client = client is None
+        self._client = client or httpx.Client(
+            base_url=_ARM_ORIGIN,
+            follow_redirects=False,
+            timeout=httpx.Timeout(10.0),
+            limits=httpx.Limits(max_connections=2, max_keepalive_connections=1),
+            trust_env=False,
+            headers={"accept": "application/json"},
+        )
+
+    def get_json(self, path: str, bearer_token: str) -> object:
+        """GET one allowlisted ARM resource and decode bounded JSON."""
+        _validate_request(path, bearer_token, self._approved_paths)
+        try:
+            with self._client.stream(
+                "GET",
+                path,
+                headers={"authorization": f"Bearer {bearer_token}"},
+                follow_redirects=False,
+            ) as response:
+                return _decode_json(_read_response(response))
+        except AzureContainerAppARMError:
+            raise
+        except httpx.HTTPError:
+            raise AzureContainerAppARMError(
+                "Azure Resource Manager read failed"
+            ) from None
+
+    def close(self) -> None:
+        """Close only a client allocated by this transport."""
+        if self._owns_client:
+            self._client.close()
+
+    def __enter__(self) -> HttpxARMJSONTransport:
+        """Return this transport as an owned context resource."""
+        return self
+
+    def __exit__(
+        self,
+        _exception_type: object,
+        _exception: object,
+        _traceback: object,
+    ) -> None:
+        """Close the owned transport when its context exits."""
+        self.close()
+
+
+class HttpxContainerAppARMTransport:
+    """Issue bounded GETs for one exact Container App at the fixed ARM origin."""
+
+    def __init__(
+        self,
+        *,
+        subscription_id: str,
+        resource_group: str,
+        app_name: str,
+        client: httpx.Client | None = None,
+    ) -> None:
+        """Bind the transport to one exact Container App resource."""
+        self._path = _container_app_path(
+            subscription_id,
+            resource_group,
+            app_name,
+        )
+        self._approved_paths = frozenset({self._path})
+        self._owns_client = client is None
+        self._client = client or httpx.Client(
+            base_url=_ARM_ORIGIN,
+            follow_redirects=False,
+            timeout=httpx.Timeout(10.0),
+            limits=httpx.Limits(max_connections=1, max_keepalive_connections=1),
+            trust_env=False,
+            headers={"accept": "application/json"},
+        )
+
+    def get_json(self, bearer_token: str) -> object | None:
+        """Return the exact app document, or ``None`` only for an exact 404."""
+        _validate_request(self._path, bearer_token, self._approved_paths)
+        try:
+            with self._client.stream(
+                "GET",
+                self._path,
+                headers={"authorization": f"Bearer {bearer_token}"},
+                follow_redirects=False,
+            ) as response:
+                if response.status_code == 404:
+                    return None
+                return _decode_json(_read_response(response))
+        except AzureContainerAppARMError:
+            raise
+        except httpx.HTTPError:
+            raise AzureContainerAppARMError(
+                "Azure Resource Manager read failed"
+            ) from None
+
+    def close(self) -> None:
+        """Close only a client allocated by this transport."""
+        if self._owns_client:
+            self._client.close()
+
+    def __enter__(self) -> HttpxContainerAppARMTransport:
+        """Return this transport as an owned context resource."""
+        return self
+
+    def __exit__(
+        self,
+        _exception_type: object,
+        _exception: object,
+        _traceback: object,
+    ) -> None:
+        """Close the owned transport when its context exits."""
+        self.close()
+
+
+__all__ = [
+    "AzureContainerAppARMError",
+    "HttpxARMJSONTransport",
+    "HttpxContainerAppARMTransport",
+]

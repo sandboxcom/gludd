@@ -16,6 +16,7 @@ import os
 import re
 import shlex
 import tempfile
+import threading
 from collections.abc import Callable
 from contextlib import AbstractContextManager, ExitStack
 from dataclasses import dataclass, field, replace
@@ -26,6 +27,15 @@ from typing import Final, Protocol, cast, runtime_checkable
 from general_ludd.hardware.model_fit import unified_probe
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.local_model import LocalModelConfig
+from general_ludd.self_improve._candidate_execution_types import (
+    CandidateExecutionBoundary,
+    CandidateExecutionTrace,
+)
+from general_ludd.self_improve._candidate_prediction import stable_digest
+from general_ludd.self_improve.azure_backend import (
+    AzureApprovedPrompt,
+    AzureCandidateResponse,
+)
 from general_ludd.self_improve.candidate_classification import (
     CandidateTaskClassification,
     classify_candidate_task,
@@ -52,9 +62,20 @@ from general_ludd.self_improve.codex_comparison import (
     safe_evaluation_retry_diagnosis,
 )
 from general_ludd.self_improve.live_candidate_wiring import (
+    LiveManagedCandidateSet,
     LiveManagedCandidateWiring,
 )
 from general_ludd.self_improve.managed_candidate_assembly import CandidatePrivacyState
+from general_ludd.self_improve.managed_candidate_routing import (
+    CandidateObservedUsage,
+    CandidateProposalAssessment,
+    CandidateProposalDecodeRejected,
+    ManagedCandidateProposalCodec,
+    ManagedCandidateRoutingResult,
+    ManagedCandidateRoutingTrace,
+    ManagedCandidateTrialSpec,
+    route_managed_candidate_proposals,
+)
 from general_ludd.self_improve.model_candidate_planner import (
     CODE_TASK_CAPABILITY_POLICY_ID,
     CodeTaskShape,
@@ -63,7 +84,11 @@ from general_ludd.self_improve.model_candidate_planner import (
     plan_model_candidates,
     record_self_improve_outcome,
 )
-from general_ludd.self_improve.model_candidates import LocalGGUFCandidateIdentity
+from general_ludd.self_improve.model_candidates import (
+    BoundedCandidateSession,
+    LocalGGUFCandidateIdentity,
+    ModelCandidateProvider,
+)
 from general_ludd.self_improve.model_lifecycle import (
     AcquiredModel,
     ModelAcquisitionError,
@@ -74,6 +99,7 @@ from general_ludd.self_improve.model_lifecycle import (
 from general_ludd.self_improve.private_policy import (
     PolicyAccess,
     SelfImprovePrivacyPolicy,
+    SelfImproveRuntimePolicyGuard,
     load_self_improve_policy,
 )
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
@@ -90,6 +116,9 @@ _LEGACY_BOUND_PLAN_SCHEMA_VERSION: Final = 2
 _PLAN_SCHEMA_VERSION: Final = 3
 COMPACT_V4_SYNTAX_REPAIR_POLICY_ID: Final = "compact-v4-syntax-self-repair-v2"
 _MAX_SYNTAX_REPAIR_DRAFT_BYTES: Final = 4_096
+_MANAGED_CANDIDATE_EVALUATOR_DIGEST: Final = stable_digest(
+    {"protocol": "gludd-managed-full-proposal-evaluator-v1"}
+)
 
 
 class ModelPlanFailure(StrEnum):
@@ -673,6 +702,15 @@ class GeneratedProposal:
 
     proposal: ProposalManifest = field(repr=False)
     compact_proposals: tuple[CompactSpanProposal, ...] = field(default=(), repr=False)
+    evaluated_result: AttemptResult | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    selected_candidate_identity_digest: str = ""
+    selected_candidate_provider: ModelCandidateProvider | None = None
+    candidate_plan_digest: str = ""
+    routed_local_accepted: bool | None = None
 
     def __post_init__(self) -> None:
         """Bind compact repair material to exactly the expanded manifest paths."""
@@ -689,6 +727,36 @@ class GeneratedProposal:
                 raise ValueError(
                     "generated compact proposals must match manifest paths in order"
                 )
+        if self.evaluated_result is not None and (
+            not isinstance(self.evaluated_result, AttemptResult)
+            or self.evaluated_result.proposal != self.proposal
+        ):
+            raise ValueError("pre-evaluated result must match the generated proposal")
+        route_fields = (
+            self.selected_candidate_identity_digest,
+            self.selected_candidate_provider,
+            self.candidate_plan_digest,
+        )
+        if any(field_value not in {"", None} for field_value in route_fields):
+            _validate_digest(
+                "selected_candidate_identity_digest",
+                self.selected_candidate_identity_digest,
+            )
+            _validate_digest("candidate_plan_digest", self.candidate_plan_digest)
+            if not isinstance(
+                self.selected_candidate_provider,
+                ModelCandidateProvider,
+            ):
+                raise ValueError(
+                    "selected_candidate_provider must be a ModelCandidateProvider"
+                )
+            if self.evaluated_result is None:
+                raise ValueError("routed proposals require their evaluated result")
+        if self.routed_local_accepted is not None and not isinstance(
+            self.routed_local_accepted,
+            bool,
+        ):
+            raise ValueError("routed_local_accepted must be an explicit boolean")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1353,6 +1421,18 @@ class _ProposalGenerator(Protocol):
     ) -> ProposalManifest | GeneratedProposal: ...
 
 
+@runtime_checkable
+class _RemoteProposalCodecFactory(Protocol):
+    """Prepare one exact remote request/decoder without invoking a provider."""
+
+    def __call__(
+        self,
+        prompt: PromptPlan | str,
+        task: TaskSpec,
+        reference: CodexReference,
+    ) -> ManagedCandidateProposalCodec[GeneratedProposal] | None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class LocalProposalInvocation:
     """Exact legacy local-generator arguments transported through a backend seam."""
@@ -1397,6 +1477,40 @@ class LocalProposalBackendAdapter:
             request.task,
             request.reference,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class _LocalProposalDecodeRejected:
+    """Content-free local protocol rejection retained as a trial response."""
+
+
+class _RoutingLocalProposalBackend:
+    """Convert deterministic local decode failures into calibratable responses."""
+
+    def __init__(self, backend: LocalProposalBackendAdapter) -> None:
+        self._backend = backend
+
+    @property
+    def candidate_identity(self) -> LocalGGUFCandidateIdentity:
+        """Return the exact acquired artifact identity."""
+        return self._backend.candidate_identity
+
+    def generate(
+        self,
+        request: LocalProposalInvocation,
+        *,
+        max_output_tokens: int,
+        timeout_seconds: float,
+    ) -> ProposalManifest | GeneratedProposal | _LocalProposalDecodeRejected:
+        """Invoke once and retain only the fact of deterministic invalid output."""
+        try:
+            return self._backend.generate(
+                request,
+                max_output_tokens=max_output_tokens,
+                timeout_seconds=timeout_seconds,
+            )
+        except ValueError:
+            return _LocalProposalDecodeRejected()
 
 
 @runtime_checkable
@@ -1517,6 +1631,163 @@ def _local_backend_identity(
     )
 
 
+def _managed_project_identity(plan: ApprovedSelfImprovePlan) -> str:
+    """Bind candidate effects to the approved repository object and plan."""
+    if plan.repo_root is None:
+        raise ValueError("approved repository is unavailable")
+    root = plan.repo_root.resolve(strict=True)
+    stat = root.stat()
+    return stable_digest(
+        {
+            "approved_plan_digest": plan.approved_plan_digest,
+            "baseline_sha": plan.reference.baseline_sha,
+            "device": stat.st_dev,
+            "inode": stat.st_ino,
+            "project_id_digest": hashlib.sha256(
+                plan.project_id.encode("utf-8", errors="surrogatepass")
+            ).hexdigest(),
+            "protocol": "gludd-managed-project-execution-identity-v1",
+            "repository_binding_digest": plan.repository_binding_digest,
+            "root_digest": hashlib.sha256(
+                str(root).encode("utf-8", errors="surrogatepass")
+            ).hexdigest(),
+        }
+    )
+
+
+def _decode_local_routing_response(response: object) -> GeneratedProposal:
+    if isinstance(response, _LocalProposalDecodeRejected):
+        raise CandidateProposalDecodeRejected
+    if isinstance(response, GeneratedProposal):
+        return response
+    if isinstance(response, ProposalManifest):
+        return GeneratedProposal(response)
+    raise CandidateProposalDecodeRejected
+
+
+def _local_routing_usage(
+    response: object,
+    *,
+    input_tokens: int,
+    output_token_limit: int,
+) -> CandidateObservedUsage:
+    if isinstance(response, GeneratedProposal):
+        manifest = response.proposal
+    elif isinstance(response, ProposalManifest):
+        manifest = response
+    else:
+        return CandidateObservedUsage(input_tokens, 0, 0)
+    estimated_output = min(
+        output_token_limit,
+        max(1, (len(manifest.to_json().encode("utf-8")) + 3) // 4),
+    )
+    return CandidateObservedUsage(input_tokens, estimated_output, 0)
+
+
+def _remote_routing_usage(
+    response: object,
+    *,
+    cost_microusd: int,
+) -> CandidateObservedUsage:
+    if not isinstance(response, AzureCandidateResponse):
+        raise TypeError("remote candidate returned an invalid response contract")
+    return CandidateObservedUsage(
+        response.input_tokens,
+        response.output_tokens,
+        cost_microusd,
+    )
+
+
+def _decode_remote_routing_response(
+    response: object,
+    codec: ManagedCandidateProposalCodec[GeneratedProposal],
+) -> GeneratedProposal:
+    if not isinstance(response, AzureCandidateResponse):
+        raise CandidateProposalDecodeRejected
+    try:
+        proposal = codec.decoder(response.text)
+    except CandidateProposalDecodeRejected:
+        raise
+    except (TypeError, ValueError, UnicodeError):
+        raise CandidateProposalDecodeRejected from None
+    if not isinstance(proposal, GeneratedProposal):
+        raise CandidateProposalDecodeRejected
+    return proposal
+
+
+def _remote_candidate_trial_spec(
+    session: BoundedCandidateSession[AzureApprovedPrompt, AzureCandidateResponse],
+    approved_prompt: AzureApprovedPrompt,
+    codec: ManagedCandidateProposalCodec[GeneratedProposal],
+    assessor: Callable[[GeneratedProposal], CandidateProposalAssessment],
+    *,
+    cost_microusd: int,
+    predicted_latency_ms: int,
+    input_tokens: int,
+    output_tokens: int,
+) -> ManagedCandidateTrialSpec[GeneratedProposal]:
+    """Build one remote trial without loop-captured provider state."""
+
+    def decode(response: object) -> GeneratedProposal:
+        return _decode_remote_routing_response(response, codec)
+
+    def usage(response: object) -> CandidateObservedUsage:
+        return _remote_routing_usage(response, cost_microusd=cost_microusd)
+
+    return ManagedCandidateTrialSpec(
+        session=cast("BoundedCandidateSession[object, object]", session),
+        request=approved_prompt,
+        decoder=decode,
+        usage_reader=usage,
+        assessor=assessor,
+        predicted_latency_ms=predicted_latency_ms,
+        predicted_input_tokens=input_tokens,
+        predicted_output_tokens=output_tokens,
+        predicted_cost_microusd=cost_microusd,
+    )
+
+
+def _candidate_routing_trace_message(trace: object) -> str:
+    """Render only categorical fields and digests from candidate routing."""
+    if isinstance(trace, ManagedCandidateRoutingTrace):
+        payload = {
+            "accepted": trace.accepted,
+            "candidate_identity_digest": trace.candidate_identity_digest,
+            "event": trace.event.value,
+            "plan_digest": trace.plan_digest,
+            "provider": trace.provider,
+            "trial_count": trace.trial_count,
+        }
+    elif isinstance(trace, CandidateExecutionTrace):
+        payload = {
+            "calibration_persisted": trace.calibration_persisted,
+            "calibration_skip_reason": (
+                None
+                if trace.calibration_skip_reason is None
+                else trace.calibration_skip_reason.value
+            ),
+            "candidate_identity_digest": trace.candidate_identity_digest,
+            "event": trace.event.value,
+            "failure": None if trace.failure is None else trace.failure.value,
+            "outcome": None if trace.outcome is None else trace.outcome.value,
+            "plan_digest": trace.plan_digest,
+            "provider": None if trace.provider is None else trace.provider.value,
+            "scope_failure": (
+                None if trace.scope_failure is None else trace.scope_failure.value
+            ),
+            "trial_count": trace.trial_count,
+        }
+    else:
+        raise TypeError("candidate routing emitted an invalid trace")
+    return "SELF_IMPROVE_CANDIDATE_ROUTING_EVENT " + json.dumps(
+        payload,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
 def _print_progress(message: str) -> None:
     print(message, flush=True)
 
@@ -1567,6 +1838,7 @@ class _ManagedRunnerPolicySupport:
         validation_retry_builder: Callable[[PromptPlan, str], PromptPlan] | None = None,
         syntax_repair_builder: _SyntaxRepairBuilder | None = None,
         live_candidate_wiring: LiveManagedCandidateWiring | None = None,
+        remote_proposal_codec_factory: _RemoteProposalCodecFactory | None = None,
     ) -> None:
         """Inject side-effecting boundaries while retaining orchestration centrally."""
         self.proposal_generator = proposal_generator
@@ -1592,6 +1864,18 @@ class _ManagedRunnerPolicySupport:
                 "live_candidate_wiring must be a LiveManagedCandidateWiring"
             )
         self.live_candidate_wiring = live_candidate_wiring
+        if remote_proposal_codec_factory is not None and not isinstance(
+            remote_proposal_codec_factory,
+            _RemoteProposalCodecFactory,
+        ):
+            raise ValueError(
+                "remote_proposal_codec_factory must implement its protocol"
+            )
+        if remote_proposal_codec_factory is not None and live_candidate_wiring is None:
+            raise ValueError(
+                "remote_proposal_codec_factory requires live candidate wiring"
+            )
+        self.remote_proposal_codec_factory = remote_proposal_codec_factory
 
     @property
     def live_candidate_wiring_enabled(self) -> bool:
@@ -1704,6 +1988,7 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
                     approved_identity,
                     repair_prompt,
                     attempt,
+                    generated,
                 )
                 if completed is not None:
                     return completed
@@ -1735,6 +2020,10 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
             if state.model_manager is None:
                 state.model_manager = self.model_manager_factory(
                     event_sink=self.acquisition_event_sink
+                )
+            if self.remote_proposal_codec_factory is not None and state.outcomes is None:
+                state.outcomes = self.outcome_adapter_factory(
+                    state.model_manager.cache_root
                 )
             if plan.explicit_model_path is None and not repairing:
                 if state.outcomes is None:
@@ -1791,6 +2080,8 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
                 context.use_mechanical,
                 state.reservation,
                 context.candidate_identity,
+                outcomes=state.outcomes,
+                attempt=attempt,
             )
         except self.model_acquisition_error as exc:
             failure = getattr(getattr(exc, "failure", None), "value", "unknown")
@@ -1830,24 +2121,16 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
         attempt: int,
     ) -> tuple[AttemptResult, str, PromptPlan | None]:
         """Evaluate one generated proposal and derive an optional syntax repair."""
-        policy = self._execution_policy(
-            plan,
-            generated.proposal,
-            emit_loaded=True,
-        )
-        bound = PlanBoundProposal(
-            proposal=generated.proposal,
-            attempt_identity_digest=plan.attempt_identity_digest,
-            policy_digest=policy.digest,
-        )
         try:
-            final = self.attempt_evaluator(
-                plan.task,
-                plan.reference,
-                bound,
-                attempt,
-                expected_attempt_identity_digest=plan.attempt_identity_digest,
-                merge=False,
+            if generated.evaluated_result is None:
+                final = self._evaluate_routed_proposal(plan, generated, attempt)
+            else:
+                final = generated.evaluated_result
+                self._execution_policy(plan, generated.proposal, emit_loaded=True)
+            bound = PlanBoundProposal(
+                proposal=generated.proposal,
+                attempt_identity_digest=plan.attempt_identity_digest,
+                policy_digest=plan.policy_digest,
             )
             approved_identity = _validate_approved_result_identity(
                 final,
@@ -1878,6 +2161,7 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
         approved_identity: str,
         repair_prompt: PromptPlan | None,
         attempt: int,
+        generated: GeneratedProposal,
     ) -> ManagedRunResult | None:
         """Record one evaluated attempt and prepare its bounded successor."""
         if final.comparison.accepted or repair_prompt is None:
@@ -1891,7 +2175,11 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
                 plan,
                 context.candidate,
                 state.outcomes,
-                final.comparison.accepted,
+                (
+                    generated.routed_local_accepted
+                    if generated.routed_local_accepted is not None
+                    else final.comparison.accepted
+                ),
                 state.outcome_ids,
                 approved_identity=approved_identity,
             )
@@ -2002,6 +2290,287 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
         )
         return candidates, reserved
 
+    def _evaluate_routed_proposal(
+        self,
+        plan: ApprovedSelfImprovePlan,
+        generated: GeneratedProposal,
+        attempt: int,
+    ) -> AttemptResult:
+        """Evaluate one planned provider result under the normal policy boundary."""
+        policy = self._execution_policy(
+            plan,
+            generated.proposal,
+            emit_loaded=True,
+        )
+        bound = PlanBoundProposal(
+            proposal=generated.proposal,
+            attempt_identity_digest=plan.attempt_identity_digest,
+            policy_digest=policy.digest,
+        )
+        result = self.attempt_evaluator(
+            plan.task,
+            plan.reference,
+            bound,
+            attempt,
+            expected_attempt_identity_digest=plan.attempt_identity_digest,
+            merge=False,
+        )
+        _validate_approved_result_identity(
+            result,
+            bound,
+            plan.attempt_identity_digest,
+        )
+        self._execution_policy(plan, generated.proposal)
+        return result
+
+    def _managed_candidate_boundary(
+        self,
+        plan: ApprovedSelfImprovePlan,
+        candidate_set: LiveManagedCandidateSet[LocalProposalInvocation, object],
+        codec: ManagedCandidateProposalCodec[GeneratedProposal],
+    ) -> tuple[CandidateExecutionBoundary, AzureApprovedPrompt | None]:
+        """Bind provider calls to the approved project and privacy identities."""
+        if plan.repo_root is None:
+            raise SelfImprovePolicyViolation
+        policy_guard = SelfImproveRuntimePolicyGuard.bound(
+            plan.repo_root,
+            plan.policy_digest,
+            self.progress_sink,
+            SelfImprovePolicyViolation,
+        )
+        source_paths = _scope_paths(plan)
+        has_remote = (
+            candidate_set.azure_session is not None
+            or candidate_set.containerapp_session is not None
+        )
+        approved_prompt = (
+            AzureApprovedPrompt.approve(
+                prompt=codec.request_text,
+                source_paths=source_paths,
+                policy_guard=policy_guard,
+            )
+            if has_remote
+            else None
+        )
+        expected_project_identity = _managed_project_identity(plan)
+        return (
+            CandidateExecutionBoundary(
+                policy_guard=policy_guard,
+                source_paths=source_paths,
+                expected_project_identity_digest=expected_project_identity,
+                project_identity_probe=lambda: _managed_project_identity(plan),
+            ),
+            approved_prompt,
+        )
+
+    def _managed_candidate_trial_specs(
+        self,
+        plan: ApprovedSelfImprovePlan,
+        candidate_set: LiveManagedCandidateSet[LocalProposalInvocation, object],
+        invocation: LocalProposalInvocation,
+        codec: ManagedCandidateProposalCodec[GeneratedProposal],
+        approved_prompt: AzureApprovedPrompt | None,
+        assessor: Callable[
+            [str], Callable[[GeneratedProposal], CandidateProposalAssessment]
+        ],
+        *,
+        input_tokens: int,
+    ) -> tuple[ManagedCandidateTrialSpec[GeneratedProposal], ...]:
+        """Build exact local and remote trials without invoking a provider."""
+        local_identity = candidate_set.local_session.candidate_identity
+        specs: list[ManagedCandidateTrialSpec[GeneratedProposal]] = [
+            ManagedCandidateTrialSpec(
+                session=cast(
+                    "BoundedCandidateSession[object, object]",
+                    candidate_set.local_session,
+                ),
+                request=invocation,
+                decoder=_decode_local_routing_response,
+                usage_reader=lambda response: _local_routing_usage(
+                    response,
+                    input_tokens=input_tokens,
+                    output_token_limit=plan.required_output_tokens,
+                ),
+                assessor=assessor(local_identity.identity_digest),
+                predicted_latency_ms=1_000,
+                predicted_input_tokens=input_tokens,
+                predicted_output_tokens=plan.required_output_tokens,
+                predicted_cost_microusd=0,
+            )
+        ]
+        policy = cast(LiveManagedCandidateWiring, self.live_candidate_wiring).policy
+        remote_candidates = (
+            (candidate_set.azure_session, policy.azure_estimated_cost_microusd, 5_000),
+            (
+                candidate_set.containerapp_session,
+                policy.containerapp_estimated_cost_microusd,
+                10_000,
+            ),
+        )
+        for session, cost, latency in remote_candidates:
+            if session is None:
+                continue
+            if approved_prompt is None:
+                raise RuntimeError("remote candidate has no approved prompt")
+            specs.append(
+                _remote_candidate_trial_spec(
+                    session,
+                    approved_prompt,
+                    codec,
+                    assessor(session.candidate_identity.identity_digest),
+                    cost_microusd=cost,
+                    predicted_latency_ms=latency,
+                    input_tokens=input_tokens,
+                    output_tokens=plan.required_output_tokens,
+                )
+            )
+        return tuple(specs)
+
+    @staticmethod
+    def _routed_generated_proposal(
+        routed: ManagedCandidateRoutingResult[GeneratedProposal],
+        evaluated: dict[str, AttemptResult],
+    ) -> GeneratedProposal:
+        """Rebind the selected proposal to its already completed evaluation."""
+        selected_identity = routed.selected_prediction.candidate_identity_digest
+        selected_result = evaluated[selected_identity]
+        local_attempt = next(
+            (
+                trial.attempt
+                for trial in routed.execution.trials
+                if trial.attempt.prediction.provider
+                is ModelCandidateProvider.LOCAL_GGUF
+            ),
+            None,
+        )
+        local_accepted = (
+            local_attempt.accepted
+            if local_attempt is not None and local_attempt.is_evaluated
+            else None
+        )
+        return GeneratedProposal(
+            routed.selected.proposal,
+            routed.selected.compact_proposals,
+            evaluated_result=selected_result,
+            selected_candidate_identity_digest=selected_identity,
+            selected_candidate_provider=routed.selected_prediction.provider,
+            candidate_plan_digest=routed.execution.plan_digest,
+            routed_local_accepted=local_accepted,
+        )
+
+    def _route_live_candidate_set(
+        self,
+        plan: ApprovedSelfImprovePlan,
+        candidate_set: LiveManagedCandidateSet[LocalProposalInvocation, object],
+        invocation: LocalProposalInvocation,
+        codec: ManagedCandidateProposalCodec[GeneratedProposal],
+        outcomes: ManagedOutcomeAdapter,
+        classification: CandidateTaskClassification,
+        *,
+        input_tokens: int,
+        attempt: int,
+    ) -> GeneratedProposal:
+        """Run and fully evaluate every explicit local/cloud candidate once."""
+        boundary, approved_prompt = self._managed_candidate_boundary(
+            plan, candidate_set, codec
+        )
+        evaluated: dict[str, AttemptResult] = {}
+        evaluated_lock = threading.Lock()
+
+        def assessor(identity_digest: str) -> Callable[[GeneratedProposal], CandidateProposalAssessment]:
+            def assess(generated: GeneratedProposal) -> CandidateProposalAssessment:
+                result = self._evaluate_routed_proposal(plan, generated, attempt)
+                with evaluated_lock:
+                    evaluated[identity_digest] = result
+                return CandidateProposalAssessment(
+                    accepted=result.comparison.accepted,
+                    score=result.comparison.score / 100.0,
+                    blocker_count=len(result.comparison.blockers),
+                )
+
+            return assess
+
+        specs = self._managed_candidate_trial_specs(
+            plan,
+            candidate_set,
+            invocation,
+            codec,
+            approved_prompt,
+            assessor,
+            input_tokens=input_tokens,
+        )
+        store = outcomes.planner_store
+        if not isinstance(store, CapabilityEvidenceStore):
+            raise ValueError("managed outcome adapter has no capability evidence store")
+        routed = route_managed_candidate_proposals(
+            classification,
+            specs,
+            boundary=boundary,
+            evidence_store=store,
+            prompt_protocol_digest=codec.protocol_digest,
+            evaluator_digest=_MANAGED_CANDIDATE_EVALUATOR_DIGEST,
+            sampling_digest=codec.sampling_digest,
+            concurrent=False,
+            trace_sink=lambda trace: self.progress_sink(
+                _candidate_routing_trace_message(trace)
+            ),
+        )
+        return self._routed_generated_proposal(routed, evaluated)
+
+    def _generate_live_candidate_proposal(
+        self,
+        plan: ApprovedSelfImprovePlan,
+        prompt: PromptPlan | str,
+        classification: CandidateTaskClassification,
+        backend: LocalProposalBackendAdapter,
+        invocation: LocalProposalInvocation,
+        outcomes: ManagedOutcomeAdapter | None,
+        *,
+        attempt: int,
+    ) -> object:
+        """Assemble and optionally route one explicit live candidate set."""
+        self._execution_policy(plan)
+        codec_factory = self.remote_proposal_codec_factory
+        codec = (
+            None
+            if codec_factory is None
+            else codec_factory(prompt, plan.task, plan.reference)
+        )
+        if codec is not None and outcomes is None:
+            raise RuntimeError("candidate routing requires a durable outcome adapter")
+        input_tokens = max(1, (_prompt_bytes(prompt) + 3) // 4)
+        wiring = cast(LiveManagedCandidateWiring, self.live_candidate_wiring)
+        with wiring.assemble(
+            classification,
+            expected_classification_digest=classification.classification_digest,
+            local_backend=(
+                _RoutingLocalProposalBackend(backend) if codec is not None else backend
+            ),
+            privacy_state=CandidatePrivacyState.APPROVED_PUBLIC,
+            input_tokens=input_tokens,
+            max_output_tokens=plan.required_output_tokens,
+        ) as candidate_set:
+            if codec is None:
+                return candidate_set.local_session.generate(
+                    invocation,
+                    input_tokens=input_tokens,
+                    max_output_tokens=plan.required_output_tokens,
+                    estimated_cost_microusd=0,
+                )
+            return self._route_live_candidate_set(
+                plan,
+                cast(
+                    "LiveManagedCandidateSet[LocalProposalInvocation, object]",
+                    candidate_set,
+                ),
+                invocation,
+                codec,
+                cast(ManagedOutcomeAdapter, outcomes),
+                classification,
+                input_tokens=input_tokens,
+                attempt=attempt,
+            )
+
     def _generate_proposal(
         self,
         plan: ApprovedSelfImprovePlan,
@@ -2011,6 +2580,9 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
         use_mechanical: bool,
         reservation: _Reservation | None,
         candidate_identity: ModelArtifactIdentity | None,
+        *,
+        outcomes: ManagedOutcomeAdapter | None = None,
+        attempt: int = 1,
     ) -> GeneratedProposal:
         if use_mechanical:
             if plan.mechanical_proposal is None:
@@ -2056,6 +2628,7 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
                     plan.reference,
                 )
                 wiring = self.live_candidate_wiring
+                proposal: object
                 if wiring is None:
                     proposal = backend.generate(
                         invocation,
@@ -2063,31 +2636,18 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
                         timeout_seconds=600.0,
                     )
                 else:
-                    self._execution_policy(plan)
                     if classification is None:
                         raise RuntimeError("live candidate classification was not created")
-                    input_tokens = max(1, (_prompt_bytes(prompt) + 3) // 4)
-                    with wiring.assemble(
+                    proposal = self._generate_live_candidate_proposal(
+                        plan,
+                        prompt,
                         classification,
-                        expected_classification_digest=(
-                            classification.classification_digest
-                        ),
-                        local_backend=backend,
-                        privacy_state=CandidatePrivacyState.APPROVED_PUBLIC,
-                        input_tokens=input_tokens,
-                        max_output_tokens=plan.required_output_tokens,
-                    ) as candidate_set:
-                        proposal = candidate_set.local_session.generate(
-                            invocation,
-                            input_tokens=input_tokens,
-                            max_output_tokens=plan.required_output_tokens,
-                            estimated_cost_microusd=0,
-                        )
-                generated = (
-                    proposal
-                    if isinstance(proposal, GeneratedProposal)
-                    else GeneratedProposal(proposal)
-                )
+                        backend,
+                        invocation,
+                        outcomes,
+                        attempt=attempt,
+                    )
+                generated = _decode_local_routing_response(proposal)
                 if reservation is not None and candidate_identity is not None:
                     reservation.mark_eligible(candidate_identity)
                 return generated

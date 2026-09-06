@@ -4,6 +4,28 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-06 — (blocked externally) Valid accelerator credential has no shared Container Apps GPU environment
+
+- **What happened**: The supplied private Azure JSON passed Gludd's live authentication check, then the traced read-only Container Apps preflight returned the fixed reason `environment_not_found` before any mutation. No app, GPU replica, role assignment, or other paid resource was created.
+- **Root cause**: The operator-owned `gludd-gpu-environment` baseline does not exist in the configured resource group. This is intentionally outside the runtime principal's authority: the ten-action role can read and join that exact environment and manage only Container Apps, but cannot create environments, resource groups, provider registrations, networks, registries, monitoring resources, secrets, or IAM.
+- **Safe continuation**: An authorized operator must run the documented one-line `azure-containerapp-environment-bootstrap-args` pipeline once, then Gludd can repeat preflight and run its app-only bounded deploy/infer/destroy proof. Do not widen the service principal to bypass this separation of duties.
+- **Practitioner evidence**: Current Azure documentation scopes GPU quota to each managed environment. Azure CLI issues #30526 and #31239 report supported T4 profile creation failures, while Container Apps issues #1511, #1763, and #1239 report failed starts, long billable cold starts, and stuck scale-down. `docs/azure-iam-setup.md` links these reports and explains why bootstrap remains operator-owned and the live proof remains hard-bounded and visibly traced.
+
+### 2026-09-06 — (resolved locally) Live credential validation example silently selected validate-only mode
+
+- **What happened**: The setup guide's credential-check example omitted `AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY=0`, so the target validated its argument shape without authenticating even when the operator intended a real check.
+- **Root cause**: The target correctly defaults to zero-network validation, but the documentation did not explicitly cross the live-effect boundary. Existing tests pinned secret safety and argument validation without pinning the operator command line.
+- **Fix applied**: The guide now sets the live switch explicitly, a regression test pins that exact command, and the supplied credential produced only the fixed success marker before the independent read-only preflight authenticated and reported the missing environment.
+- **Lesson**: Every safe-by-default live target needs documentation and tests that distinguish structural validation from an explicitly authorized read-only external request.
+
+### 2026-09-05 — (resolved locally) Accelerator JSON credentials had no secret-safe ingestion boundary
+
+- **What happened**: The supported one-line Azure CLI command correctly produced `--json-auth` JSON, but the existing sourced provision target expected dotenv assignments. Treating JSON as shell input either fails or encourages unsafe ad-hoc conversion that can echo, interpolate, or persist the client secret.
+- **Root cause**: Gludd generated credentials without providing the inverse trust boundary: a race-safe JSON loader and a fixed-output validation target. Tests covered argv generation but not file ownership, mode, symlinks, duplicate JSON keys, subscription binding, endpoint substitution, growth after metadata inspection, or secret-free errors.
+- **Fix applied**: `azure-accelerator-auth-check` now reads the file through an owned `0600` regular-file descriptor with symlink/race and 16 KiB bounds, accepts only canonical identifiers and Azure public-cloud endpoints, binds the expected subscription, and emits a fixed marker containing no credential value or file path. The operator's real file passed this check without being displayed or sourced.
+- **Practitioner evidence**: The existing long-lived Azure CLI scope-only service-principal thread and current Microsoft CLI contract are linked in `docs/azure-iam-setup.md`; they support direct JSON capture and absolute assignment scopes rather than shell evaluation.
+- **Lesson**: A credential creation pipeline is incomplete until its consumer validates the artifact as data, never as executable shell text, and proves redaction on every failure path.
+
 ### 2026-09-05 — (resolved locally) Azure credential argv used an unsupported subscription option
 
 - **What happened**: After the accelerator role was created successfully, the operator's one-line `azure-accelerator-auth-args` pipeline reached `az ad sp create-for-rbac`, which rejected `--subscription` as an unrecognized argument. No credential JSON was produced.

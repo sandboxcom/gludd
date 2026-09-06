@@ -2,19 +2,109 @@
   "version": 1,
   "targets": [
     {
+      "name": "uv-cache-path",
+      "make_variables": [],
+      "behavior": "make uv-cache-path"
+    },
+    {
       "name": "azure-accelerator-role-args",
       "make_variables": [
-        "AZURE_ACCELERATOR_SUBSCRIPTION_ID"
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_ACCELERATOR_RESOURCE_GROUP"
       ],
-      "behavior": "make azure-accelerator-role-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555"
+      "behavior": "make azure-accelerator-role-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus"
+    },
+    {
+      "name": "azure-accelerator-role-update-args",
+      "make_variables": [
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_ACCELERATOR_RESOURCE_GROUP"
+      ],
+      "behavior": "make azure-accelerator-role-update-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus"
     },
     {
       "name": "azure-accelerator-auth-args",
       "make_variables": [
         "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_ACCELERATOR_RESOURCE_GROUP",
         "AZURE_ACCELERATOR_SP_NAME"
       ],
-      "behavior": "make azure-accelerator-auth-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_SP_NAME=gludd-accelerator-contract"
+      "behavior": "make azure-accelerator-auth-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_ACCELERATOR_SP_NAME=gludd-accelerator-contract"
+    },
+    {
+      "name": "azure-accelerator-auth-check",
+      "make_variables": [
+        "AZURE_ACCELERATOR_AUTH_FILE",
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY"
+      ],
+      "behavior": "make azure-accelerator-auth-check AZURE_ACCELERATOR_AUTH_FILE=/tmp/gludd-contract-absent.json AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "azure-containerapp-environment-bootstrap-args",
+      "make_variables": [
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_ACCELERATOR_RESOURCE_GROUP",
+        "AZURE_CONTAINERAPP_ENVIRONMENT",
+        "AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME",
+        "AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE",
+        "AZURE_CONTAINERAPP_LOCATION"
+      ],
+      "behavior": "make azure-containerapp-environment-bootstrap-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_CONTAINERAPP_ENVIRONMENT=gludd-gpu-environment AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME=gpu-t4 AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE=Consumption-GPU-NC8as-T4 AZURE_CONTAINERAPP_LOCATION=eastus"
+    },
+    {
+      "name": "azure-containerapp-preflight",
+      "make_variables": [
+        "AZURE_ACCELERATOR_AUTH_FILE",
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_CONTAINERAPP_RESOURCE_GROUP",
+        "AZURE_CONTAINERAPP_ENVIRONMENT",
+        "AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME",
+        "AZURE_CONTAINERAPP_LOCATION",
+        "AZURE_CONTAINERAPP_MODEL_ID",
+        "AZURE_CONTAINERAPP_MODEL_REVISION",
+        "AZURE_CONTAINERAPP_PARAMETER_COUNT",
+        "AZURE_CONTAINERAPP_WEIGHT_BITS",
+        "AZURE_CONTAINERAPP_KV_CACHE_MIB",
+        "AZURE_CONTAINERAPP_RUNTIME_OVERHEAD_MIB",
+        "AZURE_CONTAINERAPP_PREFLIGHT_LIVE"
+      ],
+      "behavior": "make azure-containerapp-preflight AZURE_ACCELERATOR_AUTH_FILE=/tmp/gludd-contract-absent.json AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_CONTAINERAPP_RESOURCE_GROUP=gludd-models-eastus AZURE_CONTAINERAPP_ENVIRONMENT=gludd-gpu-environment AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME=gpu-t4 AZURE_CONTAINERAPP_LOCATION=eastus AZURE_CONTAINERAPP_MODEL_ID=Qwen/Qwen2.5-0.5B-Instruct AZURE_CONTAINERAPP_MODEL_REVISION=7ae557604adf67be50417f59c2c2f167def9a775 AZURE_CONTAINERAPP_PARAMETER_COUNT=494032768 AZURE_CONTAINERAPP_WEIGHT_BITS=16 AZURE_CONTAINERAPP_KV_CACHE_MIB=2048 AZURE_CONTAINERAPP_RUNTIME_OVERHEAD_MIB=3072 AZURE_CONTAINERAPP_PREFLIGHT_LIVE=0"
+    },
+    {
+      "name": "azure-containerapp-terraform-phase",
+      "make_variables": [
+        "AZURE_CONTAINERAPP_TF_PHASE",
+        "AZURE_CONTAINERAPP_TF_DIR",
+        "AZURE_CONTAINERAPP_TF_PLAN_FILE",
+        "AZURE_CONTAINERAPP_TF_JSON_FILE",
+        "AZURE_CONTAINERAPP_TF_VALIDATE_ONLY"
+      ],
+      "behavior": "make azure-containerapp-terraform-phase AZURE_CONTAINERAPP_TF_PHASE=plan AZURE_CONTAINERAPP_TF_DIR=/tmp/gludd-azure-containerapp-live-proof/aaaaaaaaaaaaaaaaaaaaaaaa AZURE_CONTAINERAPP_TF_PLAN_FILE=/tmp/gludd-azure-containerapp-live-proof/aaaaaaaaaaaaaaaaaaaaaaaa/gludd.tfplan AZURE_CONTAINERAPP_TF_JSON_FILE=/tmp/gludd-azure-containerapp-live-proof/aaaaaaaaaaaaaaaaaaaaaaaa/gludd.plan.json AZURE_CONTAINERAPP_TF_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "azure-containerapp-live-proof",
+      "make_variables": [
+        "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_LIVE",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH"
+      ],
+      "behavior": "make azure-containerapp-live-proof AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE=/tmp/gludd-contract-absent.json AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP=gludd-models-eastus AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT=gludd-gpu-environment AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME=gpu-t4 AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION=eastus AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR=203.0.113.7/32 AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD=5 AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES=60 AZURE_CONTAINERAPP_LIVE_PROOF_LIVE=0 AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT=dry-run AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT=. AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH=src/general_ludd/__init__.py"
+    },
+    {
+      "name": "test-azure-containerapp-coverage",
+      "make_variables": [],
+      "behavior": "make test-azure-containerapp-coverage"
     },
     {
       "name": "azure-self-improve-auth-args",

@@ -19,6 +19,8 @@ _SAFE_REGION_RE = re.compile(r"^[A-Za-z0-9-]+$")
 
 
 class ComputeProvider(enum.StrEnum):
+    """Supported local, cloud, and hosted compute providers."""
+
     AWS = "aws"
     AZURE = "azure"
     GCP = "gcp"
@@ -41,6 +43,8 @@ class ComputeProvider(enum.StrEnum):
 
 
 class GPUType(enum.StrEnum):
+    """Supported accelerator models used for workload sizing."""
+
     T4 = "t4"
     A10G = "a10g"
     L4 = "l4"
@@ -57,11 +61,15 @@ class GPUType(enum.StrEnum):
 
 
 class InferenceEngine(enum.StrEnum):
+    """Supported model-serving engine families."""
+
     LLAMACPP = "llamacpp"
     VLLM = "vllm"
 
 
 class ComputeConfig(BaseModel):
+    """Validated configuration for one bounded compute deployment."""
+
     provider: ComputeProvider
     gpu_type: GPUType
     gpu_count: int = 1
@@ -73,6 +81,14 @@ class ComputeConfig(BaseModel):
     timeout_minutes: float = 60.0
     disk_size_gb: int = 100
     container_image: str | None = None
+    # Immutable model provenance and exact pre-existing Azure Container Apps
+    # bindings. These are required only when deploy_type="containerapp" is
+    # materialized; keeping them explicit prevents ambient subscription routing.
+    model_revision: str | None = None
+    azure_subscription_id: str | None = None
+    azure_resource_group: str | None = None
+    azure_containerapp_environment: str | None = None
+    azure_workload_profile_name: str | None = None
     api_key_alias: str | None = None
     deploy_type: str = "vm"
     # Azure VM login is key-only. Terraform expands this path locally; the
@@ -238,6 +254,8 @@ class ComputeConfig(BaseModel):
 
 
 class ComputeInstance(BaseModel):
+    """Observed identity and lifecycle state for one compute instance."""
+
     instance_id: str
     provider: ComputeProvider
     status: str = "pending"

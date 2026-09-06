@@ -29,7 +29,7 @@ POLICY_FILE = INFRA_DIR / "azure-iam-policy.json"
 POLICY_CLI_FILE = INFRA_DIR / "azure-iam-policy-cli.json"
 OBSOLETE_PROVIDER_REGISTRATION = "Microsoft.Resources/subscriptions/providers/register/action"
 
-SECURITY_CRITICAL_DENIED_ACTIONS = {
+SECURITY_CRITICAL_FORBIDDEN_ACTIONS = {
     "Microsoft.Compute/virtualMachines/runCommand/action",
     "Microsoft.Compute/virtualMachines/runCommands/read",
     "Microsoft.Compute/virtualMachines/runCommands/write",
@@ -144,10 +144,14 @@ def validate_cli_format(policy: dict[str, Any]) -> tuple[list[str], list[str], l
         errors.extend(validate_action_format(action))
         warnings.extend(check_secret_action_warnings(action))
 
-    denied = set(policy.get("NotActions", []))
-    missing_denials = SECURITY_CRITICAL_DENIED_ACTIONS - denied
-    if missing_denials:
-        errors.append(f"NotActions missing security-critical denials: {', '.join(sorted(missing_denials))}")
+    forbidden_grants = SECURITY_CRITICAL_FORBIDDEN_ACTIONS & set(
+        policy.get("Actions", [])
+    )
+    if forbidden_grants:
+        errors.append(
+            "Actions grant security-critical operations: "
+            f"{', '.join(sorted(forbidden_grants))}"
+        )
 
     description = policy.get("Description", "")
     if len(description) < 20:
@@ -214,12 +218,11 @@ def validate_rest_format(policy: dict[str, Any]) -> tuple[list[str], list[str], 
         errors.extend(validate_action_format(action))
         warnings.extend(check_secret_action_warnings(action))
 
-    denied = set(not_actions)
-    missing_denials = SECURITY_CRITICAL_DENIED_ACTIONS - denied
-    if missing_denials:
+    forbidden_grants = SECURITY_CRITICAL_FORBIDDEN_ACTIONS & set(actions)
+    if forbidden_grants:
         errors.append(
-            f"properties.permissions[0].notActions missing security-critical denials: "
-            f"{', '.join(sorted(missing_denials))}"
+            "properties.permissions[0].actions grant security-critical operations: "
+            f"{', '.join(sorted(forbidden_grants))}"
         )
 
     return errors, warnings, all_actions

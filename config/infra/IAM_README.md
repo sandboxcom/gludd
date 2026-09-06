@@ -346,67 +346,43 @@ role and principal, remove any temporary bootstrap grant:
 az role assignment delete --assignee-object-id <operator-object-id> --role "User Access Administrator" --scope "/subscriptions/<subscription-id>"
 ```
 
-### Create managed identity + assign roles
+### Create the Container Apps runtime identity
 
-The generated role uses provider-owned registration permissions such as
-`Microsoft.App/register/action` and `Microsoft.Network/register/action`. Do not
-replace them with `Microsoft.Resources/subscriptions/providers/register/action`:
-that generic string is not an Azure RBAC operation and makes role creation fail
-with `InvalidActionOrNotAction`. The rationale, current Microsoft catalogs, and
-long-lived operator reports are recorded in
-[`docs/azure-iam-setup.md`](../../docs/azure-iam-setup.md#provider-registration-actions).
+The accelerator role is intentionally limited to ten `Microsoft.App` operations
+inside one existing resource group. It cannot register providers, create the
+resource group or managed environment, change IAM, use virtual machines or
+networks, read secrets, or access Cognitive Services. `NotActions` is empty:
+Azure treats it as subtraction from wildcard grants, not an explicit deny, so
+least privilege comes from the exact allowlist.
 
 ```bash
 SUB_ID="00000000-0000-0000-0000-000000000000"
-RG="gludd-prod"
+RG="gludd-models-eastus"
 
-# Create the custom Terraform deployer role (one-time)
+# Create the custom runtime role (one-time, authorized operator only).
 # Make emits one validated NUL-delimited argv; Azure CLI receives the
-# PascalCase policy as one argument and creates the subscription-scoped role.
-make --no-print-directory azure-accelerator-role-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000 | xargs -0 az
+# PascalCase policy as one argument and creates the resource-group-scoped role.
+make --no-print-directory azure-accelerator-role-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus | xargs -0 az
 
-# For local/GHA Terraform testing, create a unique principal assigned only the
-# custom deployer role and keep Azure's one-time credential output private.
-(umask 077; make --no-print-directory azure-accelerator-auth-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000 AZURE_ACCELERATOR_SP_NAME=gludd-accelerator-test-20260905 | xargs -0 az > /tmp/gludd-azure-accelerator-auth.json)
+# If the named role already exists, update it to the same exact definition.
+make --no-print-directory azure-accelerator-role-update-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus | xargs -0 az
 
-# Create user-assigned managed identities
-az identity create --name gludd-terraform-deploy --resource-group "${RG}"
-az identity create --name gludd-runtime --resource-group "${RG}"
-az identity create --name gludd-model-inference --resource-group "${RG}"
-az identity create --name gludd-monitor --resource-group "${RG}"
-
-# Get principal IDs
-TF_ID=$(az identity show --name gludd-terraform-deploy --resource-group "${RG}" --query principalId -o tsv)
-RT_ID=$(az identity show --name gludd-runtime --resource-group "${RG}" --query principalId -o tsv)
-MI_ID=$(az identity show --name gludd-model-inference --resource-group "${RG}" --query principalId -o tsv)
-MO_ID=$(az identity show --name gludd-monitor --resource-group "${RG}" --query principalId -o tsv)
-
-SCOPE="/subscriptions/${SUB_ID}/resourceGroups/${RG}"
-
-# Assign roles to Terraform deployer
-az role assignment create --assignee "${TF_ID}" --role "General Ludd Accelerator Deployer" --scope "${SCOPE}"
-az role assignment create --assignee "${TF_ID}" --role "Contributor" --scope "${SCOPE}"
-az role assignment create --assignee "${TF_ID}" --role "Storage Blob Data Contributor" --scope "${SCOPE}"
-az role assignment create --assignee "${TF_ID}" --role "Key Vault Secrets User" --scope "${SCOPE}"
-
-# Assign roles to runtime
-az role assignment create --assignee "${RT_ID}" --role "Virtual Machine Contributor" --scope "${SCOPE}"
-az role assignment create --assignee "${RT_ID}" --role "Storage Blob Data Reader" --scope "${SCOPE}"
-az role assignment create --assignee "${RT_ID}" --role "Storage Blob Data Contributor" --scope "${SCOPE}"
-az role assignment create --assignee "${RT_ID}" --role "Log Analytics Contributor" --scope "${SCOPE}"
-az role assignment create --assignee "${RT_ID}" --role "Key Vault Secrets User" --scope "${SCOPE}"
-az role assignment create --assignee "${RT_ID}" --role "AcrPull" --scope "${SCOPE}"
-
-# Assign roles to model inference (scoped to cognitive services account)
-COG_SCOPE="${SCOPE}/providers/Microsoft.CognitiveServices/accounts/gludd-openai"
-az role assignment create --assignee "${MI_ID}" --role "Cognitive Services User" --scope "${COG_SCOPE}"
-az role assignment create --assignee "${MI_ID}" --role "Cognitive Services Metrics Advisor User" --scope "${COG_SCOPE}"
-
-# Assign roles to monitor
-az role assignment create --assignee "${MO_ID}" --role "Monitoring Reader" --scope "${SCOPE}"
-az role assignment create --assignee "${MO_ID}" --role "Cost Management Reader" --scope "${SCOPE}"
-az role assignment create --assignee "${MO_ID}" --role "Service Health Reader" --scope "${SCOPE}"
+# Create a unique principal assigned only this role and keep the one-time output private.
+(umask 077; make --no-print-directory azure-accelerator-auth-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_ACCELERATOR_SP_NAME=gludd-accelerator-test-20260905 | xargs -0 az > /tmp/gludd-azure-accelerator-auth.json)
 ```
+
+The operator creating or updating the custom role needs
+`Microsoft.Authorization/roleDefinitions/write`, normally via the built-in
+role "User Access Administrator"; the generated runtime principal never gets
+that permission. For an existing principal, remove any obsolete broader grant
+after the exact resource-group assignment is confirmed:
+
+```bash
+az role assignment delete --assignee-object-id <principal-object-id> --role "General Ludd Accelerator Deployer" --scope "/subscriptions/<subscription-id>"
+```
+
+See [`docs/azure-iam-setup.md`](../../docs/azure-iam-setup.md) for the complete
+allowlist, secure credential validation, migration order, and operator reports.
 
 ### Verify
 

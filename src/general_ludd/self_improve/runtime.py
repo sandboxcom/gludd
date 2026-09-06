@@ -79,8 +79,13 @@ from general_ludd.self_improve.evaluator import (
 )
 from general_ludd.self_improve.live_candidate_wiring import (
     AzureCandidateBackendFactory,
+    ContainerAppCandidateBackendFactory,
     LiveCandidateWiringPolicy,
     build_live_managed_candidate_wiring,
+)
+from general_ludd.self_improve.managed_candidate_routing import ManagedCandidateProposalCodec
+from general_ludd.self_improve.managed_remote_codec import (
+    build_managed_remote_proposal_codec,
 )
 from general_ludd.self_improve.managed_runner import (
     ApprovedSelfImprovePlan,
@@ -131,6 +136,10 @@ from general_ludd.self_improve.managed_runner import (
 )
 from general_ludd.self_improve.managed_runner import (
     apply_proposal as apply_proposal,
+)
+from general_ludd.self_improve.managed_runtime_evaluation import (
+    ManagedAttemptEvaluator,
+    evaluate_policy_bound_managed_proposal,
 )
 from general_ludd.self_improve.model_candidate_planner import (
     PlannedModelCandidate,
@@ -2725,41 +2734,30 @@ def _managed_syntax_retry_builder(
     return build
 
 
-def _evaluate_policy_bound_managed_proposal(
-    canonical_root: Path,
-    operation_runner: _RuntimeMakeRunner,
-    runner_factory: _MakeRunnerFactory,
-    attempt_evaluator: _AttemptEvaluationAdapter | None,
-    progress_sink: Callable[[str], None],
+def _managed_remote_proposal_codec(
+    prompt: PromptPlan | str,
     task: TaskSpec,
     reference: CodexReference,
-    bound_proposal: PlanBoundProposal,
-    attempt: int,
-    *,
-    expected_attempt_identity_digest: str,
-    merge: bool,
-) -> AttemptResult:
-    """Recheck policy immediately around one managed proposal evaluation."""
-    if merge:
-        raise ValueError("managed self-improvement cannot merge a live branch")
-    proposal_paths = _manifest_paths(bound_proposal.proposal)
-    policy_guard = SelfImproveRuntimePolicyGuard.bound(
-        canonical_root, bound_proposal.policy_digest, progress_sink,
-        SelfImprovePolicyViolation,
+) -> ManagedCandidateProposalCodec[GeneratedProposal] | None:
+    """Prepare the exact local-equivalent remote transport and decoder."""
+    return build_managed_remote_proposal_codec(
+        prompt,
+        task,
+        reference,
+        required_tests=(
+            () if isinstance(prompt, str) else _required_prompt_tests(task, reference)
+        ),
     )
-    policy_guard.require(proposal_paths, emit_loaded=True)
-    evaluator = attempt_evaluator or partial(
-        evaluate_attempt,
-        make_runner_factory=runner_factory,
-        progress_sink=progress_sink,
-    )
-    result = evaluator(
-        operation_runner, task, reference, bound_proposal, attempt,
-        expected_attempt_identity_digest=expected_attempt_identity_digest,
-        merge=False,
-    )
-    policy_guard.require(proposal_paths)
-    return result
+
+
+def _canonical_managed_repo_root(repo_root: Path) -> Path:
+    """Return one validated canonical repository root."""
+    if not isinstance(repo_root, Path):
+        raise ValueError("repo_root must be a pathlib.Path")
+    canonical_root = repo_root.resolve(strict=True)
+    if not canonical_root.is_dir():
+        raise ValueError("repo_root must be an existing directory")
+    return canonical_root
 
 
 def build_managed_self_improve_runner(
@@ -2772,26 +2770,27 @@ def build_managed_self_improve_runner(
     outcome_adapter_factory: _OutcomeAdapterFactory | None = None,
     live_candidate_policy: LiveCandidateWiringPolicy | None = None,
     azure_backend_factory: AzureCandidateBackendFactory | None = None,
+    containerapp_backend_factory: ContainerAppCandidateBackendFactory | None = None,
 ) -> ManagedSelfImproveRunner:
-    """Compose the production managed service from installed package adapters.
-
-    The returned service is repository-bound, uses Make-only execution adapters,
-    never merges an evaluated attempt, and retains injectable progress and durable
-    outcome seams for daemon integrations. Live candidate assembly is default-off
-    and never changes the legacy local proposal provider or adds a fallback.
-    """
-    if not isinstance(repo_root, Path):
-        raise ValueError("repo_root must be a pathlib.Path")
-    canonical_root = repo_root.resolve(strict=True)
-    if not canonical_root.is_dir():
-        raise ValueError("repo_root must be an existing directory")
+    """Compose a repository-bound local/cloud service with Make-only evaluation."""
+    canonical_root = _canonical_managed_repo_root(repo_root)
     runner_factory = make_runner_factory or MakeRunner
     operation_runner = root_runner or runner_factory(canonical_root)
     runtime_progress_sink = progress_sink or _runtime_progress
     live_candidate_wiring = build_live_managed_candidate_wiring(
         live_candidate_policy,
         azure_backend_factory=azure_backend_factory,
+        containerapp_backend_factory=containerapp_backend_factory,
         progress_sink=runtime_progress_sink,
+    )
+    managed_attempt_evaluator = cast(
+        ManagedAttemptEvaluator[_RuntimeMakeRunner],
+        attempt_evaluator
+        or partial(
+            evaluate_attempt,
+            make_runner_factory=runner_factory,
+            progress_sink=runtime_progress_sink,
+        ),
     )
 
     def generate_managed_proposal(
@@ -2819,16 +2818,15 @@ def build_managed_self_improve_runner(
         expected_attempt_identity_digest: str,
         merge: bool,
     ) -> AttemptResult:
-        return _evaluate_policy_bound_managed_proposal(
+        return evaluate_policy_bound_managed_proposal(
             canonical_root,
             operation_runner,
-            runner_factory,
-            attempt_evaluator,
             runtime_progress_sink,
             task,
             reference,
             bound_proposal,
             attempt,
+            evaluator=managed_attempt_evaluator,
             expected_attempt_identity_digest=expected_attempt_identity_digest,
             merge=merge,
         )
@@ -2854,6 +2852,11 @@ def build_managed_self_improve_runner(
         validation_retry_builder=_build_validation_retry_prompt_plan,
         syntax_repair_builder=_managed_syntax_retry_builder(runtime_progress_sink),
         live_candidate_wiring=live_candidate_wiring,
+        remote_proposal_codec_factory=(
+            _managed_remote_proposal_codec
+            if live_candidate_wiring is not None
+            else None
+        ),
     )
     service.bind_repository(canonical_root)
     return service

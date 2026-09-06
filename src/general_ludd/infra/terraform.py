@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import os
+import re
 import shlex
 import shutil
 import textwrap
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,10 +25,23 @@ from general_ludd.infra.azure_accelerator import (
 from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType, InferenceEngine
 from general_ludd.infra.terraform_state import StateBackendSelector, render_backend_block
 
-_AZURE_CONTAINER_APP_GPUS = {GPUType.T4, GPUType.A100_40, GPUType.A100_80}
+_AZURE_CONTAINER_APP_GPUS = {GPUType.T4, GPUType.A100_80}
 _AZURE_CONTAINER_APP_MODULES = (
     "azure-container-app-vllm",
     "gpu-cost-watchdog",
+)
+_AZURE_CONTAINER_APP_PROFILE_TYPES = {
+    GPUType.T4: "Consumption-GPU-NC8as-T4",
+    GPUType.A100_80: "Consumption-GPU-NC24-A100",
+}
+_AZURE_SUBSCRIPTION_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+_AZURE_RESOURCE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._()-]{0,88}[A-Za-z0-9_()-]$")
+_AZURE_ENVIRONMENT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{1,59}$")
+_MODEL_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
+_CONTAINER_DIGEST_RE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._/-]*@sha256:[0-9a-f]{64}$"
 )
 _UNSPECIFIED_IPV4 = str(ipaddress.IPv4Address(0))
 _LOOPBACK_IPV4 = str(ipaddress.IPv4Address("127.0.0.1"))
@@ -70,6 +87,156 @@ def _profile_string(profile: dict[str, object], key: str, default: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{key} must be a string")
     return value
+
+
+def _required_azure_containerapp_value(
+    value: object,
+    field_name: str,
+    pattern: re.Pattern[str],
+) -> str:
+    """Return one canonical deployment binding or fail before Terraform."""
+    if not isinstance(value, str) or pattern.fullmatch(value) is None:
+        raise ValueError(f"{field_name} must be one canonical value")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class _AzureContainerAppTfvars:
+    deployment_name: str
+    subscription_id: str
+    resource_group: str
+    environment: str
+    workload_profile_name: str
+    model_revision: str
+    container_image: str
+    context_length: int
+    max_num_seqs: int
+    gpu_memory_utilization: float
+    enforce_eager: bool
+    enable_prefix_caching: bool
+    enable_chunked_prefill: bool
+    kv_cache_dtype: str
+    quantization: str
+    expires_at: datetime
+    trace_id: str
+
+
+def _validated_azure_containerapp_tfvars(
+    config: ComputeConfig,
+    deployment_name: str,
+) -> _AzureContainerAppTfvars:
+    """Validate and bind all app-only Terraform values before rendering."""
+    if re.fullmatch(r"[a-z0-9][a-z0-9-]{7,39}", deployment_name) is None:
+        raise ValueError(
+            "deployment_name must contain 8-40 lowercase letters, digits, or '-'"
+        )
+    profile = config.deployment_profile or {}
+    subscription_id = _required_azure_containerapp_value(
+        config.azure_subscription_id, "azure_subscription_id", _AZURE_SUBSCRIPTION_RE
+    )
+    resource_group = _required_azure_containerapp_value(
+        config.azure_resource_group, "azure_resource_group", _AZURE_RESOURCE_NAME_RE
+    )
+    environment = _required_azure_containerapp_value(
+        config.azure_containerapp_environment,
+        "azure_containerapp_environment",
+        _AZURE_ENVIRONMENT_NAME_RE,
+    )
+    workload_profile_name = _required_azure_containerapp_value(
+        config.azure_workload_profile_name,
+        "azure_workload_profile_name",
+        _AZURE_ENVIRONMENT_NAME_RE,
+    )
+    model_revision = _required_azure_containerapp_value(
+        config.model_revision, "model_revision", _MODEL_REVISION_RE
+    )
+    container_image = config.container_image
+    if (
+        not isinstance(container_image, str)
+        or _CONTAINER_DIGEST_RE.fullmatch(container_image) is None
+    ):
+        raise ValueError("container_image must be digest-pinned")
+    try:
+        allowed_network = ipaddress.ip_network(config.allowed_cidr, strict=True)
+    except ValueError as exc:
+        raise ValueError("allowed_cidr must be one IPv4 /32") from exc
+    if allowed_network.version != 4 or allowed_network.prefixlen != 32:
+        raise ValueError("allowed_cidr must be one IPv4 /32")
+    if not 0 < config.max_cost_usd <= 5:
+        raise ValueError("max_cost_usd must be in 0..5 for a live proof")
+    if not 0 < config.timeout_minutes <= 60:
+        raise ValueError("timeout_minutes must be in 0..60 for a live proof")
+    return _AzureContainerAppTfvars(
+        deployment_name=deployment_name,
+        subscription_id=subscription_id,
+        resource_group=resource_group,
+        environment=environment,
+        workload_profile_name=workload_profile_name,
+        model_revision=model_revision,
+        container_image=container_image,
+        context_length=_profile_integer(profile, "context_length", 4096),
+        max_num_seqs=_profile_integer(profile, "max_num_seqs", 8),
+        gpu_memory_utilization=_profile_float(
+            profile, "gpu_memory_utilization", 0.90
+        ),
+        enforce_eager=_profile_boolean(profile, "enforce_eager", False),
+        enable_prefix_caching=_profile_boolean(
+            profile, "enable_prefix_caching", True
+        ),
+        enable_chunked_prefill=_profile_boolean(
+            profile, "enable_chunked_prefill", True
+        ),
+        kv_cache_dtype=_profile_string(profile, "kv_cache_dtype", "auto"),
+        quantization=_profile_string(profile, "quantization", ""),
+        expires_at=(datetime.now(UTC) + timedelta(minutes=config.timeout_minutes)).replace(
+            microsecond=0
+        ),
+        trace_id=hashlib.sha256(
+            f"azure-containerapp:{deployment_name}".encode("ascii")
+        ).hexdigest()[:32],
+    )
+
+
+def _render_azure_containerapp_tfvars(
+    config: ComputeConfig,
+    values: _AzureContainerAppTfvars,
+) -> str:
+    resource_group_id = (
+        f"/subscriptions/{values.subscription_id}/resourceGroups/{values.resource_group}"
+    )
+    environment_id = (
+        f"{resource_group_id}/providers/Microsoft.App/managedEnvironments/"
+        f"{values.environment}"
+    )
+    lines = [
+        f"deployment_name = {escape_tfvar_value(values.deployment_name)}",
+        f"resource_group_id = {escape_tfvar_value(resource_group_id)}",
+        f"managed_environment_id = {escape_tfvar_value(environment_id)}",
+        f"workload_profile_name = {escape_tfvar_value(values.workload_profile_name)}",
+        "workload_profile_type = "
+        f"{escape_tfvar_value(_AZURE_CONTAINER_APP_PROFILE_TYPES[config.gpu_type])}",
+        f"region = {escape_tfvar_value(config.region or 'eastus')}",
+        f"container_image = {escape_tfvar_value(values.container_image)}",
+        f"model_name = {escape_tfvar_value(config.model_name)}",
+        f"model_revision = {escape_tfvar_value(values.model_revision)}",
+        f"gpu_type = {escape_tfvar_value(config.gpu_type.value)}",
+        f"gpu_count = {config.gpu_count}",
+        f"allowed_cidr = {escape_tfvar_value(config.allowed_cidr)}",
+        f"max_cost_usd = {config.max_cost_usd}",
+        f"timeout_minutes = {config.timeout_minutes}",
+        f"expires_at_utc = {escape_tfvar_value(values.expires_at.strftime('%Y-%m-%dT%H:%M:%SZ'))}",
+        f"owner_token = {escape_tfvar_value(values.deployment_name)}",
+        f"trace_id = {escape_tfvar_value(values.trace_id)}",
+        f"vllm_context_length = {values.context_length}",
+        f"vllm_max_num_seqs = {values.max_num_seqs}",
+        f"vllm_gpu_memory_utilization = {values.gpu_memory_utilization}",
+        f"vllm_enforce_eager = {str(values.enforce_eager).lower()}",
+        f"vllm_enable_prefix_caching = {str(values.enable_prefix_caching).lower()}",
+        f"vllm_enable_chunked_prefill = {str(values.enable_chunked_prefill).lower()}",
+        f"vllm_kv_cache_dtype = {escape_tfvar_value(values.kv_cache_dtype)}",
+        f"vllm_quantization = {escape_tfvar_value(values.quantization)}",
+    ]
+    return "\n".join(lines) + "\n"
 
 # ---------------------------------------------------------------------------
 # Security note — HCL string interpolation
@@ -455,31 +622,8 @@ class TerraformGenerator:
     def build_azure_containerapp_tfvars(self, config: ComputeConfig, *, deployment_name: str) -> str:
         """Render only the declared inputs for the Azure GPU Container App stack."""
         self._validate_azure_containerapp(config)
-        profile = config.deployment_profile or {}
-        lines = [
-            f"deployment_name = {escape_tfvar_value(deployment_name)}",
-            f"region = {escape_tfvar_value(config.region or 'eastus')}",
-            f"container_image = {escape_tfvar_value(_container_image(config))}",
-            f"model_name = {escape_tfvar_value(config.model_name)}",
-            f"gpu_type = {escape_tfvar_value(config.gpu_type.value)}",
-            f"gpu_count = {config.gpu_count}",
-            f"allowed_cidr = {escape_tfvar_value(config.allowed_cidr)}",
-            f"max_cost_usd = {config.max_cost_usd}",
-            f"timeout_minutes = {config.timeout_minutes}",
-            f"vllm_context_length = {_profile_integer(profile, 'context_length', 4096)}",
-            f"vllm_max_num_seqs = {_profile_integer(profile, 'max_num_seqs', 8)}",
-            f"vllm_gpu_memory_utilization = {_profile_float(profile, 'gpu_memory_utilization', 0.90)}",
-            f"vllm_enforce_eager = {str(_profile_boolean(profile, 'enforce_eager', False)).lower()}",
-            "vllm_enable_prefix_caching = "
-            f"{str(_profile_boolean(profile, 'enable_prefix_caching', True)).lower()}",
-            "vllm_enable_chunked_prefill = "
-            f"{str(_profile_boolean(profile, 'enable_chunked_prefill', True)).lower()}",
-            "vllm_kv_cache_dtype = "
-            f"{escape_tfvar_value(_profile_string(profile, 'kv_cache_dtype', 'auto'))}",
-        ]
-        quantization = _profile_string(profile, "quantization", "")
-        lines.append(f"vllm_quantization = {escape_tfvar_value(quantization)}")
-        return "\n".join(lines) + "\n"
+        values = _validated_azure_containerapp_tfvars(config, deployment_name)
+        return _render_azure_containerapp_tfvars(config, values)
 
     def materialize(
         self,

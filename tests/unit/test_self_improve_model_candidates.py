@@ -9,6 +9,7 @@ from typing import Any, cast
 import pytest
 
 from general_ludd.self_improve.model_candidates import (
+    AzureContainerAppCandidateIdentity,
     AzureFoundryAPIFamily,
     AzureFoundryCandidateIdentity,
     BackendCallBudget,
@@ -41,6 +42,22 @@ def _azure_identity() -> AzureFoundryCandidateIdentity:
         api_version="2024-05-01-preview",
         model_version="2024-08-06",
         etag='W/"deployment-revision-7"',
+    )
+
+
+def _azure_containerapp_identity() -> AzureContainerAppCandidateIdentity:
+    return AzureContainerAppCandidateIdentity(
+        endpoint="https://gludd-vllm-proof.kindstone-1234.eastus.azurecontainerapps.io",
+        resource_id=(
+            "/subscriptions/12345678-1234-1234-1234-123456789abc/"
+            "resourceGroups/gludd-models-eastus/providers/Microsoft.App/"
+            "containerApps/gludd-vllm-proof"
+        ),
+        revision_name="gludd-vllm-proof--0000007",
+        image_digest="sha256:" + "c" * 64,
+        model_name="Qwen/Qwen2.5-0.5B-Instruct",
+        model_revision="d" * 40,
+        workload_profile_type="Consumption-GPU-NC8as-T4",
     )
 
 
@@ -117,6 +134,86 @@ def test_candidate_identities_are_frozen_typed_and_secret_free() -> None:
     assert "credential" not in repr(azure).lower()
     with pytest.raises(FrozenInstanceError):
         local.__setattr__("model_id", "mutated")
+
+
+def test_containerapp_identity_is_exact_immutable_and_secret_free() -> None:
+    identity = _azure_containerapp_identity()
+
+    assert identity.provider is ModelCandidateProvider.AZURE_CONTAINER_APP
+    assert identity.identity_digest == _azure_containerapp_identity().identity_digest
+    assert len(identity.identity_digest) == 64
+    assert "azurecontainerapps.io" not in identity.identity_digest
+    assert "credential" not in repr(identity).casefold()
+    with pytest.raises(FrozenInstanceError):
+        identity.__setattr__("revision_name", "mutated")
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda value: replace(value, endpoint="http://gludd.azurecontainerapps.io"),
+        lambda value: replace(value, endpoint="https://key@gludd.azurecontainerapps.io"),
+        lambda value: replace(value, endpoint="https://gludd.azurecontainerapps.io/v1"),
+        lambda value: replace(value, endpoint="https://example.com"),
+        lambda value: replace(value, resource_id="/subscriptions/wrong"),
+        lambda value: replace(value, revision_name="latest"),
+        lambda value: replace(value, revision_name="revision/escape"),
+        lambda value: replace(value, image_digest="sha256:not-a-digest"),
+        lambda value: replace(value, model_name="Qwen/latest model"),
+        lambda value: replace(value, model_revision="main"),
+        lambda value: replace(value, workload_profile_type="gpu profile"),
+    ],
+)
+def test_containerapp_identity_rejects_mutable_or_ambiguous_deployment(
+    mutation: Callable[
+        [AzureContainerAppCandidateIdentity],
+        AzureContainerAppCandidateIdentity,
+    ],
+) -> None:
+    with pytest.raises(ValueError):
+        mutation(_azure_containerapp_identity())
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda value: replace(value, endpoint="https://other.azurecontainerapps.io"),
+        lambda value: replace(
+            value,
+            resource_id=value.resource_id.replace("gludd-vllm-proof", "gludd-vllm-other"),
+            revision_name="gludd-vllm-other--0000007",
+        ),
+        lambda value: replace(value, revision_name="gludd-vllm-proof--0000008"),
+        lambda value: replace(value, image_digest="sha256:" + "e" * 64),
+        lambda value: replace(value, model_name="Qwen/Qwen2.5-Coder-0.5B-Instruct"),
+        lambda value: replace(value, model_revision="f" * 40),
+        lambda value: replace(value, workload_profile_type="Consumption-GPU-NC24-A100"),
+    ],
+)
+def test_containerapp_identity_digest_binds_every_deployment_field(
+    mutation: Callable[
+        [AzureContainerAppCandidateIdentity],
+        AzureContainerAppCandidateIdentity,
+    ],
+) -> None:
+    original = _azure_containerapp_identity()
+    assert mutation(original).identity_digest != original.identity_digest
+
+
+def test_containerapp_candidate_requires_explicit_azure_opt_in() -> None:
+    backend = _FakeBackend(_azure_containerapp_identity())
+    disabled = BoundedCandidateSession(backend, _budget(), azure_enabled=False)
+
+    with pytest.raises(BackendPolicyError) as captured:
+        disabled.generate(
+            "approved public task",
+            input_tokens=10,
+            max_output_tokens=10,
+            estimated_cost_microusd=10,
+        )
+
+    assert captured.value.failure is BackendPolicyFailure.AZURE_OPT_IN_REQUIRED
+    assert backend.calls == []
 
 
 def test_explicit_local_identity_is_artifact_bound_without_repository_path() -> None:

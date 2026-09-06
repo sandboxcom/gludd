@@ -13,6 +13,15 @@ from general_ludd.infra.compute import ComputeConfig, ComputeInstance, ComputePr
 from general_ludd.infra.providers import ProviderInfo, ProviderRegistry
 from general_ludd.infra.terraform import TerraformGenerator
 
+AZURE_CONTAINERAPP_IMAGE = "vllm/vllm-openai@sha256:" + "a" * 64
+AZURE_CONTAINERAPP_REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
+AZURE_CONTAINERAPP_BINDINGS = {
+    "azure_subscription_id": "11111111-2222-3333-4444-555555555555",
+    "azure_resource_group": "gludd-models-eastus",
+    "azure_containerapp_environment": "gludd-models-env",
+    "azure_workload_profile_name": "gludd-gpu-t4",
+}
+
 
 class TestComputeProvider:
     def test_aws_value(self):
@@ -483,7 +492,12 @@ class TestTerraformGeneratorAzureContainerApp:
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.T4,
             model_name="m",
+            model_revision=AZURE_CONTAINERAPP_REVISION,
+            container_image=AZURE_CONTAINERAPP_IMAGE,
             deploy_type="containerapp",
+            max_cost_usd=2,
+            timeout_minutes=45,
+            **AZURE_CONTAINERAPP_BINDINGS,
         )
         self.gen.materialize(cfg, tmp_path, deployment_name="d-output-test")
         outputs = (tmp_path / "outputs.tf").read_text()
@@ -494,8 +508,13 @@ class TestTerraformGeneratorAzureContainerApp:
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.T4,
             model_name="m",
+            model_revision=AZURE_CONTAINERAPP_REVISION,
+            container_image=AZURE_CONTAINERAPP_IMAGE,
             deploy_type="containerapp",
             region="westus2",
+            max_cost_usd=2,
+            timeout_minutes=45,
+            **AZURE_CONTAINERAPP_BINDINGS,
         )
         target = self.gen.build_azure_containerapp_tfvars(cfg, deployment_name="d-region-test")
         assert 'region = "westus2"' in target
@@ -505,9 +524,14 @@ class TestTerraformGeneratorAzureContainerApp:
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.T4,
             model_name="Qwen/Qwen2.5-0.5B-Instruct",
+            model_revision=AZURE_CONTAINERAPP_REVISION,
+            container_image=AZURE_CONTAINERAPP_IMAGE,
             deploy_type="containerapp",
             region="eastus",
             allowed_cidr="198.51.100.10/32",
+            max_cost_usd=2,
+            timeout_minutes=45,
+            **AZURE_CONTAINERAPP_BINDINGS,
         )
 
         self.gen.materialize(cfg, tmp_path, deployment_name="d-azure-test")
@@ -525,32 +549,23 @@ class TestTerraformGeneratorAzureContainerApp:
         assert 'allowed_cidr = "198.51.100.10/32"' in tfvars
         assert 'source  = "Azure/azapi"' in root
         assert 'version = "~> 2.0"' in root
-        assert 'resource "azapi_resource" "gludd_environment"' in module
-        assert 'type      = "Microsoft.App/managedEnvironments@2025-01-01"' in module
-        assert 'workloadProfileType = local.gpu_profile_type' in module
+        assert 'resource "azapi_resource" "vllm"' in module
+        assert 'type      = "Microsoft.App/containerApps@2025-01-01"' in module
+        assert "managedEnvironmentId = var.managed_environment_id" in module
         assert '"Consumption-GPU-NC8as-T4"' in module
         assert '"Consumption-GPU-NC24-A100"' in module
-        environment_block = module.split(
-            'resource "azapi_resource" "gludd_environment"', 1
-        )[1].split('resource "azurerm_container_app"', 1)[0]
-        assert "minimumCount" not in environment_block
-        assert "maximumCount" not in environment_block
-        assert "minimum_count" not in environment_block
-        assert "maximum_count" not in environment_block
+        assert "a100_40" not in module
         assert "azurerm_container_app_environment" not in module
-        assert (
-            "container_app_environment_id = azapi_resource.gludd_environment.id"
-            in module
-        )
-        assert re.search(r"min_replicas\s*=\s*0", module)
-        assert re.search(r"max_replicas\s*=\s*1", module)
-        assert 'resource_provider_registrations = "none"' in root
-        assert "skip_provider_registration" not in root
+        assert 'resource "azurerm_resource_group"' not in module
+        assert re.search(r"minReplicas\s*=\s*0", module)
+        assert re.search(r"maxReplicas\s*=\s*1", module)
+        assert "skip_provider_registration = true" in root
         assert "var.container_image" in module
         assert "var.model_name" in module
+        assert "var.model_revision" in module
         assert "python:3.11-slim" not in module
         assert (
-            'value       = "https://${azurerm_container_app.vllm.latest_revision_fqdn}"'
+            'value       = "https://${azapi_resource.vllm.output.properties.configuration.ingress.fqdn}"'
             in module_outputs
         )
         assert "latest_revision_fqdn}/v1" not in module_outputs
@@ -560,8 +575,14 @@ class TestTerraformGeneratorAzureContainerApp:
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.T4,
             model_name="m",
+            model_revision=AZURE_CONTAINERAPP_REVISION,
+            container_image=AZURE_CONTAINERAPP_IMAGE,
             deploy_type="containerapp",
             deployment_profile={"context_length": "4096"},
+            allowed_cidr="198.51.100.10/32",
+            max_cost_usd=2,
+            timeout_minutes=45,
+            **AZURE_CONTAINERAPP_BINDINGS,
         )
 
         with pytest.raises(ValueError, match="context_length must be an integer"):
@@ -572,8 +593,14 @@ class TestTerraformGeneratorAzureContainerApp:
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.T4,
             model_name="m",
+            model_revision=AZURE_CONTAINERAPP_REVISION,
+            container_image=AZURE_CONTAINERAPP_IMAGE,
             deploy_type="containerapp",
             deployment_profile={"gpu_memory_utilization": 1.5},
+            allowed_cidr="198.51.100.10/32",
+            max_cost_usd=2,
+            timeout_minutes=45,
+            **AZURE_CONTAINERAPP_BINDINGS,
         )
 
         with pytest.raises(ValueError, match="gpu_memory_utilization must be between 0 and 1"):

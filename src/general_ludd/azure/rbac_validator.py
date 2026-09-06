@@ -1,7 +1,7 @@
 """Validate Azure RBAC action strings and role definitions.
 
-Provides security-critical NotAction enforcement, built-in role lookup, a
-provider catalog, and high-level role-definition generation.
+Provides security-critical allowlist checks, built-in role lookup, a provider
+catalog, and high-level role-definition generation.
 """
 
 from __future__ import annotations
@@ -22,6 +22,8 @@ KNOWN_RBAC_ACTIONS: frozenset[str] = frozenset(
         "Microsoft.App/containerApps/read",
         "Microsoft.App/containerApps/write",
         "Microsoft.App/managedEnvironments/read",
+        "Microsoft.App/managedEnvironments/usages/read",
+        "Microsoft.App/managedEnvironments/workloadProfileStates/read",
         "Microsoft.Storage/storageAccounts/read",
         "Microsoft.Storage/storageAccounts/write",
         "Microsoft.ContainerRegistry/registries/read",
@@ -212,6 +214,8 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
             "Microsoft.App/managedEnvironments/write",
             "Microsoft.App/managedEnvironments/delete",
             "Microsoft.App/managedEnvironments/join/action",
+            "Microsoft.App/managedEnvironments/usages/read",
+            "Microsoft.App/managedEnvironments/workloadProfileStates/read",
             "Microsoft.App/managedEnvironments/storages/read",
             "Microsoft.App/managedEnvironments/storages/write",
             "Microsoft.App/managedEnvironments/storages/delete",

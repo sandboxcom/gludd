@@ -30,6 +30,16 @@ _MAX_COST_MICROUSD = 1_000_000_000_000
 _MAX_TIMEOUT_SECONDS = 3_600.0
 _MAX_FILENAME_BYTES = 2_048
 _MUTABLE_MODEL_VERSION_ALIASES = frozenset({"default", "latest", "preview", "stable"})
+_CONTAINER_APP_RESOURCE_ID_RE = re.compile(
+    r"^/subscriptions/(?P<subscription>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+    r"[0-9a-f]{4}-[0-9a-f]{12})/resourceGroups/"
+    r"(?P<resource_group>[A-Za-z0-9_.()\-]{1,90})/providers/"
+    r"Microsoft\.App/containerApps/(?P<app>[a-z0-9][a-z0-9-]{0,31})$"
+)
+_CONTAINER_APP_IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_CONTAINER_APP_PROFILE_TYPES = frozenset(
+    {"Consumption-GPU-NC8as-T4", "Consumption-GPU-NC24-A100"}
+)
 
 
 class ModelCandidateProvider(StrEnum):
@@ -37,6 +47,7 @@ class ModelCandidateProvider(StrEnum):
 
     LOCAL_GGUF = "local_gguf"
     AZURE_FOUNDRY = "azure_foundry"
+    AZURE_CONTAINER_APP = "azure_container_app"
 
 
 class AzureFoundryAPIFamily(StrEnum):
@@ -208,6 +219,73 @@ class AzureFoundryCandidateIdentity:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class AzureContainerAppCandidateIdentity:
+    """Exact self-hosted vLLM deployment identity without authorization data."""
+
+    endpoint: str
+    resource_id: str
+    revision_name: str
+    image_digest: str
+    model_name: str
+    model_revision: str
+    workload_profile_type: str
+
+    def __post_init__(self) -> None:
+        """Reject mutable images/models, non-ACA origins, and partial ARM identity."""
+        _validate_container_app_endpoint(self.endpoint)
+        if not isinstance(self.resource_id, str):
+            raise ValueError("resource_id must identify one canonical Container App")
+        matched = _CONTAINER_APP_RESOURCE_ID_RE.fullmatch(self.resource_id)
+        if matched is None or self.resource_id.endswith("."):
+            raise ValueError("resource_id must identify one canonical Container App")
+        revision = _strict_label(self.revision_name, "revision_name")
+        if (
+            revision.casefold() in _MUTABLE_MODEL_VERSION_ALIASES
+            or not revision.startswith(f"{matched.group('app')}--")
+        ):
+            raise ValueError("revision_name must bind the exact Container App revision")
+        if (
+            not isinstance(self.image_digest, str)
+            or _CONTAINER_APP_IMAGE_DIGEST_RE.fullmatch(self.image_digest) is None
+        ):
+            raise ValueError("image_digest must be one immutable sha256 image digest")
+        if (
+            not isinstance(self.model_name, str)
+            or _REPOSITORY_RE.fullmatch(self.model_name) is None
+        ):
+            raise ValueError("model_name must be one canonical owner/repository pair")
+        if (
+            not isinstance(self.model_revision, str)
+            or _COMMIT_RE.fullmatch(self.model_revision) is None
+        ):
+            raise ValueError("model_revision must be one immutable commit SHA")
+        if self.workload_profile_type not in _CONTAINER_APP_PROFILE_TYPES:
+            raise ValueError("workload_profile_type must be one supported GPU profile")
+
+    @property
+    def provider(self) -> ModelCandidateProvider:
+        """Return the stable provider category."""
+        return ModelCandidateProvider.AZURE_CONTAINER_APP
+
+    @property
+    def identity_digest(self) -> str:
+        """Return a stable digest binding the app, image, model, and GPU revision."""
+        return _stable_digest(
+            {
+                "endpoint": self.endpoint,
+                "image_digest": self.image_digest,
+                "model_name": self.model_name,
+                "model_revision": self.model_revision,
+                "protocol": "gludd-model-candidate-v1",
+                "provider": self.provider.value,
+                "resource_id": self.resource_id,
+                "revision_name": self.revision_name,
+                "workload_profile_type": self.workload_profile_type,
+            }
+        )
+
+
 def _validate_azure_endpoint(
     endpoint: object,
     api_family: AzureFoundryAPIFamily,
@@ -246,7 +324,40 @@ def _validate_azure_endpoint(
         raise ValueError("endpoint does not match its Azure API family")
 
 
-ModelCandidateIdentity = LocalGGUFCandidateIdentity | AzureFoundryCandidateIdentity
+def _validate_container_app_endpoint(endpoint: object) -> None:
+    if (
+        not isinstance(endpoint, str)
+        or not endpoint
+        or endpoint != endpoint.strip()
+        or len(endpoint.encode("utf-8")) > 2_048
+    ):
+        raise ValueError("endpoint must be one bounded canonical Container Apps URL")
+    try:
+        parsed = urlsplit(endpoint)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("endpoint must be one bounded canonical Container Apps URL") from exc
+    hostname = parsed.hostname
+    if (
+        parsed.scheme != "https"
+        or hostname is None
+        or parsed.netloc != hostname
+        or not hostname.endswith(".azurecontainerapps.io")
+        or parsed.username is not None
+        or parsed.password is not None
+        or port is not None
+        or parsed.path != ""
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("endpoint must be the root of one Azure Container App")
+
+
+ModelCandidateIdentity = (
+    LocalGGUFCandidateIdentity
+    | AzureFoundryCandidateIdentity
+    | AzureContainerAppCandidateIdentity
+)
 
 
 class BackendFailure(StrEnum):
@@ -404,7 +515,14 @@ class BoundedCandidateSession(Generic[_RequestT, _ResponseT]):
         if not isinstance(backend, CandidateBackend):
             raise ValueError("backend must implement CandidateBackend")
         identity = backend.candidate_identity
-        if not isinstance(identity, (LocalGGUFCandidateIdentity, AzureFoundryCandidateIdentity)):
+        if not isinstance(
+            identity,
+            (
+                LocalGGUFCandidateIdentity,
+                AzureFoundryCandidateIdentity,
+                AzureContainerAppCandidateIdentity,
+            ),
+        ):
             raise ValueError("backend must expose one typed candidate identity")
         if not isinstance(budget, BackendCallBudget):
             raise ValueError("budget must be a BackendCallBudget")
@@ -480,12 +598,23 @@ class BoundedCandidateSession(Generic[_RequestT, _ResponseT]):
         except Exception:
             raise BackendPolicyError(BackendPolicyFailure.IDENTITY_DRIFT) from None
         if (
-            not isinstance(current, (LocalGGUFCandidateIdentity, AzureFoundryCandidateIdentity))
+            not isinstance(
+                current,
+                (
+                    LocalGGUFCandidateIdentity,
+                    AzureFoundryCandidateIdentity,
+                    AzureContainerAppCandidateIdentity,
+                ),
+            )
             or current.identity_digest != self._identity_digest
         ):
             raise BackendPolicyError(BackendPolicyFailure.IDENTITY_DRIFT)
         if (
-            current.provider is ModelCandidateProvider.AZURE_FOUNDRY
+            current.provider
+            in {
+                ModelCandidateProvider.AZURE_FOUNDRY,
+                ModelCandidateProvider.AZURE_CONTAINER_APP,
+            }
             and not self._azure_enabled
         ):
             raise BackendPolicyError(BackendPolicyFailure.AZURE_OPT_IN_REQUIRED)
@@ -555,6 +684,7 @@ class BoundedCandidateSession(Generic[_RequestT, _ResponseT]):
 
 
 __all__ = (
+    "AzureContainerAppCandidateIdentity",
     "AzureFoundryAPIFamily",
     "AzureFoundryCandidateIdentity",
     "BackendBudgetSnapshot",

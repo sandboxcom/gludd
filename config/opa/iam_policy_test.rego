@@ -82,7 +82,7 @@ test_azure_scope_is_required if {
 test_azure_scoped_assignment_is_valid if {
 	data.iam.azure_least_privilege_valid with input as {
 		"provider": "azure",
-		"role_assignments": [{"scope": "/subscriptions/sub-123"}]
+		"role_assignments": [{"scope": "/subscriptions/sub-123/resourceGroups/gludd-models"}]
 	}
 }
 
@@ -138,49 +138,49 @@ test_azure_actions_non_empty_allowed if {
 	count(result) == 0
 }
 
-test_azure_runcommand_not_denied_fails if {
-	result := data.iam.deny_azure_missing_runcommand_notaction with input as {
+test_azure_runcommand_grant_fails if {
+	result := data.iam.deny_azure_forbidden_action with input as {
 		"provider": "azure",
 		"Name": "TestRole",
-		"Actions": ["Microsoft.Compute/virtualMachines/read"],
+		"Actions": ["Microsoft.Compute/virtualMachines/runCommand/action"],
 		"NotActions": [],
-		"AssignableScopes": ["/subscriptions/sub-123"]
+		"AssignableScopes": ["/subscriptions/sub-123/resourceGroups/gludd-models"]
 	}
 	count(result) == 1
 }
 
-test_azure_runcommand_denied_passes if {
-	result := data.iam.deny_azure_missing_runcommand_notaction with input as {
-		"provider": "azure",
-		"Name": "TestRole",
-		"Actions": ["Microsoft.Compute/virtualMachines/read"],
-		"NotActions": ["Microsoft.Compute/virtualMachines/runCommand/action"],
-		"AssignableScopes": ["/subscriptions/sub-123"]
-	}
-	count(result) == 0
-}
-
-test_azure_roleassign_notactions_missing_fails if {
-	result := data.iam.deny_azure_missing_roleassign_notactions with input as {
+test_azure_runcommand_absent_passes if {
+	result := data.iam.deny_azure_forbidden_action with input as {
 		"provider": "azure",
 		"Name": "TestRole",
 		"Actions": ["Microsoft.Compute/virtualMachines/read"],
 		"NotActions": [],
-		"AssignableScopes": ["/subscriptions/sub-123"]
+		"AssignableScopes": ["/subscriptions/sub-123/resourceGroups/gludd-models"]
+	}
+	count(result) == 0
+}
+
+test_azure_roleassignment_grant_fails if {
+	result := data.iam.deny_azure_forbidden_action with input as {
+		"provider": "azure",
+		"Name": "TestRole",
+		"Actions": [
+			"Microsoft.Authorization/roleAssignments/write",
+			"Microsoft.Authorization/roleAssignments/delete"
+		],
+		"NotActions": [],
+		"AssignableScopes": ["/subscriptions/sub-123/resourceGroups/gludd-models"]
 	}
 	count(result) == 2
 }
 
-test_azure_roleassign_notactions_present_passes if {
-	result := data.iam.deny_azure_missing_roleassign_notactions with input as {
+test_azure_roleassignment_absent_passes if {
+	result := data.iam.deny_azure_forbidden_action with input as {
 		"provider": "azure",
 		"Name": "TestRole",
 		"Actions": ["Microsoft.Compute/virtualMachines/read"],
-		"NotActions": [
-			"Microsoft.Authorization/roleAssignments/write",
-			"Microsoft.Authorization/roleAssignments/delete"
-		],
-		"AssignableScopes": ["/subscriptions/sub-123"]
+		"NotActions": [],
+		"AssignableScopes": ["/subscriptions/sub-123/resourceGroups/gludd-models"]
 	}
 	count(result) == 0
 }
@@ -243,22 +243,22 @@ test_azure_invalid_scope_denied if {
 	count(result) == 1
 }
 
-test_azure_subscription_scope_passes if {
+test_azure_subscription_scope_is_too_broad if {
 	result := data.iam.deny_azure_invalid_scope with input as {
 		"provider": "azure",
 		"Name": "TestRole",
 		"Actions": ["Microsoft.Compute/virtualMachines/read"],
 		"AssignableScopes": ["/subscriptions/sub-123"]
 	}
-	count(result) == 0
+	count(result) == 1
 }
 
-test_azure_accelerator_role_subscription_scope_passes if {
+test_azure_accelerator_role_resource_group_scope_passes if {
 	result := data.iam.deny_azure_invalid_scope with input as {
 		"provider": "azure",
 		"Name": "General Ludd Accelerator Deployer",
-		"Actions": ["Microsoft.Compute/virtualMachines/read"],
-		"AssignableScopes": ["/subscriptions/sub-123"]
+		"Actions": ["Microsoft.App/containerApps/read"],
+		"AssignableScopes": ["/subscriptions/sub-123/resourceGroups/gludd-models"]
 	}
 	count(result) == 0
 }
@@ -277,46 +277,21 @@ test_azure_custom_role_valid if {
 	data.iam.azure_custom_role_valid with input as {
 		"provider": "azure",
 		"Name": "General Ludd Accelerator Deployer",
-		"Description": "Least-privilege role for ephemeral Azure GPU workers",
-		"AssignableScopes": ["/subscriptions/sub-123"],
+		"Description": "Least-privilege role for one Container Apps GPU environment",
+		"AssignableScopes": ["/subscriptions/sub-123/resourceGroups/gludd-models"],
 		"Actions": [
-			"Microsoft.Resources/subscriptions/resourceGroups/read",
-			"Microsoft.Resources/subscriptions/resourceGroups/write",
-			"Microsoft.Resources/subscriptions/resourceGroups/delete",
-			"Microsoft.ContainerRegistry/registries/read",
-			"Microsoft.ContainerRegistry/registries/write",
-			"Microsoft.ContainerRegistry/registries/delete",
-			"Microsoft.ContainerRegistry/registries/listCredentials/action",
+			"Microsoft.App/managedEnvironments/read",
+			"Microsoft.App/managedEnvironments/join/action",
+			"Microsoft.App/managedEnvironments/usages/read",
+			"Microsoft.App/managedEnvironments/workloadProfileStates/read",
 			"Microsoft.App/containerApps/read",
 			"Microsoft.App/containerApps/write",
 			"Microsoft.App/containerApps/delete",
-			"Microsoft.App/containerApps/listSecrets/action",
-			"Microsoft.Network/virtualNetworks/read",
-			"Microsoft.Network/virtualNetworks/write",
-			"Microsoft.Network/virtualNetworks/delete",
-			"Microsoft.Network/virtualNetworks/subnets/read",
-			"Microsoft.Network/virtualNetworks/subnets/write",
-			"Microsoft.Network/virtualNetworks/subnets/delete",
-			"Microsoft.Network/virtualNetworks/subnets/join/action",
-			"Microsoft.Compute/virtualMachines/read",
-			"Microsoft.Compute/virtualMachines/write",
-			"Microsoft.Compute/virtualMachines/delete",
-			"Microsoft.Compute/virtualMachines/start/action",
-			"Microsoft.Compute/virtualMachines/deallocate/action",
-			"Microsoft.Authorization/roleAssignments/read",
-			"Microsoft.Authorization/roleDefinitions/read"
+			"Microsoft.App/containerApps/revisions/read",
+			"Microsoft.App/locations/containerAppOperationResults/read",
+			"Microsoft.App/locations/containerAppOperationStatuses/read"
 		],
-		"NotActions": [
-			"Microsoft.Authorization/roleAssignments/write",
-			"Microsoft.Authorization/roleAssignments/delete",
-			"Microsoft.Authorization/roleDefinitions/write",
-			"Microsoft.Authorization/roleDefinitions/delete",
-			"Microsoft.Compute/virtualMachines/runCommand/action",
-			"Microsoft.Compute/virtualMachines/runCommands/read",
-			"Microsoft.Compute/virtualMachines/runCommands/write",
-			"Microsoft.Compute/virtualMachines/runCommands/delete",
-			"Microsoft.Resources/subscriptions/resourceGroups/moveResources/action"
-		],
+		"NotActions": [],
 		"DataActions": [],
 		"NotDataActions": []
 	}

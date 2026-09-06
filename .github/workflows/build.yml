@@ -118,6 +118,31 @@ jobs:
         run: |
           echo "=== CI PHASE: install ==="
           uv sync --python ${{ matrix.python-version }}
+      - name: Azure Container App proof contract (hermetic)
+        run: |
+          make azure-containerapp-live-proof \
+            AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE=/tmp/gludd-contract-absent.json \
+            AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP=gludd-models-eastus \
+            AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT=gludd-gpu-environment \
+            AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME=gpu-t4 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION=eastus \
+            AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR=203.0.113.7/32 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD=5 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES=60 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_LIVE=0 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT=dry-run \
+            AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT=. \
+            AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH=src/general_ludd/__init__.py
+        env:
+          GLUDD_AUTH_PSK: ""
+      - name: Azure Container App coverage (hermetic)
+        if: matrix.python-version == '3.11'
+        run: |
+          echo "=== CI PHASE: azure-containerapp-coverage ==="
+          make test-azure-containerapp-coverage
+        env:
+          GLUDD_AUTH_PSK: ""
       - name: Lint
         run: |
           echo "=== CI PHASE: lint ==="

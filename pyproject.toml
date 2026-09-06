@@ -233,10 +233,6 @@ disallow_untyped_defs = true
 exclude = ["scripts/", "tests/unit/test_injection_patterns.py", "tests/unit/test_sql_injection_patterns.py", "tests/unit/test_ci_push_guard.py", "abtest/"]
 
 [[tool.mypy.overrides]]
-module = "ansible_collections.general_ludd.security.plugins.module_utils.srp"
-disable_error_code = ["no-any-return"]
-
-[[tool.mypy.overrides]]
 module = "general_ludd.algorithms.sphincs_plus"
 disable_error_code = ["no-any-return"]
 
@@ -246,7 +242,7 @@ follow_imports = "skip"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["pygments", "pygments.*", "ansible.*", "ansible_collections.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "xmlsec", "lxml", "lxml.etree", "pyVim.*", "pyVmomi", "openai", "lm_eval", "argon2", "blake3", "shamir", "srptools", "srptools.*", "pqcrypto", "pqcrypto.*", "scipy.*", "pywt"]
+module = ["pygments", "pygments.*", "ansible.*", "ansible_collections.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "xmlsec", "lxml", "lxml.etree", "pyVim.*", "pyVmomi", "openai", "lm_eval", "argon2", "blake3", "pqcrypto.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

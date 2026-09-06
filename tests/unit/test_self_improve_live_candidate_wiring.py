@@ -18,7 +18,12 @@ from general_ludd.self_improve.azure_backend import (
     AzureOpenAIConfig,
 )
 from general_ludd.self_improve.candidate_classification import classify_candidate_task
-from general_ludd.self_improve.codex_comparison import CodexReference, ProposalManifest
+from general_ludd.self_improve.codex_comparison import (
+    CandidateEvidence,
+    CodexReference,
+    ComparisonResult,
+    ProposalManifest,
+)
 from general_ludd.self_improve.live_candidate_wiring import (
     LIVE_CANDIDATE_WIRING_PROTOCOL,
     LiveCandidateWiringPolicy,
@@ -29,14 +34,20 @@ from general_ludd.self_improve.managed_candidate_assembly import (
     CandidateAssemblyFailure,
     CandidatePrivacyState,
 )
+from general_ludd.self_improve.managed_candidate_routing import (
+    ManagedCandidateProposalCodec,
+)
 from general_ludd.self_improve.managed_runner import (
     ApprovedSelfImprovePlan,
+    AttemptResult,
+    CapabilityEvidenceOutcomeAdapter,
     GeneratedProposal,
     ManagedSelfImproveRunner,
     SelfImprovePolicyViolation,
     TaskSpec,
 )
 from general_ludd.self_improve.model_candidates import (
+    AzureContainerAppCandidateIdentity,
     AzureFoundryAPIFamily,
     AzureFoundryCandidateIdentity,
     BackendCallBudget,
@@ -49,6 +60,7 @@ from general_ludd.self_improve.model_candidates import (
 )
 from general_ludd.self_improve.model_lifecycle import AcquiredModel
 from general_ludd.self_improve.runtime import build_managed_self_improve_runner
+from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
 
 def _budget(*, max_output_tokens: int = 256) -> BackendCallBudget:
@@ -80,6 +92,22 @@ def _azure_identity() -> AzureFoundryCandidateIdentity:
         api_version="v1",
         model_version="2026-09-01",
         etag='"immutable-etag"',
+    )
+
+
+def _containerapp_identity() -> AzureContainerAppCandidateIdentity:
+    return AzureContainerAppCandidateIdentity(
+        endpoint="https://gludd-vllm-proof.kindstone.eastus.azurecontainerapps.io",
+        resource_id=(
+            "/subscriptions/11111111-1111-1111-1111-111111111111/"
+            "resourceGroups/unit-test-group/providers/Microsoft.App/"
+            "containerApps/gludd-vllm-proof"
+        ),
+        revision_name="gludd-vllm-proof--0000007",
+        image_digest="sha256:" + "c" * 64,
+        model_name="Qwen/Qwen2.5-0.5B-Instruct",
+        model_revision="d" * 40,
+        workload_profile_type="Consumption-GPU-NC8as-T4",
     )
 
 
@@ -123,9 +151,10 @@ class _LocalBackend:
 
 
 class _AzureBackend:
-    def __init__(self) -> None:
+    def __init__(self, text: str = "unused") -> None:
         self.close_calls = 0
         self.generate_calls = 0
+        self.text = text
 
     @property
     def candidate_identity(self) -> AzureFoundryCandidateIdentity:
@@ -141,7 +170,37 @@ class _AzureBackend:
         del max_output_tokens, timeout_seconds
         self.generate_calls += 1
         return AzureCandidateResponse(
-            text="unused",
+            text=self.text,
+            input_tokens=1,
+            output_tokens=1,
+            total_tokens=2,
+        )
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+class _ContainerAppBackend:
+    def __init__(self, text: str = "containerapp-result") -> None:
+        self.close_calls = 0
+        self.generate_calls = 0
+        self.text = text
+
+    @property
+    def candidate_identity(self) -> AzureContainerAppCandidateIdentity:
+        return _containerapp_identity()
+
+    def generate(
+        self,
+        _request: object,
+        *,
+        max_output_tokens: int,
+        timeout_seconds: float,
+    ) -> AzureCandidateResponse:
+        del max_output_tokens, timeout_seconds
+        self.generate_calls += 1
+        return AzureCandidateResponse(
+            text=self.text,
             input_tokens=1,
             output_tokens=1,
             total_tokens=2,
@@ -162,6 +221,123 @@ def _mixed_policy() -> LiveCandidateWiringPolicy:
         azure_budget=_budget(),
         azure_estimated_cost_microusd=1_000,
     )
+
+
+def _three_provider_policy() -> LiveCandidateWiringPolicy:
+    return LiveCandidateWiringPolicy(
+        local_budget=_budget(),
+        required_providers=(
+            ModelCandidateProvider.LOCAL_GGUF,
+            ModelCandidateProvider.AZURE_FOUNDRY,
+            ModelCandidateProvider.AZURE_CONTAINER_APP,
+        ),
+        azure_config=_azure_config(),
+        azure_budget=_budget(),
+        azure_estimated_cost_microusd=1_000,
+        containerapp_identity=_containerapp_identity(),
+        containerapp_budget=_budget(),
+        containerapp_estimated_cost_microusd=2_000,
+    )
+
+
+def test_live_wiring_assembles_local_foundry_and_containerapp_candidates() -> None:
+    classification = classify_candidate_task("Implement one bounded public feature.")
+    foundry = _AzureBackend()
+    containerapp = _ContainerAppBackend()
+    wiring = LiveManagedCandidateWiring(
+        _three_provider_policy(),
+        azure_backend_factory=lambda _config: foundry,
+        containerapp_backend_factory=lambda _identity: containerapp,
+    )
+
+    with wiring.assemble(
+        classification,
+        expected_classification_digest=classification.classification_digest,
+        local_backend=_LocalBackend(),
+        privacy_state=CandidatePrivacyState.APPROVED_PUBLIC,
+        input_tokens=12,
+        max_output_tokens=32,
+    ) as candidate_set:
+        assert candidate_set.assembly.providers == (
+            ModelCandidateProvider.LOCAL_GGUF,
+            ModelCandidateProvider.AZURE_FOUNDRY,
+            ModelCandidateProvider.AZURE_CONTAINER_APP,
+        )
+        assert candidate_set.azure_session is not None
+        assert candidate_set.containerapp_session is not None
+
+    assert foundry.close_calls == 1
+    assert containerapp.close_calls == 1
+    candidate_set.close()
+    assert foundry.close_calls == 1
+    assert containerapp.close_calls == 1
+
+
+def test_containerapp_only_remote_wiring_never_constructs_foundry_backend() -> None:
+    classification = classify_candidate_task("Test one bounded public feature.")
+    foundry_builds: list[AzureOpenAIConfig] = []
+    containerapp = _ContainerAppBackend()
+    policy = LiveCandidateWiringPolicy(
+        local_budget=_budget(),
+        required_providers=(
+            ModelCandidateProvider.LOCAL_GGUF,
+            ModelCandidateProvider.AZURE_CONTAINER_APP,
+        ),
+        containerapp_identity=_containerapp_identity(),
+        containerapp_budget=_budget(),
+        containerapp_estimated_cost_microusd=2_000,
+    )
+    wiring = LiveManagedCandidateWiring(
+        policy,
+        azure_backend_factory=lambda config: (
+            foundry_builds.append(config) or _AzureBackend()
+        ),
+        containerapp_backend_factory=lambda identity: (
+            containerapp if identity == _containerapp_identity() else pytest.fail()
+        ),
+    )
+
+    with wiring.assemble(
+        classification,
+        expected_classification_digest=classification.classification_digest,
+        local_backend=_LocalBackend(),
+        privacy_state=CandidatePrivacyState.APPROVED_PUBLIC,
+        input_tokens=12,
+        max_output_tokens=32,
+    ) as candidate_set:
+        assert candidate_set.azure_session is None
+        assert candidate_set.containerapp_session is not None
+
+    assert foundry_builds == []
+    assert containerapp.close_calls == 1
+
+
+def test_containerapp_policy_requires_complete_budget_and_explicit_provider() -> None:
+    with pytest.raises(ValueError, match="containerapp_identity"):
+        LiveCandidateWiringPolicy(
+            local_budget=_budget(),
+            containerapp_budget=_budget(),
+        )
+    with pytest.raises(ValueError, match="containerapp_budget"):
+        LiveCandidateWiringPolicy(
+            local_budget=_budget(),
+            containerapp_identity=_containerapp_identity(),
+        )
+    with pytest.raises(ValueError, match="required Azure Container App"):
+        LiveCandidateWiringPolicy(
+            local_budget=_budget(),
+            required_providers=(
+                ModelCandidateProvider.LOCAL_GGUF,
+                ModelCandidateProvider.AZURE_CONTAINER_APP,
+            ),
+        )
+    with pytest.raises(ValueError, match="estimated cost"):
+        LiveCandidateWiringPolicy(
+            local_budget=_budget(),
+            containerapp_identity=_containerapp_identity(),
+            containerapp_budget=_budget(),
+            containerapp_estimated_cost_microusd=50_001,
+        )
 
 
 def test_live_wiring_assembles_authorized_mixed_set_and_closes_azure() -> None:
@@ -546,10 +722,35 @@ def test_invalid_azure_discovery_result_is_terminal() -> None:
         )
 
 
+def test_second_remote_discovery_failure_closes_first_backend() -> None:
+    classification = classify_candidate_task("Implement a bounded coding change.")
+    azure = _AzureBackend()
+    wiring = LiveManagedCandidateWiring(
+        _three_provider_policy(),
+        azure_backend_factory=lambda _config: azure,
+        containerapp_backend_factory=lambda _identity: cast(
+            _ContainerAppBackend, object()
+        ),
+    )
+
+    with pytest.raises(ValueError, match="invalid backend"):
+        wiring.assemble(
+            classification,
+            expected_classification_digest=classification.classification_digest,
+            local_backend=_LocalBackend(),
+            privacy_state=CandidatePrivacyState.APPROVED_PUBLIC,
+            input_tokens=8,
+            max_output_tokens=32,
+        )
+
+    assert azure.close_calls == 1
+
+
 def test_runtime_factory_is_default_off_and_explicit_wiring_stays_lazy(
     tmp_path: Path,
 ) -> None:
     azure_builds: list[AzureOpenAIConfig] = []
+    containerapp_builds: list[AzureContainerAppCandidateIdentity] = []
     default_runner = build_managed_self_improve_runner(
         tmp_path,
         root_runner=cast(object, object()),
@@ -557,15 +758,19 @@ def test_runtime_factory_is_default_off_and_explicit_wiring_stays_lazy(
     wired_runner = build_managed_self_improve_runner(
         tmp_path,
         root_runner=cast(object, object()),
-        live_candidate_policy=_mixed_policy(),
+        live_candidate_policy=_three_provider_policy(),
         azure_backend_factory=lambda config: (
             azure_builds.append(config) or _AzureBackend()
+        ),
+        containerapp_backend_factory=lambda identity: (
+            containerapp_builds.append(identity) or _ContainerAppBackend()
         ),
     )
 
     assert default_runner.live_candidate_wiring_enabled is False
     assert wired_runner.live_candidate_wiring_enabled is True
     assert azure_builds == []
+    assert containerapp_builds == []
     assert self_improve_package.LiveCandidateWiringPolicy is LiveCandidateWiringPolicy
     assert "LiveCandidateWiringPolicy" in self_improve_package.__all__
 
@@ -675,6 +880,7 @@ def _proposal() -> ProposalManifest:
 class _AcquisitionManager:
     def __init__(self, model_path: Path) -> None:
         self._model_path = model_path
+        self.cache_root = model_path.parent
         self.releases = 0
 
     @contextmanager
@@ -843,3 +1049,303 @@ def test_managed_runner_rechecks_privacy_before_any_live_discovery(
     assert generated == []
     assert azure_builds == []
     assert manager.releases == 0
+
+
+def test_managed_routing_privacy_blocks_before_codec_models_and_evidence(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "local-coder.Q4_K_M.gguf"
+    model_path.write_bytes(b"model")
+    plan = _approved_plan(tmp_path, model_path)
+    policy_dir = tmp_path / ".gludd"
+    policy_dir.mkdir()
+    policy_dir.joinpath("self-improve-policy.json").write_text(
+        '{"schema_version":1,"default_access":"public",'
+        '"private_paths":["src/general_ludd/example.py"],"public_paths":[]}',
+        encoding="utf-8",
+    )
+    model_builds: list[str] = []
+    outcome_builds: list[Path] = []
+    codec_builds: list[str] = []
+    azure_builds: list[AzureOpenAIConfig] = []
+    proposal_calls: list[str] = []
+    evaluator_calls: list[str] = []
+    progress: list[str] = []
+    store = CapabilityEvidenceStore(str(tmp_path / "candidate-evidence.json"))
+    codec = ManagedCandidateProposalCodec(
+        request_text="bounded approved prompt",
+        decoder=lambda text: GeneratedProposal(ProposalManifest.from_json(text)),
+        protocol_digest="5" * 64,
+        sampling_digest="6" * 64,
+    )
+
+    def model_manager_factory(**_kwargs: object) -> _AcquisitionManager:
+        model_builds.append("built")
+        return _AcquisitionManager(model_path)
+
+    def outcome_adapter_factory(cache_root: Path) -> CapabilityEvidenceOutcomeAdapter:
+        outcome_builds.append(cache_root)
+        return CapabilityEvidenceOutcomeAdapter(store)
+
+    def codec_factory(
+        _prompt: object,
+        _task_spec: TaskSpec,
+        _reference_spec: CodexReference,
+    ) -> ManagedCandidateProposalCodec[GeneratedProposal]:
+        codec_builds.append("built")
+        return codec
+
+    def generate(*_args: object, **_kwargs: object) -> ProposalManifest:
+        proposal_calls.append("called")
+        return _proposal()
+
+    def evaluate(*_args: object, **_kwargs: object) -> AttemptResult:
+        evaluator_calls.append("called")
+        raise AssertionError("private work reached evaluator")
+
+    runner = ManagedSelfImproveRunner(
+        proposal_generator=cast(Callable[..., ProposalManifest], generate),
+        attempt_evaluator=cast(Callable[..., AttemptResult], evaluate),
+        model_manager_factory=cast(Callable[..., object], model_manager_factory),
+        outcome_adapter_factory=outcome_adapter_factory,
+        progress_sink=progress.append,
+        live_candidate_wiring=LiveManagedCandidateWiring(
+            _mixed_policy(),
+            azure_backend_factory=lambda config: (
+                azure_builds.append(config) or _AzureBackend()
+            ),
+        ),
+        remote_proposal_codec_factory=codec_factory,
+    )
+
+    with pytest.raises(SelfImprovePolicyViolation):
+        runner.run(plan)
+
+    assert model_builds == []
+    assert outcome_builds == []
+    assert codec_builds == []
+    assert azure_builds == []
+    assert proposal_calls == []
+    assert evaluator_calls == []
+    assert store.list_all() == []
+    assert all("src/general_ludd/example.py" not in message for message in progress)
+
+
+def _routed_proposal(*, new_text: str) -> ProposalManifest:
+    value = json.loads(_proposal().to_json())
+    value["edits"][0]["new_text"] = new_text
+    return ProposalManifest.from_json(json.dumps(value))
+
+
+def _candidate_evidence(*, accepted: bool) -> CandidateEvidence:
+    return CandidateEvidence(
+        changed_files=frozenset({"src/general_ludd/example.py"}),
+        tests_passed=accepted,
+        warnings=0,
+        coverage_aggregate=0.9 if accepted else 0.0,
+        coverage_min_file=0.8 if accepted else 0.0,
+        ruff_passed=accepted,
+        mypy_passed=accepted,
+        docstrings_passed=accepted,
+        markdown_passed=accepted,
+        cleanup_passed=True,
+        commit_count=1,
+        worktree_clean=True,
+        elapsed_seconds=0.1,
+    )
+
+
+def test_managed_runner_routes_real_local_and_foundry_work_by_calibrated_outcome(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "local-coder.Q4_K_M.gguf"
+    model_path.write_bytes(b"model")
+    local = _routed_proposal(new_text="return 1")
+    remote = _routed_proposal(new_text="return 2")
+    azure = _AzureBackend(remote.to_json())
+    progress: list[str] = []
+    generated: list[tuple[Path, str]] = []
+    store = CapabilityEvidenceStore(str(tmp_path / "candidate-evidence.json"))
+    accept_local = False
+
+    def generate(
+        model: Path,
+        prompt: object,
+        _task_spec: TaskSpec,
+        _reference_spec: CodexReference,
+    ) -> ProposalManifest:
+        generated.append((model, cast(str, prompt)))
+        return local
+
+    def evaluate(
+        _task_spec: TaskSpec,
+        _reference_spec: CodexReference,
+        bound: object,
+        _attempt: int,
+        *,
+        expected_attempt_identity_digest: str,
+        merge: bool,
+    ) -> AttemptResult:
+        assert merge is False
+        proposal = cast(object, bound).proposal
+        accepted = accept_local or proposal == remote
+        return AttemptResult(
+            comparison=ComparisonResult(
+                accepted=accepted,
+                score=1.0 if accepted else 0.0,
+                blockers=() if accepted else ("quality",),
+                changed_file_precision=1.0,
+                changed_file_recall=1.0,
+            ),
+            evidence=_candidate_evidence(accepted=accepted),
+            patch_equivalence="accepted" if accepted else "rejected",
+            proposal=proposal,
+            diagnostics="",
+            attempt_identity_digest=expected_attempt_identity_digest,
+        )
+
+    codec = ManagedCandidateProposalCodec(
+        request_text="bounded approved prompt",
+        decoder=lambda text: GeneratedProposal(ProposalManifest.from_json(text)),
+        protocol_digest="1" * 64,
+        sampling_digest="2" * 64,
+    )
+    runner = ManagedSelfImproveRunner(
+        proposal_generator=cast(Callable[..., ProposalManifest], generate),
+        attempt_evaluator=cast(Callable[..., AttemptResult], evaluate),
+        progress_sink=progress.append,
+        live_candidate_wiring=LiveManagedCandidateWiring(
+            _mixed_policy(),
+            azure_backend_factory=lambda _config: azure,
+        ),
+        remote_proposal_codec_factory=lambda _prompt, _task, _reference: codec,
+    )
+    plan = _approved_plan(tmp_path, model_path)
+    outcomes = CapabilityEvidenceOutcomeAdapter(store)
+
+    first = runner._generate_proposal(
+        plan,
+        plan.prompt,
+        None,
+        cast(object, _AcquisitionManager(model_path)),
+        False,
+        None,
+        None,
+        outcomes=outcomes,
+        attempt=1,
+    )
+
+    assert first.proposal == remote
+    assert first.evaluated_result is not None
+    assert first.evaluated_result.comparison.accepted is True
+    assert first.selected_candidate_provider is ModelCandidateProvider.AZURE_FOUNDRY
+    assert azure.generate_calls == 1
+    assert generated == [(model_path, "bounded approved prompt")]
+    assert len(store.list_all()) == 2
+
+    accept_local = True
+    second = runner._generate_proposal(
+        plan,
+        plan.prompt,
+        None,
+        cast(object, _AcquisitionManager(model_path)),
+        False,
+        None,
+        None,
+        outcomes=outcomes,
+        attempt=1,
+    )
+
+    assert second.proposal == remote
+    assert second.selected_candidate_provider is ModelCandidateProvider.AZURE_FOUNDRY
+    assert azure.generate_calls == 2
+    assert len(store.list_all()) == 4
+    rendered = "\n".join(progress)
+    assert "SELF_IMPROVE_CANDIDATE_ROUTING_EVENT" in rendered
+    assert "bounded approved prompt" not in rendered
+    assert "return 1" not in rendered
+    assert "return 2" not in rendered
+
+
+def test_managed_run_uses_containerapp_assistant_without_duplicate_evaluation(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "local-coder.Q4_K_M.gguf"
+    model_path.write_bytes(b"model")
+    local = _routed_proposal(new_text="return 1")
+    remote = _routed_proposal(new_text="return 3")
+    containerapp = _ContainerAppBackend(remote.to_json())
+    manager = _AcquisitionManager(model_path)
+    store = CapabilityEvidenceStore(str(tmp_path / "candidate-evidence.json"))
+    evaluations: list[ProposalManifest] = []
+    progress: list[str] = []
+
+    def evaluate(
+        _task_spec: TaskSpec,
+        _reference_spec: CodexReference,
+        bound: object,
+        _attempt: int,
+        *,
+        expected_attempt_identity_digest: str,
+        merge: bool,
+    ) -> AttemptResult:
+        assert merge is False
+        proposal = cast(object, bound).proposal
+        evaluations.append(proposal)
+        accepted = proposal == remote
+        return AttemptResult(
+            comparison=ComparisonResult(
+                accepted=accepted,
+                score=1.0 if accepted else 0.0,
+                blockers=() if accepted else ("quality",),
+                changed_file_precision=1.0,
+                changed_file_recall=1.0,
+            ),
+            evidence=_candidate_evidence(accepted=accepted),
+            patch_equivalence="accepted" if accepted else "rejected",
+            proposal=proposal,
+            diagnostics="",
+            attempt_identity_digest=expected_attempt_identity_digest,
+        )
+
+    codec = ManagedCandidateProposalCodec(
+        request_text="bounded approved prompt",
+        decoder=lambda text: GeneratedProposal(ProposalManifest.from_json(text)),
+        protocol_digest="3" * 64,
+        sampling_digest="4" * 64,
+    )
+    runner = ManagedSelfImproveRunner(
+        proposal_generator=cast(
+            Callable[..., ProposalManifest],
+            lambda *_args, **_kwargs: local,
+        ),
+        attempt_evaluator=cast(Callable[..., AttemptResult], evaluate),
+        model_manager_factory=cast(Callable[..., object], lambda **_kwargs: manager),
+        outcome_adapter_factory=lambda _root: CapabilityEvidenceOutcomeAdapter(store),
+        progress_sink=progress.append,
+        live_candidate_wiring=LiveManagedCandidateWiring(
+            LiveCandidateWiringPolicy(
+                local_budget=_budget(),
+                required_providers=(
+                    ModelCandidateProvider.LOCAL_GGUF,
+                    ModelCandidateProvider.AZURE_CONTAINER_APP,
+                ),
+                containerapp_identity=_containerapp_identity(),
+                containerapp_budget=_budget(),
+                containerapp_estimated_cost_microusd=2_000,
+            ),
+            containerapp_backend_factory=lambda _identity: containerapp,
+        ),
+        remote_proposal_codec_factory=lambda _prompt, _task, _reference: codec,
+    )
+
+    result = runner.run(_approved_plan(tmp_path, model_path))
+
+    assert result.accepted is True
+    assert result.final_result.proposal == remote
+    assert evaluations == [local, remote]
+    assert containerapp.generate_calls == 1
+    assert containerapp.close_calls == 1
+    assert manager.releases == 1
+    assert len(store.list_all()) == 2
+    assert any("azure_container_app" in message for message in progress)

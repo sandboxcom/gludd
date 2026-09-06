@@ -23,6 +23,9 @@ from general_ludd.self_improve.azure_backend import (
     AzureOpenAIConfig,
     build_azure_openai_candidate_backend,
 )
+from general_ludd.self_improve.azure_containerapp_backend import (
+    build_azure_containerapp_candidate_backend,
+)
 from general_ludd.self_improve.candidate_classification import (
     CandidateTaskClassification,
 )
@@ -37,6 +40,7 @@ from general_ludd.self_improve.managed_candidate_assembly import (
     assemble_managed_candidates,
 )
 from general_ludd.self_improve.model_candidates import (
+    AzureContainerAppCandidateIdentity,
     AzureFoundryCandidateIdentity,
     BackendCallBudget,
     BoundedCandidateSession,
@@ -52,6 +56,10 @@ _ResponseT = TypeVar("_ResponseT")
 _DEFAULT_AZURE_BACKEND_FACTORY = cast(
     "AzureCandidateBackendFactory",
     build_azure_openai_candidate_backend,
+)
+_DEFAULT_CONTAINERAPP_BACKEND_FACTORY = cast(
+    "ContainerAppCandidateBackendFactory",
+    build_azure_containerapp_candidate_backend,
 )
 
 
@@ -85,6 +93,42 @@ class AzureCandidateBackendFactory(Protocol):
 
     def __call__(self, config: AzureOpenAIConfig) -> AzureCandidateBackend:
         """Discover the configured deployment without fallback."""
+        ...
+
+
+@runtime_checkable
+class ContainerAppCandidateBackend(Protocol):
+    """Owned exact Container App backend returned after model discovery."""
+
+    @property
+    def candidate_identity(self) -> AzureContainerAppCandidateIdentity:
+        """Return the immutable app revision identity."""
+        ...
+
+    def generate(
+        self,
+        request: AzureApprovedPrompt,
+        *,
+        max_output_tokens: int,
+        timeout_seconds: float,
+    ) -> AzureCandidateResponse:
+        """Invoke only the exact Container App model under explicit limits."""
+        ...
+
+    def close(self) -> None:
+        """Release the bounded HTTP client."""
+        ...
+
+
+@runtime_checkable
+class ContainerAppCandidateBackendFactory(Protocol):
+    """Construct exactly one discovered Container App backend."""
+
+    def __call__(
+        self,
+        identity: AzureContainerAppCandidateIdentity,
+    ) -> ContainerAppCandidateBackend:
+        """Bind the configured app revision without fallback."""
         ...
 
 
@@ -136,6 +180,22 @@ def _configuration_digest(
             "resource_group": config.resource_group,
             "subscription_id": config.subscription_id,
         }
+    elif provider is ModelCandidateProvider.AZURE_CONTAINER_APP:
+        identity = policy.containerapp_identity
+        budget = policy.containerapp_budget
+        if identity is None or budget is None:
+            raise ValueError("Azure Container App configuration is incomplete")
+        payload = {
+            "azure_enabled": True,
+            "budget": _budget_payload(budget),
+            "candidate_identity_digest": identity.identity_digest,
+            "estimated_cost_microusd": (
+                policy.containerapp_estimated_cost_microusd
+            ),
+            "protocol": LIVE_CANDIDATE_WIRING_PROTOCOL,
+            "provider": provider.value,
+            "required_providers": [item.value for item in policy.required_providers],
+        }
     encoded = json.dumps(
         payload,
         allow_nan=False,
@@ -157,6 +217,9 @@ class LiveCandidateWiringPolicy:
     azure_config: AzureOpenAIConfig | None = None
     azure_budget: BackendCallBudget | None = None
     azure_estimated_cost_microusd: int = 0
+    containerapp_identity: AzureContainerAppCandidateIdentity | None = None
+    containerapp_budget: BackendCallBudget | None = None
+    containerapp_estimated_cost_microusd: int = 0
 
     def __post_init__(self) -> None:
         """Reject ambiguous provider, opt-in, and budget combinations."""
@@ -180,21 +243,57 @@ class LiveCandidateWiringPolicy:
             or not 0 <= self.azure_estimated_cost_microusd <= _MAX_COST_MICROUSD
         ):
             raise ValueError("azure_estimated_cost_microusd is outside its hard bound")
-
+        if (
+            isinstance(self.containerapp_estimated_cost_microusd, bool)
+            or not isinstance(self.containerapp_estimated_cost_microusd, int)
+            or not 0
+            <= self.containerapp_estimated_cost_microusd
+            <= _MAX_COST_MICROUSD
+        ):
+            raise ValueError(
+                "containerapp_estimated_cost_microusd is outside its hard bound"
+            )
         if self.azure_config is None:
             if self.azure_budget is not None or self.azure_estimated_cost_microusd != 0:
                 raise ValueError("azure_config is required for Azure budget or cost")
             if ModelCandidateProvider.AZURE_FOUNDRY in self.required_providers:
                 raise ValueError("required Azure provider needs explicit Azure configuration")
-            return
-        if not isinstance(self.azure_config, AzureOpenAIConfig):
-            raise ValueError("azure_config must be an AzureOpenAIConfig")
-        if not self.azure_config.azure_enabled:
-            raise ValueError("Azure candidate wiring must be explicitly enabled")
-        if not isinstance(self.azure_budget, BackendCallBudget):
-            raise ValueError("azure_budget must be a BackendCallBudget")
-        if self.azure_estimated_cost_microusd > self.azure_budget.max_cost_microusd:
-            raise ValueError("Azure estimated cost exceeds its configured budget")
+        else:
+            if not isinstance(self.azure_config, AzureOpenAIConfig):
+                raise ValueError("azure_config must be an AzureOpenAIConfig")
+            if not self.azure_config.azure_enabled:
+                raise ValueError("Azure candidate wiring must be explicitly enabled")
+            if not isinstance(self.azure_budget, BackendCallBudget):
+                raise ValueError("azure_budget must be a BackendCallBudget")
+            if self.azure_estimated_cost_microusd > self.azure_budget.max_cost_microusd:
+                raise ValueError("Azure estimated cost exceeds its configured budget")
+
+        if self.containerapp_identity is None:
+            if (
+                self.containerapp_budget is not None
+                or self.containerapp_estimated_cost_microusd != 0
+            ):
+                raise ValueError(
+                    "containerapp_identity is required for Container App budget or cost"
+                )
+            if ModelCandidateProvider.AZURE_CONTAINER_APP in self.required_providers:
+                raise ValueError(
+                    "required Azure Container App provider needs an explicit identity"
+                )
+        else:
+            if type(self.containerapp_identity) is not AzureContainerAppCandidateIdentity:
+                raise ValueError(
+                    "containerapp_identity must be an AzureContainerAppCandidateIdentity"
+                )
+            if not isinstance(self.containerapp_budget, BackendCallBudget):
+                raise ValueError("containerapp_budget must be a BackendCallBudget")
+            if (
+                self.containerapp_estimated_cost_microusd
+                > self.containerapp_budget.max_cost_microusd
+            ):
+                raise ValueError(
+                    "Container App estimated cost exceeds its configured budget"
+                )
 
 
 class LiveManagedCandidateSet(Generic[_RequestT, _ResponseT]):
@@ -209,12 +308,19 @@ class LiveManagedCandidateSet(Generic[_RequestT, _ResponseT]):
         ]
         | None,
         azure_backend: AzureCandidateBackend | None,
+        containerapp_session: BoundedCandidateSession[
+            AzureApprovedPrompt, AzureCandidateResponse
+        ]
+        | None,
+        containerapp_backend: ContainerAppCandidateBackend | None,
     ) -> None:
         """Retain only the resources needed until the caller leaves the scope."""
         self.assembly = assembly
         self.local_session = local_session
         self.azure_session = azure_session
+        self.containerapp_session = containerapp_session
         self._azure_backend = azure_backend
+        self._containerapp_backend = containerapp_backend
         self._closed = False
 
     @property
@@ -227,8 +333,16 @@ class LiveManagedCandidateSet(Generic[_RequestT, _ResponseT]):
         if self._closed:
             return
         self._closed = True
-        if self._azure_backend is not None:
-            self._azure_backend.close()
+        failed = False
+        for backend in (self._containerapp_backend, self._azure_backend):
+            if backend is None:
+                continue
+            try:
+                backend.close()
+            except Exception:
+                failed = True
+        if failed:
+            raise RuntimeError("managed candidate backend cleanup failed")
 
     def __enter__(self) -> LiveManagedCandidateSet[_RequestT, _ResponseT]:
         """Return this bounded assembly scope."""
@@ -244,6 +358,27 @@ class LiveManagedCandidateSet(Generic[_RequestT, _ResponseT]):
         self.close()
 
 
+@dataclass(slots=True)
+class _DiscoveredRemoteCandidates:
+    """Remote backends and sessions owned during fail-closed assembly."""
+
+    azure_backend: AzureCandidateBackend | None = None
+    azure_session: BoundedCandidateSession[
+        AzureApprovedPrompt, AzureCandidateResponse
+    ] | None = None
+    containerapp_backend: ContainerAppCandidateBackend | None = None
+    containerapp_session: BoundedCandidateSession[
+        AzureApprovedPrompt, AzureCandidateResponse
+    ] | None = None
+
+    def close_safely(self) -> None:
+        """Suppress cleanup details while preserving the triggering failure."""
+        for backend in (self.containerapp_backend, self.azure_backend):
+            if backend is not None:
+                with suppress(Exception):
+                    backend.close()
+
+
 class LiveManagedCandidateWiring:
     """Lazily discover and assemble an explicitly enabled live candidate set."""
 
@@ -254,6 +389,9 @@ class LiveManagedCandidateWiring:
         azure_backend_factory: AzureCandidateBackendFactory = (
             _DEFAULT_AZURE_BACKEND_FACTORY
         ),
+        containerapp_backend_factory: ContainerAppCandidateBackendFactory = (
+            _DEFAULT_CONTAINERAPP_BACKEND_FACTORY
+        ),
         event_sink: Callable[[dict[str, object]], None] = _discard_event,
     ) -> None:
         """Snapshot approved non-secret configuration without provider effects."""
@@ -261,10 +399,18 @@ class LiveManagedCandidateWiring:
             raise ValueError("policy must be a LiveCandidateWiringPolicy")
         if not isinstance(azure_backend_factory, AzureCandidateBackendFactory):
             raise ValueError("azure_backend_factory must implement its protocol")
+        if not isinstance(
+            containerapp_backend_factory,
+            ContainerAppCandidateBackendFactory,
+        ):
+            raise ValueError(
+                "containerapp_backend_factory must implement its protocol"
+            )
         if not callable(event_sink):
             raise ValueError("event_sink must be callable")
         self._policy = policy
         self._azure_backend_factory = azure_backend_factory
+        self._containerapp_backend_factory = containerapp_backend_factory
         self._event_sink = event_sink
         self._approved_local_configuration_digest = _configuration_digest(
             policy,
@@ -274,6 +420,14 @@ class LiveManagedCandidateWiring:
             None
             if policy.azure_config is None
             else _configuration_digest(policy, ModelCandidateProvider.AZURE_FOUNDRY)
+        )
+        self._approved_containerapp_configuration_digest = (
+            None
+            if policy.containerapp_identity is None
+            else _configuration_digest(
+                policy,
+                ModelCandidateProvider.AZURE_CONTAINER_APP,
+            )
         )
 
     @property
@@ -342,6 +496,135 @@ class LiveManagedCandidateWiring:
             privacy_state=privacy_state,
         )
 
+    def _containerapp_source(
+        self,
+        containerapp_session: BoundedCandidateSession[
+            AzureApprovedPrompt, AzureCandidateResponse
+        ],
+        privacy_state: CandidatePrivacyState,
+    ) -> ManagedCandidateSource:
+        approved_digest = self._approved_containerapp_configuration_digest
+        if approved_digest is None:
+            raise ValueError("Azure Container App configuration was not approved")
+        identity = containerapp_session.candidate_identity
+        return ManagedCandidateSource(
+            identity=identity,
+            expected_identity_digest=identity.identity_digest,
+            approved_configuration_digest=approved_digest,
+            current_configuration_digest=self._current_configuration_digest(
+                ModelCandidateProvider.AZURE_CONTAINER_APP,
+            ),
+            health_state=CandidateHealthState.READY,
+            budget_state=CandidateBudgetState.WITHIN_LIMITS,
+            privacy_state=privacy_state,
+        )
+
+    def _require_configuration_unchanged(
+        self,
+        provider: ModelCandidateProvider,
+        *,
+        configured: bool,
+        approved_digest: str | None,
+    ) -> None:
+        current_digest = (
+            self._current_configuration_digest(provider) if configured else None
+        )
+        both_absent = current_digest is None and approved_digest is None
+        matches = bool(
+            current_digest is not None
+            and approved_digest is not None
+            and hmac.compare_digest(current_digest, approved_digest)
+        )
+        if not both_absent and not matches:
+            raise CandidateAssemblyError(CandidateAssemblyFailure.CONFIGURATION_DRIFT)
+
+    def _discover_remote_candidates(self) -> _DiscoveredRemoteCandidates:
+        """Construct only explicitly configured remote sessions."""
+        discovered = _DiscoveredRemoteCandidates()
+        try:
+            if self._policy.azure_config is not None:
+                azure_backend = self._azure_backend_factory(self._policy.azure_config)
+                if not isinstance(azure_backend, AzureCandidateBackend):
+                    raise ValueError("Azure discovery returned an invalid backend")
+                discovered.azure_backend = azure_backend
+                discovered.azure_session = BoundedCandidateSession(
+                    azure_backend,
+                    cast(BackendCallBudget, self._policy.azure_budget),
+                    azure_enabled=True,
+                )
+            if self._policy.containerapp_identity is not None:
+                containerapp_backend = self._containerapp_backend_factory(
+                    self._policy.containerapp_identity
+                )
+                if (
+                    not isinstance(containerapp_backend, ContainerAppCandidateBackend)
+                    or type(containerapp_backend.candidate_identity)
+                    is not AzureContainerAppCandidateIdentity
+                ):
+                    raise ValueError(
+                        "Azure Container App discovery returned an invalid backend"
+                    )
+                discovered.containerapp_backend = containerapp_backend
+                discovered.containerapp_session = BoundedCandidateSession(
+                    containerapp_backend,
+                    cast(BackendCallBudget, self._policy.containerapp_budget),
+                    azure_enabled=True,
+                )
+            return discovered
+        except BaseException:
+            discovered.close_safely()
+            raise
+
+    def _authorized_assembly(
+        self,
+        classification: CandidateTaskClassification,
+        expected_classification_digest: str,
+        local_session: BoundedCandidateSession[_RequestT, _ResponseT],
+        discovered: _DiscoveredRemoteCandidates,
+        privacy_state: CandidatePrivacyState,
+        *,
+        input_tokens: int,
+        max_output_tokens: int,
+    ) -> ManagedCandidateAssembly:
+        """Reauthorize all sessions after discovery and assemble exact sources."""
+        local_session.authorize(
+            input_tokens=input_tokens,
+            max_output_tokens=max_output_tokens,
+            estimated_cost_microusd=0,
+        )
+        sources = [self._local_source(local_session, privacy_state)]
+        if discovered.azure_session is not None:
+            discovered.azure_session.authorize(
+                input_tokens=input_tokens,
+                max_output_tokens=max_output_tokens,
+                estimated_cost_microusd=self._policy.azure_estimated_cost_microusd,
+            )
+            sources.append(self._azure_source(discovered.azure_session, privacy_state))
+        if discovered.containerapp_session is not None:
+            discovered.containerapp_session.authorize(
+                input_tokens=input_tokens,
+                max_output_tokens=max_output_tokens,
+                estimated_cost_microusd=(
+                    self._policy.containerapp_estimated_cost_microusd
+                ),
+            )
+            sources.append(
+                self._containerapp_source(
+                    discovered.containerapp_session,
+                    privacy_state,
+                )
+            )
+        return assemble_managed_candidates(
+            classification,
+            tuple(sources),
+            expected_classification_digest=expected_classification_digest,
+            required_providers=self._policy.required_providers,
+            azure_enabled=(
+                self._policy.azure_config is not None
+                or self._policy.containerapp_identity is not None
+            ),
+        )
+
     def assemble(
         self,
         classification: CandidateTaskClassification,
@@ -372,79 +655,43 @@ class LiveManagedCandidateWiring:
             azure_enabled=False,
         )
 
-        current_azure_digest = (
-            None
-            if self._policy.azure_config is None
-            else self._current_configuration_digest(
-                ModelCandidateProvider.AZURE_FOUNDRY,
-            )
+        self._require_configuration_unchanged(
+            ModelCandidateProvider.AZURE_FOUNDRY,
+            configured=self._policy.azure_config is not None,
+            approved_digest=self._approved_azure_configuration_digest,
         )
-        if not (
-            current_azure_digest is None
-            and self._approved_azure_configuration_digest is None
-        ) and (
-            current_azure_digest is None
-            or self._approved_azure_configuration_digest is None
-            or not hmac.compare_digest(
-                current_azure_digest,
-                self._approved_azure_configuration_digest,
-            )
-        ):
-            raise CandidateAssemblyError(CandidateAssemblyFailure.CONFIGURATION_DRIFT)
+        self._require_configuration_unchanged(
+            ModelCandidateProvider.AZURE_CONTAINER_APP,
+            configured=self._policy.containerapp_identity is not None,
+            approved_digest=self._approved_containerapp_configuration_digest,
+        )
 
-        azure_backend: AzureCandidateBackend | None = None
+        discovered = _DiscoveredRemoteCandidates()
         try:
-            azure_session: BoundedCandidateSession[
-                AzureApprovedPrompt, AzureCandidateResponse
-            ] | None = None
-            azure_source: ManagedCandidateSource | None = None
-            if self._policy.azure_config is not None:
-                azure_backend = self._azure_backend_factory(self._policy.azure_config)
-                if not isinstance(azure_backend, AzureCandidateBackend):
-                    raise ValueError("Azure discovery returned an invalid backend")
-                azure_session = BoundedCandidateSession(
-                    azure_backend,
-                    cast(BackendCallBudget, self._policy.azure_budget),
-                    azure_enabled=True,
-                )
-            local_session.authorize(
+            discovered = self._discover_remote_candidates()
+            assembly = self._authorized_assembly(
+                classification,
+                expected_classification_digest,
+                local_session,
+                discovered,
+                privacy_state,
                 input_tokens=input_tokens,
                 max_output_tokens=max_output_tokens,
-                estimated_cost_microusd=0,
-            )
-            if azure_session is not None:
-                azure_session.authorize(
-                    input_tokens=input_tokens,
-                    max_output_tokens=max_output_tokens,
-                    estimated_cost_microusd=(
-                        self._policy.azure_estimated_cost_microusd
-                    ),
-                )
-                azure_source = self._azure_source(azure_session, privacy_state)
-            sources = [self._local_source(local_session, privacy_state)]
-            if azure_source is not None:
-                sources.append(azure_source)
-            assembly = assemble_managed_candidates(
-                classification,
-                tuple(sources),
-                expected_classification_digest=expected_classification_digest,
-                required_providers=self._policy.required_providers,
-                azure_enabled=self._policy.azure_config is not None,
             )
             candidate_set = LiveManagedCandidateSet(
                 assembly,
                 local_session,
-                azure_session,
-                azure_backend,
+                discovered.azure_session,
+                discovered.azure_backend,
+                discovered.containerapp_session,
+                discovered.containerapp_backend,
             )
             self._emit(classification.event_payload())
             for event in assembly.event_payloads():
                 self._emit(event)
             return candidate_set
         except BaseException:
-            if azure_backend is not None:
-                with suppress(Exception):
-                    azure_backend.close()
+            discovered.close_safely()
             raise
 
 
@@ -452,14 +699,18 @@ def build_live_managed_candidate_wiring(
     policy: LiveCandidateWiringPolicy | None,
     *,
     azure_backend_factory: AzureCandidateBackendFactory | None,
+    containerapp_backend_factory: ContainerAppCandidateBackendFactory | None = None,
     progress_sink: Callable[[str], None],
 ) -> LiveManagedCandidateWiring | None:
     """Build the default-off live boundary without performing discovery."""
     if not callable(progress_sink):
         raise ValueError("progress_sink must be callable")
     if policy is None:
-        if azure_backend_factory is not None:
-            raise ValueError("azure_backend_factory requires live_candidate_policy")
+        if (
+            azure_backend_factory is not None
+            or containerapp_backend_factory is not None
+        ):
+            raise ValueError("backend factory requires live_candidate_policy")
         return None
 
     def emit(event: dict[str, object]) -> None:
@@ -479,9 +730,15 @@ def build_live_managed_candidate_wiring(
         if azure_backend_factory is None
         else azure_backend_factory
     )
+    selected_containerapp_factory = (
+        _DEFAULT_CONTAINERAPP_BACKEND_FACTORY
+        if containerapp_backend_factory is None
+        else containerapp_backend_factory
+    )
     return LiveManagedCandidateWiring(
         policy,
         azure_backend_factory=selected_factory,
+        containerapp_backend_factory=selected_containerapp_factory,
         event_sink=emit,
     )
 
@@ -490,6 +747,8 @@ __all__ = (
     "LIVE_CANDIDATE_WIRING_PROTOCOL",
     "AzureCandidateBackend",
     "AzureCandidateBackendFactory",
+    "ContainerAppCandidateBackend",
+    "ContainerAppCandidateBackendFactory",
     "LiveCandidateWiringPolicy",
     "LiveManagedCandidateSet",
     "LiveManagedCandidateWiring",

@@ -27,6 +27,9 @@ NODE_DEPS_NPM_CACHE ?= /tmp/gludd-npm-cache-public-v1
 NODE_DEPS_NPM_REGISTRY ?= https://registry.npmjs.org
 NODE_DEPS_NPM_UPDATE_NOTIFIER ?= false
 NODE_DEPS_AUDIT_LEVEL ?= moderate
+GLUDD_UV_CACHE_DIR ?= /tmp/gludd-uv-cache-public-v1
+override UV_CACHE_DIR := $(GLUDD_UV_CACHE_DIR)
+export UV_CACHE_DIR
 RELEASE_READINESS_VALIDATE_ONLY ?= 0
 RELEASE_COMPLETED_STAGES ?=
 RELEASE_OBSERVATIONS ?=
@@ -74,13 +77,38 @@ export _GLUDD_AZURE_SELF_IMPROVE_SP_NAME_RAW
 ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_SUBSCRIPTION_ID)))
 $(error AZURE_ACCELERATOR_SUBSCRIPTION_ID contains forbidden input)
 endif
+ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_RESOURCE_GROUP)))
+$(error AZURE_ACCELERATOR_RESOURCE_GROUP contains forbidden input)
+endif
 ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_SP_NAME)))
 $(error AZURE_ACCELERATOR_SP_NAME contains forbidden input)
 endif
+ifneq (,$(findstring $$,$(value AZURE_CONTAINERAPP_ENVIRONMENT)))
+$(error AZURE_CONTAINERAPP_ENVIRONMENT contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME)))
+$(error AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE)))
+$(error AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_CONTAINERAPP_LOCATION)))
+$(error AZURE_CONTAINERAPP_LOCATION contains forbidden input)
+endif
 override _GLUDD_AZURE_ACCELERATOR_SUBSCRIPTION_ID_RAW := $(value AZURE_ACCELERATOR_SUBSCRIPTION_ID)
+override _GLUDD_AZURE_ACCELERATOR_RESOURCE_GROUP_RAW := $(value AZURE_ACCELERATOR_RESOURCE_GROUP)
 override _GLUDD_AZURE_ACCELERATOR_SP_NAME_RAW := $(value AZURE_ACCELERATOR_SP_NAME)
+override _GLUDD_AZURE_CONTAINERAPP_ENVIRONMENT_RAW := $(value AZURE_CONTAINERAPP_ENVIRONMENT)
+override _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME_RAW := $(value AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME)
+override _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE_RAW := $(value AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE)
+override _GLUDD_AZURE_CONTAINERAPP_LOCATION_RAW := $(value AZURE_CONTAINERAPP_LOCATION)
 export _GLUDD_AZURE_ACCELERATOR_SUBSCRIPTION_ID_RAW
+export _GLUDD_AZURE_ACCELERATOR_RESOURCE_GROUP_RAW
 export _GLUDD_AZURE_ACCELERATOR_SP_NAME_RAW
+export _GLUDD_AZURE_CONTAINERAPP_ENVIRONMENT_RAW
+export _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME_RAW
+export _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE_RAW
+export _GLUDD_AZURE_CONTAINERAPP_LOCATION_RAW
 RECONCILE_QUIET_PROGRESS ?= 0
 MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
@@ -146,8 +174,8 @@ _NO_UV_SYNC_GOALS := \
     check-disk check-disk-classification disk disk-check disk-guard cache-disk cache-clean disk-user-caches audit-home-tmp \
     cache-resource-inventory cache-resource-remove tmp-gludd-usage tmp-gludd-worktree-usage \
     tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
-    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base azure-self-improve-auth-args azure-accelerator-role-args azure-accelerator-auth-args \
-    development-merge-forward development-merge-forward-batch
+    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base azure-self-improve-auth-args azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-containerapp-environment-bootstrap-args \
+    development-merge-forward development-merge-forward-batch uv-cache-path
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
 else
@@ -171,7 +199,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync migrate-up relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
+        init sync uv-cache-path migrate-up relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck _precommit-mypy setup-dirs setup-venv clean healthcheck \
@@ -185,7 +213,7 @@ PYTEST_VERBOSITY ?= -v
         feature-start feature-done test-and-commit preflight \
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
-        self-improve-local-proposal azure-self-improve-auth-args azure-accelerator-role-args azure-accelerator-auth-args test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
+        self-improve-local-proposal azure-self-improve-auth-args azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
           development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key workstream-register workstream-unregister wt-prune-safe \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
@@ -255,6 +283,7 @@ help:
 	@echo "  --- Setup ---"
 	@echo "  init                  Set up project (dirs + deps)"
 	@echo "  sync                  Sync uv dependencies"
+	@echo "  uv-cache-path         Print the sandbox-writable Gludd uv cache path"
 	@echo "  migrate-up            Upgrade an explicit database URL to a revision (MIGRATE_DATABASE_URL, MIGRATE_REVISION)"
 	@echo "  sync-llama-cpp        Sync locked local-inference extra (SYNC_LLAMA_CPP_VALIDATE_ONLY=0|1)"
 	@echo "  test-local-model-inference  Locked optional-runtime smoke (LOCAL_MODEL_INFERENCE_MODEL_PATH, LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=0|1)"
@@ -466,7 +495,14 @@ help:
 	@echo "  self-improve-local-proposal  Owned local GGUF proposal worker (SELF_IMPROVE_MODEL_PATH/PROMPT_FILE/PROPOSAL_FILE)"
 	@echo "  azure-self-improve-auth-args  Emit validated NUL arguments for one least-privilege Azure SP command"
 	@echo "  azure-accelerator-role-args  Emit validated NUL arguments to create the Terraform GPU deployer role"
+	@echo "  azure-accelerator-role-update-args  Emit validated NUL arguments to narrow an existing GPU role"
 	@echo "  azure-accelerator-auth-args  Emit validated NUL arguments for its Azure SP credential command"
+	@echo "  azure-containerapp-environment-bootstrap-args  Emit one operator-owned shared GPU environment deployment"
+	@echo "  azure-accelerator-auth-check Secret-safe validation of Azure CLI --json-auth output"
+	@echo "  azure-containerapp-preflight Traced read-only named-environment GPU sizing and quota proof"
+	@echo "  azure-containerapp-terraform-phase  Owned app-only Terraform phase (AZURE_CONTAINERAPP_TF_*)"
+	@echo "  azure-containerapp-live-proof  Hermetic/live bounded deploy-infer-destroy proof (AZURE_CONTAINERAPP_LIVE_PROOF_*)"
+	@echo "  test-azure-containerapp-coverage  Hermetic Azure Container Apps tests with 85/75 coverage gates"
 	@echo "  test-self-improve TARGET=<name>  Compare an auto-managed local model with Codex (optional SELF_IMPROVE_MODEL_PATH override)"
 	@echo "  test-self-improve-catalog-truth  Replay pinned catalog fixture (SELF_IMPROVE_CATALOG_LIVE=0|1)"
 	@echo "  test-self-improve-multifile      Replay pinned multi-file fixture (SELF_IMPROVE_MULTIFILE_LIVE=0|1)"
@@ -764,6 +800,9 @@ init: setup-dirs
 
 sync:
 	@$(UV) sync --locked
+
+uv-cache-path:
+	@printf '%s\n' "$$UV_CACHE_DIR"
 
 migrate-up:
 	@test -n "$(strip $(MIGRATE_DATABASE_URL))" || { echo "MIGRATE_DATABASE_URL is required"; exit 2; }
@@ -5682,13 +5721,117 @@ azure-self-improve-auth-args:
 
 # Stdout is one NUL-delimited argv for the Azure role-definition API.
 azure-accelerator-role-args:
-	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID
+	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP
 	@$(SYSTEM_PYTHON) scripts/render_azure_accelerator_auth_args.py role
+
+# Stdout is one NUL-delimited argv that updates an existing Azure role definition.
+azure-accelerator-role-update-args:
+	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP
+	@$(SYSTEM_PYTHON) scripts/render_azure_accelerator_auth_args.py role-update
 
 # Stdout is one NUL-delimited argv for the Entra principal/assignment API.
 azure-accelerator-auth-args:
-	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_SP_NAME
+	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP AZURE_ACCELERATOR_SP_NAME
 	@$(SYSTEM_PYTHON) scripts/render_azure_accelerator_auth_args.py auth
+
+# Stdout is one NUL-delimited argv for an operator-owned ARM group deployment.
+# The Gludd service principal intentionally cannot execute this bootstrap.
+azure-containerapp-environment-bootstrap-args:
+	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP AZURE_CONTAINERAPP_ENVIRONMENT AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE AZURE_CONTAINERAPP_LOCATION
+	@$(SYSTEM_PYTHON) scripts/render_azure_accelerator_auth_args.py environment-bootstrap
+
+# Validate Azure CLI --json-auth output without sourcing or rendering secrets.
+azure-accelerator-auth-check:
+	@# Inputs: AZURE_ACCELERATOR_AUTH_FILE AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY
+	@[ -n "$(AZURE_ACCELERATOR_AUTH_FILE)" ] || { echo "AZURE_ACCELERATOR_AUTH_FILE is required" >&2; exit 2; }
+	@[ -n "$(AZURE_ACCELERATOR_SUBSCRIPTION_ID)" ] || { echo "AZURE_ACCELERATOR_SUBSCRIPTION_ID is required" >&2; exit 2; }
+	@case "$(AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY)" in 0|1) ;; *) echo "AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY must be 0 or 1" >&2; exit 2 ;; esac
+	@$(UV) run python scripts/validate_azure_accelerator_credentials.py --auth-file "$(AZURE_ACCELERATOR_AUTH_FILE)" --subscription-id "$(AZURE_ACCELERATOR_SUBSCRIPTION_ID)" $(if $(filter 1,$(AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY)),--validate-only,)
+
+# Verify one existing Container Apps GPU profile and its quota without mutation.
+azure-containerapp-preflight:
+	@# Inputs: AZURE_ACCELERATOR_AUTH_FILE AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_CONTAINERAPP_RESOURCE_GROUP AZURE_CONTAINERAPP_ENVIRONMENT AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME AZURE_CONTAINERAPP_LOCATION AZURE_CONTAINERAPP_MODEL_ID AZURE_CONTAINERAPP_MODEL_REVISION AZURE_CONTAINERAPP_PARAMETER_COUNT AZURE_CONTAINERAPP_WEIGHT_BITS AZURE_CONTAINERAPP_KV_CACHE_MIB AZURE_CONTAINERAPP_RUNTIME_OVERHEAD_MIB AZURE_CONTAINERAPP_PREFLIGHT_LIVE
+	@[ -n "$(AZURE_ACCELERATOR_AUTH_FILE)" ] || { echo "AZURE_ACCELERATOR_AUTH_FILE is required" >&2; exit 2; }
+	@[ -n "$(AZURE_ACCELERATOR_SUBSCRIPTION_ID)" ] || { echo "AZURE_ACCELERATOR_SUBSCRIPTION_ID is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_RESOURCE_GROUP)" ] || { echo "AZURE_CONTAINERAPP_RESOURCE_GROUP is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_ENVIRONMENT)" ] || { echo "AZURE_CONTAINERAPP_ENVIRONMENT is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME)" ] || { echo "AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LOCATION)" ] || { echo "AZURE_CONTAINERAPP_LOCATION is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_MODEL_ID)" ] || { echo "AZURE_CONTAINERAPP_MODEL_ID is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_MODEL_REVISION)" ] || { echo "AZURE_CONTAINERAPP_MODEL_REVISION is required" >&2; exit 2; }
+	@$(UV) run $(if $(filter 1,$(AZURE_CONTAINERAPP_PREFLIGHT_LIVE)),--extra azure,) python scripts/azure_containerapp_preflight.py \
+		--auth-file "$(AZURE_ACCELERATOR_AUTH_FILE)" \
+		--subscription-id "$(AZURE_ACCELERATOR_SUBSCRIPTION_ID)" \
+		--resource-group "$(AZURE_CONTAINERAPP_RESOURCE_GROUP)" \
+		--environment "$(AZURE_CONTAINERAPP_ENVIRONMENT)" \
+		--workload-profile-name "$(AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME)" \
+		--location "$(AZURE_CONTAINERAPP_LOCATION)" \
+		--model-id "$(AZURE_CONTAINERAPP_MODEL_ID)" \
+		--model-revision "$(AZURE_CONTAINERAPP_MODEL_REVISION)" \
+		--parameter-count "$(AZURE_CONTAINERAPP_PARAMETER_COUNT)" \
+		--weight-bits "$(AZURE_CONTAINERAPP_WEIGHT_BITS)" \
+		--kv-cache-mib "$(AZURE_CONTAINERAPP_KV_CACHE_MIB)" \
+		--runtime-overhead-mib "$(AZURE_CONTAINERAPP_RUNTIME_OVERHEAD_MIB)" \
+		--live "$(AZURE_CONTAINERAPP_PREFLIGHT_LIVE)"
+
+# Execute one Terraform phase only inside an ownership-marked live-proof root.
+azure-containerapp-terraform-phase: tf-cache-setup
+	@# Inputs: AZURE_CONTAINERAPP_TF_PHASE AZURE_CONTAINERAPP_TF_DIR AZURE_CONTAINERAPP_TF_PLAN_FILE AZURE_CONTAINERAPP_TF_JSON_FILE AZURE_CONTAINERAPP_TF_VALIDATE_ONLY
+	@case "$(AZURE_CONTAINERAPP_TF_VALIDATE_ONLY)" in 0|1) ;; *) echo "AZURE_CONTAINERAPP_TF_VALIDATE_ONLY must be 0 or 1" >&2; exit 2;; esac
+	@if [ "$(AZURE_CONTAINERAPP_TF_VALIDATE_ONLY)" = "1" ]; then \
+		echo "AZURE_CONTAINERAPP_TERRAFORM_PHASE_PLAN phase=$(AZURE_CONTAINERAPP_TF_PHASE) secret_output=false"; \
+	else \
+		TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" $(UV) run python scripts/azure_containerapp_terraform_phase.py \
+			--phase "$(AZURE_CONTAINERAPP_TF_PHASE)" \
+			--terraform-dir "$(AZURE_CONTAINERAPP_TF_DIR)" \
+			--plan-file "$(AZURE_CONTAINERAPP_TF_PLAN_FILE)" \
+			--json-file "$(AZURE_CONTAINERAPP_TF_JSON_FILE)"; \
+	fi
+
+# Hermetic by default; LIVE=1 requires the exact acknowledgement and private auth file.
+azure-containerapp-live-proof:
+	@# Inputs: AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES AZURE_CONTAINERAPP_LIVE_PROOF_LIVE AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH
+	@case "$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)" in 0|1) ;; *) echo "AZURE_CONTAINERAPP_LIVE_PROOF_LIVE must be 0 or 1" >&2; exit 2;; esac
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH is required" >&2; exit 2; }
+	@$(UV) run $(if $(filter 1,$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)),--extra azure,) python scripts/azure_containerapp_live_proof.py \
+		--auth-file "$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE)" \
+		--subscription-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID)" \
+		--resource-group "$(AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP)" \
+		--environment "$(AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT)" \
+		--workload-profile-name "$(AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME)" \
+		--location "$(AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION)" \
+		--allowed-cidr "$(AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR)" \
+		--max-cost-usd "$(AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD)" \
+		--ttl-minutes "$(AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES)" \
+		--live "$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)" \
+		--acknowledgement "$(AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT)" \
+		--project-root "$(AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT)" \
+		--source-path "$(AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH)"
+
+# One credential-free local/GHA contract for every Azure Container Apps boundary.
+test-azure-containerapp-coverage:
+	@$(MAKE) --no-print-directory coverage-files \
+		COVERAGE_TESTFILES='tests/unit/test_azure_accelerator_credentials.py tests/unit/test_azure_containerapp_arm.py tests/unit/test_azure_containerapp_environment_preflight.py tests/unit/test_azure_containerapp_gpu.py tests/unit/test_azure_containerapp_live_proof.py tests/unit/test_azure_containerapp_make_runtime.py tests/unit/test_azure_containerapp_preflight.py tests/unit/test_azure_containerapp_preflight_cli.py tests/unit/test_azure_containerapp_terraform_phase.py tests/unit/test_self_improve_azure_containerapp_backend.py tests/e2e/test_azure_containerapp_live_proof_cli.py' \
+		COVERAGE_CONFIG=config/coverage_azure_containerapp.ini \
+		COVERAGE_REPORT=.gate-logs/coverage-azure-containerapp.json \
+		COVERAGE_AGGREGATE_MIN=85 \
+		COVERAGE_PER_FILE_MIN=75 \
+		OBSERVED_ROOT=.gate-logs/observed \
+		OBSERVED_HEARTBEAT_SECS=1 \
+		OBSERVED_QUIET_SECS=60 \
+		OBSERVED_MAX_SECS=300 \
+		OBSERVED_RETAIN_RUNS=20
 
 # Isolated inference worker: the parent owns its process group and exchange files.
 self-improve-local-proposal:
@@ -5987,7 +6130,7 @@ test-zai-identity:
 CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 CONTAINER_IMAGE := gl-agent:latest
 
-VERSION = $(shell $(UV) run python -c "from general_ludd import __version__; print(__version__)")
+VERSION = $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" $(UV) run python -c "from general_ludd import __version__; print(__version__)")
 PLATFORM = $(shell uname -s)-$(shell uname -m)
 TARBALL_NAME = general-ludd-agent-$(VERSION)-$(PLATFORM)
 TARBALL_DIR = dist/$(TARBALL_NAME)
@@ -8363,7 +8506,7 @@ tf-init: tf-cache-setup
 # removes test-generated tfvars carrying its marker; operator files and state
 # are preserved. Validate-only proves routing without downloading providers.
 tf-init-local: tf-cache-setup
-	@case "$(STACK)" in stacks/azure-vllm|stacks/azure-llamacpp) ;; *) echo "Usage: make tf-init-local STACK=stacks/azure-vllm|stacks/azure-llamacpp TF_INIT_LOCAL_VALIDATE_ONLY=0|1"; exit 2;; esac
+	@case "$(STACK)" in stacks/azure-vllm|stacks/azure-llamacpp|stacks/azure-container-app-vllm) ;; *) echo "Usage: make tf-init-local STACK=stacks/azure-vllm|stacks/azure-llamacpp|stacks/azure-container-app-vllm TF_INIT_LOCAL_VALIDATE_ONLY=0|1"; exit 2;; esac
 	@$(UV) run python scripts/clean_terraform_test_artifacts.py "$(TF_ROOT)/$(STACK)"
 	@if [ "$(TF_INIT_LOCAL_VALIDATE_ONLY)" = "1" ]; then echo "tf-init-local validate-only stack=$(STACK)"; exit 0; fi; \
 		RESOURCE_ROOT="$$( $(UV) run python scripts/resource_arbiter.py root )"; \

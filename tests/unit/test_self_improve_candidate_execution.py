@@ -31,6 +31,7 @@ from general_ludd.self_improve.candidate_routing import (
     plan_bounded_candidate_trials,
 )
 from general_ludd.self_improve.model_candidates import (
+    AzureContainerAppCandidateIdentity,
     AzureFoundryAPIFamily,
     AzureFoundryCandidateIdentity,
     BackendCallBudget,
@@ -71,6 +72,22 @@ def _azure_identity(label: str = "azure") -> AzureFoundryCandidateIdentity:
         api_version="v1",
         model_version="2026-09-04",
         etag=f'W/"{label}-revision"',
+    )
+
+
+def _containerapp_identity() -> AzureContainerAppCandidateIdentity:
+    return AzureContainerAppCandidateIdentity(
+        endpoint="https://gludd-vllm-proof.kindstone.eastus.azurecontainerapps.io",
+        resource_id=(
+            "/subscriptions/12345678-1234-1234-1234-123456789abc/"
+            "resourceGroups/gludd-models/providers/Microsoft.App/"
+            "containerApps/gludd-vllm-proof"
+        ),
+        revision_name="gludd-vllm-proof--0000007",
+        image_digest="sha256:" + "a" * 64,
+        model_name="Qwen/Qwen2.5-0.5B-Instruct",
+        model_revision="b" * 40,
+        workload_profile_type="Consumption-GPU-NC8as-T4",
     )
 
 
@@ -207,7 +224,11 @@ def _call(
     evaluator: Callable[[object], CandidateEvaluation] = _evaluation,
 ) -> CandidateTrialCall:
     enabled = (
-        backend.candidate_identity.provider is ModelCandidateProvider.AZURE_FOUNDRY
+        backend.candidate_identity.provider
+        in {
+            ModelCandidateProvider.AZURE_FOUNDRY,
+            ModelCandidateProvider.AZURE_CONTAINER_APP,
+        }
         if azure_enabled is None
         else azure_enabled
     )
@@ -283,6 +304,50 @@ def test_mixed_serial_plan_runs_each_preapproved_call_once_without_retry_or_fall
     assert result.trials[0].calibration.skip_reason is CalibrationSkipReason.INFRASTRUCTURE_FAILURE
     assert result.trials[1].calibration.persisted is True
     assert len(store.list_all()) == 1
+
+
+def test_local_and_containerapp_predictions_are_empirically_calibrated(
+    tmp_path: Path,
+) -> None:
+    boundary = _boundary(tmp_path)
+    identities: tuple[ModelCandidateIdentity, ...] = (
+        _local_identity(),
+        _containerapp_identity(),
+    )
+    plan = _plan(boundary, identities, concurrent=False)
+    calls: list[str] = []
+    backends = tuple(
+        _Backend(identity, identity.provider.value, calls) for identity in identities
+    )
+    traces: list[CandidateExecutionTrace] = []
+    store = CapabilityEvidenceStore(str(tmp_path / "evidence.json"))
+
+    result = execute_candidate_trial_plan(
+        plan,
+        tuple(_call(index, backend) for index, backend in enumerate(backends)),
+        approved_plan_digest=plan.plan_digest,
+        boundary=boundary,
+        evidence_store=store,
+        trace_sink=traces.append,
+    )
+
+    assert calls == ["local_gguf", "azure_container_app"]
+    assert [attempt.outcome for attempt in result.attempts] == [
+        CandidateAttemptOutcome.ACCEPTED,
+        CandidateAttemptOutcome.ACCEPTED,
+    ]
+    assert [trial.calibration.persisted for trial in result.trials] == [True, True]
+    assert len(store.list_all()) == 2
+    assert [trace.event for trace in traces] == [
+        CandidateExecutionEvent.PLAN_AUTHORIZED,
+        CandidateExecutionEvent.TRIAL_STARTED,
+        CandidateExecutionEvent.TRIAL_EVALUATED,
+        CandidateExecutionEvent.TRIAL_STARTED,
+        CandidateExecutionEvent.TRIAL_EVALUATED,
+        CandidateExecutionEvent.CALIBRATION_UPDATED,
+        CandidateExecutionEvent.CALIBRATION_UPDATED,
+        CandidateExecutionEvent.PLAN_COMPLETED,
+    ]
 
 
 def test_mixed_concurrent_plan_overlaps_calls_but_returns_plan_order(tmp_path: Path) -> None:

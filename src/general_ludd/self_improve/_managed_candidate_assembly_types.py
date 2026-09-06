@@ -10,6 +10,7 @@ from enum import StrEnum
 from typing import Final
 
 from general_ludd.self_improve.model_candidates import (
+    AzureContainerAppCandidateIdentity,
     AzureFoundryCandidateIdentity,
     LocalGGUFCandidateIdentity,
     ModelCandidateIdentity,
@@ -22,6 +23,7 @@ _DIGEST_RE: Final = re.compile(r"^[0-9a-f]{64}$")
 _PROVIDER_ORDER: Final = {
     ModelCandidateProvider.LOCAL_GGUF: 0,
     ModelCandidateProvider.AZURE_FOUNDRY: 1,
+    ModelCandidateProvider.AZURE_CONTAINER_APP: 2,
 }
 
 
@@ -82,6 +84,7 @@ class CandidateCleanupAction(StrEnum):
     """Cleanup obligation retained by the owner after assembly."""
 
     RELEASE_LOCAL_LEASE = "release_local_lease"
+    DESTROY_AZURE_CONTAINER_APP = "destroy_azure_container_app"
     NONE = "none"
 
 
@@ -122,6 +125,11 @@ def _resource_contract(
             CandidateResourceOwnership.CALLER_OWNED,
             CandidateCleanupAction.RELEASE_LOCAL_LEASE,
         )
+    if provider is ModelCandidateProvider.AZURE_CONTAINER_APP:
+        return (
+            CandidateResourceOwnership.CALLER_OWNED,
+            CandidateCleanupAction.DESTROY_AZURE_CONTAINER_APP,
+        )
     return CandidateResourceOwnership.EXTERNAL_PROVIDER, CandidateCleanupAction.NONE
 
 
@@ -141,7 +149,11 @@ class ManagedCandidateSource:
         """Reject raw substitutes and ambiguous state before assembly begins."""
         _require_value(
             type(self.identity)
-            in (LocalGGUFCandidateIdentity, AzureFoundryCandidateIdentity),
+            in (
+                LocalGGUFCandidateIdentity,
+                AzureFoundryCandidateIdentity,
+                AzureContainerAppCandidateIdentity,
+            ),
             "identity must be a typed model candidate identity",
         )
         _require_digest(self.expected_identity_digest, "expected_identity_digest")
@@ -326,7 +338,10 @@ class ManagedCandidateAssembly:
             "required provider is missing from candidates",
         )
         _require_value(
-            ModelCandidateProvider.AZURE_FOUNDRY not in self.providers
+            not {
+                ModelCandidateProvider.AZURE_FOUNDRY,
+                ModelCandidateProvider.AZURE_CONTAINER_APP,
+            }.intersection(self.providers)
             or self.azure_enabled,
             "Azure candidates require explicit opt-in",
         )

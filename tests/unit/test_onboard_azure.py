@@ -18,17 +18,18 @@ AZURE_POLICY_PATH = REPO_ROOT / "config" / "infra" / "azure-iam-policy.json"
 OPA_IAM_TEST_PATH = REPO_ROOT / "config" / "opa" / "iam_policy_test.rego"
 ACCELERATOR_ROLE = "General Ludd Accelerator Deployer"
 REQUIRED_ACCELERATOR_ACTIONS = (
-    "Microsoft.Compute/skus/read",
-    "Microsoft.Compute/locations/usages/read",
-    "Microsoft.Compute/virtualMachines/extensions/read",
-    "Microsoft.Compute/virtualMachines/extensions/write",
-    "Microsoft.Compute/virtualMachines/extensions/delete",
+    "Microsoft.App/managedEnvironments/read",
+    "Microsoft.App/managedEnvironments/join/action",
+    "Microsoft.App/managedEnvironments/usages/read",
+    "Microsoft.App/managedEnvironments/workloadProfileStates/read",
+    "Microsoft.App/containerApps/read",
+    "Microsoft.App/containerApps/write",
+    "Microsoft.App/containerApps/delete",
+    "Microsoft.App/containerApps/revisions/read",
+    "Microsoft.App/locations/containerAppOperationResults/read",
+    "Microsoft.App/locations/containerAppOperationStatuses/read",
 )
 OBSOLETE_PROVIDER_REGISTRATION = "Microsoft.Resources/subscriptions/providers/register/action"
-REQUIRED_TERRAFORM_PROVIDER_REGISTRATIONS = (
-    "Microsoft.Compute/register/action",
-    "Microsoft.Network/register/action",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +273,7 @@ class TestTerraformModuleLeastPriv:
         for bad in ('role_definition_name = "Contributor"', 'role_definition_name = "Owner"'):
             assert bad not in main_tf, f"Forbidden broad built-in role {bad} present in main.tf"
 
-    def test_policy_and_module_cover_preflight_and_gpu_driver_extensions(self) -> None:
+    def test_policy_and_module_cover_only_container_app_runtime_operations(self) -> None:
         main_tf = (AZURE_MODULE_DIR / "main.tf").read_text()
         policy = json.loads(AZURE_POLICY_PATH.read_text())
 
@@ -281,12 +282,11 @@ class TestTerraformModuleLeastPriv:
             assert action in main_tf
             assert action in policy["Actions"]
 
-    def test_role_uses_supported_provider_registration_actions(self) -> None:
+    def test_role_cannot_register_resource_providers(self) -> None:
         main_tf = (AZURE_MODULE_DIR / "main.tf").read_text()
 
         assert OBSOLETE_PROVIDER_REGISTRATION not in main_tf
-        for action in REQUIRED_TERRAFORM_PROVIDER_REGISTRATIONS:
-            assert action in main_tf
+        assert "/register/action" not in main_tf
 
     def test_role_can_target_service_principal_or_managed_identity(self) -> None:
         main_tf = (AZURE_MODULE_DIR / "main.tf").read_text()
@@ -296,13 +296,13 @@ class TestTerraformModuleLeastPriv:
         assert "var.operator_principal_id" in main_tf
         assert "azurerm_user_assigned_identity.gludd_operator.principal_id" in main_tf
 
-    def test_opa_contract_checks_accelerator_role_subscription_scope(self) -> None:
+    def test_opa_contract_checks_accelerator_role_resource_group_scope(self) -> None:
         rego_tests = OPA_IAM_TEST_PATH.read_text()
         makefile = (REPO_ROOT / "Makefile").read_text()
 
-        assert "test_azure_accelerator_role_subscription_scope_passes" in rego_tests
+        assert "test_azure_accelerator_role_resource_group_scope_passes" in rego_tests
         assert ACCELERATOR_ROLE in rego_tests
-        assert '"/subscriptions/sub-123"' in rego_tests
+        assert '"/subscriptions/sub-123/resourceGroups/gludd-models"' in rego_tests
         assert "test-opa-policies:" in makefile
 
     def test_creates_user_assigned_identity(self) -> None:

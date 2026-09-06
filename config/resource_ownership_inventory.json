@@ -1378,6 +1378,28 @@
       "owned": true
     },
     {
+      "path": "src/general_ludd/infra/azure_containerapp_arm.py",
+      "line": 176,
+      "column": 33,
+      "kind": "client",
+      "owner": "HttpxARMJSONTransport.__init__",
+      "acquisition": "httpx.Client(base_url=_ARM_ORIGIN, follow_redirects=False, timeout=httpx.Timeout(10.0), limits=httpx.Limits(max_connections=2, max_keepalive_connections=1), trust_env=False, headers={'accept': 'application/json'})",
+      "teardown": "self._client.close()",
+      "source_hash": "199390186bcdea428f3b476a8470bce1e433bc07f31a0bdb9f2dc9c8caa66545",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/infra/azure_containerapp_arm.py",
+      "line": 241,
+      "column": 33,
+      "kind": "client",
+      "owner": "HttpxContainerAppARMTransport.__init__",
+      "acquisition": "httpx.Client(base_url=_ARM_ORIGIN, follow_redirects=False, timeout=httpx.Timeout(10.0), limits=httpx.Limits(max_connections=1, max_keepalive_connections=1), trust_env=False, headers={'accept': 'application/json'})",
+      "teardown": "self._client.close()",
+      "source_hash": "1f1bfcba5f4c37333cb4c1ca7fea06cca55b2694cbc77e6c789175f7d815563d",
+      "owned": true
+    },
+    {
       "path": "src/general_ludd/infra/deployment.py",
       "line": 725,
       "column": 27,
@@ -1983,6 +2005,17 @@
       "owned": true
     },
     {
+      "path": "src/general_ludd/self_improve/azure_containerapp_transport.py",
+      "line": 336,
+      "column": 8,
+      "kind": "client",
+      "owner": "new_httpx_client",
+      "acquisition": "httpx.Client(base_url=identity.endpoint, follow_redirects=False, timeout=httpx.Timeout(30.0), limits=httpx.Limits(max_connections=1, max_keepalive_connections=1), trust_env=False, headers={'accept': 'application/json', 'content-type': 'application/json'})",
+      "teardown": "ownership-transfer:return",
+      "source_hash": "8f365d440c12ab17749f7b5c7d85d62ec9022f5acda08d1d5380e8e39a027163",
+      "owned": true
+    },
+    {
       "path": "src/general_ludd/self_improve/harness.py",
       "line": 707,
       "column": 27,
@@ -1995,7 +2028,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/managed_runner.py",
-      "line": 230,
+      "line": 259,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_write_atomic_temp",
@@ -2006,7 +2039,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 388,
+      "line": 397,
       "column": 15,
       "kind": "process",
       "owner": "MakeRunner._run_observable_argv",
@@ -2017,7 +2050,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 482,
+      "line": 491,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_run_local_proposal_request",

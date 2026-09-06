@@ -118,7 +118,11 @@ def _admit_source(
         CandidateAssemblyFailure.PRIVACY_INELIGIBLE,
     )
     _admit(
-        candidate.provider is not ModelCandidateProvider.AZURE_FOUNDRY
+        candidate.provider
+        not in {
+            ModelCandidateProvider.AZURE_FOUNDRY,
+            ModelCandidateProvider.AZURE_CONTAINER_APP,
+        }
         or azure_enabled,
         CandidateAssemblyFailure.PROVIDER_DISABLED,
     )

@@ -29,6 +29,7 @@ from general_ludd.self_improve.managed_candidate_assembly import (
     assemble_managed_candidates,
 )
 from general_ludd.self_improve.model_candidates import (
+    AzureContainerAppCandidateIdentity,
     AzureFoundryAPIFamily,
     AzureFoundryCandidateIdentity,
     LocalGGUFCandidateIdentity,
@@ -71,8 +72,28 @@ def _azure_identity() -> AzureFoundryCandidateIdentity:
     )
 
 
+def _containerapp_identity() -> AzureContainerAppCandidateIdentity:
+    return AzureContainerAppCandidateIdentity(
+        endpoint="https://gludd-vllm-proof.kindstone.eastus.azurecontainerapps.io",
+        resource_id=(
+            "/subscriptions/12345678-1234-1234-1234-123456789abc/"
+            "resourceGroups/gludd-models/providers/Microsoft.App/"
+            "containerApps/gludd-vllm-proof"
+        ),
+        revision_name="gludd-vllm-proof--0000007",
+        image_digest="sha256:" + "c" * 64,
+        model_name="Qwen/Qwen2.5-0.5B-Instruct",
+        model_revision="d" * 40,
+        workload_profile_type="Consumption-GPU-NC8as-T4",
+    )
+
+
 def _source(
-    identity: LocalGGUFCandidateIdentity | AzureFoundryCandidateIdentity,
+    identity: (
+        LocalGGUFCandidateIdentity
+        | AzureFoundryCandidateIdentity
+        | AzureContainerAppCandidateIdentity
+    ),
     *,
     expected_identity_digest: str | None = None,
     approved_configuration_digest: str | None = None,
@@ -217,6 +238,44 @@ def test_assembly_records_explicit_non_owning_cleanup_obligations() -> None:
     assert azure.resource_ownership is CandidateResourceOwnership.EXTERNAL_PROVIDER
     assert azure.cleanup_action is CandidateCleanupAction.NONE
     assert all(not candidate.assembler_owns_resource for candidate in assembly.candidates)
+
+
+def test_local_foundry_and_containerapp_assembly_has_explicit_cleanup_boundary() -> None:
+    assembly = _assemble(
+        _source(_containerapp_identity()),
+        _source(_azure_identity()),
+        _source(_local_identity()),
+        required_providers=(
+            ModelCandidateProvider.AZURE_CONTAINER_APP,
+            ModelCandidateProvider.LOCAL_GGUF,
+            ModelCandidateProvider.AZURE_FOUNDRY,
+        ),
+        azure_enabled=True,
+    )
+
+    assert assembly.providers == (
+        ModelCandidateProvider.LOCAL_GGUF,
+        ModelCandidateProvider.AZURE_FOUNDRY,
+        ModelCandidateProvider.AZURE_CONTAINER_APP,
+    )
+    containerapp = assembly.candidates[2]
+    assert containerapp.resource_ownership is CandidateResourceOwnership.CALLER_OWNED
+    assert (
+        containerapp.cleanup_action
+        is CandidateCleanupAction.DESTROY_AZURE_CONTAINER_APP
+    )
+    assert containerapp.assembler_owns_resource is False
+
+
+def test_containerapp_assembly_requires_explicit_azure_opt_in() -> None:
+    with pytest.raises(CandidateAssemblyError) as captured:
+        _assemble(
+            _source(_containerapp_identity()),
+            required_providers=(ModelCandidateProvider.AZURE_CONTAINER_APP,),
+            azure_enabled=False,
+        )
+
+    assert captured.value.failure is CandidateAssemblyFailure.PROVIDER_DISABLED
 
 
 def test_events_are_deterministic_complete_and_replayable() -> None:

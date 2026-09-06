@@ -2,7 +2,7 @@
 and GitHub reference roles.
 
 Verifies JSON validity, required fields, RBAC action format, forbidden suffix
-patterns, security-critical denials, subscription scopes, no duplicates,
+patterns, security-critical exclusions, resource-group scopes, no duplicates,
 REST API / Portal format, GitHub reference role structure, cross-validation
 against real-world production Azure roles, and secret-key false positive checks.
 """
@@ -157,12 +157,11 @@ class TestPolicyCLIStructure:
         scopes = policy_cli["properties"].get("assignableScopes")
         assert isinstance(scopes, list) and len(scopes) > 0
 
-    def test_has_subscription_level_scope(self, policy_cli: dict) -> None:
+    def test_has_resource_group_scope(self, policy_cli: dict) -> None:
         scopes = policy_cli["properties"].get("assignableScopes", [])
-        has_sub = any(
-            "{subscription_id}" in s or re.match(r"^/subscriptions/[0-9a-f-]+", s) or s == "/" for s in scopes
-        )
-        assert has_sub, f"No subscription-level scope found in: {scopes}"
+        assert scopes == [
+            "/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +200,7 @@ class TestActionFormat:
 
 
 class TestProviderRegistrationActions:
-    """Provider registration must use Azure's provider-owned RBAC operations."""
+    """Runtime roles must not register providers; the catalog tracks valid operations."""
 
     def test_policies_use_supported_provider_registration_actions(
         self,
@@ -215,7 +214,7 @@ class TestProviderRegistrationActions:
 
         for actions in action_sets:
             assert OBSOLETE_PROVIDER_REGISTRATION not in actions
-            assert actions >= REQUIRED_PROVIDER_REGISTRATIONS
+            assert actions.isdisjoint(REQUIRED_PROVIDER_REGISTRATIONS)
 
     def test_validator_catalog_tracks_supported_registration_actions(self) -> None:
         from general_ludd.azure.rbac_validator import all_known_actions
@@ -235,6 +234,7 @@ class TestValidatorCommandPaths:
                 "Actions": [
                     "Microsoft.Compute/virtualMachines/read",
                     "Microsoft.Compute/virtualMachines/read",
+                    "Microsoft.Compute/virtualMachines/runCommand/action",
                     OBSOLETE_PROVIDER_REGISTRATION,
                     "Microsoft.KeyVault/vaults/keys/read",
                 ],
@@ -249,7 +249,7 @@ class TestValidatorCommandPaths:
         ]
         assert any("Missing required fields: Name" in error for error in errors)
         assert any("is not supported" in error for error in errors)
-        assert any("security-critical denials" in error for error in errors)
+        assert any("security-critical operations" in error for error in errors)
         assert any("Duplicate action" in warning for warning in warnings)
         assert any("subscription-level scope" in warning for warning in warnings)
         assert any("Description is too short" in warning for warning in warnings)
@@ -341,12 +341,12 @@ class TestNoDuplicateActions:
 
 
 # ---------------------------------------------------------------------------
-# Security-critical denials in NotActions
+# Security-critical operations excluded from Actions
 # ---------------------------------------------------------------------------
 
 
-class TestSecurityCriticalDenials:
-    """All 8 security-critical actions must be denied in NotActions."""
+class TestSecurityCriticalExclusions:
+    """An explicit allowlist must omit all security-critical operations."""
 
     REQUIRED_DENIALS = frozenset(
         {
@@ -361,15 +361,16 @@ class TestSecurityCriticalDenials:
         }
     )
 
-    def test_all_8_security_denials_present(self, policy: dict) -> None:
-        denied = frozenset(policy.get("NotActions", []))
-        missing = self.REQUIRED_DENIALS - denied
-        assert not missing, f"NotActions missing security-critical denials: {sorted(missing)}"
+    def test_all_8_security_operations_absent(self, policy: dict) -> None:
+        granted = self.REQUIRED_DENIALS & frozenset(policy.get("Actions", []))
+        assert not granted, f"Actions grant security-critical operations: {sorted(granted)}"
+        assert policy.get("NotActions") == []
 
-    def test_all_8_security_denials_present_cli(self, policy_cli: dict) -> None:
-        denied = frozenset(policy_cli["properties"]["permissions"][0].get("notActions", []))
-        missing = self.REQUIRED_DENIALS - denied
-        assert not missing, f"CLI notActions missing security-critical denials: {sorted(missing)}"
+    def test_all_8_security_operations_absent_cli(self, policy_cli: dict) -> None:
+        permission = policy_cli["properties"]["permissions"][0]
+        granted = self.REQUIRED_DENIALS & frozenset(permission.get("actions", []))
+        assert not granted, f"REST actions grant security-critical operations: {sorted(granted)}"
+        assert permission.get("notActions") == []
 
 
 # ---------------------------------------------------------------------------
@@ -393,14 +394,13 @@ class TestDataActionsEmpty:
 
 
 class TestAssignableScopes:
-    """AssignableScopes must contain at least one subscription-level entry."""
+    """AssignableScopes must constrain the role to one resource group."""
 
-    def test_has_subscription_level_scope(self, policy: dict) -> None:
+    def test_has_resource_group_scope(self, policy: dict) -> None:
         scopes = policy.get("AssignableScopes", [])
-        has_sub = any(
-            "{subscription_id}" in s or re.match(r"^/subscriptions/[0-9a-f-]+", s) or s == "/" for s in scopes
-        )
-        assert has_sub, f"No subscription-level scope found in: {scopes}"
+        assert scopes == [
+            "/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -665,7 +665,7 @@ class TestValidateRestFormatFunction:
         errors, _warnings, _all_actions = validate_rest_format(policy_cli)
         assert errors == [], f"Actual -cli.json has validation errors: {errors}"
 
-    def test_security_denials_missing_is_error(self) -> None:
+    def test_security_critical_grant_is_error(self) -> None:
         doc = {
             "properties": {
                 "roleName": "Test",
@@ -673,7 +673,10 @@ class TestValidateRestFormatFunction:
                 "assignableScopes": ["/subscriptions/{subscription_id}"],
                 "permissions": [
                     {
-                        "actions": ["Microsoft.Compute/virtualMachines/read"],
+                        "actions": [
+                            "Microsoft.Compute/virtualMachines/read",
+                            "Microsoft.Compute/virtualMachines/runCommand/action",
+                        ],
                         "notActions": [],
                         "dataActions": [],
                         "notDataActions": [],
@@ -682,7 +685,7 @@ class TestValidateRestFormatFunction:
             }
         }
         errors, _, _ = validate_rest_format(doc)
-        assert any("security-critical" in e.lower() for e in errors)
+        assert any("security-critical operations" in e.lower() for e in errors)
 
 
 # ---------------------------------------------------------------------------
