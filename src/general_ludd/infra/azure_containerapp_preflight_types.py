@@ -14,8 +14,11 @@ class AzureContainerAppPreflightError(ValueError):
     """Raised when read-only Azure evidence is missing, invalid, or insufficient."""
 
 
-class _EvidenceError(AzureContainerAppPreflightError):
+class AzureContainerAppEvidenceError(AzureContainerAppPreflightError):
+    """Carry a typed refusal reason for invalid read-only Azure evidence."""
+
     def __init__(self, reason: str, message: str) -> None:
+        """Record a stable machine-readable reason and censored human message."""
         super().__init__(message)
         self.reason = reason
 
@@ -114,6 +117,7 @@ __all__ = (
     "ARM_SCOPE",
     "ARMJSONTransport",
     "AccessToken",
+    "AzureContainerAppEvidenceError",
     "AzureContainerAppPreflightError",
     "AzureContainerAppPreflightResult",
     "ContainerAppUsage",

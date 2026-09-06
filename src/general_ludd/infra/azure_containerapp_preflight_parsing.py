@@ -12,11 +12,11 @@ from general_ludd.infra.azure_containerapp_gpu import (
     AzureContainerAppGPUProfile,
 )
 from general_ludd.infra.azure_containerapp_preflight_types import (
+    AzureContainerAppEvidenceError,
     AzureContainerAppPreflightError,
     ContainerAppUsage,
     _ConfiguredWorkloadProfile,
     _EnvironmentEvidence,
-    _EvidenceError,
     _WorkloadProfileState,
 )
 
@@ -144,7 +144,7 @@ def parse_environment(
 ) -> _EnvironmentEvidence:
     """Bind a named environment response to exact requested identity and profile."""
     if not isinstance(payload, Mapping):
-        raise _EvidenceError(
+        raise AzureContainerAppEvidenceError(
             "environment_response_invalid",
             "Azure Container Apps environment response is invalid",
         )
@@ -159,7 +159,7 @@ def parse_environment(
         or not isinstance(resource_type, str)
         or resource_type.casefold() != "microsoft.app/managedenvironments"
     ):
-        raise _EvidenceError(
+        raise AzureContainerAppEvidenceError(
             "environment_identity_mismatch",
             "Azure Container Apps environment identity does not match",
         )
@@ -168,18 +168,18 @@ def parse_environment(
         not isinstance(response_location, str)
         or _normalized_location(response_location) != expected_location
     ):
-        raise _EvidenceError(
+        raise AzureContainerAppEvidenceError(
             "environment_location_mismatch",
             "Azure Container Apps environment location does not match",
         )
     properties = payload.get("properties")
     if not isinstance(properties, Mapping):
-        raise _EvidenceError(
+        raise AzureContainerAppEvidenceError(
             "environment_response_invalid",
             "Azure Container Apps environment response is invalid",
         )
     if properties.get("provisioningState") != "Succeeded":
-        raise _EvidenceError(
+        raise AzureContainerAppEvidenceError(
             "environment_not_ready",
             "Azure Container Apps environment is not ready",
         )
@@ -189,14 +189,14 @@ def parse_environment(
         or isinstance(raw_profiles, (str, bytes))
         or len(raw_profiles) > _MAX_RECORDS
     ):
-        raise _EvidenceError(
+        raise AzureContainerAppEvidenceError(
             "environment_response_invalid",
             "Azure Container Apps environment workload profile response is invalid",
         )
     try:
         profiles = tuple(_parse_profile_record(value) for value in raw_profiles)
     except (AzureContainerAppPreflightError, ValueError):
-        raise _EvidenceError(
+        raise AzureContainerAppEvidenceError(
             "environment_response_invalid",
             "Azure Container Apps environment workload profile response is invalid",
         ) from None
@@ -205,17 +205,17 @@ def parse_environment(
         None,
     )
     if configured is None:
-        raise _EvidenceError(
+        raise AzureContainerAppEvidenceError(
             "workload_profile_missing",
             "Azure Container Apps workload profile is missing",
         )
     if configured.workload_profile_type != expected_profile_type:
-        raise _EvidenceError(
+        raise AzureContainerAppEvidenceError(
             "workload_profile_type_mismatch",
             "Azure Container Apps workload profile type does not match",
         )
     if configured.maximum_count < 1:
-        raise _EvidenceError(
+        raise AzureContainerAppEvidenceError(
             "workload_profile_disabled",
             "Azure Container Apps workload profile is disabled",
         )
@@ -292,9 +292,11 @@ def parse_workload_profile_state(
         raw_states = _collection(payload, "workload profile state")
         states = tuple(_parse_state_record(value) for value in raw_states)
     except AzureContainerAppPreflightError as exc:
-        raise _EvidenceError("workload_profile_state_invalid", str(exc)) from None
+        raise AzureContainerAppEvidenceError(
+            "workload_profile_state_invalid", str(exc)
+        ) from None
     except ValueError:
-        raise _EvidenceError(
+        raise AzureContainerAppEvidenceError(
             "workload_profile_state_invalid",
             "Azure Container Apps workload profile has invalid state",
         ) from None
@@ -303,7 +305,7 @@ def parse_workload_profile_state(
         None,
     )
     if matched is None:
-        raise _EvidenceError(
+        raise AzureContainerAppEvidenceError(
             "workload_profile_state_missing",
             "Azure Container Apps workload profile state is missing",
         )

@@ -26,13 +26,13 @@ from general_ludd.infra.azure_containerapp_preflight_types import (
     ARM_SCOPE,
     AccessToken,
     ARMJSONTransport,
+    AzureContainerAppEvidenceError,
     AzureContainerAppPreflightError,
     AzureContainerAppPreflightResult,
     ContainerAppUsage,
     PreflightTrace,
     TokenCredential,
     _EnvironmentEvidence,
-    _EvidenceError,
     _WorkloadProfileState,
 )
 
@@ -128,7 +128,7 @@ class AzureContainerAppReadOnlyPreflight:
     ) -> _EnvironmentEvidence | tuple[_WorkloadProfileState, int]:
         try:
             return parser()
-        except _EvidenceError as exc:
+        except AzureContainerAppEvidenceError as exc:
             self._refuse(location, exc.reason, str(exc))
 
     def _authenticate(self, location: str) -> str:
