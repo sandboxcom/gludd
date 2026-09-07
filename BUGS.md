@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-07 — (resolved locally) Worker watchdog audit misclassified an environment-only Terraform stack
+
+- **What happened**: Exact-head candidate `b4ffa4291` passed every prephase, 3,379 integration tests, the isolated lane, and all earlier unit shards before three watchdog-coverage assertions failed in `unit-3b:batch-031` after 845 neighboring tests passed.
+- **Root cause**: The audit assumed every directory under `infra/terraform/stacks` launches a billable model worker and pinned the historical count at 18. The new autonomous-lifecycle stack owns only a managed-environment control-plane resource, so it has no process in which worker `user_data` could run.
+- **Fix applied**: The checker now distinguishes 19 total stacks from exactly 18 worker stacks, keeps the watchdog mandatory for every worker, and allows only the named environment stack when a Terraform output classifies it as `control-plane`, no model-runner module is present, and owner/plan/expiry lifecycle inputs remain wired.
+- **Evidence**: The new classification assertion failed before the Terraform output existed, then all five focused watchdog tests, scoped lint, and the real pinned Terraform validator passed after the output was added.
+- **Lesson**: Cost-control audits must classify the resource that can execute the watchdog. A control-plane-only stack needs external lease-driven teardown and an explicit machine-readable class; fabricating unusable worker bootstrap data would provide false assurance.
+
 ### 2026-09-06 — (resolved locally) Azure Container App stack interface obscured runtime-only outputs
 
 - **What happened**: After the real Terraform formatter passed, the exact-head gate found that the Azure Container App vLLM stack omitted descriptions from its input variables and that the generic vLLM/llama.cpp mirror assertion treated two real Container App outputs as unexplained drift.

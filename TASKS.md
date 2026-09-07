@@ -24,6 +24,8 @@ S83.157 independent ARM lifecycle evidence: the fixed-origin transport now reads
 
 S83.157 owned command lifecycle evidence: the public live proof now derives a stable one-way project/environment owner identity, creates or reconciles the managed environment through the existing Terraform/AzAPI phase runner, independently waits for ARM readiness, runs and destroys the bounded model app, retries only the expected eventually-consistent app inventory entry, retains on every foreign app, then destroys the idle environment through the same owner-bound Terraform state and independently proves absence. Environment lifecycle, Terraform phase, ARM heartbeat, app proof, and backend events use distinct content-free trace prefixes; dry-run constructs no credential, ARM client, or environment runtime. The local/GHA Azure profile now covers the composite orchestrator and passes 563/563 tests at 93% aggregate branch coverage with all 23 measured files above 75% and the new composite at 100%. Its documented AzAPI v2 plan fixture accepts only provider bookkeeping defaults while rejecting hidden bodies, identities, headers, query parameters, locks, broad response exports, disabled schema validation, importing, unknown fields, and sensitive metadata. Least-privilege role migration, paid live proof, exact-head gate, and hosted proof remain in progress.
 
+S83.157 control-plane watchdog evidence: exact-head candidate `b4ffa4291` cleared every prephase, 3,379 integration tests, the isolated lane, and all earlier unit shards before `unit-3b:batch-031` found that the legacy watchdog audit treated the new environment-only stack as a model worker after 845 neighboring tests passed. The failing-first contract now inventories 19 total stacks and exactly 18 worker stacks, still requires every worker to compose and expose the GPU cost watchdog, and permits only the named environment stack when it exposes `runtime_class = "control-plane"`, contains no vLLM/llama.cpp worker, and forwards the owner, plan, and expiry lifecycle boundary. Focused tests pass 5/5, scoped lint is clean, and the real pinned Terraform validator accepts the stack. Exact-head gate remains pending.
+
 S83.157 exact changed-surface registration (from the active gate):
 
 - `infra/terraform/modules/azure-container-app-vllm/main.tf`
@@ -51,6 +53,7 @@ S83.157 exact changed-surface registration (from the active gate):
 - `infra/terraform/stacks/azure-container-app-environment/outputs.tf`
 - `infra/terraform/stacks/azure-container-app-environment/variables.tf`
 - `tests/unit/test_terraform_stack_deep.py`
+- `tests/unit/test_terraform_watchdog_coverage.py`
 - `tests/integration/test_bill4_terraform_watchdog_wiring.py`
 - `tests/integration/test_bill_terraform_watchdog_e2e.py`
 - `scripts/azure_containerapp_live_proof.py`
