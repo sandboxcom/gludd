@@ -55,6 +55,7 @@
       async: "{{ execution_environment_bootstrap_machine_start_timeout_seconds | int }}"
       poll: 0
       register: _execution_environment_bootstrap_machine_init_job
+      changed_when: true
       environment: "{{ _execution_environment_bootstrap_tool_environment }}"
       when: _execution_environment_bootstrap_machine_inspect.rc != 0
 
@@ -79,6 +80,7 @@
       async: "{{ execution_environment_bootstrap_machine_start_timeout_seconds | int }}"
       poll: 0
       register: _execution_environment_bootstrap_machine_start_job
+      changed_when: true
       environment: "{{ _execution_environment_bootstrap_tool_environment }}"
 
     - name: Podman machine start bootstrap heartbeat

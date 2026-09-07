@@ -22,6 +22,7 @@
   async: "{{ execution_environment_bootstrap_build_timeout_seconds | int }}"
   poll: 0
   register: _execution_environment_bootstrap_build_job
+  changed_when: true
 
 - name: ANSIBLE_EE_BUILD_HEARTBEAT wait for candidate image
   ansible.builtin.async_status:
