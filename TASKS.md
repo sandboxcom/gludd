@@ -62,6 +62,9 @@ S83.157 exact changed-surface registration (from the active gate):
 - `src/general_ludd/infra/azure_containerapp_arm.py`
 - `src/general_ludd/infra/azure_containerapp_environment_lifecycle.py`
 - `src/general_ludd/infra/azure_containerapp_environment_make_runtime.py`
+- `src/general_ludd/infra/azure_containerapp_environment_materializer.py`
+- `src/general_ludd/infra/azure_containerapp_environment_types.py`
+- `src/general_ludd/infra/azure_containerapp_environment_validation.py`
 - `src/general_ludd/infra/azure_containerapp_gpu.py`
 - `src/general_ludd/infra/azure_containerapp_live_proof.py`
 - `src/general_ludd/infra/azure_containerapp_live_trace.py`
@@ -75,6 +78,7 @@ S83.157 exact changed-surface registration (from the active gate):
 - `src/general_ludd/infra/azure_containerapp_preflight_parsing.py`
 - `src/general_ludd/infra/azure_containerapp_preflight_types.py`
 - `src/general_ludd/infra/azure_containerapp_topology.py`
+- `src/general_ludd/infra/azure_containerapp_topology_types.py`
 - `src/general_ludd/infra/azure_cost_reconciliation.py`
 - `src/general_ludd/infra/compute.py`
 - `src/general_ludd/infra/terraform.py`
@@ -113,6 +117,7 @@ S83.157 exact changed-surface registration (from the active gate):
 - `tests/unit/test_iam_policy_deep.py`
 - `tests/unit/test_iam_roles.py`
 - `tests/unit/test_ci_named_shard_files.py`
+- `tests/unit/test_code_complexity_deep.py`
 - `tests/unit/test_infra_compute.py`
 - `tests/unit/test_make_uv_cache_sandbox.py`
 - `tests/unit/test_no_sleep_subagent.py`

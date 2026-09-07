@@ -1379,35 +1379,13 @@
     },
     {
       "path": "src/general_ludd/infra/azure_containerapp_arm.py",
-      "line": 186,
+      "line": 169,
       "column": 33,
       "kind": "client",
-      "owner": "HttpxARMJSONTransport.__init__",
-      "acquisition": "httpx.Client(base_url=_ARM_ORIGIN, follow_redirects=False, timeout=httpx.Timeout(10.0), limits=httpx.Limits(max_connections=2, max_keepalive_connections=1), trust_env=False, headers={'accept': 'application/json'})",
+      "owner": "_BoundedARMReader.__init__",
+      "acquisition": "httpx.Client(base_url=_ARM_ORIGIN, follow_redirects=False, timeout=httpx.Timeout(10.0), limits=httpx.Limits(max_connections=max_connections, max_keepalive_connections=1), trust_env=False, headers={'accept': 'application/json'})",
       "teardown": "self._client.close()",
-      "source_hash": "199390186bcdea428f3b476a8470bce1e433bc07f31a0bdb9f2dc9c8caa66545",
-      "owned": true
-    },
-    {
-      "path": "src/general_ludd/infra/azure_containerapp_arm.py",
-      "line": 251,
-      "column": 33,
-      "kind": "client",
-      "owner": "HttpxContainerAppARMTransport.__init__",
-      "acquisition": "httpx.Client(base_url=_ARM_ORIGIN, follow_redirects=False, timeout=httpx.Timeout(10.0), limits=httpx.Limits(max_connections=1, max_keepalive_connections=1), trust_env=False, headers={'accept': 'application/json'})",
-      "teardown": "self._client.close()",
-      "source_hash": "1f1bfcba5f4c37333cb4c1ca7fea06cca55b2694cbc77e6c789175f7d815563d",
-      "owned": true
-    },
-    {
-      "path": "src/general_ludd/infra/azure_containerapp_arm.py",
-      "line": 370,
-      "column": 33,
-      "kind": "client",
-      "owner": "HttpxContainerAppEnvironmentLifecycleTransport.__init__",
-      "acquisition": "httpx.Client(base_url=_ARM_ORIGIN, follow_redirects=False, timeout=httpx.Timeout(10.0), limits=httpx.Limits(max_connections=2, max_keepalive_connections=1), trust_env=False, headers={'accept': 'application/json'})",
-      "teardown": "self._client.close()",
-      "source_hash": "7afebcaf89101b1d810d1843b06cfc92b908d36f8a38f3c5d8fc1b744628d5a5",
+      "source_hash": "3db8cc0a3119b6a20daea22b10e8c497c9ebcb0840ed8663d6c87a993964b968",
       "owned": true
     },
     {

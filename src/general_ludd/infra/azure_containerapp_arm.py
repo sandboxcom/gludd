@@ -1,4 +1,4 @@
-"""Fixed-origin HTTP transport for named-environment Container Apps ARM reads."""
+"""Fixed-origin HTTP transport for bounded Azure Container Apps ARM reads."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 import re
 import uuid
 from collections.abc import Mapping
-from typing import Final
+from typing import Final, Self
 
 import httpx
 
@@ -15,9 +15,9 @@ _API_VERSION: Final = "2025-07-01"
 _CONTAINER_APP_API_VERSION: Final = "2025-01-01"
 _MAX_RESPONSE_BYTES: Final = 1024 * 1024
 _MAX_TOKEN_CHARS: Final = 8192
+_MAX_INVENTORY_ITEMS: Final = 256
 _RESOURCE_GROUP_PATTERN = re.compile(r"(?=.{1,90}\Z)[A-Za-z0-9_().-]+(?<!\.)")
 _RESOURCE_NAME_PATTERN = re.compile(r"(?=.{1,64}\Z)[A-Za-z0-9_.-]+")
-_MAX_INVENTORY_ITEMS: Final = 256
 
 
 class AzureContainerAppARMError(RuntimeError):
@@ -63,14 +63,12 @@ def _resource_root(
     )
 
 
-def _approved_paths(root: str) -> frozenset[str]:
-    return frozenset(
-        {
-            f"{root}?api-version={_API_VERSION}",
-            f"{root}/usages?api-version={_API_VERSION}",
-            f"{root}/workloadProfileStates?api-version={_API_VERSION}",
-        }
-    )
+def _resource_group_prefix(resource_root: str) -> str:
+    marker = "/managedEnvironments/"
+    if marker not in resource_root:
+        raise ValueError("ARM resource path could not be constructed")
+    prefix, _separator, _name = resource_root.partition(marker)
+    return prefix
 
 
 def _container_app_path(
@@ -79,22 +77,17 @@ def _container_app_path(
     app_name: str,
 ) -> str:
     root = _resource_root(subscription_id, resource_group, app_name)
-    environment_marker = "/managedEnvironments/"
-    if environment_marker not in root:
-        raise ValueError("container app path could not be constructed")
-    prefix, _separator, _name = root.partition(environment_marker)
     return (
-        f"{prefix}/containerApps/{app_name}"
+        f"{_resource_group_prefix(root)}/containerApps/{app_name}"
         f"?api-version={_CONTAINER_APP_API_VERSION}"
     )
 
 
 def _container_app_list_path(resource_root: str) -> str:
-    environment_marker = "/managedEnvironments/"
-    if environment_marker not in resource_root:
-        raise ValueError("container app inventory path could not be constructed")
-    prefix, _separator, _name = resource_root.partition(environment_marker)
-    return f"{prefix}/containerApps?api-version={_CONTAINER_APP_API_VERSION}"
+    return (
+        f"{_resource_group_prefix(resource_root)}/containerApps"
+        f"?api-version={_CONTAINER_APP_API_VERSION}"
+    )
 
 
 def _validate_request(
@@ -133,18 +126,13 @@ def _read_response(response: httpx.Response) -> bytes:
                 "Azure Resource Manager response has an invalid content length"
             ) from None
         if content_length < 0 or content_length > _MAX_RESPONSE_BYTES:
-            raise AzureContainerAppARMError(
-                "Azure Resource Manager response is too large"
-            )
-
+            raise AzureContainerAppARMError("Azure Resource Manager response is too large")
     chunks: list[bytes] = []
     received = 0
     for chunk in response.iter_bytes():
         received += len(chunk)
         if received > _MAX_RESPONSE_BYTES:
-            raise AzureContainerAppARMError(
-                "Azure Resource Manager response is too large"
-            )
+            raise AzureContainerAppARMError("Azure Resource Manager response is too large")
         chunks.append(chunk)
     return b"".join(chunks)
 
@@ -168,7 +156,82 @@ def _decode_json(raw: bytes) -> object:
         ) from None
 
 
-class HttpxARMJSONTransport:
+class _BoundedARMReader:
+    def __init__(
+        self,
+        approved_paths: frozenset[str],
+        *,
+        client: httpx.Client | None,
+        max_connections: int,
+    ) -> None:
+        self._approved_paths = approved_paths
+        self._owns_client = client is None
+        self._client = client or httpx.Client(
+            base_url=_ARM_ORIGIN,
+            follow_redirects=False,
+            timeout=httpx.Timeout(10.0),
+            limits=httpx.Limits(
+                max_connections=max_connections,
+                max_keepalive_connections=1,
+            ),
+            trust_env=False,
+            headers={"accept": "application/json"},
+        )
+
+    def get(
+        self,
+        path: str,
+        bearer_token: str,
+        *,
+        absent_on_404: bool = False,
+        lifecycle: bool = False,
+    ) -> object | None:
+        _validate_request(path, bearer_token, self._approved_paths)
+        try:
+            with self._client.stream(
+                "GET",
+                path,
+                headers={"authorization": f"Bearer {bearer_token}"},
+                follow_redirects=False,
+            ) as response:
+                if absent_on_404 and response.status_code == 404:
+                    return None
+                return _decode_json(_read_response(response))
+        except AzureContainerAppARMError:
+            raise
+        except httpx.HTTPError:
+            qualifier = " lifecycle" if lifecycle else ""
+            raise AzureContainerAppARMError(
+                f"Azure Resource Manager{qualifier} read failed"
+            ) from None
+
+    def close(self) -> None:
+        if self._owns_client:
+            self._client.close()
+
+
+class _OwnedARMTransport:
+    _reader: _BoundedARMReader
+
+    def close(self) -> None:
+        """Close only a client allocated by this transport."""
+        self._reader.close()
+
+    def __enter__(self) -> Self:
+        """Return this transport as an owned context resource."""
+        return self
+
+    def __exit__(
+        self,
+        _exception_type: object,
+        _exception: object,
+        _traceback: object,
+    ) -> None:
+        """Close the owned transport when its context exits."""
+        self.close()
+
+
+class HttpxARMJSONTransport(_OwnedARMTransport):
     """Issue bounded GETs for one named environment at the fixed ARM origin."""
 
     def __init__(
@@ -181,55 +244,21 @@ class HttpxARMJSONTransport:
     ) -> None:
         """Bind the transport to one exact managed environment."""
         root = _resource_root(subscription_id, resource_group, environment_name)
-        self._approved_paths = _approved_paths(root)
-        self._owns_client = client is None
-        self._client = client or httpx.Client(
-            base_url=_ARM_ORIGIN,
-            follow_redirects=False,
-            timeout=httpx.Timeout(10.0),
-            limits=httpx.Limits(max_connections=2, max_keepalive_connections=1),
-            trust_env=False,
-            headers={"accept": "application/json"},
+        approved = frozenset(
+            {
+                f"{root}?api-version={_API_VERSION}",
+                f"{root}/usages?api-version={_API_VERSION}",
+                f"{root}/workloadProfileStates?api-version={_API_VERSION}",
+            }
         )
+        self._reader = _BoundedARMReader(approved, client=client, max_connections=2)
 
     def get_json(self, path: str, bearer_token: str) -> object:
         """GET one allowlisted ARM resource and decode bounded JSON."""
-        _validate_request(path, bearer_token, self._approved_paths)
-        try:
-            with self._client.stream(
-                "GET",
-                path,
-                headers={"authorization": f"Bearer {bearer_token}"},
-                follow_redirects=False,
-            ) as response:
-                return _decode_json(_read_response(response))
-        except AzureContainerAppARMError:
-            raise
-        except httpx.HTTPError:
-            raise AzureContainerAppARMError(
-                "Azure Resource Manager read failed"
-            ) from None
-
-    def close(self) -> None:
-        """Close only a client allocated by this transport."""
-        if self._owns_client:
-            self._client.close()
-
-    def __enter__(self) -> HttpxARMJSONTransport:
-        """Return this transport as an owned context resource."""
-        return self
-
-    def __exit__(
-        self,
-        _exception_type: object,
-        _exception: object,
-        _traceback: object,
-    ) -> None:
-        """Close the owned transport when its context exits."""
-        self.close()
+        return self._reader.get(path, bearer_token)
 
 
-class HttpxContainerAppARMTransport:
+class HttpxContainerAppARMTransport(_OwnedARMTransport):
     """Issue bounded GETs for one exact Container App at the fixed ARM origin."""
 
     def __init__(
@@ -241,59 +270,16 @@ class HttpxContainerAppARMTransport:
         client: httpx.Client | None = None,
     ) -> None:
         """Bind the transport to one exact Container App resource."""
-        self._path = _container_app_path(
-            subscription_id,
-            resource_group,
-            app_name,
-        )
-        self._approved_paths = frozenset({self._path})
-        self._owns_client = client is None
-        self._client = client or httpx.Client(
-            base_url=_ARM_ORIGIN,
-            follow_redirects=False,
-            timeout=httpx.Timeout(10.0),
-            limits=httpx.Limits(max_connections=1, max_keepalive_connections=1),
-            trust_env=False,
-            headers={"accept": "application/json"},
+        self._path = _container_app_path(subscription_id, resource_group, app_name)
+        self._reader = _BoundedARMReader(
+            frozenset({self._path}),
+            client=client,
+            max_connections=1,
         )
 
     def get_json(self, bearer_token: str) -> object | None:
         """Return the exact app document, or ``None`` only for an exact 404."""
-        _validate_request(self._path, bearer_token, self._approved_paths)
-        try:
-            with self._client.stream(
-                "GET",
-                self._path,
-                headers={"authorization": f"Bearer {bearer_token}"},
-                follow_redirects=False,
-            ) as response:
-                if response.status_code == 404:
-                    return None
-                return _decode_json(_read_response(response))
-        except AzureContainerAppARMError:
-            raise
-        except httpx.HTTPError:
-            raise AzureContainerAppARMError(
-                "Azure Resource Manager read failed"
-            ) from None
-
-    def close(self) -> None:
-        """Close only a client allocated by this transport."""
-        if self._owns_client:
-            self._client.close()
-
-    def __enter__(self) -> HttpxContainerAppARMTransport:
-        """Return this transport as an owned context resource."""
-        return self
-
-    def __exit__(
-        self,
-        _exception_type: object,
-        _exception: object,
-        _traceback: object,
-    ) -> None:
-        """Close the owned transport when its context exits."""
-        self.close()
+        return self._reader.get(self._path, bearer_token, absent_on_404=True)
 
 
 def _inventory_app_ids(
@@ -325,9 +311,7 @@ def _inventory_app_ids(
             if not normalized_id.startswith(app_id_prefix.casefold()):
                 raise ValueError
             app_name = resource_id[len(app_id_prefix) :]
-            if _RESOURCE_NAME_PATTERN.fullmatch(app_name) is None:
-                raise ValueError
-            if normalized_id in seen:
+            if _RESOURCE_NAME_PATTERN.fullmatch(app_name) is None or normalized_id in seen:
                 raise ValueError
             seen.add(normalized_id)
             observed_environment = properties.get("managedEnvironmentId")
@@ -342,7 +326,7 @@ def _inventory_app_ids(
         ) from None
 
 
-class HttpxContainerAppEnvironmentLifecycleTransport:
+class HttpxContainerAppEnvironmentLifecycleTransport(_OwnedARMTransport):
     """Read one environment and its resource-group app inventory, never mutate."""
 
     def __init__(
@@ -361,78 +345,35 @@ class HttpxContainerAppEnvironmentLifecycleTransport:
         )
         self._environment_path = f"{self._environment_id}?api-version={_API_VERSION}"
         self._inventory_path = _container_app_list_path(self._environment_id)
-        self._approved_paths = frozenset(
-            {self._environment_path, self._inventory_path}
-        )
         inventory_suffix = f"?api-version={_CONTAINER_APP_API_VERSION}"
         self._app_id_prefix = self._inventory_path.removesuffix(inventory_suffix) + "/"
-        self._owns_client = client is None
-        self._client = client or httpx.Client(
-            base_url=_ARM_ORIGIN,
-            follow_redirects=False,
-            timeout=httpx.Timeout(10.0),
-            limits=httpx.Limits(max_connections=2, max_keepalive_connections=1),
-            trust_env=False,
-            headers={"accept": "application/json"},
+        self._reader = _BoundedARMReader(
+            frozenset({self._environment_path, self._inventory_path}),
+            client=client,
+            max_connections=2,
         )
-
-    def _get(self, path: str, bearer_token: str, *, absent_on_404: bool) -> object | None:
-        _validate_request(path, bearer_token, self._approved_paths)
-        try:
-            with self._client.stream(
-                "GET",
-                path,
-                headers={"authorization": f"Bearer {bearer_token}"},
-                follow_redirects=False,
-            ) as response:
-                if absent_on_404 and response.status_code == 404:
-                    return None
-                return _decode_json(_read_response(response))
-        except AzureContainerAppARMError:
-            raise
-        except httpx.HTTPError:
-            raise AzureContainerAppARMError(
-                "Azure Resource Manager lifecycle read failed"
-            ) from None
 
     def get_environment(self, bearer_token: str) -> object | None:
         """Return the exact environment document, or ``None`` only on 404."""
-        return self._get(
+        return self._reader.get(
             self._environment_path,
             bearer_token,
             absent_on_404=True,
+            lifecycle=True,
         )
 
     def list_environment_app_ids(self, bearer_token: str) -> tuple[str, ...]:
         """Return bounded app IDs that independently reference this environment."""
-        document = self._get(
+        document = self._reader.get(
             self._inventory_path,
             bearer_token,
-            absent_on_404=False,
+            lifecycle=True,
         )
         return _inventory_app_ids(
             document,
             environment_id=self._environment_id,
             app_id_prefix=self._app_id_prefix,
         )
-
-    def close(self) -> None:
-        """Close only a client allocated by this transport."""
-        if self._owns_client:
-            self._client.close()
-
-    def __enter__(self) -> HttpxContainerAppEnvironmentLifecycleTransport:
-        """Return this transport as an owned context resource."""
-        return self
-
-    def __exit__(
-        self,
-        _exception_type: object,
-        _exception: object,
-        _traceback: object,
-    ) -> None:
-        """Close the owned transport when its context exits."""
-        self.close()
 
 
 __all__ = [

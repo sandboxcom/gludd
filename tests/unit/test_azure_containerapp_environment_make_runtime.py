@@ -22,6 +22,9 @@ from general_ludd.infra.azure_containerapp_environment_make_runtime import (
     MakeRuntimeEvent,
     MakeRuntimeState,
 )
+from general_ludd.infra.azure_containerapp_environment_materializer import (
+    verify_existing_state_boundary,
+)
 
 SUBSCRIPTION = "12345678-1234-1234-1234-123456789abc"
 SECRET = "never-render-this-environment-secret"
@@ -463,6 +466,36 @@ def test_constructor_and_materializer_boundaries_fail_closed(tmp_path: Path) -> 
         arguments[name] = value
         with pytest.raises(ValueError):
             AzureContainerAppEnvironmentMakeRuntime(**cast(Any, arguments))
+
+
+def test_materializer_rejects_untyped_policy_and_missing_reviewed_assets(
+    tmp_path: Path,
+) -> None:
+    materializer = AzureContainerAppEnvironmentTerraformMaterializer()
+    with pytest.raises(AzureContainerAppMakeRuntimeError, match="policy"):
+        materializer.materialize(cast(Any, object()), tmp_path / "untyped")
+
+    missing_assets = AzureContainerAppEnvironmentTerraformMaterializer(
+        tmp_path / "missing-assets"
+    )
+    with pytest.raises(AzureContainerAppMakeRuntimeError, match="assets"):
+        missing_assets.materialize(_policy(), tmp_path / "missing-output")
+
+
+def test_state_boundary_accepts_only_absent_or_empty_unowned_directories(
+    tmp_path: Path,
+) -> None:
+    digest = _policy().state_digest
+    verify_existing_state_boundary(tmp_path / "absent", digest)
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    verify_existing_state_boundary(empty, digest)
+
+    regular_file = tmp_path / "regular-file"
+    regular_file.write_text("not a state directory", encoding="utf-8")
+    with pytest.raises(AzureContainerAppMakeRuntimeError, match="state-ownership"):
+        verify_existing_state_boundary(regular_file, digest)
 
 
 def test_subscription_mismatch_fails_before_materialization_or_make(tmp_path: Path) -> None:

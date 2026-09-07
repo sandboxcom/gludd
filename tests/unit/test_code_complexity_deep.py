@@ -480,6 +480,26 @@ class TestMaintainabilityIndex:
         med = statistics.median(mis)
         assert med >= 25.0, f"Median MI={med:.1f} below 25"
 
+    def test_azure_containerapp_lifecycle_files_stay_above_20(
+        self, all_metrics: list[_FileMetrics]
+    ) -> None:
+        """Keep every newly introduced Azure lifecycle module maintainable."""
+        lifecycle_files = {
+            "azure_containerapp_arm.py",
+            "azure_containerapp_environment_lifecycle.py",
+            "azure_containerapp_environment_make_runtime.py",
+            "azure_containerapp_environment_materializer.py",
+            "azure_containerapp_environment_types.py",
+            "azure_containerapp_environment_validation.py",
+            "azure_containerapp_owned_lifecycle.py",
+            "azure_containerapp_topology.py",
+            "azure_containerapp_topology_types.py",
+        }
+        measured = {fm.path.name: fm.maintainability_index for fm in all_metrics if fm.path.name in lifecycle_files}
+        assert measured.keys() == lifecycle_files
+        below_floor = {name: round(score, 1) for name, score in measured.items() if score < 20.0}
+        assert not below_floor, f"Azure lifecycle files below MI 20: {below_floor}"
+
 
 class TestNestingDepth:
     def test_no_function_nesting_depth_exceeds_10(self, all_metrics: list[_FileMetrics]) -> None:
