@@ -8,7 +8,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import StrEnum
 from threading import RLock
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorCredentials,
@@ -21,11 +21,17 @@ _ROLE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 _LEASE_SUFFIX = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}")
 
 
+@runtime_checkable
 class _LeaseSystem(Protocol):
+    """Structural boundary for exact OpenBao lease revocation."""
+
     def revoke_lease(self, lease_id: str) -> object: ...
 
 
+@runtime_checkable
 class _OpenBaoClient(Protocol):
+    """Structural boundary for the public OpenBao client operations used here."""
+
     sys: _LeaseSystem
 
     def read(self, path: str) -> object: ...
