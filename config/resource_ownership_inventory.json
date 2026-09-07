@@ -642,7 +642,7 @@
     },
     {
       "path": "src/general_ludd/ansible/core_runner.py",
-      "line": 757,
+      "line": 761,
       "column": 33,
       "kind": "temp-artifact",
       "owner": "CoreAnsibleRunner._execute_with_runner",
@@ -664,7 +664,7 @@
     },
     {
       "path": "src/general_ludd/ansible/runner.py",
-      "line": 176,
+      "line": 194,
       "column": 52,
       "kind": "temp-artifact",
       "owner": "AnsibleRunnerAdapter.__init__",
@@ -1170,7 +1170,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 1142,
+      "line": 1162,
       "column": 15,
       "kind": "async-task",
       "owner": "_build_self_update_audit_sink._sink",
@@ -1181,7 +1181,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 1198,
+      "line": 1218,
       "column": 15,
       "kind": "client",
       "owner": "_warm_start_local_models",
@@ -1192,7 +1192,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 1286,
+      "line": 1306,
       "column": 18,
       "kind": "service",
       "owner": "_lifespan",
@@ -1203,7 +1203,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 2406,
+      "line": 2429,
       "column": 15,
       "kind": "async-task",
       "owner": "_lifespan",
@@ -1214,7 +1214,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 2658,
+      "line": 2681,
       "column": 36,
       "kind": "async-task",
       "owner": "_lifespan",
@@ -1225,7 +1225,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 2755,
+      "line": 2778,
       "column": 39,
       "kind": "async-task",
       "owner": "_lifespan",
@@ -1236,7 +1236,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3196,
+      "line": 3414,
       "column": 26,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1247,7 +1247,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3254,
+      "line": 3472,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1258,7 +1258,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 4372,
+      "line": 4630,
       "column": 40,
       "kind": "async-task",
       "owner": "EventLoop._phase_reconcile_completed_decisions",
@@ -1269,7 +1269,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 4386,
+      "line": 4644,
       "column": 44,
       "kind": "async-task",
       "owner": "EventLoop._phase_reconcile_completed_decisions",
@@ -1386,6 +1386,17 @@
       "acquisition": "httpx.Client(base_url=_ARM_ORIGIN, follow_redirects=False, timeout=httpx.Timeout(10.0), limits=httpx.Limits(max_connections=max_connections, max_keepalive_connections=1), trust_env=False, headers={'accept': 'application/json'})",
       "teardown": "self._client.close()",
       "source_hash": "3db8cc0a3119b6a20daea22b10e8c497c9ebcb0840ed8663d6c87a993964b968",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/infra/azure_containerapp_terraform_executor.py",
+      "line": 262,
+      "column": 9,
+      "kind": "temp-artifact",
+      "owner": "_diagnostic_output",
+      "acquisition": "tempfile.TemporaryFile(mode='w+t', encoding='utf-8')",
+      "teardown": "context-manager-exit",
+      "source_hash": "e00e5296efcae9e208fc7afb4ed1fbae0a293214ba236640823806cfce4c04ca",
       "owned": true
     },
     {
@@ -2028,7 +2039,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 397,
+      "line": 398,
       "column": 15,
       "kind": "process",
       "owner": "MakeRunner._run_observable_argv",
@@ -2039,7 +2050,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 491,
+      "line": 492,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_run_local_proposal_request",

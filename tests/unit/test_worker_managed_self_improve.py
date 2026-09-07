@@ -254,11 +254,14 @@ def test_default_runner_factory_delegates_to_installed_composition_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    sentinel: Any = _Runner(_managed_result(_plan(tmp_path)))
-    roots: list[Path] = []
+    from general_ludd.config import loader as config_loader
 
-    def build(repo_root: Path) -> Any:
-        roots.append(repo_root)
+    sentinel: Any = _Runner(_managed_result(_plan(tmp_path)))
+    calls: list[tuple[Path, object]] = []
+    configured = {"azure_containerapp": {"schema_version": 1, "enabled": False}}
+
+    def build(repo_root: Path, *, self_improve_config: object) -> Any:
+        calls.append((repo_root, self_improve_config))
         return sentinel
 
     monkeypatch.setattr(
@@ -266,9 +269,14 @@ def test_default_runner_factory_delegates_to_installed_composition_root(
         "build_managed_self_improve_runner",
         build,
     )
+    monkeypatch.setattr(
+        config_loader,
+        "load_user_config",
+        lambda: SimpleNamespace(self_improve=configured),
+    )
 
     assert worker_app.build_worker_self_improve_runner(tmp_path) is sentinel
-    assert roots == [tmp_path]
+    assert calls == [(tmp_path, configured)]
 
 
 def test_gateway_adds_distinct_auto_profiles_and_scopes_secrets(

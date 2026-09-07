@@ -23,6 +23,8 @@ OBSOLETE_PROVIDER_REGISTRATION = "Microsoft.Resources/subscriptions/providers/re
 EXPECTED_RUNTIME_ACTIONS = frozenset(
     {
         "Microsoft.App/managedEnvironments/read",
+        "Microsoft.App/managedEnvironments/write",
+        "Microsoft.App/managedEnvironments/delete",
         "Microsoft.App/managedEnvironments/join/action",
         "Microsoft.App/managedEnvironments/usages/read",
         "Microsoft.App/managedEnvironments/workloadProfileStates/read",
@@ -32,6 +34,9 @@ EXPECTED_RUNTIME_ACTIONS = frozenset(
         "Microsoft.App/containerApps/revisions/read",
         "Microsoft.App/locations/containerAppOperationResults/read",
         "Microsoft.App/locations/containerAppOperationStatuses/read",
+        "Microsoft.App/locations/managedEnvironmentOperationResults/read",
+        "Microsoft.App/locations/managedEnvironmentOperationStatuses/read",
+        "Microsoft.Insights/metrics/read",
     }
 )
 ROLE_ARGS_PREFIX = (
@@ -87,6 +92,7 @@ def test_role_arguments_materialize_the_checked_in_resource_group_scope() -> Non
     assert role["Name"] == ROLE_NAME
     assert role["AssignableScopes"] == [SCOPE]
     assert role["DataActions"] == []
+    assert len(role["Actions"]) == 15
     assert not any("CognitiveServices" in action for action in role["Actions"])
     assert OBSOLETE_PROVIDER_REGISTRATION not in role["Actions"]
     assert frozenset(role["Actions"]) == EXPECTED_RUNTIME_ACTIONS

@@ -9,23 +9,20 @@ import re
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Final, cast
+from typing import Final
 
-ROLE_NAME: Final = "General Ludd Accelerator Deployer"
-ROLE_TEMPLATE_PATH: Final = (
-    Path(__file__).resolve().parents[1] / "config" / "infra" / "azure-iam-policy.json"
+from general_ludd.azure.accelerator_role import (
+    EXPECTED_ACTIONS as _EXPECTED_ACTIONS,
+    ROLE_NAME,
+    ROLE_SCOPE_TEMPLATE as _ROLE_SCOPE_TEMPLATE,
+    ROLE_TEMPLATE_PATH,
+    materialize_accelerator_role,
+    validate_resource_group as _validate_resource_group,
+    validate_subscription_id as _validate_subscription,
 )
+
 ENVIRONMENT_TEMPLATE_CLI_PATH: Final = "config/infra/azure-containerapp-environment.json"
-_ROLE_SCOPE_TEMPLATE: Final = (
-    "/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
-)
-_UUID_RE: Final = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
 _PRINCIPAL_NAME_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._()\-]{0,119}$")
-_RESOURCE_GROUP_RE: Final = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9._()\-]{0,88}[A-Za-z0-9_()\-]?$"
-)
 _RESOURCE_NAME_RE: Final = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._\-]{0,62}[A-Za-z0-9_]?$"
 )
@@ -33,28 +30,6 @@ _LOCATION_RE: Final = re.compile(r"^[a-z][a-z0-9]{1,31}$")
 _GPU_PROFILE_TYPES: Final = frozenset(
     {"Consumption-GPU-NC8as-T4", "Consumption-GPU-NC24-A100"}
 )
-_EXPECTED_ACTIONS: Final = frozenset(
-    {
-        "Microsoft.App/managedEnvironments/read",
-        "Microsoft.App/managedEnvironments/join/action",
-        "Microsoft.App/managedEnvironments/usages/read",
-        "Microsoft.App/managedEnvironments/workloadProfileStates/read",
-        "Microsoft.App/containerApps/read",
-        "Microsoft.App/containerApps/write",
-        "Microsoft.App/containerApps/delete",
-        "Microsoft.App/containerApps/revisions/read",
-        "Microsoft.App/locations/containerAppOperationResults/read",
-        "Microsoft.App/locations/containerAppOperationStatuses/read",
-    }
-)
-
-
-def _validate_subscription(value: object) -> str:
-    if not isinstance(value, str) or _UUID_RE.fullmatch(value) is None:
-        raise ValueError("invalid subscription ID")
-    return value
-
-
 def _validate_principal_name(value: object) -> str:
     if (
         not isinstance(value, str)
@@ -62,12 +37,6 @@ def _validate_principal_name(value: object) -> str:
         or value != value.strip()
     ):
         raise ValueError("invalid service principal name")
-    return value
-
-
-def _validate_resource_group(value: object) -> str:
-    if not isinstance(value, str) or _RESOURCE_GROUP_RE.fullmatch(value) is None:
-        raise ValueError("invalid resource group")
     return value
 
 
@@ -89,36 +58,6 @@ def _validate_workload_profile_type(value: object) -> str:
     return value
 
 
-def _materialize_role(
-    template_path: Path,
-    subscription_id: str,
-    resource_group: str,
-) -> str:
-    try:
-        raw = json.loads(template_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ValueError("invalid accelerator role template") from exc
-    if not isinstance(raw, dict):
-        raise ValueError("invalid accelerator role template")
-    actions = raw.get("Actions")
-    if (
-        raw.get("Name") != ROLE_NAME
-        or raw.get("AssignableScopes") != [_ROLE_SCOPE_TEMPLATE]
-        or raw.get("DataActions") != []
-        or raw.get("NotDataActions") != []
-        or raw.get("NotActions") != []
-        or not isinstance(actions, list)
-        or not all(isinstance(action, str) for action in actions)
-        or frozenset(cast(list[str], actions)) != _EXPECTED_ACTIONS
-    ):
-        raise ValueError("invalid accelerator role template")
-    role = dict(raw)
-    role["AssignableScopes"] = [
-        f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
-    ]
-    return json.dumps(role, sort_keys=True, separators=(",", ":"))
-
-
 def _encode(arguments: tuple[str, ...]) -> bytes:
     return b"\0".join(argument.encode("utf-8") for argument in arguments) + b"\0"
 
@@ -132,10 +71,14 @@ def build_role_arguments(
     """Build one Azure CLI argv that creates the accelerator custom role."""
     subscription_id = _validate_subscription(subscription_id)
     resource_group = _validate_resource_group(resource_group)
-    role_definition = _materialize_role(
-        template_path,
-        subscription_id,
-        resource_group,
+    role_definition = json.dumps(
+        materialize_accelerator_role(
+            template_path=template_path,
+            subscription_id=subscription_id,
+            resource_group=resource_group,
+        ),
+        sort_keys=True,
+        separators=(",", ":"),
     )
     return (
         "role",

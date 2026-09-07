@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-07 — (resolved locally) Azure resource SDK v26 moved the resource-group client
+
+- **What happened**: The operator bootstrap validated locally, but its first live run stopped at the secret-free `resource-client` operation before making an ARM request.
+- **Root cause**: Locked `azure-mgmt-resource` 26.0.0 no longer exports `ResourceManagementClient` from the historical unversioned package root used by the initial adapter. Its release documentation places the client in `azure.mgmt.resource.resources` after the management-package split.
+- **Fix applied**: The adapter now imports the documented v26 namespace, its unit contract simulates that exact module boundary, missing dependencies and SDK contract drift have distinct fixed failure classes, and provider-controlled SDK logging is censored while Gludd's own phase/operation traces remain visible.
+- **Evidence**: The test failed first on the historical import, then the 21-test operator-role suite, strict mypy, Ruff, the exact Make behavior, and the 747-test local/GHA Azure coverage target passed. Aggregate branch coverage is 92%, with all 36 measured files at or above 75%.
+- **Practitioner evidence**: Azure SDK issue #41450 tracks the ongoing split of `azure-mgmt-resource` modules, and issue #30256 records a separate long-lived authorization client/model mismatch. Both are linked from `docs/azure-iam-setup.md` and pin the versioned imports used here.
+- **Lesson**: Installing a maintained SDK is not enough; generated management clients and models must be imported from the namespace documented for the exact locked major version and exercised by a live, content-free construction boundary.
+
 ### 2026-09-07 — (resolved locally) Worker watchdog audit misclassified an environment-only Terraform stack
 
 - **What happened**: Exact-head candidate `b4ffa4291` passed every prephase, 3,379 integration tests, the isolated lane, and all earlier unit shards before three watchdog-coverage assertions failed in `unit-3b:batch-031` after 845 neighboring tests passed.
@@ -43,12 +52,13 @@ All premature-stop incidents and process failures are tracked here.
 - **Fix applied**: `test_makefile_audit_deep.py` now has exactly one fresh-process lane in the canonical shard registry; `unit-2` excludes it, and the GitHub Actions `unit-1a1` job runs the same isolated-test tuple. The timeout, assertions, and fail-closed behavior remain unchanged.
 - **Lesson**: Subprocess-isolation requirements belong in the shared local/hosted shard registry. Do not hide resource-history failures by extending timeouts, retrying tests, or weakening assertions.
 
-### 2026-09-06 — (blocked externally) Valid accelerator credential has no shared Container Apps GPU environment
+### 2026-09-06 — (resolved locally) Ten-action accelerator role blocked autonomous environment lifecycle
 
 - **What happened**: The supplied private Azure JSON passed Gludd's live authentication check, then the traced read-only Container Apps preflight returned the fixed reason `environment_not_found` before any mutation. No app, GPU replica, role assignment, or other paid resource was created.
-- **Root cause**: The operator-owned `gludd-gpu-environment` baseline does not exist in the configured resource group. This is intentionally outside the runtime principal's authority: the ten-action role can read and join that exact environment and manage only Container Apps, but cannot create environments, resource groups, provider registrations, networks, registries, monitoring resources, secrets, or IAM.
-- **Safe continuation**: An authorized operator must run the documented one-line `azure-containerapp-environment-bootstrap-args` pipeline once, then Gludd can repeat preflight and run its app-only bounded deploy/infer/destroy proof. Do not widen the service principal to bypass this separation of duties.
-- **Practitioner evidence**: Current Azure documentation scopes GPU quota to each managed environment. Azure CLI issues #30526 and #31239 report supported T4 profile creation failures, while Container Apps issues #1511, #1763, and #1239 report failed starts, long billable cold starts, and stuck scale-down. `docs/azure-iam-setup.md` links these reports and explains why bootstrap remains operator-owned and the live proof remains hard-bounded and visibly traced.
+- **Root cause**: The original design incorrectly made an operator-owned shared environment a permanent prerequisite. Its ten-action role could read and join that environment and manage apps, but could not create or remove the environment Gludd needs to right-size for each bounded workload.
+- **Fix applied**: The exact resource-group role now has 15 operations: environment and app lifecycle, both resources' long-running-operation status reads, and only `Microsoft.Insights/metrics/read`. The owner-bound Terraform/AzAPI runtime creates, reconciles, retains when foreign apps exist, and removes idle owned environments. Resource-group, provider, IAM, registry, network, VM, logging, secret, and Cognitive Services administration remain absent.
+- **Practitioner evidence**: Current Azure documentation scopes GPU quota to each managed environment. Container Apps issues #1511, #1646, #1682, #1763, and #1239 report intermittent failed starts, v2's built-in Consumption profile, silent CUDA-to-CPU fallback, billable cold starts, and stuck scale-down. AzAPI issues #856 and #875 report provider migration and plan-output hazards. `docs/azure-iam-setup.md` links each report and explains the bounded, visibly traced lifecycle.
+- **Lesson**: Self-provisioning does not require broad cloud administration. Give the runtime only exact owned-resource verbs, keep Terraform as the single writer, and prove real GPU use plus independent absence before accepting or releasing a paid candidate.
 
 ### 2026-09-06 — (resolved locally) Live credential validation example silently selected validate-only mode
 

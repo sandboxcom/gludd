@@ -3,8 +3,9 @@
 Status: provider-neutral identity, deterministic task classification, live local,
 Azure OpenAI, and Azure Container Apps discovery/inference, candidate-set
 assembly, content-free calibrated routing, and managed-runner selection are
-implemented behind explicit policy. A paid Azure Container Apps canary remains
-blocked until its operator-owned managed environment exists.
+implemented behind explicit policy. Gludd now plans and owns the complete Azure
+Container Apps environment/app lifecycle through Terraform; a paid canary remains
+pending the existing role's 15-action least-privilege update and live evidence.
 
 ## Outcome
 
@@ -23,6 +24,40 @@ predictions, deliberately challenges under-tested candidates, executes every
 approved trial once, evaluates each result deterministically, and selects from the
 observed results. It persists only eligible public quality evidence. Private work
 and infrastructure failures remain observable but cannot train the selector.
+
+## Azure infrastructure ownership and library reuse
+
+Terraform/AzAPI is Gludd's only Azure infrastructure writer. The lifecycle plan
+and owner-bound state cover the managed environment, right-sized workload
+profiles, model-serving apps, retention in the presence of foreign apps, and
+verified teardown. Python orchestrates those reviewed Terraform phases; it does
+not reproduce ARM create/update/delete calls.
+
+The Azure CLI argument renderer is intentionally not an Azure client. It validates
+identifiers and the checked-in exact role, then writes one NUL-delimited argv for
+the real `az` executable. The existing custom read-only ARM transport is being
+replaced by Microsoft's stable
+[`azure-mgmt-appcontainers`](https://pypi.org/project/azure-mgmt-appcontainers/)
+client, while GPU evidence will use the stable
+[`azure-mgmt-monitor`](https://pypi.org/project/azure-mgmt-monitor/) single-resource
+metrics operation. `azure-monitor-querymetrics` is not suitable here because its
+batch API documents subscription-level authorization, broader than Gludd's exact
+resource-group assignment. Gludd keeps only conversion into its bounded types,
+ownership/privacy validation, retry policy, and content-free trace emission.
+
+This boundary also addresses current practitioner evidence. Container Apps issue
+[#1646](https://github.com/microsoft/azure-container-apps/issues/1646) makes the v2
+built-in Consumption profile part of the observed environment rather than owned
+desired state. Issue
+[#1682](https://github.com/microsoft/azure-container-apps/issues/1682) reports a
+CUDA 12.8 T4 container silently falling back to CPU, so readiness must be followed
+by positive `GpuUtilizationPercentage` evidence for the exact revision. Issues
+[#1511](https://github.com/microsoft/azure-container-apps/issues/1511) and
+[#1763](https://github.com/microsoft/azure-container-apps/issues/1763) justify
+bounded visible startup supervision. AzAPI issues
+[#856](https://github.com/Azure/terraform-provider-azapi/issues/856) and
+[#875](https://github.com/Azure/terraform-provider-azapi/issues/875) justify pinned
+v2 export syntax and rejecting sensitive or broad response material in plans.
 
 ## Candidate identities
 

@@ -176,6 +176,39 @@ variable "trace_id" {
   }
 }
 
+variable "min_replicas" {
+  description = "Minimum paid GPU replicas; Gludd requires scale-to-zero when idle."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.min_replicas == 0
+    error_message = "min_replicas must remain zero for paid-idle safety."
+  }
+}
+
+variable "max_replicas" {
+  description = "Maximum GPU replicas derived from bounded simultaneous task demand."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.max_replicas >= 1 && var.max_replicas <= 100 && floor(var.max_replicas) == var.max_replicas
+    error_message = "max_replicas must be an integer in 1..100."
+  }
+}
+
+variable "http_concurrent_requests" {
+  description = "Per-replica HTTP concurrency derived by the topology planner."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.http_concurrent_requests >= 1 && var.http_concurrent_requests <= 100000 && floor(var.http_concurrent_requests) == var.http_concurrent_requests
+    error_message = "http_concurrent_requests must be an integer in 1..100000."
+  }
+}
+
 variable "vllm_context_length" {
   description = "Maximum token context selected by the immutable model-fit plan."
   type        = number

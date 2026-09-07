@@ -16,6 +16,7 @@ covered separately by the storage-parity tests.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
@@ -57,7 +58,12 @@ async def session_factory():
     await engine.dispose()
 
 
-async def _insert_queued_todo(factory, todo_id: str = "T1") -> None:
+async def _insert_queued_todo(
+    factory,
+    todo_id: str = "T1",
+    *,
+    managed_self_improve: bool = False,
+) -> None:
     async with factory() as s:
         s.add(
             TodoModel(
@@ -66,6 +72,10 @@ async def _insert_queued_todo(factory, todo_id: str = "T1") -> None:
                 status=TodoStatus.QUEUED.value,
                 queue="core",
                 version=1,
+                work_type=("self_improve" if managed_self_improve else "code"),
+                approval_policy=(
+                    "managed_self_improve_plan" if managed_self_improve else "none"
+                ),
             )
         )
         await s.commit()
@@ -208,7 +218,7 @@ async def test_pid_cap_release_deletes_lease_row(session_factory):
 # AREA 1 — claim_runnable double-claim
 # ===========================================================================
 @pytest.mark.asyncio
-async def test_claim_runnable_update_has_no_status_or_version_guard(session_factory):
+async def test_claim_runnable_update_has_status_and_version_guard(session_factory):
     """The claim UPDATE is now keyed by a guarded conditional UPDATE that
     re-checks status=QUEUED and version. We prove a second claim after the row
     has been claimed returns [] rather than re-claiming it.
@@ -234,14 +244,25 @@ async def test_claim_runnable_update_has_no_status_or_version_guard(session_fact
 
 
 @pytest.mark.asyncio
-async def test_concurrent_claim_runnable_double_claims_same_todo(session_factory):
+@pytest.mark.parametrize(
+    "managed_self_improve",
+    [False, True],
+    ids=["ordinary", "managed-self-improve"],
+)
+async def test_concurrent_claim_runnable_has_exactly_one_winner(
+    session_factory,
+    managed_self_improve: bool,
+):
     """Trace: SA and SB BOTH SELECT QUEUED T1 (before either flushes); both call
     claim_runnable(). With the guarded conditional UPDATE, exactly ONE caller's
     UPDATE affects the row and returns [T1]; the loser's guarded UPDATE matches
     no row (status no longer QUEUED / version moved) and returns []. So the todo
     is dispatched exactly once.
     """
-    await _insert_queued_todo(session_factory)
+    await _insert_queued_todo(
+        session_factory,
+        managed_self_improve=managed_self_improve,
+    )
 
     async with session_factory() as sa, session_factory() as sb:
         repo_a = TodoRepository(sa)
@@ -250,10 +271,11 @@ async def test_concurrent_claim_runnable_double_claims_same_todo(session_factory
         # Drive the real production claim path on both sessions. SQLite serializes
         # the two guarded UPDATEs at the WAL/file level; the optimistic
         # status/version guard makes exactly one win.
-        claimed_a = await repo_a.claim_runnable()
-        await sa.commit()
-        claimed_b = await repo_b.claim_runnable()
-        await sb.commit()
+        claimed_a, claimed_b = await asyncio.gather(
+            repo_a.claim_runnable(),
+            repo_b.claim_runnable(),
+        )
+        await asyncio.gather(sa.commit(), sb.commit())
 
     # Exactly ONE claimant walks away with T1 -> no double dispatch.
     assert len(claimed_a) + len(claimed_b) == 1, (

@@ -241,6 +241,23 @@ def validate_app_document(
         required_argument(arguments, "--model", policy.model_name)
         required_argument(arguments, "--revision", policy.model_revision)
         required_argument(arguments, "--tokenizer-revision", policy.model_revision)
+        scale = member(template, "scale")
+        if (
+            member(scale, "minReplicas") != policy.min_replicas
+            or member(scale, "maxReplicas") != policy.max_replicas
+        ):
+            raise ValueError
+        rules = member(scale, "rules")
+        if not isinstance(rules, list) or len(rules) != 1:
+            raise ValueError
+        rule = rules[0]
+        if member(rule, "name") != "inference-requests":
+            raise ValueError
+        metadata = member(member(rule, "http"), "metadata")
+        if member(metadata, "concurrentRequests") != str(
+            policy.http_concurrent_requests
+        ):
+            raise ValueError
     except Exception:
         raise AzureContainerAppMakeRuntimeError("deployment-evidence") from None
 

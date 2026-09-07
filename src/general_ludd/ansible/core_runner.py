@@ -383,6 +383,10 @@ class CoreAnsibleRunner:
             shutil.rmtree(self._private_data_dir, ignore_errors=True)
             self._private_data_dir = ""
 
+    def set_process_isolation(self, config: Any | None) -> None:
+        """Switch subsequent playbook runs to a verified isolation boundary."""
+        self._process_isolation = config
+
     def run_playbook(
         self,
         playbook_path: str,

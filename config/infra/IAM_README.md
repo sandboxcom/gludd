@@ -348,12 +348,14 @@ az role assignment delete --assignee-object-id <operator-object-id> --role "User
 
 ### Create the Container Apps runtime identity
 
-The accelerator role is intentionally limited to ten `Microsoft.App` operations
-inside one existing resource group. It cannot register providers, create the
-resource group or managed environment, change IAM, use virtual machines or
-networks, read secrets, or access Cognitive Services. `NotActions` is empty:
-Azure treats it as subtraction from wildcard grants, not an explicit deny, so
-least privilege comes from the exact allowlist.
+The accelerator role is intentionally limited to 14 `Microsoft.App` operations
+plus `Microsoft.Insights/metrics/read` inside one existing resource group. It can
+create and remove only Gludd-owned managed environments and Container Apps and
+read their quota, status, inventory, and GPU metrics. It cannot register
+providers, create or delete the resource group, change IAM, use virtual machines
+or networks, manage registries or logging, read secrets, or access Cognitive
+Services. `NotActions` is empty: Azure treats it as subtraction from wildcard
+grants, not an explicit deny, so least privilege comes from the exact allowlist.
 
 ```bash
 SUB_ID="00000000-0000-0000-0000-000000000000"
@@ -429,7 +431,7 @@ az monitor activity-log list \
 ### Least-privilege checklist
 
 - [ ] All role assignments scoped to resource group (not subscription)
-- [ ] Custom role `azure-iam-policy.json` has explicit NotActions for dangerous operations
+- [ ] Custom role `azure-iam-policy.json` has only the exact reviewed Actions and empty NotActions
 - [ ] No `Owner` or `User Access Administrator` roles assigned
 - [ ] Managed identities used (no service principal client secrets)
 - [ ] Cognitive Services User scoped to specific account (not `*`)

@@ -77,9 +77,13 @@ def get_playbook_registry() -> set[str]:
 
 def build_worker_self_improve_runner(repo_root: Path) -> _ManagedSelfImproveService:
     """Build the installed approval-bound runtime for one canonical repository."""
+    from general_ludd.config.loader import load_user_config
     from general_ludd.self_improve import build_managed_self_improve_runner
 
-    return build_managed_self_improve_runner(repo_root)
+    return build_managed_self_improve_runner(
+        repo_root,
+        self_improve_config=load_user_config().self_improve,
+    )
 
 
 def resolve_worker_self_improve_repo_root(project_id: str) -> Path:

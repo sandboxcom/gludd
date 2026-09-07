@@ -1,4 +1,8 @@
-"""Public errors and content-free events for the Container App Make runtime."""
+"""Public errors and content-free events for Container App Terraform runtimes.
+
+Legacy names remain exported for callers created before provisioning moved out of
+Make.  Event provenance always identifies the actual Terraform execution layer.
+"""
 
 from __future__ import annotations
 
@@ -6,10 +10,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 MAKE_TARGET = "azure-containerapp-terraform-phase"
+TERRAFORM_TARGET = "terraform"
 
 
 class AzureContainerAppMakeRuntimeError(RuntimeError):
-    """Fixed-context refusal from one Make-mediated infrastructure phase."""
+    """Fixed-context refusal from one owned infrastructure phase."""
 
     def __init__(self, phase: str) -> None:
         """Initialize a censored failure for one named runtime phase."""
@@ -18,7 +23,7 @@ class AzureContainerAppMakeRuntimeError(RuntimeError):
 
 
 class MakeRuntimeState(StrEnum):
-    """Content-free state for a Make-mediated Terraform phase."""
+    """Content-free state for a direct Terraform phase."""
 
     STARTED = "started"
     HEARTBEAT = "heartbeat"
@@ -34,11 +39,12 @@ class MakeRuntimeEvent:
     state: MakeRuntimeState
     operation_digest: str
     elapsed_seconds: int = 0
-    target: str = MAKE_TARGET
+    target: str = TERRAFORM_TARGET
 
 
 __all__ = (
     "MAKE_TARGET",
+    "TERRAFORM_TARGET",
     "AzureContainerAppMakeRuntimeError",
     "MakeRuntimeEvent",
     "MakeRuntimeState",

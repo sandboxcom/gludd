@@ -17,8 +17,16 @@ AZURE_MODULE_DIR = REPO_ROOT / "infra" / "terraform" / "modules" / "onboard-iam-
 AZURE_POLICY_PATH = REPO_ROOT / "config" / "infra" / "azure-iam-policy.json"
 OPA_IAM_TEST_PATH = REPO_ROOT / "config" / "opa" / "iam_policy_test.rego"
 ACCELERATOR_ROLE = "General Ludd Accelerator Deployer"
+SUBSCRIPTION_ID = "11111111-2222-3333-4444-555555555555"
+RESOURCE_GROUP = "gludd-models-eastus"
+RESOURCE_GROUP_SCOPE = (
+    f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/{RESOURCE_GROUP}"
+)
+ROLE_DEFINITION_ID = "96008390-cad3-42f5-b72a-b5230b176675"
 REQUIRED_ACCELERATOR_ACTIONS = (
     "Microsoft.App/managedEnvironments/read",
+    "Microsoft.App/managedEnvironments/write",
+    "Microsoft.App/managedEnvironments/delete",
     "Microsoft.App/managedEnvironments/join/action",
     "Microsoft.App/managedEnvironments/usages/read",
     "Microsoft.App/managedEnvironments/workloadProfileStates/read",
@@ -28,6 +36,9 @@ REQUIRED_ACCELERATOR_ACTIONS = (
     "Microsoft.App/containerApps/revisions/read",
     "Microsoft.App/locations/containerAppOperationResults/read",
     "Microsoft.App/locations/containerAppOperationStatuses/read",
+    "Microsoft.App/locations/managedEnvironmentOperationResults/read",
+    "Microsoft.App/locations/managedEnvironmentOperationStatuses/read",
+    "Microsoft.Insights/metrics/read",
 )
 OBSOLETE_PROVIDER_REGISTRATION = "Microsoft.Resources/subscriptions/providers/register/action"
 
@@ -37,10 +48,12 @@ OBSOLETE_PROVIDER_REGISTRATION = "Microsoft.Resources/subscriptions/providers/re
 # ---------------------------------------------------------------------------
 
 class TestCreateRoleInstructions:
-    def test_mentions_terraform_apply(self) -> None:
+    def test_makes_sdk_role_apply_the_canonical_local_bootstrap(self) -> None:
         text = azure_onboard.create_role_instructions(subscription_id="00000000-0000-0000-0000-000000000000")
-        assert "terraform init" in text.lower()
-        assert "terraform apply" in text.lower()
+        assert "make azure-accelerator-role-apply" in text
+        assert "AZURE_ACCELERATOR_LOCATION=eastus" in text
+        assert "azure-mgmt-authorization" in text
+        assert "| xargs" not in text
 
     def test_mentions_principal_id(self) -> None:
         text = azure_onboard.create_role_instructions(subscription_id="00000000-0000-0000-0000-000000000000")
@@ -97,29 +110,41 @@ class TestTokenAcquisitionGuide:
 # ---------------------------------------------------------------------------
 
 class TestValidateTokenAndRole:
-    def test_calls_virtual_machines_list(self) -> None:
-        """Validate probes compute.virtual_machines.list."""
-        fake_compute = MagicMock()
-        fake_compute.virtual_machines.list.return_value = MagicMock(
+    def test_calls_container_apps_list_by_resource_group(self) -> None:
+        """Validate probes the exact permission the runtime role actually owns."""
+        fake_appcontainers = MagicMock()
+        fake_appcontainers.container_apps.list_by_resource_group.return_value = MagicMock(
             next=MagicMock(),  # iterator
         )
 
-        with patch.object(azure_onboard, "_build_azure_client", return_value=fake_compute), \
+        with patch.object(
+            azure_onboard,
+            "_build_container_apps_client",
+            return_value=fake_appcontainers,
+        ), \
              patch.object(azure_onboard, "_get_role_assignments", return_value=[]):
             _ok, info = azure_onboard.validate_token_and_role(
-                subscription_id="00000000-0000-0000-0000-000000000000",
-                resource_group_name="gludd-rg",
+                subscription_id=SUBSCRIPTION_ID,
+                resource_group_name=RESOURCE_GROUP,
                 principal_id="11111111-1111-1111-1111-111111111111",
             )
 
-        fake_compute.virtual_machines.list.assert_called_once()
-        assert info["subscription"] == "00000000-0000-0000-0000-000000000000"
+        fake_appcontainers.container_apps.list_by_resource_group.assert_called_once_with(
+            RESOURCE_GROUP,
+        )
+        assert info["subscription"] == SUBSCRIPTION_ID
 
     def test_returns_missing_roles_when_empty(self) -> None:
-        fake_compute = MagicMock()
-        fake_compute.virtual_machines.list.return_value = MagicMock(next=MagicMock())
+        fake_appcontainers = MagicMock()
+        fake_appcontainers.container_apps.list_by_resource_group.return_value = MagicMock(
+            next=MagicMock(),
+        )
 
-        with patch.object(azure_onboard, "_build_azure_client", return_value=fake_compute), \
+        with patch.object(
+            azure_onboard,
+            "_build_container_apps_client",
+            return_value=fake_appcontainers,
+        ), \
              patch.object(azure_onboard, "_get_role_assignments", return_value=[]):
             ok, info = azure_onboard.validate_token_and_role(
                 subscription_id="sub-1",
@@ -133,14 +158,20 @@ class TestValidateTokenAndRole:
             assert role  # non-empty names
 
     def test_ok_when_all_roles_present(self) -> None:
-        fake_compute = MagicMock()
-        fake_compute.virtual_machines.list.return_value = MagicMock(next=MagicMock())
+        fake_appcontainers = MagicMock()
+        fake_appcontainers.container_apps.list_by_resource_group.return_value = MagicMock(
+            next=MagicMock(),
+        )
 
         all_assignments = [
             {"role_definition_name": r, "principal_id": "principal-1"}
             for r in azure_onboard.EXPECTED_ROLES
         ]
-        with patch.object(azure_onboard, "_build_azure_client", return_value=fake_compute), \
+        with patch.object(
+            azure_onboard,
+            "_build_container_apps_client",
+            return_value=fake_appcontainers,
+        ), \
              patch.object(azure_onboard, "_get_role_assignments", return_value=all_assignments):
             ok, info = azure_onboard.validate_token_and_role(
                 subscription_id="sub-1",
@@ -174,31 +205,31 @@ class TestAzureSdkBoundaries:
         azure = ModuleType("azure")
         identity = ModuleType("azure.identity")
         mgmt = ModuleType("azure.mgmt")
-        compute = ModuleType("azure.mgmt.compute")
+        appcontainers = ModuleType("azure.mgmt.appcontainers")
         authorization = ModuleType("azure.mgmt.authorization")
         credential = MagicMock(name="DefaultAzureCredential")
-        compute_client = MagicMock(name="ComputeManagementClient")
+        appcontainers_client = MagicMock(name="ContainerAppsAPIClient")
         identity.__dict__["DefaultAzureCredential"] = credential
-        compute.__dict__["ComputeManagementClient"] = compute_client
+        appcontainers.__dict__["ContainerAppsAPIClient"] = appcontainers_client
         return (
             {
                 "azure": azure,
                 "azure.identity": identity,
                 "azure.mgmt": mgmt,
-                "azure.mgmt.compute": compute,
+                "azure.mgmt.appcontainers": appcontainers,
                 "azure.mgmt.authorization": authorization,
             },
             credential,
-            compute_client,
+            appcontainers_client,
         )
 
-    def test_build_client_uses_default_credential_and_subscription(self) -> None:
-        modules, credential, compute_client = self._sdk_modules()
+    def test_build_container_apps_client_uses_official_sdk(self) -> None:
+        modules, credential, appcontainers_client = self._sdk_modules()
         with patch.dict(sys.modules, modules):
-            result = azure_onboard._build_azure_client(subscription_id="sub-1")
+            result = azure_onboard._build_container_apps_client(subscription_id="sub-1")
 
-        assert result is compute_client.return_value
-        compute_client.assert_called_once_with(
+        assert result is appcontainers_client.return_value
+        appcontainers_client.assert_called_once_with(
             credential=credential.return_value,
             subscription_id="sub-1",
         )
@@ -273,11 +304,13 @@ class TestTerraformModuleLeastPriv:
         for bad in ('role_definition_name = "Contributor"', 'role_definition_name = "Owner"'):
             assert bad not in main_tf, f"Forbidden broad built-in role {bad} present in main.tf"
 
-    def test_policy_and_module_cover_only_container_app_runtime_operations(self) -> None:
+    def test_policy_and_module_cover_only_owned_lifecycle_and_metrics_operations(self) -> None:
         main_tf = (AZURE_MODULE_DIR / "main.tf").read_text()
         policy = json.loads(AZURE_POLICY_PATH.read_text())
 
         assert policy["Name"] == ACCELERATOR_ROLE
+        assert set(policy["Actions"]) == set(REQUIRED_ACCELERATOR_ACTIONS)
+        assert len(REQUIRED_ACCELERATOR_ACTIONS) == 15
         for action in REQUIRED_ACCELERATOR_ACTIONS:
             assert action in main_tf
             assert action in policy["Actions"]

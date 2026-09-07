@@ -1,0 +1,77 @@
+---
+- name: Inspect the exact candidate through Podman's stable interface
+  ansible.builtin.command:
+    argv:
+      - "{{ execution_environment_bootstrap_podman_executable }}"
+      - image
+      - inspect
+      - "{{ _execution_environment_bootstrap_candidate_image }}"
+      - --format
+      - json
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+  register: _execution_environment_bootstrap_image_info
+  changed_when: false
+  failed_when: false
+
+- name: Parse the exact candidate image identity
+  ansible.builtin.set_fact:
+    _execution_environment_bootstrap_image_record: >-
+      {{ (_execution_environment_bootstrap_image_info.stdout | from_json | first)
+         if _execution_environment_bootstrap_image_info.rc == 0 else {} }}
+
+- name: Fail closed when the candidate image is unavailable
+  ansible.builtin.assert:
+    that:
+      - _execution_environment_bootstrap_image_info.rc == 0
+      - _execution_environment_bootstrap_image_record.Id | default('') is match('^(sha256:)?[0-9a-f]{64}$')
+    fail_msg: >-
+      The Gludd-owned execution-environment candidate was not found after the
+      builder reported success.
+
+- name: Verify OpenTofu in the candidate without network access
+  ansible.builtin.command:
+    argv:
+      - "{{ execution_environment_bootstrap_podman_executable }}"
+      - run
+      - --rm
+      - --network=none
+      - "{{ _execution_environment_bootstrap_candidate_image }}"
+      - /usr/local/bin/tofu
+      - version
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+  register: _execution_environment_bootstrap_tofu_smoke
+  changed_when: false
+
+- name: Verify Ansible imports in the candidate without network access
+  ansible.builtin.command:
+    argv:
+      - "{{ execution_environment_bootstrap_podman_executable }}"
+      - run
+      - --rm
+      - --network=none
+      - "{{ _execution_environment_bootstrap_candidate_image }}"
+      - python3
+      - -c
+      - "import ansible, ansible_runner; print('ANSIBLE_EE_IMPORT_OK')"
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+  register: _execution_environment_bootstrap_python_smoke
+  changed_when: false
+
+- name: Publish only the verified execution-environment candidate
+  ansible.builtin.set_fact:
+    gludd_execution_environment:
+      state: present
+      owner: gludd
+      machine: "{{ execution_environment_bootstrap_machine_name }}"
+      image: "{{ _execution_environment_bootstrap_candidate_image }}"
+      image_id: "{{ _execution_environment_bootstrap_image_record.Id }}"
+      context: "{{ _execution_environment_bootstrap_candidate_context }}"
+      runtime_lock_sha256: "{{ _execution_environment_bootstrap_runtime_sha256 }}"
+      container_connection: "{{ execution_environment_bootstrap_machine_name if _execution_environment_bootstrap_machine_required else '' }}"
+      opentofu_version: "{{ _execution_environment_bootstrap_tofu_smoke.stdout_lines | first }}"
+      ansible_import_smoke: "{{ _execution_environment_bootstrap_python_smoke.stdout | trim }}"
+      verified: true
+
+- name: Report verified execution-environment identity
+  ansible.builtin.debug:
+    var: gludd_execution_environment

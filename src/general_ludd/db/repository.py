@@ -91,8 +91,16 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
         TodoStatus.MANUAL_HOLD,
     },
     TodoStatus.APPROVED: {TodoStatus.ACTIVE, TodoStatus.CANCELLED},
-    TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.FAILED, TodoStatus.BLOCKED, TodoStatus.BLOCKED_ON_HUMAN},
+    TodoStatus.QUEUED: {
+        TodoStatus.ACTIVE,
+        TodoStatus.FAILED,
+        TodoStatus.BLOCKED,
+        TodoStatus.BLOCKED_ON_HUMAN,
+        TodoStatus.CANCELLED,
+        TodoStatus.MANUAL_HOLD,
+    },
     TodoStatus.ACTIVE: {
+        TodoStatus.AWAITING_RESULT,
         TodoStatus.COMPLETE,
         TodoStatus.FAILED,
         TodoStatus.BLOCKED,
@@ -101,6 +109,12 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
         TodoStatus.MANUAL_HOLD,
         TodoStatus.NEEDS_MORE_WORK,
         TodoStatus.QUEUED,
+    },
+    TodoStatus.AWAITING_RESULT: {
+        TodoStatus.REVIEWING_RETURN,
+        TodoStatus.BLOCKED,
+        TodoStatus.CANCELLED,
+        TodoStatus.BUDGET_EXCEEDED,
     },
     TodoStatus.REVIEWING_RETURN: {
         TodoStatus.COMPLETE,

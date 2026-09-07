@@ -144,14 +144,14 @@ resource "azapi_resource" "vllm" {
           }
         ]
         scale = {
-          minReplicas = 0
-          maxReplicas = 1
+          minReplicas = var.min_replicas
+          maxReplicas = var.max_replicas
           rules = [
             {
               name = "inference-requests"
               http = {
                 metadata = {
-                  concurrentRequests = "1"
+                  concurrentRequests = tostring(var.http_concurrent_requests)
                 }
               }
             }

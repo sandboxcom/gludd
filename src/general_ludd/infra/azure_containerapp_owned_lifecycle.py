@@ -65,10 +65,11 @@ def _validate_boundaries(
         raise ValueError("trace sinks must be callable")
 
 
-def _validate_shared_authority(
+def validate_owned_azure_containerapp_authority(
     app_policy: AzureContainerAppLiveProofPolicy,
     environment_policy: AzureEnvironmentLifecyclePolicy,
 ) -> None:
+    """Require app and environment policies to share one teardown authority."""
     try:
         required_profile = AzureEnvironmentProfile(
             app_policy.workload_profile_name,
@@ -130,7 +131,7 @@ def run_owned_azure_containerapp_live_proof(
         environment_trace_sink,
         app_trace_sink,
     )
-    _validate_shared_authority(app_policy, environment_policy)
+    validate_owned_azure_containerapp_authority(app_policy, environment_policy)
     if not app_policy.live:
         return run_azure_containerapp_live_proof(
             app_policy,
@@ -185,4 +186,7 @@ def run_owned_azure_containerapp_live_proof(
     return proof
 
 
-__all__ = ("run_owned_azure_containerapp_live_proof",)
+__all__ = (
+    "run_owned_azure_containerapp_live_proof",
+    "validate_owned_azure_containerapp_authority",
+)

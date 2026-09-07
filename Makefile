@@ -83,6 +83,18 @@ endif
 ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_SP_NAME)))
 $(error AZURE_ACCELERATOR_SP_NAME contains forbidden input)
 endif
+ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_OPERATOR_AUTH)))
+$(error AZURE_ACCELERATOR_OPERATOR_AUTH contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID)))
+$(error AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_ROLE_APPLY_LIVE)))
+$(error AZURE_ACCELERATOR_ROLE_APPLY_LIVE contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_LOCATION)))
+$(error AZURE_ACCELERATOR_LOCATION contains forbidden input)
+endif
 ifneq (,$(findstring $$,$(value AZURE_CONTAINERAPP_ENVIRONMENT)))
 $(error AZURE_CONTAINERAPP_ENVIRONMENT contains forbidden input)
 endif
@@ -98,6 +110,10 @@ endif
 override _GLUDD_AZURE_ACCELERATOR_SUBSCRIPTION_ID_RAW := $(value AZURE_ACCELERATOR_SUBSCRIPTION_ID)
 override _GLUDD_AZURE_ACCELERATOR_RESOURCE_GROUP_RAW := $(value AZURE_ACCELERATOR_RESOURCE_GROUP)
 override _GLUDD_AZURE_ACCELERATOR_SP_NAME_RAW := $(value AZURE_ACCELERATOR_SP_NAME)
+override _GLUDD_AZURE_ACCELERATOR_OPERATOR_AUTH_RAW := $(value AZURE_ACCELERATOR_OPERATOR_AUTH)
+override _GLUDD_AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID_RAW := $(value AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID)
+override _GLUDD_AZURE_ACCELERATOR_ROLE_APPLY_LIVE_RAW := $(value AZURE_ACCELERATOR_ROLE_APPLY_LIVE)
+override _GLUDD_AZURE_ACCELERATOR_LOCATION_RAW := $(value AZURE_ACCELERATOR_LOCATION)
 override _GLUDD_AZURE_CONTAINERAPP_ENVIRONMENT_RAW := $(value AZURE_CONTAINERAPP_ENVIRONMENT)
 override _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME_RAW := $(value AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME)
 override _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE_RAW := $(value AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE)
@@ -105,6 +121,10 @@ override _GLUDD_AZURE_CONTAINERAPP_LOCATION_RAW := $(value AZURE_CONTAINERAPP_LO
 export _GLUDD_AZURE_ACCELERATOR_SUBSCRIPTION_ID_RAW
 export _GLUDD_AZURE_ACCELERATOR_RESOURCE_GROUP_RAW
 export _GLUDD_AZURE_ACCELERATOR_SP_NAME_RAW
+export _GLUDD_AZURE_ACCELERATOR_OPERATOR_AUTH_RAW
+export _GLUDD_AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID_RAW
+export _GLUDD_AZURE_ACCELERATOR_ROLE_APPLY_LIVE_RAW
+export _GLUDD_AZURE_ACCELERATOR_LOCATION_RAW
 export _GLUDD_AZURE_CONTAINERAPP_ENVIRONMENT_RAW
 export _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME_RAW
 export _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE_RAW
@@ -174,7 +194,7 @@ _NO_UV_SYNC_GOALS := \
     check-disk check-disk-classification disk disk-check disk-guard cache-disk cache-clean disk-user-caches audit-home-tmp \
     cache-resource-inventory cache-resource-remove tmp-gludd-usage tmp-gludd-worktree-usage \
     tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
-    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base azure-self-improve-auth-args azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-containerapp-environment-bootstrap-args \
+    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base azure-self-improve-auth-args \
     development-merge-forward development-merge-forward-batch uv-cache-path
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
@@ -213,7 +233,7 @@ PYTEST_VERBOSITY ?= -v
         feature-start feature-done test-and-commit preflight \
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
-        self-improve-local-proposal azure-self-improve-auth-args azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
+        self-improve-local-proposal azure-self-improve-auth-args azure-accelerator-role-apply azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
           development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key workstream-register workstream-unregister wt-prune-safe \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
@@ -494,7 +514,8 @@ help:
 	@echo "  agent-worktree-list           List active git worktrees"
 	@echo "  self-improve-local-proposal  Owned local GGUF proposal worker (SELF_IMPROVE_MODEL_PATH/PROMPT_FILE/PROPOSAL_FILE)"
 	@echo "  azure-self-improve-auth-args  Emit validated NUL arguments for one least-privilege Azure SP command"
-	@echo "  azure-accelerator-role-args  Emit validated NUL arguments to create the Terraform GPU deployer role"
+	@echo "  azure-accelerator-role-apply Apply/validate the exact GPU role through Microsoft SDKs (AZURE_ACCELERATOR_*)"
+	@echo "  azure-accelerator-role-args  Deprecated compatibility argv for Azure CLI role creation"
 	@echo "  azure-accelerator-role-update-args  Emit validated NUL arguments to narrow an existing GPU role"
 	@echo "  azure-accelerator-auth-args  Emit validated NUL arguments for its Azure SP credential command"
 	@echo "  azure-containerapp-environment-bootstrap-args  Emit one operator-owned shared GPU environment deployment"
@@ -1050,7 +1071,7 @@ test-specific-pyver:
 
 test-files:
 	@if [ -z "$(TESTFILES)" ]; then echo "Usage: make test-files TESTFILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi
-	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
+	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; mkdir -p "$$BT/ansible-local"; ANSIBLE_LOCAL_TEMP="$$BT/ansible-local" $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
 coverage-files:
 	@if [ -z "$(COVERAGE_TESTFILES)" ]; then echo "Usage: make coverage-files COVERAGE_TESTFILES='tests/unit/test_a.py' COVERAGE_CONFIG=config/coverage.ini COVERAGE_REPORT=.gate-logs/coverage-files.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20"; exit 2; fi
@@ -5719,26 +5740,32 @@ azure-self-improve-auth-args:
 	@# Inputs: AZURE_SELF_IMPROVE_SUBSCRIPTION_ID AZURE_SELF_IMPROVE_RESOURCE_GROUP AZURE_SELF_IMPROVE_ACCOUNT AZURE_SELF_IMPROVE_SP_NAME
 	@$(SYSTEM_PYTHON) scripts/render_azure_self_improve_auth_args.py
 
-# Stdout is one NUL-delimited argv for the Azure role-definition API.
+# Canonical operator-owned role application through supported Microsoft SDKs.
+# LIVE=0 validates locally and constructs no credential or Azure client.
+azure-accelerator-role-apply:
+	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP AZURE_ACCELERATOR_LOCATION AZURE_ACCELERATOR_OPERATOR_AUTH AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID AZURE_ACCELERATOR_ROLE_APPLY_LIVE
+	@$(UV) run $(if $(filter 1,$(AZURE_ACCELERATOR_ROLE_APPLY_LIVE)),--extra azure,) python -m general_ludd.azure.accelerator_role
+
+# Deprecated compatibility: stdout is one NUL-delimited Azure CLI argv.
 azure-accelerator-role-args:
 	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP
-	@$(SYSTEM_PYTHON) scripts/render_azure_accelerator_auth_args.py role
+	@$(UV) run python scripts/render_azure_accelerator_auth_args.py role
 
 # Stdout is one NUL-delimited argv that updates an existing Azure role definition.
 azure-accelerator-role-update-args:
 	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP
-	@$(SYSTEM_PYTHON) scripts/render_azure_accelerator_auth_args.py role-update
+	@$(UV) run python scripts/render_azure_accelerator_auth_args.py role-update
 
 # Stdout is one NUL-delimited argv for the Entra principal/assignment API.
 azure-accelerator-auth-args:
 	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP AZURE_ACCELERATOR_SP_NAME
-	@$(SYSTEM_PYTHON) scripts/render_azure_accelerator_auth_args.py auth
+	@$(UV) run python scripts/render_azure_accelerator_auth_args.py auth
 
 # Stdout is one NUL-delimited argv for an operator-owned ARM group deployment.
 # The Gludd service principal intentionally cannot execute this bootstrap.
 azure-containerapp-environment-bootstrap-args:
 	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP AZURE_CONTAINERAPP_ENVIRONMENT AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE AZURE_CONTAINERAPP_LOCATION
-	@$(SYSTEM_PYTHON) scripts/render_azure_accelerator_auth_args.py environment-bootstrap
+	@$(UV) run python scripts/render_azure_accelerator_auth_args.py environment-bootstrap
 
 # Validate Azure CLI --json-auth output without sourcing or rendering secrets.
 azure-accelerator-auth-check:
@@ -5822,7 +5849,7 @@ azure-containerapp-live-proof:
 # One credential-free local/GHA contract for every Azure Container Apps boundary.
 test-azure-containerapp-coverage:
 	@$(MAKE) --no-print-directory coverage-files \
-		COVERAGE_TESTFILES='tests/unit/test_azure_accelerator_credentials.py tests/unit/test_azure_containerapp_arm.py tests/unit/test_azure_containerapp_environment_lifecycle.py tests/unit/test_azure_containerapp_environment_make_runtime.py tests/unit/test_azure_containerapp_environment_preflight.py tests/unit/test_azure_containerapp_environment_terraform.py tests/unit/test_azure_containerapp_gpu.py tests/unit/test_azure_containerapp_live_proof.py tests/unit/test_azure_containerapp_make_runtime.py tests/unit/test_azure_containerapp_owned_lifecycle.py tests/unit/test_azure_containerapp_preflight.py tests/unit/test_azure_containerapp_preflight_cli.py tests/unit/test_azure_containerapp_terraform_phase.py tests/unit/test_azure_containerapp_topology.py tests/unit/test_azure_containerapp_tfvars.py tests/unit/test_deployment_telemetry.py tests/unit/test_provider_auth.py tests/unit/test_self_improve_azure_containerapp_backend.py tests/e2e/test_azure_containerapp_live_proof_cli.py' \
+		COVERAGE_TESTFILES='tests/unit/test_ansible_runtime_artifacts.py tests/unit/test_azure_accelerator_credentials.py tests/unit/test_azure_accelerator_openbao.py tests/unit/test_azure_accelerator_role.py tests/unit/test_azure_containerapp_ansible_orchestration.py tests/unit/test_azure_containerapp_arm.py tests/unit/test_azure_containerapp_environment_lifecycle.py tests/unit/test_azure_containerapp_environment_make_runtime.py tests/unit/test_azure_containerapp_environment_preflight.py tests/unit/test_azure_containerapp_environment_terraform.py tests/unit/test_azure_containerapp_gpu.py tests/unit/test_azure_containerapp_live_proof.py tests/unit/test_azure_containerapp_make_runtime.py tests/unit/test_azure_containerapp_owned_lifecycle.py tests/unit/test_azure_containerapp_preflight.py tests/unit/test_azure_containerapp_preflight_cli.py tests/unit/test_azure_containerapp_runtime_resources.py tests/unit/test_azure_containerapp_sdk.py tests/unit/test_azure_containerapp_terraform_executor.py tests/unit/test_azure_containerapp_terraform_phase.py tests/unit/test_azure_containerapp_topology.py tests/unit/test_azure_containerapp_tfvars.py tests/unit/test_deployment_telemetry.py tests/unit/test_provider_auth.py tests/unit/test_self_improve_azure_containerapp_backend.py tests/unit/test_self_improve_azure_containerapp_bootstrap.py tests/e2e/test_azure_containerapp_live_proof_cli.py' \
 		COVERAGE_CONFIG=config/coverage_azure_containerapp.ini \
 		COVERAGE_REPORT=.gate-logs/coverage-azure-containerapp.json \
 		COVERAGE_AGGREGATE_MIN=85 \
@@ -8515,7 +8542,9 @@ tf-init-local: tf-cache-setup
 		TF_LOCAL_DATA_DIR="$$(mktemp -d "$$TF_LOCAL_PARENT/$(subst /,-,$(STACK)).XXXXXX")"; \
 		cleanup_tf_local() { rm -rf "$$TF_LOCAL_DATA_DIR"; }; \
 		trap cleanup_tf_local EXIT INT TERM; \
-		cd "$(TF_ROOT)/$(STACK)" && TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" TF_DATA_DIR="$$TF_LOCAL_DATA_DIR" terraform init -backend=false
+		cd "$(TF_ROOT)/$(STACK)" && \
+		TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" TF_DATA_DIR="$$TF_LOCAL_DATA_DIR" terraform init -backend=false && \
+		TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" TF_DATA_DIR="$$TF_LOCAL_DATA_DIR" terraform validate
 
 # Validates a single stack against the shared cache.
 #   make tf-validate STACK=stacks/aws-vllm

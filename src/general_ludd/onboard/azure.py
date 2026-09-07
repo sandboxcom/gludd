@@ -1,16 +1,15 @@
 """Azure onboarding provider for ``gludd onboard azure``.
 
-Provisions a least-privilege user-assigned managed identity
-(``gludd-compute-operator``) and verifies the cloud-side credential before the
-daemon tries to use it.
+Applies or validates a least-privilege Container Apps role and verifies the
+cloud-side credential before the daemon tries to use it.
 
-The custom ``General Ludd Accelerator Deployer`` role is limited to SKU/quota
-preflight reads and the resource-group, network, VM, disk, and GPU-driver
-extension operations used by the release Terraform stacks.  It can be assigned
-either to the managed identity created by the onboarding module or to an
-existing app/service-principal object id used outside Azure.
+The custom ``General Ludd Accelerator Deployer`` role is limited to owned
+Container Apps environment/application lifecycle operations and one-resource
+GPU metrics reads in one resource group. It can be assigned either to the
+managed identity created by the onboarding module or to an existing
+app/service-principal object id used outside Azure.
 
-All Azure SDKs (``azure-identity``, ``azure-mgmt-compute``,
+All Azure SDKs (``azure-identity``, ``azure-mgmt-appcontainers``,
 ``azure-mgmt-authorization``) are lazy imports; install via the ``[azure]``
 extra.
 """
@@ -37,7 +36,6 @@ _INSTRUCTION_VALUE_RE = re.compile(r"^[A-Za-z0-9._@:/()<>-]+$")
 
 def _validate_instruction_values(**values: str) -> None:
     """Reject characters that could escape generated shell command arguments."""
-
     for name, value in values.items():
         if not value or _INSTRUCTION_VALUE_RE.fullmatch(value) is None:
             raise ValueError(f"unsafe {name} for Azure onboarding instructions")
@@ -55,7 +53,7 @@ def create_role_instructions(
     location: str = "eastus",
     identity_name: str = DEFAULT_IDENTITY_NAME,
 ) -> str:
-    """Return markdown walking the user through provisioning the managed identity."""
+    """Return the supported SDK-first IAM bootstrap instructions."""
     _validate_instruction_values(
         subscription_id=subscription_id,
         resource_group_name=resource_group_name,
@@ -64,9 +62,8 @@ def create_role_instructions(
     )
     return f"""# Azure onboarding — IAM provisioning
 
-This provisions a least-privilege user-assigned managed identity that gludd
-uses to launch and tear down ephemeral GPU compute VMs in subscription
-`{subscription_id}`.
+This applies a least-privilege role for Gludd-owned GPU Container Apps inside
+resource group `{resource_group_name}` in subscription `{subscription_id}`.
 
 ## 1. Authenticate and target the subscription
 
@@ -75,7 +72,27 @@ az login
 az account set --subscription {subscription_id}
 ```
 
-## 2. Provision the IAM resources
+## 2. Apply or update the exact role with Microsoft SDKs
+
+The canonical local bootstrap uses `azure-identity` and
+`azure-mgmt-authorization`; it never shells out to an Azure role command:
+
+```bash
+make azure-accelerator-role-apply \
+  AZURE_ACCELERATOR_SUBSCRIPTION_ID={subscription_id} \
+  AZURE_ACCELERATOR_RESOURCE_GROUP={resource_group_name} \
+  AZURE_ACCELERATOR_LOCATION={location} \
+  AZURE_ACCELERATOR_OPERATOR_AUTH=cli \
+  AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID= \
+  AZURE_ACCELERATOR_ROLE_APPLY_LIVE=1
+```
+
+Leave `AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID` empty to update only the existing
+role, or supply an existing service-principal object id to add the exact
+resource-group assignment. The invoking operator must already hold role-
+definition authority; the Gludd runtime identity never receives it.
+
+## 3. Optional managed identity
 
 Apply the `onboard-iam-azure` Terraform module. From the repository root:
 
@@ -91,9 +108,8 @@ terraform apply \\
 The module creates:
 
 * `azurerm_user_assigned_identity` named `{identity_name}`
-* the `General Ludd Accelerator Deployer` custom role, limited to SKU/quota
-  reads plus the resource group, network, VM, disk, and NVIDIA driver extension
-  operations used by gludd
+* the `General Ludd Accelerator Deployer` custom role, limited to owned
+  Container Apps lifecycle and one-resource GPU metrics reads
 * `azurerm_role_assignment` granting that role to the managed identity
 
 No `Owner` or `Contributor` is granted.
@@ -207,8 +223,8 @@ def validate_token_and_role(
     """Validate the Azure credential and the identity's role assignments.
 
     Uses :class:`azure.identity.DefaultAzureCredential` to authenticate, probes
-    ``compute.virtual_machines.list`` on the target subscription/resource group,
-    and cross-references the principal's role assignments against
+    ``container_apps.list_by_resource_group`` on the exact resource group, and
+    cross-references the principal's role assignments against
     :data:`EXPECTED_ROLES`.
 
     Returns ``(ok, info)`` where ``info`` contains:
@@ -223,9 +239,11 @@ def validate_token_and_role(
     if not principal_id:
         raise ValueError("principal_id is required to verify role assignments.")
 
-    compute_client = _build_azure_client(subscription_id=subscription_id)
+    appcontainers_client = _build_container_apps_client(
+        subscription_id=subscription_id,
+    )
     # Probe the live API — this is the real permission check.
-    list(compute_client.virtual_machines.list(resource_group_name=resource_group_name))
+    list(appcontainers_client.container_apps.list_by_resource_group(resource_group_name))
 
     # Cross-reference role assignments against the expected role set.
     assignments = _get_role_assignments(subscription_id, principal_id)
@@ -251,22 +269,24 @@ def validate_token_and_role(
 # ---------------------------------------------------------------------------
 
 
-def _build_azure_client(*, subscription_id: str) -> Any:
-    """Build an azure-mgmt-compute ComputeManagementClient lazily.
+def _build_container_apps_client(*, subscription_id: str) -> Any:
+    """Build Microsoft's Container Apps management client lazily.
 
-    Kept as a separate function so tests can patch ``azure._build_azure_client``
-    without importing the SDK.
+    Kept separate so tests can patch the boundary without importing the SDK.
     """
     try:
         from azure.identity import DefaultAzureCredential
-        from azure.mgmt.compute import ComputeManagementClient
+        from azure.mgmt.appcontainers import ContainerAppsAPIClient
     except ImportError as exc:
         raise RuntimeError(
             "Azure SDK not installed. Install with: pip install 'general-ludd-agent[azure]'",
         ) from exc
 
     creds = DefaultAzureCredential()
-    return ComputeManagementClient(credential=creds, subscription_id=subscription_id)
+    return ContainerAppsAPIClient(
+        credential=creds,
+        subscription_id=subscription_id,
+    )
 
 
 def _get_role_assignments(subscription_id: str, principal_id: str) -> list[dict[str, Any]]:
@@ -358,12 +378,14 @@ class AzureOnboardProvider:
         location: str = "eastus",
         identity_name: str = DEFAULT_IDENTITY_NAME,
     ) -> None:
+        """Initialize Azure onboarding identifiers and location."""
         self.subscription_id = subscription_id or os.environ.get("AZURE_SUBSCRIPTION_ID")
         self.resource_group_name = resource_group_name
         self.location = location
         self.identity_name = identity_name
 
     def create_role_instructions(self) -> str:
+        """Render the SDK-first least-privilege role bootstrap instructions."""
         return create_role_instructions(
             subscription_id=self.subscription_id or "<SUBSCRIPTION_ID>",
             resource_group_name=self.resource_group_name,
@@ -372,6 +394,7 @@ class AzureOnboardProvider:
         )
 
     def token_acquisition_guide(self) -> str:
+        """Return the noninteractive Azure identity acquisition guide."""
         return token_acquisition_guide()
 
     def validate_token_and_role(self, token: str, role_arn: str, region: str) -> tuple[bool, dict[str, Any]]:

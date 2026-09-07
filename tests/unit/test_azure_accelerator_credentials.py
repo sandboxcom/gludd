@@ -10,6 +10,7 @@ import pytest
 
 from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorCredentialError,
+    build_azure_accelerator_credentials,
     load_azure_accelerator_credentials,
 )
 
@@ -17,6 +18,51 @@ SUBSCRIPTION_ID = "11111111-2222-3333-4444-555555555555"
 TENANT_ID = "22222222-3333-4444-5555-666666666666"
 CLIENT_ID = "33333333-4444-5555-6666-777777777777"
 SECRET_VALUE = "fixture-value-not-a-real-credential"
+
+
+def test_validated_value_factory_reuses_the_file_loader_security_contract() -> None:
+    credential = build_azure_accelerator_credentials(
+        client_id=CLIENT_ID,
+        client_secret=SECRET_VALUE,
+        subscription_id=SUBSCRIPTION_ID,
+        tenant_id=TENANT_ID,
+        expected_subscription_id=SUBSCRIPTION_ID,
+    )
+
+    assert credential.client_id == CLIENT_ID
+    assert credential.subscription_id == SUBSCRIPTION_ID
+    assert credential.tenant_id == TENANT_ID
+    assert credential.client_secret == SECRET_VALUE
+    assert SECRET_VALUE not in repr(credential)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"client_id": "not-a-uuid"},
+        {"tenant_id": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"},
+        {"client_secret": "line\nbreak"},
+        {"subscription_id": "44444444-5555-6666-7777-888888888888"},
+    ],
+)
+def test_validated_value_factory_rejects_untrusted_dynamic_values(
+    overrides: dict[str, str],
+) -> None:
+    values = {
+        "client_id": CLIENT_ID,
+        "client_secret": SECRET_VALUE,
+        "subscription_id": SUBSCRIPTION_ID,
+        "tenant_id": TENANT_ID,
+    }
+    values.update(overrides)
+
+    with pytest.raises(AzureAcceleratorCredentialError) as captured:
+        build_azure_accelerator_credentials(
+            **values,
+            expected_subscription_id=SUBSCRIPTION_ID,
+        )
+
+    assert SECRET_VALUE not in repr(captured.value)
 
 
 def _payload(**overrides: object) -> dict[str, object]:

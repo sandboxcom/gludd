@@ -93,6 +93,21 @@ variable "trace_id" {
   type        = string
 }
 
+variable "min_replicas" {
+  description = "Minimum paid GPU replicas; must remain zero for the owned lifecycle."
+  type        = number
+}
+
+variable "max_replicas" {
+  description = "Maximum GPU replicas derived from bounded simultaneous demand."
+  type        = number
+}
+
+variable "http_concurrent_requests" {
+  description = "Per-replica HTTP concurrency used by the HTTP scaling rule."
+  type        = number
+}
+
 variable "use_spot" {
   description = "Spot capacity is unsupported for Azure Container Apps serverless GPU."
   type        = bool

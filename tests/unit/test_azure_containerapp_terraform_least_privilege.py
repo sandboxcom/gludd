@@ -60,8 +60,9 @@ def test_t4_and_a100_are_not_conflated_and_app_is_bounded() -> None:
     assert 'contains(["t4", "a100_80"], var.gpu_type)' in variables
     assert 'workload_profile_type = "Consumption-GPU-NC8as-T4"' in main
     assert 'workload_profile_type = "Consumption-GPU-NC24-A100"' in main
-    assert "minReplicas = 0" in main
-    assert "maxReplicas = 1" in main
+    assert "minReplicas = var.min_replicas" in main
+    assert "maxReplicas = var.max_replicas" in main
+    assert "concurrentRequests = tostring(var.http_concurrent_requests)" in main
     assert "ipSecurityRestrictions" in main
     assert "var.allowed_cidr" in main
     assert "allowed_cidr must be one IPv4 /32" in variables

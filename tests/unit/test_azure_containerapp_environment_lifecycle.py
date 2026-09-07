@@ -461,6 +461,28 @@ def test_plan_audit_accepts_documented_azapi_v2_provider_bookkeeping() -> None:
     )
 
 
+def test_plan_audit_accepts_opentofu_nested_false_metadata_shapes() -> None:
+    """OpenTofu 1.15 emits structural false/empty sensitivity metadata."""
+    policy = _policy()
+    plan = _provider_v2_plan_payload(policy)
+    resource_changes = cast(list[dict[str, object]], plan["resource_changes"])
+    change = cast(dict[str, object], resource_changes[0]["change"])
+    provider_shape = {
+        "body": {"properties": {"workloadProfiles": [{}]}},
+        "identity": [],
+        "response_export_values": [False, False, False, False, False],
+        "tags": {},
+    }
+    change["after_sensitive"] = copy.deepcopy(provider_shape)
+    change["after_unknown"] = {
+        **provider_shape,
+        "id": True,
+        "output": True,
+    }
+
+    assert audit_environment_plan(plan, policy, existed_before=False) is True
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -493,6 +515,12 @@ def test_plan_audit_accepts_documented_azapi_v2_provider_bookkeeping() -> None:
         ),
         lambda plan: plan["resource_changes"][0]["change"].update(
             after_sensitive={"sensitive_body": True}
+        ),
+        lambda plan: plan["resource_changes"][0]["change"].update(
+            after_sensitive={"body": {"properties": {"secret": True}}}
+        ),
+        lambda plan: plan["resource_changes"][0]["change"].update(
+            after_unknown={"body": {"properties": {"unreviewed": True}}}
         ),
         lambda plan: plan["resource_changes"][0]["change"].update(
             importing={"id": "/subscriptions/other"}

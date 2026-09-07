@@ -34,6 +34,10 @@ COLLECTION_ARTIFACTS = (
         ROOT / "dist" / "collections" / "general_ludd-agent-0.2.0.tar.gz",
     ),
     (
+        ROOT / "collections" / "ansible_collections" / "general_ludd" / "azure",
+        ROOT / "dist" / "collections" / "general_ludd-azure-0.2.0.tar.gz",
+    ),
+    (
         ROOT / "collections" / "ansible_collections" / "general_ludd" / "language",
         ROOT / "dist" / "collections" / "general_ludd-language-0.1.0.tar.gz",
     ),
@@ -60,6 +64,19 @@ EXPECTED_BUILD_FILES = [
     }
     for _source, artifact in COLLECTION_ARTIFACTS
 ]
+EXPECTED_OPENTOFU_MARKERS = (
+    "tofu_1.12.6_linux_amd64.zip",
+    "tofu_1.12.6_linux_arm64.zip",
+    "5dc43da4f750f33873dc25e94587128709e819e544b7be9016b255316153c3a8",
+    "e573979ba68a17fe7b881752051a694a7efcd970e39521f6a25775197861ed4d",
+    "github.com/opentofu/opentofu/releases/download/v1.12.6",
+    "sha256sum --check --strict",
+    "/usr/local/bin/tofu",
+)
+FORBIDDEN_HASHICORP_TERRAFORM_MARKERS = (
+    "releases.hashicorp.com",
+    "/usr/local/bin/terraform",
+)
 
 
 def _sha256(path: Path) -> str:
@@ -141,6 +158,27 @@ def validate_files() -> list[str]:
         errors.append("execution environment dependencies must name the locked inputs and controller interpreter")
     if definition.get("additional_build_files") != EXPECTED_BUILD_FILES:
         errors.append("execution environment must stage the exact locked collection artifacts")
+    build_steps = definition.get("additional_build_steps", {})
+    append_final = (
+        build_steps.get("append_final", [])
+        if isinstance(build_steps, dict)
+        else []
+    )
+    rendered_steps = "\n".join(
+        step for step in append_final if isinstance(step, str)
+    )
+    if not append_final or any(
+        marker not in rendered_steps for marker in EXPECTED_OPENTOFU_MARKERS
+    ):
+        errors.append(
+            "execution environment must install the checksum-pinned OpenTofu CLI"
+        )
+    if any(
+        marker in rendered_steps for marker in FORBIDDEN_HASHICORP_TERRAFORM_MARKERS
+    ):
+        errors.append(
+            "execution environment must not install HashiCorp Terraform"
+        )
 
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     if lock.get("schema_version") != 1 or lock.get("release") != "0.1.0-beta.4":
@@ -232,7 +270,7 @@ def build_environment(runtime: str, image: str, context: Path, validate_only: bo
 
 
 def verify_environment(runtime: str, image: str, validate_only: bool) -> int:
-    """Verify a digest-addressed EE and its controller imports."""
+    """Verify a digest-addressed EE, OpenTofu CLI, and controller imports."""
     try:
         _require_image(image)
     except ValueError as exc:
@@ -252,20 +290,46 @@ def verify_environment(runtime: str, image: str, validate_only: bool) -> int:
     inspect = subprocess.run([runtime, "image", "inspect", image], check=False)
     if inspect.returncode != 0:
         return inspect.returncode
-    command = [
-        runtime,
-        "run",
-        "--rm",
-        "--network=none",
-        image,
-        "python3",
-        "-c",
-        "import ansible, ansible_runner; print('ANSIBLE_EE_IMPORT_OK')",
-    ]
-    print(f"ANSIBLE_EE_SMOKE_START runtime={runtime} image={image}", flush=True)
-    result = subprocess.run(command, check=False)
-    print(f"ANSIBLE_EE_SMOKE_END rc={result.returncode}", flush=True)
-    return result.returncode
+    smoke_commands = (
+        (
+            "opentofu",
+            [
+                runtime,
+                "run",
+                "--rm",
+                "--network=none",
+                image,
+                "/usr/local/bin/tofu",
+                "version",
+            ],
+        ),
+        (
+            "python",
+            [
+                runtime,
+                "run",
+                "--rm",
+                "--network=none",
+                image,
+                "python3",
+                "-c",
+                "import ansible, ansible_runner; print('ANSIBLE_EE_IMPORT_OK')",
+            ],
+        ),
+    )
+    for phase, command in smoke_commands:
+        print(
+            f"ANSIBLE_EE_SMOKE_START phase={phase} runtime={runtime} image={image}",
+            flush=True,
+        )
+        result = subprocess.run(command, check=False)
+        print(
+            f"ANSIBLE_EE_SMOKE_END phase={phase} rc={result.returncode}",
+            flush=True,
+        )
+        if result.returncode != 0:
+            return result.returncode
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

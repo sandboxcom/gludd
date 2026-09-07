@@ -1,10 +1,11 @@
 # Azure onboarding IAM module — provisions the least-privilege user-assigned
-# managed identity gludd uses for one pre-created Container Apps environment.
+# managed identity Gludd uses for owned Container Apps infrastructure.
 #
 # The custom role below is the minimal control-plane surface required by the
-# release stack: inspect the environment quota, deploy one Container App, inspect
-# its revision, and tear that app back down. Environment/bootstrap administration
-# remains with the human operator. Asserted by
+# release stack: create one managed environment, inspect its quota, deploy one
+# Container App, attest GPU execution through read-only metrics, and tear both
+# resources back down. Resource-group, provider, IAM, registry, network, VM,
+# logging, and secret administration remain with the human operator. Asserted by
 # tests/unit/test_onboard_azure.py::TestTerraformModuleLeastPriv.
 
 terraform {
@@ -48,11 +49,13 @@ locals {
 resource "azurerm_role_definition" "accelerator_deployer" {
   name        = "General Ludd Accelerator Deployer"
   scope       = local.resource_group_scope
-  description = "Deploy, inspect, and remove Gludd-owned Container Apps in one pre-created GPU environment."
+  description = "Create, inspect, and remove Gludd-owned Container Apps environments and apps, and read GPU metrics, in one resource group."
 
   permissions {
     actions = [
       "Microsoft.App/managedEnvironments/read",
+      "Microsoft.App/managedEnvironments/write",
+      "Microsoft.App/managedEnvironments/delete",
       "Microsoft.App/managedEnvironments/join/action",
       "Microsoft.App/managedEnvironments/usages/read",
       "Microsoft.App/managedEnvironments/workloadProfileStates/read",
@@ -62,6 +65,9 @@ resource "azurerm_role_definition" "accelerator_deployer" {
       "Microsoft.App/containerApps/revisions/read",
       "Microsoft.App/locations/containerAppOperationResults/read",
       "Microsoft.App/locations/containerAppOperationStatuses/read",
+      "Microsoft.App/locations/managedEnvironmentOperationResults/read",
+      "Microsoft.App/locations/managedEnvironmentOperationStatuses/read",
+      "Microsoft.Insights/metrics/read",
     ]
     not_actions = []
   }

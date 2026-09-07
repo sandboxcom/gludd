@@ -7,6 +7,18 @@
       "behavior": "make uv-cache-path"
     },
     {
+      "name": "azure-accelerator-role-apply",
+      "make_variables": [
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_ACCELERATOR_RESOURCE_GROUP",
+        "AZURE_ACCELERATOR_LOCATION",
+        "AZURE_ACCELERATOR_OPERATOR_AUTH",
+        "AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID",
+        "AZURE_ACCELERATOR_ROLE_APPLY_LIVE"
+      ],
+      "behavior": "make azure-accelerator-role-apply AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_ACCELERATOR_LOCATION=eastus AZURE_ACCELERATOR_OPERATOR_AUTH=cli AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID= AZURE_ACCELERATOR_ROLE_APPLY_LIVE=0"
+    },
+    {
       "name": "azure-accelerator-role-args",
       "make_variables": [
         "AZURE_ACCELERATOR_SUBSCRIPTION_ID",

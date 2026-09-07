@@ -1,11 +1,13 @@
 {
   "properties": {
     "roleName": "General Ludd Accelerator Deployer",
-    "description": "Deploy, inspect, and remove Gludd-owned Container Apps in one pre-created GPU environment; no environment, registry, VM, network, secret, role, or provider-administration access.",
+    "description": "Create, inspect, and remove Gludd-owned Container Apps environments and apps, and read GPU metrics, in one resource group; no registry, VM, network, secret, role, or provider-administration access.",
     "permissions": [
       {
         "actions": [
           "Microsoft.App/managedEnvironments/read",
+          "Microsoft.App/managedEnvironments/write",
+          "Microsoft.App/managedEnvironments/delete",
           "Microsoft.App/managedEnvironments/join/action",
           "Microsoft.App/managedEnvironments/usages/read",
           "Microsoft.App/managedEnvironments/workloadProfileStates/read",
@@ -14,7 +16,10 @@
           "Microsoft.App/containerApps/delete",
           "Microsoft.App/containerApps/revisions/read",
           "Microsoft.App/locations/containerAppOperationResults/read",
-          "Microsoft.App/locations/containerAppOperationStatuses/read"
+          "Microsoft.App/locations/containerAppOperationStatuses/read",
+          "Microsoft.App/locations/managedEnvironmentOperationResults/read",
+          "Microsoft.App/locations/managedEnvironmentOperationStatuses/read",
+          "Microsoft.Insights/metrics/read"
         ],
         "notActions": [],
         "dataActions": [],

@@ -60,19 +60,21 @@ class TestEventLoop:
         call_order: list[str] = []
         expected = [
             "load_config_snapshot",
-            "claim_unreviewed_task_returns",
-            "dispatch_return_review_jobs",
             "evaluate_pid_controllers",
             "refill_task_buckets",
             "run_scheduler",
+            "self_improve",
+            "poll_issue_sources",
             "sdlc_gate",
+            "reconcile_compute_demand",
+            "claim_unreviewed_task_returns",
+            "dispatch_return_review_jobs",
             "claim_runnable_todos",
             "evaluate_rules",
             "dispatch_execute_jobs",
             "reconcile_completed_decisions",
             "refresh_model_performance",
             "check_compute_utilization",
-            "self_improve",
             "emit_tick_metrics",
         ]
         for name in expected:

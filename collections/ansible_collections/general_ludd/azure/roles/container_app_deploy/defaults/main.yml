@@ -1,6 +1,29 @@
 ---
-role_enabled: false
-gpu_type: T4
-model_name: ""
-region: eastus
-output_path: /tmp/gludd-azure-container-app
+containerapp_role_enabled: false
+containerapp_state: observe
+containerapp_subscription_id: ""
+containerapp_resource_group: ""
+containerapp_environment_name: ""
+containerapp_app_name: ""
+containerapp_workload_profile_name: ""
+containerapp_workload_profile_type: ""
+containerapp_revision_name: ""
+containerapp_owner_digest: ""
+containerapp_required_profile_headroom: 1
+
+containerapp_operation_digest: ""
+containerapp_plan_audited: false
+containerapp_terraform_project_path: ""
+containerapp_terraform_plan_file: ""
+containerapp_terraform_plan_sha256: ""
+containerapp_terraform_state_file: ""
+containerapp_iac_binary_path: /usr/local/bin/tofu
+
+containerapp_api_version: "2025-07-01"
+containerapp_metrics_api_version: "2023-10-01"
+containerapp_metric_timespan: ""
+containerapp_auth_source: env
+
+containerapp_parallelism: 2
+containerapp_poll_seconds: 5
+containerapp_async_timeout_seconds: 1800

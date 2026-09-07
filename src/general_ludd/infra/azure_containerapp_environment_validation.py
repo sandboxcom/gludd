@@ -255,16 +255,32 @@ def _validate_plan_metadata(change: Mapping[str, object]) -> None:
     after_unknown = change.get("after_unknown")
     if after_unknown not in ({}, None):
         unknown = _mapping(after_unknown)
-        if set(unknown) - {"id", "output"} or any(
-            item is not True for item in unknown.values()
-        ):
-            raise ValueError
-    if any(change.get(field) not in (None, False, {}) for field in ("after_sensitive", "before_sensitive")):
+        for name, item in unknown.items():
+            if name in {"id", "output"}:
+                if item is not True:
+                    raise ValueError
+            elif not _false_or_empty_metadata(item):
+                raise ValueError
+    if any(
+        not _false_or_empty_metadata(change.get(field))
+        for field in ("after_sensitive", "before_sensitive")
+    ):
         raise ValueError
     if change.get("replace_paths") not in (None, []):
         raise ValueError
     if change.get("importing") is not None or change.get("generated_config") is not None:
         raise ValueError
+
+
+def _false_or_empty_metadata(value: object) -> bool:
+    """Accept provider metadata shapes only when no nested flag is true."""
+    if value is None or value is False:
+        return True
+    if isinstance(value, Mapping):
+        return all(_false_or_empty_metadata(item) for item in value.values())
+    if isinstance(value, list):
+        return all(_false_or_empty_metadata(item) for item in value)
+    return False
 
 
 def audit_environment_plan(

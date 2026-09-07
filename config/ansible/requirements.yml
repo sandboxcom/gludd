@@ -1,6 +1,12 @@
 ---
 collections:
+  - name: azure.azcollection
+    version: 3.21.0
+  - name: cloud.terraform
+    version: 4.0.0
   - name: collections/general_ludd-agent-0.2.0.tar.gz
+    type: file
+  - name: collections/general_ludd-azure-0.2.0.tar.gz
     type: file
   - name: collections/general_ludd-language-0.1.0.tar.gz
     type: file

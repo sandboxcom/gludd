@@ -30,7 +30,7 @@ class _Process:
         self.polls = 0
         self.terminated = False
         self.killed = False
-        if stdout is not None:
+        if hasattr(stdout, "write"):
             stdout.write('{"safe":true}')
             stdout.flush()
 
@@ -320,6 +320,47 @@ def test_phase_refuses_invalid_timing_and_binary_boundaries_before_subprocess(
     assert result == 2
 
 
+def test_wrapper_leaves_optional_executor_dependencies_at_production_defaults(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    allowed, terraform_dir, plan_file, json_file = _root(tmp_path)
+    constructed: list[dict[str, object]] = []
+    runs: list[dict[str, object]] = []
+
+    class Executor:
+        def __init__(self, **kwargs: object) -> None:
+            constructed.append(dict(kwargs))
+
+        def run(self, **kwargs: object) -> None:
+            runs.append(dict(kwargs))
+
+    monkeypatch.setattr(
+        terraform_phase,
+        "AzureContainerAppTerraformPhaseExecutor",
+        Executor,
+    )
+
+    result = main(
+        [
+            "--phase",
+            "init",
+            "--terraform-dir",
+            str(terraform_dir),
+            "--plan-file",
+            str(plan_file),
+            "--json-file",
+            str(json_file),
+        ],
+        allowed_root=allowed,
+    )
+
+    assert result == 0
+    assert "binary_resolver" not in constructed[0]
+    assert "process_factory" not in constructed[0]
+    assert runs[0]["phase"] == "init"
+
+
 @pytest.mark.parametrize(
     "marker",
     [
@@ -376,6 +417,14 @@ def test_regular_file_can_treat_an_absent_optional_artifact_as_valid(
 
 
 SECRET_NOT_PRESENT = "a-secret-that-must-never-appear"
+
+
+def test_script_is_only_a_wrapper_around_the_production_executor() -> None:
+    source = Path(terraform_phase.__file__).read_text(encoding="utf-8")
+
+    assert "AzureContainerAppTerraformPhaseExecutor" in source
+    assert "subprocess.Popen" not in source
+    assert "def _command(" not in source
 
 
 def test_make_target_is_explicit_validate_only_and_contract_tracked() -> None:

@@ -3,23 +3,28 @@
 Gludd uses two deliberately separate Azure identities:
 
 - the **Container Apps accelerator identity** creates, reads, updates, and deletes
-  only model-serving Container Apps inside one existing resource group and joins
-  them to one existing managed environment; and
+  only Gludd-owned model-serving managed environments and Container Apps inside
+  one existing resource group, and reads their GPU-utilization metrics; and
 - the **Azure OpenAI self-improvement identity** can read one Azure OpenAI
   account and invoke the Responses API on that account.
 
-Neither runtime identity can create resource groups or managed environments,
-change IAM, manage networks, read secrets, register providers, or administer a
-subscription. Bootstrap is an operator action. Keep each generated JSON file at
-mode `0600`, never paste it into chat or logs, and rotate it after exposure.
+Neither runtime identity can create resource groups, change IAM, manage networks
+or registries, read secrets, register providers, create virtual machines, or
+administer a subscription. A separately authenticated operator bootstrap creates
+only the named resource group, exact custom role, and optional assignment through
+Microsoft SDKs; Gludd owns the bounded model-environment lifecycle through
+OpenTofu. Keep each generated JSON file at mode `0600`, never paste it into chat
+or logs, and rotate it after exposure.
 
 ## Container Apps accelerator role
 
-The checked-in role is resource-group scoped and contains exactly these ten
+The checked-in role is resource-group scoped and contains exactly these 15
 control-plane operations:
 
 ```text
 Microsoft.App/managedEnvironments/read
+Microsoft.App/managedEnvironments/write
+Microsoft.App/managedEnvironments/delete
 Microsoft.App/managedEnvironments/join/action
 Microsoft.App/managedEnvironments/usages/read
 Microsoft.App/managedEnvironments/workloadProfileStates/read
@@ -29,38 +34,59 @@ Microsoft.App/containerApps/delete
 Microsoft.App/containerApps/revisions/read
 Microsoft.App/locations/containerAppOperationResults/read
 Microsoft.App/locations/containerAppOperationStatuses/read
+Microsoft.App/locations/managedEnvironmentOperationResults/read
+Microsoft.App/locations/managedEnvironmentOperationStatuses/read
+Microsoft.Insights/metrics/read
 ```
 
-`Microsoft.App/containerApps/delete` is the only destructive permission. It is
-required so every paid live proof can clean up the one app it created. The role
-cannot delete the resource group, environment, registry, network, identity, or
-role assignment. Azure RBAC `NotActions` is not an explicit deny; the safe
-boundary is the exact allowlist above with all unrelated actions absent.
+The two destructive permissions can delete only an owned Container App or
+managed environment. Both are required so every paid live proof can tear down
+the complete environment it created. The role cannot delete the resource group,
+registry, network, identity, role assignment, or any VM. The sole Monitor action
+is `metrics/read`; it cannot create alerts, workspaces, diagnostic settings, or
+logs. Azure RBAC `NotActions` is not an explicit deny, so the safety boundary is
+the exact allowlist above with every unrelated action absent.
 
-An administrator first creates the resource group and Container Apps managed
-environment, including its Consumption GPU workload profile. The runtime role's
-assignable scope and assignment are then both narrowed to that exact resource
-group.
+An administrator authorizes the explicit operator bootstrap described below.
+It idempotently creates only the exact tagged resource group when absent, applies
+the reviewed custom role, and optionally assigns an already-known principal.
+Gludd then plans the smallest environment/profile topology, creates or reconciles
+it through the checked-in OpenTofu/AzAPI stack, verifies GPU execution, destroys
+the app, and destroys the idle owned environment. The runtime role's assignable
+scope and assignment are both narrowed to that exact resource group.
 
-Create the shared environment and its T4 profile with one operator-owned ARM
-group deployment after the resource group exists:
+The historical operator bootstrap target remains available only to inspect or
+migrate an older shared-environment installation:
 
 ```sh
 make --no-print-directory azure-containerapp-environment-bootstrap-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_CONTAINERAPP_ENVIRONMENT=gludd-gpu-environment AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME=gpu-t4 AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE=Consumption-GPU-NC8as-T4 AZURE_CONTAINERAPP_LOCATION=eastus | xargs -0 az
 ```
 
-The generated command is one incremental deployment of the checked-in ARM
-template. The template owns only `Microsoft.App/managedEnvironments`; it does
-not create IAM, networks, registries, Log Analytics workspaces, Container Apps,
-or secrets. Run it with the operator identity, not the Gludd service principal.
-The service principal intentionally lacks `managedEnvironments/write` and
-cannot alter or delete this shared baseline.
+Do not use that target for a new autonomous Gludd run. It creates a differently
+owned shared baseline that the runtime must refuse to adopt or delete. New runs
+use the owner-bound Terraform state and lifecycle command documented below.
 
 Creating or changing a custom role requires
 `Microsoft.Authorization/roleDefinitions/write`. The operator normally gets
 that through the Azure built-in role "User Access Administrator" at the exact
 resource-group scope or a carefully constrained parent scope. The Gludd runtime
 identity does not receive it and therefore cannot create or update a custom role.
+
+The canonical bootstrap is one content-free SDK command. Leave the principal
+empty to create/update only the resource group and role, or supply the service
+principal object ID to create the stable exact-scope assignment as well:
+
+```sh
+make --no-print-directory azure-accelerator-role-apply AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_ACCELERATOR_LOCATION=eastus AZURE_ACCELERATOR_OPERATOR_AUTH=cli AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee AZURE_ACCELERATOR_ROLE_APPLY_LIVE=1
+```
+
+Set `AZURE_ACCELERATOR_ROLE_APPLY_LIVE=0` for a credential-free validation. The
+live path uses `AzureCliCredential` or `EnvironmentCredential` explicitly, never
+an interactive/default credential chain. Its traces contain only phase, state,
+fixed operation and failure classes, and whether an assignment was requested;
+the result reports whether the resource group was created. Provider-controlled
+SDK logging is suppressed at the command boundary. The runtime credential
+remains unable to call this operator boundary.
 
 For a new role, an authorized operator runs this one line (replace the example
 subscription and resource-group values):
@@ -114,11 +140,44 @@ credentials.
 
 On 2026-09-06 the supplied accelerator credential passed authentication and the
 preflight stopped with the typed, content-free reason `environment_not_found`.
-That is a real readiness blocker, not an authorization failure: the service
-principal intentionally cannot create the shared managed environment. Run the
-operator bootstrap command above, then repeat the read-only preflight. Do not add
-`managedEnvironments/write`, resource-group creation, provider registration, or
-broader subscription access to make the runtime principal bootstrap itself.
+That proved the original ten-action role could authenticate but could not satisfy
+the autonomous lifecycle. Update that existing role to the exact 15-action
+definition above. Do not add resource-group creation, provider registration,
+subscription-wide assignment, or any broader access.
+
+On 2026-09-07 two bounded live OpenTofu plans passed the exact-resource audit and
+then stopped before environment creation with the content-free class
+`apply:resource-group-not-found`; neither named resource group existed. That is
+why resource-group creation belongs to the separately authenticated operator SDK
+bootstrap, not the accelerator runtime role. The executor retains provider output
+only in a private ephemeral file long enough to classify a fixed failure type;
+it never returns or persists the provider message.
+
+## Supported Azure libraries and ownership boundary
+
+Gludd does not reimplement Azure CLI, ARM authentication, API-version routing, or
+response models. The canonical operator bootstrap uses Microsoft's
+`azure-identity`, `azure-mgmt-resource`, and `azure-mgmt-authorization` clients.
+It pins the role-assignment model to API `2022-04-01`, avoiding the ambiguous
+legacy model exposed through the SDK's unversioned namespace. The locked
+`azure-mgmt-resource` 26 client uses its documented
+`azure.mgmt.resource.resources` namespace after the management-package split.
+The deprecated argv renderers remain only for migration and credential creation
+because Azure emits a new service-principal secret once; they validate local
+inputs and delegate the operation to the installed CLI.
+
+Paid model-environment mutation remains exclusively OpenTofu/AzAPI so planning,
+state, ownership, and teardown are reviewable. Management-plane reads are
+constrained to Microsoft's `azure-mgmt-appcontainers` client, and GPU attestation
+to the single-resource `azure-mgmt-monitor` metrics client; no second raw ARM or
+metrics client is added. Gludd's Python layer retains only bounded domain
+conversion, privacy checks, ownership proofs, failure classification, and
+content-free traces.
+
+The newer `azure-monitor-querymetrics` batch API is intentionally not used: its
+documented authorization boundary is subscription-level, which is broader than
+this resource-group role. The selected `azure-mgmt-monitor` operation reads one
+exact resource URI under `Microsoft.Insights/metrics/read`.
 
 If an older Gludd principal has a subscription-scoped assignment, adding a new
 resource-group assignment is not enough: the broader assignment must also be
@@ -181,7 +240,7 @@ proof is permitted.
 - [arbitrary non-root UID compatibility][aca-1746]
 - [region-specific image-pull authorization][aca-1629]
 
-Research was rechecked on 2026-09-06 against current Microsoft documentation and
+Research was rechecked on 2026-09-07 against current Microsoft documentation and
 the original practitioner threads:
 
 - Azure CLI customer reports [#30526][azure-cli-30526] (opened December 2024)
@@ -195,6 +254,15 @@ the original practitioner threads:
   investigation into 25-minute A100 startup delays and billing during the wait.
   The live proof consequently has bounded visible phase heartbeats, no hidden
   retry, a hard TTL/cost ceiling, and cleanup on every terminal path.
+- Microsoft's workload-profile announcement [#1646][aca-1646] says v2 is now
+  the default environment type and includes a built-in Consumption profile.
+  Gludd accepts that platform-owned entry during reads but never adds it to the
+  owner-bound desired-profile set or mistakes it for an owned GPU profile.
+- Container Apps report [#1682][aca-1682] shows a CUDA 12.8/cu128 T4 container
+  starting while silently falling back to CPU, whereas a cu121 build worked on
+  the same nodes. Image readiness alone therefore is not GPU evidence: the live
+  proof must read a positive `GpuUtilizationPercentage` sample for its exact
+  revision before admitting the candidate.
 - A 2024 scale-to-zero report [#1239][aca-1239] associated stuck replicas with
   unexpectedly high cost. Gludd does not treat a requested zero minimum as proof
   of cleanup: it destroys the one owned app and independently reads the exact app
@@ -215,6 +283,19 @@ the original practitioner threads:
   tolerate an arbitrary non-root UID. The proof image and writable cache paths
   must remain non-root compatible; startup-time package installation is not an
   accepted workaround.
+- AzAPI reports [#856][azapi-856] and [#875][azapi-875] document a v1-to-v2
+  `response_export_values` migration failure and sensitive body keys appearing
+  in plan output. Gludd pins AzAPI v2 syntax, exports only reviewed identifiers,
+  rejects sensitive bodies and broad default output, and keeps credentials out
+  of Terraform values and state.
+- Azure SDK for Python report [#30256][azure-sdk-30256] documents the long-lived
+  incompatibility between the unversioned authorization client's operation and
+  its legacy role-assignment model. Gludd imports the documented
+  `v2022_04_01` model explicitly and tests that exact namespace.
+- Azure SDK tracking issue [#41450][azure-sdk-41450] records the ongoing split of
+  `azure-mgmt-resource` modules into narrower packages. Version 26 documents the
+  resource-group client under `azure.mgmt.resource.resources`; the live bootstrap
+  import check and unit contract pin that exact supported path.
 
 Practitioner threads are operational evidence rather than service contracts. The
 official quota, workload-profile, GPU, RBAC, and REST references below define the
@@ -229,6 +310,11 @@ normative boundary.
 - [Azure CLI workload-profile management][azure-workload-profiles]
 - [Managed-environment usage API][azure-environment-usages]
 - [Workload-profile state API][azure-workload-profile-states]
+- [Azure Container Apps Python SDK][azure-appcontainers-sdk]
+- [Azure Monitor metrics Python SDK][azure-monitor-metrics-sdk]
+- [Azure resource-group Python SDK example][azure-resource-groups-sdk]
+- [Azure role-assignment Python SDK model][azure-role-assignment-model]
+- [Azure RBAC assignment scope guidance][azure-role-assignment-scope]
 
 [forum-sp-scope-only]: https://learn.microsoft.com/en-us/answers/questions/1337773/how-to-create-service-principal
 [azure-cli-31995]: https://github.com/Azure/azure-cli/issues/31995
@@ -236,10 +322,16 @@ normative boundary.
 [azure-cli-30526]: https://github.com/Azure/azure-cli/issues/30526
 [azure-cli-31239]: https://github.com/Azure/azure-cli/issues/31239
 [aca-1511]: https://github.com/microsoft/azure-container-apps/issues/1511
+[aca-1646]: https://github.com/microsoft/azure-container-apps/issues/1646
+[aca-1682]: https://github.com/microsoft/azure-container-apps/issues/1682
 [aca-1763]: https://github.com/microsoft/azure-container-apps/issues/1763
 [aca-1746]: https://github.com/microsoft/azure-container-apps/issues/1746
 [aca-1629]: https://github.com/microsoft/azure-container-apps/issues/1629
 [aca-1239]: https://github.com/microsoft/azure-container-apps/issues/1239
+[azapi-856]: https://github.com/Azure/terraform-provider-azapi/issues/856
+[azapi-875]: https://github.com/Azure/terraform-provider-azapi/issues/875
+[azure-sdk-30256]: https://github.com/Azure/azure-sdk-for-python/issues/30256
+[azure-sdk-41450]: https://github.com/Azure/azure-sdk-for-python/issues/41450
 [azure-custom-role-scope]: https://learn.microsoft.com/en-us/azure/role-based-access-control/custom-roles
 [azure-role-definitions]: https://learn.microsoft.com/en-us/azure/role-based-access-control/role-definitions
 [azure-app-permissions]: https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/compute#microsoftapp
@@ -248,3 +340,8 @@ normative boundary.
 [azure-workload-profiles]: https://learn.microsoft.com/en-us/azure/container-apps/workload-profiles-manage-cli
 [azure-environment-usages]: https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/managed-environment-usages/list?view=rest-resource-manager-containerapps-2025-07-01
 [azure-workload-profile-states]: https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/managed-environments/list-workload-profile-states?view=rest-resource-manager-containerapps-2025-07-01
+[azure-appcontainers-sdk]: https://learn.microsoft.com/en-us/python/api/azure-mgmt-appcontainers/azure.mgmt.appcontainers.containerappsapiclient
+[azure-monitor-metrics-sdk]: https://learn.microsoft.com/en-us/python/api/azure-mgmt-monitor/azure.mgmt.monitor.operations.metricsoperations
+[azure-resource-groups-sdk]: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/manage-resource-groups-python
+[azure-role-assignment-model]: https://learn.microsoft.com/en-us/python/api/azure-mgmt-authorization/azure.mgmt.authorization.v2022_04_01.models.roleassignmentcreateparameters
+[azure-role-assignment-scope]: https://learn.microsoft.com/en-us/azure/role-based-access-control/role-assignments

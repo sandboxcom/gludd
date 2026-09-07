@@ -526,6 +526,20 @@ wheels = [
 ]
 
 [[package]]
+name = "azure-mgmt-appcontainers"
+version = "5.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-mgmt-core" },
+    { name = "isodate" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/05/f6/ee9e9408345b420bc64a8ef8fcb31e428c6a47571bf25daff3babceb6c2e/azure_mgmt_appcontainers-5.0.0.tar.gz", hash = "sha256:a3cb592741f09a2d8d63a68a202eb62a2daaf0b1c42c2bc160c2018e5b340efe", size = 260615, upload-time = "2026-07-08T09:42:11.252Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/09/95/4ef0bf9edfe346e5a0af35c7dece90682010fa0c2e66a7fbf5c574492872/azure_mgmt_appcontainers-5.0.0-py3-none-any.whl", hash = "sha256:1c94d1c7b5ded159353ff2c087f96d485d2e05ce3eedd5309fcdb474532aba61", size = 229829, upload-time = "2026-07-08T09:42:12.618Z" },
+]
+
+[[package]]
 name = "azure-mgmt-authorization"
 version = "4.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -591,6 +605,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/11/6c/8fa4145a45a5feed057a45db99376860a4bfedc4c664392103a1c2043ded/azure_mgmt_costmanagement-5.0.0b1.tar.gz", hash = "sha256:7ff39d3d1dfe852942c1bfbd731a6c2c0c39c80acde1b2b4f52bd25f21cea557", size = 154889, upload-time = "2026-05-26T08:53:44.398Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5a/5b/6c3fadd4fe80b6987cab98fb8115fdb2ac85374b2fd4895a1cd29c726096/azure_mgmt_costmanagement-5.0.0b1-py3-none-any.whl", hash = "sha256:8e8f097d51865f63acbd306d730fa2ad50e2c9cb087d79e3d0154db622d5b43d", size = 159667, upload-time = "2026-05-26T08:53:45.906Z" },
+]
+
+[[package]]
+name = "azure-mgmt-monitor"
+version = "7.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-common" },
+    { name = "azure-mgmt-core" },
+    { name = "isodate" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0e/12/25874f6b894e972646244f570a23298969b58f57cfb7a188e2740017b43a/azure_mgmt_monitor-7.0.0.tar.gz", hash = "sha256:b75f536441d430f69ff873a1646e5f5dbcb3080a10768a59d0adc01541623816", size = 195496, upload-time = "2025-07-28T07:46:17.031Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c6/d1/f6ea4731edfa02c14756770d7c3d5202b40c5c72744f15142c0d89b6d957/azure_mgmt_monitor-7.0.0-py3-none-any.whl", hash = "sha256:ad63b5d187e21d2d34366271ade6abbeea1fcf76e313ff0f83d394d9c124aa1b", size = 245243, upload-time = "2025-07-28T07:46:18.594Z" },
 ]
 
 [[package]]
@@ -1996,6 +2025,7 @@ dependencies = [
 
 [package.optional-dependencies]
 ansible-controller = [
+    { name = "ansible-builder" },
     { name = "ansible-core", version = "2.19.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "ansible-core", version = "2.21.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "ansible-runner" },
@@ -2005,10 +2035,12 @@ aws = [
 ]
 azure = [
     { name = "azure-identity" },
+    { name = "azure-mgmt-appcontainers" },
     { name = "azure-mgmt-authorization" },
     { name = "azure-mgmt-cognitiveservices" },
     { name = "azure-mgmt-compute" },
     { name = "azure-mgmt-costmanagement" },
+    { name = "azure-mgmt-monitor" },
     { name = "azure-mgmt-resource" },
 ]
 benchmark = [
@@ -2059,10 +2091,12 @@ dev = [
 ]
 e2e-all = [
     { name = "azure-identity" },
+    { name = "azure-mgmt-appcontainers" },
     { name = "azure-mgmt-authorization" },
     { name = "azure-mgmt-cognitiveservices" },
     { name = "azure-mgmt-compute" },
     { name = "azure-mgmt-costmanagement" },
+    { name = "azure-mgmt-monitor" },
     { name = "azure-mgmt-resource" },
     { name = "langchain-openai" },
     { name = "numpy" },
@@ -2164,6 +2198,7 @@ requires-dist = [
     { name = "aiosqlite", marker = "extra == 'dev'", specifier = ">=0.20.0" },
     { name = "alembic", specifier = ">=1.14.0" },
     { name = "annotated-types", specifier = ">=0.7.0" },
+    { name = "ansible-builder", marker = "extra == 'ansible-controller'", specifier = ">=3.1.1,<3.2" },
     { name = "ansible-builder", marker = "extra == 'dev'", specifier = ">=3.1.1,<3.2" },
     { name = "ansible-core", marker = "python_full_version >= '3.12' and extra == 'ansible-controller'", specifier = ">=2.21.2,<2.22" },
     { name = "ansible-core", marker = "python_full_version >= '3.12' and extra == 'dev'", specifier = ">=2.21.2,<2.22" },
@@ -2175,6 +2210,8 @@ requires-dist = [
     { name = "argon2-cffi", specifier = ">=23.1.0" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.16.0" },
     { name = "azure-identity", marker = "extra == 'e2e-all'", specifier = ">=1.16.0" },
+    { name = "azure-mgmt-appcontainers", marker = "extra == 'azure'", specifier = ">=5.0.0,<6" },
+    { name = "azure-mgmt-appcontainers", marker = "extra == 'e2e-all'", specifier = ">=5.0.0,<6" },
     { name = "azure-mgmt-authorization", marker = "extra == 'azure'", specifier = ">=4.0.0" },
     { name = "azure-mgmt-authorization", marker = "extra == 'e2e-all'", specifier = ">=4.0.0" },
     { name = "azure-mgmt-cognitiveservices", marker = "extra == 'azure'", specifier = ">=14.1.0,<15" },
@@ -2183,6 +2220,8 @@ requires-dist = [
     { name = "azure-mgmt-compute", marker = "extra == 'e2e-all'", specifier = ">=31.0.0" },
     { name = "azure-mgmt-costmanagement", marker = "extra == 'azure'", specifier = "==5.0.0b1" },
     { name = "azure-mgmt-costmanagement", marker = "extra == 'e2e-all'", specifier = "==5.0.0b1" },
+    { name = "azure-mgmt-monitor", marker = "extra == 'azure'", specifier = ">=7.0.0,<8" },
+    { name = "azure-mgmt-monitor", marker = "extra == 'e2e-all'", specifier = ">=7.0.0,<8" },
     { name = "azure-mgmt-resource", marker = "extra == 'azure'", specifier = ">=23.0.0" },
     { name = "azure-mgmt-resource", marker = "extra == 'e2e-all'", specifier = ">=23.0.0" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.8.0" },

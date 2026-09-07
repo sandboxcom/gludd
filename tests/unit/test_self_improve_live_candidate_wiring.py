@@ -210,6 +210,22 @@ class _ContainerAppBackend:
         self.close_calls += 1
 
 
+class _ContainerAppBootstrapFactory:
+    def __init__(
+        self,
+        backend: _ContainerAppBackend,
+        *,
+        deployment_digest: str = "e" * 64,
+    ) -> None:
+        self.backend = backend
+        self.deployment_digest = deployment_digest
+        self.calls = 0
+
+    def __call__(self) -> _ContainerAppBackend:
+        self.calls += 1
+        return self.backend
+
+
 def _mixed_policy() -> LiveCandidateWiringPolicy:
     return LiveCandidateWiringPolicy(
         local_budget=_budget(),
@@ -310,6 +326,121 @@ def test_containerapp_only_remote_wiring_never_constructs_foundry_backend() -> N
 
     assert foundry_builds == []
     assert containerapp.close_calls == 1
+
+
+def test_containerapp_bootstrap_is_lazy_and_supplies_discovered_identity() -> None:
+    classification = classify_candidate_task("Test one bounded public feature.")
+    backend = _ContainerAppBackend()
+    bootstrap = _ContainerAppBootstrapFactory(backend)
+    attached_builds: list[AzureContainerAppCandidateIdentity] = []
+    policy = LiveCandidateWiringPolicy(
+        local_budget=_budget(),
+        required_providers=(
+            ModelCandidateProvider.LOCAL_GGUF,
+            ModelCandidateProvider.AZURE_CONTAINER_APP,
+        ),
+        containerapp_bootstrap_digest=bootstrap.deployment_digest,
+        containerapp_budget=_budget(),
+        containerapp_estimated_cost_microusd=2_000,
+    )
+    wiring = LiveManagedCandidateWiring(
+        policy,
+        containerapp_backend_factory=lambda identity: (
+            attached_builds.append(identity) or _ContainerAppBackend()
+        ),
+        containerapp_bootstrap_factory=bootstrap,
+    )
+
+    assert bootstrap.calls == 0
+    with wiring.assemble(
+        classification,
+        expected_classification_digest=classification.classification_digest,
+        local_backend=_LocalBackend(),
+        privacy_state=CandidatePrivacyState.APPROVED_PUBLIC,
+        input_tokens=12,
+        max_output_tokens=32,
+    ) as candidate_set:
+        assert candidate_set.containerapp_session is not None
+        assert (
+            candidate_set.containerapp_session.candidate_identity.identity_digest
+            == _containerapp_identity().identity_digest
+        )
+
+    assert bootstrap.calls == 1
+    assert attached_builds == []
+    assert backend.close_calls == 1
+
+
+def test_containerapp_bootstrap_drift_fails_before_paid_provisioning() -> None:
+    classification = classify_candidate_task("Test one bounded public feature.")
+    bootstrap = _ContainerAppBootstrapFactory(_ContainerAppBackend())
+    policy = LiveCandidateWiringPolicy(
+        local_budget=_budget(),
+        required_providers=(
+            ModelCandidateProvider.LOCAL_GGUF,
+            ModelCandidateProvider.AZURE_CONTAINER_APP,
+        ),
+        containerapp_bootstrap_digest=bootstrap.deployment_digest,
+        containerapp_budget=_budget(),
+    )
+    wiring = LiveManagedCandidateWiring(
+        policy,
+        containerapp_bootstrap_factory=bootstrap,
+    )
+    bootstrap.deployment_digest = "f" * 64
+
+    with pytest.raises(CandidateAssemblyError) as captured:
+        wiring.assemble(
+            classification,
+            expected_classification_digest=classification.classification_digest,
+            local_backend=_LocalBackend(),
+            privacy_state=CandidatePrivacyState.APPROVED_PUBLIC,
+            input_tokens=12,
+            max_output_tokens=32,
+        )
+
+    assert captured.value.failure is CandidateAssemblyFailure.CONFIGURATION_DRIFT
+    assert bootstrap.calls == 0
+
+
+def test_containerapp_bootstrap_policy_requires_exactly_one_matching_factory() -> None:
+    digest = "e" * 64
+    backend = _ContainerAppBackend()
+    bootstrap = _ContainerAppBootstrapFactory(backend, deployment_digest=digest)
+    policy = LiveCandidateWiringPolicy(
+        local_budget=_budget(),
+        containerapp_bootstrap_digest=digest,
+        containerapp_budget=_budget(),
+    )
+
+    with pytest.raises(ValueError, match="bootstrap factory"):
+        LiveManagedCandidateWiring(policy)
+    with pytest.raises(ValueError, match="digest"):
+        LiveManagedCandidateWiring(
+            policy,
+            containerapp_bootstrap_factory=_ContainerAppBootstrapFactory(
+                backend,
+                deployment_digest="f" * 64,
+            ),
+        )
+    with pytest.raises(ValueError, match="exactly one"):
+        LiveCandidateWiringPolicy(
+            local_budget=_budget(),
+            containerapp_identity=_containerapp_identity(),
+            containerapp_bootstrap_digest=digest,
+            containerapp_budget=_budget(),
+        )
+    with pytest.raises(ValueError, match="SHA-256"):
+        LiveCandidateWiringPolicy(
+            local_budget=_budget(),
+            containerapp_bootstrap_digest="not-a-digest",
+            containerapp_budget=_budget(),
+        )
+    with pytest.raises(ValueError, match="not configured"):
+        LiveManagedCandidateWiring(
+            LiveCandidateWiringPolicy(local_budget=_budget()),
+            containerapp_bootstrap_factory=bootstrap,
+        )
 
 
 def test_containerapp_policy_requires_complete_budget_and_explicit_provider() -> None:

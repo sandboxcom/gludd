@@ -124,6 +124,9 @@ class _AzureContainerAppTfvars:
     enable_chunked_prefill: bool
     kv_cache_dtype: str
     quantization: str
+    min_replicas: int
+    max_replicas: int
+    http_concurrent_requests: int
     expires_at: datetime
     trace_id: str
 
@@ -195,6 +198,9 @@ def _validated_azure_containerapp_tfvars(
         ),
         kv_cache_dtype=_profile_string(profile, "kv_cache_dtype", "auto"),
         quantization=_profile_string(profile, "quantization", ""),
+        min_replicas=config.azure_min_replicas,
+        max_replicas=config.azure_max_replicas,
+        http_concurrent_requests=config.azure_http_concurrent_requests,
         expires_at=(datetime.now(UTC) + timedelta(minutes=config.timeout_minutes)).replace(
             microsecond=0
         ),
@@ -235,6 +241,9 @@ def _render_azure_containerapp_tfvars(
         f"expires_at_utc = {escape_tfvar_value(values.expires_at.strftime('%Y-%m-%dT%H:%M:%SZ'))}",
         f"owner_token = {escape_tfvar_value(values.deployment_name)}",
         f"trace_id = {escape_tfvar_value(values.trace_id)}",
+        f"min_replicas = {values.min_replicas}",
+        f"max_replicas = {values.max_replicas}",
+        f"http_concurrent_requests = {values.http_concurrent_requests}",
         f"vllm_context_length = {values.context_length}",
         f"vllm_max_num_seqs = {values.max_num_seqs}",
         f"vllm_gpu_memory_utilization = {values.gpu_memory_utilization}",

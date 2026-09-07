@@ -557,8 +557,11 @@ class TestTerraformGeneratorAzureContainerApp:
         assert "a100_40" not in module
         assert "azurerm_container_app_environment" not in module
         assert 'resource "azurerm_resource_group"' not in module
-        assert re.search(r"minReplicas\s*=\s*0", module)
-        assert re.search(r"maxReplicas\s*=\s*1", module)
+        assert re.search(r"minReplicas\s*=\s*var\.min_replicas", module)
+        assert re.search(r"maxReplicas\s*=\s*var\.max_replicas", module)
+        assert "min_replicas = 0" in tfvars
+        assert "max_replicas = 1" in tfvars
+        assert "http_concurrent_requests = 1" in tfvars
         assert "skip_provider_registration = true" in root
         assert "var.container_image" in module
         assert "var.model_name" in module

@@ -137,6 +137,20 @@ class ContainerAppCandidateBackendFactory(Protocol):
         ...
 
 
+@runtime_checkable
+class ContainerAppCandidateBootstrapFactory(Protocol):
+    """Lazily provision one exact Container App candidate and own its cleanup."""
+
+    @property
+    def deployment_digest(self) -> str:
+        """Return the immutable approved infrastructure configuration digest."""
+        ...
+
+    def __call__(self) -> ContainerAppCandidateBackend:
+        """Create missing infrastructure and return its lifecycle-owning backend."""
+        ...
+
+
 def _discard_event(_event: dict[str, object]) -> None:
     return
 
@@ -187,13 +201,13 @@ def _configuration_digest(
         }
     elif provider is ModelCandidateProvider.AZURE_CONTAINER_APP:
         identity = policy.containerapp_identity
+        bootstrap_digest = policy.containerapp_bootstrap_digest
         budget = policy.containerapp_budget
-        if identity is None or budget is None:
+        if (identity is None) == (bootstrap_digest is None) or budget is None:
             raise ValueError("Azure Container App configuration is incomplete")
         payload = {
             "azure_enabled": True,
             "budget": _budget_payload(budget),
-            "candidate_identity_digest": identity.identity_digest,
             "estimated_cost_microusd": (
                 policy.containerapp_estimated_cost_microusd
             ),
@@ -201,6 +215,12 @@ def _configuration_digest(
             "provider": provider.value,
             "required_providers": [item.value for item in policy.required_providers],
         }
+        if identity is not None:
+            payload["candidate_identity_digest"] = identity.identity_digest
+            payload["deployment_mode"] = "attach"
+        else:
+            payload["bootstrap_digest"] = bootstrap_digest
+            payload["deployment_mode"] = "bootstrap"
     encoded = json.dumps(
         payload,
         allow_nan=False,
@@ -223,6 +243,7 @@ class LiveCandidateWiringPolicy:
     azure_budget: BackendCallBudget | None = None
     azure_estimated_cost_microusd: int = 0
     containerapp_identity: AzureContainerAppCandidateIdentity | None = None
+    containerapp_bootstrap_digest: str | None = None
     containerapp_budget: BackendCallBudget | None = None
     containerapp_estimated_cost_microusd: int = 0
 
@@ -273,20 +294,43 @@ class LiveCandidateWiringPolicy:
             if self.azure_estimated_cost_microusd > self.azure_budget.max_cost_microusd:
                 raise ValueError("Azure estimated cost exceeds its configured budget")
 
-        if self.containerapp_identity is None:
+        configured_containerapp = (
+            self.containerapp_identity is not None
+            or self.containerapp_bootstrap_digest is not None
+        )
+        if (
+            self.containerapp_identity is not None
+            and self.containerapp_bootstrap_digest is not None
+        ):
+            raise ValueError(
+                "Container App configuration must select exactly one attach or bootstrap mode"
+            )
+        if self.containerapp_bootstrap_digest is not None and (
+            len(self.containerapp_bootstrap_digest) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in self.containerapp_bootstrap_digest
+            )
+        ):
+            raise ValueError("containerapp_bootstrap_digest must be a lowercase SHA-256")
+        if not configured_containerapp:
             if (
                 self.containerapp_budget is not None
                 or self.containerapp_estimated_cost_microusd != 0
             ):
                 raise ValueError(
-                    "containerapp_identity is required for Container App budget or cost"
+                    "containerapp_identity or bootstrap digest is required for Container App budget or cost"
                 )
             if ModelCandidateProvider.AZURE_CONTAINER_APP in self.required_providers:
                 raise ValueError(
                     "required Azure Container App provider needs an explicit identity"
                 )
         else:
-            if type(self.containerapp_identity) is not AzureContainerAppCandidateIdentity:
+            if (
+                self.containerapp_identity is not None
+                and type(self.containerapp_identity)
+                is not AzureContainerAppCandidateIdentity
+            ):
                 raise ValueError(
                     "containerapp_identity must be an AzureContainerAppCandidateIdentity"
                 )
@@ -438,6 +482,9 @@ class LiveManagedCandidateWiring:
         containerapp_backend_factory: ContainerAppCandidateBackendFactory = (
             _DEFAULT_CONTAINERAPP_BACKEND_FACTORY
         ),
+        containerapp_bootstrap_factory: (
+            ContainerAppCandidateBootstrapFactory | None
+        ) = None,
         event_sink: Callable[[dict[str, object]], None] = _discard_event,
     ) -> None:
         """Snapshot approved non-secret configuration without provider effects."""
@@ -454,9 +501,26 @@ class LiveManagedCandidateWiring:
             )
         if not callable(event_sink):
             raise ValueError("event_sink must be callable")
+        bootstrap_digest = policy.containerapp_bootstrap_digest
+        if bootstrap_digest is None and containerapp_bootstrap_factory is not None:
+            raise ValueError("Container App bootstrap factory is not configured by policy")
+        if bootstrap_digest is not None:
+            if containerapp_bootstrap_factory is None:
+                raise ValueError("Container App bootstrap factory is required")
+            if not isinstance(
+                containerapp_bootstrap_factory,
+                ContainerAppCandidateBootstrapFactory,
+            ):
+                raise ValueError("Container App bootstrap factory has an invalid boundary")
+            if not hmac.compare_digest(
+                containerapp_bootstrap_factory.deployment_digest,
+                bootstrap_digest,
+            ):
+                raise ValueError("Container App bootstrap factory digest does not match policy")
         self._policy = policy
         self._azure_backend_factory = azure_backend_factory
         self._containerapp_backend_factory = containerapp_backend_factory
+        self._containerapp_bootstrap_factory = containerapp_bootstrap_factory
         self._event_sink = event_sink
         self._approved_local_configuration_digest = _configuration_digest(
             policy,
@@ -469,7 +533,10 @@ class LiveManagedCandidateWiring:
         )
         self._approved_containerapp_configuration_digest = (
             None
-            if policy.containerapp_identity is None
+            if (
+                policy.containerapp_identity is None
+                and policy.containerapp_bootstrap_digest is None
+            )
             else _configuration_digest(
                 policy,
                 ModelCandidateProvider.AZURE_CONTAINER_APP,
@@ -598,10 +665,30 @@ class LiveManagedCandidateWiring:
                     cast(BackendCallBudget, self._policy.azure_budget),
                     azure_enabled=True,
                 )
-            if self._policy.containerapp_identity is not None:
-                containerapp_backend = self._containerapp_backend_factory(
-                    self._policy.containerapp_identity
-                )
+            if (
+                self._policy.containerapp_identity is not None
+                or self._policy.containerapp_bootstrap_digest is not None
+            ):
+                if self._policy.containerapp_bootstrap_digest is not None:
+                    bootstrap_factory = self._containerapp_bootstrap_factory
+                    if (
+                        bootstrap_factory is None
+                        or not hmac.compare_digest(
+                            bootstrap_factory.deployment_digest,
+                            self._policy.containerapp_bootstrap_digest,
+                        )
+                    ):
+                        raise CandidateAssemblyError(
+                            CandidateAssemblyFailure.CONFIGURATION_DRIFT
+                        )
+                    containerapp_backend = bootstrap_factory()
+                else:
+                    identity = self._policy.containerapp_identity
+                    if identity is None:
+                        raise CandidateAssemblyError(
+                            CandidateAssemblyFailure.CONFIGURATION_DRIFT
+                        )
+                    containerapp_backend = self._containerapp_backend_factory(identity)
                 if (
                     not isinstance(containerapp_backend, ContainerAppCandidateBackend)
                     or type(containerapp_backend.candidate_identity)
@@ -668,6 +755,7 @@ class LiveManagedCandidateWiring:
             azure_enabled=(
                 self._policy.azure_config is not None
                 or self._policy.containerapp_identity is not None
+                or self._policy.containerapp_bootstrap_digest is not None
             ),
         )
 
@@ -708,7 +796,10 @@ class LiveManagedCandidateWiring:
         )
         self._require_configuration_unchanged(
             ModelCandidateProvider.AZURE_CONTAINER_APP,
-            configured=self._policy.containerapp_identity is not None,
+            configured=(
+                self._policy.containerapp_identity is not None
+                or self._policy.containerapp_bootstrap_digest is not None
+            ),
             approved_digest=self._approved_containerapp_configuration_digest,
         )
 
@@ -746,6 +837,7 @@ def build_live_managed_candidate_wiring(
     *,
     azure_backend_factory: AzureCandidateBackendFactory | None,
     containerapp_backend_factory: ContainerAppCandidateBackendFactory | None = None,
+    containerapp_bootstrap_factory: ContainerAppCandidateBootstrapFactory | None = None,
     progress_sink: Callable[[str], None],
 ) -> LiveManagedCandidateWiring | None:
     """Build the default-off live boundary without performing discovery."""
@@ -755,6 +847,7 @@ def build_live_managed_candidate_wiring(
         if (
             azure_backend_factory is not None
             or containerapp_backend_factory is not None
+            or containerapp_bootstrap_factory is not None
         ):
             raise ValueError("backend factory requires live_candidate_policy")
         return None
@@ -785,6 +878,7 @@ def build_live_managed_candidate_wiring(
         policy,
         azure_backend_factory=selected_factory,
         containerapp_backend_factory=selected_containerapp_factory,
+        containerapp_bootstrap_factory=containerapp_bootstrap_factory,
         event_sink=emit,
     )
 
@@ -795,6 +889,7 @@ __all__ = (
     "AzureCandidateBackendFactory",
     "ContainerAppCandidateBackend",
     "ContainerAppCandidateBackendFactory",
+    "ContainerAppCandidateBootstrapFactory",
     "LiveCandidateWiringPolicy",
     "LiveManagedCandidateSet",
     "LiveManagedCandidateWiring",

@@ -13,6 +13,9 @@ import pytest
 from scripts import azure_containerapp_live_proof as live_cli
 from scripts.azure_containerapp_live_proof import main
 
+from general_ludd.azure.accelerator_credential_source import (
+    AzureAcceleratorCredentialLease,
+)
 from general_ludd.azure.accelerator_credentials import AzureAcceleratorCredentials
 from general_ludd.infra.azure_containerapp_environment_lifecycle import (
     AzureEnvironmentLifecyclePolicy,
@@ -401,6 +404,27 @@ def test_environment_policy_binds_owner_without_exposing_project_path(
     assert len(policy.owner_digest) == 64
     assert str(project) not in repr(policy)
 
+    with pytest.raises(ValueError, match="timezone-aware"):
+        live_cli._environment_policy(
+            app_policy,
+            guard=guard,
+            project_root=project,
+            now=datetime(2026, 9, 6, 19, 5, 7),
+        )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        object(),
+        SimpleNamespace(acquire=lambda: None),
+    ],
+    ids=("missing-acquire-and-release", "missing-release"),
+)
+def test_openbao_factory_rejects_incomplete_lease_boundaries(source: object) -> None:
+    with pytest.raises(ValueError, match="exactly revoke"):
+        live_cli.build_openbao_live_resources_factory(cast(Any, source))
+
 
 def test_injected_live_cli_runs_one_request_then_verified_cleanup(
     tmp_path: Path,
@@ -448,6 +472,37 @@ def test_injected_live_cli_runs_one_request_then_verified_cleanup(
     assert "AZURE_CONTAINERAPP_ENVIRONMENT_LIFECYCLE_TRACE" in captured.out
     assert "Exercise the empty-string branch" not in captured.out
     assert SUBSCRIPTION not in captured.out + captured.err
+
+
+def test_live_policy_auto_cidr_reuses_bounded_public_ipv4_discovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _project(tmp_path)
+    argv = _argv(
+        project,
+        live=1,
+        acknowledgement="DEPLOY_ONE_CONTAINER_APP_AND_DESTROY",
+    )
+    argv[argv.index("203.0.113.7/32")] = "auto"
+    calls: list[str] = []
+
+    def discover() -> str:
+        calls.append("discover")
+        return "8.8.8.8/32"
+
+    monkeypatch.setattr(
+        live_cli,
+        "resolve_public_ipv4_cidr",
+        discover,
+        raising=False,
+    )
+    args = live_cli._parser().parse_args(argv)
+
+    policy = live_cli._policy(args, app_name="gludd-vllm-proof-abc123abc123")
+
+    assert policy.allowed_cidr == "8.8.8.8/32"
+    assert calls == ["discover"]
 
 
 def test_remote_failure_is_censored_but_still_cleans_up(
@@ -619,6 +674,41 @@ def test_credential_client_uses_fixed_public_cloud_configuration(
         "retry_total": 0,
         "closed": True,
     }
+
+
+@pytest.mark.parametrize(
+    "credentials",
+    [
+        object(),
+        AzureAcceleratorCredentials(
+            client_id="99999999-8888-7777-6666-555555555555",
+            client_secret="unit-secret",
+            subscription_id="22222222-3333-4444-5555-666666666666",
+            tenant_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        ),
+    ],
+    ids=("wrong-type", "wrong-subscription"),
+)
+def test_default_live_resources_rejects_unapproved_credentials_before_clients(
+    tmp_path: Path,
+    credentials: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _project(tmp_path)
+    args, policy, requirement = _live_inputs(project)
+    monkeypatch.setattr(
+        live_cli,
+        "build_azure_containerapp_runtime_resources",
+        lambda **_kwargs: pytest.fail("resource construction must remain unreachable"),
+    )
+
+    with pytest.raises(ValueError, match="approved subscription"):
+        live_cli._default_live_resources(
+            args,
+            policy,
+            requirement,
+            credentials=cast(Any, credentials),
+        )
 
 
 def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
@@ -799,10 +889,10 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
         FakeLifecycleTransport,
     )
     monkeypatch.setattr(live_cli, "AzureContainerAppReadOnlyPreflight", FakePreflight)
-    monkeypatch.setattr(live_cli, "AzureContainerAppMakeRuntime", FakeRuntime)
+    monkeypatch.setattr(live_cli, "AzureContainerAppTerraformRuntime", FakeRuntime)
     monkeypatch.setattr(
         live_cli,
-        "AzureContainerAppEnvironmentMakeRuntime",
+        "AzureContainerAppEnvironmentTerraformRuntime",
         FakeEnvironmentRuntime,
     )
     monkeypatch.setattr(live_cli, "build_azure_containerapp_candidate_backend", build_backend)
@@ -856,7 +946,8 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
 
     output = capsys.readouterr().out
     assert "AZURE_CONTAINERAPP_PREFLIGHT_TRACE" in output
-    assert "AZURE_CONTAINERAPP_MAKE_TRACE" in output
+    assert "AZURE_CONTAINERAPP_TERRAFORM_TRACE" in output
+    assert "AZURE_CONTAINERAPP_ENVIRONMENT_TERRAFORM_TRACE" in output
     assert "AZURE_CONTAINERAPP_BACKEND_TRACE" in output
     assert "AZURE_CONTAINERAPP_ARM_TRACE phase=readiness state=heartbeat" in output
     assert "AZURE_CONTAINERAPP_ARM_TRACE phase=absence state=heartbeat" in output
@@ -898,11 +989,11 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
             "requirement": requirement,
         }
     ]
-    assert runtime_arguments["repo_root"] == live_cli._REPO_ROOT
+    assert "repo_root" not in runtime_arguments
     assert runtime_arguments["work_root"] == live_cli._WORK_ROOT
     assert runtime_arguments["credentials"] is credentials
     assert runtime_arguments["requirement"] is requirement
-    assert environment_runtime_arguments["repo_root"] == live_cli._REPO_ROOT
+    assert "repo_root" not in environment_runtime_arguments
     assert (
         environment_runtime_arguments["work_root"]
         == live_cli._ENVIRONMENT_WORK_ROOT
@@ -977,7 +1068,7 @@ def test_default_resource_construction_failure_closes_every_created_client(
     )
     monkeypatch.setattr(
         live_cli,
-        "AzureContainerAppMakeRuntime",
+        "AzureContainerAppTerraformRuntime",
         lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("constructor failed")),
     )
 
@@ -1012,13 +1103,130 @@ def test_default_resource_cleanup_is_idempotent_and_reports_any_close_failure() 
         environment_transport=cast(Any, Client("environment", fail=True)),
         lifecycle_transport=cast(Any, Client("lifecycle")),
         app_transport=cast(Any, Client("app")),
+        credential_release=lambda: lifecycle.append("lease.release"),
     )
 
     with pytest.raises(RuntimeError, match="Azure live resource cleanup failed"):
         resources.close()
     resources.close()
 
-    assert lifecycle == ["app", "lifecycle", "environment", "credential"]
+    assert lifecycle == [
+        "app",
+        "lifecycle",
+        "environment",
+        "credential",
+        "lease.release",
+    ]
+
+
+def test_openbao_resource_factory_acquires_one_lease_and_releases_it_last(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _project(tmp_path)
+    args, policy, requirement = _live_inputs(project)
+    credentials = AzureAcceleratorCredentials(
+        client_id="33333333-4444-4555-8666-777777777777",
+        client_secret="dynamic-secret-never-render",
+        subscription_id=SUBSCRIPTION,
+        tenant_id="22222222-3333-4444-8555-666666666666",
+    )
+    lease = AzureAcceleratorCredentialLease(
+        credentials=credentials,
+        lease_duration_seconds=600,
+        renewable=False,
+        _lease_id="azure/creds/gludd-accelerator/unit-lease",
+    )
+    lifecycle: list[str] = []
+    captured: dict[str, object] = {}
+
+    class Source:
+        def acquire(self) -> AzureAcceleratorCredentialLease:
+            lifecycle.append("lease.acquire")
+            return lease
+
+        def release(self, released: AzureAcceleratorCredentialLease) -> None:
+            assert released is lease
+            lifecycle.append("lease.release")
+
+    class Resources:
+        def close(self) -> None:
+            lifecycle.append("resources.close")
+            cast(Any, captured["credential_release"])()
+
+    def build_resources(
+        active_args: object,
+        active_policy: object,
+        active_requirement: object,
+        *,
+        credentials: object,
+        credential_release: object,
+    ) -> Resources:
+        captured.update(
+            args=active_args,
+            policy=active_policy,
+            requirement=active_requirement,
+            credentials=credentials,
+            credential_release=credential_release,
+        )
+        return Resources()
+
+    monkeypatch.setattr(live_cli, "_default_live_resources", build_resources)
+
+    resources = live_cli.build_openbao_live_resources_factory(cast(Any, Source()))(
+        args,
+        policy,
+        requirement,
+    )
+    resources.close()
+
+    assert captured["args"] is args
+    assert captured["policy"] is policy
+    assert captured["requirement"] is requirement
+    assert captured["credentials"] is credentials
+    assert lifecycle == ["lease.acquire", "resources.close", "lease.release"]
+
+
+def test_openbao_resource_factory_revokes_lease_when_construction_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _project(tmp_path)
+    args, policy, requirement = _live_inputs(project)
+    credentials = AzureAcceleratorCredentials(
+        client_id="33333333-4444-4555-8666-777777777777",
+        client_secret="dynamic-secret-never-render",
+        subscription_id=SUBSCRIPTION,
+        tenant_id="22222222-3333-4444-8555-666666666666",
+    )
+    lease = AzureAcceleratorCredentialLease(
+        credentials=credentials,
+        lease_duration_seconds=600,
+        renewable=False,
+        _lease_id="azure/creds/gludd-accelerator/unit-lease",
+    )
+    releases: list[object] = []
+
+    class Source:
+        def acquire(self) -> AzureAcceleratorCredentialLease:
+            return lease
+
+        def release(self, released: AzureAcceleratorCredentialLease) -> None:
+            releases.append(released)
+
+    monkeypatch.setattr(
+        live_cli,
+        "_default_live_resources",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("private construction detail")
+        ),
+    )
+
+    factory = live_cli.build_openbao_live_resources_factory(cast(Any, Source()))
+    with pytest.raises(RuntimeError, match="private construction detail"):
+        factory(args, policy, requirement)
+
+    assert releases == [lease]
 
 
 def test_live_cli_treats_client_cleanup_failure_as_terminal_and_censors_detail(
@@ -1104,14 +1312,20 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     )[0]
     assert "coverage-files" in recipe
     assert "config/coverage_azure_containerapp.ini" in recipe
+    assert "tests/unit/test_azure_accelerator_openbao.py" in recipe
     assert "tests/unit/test_azure_containerapp_environment_lifecycle.py" in recipe
     assert "tests/unit/test_azure_containerapp_environment_make_runtime.py" in recipe
     assert "tests/unit/test_azure_containerapp_environment_terraform.py" in recipe
     assert "tests/unit/test_azure_containerapp_owned_lifecycle.py" in recipe
+    assert "tests/unit/test_azure_containerapp_runtime_resources.py" in recipe
+    assert "tests/unit/test_azure_containerapp_sdk.py" in recipe
+    assert "tests/unit/test_azure_containerapp_terraform_executor.py" in recipe
+    assert "tests/unit/test_azure_accelerator_role.py" in recipe
     assert "tests/unit/test_azure_containerapp_topology.py" in recipe
     assert "tests/unit/test_azure_containerapp_tfvars.py" in recipe
     assert "tests/unit/test_deployment_telemetry.py" in recipe
     assert "tests/unit/test_provider_auth.py" in recipe
+    assert "tests/unit/test_self_improve_azure_containerapp_bootstrap.py" in recipe
     assert "COVERAGE_AGGREGATE_MIN=85" in recipe
     assert "COVERAGE_PER_FILE_MIN=75" in recipe
     entry = next(
@@ -1134,7 +1348,14 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     coverage_config = (
         root / "config/coverage_azure_containerapp.ini"
     ).read_text(encoding="utf-8")
+    assert "azure/accelerator_credential_source.py" in coverage_config
+    assert "azure/accelerator_role.py" in coverage_config
     assert "azure_containerapp_environment_lifecycle.py" in coverage_config
     assert "azure_containerapp_environment_make_runtime.py" in coverage_config
+    assert "azure_containerapp_owned_candidate.py" in coverage_config
     assert "azure_containerapp_owned_lifecycle.py" in coverage_config
+    assert "azure_containerapp_runtime_resources.py" in coverage_config
+    assert "azure_containerapp_sdk.py" in coverage_config
+    assert "azure_containerapp_terraform_executor.py" in coverage_config
     assert "azure_containerapp_topology.py" in coverage_config
+    assert "self_improve/azure_containerapp_bootstrap.py" in coverage_config

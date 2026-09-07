@@ -185,6 +185,39 @@ def _validate_public_cloud_endpoints(payload: dict[str, object]) -> None:
             )
 
 
+def build_azure_accelerator_credentials(
+    *,
+    client_id: str,
+    client_secret: str,
+    subscription_id: str,
+    tenant_id: str,
+    expected_subscription_id: str | None = None,
+) -> AzureAcceleratorCredentials:
+    """Validate secret-engine or SDK values through the canonical contract."""
+    values = (client_id, client_secret, subscription_id, tenant_id)
+    if any(
+        not isinstance(value, str) or not value or value.strip() != value
+        for value in values
+    ):
+        raise AzureAcceleratorCredentialError(
+            "credential values are missing valid required fields"
+        )
+    validated_client_id = _canonical_uuid(client_id)
+    validated_subscription_id = _canonical_uuid(subscription_id)
+    validated_tenant_id = _canonical_uuid(tenant_id)
+    _validate_secret(client_secret)
+    if expected_subscription_id is not None:
+        expected = _canonical_uuid(expected_subscription_id)
+        if validated_subscription_id != expected:
+            raise AzureAcceleratorCredentialError("credential subscription mismatch")
+    return AzureAcceleratorCredentials(
+        client_id=validated_client_id,
+        client_secret=client_secret,
+        subscription_id=validated_subscription_id,
+        tenant_id=validated_tenant_id,
+    )
+
+
 def load_azure_accelerator_credentials(
     path: str | os.PathLike[str],
     *,
@@ -198,28 +231,19 @@ def load_azure_accelerator_credentials(
         os.close(descriptor)
 
     values = {field_name: _required_string(payload, field_name) for field_name in _REQUIRED_FIELDS}
-    client_id = _canonical_uuid(values["clientId"])
-    subscription_id = _canonical_uuid(values["subscriptionId"])
-    tenant_id = _canonical_uuid(values["tenantId"])
-    _validate_secret(values["clientSecret"])
     _validate_public_cloud_endpoints(payload)
-    if expected_subscription_id is not None:
-        expected = _canonical_uuid(expected_subscription_id)
-        if subscription_id != expected:
-            raise AzureAcceleratorCredentialError(
-                "credential subscription mismatch"
-            )
-
-    return AzureAcceleratorCredentials(
-        client_id=client_id,
+    return build_azure_accelerator_credentials(
+        client_id=values["clientId"],
         client_secret=values["clientSecret"],
-        subscription_id=subscription_id,
-        tenant_id=tenant_id,
+        subscription_id=values["subscriptionId"],
+        tenant_id=values["tenantId"],
+        expected_subscription_id=expected_subscription_id,
     )
 
 
 __all__ = [
     "AzureAcceleratorCredentialError",
     "AzureAcceleratorCredentials",
+    "build_azure_accelerator_credentials",
     "load_azure_accelerator_credentials",
 ]

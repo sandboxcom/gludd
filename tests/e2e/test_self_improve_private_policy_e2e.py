@@ -12,8 +12,14 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
+from general_ludd.db.models import Base
+from general_ludd.db.repository import TodoRepository
+from general_ludd.event_loop.loop import EventLoop
 from general_ludd.local_model import get_model
+from general_ludd.schemas.todo import TodoStatus
 from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
     CodexReference,
@@ -59,6 +65,17 @@ class _Trace:
     acquisitions: list[str] = field(default_factory=list)
     outcomes: list[dict[str, object]] = field(default_factory=list)
     events: list[str] = field(default_factory=list)
+
+
+class _ComputeLifecycle:
+    """Hermetic execution-environment boundary with an auditable call ledger."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def reconcile_execution_environment(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(dict(kwargs))
+        return {"status": "successful", "rc": 0, "events": []}
 
 
 class _Reservation:
@@ -380,6 +397,143 @@ def _assert_no_private_data_leaked(trace: _Trace, error: BaseException | None) -
         *PROVIDER_CREDENTIALS.values(),
     ):
         assert forbidden not in observable
+
+
+@pytest.mark.parametrize("mode", PROVIDER_MODES)
+@pytest.mark.asyncio
+async def test_self_improvement_uses_common_todo_ranking_compute_and_real_edit(
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    """Prove managed improvement is ordinary ranked work with bounded controls."""
+    _write_policy(tmp_path)
+    destination = _prepare_path(tmp_path, PUBLIC_PATH, "replace")
+    plan = _approve(tmp_path)
+    plan_artifact = plan.to_json()
+    normal_todo_id = f"todo-normal-{mode}"
+    trace = _Trace()
+    lifecycle = _ComputeLifecycle()
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        async with factory() as session:
+            repository = TodoRepository(session)
+            await repository.create(
+                {
+                    "todo_id": normal_todo_id,
+                    "title": "Ordinary application work",
+                    "description": "Competes in the same durable scheduler.",
+                    "status": TodoStatus.QUEUED.value,
+                    "priority": 10,
+                    "queue": "core",
+                    "work_type": "docs",
+                    "project_id": plan.project_id,
+                }
+            )
+            await repository.create(
+                {
+                    "todo_id": plan.todo_id,
+                    "title": "Managed self-improvement",
+                    "description": "Apply one approved public repository edit.",
+                    "status": TodoStatus.QUEUED.value,
+                    "priority": 100,
+                    "queue": "core",
+                    "work_type": "self_improve",
+                    "resource_profile": "hybrid",
+                    "project_id": plan.project_id,
+                    "plan_artifact": plan_artifact,
+                    "approved_artifact_digest": hashlib.sha256(
+                        plan_artifact.encode("utf-8")
+                    ).hexdigest(),
+                    "approval_policy": "managed_self_improve_plan",
+                }
+            )
+            await session.commit()
+
+        project_manager = SimpleNamespace(
+            select_project=lambda: SimpleNamespace(project_id=plan.project_id)
+        )
+        loop = EventLoop(
+            session=factory,
+            runner=lifecycle,
+            config={
+                "repo_root": str(tmp_path),
+                "execution_environment": {
+                    "machine_cpus": 2,
+                    "machine_memory_mb": 4096,
+                    "machine_disk_gb": 16,
+                },
+            },
+            project_manager=project_manager,
+            project_workspace={
+                plan.project_id: SimpleNamespace(repo_dir=tmp_path),
+            },
+            floor_controller=SimpleNamespace(get_max_active=lambda: 1),
+            self_improve_runner_factory=lambda root: _runner(
+                root,
+                mode,
+                trace,
+                _proposal(PUBLIC_PATH, "replace"),
+            ),
+        )
+
+        metrics = await loop.tick()
+
+        assert [call["state"] for call in lifecycle.calls] == ["present"]
+        assert lifecycle.calls[0]["project_root"] == tmp_path.resolve()
+        assert [todo.todo_id for todo in loop._tick_state["claimed_todos"]] == [
+            plan.todo_id
+        ]
+        assert metrics["todos_dispatched"] == 1
+        assert destination.read_text(encoding="utf-8") == PUBLIC_NEW
+        assert trace.provider_calls == [mode]
+        assert trace.evaluator_calls == [mode]
+        assert trace.acquisitions == [mode]
+        assert len(trace.outcomes) == 1
+
+        async with factory() as session:
+            repository = TodoRepository(session)
+            improved = await repository.get_by_id(
+                plan.todo_id,
+                project_id=plan.project_id,
+            )
+            ordinary = await repository.get_by_id(
+                normal_todo_id,
+                project_id=plan.project_id,
+            )
+            assert improved is not None
+            assert ordinary is not None
+            assert improved.status == TodoStatus.AWAITING_RESULT.value
+            assert ordinary.status == TodoStatus.QUEUED.value
+            await repository.transition(
+                improved.todo_id,
+                TodoStatus.CANCELLED,
+                improved.version,
+                project_id=plan.project_id,
+            )
+            await repository.transition(
+                ordinary.todo_id,
+                TodoStatus.CANCELLED,
+                ordinary.version,
+                project_id=plan.project_id,
+            )
+            await session.commit()
+            loop._active_session = session
+            loop._todo_repo = repository
+            loop._tick_project_id = plan.project_id
+            await loop._phase_reconcile_compute_demand()
+
+        assert [call["state"] for call in lifecycle.calls] == ["present", "absent"]
+        assert loop._tick_state["compute_demand"]["runnable_todos"] == 0
+        _assert_no_private_data_leaked(trace, None)
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.parametrize("mode", PROVIDER_MODES)

@@ -14,6 +14,7 @@ import os
 import shutil
 import sys
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +28,7 @@ from general_ludd.ansible.paths import (
     to_ansible_env,
 )
 from general_ludd.ansible.unsafe import validate_extravars
-from general_ludd.events.types import PlaybookRegisteredEvent
+from general_ludd.events.types import CustomEvent, PlaybookRegisteredEvent
 from general_ludd.security.sanitize import sanitize_job_id
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,23 @@ _LANGUAGE_ROLES_ROOT = (
     / "language"
     / "roles"
 )
+
+_EXECUTION_ENVIRONMENT_CONSTRAINTS = frozenset(
+    {
+        "build_timeout_seconds",
+        "cleanup_on_failure",
+        "ephemeral",
+        "install_podman",
+        "machine_cpus",
+        "machine_disk_gb",
+        "machine_memory_mb",
+        "machine_start_timeout_seconds",
+        "poll_seconds",
+        "remove_image_on_absent",
+        "validate_only",
+    }
+)
+_EXECUTION_ENVIRONMENT_TIMEOUTS = {"present": 7800.0, "absent": 1200.0}
 
 
 def _build_registry(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -188,6 +206,15 @@ class AnsibleRunnerAdapter:
             process_isolation=isolation_config,
             private_data_dir=self.private_data_dir,
         )
+        # Bootstrap must remain able to install/start the container engine even
+        # when ordinary work is configured to run inside that engine.  A
+        # dedicated native controller avoids the circular "Podman is required
+        # to install Podman" failure without mutating the live runner boundary.
+        self._bootstrap_core_runner = CoreAnsibleRunner(
+            process_isolation=None,
+            private_data_dir=self.private_data_dir,
+        )
+        self._managed_execution_environment_isolation = False
         if playbooks_dir:
             self._scan_playbook_dir(playbooks_dir)
 
@@ -329,7 +356,24 @@ class AnsibleRunnerAdapter:
             playbook_path = self.resolve_playbook(playbook_name)
         except ValueError as exc:
             return {"status": "failed", "rc": 1, "error": str(exc), "events": []}
-        _pdd = private_data_dir or self.private_data_dir
+        return self._run_resolved_playbook(
+            self._core_runner,
+            playbook_path=playbook_path,
+            extravars=extravars,
+            env=env,
+            timeout=timeout,
+        )
+
+    def _run_resolved_playbook(
+        self,
+        core_runner: CoreAnsibleRunner,
+        *,
+        playbook_path: str,
+        extravars: dict[str, Any] | None,
+        env: dict[str, str] | None,
+        timeout: float | None,
+    ) -> dict[str, Any]:
+        """Execute one resolved playbook with the selected controller runner."""
         # HIGH (global env mutation): do NOT mutate os.environ. Pass caller-
         # supplied env overrides as extra_env to core_runner, which merges them
         # into the scrubbed allowlist env immediately before pb_exec.run() and
@@ -363,7 +407,7 @@ class AnsibleRunnerAdapter:
                 _merged_env["ANSIBLE_ROLES_PATH"] = (
                     activation_paths + os.pathsep + existing_rp if existing_rp else activation_paths
                 )
-            result = self._core_runner.run_playbook(
+            result = core_runner.run_playbook(
                 playbook_path=playbook_path,
                 # Do not evaluate truthiness on this untrusted mapping: a dict
                 # subclass can override __bool__/__len__. CoreAnsibleRunner's
@@ -376,6 +420,168 @@ class AnsibleRunnerAdapter:
         except Exception as exc:
             logger.error("Ansible core runner failed: %s", exc)
             return {"status": "failed", "rc": 1, "error": str(exc), "events": []}
+
+    def reconcile_execution_environment(
+        self,
+        *,
+        state: str = "present",
+        project_root: str | Path | None = None,
+        constraints: Mapping[str, Any] | None = None,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        """Create, verify, or remove Gludd's namespaced execution environment.
+
+        This is the public Python boundary for the Ansible bootstrap role.  It
+        deliberately exposes only resource and lifecycle constraints; callers
+        cannot replace the playbook, resource namespace, image, download URL,
+        checksum, or executable path.
+        """
+        if state not in _EXECUTION_ENVIRONMENT_TIMEOUTS:
+            allowed = ", ".join(sorted(_EXECUTION_ENVIRONMENT_TIMEOUTS))
+            raise ValueError(f"state must be one of: {allowed}")
+
+        supplied_constraints = dict(constraints or {})
+        unsupported = sorted(set(supplied_constraints) - _EXECUTION_ENVIRONMENT_CONSTRAINTS)
+        if unsupported:
+            raise ValueError(f"Unsupported execution-environment constraint: {unsupported[0]}")
+
+        selected_root = Path(project_root) if project_root is not None else self._project_root
+        if selected_root is None:
+            selected_root = _PLAYBOOKS_ROOT.parent
+        selected_root = selected_root.expanduser().resolve()
+        if not selected_root.is_dir():
+            raise ValueError(f"Execution-environment project root is not a directory: {selected_root}")
+
+        effective_timeout = _EXECUTION_ENVIRONMENT_TIMEOUTS[state] if timeout is None else float(timeout)
+        if not 0 < effective_timeout <= 86_400:
+            raise ValueError("timeout must be greater than 0 and no more than 86400 seconds")
+
+        extravars: dict[str, Any] = {
+            "execution_environment_bootstrap_state": state,
+            "execution_environment_bootstrap_project_root": str(selected_root),
+        }
+        for name, value in supplied_constraints.items():
+            extravars[f"execution_environment_bootstrap_{name}"] = value
+
+        self._publish_execution_environment_event(
+            "execution_environment_reconcile_started",
+            state=state,
+        )
+        result = self._run_resolved_playbook(
+            self._bootstrap_core_runner,
+            playbook_path=self.resolve_playbook("bootstrap_execution_environment.yml"),
+            extravars=extravars,
+            env=None,
+            timeout=effective_timeout,
+        )
+        fact = self._execution_environment_fact(result)
+        validate_only = supplied_constraints.get("validate_only") is True
+        if result.get("status") == "successful" and int(result.get("rc", 1)) == 0:
+            failure = self._apply_execution_environment_fact(
+                state=state,
+                fact=fact,
+                validate_only=validate_only,
+            )
+            if failure is not None:
+                result = {
+                    **result,
+                    "status": "failed",
+                    "rc": 1,
+                    "error": failure,
+                }
+            elif fact is not None:
+                result = {**result, "execution_environment": fact}
+        rc = int(result.get("rc", 1))
+        terminal_name = (
+            "execution_environment_reconcile_completed"
+            if result.get("status") == "successful" and rc == 0
+            else "execution_environment_reconcile_failed"
+        )
+        self._publish_execution_environment_event(terminal_name, state=state, rc=rc)
+        return result
+
+    @staticmethod
+    def _execution_environment_fact(result: Mapping[str, Any]) -> dict[str, Any] | None:
+        """Extract the role's bounded fact from native or ansible-runner events."""
+        events = result.get("events")
+        if not isinstance(events, list):
+            return None
+        for event in reversed(events):
+            if not isinstance(event, dict):
+                continue
+            event_data = event.get("event_data")
+            candidates = [event.get("result")]
+            if isinstance(event_data, dict):
+                candidates.append(event_data.get("res"))
+            for candidate in candidates:
+                if not isinstance(candidate, dict):
+                    continue
+                facts = candidate.get("ansible_facts")
+                if not isinstance(facts, dict):
+                    continue
+                fact = facts.get("gludd_execution_environment")
+                if isinstance(fact, dict):
+                    return dict(fact)
+        return None
+
+    def _apply_execution_environment_fact(
+        self,
+        *,
+        state: str,
+        fact: dict[str, Any] | None,
+        validate_only: bool,
+    ) -> str | None:
+        """Activate only a verified image, or disable only Gludd-owned isolation."""
+        if fact is None or fact.get("owner") != "gludd":
+            return "execution-environment role did not publish its owned lifecycle fact"
+        if validate_only:
+            if fact.get("state") != "planned" or fact.get("requested_state") != state:
+                return "execution-environment validation fact did not match the request"
+            return None
+        if state == "absent":
+            if fact.get("state") != "absent":
+                return "execution-environment teardown fact did not prove absence"
+            if self._managed_execution_environment_isolation:
+                self.isolation_config = None
+                self._core_runner.set_process_isolation(None)
+                self._managed_execution_environment_isolation = False
+            return None
+        if fact.get("state") != "present" or fact.get("verified") is not True:
+            return "execution-environment candidate was not verified"
+        image_id = self._normalized_local_image_id(fact.get("image_id"))
+        if image_id is None:
+            return "execution-environment candidate has no immutable local image ID"
+        isolation = ProcessIsolationConfig(
+            enabled=True,
+            executable="podman",
+            container_image=image_id,
+        )
+        self.isolation_config = isolation
+        self._core_runner.set_process_isolation(isolation)
+        self._managed_execution_environment_isolation = True
+        return None
+
+    @staticmethod
+    def _normalized_local_image_id(value: object) -> str | None:
+        """Return a canonical immutable Podman image ID without accepting tags."""
+        if not isinstance(value, str):
+            return None
+        digest = value.removeprefix("sha256:")
+        if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+            return None
+        return f"sha256:{digest}"
+
+    def _publish_execution_environment_event(self, name: str, **payload: object) -> None:
+        """Publish a sanitized lifecycle event when an event bus is configured."""
+        logger.info("%s state=%s", name, payload.get("state", "unknown"))
+        if self._event_bus is not None:
+            self._event_bus.publish(
+                CustomEvent(
+                    name=name,
+                    payload=dict(payload),
+                    source="ansible_runner",
+                )
+            )
 
     async def run_role(self, task_args: dict[str, Any]) -> dict[str, Any]:
         """Execute a language role script with a 30s timeout and parse its JSON."""

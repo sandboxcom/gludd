@@ -107,12 +107,14 @@ def test_outputs_expose_only_identity_and_exact_cleanup_boundary() -> None:
     assert set(re.findall(r'^output "([^"]+)"', stack_outputs, re.MULTILINE)) == {
         "environment_id",
         "cleanup_boundary",
+        "runtime_class",
     }
     assert "azapi_resource.managed_environment.id" in module_outputs
     assert "module.environment.environment_id" in stack_outputs
     assert "module.environment.cleanup_boundary" in stack_outputs
     assert module_outputs.count("description =") == 2
-    assert stack_outputs.count("description =") == 2
+    assert 'value       = "control-plane"' in stack_outputs
+    assert stack_outputs.count("description =") == 3
 
 
 def test_environment_assets_do_not_claim_to_create_a_shared_operator_resource() -> None:
@@ -136,3 +138,8 @@ def test_state_free_terraform_validation_target_accepts_environment_stack() -> N
 
     assert "stacks/azure-container-app-environment" in target
     assert "TF_INIT_LOCAL_VALIDATE_ONLY" in target
+    assert "terraform init -backend=false" in target
+    assert "terraform validate" in target
+    assert target.index("terraform init -backend=false") < target.index(
+        "terraform validate"
+    )

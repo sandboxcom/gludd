@@ -42,6 +42,9 @@ module "vllm_server" {
   expires_at_utc                 = var.expires_at_utc
   owner_token                    = var.owner_token
   trace_id                       = var.trace_id
+  min_replicas                   = var.min_replicas
+  max_replicas                   = var.max_replicas
+  http_concurrent_requests       = var.http_concurrent_requests
   vllm_context_length            = var.vllm_context_length
   vllm_max_num_seqs              = var.vllm_max_num_seqs
   vllm_gpu_memory_utilization    = var.vllm_gpu_memory_utilization

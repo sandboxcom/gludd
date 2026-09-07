@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import copy
 import logging
 import os
 import sys
@@ -241,6 +242,25 @@ def _compaction_config_dict(uc: Any) -> dict[str, Any]:
     if callable(dump):
         return dict(dump())
     return {}
+
+
+def _build_self_improve_runner_factory(
+    config: dict[str, Any],
+) -> Callable[[Path], Any]:
+    """Snapshot global self-improvement config for every repository runner."""
+    snapshot = copy.deepcopy(config)
+
+    def build(repo_root: Path) -> Any:
+        from general_ludd.self_improve.runtime import (
+            build_managed_self_improve_runner,
+        )
+
+        return build_managed_self_improve_runner(
+            repo_root,
+            self_improve_config=copy.deepcopy(snapshot),
+        )
+
+    return build
 
 
 def _remediation_tick_settings(uc: Any) -> tuple[int, int]:
@@ -2330,6 +2350,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             consensus_reviewer=consensus_reviewer,
             langgraph_reviewer=langgraph_reviewer,
             self_improve_interval=self_improve_interval,
+            self_improve_runner_factory=_build_self_improve_runner_factory(
+                getattr(uc, "self_improve", {}) if uc else {}
+            ),
             # H3: spend_limiter passed via constructor so _spend_limiter is set
             # before the run_forever task is scheduled — the first tick can never
             # bypass the operator spend cap.

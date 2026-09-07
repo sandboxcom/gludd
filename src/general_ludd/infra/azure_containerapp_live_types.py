@@ -109,6 +109,9 @@ class AzureContainerAppLiveProofPolicy:
     estimated_request_cost_microusd: int
     live: bool
     acknowledgement: str | None
+    min_replicas: int = 0
+    max_replicas: int = 1
+    http_concurrent_requests: int = 1
 
     def __post_init__(self) -> None:
         """Reject broad, mutable, ambiguous, or unbounded deployment authority."""
@@ -167,6 +170,20 @@ class AzureContainerAppLiveProofPolicy:
                 raise ValueError("live proof requires the exact acknowledgement")
         elif self.acknowledgement is not None:
             raise ValueError("dry-run acknowledgement must be omitted")
+        if self.min_replicas != 0:
+            raise ValueError("min_replicas must be zero for paid-idle safety")
+        if (
+            isinstance(self.max_replicas, bool)
+            or not isinstance(self.max_replicas, int)
+            or not 1 <= self.max_replicas <= 100
+        ):
+            raise ValueError("max_replicas must be in 1..100")
+        if (
+            isinstance(self.http_concurrent_requests, bool)
+            or not isinstance(self.http_concurrent_requests, int)
+            or not 1 <= self.http_concurrent_requests <= 100_000
+        ):
+            raise ValueError("http_concurrent_requests must be in 1..100000")
         if (
             not isinstance(self.container_image, str)
             or self.container_image.count("@") != 1
@@ -236,6 +253,9 @@ class AzureContainerAppLiveProofPolicy:
             "max_cost_usd": self.max_cost_usd,
             "model_name": self.model_name,
             "model_revision": self.model_revision,
+            "min_replicas": self.min_replicas,
+            "max_replicas": self.max_replicas,
+            "http_concurrent_requests": self.http_concurrent_requests,
             "protocol": "gludd-azure-containerapp-live-proof-v1",
             "ttl_minutes": self.ttl_minutes,
             "workload_profile_name": self.workload_profile_name,

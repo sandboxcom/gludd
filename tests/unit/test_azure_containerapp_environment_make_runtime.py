@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
+import general_ludd.infra.azure_containerapp_environment_make_runtime as runtime_module
 from general_ludd.azure.accelerator_credentials import AzureAcceleratorCredentials
-from general_ludd.commands.make import MakeResult
 from general_ludd.infra.azure_containerapp_environment_lifecycle import (
     AzureEnvironmentLifecyclePolicy,
     AzureEnvironmentProfile,
@@ -18,6 +17,7 @@ from general_ludd.infra.azure_containerapp_environment_lifecycle import (
 from general_ludd.infra.azure_containerapp_environment_make_runtime import (
     AzureContainerAppEnvironmentMakeRuntime,
     AzureContainerAppEnvironmentTerraformMaterializer,
+    AzureContainerAppEnvironmentTerraformRuntime,
     AzureContainerAppMakeRuntimeError,
     MakeRuntimeEvent,
     MakeRuntimeState,
@@ -25,9 +25,21 @@ from general_ludd.infra.azure_containerapp_environment_make_runtime import (
 from general_ludd.infra.azure_containerapp_environment_materializer import (
     verify_existing_state_boundary,
 )
+from general_ludd.infra.azure_containerapp_terraform_executor import (
+    AzureContainerAppTerraformPhaseError,
+    TerraformRuntimeState,
+)
 
 SUBSCRIPTION = "12345678-1234-1234-1234-123456789abc"
 SECRET = "never-render-this-environment-secret"
+
+
+def test_environment_runtime_has_no_make_or_shell_provisioning_dependency() -> None:
+    source = Path(runtime_module.__file__).read_text(encoding="utf-8")
+
+    assert "general_ludd.commands.make" not in source
+    assert "MakeRunner" not in source
+    assert "subprocess" not in source
 
 
 def _profile(name: str = "gpu-t4") -> AzureEnvironmentProfile:
@@ -139,39 +151,42 @@ class _Runner:
         self.materializer = materializer
         self.fail_phase = fail_phase
         self.action = action
-        self.calls: list[tuple[str, list[str], dict[str, str], int | None]] = []
+        self.calls: list[dict[str, object]] = []
 
     def run(
         self,
-        target: str,
         *,
-        extra_args: list[str] | None = None,
-        timeout_s: int | None = None,
-        env_extra: dict[str, str] | None = None,
-        stream: bool = False,
-        stream_callback: object | None = None,
-    ) -> MakeResult:
-        del stream, stream_callback
-        arguments = list(extra_args or [])
-        environment = dict(env_extra or {})
-        self.calls.append((target, arguments, environment, timeout_s))
-        variables = dict(argument.split("=", 1) for argument in arguments)
-        phase = variables["AZURE_CONTAINERAPP_TF_PHASE"]
+        phase: str,
+        terraform_dir: str | Path,
+        plan_file: str | Path,
+        json_file: str | Path,
+        allowed_root: str | Path,
+        environment: dict[str, str],
+        timeout_seconds: int,
+        progress: object,
+    ) -> None:
+        cast(Any, progress)(phase, TerraformRuntimeState.STARTED, 0)
+        self.calls.append(
+            {
+                "phase": phase,
+                "terraform_dir": Path(terraform_dir),
+                "plan_file": Path(plan_file),
+                "json_file": Path(json_file),
+                "allowed_root": Path(allowed_root),
+                "environment": dict(environment),
+                "timeout_seconds": timeout_seconds,
+            }
+        )
         if phase == "show-plan":
             policy = self.materializer.calls[-1][0]
-            Path(variables["AZURE_CONTAINERAPP_TF_JSON_FILE"]).write_text(
+            Path(json_file).write_text(
                 json.dumps(_plan(policy, self.action)),
                 encoding="utf-8",
             )
-        failed = phase == self.fail_phase
-        return MakeResult(
-            target=target,
-            exit_code=2 if failed else 0,
-            success=not failed,
-            duration_s=0.01,
-            stdout_tail=f"provider output {SECRET}" if failed else "",
-            stderr_tail=f"provider error {SECRET}" if failed else "",
-        )
+        if phase == self.fail_phase:
+            cast(Any, progress)(phase, TerraformRuntimeState.FAILED, 0)
+            raise AzureContainerAppTerraformPhaseError(phase)
+        cast(Any, progress)(phase, TerraformRuntimeState.SUCCEEDED, 0)
 
 
 def _runtime(
@@ -186,8 +201,7 @@ def _runtime(
 ) -> tuple[AzureContainerAppEnvironmentMakeRuntime, _Materializer, _Runner]:
     active_materializer = materializer or _Materializer()
     active_runner = runner or _Runner(active_materializer)
-    runtime = AzureContainerAppEnvironmentMakeRuntime(
-        repo_root=Path.cwd(),
+    runtime = AzureContainerAppEnvironmentTerraformRuntime(
         work_root=tmp_path / "gludd-azure-containerapp-live-proof",
         credentials=credentials or _credentials(),
         read_environment=cast(
@@ -199,14 +213,14 @@ def _runtime(
             Any,
             list_apps or (lambda _policy: ()),
         ),
-        make_runner=active_runner,
+        terraform_executor=active_runner,
         terraform_materializer=active_materializer,
         trace_sink=cast(Any, trace_sink or (lambda _event: None)),
     )
     return runtime, active_materializer, active_runner
 
 
-def test_runtime_materializes_and_runs_only_the_existing_make_phase_target(
+def test_runtime_materializes_and_runs_terraform_directly(
     tmp_path: Path,
 ) -> None:
     traces: list[MakeRuntimeEvent] = []
@@ -217,18 +231,20 @@ def test_runtime_materializes_and_runs_only_the_existing_make_phase_target(
     runtime.apply(policy)
     runtime.destroy(policy)
 
-    phases = [call[1][0] for call in runner.calls]
+    phases = [call["phase"] for call in runner.calls]
     assert phases == [
-        "AZURE_CONTAINERAPP_TF_PHASE=init",
-        "AZURE_CONTAINERAPP_TF_PHASE=validate",
-        "AZURE_CONTAINERAPP_TF_PHASE=plan",
-        "AZURE_CONTAINERAPP_TF_PHASE=show-plan",
-        "AZURE_CONTAINERAPP_TF_PHASE=apply",
-        "AZURE_CONTAINERAPP_TF_PHASE=destroy",
+        "init",
+        "validate",
+        "plan",
+        "show-plan",
+        "apply",
+        "destroy",
     ]
-    assert all(call[0] == "azure-containerapp-terraform-phase" for call in runner.calls)
-    assert all(call[2]["ARM_CLIENT_SECRET"] == SECRET for call in runner.calls)
-    assert all(SECRET not in repr(call[1]) for call in runner.calls)
+    assert all(
+        cast(dict[str, str], call["environment"])["ARM_CLIENT_SECRET"] == SECRET
+        for call in runner.calls
+    )
+    assert all("make" not in repr(call["phase"]).casefold() for call in runner.calls)
     assert materializer.calls == [(policy, materializer.calls[0][1])]
     marker = materializer.calls[0][1] / ".gludd-azure-containerapp-live-proof.json"
     marker_payload = json.loads(marker.read_text(encoding="utf-8"))
@@ -456,7 +472,6 @@ def test_constructor_and_materializer_boundaries_fail_closed(tmp_path: Path) -> 
     ]
     for name, value in cases:
         arguments: dict[str, object] = {
-            "repo_root": Path.cwd(),
             "work_root": tmp_path / name,
             "credentials": _credentials(),
             "read_environment": lambda _policy, _absent: None,
@@ -602,19 +617,19 @@ def test_long_terraform_phase_emits_content_free_heartbeats(tmp_path: Path) -> N
     materializer = _Materializer()
 
     class SlowRunner(_Runner):
-        def run(self, *args: object, **kwargs: object) -> MakeResult:
-            time.sleep(0.015)
-            return super().run(*args, **kwargs)
+        def run(self, *args: object, **kwargs: object) -> None:
+            progress = cast(Any, kwargs["progress"])
+            progress(str(kwargs["phase"]), TerraformRuntimeState.HEARTBEAT, 1)
+            super().run(*args, **kwargs)
 
     runner = SlowRunner(materializer)
     traces: list[MakeRuntimeEvent] = []
     runtime = AzureContainerAppEnvironmentMakeRuntime(
-        repo_root=Path.cwd(),
         work_root=tmp_path / "gludd-azure-containerapp-live-proof",
         credentials=_credentials(),
         read_environment=lambda _policy, _absent: None,
         list_environment_apps=lambda _policy: (),
-        make_runner=runner,
+        terraform_executor=runner,
         terraform_materializer=materializer,
         trace_sink=traces.append,
         heartbeat_seconds=0.002,
@@ -623,7 +638,7 @@ def test_long_terraform_phase_emits_content_free_heartbeats(tmp_path: Path) -> N
     runtime.plan(_policy())
 
     assert any(event.state is MakeRuntimeState.HEARTBEAT for event in traces)
-    assert all(event.target == "azure-containerapp-terraform-phase" for event in traces)
+    assert all(event.target == "terraform" for event in traces)
     assert SECRET not in repr(traces)
 
 
@@ -631,7 +646,7 @@ def test_runner_and_trace_exceptions_are_censored(tmp_path: Path) -> None:
     materializer = _Materializer()
 
     class RaisingRunner(_Runner):
-        def run(self, *_args: object, **_kwargs: object) -> MakeResult:
+        def run(self, *_args: object, **_kwargs: object) -> None:
             raise RuntimeError(f"private provider output {SECRET}")
 
     traces: list[MakeRuntimeEvent] = []

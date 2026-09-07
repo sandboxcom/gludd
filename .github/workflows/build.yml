@@ -1518,6 +1518,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "=== CI PHASE: ansible-ee-smoke ==="
+          docker run --rm --network=none "${EE_TAG}" /usr/local/bin/tofu version
           docker run --rm --network=none "${EE_TAG}"             /usr/bin/python3.11 -c "import ansible, ansible_runner; print('ANSIBLE_EE_SMOKE_PASS')"
       - name: Log in to GHCR
         if: startsWith(github.ref, 'refs/tags/v')

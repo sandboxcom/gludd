@@ -15,7 +15,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -113,12 +113,15 @@ class _FileClaimConflict(Exception):
 
 PHASE_ORDER = [
     "load_config_snapshot",
-    "claim_unreviewed_task_returns",
-    "dispatch_return_review_jobs",
     "evaluate_pid_controllers",
     "refill_task_buckets",
     "run_scheduler",
+    "self_improve",
+    "poll_issue_sources",
     "sdlc_gate",
+    "reconcile_compute_demand",
+    "claim_unreviewed_task_returns",
+    "dispatch_return_review_jobs",
     "claim_runnable_todos",
     "evaluate_rules",
     "dispatch_execute_jobs",
@@ -129,8 +132,6 @@ PHASE_ORDER = [
     "flush_spend_ledger",
     "remediate_blocked_tasks",
     "consolidate_memory",
-    "self_improve",
-    "poll_issue_sources",
     "service_discovery",
     "reap_expired_sts_tokens",
     "purge_old_task_decisions",
@@ -479,6 +480,10 @@ class EventLoop(EventLoopHandlers):
         self._tick_lock = asyncio.Lock()
         self._total_ticks = 0
         self._tick_state: dict[str, Any] = {}
+        # Last successful desired lifecycle state per exact repository root.
+        # This is deliberately process-local: after a daemon restart the first
+        # tick reconciles actual state again instead of trusting stale memory.
+        self._execution_environment_states: dict[str, tuple[str, str]] = {}
         self._active_traces: dict[str, Any] = {}
         self._benchmark_recorder: Any = None
         # A3: fire-and-forget background tasks (benchmark / trace writes).
@@ -1173,7 +1178,58 @@ class EventLoop(EventLoopHandlers):
             return
         project_id = self._tick_project_id
         claimed = await self._task_return_repo.claim_unreviewed(project_id=project_id)
-        self._tick_state["claimed_returns"] = claimed
+        reviewable: list[Any] = []
+        for task_return in claimed:
+            if self._todo_repo is None or not issubclass(
+                type(self._todo_repo),
+                TodoRepository,
+            ):
+                # Protocol fakes and externally managed repositories retain the
+                # pre-existing review contract; SQL-backed production repos use
+                # the atomic lifecycle advancement below.
+                reviewable.append(task_return)
+                continue
+            todo_id = getattr(task_return, "todo_id", None)
+            return_project_id = getattr(task_return, "project_id", None)
+            if not isinstance(return_project_id, str):
+                return_project_id = project_id
+            try:
+                todo = (
+                    await self._todo_repo.get_by_id(
+                        todo_id,
+                        project_id=return_project_id,
+                    )
+                    if isinstance(todo_id, str)
+                    else None
+                )
+                if todo is None:
+                    raise ValueError("task return has no matching todo")
+                current = TodoStatus(todo.status)
+                if current in {TodoStatus.AWAITING_RESULT, TodoStatus.ACTIVE}:
+                    await self._todo_repo.transition(
+                        todo.todo_id,
+                        TodoStatus.REVIEWING_RETURN,
+                        todo.version,
+                        project_id=return_project_id,
+                    )
+                elif current is not TodoStatus.REVIEWING_RETURN:
+                    raise ValueError("task return todo is not reviewable")
+            except Exception as exc:
+                # Release only this return's guarded claim. The enclosing tick
+                # transaction commits the reset with successful sibling claims.
+                task_return.status = TaskReturnStatus.CREATED.value
+                if hasattr(task_return, "updated_at"):
+                    task_return.updated_at = datetime.now(UTC)
+                logger.error(
+                    "Return review claim released because todo ownership could not "
+                    "advance (error_type=%s)",
+                    type(exc).__name__,
+                )
+                continue
+            reviewable.append(task_return)
+        if self._active_session is not None:
+            await self._active_session.flush()
+        self._tick_state["claimed_returns"] = reviewable
 
     async def _phase_dispatch_return_review_jobs(self) -> None:
         claimed = self._tick_state.get("claimed_returns", [])
@@ -1857,8 +1913,170 @@ class EventLoop(EventLoopHandlers):
                 results["stages_checked"],
             )
 
+    async def _phase_reconcile_compute_demand(self) -> None:
+        """Reconcile owned compute from durable, runnable todo demand.
+
+        Discovery producers run before this phase, so normal and
+        self-improvement work share one demand signal. QUEUED work that can be
+        claimed and execution/review states already in flight retain compute;
+        scheduled, approval-waiting, blocked, and terminal work do not.
+
+        Runners without a concrete lifecycle method are treated as externally
+        managed for backwards compatibility.  A lifecycle-capable runner fails
+        closed: an unknown queue or failed bootstrap never mutates todo state.
+        """
+        runner = self._runner
+        if runner is None:
+            self._tick_state["compute_ready"] = True
+            self._tick_state["compute_demand"] = {
+                "state": "externally_managed",
+                "execution_environment": "external",
+            }
+            return
+
+        lifecycle_method = getattr(type(runner), "reconcile_execution_environment", None)
+        if not callable(lifecycle_method):
+            self._tick_state["compute_ready"] = True
+            self._tick_state["compute_demand"] = {
+                "state": "externally_managed",
+                "execution_environment": "external",
+            }
+            return
+
+        if self._todo_repo is None:
+            self._tick_state["compute_ready"] = False
+            self._tick_state["compute_demand"] = {
+                "state": "unknown",
+                "execution_environment": "preserved",
+            }
+            return
+
+        project_id = self._tick_project_id
+        try:
+            summary = await self._todo_repo.status_summary(project_id=project_id)
+            if not isinstance(summary, Mapping):
+                raise TypeError("todo status summary is not a mapping")
+            by_status = summary.get("by_status")
+            if not isinstance(by_status, Mapping):
+                raise TypeError("todo status counts are not a mapping")
+            runnable_todos = sum(
+                max(0, int(by_status.get(status, 0) or 0))
+                for status in (
+                    TodoStatus.QUEUED.value,
+                    TodoStatus.ACTIVE.value,
+                    TodoStatus.AWAITING_RESULT.value,
+                    TodoStatus.REVIEWING_RETURN.value,
+                    TodoStatus.NEEDS_MORE_WORK.value,
+                )
+            )
+        except Exception as exc:
+            logger.error(
+                "Compute demand unknown; preserving owned resources and deferring claims "
+                "(error_type=%s)",
+                type(exc).__name__,
+            )
+            self._tick_state["compute_ready"] = False
+            self._tick_state["compute_demand"] = {
+                "state": "unknown",
+                "execution_environment": "preserved",
+            }
+            return
+
+        root_value = self._resolve_repo_root(project_id)
+        if root_value is None:
+            logger.error("Compute demand cannot be reconciled without an exact project root")
+            self._tick_state["compute_ready"] = False
+            self._tick_state["compute_demand"] = {
+                "state": "unknown",
+                "runnable_todos": runnable_todos,
+                "execution_environment": "preserved",
+            }
+            return
+
+        execution_environment = self.config.get("execution_environment", {})
+        if not isinstance(execution_environment, Mapping):
+            logger.error("Compute demand cannot use a non-mapping execution_environment config")
+            self._tick_state["compute_ready"] = False
+            self._tick_state["compute_demand"] = {
+                "state": "unknown",
+                "runnable_todos": runnable_todos,
+                "execution_environment": "preserved",
+            }
+            return
+        if execution_environment.get("enabled", True) is False:
+            self._tick_state["compute_ready"] = True
+            self._tick_state["compute_demand"] = {
+                "state": "externally_managed",
+                "runnable_todos": runnable_todos,
+                "execution_environment": "disabled",
+            }
+            return
+
+        constraints = {
+            str(name): value
+            for name, value in execution_environment.items()
+            if name != "enabled"
+        }
+        desired_state = "present" if runnable_todos else "absent"
+        project_root = Path(root_value).expanduser().resolve()
+        root_key = str(project_root)
+        fingerprint = (
+            desired_state,
+            json.dumps(constraints, sort_keys=True, separators=(",", ":"), default=repr),
+        )
+        self._tick_state["compute_demand"] = {
+            "state": "demanded" if runnable_todos else "idle",
+            "runnable_todos": runnable_todos,
+            "execution_environment": desired_state,
+        }
+        self._tick_metrics["compute_demand_runnable_todos"] = runnable_todos
+
+        if self._execution_environment_states.get(root_key) == fingerprint:
+            self._tick_state["compute_ready"] = desired_state == "present"
+            return
+
+        reconcile = runner.reconcile_execution_environment
+        try:
+            result = await self._bounded_to_thread(
+                reconcile,
+                state=desired_state,
+                project_root=project_root,
+                constraints=constraints,
+            )
+            success = (
+                isinstance(result, Mapping)
+                and result.get("status") == "successful"
+                and int(result.get("rc", 1)) == 0
+            )
+        except Exception as exc:
+            logger.error(
+                "Execution-environment reconciliation failed "
+                "(state=%s, error_type=%s)",
+                desired_state,
+                type(exc).__name__,
+            )
+            success = False
+
+        self._tick_metrics["execution_environment_reconciliations"] = 1
+        if not success:
+            self._tick_state["compute_ready"] = False
+            self._tick_state["compute_demand"]["execution_environment"] = "failed"
+            return
+
+        self._execution_environment_states[root_key] = fingerprint
+        self._tick_state["compute_ready"] = desired_state == "present"
+        logger.info(
+            "Execution environment reconciled (state=%s, runnable_todos=%d)",
+            desired_state,
+            runnable_todos,
+        )
+
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
+            return
+        if self._tick_state.get("compute_ready") is False:
+            logger.info("Todo claim deferred: demanded execution environment is not ready")
+            self._tick_state["claimed_todos"] = []
             return
         if (
             self._pause_controller is not None
@@ -4119,32 +4337,72 @@ class EventLoop(EventLoopHandlers):
     ) -> None:
         eff_repo = _task_return_repo_override if _task_return_repo_override is not None else self._task_return_repo
         eff_session = _session_override if _session_override is not None else self._active_session
+        real_session = eff_session is not None and issubclass(
+            type(eff_session),
+            AsyncSession,
+        )
         if eff_repo is None:
             return
         try:
-            body = getattr(resp, "json", None)
-            if callable(body):
-                data = await body()
-            elif isinstance(resp, dict):
-                data = resp
+            async def _persist_and_advance() -> None:
+                body = getattr(resp, "json", None)
+                if callable(body):
+                    data = await body()
+                elif isinstance(resp, dict):
+                    data = resp
+                else:
+                    return
+                if not isinstance(data, dict):
+                    return
+                await eff_repo.create(
+                    data={
+                        "return_id": data.get("return_id", f"RET-{job.job_id}"),
+                        "todo_id": todo.todo_id,
+                        "job_id": job.job_id,
+                        "playbook": job.playbook,
+                        "queue": job.queue,
+                        "exit_code": data.get("exit_code", 0),
+                        "result_summary": data.get("result_summary", ""),
+                        "project_id": job.project_id,
+                    }
+                )
+                expected_version = getattr(todo, "version", None)
+                if real_session:
+                    if not isinstance(expected_version, int):
+                        raise RuntimeError(
+                            "task return persistence requires todo ownership"
+                        )
+                    await TodoRepository(
+                        cast(AsyncSession, eff_session)
+                    ).transition(
+                        todo.todo_id,
+                        TodoStatus.AWAITING_RESULT,
+                        expected_version,
+                        project_id=job.project_id,
+                    )
+                elif self._todo_repo is not None and not isinstance(
+                    self._todo_repo,
+                    TodoRepository,
+                ):
+                    # Test/embedded repository boundaries may be protocol fakes
+                    # without a SQLAlchemy session; retain their observable call.
+                    await self._todo_repo.transition(
+                        todo.todo_id,
+                        TodoStatus.AWAITING_RESULT,
+                        expected_version,
+                        project_id=job.project_id,
+                    )
+                if eff_session is not None:
+                    await eff_session.flush()
+
+            if real_session:
+                # A SAVEPOINT makes TaskReturn creation and todo advancement one
+                # unit without rolling back unrelated work in the tick session.
+                assert eff_session is not None
+                async with eff_session.begin_nested():
+                    await _persist_and_advance()
             else:
-                return
-            if not isinstance(data, dict):
-                return
-            await eff_repo.create(
-                data={
-                    "return_id": data.get("return_id", f"RET-{job.job_id}"),
-                    "todo_id": todo.todo_id,
-                    "job_id": job.job_id,
-                    "playbook": job.playbook,
-                    "queue": job.queue,
-                    "exit_code": data.get("exit_code", 0),
-                    "result_summary": data.get("result_summary", ""),
-                    "project_id": job.project_id,
-                }
-            )
-            if eff_session is not None:
-                await eff_session.flush()
+                await _persist_and_advance()
             logger.info("Persisted TaskReturn for todo %s", todo.todo_id)
         except Exception as exc:
             logger.warning("Failed to persist task return for %s: %s", todo.todo_id, exc)

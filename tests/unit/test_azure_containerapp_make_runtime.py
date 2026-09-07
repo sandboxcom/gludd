@@ -10,7 +10,6 @@ import pytest
 
 import general_ludd.infra.azure_containerapp_make_runtime as runtime_module
 from general_ludd.azure.accelerator_credentials import AzureAcceleratorCredentials
-from general_ludd.commands.make import MakeResult
 from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
 from general_ludd.infra.azure_containerapp_live_proof import (
     LIVE_PROOF_ACKNOWLEDGEMENT,
@@ -19,8 +18,13 @@ from general_ludd.infra.azure_containerapp_live_proof import (
 from general_ludd.infra.azure_containerapp_make_runtime import (
     AzureContainerAppMakeRuntime,
     AzureContainerAppMakeRuntimeError,
+    AzureContainerAppTerraformRuntime,
     MakeRuntimeEvent,
     MakeRuntimeState,
+)
+from general_ludd.infra.azure_containerapp_terraform_executor import (
+    AzureContainerAppTerraformPhaseError,
+    TerraformRuntimeState,
 )
 from general_ludd.infra.compute import GPUType
 from general_ludd.self_improve.model_candidates import BackendCallBudget
@@ -30,6 +34,14 @@ MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
 IMAGE = "vllm/vllm-openai@sha256:" + "a" * 64
 SECRET = "never-render-this-client-secret"
+
+
+def test_runtime_has_no_make_or_shell_provisioning_dependency() -> None:
+    source = Path(runtime_module.__file__).read_text(encoding="utf-8")
+
+    assert "general_ludd.commands.make" not in source
+    assert "MakeRunner" not in source
+    assert "subprocess" not in source
 
 
 def _policy(**overrides: object) -> AzureContainerAppLiveProofPolicy:
@@ -134,7 +146,23 @@ def _app_document(policy: AzureContainerAppLiveProofPolicy) -> dict[str, object]
                             policy.model_revision,
                         ],
                     }
-                ]
+                ],
+                "scale": {
+                    "minReplicas": policy.min_replicas,
+                    "maxReplicas": policy.max_replicas,
+                    "rules": [
+                        {
+                            "name": "inference-requests",
+                            "http": {
+                                "metadata": {
+                                    "concurrentRequests": str(
+                                        policy.http_concurrent_requests
+                                    )
+                                }
+                            },
+                        }
+                    ],
+                },
             },
         },
     }
@@ -168,63 +196,65 @@ class _Runner:
         self.policy = policy
         self.fail_phase = fail_phase
         self.output_payload = _outputs(policy) if output_payload is None else output_payload
-        self.calls: list[tuple[str, list[str], dict[str, str]]] = []
+        self.calls: list[dict[str, object]] = []
         self.destroyed = False
 
     def run(
         self,
-        target: str,
         *,
-        extra_args: list[str] | None = None,
-        timeout_s: int | None = None,
-        env_extra: dict[str, str] | None = None,
-        stream: bool = False,
-        stream_callback: object | None = None,
-    ) -> MakeResult:
-        del timeout_s, stream, stream_callback
-        args = list(extra_args or [])
-        environment = dict(env_extra or {})
-        self.calls.append((target, args, environment))
-        variables = dict(argument.split("=", 1) for argument in args)
-        phase = variables["AZURE_CONTAINERAPP_TF_PHASE"]
+        phase: str,
+        terraform_dir: str | Path,
+        plan_file: str | Path,
+        json_file: str | Path,
+        allowed_root: str | Path,
+        environment: dict[str, str],
+        timeout_seconds: int,
+        progress: object,
+    ) -> None:
+        cast(Any, progress)(phase, TerraformRuntimeState.STARTED, 0)
+        self.calls.append(
+            {
+                "phase": phase,
+                "terraform_dir": Path(terraform_dir),
+                "plan_file": Path(plan_file),
+                "json_file": Path(json_file),
+                "allowed_root": Path(allowed_root),
+                "environment": dict(environment),
+                "timeout_seconds": timeout_seconds,
+            }
+        )
         if phase == "show-plan":
-            Path(variables["AZURE_CONTAINERAPP_TF_JSON_FILE"]).write_text(
+            Path(json_file).write_text(
                 json.dumps(_plan(self.policy)),
                 encoding="utf-8",
             )
         if phase == "output":
-            Path(variables["AZURE_CONTAINERAPP_TF_JSON_FILE"]).write_text(
+            Path(json_file).write_text(
                 json.dumps(self.output_payload),
                 encoding="utf-8",
             )
         if phase == "destroy":
             self.destroyed = True
-        failed = phase == self.fail_phase
-        return MakeResult(
-            target=target,
-            exit_code=2 if failed else 0,
-            success=not failed,
-            duration_s=0.01,
-            stdout_tail=f"provider output {SECRET}" if failed else "",
-            stderr_tail=f"provider error {SECRET}" if failed else "",
-        )
+        if phase == self.fail_phase:
+            cast(Any, progress)(phase, TerraformRuntimeState.FAILED, 0)
+            raise AzureContainerAppTerraformPhaseError(phase)
+        cast(Any, progress)(phase, TerraformRuntimeState.SUCCEEDED, 0)
 
 
-def test_runtime_materializes_and_invokes_only_make_with_secret_environment(
+def test_runtime_materializes_and_invokes_terraform_directly_with_secret_environment(
     tmp_path: Path,
 ) -> None:
-    policy = _policy()
+    policy = _policy(max_replicas=3, http_concurrent_requests=4)
     runner = _Runner(policy)
     materializer = _Materializer()
     preflights: list[tuple[object, object]] = []
     traces: list[MakeRuntimeEvent] = []
 
-    runtime = AzureContainerAppMakeRuntime(
-        repo_root=Path.cwd(),
+    runtime = AzureContainerAppTerraformRuntime(
         work_root=tmp_path / "gludd-azure-live-proof",
         credentials=_credentials(),
         requirement=_requirement(),
-        make_runner=runner,
+        terraform_executor=runner,
         terraform_generator=materializer,
         preflight_check=lambda active, requirement: preflights.append(
             (active, requirement)
@@ -241,23 +271,29 @@ def test_runtime_materializes_and_invokes_only_make_with_secret_environment(
     runtime.destroy(policy)
     assert runtime.exists(policy) is False
 
-    assert [call[1][0] for call in runner.calls] == [
-        "AZURE_CONTAINERAPP_TF_PHASE=init",
-        "AZURE_CONTAINERAPP_TF_PHASE=validate",
-        "AZURE_CONTAINERAPP_TF_PHASE=plan",
-        "AZURE_CONTAINERAPP_TF_PHASE=show-plan",
-        "AZURE_CONTAINERAPP_TF_PHASE=apply",
-        "AZURE_CONTAINERAPP_TF_PHASE=output",
-        "AZURE_CONTAINERAPP_TF_PHASE=destroy",
+    assert [call["phase"] for call in runner.calls] == [
+        "init",
+        "validate",
+        "plan",
+        "show-plan",
+        "apply",
+        "output",
+        "destroy",
     ]
-    assert all(call[0] == "azure-containerapp-terraform-phase" for call in runner.calls)
-    assert all(call[2]["ARM_CLIENT_SECRET"] == SECRET for call in runner.calls)
-    assert all(SECRET not in repr(call[1]) for call in runner.calls)
+    assert all(call["allowed_root"] == runtime._work_root for call in runner.calls)
+    assert all(
+        cast(dict[str, str], call["environment"])["ARM_CLIENT_SECRET"] == SECRET
+        for call in runner.calls
+    )
+    assert all("make" not in repr(call["phase"]).casefold() for call in runner.calls)
     assert preflights == [(policy, _requirement())]
     config, _destination, deployment_name = materializer.calls[0]
     assert cast(Any, config).gpu_type is GPUType.T4
     assert cast(Any, config).allowed_cidr == policy.allowed_cidr
     assert cast(Any, config).spot is False
+    assert cast(Any, config).azure_min_replicas == 0
+    assert cast(Any, config).azure_max_replicas == 3
+    assert cast(Any, config).azure_http_concurrent_requests == 4
     assert deployment_name == "proof-abc123"
     marker_path = _destination / ".gludd-azure-containerapp-live-proof.json"
     assert json.loads(marker_path.read_text(encoding="utf-8")) == {
@@ -279,11 +315,10 @@ def test_plan_phase_failures_are_fixed_context_and_never_render_provider_output(
 ) -> None:
     policy = _policy()
     runtime = AzureContainerAppMakeRuntime(
-        repo_root=Path.cwd(),
         work_root=tmp_path / "gludd-azure-live-proof",
         credentials=_credentials(),
         requirement=_requirement(),
-        make_runner=_Runner(policy, fail_phase=phase),
+        terraform_executor=_Runner(policy, fail_phase=phase),
         terraform_generator=_Materializer(),
         preflight_check=lambda _policy, _requirement: None,
         read_app=lambda _policy, _expect_absent: None,
@@ -316,11 +351,10 @@ def test_apply_rejects_mutated_terraform_outputs_before_endpoint_use(
     reads: list[object] = []
     runner = _Runner(policy, output_payload=outputs)
     runtime = AzureContainerAppMakeRuntime(
-        repo_root=Path.cwd(),
         work_root=tmp_path / "gludd-azure-live-proof",
         credentials=_credentials(),
         requirement=_requirement(),
-        make_runner=runner,
+        terraform_executor=runner,
         terraform_generator=_Materializer(),
         preflight_check=lambda _policy, _requirement: None,
         read_app=lambda active, _expect_absent: reads.append(active),
@@ -343,6 +377,15 @@ def test_apply_rejects_mutated_terraform_outputs_before_endpoint_use(
         lambda document: document["properties"]["template"]["containers"][0].update(
             image="vllm/vllm-openai:latest"
         ),
+        lambda document: document["properties"]["template"]["scale"].update(
+            minReplicas=1
+        ),
+        lambda document: document["properties"]["template"]["scale"].update(
+            maxReplicas=99
+        ),
+        lambda document: document["properties"]["template"]["scale"]["rules"][0][
+            "http"
+        ]["metadata"].update(concurrentRequests="99"),
     ],
 )
 def test_apply_rejects_mutated_arm_deployment_evidence(
@@ -353,11 +396,10 @@ def test_apply_rejects_mutated_arm_deployment_evidence(
     document = _app_document(policy)
     mutation(document)
     runtime = AzureContainerAppMakeRuntime(
-        repo_root=Path.cwd(),
         work_root=tmp_path / "gludd-azure-live-proof",
         credentials=_credentials(),
         requirement=_requirement(),
-        make_runner=_Runner(policy),
+        terraform_executor=_Runner(policy),
         terraform_generator=_Materializer(),
         preflight_check=lambda _policy, _requirement: None,
         read_app=lambda _policy, _expect_absent: document,
@@ -376,11 +418,10 @@ def test_runtime_rejects_policy_drift_before_another_make_invocation(
     policy = _policy()
     runner = _Runner(policy)
     runtime = AzureContainerAppMakeRuntime(
-        repo_root=Path.cwd(),
         work_root=tmp_path / "gludd-azure-live-proof",
         credentials=_credentials(),
         requirement=_requirement(),
-        make_runner=runner,
+        terraform_executor=runner,
         terraform_generator=_Materializer(),
         preflight_check=lambda _policy, _requirement: None,
         read_app=lambda _policy, _expect_absent: _app_document(policy),
@@ -417,11 +458,10 @@ def test_constructor_rejects_ambiguous_runtime_boundaries(
 ) -> None:
     policy = _policy()
     arguments: dict[str, object] = {
-        "repo_root": Path.cwd(),
         "work_root": tmp_path / "gludd-azure-live-proof",
         "credentials": _credentials(),
         "requirement": _requirement(),
-        "make_runner": _Runner(policy),
+        "terraform_executor": _Runner(policy),
         "terraform_generator": _Materializer(),
         "preflight_check": lambda _policy, _requirement: None,
         "read_app": lambda _policy, _expect_absent: None,
@@ -557,11 +597,10 @@ def test_runtime_internal_boundaries_fail_closed_with_fixed_phases(
 ) -> None:
     policy = _policy()
     runtime = AzureContainerAppMakeRuntime(
-        repo_root=Path.cwd(),
         work_root=tmp_path / "gludd-azure-live-proof",
         credentials=_credentials(),
         requirement=_requirement(),
-        make_runner=_Runner(policy),
+        terraform_executor=_Runner(policy),
         terraform_generator=_Materializer(),
         preflight_check=lambda _policy, _requirement: None,
         read_app=lambda _policy, _expect_absent: None,
@@ -617,11 +656,10 @@ def test_runtime_rejects_credential_sizing_name_and_materializer_drift(
 
     for index, (policy, requirement, materializer, phase) in enumerate(cases):
         runtime = AzureContainerAppMakeRuntime(
-            repo_root=Path.cwd(),
             work_root=tmp_path / f"gludd-azure-live-proof-{index}",
             credentials=_credentials(),
             requirement=cast(Any, requirement),
-            make_runner=_Runner(policy),
+            terraform_executor=_Runner(policy),
             terraform_generator=cast(Any, materializer),
             preflight_check=lambda _policy, _requirement: None,
             read_app=lambda _policy, _expect_absent: None,
@@ -646,11 +684,10 @@ def test_runtime_censors_external_read_boundary_failures(
         raise RuntimeError(f"private provider output {SECRET}")
 
     runtime = AzureContainerAppMakeRuntime(
-        repo_root=Path.cwd(),
         work_root=tmp_path / "gludd-azure-live-proof",
         credentials=_credentials(),
         requirement=_requirement(),
-        make_runner=_Runner(policy),
+        terraform_executor=_Runner(policy),
         terraform_generator=_Materializer(),
         preflight_check=cast(Any, fail),
         read_app=cast(Any, fail),
@@ -670,15 +707,14 @@ def test_runner_exception_emits_failed_trace_and_is_censored(tmp_path: Path) -> 
     traces: list[MakeRuntimeEvent] = []
 
     class RaisingRunner(_Runner):
-        def run(self, *_args: object, **_kwargs: object) -> MakeResult:
+        def run(self, *_args: object, **_kwargs: object) -> None:
             raise RuntimeError(f"private provider output {SECRET}")
 
     runtime = AzureContainerAppMakeRuntime(
-        repo_root=Path.cwd(),
         work_root=tmp_path / "gludd-azure-live-proof",
         credentials=_credentials(),
         requirement=_requirement(),
-        make_runner=RaisingRunner(policy),
+        terraform_executor=RaisingRunner(policy),
         terraform_generator=_Materializer(),
         preflight_check=lambda _policy, _requirement: None,
         read_app=lambda _policy, _expect_absent: None,

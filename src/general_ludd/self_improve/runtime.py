@@ -19,7 +19,7 @@ import sys
 import tempfile
 import time
 import tokenize
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from functools import partial
 from pathlib import Path
@@ -80,6 +80,7 @@ from general_ludd.self_improve.evaluator import (
 from general_ludd.self_improve.live_candidate_wiring import (
     AzureCandidateBackendFactory,
     ContainerAppCandidateBackendFactory,
+    ContainerAppCandidateBootstrapFactory,
     LiveCandidateWiringPolicy,
     build_live_managed_candidate_wiring,
 )
@@ -2760,6 +2761,32 @@ def _canonical_managed_repo_root(repo_root: Path) -> Path:
     return canonical_root
 
 
+class _ConfiguredAzureBootstrapWiring(Protocol):
+    @property
+    def policy(self) -> LiveCandidateWiringPolicy: ...
+
+    @property
+    def bootstrap_factory(self) -> ContainerAppCandidateBootstrapFactory: ...
+
+
+def build_azure_containerapp_bootstrap_wiring(
+    repo_root: Path,
+    self_improve_config: Mapping[str, object],
+    *,
+    progress_sink: Callable[[str], None],
+) -> _ConfiguredAzureBootstrapWiring | None:
+    """Lazy import avoids package initialization cycles at the infra boundary."""
+    from general_ludd.self_improve.azure_containerapp_bootstrap import (
+        build_azure_containerapp_bootstrap_wiring as build,
+    )
+
+    return build(
+        repo_root,
+        self_improve_config,
+        progress_sink=progress_sink,
+    )
+
+
 def build_managed_self_improve_runner(
     repo_root: Path,
     *,
@@ -2771,16 +2798,36 @@ def build_managed_self_improve_runner(
     live_candidate_policy: LiveCandidateWiringPolicy | None = None,
     azure_backend_factory: AzureCandidateBackendFactory | None = None,
     containerapp_backend_factory: ContainerAppCandidateBackendFactory | None = None,
+    containerapp_bootstrap_factory: ContainerAppCandidateBootstrapFactory | None = None,
+    self_improve_config: Mapping[str, object] | None = None,
 ) -> ManagedSelfImproveRunner:
     """Compose a repository-bound local/cloud service with Make-only evaluation."""
     canonical_root = _canonical_managed_repo_root(repo_root)
     runner_factory = make_runner_factory or MakeRunner
     operation_runner = root_runner or runner_factory(canonical_root)
     runtime_progress_sink = progress_sink or _runtime_progress
+    if self_improve_config is not None:
+        configured = build_azure_containerapp_bootstrap_wiring(
+            canonical_root,
+            self_improve_config,
+            progress_sink=runtime_progress_sink,
+        )
+        if configured is not None:
+            if (
+                live_candidate_policy is not None
+                or containerapp_backend_factory is not None
+                or containerapp_bootstrap_factory is not None
+            ):
+                raise ValueError(
+                    "configured Container App bootstrap conflicts with explicit wiring"
+                )
+            live_candidate_policy = configured.policy
+            containerapp_bootstrap_factory = configured.bootstrap_factory
     live_candidate_wiring = build_live_managed_candidate_wiring(
         live_candidate_policy,
         azure_backend_factory=azure_backend_factory,
         containerapp_backend_factory=containerapp_backend_factory,
+        containerapp_bootstrap_factory=containerapp_bootstrap_factory,
         progress_sink=runtime_progress_sink,
     )
     managed_attempt_evaluator = cast(

@@ -21,6 +21,13 @@ from general_ludd.infra.azure_containerapp_live_proof import (
     AzureContainerAppLiveProofPolicy,
     LiveProofTrace,
 )
+from general_ludd.infra.azure_containerapp_owned_candidate import (
+    AzureContainerAppOwnedCandidateFactory,
+    OwnedCandidateLifecycleError,
+    OwnedCandidateLifecycleEvent,
+    OwnedCandidateLifecycleTrace,
+    owned_candidate_deployment_digest,
+)
 from general_ludd.infra.azure_containerapp_owned_lifecycle import (
     run_owned_azure_containerapp_live_proof,
 )
@@ -352,6 +359,206 @@ def _approved(tmp_path: Path) -> AzureApprovedPrompt:
         source_paths=("src/public.py",),
         policy_guard=guard,
     )
+
+
+def test_owned_candidate_factory_bootstraps_on_demand_and_tears_down_on_close() -> None:
+    events: list[str] = []
+    app_policy = _app_policy()
+    environment_policy = _environment_policy(app_policy)
+    environment_runtime = _EnvironmentRuntime(environment_policy, events)
+    app_runtime = _AppRuntime(app_policy, events)
+    backend_delegate: _Backend | None = None
+    traces: list[OwnedCandidateLifecycleTrace] = []
+
+    def build_backend(identity: AzureContainerAppCandidateIdentity) -> _Backend:
+        nonlocal backend_delegate
+        backend_delegate = _Backend(identity)
+        events.append("backend:open")
+        return backend_delegate
+
+    factory = AzureContainerAppOwnedCandidateFactory(
+        app_policy=app_policy,
+        environment_policy=environment_policy,
+        environment_runtime=environment_runtime,
+        app_runtime=app_runtime,
+        backend_factory=build_backend,
+        resource_release=lambda: events.append("resources:close"),
+        trace_sink=traces.append,
+    )
+
+    backend = factory()
+    response = backend.generate(object(), max_output_tokens=8, timeout_seconds=3.0)
+    backend.close()
+    backend.close()
+
+    with pytest.raises(OwnedCandidateLifecycleError, match="closed"):
+        backend.generate(object(), max_output_tokens=8, timeout_seconds=3.0)
+
+    assert response.text == "safe result"
+    assert backend_delegate is not None and backend_delegate.closed is True
+    assert factory.active is False
+    assert events == [
+        "environment:read",
+        "environment:plan",
+        "environment:apply",
+        "environment:read",
+        "app:plan",
+        "app:preflight",
+        "app:apply",
+        "backend:open",
+        "app:destroy",
+        "app:exists",
+        "environment:read",
+        "environment:inventory",
+        "environment:destroy",
+        "environment:read",
+        "resources:close",
+    ]
+    assert [trace.event for trace in traces] == [
+        OwnedCandidateLifecycleEvent.ENVIRONMENT_ACQUIRE_STARTED,
+        OwnedCandidateLifecycleEvent.ENVIRONMENT_ACQUIRED,
+        OwnedCandidateLifecycleEvent.APP_PLAN_STARTED,
+        OwnedCandidateLifecycleEvent.APP_PLAN_AUDITED,
+        OwnedCandidateLifecycleEvent.APP_PREFLIGHT_STARTED,
+        OwnedCandidateLifecycleEvent.APP_PREFLIGHT_SUCCEEDED,
+        OwnedCandidateLifecycleEvent.APP_APPLY_STARTED,
+        OwnedCandidateLifecycleEvent.APP_APPLIED,
+        OwnedCandidateLifecycleEvent.BACKEND_ACQUIRED,
+        OwnedCandidateLifecycleEvent.BACKEND_CLOSE_STARTED,
+        OwnedCandidateLifecycleEvent.BACKEND_CLOSED,
+        OwnedCandidateLifecycleEvent.APP_DESTROY_STARTED,
+        OwnedCandidateLifecycleEvent.APP_DESTROYED,
+        OwnedCandidateLifecycleEvent.APP_ABSENCE_VERIFIED,
+        OwnedCandidateLifecycleEvent.ENVIRONMENT_RELEASE_STARTED,
+        OwnedCandidateLifecycleEvent.ENVIRONMENT_RELEASED,
+        OwnedCandidateLifecycleEvent.RESOURCES_RELEASED,
+    ]
+    assert all(trace.operation_digest == factory.deployment_digest for trace in traces)
+
+
+def test_owned_candidate_factory_cleans_every_paid_resource_after_discovery_failure() -> None:
+    events: list[str] = []
+    app_policy = _app_policy()
+    environment_policy = _environment_policy(app_policy)
+    environment_runtime = _EnvironmentRuntime(environment_policy, events)
+    app_runtime = _AppRuntime(app_policy, events)
+
+    def fail_backend(_identity: AzureContainerAppCandidateIdentity) -> _Backend:
+        raise RuntimeError(SECRET)
+
+    factory = AzureContainerAppOwnedCandidateFactory(
+        app_policy=app_policy,
+        environment_policy=environment_policy,
+        environment_runtime=environment_runtime,
+        app_runtime=app_runtime,
+        backend_factory=fail_backend,
+        resource_release=lambda: events.append("resources:close"),
+    )
+
+    with pytest.raises(OwnedCandidateLifecycleError, match="backend") as captured:
+        factory()
+
+    assert SECRET not in repr(captured.value)
+    assert factory.active is False
+    assert events[-7:] == [
+        "app:destroy",
+        "app:exists",
+        "environment:read",
+        "environment:inventory",
+        "environment:destroy",
+        "environment:read",
+        "resources:close",
+    ]
+
+
+def test_owned_candidate_factory_never_destroys_environment_while_app_may_remain() -> None:
+    events: list[str] = []
+    app_policy = _app_policy()
+    environment_policy = _environment_policy(app_policy)
+    environment_runtime = _EnvironmentRuntime(
+        environment_policy,
+        events,
+        remaining_apps=(app_policy.expected_resource_id,),
+    )
+    app_runtime = _AppRuntime(app_policy, events, fail_at="destroy")
+    factory = AzureContainerAppOwnedCandidateFactory(
+        app_policy=app_policy,
+        environment_policy=environment_policy,
+        environment_runtime=environment_runtime,
+        app_runtime=app_runtime,
+        backend_factory=_Backend,
+        resource_release=lambda: events.append("resources:close"),
+    )
+
+    backend = factory()
+    with pytest.raises(OwnedCandidateLifecycleError, match="cleanup") as captured:
+        backend.close()
+
+    assert SECRET not in repr(captured.value)
+    assert "environment:destroy" not in events
+    assert events[-1] == "resources:close"
+
+
+def test_owned_candidate_factory_is_single_use_and_configuration_bound() -> None:
+    events: list[str] = []
+    app_policy = _app_policy()
+    environment_policy = _environment_policy(app_policy)
+    factory = AzureContainerAppOwnedCandidateFactory(
+        app_policy=app_policy,
+        environment_policy=environment_policy,
+        environment_runtime=_EnvironmentRuntime(environment_policy, events),
+        app_runtime=_AppRuntime(app_policy, events),
+        backend_factory=_Backend,
+    )
+
+    backend = factory()
+    with pytest.raises(OwnedCandidateLifecycleError, match="active"):
+        factory()
+    backend.close()
+    with pytest.raises(OwnedCandidateLifecycleError, match="closed"):
+        factory()
+
+    assert len(factory.deployment_digest) == 64
+
+
+def test_owned_candidate_factory_rejects_every_ambiguous_public_boundary() -> None:
+    events: list[str] = []
+    app_policy = _app_policy()
+    environment_policy = _environment_policy(app_policy)
+    environment_runtime = _EnvironmentRuntime(environment_policy, events)
+    app_runtime = _AppRuntime(app_policy, events)
+
+    with pytest.raises(ValueError, match="invalid boundary"):
+        owned_candidate_deployment_digest(cast(Any, object()), environment_policy)
+    with pytest.raises(ValueError, match="invalid boundary"):
+        owned_candidate_deployment_digest(app_policy, cast(Any, object()))
+
+    invalid_values: tuple[dict[str, object], ...] = (
+        {"app_policy": _app_policy(live=False)},
+        {"environment_policy": object()},
+        {"environment_runtime": object()},
+        {"app_runtime": object()},
+        {"backend_factory": object()},
+        {"resource_release": object()},
+        {"trace_sink": object()},
+    )
+    base: dict[str, object] = {
+        "app_policy": app_policy,
+        "environment_policy": environment_policy,
+        "environment_runtime": environment_runtime,
+        "app_runtime": app_runtime,
+        "backend_factory": _Backend,
+        "resource_release": None,
+        "trace_sink": lambda _event: None,
+    }
+
+    for invalid in invalid_values:
+        with pytest.raises(ValueError):
+            AzureContainerAppOwnedCandidateFactory(
+                **cast(Any, {**base, **invalid})
+            )
+
+    assert events == []
 
 
 def test_owned_lifecycle_creates_environment_runs_work_then_destroys_everything(

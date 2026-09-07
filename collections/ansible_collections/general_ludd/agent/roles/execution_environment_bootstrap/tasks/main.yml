@@ -1,0 +1,71 @@
+---
+- name: Validate execution-environment bootstrap contract
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Report execution-environment lifecycle phase
+  ansible.builtin.debug:
+    msg: >-
+      ANSIBLE_EE_BOOTSTRAP_PHASE state={{ execution_environment_bootstrap_state }}
+      validate_only={{ execution_environment_bootstrap_validate_only | bool }}
+      machine={{ execution_environment_bootstrap_machine_name }}
+      image={{ _execution_environment_bootstrap_candidate_image }}
+
+- name: Remove exact Gludd-owned execution-environment resources
+  ansible.builtin.include_tasks: absent.yml
+  when:
+    - execution_environment_bootstrap_state == 'absent'
+    - not execution_environment_bootstrap_validate_only | bool
+
+- name: Publish validated lifecycle plan without mutation
+  ansible.builtin.set_fact:
+    gludd_execution_environment:
+      state: planned
+      requested_state: "{{ execution_environment_bootstrap_state }}"
+      owner: gludd
+      machine: "{{ execution_environment_bootstrap_machine_name }}"
+      image: "{{ _execution_environment_bootstrap_candidate_image }}"
+      context: "{{ _execution_environment_bootstrap_candidate_context }}"
+      runtime_lock_sha256: "{{ _execution_environment_bootstrap_runtime_sha256 }}"
+      container_connection: "{{ execution_environment_bootstrap_machine_name if _execution_environment_bootstrap_machine_required else '' }}"
+      verified: false
+  when: execution_environment_bootstrap_validate_only | bool
+
+- name: Create and verify the Gludd-owned execution environment
+  when:
+    - execution_environment_bootstrap_state == 'present'
+    - not execution_environment_bootstrap_validate_only | bool
+  block:
+    - name: Bootstrap Podman and Ansible Builder prerequisites
+      ansible.builtin.include_tasks: install.yml
+
+    - name: Bootstrap the namespaced Podman machine when required
+      ansible.builtin.include_tasks: machine.yml
+
+    - name: Build a side-by-side candidate execution environment
+      ansible.builtin.include_tasks: build.yml
+
+    - name: Verify the candidate before publishing it
+      ansible.builtin.include_tasks: verify.yml
+  rescue:
+    - name: Report failed execution-environment candidate
+      ansible.builtin.debug:
+        msg: >-
+          ANSIBLE_EE_BOOTSTRAP_FAILED image={{ _execution_environment_bootstrap_candidate_image }}
+          task={{ ansible_failed_task.name | default('unknown') }}
+
+    - name: Clean exact Gludd-owned resources after a failed candidate
+      ansible.builtin.include_tasks: absent.yml
+      when:
+        - execution_environment_bootstrap_cleanup_on_failure | bool
+        - not execution_environment_bootstrap_ephemeral | bool
+
+    - name: Preserve the original execution-environment failure
+      ansible.builtin.fail:
+        msg: >-
+          Execution-environment bootstrap failed at
+          {{ ansible_failed_task.name | default('unknown task') }}:
+          {{ ansible_failed_result.msg | default('no failure message') }}
+  always:
+    - name: Tear down ephemeral execution-environment resources
+      ansible.builtin.include_tasks: absent.yml
+      when: execution_environment_bootstrap_ephemeral | bool

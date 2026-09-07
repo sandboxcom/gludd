@@ -9,17 +9,21 @@ import json
 import secrets
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from general_ludd.azure.accelerator_credential_source import (
+    AzureAcceleratorCredentialLease,
+)
 from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorCredentials,
     load_azure_accelerator_credentials,
 )
+from general_ludd.cloud.azure_game_runtime import resolve_public_ipv4_cidr
 from general_ludd.infra.azure_containerapp_arm import (
     HttpxARMJSONTransport,
     HttpxContainerAppARMTransport,
@@ -32,7 +36,7 @@ from general_ludd.infra.azure_containerapp_environment_lifecycle import (
     EnvironmentLifecycleTrace,
 )
 from general_ludd.infra.azure_containerapp_environment_make_runtime import (
-    AzureContainerAppEnvironmentMakeRuntime,
+    AzureContainerAppEnvironmentTerraformRuntime,
 )
 from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
 from general_ludd.infra.azure_containerapp_live_proof import (
@@ -43,17 +47,30 @@ from general_ludd.infra.azure_containerapp_live_proof import (
     run_azure_containerapp_live_proof,
 )
 from general_ludd.infra.azure_containerapp_make_runtime import (
-    AzureContainerAppMakeRuntime,
+    AzureContainerAppTerraformRuntime,
     MakeRuntimeEvent,
 )
 from general_ludd.infra.azure_containerapp_owned_lifecycle import (
     run_owned_azure_containerapp_live_proof,
 )
 from general_ludd.infra.azure_containerapp_preflight import (
-    ARM_SCOPE,
     AzureContainerAppReadOnlyPreflight,
     PreflightTrace,
 )
+from general_ludd.infra.azure_containerapp_runtime_resources import (
+    ARM_SCOPE as ARM_SCOPE,
+)
+from general_ludd.infra.azure_containerapp_runtime_resources import (
+    AzureContainerAppRuntimeResources,
+    build_azure_containerapp_runtime_resources,
+)
+from general_ludd.infra.azure_containerapp_runtime_resources import (
+    _credential_client as _credential_client,
+)
+from general_ludd.infra.azure_containerapp_runtime_resources import (
+    _environment_ready as _environment_ready,
+)
+from general_ludd.infra.azure_containerapp_runtime_resources import _ready as _ready
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
     AzureCandidateResponse,
@@ -70,6 +87,8 @@ from general_ludd.self_improve.model_candidates import (
 )
 from general_ludd.self_improve.private_policy import SelfImproveRuntimePolicyGuard
 
+_DefaultResources = AzureContainerAppRuntimeResources
+
 _MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 _MODEL_REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
 _IMAGE = (
@@ -80,14 +99,18 @@ _PARAMETER_COUNT = 494_032_768
 _PROMPT = "Suggest one deterministic edge-case test for a public Python function."
 _WORK_ROOT = Path("/tmp/gludd-azure-containerapp-live-proof")
 _ENVIRONMENT_WORK_ROOT = Path("/tmp/gludd-azure-containerapp-environments")
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_AZURE_AUTHORITY = "login.microsoftonline.com"
 
 
 class _ClosableCredential(Protocol):
     def get_token(self, *scopes: str) -> Any: ...
 
     def close(self) -> None: ...
+
+
+class _CredentialLeaseSource(Protocol):
+    def acquire(self) -> AzureAcceleratorCredentialLease: ...
+
+    def release(self, lease: AzureAcceleratorCredentialLease) -> None: ...
 
 
 class _LiveResources(Protocol):
@@ -182,6 +205,12 @@ def _policy(
     *,
     app_name: str,
 ) -> AzureContainerAppLiveProofPolicy:
+    requested_cidr = cast(str, args.allowed_cidr)
+    allowed_cidr = (
+        resolve_public_ipv4_cidr()
+        if requested_cidr.casefold() == "auto"
+        else requested_cidr
+    )
     return AzureContainerAppLiveProofPolicy(
         subscription_id=cast(str, args.subscription_id),
         resource_group=cast(str, args.resource_group),
@@ -190,7 +219,7 @@ def _policy(
         workload_profile_type="Consumption-GPU-NC8as-T4",
         location=cast(str, args.location),
         app_name=app_name,
-        allowed_cidr=cast(str, args.allowed_cidr),
+        allowed_cidr=allowed_cidr,
         container_image=_IMAGE,
         model_name=_MODEL,
         model_revision=_MODEL_REVISION,
@@ -341,265 +370,106 @@ class _HermeticRuntime:
         raise RuntimeError("dry-run absence check is unreachable")
 
 
-class _DefaultResources:
-    def __init__(
-        self,
-        *,
-        runtime: AzureContainerAppMakeRuntime,
-        environment_runtime: AzureContainerAppEnvironmentMakeRuntime,
-        credential: _ClosableCredential,
-        environment_transport: HttpxARMJSONTransport,
-        lifecycle_transport: HttpxContainerAppEnvironmentLifecycleTransport,
-        app_transport: HttpxContainerAppARMTransport,
-    ) -> None:
-        self.runtime: AzureContainerAppProofRuntime = runtime
-        self.environment_runtime: AzureContainerAppEnvironmentRuntime = (
-            environment_runtime
-        )
-        self._credential = credential
-        self._environment_transport = environment_transport
-        self._lifecycle_transport = lifecycle_transport
-        self._app_transport = app_transport
-        self._closed = False
-
-    def backend_factory(
-        self,
-        identity: AzureContainerAppCandidateIdentity,
-    ) -> CandidateBackend[AzureApprovedPrompt, AzureCandidateResponse]:
-        return build_azure_containerapp_candidate_backend(
-            identity,
-            discovery_timeout_seconds=120.0,
-            trace_sink=lambda event: _trace(
-                "AZURE_CONTAINERAPP_BACKEND_TRACE",
-                event,
-            ),
-        )
-
-    def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        failed = False
-        for client in (
-            self._app_transport,
-            self._lifecycle_transport,
-            self._environment_transport,
-            self._credential,
-        ):
-            try:
-                client.close()
-            except Exception:
-                failed = True
-        if failed:
-            raise RuntimeError("Azure live resource cleanup failed")
-
-
-def _credential_client(credentials: AzureAcceleratorCredentials) -> _ClosableCredential:
-    try:
-        from azure.identity import ClientSecretCredential
-    except ImportError:
-        raise RuntimeError("Azure Identity dependency is unavailable") from None
-    return cast(
-        _ClosableCredential,
-        ClientSecretCredential(
-            tenant_id=credentials.tenant_id,
-            client_id=credentials.client_id,
-            client_secret=credentials.client_secret,
-            authority=_AZURE_AUTHORITY,
-            disable_instance_discovery=True,
-            retry_total=0,
-        ),
-    )
-
-
-def _ready(document: object | None) -> bool:
-    if not isinstance(document, Mapping):
-        return False
-    properties = document.get("properties")
-    return bool(
-        isinstance(properties, Mapping)
-        and properties.get("provisioningState") == "Succeeded"
-        and isinstance(properties.get("latestReadyRevisionName"), str)
-        and properties.get("latestReadyRevisionName")
-    )
-
-
-def _environment_ready(document: object | None) -> bool:
-    if not isinstance(document, Mapping):
-        return False
-    properties = document.get("properties")
-    return bool(
-        isinstance(properties, Mapping)
-        and properties.get("provisioningState") == "Succeeded"
-    )
-
-
 def _default_live_resources(
     args: argparse.Namespace,
     policy: AzureContainerAppLiveProofPolicy,
     requirement: ModelServingRequirement,
+    *,
+    credentials: AzureAcceleratorCredentials | None = None,
+    credential_release: Callable[[], None] | None = None,
 ) -> _LiveResources:
-    credentials = load_azure_accelerator_credentials(
-        cast(str, args.auth_file),
-        expected_subscription_id=policy.subscription_id,
+    """Build concrete runtimes without retaining infrastructure logic in the CLI."""
+    if credentials is None:
+        credentials = load_azure_accelerator_credentials(
+            cast(str, args.auth_file),
+            expected_subscription_id=policy.subscription_id,
+        )
+    elif (
+        not isinstance(credentials, AzureAcceleratorCredentials)
+        or credentials.subscription_id != policy.subscription_id
+    ):
+        raise ValueError("Azure credentials do not match the approved subscription")
+
+    def progress(message: str) -> None:
+        _component, separator, fields = message.partition(" ")
+        print(
+            "AZURE_CONTAINERAPP_ARM_TRACE "
+            f"{fields if separator else message} secret_output=false",
+            flush=True,
+        )
+
+    return build_azure_containerapp_runtime_resources(
+        credentials=credentials,
+        policy=policy,
+        requirement=requirement,
+        work_root=_WORK_ROOT,
+        environment_work_root=_ENVIRONMENT_WORK_ROOT,
+        credential_release=credential_release,
+        preflight_trace_sink=lambda event: _trace(
+            "AZURE_CONTAINERAPP_PREFLIGHT_TRACE",
+            event,
+        ),
+        terraform_trace_sink=lambda event: _trace(
+            "AZURE_CONTAINERAPP_TERRAFORM_TRACE",
+            event,
+        ),
+        environment_terraform_trace_sink=lambda event: _trace(
+            "AZURE_CONTAINERAPP_ENVIRONMENT_TERRAFORM_TRACE",
+            event,
+        ),
+        backend_trace_sink=lambda event: _trace(
+            "AZURE_CONTAINERAPP_BACKEND_TRACE",
+            event,
+        ),
+        progress_sink=progress,
+        monotonic=lambda: time.monotonic(),
+        sleep=lambda seconds: time.sleep(seconds),
+        _credential_factory=_credential_client,
+        _environment_transport_factory=HttpxARMJSONTransport,
+        _lifecycle_transport_factory=(
+            HttpxContainerAppEnvironmentLifecycleTransport
+        ),
+        _app_transport_factory=HttpxContainerAppARMTransport,
+        _preflight_factory=AzureContainerAppReadOnlyPreflight,
+        _app_runtime_factory=AzureContainerAppTerraformRuntime,
+        _environment_runtime_factory=(
+            AzureContainerAppEnvironmentTerraformRuntime
+        ),
+        _backend_factory=build_azure_containerapp_candidate_backend,
     )
-    credential: _ClosableCredential | None = None
-    environment_transport: HttpxARMJSONTransport | None = None
-    lifecycle_transport: HttpxContainerAppEnvironmentLifecycleTransport | None = None
-    app_transport: HttpxContainerAppARMTransport | None = None
-    try:
-        credential = _credential_client(credentials)
-        environment_transport = HttpxARMJSONTransport(
-            subscription_id=policy.subscription_id,
-            resource_group=policy.resource_group,
-            environment_name=policy.environment_name,
-        )
-        lifecycle_transport = HttpxContainerAppEnvironmentLifecycleTransport(
-            subscription_id=policy.subscription_id,
-            resource_group=policy.resource_group,
-            environment_name=policy.environment_name,
-        )
-        app_transport = HttpxContainerAppARMTransport(
-            subscription_id=policy.subscription_id,
-            resource_group=policy.resource_group,
-            app_name=policy.app_name,
-        )
 
-        def preflight(
-            active_policy: AzureContainerAppLiveProofPolicy,
-            active_requirement: ModelServingRequirement,
-        ) -> None:
-            AzureContainerAppReadOnlyPreflight(
-                cast(Any, credential),
-                cast(Any, environment_transport),
-                trace_sink=lambda event: _trace(
-                    "AZURE_CONTAINERAPP_PREFLIGHT_TRACE",
-                    event,
-                ),
-            ).check(
-                subscription_id=active_policy.subscription_id,
-                resource_group=active_policy.resource_group,
-                environment_name=active_policy.environment_name,
-                workload_profile_name=active_policy.workload_profile_name,
-                location=active_policy.location,
-                requirement=active_requirement,
+
+def build_openbao_live_resources_factory(
+    source: _CredentialLeaseSource,
+) -> LiveResourcesFactory:
+    """Build a live-resource factory backed by one exact OpenBao lease per run."""
+    if not callable(getattr(source, "acquire", None)) or not callable(
+        getattr(source, "release", None)
+    ):
+        raise ValueError("source must issue and exactly revoke Azure credential leases")
+
+    def build(
+        args: argparse.Namespace,
+        policy: AzureContainerAppLiveProofPolicy,
+        requirement: ModelServingRequirement,
+    ) -> _LiveResources:
+        lease = source.acquire()
+        if not isinstance(lease, AzureAcceleratorCredentialLease):
+            raise ValueError("credential source returned an invalid Azure lease")
+        try:
+            return _default_live_resources(
+                args,
+                policy,
+                requirement,
+                credentials=lease.credentials,
+                credential_release=lambda: source.release(lease),
             )
+        except BaseException:
+            with suppress(Exception):
+                source.release(lease)
+            raise
 
-        def read_app(
-            _active_policy: AzureContainerAppLiveProofPolicy,
-            expect_absent: bool,
-        ) -> object | None:
-            deadline = time.monotonic() + (600.0 if expect_absent else 900.0)
-            last_document: object | None = None
-            while True:
-                token = credential.get_token(ARM_SCOPE).token
-                last_document = app_transport.get_json(token)
-                if expect_absent:
-                    if last_document is None:
-                        return None
-                elif _ready(last_document):
-                    return last_document
-                if time.monotonic() >= deadline:
-                    return last_document
-                print(
-                    "AZURE_CONTAINERAPP_ARM_TRACE phase="
-                    f"{'absence' if expect_absent else 'readiness'} "
-                    "state=heartbeat secret_output=false",
-                    flush=True,
-                )
-                time.sleep(10.0)
-
-        def read_environment(
-            active_policy: AzureEnvironmentLifecyclePolicy,
-            expect_absent: bool,
-        ) -> object | None:
-            if active_policy.environment_id.casefold() != policy.environment_id.casefold():
-                raise RuntimeError("environment policy escaped the bound resource")
-            deadline = time.monotonic() + (900.0 if expect_absent else 1_200.0)
-            last_document: object | None = None
-            while True:
-                token = credential.get_token(ARM_SCOPE).token
-                last_document = lifecycle_transport.get_environment(token)
-                if expect_absent:
-                    if last_document is None:
-                        return None
-                elif last_document is None or _environment_ready(last_document):
-                    return last_document
-                if time.monotonic() >= deadline:
-                    return last_document
-                print(
-                    "AZURE_CONTAINERAPP_ENVIRONMENT_ARM_TRACE phase="
-                    f"{'absence' if expect_absent else 'readiness'} "
-                    "state=heartbeat secret_output=false",
-                    flush=True,
-                )
-                time.sleep(10.0)
-
-        def list_environment_apps(
-            active_policy: AzureEnvironmentLifecyclePolicy,
-        ) -> tuple[str, ...]:
-            if active_policy.environment_id.casefold() != policy.environment_id.casefold():
-                raise RuntimeError("environment policy escaped the bound resource")
-            expected_app_id = policy.expected_resource_id.casefold()
-            deadline = time.monotonic() + 300.0
-            while True:
-                token = credential.get_token(ARM_SCOPE).token
-                app_ids = lifecycle_transport.list_environment_app_ids(token)
-                if not app_ids or any(
-                    app_id.casefold() != expected_app_id for app_id in app_ids
-                ):
-                    return app_ids
-                if time.monotonic() >= deadline:
-                    return app_ids
-                print(
-                    "AZURE_CONTAINERAPP_ENVIRONMENT_ARM_TRACE "
-                    "phase=inventory state=heartbeat secret_output=false",
-                    flush=True,
-                )
-                time.sleep(10.0)
-
-        runtime = AzureContainerAppMakeRuntime(
-            repo_root=_REPO_ROOT,
-            work_root=_WORK_ROOT,
-            credentials=credentials,
-            requirement=requirement,
-            preflight_check=preflight,
-            read_app=read_app,
-            trace_sink=lambda event: _trace(
-                "AZURE_CONTAINERAPP_MAKE_TRACE",
-                event,
-            ),
-        )
-        environment_runtime = AzureContainerAppEnvironmentMakeRuntime(
-            repo_root=_REPO_ROOT,
-            work_root=_ENVIRONMENT_WORK_ROOT,
-            credentials=credentials,
-            read_environment=read_environment,
-            list_environment_apps=list_environment_apps,
-            trace_sink=lambda event: _trace(
-                "AZURE_CONTAINERAPP_ENVIRONMENT_MAKE_TRACE",
-                event,
-            ),
-        )
-        return _DefaultResources(
-            runtime=runtime,
-            environment_runtime=environment_runtime,
-            credential=credential,
-            environment_transport=environment_transport,
-            lifecycle_transport=lifecycle_transport,
-            app_transport=app_transport,
-        )
-    except BaseException:
-        for client in (
-            app_transport,
-            lifecycle_transport,
-            environment_transport,
-            credential,
-        ):
-            if client is not None:
-                with suppress(Exception):
-                    client.close()
-        raise
+    return build
 
 
 def main(

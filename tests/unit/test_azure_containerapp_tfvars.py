@@ -36,7 +36,11 @@ def _config(**overrides: object) -> ComputeConfig:
 
 
 def test_tfvars_bind_existing_environment_and_immutable_artifacts() -> None:
-    config = _config()
+    config = _config(
+        azure_min_replicas=0,
+        azure_max_replicas=3,
+        azure_http_concurrent_requests=4,
+    )
     tfvars = TerraformGenerator().build_azure_containerapp_tfvars(
         config,
         deployment_name="gludd-proof-a1b2c3",
@@ -55,6 +59,9 @@ def test_tfvars_bind_existing_environment_and_immutable_artifacts() -> None:
     assert 'workload_profile_type = "Consumption-GPU-NC8as-T4"' in tfvars
     assert f'model_revision = "{MODEL_REVISION}"' in tfvars
     assert f'container_image = "{IMAGE}"' in tfvars
+    assert "min_replicas = 0" in tfvars
+    assert "max_replicas = 3" in tfvars
+    assert "http_concurrent_requests = 4" in tfvars
     assert 'owner_token = "gludd-proof-a1b2c3"' in tfvars
     assert re.search(r'trace_id = "[0-9a-f]{32}"', tfvars)
     assert re.search(

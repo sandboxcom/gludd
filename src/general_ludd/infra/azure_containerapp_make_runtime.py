@@ -1,17 +1,17 @@
-"""Make-mediated Terraform runtime for one bounded Azure Container App proof."""
+"""Direct Terraform runtime for one bounded Azure Container App proof.
+
+The historical module name is retained as an import compatibility boundary.  The
+runtime itself never invokes Make or a shell.
+"""
 
 from __future__ import annotations
 
 import os
-import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 from typing import Protocol, cast
 
 from general_ludd.azure.accelerator_credentials import AzureAcceleratorCredentials
-from general_ludd.commands.make import MakeResult, MakeRunner
 from general_ludd.infra.azure_containerapp_gpu import (
     ModelServingRequirement,
     select_smallest_sufficient_profile,
@@ -19,9 +19,6 @@ from general_ludd.infra.azure_containerapp_gpu import (
 from general_ludd.infra.azure_containerapp_live_proof import (
     AzureContainerAppDeploymentEvidence,
     AzureContainerAppLiveProofPolicy,
-)
-from general_ludd.infra.azure_containerapp_make_types import (
-    MAKE_TARGET as _MAKE_TARGET,
 )
 from general_ludd.infra.azure_containerapp_make_types import (
     AzureContainerAppMakeRuntimeError,
@@ -49,6 +46,12 @@ from general_ludd.infra.azure_containerapp_make_validation import (
 from general_ludd.infra.azure_containerapp_make_validation import (
     write_ownership_marker as _write_ownership_marker,
 )
+from general_ludd.infra.azure_containerapp_terraform_executor import (
+    AzureContainerAppTerraformPhaseError,
+    AzureContainerAppTerraformPhaseExecutor,
+    TerraformRuntimeState,
+    terraform_process_environment,
+)
 from general_ludd.infra.compute import (
     ComputeConfig,
     ComputeProvider,
@@ -68,17 +71,19 @@ _PROFILE_GPUS = {
 }
 
 
-class _MakeRunner(Protocol):
+class _TerraformExecutor(Protocol):
     def run(
         self,
-        target: str,
         *,
-        extra_args: list[str] | None = None,
-        timeout_s: int | None = None,
-        env_extra: dict[str, str] | None = None,
-        stream: bool = False,
-        stream_callback: Callable[[str], None] | None = None,
-    ) -> MakeResult: ...
+        phase: str,
+        terraform_dir: str | os.PathLike[str],
+        plan_file: str | os.PathLike[str],
+        json_file: str | os.PathLike[str],
+        allowed_root: str | os.PathLike[str],
+        environment: dict[str, str],
+        timeout_seconds: int,
+        progress: Callable[[str, TerraformRuntimeState, int], None],
+    ) -> None: ...
 
 
 class _TerraformGenerator(Protocol):
@@ -102,19 +107,18 @@ def _discard_trace(_event: MakeRuntimeEvent) -> None:
     return None
 
 
-class AzureContainerAppMakeRuntime:
-    """Materialize and operate one app through a single audited Make target."""
+class AzureContainerAppTerraformRuntime:
+    """Materialize and operate one app through direct Terraform/OpenTofu calls."""
 
     def __init__(
         self,
         *,
-        repo_root: str | os.PathLike[str],
         work_root: str | os.PathLike[str],
         credentials: AzureAcceleratorCredentials,
         requirement: ModelServingRequirement,
         preflight_check: PreflightCheck,
         read_app: ReadApp,
-        make_runner: _MakeRunner | None = None,
+        terraform_executor: _TerraformExecutor | None = None,
         terraform_generator: _TerraformGenerator | None = None,
         trace_sink: Callable[[MakeRuntimeEvent], None] = _discard_trace,
         heartbeat_seconds: float = 15.0,
@@ -134,13 +138,14 @@ class AzureContainerAppMakeRuntime:
             or not 0.0 < float(heartbeat_seconds) <= 60.0
         ):
             raise ValueError("heartbeat_seconds must be in 0..60")
-        self._repo_root = Path(repo_root).resolve()
         self._work_root = Path(work_root).resolve()
         self._credentials = credentials
         self._requirement = requirement
         self._preflight_check = preflight_check
         self._read_app = read_app
-        self._runner = make_runner or MakeRunner(self._repo_root)
+        self._executor = terraform_executor or AzureContainerAppTerraformPhaseExecutor(
+            heartbeat_seconds=float(heartbeat_seconds)
+        )
         self._generator = terraform_generator or TerraformGenerator()
         self._trace_sink = trace_sink
         self._heartbeat_seconds = float(heartbeat_seconds)
@@ -197,62 +202,51 @@ class AzureContainerAppMakeRuntime:
 
     def _invoke(self, phase: str, *, json_file: Path, timeout_seconds: int) -> None:
         tf_dir, plan_file, _plan_json, _output_json = self._paths()
-        arguments = [
-            f"AZURE_CONTAINERAPP_TF_PHASE={phase}",
-            f"AZURE_CONTAINERAPP_TF_DIR={tf_dir}",
-            f"AZURE_CONTAINERAPP_TF_PLAN_FILE={plan_file}",
-            f"AZURE_CONTAINERAPP_TF_JSON_FILE={json_file}",
-            "AZURE_CONTAINERAPP_TF_VALIDATE_ONLY=0",
-        ]
-        environment = self._credentials.arm_environment()
-        environment.update(
+        credential_environment = self._credentials.arm_environment()
+        credential_environment.update(
             {
                 "CHECKPOINT_DISABLE": "1",
                 "TF_IN_AUTOMATION": "1",
                 "TF_INPUT": "0",
             }
         )
-        started = time.monotonic()
-        self._emit(phase, MakeRuntimeState.STARTED)
+        environment = terraform_process_environment(credential_environment)
+        failed_emitted = False
+
+        def progress(
+            active_phase: str,
+            state: TerraformRuntimeState,
+            elapsed_seconds: int,
+        ) -> None:
+            nonlocal failed_emitted
+            failed_emitted = failed_emitted or state is TerraformRuntimeState.FAILED
+            self._emit(
+                active_phase,
+                MakeRuntimeState(state.value),
+                elapsed_seconds=elapsed_seconds,
+            )
+
         try:
-            with ThreadPoolExecutor(
-                max_workers=1,
-                thread_name_prefix="gludd-azure-containerapp",
-            ) as executor:
-                future = executor.submit(
-                    self._runner.run,
-                    _MAKE_TARGET,
-                    extra_args=arguments,
-                    timeout_s=timeout_seconds,
-                    env_extra=environment,
-                )
-                while True:
-                    try:
-                        result = future.result(timeout=self._heartbeat_seconds)
-                        break
-                    except FutureTimeoutError:
-                        self._emit(
-                            phase,
-                            MakeRuntimeState.HEARTBEAT,
-                            elapsed_seconds=int(time.monotonic() - started),
-                        )
+            self._executor.run(
+                phase=phase,
+                terraform_dir=tf_dir,
+                plan_file=plan_file,
+                json_file=json_file,
+                allowed_root=self._work_root,
+                environment=environment,
+                timeout_seconds=timeout_seconds,
+                progress=progress,
+            )
         except AzureContainerAppMakeRuntimeError:
             raise
-        except Exception:
-            self._emit(phase, MakeRuntimeState.FAILED)
+        except AzureContainerAppTerraformPhaseError:
+            if not failed_emitted:
+                self._emit(phase, MakeRuntimeState.FAILED)
             raise AzureContainerAppMakeRuntimeError(phase) from None
-        if not result.success:
-            self._emit(
-                phase,
-                MakeRuntimeState.FAILED,
-                elapsed_seconds=int(time.monotonic() - started),
-            )
-            raise AzureContainerAppMakeRuntimeError(phase)
-        self._emit(
-            phase,
-            MakeRuntimeState.SUCCEEDED,
-            elapsed_seconds=int(time.monotonic() - started),
-        )
+        except Exception:
+            if not failed_emitted:
+                self._emit(phase, MakeRuntimeState.FAILED)
+            raise AzureContainerAppMakeRuntimeError(phase) from None
 
     def _compute_config(self, policy: AzureContainerAppLiveProofPolicy) -> ComputeConfig:
         selection = select_smallest_sufficient_profile(self._requirement)
@@ -282,6 +276,9 @@ class AzureContainerAppMakeRuntime:
             azure_resource_group=policy.resource_group,
             azure_containerapp_environment=policy.environment_name,
             azure_workload_profile_name=policy.workload_profile_name,
+            azure_min_replicas=policy.min_replicas,
+            azure_max_replicas=policy.max_replicas,
+            azure_http_concurrent_requests=policy.http_concurrent_requests,
             deploy_type="containerapp",
             allowed_cidr=policy.allowed_cidr,
             deployment_profile={
@@ -370,9 +367,13 @@ class AzureContainerAppMakeRuntime:
             raise AzureContainerAppMakeRuntimeError("absence") from None
 
 
+AzureContainerAppMakeRuntime = AzureContainerAppTerraformRuntime
+
+
 __all__ = (
     "AzureContainerAppMakeRuntime",
     "AzureContainerAppMakeRuntimeError",
+    "AzureContainerAppTerraformRuntime",
     "MakeRuntimeEvent",
     "MakeRuntimeState",
 )
