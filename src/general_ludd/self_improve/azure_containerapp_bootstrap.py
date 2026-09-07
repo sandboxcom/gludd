@@ -25,6 +25,10 @@ from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorCredentials,
     load_azure_accelerator_credentials,
 )
+from general_ludd.azure.resource_group_bootstrap import (
+    AzureResourceGroupBootstrapPolicy,
+    ensure_azure_resource_group,
+)
 from general_ludd.infra.azure_containerapp_environment_lifecycle import (
     AzureEnvironmentLifecyclePolicy,
     AzureEnvironmentProfile,
@@ -380,10 +384,12 @@ def _runtime_trace(
         getattr(event, "candidate_identity_digest", None),
     )
     elapsed = getattr(event, "elapsed_seconds", 0)
+    failure_class = getattr(event, "failure_class", None)
     progress_sink(
         "SELF_IMPROVE_AZURE_BOOTSTRAP "
         f"component={component} phase={phase} state={state} "
         f"operation_digest={digest or 'unbound'} elapsed_seconds={elapsed} "
+        f"failure_class={failure_class or 'none'} "
         "secret_output=false"
     )
 
@@ -400,6 +406,7 @@ class ConfiguredAzureContainerAppBootstrapFactory:
         work_root: Path,
         environment_work_root: Path,
         credential_provider: _CredentialProvider,
+        resource_group_bootstrapper: Callable[..., object],
         resources_builder: Callable[..., _RuntimeResources],
         owned_factory_type: type[Any],
         progress_sink: Callable[[str], None],
@@ -411,6 +418,9 @@ class ConfiguredAzureContainerAppBootstrapFactory:
         self._work_root = work_root
         self._environment_work_root = environment_work_root
         self._credential_provider = credential_provider
+        if not callable(resource_group_bootstrapper):
+            raise ValueError("resource_group_bootstrapper must be callable")
+        self._resource_group_bootstrapper = resource_group_bootstrapper
         self._resources_builder = resources_builder
         self._owned_factory_type = owned_factory_type
         self._progress_sink = progress_sink
@@ -440,6 +450,27 @@ class ConfiguredAzureContainerAppBootstrapFactory:
             "SELF_IMPROVE_AZURE_BOOTSTRAP phase=credential_acquired "
             f"operation_digest={self._deployment_digest} secret_output=false"
         )
+        try:
+            self._resource_group_bootstrapper(
+                AzureResourceGroupBootstrapPolicy(
+                    subscription_id=self._app_policy.subscription_id,
+                    resource_group=self._app_policy.resource_group,
+                    location=self._app_policy.location,
+                    owner_digest=self._environment_policy.owner_digest,
+                ),
+                acquisition.credentials,
+                trace_sink=lambda event: _runtime_trace(
+                    self._progress_sink,
+                    "resource_group",
+                    event,
+                ),
+            )
+        except BaseException:
+            with suppress(Exception):
+                release()
+            raise RuntimeError(
+                "Azure bootstrap resource-group acquisition failed"
+            ) from None
         try:
             resources = self._resources_builder(
                 credentials=acquisition.credentials,
@@ -528,6 +559,7 @@ def build_azure_containerapp_bootstrap_wiring(
     resources_builder: Callable[..., Any] = (
         build_azure_containerapp_runtime_resources
     ),
+    resource_group_bootstrapper: Callable[..., object] = ensure_azure_resource_group,
     owned_factory_type: type[Any] = AzureContainerAppOwnedCandidateFactory,
     now: Callable[[], datetime] = _utc_now,
 ) -> AzureContainerAppBootstrapWiring | None:
@@ -634,6 +666,7 @@ def build_azure_containerapp_bootstrap_wiring(
         work_root=work_root,
         environment_work_root=environment_work_root,
         credential_provider=provider,
+        resource_group_bootstrapper=resource_group_bootstrapper,
         resources_builder=resources_builder,
         owned_factory_type=owned_factory_type,
         progress_sink=progress_sink,

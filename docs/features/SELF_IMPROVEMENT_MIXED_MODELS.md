@@ -4,8 +4,9 @@ Status: provider-neutral identity, deterministic task classification, live local
 Azure OpenAI, and Azure Container Apps discovery/inference, candidate-set
 assembly, content-free calibrated routing, and managed-runner selection are
 implemented behind explicit policy. Gludd now plans and owns the complete Azure
-Container Apps environment/app lifecycle through Terraform; a paid canary remains
-pending the existing role's 15-action least-privilege update and live evidence.
+Container Apps resource-group/environment/app lifecycle through the Microsoft SDK
+and OpenTofu; a paid canary remains pending the existing role's 17-action
+least-privilege update and live evidence.
 
 ## Outcome
 
@@ -27,11 +28,13 @@ and infrastructure failures remain observable but cannot train the selector.
 
 ## Azure infrastructure ownership and library reuse
 
-Terraform/AzAPI is Gludd's only Azure infrastructure writer. The lifecycle plan
-and owner-bound state cover the managed environment, right-sized workload
-profiles, model-serving apps, retention in the presence of foreign apps, and
-verified teardown. Python orchestrates those reviewed Terraform phases; it does
-not reproduce ARM create/update/delete calls.
+The Microsoft resource SDK writes only the zero-compute, exact owner-tagged
+resource-group boundary. OpenTofu/AzAPI is Gludd's only paid Azure infrastructure
+writer. Its lifecycle plan and owner-bound state cover the managed environment,
+right-sized workload profiles, model-serving apps, retention in the presence of
+foreign apps, and verified teardown. Python orchestrates those reviewed phases
+and uses supported SDK clients for the bounded group and observation contracts;
+it does not reproduce raw ARM calls.
 
 The Azure CLI argument renderer is intentionally not an Azure client. It validates
 identifiers and the checked-in exact role, then writes one NUL-delimited argv for

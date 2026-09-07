@@ -4,8 +4,9 @@
 # The custom role below is the minimal control-plane surface required by the
 # release stack: create one managed environment, inspect its quota, deploy one
 # Container App, attest GPU execution through read-only metrics, and tear both
-# resources back down. Resource-group, provider, IAM, registry, network, VM,
-# logging, and secret administration remain with the human operator. Asserted by
+# resources back down. Exact resource-group read/write permits a pre-assigned
+# principal to create its absent boundary; group delete, provider, IAM, registry,
+# network, VM, logging, and secret administration remain forbidden. Asserted by
 # tests/unit/test_onboard_azure.py::TestTerraformModuleLeastPriv.
 
 terraform {
@@ -49,7 +50,7 @@ locals {
 resource "azurerm_role_definition" "accelerator_deployer" {
   name        = "General Ludd Accelerator Deployer"
   scope       = local.resource_group_scope
-  description = "Create, inspect, and remove Gludd-owned Container Apps environments and apps, and read GPU metrics, in one resource group."
+  description = "Create or verify the exact Gludd resource group, manage its owned Container Apps environments and apps, and read GPU metrics."
 
   permissions {
     actions = [
@@ -68,6 +69,8 @@ resource "azurerm_role_definition" "accelerator_deployer" {
       "Microsoft.App/locations/managedEnvironmentOperationResults/read",
       "Microsoft.App/locations/managedEnvironmentOperationStatuses/read",
       "Microsoft.Insights/metrics/read",
+      "Microsoft.Resources/subscriptions/resourceGroups/read",
+      "Microsoft.Resources/subscriptions/resourceGroups/write",
     ]
     not_actions = []
   }

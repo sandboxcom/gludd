@@ -8,7 +8,10 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from general_ludd.azure.accelerator_credentials import AzureAcceleratorCredentials
+from general_ludd.azure.accelerator_credentials import (
+    AzureAcceleratorCredentials,
+    build_azure_management_credential,
+)
 from general_ludd.infra.azure_containerapp_arm import (
     HttpxARMJSONTransport,
     HttpxContainerAppARMTransport,
@@ -48,7 +51,6 @@ from general_ludd.self_improve.model_candidates import (
     CandidateBackend,
 )
 
-_AZURE_AUTHORITY = "login.microsoftonline.com"
 _Backend = CandidateBackend[AzureApprovedPrompt, AzureCandidateResponse]
 
 
@@ -75,21 +77,7 @@ def _discard_progress(_message: str) -> None:
 
 
 def _credential_client(credentials: AzureAcceleratorCredentials) -> _ClosableCredential:
-    try:
-        from azure.identity import ClientSecretCredential
-    except ImportError:
-        raise RuntimeError("Azure Identity dependency is unavailable") from None
-    return cast(
-        _ClosableCredential,
-        ClientSecretCredential(
-            tenant_id=credentials.tenant_id,
-            client_id=credentials.client_id,
-            client_secret=credentials.client_secret,
-            authority=_AZURE_AUTHORITY,
-            disable_instance_discovery=True,
-            retry_total=0,
-        ),
-    )
+    return cast(_ClosableCredential, build_azure_management_credential(credentials))
 
 
 def _ready(document: object | None) -> bool:

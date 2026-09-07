@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorCredentialError,
     build_azure_accelerator_credentials,
+    build_azure_management_credential,
     load_azure_accelerator_credentials,
 )
 
@@ -34,6 +37,42 @@ def test_validated_value_factory_reuses_the_file_loader_security_contract() -> N
     assert credential.tenant_id == TENANT_ID
     assert credential.client_secret == SECRET_VALUE
     assert SECRET_VALUE not in repr(credential)
+
+
+def test_shared_management_credential_uses_one_hardened_sdk_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+
+    class Credential:
+        def __init__(self, **kwargs: object) -> None:
+            observed.update(kwargs)
+
+        def close(self) -> None:
+            observed["closed"] = True
+
+    identity = ModuleType("azure.identity")
+    identity.__dict__["ClientSecretCredential"] = Credential
+    monkeypatch.setitem(sys.modules, "azure.identity", identity)
+    values = build_azure_accelerator_credentials(
+        client_id=CLIENT_ID,
+        client_secret=SECRET_VALUE,
+        subscription_id=SUBSCRIPTION_ID,
+        tenant_id=TENANT_ID,
+    )
+
+    credential = build_azure_management_credential(values)
+    credential.close()
+
+    assert observed == {
+        "tenant_id": TENANT_ID,
+        "client_id": CLIENT_ID,
+        "client_secret": SECRET_VALUE,
+        "authority": "login.microsoftonline.com",
+        "disable_instance_discovery": True,
+        "retry_total": 0,
+        "closed": True,
+    }
 
 
 @pytest.mark.parametrize(

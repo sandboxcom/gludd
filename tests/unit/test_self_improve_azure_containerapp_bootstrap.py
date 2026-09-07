@@ -16,6 +16,11 @@ from general_ludd.azure.accelerator_credential_source import (
 from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorCredentials,
 )
+from general_ludd.azure.resource_group_bootstrap import (
+    AzureResourceGroupBootstrapPolicy,
+    AzureResourceGroupBootstrapState,
+    AzureResourceGroupBootstrapTrace,
+)
 from general_ludd.infra.azure_containerapp_gpu import A100_PROFILE, T4_PROFILE
 from general_ludd.infra.azure_containerapp_owned_candidate import (
     owned_candidate_deployment_digest,
@@ -150,17 +155,100 @@ def _build(
     *,
     credential_provider: _CredentialProvider | None = None,
     resources_builder: Any = None,
+    resource_group_bootstrapper: Any = None,
 ) -> AzureContainerAppBootstrapWiring | None:
     provider = credential_provider or _CredentialProvider()
+    group_bootstrapper = resource_group_bootstrapper or (
+        lambda _policy, _credentials, **_kwargs: None
+    )
     return build_azure_containerapp_bootstrap_wiring(
         tmp_path,
         _config() if config is None else config,
         progress_sink=lambda _message: None,
         credential_provider=provider,
         resources_builder=resources_builder,
+        resource_group_bootstrapper=group_bootstrapper,
         owned_factory_type=_OwnedFactory,
         now=lambda: NOW,
     )
+
+
+def test_same_scoped_credential_bootstraps_owned_group_before_runtime_resources(
+    tmp_path: Path,
+) -> None:
+    order: list[str] = []
+    group_calls: list[tuple[object, AzureAcceleratorCredentials]] = []
+    progress: list[str] = []
+    provider = _CredentialProvider()
+
+    def group_bootstrap(
+        policy: object,
+        credentials: AzureAcceleratorCredentials,
+        *,
+        trace_sink: Any,
+    ) -> None:
+        order.append("group")
+        group_calls.append((policy, credentials))
+        trace_sink(
+            AzureResourceGroupBootstrapTrace(
+                AzureResourceGroupBootstrapState.CREATE_STARTED
+            )
+        )
+
+    def resources(**_kwargs: object) -> _Resources:
+        order.append("resources")
+        return _Resources(order, _Backend("unused"))
+
+    wiring = build_azure_containerapp_bootstrap_wiring(
+        tmp_path,
+        _config(),
+        progress_sink=progress.append,
+        credential_provider=provider,
+        resources_builder=resources,
+        resource_group_bootstrapper=group_bootstrap,
+        owned_factory_type=_OwnedFactory,
+        now=lambda: NOW,
+    )
+    assert isinstance(wiring, AzureContainerAppBootstrapWiring)
+
+    wiring.bootstrap_factory()
+
+    assert order[:2] == ["group", "resources"]
+    policy, credentials = group_calls[0]
+    assert isinstance(policy, AzureResourceGroupBootstrapPolicy)
+    assert policy.subscription_id == SUBSCRIPTION
+    assert policy.resource_group == "gludd-models-eastus"
+    assert policy.location == "eastus"
+    assert policy.owner_digest == wiring.environment_policy.owner_digest
+    assert credentials.subscription_id == SUBSCRIPTION
+    assert any(
+        "component=resource_group" in event
+        and "state=create_started" in event
+        and "failure_class=none" in event
+        for event in progress
+    )
+    assert "unit-secret" not in repr(progress)
+
+
+def test_group_bootstrap_failure_releases_same_credential_before_resources(
+    tmp_path: Path,
+) -> None:
+    provider = _CredentialProvider()
+    wiring = _build(
+        tmp_path,
+        credential_provider=provider,
+        resource_group_bootstrapper=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("provider-secret")
+        ),
+        resources_builder=lambda **_kwargs: pytest.fail("must remain unreachable"),
+    )
+    assert isinstance(wiring, AzureContainerAppBootstrapWiring)
+
+    with pytest.raises(RuntimeError, match="resource-group acquisition failed") as caught:
+        wiring.bootstrap_factory()
+
+    assert "provider-secret" not in str(caught.value)
+    assert provider.acquisitions == provider.releases == 1
 
 
 def test_disabled_or_absent_configuration_has_no_live_capability(tmp_path: Path) -> None:

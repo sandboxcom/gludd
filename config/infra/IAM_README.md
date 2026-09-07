@@ -348,14 +348,16 @@ az role assignment delete --assignee-object-id <operator-object-id> --role "User
 
 ### Create the Container Apps runtime identity
 
-The accelerator role is intentionally limited to 14 `Microsoft.App` operations
-plus `Microsoft.Insights/metrics/read` inside one existing resource group. It can
-create and remove only Gludd-owned managed environments and Container Apps and
+The accelerator role is intentionally limited to 14 `Microsoft.App` operations,
+`Microsoft.Insights/metrics/read`, and resource-group `read`/`write` at one exact
+resource-group path. It can create the absent owner-tagged group, create and
+remove only Gludd-owned managed environments and Container Apps inside it, and
 read their quota, status, inventory, and GPU metrics. It cannot register
-providers, create or delete the resource group, change IAM, use virtual machines
-or networks, manage registries or logging, read secrets, or access Cognitive
-Services. `NotActions` is empty: Azure treats it as subtraction from wildcard
-grants, not an explicit deny, so least privilege comes from the exact allowlist.
+providers, delete the group, change IAM, use virtual machines or networks, manage
+registries or logging, read secrets, or access Cognitive Services. `NotActions`
+is empty: Azure treats it as subtraction from wildcard grants, not an explicit
+deny, so least privilege comes from the exact 17-action allowlist and exact-scope
+assignment.
 
 ```bash
 SUB_ID="00000000-0000-0000-0000-000000000000"
@@ -369,9 +371,17 @@ make --no-print-directory azure-accelerator-role-args AZURE_ACCELERATOR_SUBSCRIP
 # If the named role already exists, update it to the same exact definition.
 make --no-print-directory azure-accelerator-role-update-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus | xargs -0 az
 
-# Create a unique principal assigned only this role and keep the one-time output private.
+# Create the one accelerator principal and keep the one-time output private.
 (umask 077; make --no-print-directory azure-accelerator-auth-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_ACCELERATOR_SP_NAME=gludd-accelerator-test-20260905 | xargs -0 az > /tmp/gludd-azure-accelerator-auth.json)
 ```
+
+An existing principal needs no new secret after the role update. Gludd uses the
+same credential for the owner-tagged group bootstrap and the OpenTofu lifecycle,
+or acquires an equivalent short-lived credential from the configured OpenBao
+Azure role. Downstream workers receive only their scoped OpenBao lease/capability
+and never the accelerator credential. Do not assign the complete accelerator
+role at subscription scope: Azure would apply all 17 actions there, and OpenBao
+cannot retroactively narrow a token already exposed to a component.
 
 The operator creating or updating the custom role needs
 `Microsoft.Authorization/roleDefinitions/write`, normally via the built-in

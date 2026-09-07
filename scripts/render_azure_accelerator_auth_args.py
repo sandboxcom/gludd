@@ -12,12 +12,14 @@ from pathlib import Path
 from typing import Final
 
 from general_ludd.azure.accelerator_role import (
-    EXPECTED_ACTIONS as _EXPECTED_ACTIONS,
     ROLE_NAME,
-    ROLE_SCOPE_TEMPLATE as _ROLE_SCOPE_TEMPLATE,
     ROLE_TEMPLATE_PATH,
     materialize_accelerator_role,
+)
+from general_ludd.azure.accelerator_role import (
     validate_resource_group as _validate_resource_group,
+)
+from general_ludd.azure.accelerator_role import (
     validate_subscription_id as _validate_subscription,
 )
 
@@ -30,6 +32,8 @@ _LOCATION_RE: Final = re.compile(r"^[a-z][a-z0-9]{1,31}$")
 _GPU_PROFILE_TYPES: Final = frozenset(
     {"Consumption-GPU-NC8as-T4", "Consumption-GPU-NC24-A100"}
 )
+
+
 def _validate_principal_name(value: object) -> str:
     if (
         not isinstance(value, str)

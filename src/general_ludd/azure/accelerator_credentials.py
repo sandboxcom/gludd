@@ -13,7 +13,7 @@ import stat
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final
+from typing import Final, Protocol, cast, runtime_checkable
 
 _MAX_CREDENTIAL_BYTES: Final = 16 * 1024
 _REQUIRED_FIELDS: Final = (
@@ -30,6 +30,19 @@ _PUBLIC_CLOUD_ENDPOINTS: Final = {
 
 class AzureAcceleratorCredentialError(ValueError):
     """Report a fixed-context credential-file refusal without sensitive data."""
+
+
+@runtime_checkable
+class AzureManagementCredential(Protocol):
+    """Minimal closeable token credential shared by Azure management clients."""
+
+    def get_token(self, *scopes: str) -> object:
+        """Acquire an SDK token for the explicit management scope."""
+        ...
+
+    def close(self) -> None:
+        """Release credential-owned transports and cached state."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,6 +231,29 @@ def build_azure_accelerator_credentials(
     )
 
 
+def build_azure_management_credential(
+    credentials: AzureAcceleratorCredentials,
+) -> AzureManagementCredential:
+    """Build the single hardened Microsoft SDK credential configuration."""
+    if not isinstance(credentials, AzureAcceleratorCredentials):
+        raise ValueError("credentials must use the accelerator credential contract")
+    try:
+        from azure.identity import ClientSecretCredential
+    except ImportError:
+        raise RuntimeError("Azure Identity dependency is unavailable") from None
+    return cast(
+        AzureManagementCredential,
+        ClientSecretCredential(
+            tenant_id=credentials.tenant_id,
+            client_id=credentials.client_id,
+            client_secret=credentials.client_secret,
+            authority="login.microsoftonline.com",
+            disable_instance_discovery=True,
+            retry_total=0,
+        ),
+    )
+
+
 def load_azure_accelerator_credentials(
     path: str | os.PathLike[str],
     *,
@@ -244,6 +280,8 @@ def load_azure_accelerator_credentials(
 __all__ = [
     "AzureAcceleratorCredentialError",
     "AzureAcceleratorCredentials",
+    "AzureManagementCredential",
     "build_azure_accelerator_credentials",
+    "build_azure_management_credential",
     "load_azure_accelerator_credentials",
 ]

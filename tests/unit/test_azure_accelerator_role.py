@@ -34,7 +34,7 @@ def test_materialized_role_is_the_exact_checked_in_resource_group_policy() -> No
     assert role["Name"] == subject.ROLE_NAME
     assert role["AssignableScopes"] == [RESOURCE_GROUP_SCOPE]
     assert frozenset(role["Actions"]) == subject.EXPECTED_ACTIONS
-    assert len(role["Actions"]) == 15
+    assert len(role["Actions"]) == 17
     assert role["NotActions"] == []
     assert role["DataActions"] == []
     assert role["NotDataActions"] == []
@@ -93,7 +93,7 @@ def test_validate_only_constructs_no_credential_or_cloud_client() -> None:
 
     assert result == subject.AcceleratorRoleApplyResult(
         state="validated",
-        action_count=15,
+        action_count=17,
         assignment_created=False,
     )
     assert traces == [
@@ -161,7 +161,7 @@ def test_live_apply_uses_sdk_role_and_exact_optional_assignment() -> None:
     credential.close.assert_called_once_with()
     assert result == subject.AcceleratorRoleApplyResult(
         state="applied",
-        action_count=15,
+        action_count=17,
         assignment_created=True,
     )
     assert [trace.state for trace in traces] == ["started", "applied"]
@@ -532,7 +532,7 @@ def test_make_entrypoint_validate_only_is_content_free(
 
     captured = capsys.readouterr()
     assert "state=validated" in captured.out
-    assert "action_count=15" in captured.out
+    assert "action_count=17" in captured.out
     assert "secret_output=false" in captured.out
     assert captured.err == ""
     assert SUBSCRIPTION_ID not in captured.out

@@ -39,6 +39,8 @@ REQUIRED_ACCELERATOR_ACTIONS = (
     "Microsoft.App/locations/managedEnvironmentOperationResults/read",
     "Microsoft.App/locations/managedEnvironmentOperationStatuses/read",
     "Microsoft.Insights/metrics/read",
+    "Microsoft.Resources/subscriptions/resourceGroups/read",
+    "Microsoft.Resources/subscriptions/resourceGroups/write",
 )
 OBSOLETE_PROVIDER_REGISTRATION = "Microsoft.Resources/subscriptions/providers/register/action"
 
@@ -310,7 +312,7 @@ class TestTerraformModuleLeastPriv:
 
         assert policy["Name"] == ACCELERATOR_ROLE
         assert set(policy["Actions"]) == set(REQUIRED_ACCELERATOR_ACTIONS)
-        assert len(REQUIRED_ACCELERATOR_ACTIONS) == 15
+        assert len(REQUIRED_ACCELERATOR_ACTIONS) == 17
         for action in REQUIRED_ACCELERATOR_ACTIONS:
             assert action in main_tf
             assert action in policy["Actions"]

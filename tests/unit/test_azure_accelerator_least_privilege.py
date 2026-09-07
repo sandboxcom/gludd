@@ -33,6 +33,8 @@ EXPECTED_ACTIONS = frozenset(
         "Microsoft.App/locations/managedEnvironmentOperationResults/read",
         "Microsoft.App/locations/managedEnvironmentOperationStatuses/read",
         "Microsoft.Insights/metrics/read",
+        "Microsoft.Resources/subscriptions/resourceGroups/read",
+        "Microsoft.Resources/subscriptions/resourceGroups/write",
     }
 )
 
@@ -54,7 +56,7 @@ def test_both_role_formats_grant_only_owned_lifecycle_and_metrics_operations() -
 
     assert frozenset(cli["Actions"]) == EXPECTED_ACTIONS
     assert frozenset(permission["actions"]) == EXPECTED_ACTIONS
-    assert len(EXPECTED_ACTIONS) == 15
+    assert len(EXPECTED_ACTIONS) == 17
     assert cli["NotActions"] == []
     assert permission["notActions"] == []
     assert cli["DataActions"] == []
@@ -74,7 +76,6 @@ def test_role_has_no_secret_admin_provider_or_infrastructure_permissions() -> No
         "microsoft.network/",
         "microsoft.operationalinsights/",
         "microsoft.resources/deployments/",
-        "resourcegroups/write",
         "resourcegroups/delete",
         "/register/action",
     )
@@ -126,4 +127,5 @@ def test_runtime_role_retains_only_owned_lifecycle_as_mutating_operations() -> N
         "Microsoft.App/managedEnvironments/join/action",
         "Microsoft.App/containerApps/write",
         "Microsoft.App/containerApps/delete",
+        "Microsoft.Resources/subscriptions/resourceGroups/write",
     }
