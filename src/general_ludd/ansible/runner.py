@@ -207,13 +207,11 @@ class AnsibleRunnerAdapter:
             private_data_dir=self.private_data_dir,
         )
         # Bootstrap must remain able to install/start the container engine even
-        # when ordinary work is configured to run inside that engine.  A
-        # dedicated native controller avoids the circular "Podman is required
-        # to install Podman" failure without mutating the live runner boundary.
-        self._bootstrap_core_runner = CoreAnsibleRunner(
-            process_isolation=None,
-            private_data_dir=self.private_data_dir,
-        )
+        # when ordinary work is configured to run inside that engine.  Create
+        # that native controller lazily: adapter construction then has one
+        # unambiguous primary-runner boundary, while the bootstrap controller
+        # still cannot inherit process isolation and create a Podman cycle.
+        self._bootstrap_core_runner: CoreAnsibleRunner | None = None
         self._managed_execution_environment_isolation = False
         if playbooks_dir:
             self._scan_playbook_dir(playbooks_dir)
@@ -448,7 +446,10 @@ class AnsibleRunnerAdapter:
         selected_root = Path(project_root) if project_root is not None else self._project_root
         if selected_root is None:
             selected_root = _PLAYBOOKS_ROOT.parent
-        selected_root = selected_root.expanduser().resolve()
+        # Preserve the caller's absolute path spelling (notably macOS's
+        # ``/tmp`` alias) at the Ansible boundary while still normalizing
+        # relative segments and validating the directory through the OS.
+        selected_root = selected_root.expanduser().absolute()
         if not selected_root.is_dir():
             raise ValueError(f"Execution-environment project root is not a directory: {selected_root}")
 
@@ -467,8 +468,15 @@ class AnsibleRunnerAdapter:
             "execution_environment_reconcile_started",
             state=state,
         )
+        bootstrap_runner = self._bootstrap_core_runner
+        if bootstrap_runner is None:
+            bootstrap_runner = CoreAnsibleRunner(
+                process_isolation=None,
+                private_data_dir=self.private_data_dir,
+            )
+            self._bootstrap_core_runner = bootstrap_runner
         result = self._run_resolved_playbook(
-            self._bootstrap_core_runner,
+            bootstrap_runner,
             playbook_path=self.resolve_playbook("bootstrap_execution_environment.yml"),
             extravars=extravars,
             env=None,
