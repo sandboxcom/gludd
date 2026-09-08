@@ -157,6 +157,15 @@ proves the same boundary around an immutable approved plan, including coroutine
 cancellation. The daemon and worker dispatch suites prove both production paths
 select that executor instead of an unkillable background thread.
 
+Ansible execution carries the same ownership signal through its public adapter.
+The native backend polls that callback while supervising its existing finite,
+spawned process group and returns `cancelled` only after TERM/KILL/join. The
+execution-environment backend uses Ansible Runner's maintained
+`cancel_callback`, preserving Runner's container cleanup authority, and
+normalizes the terminal result. A callback can never select the legacy inline
+path, and callback failures fail closed without rendering their message. These
+rules keep Gunicorn and CI outside the termination protocol.
+
 Migration 046 makes a dispatch bucket a durable single-owner execution lease,
 not a replaceable liveness hint. Each lease records the todo version, last
 heartbeat, cancellation request, and exact-owner termination confirmation.

@@ -14,7 +14,7 @@ import os
 import shutil
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -347,6 +347,7 @@ class AnsibleRunnerAdapter:
         extravars: dict[str, Any] | None = None,
         env: dict[str, str] | None = None,
         timeout: float | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
         **runner_kwargs: Any,
     ) -> dict[str, Any]:
         """Run a registered playbook with a finite timeout and merged env."""
@@ -360,6 +361,7 @@ class AnsibleRunnerAdapter:
             extravars=extravars,
             env=env,
             timeout=timeout,
+            cancel_requested=cancel_requested,
         )
 
     def _run_resolved_playbook(
@@ -370,6 +372,7 @@ class AnsibleRunnerAdapter:
         extravars: dict[str, Any] | None,
         env: dict[str, str] | None,
         timeout: float | None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
         """Execute one resolved playbook with the selected controller runner."""
         # HIGH (global env mutation): do NOT mutate os.environ. Pass caller-
@@ -413,6 +416,7 @@ class AnsibleRunnerAdapter:
                 extravars={} if extravars is None else extravars,
                 timeout=effective_timeout,
                 extra_env=_merged_env or None,
+                cancel_requested=cancel_requested,
             )
             return result.model_dump()
         except Exception as exc:

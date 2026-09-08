@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-08 — (resolved locally) Ansible execution discarded owner cancellation
+
+- **What happened**: `AnsibleRunnerAdapter.run_playbook()` accepted arbitrary runner keywords but discarded them, `CoreAnsibleRunner` had no cancellation parameter, the native child supervisor blocked in one deadline-length join, and the isolation backend never supplied Ansible Runner's supported `cancel_callback`.
+- **Root cause**: Timeout ownership had been added one backend at a time, but cancellation was not modeled as a typed end-to-end protocol. Cancelling the surrounding coroutine could therefore abandon a still-running thread, Ansible process group, or isolation container.
+- **Fix applied**: One typed `Callable[[], bool]` now crosses the adapter and core boundary. Native execution polls it in the finite parent supervisor, terminates and joins the existing owned process group, and returns a distinct `cancelled`/130 result. Isolated execution supplies the callback to the maintained Ansible Runner API and normalizes both of its cancellation spellings. Nonpositive timeouts cannot select inline execution when an owner callback exists, and callback failures reap work without exposing exception messages.
+- **Evidence**: Four focused contracts failed first across every missing boundary. The resulting 17-test cancellation/option suite and wider 495-test Ansible coverage profile pass; aggregate branch-aware coverage is 90%, with both `core_runner.py` and `runner.py` above the 75% per-file floor. Scoped Ruff, strict mypy, and docstring checks are clean.
+- **Practitioner evidence**: Ansible Runner issues #1371 and #1187 demonstrate that quiet or disconnected output is not termination evidence. The maintained Python interface's cancellation callback remains the backend authority; links and consequences are recorded in `docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md`.
+- **Lesson**: Coroutine cancellation is not process cancellation. A blocking adapter must accept an application-owned signal and return only after its actual child/container boundary reports terminal.
+
 ### 2026-09-08 — (resolved locally) EventLoop captured a pre-flush lease fence
 
 - **What happened**: EventLoop computed and staged `estimated_cost_usd`, captured each claimed todo's version for its execution lease, and then opened a nested transaction. SQLAlchemy flushed the pending estimate before the savepoint and advanced the todo version, leaving a successfully acquired lease one version behind its ACTIVE todo.
@@ -34,7 +43,7 @@ All premature-stop incidents and process failures are tracked here.
 - **What happened**: The network-facing adapter calculated a finite playbook timeout, but `CoreAnsibleRunner` forwarded it only to the native process backend. Enabling the execution environment selected `ansible-runner` and silently dropped that deadline, leaving the isolation container dependent on external termination.
 - **Root cause**: `_execute_with_runner()` had no timeout parameter and its `ansible_runner.run()` call supplied no `job_timeout` setting even though the maintained library owns container and process-group cleanup on timeout.
 - **Fix applied**: The isolation branch now resolves the same positive default or caller deadline and passes it as `settings.job_timeout` to `ansible-runner`; the native killable-child behavior is unchanged.
-- **Evidence**: Two failing-first regressions observed the missing forwarding argument and missing Runner setting, then passed after production wiring. The wider runner suite and exact-head gate remain pending.
+- **Evidence**: Two failing-first regressions observed the missing forwarding argument and missing Runner setting, then passed after production wiring. The widened 495-test runner suite now covers timeout and cancellation at 90% aggregate branch-aware coverage; exact-head gate remains pending.
 - **Practitioner evidence**: Ansible Runner issues #1371 and #1187 show that quiet output and dropped streaming connections are not proof that execution stopped. The official Python interface documents application-owned cancellation and terminal callbacks; the sources and design consequences are recorded in `docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md`.
 - **Lesson**: Selecting a stronger isolation backend must not weaken the owner's execution deadline. Timeout and cleanup authority travel with the job across every backend.
 
