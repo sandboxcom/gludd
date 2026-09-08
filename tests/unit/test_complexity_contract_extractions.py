@@ -72,3 +72,18 @@ def test_pause_router_reexports_canonical_request_contracts() -> None:
     assert pause.ResumeEntityRequest is pause_contracts.ResumeEntityRequest
     assert pause.PauseRequest is pause_contracts.PauseRequest
     assert pause.ResumeRequest is pause_contracts.ResumeRequest
+
+
+def test_event_loop_uses_canonical_managed_dispatch_helpers() -> None:
+    """Managed dispatch validation and decoding have one implementation."""
+    from general_ludd.event_loop import loop
+    from general_ludd.event_loop import managed_self_improve_dispatch as support
+
+    namespace = vars(loop)
+    assert namespace["_validate_managed_plan"] is support.validate_approved_plan
+    assert (
+        namespace["_configured_self_improve_execution_mode"]
+        is support.configured_execution_mode
+    )
+    assert namespace["_decode_managed_worker_response"] is support.decode_worker_response
+    assert namespace["_validate_managed_worker_result"] is support.validate_worker_result

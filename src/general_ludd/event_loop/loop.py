@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import hmac
-import inspect
 import json
 import logging
 import queue as _stdqueue
@@ -45,6 +43,30 @@ from general_ludd.db.tenant import reset_tenant as _reset_tenant
 from general_ludd.db.tenant import set_tenant as _set_tenant
 from general_ludd.event_loop.lease import reclaim_expired_leases, release_lease
 from general_ludd.event_loop.loop_handlers import EventLoopHandlers
+from general_ludd.event_loop.managed_self_improve_dispatch import (
+    bind_local_plan as _bind_approved_local_plan,
+)
+from general_ludd.event_loop.managed_self_improve_dispatch import (
+    configured_execution_mode as _configured_self_improve_execution_mode,
+)
+from general_ludd.event_loop.managed_self_improve_dispatch import (
+    decode_worker_response as _decode_managed_worker_response,
+)
+from general_ludd.event_loop.managed_self_improve_dispatch import (
+    resolve_repository_binding as _resolve_approved_repository_binding,
+)
+from general_ludd.event_loop.managed_self_improve_dispatch import (
+    serialize_run_result as _serialize_managed_run_result,
+)
+from general_ludd.event_loop.managed_self_improve_dispatch import (
+    validate_approved_plan as _validate_managed_plan,
+)
+from general_ludd.event_loop.managed_self_improve_dispatch import (
+    validate_worker_result as _validate_managed_worker_result,
+)
+from general_ludd.event_loop.managed_self_improve_dispatch import (
+    worker_rejection_reason as _managed_worker_rejection_reason,
+)
 from general_ludd.execution.graph_checkpointer import TickCheckpointer
 from general_ludd.execution.human_gate import HumanGate
 from general_ludd.execution.situation_store import BadCallSituationStore
@@ -74,13 +96,9 @@ from general_ludd.self_improve.promotion import (
     ManagedPromotionReceipt,
     build_managed_self_improve_promotion_coordinator,
 )
-from general_ludd.self_improve.result_artifact import (
-    ManagedSelfImproveResultArtifact,
-)
 from general_ludd.self_improve.runtime import build_managed_self_improve_runner
 from general_ludd.self_improve.staging import (
     MANAGED_SELF_IMPROVE_APPROVAL_POLICY,
-    self_improve_artifact_digest,
 )
 
 if TYPE_CHECKING:
@@ -3613,76 +3631,21 @@ class EventLoop(EventLoopHandlers):
         session: AsyncSession | None,
     ) -> None:
         """Run one immutable approved plan without a generic dispatch fallback."""
-        plan_artifact = _safe_str(todo, "plan_artifact")
-        if not plan_artifact:
+        validation = _validate_managed_plan(todo, project_id)
+        if validation.plan is None:
             await self._persist_managed_self_improve_return(
                 todo,
                 project_id=project_id,
-                reason="missing_plan_artifact",
+                reason=validation.rejection_reason or "invalid_plan_artifact",
                 task_return_repo=task_return_repo,
                 session=session,
             )
             return
-        approved_digest = getattr(todo, "approved_artifact_digest", None)
-        try:
-            actual_digest = self_improve_artifact_digest(plan_artifact)
-        except ValueError:
-            actual_digest = ""
-        if not isinstance(approved_digest, str) or not hmac.compare_digest(
-            approved_digest,
-            actual_digest,
-        ):
-            await self._persist_managed_self_improve_return(
-                todo,
-                project_id=project_id,
-                reason="approval_artifact_digest_mismatch",
-                task_return_repo=task_return_repo,
-                session=session,
-            )
-            return
-        try:
-            plan = ApprovedSelfImprovePlan.from_json(plan_artifact)
-        except (TypeError, ValueError):
-            await self._persist_managed_self_improve_return(
-                todo,
-                project_id=project_id,
-                reason="invalid_plan_artifact",
-                task_return_repo=task_return_repo,
-                session=session,
-            )
-            return
-
-        todo_id = _safe_str(todo, "todo_id", "") or ""
-        if plan.todo_id != todo_id:
-            await self._persist_managed_self_improve_return(
-                todo,
-                project_id=project_id,
-                reason="todo_identity_mismatch",
-                task_return_repo=task_return_repo,
-                session=session,
-            )
-            return
-        if project_id is None or plan.project_id != project_id:
-            await self._persist_managed_self_improve_return(
-                todo,
-                project_id=project_id,
-                reason="project_identity_mismatch",
-                task_return_repo=task_return_repo,
-                session=session,
-            )
-            return
-
-        self_improve_config = (
-            self.config.get("self_improve", {})
-            if isinstance(self.config, dict)
-            else {}
-        )
-        execution_mode = (
-            self_improve_config.get("execution_mode", "local")
-            if isinstance(self_improve_config, dict)
-            else "local"
-        )
-        if execution_mode not in {"local", "worker"}:
+        plan = validation.plan
+        todo_id = validation.todo_id
+        assert project_id is not None
+        execution_mode = _configured_self_improve_execution_mode(self.config)
+        if execution_mode is None:
             await self._persist_managed_self_improve_return(
                 todo,
                 project_id=project_id,
@@ -3691,41 +3654,21 @@ class EventLoop(EventLoopHandlers):
                 session=session,
             )
             return
-
-        binding: ProjectRepositoryBinding | None = None
-        if plan.repository_binding_digest:
-            binding = self._resolve_managed_self_improve_binding(project_id)
-            if binding is None:
-                await self._persist_managed_self_improve_return(
-                    todo,
-                    project_id=project_id,
-                    reason="repository_unavailable",
-                    task_return_repo=task_return_repo,
-                    session=session,
-                )
-                return
-            if not hmac.compare_digest(
-                plan.repository_binding_digest,
-                binding.digest,
-            ):
-                await self._persist_managed_self_improve_return(
-                    todo,
-                    project_id=project_id,
-                    reason="repository_binding_stale",
-                    task_return_repo=task_return_repo,
-                    session=session,
-                )
-                return
-        elif execution_mode == "worker":
+        binding, binding_reason = _resolve_approved_repository_binding(
+            plan,
+            project_id,
+            execution_mode,
+            self._resolve_managed_self_improve_binding,
+        )
+        if binding_reason is not None:
             await self._persist_managed_self_improve_return(
                 todo,
                 project_id=project_id,
-                reason="repository_binding_required",
+                reason=binding_reason,
                 task_return_repo=task_return_repo,
                 session=session,
             )
             return
-
         if execution_mode == "worker":
             await self._dispatch_managed_self_improve_to_worker(
                 todo,
@@ -3735,42 +3678,43 @@ class EventLoop(EventLoopHandlers):
                 session=session,
             )
             return
-
         repo_root = self._resolve_managed_self_improve_repo(project_id)
-        if repo_root is None:
+        local_plan, local_reason = _bind_approved_local_plan(
+            plan,
+            repo_root,
+            binding,
+        )
+        if repo_root is None or local_plan is None:
             await self._persist_managed_self_improve_return(
                 todo,
                 project_id=project_id,
-                reason="repository_unavailable",
+                reason=local_reason or "repository_unavailable",
                 task_return_repo=task_return_repo,
                 session=session,
             )
             return
-        if binding is not None:
-            try:
-                plan = plan.bind_execution_repository(
-                    repo_root,
-                    repository_binding_digest=binding.digest,
-                )
-            except (OSError, TypeError, ValueError):
-                await self._persist_managed_self_improve_return(
-                    todo,
-                    project_id=project_id,
-                    reason="repository_binding_stale",
-                    task_return_repo=task_return_repo,
-                    session=session,
-                )
-                return
-        elif plan.repo_root != repo_root:
-            await self._persist_managed_self_improve_return(
-                todo,
-                project_id=project_id,
-                reason="repository_identity_mismatch",
-                task_return_repo=task_return_repo,
-                session=session,
-            )
-            return
+        await self._run_local_managed_self_improve(
+            todo,
+            plan=local_plan,
+            repo_root=repo_root,
+            project_id=project_id,
+            todo_id=todo_id,
+            task_return_repo=task_return_repo,
+            session=session,
+        )
 
+    async def _run_local_managed_self_improve(
+        self,
+        todo: Any,
+        *,
+        plan: ApprovedSelfImprovePlan,
+        repo_root: Path,
+        project_id: str,
+        todo_id: str,
+        task_return_repo: TaskReturnRepository | None,
+        session: AsyncSession | None,
+    ) -> None:
+        """Run and validate one repository-bound local improvement plan."""
         try:
             async with self._self_improve_run_lock:
                 managed_runner = self._self_improve_runner_factory(repo_root)
@@ -3789,15 +3733,8 @@ class EventLoop(EventLoopHandlers):
                 session=session,
             )
             return
-
         try:
-            artifact = ManagedSelfImproveResultArtifact.from_run_result(result)
-            if (
-                artifact.plan_identity_digest != plan.identity_digest
-                or artifact.attempt_identity_digest != plan.attempt_identity_digest
-            ):
-                raise ValueError("managed result identity does not match approved plan")
-            result_summary = artifact.to_json()
+            result_summary, exit_code = _serialize_managed_run_result(plan, result)
         except (TypeError, ValueError) as exc:
             logger.warning(
                 "Managed self-improvement returned an invalid result for todo %s (%s)",
@@ -3812,12 +3749,11 @@ class EventLoop(EventLoopHandlers):
                 session=session,
             )
             return
-
         await self._persist_managed_self_improve_return(
             todo,
             project_id=project_id,
             result_summary=result_summary,
-            exit_code=0 if artifact.accepted else 1,
+            exit_code=exit_code,
             task_return_repo=task_return_repo,
             session=session,
         )
@@ -3848,8 +3784,7 @@ class EventLoop(EventLoopHandlers):
             queue=_safe_str(todo, "queue", "core") or "core",
             work_type="self_improve",
             resource_profile=(
-                _safe_str(todo, "resource_profile", "local_heavy")
-                or "local_heavy"
+                _safe_str(todo, "resource_profile", "local_heavy") or "local_heavy"
             ),
             plan_artifact=plan.to_json(),
             project_id=plan.project_id,
@@ -3860,19 +3795,7 @@ class EventLoop(EventLoopHandlers):
                 f"{self.worker_base_url}/jobs/execute",
                 json=job.model_dump(mode="json"),
             )
-            if isinstance(response, dict):
-                data: object = response
-                status_code = 200
-            else:
-                response_json = getattr(response, "json", None)
-                if not callable(response_json):
-                    raise ValueError("worker response has no JSON body")
-                data = response_json()
-                if inspect.isawaitable(data):
-                    data = await data
-                status_code = getattr(response, "status_code", 200)
-            if not isinstance(data, dict):
-                raise ValueError("worker response body is not a mapping")
+            data, status_code = await _decode_managed_worker_response(response)
         except Exception as exc:
             logger.warning(
                 "Managed self-improvement worker dispatch failed for todo %s (%s)",
@@ -3887,38 +3810,18 @@ class EventLoop(EventLoopHandlers):
                 session=session,
             )
             return
-
-        if not isinstance(status_code, int) or status_code < 200 or status_code >= 300:
-            detail = data.get("detail")
-            remote_reason_value = (
-                detail.get("reason") if isinstance(detail, dict) else None
-            )
-            remote_reason = (
-                remote_reason_value if isinstance(remote_reason_value, str) else ""
-            )
-            reason = {
-                "self_improve_repository_binding_stale": "repository_binding_stale",
-                "self_improve_repository_unavailable": "repository_unavailable",
-            }.get(remote_reason, "worker_rejected")
+        rejection_reason = _managed_worker_rejection_reason(data, status_code)
+        if rejection_reason is not None:
             await self._persist_managed_self_improve_return(
                 todo,
                 project_id=plan.project_id,
-                reason=reason,
+                reason=rejection_reason,
                 task_return_repo=task_return_repo,
                 session=session,
             )
             return
-
-        result_summary = data.get("result_summary")
         try:
-            if not isinstance(result_summary, str):
-                raise TypeError("worker result summary must be serialized JSON")
-            artifact = ManagedSelfImproveResultArtifact.from_json(result_summary)
-            if (
-                artifact.plan_identity_digest != plan.identity_digest
-                or artifact.attempt_identity_digest != plan.attempt_identity_digest
-            ):
-                raise ValueError("worker result identity does not match approved plan")
+            _validate_managed_worker_result(plan, data)
         except (TypeError, ValueError):
             await self._persist_managed_self_improve_return(
                 todo,
