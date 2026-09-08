@@ -229,6 +229,17 @@ non-renewable timing fails the complete claim closed before dispatch.
   insufficient; the owned Azure path requires health and invocation proof before
   admitting the candidate:
    [Microsoft Q&A 5572527](https://learn.microsoft.com/en-us/answers/questions/5572527/container-app-using-serverless-gpu-stuck-assigning).
+- A resource-group creator question open since 2020 records Microsoft's practical
+  RBAC boundary: `resourceGroups/write` must be granted through a custom role at
+  subscription scope because the absent group cannot host its own assignment.
+  Gludd therefore treats this as a controller-only bootstrap credential and never
+  hands it to model components:
+  [Microsoft Q&A 48782](https://learn.microsoft.com/en-us/answers/questions/48782/assigning-create-resource-group-permission-only-to).
+- Azure CLI users reported in 2025 that repeated `az role assignment create` could
+  return `RoleAssignmentExists` rather than behaving idempotently. Gludd keeps the
+  CLI renderer as a one-time credential bootstrap and uses deterministic IDs with
+  Microsoft's SDK for its supported repeatable IAM path:
+  [Azure CLI issue #31995](https://github.com/Azure/azure-cli/issues/31995).
 - Ansible Runner users report that stdout can stop while the underlying playbook
   continues and its event artifacts remain complete. Gludd therefore does not
   treat quiet output as proof of a stall:

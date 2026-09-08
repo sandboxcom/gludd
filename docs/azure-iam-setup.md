@@ -2,26 +2,28 @@
 
 Gludd uses two deliberately separate Azure identities:
 
-- the **Container Apps accelerator identity** creates or verifies its exact
-  owner-tagged resource group, creates, reads, updates, and deletes only Gludd-owned
-  model-serving managed environments and Container Apps inside it, and reads their
-  GPU-utilization metrics; and
+- the **Container Apps accelerator controller identity** creates or verifies the
+  configured owner-tagged resource group, creates, reads, updates, and deletes
+  Gludd-owned model-serving managed environments and Container Apps, and reads
+  their GPU-utilization metrics; and
 - the **Azure OpenAI self-improvement identity** can read one Azure OpenAI
   account and invoke the Responses API on that account.
 
-The accelerator identity can create or verify only the exact resource-group scope
-to which its role is assigned; it cannot delete a group. Neither runtime identity
-can change IAM, manage networks or registries, read secrets, register providers,
-create virtual machines, or administer a subscription. A separately authenticated
-operator creates the exact custom role and assignment once. Gludd then owns the
-group bootstrap through Microsoft's SDK and the bounded paid model-environment
-lifecycle through OpenTofu. Keep each generated JSON file at mode `0600`, never
-paste it into chat or logs, and rotate it after exposure.
+Azure evaluates resource-group creation at the subscription parent, so the
+accelerator controller's 17-action custom role is assigned at that subscription
+scope. It cannot delete a group, change IAM, manage networks or registries, read
+secrets, register providers, create virtual machines, or administer unrelated
+resource types. A separately authenticated operator creates the custom role and
+assignment once. Gludd then owns group bootstrap through Microsoft's SDK and the
+bounded paid model-environment lifecycle through OpenTofu. The controller
+credential is never passed to the model app or a task component; OpenBao leases
+can additionally bound its lifetime. Keep each generated JSON file at mode `0600`,
+never paste it into chat or logs, and rotate it after exposure.
 
 ## Container Apps accelerator role
 
-The checked-in role is resource-group scoped and contains exactly these 17
-control-plane operations:
+The checked-in controller role is subscription scoped and contains exactly these
+17 control-plane operations:
 
 ```text
 Microsoft.App/managedEnvironments/read
@@ -53,12 +55,13 @@ logs. Azure RBAC `NotActions` is not an explicit deny, so the safety boundary is
 the exact allowlist above with every unrelated action absent.
 
 An administrator authorizes the explicit role-definition and assignment bootstrap
-described below. The role's assignable scope and principal assignment both name the
-one exact resource group. When work is actually scheduled, Gludd uses that same
-credential to read or create the absent owner-tagged boundary through Microsoft's
-SDK, plans the smallest environment/profile topology, creates or reconciles it
-through the checked-in OpenTofu/AzAPI stack, verifies GPU execution, destroys the
-app, and destroys the idle owned environment.
+described below. The assignable scope and principal assignment name the
+subscription because that is the narrowest existing parent of an absent resource
+group. When work is actually scheduled, Gludd's policy still admits only the
+configured `gludd-` group, refuses foreign ownership tags, plans the smallest
+environment/profile topology, creates or reconciles it through the checked-in
+OpenTofu/AzAPI stack, verifies GPU execution, destroys the app, and destroys the
+idle owned environment.
 
 The historical operator bootstrap target remains available only to inspect or
 migrate an older shared-environment installation:
@@ -73,14 +76,14 @@ use the owner-bound Terraform state and lifecycle command documented below.
 
 Creating or changing a custom role requires
 `Microsoft.Authorization/roleDefinitions/write`. The operator normally gets
-that through the Azure built-in role "User Access Administrator" at the exact
-resource-group scope or a carefully constrained parent scope. The Gludd runtime
+that through the Azure built-in role "User Access Administrator" at subscription
+scope. The Gludd runtime
 identity does not receive it and therefore cannot create or update a custom role.
 
 The content-free operator SDK command remains available for an older installation
 that needs its resource group, role, and stable assignment migrated together.
 Leave the principal empty to create/update only the group and role, or supply the
-service-principal object ID to create the exact-scope assignment as well:
+service-principal object ID to create the subscription bootstrap assignment as well:
 
 ```sh
 make --no-print-directory azure-accelerator-role-apply AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_ACCELERATOR_LOCATION=eastus AZURE_ACCELERATOR_OPERATOR_AUTH=cli AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee AZURE_ACCELERATOR_ROLE_APPLY_LIVE=1
@@ -127,21 +130,25 @@ failure reported by operators and matches the
 arguments; the target emits argv rather than piping a role document to stdin.
 
 Do not create a second persistent principal merely to bootstrap the resource
-group. Updating the existing role definition changes the permissions used by its
-existing assignment, so the existing private credential remains valid. Gludd may
-instead acquire a short-lived credential from its operator-configured OpenBao
-Azure role. The OpenBao lease limits lifetime and exposes the credential only to
-the Gludd orchestration boundary; app/model components receive narrower OpenBao
-capabilities and never receive the accelerator credential itself.
+group. After changing an older resource-group-scoped definition, update the role
+and run the credential command again: updating a definition does not move an
+existing assignment to its new parent scope. Gludd may instead acquire a
+short-lived credential from its operator-configured OpenBao Azure role. The lease
+limits lifetime and exposes the controller credential only to Gludd's orchestration
+boundary; app/model components never receive it.
 
-Azure evaluates every permission at the scope of its role assignment. Assigning
-the complete 17-action role at subscription scope would therefore make all
-Container Apps mutations subscription-wide; an OpenBao policy cannot narrow an
-Azure token after that token has been handed to a component. Keep the assignment
-at the exact resource-group path. OpenBao's Azure secrets plugin can create truly
-narrower Azure principals only when its own root identity has Entra application
-and Azure role-assignment administration; Gludd deliberately does not add that
-high-privilege broker authority to this accelerator role.
+This is an explicit Azure limitation, not a claim that subscription inheritance is
+an exact-resource-group IAM boundary. The 17 allowed actions can technically be
+authorized against matching resource types elsewhere in the subscription. Gludd
+adds its exact name, owner-tag, plan-audit, and no-list policy boundary, but that is
+application enforcement. Azure RBAC conditions cannot narrow these management
+actions by group name; Microsoft currently supports assignment conditions only for
+Blob and Queue data actions. An installation requiring Azure-enforced group
+isolation must have an operator pre-create a stable group and assign a separate
+resource-group-scoped runtime role, giving up autonomous absent-group creation.
+OpenBao can create truly narrower Azure principals only when its own root identity
+has Entra application and Azure role-assignment administration; Gludd deliberately
+does not add that broker authority to this accelerator role.
 
 Validate the private file without printing a secret:
 
@@ -171,15 +178,16 @@ definition above. The only resource-group permissions added are `read` and
 `write`; do not add group deletion, provider registration, subscription-wide
 assignment, or any broader access.
 
-On 2026-09-07 two bounded live OpenTofu plans passed the exact-resource audit and
-then stopped before environment creation with the content-free class
-`apply:resource-group-not-found`; neither named resource group existed. The
-runtime now uses the same acquired accelerator credential to read that one group,
-create it only when absent with the exact owner/location/tag contract, and reject
-an existing foreign or ambiguous group before OpenTofu can run. Hermetic local
-and GHA tests cover success, reuse, ownership mismatch, cleanup, and censored
-401/403/409/429 failures. The role update and bounded live proof are still
-required before this behavior is claimed against Azure.
+On 2026-09-08 a bounded live OpenTofu run authenticated, inspected the absent
+environment, passed init, validation, plan, and plan audit, and then stopped before
+paid allocation with `apply:resource-group-not-found`. The standalone proof had
+skipped the SDK group bootstrap, while its credential assignment was scoped below
+the absent group. The proof now calls the same exact owner/location/tag bootstrap
+as managed self-improvement before constructing environment clients, and the
+controller assignment uses the required subscription parent. Hermetic local and
+GHA tests cover success, reuse, ownership mismatch, cleanup, and censored
+401/403/409/429 failures. The updated role/assignment and bounded live proof are
+still required before this behavior is claimed against Azure.
 
 ## Supported Azure libraries and ownership boundary
 

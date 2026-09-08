@@ -16,23 +16,20 @@ from general_ludd.azure import accelerator_role as subject
 
 SUBSCRIPTION_ID = "11111111-2222-3333-4444-555555555555"
 RESOURCE_GROUP = "gludd-models-eastus"
-RESOURCE_GROUP_SCOPE = (
-    f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/{RESOURCE_GROUP}"
-)
 SUBSCRIPTION_SCOPE = f"/subscriptions/{SUBSCRIPTION_ID}"
 PRINCIPAL_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 LOCATION = "eastus"
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_materialized_role_is_the_exact_checked_in_resource_group_policy() -> None:
+def test_materialized_role_is_the_exact_checked_in_subscription_bootstrap_policy() -> None:
     role = subject.materialize_accelerator_role(
         subscription_id=SUBSCRIPTION_ID,
         resource_group=RESOURCE_GROUP,
     )
 
     assert role["Name"] == subject.ROLE_NAME
-    assert role["AssignableScopes"] == [RESOURCE_GROUP_SCOPE]
+    assert role["AssignableScopes"] == [SUBSCRIPTION_SCOPE]
     assert frozenset(role["Actions"]) == subject.EXPECTED_ACTIONS
     assert len(role["Actions"]) == 17
     assert role["NotActions"] == []
@@ -150,10 +147,10 @@ def test_live_apply_uses_sdk_role_and_exact_optional_assignment() -> None:
     )
     assignment_id = subject.role_assignment_id(
         principal_object_id=PRINCIPAL_ID,
-        resource_group_scope=RESOURCE_GROUP_SCOPE,
+        assignment_scope=SUBSCRIPTION_SCOPE,
     )
     client.role_assignments.create.assert_called_once_with(
-        scope=RESOURCE_GROUP_SCOPE,
+        scope=SUBSCRIPTION_SCOPE,
         role_assignment_name=assignment_id,
         parameters=assignment_model,
     )
@@ -435,7 +432,7 @@ def test_sdk_model_builders_use_supported_authorization_models() -> None:
         role_name=subject.ROLE_NAME,
         description=role["Description"],
         permissions=[permission_type.return_value],
-        assignable_scopes=[RESOURCE_GROUP_SCOPE],
+        assignable_scopes=[SUBSCRIPTION_SCOPE],
     )
     assignment_type.assert_called_once_with(
         principal_id=PRINCIPAL_ID,

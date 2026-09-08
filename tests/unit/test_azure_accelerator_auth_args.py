@@ -15,10 +15,8 @@ SUBSCRIPTION_ID = "11111111-2222-3333-4444-555555555555"
 SP_NAME = "gludd accelerator 20260905"
 ROLE_NAME = "General Ludd Accelerator Deployer"
 RESOURCE_GROUP = "gludd-models-eastus"
-SCOPE = f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/{RESOURCE_GROUP}"
-ROLE_SCOPE_TEMPLATE = (
-    "/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
-)
+SCOPE = f"/subscriptions/{SUBSCRIPTION_ID}"
+ROLE_SCOPE_TEMPLATE = "/subscriptions/{subscription_id}"
 OBSOLETE_PROVIDER_REGISTRATION = "Microsoft.Resources/subscriptions/providers/register/action"
 EXPECTED_RUNTIME_ACTIONS = frozenset(
     {
@@ -76,7 +74,7 @@ def _decode(payload: bytes) -> tuple[str, ...]:
     return tuple(part.decode("utf-8") for part in payload.removesuffix(b"\0").split(b"\0"))
 
 
-def test_role_arguments_materialize_the_checked_in_resource_group_scope() -> None:
+def test_role_arguments_materialize_the_checked_in_subscription_bootstrap_scope() -> None:
     arguments = subject.build_role_arguments(
         subscription_id=SUBSCRIPTION_ID,
         resource_group=RESOURCE_GROUP,
@@ -118,7 +116,7 @@ def test_role_update_arguments_narrow_an_existing_role_with_the_same_definition(
     assert role["AssignableScopes"] == [SCOPE]
 
 
-def test_auth_arguments_assign_the_accelerator_role_at_resource_group_scope() -> None:
+def test_auth_arguments_assign_the_accelerator_role_at_subscription_bootstrap_scope() -> None:
     arguments = subject.build_auth_arguments(
         subscription_id=SUBSCRIPTION_ID,
         resource_group=RESOURCE_GROUP,
