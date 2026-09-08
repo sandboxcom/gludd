@@ -26,7 +26,9 @@ ROLE_DEFINITION_ID: Final = "96008390-cad3-42f5-b72a-b5230b176675"
 ROLE_TEMPLATE_PATH: Final = (
     Path(__file__).resolve().parents[3] / "config" / "infra" / "azure-iam-policy.json"
 )
-ROLE_SCOPE_TEMPLATE: Final = "/subscriptions/{subscription_id}"
+ROLE_SCOPE_TEMPLATE: Final = (
+    "/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+)
 EXPECTED_ACTIONS: Final = frozenset(
     {
         "Microsoft.App/managedEnvironments/read",
@@ -162,11 +164,11 @@ def _validate_principal_object_id(value: object) -> str:
     return value
 
 
-def subscription_bootstrap_scope(*, subscription_id: str, resource_group: str) -> str:
-    """Return the narrowest parent scope from which Gludd can create its group."""
+def resource_group_scope(*, subscription_id: str, resource_group: str) -> str:
+    """Return the one exact assignment and assignable scope."""
     subscription_id = validate_subscription_id(subscription_id)
-    validate_resource_group(resource_group)
-    return f"/subscriptions/{subscription_id}"
+    resource_group = validate_resource_group(resource_group)
+    return f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
 
 
 def materialize_accelerator_role(
@@ -176,7 +178,7 @@ def materialize_accelerator_role(
     template_path: Path = ROLE_TEMPLATE_PATH,
 ) -> dict[str, Any]:
     """Validate and scope the canonical accelerator role document."""
-    scope = subscription_bootstrap_scope(
+    scope = resource_group_scope(
         subscription_id=subscription_id,
         resource_group=resource_group,
     )
@@ -623,8 +625,8 @@ __all__ = [
     "apply_accelerator_role",
     "main",
     "materialize_accelerator_role",
+    "resource_group_scope",
     "role_assignment_id",
-    "subscription_bootstrap_scope",
     "validate_resource_group",
     "validate_subscription_id",
 ]

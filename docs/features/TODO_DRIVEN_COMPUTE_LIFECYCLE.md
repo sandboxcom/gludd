@@ -229,11 +229,12 @@ non-renewable timing fails the complete claim closed before dispatch.
   insufficient; the owned Azure path requires health and invocation proof before
   admitting the candidate:
    [Microsoft Q&A 5572527](https://learn.microsoft.com/en-us/answers/questions/5572527/container-app-using-serverless-gpu-stuck-assigning).
-- A resource-group creator question open since 2020 records Microsoft's practical
-  RBAC boundary: `resourceGroups/write` must be granted through a custom role at
-  subscription scope because the absent group cannot host its own assignment.
-  Gludd therefore treats this as a controller-only bootstrap credential and never
-  hands it to model components:
+- A resource-group creator question open since 2020 gives the generic recommendation
+  to grant `resourceGroups/write` through a custom role at subscription scope.
+  Gludd tested the narrower alternative instead: on 2026-09-08 its existing
+  future-resource-group-path assignment created and read back the absent exact
+  group. The role therefore remains resource-group scoped, and this observed
+  provider behavior is pinned rather than widening authority from forum guidance:
   [Microsoft Q&A 48782](https://learn.microsoft.com/en-us/answers/questions/48782/assigning-create-resource-group-permission-only-to).
 - Azure CLI users reported in 2025 that repeated `az role assignment create` could
   return `RoleAssignmentExists` rather than behaving idempotently. Gludd keeps the

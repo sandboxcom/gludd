@@ -157,9 +157,11 @@ class TestPolicyCLIStructure:
         scopes = policy_cli["properties"].get("assignableScopes")
         assert isinstance(scopes, list) and len(scopes) > 0
 
-    def test_has_subscription_bootstrap_scope(self, policy_cli: dict) -> None:
+    def test_has_resource_group_scope(self, policy_cli: dict) -> None:
         scopes = policy_cli["properties"].get("assignableScopes", [])
-        assert scopes == ["/subscriptions/{subscription_id}"]
+        assert scopes == [
+            "/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -392,11 +394,13 @@ class TestDataActionsEmpty:
 
 
 class TestAssignableScopes:
-    """AssignableScopes must permit absent resource-group creation at its parent."""
+    """AssignableScopes must constrain the role to one resource group."""
 
-    def test_has_subscription_bootstrap_scope(self, policy: dict) -> None:
+    def test_has_resource_group_scope(self, policy: dict) -> None:
         scopes = policy.get("AssignableScopes", [])
-        assert scopes == ["/subscriptions/{subscription_id}"]
+        assert scopes == [
+            "/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+        ]
 
 
 # ---------------------------------------------------------------------------
