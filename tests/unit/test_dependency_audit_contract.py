@@ -63,6 +63,25 @@ def test_hindsight_optional_dependency_is_statically_auditable() -> None:
     assert "class Hindsight" in stub.read_text(encoding="utf-8")
 
 
+def test_ansible_builder_module_entrypoint_is_explicitly_adjudicated() -> None:
+    """Keep controller-only builder ownership narrow and documented."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    ignored = project["tool"]["deptry"]["per_rule_ignores"]["DEP002"]
+    assert "ansible-builder" in ignored
+
+    source = (
+        ROOT / "scripts" / "ansible_runtime_artifacts.py"
+    ).read_text(encoding="utf-8")
+    assert 'find_spec("ansible_builder")' in source
+    assert "sys.executable" in source
+    assert '"ansible_builder"' in source
+
+    evidence = (
+        ROOT / "docs" / "features" / "DEPENDENCY_TRUTH_AUDIT.md"
+    ).read_text(encoding="utf-8")
+    assert "`python -m ansible_builder`" in evidence
+
+
 def test_dependency_audit_evidence_documents_practitioner_and_zdd_contracts() -> None:
     evidence = (
         ROOT / "docs" / "features" / "DEPENDENCY_TRUTH_AUDIT.md"

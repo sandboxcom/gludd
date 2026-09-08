@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -241,7 +242,7 @@ def build_environment(runtime: str, image: str, context: Path, validate_only: bo
     if validate_only:
         print(f"ANSIBLE_EE_BUILD_VALIDATED definition={DEFINITION.relative_to(ROOT)} context={context}")
         return 0
-    if shutil.which("ansible-builder") is None:
+    if find_spec("ansible_builder") is None:
         print("ansible-builder is unavailable; sync the dev/controller dependencies", file=sys.stderr)
         return 2
     if shutil.which(runtime) is None:
@@ -252,7 +253,9 @@ def build_environment(runtime: str, image: str, context: Path, validate_only: bo
         return collection_status
     context.mkdir(parents=True, exist_ok=True)
     command = [
-        "ansible-builder",
+        sys.executable,
+        "-m",
+        "ansible_builder",
         "build",
         "--file",
         str(DEFINITION),

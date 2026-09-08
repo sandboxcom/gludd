@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -232,6 +233,11 @@ def test_build_reports_missing_tools(
     message: str,
 ) -> None:
     monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(
+        artifacts,
+        "find_spec",
+        lambda _name: object() if "ansible-builder" in available else None,
+    )
     monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}" if name in available else None)
     assert artifacts.build_environment("podman", "gludd-ee:beta4", tmp_path / "context", False) == expected
     assert message in capsys.readouterr().err
@@ -240,6 +246,7 @@ def test_build_reports_missing_tools(
 def test_build_streams_ansible_builder_with_bounded_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[list[str], Path | None]] = []
     monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(artifacts, "find_spec", lambda _name: object())
     monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
     collection_artifacts = tuple(
         (tmp_path / f"source-{index}", tmp_path / "dist" / f"collection-{index}.tar.gz")
@@ -263,7 +270,7 @@ def test_build_streams_ansible_builder_with_bounded_context(tmp_path: Path, monk
         ["ansible-galaxy", "collection", "build"],
         ["ansible-galaxy", "collection", "build"],
     ]
-    assert calls[3][0][:2] == ["ansible-builder", "build"]
+    assert calls[3][0][:4] == [sys.executable, "-m", "ansible_builder", "build"]
     assert calls[3][1] == artifacts.ROOT
     assert context.is_dir()
 

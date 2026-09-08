@@ -351,6 +351,7 @@ known_first_party = ["ansible_collections"]
 [tool.deptry.per_rule_ignores]
 DEP002 = [
     "aiosqlite",
+    "ansible-builder",
     "boto3",
     "gunicorn",
     "langchain-openai",
