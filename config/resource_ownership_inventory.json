@@ -1236,7 +1236,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3414,
+      "line": 3432,
       "column": 26,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1247,7 +1247,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3472,
+      "line": 3490,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1258,7 +1258,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 4630,
+      "line": 4533,
       "column": 40,
       "kind": "async-task",
       "owner": "EventLoop._phase_reconcile_completed_decisions",
@@ -1269,7 +1269,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 4644,
+      "line": 4547,
       "column": 44,
       "kind": "async-task",
       "owner": "EventLoop._phase_reconcile_completed_decisions",
@@ -2039,7 +2039,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 398,
+      "line": 413,
       "column": 15,
       "kind": "process",
       "owner": "MakeRunner._run_observable_argv",
@@ -2050,7 +2050,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 492,
+      "line": 507,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_run_local_proposal_request",
