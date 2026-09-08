@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from threading import RLock
 from typing import Protocol, runtime_checkable
 
@@ -28,6 +30,13 @@ from general_ludd.infra.azure_containerapp_owned_candidate_types import (
 from general_ludd.infra.azure_containerapp_owned_lifecycle import (
     validate_owned_azure_containerapp_authority,
 )
+from general_ludd.infra.azure_idle_retention import (
+    AzureIdleRetentionPlan,
+    AzureIdleRetentionPolicy,
+    AzureProvisioningLatencyEvidence,
+    container_apps_consumption_layers,
+    plan_azure_idle_retention,
+)
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
     AzureCandidateResponse,
@@ -35,6 +44,12 @@ from general_ludd.self_improve.azure_backend import (
 from general_ludd.self_improve.model_candidates import AzureContainerAppCandidateIdentity
 
 _PROTOCOL = "gludd-owned-azure-containerapp-candidate-v1"
+_CONTAINER_APPS_BILLING_CONTRACT_OBSERVED_AT = datetime(
+    2025,
+    12,
+    9,
+    tzinfo=UTC,
+)
 
 
 @runtime_checkable
@@ -63,6 +78,8 @@ def _discard_trace(_trace: OwnedCandidateLifecycleTrace) -> None:
 def owned_candidate_deployment_digest(
     app_policy: AzureContainerAppLiveProofPolicy,
     environment_policy: AzureEnvironmentLifecyclePolicy,
+    idle_retention_policy: AzureIdleRetentionPolicy | None = None,
+    expected_next_demand_seconds: int | None = None,
 ) -> str:
     """Bind one app and environment desired state without acquiring resources."""
     if not isinstance(app_policy, AzureContainerAppLiveProofPolicy) or not isinstance(
@@ -75,6 +92,35 @@ def owned_candidate_deployment_digest(
             "app_operation_digest": app_policy.operation_digest,
             "environment_operation_digest": environment_policy.operation_digest,
             "environment_state_digest": environment_policy.state_digest,
+            "idle_retention": (
+                None
+                if idle_retention_policy is None
+                else {
+                    "preset": idle_retention_policy.preset.value,
+                    "max_idle_hourly_cost_microusd": (
+                        idle_retention_policy.max_idle_hourly_cost_microusd
+                    ),
+                    "max_idle_monthly_cost_microusd": (
+                        idle_retention_policy.max_idle_monthly_cost_microusd
+                    ),
+                    "max_retention_cost_microusd": (
+                        idle_retention_policy.max_retention_cost_microusd
+                    ),
+                    "max_retention_seconds": (
+                        idle_retention_policy.max_retention_seconds
+                    ),
+                    "max_price_age_seconds": (
+                        idle_retention_policy.max_price_age_seconds
+                    ),
+                    "max_latency_age_seconds": (
+                        idle_retention_policy.max_latency_age_seconds
+                    ),
+                    "max_cost_per_saved_hour_microusd": (
+                        idle_retention_policy.max_cost_per_saved_hour_microusd
+                    ),
+                    "expected_next_demand_seconds": expected_next_demand_seconds,
+                }
+            ),
             "protocol": _PROTOCOL,
         },
         ensure_ascii=True,
@@ -135,6 +181,10 @@ class AzureContainerAppOwnedCandidateFactory:
         backend_factory: _BackendFactory,
         resource_release: Callable[[], None] | None = None,
         trace_sink: Callable[[OwnedCandidateLifecycleTrace], None] = _discard_trace,
+        idle_retention_policy: AzureIdleRetentionPolicy | None = None,
+        expected_next_demand_seconds: int | None = None,
+        now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         """Initialize the exact app, environment, backend, and release owners."""
         if not isinstance(app_policy, AzureContainerAppLiveProofPolicy):
@@ -153,6 +203,19 @@ class AzureContainerAppOwnedCandidateFactory:
             raise ValueError("resource_release must be callable")
         if not callable(trace_sink):
             raise ValueError("trace_sink must be callable")
+        if idle_retention_policy is not None and not isinstance(
+            idle_retention_policy,
+            AzureIdleRetentionPolicy,
+        ):
+            raise ValueError("idle_retention_policy has an invalid boundary")
+        if expected_next_demand_seconds is not None and (
+            isinstance(expected_next_demand_seconds, bool)
+            or not isinstance(expected_next_demand_seconds, int)
+            or expected_next_demand_seconds <= 0
+        ):
+            raise ValueError("expected_next_demand_seconds must be a positive integer")
+        if not callable(now) or not callable(monotonic):
+            raise ValueError("retention clocks must be callable")
         validate_owned_azure_containerapp_authority(app_policy, environment_policy)
         self._app_policy = app_policy
         self._environment_policy = environment_policy
@@ -161,9 +224,17 @@ class AzureContainerAppOwnedCandidateFactory:
         self._backend_factory = backend_factory
         self._resource_release = resource_release
         self._trace_sink = trace_sink
+        self._idle_retention_policy = idle_retention_policy
+        self._expected_next_demand_seconds = expected_next_demand_seconds
+        self._now = now
+        self._monotonic = monotonic
+        self._environment_latency_seconds: float | None = None
+        self._app_latency_seconds: float | None = None
         self._deployment_digest = owned_candidate_deployment_digest(
             app_policy,
             environment_policy,
+            idle_retention_policy,
+            expected_next_demand_seconds,
         )
         self._lock = RLock()
         self._active = False
@@ -185,6 +256,7 @@ class AzureContainerAppOwnedCandidateFactory:
         self,
         event: OwnedCandidateLifecycleEvent,
         identity: AzureContainerAppCandidateIdentity | None = None,
+        retention_plan: AzureIdleRetentionPlan | None = None,
     ) -> None:
         try:
             self._trace_sink(
@@ -193,6 +265,17 @@ class AzureContainerAppOwnedCandidateFactory:
                     operation_digest=self._deployment_digest,
                     candidate_identity_digest=(
                         None if identity is None else identity.identity_digest
+                    ),
+                    retention_plan_digest=(
+                        None if retention_plan is None else retention_plan.plan_digest
+                    ),
+                    retention_seconds=(
+                        0 if retention_plan is None else retention_plan.retention_seconds
+                    ),
+                    retention_hourly_cost_microusd=(
+                        0
+                        if retention_plan is None
+                        else retention_plan.hourly_cost_microusd
                     ),
                 )
             )
@@ -203,9 +286,10 @@ class AzureContainerAppOwnedCandidateFactory:
         self,
         event: OwnedCandidateLifecycleEvent,
         identity: AzureContainerAppCandidateIdentity | None = None,
+        retention_plan: AzureIdleRetentionPlan | None = None,
     ) -> bool:
         try:
-            self._emit(event, identity)
+            self._emit(event, identity, retention_plan)
         except OwnedCandidateLifecycleError:
             return False
         return True
@@ -226,23 +310,86 @@ class AzureContainerAppOwnedCandidateFactory:
         emitted = self._cleanup_emit(
             OwnedCandidateLifecycleEvent.ENVIRONMENT_RELEASE_STARTED
         )
+        retention_plan = self._build_retention_plan()
+        if retention_plan is not None:
+            emitted = (
+                self._cleanup_emit(
+                    OwnedCandidateLifecycleEvent.ENVIRONMENT_RETENTION_PLANNED,
+                    retention_plan=retention_plan,
+                )
+                and emitted
+            )
         try:
             result = release_azure_containerapp_environment(
                 self._environment_policy,
                 runtime=self._environment_runtime,
+                retention_plan=retention_plan,
+                now=(
+                    retention_plan.reconcile_at
+                    - timedelta(seconds=retention_plan.retention_seconds)
+                    if retention_plan is not None
+                    else None
+                ),
             )
         except Exception:
             return False
         released = result.disposition in {
             EnvironmentLifecycleDisposition.ABSENT,
             EnvironmentLifecycleDisposition.DESTROYED,
-        }
+        } or (
+            result.disposition is EnvironmentLifecycleDisposition.RETAINED
+            and retention_plan is not None
+            and result.active_app_count == 0
+        )
         if released:
             emitted = (
                 self._cleanup_emit(OwnedCandidateLifecycleEvent.ENVIRONMENT_RELEASED)
                 and emitted
             )
         return emitted and released
+
+    def _build_retention_plan(self) -> AzureIdleRetentionPlan | None:
+        if (
+            self._idle_retention_policy is None
+            or self._environment_latency_seconds is None
+            or self._app_latency_seconds is None
+        ):
+            return None
+        try:
+            current = self._now()
+            environment_latency = AzureProvisioningLatencyEvidence(
+                p50_seconds=self._environment_latency_seconds,
+                p95_seconds=self._environment_latency_seconds,
+                sample_count=1,
+                observed_at=current,
+            )
+            app_latency = AzureProvisioningLatencyEvidence(
+                p50_seconds=self._app_latency_seconds,
+                p95_seconds=self._app_latency_seconds,
+                sample_count=1,
+                observed_at=current,
+            )
+            layers = container_apps_consumption_layers(
+                observed_at=_CONTAINER_APPS_BILLING_CONTRACT_OBSERVED_AT,
+                environment_latency=environment_latency,
+                app_latency=app_latency,
+                min_replicas=self._app_policy.min_replicas,
+                activation_blocked_when_idle=False,
+                has_dedicated_profiles=False,
+                has_private_endpoint=False,
+                has_planned_maintenance=False,
+                has_paid_logging=False,
+            )
+            return plan_azure_idle_retention(
+                layers,
+                policy=self._idle_retention_policy,
+                scope_digest=self._environment_policy.operation_digest,
+                now=current,
+                runnable_todo_count=0,
+                expected_next_demand_seconds=self._expected_next_demand_seconds,
+            )
+        except Exception:
+            return None
 
     def _cleanup(
         self,
@@ -331,12 +478,18 @@ class AzureContainerAppOwnedCandidateFactory:
         delegate: _Backend | None = None
         try:
             self._emit(OwnedCandidateLifecycleEvent.ENVIRONMENT_ACQUIRE_STARTED)
+            environment_started = self._monotonic()
             ensure_azure_containerapp_environment(
                 self._environment_policy,
                 runtime=self._environment_runtime,
             )
+            self._environment_latency_seconds = max(
+                self._monotonic() - environment_started,
+                0.000_001,
+            )
             self._emit(OwnedCandidateLifecycleEvent.ENVIRONMENT_ACQUIRED)
             phase = "plan"
+            app_started = self._monotonic()
             self._emit(OwnedCandidateLifecycleEvent.APP_PLAN_STARTED)
             plan = self._app_runtime.plan(self._app_policy)
             audit_containerapp_plan(plan, self._app_policy)
@@ -349,6 +502,10 @@ class AzureContainerAppOwnedCandidateFactory:
             self._emit(OwnedCandidateLifecycleEvent.APP_APPLY_STARTED)
             app_apply_started = True
             evidence = self._app_runtime.apply(self._app_policy)
+            self._app_latency_seconds = max(
+                self._monotonic() - app_started,
+                0.000_001,
+            )
             identity = evidence.candidate_identity(self._app_policy)
             self._emit(OwnedCandidateLifecycleEvent.APP_APPLIED, identity)
             phase = "backend"

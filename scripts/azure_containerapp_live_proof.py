@@ -289,7 +289,6 @@ def _environment_policy(
         owner_digest=owner_digest,
         plan_digest=app_policy.operation_digest,
         expires_at_utc=expires_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        teardown_when_idle=True,
     )
 
 

@@ -82,7 +82,6 @@ def _environment_policy(
         owner_digest="c" * 64,
         plan_digest=policy.operation_digest,
         expires_at_utc="2026-09-07T18:00:00Z",
-        teardown_when_idle=True,
     )
 
 

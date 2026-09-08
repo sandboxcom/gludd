@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -31,6 +32,10 @@ from general_ludd.infra.azure_containerapp_owned_candidate import (
 from general_ludd.infra.azure_containerapp_owned_lifecycle import (
     run_owned_azure_containerapp_live_proof,
 )
+from general_ludd.infra.azure_idle_retention import (
+    AzureIdleRetentionPolicy,
+    AzureRetentionPreset,
+)
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
     AzureCandidateResponse,
@@ -47,6 +52,7 @@ MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
 IMAGE = "vllm/vllm-openai@sha256:" + "a" * 64
 SECRET = "private-provider-payload"
+NOW = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
 
 
 def _app_policy(*, live: bool = True, **overrides: object) -> AzureContainerAppLiveProofPolicy:
@@ -91,10 +97,22 @@ def _environment_policy(
         "owner_digest": "b" * 64,
         "plan_digest": app_policy.operation_digest,
         "expires_at_utc": "2026-09-06T21:00:00Z",
-        "teardown_when_idle": True,
     }
     values.update(overrides)
     return AzureEnvironmentLifecyclePolicy(**cast(Any, values))
+
+
+def _idle_retention_policy() -> AzureIdleRetentionPolicy:
+    return AzureIdleRetentionPolicy(
+        preset=AzureRetentionPreset.ZERO_COST_ONLY,
+        max_idle_hourly_cost_microusd=0,
+        max_idle_monthly_cost_microusd=0,
+        max_retention_cost_microusd=0,
+        max_retention_seconds=3_600,
+        max_price_age_seconds=31_536_000,
+        max_latency_age_seconds=86_400,
+        max_cost_per_saved_hour_microusd=0,
+    )
 
 
 def _environment_document(policy: AzureEnvironmentLifecyclePolicy) -> dict[str, object]:
@@ -436,6 +454,81 @@ def test_owned_candidate_factory_bootstraps_on_demand_and_tears_down_on_close() 
     assert all(trace.operation_digest == factory.deployment_digest for trace in traces)
 
 
+def test_owned_candidate_retains_only_zero_cost_environment_with_bounded_plan() -> None:
+    events: list[str] = []
+    app_policy = _app_policy()
+    environment_policy = _environment_policy(app_policy)
+    environment_runtime = _EnvironmentRuntime(environment_policy, events)
+    ticks = iter((10.0, 974.0, 1_000.0, 1_240.0))
+    traces: list[OwnedCandidateLifecycleTrace] = []
+    factory = AzureContainerAppOwnedCandidateFactory(
+        app_policy=app_policy,
+        environment_policy=environment_policy,
+        environment_runtime=environment_runtime,
+        app_runtime=_AppRuntime(app_policy, events),
+        backend_factory=_Backend,
+        resource_release=lambda: events.append("resources:close"),
+        trace_sink=traces.append,
+        idle_retention_policy=_idle_retention_policy(),
+        expected_next_demand_seconds=1_800,
+        now=lambda: NOW,
+        monotonic=lambda: next(ticks),
+    )
+
+    backend = factory()
+    backend.close()
+
+    assert "environment:destroy" not in events
+    assert events[-3:] == [
+        "environment:read",
+        "environment:inventory",
+        "resources:close",
+    ]
+    retention = [
+        trace
+        for trace in traces
+        if trace.event is OwnedCandidateLifecycleEvent.ENVIRONMENT_RETENTION_PLANNED
+    ]
+    assert len(retention) == 1
+    assert retention[0].retention_seconds == 1_800
+    assert retention[0].retention_hourly_cost_microusd == 0
+    assert retention[0].retention_plan_digest is not None
+    assert app_policy.min_replicas == 0
+
+
+def test_retention_clock_failure_falls_back_to_verified_environment_destroy() -> None:
+    events: list[str] = []
+    app_policy = _app_policy()
+    environment_policy = _environment_policy(app_policy)
+    environment_runtime = _EnvironmentRuntime(environment_policy, events)
+    ticks = iter((10.0, 974.0, 1_000.0, 1_240.0))
+
+    def broken_clock() -> datetime:
+        raise RuntimeError(SECRET)
+
+    factory = AzureContainerAppOwnedCandidateFactory(
+        app_policy=app_policy,
+        environment_policy=environment_policy,
+        environment_runtime=environment_runtime,
+        app_runtime=_AppRuntime(app_policy, events),
+        backend_factory=_Backend,
+        resource_release=lambda: events.append("resources:close"),
+        idle_retention_policy=_idle_retention_policy(),
+        now=broken_clock,
+        monotonic=lambda: next(ticks),
+    )
+
+    backend = factory()
+    backend.close()
+
+    assert environment_runtime.document is None
+    assert events[-3:] == [
+        "environment:destroy",
+        "environment:read",
+        "resources:close",
+    ]
+
+
 def test_owned_candidate_factory_cleans_every_paid_resource_after_discovery_failure() -> None:
     events: list[str] = []
     app_policy = _app_policy()
@@ -706,7 +799,6 @@ def test_environment_retained_due_to_remaining_app_is_terminal_cleanup_failure(
                 ),
             )
         },
-        {"teardown_when_idle": False},
     ],
 )
 def test_mismatched_environment_authority_refuses_before_any_effect(

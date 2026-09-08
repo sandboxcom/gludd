@@ -81,7 +81,6 @@ def validate_owned_azure_containerapp_authority(
             or app_policy.environment_name != environment_policy.environment_name
             or app_policy.location != environment_policy.location
             or required_profile not in environment_policy.profiles
-            or not environment_policy.teardown_when_idle
         ):
             raise ValueError
     except Exception:

@@ -93,7 +93,6 @@ class AzureEnvironmentLifecyclePolicy:
     owner_digest: str
     plan_digest: str
     expires_at_utc: str
-    teardown_when_idle: bool = True
 
     def __post_init__(self) -> None:
         """Validate and canonicalize every value before Terraform can run."""
@@ -112,8 +111,6 @@ class AzureEnvironmentLifecyclePolicy:
             raise ValueError("plan_digest must be a lowercase SHA-256 digest")
         if _EXPIRES_PATTERN.fullmatch(self.expires_at_utc) is None:
             raise ValueError("expires_at_utc must be an RFC3339 UTC second")
-        if not isinstance(self.teardown_when_idle, bool):
-            raise ValueError("teardown_when_idle must be boolean")
 
     @property
     def resource_group_id(self) -> str:
@@ -194,6 +191,7 @@ class EnvironmentLifecycleEvent(StrEnum):
     READINESS_VERIFIED = "readiness_verified"
     RELEASE_STARTED = "release_started"
     APP_INVENTORY_VERIFIED = "app_inventory_verified"
+    RETENTION_EXPIRED = "retention_expired"
     ENVIRONMENT_RETAINED = "environment_retained"
     DESTROY_STARTED = "destroy_started"
     DESTROY_SUCCEEDED = "destroy_succeeded"
@@ -208,6 +206,9 @@ class EnvironmentLifecycleTrace:
     operation_digest: str
     profile_count: int = 0
     active_app_count: int = 0
+    retention_plan_digest: str | None = None
+    retention_seconds_remaining: int = 0
+    retention_hourly_cost_microusd: int = 0
 
 
 @dataclass(frozen=True, slots=True)

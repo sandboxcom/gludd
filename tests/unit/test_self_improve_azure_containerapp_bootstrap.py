@@ -25,6 +25,10 @@ from general_ludd.infra.azure_containerapp_gpu import A100_PROFILE, T4_PROFILE
 from general_ludd.infra.azure_containerapp_owned_candidate import (
     owned_candidate_deployment_digest,
 )
+from general_ludd.infra.azure_idle_retention import (
+    AzureIdleRetentionPolicy,
+    AzureRetentionPreset,
+)
 from general_ludd.self_improve import azure_containerapp_bootstrap as bootstrap
 from general_ludd.self_improve import runtime as self_improve_runtime
 from general_ludd.self_improve.azure_containerapp_bootstrap import (
@@ -42,6 +46,23 @@ CLIENT = "99999999-8888-7777-6666-555555555555"
 REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
 IMAGE = "vllm/vllm-openai@sha256:" + ("a" * 64)
 NOW = datetime(2026, 9, 7, 12, 0, tzinfo=UTC)
+
+
+def _retention_config(**overrides: object) -> dict[str, object]:
+    result: dict[str, object] = {
+        "schema_version": 1,
+        "preset": "zero_cost_only",
+        "max_idle_hourly_cost_microusd": 0,
+        "max_idle_monthly_cost_microusd": 0,
+        "max_retention_cost_microusd": 0,
+        "max_retention_seconds": 21_600,
+        "max_price_age_seconds": 31_536_000,
+        "max_latency_age_seconds": 86_400,
+        "max_cost_per_saved_hour_microusd": 0,
+        "expected_next_demand_seconds": None,
+    }
+    result.update(overrides)
+    return result
 
 
 def _config(**overrides: object) -> dict[str, object]:
@@ -77,9 +98,32 @@ def _config(**overrides: object) -> dict[str, object]:
         "max_cost_microusd": 500_000,
         "timeout_seconds": 60.0,
         "estimated_request_cost_microusd": 100_000,
+        "idle_retention": _retention_config(),
     }
     azure.update(overrides)
     return {"interval": 10, "azure_containerapp": azure}
+
+
+def test_runtime_trace_surfaces_retention_decision_without_resource_identity() -> None:
+    messages: list[str] = []
+    bootstrap._runtime_trace(
+        messages.append,
+        "owned_lifecycle",
+        SimpleNamespace(
+            event="environment_retention_planned",
+            operation_digest="d" * 64,
+            retention_plan_digest="e" * 64,
+            retention_seconds=21_600,
+            retention_hourly_cost_microusd=0,
+        ),
+    )
+
+    assert len(messages) == 1
+    assert "retention_plan_digest=" + "e" * 64 in messages[0]
+    assert "retention_seconds=21600" in messages[0]
+    assert "retention_hourly_cost_microusd=0" in messages[0]
+    assert "resource_group" not in messages[0]
+    assert "secret_output=false" in messages[0]
 
 
 @dataclass
@@ -134,13 +178,19 @@ class _OwnedFactory:
         backend_factory: object,
         resource_release: Any,
         trace_sink: Any,
+        idle_retention_policy: AzureIdleRetentionPolicy,
+        expected_next_demand_seconds: int | None,
     ) -> None:
         self.deployment_digest = self.digest_override or owned_candidate_deployment_digest(
             app_policy,
             environment_policy,
+            idle_retention_policy,
+            expected_next_demand_seconds,
         )
         del app_policy, environment_policy, environment_runtime, app_runtime
         del backend_factory, trace_sink
+        self.idle_retention_policy = idle_retention_policy
+        self.expected_next_demand_seconds = expected_next_demand_seconds
         self._release = resource_release
         self._backend = _Backend(f"backend-{len(self.created) + 1}")
         self.created.append(self)
@@ -313,6 +363,8 @@ def test_config_derives_t4_topology_and_bootstraps_fresh_owned_sessions(
     assert wiring.app_policy.http_concurrent_requests == 2
     assert wiring.environment_policy.profiles[0].profile_name == "gpu-t4"
     assert wiring.environment_policy.expires_at_utc == "2026-09-07T12:30:00Z"
+    assert wiring.idle_retention_policy.preset is AzureRetentionPreset.ZERO_COST_ONLY
+    assert wiring.idle_retention_policy.max_retention_seconds == 21_600
     assert wiring.policy.required_providers == (
         ModelCandidateProvider.LOCAL_GGUF,
         ModelCandidateProvider.AZURE_CONTAINER_APP,
@@ -334,6 +386,10 @@ def test_config_derives_t4_topology_and_bootstraps_fresh_owned_sessions(
     assert all("repo_root" not in call for call in resource_calls)
     assert resource_calls[0]["work_root"] != resource_calls[0]["environment_work_root"]
     assert str(tmp_path) not in repr(wiring)
+    assert all(
+        owner.idle_retention_policy is wiring.idle_retention_policy
+        for owner in _OwnedFactory.created
+    )
 
 
 def test_large_model_selects_a100_without_user_selecting_a_gpu(tmp_path: Path) -> None:
@@ -377,6 +433,27 @@ def test_large_model_selects_a100_without_user_selecting_a_gpu(tmp_path: Path) -
         ({"max_cost_usd": True}, "bounded number"),
         ({"timeout_seconds": "60"}, "bounded number"),
         ({"auth_file": "/private/../azure-auth.json"}, "absolute"),
+        ({"idle_retention": {}}, "retention exact schema"),
+        (
+            {"idle_retention": _retention_config(preset="guess")},
+            "retention preset",
+        ),
+        (
+            {
+                "idle_retention": _retention_config(
+                    max_idle_monthly_cost_microusd=True
+                )
+            },
+            "max_idle_monthly_cost_microusd",
+        ),
+        (
+            {
+                "idle_retention": _retention_config(
+                    expected_next_demand_seconds=0
+                )
+            },
+            "expected_next_demand_seconds",
+        ),
     ],
 )
 def test_invalid_config_fails_before_credentials_or_paid_resources(

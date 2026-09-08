@@ -58,6 +58,10 @@ from general_ludd.infra.azure_containerapp_topology import (
     TopologyTrace,
     plan_azure_runner_topology,
 )
+from general_ludd.infra.azure_idle_retention import (
+    AzureIdleRetentionPolicy,
+    AzureRetentionPreset,
+)
 from general_ludd.security.state import project_state
 from general_ludd.self_improve.live_candidate_wiring import (
     ContainerAppCandidateBackend,
@@ -103,6 +107,21 @@ _CONFIG_KEYS = frozenset(
         "max_cost_microusd",
         "timeout_seconds",
         "estimated_request_cost_microusd",
+        "idle_retention",
+    }
+)
+_RETENTION_KEYS = frozenset(
+    {
+        "schema_version",
+        "preset",
+        "max_idle_hourly_cost_microusd",
+        "max_idle_monthly_cost_microusd",
+        "max_retention_cost_microusd",
+        "max_retention_seconds",
+        "max_price_age_seconds",
+        "max_latency_age_seconds",
+        "max_cost_per_saved_hour_microusd",
+        "expected_next_demand_seconds",
     }
 )
 
@@ -209,6 +228,8 @@ class _Settings:
     max_cost_microusd: int
     timeout_seconds: float
     estimated_request_cost_microusd: int
+    idle_retention_policy: AzureIdleRetentionPolicy
+    expected_next_demand_seconds: int | None
 
 
 def _text(config: Mapping[str, object], name: str) -> str:
@@ -232,6 +253,54 @@ def _number(config: Mapping[str, object], name: str) -> float:
     return float(value)
 
 
+def _parse_idle_retention(
+    raw: object,
+) -> tuple[AzureIdleRetentionPolicy, int | None]:
+    if not isinstance(raw, Mapping) or set(raw) != _RETENTION_KEYS:
+        raise ValueError("idle retention exact schema is required")
+    if raw.get("schema_version") != 1 or isinstance(
+        raw.get("schema_version"),
+        bool,
+    ):
+        raise ValueError("idle retention schema_version must equal 1")
+    try:
+        preset = AzureRetentionPreset(_text(raw, "preset"))
+    except ValueError:
+        raise ValueError("idle retention preset is invalid") from None
+    expected = raw.get("expected_next_demand_seconds")
+    if expected is not None and (
+        isinstance(expected, bool)
+        or not isinstance(expected, int)
+        or expected <= 0
+    ):
+        raise ValueError(
+            "expected_next_demand_seconds must be a positive integer or null"
+        )
+    policy = AzureIdleRetentionPolicy(
+        preset=preset,
+        max_idle_hourly_cost_microusd=_integer(
+            raw,
+            "max_idle_hourly_cost_microusd",
+        ),
+        max_idle_monthly_cost_microusd=_integer(
+            raw,
+            "max_idle_monthly_cost_microusd",
+        ),
+        max_retention_cost_microusd=_integer(
+            raw,
+            "max_retention_cost_microusd",
+        ),
+        max_retention_seconds=_integer(raw, "max_retention_seconds"),
+        max_price_age_seconds=_integer(raw, "max_price_age_seconds"),
+        max_latency_age_seconds=_integer(raw, "max_latency_age_seconds"),
+        max_cost_per_saved_hour_microusd=_integer(
+            raw,
+            "max_cost_per_saved_hour_microusd",
+        ),
+    )
+    return policy, expected
+
+
 def _parse_settings(config: Mapping[str, object]) -> _Settings:
     if set(config) != _CONFIG_KEYS:
         raise ValueError("azure_containerapp must use the exact schema")
@@ -246,6 +315,9 @@ def _parse_settings(config: Mapping[str, object]) -> _Settings:
     auth_file = Path(_text(config, "auth_file")).expanduser()
     if not auth_file.is_absolute() or ".." in auth_file.parts:
         raise ValueError("auth_file must be an absolute path")
+    retention_policy, expected_next_demand_seconds = _parse_idle_retention(
+        config.get("idle_retention")
+    )
     return _Settings(
         auth_file=auth_file,
         subscription_id=_text(config, "subscription_id"),
@@ -278,6 +350,8 @@ def _parse_settings(config: Mapping[str, object]) -> _Settings:
             config,
             "estimated_request_cost_microusd",
         ),
+        idle_retention_policy=retention_policy,
+        expected_next_demand_seconds=expected_next_demand_seconds,
     )
 
 
@@ -385,11 +459,21 @@ def _runtime_trace(
     )
     elapsed = getattr(event, "elapsed_seconds", 0)
     failure_class = getattr(event, "failure_class", None)
+    retention_digest = getattr(event, "retention_plan_digest", None)
+    retention_seconds = getattr(event, "retention_seconds", 0)
+    retention_hourly_cost = getattr(
+        event,
+        "retention_hourly_cost_microusd",
+        0,
+    )
     progress_sink(
         "SELF_IMPROVE_AZURE_BOOTSTRAP "
         f"component={component} phase={phase} state={state} "
         f"operation_digest={digest or 'unbound'} elapsed_seconds={elapsed} "
         f"failure_class={failure_class or 'none'} "
+        f"retention_plan_digest={retention_digest or 'none'} "
+        f"retention_seconds={retention_seconds} "
+        f"retention_hourly_cost_microusd={retention_hourly_cost} "
         "secret_output=false"
     )
 
@@ -410,6 +494,8 @@ class ConfiguredAzureContainerAppBootstrapFactory:
         resources_builder: Callable[..., _RuntimeResources],
         owned_factory_type: type[Any],
         progress_sink: Callable[[str], None],
+        idle_retention_policy: AzureIdleRetentionPolicy,
+        expected_next_demand_seconds: int | None,
     ) -> None:
         """Initialize immutable lifecycle inputs for fresh candidate sessions."""
         self._app_policy = app_policy
@@ -424,9 +510,13 @@ class ConfiguredAzureContainerAppBootstrapFactory:
         self._resources_builder = resources_builder
         self._owned_factory_type = owned_factory_type
         self._progress_sink = progress_sink
+        self._idle_retention_policy = idle_retention_policy
+        self._expected_next_demand_seconds = expected_next_demand_seconds
         self._deployment_digest = owned_candidate_deployment_digest(
             app_policy,
             environment_policy,
+            idle_retention_policy,
+            expected_next_demand_seconds,
         )
 
     @property
@@ -529,6 +619,8 @@ class ConfiguredAzureContainerAppBootstrapFactory:
                 backend_factory=resources.backend_factory,
                 resource_release=resources.close,
                 trace_sink=owned_trace,
+                idle_retention_policy=self._idle_retention_policy,
+                expected_next_demand_seconds=self._expected_next_demand_seconds,
             )
             if owner.deployment_digest != self._deployment_digest:
                 resources.close()
@@ -556,6 +648,7 @@ class AzureContainerAppBootstrapWiring:
     topology: AzureRunnerTopologyPlan
     app_policy: AzureContainerAppLiveProofPolicy
     environment_policy: AzureEnvironmentLifecyclePolicy
+    idle_retention_policy: AzureIdleRetentionPolicy
 
 
 def build_azure_containerapp_bootstrap_wiring(
@@ -658,7 +751,6 @@ def build_azure_containerapp_bootstrap_wiring(
         owner_digest=owner_digest,
         plan_digest=topology.plan_digest,
         expires_at_utc=expires.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        teardown_when_idle=True,
     )
     state = project_state(project_root=canonical_root)
     work_root = state.directory("azure-containerapp", "applications")
@@ -678,6 +770,8 @@ def build_azure_containerapp_bootstrap_wiring(
         resources_builder=resources_builder,
         owned_factory_type=owned_factory_type,
         progress_sink=progress_sink,
+        idle_retention_policy=settings.idle_retention_policy,
+        expected_next_demand_seconds=settings.expected_next_demand_seconds,
     )
     policy = LiveCandidateWiringPolicy(
         local_budget=call_budget,
@@ -703,6 +797,7 @@ def build_azure_containerapp_bootstrap_wiring(
         topology=topology,
         app_policy=app_policy,
         environment_policy=environment_policy,
+        idle_retention_policy=settings.idle_retention_policy,
     )
 
 

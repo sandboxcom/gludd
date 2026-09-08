@@ -33,6 +33,7 @@ class OwnedCandidateLifecycleEvent(StrEnum):
     APP_DESTROYED = "app_destroyed"
     APP_ABSENCE_VERIFIED = "app_absence_verified"
     ENVIRONMENT_RELEASE_STARTED = "environment_release_started"
+    ENVIRONMENT_RETENTION_PLANNED = "environment_retention_planned"
     ENVIRONMENT_RELEASED = "environment_released"
     RESOURCES_RELEASED = "resources_released"
     FAILED = "failed"
@@ -45,6 +46,9 @@ class OwnedCandidateLifecycleTrace:
     event: OwnedCandidateLifecycleEvent
     operation_digest: str
     candidate_identity_digest: str | None = None
+    retention_plan_digest: str | None = None
+    retention_seconds: int = 0
+    retention_hourly_cost_microusd: int = 0
 
 
 __all__ = (

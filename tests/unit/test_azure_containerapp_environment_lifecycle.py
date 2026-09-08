@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import pytest
@@ -21,11 +22,23 @@ from general_ludd.infra.azure_containerapp_environment_lifecycle import (
     release_azure_containerapp_environment,
 )
 from general_ludd.infra.azure_containerapp_gpu import A100_PROFILE, T4_PROFILE
+from general_ludd.infra.azure_idle_retention import (
+    AzureIdleCostEvidence,
+    AzureIdleRetentionPlan,
+    AzureIdleRetentionPolicy,
+    AzureProvisioningLatencyEvidence,
+    AzureRetentionEvidenceSource,
+    AzureRetentionLayer,
+    AzureRetentionLayerKind,
+    AzureRetentionPreset,
+    plan_azure_idle_retention,
+)
 
 _SUBSCRIPTION = "12345678-1234-1234-1234-123456789abc"
 _OWNER = "b" * 64
 _PLAN = "c" * 64
 _SECRET = "azure-secret-must-never-render"
+_NOW = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
 
 
 def _t4() -> AzureEnvironmentProfile:
@@ -52,10 +65,51 @@ def _policy(**overrides: object) -> AzureEnvironmentLifecyclePolicy:
         "owner_digest": _OWNER,
         "plan_digest": _PLAN,
         "expires_at_utc": "2026-09-06T19:00:00Z",
-        "teardown_when_idle": True,
     }
     values.update(overrides)
     return AzureEnvironmentLifecyclePolicy(**cast(Any, values))
+
+
+def _retention_plan(
+    policy: AzureEnvironmentLifecyclePolicy,
+    *,
+    scope_digest: str | None = None,
+    expected_next_demand_seconds: int = 1_800,
+) -> AzureIdleRetentionPlan:
+    zero_cost = AzureIdleCostEvidence(
+        hourly_cost_microusd=0,
+        observed_at=_NOW,
+        source=AzureRetentionEvidenceSource.AZURE_BILLING_CONTRACT,
+    )
+    latency = AzureProvisioningLatencyEvidence(
+        p50_seconds=18,
+        p95_seconds=964,
+        sample_count=2,
+        observed_at=_NOW,
+    )
+    return plan_azure_idle_retention(
+        (
+            AzureRetentionLayer(
+                kind=AzureRetentionLayerKind.MANAGED_ENVIRONMENT,
+                idle_cost=zero_cost,
+                provisioning_latency=latency,
+            ),
+        ),
+        policy=AzureIdleRetentionPolicy(
+            preset=AzureRetentionPreset.ZERO_COST_ONLY,
+            max_idle_hourly_cost_microusd=0,
+            max_idle_monthly_cost_microusd=0,
+            max_retention_cost_microusd=0,
+            max_retention_seconds=3_600,
+            max_price_age_seconds=86_400,
+            max_latency_age_seconds=86_400,
+            max_cost_per_saved_hour_microusd=0,
+        ),
+        scope_digest=scope_digest or policy.operation_digest,
+        now=_NOW,
+        runnable_todo_count=0,
+        expected_next_demand_seconds=expected_next_demand_seconds,
+    )
 
 
 def _document(
@@ -687,14 +741,50 @@ def test_environment_with_any_live_app_is_retained_without_destroy() -> None:
     assert runtime.calls == ["read", "list-apps"]
 
 
-def test_teardown_policy_can_retain_owned_environment_without_listing_apps() -> None:
-    policy = _policy(teardown_when_idle=False)
+def test_bounded_retention_plan_keeps_idle_environment_after_empty_inventory() -> None:
+    policy = _policy()
     runtime = _Runtime(policy, document=_document(policy))
+    traces: list[EnvironmentLifecycleTrace] = []
 
-    result = release_azure_containerapp_environment(policy, runtime=runtime)
+    result = release_azure_containerapp_environment(
+        policy,
+        runtime=runtime,
+        retention_plan=_retention_plan(policy),
+        now=_NOW,
+        trace_sink=traces.append,
+    )
 
     assert result.disposition is EnvironmentLifecycleDisposition.RETAINED
-    assert runtime.calls == ["read"]
+    assert result.active_app_count == 0
+    assert runtime.calls == ["read", "list-apps"]
+    assert traces[-1].event is EnvironmentLifecycleEvent.ENVIRONMENT_RETAINED
+    assert traces[-1].retention_plan_digest == _retention_plan(policy).plan_digest
+    assert traces[-1].retention_seconds_remaining == 1_800
+
+
+def test_expired_or_foreign_retention_plan_cannot_bypass_owned_destroy() -> None:
+    policy = _policy()
+    expired = _Runtime(policy, document=_document(policy))
+
+    result = release_azure_containerapp_environment(
+        policy,
+        runtime=expired,
+        retention_plan=_retention_plan(policy),
+        now=_NOW + timedelta(seconds=1_800),
+    )
+
+    assert result.disposition is EnvironmentLifecycleDisposition.DESTROYED
+    assert expired.calls == ["read", "list-apps", "destroy", "read"]
+
+    foreign = _Runtime(policy, document=_document(policy))
+    with pytest.raises(AzureEnvironmentLifecycleError, match="retention"):
+        release_azure_containerapp_environment(
+            policy,
+            runtime=foreign,
+            retention_plan=_retention_plan(policy, scope_digest="d" * 64),
+            now=_NOW,
+        )
+    assert foreign.calls == []
 
 
 def test_already_absent_environment_is_a_successful_idempotent_release() -> None:
@@ -796,7 +886,6 @@ def test_trace_failure_stops_before_mutation_and_cleanup_trace_failure_is_termin
         ("owner_digest", "short"),
         ("plan_digest", "short"),
         ("expires_at_utc", "tomorrow"),
-        ("teardown_when_idle", "yes"),
     ],
 )
 def test_policy_rejects_ambiguous_or_unbounded_values(

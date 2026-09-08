@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC, datetime
 
 from general_ludd.infra.azure_containerapp_environment_types import (
     AzureContainerAppEnvironmentRuntime,
@@ -23,6 +24,11 @@ from general_ludd.infra.azure_containerapp_environment_types import (
 from general_ludd.infra.azure_containerapp_environment_validation import (
     audit_environment_plan,
     validated_environment_profiles,
+)
+from general_ludd.infra.azure_idle_retention import (
+    AzureIdleRetentionPlan,
+    AzureRetentionDisposition,
+    AzureRetentionLayerKind,
 )
 
 _APP_NAME_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?")
@@ -39,6 +45,8 @@ def _emit(
     policy: AzureEnvironmentLifecyclePolicy,
     *,
     active_app_count: int = 0,
+    retention_plan: AzureIdleRetentionPlan | None = None,
+    retention_seconds_remaining: int = 0,
 ) -> None:
     try:
         sink(
@@ -47,6 +55,15 @@ def _emit(
                 operation_digest=policy.operation_digest,
                 profile_count=len(policy.profiles),
                 active_app_count=active_app_count,
+                retention_plan_digest=(
+                    None if retention_plan is None else retention_plan.plan_digest
+                ),
+                retention_seconds_remaining=retention_seconds_remaining,
+                retention_hourly_cost_microusd=(
+                    0
+                    if retention_plan is None
+                    else retention_plan.hourly_cost_microusd
+                ),
             )
         )
     except Exception:
@@ -241,14 +258,50 @@ def _retained_result(
     )
 
 
+def _retention_deadline(
+    policy: AzureEnvironmentLifecyclePolicy,
+    retention_plan: AzureIdleRetentionPlan | None,
+    now: datetime | None,
+) -> tuple[AzureIdleRetentionPlan | None, datetime]:
+    current = datetime.now(UTC) if now is None else now
+    if current.tzinfo is None or current.utcoffset() is None:
+        raise AzureEnvironmentLifecycleError("retention")
+    current = current.astimezone(UTC)
+    if retention_plan is None:
+        return None, current
+    if (
+        not isinstance(retention_plan, AzureIdleRetentionPlan)
+        or retention_plan.scope_digest != policy.operation_digest
+    ):
+        raise AzureEnvironmentLifecycleError("retention")
+    return retention_plan, current
+
+
+def _retains_environment(
+    plan: AzureIdleRetentionPlan,
+) -> bool:
+    try:
+        decision = plan.decision_for(AzureRetentionLayerKind.MANAGED_ENVIRONMENT)
+    except KeyError:
+        return False
+    return decision.disposition is AzureRetentionDisposition.RETAIN
+
+
 def release_azure_containerapp_environment(
     policy: AzureEnvironmentLifecyclePolicy,
     *,
     runtime: AzureContainerAppEnvironmentRuntime,
     trace_sink: _TraceSink = _discard_trace,
+    retention_plan: AzureIdleRetentionPlan | None = None,
+    now: datetime | None = None,
 ) -> AzureEnvironmentLifecycleResult:
-    """Destroy an idle owned environment through Terraform and prove absence."""
+    """Destroy or boundedly retain an idle environment and prove the outcome."""
     _validated_boundaries(policy, runtime, trace_sink)
+    authorized_retention, current = _retention_deadline(
+        policy,
+        retention_plan,
+        now,
+    )
     _emit(trace_sink, EnvironmentLifecycleEvent.RELEASE_STARTED, policy)
     existing = _read_environment(
         runtime,
@@ -271,10 +324,6 @@ def release_azure_containerapp_environment(
     )
     effective_policy = _merged_policy(policy, profiles)
     _emit(trace_sink, EnvironmentLifecycleEvent.OWNERSHIP_VERIFIED, effective_policy)
-    if not policy.teardown_when_idle:
-        _emit(trace_sink, EnvironmentLifecycleEvent.ENVIRONMENT_RETAINED, effective_policy)
-        return _retained_result(effective_policy)
-
     try:
         apps = _validated_app_inventory(
             runtime.list_environment_apps(effective_policy),
@@ -298,6 +347,27 @@ def release_azure_containerapp_environment(
             active_app_count=len(apps),
         )
         return _retained_result(effective_policy, active_app_count=len(apps))
+    if authorized_retention is not None and _retains_environment(
+        authorized_retention
+    ):
+        remaining = int(
+            (authorized_retention.reconcile_at - current).total_seconds()
+        )
+        if remaining > 0:
+            _emit(
+                trace_sink,
+                EnvironmentLifecycleEvent.ENVIRONMENT_RETAINED,
+                effective_policy,
+                retention_plan=authorized_retention,
+                retention_seconds_remaining=remaining,
+            )
+            return _retained_result(effective_policy)
+        _emit(
+            trace_sink,
+            EnvironmentLifecycleEvent.RETENTION_EXPIRED,
+            effective_policy,
+            retention_plan=authorized_retention,
+        )
 
     _emit(trace_sink, EnvironmentLifecycleEvent.DESTROY_STARTED, effective_policy)
     try:
@@ -305,13 +375,13 @@ def release_azure_containerapp_environment(
     except Exception:
         raise AzureEnvironmentLifecycleError("destroy") from None
     _emit(trace_sink, EnvironmentLifecycleEvent.DESTROY_SUCCEEDED, effective_policy)
-    remaining = _read_environment(
+    remaining_environment = _read_environment(
         runtime,
         effective_policy,
         expect_absent=True,
         phase="absence",
     )
-    if remaining is not None:
+    if remaining_environment is not None:
         raise AzureEnvironmentLifecycleError("absence")
     _emit(trace_sink, EnvironmentLifecycleEvent.ABSENCE_VERIFIED, effective_policy)
     return AzureEnvironmentLifecycleResult(
