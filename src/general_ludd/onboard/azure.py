@@ -239,7 +239,7 @@ def validate_token_and_role(
     if not principal_id:
         raise ValueError("principal_id is required to verify role assignments.")
 
-    appcontainers_client = _build_container_apps_client(
+    appcontainers_client = _build_azure_client(
         subscription_id=subscription_id,
     )
     # Probe the live API — this is the real permission check.
@@ -267,6 +267,16 @@ def validate_token_and_role(
 # ---------------------------------------------------------------------------
 # Internal helpers (lazy-imported SDK boundaries — mockable in tests)
 # ---------------------------------------------------------------------------
+
+
+def _build_azure_client(*, subscription_id: str) -> Any:
+    """Return the canonical SDK client through the stable injection boundary.
+
+    Provider-neutral onboarding tests and embedders patch this boundary to
+    prevent network access.  The implementation delegates to the Container
+    Apps factory so there is only one Azure SDK construction path.
+    """
+    return _build_container_apps_client(subscription_id=subscription_id)
 
 
 def _build_container_apps_client(*, subscription_id: str) -> Any:
