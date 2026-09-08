@@ -565,7 +565,9 @@ class TestLegacyClaimRecoveryBranches:
             "TODO-REAPED", TodoStatus.QUEUED, 4, project_id="project-1"
         )
         release.assert_awaited_once_with(
-            mocks["session"], "repair:TODO-REAPED", holder_id="tick-0"
+            mocks["session"],
+            "repair:TODO-REAPED",
+            holder_id=loop._lease_owner_id,
         )
         acquire.assert_awaited_once()
 

@@ -169,6 +169,16 @@ intruder heartbeats, expiry, termination acknowledgement, version fencing, and
 replacement attempts, while migration parity compares `create_all` with a full
 Alembic upgrade.
 
+EventLoop holds one process-stable lease identity across ticks. It acquires the
+complete claimed batch in a database savepoint, fails the whole batch closed on
+any live-owner conflict, and returns denied claims to `QUEUED` without dispatch.
+Pending estimate mutations are flushed before the todo-version fence is sampled;
+this order matters because `AsyncSession.begin_nested()` flushes automatically.
+A normally returned owned execution releases only its exact holder lease, while
+an exception with an uncertain remote outcome retains ownership for the terminal
+handshake. Real-session tests prove both conflict preservation and equality
+between the persisted lease fence and the post-flush ACTIVE todo version.
+
 ## Long-lived operator reports that shaped the design
 
 - Gunicorn maintainers explain that workers are separate processes and do not

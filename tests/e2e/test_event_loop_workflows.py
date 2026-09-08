@@ -150,19 +150,17 @@ class TestTodoLifecycleWorkflow:
         assert metrics["phases_completed"] == len(PHASE_ORDER)
 
     @pytest.mark.asyncio
-    async def test_claimed_todo_has_acquired_lease(self, session_factory, loop_for_pipeline):
+    async def test_completed_dispatch_releases_acquired_lease(self, session_factory, loop_for_pipeline):
         await _seed_todo(session_factory, todo_id="TODO-LEASE-1")
         await loop_for_pipeline.tick()
+        assert "TODO-LEASE-1" in loop_for_pipeline._tick_state[
+            "execution_lease_todo_ids"
+        ]
         async with session_factory() as session:
             stmt = select(BucketLeaseModel).where(BucketLeaseModel.bucket_key == "core:TODO-LEASE-1")
             result = await session.execute(stmt)
             lease = result.scalar_one_or_none()
-            assert lease is not None
-            assert "tick-" in lease.holder_id
-            expires_at = lease.expires_at
-            if expires_at.tzinfo is None:  # SQLite drops timezone metadata on round-trip
-                expires_at = expires_at.replace(tzinfo=UTC)
-            assert expires_at > datetime.now(UTC)
+            assert lease is None
 
     @pytest.mark.asyncio
     async def test_todo_starts_active_after_claim(self, session_factory, loop_for_pipeline):
@@ -287,7 +285,7 @@ class TestLeaseAcquisitionWorkflow:
 
 class TestStuckTodoDetection:
     @pytest.mark.asyncio
-    async def test_active_todo_with_expired_lease_is_reaped(self, session_factory):
+    async def test_unfenced_active_todo_is_not_requeued(self, session_factory):
 
         async with session_factory() as session:
             repo = TodoRepository(session)
@@ -333,20 +331,21 @@ class TestStuckTodoDetection:
             repo = TodoRepository(session)
             recovered = await repo.get_by_id("TODO-STUCK-1")
             assert recovered is not None
-            # Reap requeues the stale ACTIVE row; the deliberate deferral
-            # (loop.py: stale-requeued todos are never reclaimed in the same
-            # tick — the old runner may still be finishing) leaves it QUEUED.
-            assert recovered.status == TodoStatus.QUEUED.value
-            assert recovered.version >= 3
+            assert recovered.status == TodoStatus.ACTIVE.value
+            assert recovered.version >= 1
+        assert loop._tick_state["unfenced_stuck_todo_ids"] == {"TODO-STUCK-1"}
 
-        # A second tick claims the recovered todo for its next attempt.
+        # A second tick still cannot infer that the missing owner stopped.
         await loop.tick()
         async with session_factory() as session:
             repo = TodoRepository(session)
             recovered = await repo.get_by_id("TODO-STUCK-1")
             assert recovered is not None
             assert recovered.status == TodoStatus.ACTIVE.value
-        assert any(todo.todo_id == "TODO-STUCK-1" for todo in loop._tick_state["claimed_todos"])
+        assert not any(
+            todo.todo_id == "TODO-STUCK-1"
+            for todo in loop._tick_state["claimed_todos"]
+        )
 
     @pytest.mark.asyncio
     async def test_active_todo_with_live_lease_not_reaped(self, session_factory):

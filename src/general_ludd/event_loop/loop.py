@@ -469,6 +469,10 @@ class EventLoop(EventLoopHandlers):
             or build_managed_self_improve_promotion_coordinator
         )
         self._self_improve_promotion_instance = uuid4().hex[:12]
+        # One process-stable identity owns every lease acquired by this loop.
+        # The todo version completes the execution-attempt fence, so a later
+        # attempt in the same process cannot accidentally renew an older one.
+        self._lease_owner_id = f"event-loop-{uuid4().hex}"
         # Compaction feedback loop: accumulated accuracy samples across ticks.
         self._compaction_passed = 0
         self._compaction_total = 0
@@ -739,28 +743,22 @@ class EventLoop(EventLoopHandlers):
         self._config_snapshot = dict(self.config)
 
     async def _reap_stuck_todos(self) -> None:
-        """Requeue ACTIVE todos whose worker is genuinely gone.
+        """Classify stale ACTIVE todos without inferring process termination.
 
-        A liveness signal is required before reaping: an ACTIVE todo is only
-        "stuck" if its bucket lease has *expired* (or never existed). A todo that
-        is still executing holds a live (unexpired) lease — its ``updated_at`` is
-        frozen at claim time with no heartbeat, so ``updated_at`` ALONE is not a
-        liveness clock and must never be used to reap live work.
-
-        ``version`` is NOT a retry counter (it is bumped by every write), so it is
-        no longer conflated with attempts. A genuinely stale scheduler-owned todo
-        is requeued for another attempt. A legacy manual self-improve apply has
-        already consumed its one-time approval before entering ``ACTIVE``; an
-        interrupted apply is therefore failed terminally instead of being made
-        replayable through the queue-recovery path.
+        ``updated_at`` and lease expiry are liveness hints, never terminal proof.
+        The durable lease recovery handshake requests cancellation and performs
+        the only safe requeue after exact-owner termination confirmation. This
+        detector therefore emits state for unfenced legacy work but never starts
+        a second execution merely because a timestamp went quiet.
         """
         if self._active_session is None or self._todo_repo is None:
             return
         try:
             from general_ludd.db.models import BucketLeaseModel, TodoModel
 
-            now = datetime.now(UTC)
-            cutoff = now - timedelta(minutes=self._stuck_timeout_minutes)
+            cutoff = datetime.now(UTC) - timedelta(
+                minutes=self._stuck_timeout_minutes
+            )
             stmt = (
                 select(TodoModel)
                 .where(TodoModel.status == TodoStatus.ACTIVE.value)
@@ -771,69 +769,35 @@ class EventLoop(EventLoopHandlers):
             if not candidates:
                 return
 
-            # Batch-fetch all live leases for candidate todos in one query
-            # instead of per-todo N+1 lookups. Build bucket_keys from
-            # queue:todo_id pairs, then query BucketLeaseModel with IN.
-            bucket_keys = [f"{_safe_str(t, 'queue', 'core')}:{_safe_str(t, 'todo_id', '')}" for t in candidates]
-            live_lease_stmt = (
+            bucket_keys = [
+                f"{_safe_str(t, 'queue', 'core')}:{_safe_str(t, 'todo_id', '')}"
+                for t in candidates
+            ]
+            lease_stmt = (
                 select(BucketLeaseModel.bucket_key)
                 .where(BucketLeaseModel.bucket_key.in_(bucket_keys))
-                .where(BucketLeaseModel.expires_at > now)
             )
-            live_lease_result = await self._active_session.execute(live_lease_stmt)
-            live_bucket_keys: set[str] = set(live_lease_result.scalars().all())
-
-            reaped = 0
-            terminally_failed = 0
+            lease_result = await self._active_session.execute(lease_stmt)
+            leased_bucket_keys: set[str] = set(lease_result.scalars().all())
+            unfenced: set[str] = set()
+            recovery_pending: set[str] = set()
             for todo in candidates:
                 queue = _safe_str(todo, "queue", "core") or "core"
                 todo_id = _safe_str(todo, "todo_id", "") or ""
                 bucket_key = f"{queue}:{todo_id}"
-                if bucket_key in live_bucket_keys:
-                    # Worker is still heartbeating (lease alive) -> do NOT reap.
-                    continue
-                # Guarded compare-and-set: transition only if the row is STILL
-                # active at the version we read. A concurrent writer
-                # (claim, reconcile, manual edit) that moved the row makes the CAS
-                # affect zero rows -> ConcurrencyError, treated as a lost race and
-                # skipped. This mirrors claim_runnable()/transition()'s version +
-                # status guard so the reaper can never silently clobber a
-                # concurrent status write (the check-then-act race this method
-                # previously had when it assigned the ORM attribute directly).
-                is_consumed_legacy_approval = (
-                    _safe_str(todo, "work_type") == "self_improve"
-                    and getattr(todo, "approval_policy", None)
-                    != MANAGED_SELF_IMPROVE_APPROVAL_POLICY
+                if bucket_key in leased_bucket_keys:
+                    recovery_pending.add(todo_id)
+                else:
+                    unfenced.add(todo_id)
+            if recovery_pending:
+                self._tick_state["lease_recovery_pending_todo_ids"] = (
+                    recovery_pending
                 )
-                recovery_status = (
-                    TodoStatus.FAILED
-                    if is_consumed_legacy_approval
-                    else TodoStatus.QUEUED
-                )
-                try:
-                    await self._todo_repo.transition(
-                        todo.todo_id,
-                        recovery_status,
-                        todo.version,
-                    )
-                except ConcurrencyError as exc:
-                    logger.info(
-                        "Reaper lost version race for todo %s: %s — skipping",
-                        todo.todo_id,
-                        exc,
-                    )
-                    continue
-                if is_consumed_legacy_approval:
-                    terminally_failed += 1
-                    continue
-                reaped += 1
-                self._tick_state.setdefault("reaped_todo_ids", set()).add(todo.todo_id)
-            if reaped:
-                logger.info("Reaped %d stuck ACTIVE todos (no live lease)", reaped)
-            if terminally_failed:
+            if unfenced:
+                self._tick_state["unfenced_stuck_todo_ids"] = unfenced
                 logger.warning(
-                    "Terminally failed %d interrupted legacy self-improve applies",
-                    terminally_failed,
+                    "Detected %d stale ACTIVE todos without terminal proof; requeue denied",
+                    len(unfenced),
                 )
         except Exception as exc:
             logger.warning("Stuck-todo reaper failed: %s", exc)
@@ -2168,7 +2132,7 @@ class EventLoop(EventLoopHandlers):
         reaped_ids = self._tick_state.get("reaped_todo_ids", set())
         if reaped_ids:
             retained: list[Any] = []
-            holder = f"tick-{self._total_ticks}"
+            holder = self._lease_owner_id
             for todo in claimed:
                 if todo.todo_id not in reaped_ids:
                     retained.append(todo)
@@ -2194,7 +2158,6 @@ class EventLoop(EventLoopHandlers):
                         exc,
                     )
             claimed = retained
-        self._tick_state["claimed_todos"] = claimed
         # ── Resource estimation: set estimated_cost_usd per claimed todo ──
         if claimed and self._active_session is not None:
             for todo in claimed:
@@ -2204,26 +2167,75 @@ class EventLoop(EventLoopHandlers):
         if claimed and self._active_session is not None:
             from general_ludd.event_loop.lease import acquire_leases_batch
 
-            holder = f"tick-{self._total_ticks}"
-            bucket_keys = []
+            holder = self._lease_owner_id
+            bucket_keys: list[str] = []
             for todo in claimed:
                 bucket_key = _safe_str(todo, "queue", "core") or "core"
                 todo_id = _safe_str(todo, "todo_id", "") or ""
-                bucket_keys.append(f"{bucket_key}:{todo_id}")
+                execution_bucket = f"{bucket_key}:{todo_id}"
+                bucket_keys.append(execution_bucket)
             try:
-                await acquire_leases_batch(
-                    self._active_session,
-                    bucket_keys,
-                    holder_id=holder,
-                    project_id=project_id,
-                )
+                if isinstance(self._active_session, AsyncSession):
+                    # ``begin_nested()`` flushes pending ORM mutations before it
+                    # opens the savepoint.  Flush the persisted cost estimates
+                    # explicitly, then capture the resulting version fence so a
+                    # lease can never trail its ACTIVE todo by one version.
+                    await self._active_session.flush()
+                todo_versions: dict[str, int] = {}
+                for todo, execution_bucket in zip(claimed, bucket_keys, strict=True):
+                    version = getattr(todo, "version", None)
+                    if isinstance(version, int) and not isinstance(version, bool):
+                        todo_versions[execution_bucket] = version
+                if isinstance(self._active_session, AsyncSession):
+                    async with self._active_session.begin_nested():
+                        await acquire_leases_batch(
+                            self._active_session,
+                            bucket_keys,
+                            holder_id=holder,
+                            project_id=project_id,
+                            todo_versions=todo_versions,
+                        )
+                else:
+                    await acquire_leases_batch(
+                        self._active_session,
+                        bucket_keys,
+                        holder_id=holder,
+                        project_id=project_id,
+                        todo_versions=todo_versions,
+                    )
             except Exception as exc:
-                logger.warning(
-                    "Batch lease acquisition failed for %d todos: %s",
+                logger.error(
+                    "Batch lease acquisition denied dispatch for %d todos: %s",
                     len(bucket_keys),
                     exc,
                     exc_info=True,
                 )
+                conflicted_ids: list[str] = []
+                for todo in claimed:
+                    todo_id = _safe_str(todo, "todo_id", "") or ""
+                    version = getattr(todo, "version", None)
+                    if not todo_id or not isinstance(version, int):
+                        continue
+                    conflicted_ids.append(todo_id)
+                    try:
+                        await self._todo_repo.transition(
+                            todo_id,
+                            TodoStatus.QUEUED,
+                            version,
+                            project_id=project_id,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Failed to return lease-conflicted todo %s to QUEUED",
+                            todo_id,
+                        )
+                self._tick_state["lease_conflict_todo_ids"] = conflicted_ids
+                claimed = []
+            else:
+                self._tick_state["execution_lease_todo_ids"] = [
+                    _safe_str(todo, "todo_id", "") or "" for todo in claimed
+                ]
+        self._tick_state["claimed_todos"] = claimed
 
     async def _trim_claimed_to_pid_cap(self, claimed: list[Any]) -> list[Any]:
         pid_outputs = self._tick_state.get("pid_outputs")
@@ -2386,6 +2398,11 @@ class EventLoop(EventLoopHandlers):
                 for todo in batch_todos:
                     try:
                         await self._dispatch_execute_job(todo)
+                        if self._active_session is not None:
+                            await self._release_completed_execution_lease(
+                                self._active_session,
+                                todo,
+                            )
                         dispatch_count += 1
                     except Exception as exc:
                         logger.error("Sequential job dispatch raised: %s", exc)
@@ -2429,6 +2446,7 @@ class EventLoop(EventLoopHandlers):
                     _task_return_repo_override=job_task_return_repo,
                     _session_override=job_session,
                 )
+                await self._release_completed_execution_lease(job_session, todo)
                 try:
                     await job_session.commit()
                 except Exception as exc:
@@ -2440,6 +2458,23 @@ class EventLoop(EventLoopHandlers):
         finally:
             if sandbox_handle is not None:
                 await self._sandbox_release(sandbox_handle)
+
+    async def _release_completed_execution_lease(
+        self,
+        session: AsyncSession,
+        todo: Any,
+    ) -> None:
+        """Release one lease only after its dispatch returned normally."""
+        todo_id = _safe_str(todo, "todo_id", "") or ""
+        leased_todo_ids = self._tick_state.get("execution_lease_todo_ids", [])
+        if not todo_id or todo_id not in leased_todo_ids:
+            return
+        queue = _safe_str(todo, "queue", "core") or "core"
+        await release_lease(
+            session,
+            f"{queue}:{todo_id}",
+            holder_id=self._lease_owner_id,
+        )
 
     async def _sandbox_apply_for_todo(self, todo: Any) -> Any | None:
         """Resolve this todo's PermissionSpec and apply the host sandbox.

@@ -4,12 +4,20 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-08 — (resolved locally) EventLoop captured a pre-flush lease fence
+
+- **What happened**: EventLoop computed and staged `estimated_cost_usd`, captured each claimed todo's version for its execution lease, and then opened a nested transaction. SQLAlchemy flushed the pending estimate before the savepoint and advanced the todo version, leaving a successfully acquired lease one version behind its ACTIVE todo.
+- **Root cause**: `AsyncSession.begin_nested()` performs an unconditional flush. The lease code treated entering a savepoint as transaction structure only and captured its compare-and-swap fence before that documented ORM lifecycle boundary.
+- **Fix applied**: EventLoop now explicitly flushes pending claim metadata before capturing todo versions, then acquires the complete lease batch inside the savepoint. A real SQLite session proves the stored lease version equals the post-flush ACTIVE todo, while a separate live-owner conflict proves the claim returns to QUEUED without replacing the foreign lease.
+- **Evidence**: The new proof failed with `lease.todo_version == 2` and `todo.version == 3` before the change. The complete warning-strict EventLoop, scheduler, red-team, and workflow slice now passes 162/162; strict mypy and scoped Ruff/docstrings are clean.
+- **Lesson**: A durable fence must be sampled after every automatic flush boundary that can advance its protected row, not merely after the explicit state transition.
+
 ### 2026-09-08 — (resolved locally) Replaceable leases could duplicate still-running work
 
 - **What happened**: Bucket leases were unique only by `(bucket_key, holder_id)`, so two Gunicorn workers could persist simultaneous ownership rows. The reaper also treated an expired timestamp as proof that the underlying model, Ansible, or infrastructure effects had stopped and immediately requeued the todo.
 - **Root cause**: A liveness signal was being used as both a mutex and a terminal execution result. Worker-process separation prevents shared-memory coordination, and quiet or disconnected Runner output does not prove child termination.
 - **Fix applied**: Migration 046 enforces one owner per bucket and adds todo-version, heartbeat, cancellation-request, termination-confirmation, and update fields. Batch acquisition preflights every conflict before staging rows; renewal is fenced to one live exact attempt; expiry retains the mutex and requests cancellation; only exact-owner termination proof plus a todo-version compare-and-swap permits requeue.
-- **Evidence**: The lease/migration/red-team slice passes 57/57 with warnings as errors; five migration-chain and ORM-parity suites pass 109/109; focused branch coverage for `lease.py` is 92%, with no measured file below 75%. EventLoop heartbeat and runner-cancellation integration remain tracked under S83.158.
+- **Evidence**: The lease/migration/red-team slice passes 57/57 with warnings as errors; five migration-chain and ORM-parity suites pass 109/109; focused branch coverage for `lease.py` is 92%, with no measured file below 75%. EventLoop claim/release integration and real-session conflict/version proofs now pass in the widened 162-test slice; heartbeat and runner-cancellation integration remain tracked under S83.158.
 - **Practitioner evidence**: Gunicorn issues #2082 and #2905 and Ansible Runner issues #1371 and #1187 demonstrate the worker-local-state and false-stall failure classes. Links and their design consequences are recorded in `docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md`.
 - **Lesson**: Lease expiry is a request to investigate or cancel, never authority to start a second copy. Ownership may transfer only after the previous application-owned execution boundary proves it is terminal.
 

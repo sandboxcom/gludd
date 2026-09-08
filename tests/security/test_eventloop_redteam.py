@@ -295,7 +295,85 @@ async def test_concurrent_claim_runnable_has_exactly_one_winner(
         t1 = await repo.get_by_id("T1")
         assert t1 is not None
         assert t1.status == TodoStatus.ACTIVE.value
-        assert t1.version == 2
+    assert t1.version == 2
+
+
+@pytest.mark.asyncio
+async def test_event_loop_live_lease_conflict_fails_closed_in_real_session(
+    session_factory,
+):
+    """A live foreign lease survives while EventLoop returns its claim to QUEUED."""
+    from general_ludd.event_loop.loop import EventLoop
+
+    await _insert_queued_todo(session_factory)
+    async with session_factory() as s:
+        await acquire_lease(
+            s,
+            bucket_key="core:T1",
+            holder_id="event-loop-existing-owner",
+            todo_version=2,
+        )
+        await s.commit()
+
+    async with session_factory() as s:
+        repo = TodoRepository(s)
+        loop = EventLoop(session=s, todo_repo=repo)
+        loop._active_session = s
+        loop._tick_project_id = None
+
+        await loop._phase_claim_runnable_todos()
+        await s.commit()
+
+        todo = await repo.get_by_id("T1")
+        lease = (
+            await s.execute(
+                select(BucketLeaseModel).where(
+                    BucketLeaseModel.bucket_key == "core:T1"
+                )
+            )
+        ).scalar_one()
+
+    assert loop._tick_state["claimed_todos"] == []
+    assert loop._tick_state["lease_conflict_todo_ids"] == ["T1"]
+    assert todo is not None
+    assert todo.status == TodoStatus.QUEUED.value
+    # Claiming advances the state fence, persisting the estimate advances the
+    # ORM fence, and returning the denied claim advances it once more.
+    assert todo.version == 4
+    assert lease.holder_id == "event-loop-existing-owner"
+    assert lease.todo_version == 2
+
+
+@pytest.mark.asyncio
+async def test_event_loop_persists_lease_with_post_flush_todo_version(
+    session_factory,
+):
+    """The lease fence matches the todo after pending ORM estimates are flushed."""
+    from general_ludd.event_loop.loop import EventLoop
+
+    await _insert_queued_todo(session_factory)
+    async with session_factory() as s:
+        repo = TodoRepository(s)
+        loop = EventLoop(session=s, todo_repo=repo)
+        loop._active_session = s
+        loop._tick_project_id = None
+
+        await loop._phase_claim_runnable_todos()
+        await s.commit()
+
+    async with session_factory() as s:
+        todo = await TodoRepository(s).get_by_id("T1")
+        lease = (
+            await s.execute(
+                select(BucketLeaseModel).where(
+                    BucketLeaseModel.bucket_key == "core:T1"
+                )
+            )
+        ).scalar_one()
+
+    assert todo is not None
+    assert todo.status == TodoStatus.ACTIVE.value
+    assert lease.todo_version == todo.version
 
 
 # ===========================================================================

@@ -52,9 +52,8 @@ def _make_loop_resilience(**overrides):
 
 class TestWorkerCrashRecovery:
     @pytest.mark.asyncio
-    async def test_expired_lease_reaps_stuck_active_todo(self):
-        """An ACTIVE todo whose lease has expired (no live lease row) must be
-        transitioned ACTIVE->QUEUED by _reap_stuck_todos."""
+    async def test_unfenced_stale_active_todo_is_not_requeued(self):
+        """A missing lease cannot prove that the old execution stopped."""
 
         loop, mocks = _make_loop_resilience()
         session = mocks["session"]
@@ -80,7 +79,8 @@ class TestWorkerCrashRecovery:
 
         await loop._reap_stuck_todos()
 
-        mocks["todo_repo"].transition.assert_called_once_with("TODO-STUCK-1", TodoStatus.QUEUED, 3)
+        mocks["todo_repo"].transition.assert_not_called()
+        assert loop._tick_state["unfenced_stuck_todo_ids"] == {"TODO-STUCK-1"}
 
     @pytest.mark.asyncio
     async def test_live_lease_prevents_reaping(self):
@@ -113,11 +113,8 @@ class TestWorkerCrashRecovery:
         mocks["todo_repo"].transition.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_reap_skips_concurrent_version_change(self):
-        """When transition raises ConcurrencyError (lost race), the todo is
-        skipped — no crash, no double-reap."""
-        from general_ludd.db.repository import ConcurrencyError
-
+    async def test_stale_detection_never_attempts_a_version_transition(self):
+        """Detection is read-only regardless of the todo's observed version."""
         loop, mocks = _make_loop_resilience()
         session = mocks["session"]
 
@@ -134,14 +131,14 @@ class TestWorkerCrashRecovery:
         result2.scalars.return_value.all.return_value = []
         session.execute.side_effect = [result1, result2]
 
-        mocks["todo_repo"].transition = AsyncMock(side_effect=ConcurrencyError("version mismatch"))
+        mocks["todo_repo"].transition = AsyncMock()
         loop._todo_repo = mocks["todo_repo"]
         loop._active_session = session
 
-        # Must not raise — just skip the lost race.
         await loop._reap_stuck_todos()
 
-        mocks["todo_repo"].transition.assert_called_once()
+        mocks["todo_repo"].transition.assert_not_called()
+        assert loop._tick_state["unfenced_stuck_todo_ids"] == {"TODO-RACE-1"}
 
     @pytest.mark.asyncio
     async def test_reap_handles_no_active_session(self):
