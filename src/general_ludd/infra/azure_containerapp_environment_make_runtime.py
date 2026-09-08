@@ -326,7 +326,7 @@ class AzureContainerAppEnvironmentTerraformRuntime:
         """Destroy only resources in this stable owner/resource state boundary."""
         self._bind_state(policy)
         self._materialize_policy(policy)
-        self._invoke("destroy", timeout_seconds=900)
+        self._invoke("destroy", timeout_seconds=1_800)
 
 
 AzureContainerAppEnvironmentMakeRuntime = AzureContainerAppEnvironmentTerraformRuntime

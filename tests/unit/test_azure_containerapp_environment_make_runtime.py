@@ -268,6 +268,17 @@ def test_runtime_materializes_and_runs_terraform_directly(
     assert SECRET not in repr(traces)
 
 
+def test_environment_destroy_allows_azure_managed_deletion_to_finish(
+    tmp_path: Path,
+) -> None:
+    runtime, _materializer, runner = _runtime(tmp_path)
+
+    runtime.destroy(_policy())
+
+    assert runner.calls[0]["phase"] == "destroy"
+    assert runner.calls[0]["timeout_seconds"] == 1_800
+
+
 def test_environment_runtime_forwards_machine_ui_and_exact_azure_state(
     tmp_path: Path,
 ) -> None:
