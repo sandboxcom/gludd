@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-08 — (resolved locally) Isolated Ansible jobs discarded Gludd's deadline
+
+- **What happened**: The network-facing adapter calculated a finite playbook timeout, but `CoreAnsibleRunner` forwarded it only to the native process backend. Enabling the execution environment selected `ansible-runner` and silently dropped that deadline, leaving the isolation container dependent on external termination.
+- **Root cause**: `_execute_with_runner()` had no timeout parameter and its `ansible_runner.run()` call supplied no `job_timeout` setting even though the maintained library owns container and process-group cleanup on timeout.
+- **Fix applied**: The isolation branch now resolves the same positive default or caller deadline and passes it as `settings.job_timeout` to `ansible-runner`; the native killable-child behavior is unchanged.
+- **Evidence**: Two failing-first regressions observed the missing forwarding argument and missing Runner setting, then passed after production wiring. The wider runner suite and exact-head gate remain pending.
+- **Practitioner evidence**: Ansible Runner issues #1371 and #1187 show that quiet output and dropped streaming connections are not proof that execution stopped. The official Python interface documents application-owned cancellation and terminal callbacks; the sources and design consequences are recorded in `docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md`.
+- **Lesson**: Selecting a stronger isolation backend must not weaken the owner's execution deadline. Timeout and cleanup authority travel with the job across every backend.
+
 ### 2026-09-07 — (resolved locally) Azure resource SDK v26 moved the resource-group client
 
 - **What happened**: The operator bootstrap validated locally, but its first live run stopped at the secret-free `resource-client` operation before making an ARM request.

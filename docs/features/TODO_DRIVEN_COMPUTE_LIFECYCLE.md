@@ -60,6 +60,15 @@ SQLite, which silently drops row locks, retains the same safety through the
 status-and-version compare-and-swap and treats `SQLITE_BUSY` as a lost claim.
 Neither a bucket lease nor an in-process lock is trusted as the ownership fence.
 
+The execution backend owns its deadline. Native Ansible work runs in Gludd's
+terminable process group, while execution-environment work passes the same
+absolute `job_timeout` into `ansible-runner`. On expiry, the runner kills its
+owned container and process group before reporting a timeout. A reverse proxy,
+Gunicorn timeout, CI watchdog, or operator shell is never the normal cancellation
+mechanism. Lease renewal and fail-closed requeue fencing are tracked as part of
+this same lifecycle; a missing heartbeat must not, by itself, authorize a second
+execution.
+
 TaskReturn persistence and `active -> awaiting_result` advancement share one
 SQLAlchemy savepoint. Review claim then advances the matching todo to
 `reviewing_return`. This prevents an executable todo and a reviewable return from
@@ -151,7 +160,18 @@ not create cloud resources.
   `AssigningReplica` after scale-from-zero. A provisioning response is therefore
   insufficient; the owned Azure path requires health and invocation proof before
   admitting the candidate:
-  [Microsoft Q&A 5572527](https://learn.microsoft.com/en-us/answers/questions/5572527/container-app-using-serverless-gpu-stuck-assigning).
+   [Microsoft Q&A 5572527](https://learn.microsoft.com/en-us/answers/questions/5572527/container-app-using-serverless-gpu-stuck-assigning).
+- Ansible Runner users report that stdout can stop while the underlying playbook
+  continues and its event artifacts remain complete. Gludd therefore does not
+  treat quiet output as proof of a stall:
+  [ansible-runner issue #1371](https://github.com/ansible/ansible-runner/issues/1371).
+- Operators of Runner's worker/process streaming mode reported intermediary idle
+  timeouts severing healthy long-lived work, motivating protocol-level keepalive
+  rather than external connection state as execution ownership:
+  [ansible-runner issue #1187](https://github.com/ansible/ansible-runner/issues/1187).
 
 Azure's own scaling documentation remains the normative platform reference:
 [Azure Container Apps scaling](https://learn.microsoft.com/en-us/azure/container-apps/scale-app).
+Ansible Runner's documented `cancel_callback`, `finished_callback`, status events,
+and runner settings remain the normative local execution contract:
+[Ansible Runner Python interface](https://ansible.readthedocs.io/projects/runner/en/stable/python_interface/).

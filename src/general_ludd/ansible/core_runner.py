@@ -448,6 +448,11 @@ class CoreAnsibleRunner:
         # actual confinement via ansible-runner.
         iso = self._process_isolation
         if iso is not None and getattr(iso, "enabled", False):
+            # Process-isolated execution still belongs to Gludd.  Give the
+            # ansible-runner backend the same absolute deadline as the native
+            # child-process path instead of relying on a caller, HTTP proxy, or
+            # external watchdog to tear down a stalled container.
+            isolation_timeout = _env_default_timeout() if timeout is None else timeout
             return self._execute_with_runner(
                 playbook_path=playbook_path,
                 inventory=inventory,
@@ -459,6 +464,7 @@ class CoreAnsibleRunner:
                 connection=connection,
                 become=become,
                 extra_env=extra_env,
+                timeout=isolation_timeout,
             )
 
         # HIGH (no timeout): bound the run in a killable child process. An
@@ -724,6 +730,7 @@ class CoreAnsibleRunner:
         connection: str = "local",
         become: bool = False,
         extra_env: dict[str, str] | None = None,
+        timeout: float | None = None,
     ) -> AnsibleResult:
         """Execute playbook via the ansible-runner subprocess backend.
 
@@ -766,6 +773,11 @@ class CoreAnsibleRunner:
             "playbook": playbook_path,
             **iso.to_runner_kwargs(),
         }
+        if timeout is not None and timeout > 0:
+            # ``job_timeout`` is enforced inside ansible-runner's own event
+            # loop.  On expiry it kills the owned isolation container and the
+            # Ansible process group before returning status="timeout".
+            runner_kwargs["settings"] = {"job_timeout": timeout}
         if inventory:
             runner_kwargs["inventory"] = inventory
         if extravars:
