@@ -61,7 +61,7 @@ async def test_acquire_leases_batch_single_query():
 
 
 @pytest.mark.asyncio
-async def test_reclaim_expired_leases_batches_live_check():
+async def test_reclaim_expired_leases_batches_todo_lookup():
     from general_ludd.event_loop.lease import reclaim_expired_leases
 
     mock_session = AsyncMock()
@@ -80,30 +80,19 @@ async def test_reclaim_expired_leases_batches_live_check():
         _FakeLease(3, "core:TODO-C", past),
     ]
 
-    select_results = []
-
-    def _fake_execute(stmt):
-        stmt_str = str(stmt)
-        if "in_" in stmt_str or "IN" in stmt_str.upper():
-            mock2 = MagicMock()
-            mock2.scalars.return_value.all.return_value = []
-            return mock2
-        mock1 = MagicMock()
-        mock1.scalars.return_value.all.return_value = expired
-        select_results.append(mock1)
-        return mock1
-
-    mock_session.execute.side_effect = _fake_execute
+    expired_result = MagicMock()
+    expired_result.scalars.return_value.all.return_value = expired
+    todo_result = MagicMock()
+    todo_result.scalars.return_value.all.return_value = []
+    mock_session.execute.side_effect = [expired_result, todo_result]
 
     await reclaim_expired_leases(mock_session)
 
-    from sqlalchemy.sql import Select, Update
+    from sqlalchemy.sql import Select
     select_count = sum(1 for c in mock_session.execute.call_args_list
                        if isinstance(c.args[0], Select))
-    update_count = sum(1 for c in mock_session.execute.call_args_list
-                       if isinstance(c.args[0], Update))
     assert select_count == 2, (
-        f"Expected 2 SELECT (expired + batch live-check), got {select_count} SELECT + {update_count} UPDATE "
+        f"Expected 2 SELECT (expired + batched todo lookup), got {select_count} SELECT "
         f"across {mock_session.execute.call_count} total calls"
     )
 

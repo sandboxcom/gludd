@@ -650,7 +650,7 @@ class VariableValueModel(Base):
 
 
 class BucketLeaseModel(Base):
-    """Persist expiring resource-bucket ownership unique per key and holder."""
+    """Persist one fenced, renewable execution attempt per resource bucket."""
 
     __tablename__ = "bucket_leases"
 
@@ -663,11 +663,24 @@ class BucketLeaseModel(Base):
         index=True,
     )
     holder_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    todo_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
+    heartbeat_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=_utcnow
+    )
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime(), nullable=True
+    )
+    termination_confirmed_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime(), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
 
     __table_args__ = (
-        UniqueConstraint("bucket_key", "holder_id", name="uq_bucket_lease"),
+        UniqueConstraint("bucket_key", name="uq_bucket_lease_bucket_key"),
         Index("ix_bucket_leases_key_expires", "bucket_key", "expires_at"),
     )
 

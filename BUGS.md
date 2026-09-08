@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-08 — (resolved locally) Replaceable leases could duplicate still-running work
+
+- **What happened**: Bucket leases were unique only by `(bucket_key, holder_id)`, so two Gunicorn workers could persist simultaneous ownership rows. The reaper also treated an expired timestamp as proof that the underlying model, Ansible, or infrastructure effects had stopped and immediately requeued the todo.
+- **Root cause**: A liveness signal was being used as both a mutex and a terminal execution result. Worker-process separation prevents shared-memory coordination, and quiet or disconnected Runner output does not prove child termination.
+- **Fix applied**: Migration 046 enforces one owner per bucket and adds todo-version, heartbeat, cancellation-request, termination-confirmation, and update fields. Batch acquisition preflights every conflict before staging rows; renewal is fenced to one live exact attempt; expiry retains the mutex and requests cancellation; only exact-owner termination proof plus a todo-version compare-and-swap permits requeue.
+- **Evidence**: The lease/migration/red-team slice passes 57/57 with warnings as errors; five migration-chain and ORM-parity suites pass 109/109; focused branch coverage for `lease.py` is 92%, with no measured file below 75%. EventLoop heartbeat and runner-cancellation integration remain tracked under S83.158.
+- **Practitioner evidence**: Gunicorn issues #2082 and #2905 and Ansible Runner issues #1371 and #1187 demonstrate the worker-local-state and false-stall failure classes. Links and their design consequences are recorded in `docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md`.
+- **Lesson**: Lease expiry is a request to investigate or cancel, never authority to start a second copy. Ownership may transfer only after the previous application-owned execution boundary proves it is terminal.
+
 ### 2026-09-08 — (resolved locally) Managed self-improvement ran in unkillable threads
 
 - **What happened**: Both the daemon-local and worker-hosted managed self-improvement paths delegated the complete model workflow to `asyncio.to_thread()`. Cancelling the coroutine released the async caller but could not stop the underlying synchronous model, subprocess, or infrastructure work.

@@ -1308,7 +1308,7 @@ class TestSpendRecordModel:
 
 
 class TestBucketLeaseModelUniqueness:
-    async def test_unique_bucket_key_holder_id(self, async_session: AsyncSession):
+    async def test_unique_bucket_key(self, async_session: AsyncSession):
         l1 = BucketLeaseModel(
             bucket_key="todo:core:active",
             holder_id="worker-1",
@@ -1326,7 +1326,10 @@ class TestBucketLeaseModelUniqueness:
             await async_session.flush()
         await async_session.rollback()
 
-    async def test_different_holders_same_bucket_succeeds(self, async_session: AsyncSession):
+    async def test_different_holders_same_bucket_is_rejected(
+        self,
+        async_session: AsyncSession,
+    ):
         l1 = BucketLeaseModel(
             bucket_key="todo:core:active",
             holder_id="worker-1",
@@ -1338,8 +1341,9 @@ class TestBucketLeaseModelUniqueness:
             expires_at=datetime(2026, 1, 2, tzinfo=UTC),
         )
         async_session.add_all([l1, l2])
-        await async_session.flush()
-        assert l1.id != l2.id
+        with pytest.raises(IntegrityError, match="UNIQUE constraint failed: bucket_leases"):
+            await async_session.flush()
+        await async_session.rollback()
 
 
 # ── TaskReturnModel schema_version / queue ───────────────────────────────

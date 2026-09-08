@@ -31,7 +31,9 @@ from general_ludd.controllers.floor import FloorController
 from general_ludd.db.models import Base, BucketLeaseModel, ProjectModel, TodoModel
 from general_ludd.db.repository import TodoRepository
 from general_ludd.event_loop.lease import (
+    LeaseBusyError,
     acquire_lease,
+    confirm_lease_termination,
     reclaim_expired_leases,
     release_lease,
 )
@@ -203,12 +205,16 @@ class TestLeaseAcquisitionWorkflow:
         assert b.holder_id == "worker-b"
 
     @pytest.mark.asyncio
-    async def test_lease_upsert_replaces_holder(self, db_session: AsyncSession):
+    async def test_competing_lease_holder_is_rejected(self, db_session: AsyncSession):
         await acquire_lease(db_session, "core:race-1", "worker-x", ttl_seconds=300)
         await db_session.commit()
-        second = await acquire_lease(db_session, "core:race-1", "worker-y", ttl_seconds=600)
-        assert second.holder_id == "worker-y"
-        assert second.bucket_key == "core:race-1"
+        with pytest.raises(LeaseBusyError, match="already owned"):
+            await acquire_lease(
+                db_session,
+                "core:race-1",
+                "worker-y",
+                ttl_seconds=600,
+            )
 
     @pytest.mark.asyncio
     async def test_expired_lease_reclaimed_and_todo_requeued(self, db_session: AsyncSession):
@@ -226,10 +232,19 @@ class TestLeaseAcquisitionWorkflow:
         lease = BucketLeaseModel(
             bucket_key="core:todo-exp-1",
             holder_id="dead-worker",
+            todo_version=todo.version,
             expires_at=datetime.now(UTC) - timedelta(seconds=10),
         )
         db_session.add(lease)
         await db_session.commit()
+        reclaimed = await reclaim_expired_leases(db_session)
+        assert reclaimed == 0
+        assert await confirm_lease_termination(
+            db_session,
+            bucket_key="core:todo-exp-1",
+            holder_id="dead-worker",
+            todo_version=todo.version,
+        )
         reclaimed = await reclaim_expired_leases(db_session)
         assert reclaimed == 1
         stmt = select(TodoModel).where(TodoModel.todo_id == "todo-exp-1")

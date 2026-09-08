@@ -569,8 +569,8 @@ class TestUniqueConstraints:
 
     def test_bucket_lease_unique(self):
         uqs = _uq_constraints(m.BucketLeaseModel)
-        names = {u.name for u in uqs}
-        assert "uq_bucket_lease" in names
+        columns = {u.name: tuple(column.name for column in u.columns) for u in uqs}
+        assert columns["uq_bucket_lease_bucket_key"] == ("bucket_key",)
 
     def test_azure_cost_observation_identity_unique(self):
         uqs = _uq_constraints(m.AzureCostObservationModel)

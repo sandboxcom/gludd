@@ -157,6 +157,18 @@ proves the same boundary around an immutable approved plan, including coroutine
 cancellation. The daemon and worker dispatch suites prove both production paths
 select that executor instead of an unkillable background thread.
 
+Migration 046 makes a dispatch bucket a durable single-owner execution lease,
+not a replaceable liveness hint. Each lease records the todo version, last
+heartbeat, cancellation request, and exact-owner termination confirmation.
+Renewal is a holder/version-fenced compare-and-swap. Expiry retains the mutex and
+requests cancellation; it never makes still-running work claimable. Requeue is a
+second compare-and-swap permitted only after the exact attempt reports that its
+owned process group has terminated. Non-active or missing todo orphans remain
+safe to delete. The red-team suite exercises competing database sessions,
+intruder heartbeats, expiry, termination acknowledgement, version fencing, and
+replacement attempts, while migration parity compares `create_all` with a full
+Alembic upgrade.
+
 ## Long-lived operator reports that shaped the design
 
 - Gunicorn maintainers explain that workers are separate processes and do not

@@ -107,12 +107,17 @@ class TestEventLoopE2E:
                         expires_at=datetime.now(UTC) - timedelta(seconds=10),
                     )
                 )
-                await acquire_lease(session, "core", "worker-new", ttl_seconds=300)
                 await session.commit()
 
                 reclaimed = await reclaim_expired_leases(session)
                 assert isinstance(reclaimed, int)
                 assert reclaimed == 1
+                await acquire_lease(
+                    session,
+                    "core",
+                    "worker-new",
+                    ttl_seconds=300,
+                )
 
                 remaining = (
                     (await session.execute(select(BucketLeaseModel))).scalars().all()

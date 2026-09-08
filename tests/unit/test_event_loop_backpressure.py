@@ -503,14 +503,14 @@ class TestLeaseReclaim:
 
 class TestLeaseEdgeCases:
     @pytest.mark.asyncio
-    async def test_acquire_lease_zero_ttl_still_works(self) -> None:
+    async def test_acquire_lease_zero_ttl_is_rejected(self) -> None:
         ses = AsyncMock()
         ses.add = MagicMock()
         result_mock = MagicMock()
         result_mock.scalars.return_value.all.return_value = []
         ses.execute.return_value = result_mock
-        result = await acquire_lease(ses, "bucket-0", "holder-z", 0)
-        assert result is not None
+        with pytest.raises(ValueError, match="ttl_seconds"):
+            await acquire_lease(ses, "bucket-0", "holder-z", 0)
 
     @pytest.mark.asyncio
     async def test_acquire_leases_batch_empty(self) -> None:
@@ -683,6 +683,10 @@ class TestLease:
         existing = MagicMock()
         existing.bucket_key = "bucket-1"
         existing.holder_id = "holder-a"
+        existing.todo_version = None
+        existing.expires_at = datetime.now(UTC).replace(year=2099)
+        existing.cancel_requested_at = None
+        existing.termination_confirmed_at = None
         result_mock = MagicMock()
         result_mock.scalars.return_value.all.return_value = [existing]
         ses.execute.return_value = result_mock

@@ -36,7 +36,14 @@ from general_ludd.db.repository import (
     TaskReturnRepository,
     TodoRepository,
 )
-from general_ludd.event_loop.lease import acquire_lease, reclaim_expired_leases
+from general_ludd.event_loop.lease import (
+    LeaseBusyError,
+    LeaseRenewalStatus,
+    acquire_lease,
+    confirm_lease_termination,
+    reclaim_expired_leases,
+    renew_lease,
+)
 from general_ludd.scheduling.scheduler import Scheduler, WorkItem
 from general_ludd.schemas.todo import TodoStatus
 
@@ -128,7 +135,6 @@ async def _insert_active_todo_with_lease(
                 title="redteam",
                 status=TodoStatus.ACTIVE.value,
                 queue="core",
-                version=2,
             )
         )
         s.add(
@@ -296,15 +302,26 @@ async def test_concurrent_claim_runnable_has_exactly_one_winner(
 # AREA 2 — bucket lease provides neither mutex nor crash recovery
 # ===========================================================================
 @pytest.mark.asyncio
-async def test_two_ticks_acquire_duplicate_leases_for_same_bucket(session_factory):
-    """holder_id=f'tick-N' is unique per tick, so the (bucket_key, holder_id)
-    unique constraint never fires across ticks: two ticks hold TWO leases on the
-    SAME bucket simultaneously. The lease is not a mutual-exclusion primitive.
-    """
+async def test_second_holder_cannot_acquire_same_execution_bucket(session_factory):
+    """A second process cannot create a competing lease for one active attempt."""
     async with session_factory() as s:
-        await acquire_lease(s, bucket_key="core:T1", holder_id="tick-5")
-        await acquire_lease(s, bucket_key="core:T1", holder_id="tick-6")
+        await acquire_lease(
+            s,
+            bucket_key="core:T1",
+            holder_id="instance-a",
+            todo_version=2,
+        )
         await s.commit()
+
+    async with session_factory() as s:
+        with pytest.raises(LeaseBusyError, match="already owned"):
+            await acquire_lease(
+                s,
+                bucket_key="core:T1",
+                holder_id="instance-b",
+                todo_version=1,
+            )
+        await s.rollback()
 
     async with session_factory() as s:
         from sqlalchemy import select
@@ -320,22 +337,67 @@ async def test_two_ticks_acquire_duplicate_leases_for_same_bucket(session_factor
             .scalars()
             .all()
         )
-    # Two live leases on one bucket -> no exclusion.
-    assert len(rows) == 2, (
-        "Expected the per-tick holder_id to defeat the unique constraint; "
-        f"got {len(rows)} lease rows"
-    )
+    assert len(rows) == 1
+    assert rows[0].holder_id == "instance-a"
 
 
 @pytest.mark.asyncio
-async def test_reclaim_skips_requeue_when_live_lease_exists_for_same_bucket(session_factory):
-    """F1 defense-in-depth: a bucket may have BOTH an expired lease (from a dead
-    tick) AND a newer live lease (from the tick that legitimately re-claimed it).
-    ``reclaim_expired_leases`` must delete the expired row but NOT requeue the
-    todo while a live lease still covers that bucket — otherwise the same todo
-    is dispatched twice (once by the live holder, once by the next claim after
-    reclaim requeues it).
-    """
+async def test_renewal_is_fenced_to_live_exact_attempt(session_factory):
+    """Only the current owner/version can extend a non-cancelled lease."""
+    async with session_factory() as s:
+        await acquire_lease(
+            s,
+            bucket_key="core:T1",
+            holder_id="instance-a",
+            todo_version=2,
+            ttl_seconds=60,
+        )
+        await s.commit()
+
+    async with session_factory() as s:
+        renewed = await renew_lease(
+            s,
+            bucket_key="core:T1",
+            holder_id="instance-a",
+            todo_version=2,
+            ttl_seconds=120,
+        )
+        intruder = await renew_lease(
+            s,
+            bucket_key="core:T1",
+            holder_id="instance-b",
+            todo_version=2,
+            ttl_seconds=120,
+        )
+        await s.commit()
+    assert renewed is LeaseRenewalStatus.RENEWED
+    assert intruder is LeaseRenewalStatus.STALE
+
+    async with session_factory() as s:
+        lease = (
+            await s.execute(
+                select(BucketLeaseModel).where(
+                    BucketLeaseModel.bucket_key == "core:T1"
+                )
+            )
+        ).scalar_one()
+        lease.cancel_requested_at = datetime.now(UTC)
+        await s.commit()
+
+    async with session_factory() as s:
+        cancelled = await renew_lease(
+            s,
+            bucket_key="core:T1",
+            holder_id="instance-a",
+            todo_version=2,
+            ttl_seconds=120,
+        )
+    assert cancelled is LeaseRenewalStatus.CANCEL_REQUESTED
+
+
+@pytest.mark.asyncio
+async def test_expired_owner_blocks_replacement_until_termination(session_factory):
+    """An expired owner remains the mutex until its process is proven dead."""
     async with session_factory() as s:
         s.add(
             TodoModel(
@@ -343,23 +405,14 @@ async def test_reclaim_skips_requeue_when_live_lease_exists_for_same_bucket(sess
                 title="redteam",
                 status=TodoStatus.ACTIVE.value,
                 queue="core",
-                version=2,
             )
         )
-        # Expired lease from a crashed tick-5.
         s.add(
             BucketLeaseModel(
                 bucket_key="core:T1",
                 holder_id="tick-5",
+                todo_version=1,
                 expires_at=datetime.now(UTC) - timedelta(seconds=10),
-            )
-        )
-        # Live lease from the current tick-6 that legitimately owns this work.
-        s.add(
-            BucketLeaseModel(
-                bucket_key="core:T1",
-                holder_id="tick-6",
-                expires_at=datetime.now(UTC) + timedelta(minutes=10),
             )
         )
         await s.commit()
@@ -367,25 +420,39 @@ async def test_reclaim_skips_requeue_when_live_lease_exists_for_same_bucket(sess
     async with session_factory() as s:
         reclaimed = await reclaim_expired_leases(s)
         await s.commit()
-    # The expired row IS deleted (return count 1)...
-    assert reclaimed == 1, f"Expected 1 expired lease deleted, got {reclaimed}"
+    assert reclaimed == 0
 
-    # ...but the todo STAYS ACTIVE because a newer live lease still covers it.
+    async with session_factory() as s:
+        with pytest.raises(LeaseBusyError, match="already owned"):
+            await acquire_lease(
+                s,
+                bucket_key="core:T1",
+                holder_id="tick-6",
+                todo_version=1,
+            )
+        await s.rollback()
+
     async with session_factory() as s:
         repo = TodoRepository(s)
         t1 = await repo.get_by_id("T1")
         assert t1 is not None
-    assert t1.status == TodoStatus.ACTIVE.value, (
-        "Reclaim requeued T1 even though a live lease covers core:T1 -> "
-        "double-dispatch vector (live holder + next claim after requeue)."
-    )
+        lease = (
+            await s.execute(
+                select(BucketLeaseModel).where(
+                    BucketLeaseModel.bucket_key == "core:T1"
+                )
+            )
+        ).scalar_one()
+    assert t1.status == TodoStatus.ACTIVE.value
+    assert lease.holder_id == "tick-5"
+    assert lease.cancel_requested_at is not None
 
 
 @pytest.mark.asyncio
-async def test_expired_lease_does_requeue_active_todo(session_factory):
-    """Trace: tick claims T1 (ACTIVE) + leases core:T1; worker crashes; lease
-    expires; reclaim runs. A correct reclaim requeues T1 (now fixed).
-    """
+async def test_expiry_requests_cancel_and_requeues_only_after_termination_proof(
+    session_factory,
+):
+    """Expiry alone never creates a second execution of still-running work."""
     # T1 is ACTIVE (claimed) with an already-expired lease.
     async with session_factory() as s:
         s.add(
@@ -394,13 +461,13 @@ async def test_expired_lease_does_requeue_active_todo(session_factory):
                 title="redteam",
                 status=TodoStatus.ACTIVE.value,
                 queue="core",
-                version=2,
             )
         )
         s.add(
             BucketLeaseModel(
                 bucket_key="core:T1",
-                holder_id="tick-5",
+                holder_id="instance-a",
+                todo_version=1,
                 expires_at=datetime.now(UTC) - timedelta(seconds=10),
             )
         )
@@ -409,17 +476,70 @@ async def test_expired_lease_does_requeue_active_todo(session_factory):
     async with session_factory() as s:
         reclaimed = await reclaim_expired_leases(s)
         await s.commit()
-    assert reclaimed == 1  # the row was deleted...
+    assert reclaimed == 0
 
-    # ...AND the todo was requeued for the work to run again.
+    # The first sweep records an internal cancellation request but cannot infer
+    # that the original process stopped merely because its heartbeat expired.
     async with session_factory() as s:
         repo = TodoRepository(s)
         t1 = await repo.get_by_id("T1")
         assert t1 is not None
-    assert t1.status == TodoStatus.QUEUED.value, (
-        "Crashed worker's todo NOT requeued by lease expiry -> work lost. "
-        f"status={t1.status}"
-    )
+        lease = (
+            await s.execute(
+                select(BucketLeaseModel).where(
+                    BucketLeaseModel.bucket_key == "core:T1"
+                )
+            )
+        ).scalar_one()
+    assert t1.status == TodoStatus.ACTIVE.value
+    assert lease.cancel_requested_at is not None
+    assert lease.termination_confirmed_at is None
+
+    # Only the exact owner can acknowledge that its owned process group has
+    # terminated. The next recovery sweep may then CAS-requeue that attempt.
+    async with session_factory() as s:
+        confirmed = await confirm_lease_termination(
+            s,
+            bucket_key="core:T1",
+            holder_id="instance-a",
+            todo_version=1,
+        )
+        await s.commit()
+    assert confirmed is True
+
+    async with session_factory() as s:
+        stored_lease = (
+            await s.execute(
+                select(BucketLeaseModel).where(
+                    BucketLeaseModel.bucket_key == "core:T1"
+                )
+            )
+        ).scalar_one()
+        stored_todo = (
+            await s.execute(select(TodoModel).where(TodoModel.todo_id == "T1"))
+        ).scalar_one()
+        assert stored_lease.cancel_requested_at is not None
+        assert stored_lease.termination_confirmed_at is not None
+        assert stored_lease.todo_version == stored_todo.version == 1
+        assert stored_lease.expires_at < datetime.now(UTC)
+        reclaimed = await reclaim_expired_leases(s)
+        await s.commit()
+    assert reclaimed == 1
+
+    async with session_factory() as s:
+        repo = TodoRepository(s)
+        t1 = await repo.get_by_id("T1")
+        assert t1 is not None
+        remaining = (
+            await s.execute(
+                select(BucketLeaseModel).where(
+                    BucketLeaseModel.bucket_key == "core:T1"
+                )
+            )
+        ).scalar_one_or_none()
+    assert t1.status == TodoStatus.QUEUED.value
+    assert t1.version == 2
+    assert remaining is None
 
 
 # ===========================================================================
