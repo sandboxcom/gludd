@@ -434,6 +434,34 @@ class ConfiguredAzureContainerAppBootstrapFactory:
         """Return the immutable app-and-environment desired-state digest."""
         return self._deployment_digest
 
+    def _ensure_resource_group(
+        self,
+        credentials: AzureAcceleratorCredentials,
+        release: Callable[[], None],
+    ) -> None:
+        """Acquire the owned resource group or release the credential lease."""
+        try:
+            self._resource_group_bootstrapper(
+                AzureResourceGroupBootstrapPolicy(
+                    subscription_id=self._app_policy.subscription_id,
+                    resource_group=self._app_policy.resource_group,
+                    location=self._app_policy.location,
+                    owner_digest=self._environment_policy.owner_digest,
+                ),
+                credentials,
+                trace_sink=lambda event: _runtime_trace(
+                    self._progress_sink,
+                    "resource_group",
+                    event,
+                ),
+            )
+        except BaseException:
+            with suppress(Exception):
+                release()
+            raise RuntimeError(
+                "Azure bootstrap resource-group acquisition failed"
+            ) from None
+
     def __call__(self) -> ContainerAppCandidateBackend:
         """Acquire credentials and return one fully owned Azure backend."""
         self._progress_sink(
@@ -450,27 +478,7 @@ class ConfiguredAzureContainerAppBootstrapFactory:
             "SELF_IMPROVE_AZURE_BOOTSTRAP phase=credential_acquired "
             f"operation_digest={self._deployment_digest} secret_output=false"
         )
-        try:
-            self._resource_group_bootstrapper(
-                AzureResourceGroupBootstrapPolicy(
-                    subscription_id=self._app_policy.subscription_id,
-                    resource_group=self._app_policy.resource_group,
-                    location=self._app_policy.location,
-                    owner_digest=self._environment_policy.owner_digest,
-                ),
-                acquisition.credentials,
-                trace_sink=lambda event: _runtime_trace(
-                    self._progress_sink,
-                    "resource_group",
-                    event,
-                ),
-            )
-        except BaseException:
-            with suppress(Exception):
-                release()
-            raise RuntimeError(
-                "Azure bootstrap resource-group acquisition failed"
-            ) from None
+        self._ensure_resource_group(acquisition.credentials, release)
         try:
             resources = self._resources_builder(
                 credentials=acquisition.credentials,
