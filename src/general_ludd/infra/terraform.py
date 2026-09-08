@@ -472,6 +472,34 @@ def _override_apply(terraform_config: object | None) -> Callable[[str, object], 
     return _resolve
 
 
+def _render_deployment_profile_tfvars(prefix: str, profile: dict[str, object]) -> list[str]:
+    """Render ordered engine-prefixed workload profile variables."""
+    defaults: dict[str, object] = {
+        "context_length": 32768,
+        "max_tokens": 4096,
+        "batch_size": 256,
+        "tensor_parallel": 0,
+        "gpu_memory_utilization": 0.90,
+        "quantization": "",
+        "threads": 0,
+        "max_num_seqs": 256,
+        "enforce_eager": False,
+        "enable_prefix_caching": True,
+        "enable_chunked_prefill": True,
+        "kv_cache_dtype": "auto",
+    }
+    lines: list[str] = []
+    for key, default_value in defaults.items():
+        value = profile.get(key, default_value)
+        if isinstance(value, bool):
+            lines.append(f"{prefix}{key} = {str(value).lower()}")
+        elif isinstance(value, str):
+            lines.append(f"{prefix}{key} = {escape_tfvar_value(value)}")
+        else:
+            lines.append(f"{prefix}{key} = {value}")
+    return lines
+
+
 class TerraformGenerator:
     """Generate and materialize self-contained Terraform deployment roots."""
 
@@ -577,28 +605,7 @@ class TerraformGenerator:
         lines.append(f"workload_type              = {escape_tfvar_value(wt)}")
 
         profile = config.deployment_profile or {}
-        default_profile: dict[str, object] = {
-            "context_length": 32768,
-            "max_tokens": 4096,
-            "batch_size": 256,
-            "tensor_parallel": 0,
-            "gpu_memory_utilization": 0.90,
-            "quantization": "",
-            "threads": 0,
-            "max_num_seqs": 256,
-            "enforce_eager": False,
-            "enable_prefix_caching": True,
-            "enable_chunked_prefill": True,
-            "kv_cache_dtype": "auto",
-        }
-        for key, default_val in default_profile.items():
-            val = profile.get(key, default_val)
-            if isinstance(val, bool):
-                lines.append(f"{prefix}{key} = {str(val).lower()}")
-            elif isinstance(val, str):
-                lines.append(f"{prefix}{key} = {escape_tfvar_value(val)}")
-            else:
-                lines.append(f"{prefix}{key} = {val}")
+        lines.extend(_render_deployment_profile_tfvars(prefix, profile))
 
         if self._deployment_optimization_config is not None:
             d = self._deployment_optimization_config
