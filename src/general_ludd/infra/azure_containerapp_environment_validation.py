@@ -87,20 +87,37 @@ def validated_environment_profiles(
     """Validate identity, ownership, readiness, and bounded GPU profiles."""
     try:
         root = _mapping(document)
-        identity = (
-            _string_member(root, "id").casefold(),
-            _string_member(root, "name"),
-            _string_member(root, "type").casefold(),
-            _string_member(root, "location").casefold(),
-        )
-        expected_identity = (
-            policy.environment_id.casefold(),
-            policy.environment_name,
+    except (TypeError, ValueError):
+        raise AzureEnvironmentLifecycleError(
+            "ownership", reason="response"
+        ) from None
+    identity_fields = (
+        ("id", policy.environment_id.casefold(), "identity_resource_id", True),
+        ("name", policy.environment_name, "identity_name", False),
+        (
+            "type",
             _ENVIRONMENT_RESOURCE_TYPE.casefold(),
-            policy.location.casefold(),
-        )
-        if identity != expected_identity:
-            raise ValueError
+            "identity_resource_type",
+            True,
+        ),
+        ("location", policy.location.casefold(), "identity_location", True),
+    )
+    for key, expected, reason, case_insensitive in identity_fields:
+        try:
+            observed = _string_member(root, key)
+        except (KeyError, TypeError, ValueError):
+            raise AzureEnvironmentLifecycleError(
+                "ownership", reason=reason
+            ) from None
+        if key == "location":
+            observed = "".join(
+                character for character in observed.casefold() if character.isalnum()
+            )
+        elif case_insensitive:
+            observed = observed.casefold()
+        if observed != expected:
+            raise AzureEnvironmentLifecycleError("ownership", reason=reason)
+    try:
         tags = _mapping(root.get("tags"))
         required_tags = (
             policy.ownership_tags
@@ -111,17 +128,28 @@ def validated_environment_profiles(
                 "gludd-owner-digest": policy.owner_digest,
             }
         )
-        if any(tags.get(key) != value for key, value in required_tags.items()):
-            raise ValueError
-        properties = _mapping(root.get("properties"))
-        if _string_member(properties, "provisioningState") != "Succeeded":
-            raise ValueError
-        profiles = _profile_tuple(properties.get("workloadProfiles"))
-        if require_desired_profiles and not set(policy.profiles).issubset(profiles):
-            raise ValueError
-        return profiles
     except (KeyError, TypeError, ValueError):
-        raise AzureEnvironmentLifecycleError("ownership") from None
+        raise AzureEnvironmentLifecycleError("ownership", reason="tags") from None
+    if any(tags.get(key) != value for key, value in required_tags.items()):
+        raise AzureEnvironmentLifecycleError("ownership", reason="tags")
+    try:
+        properties = _mapping(root.get("properties"))
+        provisioning_state = _string_member(properties, "provisioningState")
+    except (KeyError, TypeError, ValueError):
+        raise AzureEnvironmentLifecycleError(
+            "ownership", reason="readiness"
+        ) from None
+    if provisioning_state != "Succeeded":
+        raise AzureEnvironmentLifecycleError("ownership", reason="readiness")
+    try:
+        profiles = _profile_tuple(properties.get("workloadProfiles"))
+    except (KeyError, TypeError, ValueError):
+        raise AzureEnvironmentLifecycleError(
+            "ownership", reason="profiles"
+        ) from None
+    if require_desired_profiles and not set(policy.profiles).issubset(profiles):
+        raise AzureEnvironmentLifecycleError("ownership", reason="profiles")
+    return profiles
 
 
 def _expected_plan_after(policy: AzureEnvironmentLifecyclePolicy) -> dict[str, object]:
@@ -188,7 +216,26 @@ def _validate_plan_after(value: object, policy: AzureEnvironmentLifecyclePolicy)
         raise ValueError
 
 
-def _validate_plan_metadata(change: Mapping[str, object]) -> None:
+def _validate_resource_identity(
+    value: object,
+    policy: AzureEnvironmentLifecyclePolicy,
+) -> None:
+    if value is None:
+        return
+    identity = _mapping(value)
+    if (
+        set(identity) != {"id", "type"}
+        or _string_member(identity, "id").casefold()
+        != policy.environment_id.casefold()
+        or identity.get("type") is not None
+    ):
+        raise ValueError
+
+
+def _validate_plan_metadata(
+    change: Mapping[str, object],
+    policy: AzureEnvironmentLifecyclePolicy,
+) -> None:
     if set(change) - _CHANGE_FIELDS:
         raise ValueError
     after_unknown = change.get("after_unknown")
@@ -209,6 +256,8 @@ def _validate_plan_metadata(change: Mapping[str, object]) -> None:
         raise ValueError
     if change.get("importing") is not None or change.get("generated_config") is not None:
         raise ValueError
+    _validate_resource_identity(change.get("before_identity"), policy)
+    _validate_resource_identity(change.get("after_identity"), policy)
 
 
 def _false_or_empty_metadata(value: object) -> bool:
@@ -263,7 +312,7 @@ def audit_environment_plan(
         if not existed_before and change.get("before") is not None:
             raise ValueError
         _validate_plan_after(change.get("after"), policy)
-        _validate_plan_metadata(change)
+        _validate_plan_metadata(change, policy)
         return tuple(actions) != ("no-op",)
     except (KeyError, TypeError, ValueError):
         raise AzureEnvironmentLifecycleError("plan") from None

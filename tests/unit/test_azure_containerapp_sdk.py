@@ -169,6 +169,40 @@ def test_sdk_error_and_token_helpers_fail_closed_on_alternate_shapes() -> None:
             subject._validated_token(cast(Any, token))
 
 
+def test_environment_document_accepts_sdk_flattened_properties_shape() -> None:
+    policy = _policy()
+    value = SimpleNamespace(
+        id=policy.environment_id,
+        name=policy.environment_name,
+        type="Microsoft.App/managedEnvironments",
+        location=policy.location,
+        tags={"gludd-owner": "b" * 64},
+        provisioning_state="Succeeded",
+        workload_profiles=[
+            SimpleNamespace(
+                name="gpu-t4",
+                workload_profile_type="Consumption-GPU-NC8as-T4",
+                minimum_count=0,
+                maximum_count=1,
+            )
+        ],
+    )
+
+    document = subject._environment_document(value)
+
+    assert document["properties"] == {
+        "provisioningState": "Succeeded",
+        "workloadProfiles": [
+            {
+                "name": "gpu-t4",
+                "workloadProfileType": "Consumption-GPU-NC8as-T4",
+                "minimumCount": 0,
+                "maximumCount": 1,
+            }
+        ],
+    }
+
+
 class _ManagedEnvironments:
     def __init__(self, calls: list[tuple[str, tuple[object, ...]]]) -> None:
         self.calls = calls

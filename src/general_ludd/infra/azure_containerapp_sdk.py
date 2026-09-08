@@ -200,6 +200,8 @@ def _validated_token(token: str) -> None:
 
 def _environment_document(value: object) -> dict[str, object]:
     properties = _member(value, "properties")
+    if properties is None:
+        properties = value
     profiles = _sequence(
         _member(properties, "workload_profiles", "workloadProfiles", default=()),
         "environment workload profile",

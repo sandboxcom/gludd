@@ -11,7 +11,8 @@ from typing import Final, Self
 import httpx
 
 _ARM_ORIGIN: Final = "https://management.azure.com"
-_API_VERSION: Final = "2025-07-01"
+ENVIRONMENT_PREFLIGHT_API_VERSION: Final = "2026-01-01"
+_ENVIRONMENT_LIFECYCLE_API_VERSION: Final = "2025-07-01"
 _CONTAINER_APP_API_VERSION: Final = "2025-01-01"
 _MAX_RESPONSE_BYTES: Final = 1024 * 1024
 _MAX_TOKEN_CHARS: Final = 8192
@@ -246,9 +247,9 @@ class HttpxARMJSONTransport(_OwnedARMTransport):
         root = _resource_root(subscription_id, resource_group, environment_name)
         approved = frozenset(
             {
-                f"{root}?api-version={_API_VERSION}",
-                f"{root}/usages?api-version={_API_VERSION}",
-                f"{root}/workloadProfileStates?api-version={_API_VERSION}",
+                f"{root}?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}",
+                f"{root}/usages?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}",
+                f"{root}/workloadProfileStates?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}",
             }
         )
         self._reader = _BoundedARMReader(approved, client=client, max_connections=2)
@@ -343,7 +344,9 @@ class HttpxContainerAppEnvironmentLifecycleTransport(_OwnedARMTransport):
             resource_group,
             environment_name,
         )
-        self._environment_path = f"{self._environment_id}?api-version={_API_VERSION}"
+        self._environment_path = (
+            f"{self._environment_id}?api-version={_ENVIRONMENT_LIFECYCLE_API_VERSION}"
+        )
         self._inventory_path = _container_app_list_path(self._environment_id)
         inventory_suffix = f"?api-version={_CONTAINER_APP_API_VERSION}"
         self._app_id_prefix = self._inventory_path.removesuffix(inventory_suffix) + "/"
@@ -377,6 +380,7 @@ class HttpxContainerAppEnvironmentLifecycleTransport(_OwnedARMTransport):
 
 
 __all__ = [
+    "ENVIRONMENT_PREFLIGHT_API_VERSION",
     "AzureContainerAppARMError",
     "HttpxARMJSONTransport",
     "HttpxContainerAppARMTransport",

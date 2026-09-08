@@ -12,6 +12,7 @@ from general_ludd.infra.azure_containerapp_terraform_executor import (
     AzureContainerAppTerraformPhaseError,
     AzureContainerAppTerraformPhaseExecutor,
     TerraformRuntimeState,
+    TerraformUIEvent,
     terraform_process_environment,
 )
 
@@ -179,6 +180,109 @@ def test_executor_runs_direct_list_argv_with_exact_environment_and_traces(
     assert json.loads(json_file.read_text(encoding="utf-8")) == {"safe": True}
     assert oct(json_file.stat().st_mode & 0o777) == "0o600"
     assert SECRET not in repr(events)
+
+
+def test_apply_streams_only_allowlisted_machine_ui_resource_facts(
+    tmp_path: Path,
+) -> None:
+    allowed_root, terraform_dir, plan_file, json_file = _owned_root(tmp_path)
+    plan_file.write_bytes(b"saved-plan")
+    ui_events: list[TerraformUIEvent] = []
+    process_events = (
+        {
+            "@message": f"provider version includes {SECRET}",
+            "type": "version",
+            "ui": "1.2",
+        },
+        {
+            "@message": f"creating address {SECRET}",
+            "type": "apply_start",
+            "hook": {
+                "resource": {
+                    "addr": f"module.{SECRET}.azapi_resource.environment",
+                    "resource_type": "azapi_resource",
+                    "resource_name": SECRET,
+                },
+                "action": "create",
+            },
+        },
+        {
+            "@message": f"still creating {SECRET}",
+            "type": "apply_progress",
+            "hook": {
+                "resource": {
+                    "addr": f"module.{SECRET}.azapi_resource.environment",
+                    "resource_type": "azapi_resource",
+                },
+                "action": "create",
+                "elapsed_seconds": 7,
+                "id_value": SECRET,
+            },
+        },
+        {
+            "@message": f"creation complete {SECRET}",
+            "type": "apply_complete",
+            "hook": {
+                "resource": {
+                    "addr": f"module.{SECRET}.azapi_resource.environment",
+                    "resource_type": "azapi_resource",
+                },
+                "action": "create",
+                "elapsed_seconds": 11,
+                "id_value": SECRET,
+            },
+        },
+        {
+            "type": "diagnostic",
+            "diagnostic": {"detail": SECRET},
+        },
+    )
+    output = "\n".join(json.dumps(event) for event in process_events)
+    output += f"\nnot-json-{SECRET}\n"
+    processes: list[_Process] = []
+    emission_polls: list[int] = []
+
+    def factory(argv: list[str], **kwargs: object) -> _Process:
+        process = _Process(argv, output=output, polls_before_exit=2, **cast_kwargs(kwargs))
+        processes.append(process)
+        return process
+
+    def record_ui_event(event: TerraformUIEvent) -> None:
+        ui_events.append(event)
+        emission_polls.append(processes[0].polls)
+
+    executor = AzureContainerAppTerraformPhaseExecutor(
+        binary_resolver=lambda: "/opt/gludd/bin/tofu",
+        process_factory=factory,
+        telemetry_sink=record_ui_event,
+        heartbeat_seconds=0.5,
+        poll_seconds=0.1,
+        monotonic=_Clock(),
+        sleeper=lambda _seconds: None,
+    )
+
+    executor.run(
+        phase="apply",
+        terraform_dir=terraform_dir,
+        plan_file=plan_file,
+        json_file=json_file,
+        allowed_root=allowed_root,
+        environment=_environment(),
+        timeout_seconds=30,
+    )
+
+    assert "-json" in processes[0].argv
+    assert [
+        (event.phase, event.state, event.resource_type, event.action, event.elapsed_seconds)
+        for event in ui_events
+    ] == [
+        ("apply", TerraformRuntimeState.STARTED, "azapi_resource", "create", 0),
+        ("apply", TerraformRuntimeState.HEARTBEAT, "azapi_resource", "create", 7),
+        ("apply", TerraformRuntimeState.SUCCEEDED, "azapi_resource", "create", 11),
+    ]
+    assert SECRET not in repr(ui_events)
+    assert emission_polls
+    assert max(emission_polls) <= 2
 
 
 def test_executor_times_out_terminates_and_emits_only_censored_failure(

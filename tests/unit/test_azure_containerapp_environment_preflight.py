@@ -9,6 +9,7 @@ import pytest
 from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
 from general_ludd.infra.azure_containerapp_preflight import (
     AzureContainerAppPreflightError,
+    AzureContainerAppPreflightResult,
     AzureContainerAppReadOnlyPreflight,
     PreflightTrace,
 )
@@ -125,7 +126,7 @@ def _check(
     transport: _Transport,
     *,
     trace_sink: list[PreflightTrace] | None = None,
-) -> object:
+) -> AzureContainerAppPreflightResult:
     return AzureContainerAppReadOnlyPreflight(
         _Credential(),
         transport,
@@ -153,9 +154,9 @@ def test_named_environment_preflight_uses_only_three_exact_resource_gets() -> No
     assert result.quota_name == PROFILE_NAME
     assert result.quota_remaining == 1
     assert transport.calls == [
-        (f"{ROOT}?api-version=2025-07-01", TOKEN),
-        (f"{ROOT}/usages?api-version=2025-07-01", TOKEN),
-        (f"{ROOT}/workloadProfileStates?api-version=2025-07-01", TOKEN),
+        (f"{ROOT}?api-version=2026-01-01", TOKEN),
+        (f"{ROOT}/usages?api-version=2026-01-01", TOKEN),
+        (f"{ROOT}/workloadProfileStates?api-version=2026-01-01", TOKEN),
     ]
     assert all("/locations/" not in path for path, _token in transport.calls)
 
@@ -200,6 +201,27 @@ def test_environment_must_be_fully_provisioned_before_quota_reads() -> None:
     assert traces[-1].reason == "environment_not_ready"
 
 
+def test_serverless_gpu_profile_omitted_counts_defer_capacity_to_state_read() -> None:
+    environment = _environment_payload()
+    properties = environment["properties"]
+    assert isinstance(properties, dict)
+    profiles = properties["workloadProfiles"]
+    assert isinstance(profiles, list)
+    profile = profiles[0]
+    assert isinstance(profile, dict)
+    profile.pop("minimumCount", None)
+    profile.pop("maximumCount", None)
+    profiles.insert(
+        0,
+        {"name": "Consumption", "workloadProfileType": "Consumption"},
+    )
+
+    result = _check(_Transport(environment=environment))
+
+    assert result.quota_verified is True
+    assert result.quota_remaining == 1
+
+
 @pytest.mark.parametrize(
     ("profile", "reason"),
     [
@@ -227,7 +249,6 @@ def test_exact_named_gpu_profile_must_be_configured(
 @pytest.mark.parametrize(
     ("states", "reason", "message"),
     [
-        ({"value": []}, "workload_profile_state_missing", "state is missing"),
         (
             {
                 "value": [
@@ -270,6 +291,21 @@ def test_workload_profile_state_must_prove_one_unit_of_headroom(
         _check(_Transport(states=states), trace_sink=traces)
 
     assert traces[-1].reason == reason
+
+
+def test_missing_supplementary_profile_state_defers_to_deployment_capacity() -> None:
+    traces: list[PreflightTrace] = []
+
+    result = _check(_Transport(states={"value": []}), trace_sink=traces)
+
+    assert result.ready is True
+    assert result.quota_scope == "deployment"
+    assert result.quota_verified is False
+    assert any(
+        trace.phase == "supplementary_profile_state_unavailable"
+        and trace.reason == "workload_profile_state_missing"
+        for trace in traces
+    )
 
 
 def test_matching_environment_usage_can_only_reduce_available_headroom() -> None:

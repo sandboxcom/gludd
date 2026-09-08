@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from general_ludd.infra.azure_containerapp_arm import (
+    ENVIRONMENT_PREFLIGHT_API_VERSION,
     AzureContainerAppARMError,
     HttpxARMJSONTransport,
     HttpxContainerAppARMTransport,
@@ -26,10 +27,11 @@ RESOURCE_ROOT = (
     "providers/Microsoft.App/managedEnvironments/gludd-gpu-environment"
 )
 ENVIRONMENT_PATHS = (
-    f"{RESOURCE_ROOT}?api-version=2025-07-01",
-    f"{RESOURCE_ROOT}/usages?api-version=2025-07-01",
-    f"{RESOURCE_ROOT}/workloadProfileStates?api-version=2025-07-01",
+    f"{RESOURCE_ROOT}?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}",
+    f"{RESOURCE_ROOT}/usages?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}",
+    f"{RESOURCE_ROOT}/workloadProfileStates?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}",
 )
+LIFECYCLE_ENVIRONMENT_PATH = f"{RESOURCE_ROOT}?api-version=2025-07-01"
 APP_RESOURCE_ID = (
     f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/gludd-models-eastus/"
     "providers/Microsoft.App/containerApps/gludd-vllm-proof-abc123"
@@ -372,7 +374,7 @@ def test_lifecycle_transport_reads_only_environment_and_group_app_inventory() ->
     )
     assert [request.method for request in requests] == ["GET", "GET"]
     assert [str(request.url) for request in requests] == [
-        f"https://management.azure.com{ENVIRONMENT_PATHS[0]}",
+        f"https://management.azure.com{LIFECYCLE_ENVIRONMENT_PATH}",
         f"https://management.azure.com{APP_LIST_PATH}",
     ]
     assert all(request.headers["authorization"] == f"Bearer {TOKEN}" for request in requests)

@@ -264,7 +264,7 @@ def test_provider_failure_is_redacted_and_clients_still_close(
     assert transport.closed is True
 
 
-def test_environment_scoped_quota_must_be_verified_without_guessing(
+def test_environment_usage_verifies_quota_when_profile_state_is_pending(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -277,10 +277,10 @@ def test_environment_scoped_quota_must_be_verified_without_guessing(
     )
     captured = capsys.readouterr()
 
-    assert result == 2
-    assert "reason=workload_profile_state_missing" in captured.out
-    assert "AZURE_CONTAINERAPP_PREFLIGHT_READY" not in captured.out
-    assert "AZURE_CONTAINERAPP_PREFLIGHT_INVALID" in captured.err
+    assert result == 0
+    assert "quota_verified=true" in captured.out
+    assert "AZURE_CONTAINERAPP_PREFLIGHT_READY" in captured.out
+    assert "AZURE_CONTAINERAPP_PREFLIGHT_INVALID" not in captured.err
 
 
 def test_cleanup_failure_overrides_success_and_is_secret_free(

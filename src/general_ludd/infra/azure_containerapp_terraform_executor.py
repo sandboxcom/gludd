@@ -11,6 +11,7 @@ import tempfile
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager, suppress
+from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any
 
@@ -31,11 +32,27 @@ TERRAFORM_PHASES = (
     "destroy",
 )
 _JSON_PHASES = frozenset({"show-plan", "output"})
+_MACHINE_UI_PHASES = frozenset({"plan", "apply", "destroy"})
 _PLAN_REQUIRED_PHASES = frozenset({"show-plan", "apply"})
 _MAX_MARKER_BYTES = 4096
 _MAX_JSON_BYTES = 2 * 1024 * 1024
 _MAX_DIAGNOSTIC_BYTES = 256 * 1024
+_MAX_UI_LINE_CHARS = 64 * 1024
+_UI_READ_CHARS = 64 * 1024
 _ENVIRONMENT_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_SUPPORTED_UI_VERSION = re.compile(r"(?:0|1)\.[0-9]+(?:\.[0-9]+)?")
+_SAFE_RESOURCE_TYPES = frozenset({"azapi_resource"})
+_SAFE_ACTIONS = frozenset(
+    {"noop", "create", "read", "update", "replace", "delete", "move"}
+)
+_UI_EVENT_STATES = {
+    "planned_change": TerraformRuntimeState.STARTED,
+    "resource_drift": TerraformRuntimeState.HEARTBEAT,
+    "apply_start": TerraformRuntimeState.STARTED,
+    "apply_progress": TerraformRuntimeState.HEARTBEAT,
+    "apply_complete": TerraformRuntimeState.SUCCEEDED,
+    "apply_errored": TerraformRuntimeState.FAILED,
+}
 _INHERITED_ENVIRONMENT_NAMES = frozenset(
     {
         "APPDATA",
@@ -60,6 +77,21 @@ _INHERITED_ENVIRONMENT_NAMES = frozenset(
 ProgressSink = Callable[[str, TerraformRuntimeState, int], None]
 
 
+@dataclass(frozen=True, slots=True)
+class TerraformUIEvent:
+    """Allowlisted machine-UI resource fact with no address or provider text."""
+
+    phase: str
+    state: TerraformRuntimeState
+    resource_type: str
+    action: str
+    event_kind: str
+    elapsed_seconds: int = 0
+
+
+TelemetrySink = Callable[[TerraformUIEvent], None]
+
+
 class AzureContainerAppTerraformPhaseError(RuntimeError):
     """Content-free failure from one direct Terraform/OpenTofu phase."""
 
@@ -80,6 +112,115 @@ def _discard_progress(
     _elapsed_seconds: int,
 ) -> None:
     return None
+
+
+def _discard_telemetry(_event: TerraformUIEvent) -> None:
+    return None
+
+
+class _TerraformMachineUIStream:
+    """Incrementally decode only the non-sensitive machine-UI event subset."""
+
+    def __init__(self, phase: str) -> None:
+        self._phase = phase
+        self._pending = ""
+        self._discarding_oversized_line = False
+        self._supported = False
+
+    def _decode_line(self, line: str) -> TerraformUIEvent | None:
+        try:
+            document = json.loads(line)
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(document, dict):
+            return None
+        event_kind = document.get("type")
+        if event_kind == "version":
+            ui_version = document.get("ui")
+            self._supported = bool(
+                isinstance(ui_version, str)
+                and _SUPPORTED_UI_VERSION.fullmatch(ui_version)
+            )
+            return None
+        if not self._supported or not isinstance(event_kind, str):
+            return None
+        state = _UI_EVENT_STATES.get(event_kind)
+        container_key = (
+            "change" if event_kind in {"planned_change", "resource_drift"} else "hook"
+        )
+        container = document.get(container_key)
+        if state is None or not isinstance(container, dict):
+            return None
+        resource = container.get("resource")
+        resource_type = (
+            resource.get("resource_type") if isinstance(resource, dict) else None
+        )
+        action = container.get("action")
+        if resource_type not in _SAFE_RESOURCE_TYPES or action not in _SAFE_ACTIONS:
+            return None
+        elapsed = container.get("elapsed_seconds", 0)
+        if (
+            isinstance(elapsed, bool)
+            or not isinstance(elapsed, int)
+            or not 0 <= elapsed <= 86_400
+        ):
+            elapsed = 0
+        return TerraformUIEvent(
+            phase=self._phase,
+            state=state,
+            resource_type=resource_type,
+            action=action,
+            event_kind=event_kind,
+            elapsed_seconds=elapsed,
+        )
+
+    def feed(self, chunk: str, *, final: bool = False) -> tuple[TerraformUIEvent, ...]:
+        """Consume a bounded chunk and return safe events completed by it."""
+        if not isinstance(chunk, str):
+            return ()
+        combined = self._pending + chunk
+        self._pending = ""
+        pieces = combined.splitlines(keepends=True)
+        events: list[TerraformUIEvent] = []
+        for index, piece in enumerate(pieces):
+            complete = piece.endswith(("\n", "\r")) or (final and index == len(pieces) - 1)
+            if not complete:
+                if len(piece) <= _MAX_UI_LINE_CHARS:
+                    self._pending = piece
+                else:
+                    self._discarding_oversized_line = True
+                continue
+            if self._discarding_oversized_line:
+                self._discarding_oversized_line = False
+                continue
+            line = piece.rstrip("\r\n")
+            if not line or len(line) > _MAX_UI_LINE_CHARS:
+                continue
+            event = self._decode_line(line)
+            if event is not None:
+                events.append(event)
+        if final:
+            self._pending = ""
+            self._discarding_oversized_line = False
+        return tuple(events)
+
+
+def _drain_machine_ui(
+    output: IO[str],
+    stream: _TerraformMachineUIStream,
+    telemetry_sink: TelemetrySink,
+    *,
+    final: bool = False,
+) -> None:
+    while True:
+        chunk = output.read(_UI_READ_CHARS)
+        if not chunk:
+            break
+        for event in stream.feed(chunk):
+            telemetry_sink(event)
+    if final:
+        for event in stream.feed("", final=True):
+            telemetry_sink(event)
 
 
 def _regular_file(path: Path, *, required: bool = True) -> bool:
@@ -180,6 +321,7 @@ def _command(phase: str, binary: str, plan_file: Path) -> list[str]:
         "plan": [
             binary,
             "plan",
+            "-json",
             "-input=false",
             "-no-color",
             f"-out={plan_file}",
@@ -188,6 +330,7 @@ def _command(phase: str, binary: str, plan_file: Path) -> list[str]:
         "apply": [
             binary,
             "apply",
+            "-json",
             "-input=false",
             "-no-color",
             "-auto-approve",
@@ -197,6 +340,7 @@ def _command(phase: str, binary: str, plan_file: Path) -> list[str]:
         "destroy": [
             binary,
             "destroy",
+            "-json",
             "-input=false",
             "-no-color",
             "-auto-approve",
@@ -257,10 +401,25 @@ def _classify_provider_failure(output: IO[str]) -> str:
 
 
 @contextmanager
-def _diagnostic_output() -> Iterator[IO[str]]:
-    """Yield a private ephemeral stream that is always unlinked on close."""
-    with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as output:
-        yield output
+def _diagnostic_output(directory: Path) -> Iterator[tuple[IO[str], IO[str]]]:
+    """Yield separate writer/reader handles to one private ephemeral stream."""
+    descriptor, raw_path = tempfile.mkstemp(
+        prefix=".gludd-provider-",
+        suffix=".log",
+        dir=directory,
+    )
+    path = Path(raw_path)
+    writer = os.fdopen(descriptor, "w+t", encoding="utf-8")
+    reader: IO[str] | None = None
+    try:
+        reader = path.open("r", encoding="utf-8")
+        path.unlink(missing_ok=True)
+        yield writer, reader
+    finally:
+        if reader is not None:
+            reader.close()
+        writer.close()
+        path.unlink(missing_ok=True)
 
 
 class AzureContainerAppTerraformPhaseExecutor:
@@ -271,13 +430,18 @@ class AzureContainerAppTerraformPhaseExecutor:
         *,
         binary_resolver: Callable[[], str] = _default_binary_resolver,
         process_factory: Callable[..., Any] = subprocess.Popen,
+        telemetry_sink: TelemetrySink = _discard_telemetry,
         heartbeat_seconds: float = 10.0,
         poll_seconds: float = 0.25,
         monotonic: Callable[[], float] = time.monotonic,
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         """Initialize bounded process, timing, and binary-resolution seams."""
-        if not callable(binary_resolver) or not callable(process_factory):
+        if (
+            not callable(binary_resolver)
+            or not callable(process_factory)
+            or not callable(telemetry_sink)
+        ):
             raise ValueError("Terraform execution boundaries must be callable")
         if not callable(monotonic) or not callable(sleeper):
             raise ValueError("Terraform timing boundaries must be callable")
@@ -293,6 +457,7 @@ class AzureContainerAppTerraformPhaseExecutor:
                 raise ValueError(f"{name} must be positive")
         self._binary_resolver = binary_resolver
         self._process_factory = process_factory
+        self._telemetry_sink = telemetry_sink
         self._heartbeat_seconds = float(heartbeat_seconds)
         self._poll_seconds = float(poll_seconds)
         self._monotonic = monotonic
@@ -315,6 +480,8 @@ class AzureContainerAppTerraformPhaseExecutor:
         resource_stack = ExitStack()
         output_handle: IO[str] | None = None
         diagnostic_handle: IO[str] | None = None
+        diagnostic_reader: IO[str] | None = None
+        machine_ui: _TerraformMachineUIStream | None = None
         temporary_json: Path | None = None
         started: float | None = None
         failure_class = "internal"
@@ -353,7 +520,11 @@ class AzureContainerAppTerraformPhaseExecutor:
                     0o600,
                 )
                 output_handle = os.fdopen(descriptor, "w", encoding="utf-8")
-            diagnostic_handle = resource_stack.enter_context(_diagnostic_output())
+            diagnostic_handle, diagnostic_reader = resource_stack.enter_context(
+                _diagnostic_output(resolved_dir)
+            )
+            if phase in _MACHINE_UI_PHASES:
+                machine_ui = _TerraformMachineUIStream(phase)
             started = self._monotonic()
             progress(phase, TerraformRuntimeState.STARTED, 0)
             process = self._process_factory(
@@ -370,6 +541,12 @@ class AzureContainerAppTerraformPhaseExecutor:
             last_heartbeat = started
             while True:
                 returncode = process.poll()
+                if machine_ui is not None and diagnostic_reader is not None:
+                    _drain_machine_ui(
+                        diagnostic_reader,
+                        machine_ui,
+                        self._telemetry_sink,
+                    )
                 if returncode is not None:
                     break
                 now = self._monotonic()
@@ -386,6 +563,13 @@ class AzureContainerAppTerraformPhaseExecutor:
                     )
                     last_heartbeat = now
                 self._sleeper(self._poll_seconds)
+            if machine_ui is not None and diagnostic_reader is not None:
+                _drain_machine_ui(
+                    diagnostic_reader,
+                    machine_ui,
+                    self._telemetry_sink,
+                    final=True,
+                )
             if output_handle is not None:
                 output_handle.close()
                 output_handle = None
@@ -443,5 +627,6 @@ __all__ = (
     "AzureContainerAppTerraformPhaseError",
     "AzureContainerAppTerraformPhaseExecutor",
     "TerraformRuntimeState",
+    "TerraformUIEvent",
     "terraform_process_environment",
 )

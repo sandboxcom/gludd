@@ -22,6 +22,10 @@ from general_ludd.azure.resource_group_bootstrap import (
     AzureResourceGroupBootstrapTrace,
 )
 from general_ludd.infra.azure_containerapp_gpu import A100_PROFILE, T4_PROFILE
+from general_ludd.infra.azure_containerapp_make_types import (
+    MakeRuntimeEvent,
+    MakeRuntimeState,
+)
 from general_ludd.infra.azure_containerapp_owned_candidate import (
     owned_candidate_deployment_digest,
 )
@@ -42,6 +46,29 @@ CLIENT = "99999999-8888-7777-6666-555555555555"
 REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
 IMAGE = "vllm/vllm-openai@sha256:" + ("a" * 64)
 NOW = datetime(2026, 9, 7, 12, 0, tzinfo=UTC)
+
+
+def test_runtime_trace_forwards_only_structured_infrastructure_facts() -> None:
+    messages: list[str] = []
+    event = MakeRuntimeEvent(
+        phase="apply",
+        state=MakeRuntimeState.HEARTBEAT,
+        operation_digest="a" * 64,
+        elapsed_seconds=73,
+        event_source="opentofu_ui",
+        resource_type="azapi_resource",
+        action="create",
+        event_kind="apply_progress",
+    )
+
+    bootstrap._runtime_trace(messages.append, "environment_terraform", event)
+
+    assert len(messages) == 1
+    assert "event_source=opentofu_ui" in messages[0]
+    assert "resource_type=azapi_resource" in messages[0]
+    assert "action=create" in messages[0]
+    assert "event_kind=apply_progress" in messages[0]
+    assert "secret_output=false" in messages[0]
 
 
 def _config(**overrides: object) -> dict[str, object]:

@@ -39,6 +39,7 @@ def _emit(
     policy: AzureEnvironmentLifecyclePolicy,
     *,
     active_app_count: int = 0,
+    failure_reason: str | None = None,
 ) -> None:
     try:
         sink(
@@ -47,6 +48,7 @@ def _emit(
                 operation_digest=policy.operation_digest,
                 profile_count=len(policy.profiles),
                 active_app_count=active_app_count,
+                failure_reason=failure_reason,
             )
         )
     except Exception:
@@ -138,12 +140,21 @@ def ensure_azure_containerapp_environment(
     if existing is None:
         _emit(trace_sink, EnvironmentLifecycleEvent.ENVIRONMENT_ABSENT, policy)
     else:
-        existing_profiles = validated_environment_profiles(
-            existing,
-            policy,
-            require_desired_profiles=False,
-            require_current_tags=False,
-        )
+        try:
+            existing_profiles = validated_environment_profiles(
+                existing,
+                policy,
+                require_desired_profiles=False,
+                require_current_tags=False,
+            )
+        except AzureEnvironmentLifecycleError as exc:
+            _emit(
+                trace_sink,
+                EnvironmentLifecycleEvent.INSPECTION_FAILED,
+                policy,
+                failure_reason=exc.reason or "unknown",
+            )
+            raise
         effective_policy = _merged_policy(policy, existing_profiles)
         _emit(trace_sink, EnvironmentLifecycleEvent.OWNERSHIP_VERIFIED, effective_policy)
 

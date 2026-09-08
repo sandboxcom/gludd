@@ -385,11 +385,68 @@ def _runtime_trace(
     )
     elapsed = getattr(event, "elapsed_seconds", 0)
     failure_class = getattr(event, "failure_class", None)
+    event_source = getattr(event, "event_source", None)
+    allowed_fields = {
+        "event_source": frozenset({"opentofu_ui", "azure_resource_manager"}),
+        "resource_type": frozenset(
+            {
+                "azapi_resource",
+                "microsoft.app/containerapps",
+                "microsoft.app/managedenvironments",
+            }
+        ),
+        "action": frozenset(
+            {"noop", "create", "read", "update", "replace", "delete", "move"}
+        ),
+        "event_kind": frozenset(
+            {
+                "planned_change",
+                "resource_drift",
+                "apply_start",
+                "apply_progress",
+                "apply_complete",
+                "apply_errored",
+            }
+        ),
+        "provisioning_state": frozenset(
+            {
+                "succeeded",
+                "failed",
+                "canceled",
+                "waiting",
+                "in-progress",
+                "provisioning",
+                "deleting",
+                "initialization-in-progress",
+                "infrastructure-setup-in-progress",
+                "infrastructure-setup-complete",
+                "scheduled-for-delete",
+                "upgrade-requested",
+                "upgrade-failed",
+            }
+        ),
+    }
+    structured = ""
+    if event_source in allowed_fields["event_source"]:
+        values = {
+            name: getattr(event, name, None)
+            for name in (
+                "event_source",
+                "resource_type",
+                "action",
+                "event_kind",
+                "provisioning_state",
+            )
+        }
+        structured = " " + " ".join(
+            f"{name}={value if value in allowed_fields[name] else 'none'}"
+            for name, value in values.items()
+        )
     progress_sink(
         "SELF_IMPROVE_AZURE_BOOTSTRAP "
         f"component={component} phase={phase} state={state} "
         f"operation_digest={digest or 'unbound'} elapsed_seconds={elapsed} "
-        f"failure_class={failure_class or 'none'} "
+        f"failure_class={failure_class or 'none'}{structured} "
         "secret_output=false"
     )
 
