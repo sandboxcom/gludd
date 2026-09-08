@@ -17,6 +17,7 @@ from general_ludd.event_loop.lease import (
     reclaim_expired_leases,
     release_lease,
     renew_lease,
+    request_lease_cancellation,
 )
 from general_ludd.schemas.todo import TodoStatus
 
@@ -481,6 +482,45 @@ class TestReclaimExpiredLeases:
 
 
 class TestLeaseHeartbeatAndTermination:
+    async def test_exact_owner_can_request_immediate_cancellation(self) -> None:
+        session = _mock_session()
+        session.execute.return_value = MagicMock(rowcount=1)
+        now = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
+
+        with patch("general_ludd.event_loop.lease.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.UTC = UTC
+            requested = await request_lease_cancellation(
+                session,
+                bucket_key="core:TODO-01",
+                holder_id="holder-1",
+                todo_version=7,
+            )
+
+        assert requested is True
+        statement = session.execute.await_args.args[0]
+        compiled = statement.compile(compile_kwargs={"literal_binds": True})
+        sql = str(compiled)
+        assert "core:TODO-01" in sql
+        assert "holder-1" in sql
+        assert "todo_version = 7" in sql
+        assert compiled.params == {}
+        session.flush.assert_awaited_once()
+
+    async def test_wrong_attempt_cannot_request_cancellation(self) -> None:
+        session = _mock_session()
+        session.execute.return_value = MagicMock(rowcount=0)
+
+        requested = await request_lease_cancellation(
+            session,
+            bucket_key="core:TODO-01",
+            holder_id="intruder",
+            todo_version=7,
+        )
+
+        assert requested is False
+        session.flush.assert_awaited_once()
+
     async def test_renew_returns_renewed_after_exact_cas(self) -> None:
         session = _mock_session()
         cursor = MagicMock(rowcount=1)

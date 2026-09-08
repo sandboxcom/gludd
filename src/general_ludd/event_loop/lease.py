@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any, cast
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -195,6 +195,47 @@ async def renew_lease(
     return LeaseRenewalStatus.STALE
 
 
+async def request_lease_cancellation(
+    session: AsyncSession,
+    *,
+    bucket_key: str,
+    holder_id: str,
+    todo_version: int,
+) -> bool:
+    """Request cancellation only for the exact current execution attempt.
+
+    Expiring the lease in the same compare-and-set makes it eligible for the
+    existing two-phase reclaimer as soon as the runner later supplies terminal
+    proof.  The original request timestamp is retained across idempotent calls.
+    """
+    _validate_lease_input(
+        [bucket_key],
+        holder_id,
+        1,
+        {bucket_key: todo_version},
+    )
+    now = datetime.now(UTC)
+    result = await session.execute(
+        update(BucketLeaseModel)
+        .where(
+            BucketLeaseModel.bucket_key == bucket_key,
+            BucketLeaseModel.holder_id == holder_id,
+            BucketLeaseModel.todo_version == todo_version,
+            BucketLeaseModel.termination_confirmed_at.is_(None),
+        )
+        .values(
+            cancel_requested_at=func.coalesce(
+                BucketLeaseModel.cancel_requested_at,
+                now,
+            ),
+            expires_at=now,
+            updated_at=now,
+        )
+    )
+    await session.flush()
+    return (cast("CursorResult[Any]", result).rowcount or 0) == 1
+
+
 async def confirm_lease_termination(
     session: AsyncSession,
     *,
@@ -318,4 +359,5 @@ __all__ = (
     "reclaim_expired_leases",
     "release_lease",
     "renew_lease",
+    "request_lease_cancellation",
 )
