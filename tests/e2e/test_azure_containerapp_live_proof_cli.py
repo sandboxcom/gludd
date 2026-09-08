@@ -696,6 +696,12 @@ def test_default_live_resources_rejects_unapproved_credentials_before_clients(
 ) -> None:
     project = _project(tmp_path)
     args, policy, requirement = _live_inputs(project)
+    environment_policy = live_cli._environment_policy(
+        policy,
+        guard=cast(Any, SimpleNamespace(expected_digest="d" * 64)),
+        project_root=project,
+        now=datetime(2026, 9, 6, 19, 0, tzinfo=UTC),
+    )
     monkeypatch.setattr(
         live_cli,
         "build_azure_containerapp_runtime_resources",
@@ -707,8 +713,68 @@ def test_default_live_resources_rejects_unapproved_credentials_before_clients(
             args,
             policy,
             requirement,
+            environment_policy,
             credentials=cast(Any, credentials),
         )
+
+
+def test_default_live_resources_bootstraps_owned_group_before_runtime_construction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _project(tmp_path)
+    args, policy, requirement = _live_inputs(project)
+    environment_policy = live_cli._environment_policy(
+        policy,
+        guard=cast(Any, SimpleNamespace(expected_digest="d" * 64)),
+        project_root=project,
+        now=datetime(2026, 9, 6, 19, 0, tzinfo=UTC),
+    )
+    credentials = AzureAcceleratorCredentials(
+        client_id="client-id",
+        client_secret="unit-secret",
+        subscription_id=SUBSCRIPTION,
+        tenant_id="tenant-id",
+    )
+    calls: list[tuple[str, object]] = []
+    resources = object()
+
+    monkeypatch.setattr(
+        live_cli,
+        "load_azure_accelerator_credentials",
+        lambda path, *, expected_subscription_id: credentials,
+    )
+
+    def bootstrap(group_policy: object, active_credentials: object, **_kwargs: object) -> None:
+        assert active_credentials is credentials
+        calls.append(("resource-group", group_policy))
+
+    monkeypatch.setattr(
+        live_cli,
+        "ensure_azure_resource_group",
+        bootstrap,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        live_cli,
+        "build_azure_containerapp_runtime_resources",
+        lambda **_kwargs: calls.append(("runtime", policy)) or resources,
+    )
+
+    observed = live_cli._default_live_resources(
+        args,
+        policy,
+        requirement,
+        environment_policy=environment_policy,
+    )
+
+    assert observed is resources
+    assert [name for name, _value in calls] == ["resource-group", "runtime"]
+    group_policy = calls[0][1]
+    assert group_policy.subscription_id == SUBSCRIPTION
+    assert group_policy.resource_group == policy.resource_group
+    assert group_policy.location == policy.location
+    assert group_policy.owner_digest == environment_policy.owner_digest
 
 
 def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
@@ -896,6 +962,11 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
         FakeEnvironmentRuntime,
     )
     monkeypatch.setattr(live_cli, "build_azure_containerapp_candidate_backend", build_backend)
+    monkeypatch.setattr(
+        live_cli,
+        "ensure_azure_resource_group",
+        lambda *_args, **_kwargs: None,
+    )
     monkeypatch.setattr(live_cli.time, "monotonic", lambda: 0.0)
     monkeypatch.setattr(
         live_cli.time,
@@ -903,7 +974,12 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
         lambda seconds: sleep_seconds.append(seconds),
     )
 
-    resources = live_cli._default_live_resources(args, policy, requirement)
+    resources = live_cli._default_live_resources(
+        args,
+        policy,
+        requirement,
+        environment_policy,
+    )
     runtime_arguments["preflight_check"](policy, requirement)
     assert runtime_arguments["read_app"](policy, False) == ready_document
     assert runtime_arguments["read_app"](policy, True) is None
@@ -1019,6 +1095,12 @@ def test_default_resource_construction_failure_closes_every_created_client(
 ) -> None:
     project = _project(tmp_path)
     args, policy, requirement = _live_inputs(project)
+    environment_policy = live_cli._environment_policy(
+        policy,
+        guard=cast(Any, SimpleNamespace(expected_digest="d" * 64)),
+        project_root=project,
+        now=datetime(2026, 9, 6, 19, 0, tzinfo=UTC),
+    )
     credentials = AzureAcceleratorCredentials(
         client_id="client-id",
         client_secret="unit-secret",
@@ -1071,9 +1153,19 @@ def test_default_resource_construction_failure_closes_every_created_client(
         "AzureContainerAppTerraformRuntime",
         lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("constructor failed")),
     )
+    monkeypatch.setattr(
+        live_cli,
+        "ensure_azure_resource_group",
+        lambda *_args, **_kwargs: None,
+    )
 
     with pytest.raises(RuntimeError, match="constructor failed"):
-        live_cli._default_live_resources(args, policy, requirement)
+        live_cli._default_live_resources(
+            args,
+            policy,
+            requirement,
+            environment_policy,
+        )
 
     assert lifecycle == [
         "app.close",
@@ -1125,6 +1217,12 @@ def test_openbao_resource_factory_acquires_one_lease_and_releases_it_last(
 ) -> None:
     project = _project(tmp_path)
     args, policy, requirement = _live_inputs(project)
+    environment_policy = live_cli._environment_policy(
+        policy,
+        guard=cast(Any, SimpleNamespace(expected_digest="d" * 64)),
+        project_root=project,
+        now=datetime(2026, 9, 6, 19, 0, tzinfo=UTC),
+    )
     credentials = AzureAcceleratorCredentials(
         client_id="33333333-4444-4555-8666-777777777777",
         client_secret="dynamic-secret-never-render",
@@ -1158,6 +1256,7 @@ def test_openbao_resource_factory_acquires_one_lease_and_releases_it_last(
         active_args: object,
         active_policy: object,
         active_requirement: object,
+        active_environment_policy: object,
         *,
         credentials: object,
         credential_release: object,
@@ -1166,6 +1265,7 @@ def test_openbao_resource_factory_acquires_one_lease_and_releases_it_last(
             args=active_args,
             policy=active_policy,
             requirement=active_requirement,
+            environment_policy=active_environment_policy,
             credentials=credentials,
             credential_release=credential_release,
         )
@@ -1177,12 +1277,14 @@ def test_openbao_resource_factory_acquires_one_lease_and_releases_it_last(
         args,
         policy,
         requirement,
+        environment_policy,
     )
     resources.close()
 
     assert captured["args"] is args
     assert captured["policy"] is policy
     assert captured["requirement"] is requirement
+    assert captured["environment_policy"] is environment_policy
     assert captured["credentials"] is credentials
     assert lifecycle == ["lease.acquire", "resources.close", "lease.release"]
 
@@ -1193,6 +1295,12 @@ def test_openbao_resource_factory_revokes_lease_when_construction_fails(
 ) -> None:
     project = _project(tmp_path)
     args, policy, requirement = _live_inputs(project)
+    environment_policy = live_cli._environment_policy(
+        policy,
+        guard=cast(Any, SimpleNamespace(expected_digest="d" * 64)),
+        project_root=project,
+        now=datetime(2026, 9, 6, 19, 0, tzinfo=UTC),
+    )
     credentials = AzureAcceleratorCredentials(
         client_id="33333333-4444-4555-8666-777777777777",
         client_secret="dynamic-secret-never-render",
@@ -1224,7 +1332,7 @@ def test_openbao_resource_factory_revokes_lease_when_construction_fails(
 
     factory = live_cli.build_openbao_live_resources_factory(cast(Any, Source()))
     with pytest.raises(RuntimeError, match="private construction detail"):
-        factory(args, policy, requirement)
+        factory(args, policy, requirement, environment_policy)
 
     assert releases == [lease]
 

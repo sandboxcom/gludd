@@ -1,6 +1,6 @@
 {
   "Name": "General Ludd Accelerator Deployer",
-  "Description": "Create or verify the exact Gludd resource group, manage its owned Container Apps environments and apps, and read GPU metrics; no group delete, registry, VM, network, secret, role, or provider-administration access.",
+  "Description": "Top-level Gludd controller bootstrap and owned Container Apps lifecycle; no group delete, registry, VM, network, secret, role, or provider-administration access, and never delegated to model components.",
   "Actions": [
     "Microsoft.App/managedEnvironments/read",
     "Microsoft.App/managedEnvironments/write",
@@ -24,6 +24,6 @@
   "DataActions": [],
   "NotDataActions": [],
   "AssignableScopes": [
-    "/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+    "/subscriptions/{subscription_id}"
   ]
 }

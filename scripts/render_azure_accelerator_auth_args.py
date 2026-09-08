@@ -123,7 +123,7 @@ def build_auth_arguments(
     subscription_id = _validate_subscription(subscription_id)
     resource_group = _validate_resource_group(resource_group)
     service_principal_name = _validate_principal_name(service_principal_name)
-    scope = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+    scope = f"/subscriptions/{subscription_id}"
     return (
         "ad",
         "sp",

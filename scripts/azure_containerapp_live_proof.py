@@ -23,6 +23,11 @@ from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorCredentials,
     load_azure_accelerator_credentials,
 )
+from general_ludd.azure.resource_group_bootstrap import (
+    AzureResourceGroupBootstrapPolicy,
+    AzureResourceGroupBootstrapTrace,
+    ensure_azure_resource_group,
+)
 from general_ludd.cloud.azure_game_runtime import resolve_public_ipv4_cidr
 from general_ludd.infra.azure_containerapp_arm import (
     HttpxARMJSONTransport,
@@ -130,6 +135,7 @@ LiveResourcesFactory = Callable[
         argparse.Namespace,
         AzureContainerAppLiveProofPolicy,
         ModelServingRequirement,
+        AzureEnvironmentLifecyclePolicy,
     ],
     _LiveResources,
 ]
@@ -167,6 +173,7 @@ def _trace(
         | LiveProofTrace
         | MakeRuntimeEvent
         | PreflightTrace
+        | AzureResourceGroupBootstrapTrace
     ),
 ) -> None:
     fields = {
@@ -374,6 +381,7 @@ def _default_live_resources(
     args: argparse.Namespace,
     policy: AzureContainerAppLiveProofPolicy,
     requirement: ModelServingRequirement,
+    environment_policy: AzureEnvironmentLifecyclePolicy,
     *,
     credentials: AzureAcceleratorCredentials | None = None,
     credential_release: Callable[[], None] | None = None,
@@ -389,6 +397,26 @@ def _default_live_resources(
         or credentials.subscription_id != policy.subscription_id
     ):
         raise ValueError("Azure credentials do not match the approved subscription")
+    if (
+        environment_policy.subscription_id != policy.subscription_id
+        or environment_policy.resource_group != policy.resource_group
+        or environment_policy.environment_name != policy.environment_name
+        or environment_policy.location != policy.location
+    ):
+        raise ValueError("Azure environment policy does not match the approved deployment")
+    ensure_azure_resource_group(
+        AzureResourceGroupBootstrapPolicy(
+            subscription_id=policy.subscription_id,
+            resource_group=policy.resource_group,
+            location=policy.location,
+            owner_digest=environment_policy.owner_digest,
+        ),
+        credentials,
+        trace_sink=lambda event: _trace(
+            "AZURE_RESOURCE_GROUP_BOOTSTRAP_TRACE",
+            event,
+        ),
+    )
 
     def progress(message: str) -> None:
         _component, separator, fields = message.partition(" ")
@@ -452,6 +480,7 @@ def build_openbao_live_resources_factory(
         args: argparse.Namespace,
         policy: AzureContainerAppLiveProofPolicy,
         requirement: ModelServingRequirement,
+        environment_policy: AzureEnvironmentLifecyclePolicy,
     ) -> _LiveResources:
         lease = source.acquire()
         if not isinstance(lease, AzureAcceleratorCredentialLease):
@@ -461,6 +490,7 @@ def build_openbao_live_resources_factory(
                 args,
                 policy,
                 requirement,
+                environment_policy,
                 credentials=lease.credentials,
                 credential_release=lambda: source.release(lease),
             )
@@ -507,7 +537,12 @@ def main(
                 project_root=project_root,
                 now=datetime.now(UTC),
             )
-            resources = live_resources_factory(args, policy, requirement)
+            resources = live_resources_factory(
+                args,
+                policy,
+                requirement,
+                environment_policy,
+            )
             result = run_owned_azure_containerapp_live_proof(
                 policy,
                 environment_policy=environment_policy,
