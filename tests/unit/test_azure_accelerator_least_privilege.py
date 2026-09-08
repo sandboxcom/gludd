@@ -12,7 +12,9 @@ SUBSCRIPTION_ID = "11111111-2222-3333-4444-555555555555"
 RESOURCE_GROUP = "gludd-models-eastus"
 SP_NAME = "gludd accelerator 20260905"
 ROLE_NAME = "General Ludd Accelerator Deployer"
-SUBSCRIPTION_SCOPE = f"/subscriptions/{SUBSCRIPTION_ID}"
+RESOURCE_GROUP_SCOPE = (
+    f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/{RESOURCE_GROUP}"
+)
 
 EXPECTED_ACTIONS = frozenset(
     {
@@ -90,7 +92,7 @@ def test_role_has_no_secret_admin_provider_or_infrastructure_permissions() -> No
     } == {"microsoft.insights/metrics/read"}
 
 
-def test_top_level_identity_has_parent_scope_required_to_create_resource_group() -> None:
+def test_controller_identity_retains_exact_resource_group_scope() -> None:
     role_arguments = subject.build_role_arguments(
         subscription_id=SUBSCRIPTION_ID,
         resource_group=RESOURCE_GROUP,
@@ -103,8 +105,8 @@ def test_top_level_identity_has_parent_scope_required_to_create_resource_group()
     )
 
     assert role["Name"] == ROLE_NAME
-    assert role["AssignableScopes"] == [SUBSCRIPTION_SCOPE]
-    assert auth_arguments[auth_arguments.index("--scopes") + 1] == SUBSCRIPTION_SCOPE
+    assert role["AssignableScopes"] == [RESOURCE_GROUP_SCOPE]
+    assert auth_arguments[auth_arguments.index("--scopes") + 1] == RESOURCE_GROUP_SCOPE
 
 
 def test_runtime_role_retains_only_owned_lifecycle_as_mutating_operations() -> None:

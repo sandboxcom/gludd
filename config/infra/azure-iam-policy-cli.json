@@ -1,7 +1,7 @@
 {
   "properties": {
     "roleName": "General Ludd Accelerator Deployer",
-    "description": "Top-level Gludd controller bootstrap and owned Container Apps lifecycle; no group delete, registry, VM, network, secret, role, or provider-administration access, and never delegated to model components.",
+    "description": "Create or verify the exact Gludd resource group, manage its owned Container Apps environments and apps, and read GPU metrics; no group delete, registry, VM, network, secret, role, or provider-administration access.",
     "permissions": [
       {
         "actions": [
@@ -29,7 +29,7 @@
       }
     ],
     "assignableScopes": [
-      "/subscriptions/{subscription_id}"
+      "/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
     ]
   }
 }

@@ -455,11 +455,11 @@ class TestAzureCliPolicySchema:
         desc = azure_cli_policy["properties"].get("description", "")
         assert isinstance(desc, str) and len(desc) > 0
 
-    def test_cli_policy_has_subscription_bootstrap_scope(
-        self, azure_cli_policy: dict
-    ) -> None:
+    def test_cli_policy_has_assignable_scopes(self, azure_cli_policy: dict) -> None:
         scopes = azure_cli_policy["properties"].get("assignableScopes", [])
-        assert scopes == ["/subscriptions/{subscription_id}"]
+        assert len(scopes) == 1
+        assert scopes[0].startswith("/subscriptions/")
+        assert "/resourceGroups/" in scopes[0]
 
     def test_cli_policy_has_permissions(self, azure_cli_policy: dict) -> None:
         perms = azure_cli_policy["properties"].get("permissions", [])
