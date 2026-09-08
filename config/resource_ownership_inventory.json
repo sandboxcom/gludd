@@ -642,7 +642,7 @@
     },
     {
       "path": "src/general_ludd/ansible/core_runner.py",
-      "line": 761,
+      "line": 814,
       "column": 33,
       "kind": "temp-artifact",
       "owner": "CoreAnsibleRunner._execute_with_runner",
@@ -1170,7 +1170,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 1162,
+      "line": 1160,
       "column": 15,
       "kind": "async-task",
       "owner": "_build_self_update_audit_sink._sink",
@@ -1181,7 +1181,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 1218,
+      "line": 1216,
       "column": 15,
       "kind": "client",
       "owner": "_warm_start_local_models",
@@ -1192,7 +1192,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 1306,
+      "line": 1304,
       "column": 18,
       "kind": "service",
       "owner": "_lifespan",
@@ -1203,7 +1203,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 2429,
+      "line": 2436,
       "column": 15,
       "kind": "async-task",
       "owner": "_lifespan",
@@ -1214,7 +1214,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 2681,
+      "line": 2688,
       "column": 36,
       "kind": "async-task",
       "owner": "_lifespan",
@@ -1225,7 +1225,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 2778,
+      "line": 2785,
       "column": 39,
       "kind": "async-task",
       "owner": "_lifespan",
@@ -1236,7 +1236,51 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3432,
+      "line": 962,
+      "column": 22,
+      "kind": "async-task",
+      "owner": "EventLoop._run_playbook_with_lease_supervision",
+      "acquisition": "asyncio.create_task(self._bounded_to_thread(self._runner.run_playbook, playbook_name=playbook, private_data_dir=private_data_dir, env=env, cancel_requested=supervisor.is_cancellation_requested))",
+      "teardown": "await asyncio.shield(runner_task); await self._await_terminal_task(runner_task); ownership-transfer:return await asyncio.shield(runner_task)",
+      "source_hash": "16722bb4816482ff5bbb1080e8df43d122b9318e2550fdf40e5e28db3fd64fb4",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/event_loop/loop.py",
+      "line": 974,
+      "column": 27,
+      "kind": "async-task",
+      "owner": "EventLoop._run_playbook_with_lease_supervision",
+      "acquisition": "asyncio.create_task(supervisor.request_cancellation())",
+      "teardown": "await self._await_terminal_task(request_task)",
+      "source_hash": "feae3fb7188486783fbb3d21b7c5d040f69387dd13e385ed2d96fa9a45b98e28",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/event_loop/loop.py",
+      "line": 988,
+      "column": 32,
+      "kind": "async-task",
+      "owner": "EventLoop._run_playbook_with_lease_supervision",
+      "acquisition": "asyncio.create_task(supervisor.confirm_termination())",
+      "teardown": "await self._await_terminal_task(confirmation_task)",
+      "source_hash": "b68c8439b3e19be5fb09849b86c5eee8711346669cdba945356d86fe1a8689a3",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/event_loop/loop.py",
+      "line": 2500,
+      "column": 12,
+      "kind": "async-task",
+      "owner": "EventLoop._dispatch_execute_job_isolated",
+      "acquisition": "asyncio.create_task(lease_supervisor.run())",
+      "teardown": "await self._stop_execution_lease_heartbeat(lease_supervisor, heartbeat_task); ownership-transfer:self._stop_execution_lease_heartbeat(lease_supervisor, heartbeat_task)",
+      "source_hash": "851b60e2480c8450fbf1690482a70647fb77176b2962ec75444ae80256ce3e5d",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/event_loop/loop.py",
+      "line": 3629,
       "column": 26,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1247,7 +1291,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3490,
+      "line": 3687,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1258,7 +1302,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 4533,
+      "line": 4753,
       "column": 40,
       "kind": "async-task",
       "owner": "EventLoop._phase_reconcile_completed_decisions",
@@ -1269,7 +1313,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 4547,
+      "line": 4767,
       "column": 44,
       "kind": "async-task",
       "owner": "EventLoop._phase_reconcile_completed_decisions",
@@ -2024,6 +2068,17 @@
       "acquisition": "tempfile.mkstemp(dir=dir_name, suffix='.tmp')",
       "teardown": "atomic-replace-or-unlink",
       "source_hash": "fe7cb0ae69bc98d66a39f13dc12931836738eee9e2cbf15763e8ba90455a73ad",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/self_improve/managed_execution.py",
+      "line": 150,
+      "column": 44,
+      "kind": "async-task",
+      "owner": "ManagedSelfImproveProcessExecutor.run_async",
+      "acquisition": "asyncio.create_task(asyncio.to_thread(self.run, repo_root, plan, cancel_requested=cancel.is_set))",
+      "teardown": "await asyncio.shield(thread_task); ownership-transfer:return await asyncio.shield(thread_task)",
+      "source_hash": "c7919b893d5d8d60fb01c3b8af13c884a885b64f6e974ae63fb093d37567c30f",
       "owned": true
     },
     {

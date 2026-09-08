@@ -374,7 +374,6 @@ src/general_ludd/encoding_converter.py:decode_with_bom
 src/general_ludd/encoding_converter.py:guess_encoding
 src/general_ludd/encoding_converter.py:roundtrip
 src/general_ludd/entity/research_patterns.py:research_entity
-src/general_ludd/event_loop/lease.py:acquire_lease
 src/general_ludd/events/types.py:BranchEvent
 src/general_ludd/execution/engine.py:validate_extra_vars_safe
 src/general_ludd/execution/map_reduce_executor.py:map_reduce_builder
