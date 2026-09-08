@@ -66,7 +66,7 @@ def test_release_ops_reexports_canonical_readme_check() -> None:
 
 def test_pause_router_reexports_canonical_request_contracts() -> None:
     """Pause clients keep their established request-model identities."""
-    from general_ludd.routers import _pause_contracts as pause_contracts
+    from general_ludd.controllers import pause_contracts
     from general_ludd.routers import pause
 
     assert pause.PauseEntityRequest is pause_contracts.PauseEntityRequest

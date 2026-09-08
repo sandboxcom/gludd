@@ -1,4 +1,4 @@
-"""Private request and response contracts shared by pause/resume routes."""
+"""Request and response contracts shared by pause/resume routes."""
 
 from __future__ import annotations
 
