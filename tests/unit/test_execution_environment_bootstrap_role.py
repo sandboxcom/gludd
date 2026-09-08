@@ -82,8 +82,12 @@ def test_role_has_complete_lifecycle_surface() -> None:
 
 def test_molecule_scenario_exercises_non_mutating_present_and_absent_plans() -> None:
     molecule = (MOLECULE / "molecule.yml").read_text(encoding="utf-8")
+    prepare = (MOLECULE / "default/prepare.yml").read_text(encoding="utf-8")
     converge = (MOLECULE / "default/converge.yml").read_text(encoding="utf-8")
     verify = (MOLECULE / "default/verify.yml").read_text(encoding="utf-8")
+    assert "prepare: default/prepare.yml" in molecule
+    assert "- prepare" in molecule
+    assert "No host mutation is required" in prepare
     assert "idempotence" in molecule
     assert "general_ludd.agent.execution_environment_bootstrap" in converge
     assert "execution_environment_bootstrap_validate_only: true" in converge

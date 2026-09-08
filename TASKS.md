@@ -167,6 +167,7 @@ S83.157/S83.158 exact autonomous-compute and atomic-scheduler surface:
 - `config/ansible/runtime-lock.json`
 - `docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md`
 - `molecule/playbooks/role_execution_environment_bootstrap/molecule.yml`
+- `molecule/playbooks/role_execution_environment_bootstrap/default/prepare.yml`
 - `molecule/playbooks/role_execution_environment_bootstrap/default/converge.yml`
 - `molecule/playbooks/role_execution_environment_bootstrap/default/verify.yml`
 - `playbooks/bootstrap_execution_environment.yml`

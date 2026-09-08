@@ -76,6 +76,10 @@ machine, execution-environment image, immutable image identity, health facts,
 and exact teardown. Runners without that lifecycle method are explicitly treated
 as externally managed for compatibility.
 
+The role's Molecule scenario exercises an explicit, non-mutating `prepare` phase
+before validating both the `present` and `absent` plans. This keeps bootstrap
+readiness, idempotence, and exact teardown in the same CI-visible lifecycle.
+
 When an approved self-improvement plan includes Azure Container Apps, the normal
 managed candidate factory lazily composes the Azure SDK, OpenTofu-in-EE plan,
 model-serving requirement, topology, call budget, and owned release callback.
