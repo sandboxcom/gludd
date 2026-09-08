@@ -5,7 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import NoReturn
 
-from general_ludd.infra.azure_containerapp_arm import AzureContainerAppARMError
+from general_ludd.infra.azure_containerapp_arm import (
+    ENVIRONMENT_PREFLIGHT_API_VERSION,
+    AzureContainerAppARMError,
+)
 from general_ludd.infra.azure_containerapp_gpu import (
     AzureContainerAppGPUUnavailable,
     GPUProfileSelection,
@@ -36,7 +39,6 @@ from general_ludd.infra.azure_containerapp_preflight_types import (
     _WorkloadProfileState,
 )
 
-_API_VERSION = "2025-07-01"
 _count = count
 _parse_environment = parse_environment
 _parse_usages = parse_usages
@@ -56,6 +58,7 @@ def _emit(sink: Callable[[PreflightTrace], None], trace: PreflightTrace) -> None
         sink(trace)
     except Exception:
         raise RuntimeError("preflight trace publication failed") from None
+
 
 class AzureContainerAppReadOnlyPreflight:
     """Read one named environment and quota before any paid Azure mutation."""
@@ -108,6 +111,15 @@ class AzureContainerAppReadOnlyPreflight:
                     f"{phase}_not_found",
                     f"Azure Container Apps {phase} does not exist",
                 )
+            if (
+                isinstance(exc.status_code, int)
+                and 100 <= exc.status_code <= 599
+            ):
+                self._refuse(
+                    location,
+                    f"{phase}_http_{exc.status_code}",
+                    f"Azure Container Apps {phase} read failed",
+                )
             self._refuse(
                 location,
                 f"{phase}_read_failed",
@@ -156,7 +168,7 @@ class AzureContainerAppReadOnlyPreflight:
     ) -> _EnvironmentEvidence:
         """Read and bind the exact named environment and configured profile."""
         payload = self._read(
-            path=f"{root}?api-version={_API_VERSION}",
+            path=f"{root}?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}",
             token=token,
             phase="environment",
             location=location,
@@ -193,12 +205,50 @@ class AzureContainerAppReadOnlyPreflight:
         selection: GPUProfileSelection,
     ) -> tuple[ContainerAppUsage, ...]:
         """Read the bounded environment-level usage evidence."""
-        payload = self._read(
-            path=f"{root}/usages?api-version={_API_VERSION}",
-            token=token,
-            phase="usages",
-            location=location,
-        )
+        def unavailable(reason: str) -> tuple[ContainerAppUsage, ...]:
+            _emit(
+                self._trace_sink,
+                PreflightTrace(
+                    "supplementary_usage_unavailable",
+                    location,
+                    profile_name=selection.profile.name,
+                    reason=reason,
+                ),
+            )
+            return ()
+
+        try:
+            payload = self._transport.get_json(
+                f"{root}/usages?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}",
+                token,
+            )
+        except AzureContainerAppARMError as exc:
+            if (
+                isinstance(exc.status_code, int)
+                and 500 <= exc.status_code <= 599
+            ):
+                return unavailable(f"usages_http_{exc.status_code}")
+            if exc.status_code in {401, 403}:
+                self._refuse(
+                    location,
+                    "usages_unauthorized",
+                    "Azure Container Apps usages read is not authorized",
+                )
+            if exc.status_code == 404:
+                self._refuse(
+                    location,
+                    "usages_not_found",
+                    "Azure Container Apps usages does not exist",
+                )
+            if isinstance(exc.status_code, int) and 100 <= exc.status_code <= 599:
+                self._refuse(
+                    location,
+                    f"usages_http_{exc.status_code}",
+                    "Azure Container Apps usages read failed",
+                )
+            return unavailable("usages_read_failed")
+        except Exception:
+            return unavailable("usages_read_failed")
         try:
             usages = _parse_usages(payload)
         except AzureContainerAppPreflightError:
@@ -226,19 +276,32 @@ class AzureContainerAppReadOnlyPreflight:
         location: str,
         workload_profile_name: str,
         selection: GPUProfileSelection,
-    ) -> _WorkloadProfileState:
+    ) -> _WorkloadProfileState | None:
         """Read the exact workload-profile state and publish its count."""
         payload = self._read(
-            path=f"{root}/workloadProfileStates?api-version={_API_VERSION}",
+            path=(
+                f"{root}/workloadProfileStates"
+                f"?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}"
+            ),
             token=token,
             phase="workload_profile_states",
             location=location,
         )
-        parsed = self._parse_or_refuse(
-            location,
-            lambda: _parse_workload_profile_state(payload, workload_profile_name),
-        )
-        assert isinstance(parsed, tuple)
+        try:
+            parsed = _parse_workload_profile_state(payload, workload_profile_name)
+        except AzureContainerAppEvidenceError as exc:
+            if exc.reason != "workload_profile_state_missing":
+                self._refuse(location, exc.reason, str(exc))
+            _emit(
+                self._trace_sink,
+                PreflightTrace(
+                    "supplementary_profile_state_unavailable",
+                    location,
+                    profile_name=selection.profile.name,
+                    reason=exc.reason,
+                ),
+            )
+            return None
         state, state_count = parsed
         _emit(
             self._trace_sink,
@@ -257,20 +320,38 @@ class AzureContainerAppReadOnlyPreflight:
         location: str,
         selection: GPUProfileSelection,
         usages: tuple[ContainerAppUsage, ...],
-        state: _WorkloadProfileState,
-    ) -> float:
-        """Intersect state and optional usage headroom, refusing exhaustion."""
+        state: _WorkloadProfileState | None,
+    ) -> tuple[float | None, str | None]:
+        """Intersect available quota evidence without inventing absent values."""
         environment_quota = _quota_for_profile(selection.profile, usages)
-        remaining = float(state.remaining)
+        remaining_values: list[float] = []
+        quota_name: str | None = None
+        if state is not None:
+            remaining_values.append(float(state.remaining))
+            quota_name = state.name
         if environment_quota is not None:
-            remaining = min(remaining, environment_quota.remaining)
+            remaining_values.append(environment_quota.remaining)
+            if quota_name is None:
+                quota_name = environment_quota.name
+        if not remaining_values:
+            _emit(
+                self._trace_sink,
+                PreflightTrace(
+                    "quota_verification_deferred",
+                    location,
+                    profile_name=selection.profile.name,
+                    reason="provider_evidence_unavailable",
+                ),
+            )
+            return None, None
+        remaining = min(remaining_values)
         if remaining < 1:
             self._refuse(
                 location,
                 "gpu_quota_exhausted",
                 "Azure Container Apps GPU quota is exhausted",
             )
-        return remaining
+        return remaining, quota_name
 
     def check(
         self,
@@ -316,7 +397,12 @@ class AzureContainerAppReadOnlyPreflight:
             workload_profile_name,
             selection,
         )
-        quota_remaining = self._remaining_quota(location, selection, usages, state)
+        quota_remaining, quota_name = self._remaining_quota(
+            location,
+            selection,
+            usages,
+            state,
+        )
 
         _emit(
             self._trace_sink,
@@ -332,9 +418,9 @@ class AzureContainerAppReadOnlyPreflight:
             profile=selection.profile,
             required_vram_mib=selection.required_vram_mib,
             available_profile_types=environment.available_profile_types,
-            quota_scope="environment",
-            quota_verified=True,
-            quota_name=state.name,
+            quota_scope="environment" if quota_remaining is not None else "deployment",
+            quota_verified=quota_remaining is not None,
+            quota_name=quota_name,
             quota_remaining=quota_remaining,
         )
 

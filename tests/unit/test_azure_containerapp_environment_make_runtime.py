@@ -28,6 +28,7 @@ from general_ludd.infra.azure_containerapp_environment_materializer import (
 from general_ludd.infra.azure_containerapp_terraform_executor import (
     AzureContainerAppTerraformPhaseError,
     TerraformRuntimeState,
+    TerraformUIEvent,
 )
 
 SUBSCRIPTION = "12345678-1234-1234-1234-123456789abc"
@@ -264,6 +265,58 @@ def test_runtime_materializes_and_runs_terraform_directly(
         MakeRuntimeState.STARTED,
         MakeRuntimeState.SUCCEEDED,
     ]
+    assert SECRET not in repr(traces)
+
+
+def test_environment_runtime_forwards_machine_ui_and_exact_azure_state(
+    tmp_path: Path,
+) -> None:
+    traces: list[MakeRuntimeEvent] = []
+    policy = _policy()
+    document = {
+        "properties": {"provisioningState": "InfrastructureSetupInProgress"}
+    }
+    runtime = AzureContainerAppEnvironmentTerraformRuntime(
+        work_root=tmp_path / "gludd-azure-containerapp-live-proof",
+        credentials=_credentials(),
+        read_environment=lambda _policy, _expect_absent: document,
+        list_environment_apps=lambda _policy: (),
+        trace_sink=traces.append,
+    )
+    runtime.read_environment(policy, expect_absent=False)
+
+    assert traces[-1] == MakeRuntimeEvent(
+        phase="azure-resource-state",
+        state=MakeRuntimeState.HEARTBEAT,
+        operation_digest=policy.operation_digest,
+        target="azure-resource-manager",
+        event_source="azure_resource_manager",
+        resource_type="microsoft.app/managedenvironments",
+        action="read",
+        provisioning_state="infrastructure-setup-in-progress",
+    )
+
+    cast(Any, runtime._executor)._telemetry_sink(
+        TerraformUIEvent(
+            phase="apply",
+            state=TerraformRuntimeState.HEARTBEAT,
+            resource_type="azapi_resource",
+            action="create",
+            event_kind="apply_progress",
+            elapsed_seconds=91,
+        )
+    )
+
+    assert traces[-1] == MakeRuntimeEvent(
+        phase="apply",
+        state=MakeRuntimeState.HEARTBEAT,
+        operation_digest=policy.operation_digest,
+        elapsed_seconds=91,
+        event_source="opentofu_ui",
+        resource_type="azapi_resource",
+        action="create",
+        event_kind="apply_progress",
+    )
     assert SECRET not in repr(traces)
 
 

@@ -462,6 +462,56 @@ def test_unowned_or_incompatible_environment_refuses_before_terraform_plan(
     assert _SECRET not in repr(captured.value)
 
 
+def test_inspection_failure_trace_classifies_tags_without_provider_content() -> None:
+    policy = _policy()
+    document = _document(policy)
+    cast(dict[str, object], document["tags"])["gludd-owner-digest"] = "d" * 64
+    runtime = _Runtime(policy, document=document)
+    events: list[EnvironmentLifecycleTrace] = []
+
+    with pytest.raises(AzureEnvironmentLifecycleError) as captured:
+        ensure_azure_containerapp_environment(
+            policy,
+            runtime=runtime,
+            trace_sink=events.append,
+        )
+
+    assert captured.value.phase == "ownership"
+    assert captured.value.reason == "tags"
+    assert events[-1].event is EnvironmentLifecycleEvent.INSPECTION_FAILED
+    assert events[-1].failure_reason == "tags"
+    assert _SECRET not in repr(events)
+
+
+def test_inspection_failure_trace_identifies_the_mismatched_identity_field() -> None:
+    policy = _policy()
+    document = _document(policy)
+    document["location"] = "westus"
+    runtime = _Runtime(policy, document=document)
+    events: list[EnvironmentLifecycleTrace] = []
+
+    with pytest.raises(AzureEnvironmentLifecycleError) as captured:
+        ensure_azure_containerapp_environment(
+            policy,
+            runtime=runtime,
+            trace_sink=events.append,
+        )
+
+    assert captured.value.reason == "identity_location"
+    assert events[-1].failure_reason == "identity_location"
+
+
+def test_provider_formatted_location_is_the_same_environment_identity() -> None:
+    policy = _policy()
+    document = _document(policy)
+    document["location"] = "East US"
+    runtime = _Runtime(policy, document=document, plan_actions=["no-op"])
+
+    result = ensure_azure_containerapp_environment(policy, runtime=runtime)
+
+    assert result.disposition is EnvironmentLifecycleDisposition.REUSED
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -535,6 +585,19 @@ def test_plan_audit_accepts_opentofu_nested_false_metadata_shapes() -> None:
     }
 
     assert audit_environment_plan(plan, policy, existed_before=False) is True
+
+
+def test_plan_audit_accepts_exact_opentofu_resource_identity_metadata() -> None:
+    policy = _policy()
+    plan = _provider_v2_plan_payload(policy)
+    resources = cast(list[dict[str, object]], plan["resource_changes"])
+    change = cast(dict[str, object], resources[0]["change"])
+    change["actions"] = ["update"]
+    identity = {"id": policy.environment_id, "type": None}
+    change["before_identity"] = copy.deepcopy(identity)
+    change["after_identity"] = copy.deepcopy(identity)
+
+    assert audit_environment_plan(plan, policy, existed_before=True) is True
 
 
 @pytest.mark.parametrize(

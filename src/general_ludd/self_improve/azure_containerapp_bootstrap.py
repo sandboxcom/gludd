@@ -466,6 +466,63 @@ def _runtime_trace(
         "retention_hourly_cost_microusd",
         0,
     )
+    event_source = getattr(event, "event_source", None)
+    allowed_fields = {
+        "event_source": frozenset({"opentofu_ui", "azure_resource_manager"}),
+        "resource_type": frozenset(
+            {
+                "azapi_resource",
+                "microsoft.app/containerapps",
+                "microsoft.app/managedenvironments",
+            }
+        ),
+        "action": frozenset(
+            {"noop", "create", "read", "update", "replace", "delete", "move"}
+        ),
+        "event_kind": frozenset(
+            {
+                "planned_change",
+                "resource_drift",
+                "apply_start",
+                "apply_progress",
+                "apply_complete",
+                "apply_errored",
+            }
+        ),
+        "provisioning_state": frozenset(
+            {
+                "succeeded",
+                "failed",
+                "canceled",
+                "waiting",
+                "in-progress",
+                "provisioning",
+                "deleting",
+                "initialization-in-progress",
+                "infrastructure-setup-in-progress",
+                "infrastructure-setup-complete",
+                "scheduled-for-delete",
+                "upgrade-requested",
+                "upgrade-failed",
+            }
+        ),
+    }
+    structured = ""
+    if event_source in allowed_fields["event_source"]:
+        values = {
+            name: getattr(event, name, None)
+            for name in (
+                "event_source",
+                "resource_type",
+                "action",
+                "event_kind",
+                "provisioning_state",
+            )
+        }
+        structured = " " + " ".join(
+            f"{name}={value if value in allowed_fields[name] else 'none'}"
+            for name, value in values.items()
+        )
     progress_sink(
         "SELF_IMPROVE_AZURE_BOOTSTRAP "
         f"component={component} phase={phase} state={state} "
@@ -473,7 +530,7 @@ def _runtime_trace(
         f"failure_class={failure_class or 'none'} "
         f"retention_plan_digest={retention_digest or 'none'} "
         f"retention_seconds={retention_seconds} "
-        f"retention_hourly_cost_microusd={retention_hourly_cost} "
+        f"retention_hourly_cost_microusd={retention_hourly_cost}{structured} "
         "secret_output=false"
     )
 

@@ -45,6 +45,7 @@ def build_live_proof_trace(
     *,
     candidate_digest: str | None = None,
     failure: AzureContainerAppLiveProofFailure | None = None,
+    failure_detail: str | None = None,
     resource_change_count: int = 0,
     response: AzureCandidateResponse | None = None,
 ) -> LiveProofTrace:
@@ -54,6 +55,7 @@ def build_live_proof_trace(
         operation_digest=policy.operation_digest,
         candidate_identity_digest=candidate_digest,
         failure=failure,
+        failure_detail=failure_detail,
         resource_change_count=resource_change_count,
         input_tokens=0 if response is None else response.input_tokens,
         output_tokens=0 if response is None else response.output_tokens,

@@ -21,9 +21,11 @@ from general_ludd.infra.azure_containerapp_environment_materializer import (
     verify_existing_state_boundary,
 )
 from general_ludd.infra.azure_containerapp_make_types import (
+    AZURE_RESOURCE_MANAGER_TARGET,
     AzureContainerAppMakeRuntimeError,
     MakeRuntimeEvent,
     MakeRuntimeState,
+    azure_provisioning_fact,
 )
 from general_ludd.infra.azure_containerapp_make_validation import (
     OWNERSHIP_MARKER,
@@ -34,6 +36,7 @@ from general_ludd.infra.azure_containerapp_terraform_executor import (
     AzureContainerAppTerraformPhaseError,
     AzureContainerAppTerraformPhaseExecutor,
     TerraformRuntimeState,
+    TerraformUIEvent,
     terraform_process_environment,
 )
 
@@ -102,7 +105,8 @@ class AzureContainerAppEnvironmentTerraformRuntime:
         self._read_environment = read_environment
         self._list_environment_apps = list_environment_apps
         self._executor = terraform_executor or AzureContainerAppTerraformPhaseExecutor(
-            heartbeat_seconds=float(heartbeat_seconds)
+            heartbeat_seconds=float(heartbeat_seconds),
+            telemetry_sink=self._emit_terraform_ui,
         )
         self._materializer = (
             terraform_materializer
@@ -124,6 +128,12 @@ class AzureContainerAppEnvironmentTerraformRuntime:
         state: MakeRuntimeState,
         *,
         elapsed_seconds: int = 0,
+        target: str = "terraform",
+        event_source: str | None = None,
+        resource_type: str | None = None,
+        action: str | None = None,
+        event_kind: str | None = None,
+        provisioning_state: str | None = None,
     ) -> None:
         try:
             self._trace_sink(
@@ -132,10 +142,44 @@ class AzureContainerAppEnvironmentTerraformRuntime:
                     state=state,
                     operation_digest=self._current_operation_digest or "unbound",
                     elapsed_seconds=elapsed_seconds,
+                    target=target,
+                    event_source=event_source,
+                    resource_type=resource_type,
+                    action=action,
+                    event_kind=event_kind,
+                    provisioning_state=provisioning_state,
                 )
             )
         except Exception:
             raise AzureContainerAppMakeRuntimeError("trace") from None
+
+    def _emit_terraform_ui(self, event: TerraformUIEvent) -> None:
+        if not isinstance(event, TerraformUIEvent):
+            raise AzureContainerAppMakeRuntimeError("trace")
+        self._emit(
+            event.phase,
+            MakeRuntimeState(event.state.value),
+            elapsed_seconds=event.elapsed_seconds,
+            event_source="opentofu_ui",
+            resource_type=event.resource_type,
+            action=event.action,
+            event_kind=event.event_kind,
+        )
+
+    def _emit_azure_state(self, document: object) -> None:
+        fact = azure_provisioning_fact(document)
+        if fact is None:
+            return
+        provisioning_state, state = fact
+        self._emit(
+            "azure-resource-state",
+            state,
+            target=AZURE_RESOURCE_MANAGER_TARGET,
+            event_source="azure_resource_manager",
+            resource_type="microsoft.app/managedenvironments",
+            action="read",
+            provisioning_state=provisioning_state,
+        )
 
     def _bind_state(self, policy: AzureEnvironmentLifecyclePolicy) -> None:
         if not isinstance(policy, AzureEnvironmentLifecyclePolicy):
@@ -236,9 +280,11 @@ class AzureContainerAppEnvironmentTerraformRuntime:
         if not isinstance(expect_absent, bool):
             raise AzureContainerAppMakeRuntimeError("environment-read")
         try:
-            return self._read_environment(policy, expect_absent)
+            document = self._read_environment(policy, expect_absent)
         except Exception:
             raise AzureContainerAppMakeRuntimeError("environment-read") from None
+        self._emit_azure_state(document)
+        return document
 
     def list_environment_apps(
         self,

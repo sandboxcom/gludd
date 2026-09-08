@@ -491,6 +491,29 @@ def test_plan_audit_rejects_every_scope_or_provenance_widening(
     assert captured.value.failure is AzureContainerAppLiveProofFailure.PLAN_SCOPE
 
 
+def test_plan_refusal_trace_exposes_only_the_fixed_audit_stage(tmp_path: Path) -> None:
+    policy = _policy(live=False)
+    plan = _plan(policy)
+    resources = cast(list[dict[str, Any]], plan["resource_changes"])
+    after = cast(dict[str, Any], resources[0]["change"])["after"]
+    cast(dict[str, Any], after)["name"] = "foreign-app"
+    traces: list[LiveProofTrace] = []
+
+    with pytest.raises(AzureContainerAppLiveProofError) as captured:
+        run_azure_containerapp_live_proof(
+            policy,
+            runtime=_Runtime(policy, plan=plan),
+            approved_prompt=_approved(tmp_path),
+            backend_factory=lambda identity: _Backend(identity),
+            trace_sink=traces.append,
+        )
+
+    assert captured.value.failure is AzureContainerAppLiveProofFailure.PLAN_SCOPE
+    assert captured.value.detail == "resource_scope"
+    assert traces[-1].event is LiveProofEvent.FAILED
+    assert traces[-1].failure_detail == "resource_scope"
+
+
 def test_preflight_failure_stops_before_paid_mutation(tmp_path: Path) -> None:
     policy = _policy()
     runtime = _Runtime(policy, fail_at="preflight")

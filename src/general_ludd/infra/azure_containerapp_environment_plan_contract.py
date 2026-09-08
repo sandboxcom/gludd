@@ -80,9 +80,11 @@ CHANGE_FIELDS = frozenset(
     {
         "actions",
         "after",
+        "after_identity",
         "after_sensitive",
         "after_unknown",
         "before",
+        "before_identity",
         "before_sensitive",
         "generated_config",
         "importing",

@@ -22,9 +22,11 @@ from general_ludd.infra.azure_containerapp_make_runtime import (
     MakeRuntimeEvent,
     MakeRuntimeState,
 )
+from general_ludd.infra.azure_containerapp_make_types import azure_provisioning_fact
 from general_ludd.infra.azure_containerapp_terraform_executor import (
     AzureContainerAppTerraformPhaseError,
     TerraformRuntimeState,
+    TerraformUIEvent,
 )
 from general_ludd.infra.compute import GPUType
 from general_ludd.self_improve.model_candidates import BackendCallBudget
@@ -34,6 +36,31 @@ MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
 IMAGE = "vllm/vllm-openai@sha256:" + "a" * 64
 SECRET = "never-render-this-client-secret"
+
+
+@pytest.mark.parametrize(
+    ("document", "expected"),
+    [
+        (None, None),
+        ({}, None),
+        ({"properties": []}, None),
+        ({"properties": {"provisioningState": 1}}, None),
+        ({"properties": {"provisioningState": "unknown"}}, None),
+        (
+            {"properties": {"provisioningState": "Succeeded"}},
+            ("succeeded", MakeRuntimeState.SUCCEEDED),
+        ),
+        (
+            {"properties": {"provisioningState": "Deleting"}},
+            ("deleting", MakeRuntimeState.HEARTBEAT),
+        ),
+    ],
+)
+def test_arm_provisioning_fact_is_bounded_and_content_free(
+    document: object,
+    expected: tuple[str, MakeRuntimeState] | None,
+) -> None:
+    assert azure_provisioning_fact(document) == expected
 
 
 def test_runtime_has_no_make_or_shell_provisioning_dependency() -> None:
@@ -306,6 +333,67 @@ def test_runtime_materializes_and_invokes_terraform_directly_with_secret_environ
     assert evidence.revision_name == f"{policy.app_name}--0000007"
     assert SECRET not in repr(traces)
     assert SECRET not in repr(evidence)
+    assert [
+        (
+            event.event_source,
+            event.resource_type,
+            event.action,
+            event.provisioning_state,
+            event.state,
+        )
+        for event in traces
+        if event.event_source == "azure_resource_manager"
+    ] == [
+        (
+            "azure_resource_manager",
+            "microsoft.app/containerapps",
+            "read",
+            "succeeded",
+            MakeRuntimeState.SUCCEEDED,
+        )
+    ]
+
+
+def test_default_executor_forwards_machine_ui_as_structured_gludd_trace(
+    tmp_path: Path,
+) -> None:
+    traces: list[MakeRuntimeEvent] = []
+    policy = _policy()
+    runtime = AzureContainerAppTerraformRuntime(
+        work_root=tmp_path / "gludd-azure-live-proof",
+        credentials=_credentials(),
+        requirement=_requirement(),
+        terraform_generator=_Materializer(),
+        preflight_check=lambda _policy, _requirement: None,
+        read_app=lambda _policy, _expect_absent: None,
+        trace_sink=traces.append,
+    )
+    runtime._bind(policy)
+
+    cast(Any, runtime._executor)._telemetry_sink(
+        TerraformUIEvent(
+            phase="apply",
+            state=TerraformRuntimeState.HEARTBEAT,
+            resource_type="azapi_resource",
+            action="create",
+            event_kind="apply_progress",
+            elapsed_seconds=37,
+        )
+    )
+
+    assert traces == [
+        MakeRuntimeEvent(
+            phase="apply",
+            state=MakeRuntimeState.HEARTBEAT,
+            operation_digest=policy.operation_digest,
+            elapsed_seconds=37,
+            event_source="opentofu_ui",
+            resource_type="azapi_resource",
+            action="create",
+            event_kind="apply_progress",
+        )
+    ]
+    assert SECRET not in repr(traces)
 
 
 @pytest.mark.parametrize("phase", ["init", "validate", "plan", "show-plan"])

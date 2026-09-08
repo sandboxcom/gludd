@@ -22,6 +22,24 @@ _RESOURCE_GROUP_RE = re.compile(r"(?=.{1,90}\Z)[A-Za-z0-9_().-]+(?<!\.)")
 _RESOURCE_NAME_RE = re.compile(r"(?=.{1,64}\Z)[A-Za-z0-9_.-]+")
 _APP_NAME_RE = re.compile(r"(?=.{2,32}\Z)[a-z][a-z0-9-]*[a-z0-9]")
 _LOCATION_RE = re.compile(r"[a-z][a-z0-9]{1,31}")
+_FAILURE_DETAILS = frozenset(
+    {
+        "action",
+        "change_count",
+        "configuration",
+        "container",
+        "environment_binding",
+        "format",
+        "image",
+        "ingress",
+        "network_restriction",
+        "resource_identity",
+        "resource_scope",
+        "runtime_plan",
+        "shape",
+        "arguments",
+    }
+)
 
 
 class AzureContainerAppLiveProofFailure(StrEnum):
@@ -42,12 +60,20 @@ class AzureContainerAppLiveProofFailure(StrEnum):
 class AzureContainerAppLiveProofError(RuntimeError):
     """Censored live-proof failure with an exact lifecycle category."""
 
-    def __init__(self, failure: AzureContainerAppLiveProofFailure) -> None:
+    def __init__(
+        self,
+        failure: AzureContainerAppLiveProofFailure,
+        *,
+        detail: str | None = None,
+    ) -> None:
         """Initialize an error without retaining sensitive response content."""
         if not isinstance(failure, AzureContainerAppLiveProofFailure):
             raise ValueError("failure must be an AzureContainerAppLiveProofFailure")
+        if detail is not None and detail not in _FAILURE_DETAILS:
+            raise ValueError("detail must be a fixed live-proof failure detail")
         super().__init__(f"Azure Container App live proof failed: {failure.value}")
         self.failure = failure
+        self.detail = detail
 
 
 class LiveProofEvent(StrEnum):
@@ -82,6 +108,7 @@ class LiveProofTrace:
     operation_digest: str
     candidate_identity_digest: str | None = None
     failure: AzureContainerAppLiveProofFailure | None = None
+    failure_detail: str | None = None
     resource_change_count: int = 0
     input_tokens: int = 0
     output_tokens: int = 0

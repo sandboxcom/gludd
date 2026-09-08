@@ -126,9 +126,16 @@ def _parse_profile_record(value: object) -> _ConfiguredWorkloadProfile:
         raise ValueError
     name = provider_name(value.get("name"), "workload profile")
     profile_type = provider_name(value.get("workloadProfileType"), "workload profile")
-    minimum = count(value.get("minimumCount", 0))
-    maximum = count(value.get("maximumCount"))
-    if minimum > maximum:
+    raw_minimum = value.get("minimumCount", 0)
+    raw_maximum = value.get("maximumCount")
+    serverless = profile_type == "Consumption" or profile_type.startswith(
+        "Consumption-GPU-"
+    )
+    minimum = 0 if raw_minimum is None and serverless else count(raw_minimum)
+    maximum = (
+        None if raw_maximum is None and serverless else count(raw_maximum)
+    )
+    if maximum is not None and minimum > maximum:
         raise ValueError
     return _ConfiguredWorkloadProfile(name, profile_type, minimum, maximum)
 
@@ -214,7 +221,7 @@ def parse_environment(
             "workload_profile_type_mismatch",
             "Azure Container Apps workload profile type does not match",
         )
-    if configured.maximum_count < 1:
+    if configured.maximum_count is not None and configured.maximum_count < 1:
         raise AzureContainerAppEvidenceError(
             "workload_profile_disabled",
             "Azure Container Apps workload profile is disabled",

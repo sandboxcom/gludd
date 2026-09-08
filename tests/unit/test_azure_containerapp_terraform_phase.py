@@ -106,17 +106,24 @@ def _run(
         ("validate", ["validate", "-no-color"]),
         (
             "plan",
-            ["plan", "-input=false", "-no-color", "-out={plan}"],
+            ["plan", "-json", "-input=false", "-no-color", "-out={plan}"],
         ),
         ("show-plan", ["show", "-json", "{plan}"]),
         (
             "apply",
-            ["apply", "-input=false", "-no-color", "-auto-approve", "{plan}"],
+            [
+                "apply",
+                "-json",
+                "-input=false",
+                "-no-color",
+                "-auto-approve",
+                "{plan}",
+            ],
         ),
         ("output", ["output", "-json"]),
         (
             "destroy",
-            ["destroy", "-input=false", "-no-color", "-auto-approve"],
+            ["destroy", "-json", "-input=false", "-no-color", "-auto-approve"],
         ),
     ],
 )

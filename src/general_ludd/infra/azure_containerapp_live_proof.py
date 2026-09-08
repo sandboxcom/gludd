@@ -95,10 +95,33 @@ def _audit_requested_plan(
     try:
         plan = runtime.plan(policy)
     except Exception:
-        raise AzureContainerAppLiveProofError(
-            AzureContainerAppLiveProofFailure.PLAN_SCOPE
-        ) from None
-    audit_containerapp_plan(plan, policy)
+        error = AzureContainerAppLiveProofError(
+            AzureContainerAppLiveProofFailure.PLAN_SCOPE,
+            detail="runtime_plan",
+        )
+        _emit(
+            trace_sink,
+            _trace(
+                LiveProofEvent.FAILED,
+                policy,
+                failure=error.failure,
+                failure_detail=error.detail,
+            ),
+        )
+        raise error from None
+    try:
+        audit_containerapp_plan(plan, policy)
+    except AzureContainerAppLiveProofError as error:
+        _emit(
+            trace_sink,
+            _trace(
+                LiveProofEvent.FAILED,
+                policy,
+                failure=error.failure,
+                failure_detail=error.detail,
+            ),
+        )
+        raise
     _emit(
         trace_sink,
         _trace(LiveProofEvent.PLAN_AUDITED, policy, resource_change_count=1),

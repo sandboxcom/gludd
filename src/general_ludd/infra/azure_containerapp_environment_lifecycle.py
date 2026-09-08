@@ -47,6 +47,7 @@ def _emit(
     active_app_count: int = 0,
     retention_plan: AzureIdleRetentionPlan | None = None,
     retention_seconds_remaining: int = 0,
+    failure_reason: str | None = None,
 ) -> None:
     try:
         sink(
@@ -64,6 +65,7 @@ def _emit(
                     if retention_plan is None
                     else retention_plan.hourly_cost_microusd
                 ),
+                failure_reason=failure_reason,
             )
         )
     except Exception:
@@ -155,12 +157,21 @@ def ensure_azure_containerapp_environment(
     if existing is None:
         _emit(trace_sink, EnvironmentLifecycleEvent.ENVIRONMENT_ABSENT, policy)
     else:
-        existing_profiles = validated_environment_profiles(
-            existing,
-            policy,
-            require_desired_profiles=False,
-            require_current_tags=False,
-        )
+        try:
+            existing_profiles = validated_environment_profiles(
+                existing,
+                policy,
+                require_desired_profiles=False,
+                require_current_tags=False,
+            )
+        except AzureEnvironmentLifecycleError as exc:
+            _emit(
+                trace_sink,
+                EnvironmentLifecycleEvent.INSPECTION_FAILED,
+                policy,
+                failure_reason=exc.reason or "unknown",
+            )
+            raise
         effective_policy = _merged_policy(policy, existing_profiles)
         _emit(trace_sink, EnvironmentLifecycleEvent.OWNERSHIP_VERIFIED, effective_policy)
 

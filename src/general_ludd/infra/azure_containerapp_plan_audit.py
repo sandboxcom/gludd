@@ -40,13 +40,17 @@ def audit_containerapp_plan(
     """Require exactly one create for the approved app and immutable model."""
     if not isinstance(policy, AzureContainerAppLiveProofPolicy):
         raise ValueError("policy must be an AzureContainerAppLiveProofPolicy")
+    stage = "shape"
     try:
+        stage = "format"
         format_version = _member(plan, "format_version")
         if format_version not in {"1.0", "1.1", "1.2"}:
             raise ValueError
+        stage = "change_count"
         changes = _member(plan, "resource_changes")
         if not isinstance(changes, list) or len(changes) != 1:
             raise ValueError
+        stage = "resource_identity"
         resource = changes[0]
         expected_resource_fields = {
             "address": "module.vllm_server.azapi_resource.vllm",
@@ -60,9 +64,11 @@ def audit_containerapp_plan(
             for key, value in expected_resource_fields.items()
         ):
             raise ValueError
+        stage = "action"
         change = _member(resource, "change")
         if _member(change, "actions") != ["create"] or _member(change, "before") is not None:
             raise ValueError
+        stage = "resource_scope"
         after = _member(change, "after")
         expected_after = {
             "type": "Microsoft.App/containerApps@2025-01-01",
@@ -72,6 +78,7 @@ def audit_containerapp_plan(
         }
         if any(_member(after, key) != value for key, value in expected_after.items()):
             raise ValueError
+        stage = "environment_binding"
         body = _member(after, "body")
         properties = _member(body, "properties")
         if (
@@ -80,12 +87,14 @@ def audit_containerapp_plan(
             != policy.workload_profile_name
         ):
             raise ValueError
+        stage = "configuration"
         configuration = _member(properties, "configuration")
         if (
             _member(configuration, "activeRevisionsMode") != "Single"
             or not isinstance(_member(configuration, "ingress"), Mapping)
         ):
             raise ValueError
+        stage = "ingress"
         ingress = _member(configuration, "ingress")
         expected_ingress = {
             "external": True,
@@ -95,6 +104,7 @@ def audit_containerapp_plan(
         }
         if any(_member(ingress, key) != value for key, value in expected_ingress.items()):
             raise ValueError
+        stage = "network_restriction"
         restrictions = _member(ingress, "ipSecurityRestrictions")
         if not isinstance(restrictions, list) or len(restrictions) != 1:
             raise ValueError
@@ -110,20 +120,24 @@ def audit_containerapp_plan(
             for key, value in expected_restriction.items()
         ):
             raise ValueError
+        stage = "container"
         template = _member(properties, "template")
         containers = _member(template, "containers")
         if not isinstance(containers, list) or len(containers) != 1:
             raise ValueError
+        stage = "image"
         container = containers[0]
         if _member(container, "image") != policy.container_image:
             raise ValueError
+        stage = "arguments"
         arguments = _member(container, "args")
         _required_argument(arguments, "--model", policy.model_name)
         _required_argument(arguments, "--revision", policy.model_revision)
         _required_argument(arguments, "--tokenizer-revision", policy.model_revision)
     except Exception:
         raise AzureContainerAppLiveProofError(
-            AzureContainerAppLiveProofFailure.PLAN_SCOPE
+            AzureContainerAppLiveProofFailure.PLAN_SCOPE,
+            detail=stage,
         ) from None
 
 

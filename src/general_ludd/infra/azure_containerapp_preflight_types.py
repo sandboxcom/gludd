@@ -65,7 +65,7 @@ class _ConfiguredWorkloadProfile:
     name: str
     workload_profile_type: str
     minimum_count: int
-    maximum_count: int
+    maximum_count: int | None
 
 
 @dataclass(frozen=True, slots=True)

@@ -28,10 +28,11 @@ _LIFECYCLE_VERSION = "1"
 class AzureEnvironmentLifecycleError(RuntimeError):
     """Censored failure at one environment lifecycle phase."""
 
-    def __init__(self, phase: str) -> None:
+    def __init__(self, phase: str, *, reason: str | None = None) -> None:
         """Expose only a fixed phase, never provider or resource data."""
         super().__init__(f"Azure environment lifecycle failed: {phase}")
         self.phase = phase
+        self.reason = reason
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -182,6 +183,7 @@ class EnvironmentLifecycleEvent(StrEnum):
     """Content-free state transitions for lifecycle tracing."""
 
     INSPECTION_STARTED = "inspection_started"
+    INSPECTION_FAILED = "inspection_failed"
     ENVIRONMENT_ABSENT = "environment_absent"
     OWNERSHIP_VERIFIED = "ownership_verified"
     PLAN_STARTED = "plan_started"
@@ -209,6 +211,7 @@ class EnvironmentLifecycleTrace:
     retention_plan_digest: str | None = None
     retention_seconds_remaining: int = 0
     retention_hourly_cost_microusd: int = 0
+    failure_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

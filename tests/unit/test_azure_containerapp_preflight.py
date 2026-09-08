@@ -145,11 +145,17 @@ def _check(
 
 def test_authentication_uses_only_arm_scope() -> None:
     credential = _Credential()
+    transport = _Transport()
 
-    result = _check(credential, _Transport())
+    result = _check(credential, transport)
 
     assert result.ready is True
     assert credential.scopes == [ARM_SCOPE]
+    assert transport.calls
+    assert all(
+        path.endswith("?api-version=2026-01-01")
+        for path, _bearer_token in transport.calls
+    )
 
 
 def test_authentication_failure_is_redacted_and_traced() -> None:
@@ -171,7 +177,7 @@ def test_authentication_failure_is_redacted_and_traced() -> None:
 
 @pytest.mark.parametrize(
     "phase",
-    ["environment", "usages", "workload_profile_states"],
+    ["environment", "workload_profile_states"],
 )
 def test_arm_failures_are_redacted_and_identify_only_the_phase(phase: str) -> None:
     traces: list[PreflightTrace] = []
@@ -183,12 +189,35 @@ def test_arm_failures_are_redacted_and_identify_only_the_phase(phase: str) -> No
     assert traces[-1].reason == f"{phase}_read_failed"
 
 
+def test_optional_usage_transport_failure_defers_to_profile_state() -> None:
+    traces: list[PreflightTrace] = []
+
+    result = _check(
+        _Credential(),
+        _Transport(error_phase="usages"),
+        traces=traces,
+    )
+
+    assert result.ready is True
+    assert result.quota_verified is True
+    assert result.quota_remaining == 1
+    assert any(
+        trace.phase == "supplementary_usage_unavailable"
+        and trace.reason == "usages_read_failed"
+        for trace in traces
+    )
+    assert TOKEN not in repr(traces)
+
+
 @pytest.mark.parametrize(
     ("status", "reason", "message"),
     [
         (401, "environment_unauthorized", "not authorized"),
         (403, "environment_unauthorized", "not authorized"),
         (404, "environment_not_found", "does not exist"),
+        (400, "environment_http_400", "read failed"),
+        (429, "environment_http_429", "read failed"),
+        (503, "environment_http_503", "read failed"),
     ],
 )
 def test_environment_http_status_is_observable_without_provider_body(
@@ -210,6 +239,99 @@ def test_environment_http_status_is_observable_without_provider_body(
 
     assert traces[-1].reason == reason
     assert TOKEN not in repr(captured.value)
+
+
+def test_optional_usage_502_defers_to_authoritative_profile_state() -> None:
+    traces: list[PreflightTrace] = []
+
+    class UnavailableUsageTransport(_Transport):
+        def get_json(self, path: str, bearer_token: str) -> object:
+            if "/usages?" in path:
+                self.calls.append((path, bearer_token))
+                raise AzureContainerAppARMError(
+                    f"private provider response {TOKEN}",
+                    status_code=502,
+                )
+            return super().get_json(path, bearer_token)
+
+    transport = UnavailableUsageTransport()
+
+    result = _check(_Credential(), transport, traces=traces)
+
+    assert result.ready is True
+    assert result.quota_verified is True
+    assert result.quota_remaining == 1
+    assert any(
+        trace.phase == "supplementary_usage_unavailable"
+        and trace.reason == "usages_http_502"
+        for trace in traces
+    )
+    assert any("/workloadProfileStates?" in path for path, _token in transport.calls)
+    assert TOKEN not in repr(traces)
+
+
+def test_serverless_capacity_without_provider_evidence_is_explicitly_deferred() -> None:
+    traces: list[PreflightTrace] = []
+
+    class DeferredCapacityTransport(_Transport):
+        def get_json(self, path: str, bearer_token: str) -> object:
+            if "/usages?" in path:
+                self.calls.append((path, bearer_token))
+                raise AzureContainerAppARMError(
+                    f"private provider response {TOKEN}",
+                    status_code=502,
+                )
+            if "/workloadProfileStates?" in path:
+                self.calls.append((path, bearer_token))
+                return {"value": []}
+            return super().get_json(path, bearer_token)
+
+    result = _check(_Credential(), DeferredCapacityTransport(), traces=traces)
+
+    assert result.ready is True
+    assert result.quota_verified is False
+    assert result.quota_scope == "deployment"
+    assert result.quota_name is None
+    assert result.quota_remaining is None
+    assert any(
+        trace.phase == "quota_verification_deferred"
+        and trace.reason == "provider_evidence_unavailable"
+        for trace in traces
+    )
+
+
+def test_serverless_usage_quota_is_sufficient_when_profile_state_is_absent() -> None:
+    traces: list[PreflightTrace] = []
+    usage_name = "Managed Environment Consumption T4 Gpus"
+
+    class UsageOnlyCapacityTransport(_Transport):
+        def __init__(self) -> None:
+            super().__init__(
+                usages={
+                    "value": [
+                        {
+                            "name": {"value": usage_name},
+                            "currentValue": 1,
+                            "limit": 3,
+                            "unit": "Count",
+                        }
+                    ]
+                }
+            )
+
+        def get_json(self, path: str, bearer_token: str) -> object:
+            if "/workloadProfileStates?" in path:
+                self.calls.append((path, bearer_token))
+                return {"value": []}
+            return super().get_json(path, bearer_token)
+
+    result = _check(_Credential(), UsageOnlyCapacityTransport(), traces=traces)
+
+    assert result.ready is True
+    assert result.quota_verified is True
+    assert result.quota_scope == "environment"
+    assert result.quota_name == usage_name
+    assert result.quota_remaining == 2
 
 
 @pytest.mark.parametrize(
