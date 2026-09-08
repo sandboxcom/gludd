@@ -623,6 +623,7 @@ def test_daemon_runner_factory_snapshots_global_self_improve_config(
 
     monkeypatch.setattr(self_improve_runtime, "build_managed_self_improve_runner", build)
     factory = daemon._build_self_improve_runner_factory(configured)
+    assert type(factory).__name__ == "ConfiguredManagedRunnerFactory"
     cast_config = configured["azure_containerapp"]
     assert isinstance(cast_config, dict)
     cast_config["enabled"] = True

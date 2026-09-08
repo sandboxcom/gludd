@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "_GENERATION_WORK_TYPES",
+    "build_worker_self_improve_executor",
     "build_worker_self_improve_runner",
     "create_app",
     "invoke_model_for_generation",
@@ -83,6 +84,28 @@ def build_worker_self_improve_runner(repo_root: Path) -> _ManagedSelfImproveServ
     return build_managed_self_improve_runner(
         repo_root,
         self_improve_config=load_user_config().self_improve,
+    )
+
+
+def _log_owned_self_improve_event(event: str) -> None:
+    """Expose content-free child lifecycle events through worker logs."""
+    logger.info("managed_self_improve_supervisor %s", event)
+
+
+def build_worker_self_improve_executor() -> Any:
+    """Build the worker's application-owned managed execution boundary."""
+    from general_ludd.config.loader import load_user_config
+    from general_ludd.self_improve.managed_execution import (
+        ConfiguredManagedRunnerFactory,
+        ManagedSelfImproveProcessExecutor,
+        managed_execution_timeout_seconds,
+    )
+
+    config = dict(load_user_config().self_improve)
+    return ManagedSelfImproveProcessExecutor(
+        runner_factory=ConfiguredManagedRunnerFactory(config),
+        timeout_seconds=managed_execution_timeout_seconds(config),
+        event_sink=_log_owned_self_improve_event,
     )
 
 
@@ -285,6 +308,7 @@ def create_app(
     dispatcher: Any = _UNSET,
     permission_spec: Any = None,
     self_improve_runner_factory: _ManagedSelfImproveFactory | None = None,
+    self_improve_executor: Any | None = None,
     self_improve_repo_resolver: _SelfImproveRepoResolver | None = None,
     self_improve_repository_registry: ProjectRepositoryRegistry | None = None,
 ) -> FastAPI:
@@ -303,10 +327,16 @@ def create_app(
     if dispatcher is _UNSET:
         dispatcher = build_dispatcher_from_config()
     application.state.dispatcher = dispatcher
+    uses_default_self_improve_factory = self_improve_runner_factory is None
     application.state.self_improve_runner_factory = (
         build_worker_self_improve_runner
-        if self_improve_runner_factory is None
+        if uses_default_self_improve_factory
         else self_improve_runner_factory
+    )
+    application.state.self_improve_executor = (
+        build_worker_self_improve_executor()
+        if self_improve_executor is None and uses_default_self_improve_factory
+        else self_improve_executor
     )
     application.state.self_improve_repo_resolver = (
         resolve_worker_self_improve_repo_root
@@ -504,11 +534,18 @@ def create_app(
                     )
 
             try:
-                managed_runner = application.state.self_improve_runner_factory(
-                    canonical_root
-                )
                 async with application.state.self_improve_model_lock:
-                    managed_result = await asyncio.to_thread(managed_runner.run, plan)
+                    managed_executor = application.state.self_improve_executor
+                    if managed_executor is not None:
+                        managed_result = await managed_executor.run_async(
+                            canonical_root,
+                            plan,
+                        )
+                    else:
+                        managed_runner = application.state.self_improve_runner_factory(
+                            canonical_root
+                        )
+                        managed_result = await asyncio.to_thread(managed_runner.run, plan)
                 result_artifact = ManagedSelfImproveResultArtifact.from_run_result(
                     managed_result
                 )

@@ -7,7 +7,6 @@ import hashlib
 import json
 import logging
 import math
-import multiprocessing
 import os
 import re
 import shutil
@@ -20,7 +19,6 @@ from collections.abc import Callable, Collection, Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from enum import StrEnum
-from multiprocessing.connection import Connection
 from pathlib import Path
 from typing import Protocol, cast, runtime_checkable
 
@@ -30,6 +28,12 @@ from general_ludd.self_improve.hf_cache_delete import (
     HuggingFaceCacheDeletion,
 )
 from general_ludd.small_models.download import DownloadedModel, ModelDownloader
+from general_ludd.util.owned_process import (
+    OwnedProcessPolicy,
+    OwnedProcessTerminationError,
+    OwnedProcessTimeout,
+    run_owned_process,
+)
 
 _MANIFEST_SCHEMA = 1
 _RESERVATION_SCHEMA = 1
@@ -408,24 +412,6 @@ def _read_json(path: Path, label: str) -> dict[str, object]:
     return cast(dict[str, object], value)
 
 
-def _bounded_process_entry(
-    sender: Connection,
-    operation: Callable[..., object],
-    args: tuple[object, ...],
-) -> None:
-    """Execute one blocking external operation and return one bounded payload."""
-    try:
-        try:
-            sender.send(("result", operation(*args)))
-        except BaseException as error:
-            try:
-                sender.send(("error", error))
-            except Exception:
-                sender.send(("error_type", type(error).__name__))
-    finally:
-        sender.close()
-
-
 def _run_bounded_process(
     operation: Callable[..., object],
     args: tuple[object, ...],
@@ -433,65 +419,21 @@ def _run_bounded_process(
     timeout_seconds: float,
     process_name: str,
 ) -> object:
-    """Run a blocking external operation in a terminable, always-joined process."""
-    context = multiprocessing.get_context("spawn")
-    receiver, sender = context.Pipe(duplex=False)
-    process = context.Process(
-        target=_bounded_process_entry,
-        args=(sender, operation, args),
-        name=process_name,
-        daemon=False,
-    )
-    started = False
+    """Run acquisition through the shared process-group-owned supervisor."""
     try:
-        process.start()
-        started = True
-        sender.close()
-        process.join(timeout_seconds)
-        if process.is_alive():
-            process.terminate()
-            process.join(_PROCESS_SHUTDOWN_GRACE_SECONDS)
-            if process.is_alive():
-                process.kill()
-                process.join(_PROCESS_SHUTDOWN_GRACE_SECONDS)
-            if process.is_alive():
-                raise RuntimeError("model acquisition worker could not be stopped")
-            raise TimeoutError("model acquisition deadline exceeded")
-        if not receiver.poll(_PROCESS_SHUTDOWN_GRACE_SECONDS):
-            raise RuntimeError("model acquisition worker returned no result")
-        try:
-            payload = receiver.recv()
-        except EOFError as exc:
-            raise RuntimeError(
-                "model acquisition worker returned no result"
-            ) from exc
-    finally:
-        if started and process.is_alive():
-            process.terminate()
-            process.join(_PROCESS_SHUTDOWN_GRACE_SECONDS)
-            if process.is_alive():
-                process.kill()
-                process.join(_PROCESS_SHUTDOWN_GRACE_SECONDS)
-        receiver.close()
-        with suppress(OSError, ValueError):
-            sender.close()
-        if started and not process.is_alive():
-            process.close()
-
-    if (
-        not isinstance(payload, tuple)
-        or len(payload) != 2
-        or not isinstance(payload[0], str)
-    ):
-        raise RuntimeError("model acquisition worker returned an invalid result")
-    status, value = payload
-    if status == "result":
-        return value
-    if status == "error" and isinstance(value, BaseException):
-        raise value
-    if status == "error_type" and isinstance(value, str):
-        raise RuntimeError(f"model acquisition worker failed with {value}")
-    raise RuntimeError("model acquisition worker returned an invalid result")
+        return run_owned_process(
+            operation,
+            args,
+            policy=OwnedProcessPolicy(
+                timeout_seconds=timeout_seconds,
+                shutdown_grace_seconds=_PROCESS_SHUTDOWN_GRACE_SECONDS,
+            ),
+            process_name=process_name,
+        )
+    except OwnedProcessTimeout as exc:
+        raise TimeoutError("model acquisition deadline exceeded") from exc
+    except OwnedProcessTerminationError as exc:
+        raise RuntimeError("model acquisition worker could not be stopped") from exc
 
 
 def _validated_cache_limits(

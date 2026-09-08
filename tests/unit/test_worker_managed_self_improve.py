@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -279,6 +279,22 @@ def test_default_runner_factory_delegates_to_installed_composition_root(
     assert calls == [(tmp_path, configured)]
 
 
+def test_default_worker_app_installs_owned_process_executor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentinel = object()
+    monkeypatch.setenv("GLUDD_PSK_DISABLE", "1")
+    monkeypatch.setattr(
+        worker_app,
+        "build_worker_self_improve_executor",
+        lambda: sentinel,
+    )
+
+    app = worker_app.create_app(gateway=None, dispatcher=None)
+
+    assert app.state.self_improve_executor is sentinel
+
+
 def test_gateway_adds_distinct_auto_profiles_and_scopes_secrets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -422,6 +438,33 @@ async def test_self_improve_executes_approved_plan_without_playbook_fallback(
     }]
     assert factory.roots == [tmp_path.resolve()]
     assert runner.plans == [ApprovedSelfImprovePlan.from_json(plan.to_json())]
+
+
+@pytest.mark.asyncio
+async def test_worker_managed_execution_uses_owned_process_executor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _plan(tmp_path)
+    executor = AsyncMock()
+    executor.run_async.return_value = _managed_result(plan)
+    runner = _FailingRunner()
+    app = _build_app(
+        monkeypatch,
+        repo_root=tmp_path,
+        factory=_Factory(runner),
+    )
+    app.state.self_improve_executor = executor
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post("/jobs/execute", json=_payload(plan))
+
+    assert response.status_code == 200
+    assert response.json()["exit_code"] == 0
+    executor.run_async.assert_awaited_once_with(tmp_path.resolve(), plan)
 
 
 @pytest.mark.asyncio

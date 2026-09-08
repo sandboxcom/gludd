@@ -419,6 +419,7 @@ class EventLoop(EventLoopHandlers):
         checkpoint_manager: Any | None = None,
         service_discovery: Any | None = None,
         self_improve_runner_factory: Callable[[Path], Any] | None = None,
+        self_improve_executor: Any | None = None,
         self_improve_promotion_factory: Callable[
             [AsyncSession, Path, str], Any
         ]
@@ -461,6 +462,7 @@ class EventLoop(EventLoopHandlers):
         self._self_improve_runner_factory = (
             self_improve_runner_factory or build_managed_self_improve_runner
         )
+        self._self_improve_executor = self_improve_executor
         self._self_improve_run_lock = asyncio.Lock()
         self._self_improve_promotion_factory = (
             self_improve_promotion_factory
@@ -3717,8 +3719,11 @@ class EventLoop(EventLoopHandlers):
         """Run and validate one repository-bound local improvement plan."""
         try:
             async with self._self_improve_run_lock:
-                managed_runner = self._self_improve_runner_factory(repo_root)
-                result = await self._bounded_to_thread(managed_runner.run, plan)
+                if self._self_improve_executor is not None:
+                    result = await self._self_improve_executor.run_async(repo_root, plan)
+                else:
+                    managed_runner = self._self_improve_runner_factory(repo_root)
+                    result = await self._bounded_to_thread(managed_runner.run, plan)
         except Exception as exc:
             logger.warning(
                 "Managed self-improvement failed for todo %s (%s)",

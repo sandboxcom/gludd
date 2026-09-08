@@ -128,6 +128,11 @@ from general_ludd.security.sandboxes.vm.pool import (
 from general_ludd.security.sandboxes.vm.pool import (
     VMSandboxPool as _dc_VMSandboxPool,
 )
+from general_ludd.self_improve.managed_execution import (
+    ConfiguredManagedRunnerFactory,
+    ManagedSelfImproveProcessExecutor,
+    managed_execution_timeout_seconds,
+)
 from general_ludd.skills.loader import discover_skills
 from general_ludd.skills.registry import SkillRegistry
 from general_ludd.sts.dashboard import (
@@ -248,19 +253,12 @@ def _build_self_improve_runner_factory(
     config: dict[str, Any],
 ) -> Callable[[Path], Any]:
     """Snapshot global self-improvement config for every repository runner."""
-    snapshot = copy.deepcopy(config)
+    return ConfiguredManagedRunnerFactory(copy.deepcopy(config))
 
-    def build(repo_root: Path) -> Any:
-        from general_ludd.self_improve.runtime import (
-            build_managed_self_improve_runner,
-        )
 
-        return build_managed_self_improve_runner(
-            repo_root,
-            self_improve_config=copy.deepcopy(snapshot),
-        )
-
-    return build
+def _log_owned_self_improve_event(event: str) -> None:
+    """Expose content-free managed child lifecycle events through daemon logs."""
+    logger.info("managed_self_improve_supervisor %s", event)
 
 
 def _remediation_tick_settings(uc: Any) -> tuple[int, int]:
@@ -2284,6 +2282,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 searx_model_discoverer.index_size,
             )
 
+        self_improve_config = dict(getattr(uc, "self_improve", {}) if uc else {})
+        self_improve_runner_factory = _build_self_improve_runner_factory(
+            self_improve_config
+        )
+        self_improve_executor = ManagedSelfImproveProcessExecutor(
+            runner_factory=self_improve_runner_factory,
+            timeout_seconds=managed_execution_timeout_seconds(self_improve_config),
+            event_sink=_log_owned_self_improve_event,
+        )
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,
@@ -2306,7 +2314,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "rules": startup_config.get("rules", []),
                 "queues": getattr(uc, "queues", []) if uc else [],
                 "budget": getattr(uc, "budget", {}) if uc else {},
-                "self_improve": getattr(uc, "self_improve", {}) if uc else {},
+                "self_improve": self_improve_config,
                 # #56: reachable SLM context-compaction on the generation path.
                 # Serialized to a plain dict so the EventLoop config stays a
                 # dict[str, Any]. Default OFF (compaction.enabled = False).
@@ -2350,9 +2358,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             consensus_reviewer=consensus_reviewer,
             langgraph_reviewer=langgraph_reviewer,
             self_improve_interval=self_improve_interval,
-            self_improve_runner_factory=_build_self_improve_runner_factory(
-                getattr(uc, "self_improve", {}) if uc else {}
-            ),
+            self_improve_runner_factory=self_improve_runner_factory,
+            self_improve_executor=self_improve_executor,
             # H3: spend_limiter passed via constructor so _spend_limiter is set
             # before the run_forever task is scheduled — the first tick can never
             # bypass the operator spend cap.

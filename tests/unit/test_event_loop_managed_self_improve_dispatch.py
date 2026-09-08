@@ -946,6 +946,30 @@ async def test_managed_runtime_failure_becomes_failed_reviewable_return(
 
 
 @pytest.mark.asyncio
+async def test_local_managed_execution_uses_owned_process_executor(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    plan = _approved_plan(repo_root)
+    managed_runner = MagicMock()
+    managed_runner.run.side_effect = AssertionError(
+        "unowned in-process managed runner was used"
+    )
+    loop, collaborators = _make_loop(repo_root, managed_runner)
+    executor = AsyncMock()
+    executor.run_async.return_value = _managed_result(plan)
+    loop._self_improve_executor = executor
+
+    await loop._dispatch_execute_job(_todo(plan.to_json()))
+
+    executor.run_async.assert_awaited_once_with(repo_root.resolve(), plan)
+    managed_runner.run.assert_not_called()
+    persisted = collaborators["task_return_repo"].create.await_args.kwargs["data"]
+    assert persisted["exit_code"] == 0
+
+
+@pytest.mark.asyncio
 async def test_rejected_managed_result_is_persisted_as_unsuccessful(
     tmp_path: Path,
 ) -> None:

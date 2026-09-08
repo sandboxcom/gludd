@@ -62,12 +62,19 @@ Neither a bucket lease nor an in-process lock is trusted as the ownership fence.
 
 The execution backend owns its deadline. Native Ansible work runs in Gludd's
 terminable process group, while execution-environment work passes the same
-absolute `job_timeout` into `ansible-runner`. On expiry, the runner kills its
-owned container and process group before reporting a timeout. A reverse proxy,
+absolute `job_timeout` into `ansible-runner`. Managed self-improvement, including
+model acquisition and candidate evaluation, runs in a Gludd-owned child process
+group. On deadline or internal cancellation, Gludd sends TERM then KILL if needed,
+joins the exact child, and only then reports the terminal result. A reverse proxy,
 Gunicorn timeout, CI watchdog, or operator shell is never the normal cancellation
 mechanism. Lease renewal and fail-closed requeue fencing are tracked as part of
 this same lifecycle; a missing heartbeat must not, by itself, authorize a second
 execution.
+
+`self_improve.managed_execution_timeout_seconds` sets the absolute deadline for
+the complete approval-bound run. It defaults to 1,800 seconds, must be finite and
+positive, and cannot exceed 7,200 seconds. Both the daemon-local and worker-hosted
+paths apply the same policy.
 
 TaskReturn persistence and `active -> awaiting_result` advancement share one
 SQLAlchemy savepoint. Review claim then advances the matching todo to
@@ -115,6 +122,9 @@ Every lifecycle transition is content-free and secret-safe:
   `execution_environment_reconcile_failed`.
 - Managed candidate progress emits provider discovery, acquisition, request,
   evaluation, learning, and release phase markers with operation digests.
+- Every owned blocking child emits start and periodic heartbeat markers plus an
+  explicit timeout or cancellation marker. Process names contain only a digest
+  of the approved attempt identity.
 - Azure authentication values, private project paths, prompts, and proposal
   content are excluded from events and errors.
 
@@ -139,6 +149,13 @@ queues, bootstrap failure, and unknown database state. These tests are hermetic
 and run in GitHub Actions. The paid live Azure proof is separately gated by
 explicit credentials, scope, cost, TTL, and acknowledgement so pull requests do
 not create cloud resources.
+
+`tests/unit/test_owned_process_supervisor.py` deliberately wedges child work and
+proves that timeout and internal cancellation terminate and reap the exact process
+group while emitting progress. `tests/unit/test_managed_self_improve_process.py`
+proves the same boundary around an immutable approved plan, including coroutine
+cancellation. The daemon and worker dispatch suites prove both production paths
+select that executor instead of an unkillable background thread.
 
 ## Long-lived operator reports that shaped the design
 

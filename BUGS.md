@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-08 — (resolved locally) Managed self-improvement ran in unkillable threads
+
+- **What happened**: Both the daemon-local and worker-hosted managed self-improvement paths delegated the complete model workflow to `asyncio.to_thread()`. Cancelling the coroutine released the async caller but could not stop the underlying synchronous model, subprocess, or infrastructure work.
+- **Root cause**: Gunicorn worker isolation was mistaken for per-task execution ownership. Gunicorn can replace an unhealthy HTTP worker, but it cannot emit the task's terminal result, preserve its lease fence, or prove that descendants are dead before recovery.
+- **Fix applied**: Gludd now runs the complete approval-bound workflow in a named, spawned process group with a finite configurable deadline, periodic content-free heartbeats, internal cancellation, TERM/KILL escalation, and mandatory join. Daemon and worker production composition install the same executor; model acquisition reuses the shared supervisor instead of maintaining a second implementation.
+- **Evidence**: Failing-first dispatch tests proved both paths ignored the executor. The focused process tests deliberately wedge and cancel child work, and the widened 171-test self-improvement/Azure regression suite passes. Coverage and exact-head gate remain pending.
+- **Lesson**: Multi-worker HTTP availability and task correctness are separate concerns. Every blocking effect needs an application-owned execution boundary, and a task may be recovered only after that boundary reports a confirmed terminal outcome.
+
 ### 2026-09-08 — (resolved locally) Isolated Ansible jobs discarded Gludd's deadline
 
 - **What happened**: The network-facing adapter calculated a finite playbook timeout, but `CoreAnsibleRunner` forwarded it only to the native process backend. Enabling the execution environment selected `ansible-runner` and silently dropped that deadline, leaving the isolation container dependent on external termination.
