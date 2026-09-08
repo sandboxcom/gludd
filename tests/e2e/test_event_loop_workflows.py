@@ -14,6 +14,7 @@ Scenarios:
 from __future__ import annotations
 
 import asyncio
+import threading
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -36,6 +37,7 @@ from general_ludd.event_loop.lease import (
     confirm_lease_termination,
     reclaim_expired_leases,
     release_lease,
+    request_lease_cancellation,
 )
 from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
 from general_ludd.schemas.todo import TodoStatus
@@ -187,6 +189,105 @@ class TestTodoLifecycleWorkflow:
             repo = TodoRepository(session)
             completed = await repo.get_by_id("TODO-COMPLETE-1")
             assert completed.status == TodoStatus.COMPLETE.value
+
+    @pytest.mark.asyncio
+    async def test_database_cancel_reaps_runner_then_atomically_requeues(
+        self,
+        session_factory,
+    ) -> None:
+        runner_started = threading.Event()
+        runner_stopped = threading.Event()
+        poll_wait = threading.Event()
+        runner = MagicMock()
+        runner.prepare_job_dirs.return_value = {"root": "/tmp/e2e-workflows"}
+        runner.write_vars.return_value = "/tmp/e2e-workflows/env/extravars"
+
+        def _run_playbook(**kwargs):
+            callback = kwargs["cancel_requested"]
+            runner_started.set()
+            for _ in range(1_000):
+                if callback():
+                    break
+                poll_wait.wait(0.005)
+            assert callback() is True
+            runner_stopped.set()
+            return {"status": "cancelled", "rc": 130}
+
+        runner.run_playbook.side_effect = _run_playbook
+        task_return_repo = AsyncMock()
+        task_return_repo.claim_unreviewed.return_value = []
+        event_bus = MagicMock()
+        loop = EventLoop(
+            session=session_factory,
+            runner=runner,
+            task_return_repo=task_return_repo,
+            config={
+                "repo_root": "/tmp",
+                "event_loop": {
+                    "execution_lease_ttl_seconds": 2,
+                    "execution_lease_heartbeat_interval_seconds": 0.01,
+                },
+            },
+            project_manager=_pipeline_project_manager(),
+            event_bus=event_bus,
+        )
+        await _seed_todo(
+            session_factory,
+            todo_id="TODO-CANCEL-1",
+            work_type="maintenance",
+        )
+        tick_task = asyncio.create_task(loop.tick())
+
+        async def _wait_for_runner() -> None:
+            while not runner_started.is_set():
+                await asyncio.sleep(0.001)
+
+        await asyncio.wait_for(_wait_for_runner(), timeout=2.0)
+        async with session_factory() as session:
+            lease = (
+                await session.execute(
+                    select(BucketLeaseModel).where(
+                        BucketLeaseModel.bucket_key == "core:TODO-CANCEL-1"
+                    )
+                )
+            ).scalar_one()
+            assert lease.todo_version is not None
+            assert await request_lease_cancellation(
+                session,
+                bucket_key=lease.bucket_key,
+                holder_id=loop._lease_owner_id,
+                todo_version=lease.todo_version,
+            )
+            await session.commit()
+
+        await asyncio.wait_for(tick_task, timeout=5.0)
+
+        assert runner_stopped.is_set()
+        async with session_factory() as session:
+            todo = (
+                await session.execute(
+                    select(TodoModel).where(TodoModel.todo_id == "TODO-CANCEL-1")
+                )
+            ).scalar_one()
+            remaining_lease = (
+                await session.execute(
+                    select(BucketLeaseModel).where(
+                        BucketLeaseModel.bucket_key == "core:TODO-CANCEL-1"
+                    )
+                )
+            ).scalar_one_or_none()
+        assert todo.status == TodoStatus.QUEUED.value
+        assert remaining_lease is None
+        event_names = {
+            call.args[0].name
+            for call in event_bus.publish.call_args_list
+            if call.args
+        }
+        assert {
+            "execution_lease_heartbeat",
+            "execution_lease_cancellation_requested",
+            "execution_lease_termination_confirmed",
+        } <= event_names
 
 
 # ── 2. Lease Acquisition ─────────────────────────────────────────────────────

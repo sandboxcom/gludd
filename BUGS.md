@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-08 — (resolved locally) EventLoop cancellation abandoned blocking runners
+
+- **What happened**: EventLoop held no heartbeat while dispatched work ran, and cancelling an asyncio task waiting on `to_thread()` abandoned the underlying Ansible call. The durable reaper could request cancellation, but no live callback consumed that request or supplied exact terminal proof, so safe recovery could remain stuck indefinitely.
+- **Root cause**: Database lease ownership, asyncio task lifetime, and the blocking process supervisor were implemented as separate mechanisms rather than one end-to-end protocol. A returned coroutine was incorrectly treated as the relevant execution boundary even though its worker thread and child process could still be active.
+- **Fix applied**: Every database-backed dispatch now gets a short-session `ExecutionLeaseSupervisor` bound to the exact bucket, process owner, and todo version. It emits heartbeat/cancel/terminal events, passes a thread-safe cancellation callback into Ansible, persists owner cancellation before flipping that callback, shields the blocking call from coroutine abandonment, waits for actual terminal return, then confirms and reclaims with the existing compare-and-set fence. Invalid heartbeat timing fails the whole claim closed; stale, database-failed, and uncertain remote outcomes retain the mutex.
+- **Evidence**: Failing-first contracts covered missing timing propagation, absent callbacks, early coroutine return, and premature requeue. The combined lease/supervisor profile passes 61/61 at 95% aggregate branch coverage with both files above 75%; the widened dispatch/model/security/workflow slice passes 176/176 with warnings as errors; and a real SQLite E2E cancels a live threaded runner through the database then proves runner termination precedes atomic ACTIVE-to-QUEUED recovery and lease removal.
+- **Practitioner evidence**: Gunicorn issues #2082/#2905 and Ansible Runner issues #1371/#1187 show why worker replacement, quiet output, or a disconnected caller cannot prove terminal execution. The linked reports and resulting ownership rules are documented in `docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md`.
+- **Lesson**: Coroutine completion is not process completion. Ownership may be released or transferred only after the application-owned blocking boundary consumes cancellation and reports terminal.
+
 ### 2026-09-08 — (resolved locally) Ansible execution discarded owner cancellation
 
 - **What happened**: `AnsibleRunnerAdapter.run_playbook()` accepted arbitrary runner keywords but discarded them, `CoreAnsibleRunner` had no cancellation parameter, the native child supervisor blocked in one deadline-length join, and the isolation backend never supplied Ansible Runner's supported `cancel_callback`.

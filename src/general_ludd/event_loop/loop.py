@@ -41,6 +41,11 @@ from general_ludd.db.repository import (
 )
 from general_ludd.db.tenant import reset_tenant as _reset_tenant
 from general_ludd.db.tenant import set_tenant as _set_tenant
+from general_ludd.event_loop.execution_supervision import (
+    ExecutionLeaseIdentity,
+    ExecutionLeaseSupervisor,
+    OwnedExecutionCancelled,
+)
 from general_ludd.event_loop.lease import reclaim_expired_leases, release_lease
 from general_ludd.event_loop.loop_handlers import EventLoopHandlers
 from general_ludd.event_loop.managed_self_improve_dispatch import (
@@ -933,6 +938,59 @@ class EventLoop(EventLoopHandlers):
     async def _bounded_to_thread(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         async with self._to_thread_semaphore:
             return await asyncio.to_thread(fn, *args, **kwargs)
+
+    @staticmethod
+    async def _await_terminal_task(task: asyncio.Task[Any]) -> Any:
+        """Drain a shielded cleanup task despite repeated caller cancellation."""
+        while True:
+            try:
+                return await asyncio.shield(task)
+            except asyncio.CancelledError:
+                if task.done():
+                    return task.result()
+
+    async def _run_playbook_with_lease_supervision(
+        self,
+        supervisor: ExecutionLeaseSupervisor,
+        *,
+        playbook: str,
+        private_data_dir: str,
+        env: dict[str, str],
+    ) -> Any:
+        """Run blocking Ansible work without abandoning it on task cancellation."""
+        assert self._runner is not None
+        runner_task = asyncio.create_task(
+            self._bounded_to_thread(
+                self._runner.run_playbook,
+                playbook_name=playbook,
+                private_data_dir=private_data_dir,
+                env=env,
+                cancel_requested=supervisor.is_cancellation_requested,
+            )
+        )
+        try:
+            return await asyncio.shield(runner_task)
+        except asyncio.CancelledError as cancellation:
+            request_task = asyncio.create_task(supervisor.request_cancellation())
+            with contextlib.suppress(Exception):
+                await self._await_terminal_task(request_task)
+
+            runner_failure: BaseException | None = None
+            try:
+                await self._await_terminal_task(runner_task)
+            except BaseException as exc:
+                runner_failure = exc
+                logger.error(
+                    "OWNED_EXECUTION_REAP status=failed exception_type=%s",
+                    type(exc).__name__,
+                )
+
+            confirmation_task = asyncio.create_task(supervisor.confirm_termination())
+            with contextlib.suppress(Exception):
+                await self._await_terminal_task(confirmation_task)
+            if runner_failure is not None:
+                raise cancellation from runner_failure
+            raise
 
     async def run_forever(self, interval: float = 1.0) -> None:
         """Run observable ticks until :meth:`stop` is called."""
@@ -2175,6 +2233,7 @@ class EventLoop(EventLoopHandlers):
                 execution_bucket = f"{bucket_key}:{todo_id}"
                 bucket_keys.append(execution_bucket)
             try:
+                lease_ttl_seconds, _ = self._execution_lease_timing()
                 if isinstance(self._active_session, AsyncSession):
                     # ``begin_nested()`` flushes pending ORM mutations before it
                     # opens the savepoint.  Flush the persisted cost estimates
@@ -2192,6 +2251,7 @@ class EventLoop(EventLoopHandlers):
                             self._active_session,
                             bucket_keys,
                             holder_id=holder,
+                            ttl_seconds=lease_ttl_seconds,
                             project_id=project_id,
                             todo_versions=todo_versions,
                         )
@@ -2200,6 +2260,7 @@ class EventLoop(EventLoopHandlers):
                         self._active_session,
                         bucket_keys,
                         holder_id=holder,
+                        ttl_seconds=lease_ttl_seconds,
                         project_id=project_id,
                         todo_versions=todo_versions,
                     )
@@ -2235,6 +2296,10 @@ class EventLoop(EventLoopHandlers):
                 self._tick_state["execution_lease_todo_ids"] = [
                     _safe_str(todo, "todo_id", "") or "" for todo in claimed
                 ]
+                self._tick_state["execution_lease_versions"] = {
+                    _safe_str(todo, "todo_id", "") or "": todo.version
+                    for todo in claimed
+                }
         self._tick_state["claimed_todos"] = claimed
 
     async def _trim_claimed_to_pid_cap(self, claimed: list[Any]) -> list[Any]:
@@ -2430,6 +2495,12 @@ class EventLoop(EventLoopHandlers):
         """
         assert self._session_factory is not None
 
+        lease_supervisor = self._execution_lease_supervisor_for_todo(todo)
+        heartbeat_task = (
+            asyncio.create_task(lease_supervisor.run())
+            if lease_supervisor is not None
+            else None
+        )
         sandbox_handle = await self._sandbox_apply_for_todo(todo)
         try:
             async with self._session_factory() as job_session:
@@ -2440,11 +2511,26 @@ class EventLoop(EventLoopHandlers):
                     )
                 job_variable_repo = VariableNamespaceRepository(job_session)
                 job_task_return_repo = TaskReturnRepository(job_session)
-                await self._dispatch_execute_job(
-                    todo,
-                    _variable_repo_override=job_variable_repo,
-                    _task_return_repo_override=job_task_return_repo,
-                    _session_override=job_session,
+                try:
+                    await self._dispatch_execute_job(
+                        todo,
+                        _variable_repo_override=job_variable_repo,
+                        _task_return_repo_override=job_task_return_repo,
+                        _session_override=job_session,
+                        _lease_supervisor_override=lease_supervisor,
+                    )
+                except OwnedExecutionCancelled:
+                    await self._stop_execution_lease_heartbeat(
+                        lease_supervisor,
+                        heartbeat_task,
+                    )
+                    if lease_supervisor is not None:
+                        await lease_supervisor.request_cancellation()
+                        await lease_supervisor.confirm_termination()
+                    raise
+                await self._stop_execution_lease_heartbeat(
+                    lease_supervisor,
+                    heartbeat_task,
                 )
                 await self._release_completed_execution_lease(job_session, todo)
                 try:
@@ -2456,8 +2542,81 @@ class EventLoop(EventLoopHandlers):
                         exc,
                     )
         finally:
+            await self._stop_execution_lease_heartbeat(
+                lease_supervisor,
+                heartbeat_task,
+            )
             if sandbox_handle is not None:
                 await self._sandbox_release(sandbox_handle)
+
+    def _execution_lease_supervisor_for_todo(
+        self,
+        todo: Any,
+    ) -> ExecutionLeaseSupervisor | None:
+        """Build supervision only for a claim fenced by this process."""
+        if self._session_factory is None:
+            return None
+        todo_id = _safe_str(todo, "todo_id", "") or ""
+        leased_todo_ids = self._tick_state.get("execution_lease_todo_ids", [])
+        if not todo_id or todo_id not in leased_todo_ids:
+            return None
+        versions = self._tick_state.get("execution_lease_versions", {})
+        version = versions.get(todo_id) if isinstance(versions, Mapping) else None
+        if not isinstance(version, int) or isinstance(version, bool) or version <= 0:
+            return None
+        queue = _safe_str(todo, "queue", "core") or "core"
+        ttl_seconds, heartbeat_interval_seconds = self._execution_lease_timing()
+        return ExecutionLeaseSupervisor(
+            session_factory=self._session_factory,
+            identity=ExecutionLeaseIdentity(
+                bucket_key=f"{queue}:{todo_id}",
+                holder_id=self._lease_owner_id,
+                todo_version=version,
+            ),
+            event_bus=self._event_bus,
+            ttl_seconds=ttl_seconds,
+            heartbeat_interval_seconds=heartbeat_interval_seconds,
+        )
+
+    def _execution_lease_timing(self) -> tuple[int, float]:
+        """Return validated lease TTL and heartbeat interval configuration."""
+        raw_config = self.config.get("event_loop", {})
+        event_loop_config = raw_config if isinstance(raw_config, Mapping) else {}
+        ttl_seconds = event_loop_config.get("execution_lease_ttl_seconds", 300)
+        interval_seconds = event_loop_config.get(
+            "execution_lease_heartbeat_interval_seconds",
+            30.0,
+        )
+        if (
+            not isinstance(ttl_seconds, int)
+            or isinstance(ttl_seconds, bool)
+            or ttl_seconds <= 0
+            or ttl_seconds > 86_400
+        ):
+            raise ValueError(
+                "execution_lease_ttl_seconds must be an integer between 1 and 86400"
+            )
+        if (
+            not isinstance(interval_seconds, (int, float))
+            or isinstance(interval_seconds, bool)
+            or not 0 < interval_seconds < ttl_seconds
+        ):
+            raise ValueError(
+                "execution_lease_heartbeat_interval_seconds must be positive and shorter than the lease TTL"
+            )
+        return ttl_seconds, float(interval_seconds)
+
+    @staticmethod
+    async def _stop_execution_lease_heartbeat(
+        supervisor: ExecutionLeaseSupervisor | None,
+        heartbeat_task: asyncio.Task[None] | None,
+    ) -> None:
+        """Stop and drain a heartbeat task before releasing its database fence."""
+        if supervisor is None or heartbeat_task is None:
+            return
+        supervisor.stop()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat_task
 
     async def _release_completed_execution_lease(
         self,
@@ -2810,6 +2969,7 @@ class EventLoop(EventLoopHandlers):
         _variable_repo_override: VariableNamespaceRepository | None = None,
         _task_return_repo_override: TaskReturnRepository | None = None,
         _session_override: AsyncSession | None = None,
+        _lease_supervisor_override: ExecutionLeaseSupervisor | None = None,
     ) -> None:
         """Dispatch a single execute job.
 
@@ -3573,12 +3733,32 @@ class EventLoop(EventLoopHandlers):
             # M9 (W3.3): run_playbook is a blocking I/O call; wrap in
             # asyncio.to_thread so the event loop stays responsive during
             # long playbook executions and CancelledError propagates cleanly.
-            await self._bounded_to_thread(
-                self._runner.run_playbook,
-                playbook_name=playbook,
-                private_data_dir=pdd,
-                env=runner_env,
-            )
+            if (
+                _lease_supervisor_override is not None
+                and _lease_supervisor_override.is_cancellation_requested()
+            ):
+                raise OwnedExecutionCancelled
+            if _lease_supervisor_override is None:
+                run_result = await self._bounded_to_thread(
+                    self._runner.run_playbook,
+                    playbook_name=playbook,
+                    private_data_dir=pdd,
+                    env=runner_env,
+                )
+            else:
+                run_result = await self._run_playbook_with_lease_supervision(
+                    _lease_supervisor_override,
+                    playbook=playbook,
+                    private_data_dir=pdd,
+                    env=runner_env,
+                )
+            if (
+                _lease_supervisor_override is not None
+                and isinstance(run_result, Mapping)
+                and str(run_result.get("status", "")).lower()
+                in {"canceled", "cancelled"}
+            ):
+                raise OwnedExecutionCancelled
             if self._run_recorder is not None:
                 with contextlib.suppress(Exception):
                     self._run_recorder.record(

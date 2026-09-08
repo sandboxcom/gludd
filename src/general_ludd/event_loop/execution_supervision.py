@@ -35,6 +35,10 @@ class EventPublisher(Protocol):
 SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
 
+class OwnedExecutionCancelled(RuntimeError):
+    """Signal that a supervised runner stopped after cancellation."""
+
+
 @dataclass(frozen=True, slots=True)
 class ExecutionLeaseIdentity:
     """Immutable database fence for one claimed todo attempt."""
@@ -253,4 +257,5 @@ __all__ = (
     "ExecutionLeaseIdentity",
     "ExecutionLeaseSupervisor",
     "LeaseTerminationOutcome",
+    "OwnedExecutionCancelled",
 )

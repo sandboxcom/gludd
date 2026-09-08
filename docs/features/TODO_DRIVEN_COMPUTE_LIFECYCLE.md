@@ -188,6 +188,22 @@ an exception with an uncertain remote outcome retains ownership for the terminal
 handshake. Real-session tests prove both conflict preservation and equality
 between the persisted lease fence and the post-flush ACTIVE todo version.
 
+Each database-backed dispatch now starts an independent short-session lease
+supervisor before model or Ansible work begins. It renews the exact
+bucket/holder/todo-version fence immediately and at the configured interval,
+publishing content-free `execution_lease_heartbeat` events. A cancellation flag
+or lost fence reaches the Ansible adapter through its thread-safe callback. If
+the asyncio caller is cancelled, Gludd first persists the owner-scoped request,
+then waits for the blocking runner to terminate and reap its process boundary,
+and only then records terminal proof. Confirmed cancellation publishes
+`execution_lease_cancellation_requested` and
+`execution_lease_termination_confirmed`, atomically returns the still-matching
+todo to `QUEUED`, and removes the lease. Any database failure, stale fence, or
+uncertain remote outcome keeps the lease rather than risking duplicate effects.
+`execution_lease_ttl_seconds` defaults to 300 and
+`execution_lease_heartbeat_interval_seconds` defaults to 30; invalid or
+non-renewable timing fails the complete claim closed before dispatch.
+
 ## Long-lived operator reports that shaped the design
 
 - Gunicorn maintainers explain that workers are separate processes and do not
