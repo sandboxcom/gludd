@@ -27,25 +27,25 @@ from typing import cast
 from fastapi import FastAPI
 
 from general_ludd.controllers.pause_controller import PauseController, PauseKind
-from general_ludd.routers.pause_contracts import (
+from general_ludd.routers._pause_contracts import (
     PauseEntityRequest as PauseEntityRequest,
 )
-from general_ludd.routers.pause_contracts import (
+from general_ludd.routers._pause_contracts import (
     PauseRequest as PauseRequest,
 )
-from general_ludd.routers.pause_contracts import (
+from general_ludd.routers._pause_contracts import (
     ResumeEntityRequest as ResumeEntityRequest,
 )
-from general_ludd.routers.pause_contracts import (
+from general_ludd.routers._pause_contracts import (
     ResumeRequest as ResumeRequest,
 )
-from general_ludd.routers.pause_contracts import (
+from general_ludd.routers._pause_contracts import (
     format_pause_record as _format_pause_record,
 )
-from general_ludd.routers.pause_contracts import (
+from general_ludd.routers._pause_contracts import (
     pause_entity_response as _pause_entity_response,
 )
-from general_ludd.routers.pause_contracts import (
+from general_ludd.routers._pause_contracts import (
     resume_entity_response as _resume_entity_response,
 )
 
