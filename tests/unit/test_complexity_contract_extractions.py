@@ -23,3 +23,52 @@ def test_owned_candidate_reexports_canonical_lifecycle_contract() -> None:
     assert candidate.OwnedCandidateLifecycleError is contract.OwnedCandidateLifecycleError
     assert candidate.OwnedCandidateLifecycleEvent is contract.OwnedCandidateLifecycleEvent
     assert candidate.OwnedCandidateLifecycleTrace is contract.OwnedCandidateLifecycleTrace
+
+
+def test_promotion_reexports_canonical_value_contracts() -> None:
+    """Promotion callers keep the established public import surface."""
+    from general_ludd.ai_ml import promotion
+    from general_ludd.ai_ml import promotion_contracts as contract
+
+    assert promotion.PromotionPhase is contract.PromotionPhase
+    assert promotion.CanaryBudgets is contract.CanaryBudgets
+    assert promotion.CanaryMetrics is contract.CanaryMetrics
+    assert promotion.CanaryVerdict is contract.CanaryVerdict
+    assert promotion.AliasSwap is contract.AliasSwap
+    assert promotion.RollbackResult is contract.RollbackResult
+
+
+def test_role_generator_reexports_canonical_pruner() -> None:
+    """Role generation delegates pruning to one tested implementation."""
+    from general_ludd.cloud import role_generator, role_pruning
+
+    assert vars(role_generator)["_prune_by_resource_types"] is role_pruning.prune_by_resource_types
+
+
+def test_windows_defender_uses_canonical_command_support() -> None:
+    """The connector retains its helper seam after command support extraction."""
+    from general_ludd.connectors import windows_defender
+    from general_ludd.connectors import windows_defender_support as support
+
+    namespace = vars(windows_defender)
+    assert namespace["_validate_arg"] is support.validate_arg
+    assert namespace["_default_runner"] is support.default_runner
+    assert namespace["_run"] is support.run
+    assert namespace["_normalize_record"] is support.normalize_record
+
+
+def test_release_ops_reexports_canonical_readme_check() -> None:
+    """Release operations retain the patchable README-check boundary."""
+    from general_ludd.git_automation import release_checks, release_ops
+
+    assert vars(release_ops)["_release_readme_check"] is release_checks.check_readme_status_inner
+
+
+def test_pause_router_reexports_canonical_request_contracts() -> None:
+    """Pause clients keep their established request-model identities."""
+    from general_ludd.routers import pause, pause_contracts
+
+    assert pause.PauseEntityRequest is pause_contracts.PauseEntityRequest
+    assert pause.ResumeEntityRequest is pause_contracts.ResumeEntityRequest
+    assert pause.PauseRequest is pause_contracts.PauseRequest
+    assert pause.ResumeRequest is pause_contracts.ResumeRequest
