@@ -87,3 +87,13 @@ def test_event_loop_uses_canonical_managed_dispatch_helpers() -> None:
     )
     assert namespace["_decode_managed_worker_response"] is support.decode_worker_response
     assert namespace["_validate_managed_worker_result"] is support.validate_worker_result
+
+
+def test_runtime_delegates_managed_runner_composition() -> None:
+    """The runtime keeps one patch-compatible managed composition implementation."""
+    from general_ludd.self_improve import runtime, runtime_builder
+
+    assert (
+        vars(runtime)["_build_managed_runner_composition"]
+        is runtime_builder.build_managed_self_improve_runner
+    )

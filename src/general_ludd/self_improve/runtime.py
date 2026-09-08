@@ -25,7 +25,7 @@ from functools import partial
 from pathlib import Path
 from typing import Final, Protocol, TextIO, cast, runtime_checkable
 
-from general_ludd.hardware.model_fit import unified_probe
+from general_ludd.hardware.model_fit import unified_probe as unified_probe
 from general_ludd.local_model import LocalModelConfig
 from general_ludd.planning.repo_map import RepoMapBuilder
 from general_ludd.self_improve.codex_comparison import (
@@ -82,7 +82,9 @@ from general_ludd.self_improve.live_candidate_wiring import (
     ContainerAppCandidateBackendFactory,
     ContainerAppCandidateBootstrapFactory,
     LiveCandidateWiringPolicy,
-    build_live_managed_candidate_wiring,
+)
+from general_ludd.self_improve.live_candidate_wiring import (
+    build_live_managed_candidate_wiring as build_live_managed_candidate_wiring,
 )
 from general_ludd.self_improve.managed_candidate_routing import ManagedCandidateProposalCodec
 from general_ludd.self_improve.managed_remote_codec import (
@@ -99,7 +101,6 @@ from general_ludd.self_improve.managed_runner import (
     PromptPlan,
     PromptShard,
     SelfImprovePolicyViolation,
-    _build_validation_retry_prompt_plan,
     _validate_attempt_identity_digest,
     _validation_retry_feedback,
     build_retry_prompt_plan,
@@ -121,6 +122,9 @@ from general_ludd.self_improve.managed_runner import (
     _attempt_identity_digest as _attempt_identity_digest,
 )
 from general_ludd.self_improve.managed_runner import (
+    _build_validation_retry_prompt_plan as _build_validation_retry_prompt_plan,
+)
+from general_ludd.self_improve.managed_runner import (
     _is_safe_make_command as _is_safe_make_command,
 )
 from general_ludd.self_improve.managed_runner import (
@@ -139,21 +143,29 @@ from general_ludd.self_improve.managed_runner import (
     apply_proposal as apply_proposal,
 )
 from general_ludd.self_improve.managed_runtime_evaluation import (
-    ManagedAttemptEvaluator,
-    evaluate_policy_bound_managed_proposal,
+    ManagedAttemptEvaluator as ManagedAttemptEvaluator,
+)
+from general_ludd.self_improve.managed_runtime_evaluation import (
+    evaluate_policy_bound_managed_proposal as evaluate_policy_bound_managed_proposal,
 )
 from general_ludd.self_improve.model_candidate_planner import (
     PlannedModelCandidate,
     load_latest_failed_model_ids,
-    plan_model_candidates,
     record_self_improve_outcome,
+)
+from general_ludd.self_improve.model_candidate_planner import (
+    plan_model_candidates as plan_model_candidates,
 )
 from general_ludd.self_improve.model_lifecycle import (
     AcquiredModel,
-    ModelAcquisitionError,
     ModelAcquisitionEvent,
     ModelArtifactIdentity,
-    ModelLeaseManager,
+)
+from general_ludd.self_improve.model_lifecycle import (
+    ModelAcquisitionError as ModelAcquisitionError,
+)
+from general_ludd.self_improve.model_lifecycle import (
+    ModelLeaseManager as ModelLeaseManager,
 )
 from general_ludd.self_improve.private_policy import (
     SelfImproveLearningScope,
@@ -161,6 +173,9 @@ from general_ludd.self_improve.private_policy import (
     SelfImprovePolicyBoundOutcomeAdapter,
     SelfImprovePrivacyPolicy,
     SelfImproveRuntimePolicyGuard,
+)
+from general_ludd.self_improve.runtime_builder import (
+    build_managed_self_improve_runner as _build_managed_runner_composition,
 )
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 from general_ludd.small_models.recommender import map_task_to_capabilities
@@ -2802,111 +2817,20 @@ def build_managed_self_improve_runner(
     self_improve_config: Mapping[str, object] | None = None,
 ) -> ManagedSelfImproveRunner:
     """Compose a repository-bound local/cloud service with Make-only evaluation."""
-    canonical_root = _canonical_managed_repo_root(repo_root)
-    runner_factory = make_runner_factory or MakeRunner
-    operation_runner = root_runner or runner_factory(canonical_root)
-    runtime_progress_sink = progress_sink or _runtime_progress
-    if self_improve_config is not None:
-        configured = build_azure_containerapp_bootstrap_wiring(
-            canonical_root,
-            self_improve_config,
-            progress_sink=runtime_progress_sink,
-        )
-        if configured is not None:
-            if (
-                live_candidate_policy is not None
-                or containerapp_backend_factory is not None
-                or containerapp_bootstrap_factory is not None
-            ):
-                raise ValueError(
-                    "configured Container App bootstrap conflicts with explicit wiring"
-                )
-            live_candidate_policy = configured.policy
-            containerapp_bootstrap_factory = configured.bootstrap_factory
-    live_candidate_wiring = build_live_managed_candidate_wiring(
-        live_candidate_policy,
+    return _build_managed_runner_composition(
+        repo_root,
+        root_runner=root_runner,
+        make_runner_factory=make_runner_factory,
+        attempt_evaluator=attempt_evaluator,
+        progress_sink=progress_sink,
+        outcome_adapter_factory=outcome_adapter_factory,
+        live_candidate_policy=live_candidate_policy,
         azure_backend_factory=azure_backend_factory,
         containerapp_backend_factory=containerapp_backend_factory,
         containerapp_bootstrap_factory=containerapp_bootstrap_factory,
-        progress_sink=runtime_progress_sink,
-    )
-    managed_attempt_evaluator = cast(
-        ManagedAttemptEvaluator[_RuntimeMakeRunner],
-        attempt_evaluator
-        or partial(
-            evaluate_attempt,
-            make_runner_factory=runner_factory,
-            progress_sink=runtime_progress_sink,
-        ),
+        self_improve_config=self_improve_config,
     )
 
-    def generate_managed_proposal(
-        model_path: Path,
-        prompt: PromptPlan | str,
-        task: TaskSpec,
-        reference: CodexReference,
-    ) -> ProposalManifest | GeneratedProposal:
-        if isinstance(prompt, PromptPlan):
-            return _generate_local_proposal_plan_result(
-                operation_runner,
-                model_path,
-                prompt,
-                task,
-                reference,
-            )
-        return generate_local_proposal(operation_runner, model_path, prompt)
-
-    def evaluate_managed_proposal(
-        task: TaskSpec,
-        reference: CodexReference,
-        bound_proposal: PlanBoundProposal,
-        attempt: int,
-        *,
-        expected_attempt_identity_digest: str,
-        merge: bool,
-    ) -> AttemptResult:
-        return evaluate_policy_bound_managed_proposal(
-            canonical_root,
-            operation_runner,
-            runtime_progress_sink,
-            task,
-            reference,
-            bound_proposal,
-            attempt,
-            evaluator=managed_attempt_evaluator,
-            expected_attempt_identity_digest=expected_attempt_identity_digest,
-            merge=merge,
-        )
-
-    service = _RepositoryBoundManagedSelfImproveRunner(
-        proposal_generator=generate_managed_proposal,
-        attempt_evaluator=evaluate_managed_proposal,
-        model_manager_factory=ModelLeaseManager,
-        outcome_adapter_factory=(
-            outcome_adapter_factory or _default_runtime_outcome_adapter
-        ),
-        candidate_planner=plan_model_candidates,
-        hardware_probe=unified_probe,
-        artifact_identity=_planned_artifact_identity,
-        acquisition_event_sink=_report_model_acquisition_event,
-        resolution_failure_sink=_report_model_resolution_failure,
-        release_sink=_report_model_release,
-        progress_sink=runtime_progress_sink,
-        model_acquisition_error=ModelAcquisitionError,
-        comparison_retry_builder=_managed_comparison_retry_builder(
-            runtime_progress_sink
-        ),
-        validation_retry_builder=_build_validation_retry_prompt_plan,
-        syntax_repair_builder=_managed_syntax_retry_builder(runtime_progress_sink),
-        live_candidate_wiring=live_candidate_wiring,
-        remote_proposal_codec_factory=(
-            _managed_remote_proposal_codec
-            if live_candidate_wiring is not None
-            else None
-        ),
-    )
-    service.bind_repository(canonical_root)
-    return service
 
 
 def _required_managed_output_tokens(
