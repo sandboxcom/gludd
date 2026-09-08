@@ -175,6 +175,9 @@ from general_ludd.self_improve.private_policy import (
     SelfImproveRuntimePolicyGuard,
 )
 from general_ludd.self_improve.runtime_builder import (
+    _RuntimeCompositionApi,
+)
+from general_ludd.self_improve.runtime_builder import (
     build_managed_self_improve_runner as _build_managed_runner_composition,
 )
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
@@ -2829,6 +2832,7 @@ def build_managed_self_improve_runner(
         containerapp_backend_factory=containerapp_backend_factory,
         containerapp_bootstrap_factory=containerapp_bootstrap_factory,
         self_improve_config=self_improve_config,
+        _runtime_api=cast(_RuntimeCompositionApi, sys.modules[__name__]),
     )
 
 

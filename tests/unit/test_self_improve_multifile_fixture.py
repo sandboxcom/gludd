@@ -111,6 +111,7 @@ COVERAGE_SOURCES = (
     "*/src/general_ludd/self_improve/managed_remote_codec.py",
     "*/src/general_ludd/self_improve/managed_runtime_evaluation.py",
     "*/src/general_ludd/self_improve/runtime.py",
+    "*/src/general_ludd/self_improve/runtime_builder.py",
     "*/src/general_ludd/self_improve/evaluator.py",
     "*/src/general_ludd/self_improve/result_artifact.py",
     "*/src/general_ludd/self_improve/staging.py",

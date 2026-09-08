@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import Protocol, cast
 
 from general_ludd.self_improve.codex_comparison import CodexReference, ProposalManifest
 from general_ludd.self_improve.live_candidate_wiring import (
@@ -29,12 +29,129 @@ from general_ludd.self_improve.managed_runner import (
 )
 from general_ludd.self_improve.managed_runtime_evaluation import ManagedAttemptEvaluator
 
-if TYPE_CHECKING:
-    from general_ludd.self_improve.runtime import (
-        _AttemptEvaluationAdapter,
-        _MakeRunnerFactory,
-        _RuntimeMakeRunner,
-    )
+
+class _ConfiguredAzureBootstrapWiring(Protocol):
+    """Minimal configured Azure wiring exposed by the runtime composition API."""
+
+    @property
+    def policy(self) -> LiveCandidateWiringPolicy:
+        """Return the immutable live-candidate policy."""
+
+    @property
+    def bootstrap_factory(self) -> ContainerAppCandidateBootstrapFactory:
+        """Return the environment bootstrap factory."""
+
+
+class _RepositoryBindable(Protocol):
+    """Repository binding exposed by the concrete managed service."""
+
+    def bind_repository(self, repo_root: Path) -> None:
+        """Bind the service to one canonical repository."""
+
+
+class _RuntimeCompositionApi(Protocol):
+    """Patch-compatible runtime capabilities consumed by the composition helper."""
+
+    MakeRunner: Callable[[Path], object]
+    ModelLeaseManager: object
+    ModelAcquisitionError: object
+    _RepositoryBoundManagedSelfImproveRunner: Callable[..., ManagedSelfImproveRunner]
+    _default_runtime_outcome_adapter: _OutcomeAdapterFactory
+    plan_model_candidates: object
+    unified_probe: object
+    _planned_artifact_identity: object
+    _report_model_acquisition_event: object
+    _report_model_resolution_failure: object
+    _report_model_release: object
+    _build_validation_retry_prompt_plan: object
+    _managed_remote_proposal_codec: object
+
+    def _canonical_managed_repo_root(self, repo_root: Path) -> Path:
+        """Return one canonical repository root."""
+
+    def _runtime_progress(self, message: str) -> None:
+        """Publish one bounded progress event."""
+
+    def build_azure_containerapp_bootstrap_wiring(
+        self,
+        repo_root: Path,
+        self_improve_config: Mapping[str, object],
+        *,
+        progress_sink: Callable[[str], None],
+    ) -> _ConfiguredAzureBootstrapWiring | None:
+        """Build optional config-derived Azure environment wiring."""
+
+    def build_live_managed_candidate_wiring(
+        self,
+        policy: LiveCandidateWiringPolicy | None,
+        *,
+        azure_backend_factory: AzureCandidateBackendFactory | None,
+        containerapp_backend_factory: ContainerAppCandidateBackendFactory | None,
+        containerapp_bootstrap_factory: ContainerAppCandidateBootstrapFactory | None,
+        progress_sink: Callable[[str], None],
+    ) -> LiveManagedCandidateWiring | None:
+        """Build optional live candidate wiring."""
+
+    def _generate_local_proposal_plan_result(
+        self,
+        root_runner: object,
+        model_path: Path,
+        prompt: PromptPlan,
+        task: TaskSpec,
+        reference: CodexReference,
+    ) -> ProposalManifest | GeneratedProposal:
+        """Generate one plan-bound local proposal."""
+
+    def generate_local_proposal(
+        self,
+        root_runner: object,
+        model_path: Path,
+        prompt: str,
+    ) -> ProposalManifest:
+        """Generate one legacy string-prompt proposal."""
+
+    def evaluate_policy_bound_managed_proposal(
+        self,
+        canonical_root: Path,
+        operation_runner: object,
+        progress_sink: Callable[[str], None],
+        task: TaskSpec,
+        reference: CodexReference,
+        bound_proposal: PlanBoundProposal,
+        attempt: int,
+        *,
+        evaluator: ManagedAttemptEvaluator[object],
+        expected_attempt_identity_digest: str,
+        merge: bool,
+    ) -> AttemptResult:
+        """Evaluate one proposal inside its project-policy boundary."""
+
+    def evaluate_attempt(
+        self,
+        root_runner: object,
+        task: TaskSpec,
+        reference: CodexReference,
+        bound_proposal: PlanBoundProposal,
+        attempt: int,
+        *,
+        expected_attempt_identity_digest: str,
+        merge: bool,
+        make_runner_factory: Callable[[Path], object] | None = None,
+        progress_sink: Callable[[str], None] | None = None,
+    ) -> AttemptResult:
+        """Evaluate one managed attempt through Make-only operations."""
+
+    def _managed_comparison_retry_builder(
+        self,
+        progress_sink: Callable[[str], None],
+    ) -> object:
+        """Build the comparison retry callback."""
+
+    def _managed_syntax_retry_builder(
+        self,
+        progress_sink: Callable[[str], None],
+    ) -> object:
+        """Build the syntax retry callback."""
 
 class _ProposalEvaluator(Protocol):
     """Evaluate one plan-bound proposal through the managed policy boundary."""
@@ -53,6 +170,7 @@ class _ProposalEvaluator(Protocol):
 
 
 def _configure_live_candidate_wiring(
+    runtime_api: _RuntimeCompositionApi,
     canonical_root: Path,
     self_improve_config: Mapping[str, object] | None,
     progress_sink: Callable[[str], None],
@@ -62,8 +180,6 @@ def _configure_live_candidate_wiring(
     containerapp_bootstrap_factory: ContainerAppCandidateBootstrapFactory | None,
 ) -> LiveManagedCandidateWiring | None:
     """Combine explicit and config-derived live candidate wiring."""
-    from general_ludd.self_improve import runtime as runtime_api
-
     if self_improve_config is not None:
         configured = runtime_api.build_azure_containerapp_bootstrap_wiring(
             canonical_root,
@@ -91,15 +207,14 @@ def _configure_live_candidate_wiring(
 
 
 def _build_managed_callbacks(
+    runtime_api: _RuntimeCompositionApi,
     canonical_root: Path,
-    operation_runner: _RuntimeMakeRunner,
-    runner_factory: _MakeRunnerFactory,
+    operation_runner: object,
+    runner_factory: Callable[[Path], object],
     progress_sink: Callable[[str], None],
-    attempt_evaluator: ManagedAttemptEvaluator[_RuntimeMakeRunner],
+    attempt_evaluator: ManagedAttemptEvaluator[object],
 ) -> tuple[_ManagedProposalGenerator, _ProposalEvaluator]:
     """Bind proposal generation and evaluation to one repository."""
-    from general_ludd.self_improve import runtime as runtime_api
-
     def generate(
         model_path: Path,
         prompt: PromptPlan | str,
@@ -142,6 +257,7 @@ def _build_managed_callbacks(
 
 
 def _compose_service(
+    runtime_api: _RuntimeCompositionApi,
     canonical_root: Path,
     progress_sink: Callable[[str], None],
     proposal_generator: _ManagedProposalGenerator,
@@ -150,8 +266,6 @@ def _compose_service(
     live_candidate_wiring: LiveManagedCandidateWiring | None,
 ) -> ManagedSelfImproveRunner:
     """Construct and bind the managed runner from validated collaborators."""
-    from general_ludd.self_improve import runtime as runtime_api
-
     service = runtime_api._RepositoryBoundManagedSelfImproveRunner(
         proposal_generator=proposal_generator,
         attempt_evaluator=proposal_evaluator,
@@ -177,16 +291,16 @@ def _compose_service(
             else None
         ),
     )
-    service.bind_repository(canonical_root)
+    cast(_RepositoryBindable, service).bind_repository(canonical_root)
     return service
 
 
 def build_managed_self_improve_runner(
     repo_root: Path,
     *,
-    root_runner: _RuntimeMakeRunner | None = None,
-    make_runner_factory: _MakeRunnerFactory | None = None,
-    attempt_evaluator: _AttemptEvaluationAdapter | None = None,
+    root_runner: object | None = None,
+    make_runner_factory: Callable[[Path], object] | None = None,
+    attempt_evaluator: object | None = None,
     progress_sink: Callable[[str], None] | None = None,
     outcome_adapter_factory: _OutcomeAdapterFactory | None = None,
     live_candidate_policy: LiveCandidateWiringPolicy | None = None,
@@ -194,15 +308,15 @@ def build_managed_self_improve_runner(
     containerapp_backend_factory: ContainerAppCandidateBackendFactory | None = None,
     containerapp_bootstrap_factory: ContainerAppCandidateBootstrapFactory | None = None,
     self_improve_config: Mapping[str, object] | None = None,
+    _runtime_api: _RuntimeCompositionApi,
 ) -> ManagedSelfImproveRunner:
     """Compose a repository-bound local/cloud service with Make-only evaluation."""
-    from general_ludd.self_improve import runtime as runtime_api
-
-    canonical_root = runtime_api._canonical_managed_repo_root(repo_root)
-    runner_factory = make_runner_factory or runtime_api.MakeRunner
+    canonical_root = _runtime_api._canonical_managed_repo_root(repo_root)
+    runner_factory = make_runner_factory or _runtime_api.MakeRunner
     operation_runner = root_runner or runner_factory(canonical_root)
-    runtime_progress_sink = progress_sink or runtime_api._runtime_progress
+    runtime_progress_sink = progress_sink or _runtime_api._runtime_progress
     live_wiring = _configure_live_candidate_wiring(
+        _runtime_api,
         canonical_root,
         self_improve_config,
         runtime_progress_sink,
@@ -212,15 +326,16 @@ def build_managed_self_improve_runner(
         containerapp_bootstrap_factory,
     )
     managed_evaluator = cast(
-        runtime_api.ManagedAttemptEvaluator[runtime_api._RuntimeMakeRunner],
+        ManagedAttemptEvaluator[object],
         attempt_evaluator
         or partial(
-            runtime_api.evaluate_attempt,
+            _runtime_api.evaluate_attempt,
             make_runner_factory=runner_factory,
             progress_sink=runtime_progress_sink,
         ),
     )
     proposal_generator, proposal_evaluator = _build_managed_callbacks(
+        _runtime_api,
         canonical_root,
         operation_runner,
         runner_factory,
@@ -228,6 +343,7 @@ def build_managed_self_improve_runner(
         managed_evaluator,
     )
     return _compose_service(
+        _runtime_api,
         canonical_root,
         runtime_progress_sink,
         proposal_generator,

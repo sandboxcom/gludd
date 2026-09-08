@@ -2039,7 +2039,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 413,
+      "line": 416,
       "column": 15,
       "kind": "process",
       "owner": "MakeRunner._run_observable_argv",
@@ -2050,7 +2050,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 507,
+      "line": 510,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_run_local_proposal_request",

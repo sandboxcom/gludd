@@ -25,6 +25,13 @@ must not move an `await`, state mutation, event, or resource transfer across a
 `try`, `finally`, lock, context-manager, or cancellation boundary unless a
 characterization test first proves the old and new behavior identical.
 
+The managed-runner composition helper is also directionally isolated. The
+`runtime` facade supplies its current, patch-compatible capabilities through a
+typed protocol on each factory call; `runtime_builder` never imports the facade
+that delegates to it. This preserves injected test/runtime replacements while
+keeping the static module graph acyclic. The repository-wide import-graph test
+rejects a future reverse dependency instead of normalizing it in an allowlist.
+
 ## Compatibility contract
 
 The refactor must leave all externally observable contracts unchanged:
