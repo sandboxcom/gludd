@@ -4,6 +4,33 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from general_ludd.infra.azure_containerapp_environment_plan_contract import (
+    CHANGE_FIELDS as _CHANGE_FIELDS,
+)
+from general_ludd.infra.azure_containerapp_environment_plan_contract import (
+    EMPTY_PROVIDER_FIELDS as _EMPTY_PROVIDER_FIELDS,
+)
+from general_ludd.infra.azure_containerapp_environment_plan_contract import (
+    ENVIRONMENT_API_TYPE as _ENVIRONMENT_API_TYPE,
+)
+from general_ludd.infra.azure_containerapp_environment_plan_contract import (
+    ENVIRONMENT_RESOURCE_TYPE as _ENVIRONMENT_RESOURCE_TYPE,
+)
+from general_ludd.infra.azure_containerapp_environment_plan_contract import (
+    PLATFORM_CONSUMPTION_PROFILE as _PLATFORM_CONSUMPTION_PROFILE,
+)
+from general_ludd.infra.azure_containerapp_environment_plan_contract import (
+    PROVIDER_AFTER_FIELDS as _PROVIDER_AFTER_FIELDS,
+)
+from general_ludd.infra.azure_containerapp_environment_plan_contract import (
+    PROVIDER_BOOLEAN_DEFAULTS as _PROVIDER_BOOLEAN_DEFAULTS,
+)
+from general_ludd.infra.azure_containerapp_environment_plan_contract import (
+    RESOURCE_ADDRESS as _RESOURCE_ADDRESS,
+)
+from general_ludd.infra.azure_containerapp_environment_plan_contract import (
+    RESPONSE_EXPORT_VALUES as _RESPONSE_EXPORT_VALUES,
+)
 from general_ludd.infra.azure_containerapp_environment_types import (
     _LIFECYCLE_VERSION,
     _MANAGED_BY,
@@ -11,94 +38,6 @@ from general_ludd.infra.azure_containerapp_environment_types import (
     AzureEnvironmentLifecycleError,
     AzureEnvironmentLifecyclePolicy,
     AzureEnvironmentProfile,
-)
-
-_ENVIRONMENT_API_TYPE = "Microsoft.App/managedEnvironments@2025-07-01"
-_ENVIRONMENT_RESOURCE_TYPE = "Microsoft.App/managedEnvironments"
-_RESOURCE_ADDRESS = "module.environment.azapi_resource.managed_environment"
-_PLATFORM_CONSUMPTION_PROFILE = ("Consumption", "Consumption")
-_RESPONSE_EXPORT_VALUES = (
-    "id",
-    "name",
-    "properties.provisioningState",
-    "properties.workloadProfiles",
-    "tags",
-)
-_PROVIDER_AFTER_FIELDS = frozenset(
-    {
-        "body",
-        "create_headers",
-        "create_query_parameters",
-        "delete_headers",
-        "delete_query_parameters",
-        "id",
-        "identity",
-        "ignore_body_changes",
-        "ignore_casing",
-        "ignore_missing_property",
-        "ignore_null_property",
-        "ignore_other_items_in_list",
-        "list_unique_id_property",
-        "location",
-        "locks",
-        "name",
-        "output",
-        "parent_id",
-        "read_headers",
-        "read_query_parameters",
-        "replace_triggers_external_values",
-        "replace_triggers_refs",
-        "response_export_values",
-        "retry",
-        "schema_validation_enabled",
-        "sensitive_body",
-        "sensitive_body_version",
-        "tags",
-        "timeouts",
-        "type",
-        "update_headers",
-        "update_query_parameters",
-    }
-)
-_EMPTY_PROVIDER_FIELDS = frozenset(
-    {
-        "create_headers",
-        "create_query_parameters",
-        "delete_headers",
-        "delete_query_parameters",
-        "identity",
-        "ignore_body_changes",
-        "ignore_other_items_in_list",
-        "list_unique_id_property",
-        "locks",
-        "read_headers",
-        "read_query_parameters",
-        "replace_triggers_external_values",
-        "replace_triggers_refs",
-        "sensitive_body",
-        "sensitive_body_version",
-        "update_headers",
-        "update_query_parameters",
-    }
-)
-_PROVIDER_BOOLEAN_DEFAULTS = {
-    "ignore_casing": False,
-    "ignore_missing_property": True,
-    "ignore_null_property": False,
-    "schema_validation_enabled": True,
-}
-_CHANGE_FIELDS = frozenset(
-    {
-        "actions",
-        "after",
-        "after_sensitive",
-        "after_unknown",
-        "before",
-        "before_sensitive",
-        "generated_config",
-        "importing",
-        "replace_paths",
-    }
 )
 
 
