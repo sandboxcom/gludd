@@ -47,6 +47,10 @@ HashiCorp Terraform belongs on the host.
 - OpenTofu is installed inside the EE by the canonical definition. Verification
   runs `/usr/local/bin/tofu version` with `--network=none`; HashiCorp Terraform
   is neither installed nor invoked.
+- The offline Ansible import smoke uses the EE definition's exact managed
+  interpreter, `/usr/bin/python3.11`, through the validated
+  `execution_environment_bootstrap_candidate_python_executable` variable. The
+  role rejects overrides, so verification cannot drift to ambient host Python.
 
 ## Community findings carried into the design
 

@@ -50,7 +50,7 @@
       - --rm
       - --network=none
       - "{{ _execution_environment_bootstrap_candidate_image }}"
-      - python3
+      - "{{ execution_environment_bootstrap_candidate_python_executable }}"
       - -c
       - "import ansible, ansible_runner; print('ANSIBLE_EE_IMPORT_OK')"
   environment: "{{ _execution_environment_bootstrap_tool_environment }}"

@@ -13,6 +13,7 @@ execution_environment_bootstrap_build_timeout_seconds: 7200
 execution_environment_bootstrap_poll_seconds: 5
 execution_environment_bootstrap_container_runtime: podman
 execution_environment_bootstrap_podman_executable: podman
+execution_environment_bootstrap_candidate_python_executable: /usr/bin/python3.11
 execution_environment_bootstrap_podman_version: 5.8.2
 execution_environment_bootstrap_podman_macos_url: >-
   https://github.com/containers/podman/releases/download/v5.8.2/podman-installer-macos-universal.pkg

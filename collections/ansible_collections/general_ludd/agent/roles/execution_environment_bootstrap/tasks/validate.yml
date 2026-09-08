@@ -17,6 +17,7 @@
       - execution_environment_bootstrap_build_timeout_seconds | int <= 14400
       - execution_environment_bootstrap_poll_seconds | int >= 1
       - execution_environment_bootstrap_poll_seconds | int <= 60
+      - execution_environment_bootstrap_candidate_python_executable is match('^/usr/bin/python3[.]11$')
       - execution_environment_bootstrap_project_root | length > 0
       - execution_environment_bootstrap_project_root is match('^/.*')
       - execution_environment_bootstrap_state_root is match('^/.*/gludd/[A-Za-z0-9._/-]+$')

@@ -123,6 +123,10 @@ def test_defaults_are_namespaced_bounded_and_zdd_safe() -> None:
     assert "/gludd/" in defaults["execution_environment_bootstrap_state_root"]
     assert "execution_environment_bootstrap_machine_name" in defaults["execution_environment_bootstrap_state_root"]
     assert defaults["execution_environment_bootstrap_cleanup_on_failure"] is True
+    assert (
+        defaults["execution_environment_bootstrap_candidate_python_executable"]
+        == "/usr/bin/python3.11"
+    )
 
 
 def test_validation_fails_closed_on_ownership_and_resource_bounds() -> None:
@@ -194,6 +198,11 @@ def test_verify_is_network_isolated_and_checks_opentofu_and_ansible() -> None:
     assert "--network=none" in text
     assert "/usr/local/bin/tofu" in text
     assert "import ansible, ansible_runner" in text
+    assert "{{ execution_environment_bootstrap_candidate_python_executable }}" in text
+    assert all("python3" not in argv for argv in commands)
+    assert "execution_environment_bootstrap_candidate_python_executable is match" in _serialized(
+        "tasks/validate.yml"
+    )
     assert "_execution_environment_bootstrap_tool_environment" in text
     assert "CONTAINER_CONNECTION" in _serialized("tasks/validate.yml")
     assert "gludd_execution_environment" in text
