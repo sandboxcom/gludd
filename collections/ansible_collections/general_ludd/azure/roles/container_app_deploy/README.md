@@ -23,6 +23,16 @@ The final sanitized snapshot is exposed as the host variable
 `gludd_azure_containerapp`. Although playbooks commonly call such values facts,
 the underlying Azure calls correctly use `_info`: Ansible reserves `*_facts`
 modules for host-local properties and recommends `_info` for online services.
+When `containerapp_idle_retention` contains the exact planner request schema,
+the same fact also contains a content-free `retention` decision: chosen layers,
+reason codes, current micro-dollar ceilings, measured p95 time saved, and the
+mandatory reconciliation timestamp. The filter delegates to Gludd's core
+planner, so the role and Python lifecycle cannot drift into separate pricing or
+dependency algorithms. An empty mapping disables retention planning.
+
+See [Azure model-runner idle retention](../../../../../../docs/azure-idle-retention.md)
+for the four user postures, billing boundaries, exact configuration, and
+practitioner reports that shaped the fail-closed behavior.
 
 ## Inputs and lifecycle
 

@@ -11,7 +11,16 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from typing import Any, Final
+
+from general_ludd.infra.azure_idle_retention import (
+    AzureIdleRetentionPolicy,
+    AzureProvisioningLatencyEvidence,
+    AzureRetentionPreset,
+    container_apps_consumption_layers,
+    plan_azure_idle_retention,
+)
 
 _PROTOCOL: Final = "gludd-azure-containerapp-observation-v1"
 _GPU_METRIC: Final = "GpuUtilizationPercentage"
@@ -20,6 +29,38 @@ _DIGEST = re.compile(r"[0-9a-f]{64}")
 _SENSITIVE_KEY = re.compile(
     r"(?:clientsecret|secret|token|password|credential|accesskey|apikey)",
     re.IGNORECASE,
+)
+_RETENTION_REQUEST_KEYS: Final = frozenset(
+    {
+        "now",
+        "scope_digest",
+        "runnable_todo_count",
+        "expected_next_demand_seconds",
+        "policy",
+        "environment_latency",
+        "app_latency",
+        "min_replicas",
+        "activation_blocked_when_idle",
+        "has_dedicated_profiles",
+        "has_private_endpoint",
+        "has_planned_maintenance",
+        "has_paid_logging",
+    }
+)
+_RETENTION_POLICY_KEYS: Final = frozenset(
+    {
+        "preset",
+        "max_idle_hourly_cost_microusd",
+        "max_idle_monthly_cost_microusd",
+        "max_retention_cost_microusd",
+        "max_retention_seconds",
+        "max_price_age_seconds",
+        "max_latency_age_seconds",
+        "max_cost_per_saved_hour_microusd",
+    }
+)
+_LATENCY_KEYS: Final = frozenset(
+    {"p50_seconds", "p95_seconds", "sample_count", "observed_at"}
 )
 
 
@@ -42,6 +83,39 @@ def _integer(value: object, label: str) -> int:
     if integer != value or integer < 0:
         raise ValueError(f"{label} must be a non-negative integer")
     return integer
+
+
+def _number(value: object, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a finite number")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{label} must be a finite number")
+    return result
+
+
+def _boolean(value: object, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{label} must be boolean")
+    return value
+
+
+def _utc_timestamp(value: object, label: str) -> datetime:
+    text = _text(value, label)
+    if not text.endswith("Z"):
+        raise ValueError(f"{label} must be an RFC3339 UTC timestamp")
+    try:
+        parsed = datetime.fromisoformat(text[:-1] + "+00:00")
+    except ValueError:
+        raise ValueError(f"{label} must be an RFC3339 UTC timestamp") from None
+    return parsed.astimezone(UTC)
+
+
+def _exact_mapping(value: object, label: str, keys: frozenset[str]) -> Mapping[str, object]:
+    result = _mapping(value, label)
+    if set(result) != keys:
+        raise ValueError(f"{label} must use the exact schema")
+    return result
 
 
 def _assert_safe_tree(value: object, *, depth: int = 0) -> None:
@@ -480,6 +554,144 @@ def decide_containerapp_lifecycle(
     }
 
 
+def _latency_evidence(
+    raw: object,
+    label: str,
+) -> AzureProvisioningLatencyEvidence:
+    value = _exact_mapping(raw, label, _LATENCY_KEYS)
+    return AzureProvisioningLatencyEvidence(
+        p50_seconds=_number(value.get("p50_seconds"), f"{label}.p50_seconds"),
+        p95_seconds=_number(value.get("p95_seconds"), f"{label}.p95_seconds"),
+        sample_count=_integer(value.get("sample_count"), f"{label}.sample_count"),
+        observed_at=_utc_timestamp(
+            value.get("observed_at"),
+            f"{label}.observed_at",
+        ),
+    )
+
+
+def plan_containerapp_idle_retention(request: object) -> dict[str, object]:
+    """Expose the core fail-closed retention planner as sanitized Ansible facts."""
+    value = _exact_mapping(
+        request,
+        "containerapp idle retention request",
+        _RETENTION_REQUEST_KEYS,
+    )
+    raw_policy = _exact_mapping(
+        value.get("policy"),
+        "containerapp idle retention policy",
+        _RETENTION_POLICY_KEYS,
+    )
+    try:
+        preset = AzureRetentionPreset(
+            _text(raw_policy.get("preset"), "retention preset")
+        )
+    except ValueError:
+        raise ValueError("retention preset is invalid") from None
+    policy = AzureIdleRetentionPolicy(
+        preset=preset,
+        max_idle_hourly_cost_microusd=_integer(
+            raw_policy.get("max_idle_hourly_cost_microusd"),
+            "max_idle_hourly_cost_microusd",
+        ),
+        max_idle_monthly_cost_microusd=_integer(
+            raw_policy.get("max_idle_monthly_cost_microusd"),
+            "max_idle_monthly_cost_microusd",
+        ),
+        max_retention_cost_microusd=_integer(
+            raw_policy.get("max_retention_cost_microusd"),
+            "max_retention_cost_microusd",
+        ),
+        max_retention_seconds=_integer(
+            raw_policy.get("max_retention_seconds"),
+            "max_retention_seconds",
+        ),
+        max_price_age_seconds=_integer(
+            raw_policy.get("max_price_age_seconds"),
+            "max_price_age_seconds",
+        ),
+        max_latency_age_seconds=_integer(
+            raw_policy.get("max_latency_age_seconds"),
+            "max_latency_age_seconds",
+        ),
+        max_cost_per_saved_hour_microusd=_integer(
+            raw_policy.get("max_cost_per_saved_hour_microusd"),
+            "max_cost_per_saved_hour_microusd",
+        ),
+    )
+    expected_raw = value.get("expected_next_demand_seconds")
+    expected = (
+        None
+        if expected_raw is None
+        else _integer(expected_raw, "expected_next_demand_seconds")
+    )
+    observed_at = _utc_timestamp(value.get("now"), "now")
+    layers = container_apps_consumption_layers(
+        observed_at=observed_at,
+        environment_latency=_latency_evidence(
+            value.get("environment_latency"),
+            "environment_latency",
+        ),
+        app_latency=_latency_evidence(
+            value.get("app_latency"),
+            "app_latency",
+        ),
+        min_replicas=_integer(value.get("min_replicas"), "min_replicas"),
+        activation_blocked_when_idle=_boolean(
+            value.get("activation_blocked_when_idle"),
+            "activation_blocked_when_idle",
+        ),
+        has_dedicated_profiles=_boolean(
+            value.get("has_dedicated_profiles"),
+            "has_dedicated_profiles",
+        ),
+        has_private_endpoint=_boolean(
+            value.get("has_private_endpoint"),
+            "has_private_endpoint",
+        ),
+        has_planned_maintenance=_boolean(
+            value.get("has_planned_maintenance"),
+            "has_planned_maintenance",
+        ),
+        has_paid_logging=_boolean(
+            value.get("has_paid_logging"),
+            "has_paid_logging",
+        ),
+    )
+    plan = plan_azure_idle_retention(
+        layers,
+        policy=policy,
+        scope_digest=_digest(value.get("scope_digest"), "scope_digest"),
+        now=observed_at,
+        runnable_todo_count=_integer(
+            value.get("runnable_todo_count"),
+            "runnable_todo_count",
+        ),
+        expected_next_demand_seconds=expected,
+    )
+    return {
+        "protocol": "gludd-azure-idle-retention-fact-v1",
+        "scope_digest": plan.scope_digest,
+        "plan_digest": plan.plan_digest,
+        "retained_layers": [layer.value for layer in plan.retained_layers],
+        "destroyed_layers": [layer.value for layer in plan.destroyed_layers],
+        "decisions": [
+            {
+                "layer": decision.kind.value,
+                "disposition": decision.disposition.value,
+                "reason": decision.reason.value,
+            }
+            for decision in plan.decisions
+        ],
+        "retention_seconds": plan.retention_seconds,
+        "reconcile_at": plan.reconcile_at.isoformat().replace("+00:00", "Z"),
+        "hourly_cost_microusd": plan.hourly_cost_microusd,
+        "monthly_cost_microusd": plan.monthly_cost_microusd,
+        "projected_cost_microusd": plan.projected_cost_microusd,
+        "p95_seconds_saved": plan.p95_seconds_saved,
+    }
+
+
 class FilterModule:
     """Expose the lifecycle filters to Ansible."""
 
@@ -487,6 +699,7 @@ class FilterModule:
         return {
             "containerapp_observation": normalize_containerapp_observation,
             "containerapp_lifecycle_decision": decide_containerapp_lifecycle,
+            "containerapp_idle_retention": plan_containerapp_idle_retention,
         }
 
 
@@ -494,4 +707,5 @@ __all__ = (
     "FilterModule",
     "decide_containerapp_lifecycle",
     "normalize_containerapp_observation",
+    "plan_containerapp_idle_retention",
 )

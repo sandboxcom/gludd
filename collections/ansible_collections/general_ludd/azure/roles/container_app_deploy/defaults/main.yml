@@ -10,6 +10,7 @@ containerapp_workload_profile_type: ""
 containerapp_revision_name: ""
 containerapp_owner_digest: ""
 containerapp_required_profile_headroom: 1
+containerapp_idle_retention: {}
 
 containerapp_operation_digest: ""
 containerapp_plan_audited: false

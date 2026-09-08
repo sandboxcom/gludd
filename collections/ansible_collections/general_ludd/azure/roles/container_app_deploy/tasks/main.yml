@@ -12,6 +12,7 @@
       - containerapp_workload_profile_type | length > 0
       - containerapp_owner_digest is match('^[0-9a-f]{64}$')
       - containerapp_required_profile_headroom | int >= 0
+      - containerapp_idle_retention is mapping
       - containerapp_parallelism | int >= 1
       - containerapp_parallelism | int <= 4
       - containerapp_iac_binary_path is match('^/')
@@ -61,6 +62,13 @@
              'terraform_plan_sha256': containerapp_terraform_plan_sha256,
              'operation_digest': containerapp_operation_digest
            }) }}
+
+- name: Select the bounded idle-retention strategy
+  ansible.builtin.set_fact:
+    _cad_retention: >-
+      {{ containerapp_idle_retention
+         | general_ludd.azure.containerapp_idle_retention }}
+  when: containerapp_idle_retention | length > 0
 
 - name: Verify the immutable audited Terraform plan
   ansible.builtin.stat:
@@ -123,5 +131,6 @@
       desired_state: "{{ containerapp_state }}"
       operation_digest: "{{ containerapp_operation_digest }}"
       decision: "{{ _cad_decision }}"
+      retention: "{{ _cad_retention | default(None) }}"
       observation: "{{ _cad_observation }}"
       terraform_changed: "{{ _cad_terraform.changed | default(false) | bool }}"

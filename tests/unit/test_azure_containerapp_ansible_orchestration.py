@@ -560,6 +560,72 @@ def test_lifecycle_teardown_refuses_foreign_apps_and_wrong_owner() -> None:
             {"state": "absent", "operation_digest": "d" * 64},
         )
 
+
+def _retention_request(**overrides: object) -> dict[str, object]:
+    result: dict[str, object] = {
+        "now": "2026-09-08T12:00:00Z",
+        "scope_digest": "d" * 64,
+        "runnable_todo_count": 0,
+        "expected_next_demand_seconds": 1_800,
+        "policy": {
+            "preset": "zero_cost_only",
+            "max_idle_hourly_cost_microusd": 0,
+            "max_idle_monthly_cost_microusd": 0,
+            "max_retention_cost_microusd": 0,
+            "max_retention_seconds": 21_600,
+            "max_price_age_seconds": 31_536_000,
+            "max_latency_age_seconds": 86_400,
+            "max_cost_per_saved_hour_microusd": 0,
+        },
+        "environment_latency": {
+            "p50_seconds": 18.0,
+            "p95_seconds": 964.0,
+            "sample_count": 2,
+            "observed_at": "2026-09-08T12:00:00Z",
+        },
+        "app_latency": {
+            "p50_seconds": 90.0,
+            "p95_seconds": 240.0,
+            "sample_count": 2,
+            "observed_at": "2026-09-08T12:00:00Z",
+        },
+        "min_replicas": 0,
+        "activation_blocked_when_idle": False,
+        "has_dedicated_profiles": False,
+        "has_private_endpoint": False,
+        "has_planned_maintenance": False,
+        "has_paid_logging": False,
+    }
+    result.update(overrides)
+    return result
+
+
+def test_ansible_filter_exposes_core_idle_retention_plan_as_safe_facts() -> None:
+    planned = containerapp_lifecycle.plan_containerapp_idle_retention(
+        _retention_request()
+    )
+
+    assert planned["protocol"] == "gludd-azure-idle-retention-fact-v1"
+    assert planned["retained_layers"] == ["managed_environment"]
+    assert planned["destroyed_layers"] == ["container_app"]
+    assert planned["retention_seconds"] == 1_800
+    assert planned["hourly_cost_microusd"] == 0
+    assert planned["p95_seconds_saved"] == 964.0
+    assert planned["scope_digest"] == "d" * 64
+    assert "subscription" not in json.dumps(planned).casefold()
+    assert "credential" not in json.dumps(planned).casefold()
+
+
+def test_ansible_retention_filter_refuses_nonidle_or_ambiguous_input() -> None:
+    with pytest.raises(ValueError, match="empty durable todo"):
+        containerapp_lifecycle.plan_containerapp_idle_retention(
+            _retention_request(runnable_todo_count=1)
+        )
+    with pytest.raises(ValueError, match="exact schema"):
+        containerapp_lifecycle.plan_containerapp_idle_retention(
+            {**_retention_request(), "unexpected": "field"}
+        )
+
     wrong_app_owner = cast(dict[str, Any], _raw())
     wrong_app_owner["apps"]["response"]["value"][0]["tags"] = {
         "gludd-owner": "c" * 64
@@ -590,6 +656,8 @@ def test_role_uses_mature_read_and_iac_collections_and_sets_fact() -> None:
     assert 'binary_path: "{{ containerapp_iac_binary_path }}"' in tasks
     assert "general_ludd.azure.containerapp_observation" in tasks
     assert "gludd_azure_containerapp:" in tasks
+    assert "general_ludd.azure.containerapp_idle_retention" in tasks
+    assert "retention: \"{{ _cad_retention | default(None) }}\"" in tasks
     assert "checksum_algorithm: sha256" in tasks
     assert "poll: \"{{ containerapp_poll_seconds }}\"" in tasks
     assert "check_destroy: true" in tasks
@@ -599,6 +667,7 @@ def test_role_uses_mature_read_and_iac_collections_and_sets_fact() -> None:
     assert defaults["containerapp_parallelism"] <= 4
     assert defaults["containerapp_poll_seconds"] > 0
     assert defaults["containerapp_iac_binary_path"] == "/usr/local/bin/tofu"
+    assert defaults["containerapp_idle_retention"] == {}
     assert "containerapp_terraform_binary_path" not in defaults
     assert galaxy["dependencies"]["azure.azcollection"]
     assert galaxy["dependencies"]["cloud.terraform"]
