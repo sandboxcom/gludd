@@ -209,6 +209,7 @@ EXPECTED_EL_PARAMS: frozenset[str] = frozenset(
         "langgraph_reviewer",
         "self_improve_promotion_factory",
         "self_improve_runner_factory",
+        "self_improve_executor",
         "self_improve_interval",
         "model_performance_interval",
         "consolidation_interval_ticks",
