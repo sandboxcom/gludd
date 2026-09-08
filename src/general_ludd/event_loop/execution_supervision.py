@@ -9,7 +9,7 @@ import threading
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +25,7 @@ from general_ludd.events import CustomEvent
 logger = logging.getLogger(__name__)
 
 
+@runtime_checkable
 class EventPublisher(Protocol):
     """Minimal event-bus boundary used by the lease supervisor."""
 
