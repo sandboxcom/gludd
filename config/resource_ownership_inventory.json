@@ -1236,7 +1236,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 962,
+      "line": 966,
       "column": 22,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1247,7 +1247,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 974,
+      "line": 978,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1258,7 +1258,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 988,
+      "line": 992,
       "column": 32,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1269,18 +1269,18 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 2500,
-      "column": 12,
+      "line": 2511,
+      "column": 29,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job_isolated",
-      "acquisition": "asyncio.create_task(lease_supervisor.run())",
+      "acquisition": "asyncio.create_task(lease_supervisor.run(heartbeat_immediately=False))",
       "teardown": "await self._stop_execution_lease_heartbeat(lease_supervisor, heartbeat_task); ownership-transfer:self._stop_execution_lease_heartbeat(lease_supervisor, heartbeat_task)",
-      "source_hash": "851b60e2480c8450fbf1690482a70647fb77176b2962ec75444ae80256ce3e5d",
+      "source_hash": "c81bec764b9fcceaf1a5d2f6bfdbef06de64465cd1758389f1782eb82cce1c62",
       "owned": true
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3629,
+      "line": 3639,
       "column": 26,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1291,7 +1291,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3687,
+      "line": 3697,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1302,7 +1302,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 4753,
+      "line": 4763,
       "column": 40,
       "kind": "async-task",
       "owner": "EventLoop._phase_reconcile_completed_decisions",
@@ -1313,7 +1313,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 4767,
+      "line": 4777,
       "column": 44,
       "kind": "async-task",
       "owner": "EventLoop._phase_reconcile_completed_decisions",

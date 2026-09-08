@@ -15,7 +15,7 @@ from general_ludd.event_loop.execution_supervision import (
     LeaseTerminationOutcome,
     OwnedExecutionCancelled,
 )
-from general_ludd.event_loop.lease import LeaseBusyError
+from general_ludd.event_loop.lease import LeaseBusyError, LeaseRenewalStatus
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.schemas.todo import TodoStatus
 
@@ -149,9 +149,23 @@ async def test_isolated_dispatch_heartbeats_exact_claim_until_release() -> None:
     loop._session_factory = _session_factory(session)
     loop._tick_state["execution_lease_todo_ids"] = [todo.todo_id]
     loop._tick_state["execution_lease_versions"] = {todo.todo_id: todo.version}
-    loop._dispatch_execute_job = AsyncMock()  # type: ignore[method-assign]
+    lifecycle: list[str] = []
+
+    async def _dispatch(*_args: Any, **_kwargs: Any) -> None:
+        lifecycle.append("dispatch")
+
+    loop._dispatch_execute_job = AsyncMock(side_effect=_dispatch)  # type: ignore[method-assign]
     supervisor = MagicMock()
-    supervisor.run = AsyncMock()
+    supervisor.heartbeat_once = AsyncMock(
+        side_effect=lambda: lifecycle.append("initial-heartbeat")
+        or LeaseRenewalStatus.RENEWED
+    )
+
+    async def _run(*, heartbeat_immediately: bool = True) -> None:
+        assert heartbeat_immediately is False
+        lifecycle.append("periodic-heartbeat")
+
+    supervisor.run = AsyncMock(side_effect=_run)
     supervisor.stop = MagicMock()
     loop._execution_lease_supervisor_for_todo = MagicMock(  # type: ignore[method-assign]
         return_value=supervisor
@@ -164,13 +178,49 @@ async def test_isolated_dispatch_heartbeats_exact_claim_until_release() -> None:
         await loop._dispatch_execute_job_isolated(todo)
 
     loop._dispatch_execute_job.assert_awaited_once()
+    supervisor.heartbeat_once.assert_awaited_once()
+    assert lifecycle.index("initial-heartbeat") < lifecycle.index("dispatch")
     assert (
         loop._dispatch_execute_job.await_args.kwargs["_lease_supervisor_override"]
         is supervisor
     )
-    supervisor.run.assert_awaited_once()
+    supervisor.run.assert_awaited_once_with(heartbeat_immediately=False)
     supervisor.stop.assert_called()
     release.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_isolated_dispatch_refuses_stale_initial_lease() -> None:
+    todo = _todo()
+    session = MagicMock()
+    loop = EventLoop(session=None)
+    loop._session_factory = _session_factory(session)
+    loop._tick_state["execution_lease_todo_ids"] = [todo.todo_id]
+    loop._tick_state["execution_lease_versions"] = {todo.todo_id: todo.version}
+    loop._dispatch_execute_job = AsyncMock()  # type: ignore[method-assign]
+    supervisor = MagicMock()
+    supervisor.heartbeat_once = AsyncMock(return_value=LeaseRenewalStatus.STALE)
+    supervisor.run = AsyncMock()
+    supervisor.confirm_termination = AsyncMock(
+        return_value=LeaseTerminationOutcome(confirmed=False, reclaimed=0)
+    )
+    loop._execution_lease_supervisor_for_todo = MagicMock(  # type: ignore[method-assign]
+        return_value=supervisor
+    )
+
+    with (
+        patch(
+            "general_ludd.event_loop.loop.release_lease",
+            new_callable=AsyncMock,
+        ) as release,
+        pytest.raises(OwnedExecutionCancelled, match="unavailable before dispatch"),
+    ):
+        await loop._dispatch_execute_job_isolated(todo)
+
+    loop._dispatch_execute_job.assert_not_awaited()
+    supervisor.confirm_termination.assert_awaited_once()
+    supervisor.run.assert_not_awaited()
+    release.assert_not_awaited()
 
 
 def test_supervisor_factory_uses_claimed_version_and_event_bus() -> None:
@@ -299,6 +349,7 @@ async def test_cancelled_owned_runner_confirms_before_requeue_and_never_releases
     loop._tick_state["execution_lease_todo_ids"] = [todo.todo_id]
     loop._tick_state["execution_lease_versions"] = {todo.todo_id: todo.version}
     supervisor = MagicMock()
+    supervisor.heartbeat_once = AsyncMock(return_value=LeaseRenewalStatus.RENEWED)
     supervisor.run = AsyncMock()
     supervisor.stop = MagicMock()
     supervisor.request_cancellation = AsyncMock(return_value=True)
@@ -336,6 +387,7 @@ async def test_uncertain_isolated_dispatch_failure_retains_lease() -> None:
     loop._tick_state["execution_lease_todo_ids"] = [todo.todo_id]
     loop._tick_state["execution_lease_versions"] = {todo.todo_id: todo.version}
     supervisor = MagicMock()
+    supervisor.heartbeat_once = AsyncMock(return_value=LeaseRenewalStatus.RENEWED)
     supervisor.run = AsyncMock()
     supervisor.stop = MagicMock()
     supervisor.request_cancellation = AsyncMock()

@@ -46,7 +46,11 @@ from general_ludd.event_loop.execution_supervision import (
     ExecutionLeaseSupervisor,
     OwnedExecutionCancelled,
 )
-from general_ludd.event_loop.lease import reclaim_expired_leases, release_lease
+from general_ludd.event_loop.lease import (
+    LeaseRenewalStatus,
+    reclaim_expired_leases,
+    release_lease,
+)
 from general_ludd.event_loop.loop_handlers import EventLoopHandlers
 from general_ludd.event_loop.managed_self_improve_dispatch import (
     bind_local_plan as _bind_approved_local_plan,
@@ -2496,11 +2500,17 @@ class EventLoop(EventLoopHandlers):
         assert self._session_factory is not None
 
         lease_supervisor = self._execution_lease_supervisor_for_todo(todo)
-        heartbeat_task = (
-            asyncio.create_task(lease_supervisor.run())
-            if lease_supervisor is not None
-            else None
-        )
+        heartbeat_task: asyncio.Task[None] | None = None
+        if lease_supervisor is not None:
+            initial_status = await lease_supervisor.heartbeat_once()
+            if initial_status is not LeaseRenewalStatus.RENEWED:
+                await lease_supervisor.confirm_termination()
+                raise OwnedExecutionCancelled(
+                    "execution lease unavailable before dispatch"
+                )
+            heartbeat_task = asyncio.create_task(
+                lease_supervisor.run(heartbeat_immediately=False)
+            )
         sandbox_handle = await self._sandbox_apply_for_todo(todo)
         try:
             async with self._session_factory() as job_session:

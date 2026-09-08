@@ -295,6 +295,42 @@ async def test_run_heartbeats_immediately_and_stops_without_sleeping() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_can_delay_first_periodic_heartbeat() -> None:
+    session = MagicMock()
+    supervisor = _supervisor(session)
+    supervisor.heartbeat_once = AsyncMock(  # type: ignore[method-assign]
+        return_value=LeaseRenewalStatus.CANCEL_REQUESTED
+    )
+
+    async def _expire_interval(awaitable: object, *, timeout: float) -> None:
+        assert timeout == 5.0
+        close = getattr(awaitable, "close", None)
+        if close is not None:
+            close()
+        raise TimeoutError
+
+    with patch(
+        "general_ludd.event_loop.execution_supervision.asyncio.wait_for",
+        new=AsyncMock(side_effect=_expire_interval),
+    ):
+        await supervisor.run(heartbeat_immediately=False)
+
+    supervisor.heartbeat_once.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delayed_periodic_heartbeat_stops_before_first_renewal() -> None:
+    session = MagicMock()
+    supervisor = _supervisor(session)
+    supervisor.heartbeat_once = AsyncMock()  # type: ignore[method-assign]
+    supervisor.stop()
+
+    await supervisor.run(heartbeat_immediately=False)
+
+    supervisor.heartbeat_once.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_run_repeats_after_interval_until_cancellation() -> None:
     session = MagicMock()
     supervisor = _supervisor(session)

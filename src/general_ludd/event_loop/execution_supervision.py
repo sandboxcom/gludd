@@ -162,8 +162,22 @@ class ExecutionLeaseSupervisor:
         self.publish("execution_lease_heartbeat", status=status.value)
         return status
 
-    async def run(self) -> None:
-        """Heartbeat immediately and periodically until stopped or fenced out."""
+    async def run(self, *, heartbeat_immediately: bool = True) -> None:
+        """Heartbeat periodically until stopped or fenced out.
+
+        ``heartbeat_immediately=False`` is used after the dispatcher has awaited
+        a pre-transaction renewal.  That keeps the first periodic renewal from
+        racing the job transaction on single-connection database pools while
+        preserving the standalone supervisor's fail-closed immediate default.
+        """
+        if not heartbeat_immediately:
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(
+                    self._stop_requested.wait(),
+                    timeout=self._heartbeat_interval_seconds,
+                )
+            if self._stop_requested.is_set():
+                return
         while not self._stop_requested.is_set():
             status = await self.heartbeat_once()
             if status is not LeaseRenewalStatus.RENEWED:

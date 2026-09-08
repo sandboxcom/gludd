@@ -189,10 +189,14 @@ handshake. Real-session tests prove both conflict preservation and equality
 between the persisted lease fence and the post-flush ACTIVE todo version.
 
 Each database-backed dispatch now starts an independent short-session lease
-supervisor before model or Ansible work begins. It renews the exact
-bucket/holder/todo-version fence immediately and at the configured interval,
-publishing content-free `execution_lease_heartbeat` events. A cancellation flag
-or lost fence reaches the Ansible adapter through its thread-safe callback. If
+supervisor before model or Ansible work begins. It awaits renewal of the exact
+bucket/holder/todo-version fence before opening the job transaction, then starts
+the periodic loop with its first renewal delayed by the configured interval.
+This ordering prevents a single-connection database pool from interleaving the
+supervisor session with an uncommitted task return while retaining continuous
+fencing for long jobs. Renewals publish content-free
+`execution_lease_heartbeat` events. A cancellation flag or lost fence reaches
+the Ansible adapter through its thread-safe callback. If
 the asyncio caller is cancelled, Gludd first persists the owner-scoped request,
 then waits for the blocking runner to terminate and reap its process boundary,
 and only then records terminal proof. Confirmed cancellation publishes
