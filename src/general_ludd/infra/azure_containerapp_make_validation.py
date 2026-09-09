@@ -32,6 +32,8 @@ _OUTPUT_NAMES = frozenset(
         "workload_profile_type",
     }
 )
+_OPTIONAL_OUTPUT_NAMES = frozenset({"watchdog_user_data"})
+_MAX_POLICY_ARTIFACT_CHARS = 256 * 1024
 
 
 class _DuplicateJSONField(ValueError):
@@ -168,8 +170,19 @@ def deployment_outputs(
     """Bind the exact Terraform output schema to the approved policy."""
     try:
         outputs = mapping(payload)
-        if frozenset(outputs) != _OUTPUT_NAMES:
+        output_names = frozenset(outputs)
+        if output_names not in {
+            _OUTPUT_NAMES,
+            _OUTPUT_NAMES | _OPTIONAL_OUTPUT_NAMES,
+        }:
             raise ValueError
+        if "watchdog_user_data" in outputs:
+            watchdog = output_value(outputs, "watchdog_user_data")
+            if (
+                not watchdog.startswith("#cloud-config\n")
+                or len(watchdog) > _MAX_POLICY_ARTIFACT_CHARS
+            ):
+                raise ValueError
         resource_id = output_value(outputs, "instance_id")
         endpoint = output_value(outputs, "base_url")
         cleanup = output_value(outputs, "cleanup_boundary")

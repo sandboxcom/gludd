@@ -142,6 +142,36 @@ def _outputs(policy: AzureContainerAppLiveProofPolicy) -> dict[str, object]:
     }
 
 
+def test_deployment_outputs_accepts_only_the_inert_watchdog_artifact() -> None:
+    policy = _policy()
+    outputs = _outputs(policy)
+    outputs["watchdog_user_data"] = {
+        "sensitive": False,
+        "type": "string",
+        "value": "#cloud-config\nwrite_files: []",
+    }
+
+    evidence = runtime_module._deployment_outputs(outputs, policy)
+
+    assert evidence.resource_id == policy.expected_resource_id
+    assert "cloud-config" not in repr(evidence)
+
+    for invalid in (
+        {"sensitive": True, "type": "string", "value": "#cloud-config\n"},
+        {"sensitive": False, "type": "number", "value": "#cloud-config\n"},
+        {"sensitive": False, "type": "string", "value": "#!/bin/sh\n"},
+        {
+            "sensitive": False,
+            "type": "string",
+            "value": "#cloud-config\n" + ("x" * (256 * 1024)),
+        },
+    ):
+        candidate = _outputs(policy)
+        candidate["watchdog_user_data"] = invalid
+        with pytest.raises(AzureContainerAppMakeRuntimeError, match="output"):
+            runtime_module._deployment_outputs(candidate, policy)
+
+
 def _app_document(policy: AzureContainerAppLiveProofPolicy) -> dict[str, object]:
     return {
         "id": policy.expected_resource_id,
