@@ -245,6 +245,7 @@ def _policy(
         acknowledgement=(
             cast(str, args.acknowledgement) if bool(args.live) else None
         ),
+        min_replicas=1,
     )
 
 

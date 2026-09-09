@@ -107,7 +107,7 @@ def test_serial_stages_share_one_right_sized_runner_and_reuse_capacity() -> None
     assert app.task_ids == ("code", "plan", "review")
     assert app.workload_profile_type == T4_PROFILE.workload_profile_type
     assert app.profile_name == "gpu-t4"
-    assert app.min_replicas == 0
+    assert app.min_replicas == 1
     assert app.max_replicas == 2
     assert len(plan.profiles) == 1
     assert plan.profiles[0].max_replicas == 2
@@ -150,7 +150,7 @@ def test_mixed_model_shapes_create_only_the_profiles_and_apps_needed() -> None:
         "gpu-t4",
         "gpu-a100",
     }
-    assert all(app.min_replicas == 0 for app in plan.apps)
+    assert all(app.min_replicas == 1 for app in plan.apps)
 
 
 def test_empty_demand_explicitly_plans_no_paid_environment_or_runner() -> None:

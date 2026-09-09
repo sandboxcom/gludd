@@ -42,7 +42,7 @@ locals {
     model-revision   = var.model_revision
     max-cost-usd     = tostring(var.max_cost_usd)
     timeout-minutes  = tostring(var.timeout_minutes)
-    scale-to-zero    = "true"
+    scale-to-zero    = tostring(var.min_replicas == 0)
     workload-profile = local.gpu_profile_type
     gludd-expires-at = var.expires_at_utc
     gludd-owner      = var.owner_token

@@ -177,13 +177,13 @@ variable "trace_id" {
 }
 
 variable "min_replicas" {
-  description = "Minimum paid GPU replicas; Gludd requires scale-to-zero when idle."
+  description = "Minimum GPU replicas: zero while retained idle, one while work is claimed."
   type        = number
   default     = 0
 
   validation {
-    condition     = var.min_replicas == 0
-    error_message = "min_replicas must remain zero for paid-idle safety."
+    condition     = contains([0, 1], var.min_replicas)
+    error_message = "min_replicas must be zero while idle or one while actively claimed."
   }
 }
 

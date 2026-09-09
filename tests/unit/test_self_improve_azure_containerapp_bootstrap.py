@@ -386,7 +386,7 @@ def test_config_derives_t4_topology_and_bootstraps_fresh_owned_sessions(
     assert wiring.topology.apps[0].workload_profile_type == T4_PROFILE.workload_profile_type
     assert wiring.topology.apps[0].max_replicas == 2
     assert wiring.app_policy.max_replicas == 2
-    assert wiring.app_policy.min_replicas == 0
+    assert wiring.app_policy.min_replicas == 1
     assert wiring.app_policy.http_concurrent_requests == 2
     assert wiring.environment_policy.profiles[0].profile_name == "gpu-t4"
     assert wiring.environment_policy.expires_at_utc == "2026-09-07T12:30:00Z"

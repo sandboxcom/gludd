@@ -199,8 +199,12 @@ class AzureContainerAppLiveProofPolicy:
                 raise ValueError("live proof requires the exact acknowledgement")
         elif self.acknowledgement is not None:
             raise ValueError("dry-run acknowledgement must be omitted")
-        if self.min_replicas != 0:
-            raise ValueError("min_replicas must be zero for paid-idle safety")
+        if (
+            isinstance(self.min_replicas, bool)
+            or not isinstance(self.min_replicas, int)
+            or not 0 <= self.min_replicas <= 1
+        ):
+            raise ValueError("min_replicas must be zero or one")
         if (
             isinstance(self.max_replicas, bool)
             or not isinstance(self.max_replicas, int)

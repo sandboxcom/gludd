@@ -422,6 +422,15 @@ def test_policy_rejects_unsafe_unbounded_or_mutable_authority(
         _policy(**overrides)
 
 
+def test_policy_allows_only_zero_or_one_minimum_replica() -> None:
+    """Represent either an idle app or one actively claimed model runner."""
+    assert _policy(min_replicas=0).min_replicas == 0
+    assert _policy(min_replicas=1).min_replicas == 1
+    for invalid in (-1, 2, True):
+        with pytest.raises(ValueError, match="min_replicas"):
+            _policy(min_replicas=invalid)
+
+
 def test_dry_run_rejects_mutation_acknowledgement() -> None:
     with pytest.raises(ValueError, match="acknowledgement"):
         _policy(live=False, acknowledgement=LIVE_PROOF_ACKNOWLEDGEMENT)

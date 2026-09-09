@@ -127,7 +127,7 @@ def _app_plan(
         profile_name=_PROFILE_NAMES[selection.profile.workload_profile_type],
         workload_profile_type=selection.profile.workload_profile_type,
         per_replica_concurrency=per_replica,
-        min_replicas=0,
+        min_replicas=1,
         max_replicas=replicas,
     )
 

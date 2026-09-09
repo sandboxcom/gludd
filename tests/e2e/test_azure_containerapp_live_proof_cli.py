@@ -502,6 +502,7 @@ def test_live_policy_auto_cidr_reuses_bounded_public_ipv4_discovery(
     policy = live_cli._policy(args, app_name="gludd-vllm-proof-abc123abc123")
 
     assert policy.allowed_cidr == "8.8.8.8/32"
+    assert policy.min_replicas == 1
     assert calls == ["discover"]
 
 
