@@ -16,15 +16,12 @@ PSK-gated.
 from __future__ import annotations
 
 import contextlib
-import json as _json
 import logging
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from general_ludd.db.models import HumanTodoModel
 from general_ludd.db.repository import (
     HUMAN_TODO_CATEGORIES,
     HUMAN_TODO_PRIORITIES,
@@ -33,7 +30,18 @@ from general_ludd.db.repository import (
     InvalidTransitionError,
     TodoRepository,
 )
-from general_ludd.notifications.dispatcher import FALLBACK_NOTIFICATION_CONFIG, NotificationDispatcher
+from general_ludd.notifications.dispatcher import (
+    FALLBACK_NOTIFICATION_CONFIG,
+    NotificationDispatcher,
+)
+from general_ludd.routers.human_todo_types import (
+    AddTagRequest,
+    CreateHumanTodoRequest,
+    PatchHumanTodoRequest,
+)
+from general_ludd.routers.human_todo_types import (
+    human_todo_to_dict as _human_todo_to_dict,
+)
 from general_ludd.schemas.todo import TodoStatus
 
 logger = logging.getLogger(__name__)
@@ -43,54 +51,8 @@ def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | Non
     return getattr(app.state, "_session_factory", None)
 
 
-def _human_todo_to_dict(row: HumanTodoModel) -> dict[str, object]:
-    try:
-        tags: list[str] = _json.loads(row.tags or "[]")
-    except Exception:
-        tags = []
-    return {
-        "id": row.id,
-        "parent_agent_todo_id": row.parent_agent_todo_id,
-        "agent_id": row.agent_id,
-        "session_id": row.session_id,
-        "title": row.title,
-        "body": row.body,
-        "category": row.category,
-        "priority": row.priority,
-        "status": row.status,
-        "human_resolution": row.human_resolution,
-        "human_resolver": row.human_resolver,
-        "created_at": str(row.created_at) if row.created_at else None,
-        "updated_at": str(row.updated_at) if row.updated_at else None,
-        "resolved_at": str(row.resolved_at) if row.resolved_at else None,
-        "due_at": str(row.due_at) if getattr(row, "due_at", None) else None,
-        "tags": tags,
-    }
-
-
-class CreateHumanTodoRequest(BaseModel):
-    agent_id: str = Field(min_length=1, max_length=128)
-    title: str = Field(min_length=1, max_length=512)
-    body: str = Field(min_length=1)
-    category: str
-    priority: str = Field(default="medium")
-    parent_agent_todo_id: str | None = None
-    session_id: str | None = None
-    due_at: datetime | None = None
-    tags: list[str] = Field(default_factory=list)
-
-
-class PatchHumanTodoRequest(BaseModel):
-    status: str | None = None
-    human_resolution: str | None = None
-    human_resolver: str | None = None
-
-
-class AddTagRequest(BaseModel):
-    tag: str = Field(min_length=1, max_length=128)
-
-
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register human-todo CRUD routes and parent-workflow transitions."""
     dispatch_config: dict[str, object] = {}
     for key in ("notification_config", "user_config"):
         if key in _daemon_state:

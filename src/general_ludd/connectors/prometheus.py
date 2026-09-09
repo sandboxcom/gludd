@@ -60,50 +60,6 @@ MAX_RESULT_SIZE = 10_000
 _DEFAULT_TIMEOUT = 10.0
 
 
-# --------------------------------------------------------------------------- #
-# Typed API-response shapes (Prometheus query API JSON).
-# --------------------------------------------------------------------------- #
-class PromMetric(TypedDict, total=False):
-    """The ``metric`` block on a Prometheus vector/matrix series.
-
-    Label values are strings in Prometheus; ``__name__`` carries the metric
-    name and is rendered specially by :func:`_fmt_labels`.
-    """
-
-    __name__: str
-
-
-class PromVectorSeries(TypedDict, total=False):
-    """One series in a vector result: ``{"metric": {...}, "value": [ts, "val"]}``."""
-
-    metric: dict[str, str]
-    value: list[object]
-
-
-class PromMatrixSeries(TypedDict, total=False):
-    """One series in a matrix result: ``{"metric": {...}, "values": [[ts, "val"], ...]}``."""
-
-    metric: dict[str, str]
-    values: list[list[object]]
-
-
-class PromData(TypedDict, total=False):
-    """The ``data`` block of a Prometheus query response."""
-
-    resultType: str
-    result: list[object]
-
-
-class PromResponse(TypedDict, total=False):
-    """Top-level Prometheus query API response envelope."""
-
-    status: str
-    data: PromData
-    error: str
-    errorType: str
-    warnings: list[str]
-
-
 class PromQuerySpec(TypedDict, total=False):
     """Caller-supplied query spec accepted by :meth:`PrometheusSource.query`.
 
@@ -182,6 +138,7 @@ class PrometheusSource:
         *,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
+        """Bind validated endpoint configuration and an injectable transport."""
         base_url = config.get("base_url", "")
         self._base_url = _validate_base_url(str(base_url))
         token_env_obj = config.get("token_env")

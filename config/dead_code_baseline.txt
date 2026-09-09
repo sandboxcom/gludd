@@ -318,10 +318,6 @@ src/general_ludd/connectors/pagerduty.py:PagerDutyLogEntriesResponse
 src/general_ludd/connectors/pagerduty.py:PagerDutySource
 src/general_ludd/connectors/postgres_stats.py:PostgresStatsSource
 src/general_ludd/connectors/proc_sys.py:ProcSysSource
-src/general_ludd/connectors/prometheus.py:PromMatrixSeries
-src/general_ludd/connectors/prometheus.py:PromMetric
-src/general_ludd/connectors/prometheus.py:PromResponse
-src/general_ludd/connectors/prometheus.py:PromVectorSeries
 src/general_ludd/connectors/prometheus.py:PrometheusSource
 src/general_ludd/connectors/pyroscope.py:PyroscopeSource
 src/general_ludd/connectors/rabbitmq.py:RabbitMqSource
