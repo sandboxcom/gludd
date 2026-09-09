@@ -31,6 +31,40 @@ Container Registry and model-cache layers are represented by the planner, but
 must not be retained until their exact current Azure Retail Prices or Cost
 Management evidence is supplied.
 
+## Practical retained-state frontier
+
+Gludd evaluates the layers below independently. It does not treat a convenient
+monthly estimate as pricing evidence, and it does not assume that a generic VM
+disk or public-IP rule applies to a serverless Container Apps deployment.
+
+| Layer | Reuse value | Idle-cost and safety posture |
+| --- | --- | --- |
+| Resource group | Preserves a stable authorization boundary; normally little provisioning time is saved. | No workload compute is retained. Keep unless the project explicitly requests complete scope removal. |
+| Consumption-only managed environment | High. Observed cold creation has taken 711-964 seconds, versus about 18 seconds to reconcile an existing environment. | Eligible for the default only after proving there is no Dedicated profile, private endpoint, planned maintenance, or paid logging feature. |
+| Container App configuration | Low in the current measurements: about 18 seconds. | Destroy by default. A public scale-to-zero endpoint can be activated by a request, so a nominally idle app is not an inert cache. |
+| Serverless GPU replica | Avoids image, model, and engine cold start. | Never retained as idle compute. Active claimed work uses `minReplicas: 1`; teardown returns to no paid replica. |
+| Azure Container Registry | Can avoid remote image availability and pull variability; artifact cache can help repeated pulls. | Paid storage/service layer. `balanced` or `latency_first` may select it only with a current exact meter and measured pull-time benefit. It is represented but not yet autonomously retained. |
+| Model and compile cache | Potentially high for large weights and CUDA/JIT compilation. | Azure Files or another durable store has storage and transaction costs. It must be keyed by model revision, image digest, runtime version, GPU architecture, and cache type. It is represented but not yet autonomously retained. |
+| Private endpoint and logging | Operational continuity rather than model-start speed. | Explicitly priced. A Container Apps private endpoint also causes a Dedicated Plan Management charge, so neither is eligible for `zero_cost_only`. |
+
+For paid layers, the scheduler compares the projected retention cost over the
+next-demand horizon with both the configured cost ceilings and measured p95
+seconds saved. `balanced` additionally rejects a layer whose cost per saved hour
+exceeds `max_cost_per_saved_hour_microusd`; `latency_first` omits that value-rate
+filter but still enforces every hard hourly, monthly, and horizon budget. This
+makes the choice reproducible instead of relying on a static list of resources
+that are supposedly cheap.
+
+The cache frontier should be measured as separate spans: environment creation,
+image pull, model download, compile/JIT work, engine readiness, and first correct
+token. The vLLM cold-start roadmap reports a 188.7-second median from clean
+official-image pull to first correct token on one specific A10/Qwen3-8B setup,
+and 108.3 seconds when the image was already local but the model was absent.
+Those figures justify measuring retained state; they are not portable price or
+latency constants. The official vLLM Docker guidance also distinguishes the
+Hugging Face model cache from `VLLM_CACHE_ROOT`, because retaining weights alone
+does not retain compile artifacts.
+
 ## Configuration
 
 The `idle_retention` block is required when autonomous Azure Container Apps are
@@ -86,6 +120,9 @@ free:
 - [Container Registry storage](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-storage)
 - [Container Registry retention policy](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-retention-policy)
 - [Container Registry artifact cache](https://learn.microsoft.com/en-us/azure/container-registry/artifact-cache-overview)
+- [Azure Files storage mounts for Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/storage-mounts)
+- [Container Apps revision state API](https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/container-apps-revisions/get-revision?view=rest-resource-manager-containerapps-2026-01-01)
+- [vLLM persistent model and compile caches](https://github.com/vllm-project/vllm/blob/main/docs/deployment/docker.md)
 
 ## Practitioner reports considered
 
@@ -102,6 +139,21 @@ managed-environment deletion or stuck states have also been reported in [issue
 433](https://github.com/microsoft/azure-container-apps/issues/433), [issue
 1523](https://github.com/microsoft/azure-container-apps/issues/1523), and
 [issue #1778](https://github.com/microsoft/azure-container-apps/issues/1778).
+GPU startup variance is not limited to image pulls: a report in
+[issue #1763](https://github.com/microsoft/azure-container-apps/issues/1763) describes
+an intermittent 25-minute delay after an image had already been pulled. The
+vLLM project separately records a reproducible cold-start baseline in
+[roadmap #48193](https://github.com/vllm-project/vllm/issues/48193) and a report that a
+600-second engine-ready timeout can be insufficient for a large cold model and
+empty JIT cache in
+[issue #48031](https://github.com/vllm-project/vllm/issues/48031).
+
+These reports also shape readiness telemetry. Gludd now waits on the exact
+revision through Microsoft's SDK and emits only bounded `active`, replica-count,
+health, provisioning, and running-state facts. It never forwards the provider's
+free-form `provisioningError`. This distinguishes image/model warm-up from an
+ARM resource merely existing and keeps long deployments observable without
+leaking provider or project content.
 
 These reports are operational evidence, not pricing authority. Gludd uses
 Microsoft billing documentation and exact current meter evidence for decisions;
