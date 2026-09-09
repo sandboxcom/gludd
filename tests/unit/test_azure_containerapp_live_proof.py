@@ -161,6 +161,47 @@ def _plan(policy: AzureContainerAppLiveProofPolicy) -> dict[str, object]:
     }
 
 
+def _watchdog_change() -> dict[str, object]:
+    return {
+        "address": "module.gpu_cost_watchdog.terraform_data.gpu_cost_watchdog",
+        "mode": "managed",
+        "type": "terraform_data",
+        "name": "gpu_cost_watchdog",
+        "provider_name": "terraform.io/builtin/terraform",
+        "change": {
+            "actions": ["create"],
+            "before": None,
+            "after": {"input": {"cloud": "azure"}},
+        },
+    }
+
+
+def test_plan_audit_allows_only_the_exact_inert_cost_policy_artifact() -> None:
+    policy = _policy(live=False)
+    plan = _plan(policy)
+    cast(list[object], plan["resource_changes"]).insert(0, _watchdog_change())
+
+    audit_containerapp_plan(plan, policy)
+
+    unsafe_mutations: tuple[tuple[str, object], ...] = (
+        ("address", "module.foreign.terraform_data.gpu_cost_watchdog"),
+        ("provider_name", "registry.terraform.io/hashicorp/external"),
+        ("name", "foreign"),
+    )
+    for key, value in unsafe_mutations:
+        candidate = copy.deepcopy(plan)
+        watchdog = cast(list[dict[str, Any]], candidate["resource_changes"])[0]
+        watchdog[key] = value
+        with pytest.raises(AzureContainerAppLiveProofError):
+            audit_containerapp_plan(candidate, policy)
+
+    candidate = copy.deepcopy(plan)
+    watchdog = cast(list[dict[str, Any]], candidate["resource_changes"])[0]
+    cast(dict[str, Any], watchdog["change"])["actions"] = ["create", "delete"]
+    with pytest.raises(AzureContainerAppLiveProofError):
+        audit_containerapp_plan(candidate, policy)
+
+
 def _evidence(
     policy: AzureContainerAppLiveProofPolicy,
     **overrides: str,

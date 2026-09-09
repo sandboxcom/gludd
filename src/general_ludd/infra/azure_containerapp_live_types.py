@@ -28,6 +28,8 @@ _FAILURE_DETAILS = frozenset(
         "change_count",
         "configuration",
         "container",
+        "cost_policy_action",
+        "cost_policy_identity",
         "environment_binding",
         "format",
         "image",

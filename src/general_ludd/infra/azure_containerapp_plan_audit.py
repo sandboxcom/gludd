@@ -37,7 +37,7 @@ def audit_containerapp_plan(
     plan: object,
     policy: AzureContainerAppLiveProofPolicy,
 ) -> None:
-    """Require exactly one create for the approved app and immutable model."""
+    """Require one remote app create and at most one inert policy artifact."""
     if not isinstance(policy, AzureContainerAppLiveProofPolicy):
         raise ValueError("policy must be an AzureContainerAppLiveProofPolicy")
     stage = "shape"
@@ -48,10 +48,46 @@ def audit_containerapp_plan(
             raise ValueError
         stage = "change_count"
         changes = _member(plan, "resource_changes")
-        if not isinstance(changes, list) or len(changes) != 1:
+        if not isinstance(changes, list) or not 1 <= len(changes) <= 2:
             raise ValueError
+        remote_changes: list[object] = []
+        policy_changes: list[object] = []
+        for candidate in changes:
+            resource_type = _member(candidate, "type")
+            if resource_type == "azapi_resource":
+                remote_changes.append(candidate)
+            elif resource_type == "terraform_data":
+                policy_changes.append(candidate)
+            else:
+                raise ValueError
+        if len(remote_changes) != 1 or len(policy_changes) > 1:
+            raise ValueError
+        if policy_changes:
+            stage = "cost_policy_identity"
+            policy_resource = policy_changes[0]
+            expected_policy_fields = {
+                "address": (
+                    "module.gpu_cost_watchdog.terraform_data.gpu_cost_watchdog"
+                ),
+                "mode": "managed",
+                "type": "terraform_data",
+                "name": "gpu_cost_watchdog",
+                "provider_name": "terraform.io/builtin/terraform",
+            }
+            if any(
+                _member(policy_resource, key) != value
+                for key, value in expected_policy_fields.items()
+            ):
+                raise ValueError
+            stage = "cost_policy_action"
+            policy_change = _member(policy_resource, "change")
+            if (
+                _member(policy_change, "actions") != ["create"]
+                or _member(policy_change, "before") is not None
+            ):
+                raise ValueError
         stage = "resource_identity"
-        resource = changes[0]
+        resource = remote_changes[0]
         expected_resource_fields = {
             "address": "module.vllm_server.azapi_resource.vllm",
             "mode": "managed",
