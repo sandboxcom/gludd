@@ -12,7 +12,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, cast
 
-from general_ludd.azure.accelerator_credentials import AzureAcceleratorCredentials
+from general_ludd.azure.accelerator_credentials import (
+    AzureAcceleratorAuthentication,
+    AzureAcceleratorCredentials,
+    AzureAcceleratorWorkloadIdentity,
+)
 from general_ludd.infra.azure_containerapp_environment_lifecycle import (
     AzureEnvironmentLifecyclePolicy,
 )
@@ -79,7 +83,7 @@ class AzureContainerAppEnvironmentTerraformRuntime:
         self,
         *,
         work_root: str | os.PathLike[str],
-        credentials: AzureAcceleratorCredentials,
+        credentials: AzureAcceleratorAuthentication,
         read_environment: ReadEnvironment,
         list_environment_apps: ListEnvironmentApps,
         terraform_executor: _TerraformExecutor | None = None,
@@ -88,8 +92,11 @@ class AzureContainerAppEnvironmentTerraformRuntime:
         heartbeat_seconds: float = 15.0,
     ) -> None:
         """Bind secret-bearing execution and independent read boundaries."""
-        if not isinstance(credentials, AzureAcceleratorCredentials):
-            raise ValueError("credentials must be AzureAcceleratorCredentials")
+        if not isinstance(
+            credentials,
+            (AzureAcceleratorCredentials, AzureAcceleratorWorkloadIdentity),
+        ):
+            raise ValueError("credentials must use the Azure accelerator contract")
         if not callable(read_environment) or not callable(list_environment_apps):
             raise ValueError("Azure read boundaries must be callable")
         if not callable(trace_sink):

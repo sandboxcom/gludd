@@ -121,7 +121,11 @@ jobs:
       - name: Azure Container App proof contract (hermetic)
         run: |
           make azure-containerapp-live-proof \
+            AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE=file \
             AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE=/tmp/gludd-contract-absent.json \
+            AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE= \
+            AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID= \
+            AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID= \
             AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 \
             AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP=gludd-models-eastus \
             AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT=gludd-gpu-environment \

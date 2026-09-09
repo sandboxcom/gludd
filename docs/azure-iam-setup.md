@@ -183,6 +183,12 @@ success, reuse, ownership mismatch, cleanup, and censored 401/403/409/429 failur
 The bounded live proof remains in progress before the complete Azure-model path is
 claimed.
 
+GitHub-hosted live proofs use short-lived workload identity rather than a stored
+service-principal secret. Configure the protected Environment and exact Entra
+federated subject using
+[`azure-gha-oidc-live-proof.md`](azure-gha-oidc-live-proof.md); the ordinary CI
+path remains credential-free.
+
 ## Supported Azure libraries and ownership boundary
 
 Gludd does not reimplement Azure CLI, ARM authentication, API-version routing, or

@@ -15,7 +15,9 @@ from enum import StrEnum
 from typing import Protocol, cast, runtime_checkable
 
 from general_ludd.azure.accelerator_credentials import (
+    AzureAcceleratorAuthentication,
     AzureAcceleratorCredentials,
+    AzureAcceleratorWorkloadIdentity,
     build_azure_management_credential,
 )
 from general_ludd.azure.accelerator_role import (
@@ -113,7 +115,7 @@ class AzureResourceGroupBootstrapPolicy:
         return {**_BASE_TAGS, "gludd-owner-digest": self.owner_digest}
 
 
-def _build_credential(credentials: AzureAcceleratorCredentials) -> _Closable:
+def _build_credential(credentials: AzureAcceleratorAuthentication) -> _Closable:
     try:
         return cast(_Closable, build_azure_management_credential(credentials))
     except RuntimeError:
@@ -200,16 +202,19 @@ def _discard_trace(_event: AzureResourceGroupBootstrapTrace) -> None:
 
 def ensure_azure_resource_group(
     policy: AzureResourceGroupBootstrapPolicy,
-    credentials: AzureAcceleratorCredentials,
+    credentials: AzureAcceleratorAuthentication,
     *,
-    credential_builder: Callable[[AzureAcceleratorCredentials], object] = _build_credential,
+    credential_builder: Callable[[AzureAcceleratorAuthentication], object] = _build_credential,
     client_builder: Callable[[object, str], _ResourceClient] = _build_client,
     trace_sink: Callable[[AzureResourceGroupBootstrapTrace], None] = _discard_trace,
 ) -> AzureResourceGroupBootstrapResult:
     """Create one absent owned group or reuse one exact existing group."""
     if not isinstance(policy, AzureResourceGroupBootstrapPolicy):
         raise ValueError("policy must be AzureResourceGroupBootstrapPolicy")
-    if not isinstance(credentials, AzureAcceleratorCredentials):
+    if not isinstance(
+        credentials,
+        (AzureAcceleratorCredentials, AzureAcceleratorWorkloadIdentity),
+    ):
         raise ValueError("credentials must use the Azure accelerator contract")
     if credentials.subscription_id != policy.subscription_id:
         raise ValueError("bootstrap credential subscription mismatch")

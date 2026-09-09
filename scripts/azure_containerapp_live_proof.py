@@ -20,7 +20,10 @@ from general_ludd.azure.accelerator_credential_source import (
     AzureAcceleratorCredentialLease,
 )
 from general_ludd.azure.accelerator_credentials import (
+    AzureAcceleratorAuthentication,
     AzureAcceleratorCredentials,
+    AzureAcceleratorWorkloadIdentity,
+    build_azure_workload_identity,
     load_azure_accelerator_credentials,
 )
 from general_ludd.azure.resource_group_bootstrap import (
@@ -153,7 +156,11 @@ def _parser() -> argparse.ArgumentParser:
         ),
         allow_abbrev=False,
     )
-    parser.add_argument("--auth-file", required=True)
+    authentication = parser.add_mutually_exclusive_group(required=True)
+    authentication.add_argument("--auth-file")
+    authentication.add_argument("--federated-token-file")
+    parser.add_argument("--azure-client-id")
+    parser.add_argument("--azure-tenant-id")
     parser.add_argument("--subscription-id", required=True)
     parser.add_argument("--resource-group", required=True)
     parser.add_argument("--environment", required=True)
@@ -408,17 +415,29 @@ def _default_live_resources(
     requirement: ModelServingRequirement,
     environment_policy: AzureEnvironmentLifecyclePolicy,
     *,
-    credentials: AzureAcceleratorCredentials | None = None,
+    credentials: AzureAcceleratorAuthentication | None = None,
     credential_release: Callable[[], None] | None = None,
 ) -> _LiveResources:
     """Build concrete runtimes without retaining infrastructure logic in the CLI."""
     if credentials is None:
-        credentials = load_azure_accelerator_credentials(
-            cast(str, args.auth_file),
-            expected_subscription_id=policy.subscription_id,
-        )
+        if args.auth_file is not None:
+            credentials = load_azure_accelerator_credentials(
+                cast(str, args.auth_file),
+                expected_subscription_id=policy.subscription_id,
+            )
+        else:
+            credentials = build_azure_workload_identity(
+                client_id=cast(str, args.azure_client_id),
+                subscription_id=policy.subscription_id,
+                tenant_id=cast(str, args.azure_tenant_id),
+                federated_token_file=cast(str, args.federated_token_file),
+                expected_subscription_id=policy.subscription_id,
+            )
     elif (
-        not isinstance(credentials, AzureAcceleratorCredentials)
+        not isinstance(
+            credentials,
+            (AzureAcceleratorCredentials, AzureAcceleratorWorkloadIdentity),
+        )
         or credentials.subscription_id != policy.subscription_id
     ):
         raise ValueError("Azure credentials do not match the approved subscription")

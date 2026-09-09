@@ -11,7 +11,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, cast
 
-from general_ludd.azure.accelerator_credentials import AzureAcceleratorCredentials
+from general_ludd.azure.accelerator_credentials import (
+    AzureAcceleratorAuthentication,
+    AzureAcceleratorCredentials,
+    AzureAcceleratorWorkloadIdentity,
+)
 from general_ludd.infra.azure_containerapp_compute_config import (
     build_containerapp_compute_config,
 )
@@ -108,7 +112,7 @@ class AzureContainerAppTerraformRuntime:
         self,
         *,
         work_root: str | os.PathLike[str],
-        credentials: AzureAcceleratorCredentials,
+        credentials: AzureAcceleratorAuthentication,
         requirement: ModelServingRequirement,
         preflight_check: PreflightCheck,
         read_app: ReadApp,
@@ -118,8 +122,11 @@ class AzureContainerAppTerraformRuntime:
         heartbeat_seconds: float = 15.0,
     ) -> None:
         """Bind credentials, policy inputs, runners, and observable boundaries."""
-        if not isinstance(credentials, AzureAcceleratorCredentials):
-            raise ValueError("credentials must be AzureAcceleratorCredentials")
+        if not isinstance(
+            credentials,
+            (AzureAcceleratorCredentials, AzureAcceleratorWorkloadIdentity),
+        ):
+            raise ValueError("credentials must use the Azure accelerator contract")
         if not isinstance(requirement, ModelServingRequirement):
             raise ValueError("requirement must be ModelServingRequirement")
         if not callable(preflight_check) or not callable(read_app):

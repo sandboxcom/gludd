@@ -12,8 +12,10 @@ import pytest
 
 from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorCredentialError,
+    AzureAcceleratorWorkloadIdentity,
     build_azure_accelerator_credentials,
     build_azure_management_credential,
+    build_azure_workload_identity,
     load_azure_accelerator_credentials,
 )
 
@@ -21,6 +23,7 @@ SUBSCRIPTION_ID = "11111111-2222-3333-4444-555555555555"
 TENANT_ID = "22222222-3333-4444-5555-666666666666"
 CLIENT_ID = "33333333-4444-5555-6666-777777777777"
 SECRET_VALUE = "fixture-value-not-a-real-credential"
+OIDC_ASSERTION = "header.payload.signature"
 
 
 def test_validated_value_factory_reuses_the_file_loader_security_contract() -> None:
@@ -73,6 +76,197 @@ def test_shared_management_credential_uses_one_hardened_sdk_configuration(
         "retry_total": 0,
         "closed": True,
     }
+
+
+def test_workload_identity_uses_one_private_assertion_file_without_a_secret(
+    tmp_path: Path,
+) -> None:
+    token_file = tmp_path / "github-oidc.jwt"
+    token_file.write_text(OIDC_ASSERTION, encoding="ascii")
+    token_file.chmod(0o600)
+
+    credential = build_azure_workload_identity(
+        client_id=CLIENT_ID,
+        subscription_id=SUBSCRIPTION_ID,
+        tenant_id=TENANT_ID,
+        federated_token_file=token_file,
+        expected_subscription_id=SUBSCRIPTION_ID,
+    )
+
+    assert isinstance(credential, AzureAcceleratorWorkloadIdentity)
+    assert credential.client_id == CLIENT_ID
+    assert credential.subscription_id == SUBSCRIPTION_ID
+    assert credential.tenant_id == TENANT_ID
+    assert OIDC_ASSERTION not in repr(credential)
+    assert credential.arm_environment() == {
+        "ARM_CLIENT_ID": CLIENT_ID,
+        "ARM_SUBSCRIPTION_ID": SUBSCRIPTION_ID,
+        "ARM_TENANT_ID": TENANT_ID,
+        "ARM_USE_CLI": "false",
+        "ARM_USE_OIDC": "true",
+        "ARM_OIDC_TOKEN_FILE_PATH": str(token_file),
+        "AZURE_AUTHORITY_HOST": "https://login.microsoftonline.com",
+        "AZURE_CLIENT_ID": CLIENT_ID,
+        "AZURE_FEDERATED_TOKEN_FILE": str(token_file),
+        "AZURE_SUBSCRIPTION_ID": SUBSCRIPTION_ID,
+        "AZURE_TENANT_ID": TENANT_ID,
+        "AZURE_TOKEN_CREDENTIALS": "WorkloadIdentityCredential",
+    }
+    assert all("SECRET" not in key for key in credential.arm_environment())
+
+
+def test_workload_identity_management_credential_uses_the_explicit_sdk_type(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+    token_file = tmp_path / "github-oidc.jwt"
+    token_file.write_text(OIDC_ASSERTION, encoding="ascii")
+    token_file.chmod(0o600)
+
+    class Credential:
+        def __init__(self, **kwargs: object) -> None:
+            observed.update(kwargs)
+
+        def close(self) -> None:
+            observed["closed"] = True
+
+    identity = ModuleType("azure.identity")
+    identity.__dict__["WorkloadIdentityCredential"] = Credential
+    monkeypatch.setitem(sys.modules, "azure.identity", identity)
+    values = build_azure_workload_identity(
+        client_id=CLIENT_ID,
+        subscription_id=SUBSCRIPTION_ID,
+        tenant_id=TENANT_ID,
+        federated_token_file=token_file,
+    )
+
+    credential = build_azure_management_credential(values)
+    credential.close()
+
+    assert observed == {
+        "tenant_id": TENANT_ID,
+        "client_id": CLIENT_ID,
+        "token_file_path": str(token_file),
+        "authority": "login.microsoftonline.com",
+        "disable_instance_discovery": True,
+        "retry_total": 0,
+        "closed": True,
+    }
+
+
+def test_workload_identity_prefers_github_native_provider_refresh(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token_file = tmp_path / "github-oidc.jwt"
+    token_file.write_text(OIDC_ASSERTION, encoding="ascii")
+    token_file.chmod(0o600)
+    request_token = "github-runner-request-token"
+    request_url = (
+        "https://vstoken.actions.githubusercontent.com/example/oidctoken"
+        "?api-version=2.0"
+    )
+    monkeypatch.setenv("ACTIONS_ID_TOKEN_REQUEST_URL", request_url)
+    monkeypatch.setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", request_token)
+    values = build_azure_workload_identity(
+        client_id=CLIENT_ID,
+        subscription_id=SUBSCRIPTION_ID,
+        tenant_id=TENANT_ID,
+        federated_token_file=token_file,
+    )
+
+    environment = values.arm_environment()
+
+    assert environment["ARM_OIDC_REQUEST_URL"] == request_url
+    assert environment["ARM_OIDC_REQUEST_TOKEN"] == request_token
+    assert "ARM_OIDC_TOKEN_FILE_PATH" not in environment
+    assert request_token not in repr(values)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("ACTIONS_ID_TOKEN_REQUEST_URL", "http://example.invalid/token"),
+        ("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "line\nbreak"),
+    ],
+)
+def test_workload_identity_rejects_untrusted_github_refresh_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    value: str,
+) -> None:
+    token_file = tmp_path / "github-oidc.jwt"
+    token_file.write_text(OIDC_ASSERTION, encoding="ascii")
+    token_file.chmod(0o600)
+    monkeypatch.setenv(
+        "ACTIONS_ID_TOKEN_REQUEST_URL",
+        "https://vstoken.actions.githubusercontent.com/example/oidctoken",
+    )
+    monkeypatch.setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "request-token")
+    monkeypatch.setenv(name, value)
+    values = build_azure_workload_identity(
+        client_id=CLIENT_ID,
+        subscription_id=SUBSCRIPTION_ID,
+        tenant_id=TENANT_ID,
+        federated_token_file=token_file,
+    )
+
+    with pytest.raises(AzureAcceleratorCredentialError, match="GitHub OIDC"):
+        values.arm_environment()
+
+
+@pytest.mark.parametrize("mode", [0o604, 0o640, 0o660, 0o666])
+def test_workload_identity_rejects_nonprivate_assertion_files(
+    tmp_path: Path,
+    mode: int,
+) -> None:
+    token_file = tmp_path / "github-oidc.jwt"
+    token_file.write_text(OIDC_ASSERTION, encoding="ascii")
+    token_file.chmod(mode)
+
+    with pytest.raises(AzureAcceleratorCredentialError, match="mode 0600"):
+        build_azure_workload_identity(
+            client_id=CLIENT_ID,
+            subscription_id=SUBSCRIPTION_ID,
+            tenant_id=TENANT_ID,
+            federated_token_file=token_file,
+        )
+
+
+@pytest.mark.parametrize("assertion", ["", "not-a-jwt", "a..c", "a.b.c.d", "a b.c.d"])
+def test_workload_identity_rejects_malformed_assertions(
+    tmp_path: Path,
+    assertion: str,
+) -> None:
+    token_file = tmp_path / "github-oidc.jwt"
+    token_file.write_text(assertion, encoding="ascii")
+    token_file.chmod(0o600)
+
+    with pytest.raises(AzureAcceleratorCredentialError, match="OIDC assertion"):
+        build_azure_workload_identity(
+            client_id=CLIENT_ID,
+            subscription_id=SUBSCRIPTION_ID,
+            tenant_id=TENANT_ID,
+            federated_token_file=token_file,
+        )
+
+
+def test_workload_identity_rejects_symlinked_assertion_file(tmp_path: Path) -> None:
+    token_file = tmp_path / "github-oidc.jwt"
+    token_file.write_text(OIDC_ASSERTION, encoding="ascii")
+    token_file.chmod(0o600)
+    link = tmp_path / "assertion-link.jwt"
+    link.symlink_to(token_file)
+
+    with pytest.raises(AzureAcceleratorCredentialError, match="regular file"):
+        build_azure_workload_identity(
+            client_id=CLIENT_ID,
+            subscription_id=SUBSCRIPTION_ID,
+            tenant_id=TENANT_ID,
+            federated_token_file=link,
+        )
 
 
 @pytest.mark.parametrize(

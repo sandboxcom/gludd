@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-09 — (resolved locally; hosted proof pending) GHA had no Azure authentication boundary
+
+- **What happened**: The credential-free GitHub Actions suite could prove Azure lifecycle policy with fakes but could not run the opt-in paid deployment. The only live CLI input was a local mode-`0600` service-principal JSON file, which correctly was not committed or available to hosted runners.
+- **Root cause**: Hosted identity and hermetic CI had not been modeled as separate contracts. Adding the local credential as a repository secret would have created a long-lived credential and exposed it to a much broader workflow surface.
+- **Fix applied**: A separate protected workflow now requests a job-scoped GitHub OIDC assertion for Entra's Azure exchange audience, passes only non-secret Azure identifiers from configuration variables, validates one private assertion file, uses Microsoft's explicit workload-identity SDK credential, enables native AzureRM/AzAPI OIDC refresh for each OpenTofu process, and always removes the assertion. It has no PR/push trigger and preserves one-call, cost, TTL, concurrency, and verified-teardown bounds.
+- **Evidence**: The workload-identity and workflow contracts failed first because their API and workflow were absent. The focused authentication/CLI/workflow suite passes 81/81, the wider runtime slice passes 226/226, and the Azure profile passes 888/888 at 92% aggregate branch coverage with all 44 measured files above 75%. Make contract validation covers 154 targets; production YAML, Ruff, scoped mypy, Markdown, and the exact hermetic behavioral example are green. A protected live run remains required before claiming Azure deployment success from GHA.
+- **Practitioner evidence**: Azure Login issue #482 documents exact, case-sensitive subject mismatches; AzureRM issues #27490 and #20794 document omitted OIDC enablement and accidental CLI fallback; Azure Identity issues #44488 and #45900 document stale assertions and broad credential-chain client-ID coupling. `docs/azure-gha-oidc-live-proof.md` links each report and records the resulting fail-closed choices.
+- **Lesson**: Hosted CI needs a federated run identity, not a copied operator credential. Hermetic verification stays always-on; paid cloud proof stays explicit, protected, short-lived, and independently bounded.
+
 ### 2026-09-09 — (resolved locally) Azure retry diagnostics discarded safe failure detail and warm control-plane state
 
 - **What happened**: A bounded live Azure proof spent 11-16 minutes creating its managed environment, stopped in the read-only app preflight, then destroyed the environment. The terminal result exposed only `reason=preflight`; its already-classified safe detail and earlier streamed trace were not retained, so the next diagnosis required another cold environment cycle.

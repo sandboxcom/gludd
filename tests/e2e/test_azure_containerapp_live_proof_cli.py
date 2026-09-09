@@ -1520,7 +1520,11 @@ def test_public_make_target_is_ci_safe_and_contract_tracked() -> None:
         if target["name"] == "azure-containerapp-live-proof"
     )
     assert entry["make_variables"] == [
+        "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE",
         "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID",
         "AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID",
         "AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP",
         "AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT",
@@ -1536,6 +1540,7 @@ def test_public_make_target_is_ci_safe_and_contract_tracked() -> None:
         "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET",
         "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS",
     ]
+    assert "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE=file" in entry["behavior"]
     assert "AZURE_CONTAINERAPP_LIVE_PROOF_LIVE=0" in entry["behavior"]
     assert "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET=always_destroy" in entry[
         "behavior"
@@ -1545,6 +1550,76 @@ def test_public_make_target_is_ci_safe_and_contract_tracked() -> None:
     assert "AZURE_CONTAINERAPP_LIVE_PROOF_LIVE=0" in workflow
     assert "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET=always_destroy" in workflow
     assert "secrets.AZURE" not in workflow
+
+
+def test_cli_builds_workload_identity_from_explicit_federated_inputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _project(tmp_path)
+    token_file = tmp_path / "github-oidc.jwt"
+    token_file.write_text("header.payload.signature", encoding="ascii")
+    token_file.chmod(0o600)
+    args, policy, requirement = _live_inputs(project)
+    del args
+    workload_args = live_cli._parser().parse_args(
+        [
+            *_argv(
+                project,
+                live=1,
+                acknowledgement="DEPLOY_ONE_CONTAINER_APP_AND_DESTROY",
+            )[2:],
+            "--federated-token-file",
+            str(token_file),
+            "--azure-client-id",
+            "33333333-4444-5555-6666-777777777777",
+            "--azure-tenant-id",
+            "22222222-3333-4444-5555-666666666666",
+        ]
+    )
+    environment_policy = live_cli._environment_policy(
+        policy,
+        guard=cast(Any, SimpleNamespace(expected_digest="d" * 64)),
+        project_root=project,
+        now=datetime(2026, 9, 6, 19, 0, tzinfo=UTC),
+    )
+    expected_credentials = object()
+    observed: dict[str, object] = {}
+
+    def build(**kwargs: object) -> object:
+        observed.update(kwargs)
+        return expected_credentials
+
+    monkeypatch.setattr(live_cli, "build_azure_workload_identity", build)
+    monkeypatch.setattr(
+        live_cli,
+        "ensure_azure_resource_group",
+        lambda _policy, credentials, **_kwargs: observed.update(
+            resource_group_credentials=credentials
+        ),
+    )
+    monkeypatch.setattr(
+        live_cli,
+        "build_azure_containerapp_runtime_resources",
+        lambda **kwargs: observed.update(runtime_credentials=kwargs["credentials"])
+        or object(),
+    )
+
+    result = live_cli._default_live_resources(
+        workload_args,
+        policy,
+        requirement,
+        environment_policy,
+    )
+
+    assert result is not None
+    assert observed["client_id"] == "33333333-4444-5555-6666-777777777777"
+    assert observed["tenant_id"] == "22222222-3333-4444-5555-666666666666"
+    assert observed["subscription_id"] == SUBSCRIPTION
+    assert observed["federated_token_file"] == str(token_file)
+    assert observed["expected_subscription_id"] == SUBSCRIPTION
+    assert observed["resource_group_credentials"] is expected_credentials
+    assert observed["runtime_credentials"] is expected_credentials
 
 
 def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None:

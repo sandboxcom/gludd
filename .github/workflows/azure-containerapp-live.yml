@@ -1,0 +1,70 @@
+name: Azure Container App live proof
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 9 * * 1"
+
+concurrency:
+  group: azure-containerapp-live-${{ github.repository_id }}
+  cancel-in-progress: false
+
+jobs:
+  live-proof:
+    if: vars.AZURE_CONTAINERAPP_LIVE_ENABLED == 'true'
+    environment: azure-containerapp-live
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Check out the exact revision
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - name: Materialize the short-lived GitHub assertion
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const token = await core.getIDToken('api://AzureADTokenExchange');
+            core.setSecret(token);
+            const tokenPath = path.join(process.env.RUNNER_TEMP, 'gludd-azure-oidc.jwt');
+            fs.writeFileSync(tokenPath, token, {
+              encoding: 'ascii',
+              mode: 0o600,
+              flag: 'wx',
+            });
+      - name: Deploy, exercise, and tear down one bounded model candidate
+        run: make azure-containerapp-live-proof
+        env:
+          AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE: workload_identity
+          AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE: ""
+          AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE: ${{ runner.temp }}/gludd-azure-oidc.jwt
+          AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPP_ENVIRONMENT }}
+          AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME: ${{ vars.AZURE_CONTAINERAPP_WORKLOAD_PROFILE }}
+          AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION: ${{ vars.AZURE_CONTAINERAPP_LOCATION }}
+          AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR: auto
+          AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD: '5'
+          AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES: '60'
+          AZURE_CONTAINERAPP_LIVE_PROOF_LIVE: '1'
+          AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT: DEPLOY_ONE_CONTAINER_APP_AND_DESTROY
+          AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT: .
+          AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH: src/general_ludd/__init__.py
+          AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET: always_destroy
+          AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS: '21600'
+      - name: Remove the short-lived assertion
+        if: always()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const tokenPath = path.join(process.env.RUNNER_TEMP, 'gludd-azure-oidc.jwt');
+            fs.rmSync(tokenPath, { force: true });

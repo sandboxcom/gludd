@@ -10,7 +10,9 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from general_ludd.azure.accelerator_credentials import (
+    AzureAcceleratorAuthentication,
     AzureAcceleratorCredentials,
+    AzureAcceleratorWorkloadIdentity,
     build_azure_management_credential,
 )
 from general_ludd.infra.azure_containerapp_environment_lifecycle import (
@@ -80,7 +82,7 @@ def _discard_progress(_message: str) -> None:
     return None
 
 
-def _credential_client(credentials: AzureAcceleratorCredentials) -> _ClosableCredential:
+def _credential_client(credentials: AzureAcceleratorAuthentication) -> _ClosableCredential:
     return cast(_ClosableCredential, build_azure_management_credential(credentials))
 
 
@@ -256,7 +258,7 @@ class AzureContainerAppRuntimeResources:
 
 def build_azure_containerapp_runtime_resources(
     *,
-    credentials: AzureAcceleratorCredentials,
+    credentials: AzureAcceleratorAuthentication,
     policy: AzureContainerAppLiveProofPolicy,
     requirement: ModelServingRequirement,
     work_root: str | Path,
@@ -271,7 +273,7 @@ def build_azure_containerapp_runtime_resources(
     progress_sink: Callable[[str], None] = _discard_progress,
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
-    _credential_factory: Callable[[AzureAcceleratorCredentials], Any] | None = None,
+    _credential_factory: Callable[[AzureAcceleratorAuthentication], Any] | None = None,
     _environment_transport_factory: Callable[..., Any] | None = None,
     _lifecycle_transport_factory: Callable[..., Any] | None = None,
     _app_transport_factory: Callable[..., Any] | None = None,
@@ -283,8 +285,11 @@ def build_azure_containerapp_runtime_resources(
     _sdk_transports_factory: Callable[..., Any] | None = None,
 ) -> AzureContainerAppRuntimeResources:
     """Build an exact, secret-safe resource bundle for one approved deployment."""
-    if not isinstance(credentials, AzureAcceleratorCredentials):
-        raise ValueError("credentials must be AzureAcceleratorCredentials")
+    if not isinstance(
+        credentials,
+        (AzureAcceleratorCredentials, AzureAcceleratorWorkloadIdentity),
+    ):
+        raise ValueError("credentials must use the Azure accelerator contract")
     if not isinstance(policy, AzureContainerAppLiveProofPolicy):
         raise ValueError("policy must be AzureContainerAppLiveProofPolicy")
     if credentials.subscription_id != policy.subscription_id:
