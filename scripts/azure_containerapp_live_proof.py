@@ -29,11 +29,6 @@ from general_ludd.azure.resource_group_bootstrap import (
     ensure_azure_resource_group,
 )
 from general_ludd.cloud.azure_game_runtime import resolve_public_ipv4_cidr
-from general_ludd.infra.azure_containerapp_arm import (
-    HttpxARMJSONTransport,
-    HttpxContainerAppARMTransport,
-    HttpxContainerAppEnvironmentLifecycleTransport,
-)
 from general_ludd.infra.azure_containerapp_environment_lifecycle import (
     AzureContainerAppEnvironmentRuntime,
     AzureEnvironmentLifecyclePolicy,
@@ -76,6 +71,10 @@ from general_ludd.infra.azure_containerapp_runtime_resources import (
     _environment_ready as _environment_ready,
 )
 from general_ludd.infra.azure_containerapp_runtime_resources import _ready as _ready
+from general_ludd.infra.azure_containerapp_sdk import (
+    AzureContainerAppsSDKReadTransports,
+    build_container_apps_sdk_client,
+)
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
     AzureCandidateResponse,
@@ -453,11 +452,8 @@ def _default_live_resources(
         monotonic=lambda: time.monotonic(),
         sleep=lambda seconds: time.sleep(seconds),
         _credential_factory=_credential_client,
-        _environment_transport_factory=HttpxARMJSONTransport,
-        _lifecycle_transport_factory=(
-            HttpxContainerAppEnvironmentLifecycleTransport
-        ),
-        _app_transport_factory=HttpxContainerAppARMTransport,
+        _sdk_client_factory=build_container_apps_sdk_client,
+        _sdk_transports_factory=AzureContainerAppsSDKReadTransports,
         _preflight_factory=AzureContainerAppReadOnlyPreflight,
         _app_runtime_factory=AzureContainerAppTerraformRuntime,
         _environment_runtime_factory=(

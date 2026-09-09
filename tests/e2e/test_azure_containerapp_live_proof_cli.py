@@ -798,6 +798,7 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
     runtime_arguments: dict[str, object] = {}
     environment_runtime_arguments: dict[str, object] = {}
     backend_arguments: dict[str, object] = {}
+    sdk_arguments: list[tuple[str, object]] = []
     sleep_seconds: list[float] = []
     ready_document = {
         "properties": {
@@ -809,7 +810,28 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
         {"properties": {"provisioningState": "Updating"}},
         ready_document,
         ready_document,
+        ready_document,
         None,
+    ]
+    revision_documents = [
+        {
+            "properties": {
+                "active": True,
+                "replicas": 0,
+                "healthState": "None",
+                "provisioningState": "Provisioning",
+                "runningState": "Processing",
+            }
+        },
+        {
+            "properties": {
+                "active": True,
+                "replicas": 1,
+                "healthState": "Healthy",
+                "provisioningState": "Provisioned",
+                "runningState": "Running",
+            }
+        },
     ]
     environment_policy = live_cli._environment_policy(
         policy,
@@ -858,6 +880,11 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
         def get_json(self, token: str) -> object | None:
             assert token == "unit-token"
             return app_documents.pop(0)
+
+        def get_revision_json(self, token: str, revision_name: str) -> object:
+            assert token == "unit-token"
+            assert revision_name == f"{policy.app_name}--0000007"
+            return revision_documents.pop(0)
 
         def close(self) -> None:
             lifecycle.append("app.close")
@@ -948,13 +975,35 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
         ),
     )
     monkeypatch.setattr(live_cli, "_credential_client", lambda value: credential)
-    monkeypatch.setattr(live_cli, "HttpxARMJSONTransport", FakeEnvironmentTransport)
-    monkeypatch.setattr(live_cli, "HttpxContainerAppARMTransport", FakeAppTransport)
-    monkeypatch.setattr(
-        live_cli,
-        "HttpxContainerAppEnvironmentLifecycleTransport",
-        FakeLifecycleTransport,
-    )
+
+    sdk_client = SimpleNamespace(name="shared-container-apps-sdk-client")
+
+    def build_sdk_client(active_credential: object, subscription_id: str) -> object:
+        sdk_arguments.append(("client", (active_credential, subscription_id)))
+        return sdk_client
+
+    def build_sdk_views(*, client: object, policy: object) -> object:
+        sdk_arguments.append(("views", {"client": client, "policy": policy}))
+        return SimpleNamespace(
+            preflight=FakeEnvironmentTransport(
+                subscription_id=SUBSCRIPTION,
+                resource_group=cast(Any, policy).resource_group,
+                environment_name=cast(Any, policy).environment_name,
+            ),
+            lifecycle=FakeLifecycleTransport(
+                subscription_id=SUBSCRIPTION,
+                resource_group=cast(Any, policy).resource_group,
+                environment_name=cast(Any, policy).environment_name,
+            ),
+            app=FakeAppTransport(
+                subscription_id=SUBSCRIPTION,
+                resource_group=cast(Any, policy).resource_group,
+                app_name=cast(Any, policy).app_name,
+            ),
+        )
+
+    monkeypatch.setattr(live_cli, "build_container_apps_sdk_client", build_sdk_client)
+    monkeypatch.setattr(live_cli, "AzureContainerAppsSDKReadTransports", build_sdk_views)
     monkeypatch.setattr(live_cli, "AzureContainerAppReadOnlyPreflight", FakePreflight)
     monkeypatch.setattr(live_cli, "AzureContainerAppTerraformRuntime", FakeRuntime)
     monkeypatch.setattr(
@@ -1056,6 +1105,10 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
             },
         ),
     ]
+    assert sdk_arguments == [
+        ("client", (credential, SUBSCRIPTION)),
+        ("views", {"client": sdk_client, "policy": policy}),
+    ]
     assert preflight_checks == [
         {
             "subscription_id": SUBSCRIPTION,
@@ -1076,8 +1129,8 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
         == live_cli._ENVIRONMENT_WORK_ROOT
     )
     assert environment_runtime_arguments["credentials"] is credentials
-    assert token_scopes == [(live_cli.ARM_SCOPE,)] * 13
-    assert sleep_seconds == [10.0] * 5
+    assert token_scopes == [(live_cli.ARM_SCOPE,)] * 14
+    assert sleep_seconds == [10.0] * 6
     assert backend_arguments == {
         "identity": identity,
         "discovery_timeout_seconds": 120.0,
@@ -1142,13 +1195,20 @@ def test_default_resource_construction_failure_closes_every_created_client(
         lambda *_args, **_kwargs: credentials,
     )
     monkeypatch.setattr(live_cli, "_credential_client", lambda _value: FakeCredential())
-    monkeypatch.setattr(live_cli, "HttpxARMJSONTransport", FakeEnvironmentTransport)
-    monkeypatch.setattr(live_cli, "HttpxContainerAppARMTransport", FakeAppTransport)
+
+    def build_sdk_views(**_kwargs: object) -> object:
+        return SimpleNamespace(
+            preflight=FakeEnvironmentTransport(),
+            lifecycle=FakeLifecycleTransport(),
+            app=FakeAppTransport(),
+        )
+
     monkeypatch.setattr(
         live_cli,
-        "HttpxContainerAppEnvironmentLifecycleTransport",
-        FakeLifecycleTransport,
+        "build_container_apps_sdk_client",
+        lambda *_args: SimpleNamespace(),
     )
+    monkeypatch.setattr(live_cli, "AzureContainerAppsSDKReadTransports", build_sdk_views)
     monkeypatch.setattr(
         live_cli,
         "AzureContainerAppTerraformRuntime",

@@ -5,17 +5,13 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Mapping
 from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
 
 from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorCredentials,
     build_azure_management_credential,
-)
-from general_ludd.infra.azure_containerapp_arm import (
-    HttpxARMJSONTransport,
-    HttpxContainerAppARMTransport,
-    HttpxContainerAppEnvironmentLifecycleTransport,
 )
 from general_ludd.infra.azure_containerapp_environment_lifecycle import (
     AzureContainerAppEnvironmentRuntime,
@@ -38,6 +34,10 @@ from general_ludd.infra.azure_containerapp_preflight import (
     AzureContainerAppReadOnlyPreflight,
     PreflightTrace,
 )
+from general_ludd.infra.azure_containerapp_sdk import (
+    AzureContainerAppsSDKReadTransports,
+    build_container_apps_sdk_client,
+)
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
     AzureCandidateResponse,
@@ -57,6 +57,10 @@ _Backend = CandidateBackend[AzureApprovedPrompt, AzureCandidateResponse]
 class _ClosableCredential(Protocol):
     def get_token(self, *scopes: str) -> Any: ...
 
+    def close(self) -> None: ...
+
+
+class _ClosableClient(Protocol):
     def close(self) -> None: ...
 
 
@@ -102,6 +106,86 @@ def _environment_ready(document: object | None) -> bool:
     )
 
 
+def _fixed_state(value: object, allowed: frozenset[str]) -> str:
+    return value if isinstance(value, str) and value in allowed else "Unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class _RevisionState:
+    active: bool
+    replicas: int
+    health_state: str
+    provisioning_state: str
+    running_state: str
+
+    def ready(self, minimum_replicas: int) -> bool:
+        return bool(
+            self.active
+            and self.replicas >= minimum_replicas
+            and self.health_state == "Healthy"
+            and self.provisioning_state == "Provisioned"
+            and self.running_state == "Running"
+        )
+
+    @property
+    def terminal(self) -> bool:
+        return bool(
+            self.health_state == "Unhealthy"
+            or self.provisioning_state in {"Failed", "Deprovisioned"}
+            or self.running_state in {"Stopped", "Degraded", "Failed"}
+        )
+
+
+def _revision_state(document: object | None) -> _RevisionState:
+    properties = document.get("properties") if isinstance(document, Mapping) else None
+    values = properties if isinstance(properties, Mapping) else {}
+    replicas = values.get("replicas")
+    bounded_replicas = (
+        replicas
+        if isinstance(replicas, int)
+        and not isinstance(replicas, bool)
+        and 0 <= replicas <= 100_000
+        else 0
+    )
+    return _RevisionState(
+        active=values.get("active") is True,
+        replicas=bounded_replicas,
+        health_state=_fixed_state(
+            values.get("healthState"),
+            frozenset({"Healthy", "Unhealthy", "None", "Unknown"}),
+        ),
+        provisioning_state=_fixed_state(
+            values.get("provisioningState"),
+            frozenset(
+                {
+                    "Provisioning",
+                    "Provisioned",
+                    "Failed",
+                    "Deprovisioning",
+                    "Deprovisioned",
+                    "Unknown",
+                }
+            ),
+        ),
+        running_state=_fixed_state(
+            values.get("runningState"),
+            frozenset(
+                {"Running", "Processing", "Stopped", "Degraded", "Failed", "Unknown"}
+            ),
+        ),
+    )
+
+
+def _ready_revision_name(document: object | None) -> str | None:
+    properties = document.get("properties") if isinstance(document, Mapping) else None
+    value = (
+        properties.get("latestReadyRevisionName")
+        if isinstance(properties, Mapping)
+        else None
+    )
+    return value if isinstance(value, str) and value else None
+
+
 class AzureContainerAppRuntimeResources:
     """Own all clients used by a direct app/environment Terraform lifecycle."""
 
@@ -111,9 +195,9 @@ class AzureContainerAppRuntimeResources:
         runtime: AzureContainerAppProofRuntime,
         environment_runtime: AzureContainerAppEnvironmentRuntime,
         credential: _ClosableCredential,
-        environment_transport: HttpxARMJSONTransport,
-        lifecycle_transport: HttpxContainerAppEnvironmentLifecycleTransport,
-        app_transport: HttpxContainerAppARMTransport,
+        environment_transport: _ClosableClient,
+        lifecycle_transport: _ClosableClient,
+        app_transport: _ClosableClient,
         credential_release: Callable[[], None] | None,
         backend_trace_sink: Callable[
             [ContainerAppBackendTrace], None
@@ -195,6 +279,8 @@ def build_azure_containerapp_runtime_resources(
     _app_runtime_factory: Callable[..., Any] | None = None,
     _environment_runtime_factory: Callable[..., Any] | None = None,
     _backend_factory: Callable[..., Any] | None = None,
+    _sdk_client_factory: Callable[..., Any] | None = None,
+    _sdk_transports_factory: Callable[..., Any] | None = None,
 ) -> AzureContainerAppRuntimeResources:
     """Build an exact, secret-safe resource bundle for one approved deployment."""
     if not isinstance(credentials, AzureAcceleratorCredentials):
@@ -220,25 +306,11 @@ def build_azure_containerapp_runtime_resources(
         raise ValueError("runtime resource callbacks must be callable")
 
     credential: _ClosableCredential | None = None
-    environment_transport: HttpxARMJSONTransport | None = None
-    lifecycle_transport: HttpxContainerAppEnvironmentLifecycleTransport | None = None
-    app_transport: HttpxContainerAppARMTransport | None = None
+    environment_transport: Any | None = None
+    lifecycle_transport: Any | None = None
+    app_transport: Any | None = None
+    unowned_sdk_client: Any | None = None
     credential_factory = _credential_client if _credential_factory is None else _credential_factory
-    environment_transport_factory = (
-        HttpxARMJSONTransport
-        if _environment_transport_factory is None
-        else _environment_transport_factory
-    )
-    lifecycle_transport_factory = (
-        HttpxContainerAppEnvironmentLifecycleTransport
-        if _lifecycle_transport_factory is None
-        else _lifecycle_transport_factory
-    )
-    app_transport_factory = (
-        HttpxContainerAppARMTransport
-        if _app_transport_factory is None
-        else _app_transport_factory
-    )
     preflight_factory = (
         AzureContainerAppReadOnlyPreflight
         if _preflight_factory is None
@@ -261,21 +333,52 @@ def build_azure_containerapp_runtime_resources(
     )
     try:
         credential = credential_factory(credentials)
-        environment_transport = environment_transport_factory(
-            subscription_id=policy.subscription_id,
-            resource_group=policy.resource_group,
-            environment_name=policy.environment_name,
+        legacy_factories = (
+            _environment_transport_factory,
+            _lifecycle_transport_factory,
+            _app_transport_factory,
         )
-        lifecycle_transport = lifecycle_transport_factory(
-            subscription_id=policy.subscription_id,
-            resource_group=policy.resource_group,
-            environment_name=policy.environment_name,
-        )
-        app_transport = app_transport_factory(
-            subscription_id=policy.subscription_id,
-            resource_group=policy.resource_group,
-            app_name=policy.app_name,
-        )
+        if any(factory is not None for factory in legacy_factories):
+            if not all(factory is not None for factory in legacy_factories):
+                raise ValueError("all legacy Azure read transports must be supplied")
+            environment_transport = cast(Callable[..., Any], legacy_factories[0])(
+                subscription_id=policy.subscription_id,
+                resource_group=policy.resource_group,
+                environment_name=policy.environment_name,
+            )
+            lifecycle_transport = cast(Callable[..., Any], legacy_factories[1])(
+                subscription_id=policy.subscription_id,
+                resource_group=policy.resource_group,
+                environment_name=policy.environment_name,
+            )
+            app_transport = cast(Callable[..., Any], legacy_factories[2])(
+                subscription_id=policy.subscription_id,
+                resource_group=policy.resource_group,
+                app_name=policy.app_name,
+            )
+        else:
+            sdk_client_factory = (
+                build_container_apps_sdk_client
+                if _sdk_client_factory is None
+                else _sdk_client_factory
+            )
+            sdk_transports_factory = (
+                AzureContainerAppsSDKReadTransports
+                if _sdk_transports_factory is None
+                else _sdk_transports_factory
+            )
+            unowned_sdk_client = sdk_client_factory(
+                credential,
+                policy.subscription_id,
+            )
+            sdk_transports = sdk_transports_factory(
+                client=unowned_sdk_client,
+                policy=policy,
+            )
+            environment_transport = sdk_transports.preflight
+            lifecycle_transport = sdk_transports.lifecycle
+            app_transport = sdk_transports.app
+            unowned_sdk_client = None
 
         def preflight(
             active_policy: AzureContainerAppLiveProofPolicy,
@@ -295,7 +398,7 @@ def build_azure_containerapp_runtime_resources(
             )
 
         def read_app(
-            _active_policy: AzureContainerAppLiveProofPolicy,
+            active_policy: AzureContainerAppLiveProofPolicy,
             expect_absent: bool,
         ) -> object | None:
             deadline = monotonic() + (600.0 if expect_absent else 900.0)
@@ -303,8 +406,35 @@ def build_azure_containerapp_runtime_resources(
             while True:
                 token = credential.get_token(ARM_SCOPE).token
                 last_document = app_transport.get_json(token)
+                revision_ready = _ready(last_document)
+                revision_reader = getattr(app_transport, "get_revision_json", None)
+                if (
+                    not expect_absent
+                    and revision_ready
+                    and active_policy.min_replicas > 0
+                    and callable(revision_reader)
+                ):
+                    revision_name = _ready_revision_name(last_document)
+                    revision = (
+                        revision_reader(token, revision_name)
+                        if revision_name is not None
+                        else None
+                    )
+                    state = _revision_state(revision)
+                    if state.terminal:
+                        raise RuntimeError("Azure revision entered a terminal state")
+                    revision_ready = state.ready(active_policy.min_replicas)
+                    if not revision_ready:
+                        progress_sink(
+                            "azure_containerapp_revision_poll "
+                            "phase=readiness state=heartbeat "
+                            f"provisioning_state={state.provisioning_state} "
+                            f"health_state={state.health_state} "
+                            f"running_state={state.running_state} "
+                            f"replicas={state.replicas}"
+                        )
                 if (expect_absent and last_document is None) or (
-                    not expect_absent and _ready(last_document)
+                    not expect_absent and revision_ready
                 ):
                     return last_document
                 if monotonic() >= deadline:
@@ -393,6 +523,7 @@ def build_azure_containerapp_runtime_resources(
             app_transport,
             lifecycle_transport,
             environment_transport,
+            unowned_sdk_client,
             credential,
         ):
             if client is not None:

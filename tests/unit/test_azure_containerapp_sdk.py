@@ -305,12 +305,40 @@ class _ContainerApps:
         return [self._app()]
 
 
+class _ContainerAppsRevisions:
+    def __init__(self, calls: list[tuple[str, tuple[object, ...]]]) -> None:
+        self.calls = calls
+
+    def get_revision(
+        self,
+        resource_group_name: str,
+        container_app_name: str,
+        revision_name: str,
+    ) -> object:
+        self.calls.append(
+            (
+                "revision.get",
+                (resource_group_name, container_app_name, revision_name),
+            )
+        )
+        return SimpleNamespace(
+            name=revision_name,
+            active=True,
+            replicas=1,
+            health_state="Healthy",
+            provisioning_state="Provisioned",
+            running_state="Running",
+            provisioning_error="provider-secret-must-not-be-normalized",
+        )
+
+
 class _ContainerAppsClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[object, ...]]] = []
         self.managed_environments = _ManagedEnvironments(self.calls)
         self.managed_environment_usages = _ManagedEnvironmentUsages(self.calls)
         self.container_apps = _ContainerApps(self.calls)
+        self.container_apps_revisions = _ContainerAppsRevisions(self.calls)
         self.close_count = 0
 
     def close(self) -> None:
@@ -336,12 +364,15 @@ def test_sdk_read_views_call_only_exact_microsoft_read_operations_and_normalize(
         "bounded-token",
     )
     app = transports.app.get_json("bounded-token")
+    revision_name = f"{policy.app_name}--0000007"
+    revision = transports.app.get_revision_json("bounded-token", revision_name)
     lifecycle_environment = transports.lifecycle.get_environment("bounded-token")
     app_ids = transports.lifecycle.list_environment_app_ids("bounded-token")
     environment_document = cast(dict[str, Any], environment)
     usage_document = cast(dict[str, Any], usages)
     states_document = cast(dict[str, Any], states)
     app_document = cast(dict[str, Any], app)
+    revision_document = cast(dict[str, Any], revision)
     lifecycle_document = cast(dict[str, Any], lifecycle_environment)
 
     assert environment_document["properties"]["workloadProfiles"][0] == {
@@ -353,6 +384,17 @@ def test_sdk_read_views_call_only_exact_microsoft_read_operations_and_normalize(
     assert usage_document["value"][0]["currentValue"] == 1.0
     assert states_document["value"][0]["properties"]["maximumCount"] == 4
     assert app_document["properties"]["latestReadyRevisionName"].endswith("--0000007")
+    assert revision_document == {
+        "name": revision_name,
+        "properties": {
+            "active": True,
+            "replicas": 1,
+            "healthState": "Healthy",
+            "provisioningState": "Provisioned",
+            "runningState": "Running",
+        },
+    }
+    assert "provider-secret" not in repr(revision_document)
     assert lifecycle_document["id"] == policy.environment_id
     assert app_ids == (policy.expected_resource_id,)
     assert client.calls == [
@@ -360,6 +402,10 @@ def test_sdk_read_views_call_only_exact_microsoft_read_operations_and_normalize(
         ("usages.list", (policy.resource_group, policy.environment_name)),
         ("profile_states.list", (policy.resource_group, policy.environment_name)),
         ("app.get", (policy.resource_group, policy.app_name)),
+        (
+            "revision.get",
+            (policy.resource_group, policy.app_name, revision_name),
+        ),
         ("environment.get", (policy.resource_group, policy.environment_name)),
         ("apps.list", (policy.resource_group,)),
     ]
@@ -378,6 +424,11 @@ def test_sdk_read_views_reject_scope_escape_and_censor_provider_failure() -> Non
         transports.preflight.get_json(
             "/subscriptions/other/providers/Microsoft.Authorization/roleAssignments",
             "bounded-token",
+        )
+    with pytest.raises(ValueError, match="revision_name"):
+        transports.app.get_revision_json(
+            "bounded-token",
+            "foreign-app--0000001",
         )
 
     class ProviderFailure(RuntimeError):

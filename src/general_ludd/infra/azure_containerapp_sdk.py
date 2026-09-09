@@ -360,6 +360,28 @@ def _container_document(value: object) -> dict[str, object]:
     }
 
 
+def _revision_document(value: object) -> dict[str, object]:
+    properties = _member(value, "properties")
+    if properties is None:
+        properties = value
+    return {
+        "name": _member(value, "name"),
+        "properties": {
+            "active": _member(properties, "active"),
+            "replicas": _member(properties, "replicas"),
+            "healthState": _enum_text(
+                _member(properties, "health_state", "healthState")
+            ),
+            "provisioningState": _enum_text(
+                _member(properties, "provisioning_state", "provisioningState")
+            ),
+            "runningState": _enum_text(
+                _member(properties, "running_state", "runningState")
+            ),
+        },
+    }
+
+
 class _SDKOwner:
     def __init__(self, client: _ClosableClient) -> None:
         self.client = client
@@ -453,6 +475,39 @@ class AzureContainerAppsSDKAppTransport(_SDKView):
             absent_on_404=True,
         )
         return None if value is None else _container_document(value)
+
+    def get_revision_json(
+        self,
+        bearer_token: str,
+        revision_name: str,
+    ) -> object | None:
+        """Read one exact app-owned revision without exposing provider errors."""
+        _validated_token(bearer_token)
+        prefix = f"{self._policy.app_name}--"
+        if (
+            not isinstance(revision_name, str)
+            or not revision_name.startswith(prefix)
+            or len(revision_name) > 64
+            or re.fullmatch(r"[a-z0-9][a-z0-9-]*", revision_name[len(prefix) :])
+            is None
+        ):
+            raise ValueError("revision_name must identify the approved app")
+        value = _sdk_read(
+            lambda: self._client.container_apps_revisions.get_revision(
+                self._policy.resource_group,
+                self._policy.app_name,
+                revision_name,
+            ),
+            absent_on_404=True,
+        )
+        if value is None:
+            return None
+        document = _revision_document(value)
+        if document.get("name") != revision_name:
+            raise AzureContainerAppsSDKReadError(
+                "Azure SDK revision response is incomplete or ambiguous"
+            )
+        return document
 
 
 class AzureContainerAppsSDKLifecycleTransport(_SDKView):

@@ -51,6 +51,7 @@ def _policy() -> AzureContainerAppLiveProofPolicy:
         estimated_request_cost_microusd=250_000,
         live=True,
         acknowledgement=LIVE_PROOF_ACKNOWLEDGEMENT,
+        min_replicas=1,
     )
 
 
@@ -87,7 +88,6 @@ def _environment_policy(
 
 def test_resources_build_polling_runtimes_and_release_credentials_last(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     policy = _policy()
     lifecycle: list[str] = []
@@ -101,7 +101,35 @@ def test_resources_build_polling_runtimes_and_release_credentials_last(
                 "latestReadyRevisionName": f"{policy.app_name}--0000007",
             }
         },
+        {
+            "properties": {
+                "provisioningState": "Succeeded",
+                "latestReadyRevisionName": f"{policy.app_name}--0000007",
+            }
+        },
         None,
+    ]
+    revision_documents = [
+        {
+            "name": f"{policy.app_name}--0000007",
+            "properties": {
+                "active": True,
+                "replicas": 0,
+                "healthState": "None",
+                "provisioningState": "Provisioning",
+                "runningState": "Processing",
+            },
+        },
+        {
+            "name": f"{policy.app_name}--0000007",
+            "properties": {
+                "active": True,
+                "replicas": 1,
+                "healthState": "Healthy",
+                "provisioningState": "Provisioned",
+                "runningState": "Running",
+            },
+        },
     ]
     environment_documents: list[object | None] = [
         None,
@@ -110,6 +138,7 @@ def test_resources_build_polling_runtimes_and_release_credentials_last(
     ]
     inventories = [(policy.expected_resource_id,), ()]
     clock = iter((0.0,) * 8)
+    progress: list[str] = []
 
     class Credential:
         def get_token(self, *_scopes: str) -> object:
@@ -132,6 +161,11 @@ def test_resources_build_polling_runtimes_and_release_credentials_last(
         def get_json(self, token: str) -> object | None:
             assert token == "unit-token"
             return app_documents.pop(0)
+
+        def get_revision_json(self, token: str, revision_name: str) -> object:
+            assert token == "unit-token"
+            assert revision_name == f"{policy.app_name}--0000007"
+            return revision_documents.pop(0)
 
         def close(self) -> None:
             lifecycle.append("app.close")
@@ -159,21 +193,6 @@ def test_resources_build_polling_runtimes_and_release_credentials_last(
         def __init__(self, **kwargs: object) -> None:
             environment_runtime_arguments.update(kwargs)
 
-    monkeypatch.setattr(resources_module, "_credential_client", lambda _value: Credential())
-    monkeypatch.setattr(resources_module, "HttpxARMJSONTransport", EnvironmentTransport)
-    monkeypatch.setattr(resources_module, "HttpxContainerAppARMTransport", AppTransport)
-    monkeypatch.setattr(
-        resources_module,
-        "HttpxContainerAppEnvironmentLifecycleTransport",
-        LifecycleTransport,
-    )
-    monkeypatch.setattr(resources_module, "AzureContainerAppTerraformRuntime", Runtime)
-    monkeypatch.setattr(
-        resources_module,
-        "AzureContainerAppEnvironmentTerraformRuntime",
-        EnvironmentRuntime,
-    )
-
     resources = resources_module.build_azure_containerapp_runtime_resources(
         credentials=_credentials(),
         policy=policy,
@@ -183,6 +202,13 @@ def test_resources_build_polling_runtimes_and_release_credentials_last(
         credential_release=lambda: lifecycle.append("lease.release"),
         monotonic=lambda: next(clock),
         sleep=lambda _seconds: lifecycle.append("heartbeat.sleep"),
+        progress_sink=progress.append,
+        _credential_factory=lambda _value: Credential(),
+        _environment_transport_factory=EnvironmentTransport,
+        _lifecycle_transport_factory=LifecycleTransport,
+        _app_transport_factory=AppTransport,
+        _app_runtime_factory=Runtime,
+        _environment_runtime_factory=EnvironmentRuntime,
     )
     environment_policy = _environment_policy(policy)
 
@@ -214,11 +240,65 @@ def test_resources_build_polling_runtimes_and_release_credentials_last(
         "credential.close",
         "lease.release",
     ]
+    assert progress[:3] == [
+        "azure_containerapp_poll phase=readiness state=heartbeat",
+        (
+            "azure_containerapp_revision_poll phase=readiness state=heartbeat "
+            "provisioning_state=Provisioning health_state=None "
+            "running_state=Processing replicas=0"
+        ),
+        "azure_containerapp_poll phase=readiness state=heartbeat",
+    ]
+
+
+def test_default_resources_build_one_shared_official_sdk_reader(
+    tmp_path: Path,
+) -> None:
+    policy = _policy()
+    calls: list[tuple[str, object]] = []
+
+    class Client:
+        def close(self) -> None:
+            calls.append(("client.close", None))
+
+    class Credential:
+        def close(self) -> None:
+            calls.append(("credential.close", None))
+
+    class View:
+        def close(self) -> None:
+            calls.append(("view.close", None))
+
+    client = Client()
+    views = SimpleNamespace(preflight=View(), lifecycle=View(), app=View())
+
+    resources = resources_module.build_azure_containerapp_runtime_resources(
+        credentials=_credentials(),
+        policy=policy,
+        requirement=_requirement(),
+        work_root=tmp_path / "apps",
+        environment_work_root=tmp_path / "environments",
+        _credential_factory=lambda _value: Credential(),
+        _sdk_client_factory=lambda credential, subscription_id: (
+            calls.append(("sdk.client", (credential, subscription_id))) or client
+        ),
+        _sdk_transports_factory=lambda **kwargs: (
+            calls.append(("sdk.views", kwargs)) or views
+        ),
+        _app_runtime_factory=lambda **_kwargs: SimpleNamespace(),
+        _environment_runtime_factory=lambda **_kwargs: SimpleNamespace(),
+    )
+
+    assert calls[0][0] == "sdk.client"
+    assert calls[1] == (
+        "sdk.views",
+        {"client": client, "policy": policy},
+    )
+    resources.close()
 
 
 def test_resource_construction_failure_closes_partial_clients_and_releases_lease(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     lifecycle: list[str] = []
 
@@ -229,28 +309,6 @@ def test_resource_construction_failure_closes_partial_clients_and_releases_lease
         def close(self) -> None:
             lifecycle.append(self.name)
 
-    monkeypatch.setattr(resources_module, "_credential_client", lambda _value: Client("credential"))
-    monkeypatch.setattr(
-        resources_module,
-        "HttpxARMJSONTransport",
-        lambda **_kwargs: Client("environment"),
-    )
-    monkeypatch.setattr(
-        resources_module,
-        "HttpxContainerAppEnvironmentLifecycleTransport",
-        lambda **_kwargs: Client("lifecycle"),
-    )
-    monkeypatch.setattr(
-        resources_module,
-        "HttpxContainerAppARMTransport",
-        lambda **_kwargs: Client("app"),
-    )
-    monkeypatch.setattr(
-        resources_module,
-        "AzureContainerAppTerraformRuntime",
-        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("private failure")),
-    )
-
     with pytest.raises(RuntimeError, match="private failure"):
         resources_module.build_azure_containerapp_runtime_resources(
             credentials=_credentials(),
@@ -259,6 +317,13 @@ def test_resource_construction_failure_closes_partial_clients_and_releases_lease
             work_root=tmp_path / "apps",
             environment_work_root=tmp_path / "environments",
             credential_release=lambda: lifecycle.append("lease"),
+            _credential_factory=lambda _value: Client("credential"),
+            _environment_transport_factory=lambda **_kwargs: Client("environment"),
+            _lifecycle_transport_factory=lambda **_kwargs: Client("lifecycle"),
+            _app_transport_factory=lambda **_kwargs: Client("app"),
+            _app_runtime_factory=lambda **_kwargs: (
+                (_ for _ in ()).throw(RuntimeError("private failure"))
+            ),
         )
 
     assert lifecycle == ["app", "lifecycle", "environment", "credential", "lease"]
