@@ -319,7 +319,15 @@ class TestCyclomaticComplexity:
         """Top 20 files by complexity — regression guard (tighten toward 120)."""
         by_cc = sorted(all_metrics, key=operator.attrgetter("total_complexity"), reverse=True)[:20]
         for fm in by_cc:
-            assert fm.total_complexity < 870, f"{fm.path.name}: total_complexity={fm.total_complexity} exceeds 870"
+            highest = sorted(
+                fm.functions,
+                key=operator.attrgetter("complexity"),
+                reverse=True,
+            )[:10]
+            assert fm.total_complexity < 870, (
+                f"{fm.path}: total_complexity={fm.total_complexity} exceeds 870; "
+                f"highest={highest}"
+            )
 
     def test_median_complexity_below_50(self, all_metrics: list[_FileMetrics]) -> None:
         """Median file complexity — regression guard (tighten toward 15)."""
@@ -464,12 +472,17 @@ class TestMaintainabilityIndex:
 
     def test_files_mi_below_20_counted(self, all_metrics: list[_FileMetrics]) -> None:
         """Count files with MI < 20 — increase is a regression."""
-        violations: list[str] = []
+        violations: list[tuple[float, Path]] = []
         for fm in all_metrics:
             if fm.maintainability_index < 20.0:
-                violations.append(f"{fm.path.name}: MI={fm.maintainability_index:.1f}")
-        assert len(violations) <= 220, f"{len(violations)} file(s) below MI 20 (was 211 on CI 3.11):\n" + "\n".join(
-            violations[:20]
+                violations.append((fm.maintainability_index, fm.path))
+        nearest = sorted(violations, reverse=True)[:20]
+        evidence = "\n".join(
+            f"{path}: MI={score:.1f}" for score, path in nearest
+        )
+        assert len(violations) <= 220, (
+            f"{len(violations)} file(s) below MI 20 (was 211 on CI 3.11); "
+            f"nearest floor:\n{evidence}"
         )
 
     def test_median_mi_above_25(self, all_metrics: list[_FileMetrics]) -> None:

@@ -7,12 +7,17 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any, cast
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from general_ludd.db.models import BucketLeaseModel, TodoModel
+from general_ludd.event_loop.lease_cancellation import (
+    confirm_lease_termination,
+    request_lease_cancellation,
+)
+from general_ludd.event_loop.lease_validation import validate_lease_input
 from general_ludd.schemas.todo import TodoStatus
 
 
@@ -26,34 +31,6 @@ class LeaseRenewalStatus(StrEnum):
     RENEWED = "renewed"
     CANCEL_REQUESTED = "cancel_requested"
     STALE = "stale"
-
-
-def _validate_lease_input(
-    bucket_keys: list[str],
-    holder_id: str,
-    ttl_seconds: int,
-    todo_versions: Mapping[str, int] | None,
-) -> None:
-    if not isinstance(holder_id, str) or not holder_id or len(holder_id) > 128:
-        raise ValueError("holder_id must be non-empty text no longer than 128 characters")
-    if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int):
-        raise ValueError("ttl_seconds must be a positive integer")
-    if ttl_seconds <= 0 or ttl_seconds > 86_400:
-        raise ValueError("ttl_seconds must be between 1 and 86400")
-    if len(bucket_keys) != len(set(bucket_keys)):
-        raise ValueError("bucket_keys must not contain duplicates")
-    for key in bucket_keys:
-        if not isinstance(key, str) or not key or len(key) > 256:
-            raise ValueError(
-                "each bucket key must be non-empty text no longer than 256 characters"
-            )
-    if todo_versions is None:
-        return
-    if set(todo_versions) - set(bucket_keys):
-        raise ValueError("todo_versions contains an unknown bucket key")
-    for version in todo_versions.values():
-        if isinstance(version, bool) or not isinstance(version, int) or version <= 0:
-            raise ValueError("todo versions must be positive integers")
 
 
 async def acquire_lease(
@@ -88,7 +65,7 @@ async def acquire_leases_batch(
     todo_versions: Mapping[str, int] | None = None,
 ) -> list[BucketLeaseModel]:
     """Acquire a batch atomically without replacing another live attempt."""
-    _validate_lease_input(bucket_keys, holder_id, ttl_seconds, todo_versions)
+    validate_lease_input(bucket_keys, holder_id, ttl_seconds, todo_versions)
     if not bucket_keys:
         return []
     now = datetime.now(UTC)
@@ -154,7 +131,7 @@ async def renew_lease(
     ttl_seconds: int = 300,
 ) -> LeaseRenewalStatus:
     """Heartbeat only while the exact, unexpired attempt remains current."""
-    _validate_lease_input(
+    validate_lease_input(
         [bucket_key],
         holder_id,
         ttl_seconds,
@@ -193,71 +170,6 @@ async def renew_lease(
     if row is not None and row.cancel_requested_at is not None:
         return LeaseRenewalStatus.CANCEL_REQUESTED
     return LeaseRenewalStatus.STALE
-
-
-async def request_lease_cancellation(
-    session: AsyncSession,
-    *,
-    bucket_key: str,
-    holder_id: str,
-    todo_version: int,
-) -> bool:
-    """Request cancellation only for the exact current execution attempt.
-
-    Expiring the lease in the same compare-and-set makes it eligible for the
-    existing two-phase reclaimer as soon as the runner later supplies terminal
-    proof.  The original request timestamp is retained across idempotent calls.
-    """
-    _validate_lease_input(
-        [bucket_key],
-        holder_id,
-        1,
-        {bucket_key: todo_version},
-    )
-    now = datetime.now(UTC)
-    result = await session.execute(
-        update(BucketLeaseModel)
-        .where(
-            BucketLeaseModel.bucket_key == bucket_key,
-            BucketLeaseModel.holder_id == holder_id,
-            BucketLeaseModel.todo_version == todo_version,
-            BucketLeaseModel.termination_confirmed_at.is_(None),
-        )
-        .values(
-            cancel_requested_at=func.coalesce(
-                BucketLeaseModel.cancel_requested_at,
-                now,
-            ),
-            expires_at=now,
-            updated_at=now,
-        )
-    )
-    await session.flush()
-    return (cast("CursorResult[Any]", result).rowcount or 0) == 1
-
-
-async def confirm_lease_termination(
-    session: AsyncSession,
-    *,
-    bucket_key: str,
-    holder_id: str,
-    todo_version: int,
-) -> bool:
-    """Record exact-owner proof that cancellation fully reaped its process."""
-    now = datetime.now(UTC)
-    result = await session.execute(
-        update(BucketLeaseModel)
-        .where(
-            BucketLeaseModel.bucket_key == bucket_key,
-            BucketLeaseModel.holder_id == holder_id,
-            BucketLeaseModel.todo_version == todo_version,
-            BucketLeaseModel.cancel_requested_at.is_not(None),
-            BucketLeaseModel.termination_confirmed_at.is_(None),
-        )
-        .values(termination_confirmed_at=now, updated_at=now)
-    )
-    await session.flush()
-    return (cast("CursorResult[Any]", result).rowcount or 0) == 1
 
 
 async def reclaim_expired_leases(

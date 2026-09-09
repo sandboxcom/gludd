@@ -25,7 +25,6 @@ from general_ludd.agents.hibernation import (
 )
 from general_ludd.compaction.aggressive import level_at as _level_at
 from general_ludd.controllers.compaction_aggressiveness import (
-    AccuracySample,
     CompactionAggressivenessController,
 )
 from general_ludd.controllers.floor import FloorController
@@ -76,6 +75,13 @@ from general_ludd.event_loop.managed_self_improve_dispatch import (
 from general_ludd.event_loop.managed_self_improve_dispatch import (
     worker_rejection_reason as _managed_worker_rejection_reason,
 )
+from general_ludd.event_loop.review_orchestration import EventLoopReviewMixin
+from general_ludd.event_loop.review_orchestration import (
+    is_managed_self_improve_todo as _is_managed_self_improve_todo,
+)
+from general_ludd.event_loop.review_orchestration import (
+    safe_string_attribute as _safe_str,
+)
 from general_ludd.execution.graph_checkpointer import TickCheckpointer
 from general_ludd.execution.human_gate import HumanGate
 from general_ludd.execution.situation_store import BadCallSituationStore
@@ -106,9 +112,6 @@ from general_ludd.self_improve.promotion import (
     build_managed_self_improve_promotion_coordinator,
 )
 from general_ludd.self_improve.runtime import build_managed_self_improve_runner
-from general_ludd.self_improve.staging import (
-    MANAGED_SELF_IMPROVE_APPROVAL_POLICY,
-)
 
 if TYPE_CHECKING:
     # TYPE_CHECKING-only: avoids a runtime import cycle and keeps the drain
@@ -117,15 +120,6 @@ if TYPE_CHECKING:
     from general_ludd.ipc.queue import WriteQueue
 
 logger = logging.getLogger(__name__)
-
-
-def _is_managed_self_improve_todo(todo: object) -> bool:
-    """Return whether a todo carries the explicit managed approval contract."""
-    return (
-        getattr(todo, "work_type", None) == "self_improve"
-        and getattr(todo, "approval_policy", None)
-        == MANAGED_SELF_IMPROVE_APPROVAL_POLICY
-    )
 
 
 class _FileClaimConflict(Exception):
@@ -188,11 +182,6 @@ _TOOL_USE_WORK_TYPES: frozenset[str] = frozenset(
 )
 
 _CODE_WORK_TYPES: frozenset[str] = frozenset({"code", "bug_fix", "refactor", "feature", "test"})
-
-
-def _safe_str(obj: Any, attr: str, default: str | None = None) -> str | None:
-    val = getattr(obj, attr, default)
-    return val if isinstance(val, str) else default
 
 
 def _format_acceptance_criteria(raw_ac: str | None) -> str:
@@ -366,7 +355,7 @@ def _compute_todo_estimate(todo: object) -> float:
     return round(base_cost * (1.5 - effective_confidence), 4)
 
 
-class EventLoop(EventLoopHandlers):
+class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
     """Coordinate one durable scheduling, dispatch, and reconciliation loop."""
 
     def __init__(
@@ -796,6 +785,15 @@ class EventLoop(EventLoopHandlers):
                 bucket_key = f"{queue}:{todo_id}"
                 if bucket_key in leased_bucket_keys:
                     recovery_pending.add(todo_id)
+                elif (
+                    getattr(todo, "work_type", None) == "self_improve"
+                    and not _is_managed_self_improve_todo(todo)
+                ):
+                    await self._todo_repo.transition(
+                        todo_id,
+                        TodoStatus.FAILED,
+                        todo.version,
+                    )
                 else:
                     unfenced.add(todo_id)
             if recovery_pending:
@@ -1624,163 +1622,6 @@ class EventLoop(EventLoopHandlers):
         await self._active_session.flush()
         await self._active_session.commit()
 
-    async def _review_in_process(self, tr: Any) -> None:
-        from general_ludd.review.decision_applier import apply_decision
-
-        review_cfg = self.config.get("review", {}) if isinstance(self.config, dict) else {}
-        consensus_cfg = self.config.get("consensus_review", {}) if isinstance(self.config, dict) else {}
-        if review_cfg.get("use_langgraph") and self._langgraph_reviewer is not None:
-            effective_reviewer = self._langgraph_reviewer
-        elif consensus_cfg.get("enabled", False) and self._consensus_reviewer is not None:
-            effective_reviewer = self._consensus_reviewer
-        else:
-            assert self._reviewer is not None
-            effective_reviewer = self._reviewer
-
-        return_id = getattr(tr, "return_id", "")
-        todo_id = getattr(tr, "todo_id", None)
-        task_return = TaskReturn(
-            return_id=return_id,
-            todo_id=todo_id,
-            job_id=getattr(tr, "job_id", None) or f"JOB-{return_id}",
-            playbook=getattr(tr, "playbook", None) or "noop.yml",
-            queue=_safe_str(tr, "queue", "model") or "model",
-            work_type=_safe_str(tr, "work_type", "review") or "review",
-            exit_code=int(getattr(tr, "exit_code", 0) or 0),
-            result_summary=_safe_str(tr, "result_summary", "") or "",
-        )
-        try:
-            decision = await self._bounded_to_thread(
-                effective_reviewer.review_return,
-                task_return,
-                candidate_todos=[],
-                artifacts=[],
-            )
-        except Exception as exc:
-            # Reviewer itself failed — escalate, never silent pass/complete.
-            logger.error("Reviewer raised for return %s: %s", return_id, exc)
-            decision = TaskDecision(
-                return_id=return_id,
-                matched_todo_id=todo_id,
-                decision="manual_hold",
-                confidence=0.0,
-                audit_notes=[f"Reviewer error: {exc}"],
-            )
-        assert self._todo_repo is not None
-        assert self._active_session is not None
-        promotion_receipt: ManagedPromotionReceipt | None = None
-        if decision.decision == "complete" and task_return.work_type == "self_improve":
-            project_id = getattr(tr, "project_id", None)
-            if not isinstance(project_id, str):
-                project_id = None
-            todo = await self._todo_repo.get_by_id(
-                todo_id,
-                project_id=project_id,
-            )
-            if todo is None:
-                logger.error("Managed promotion todo %s no longer exists", todo_id)
-                await self._release_managed_review_for_retry(tr)
-                return
-            if _is_managed_self_improve_todo(todo):
-                try:
-                    await self._persist_in_process_decision(tr, decision)
-                except Exception as exc:
-                    logger.error(
-                        "Decision persistence failed for return %s: %s",
-                        return_id,
-                        exc,
-                    )
-                    await self._release_managed_review_for_retry(tr)
-                    return
-                try:
-                    promotion_receipt = (
-                        await self._ensure_managed_self_improve_promotion(tr, todo)
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "Managed promotion failed for return %s: %s",
-                        return_id,
-                        exc,
-                    )
-                    await self._release_managed_review_for_retry(tr)
-                    return
-        try:
-            _review_project_id = getattr(tr, "project_id", None) or None
-            await apply_decision(
-                decision,
-                self._todo_repo,
-                self._active_session,
-                repo_root=self._resolve_repo_root(_review_project_id),
-                managed_promotion_receipt=promotion_receipt,
-            )
-            await self._active_session.flush()
-        except Exception as exc:
-            logger.error(
-                "apply_decision failed for return %s (decision=%s): %s",
-                return_id,
-                getattr(decision, "decision", "?"),
-                exc,
-            )
-            return
-        if self._audit_repo is not None:
-            try:
-                await self._audit_repo.create(
-                    event_type="return_reviewed",
-                    entity_type="task_return",
-                    entity_id=return_id,
-                    project_id=getattr(tr, "project_id", None),
-                    details=json.dumps(
-                        {
-                            "decision": decision.decision,
-                            "confidence": decision.confidence,
-                            "matched_todo_id": decision.matched_todo_id,
-                        }
-                    ),
-                )
-            except Exception:
-                # Audit trail is best-effort; a write failure must not abort the
-                # review (the decision is already applied). Log so a broken audit
-                # sink is visible.
-                logger.warning(
-                    "Audit write failed for return_reviewed event %s",
-                    return_id,
-                    exc_info=True,
-                )
-        logger.info("In-process review for return %s -> %s", return_id, decision.decision)
-        # Compaction feedback loop: feed review outcome into the adaptive controller
-        # so compaction aggressiveness auto-tunes from accuracy signal.
-        if self._compaction_controller is not None:
-            _success = decision.decision == "complete"
-            self._compaction_passed += 1 if _success else 0
-            self._compaction_total += 1
-            _sample = AccuracySample(
-                passed=self._compaction_passed,
-                total=self._compaction_total,
-            )
-            if self._compaction_level is None:
-                _cfg = self.config.get("compaction", {}) if isinstance(self.config, dict) else {}
-                _cfg_level = _cfg.get("level", 1) if _cfg.get("enabled") else 0
-                self._compaction_level = _cfg_level
-            _next = self._compaction_controller.compute(self._compaction_level, _sample)
-            if _next != self._compaction_level:
-                logger.info(
-                    "Compaction level adjusted: %d -> %d (passed=%d total=%d)",
-                    self._compaction_level,
-                    _next,
-                    self._compaction_passed,
-                    self._compaction_total,
-                )
-                self._compaction_level = _next
-            self._compaction_disabled = self._compaction_controller.disable_signaled(self._compaction_level, _sample)
-            if self._compaction_disabled:
-                logger.warning(
-                    "Compaction disabled by adaptive controller (level=%d, passed=%d total=%d, rate=%.2f)",
-                    self._compaction_level,
-                    self._compaction_passed,
-                    self._compaction_total,
-                    _sample.rate or 0.0,
-                )
-
     async def _persist_review_response(self, tr: Any, resp: Any) -> None:
         if self._task_return_repo is None:
             return
@@ -2117,6 +1958,163 @@ class EventLoop(EventLoopHandlers):
             runnable_todos,
         )
 
+    async def _effective_claim_limit(self) -> tuple[int, int, Any]:
+        effective_limit = 10
+        currently_active = 0
+        if self._todo_repo is not None and self._active_session is not None:
+            try:
+                currently_active = await self._todo_repo.count_active()
+            except Exception:
+                currently_active = 0
+
+        if self._floor_controller is not None:
+            floor_max = self._floor_controller.get_max_active()
+            floor_claimable = max(0, floor_max - currently_active)
+            effective_limit = min(effective_limit, floor_claimable)
+
+        pid_outputs = self._tick_state.get("pid_outputs")
+        if pid_outputs is not None and hasattr(pid_outputs, "desired_total_active_buckets"):
+            pid_desired = pid_outputs.desired_total_active_buckets
+            pid_claimable = max(0, pid_desired - currently_active)
+            effective_limit = min(effective_limit, pid_claimable)
+        return effective_limit, currently_active, pid_outputs
+
+    async def _recover_legacy_self_improve(self, project_id: Any) -> None:
+        assert self._todo_repo is not None
+        try:
+            recovered_legacy = await self._todo_repo.recover_queued_legacy_self_improve(
+                limit=10,
+                project_id=project_id,
+            )
+            self._tick_state["recovered_legacy_self_improve"] = len(recovered_legacy)
+        except Exception:
+            logger.exception("Failed to recover queued legacy self-improve approvals")
+            self._tick_state["recovered_legacy_self_improve"] = 0
+
+    async def _defer_reaped_claims(
+        self,
+        claimed: list[Any],
+        project_id: Any,
+    ) -> list[Any]:
+        assert self._todo_repo is not None
+        reaped_ids = self._tick_state.get("reaped_todo_ids", set())
+        if not reaped_ids:
+            return claimed
+        retained: list[Any] = []
+        for todo in claimed:
+            if todo.todo_id not in reaped_ids:
+                retained.append(todo)
+                continue
+            try:
+                await self._todo_repo.transition(
+                    todo.todo_id,
+                    TodoStatus.QUEUED,
+                    todo.version,
+                    project_id=project_id,
+                )
+                queue = _safe_str(todo, "queue", "core") or "core"
+                if self._active_session is not None:
+                    await release_lease(
+                        self._active_session,
+                        f"{queue}:{todo.todo_id}",
+                        holder_id=self._lease_owner_id,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to defer reaped todo %s to next tick: %s",
+                    todo.todo_id,
+                    exc,
+                )
+        return retained
+
+    async def _return_lease_conflicts(
+        self,
+        claimed: list[Any],
+        project_id: Any,
+    ) -> None:
+        assert self._todo_repo is not None
+        conflicted_ids: list[str] = []
+        for todo in claimed:
+            todo_id = _safe_str(todo, "todo_id", "") or ""
+            version = getattr(todo, "version", None)
+            if not todo_id or not isinstance(version, int):
+                continue
+            conflicted_ids.append(todo_id)
+            try:
+                await self._todo_repo.transition(
+                    todo_id,
+                    TodoStatus.QUEUED,
+                    version,
+                    project_id=project_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to return lease-conflicted todo %s to QUEUED",
+                    todo_id,
+                )
+        self._tick_state["lease_conflict_todo_ids"] = conflicted_ids
+
+    async def _acquire_claim_leases(
+        self,
+        claimed: list[Any],
+        project_id: Any,
+    ) -> list[Any]:
+        if not claimed or self._active_session is None:
+            return claimed
+        from general_ludd.event_loop.lease import acquire_leases_batch
+
+        bucket_keys = [
+            f"{_safe_str(todo, 'queue', 'core') or 'core'}:"
+            f"{_safe_str(todo, 'todo_id', '') or ''}"
+            for todo in claimed
+        ]
+        try:
+            lease_ttl_seconds, _ = self._execution_lease_timing()
+            if isinstance(self._active_session, AsyncSession):
+                await self._active_session.flush()
+            todo_versions = {
+                execution_bucket: version
+                for todo, execution_bucket in zip(claimed, bucket_keys, strict=True)
+                if isinstance((version := getattr(todo, "version", None)), int)
+                and not isinstance(version, bool)
+            }
+            if isinstance(self._active_session, AsyncSession):
+                async with self._active_session.begin_nested():
+                    await acquire_leases_batch(
+                        self._active_session,
+                        bucket_keys,
+                        holder_id=self._lease_owner_id,
+                        ttl_seconds=lease_ttl_seconds,
+                        project_id=project_id,
+                        todo_versions=todo_versions,
+                    )
+            else:
+                await acquire_leases_batch(
+                    self._active_session,
+                    bucket_keys,
+                    holder_id=self._lease_owner_id,
+                    ttl_seconds=lease_ttl_seconds,
+                    project_id=project_id,
+                    todo_versions=todo_versions,
+                )
+        except Exception as exc:
+            logger.error(
+                "Batch lease acquisition denied dispatch for %d todos: %s",
+                len(bucket_keys),
+                exc,
+                exc_info=True,
+            )
+            await self._return_lease_conflicts(claimed, project_id)
+            return []
+        self._tick_state["execution_lease_todo_ids"] = [
+            _safe_str(todo, "todo_id", "") or "" for todo in claimed
+        ]
+        self._tick_state["execution_lease_versions"] = {
+            _safe_str(todo, "todo_id", "") or "": todo.version
+            for todo in claimed
+        }
+        return claimed
+
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
             return
@@ -2137,45 +2135,11 @@ class EventLoop(EventLoopHandlers):
             logger.warning("Claim skipped: no active project selected")
             self._tick_state["claimed_todos"] = []
             return
-
-        # C21: compute the effective claim limit BEFORE the CAS claim so
-        # todos are never marked ACTIVE beyond the system's dispatch capacity.
-        # Floor cap and PID cap are evaluated here instead of releasing
-        # excess ACTIVE todos back to QUEUED after the fact.
-        effective_limit = 10
-        currently_active = 0
-        if self._todo_repo is not None and self._active_session is not None:
-            try:
-                currently_active = await self._todo_repo.count_active()
-            except Exception:
-                currently_active = 0
-
-        if self._floor_controller is not None:
-            floor_max = self._floor_controller.get_max_active()
-            floor_claimable = max(0, floor_max - currently_active)
-            effective_limit = min(effective_limit, floor_claimable)
-
-        pid_outputs = self._tick_state.get("pid_outputs")
-        if pid_outputs is not None and hasattr(pid_outputs, "desired_total_active_buckets"):
-            pid_desired = pid_outputs.desired_total_active_buckets
-            pid_claimable = max(0, pid_desired - currently_active)
-            effective_limit = min(effective_limit, pid_claimable)
-
-        # Migration 045 moves historical legacy approvals out of QUEUED, but a
-        # daemon may encounter rows written by an older process during a rolling
-        # deployment. Recover a bounded batch before every claim. The repository
-        # claim query independently excludes every non-managed self-improve row,
-        # so a recovery failure remains fail-closed.
-        try:
-            recovered_legacy = await self._todo_repo.recover_queued_legacy_self_improve(
-                limit=10,
-                project_id=project_id,
-            )
-            self._tick_state["recovered_legacy_self_improve"] = len(recovered_legacy)
-        except Exception:
-            logger.exception("Failed to recover queued legacy self-improve approvals")
-            self._tick_state["recovered_legacy_self_improve"] = 0
-
+        claim_capacity = await self._effective_claim_limit()
+        effective_limit = claim_capacity[0]
+        currently_active = claim_capacity[1]
+        pid_outputs = claim_capacity[2]
+        await self._recover_legacy_self_improve(project_id)
         if effective_limit <= 0:
             logger.debug(
                 "Claim skipped: effective_limit=%d (floor=%s, pid=%s, active=%d)",
@@ -2186,124 +2150,15 @@ class EventLoop(EventLoopHandlers):
             )
             self._tick_state["claimed_todos"] = []
             return
-
-        claimed = await self._todo_repo.claim_runnable(limit=effective_limit, project_id=project_id)
-        # A stale todo requeued during the refill phase must not be reclaimed
-        # immediately in the same tick.  Leave it queued for the next worker
-        # tick, releasing the transient claim lease as part of the rollback.
-        reaped_ids = self._tick_state.get("reaped_todo_ids", set())
-        if reaped_ids:
-            retained: list[Any] = []
-            holder = self._lease_owner_id
-            for todo in claimed:
-                if todo.todo_id not in reaped_ids:
-                    retained.append(todo)
-                    continue
-                try:
-                    await self._todo_repo.transition(
-                        todo.todo_id,
-                        TodoStatus.QUEUED,
-                        todo.version,
-                        project_id=project_id,
-                    )
-                    queue = _safe_str(todo, "queue", "core") or "core"
-                    if self._active_session is not None:
-                        await release_lease(
-                            self._active_session,
-                            f"{queue}:{todo.todo_id}",
-                            holder_id=holder,
-                        )
-                except Exception as exc:
-                    logger.warning(
-                        "Failed to defer reaped todo %s to next tick: %s",
-                        todo.todo_id,
-                        exc,
-                    )
-            claimed = retained
-        # ── Resource estimation: set estimated_cost_usd per claimed todo ──
-        if claimed and self._active_session is not None:
+        claimed = await self._todo_repo.claim_runnable(
+            limit=effective_limit,
+            project_id=project_id,
+        )
+        claimed = await self._defer_reaped_claims(claimed, project_id)
+        if self._active_session is not None:
             for todo in claimed:
                 todo.estimated_cost_usd = _compute_todo_estimate(todo)
-        # H15 (W2.5): record a bucket lease per claimed todo so a crashed tick's
-        # work can be reclaimed once the lease expires.
-        if claimed and self._active_session is not None:
-            from general_ludd.event_loop.lease import acquire_leases_batch
-
-            holder = self._lease_owner_id
-            bucket_keys: list[str] = []
-            for todo in claimed:
-                bucket_key = _safe_str(todo, "queue", "core") or "core"
-                todo_id = _safe_str(todo, "todo_id", "") or ""
-                execution_bucket = f"{bucket_key}:{todo_id}"
-                bucket_keys.append(execution_bucket)
-            try:
-                lease_ttl_seconds, _ = self._execution_lease_timing()
-                if isinstance(self._active_session, AsyncSession):
-                    # ``begin_nested()`` flushes pending ORM mutations before it
-                    # opens the savepoint.  Flush the persisted cost estimates
-                    # explicitly, then capture the resulting version fence so a
-                    # lease can never trail its ACTIVE todo by one version.
-                    await self._active_session.flush()
-                todo_versions: dict[str, int] = {}
-                for todo, execution_bucket in zip(claimed, bucket_keys, strict=True):
-                    version = getattr(todo, "version", None)
-                    if isinstance(version, int) and not isinstance(version, bool):
-                        todo_versions[execution_bucket] = version
-                if isinstance(self._active_session, AsyncSession):
-                    async with self._active_session.begin_nested():
-                        await acquire_leases_batch(
-                            self._active_session,
-                            bucket_keys,
-                            holder_id=holder,
-                            ttl_seconds=lease_ttl_seconds,
-                            project_id=project_id,
-                            todo_versions=todo_versions,
-                        )
-                else:
-                    await acquire_leases_batch(
-                        self._active_session,
-                        bucket_keys,
-                        holder_id=holder,
-                        ttl_seconds=lease_ttl_seconds,
-                        project_id=project_id,
-                        todo_versions=todo_versions,
-                    )
-            except Exception as exc:
-                logger.error(
-                    "Batch lease acquisition denied dispatch for %d todos: %s",
-                    len(bucket_keys),
-                    exc,
-                    exc_info=True,
-                )
-                conflicted_ids: list[str] = []
-                for todo in claimed:
-                    todo_id = _safe_str(todo, "todo_id", "") or ""
-                    version = getattr(todo, "version", None)
-                    if not todo_id or not isinstance(version, int):
-                        continue
-                    conflicted_ids.append(todo_id)
-                    try:
-                        await self._todo_repo.transition(
-                            todo_id,
-                            TodoStatus.QUEUED,
-                            version,
-                            project_id=project_id,
-                        )
-                    except Exception:
-                        logger.exception(
-                            "Failed to return lease-conflicted todo %s to QUEUED",
-                            todo_id,
-                        )
-                self._tick_state["lease_conflict_todo_ids"] = conflicted_ids
-                claimed = []
-            else:
-                self._tick_state["execution_lease_todo_ids"] = [
-                    _safe_str(todo, "todo_id", "") or "" for todo in claimed
-                ]
-                self._tick_state["execution_lease_versions"] = {
-                    _safe_str(todo, "todo_id", "") or "": todo.version
-                    for todo in claimed
-                }
+        claimed = await self._acquire_claim_leases(claimed, project_id)
         self._tick_state["claimed_todos"] = claimed
 
     async def _trim_claimed_to_pid_cap(self, claimed: list[Any]) -> list[Any]:
@@ -2422,61 +2277,82 @@ class EventLoop(EventLoopHandlers):
 
         for batch_ids in batches:
             batch_todos = [todo_map[bid] for bid in batch_ids if bid in todo_map]
-            if not batch_todos:
-                continue
-
-            if can_concurrent and len(batch_todos) > 1:
-                # Concurrent: each coroutine opens its own session.
-                logger.info(
-                    "Scheduler batch: %d jobs concurrent (session-per-coroutine, max_concurrent=%d)",
-                    len(batch_todos),
-                    self._dispatch_semaphore._value,
-                )
-                tasks = [asyncio.ensure_future(self._dispatch_with_semaphore(t)) for t in batch_todos]
-                batch_timeout = min(300.0 * len(batch_todos), 1800.0)
-                try:
-                    results = await asyncio.wait_for(
-                        asyncio.gather(*tasks, return_exceptions=True),
-                        timeout=batch_timeout,
-                    )
-                except TimeoutError:
-                    logger.error(
-                        "Concurrent dispatch batch timed out after %.0fs; cancelling %d pending job(s)",
-                        batch_timeout,
-                        sum(1 for t in tasks if not t.done()),
-                    )
-                    for t in tasks:
-                        if not t.done():
-                            t.cancel()
-                    await asyncio.gather(*tasks, return_exceptions=True)
-                    continue
-                for res in results:
-                    if isinstance(res, Exception):
-                        logger.error("Concurrent job dispatch raised: %s", res)
-                    else:
-                        dispatch_count += 1
-            elif can_concurrent and len(batch_todos) == 1:
-                try:
-                    async with self._dispatch_semaphore:
-                        await self._dispatch_execute_job_isolated(batch_todos[0])
-                    dispatch_count += 1
-                except Exception as exc:
-                    logger.error("Job dispatch raised: %s", exc)
-            else:
-                # Sequential fallback (no session_factory).
-                for todo in batch_todos:
-                    try:
-                        await self._dispatch_execute_job(todo)
-                        if self._active_session is not None:
-                            await self._release_completed_execution_lease(
-                                self._active_session,
-                                todo,
-                            )
-                        dispatch_count += 1
-                    except Exception as exc:
-                        logger.error("Sequential job dispatch raised: %s", exc)
+            dispatch_count += await self._dispatch_scheduler_batch(
+                batch_todos,
+                can_concurrent=can_concurrent,
+            )
 
         return dispatch_count
+
+    async def _dispatch_scheduler_batch(
+        self,
+        batch_todos: list[Any],
+        *,
+        can_concurrent: bool,
+    ) -> int:
+        if not batch_todos:
+            return 0
+        if not can_concurrent:
+            return await self._dispatch_sequential_batch(batch_todos)
+        if len(batch_todos) == 1:
+            try:
+                async with self._dispatch_semaphore:
+                    await self._dispatch_execute_job_isolated(batch_todos[0])
+                return 1
+            except Exception as exc:
+                logger.error("Job dispatch raised: %s", exc)
+                return 0
+
+        logger.info(
+            "Scheduler batch: %d jobs concurrent "
+            "(session-per-coroutine, max_concurrent=%d)",
+            len(batch_todos),
+            self._dispatch_semaphore._value,
+        )
+        tasks = [
+            asyncio.ensure_future(self._dispatch_with_semaphore(todo))
+            for todo in batch_todos
+        ]
+        batch_timeout = min(300.0 * len(batch_todos), 1800.0)
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=batch_timeout,
+            )
+        except TimeoutError:
+            logger.error(
+                "Concurrent dispatch batch timed out after %.0fs; "
+                "cancelling %d pending job(s)",
+                batch_timeout,
+                sum(1 for task in tasks if not task.done()),
+            )
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            return 0
+        dispatched = 0
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error("Concurrent job dispatch raised: %s", result)
+            else:
+                dispatched += 1
+        return dispatched
+
+    async def _dispatch_sequential_batch(self, batch_todos: list[Any]) -> int:
+        dispatched = 0
+        for todo in batch_todos:
+            try:
+                await self._dispatch_execute_job(todo)
+                if self._active_session is not None:
+                    await self._release_completed_execution_lease(
+                        self._active_session,
+                        todo,
+                    )
+                dispatched += 1
+            except Exception as exc:
+                logger.error("Sequential job dispatch raised: %s", exc)
+        return dispatched
 
     async def _dispatch_with_semaphore(self, todo: Any) -> None:
         async with self._dispatch_semaphore:
