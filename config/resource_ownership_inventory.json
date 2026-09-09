@@ -1423,7 +1423,7 @@
     },
     {
       "path": "src/general_ludd/infra/azure_containerapp_arm.py",
-      "line": 169,
+      "line": 170,
       "column": 33,
       "kind": "client",
       "owner": "_BoundedARMReader.__init__",
@@ -1434,13 +1434,13 @@
     },
     {
       "path": "src/general_ludd/infra/azure_containerapp_terraform_executor.py",
-      "line": 262,
-      "column": 9,
+      "line": 406,
+      "column": 27,
       "kind": "temp-artifact",
       "owner": "_diagnostic_output",
-      "acquisition": "tempfile.TemporaryFile(mode='w+t', encoding='utf-8')",
-      "teardown": "context-manager-exit",
-      "source_hash": "e00e5296efcae9e208fc7afb4ed1fbae0a293214ba236640823806cfce4c04ca",
+      "acquisition": "tempfile.mkstemp(prefix='.gludd-provider-', suffix='.log', dir=directory)",
+      "teardown": "path.unlink(missing_ok=True)",
+      "source_hash": "8114a5037025cad949a6b0f642f01ce3b19525b12919d7f688ceb872f6e8ac21",
       "owned": true
     },
     {
