@@ -1483,6 +1483,9 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     assert "config/coverage_azure_containerapp.ini" in recipe
     assert "tests/unit/test_azure_accelerator_openbao.py" in recipe
     assert "tests/unit/test_azure_containerapp_environment_lifecycle.py" in recipe
+    assert "tests/unit/test_azure_containerapp_environment_document.py" in recipe
+    assert "tests/unit/test_azure_containerapp_environment_operations.py" in recipe
+    assert "tests/unit/test_azure_containerapp_environment_retention.py" in recipe
     assert "tests/unit/test_azure_containerapp_environment_make_runtime.py" in recipe
     assert "tests/unit/test_azure_containerapp_environment_terraform.py" in recipe
     assert "tests/unit/test_azure_idle_retention.py" in recipe
@@ -1521,6 +1524,9 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     assert "azure/accelerator_credential_source.py" in coverage_config
     assert "azure/accelerator_role.py" in coverage_config
     assert "azure_containerapp_environment_lifecycle.py" in coverage_config
+    assert "azure_containerapp_environment_document.py" in coverage_config
+    assert "azure_containerapp_environment_operations.py" in coverage_config
+    assert "azure_containerapp_environment_retention.py" in coverage_config
     assert "azure_containerapp_environment_make_runtime.py" in coverage_config
     assert "azure_containerapp_owned_candidate.py" in coverage_config
     assert "azure_containerapp_owned_lifecycle.py" in coverage_config

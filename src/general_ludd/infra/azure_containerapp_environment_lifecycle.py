@@ -6,11 +6,27 @@ precondition and postcondition without becoming a second infrastructure writer.
 
 from __future__ import annotations
 
-import re
-from collections.abc import Callable
-from dataclasses import replace
-from datetime import UTC, datetime
-
+from general_ludd.infra.azure_containerapp_environment_operations import (
+    EnvironmentTraceSink as _TraceSink,
+)
+from general_ludd.infra.azure_containerapp_environment_operations import (
+    discard_environment_trace as _discard_trace,
+)
+from general_ludd.infra.azure_containerapp_environment_operations import (
+    emit_environment_trace as _emit,
+)
+from general_ludd.infra.azure_containerapp_environment_operations import (
+    merged_environment_policy as _merged_policy,
+)
+from general_ludd.infra.azure_containerapp_environment_operations import (
+    read_environment as _read_environment,
+)
+from general_ludd.infra.azure_containerapp_environment_operations import (
+    validate_environment_boundaries as _validated_boundaries,
+)
+from general_ludd.infra.azure_containerapp_environment_retention import (
+    release_azure_containerapp_environment,
+)
 from general_ludd.infra.azure_containerapp_environment_types import (
     AzureContainerAppEnvironmentRuntime,
     AzureEnvironmentLifecycleError,
@@ -25,85 +41,6 @@ from general_ludd.infra.azure_containerapp_environment_validation import (
     audit_environment_plan,
     validated_environment_profiles,
 )
-from general_ludd.infra.azure_idle_retention import (
-    AzureIdleRetentionPlan,
-    AzureRetentionDisposition,
-    AzureRetentionLayerKind,
-)
-
-_APP_NAME_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?")
-_TraceSink = Callable[[EnvironmentLifecycleTrace], None]
-
-
-def _discard_trace(_trace: EnvironmentLifecycleTrace) -> None:
-    return None
-
-
-def _emit(
-    sink: _TraceSink,
-    event: EnvironmentLifecycleEvent,
-    policy: AzureEnvironmentLifecyclePolicy,
-    *,
-    active_app_count: int = 0,
-    retention_plan: AzureIdleRetentionPlan | None = None,
-    retention_seconds_remaining: int = 0,
-    failure_reason: str | None = None,
-) -> None:
-    try:
-        sink(
-            EnvironmentLifecycleTrace(
-                event=event,
-                operation_digest=policy.operation_digest,
-                profile_count=len(policy.profiles),
-                active_app_count=active_app_count,
-                retention_plan_digest=(
-                    None if retention_plan is None else retention_plan.plan_digest
-                ),
-                retention_seconds_remaining=retention_seconds_remaining,
-                retention_hourly_cost_microusd=(
-                    0
-                    if retention_plan is None
-                    else retention_plan.hourly_cost_microusd
-                ),
-                failure_reason=failure_reason,
-            )
-        )
-    except Exception:
-        raise AzureEnvironmentLifecycleError("trace") from None
-
-
-def _validated_boundaries(
-    policy: AzureEnvironmentLifecyclePolicy,
-    runtime: AzureContainerAppEnvironmentRuntime,
-    trace_sink: _TraceSink,
-) -> None:
-    if not isinstance(policy, AzureEnvironmentLifecyclePolicy):
-        raise ValueError("policy must be AzureEnvironmentLifecyclePolicy")
-    if not isinstance(runtime, AzureContainerAppEnvironmentRuntime):
-        raise ValueError("runtime must implement AzureContainerAppEnvironmentRuntime")
-    if not callable(trace_sink):
-        raise ValueError("trace_sink must be callable")
-
-
-def _read_environment(
-    runtime: AzureContainerAppEnvironmentRuntime,
-    policy: AzureEnvironmentLifecyclePolicy,
-    *,
-    expect_absent: bool,
-    phase: str,
-) -> object | None:
-    try:
-        return runtime.read_environment(policy, expect_absent=expect_absent)
-    except Exception:
-        raise AzureEnvironmentLifecycleError(phase) from None
-
-
-def _merged_policy(
-    policy: AzureEnvironmentLifecyclePolicy,
-    existing_profiles: tuple[AzureEnvironmentProfile, ...],
-) -> AzureEnvironmentLifecyclePolicy:
-    profiles = tuple(sorted(set(existing_profiles) | set(policy.profiles)))
-    return replace(policy, profiles=profiles)
 
 
 def _recover_new_environment(
@@ -234,170 +171,6 @@ def ensure_azure_containerapp_environment(
     return AzureEnvironmentLifecycleResult(
         disposition=disposition,
         environment_id=effective_policy.environment_id,
-        effective_profiles=effective_policy.profiles,
-    )
-
-
-def _validated_app_inventory(
-    inventory: object,
-    policy: AzureEnvironmentLifecyclePolicy,
-) -> tuple[str, ...]:
-    if not isinstance(inventory, tuple) or not all(
-        isinstance(resource_id, str) for resource_id in inventory
-    ):
-        raise AzureEnvironmentLifecycleError("inventory")
-    prefix = f"{policy.resource_group_id}/providers/Microsoft.App/containerApps/"
-    folded_prefix = prefix.casefold()
-    for resource_id in inventory:
-        if not resource_id.casefold().startswith(folded_prefix):
-            raise AzureEnvironmentLifecycleError("inventory")
-        if _APP_NAME_PATTERN.fullmatch(resource_id[len(prefix) :]) is None:
-            raise AzureEnvironmentLifecycleError("inventory")
-    return inventory
-
-
-def _retained_result(
-    policy: AzureEnvironmentLifecyclePolicy,
-    *,
-    active_app_count: int = 0,
-) -> AzureEnvironmentLifecycleResult:
-    return AzureEnvironmentLifecycleResult(
-        disposition=EnvironmentLifecycleDisposition.RETAINED,
-        environment_id=policy.environment_id,
-        effective_profiles=policy.profiles,
-        active_app_count=active_app_count,
-    )
-
-
-def _retention_deadline(
-    policy: AzureEnvironmentLifecyclePolicy,
-    retention_plan: AzureIdleRetentionPlan | None,
-    now: datetime | None,
-) -> tuple[AzureIdleRetentionPlan | None, datetime]:
-    current = datetime.now(UTC) if now is None else now
-    if current.tzinfo is None or current.utcoffset() is None:
-        raise AzureEnvironmentLifecycleError("retention")
-    current = current.astimezone(UTC)
-    if retention_plan is None:
-        return None, current
-    if (
-        not isinstance(retention_plan, AzureIdleRetentionPlan)
-        or retention_plan.scope_digest != policy.operation_digest
-    ):
-        raise AzureEnvironmentLifecycleError("retention")
-    return retention_plan, current
-
-
-def _retains_environment(
-    plan: AzureIdleRetentionPlan,
-) -> bool:
-    try:
-        decision = plan.decision_for(AzureRetentionLayerKind.MANAGED_ENVIRONMENT)
-    except KeyError:
-        return False
-    return decision.disposition is AzureRetentionDisposition.RETAIN
-
-
-def release_azure_containerapp_environment(
-    policy: AzureEnvironmentLifecyclePolicy,
-    *,
-    runtime: AzureContainerAppEnvironmentRuntime,
-    trace_sink: _TraceSink = _discard_trace,
-    retention_plan: AzureIdleRetentionPlan | None = None,
-    now: datetime | None = None,
-) -> AzureEnvironmentLifecycleResult:
-    """Destroy or boundedly retain an idle environment and prove the outcome."""
-    _validated_boundaries(policy, runtime, trace_sink)
-    authorized_retention, current = _retention_deadline(
-        policy,
-        retention_plan,
-        now,
-    )
-    _emit(trace_sink, EnvironmentLifecycleEvent.RELEASE_STARTED, policy)
-    existing = _read_environment(
-        runtime,
-        policy,
-        expect_absent=False,
-        phase="inspection",
-    )
-    if existing is None:
-        _emit(trace_sink, EnvironmentLifecycleEvent.ABSENCE_VERIFIED, policy)
-        return AzureEnvironmentLifecycleResult(
-            disposition=EnvironmentLifecycleDisposition.ABSENT,
-            environment_id=policy.environment_id,
-            effective_profiles=policy.profiles,
-        )
-    profiles = validated_environment_profiles(
-        existing,
-        policy,
-        require_desired_profiles=False,
-        require_current_tags=False,
-    )
-    effective_policy = _merged_policy(policy, profiles)
-    _emit(trace_sink, EnvironmentLifecycleEvent.OWNERSHIP_VERIFIED, effective_policy)
-    try:
-        apps = _validated_app_inventory(
-            runtime.list_environment_apps(effective_policy),
-            effective_policy,
-        )
-    except AzureEnvironmentLifecycleError:
-        raise
-    except Exception:
-        raise AzureEnvironmentLifecycleError("inventory") from None
-    _emit(
-        trace_sink,
-        EnvironmentLifecycleEvent.APP_INVENTORY_VERIFIED,
-        effective_policy,
-        active_app_count=len(apps),
-    )
-    if apps:
-        _emit(
-            trace_sink,
-            EnvironmentLifecycleEvent.ENVIRONMENT_RETAINED,
-            effective_policy,
-            active_app_count=len(apps),
-        )
-        return _retained_result(effective_policy, active_app_count=len(apps))
-    if authorized_retention is not None and _retains_environment(
-        authorized_retention
-    ):
-        remaining = int(
-            (authorized_retention.reconcile_at - current).total_seconds()
-        )
-        if remaining > 0:
-            _emit(
-                trace_sink,
-                EnvironmentLifecycleEvent.ENVIRONMENT_RETAINED,
-                effective_policy,
-                retention_plan=authorized_retention,
-                retention_seconds_remaining=remaining,
-            )
-            return _retained_result(effective_policy)
-        _emit(
-            trace_sink,
-            EnvironmentLifecycleEvent.RETENTION_EXPIRED,
-            effective_policy,
-            retention_plan=authorized_retention,
-        )
-
-    _emit(trace_sink, EnvironmentLifecycleEvent.DESTROY_STARTED, effective_policy)
-    try:
-        runtime.destroy(effective_policy)
-    except Exception:
-        raise AzureEnvironmentLifecycleError("destroy") from None
-    _emit(trace_sink, EnvironmentLifecycleEvent.DESTROY_SUCCEEDED, effective_policy)
-    remaining_environment = _read_environment(
-        runtime,
-        effective_policy,
-        expect_absent=True,
-        phase="absence",
-    )
-    if remaining_environment is not None:
-        raise AzureEnvironmentLifecycleError("absence")
-    _emit(trace_sink, EnvironmentLifecycleEvent.ABSENCE_VERIFIED, effective_policy)
-    return AzureEnvironmentLifecycleResult(
-        disposition=EnvironmentLifecycleDisposition.DESTROYED,
-        environment_id=policy.environment_id,
         effective_profiles=effective_policy.profiles,
     )
 
