@@ -21,6 +21,12 @@ from general_ludd.infra.azure_retail_pricing import AzureRetailMeter
 
 _MONTHLY_HOURS = 730
 _DIGEST_PATTERN = re.compile(r"[0-9a-f]{64}")
+_CONTAINER_APPS_BILLING_CONTRACT_OBSERVED_AT = datetime(
+    2025,
+    12,
+    9,
+    tzinfo=UTC,
+)
 
 
 class AzureRetentionPreset(StrEnum):
@@ -681,6 +687,63 @@ def container_apps_consumption_layers(
     return environment, app
 
 
+def plan_container_apps_idle_retention(
+    *,
+    policy: AzureIdleRetentionPolicy,
+    scope_digest: str,
+    now: datetime,
+    environment_latency_seconds: float,
+    app_latency_seconds: float | None,
+    min_replicas: int,
+    activation_blocked_when_idle: bool,
+    has_dedicated_profiles: bool,
+    has_private_endpoint: bool,
+    has_planned_maintenance: bool,
+    has_paid_logging: bool,
+    runnable_todo_count: int,
+    expected_next_demand_seconds: int | None,
+    trace_sink: _TraceSink | None = None,
+) -> AzureIdleRetentionPlan:
+    """Plan the reviewed Container Apps retained-state frontier from timings."""
+    current = _aware_utc("now", now)
+    environment_latency = AzureProvisioningLatencyEvidence(
+        p50_seconds=environment_latency_seconds,
+        p95_seconds=environment_latency_seconds,
+        sample_count=1,
+        observed_at=current,
+    )
+    app_latency = (
+        None
+        if app_latency_seconds is None
+        else AzureProvisioningLatencyEvidence(
+            p50_seconds=app_latency_seconds,
+            p95_seconds=app_latency_seconds,
+            sample_count=1,
+            observed_at=current,
+        )
+    )
+    layers = container_apps_consumption_layers(
+        observed_at=_CONTAINER_APPS_BILLING_CONTRACT_OBSERVED_AT,
+        environment_latency=environment_latency,
+        app_latency=app_latency or environment_latency,
+        min_replicas=min_replicas,
+        activation_blocked_when_idle=activation_blocked_when_idle,
+        has_dedicated_profiles=has_dedicated_profiles,
+        has_private_endpoint=has_private_endpoint,
+        has_planned_maintenance=has_planned_maintenance,
+        has_paid_logging=has_paid_logging,
+    )
+    return plan_azure_idle_retention(
+        layers if app_latency is not None else layers[:1],
+        policy=policy,
+        scope_digest=scope_digest,
+        now=current,
+        runnable_todo_count=runnable_todo_count,
+        expected_next_demand_seconds=expected_next_demand_seconds,
+        trace_sink=trace_sink,
+    )
+
+
 __all__ = (
     "AzureIdleCostEvidence",
     "AzureIdleRetentionPlan",
@@ -698,4 +761,5 @@ __all__ = (
     "container_apps_consumption_layers",
     "idle_cost_evidence_from_retail_meters",
     "plan_azure_idle_retention",
+    "plan_container_apps_idle_retention",
 )

@@ -38,6 +38,8 @@ S83.157 control-plane watchdog evidence: exact-head candidate `b4ffa4291` cleare
 
 S83.157 least-privilege autonomous-role evidence: three failing-first suites rejected the historical ten-action role and named exactly five missing Container Apps operations; a further failing-first runtime bootstrap suite required only group read/write. Both checked-in Azure role formats, the NUL-argv renderer, and the Terraform onboarding role now agree on 17 exact-resource-group-scoped actions: only owned environment/app lifecycle, their documented long-running-operation reads, quota/profile discovery, `Microsoft.Insights/metrics/read`, and group read/write. The same accelerator credential performs the owner-tagged group acquisition and OpenTofu lifecycle, while its OpenBao lease remains time-bounded and downstream components never receive it. Group deletion, provider, IAM, network, registry, VM, logging, secret, and Cognitive Services administration remain forbidden. The role/runtime regression passes 238/238, both role formats validate with 0 errors/warnings, all 34 action occurrences cross-reference successfully, and the complete Azure profile passes 766/766 at 92% aggregate with all 37 files above 75%. Operator documentation records Azure CLI #24753, current Container Apps #1511/#1646/#1682/#1746/#1763, and AzAPI #856/#875 implications. Existing-role update and paid proof remain pending.
 
+S83.157 retained-state evidence: the general planner exposes `always_destroy`, `zero_cost_only`, `balanced`, and `latency_first` postures over independently priced dependency-safe layers, and rejects missing/stale price or latency evidence, retained replicas, activation-capable public apps, and nonempty durable work. The autonomous candidate and bounded live proof share one planner; the latter can now retain only an empty verified Consumption environment after either success or preflight failure, while app/GPU teardown remains mandatory. The CLI preserves fixed safe failure detail and emits `AZURE_CONTAINERAPP_RETENTION_TRACE`. Failing-first contracts and the focused 111-test suite are green; the identical local/GHA Azure profile passes 869/869 at 92% aggregate branch coverage with all 44 files above 75%; Make contract, behavioral example, duplicate/help validation, YAML, Markdown, scoped Ruff, and strict mypy are green. Current Microsoft billing/storage guidance and Container Apps #1800 plus vLLM #48193/#48031 are documented in `docs/azure-idle-retention.md`; a retained live Azure retry and paid inference remain pending.
+
 S83.157 exact changed-surface registration (from the active gate):
 
 - `infra/terraform/modules/azure-container-app-vllm/main.tf`
@@ -60,6 +62,8 @@ S83.157 exact changed-surface registration (from the active gate):
 - `config/opa/iam_policy_test.rego`
 - `docs/features/SELF_IMPROVEMENT_MIXED_MODELS.md`
 - `docs/azure-iam-setup.md`
+- `docs/azure-idle-retention.md`
+- `config/resource_ownership_inventory.json`
 - `infra/terraform/modules/onboard-iam-azure/main.tf`
 - `infra/terraform/modules/azure-container-app-vllm/outputs.tf`
 - `infra/terraform/modules/azure-container-app-vllm/variables.tf`
@@ -87,6 +91,7 @@ S83.157 exact changed-surface registration (from the active gate):
 - `src/general_ludd/infra/azure_containerapp_environment_materializer.py`
 - `src/general_ludd/infra/azure_containerapp_environment_types.py`
 - `src/general_ludd/infra/azure_containerapp_environment_validation.py`
+- `src/general_ludd/infra/azure_idle_retention.py`
 - `src/general_ludd/infra/azure_containerapp_gpu.py`
 - `src/general_ludd/infra/azure_containerapp_live_proof.py`
 - `src/general_ludd/infra/azure_containerapp_live_trace.py`
@@ -137,6 +142,9 @@ S83.157 exact changed-surface registration (from the active gate):
 - `tests/unit/test_azure_containerapp_terraform_phase.py`
 - `tests/unit/test_azure_containerapp_topology.py`
 - `tests/unit/test_azure_containerapp_tfvars.py`
+- `tests/unit/test_azure_idle_retention.py`
+- `tests/unit/test_azure_containerapp_preflight_usage.py`
+- `tests/unit/test_event_loop_lease_validation.py`
 - `tests/unit/test_deployment_telemetry.py`
 - `tests/unit/test_iam_policy_deep.py`
 - `tests/unit/test_iam_roles.py`

@@ -33,9 +33,7 @@ from general_ludd.infra.azure_containerapp_owned_lifecycle import (
 from general_ludd.infra.azure_idle_retention import (
     AzureIdleRetentionPlan,
     AzureIdleRetentionPolicy,
-    AzureProvisioningLatencyEvidence,
-    container_apps_consumption_layers,
-    plan_azure_idle_retention,
+    plan_container_apps_idle_retention,
 )
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
@@ -44,14 +42,6 @@ from general_ludd.self_improve.azure_backend import (
 from general_ludd.self_improve.model_candidates import AzureContainerAppCandidateIdentity
 
 _PROTOCOL = "gludd-owned-azure-containerapp-candidate-v1"
-_CONTAINER_APPS_BILLING_CONTRACT_OBSERVED_AT = datetime(
-    2025,
-    12,
-    9,
-    tzinfo=UTC,
-)
-
-
 @runtime_checkable
 class _Backend(Protocol):
     @property
@@ -352,39 +342,22 @@ class AzureContainerAppOwnedCandidateFactory:
         if (
             self._idle_retention_policy is None
             or self._environment_latency_seconds is None
-            or self._app_latency_seconds is None
         ):
             return None
         try:
             current = self._now()
-            environment_latency = AzureProvisioningLatencyEvidence(
-                p50_seconds=self._environment_latency_seconds,
-                p95_seconds=self._environment_latency_seconds,
-                sample_count=1,
-                observed_at=current,
-            )
-            app_latency = AzureProvisioningLatencyEvidence(
-                p50_seconds=self._app_latency_seconds,
-                p95_seconds=self._app_latency_seconds,
-                sample_count=1,
-                observed_at=current,
-            )
-            layers = container_apps_consumption_layers(
-                observed_at=_CONTAINER_APPS_BILLING_CONTRACT_OBSERVED_AT,
-                environment_latency=environment_latency,
-                app_latency=app_latency,
+            return plan_container_apps_idle_retention(
+                policy=self._idle_retention_policy,
+                scope_digest=self._environment_policy.operation_digest,
+                now=current,
+                environment_latency_seconds=self._environment_latency_seconds,
+                app_latency_seconds=self._app_latency_seconds,
                 min_replicas=self._app_policy.min_replicas,
                 activation_blocked_when_idle=False,
                 has_dedicated_profiles=False,
                 has_private_endpoint=False,
                 has_planned_maintenance=False,
                 has_paid_logging=False,
-            )
-            return plan_azure_idle_retention(
-                layers,
-                policy=self._idle_retention_policy,
-                scope_digest=self._environment_policy.operation_digest,
-                now=current,
                 runnable_todo_count=0,
                 expected_next_demand_seconds=self._expected_next_demand_seconds,
             )

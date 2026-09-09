@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-09 — (resolved locally) Azure retry diagnostics discarded safe failure detail and warm control-plane state
+
+- **What happened**: A bounded live Azure proof spent 11-16 minutes creating its managed environment, stopped in the read-only app preflight, then destroyed the environment. The terminal result exposed only `reason=preflight`; its already-classified safe detail and earlier streamed trace were not retained, so the next diagnosis required another cold environment cycle.
+- **Root cause**: The composite live-proof CLI dropped `AzureContainerAppLiveProofError.detail`, and its owned-environment wrapper always selected destruction even though the autonomous candidate path already had an evidence-priced idle-retention planner.
+- **Fix applied**: The CLI now prints only the fixed whitelisted failure detail, emits a separate content-free retention trace, and accepts an explicit retention preset/window. The composite lifecycle measures environment provisioning and can retain only an empty, owned, current-price-evidenced Consumption environment; it still destroys and independently verifies the public app and every GPU replica. Missing/stale evidence, clock/trace errors, paid features, active apps, or `always_destroy` all fall back to verified destruction.
+- **Evidence**: The failing-first lifecycle/CLI contracts reproduced the missing retention arguments, trace, and detail. The focused suite passes 111/111; the local/GHA Azure profile passes 869/869 at 92% aggregate branch coverage with all 44 files above 75%; Make contract, duplicate-target, help, Ruff, strict mypy, YAML, and Markdown checks are green.
+- **Practitioner evidence**: Container Apps issue #1800 reports roughly 47 seconds of execution for 0.4 seconds of work despite a 117 ms pull, while vLLM roadmap #48193 separates image, model, compile, and first-correct-token boundaries. `docs/azure-idle-retention.md` records these findings and the resulting retained-state strategy ladder.
+- **Lesson**: A failed deployment is useful calibration evidence only when its fixed cause and phase timings survive. Retry optimization must retain independently priced non-compute layers, never treat a surviving GPU replica as an idle cache.
+
 ### 2026-09-08 — (resolved locally) EventLoop cancellation abandoned blocking runners
 
 - **What happened**: EventLoop held no heartbeat while dispatched work ran, and cancelling an asyncio task waiting on `to_thread()` abandoned the underlying Ansible call. The durable reaper could request cancellation, but no live callback consumed that request or supplied exact terminal proof, so safe recovery could remain stuck indefinitely.

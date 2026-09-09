@@ -24,6 +24,7 @@ from general_ludd.infra.azure_idle_retention import (
     container_apps_consumption_layers,
     idle_cost_evidence_from_retail_meters,
     plan_azure_idle_retention,
+    plan_container_apps_idle_retention,
 )
 from general_ludd.infra.azure_retail_pricing import AzureRetailMeter
 
@@ -167,6 +168,69 @@ def test_live_endpoint_is_destroyed_while_free_environment_is_retained() -> None
     app_decision = plan.decision_for(AzureRetentionLayerKind.CONTAINER_APP)
     assert app_decision.disposition is AzureRetentionDisposition.DESTROY
     assert app_decision.reason is AzureRetentionReason.IDLE_ACTIVATION_POSSIBLE
+
+
+def test_container_apps_helper_builds_one_observable_environment_only_plan() -> None:
+    traces: list[AzureRetentionTrace] = []
+
+    plan = plan_container_apps_idle_retention(
+        policy=_policy(
+            preset=AzureRetentionPreset.ZERO_COST_ONLY,
+            max_idle_hourly_cost_microusd=0,
+            max_idle_monthly_cost_microusd=0,
+            max_retention_cost_microusd=0,
+            max_cost_per_saved_hour_microusd=0,
+            max_price_age_seconds=31_536_000,
+        ),
+        scope_digest="a" * 64,
+        now=NOW,
+        environment_latency_seconds=964.0,
+        app_latency_seconds=None,
+        min_replicas=1,
+        activation_blocked_when_idle=False,
+        has_dedicated_profiles=False,
+        has_private_endpoint=False,
+        has_planned_maintenance=False,
+        has_paid_logging=False,
+        runnable_todo_count=0,
+        expected_next_demand_seconds=1_800,
+        trace_sink=traces.append,
+    )
+
+    assert plan.retained_layers == (AzureRetentionLayerKind.MANAGED_ENVIRONMENT,)
+    assert plan.destroyed_layers == ()
+    assert plan.retention_seconds == 1_800
+    assert plan.hourly_cost_microusd == 0
+    assert [trace.event for trace in traces] == [
+        AzureRetentionTraceEvent.EVALUATION_STARTED,
+        AzureRetentionTraceEvent.PLAN_SELECTED,
+    ]
+
+
+def test_container_apps_helper_keeps_public_app_out_of_retained_frontier() -> None:
+    plan = plan_container_apps_idle_retention(
+        policy=_policy(
+            preset=AzureRetentionPreset.LATENCY_FIRST,
+            max_price_age_seconds=31_536_000,
+        ),
+        scope_digest="a" * 64,
+        now=NOW,
+        environment_latency_seconds=964.0,
+        app_latency_seconds=240.0,
+        min_replicas=0,
+        activation_blocked_when_idle=False,
+        has_dedicated_profiles=False,
+        has_private_endpoint=False,
+        has_planned_maintenance=False,
+        has_paid_logging=False,
+        runnable_todo_count=0,
+        expected_next_demand_seconds=1_800,
+    )
+
+    assert plan.retained_layers == (AzureRetentionLayerKind.MANAGED_ENVIRONMENT,)
+    app = plan.decision_for(AzureRetentionLayerKind.CONTAINER_APP)
+    assert app.disposition is AzureRetentionDisposition.DESTROY
+    assert app.reason is AzureRetentionReason.IDLE_ACTIVATION_POSSIBLE
 
 
 @pytest.mark.parametrize(
@@ -659,9 +723,13 @@ def test_operator_guide_documents_strategies_costs_and_practitioner_reports() ->
         "github.com/microsoft/azure-container-apps/issues/388",
         "github.com/microsoft/azure-container-apps/issues/1511",
         "github.com/microsoft/azure-container-apps/issues/1628",
+        "github.com/microsoft/azure-container-apps/issues/1800",
+        "learn.microsoft.com/en-us/azure/container-apps/sessions",
     ):
         assert source in guide
     assert "964 seconds" in guide
     assert "18 seconds" in guide
     assert "unknown or stale" in guide.casefold()
     assert "idle_retention:" in guide
+    assert "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET=zero_cost_only" in guide
+    assert "AZURE_CONTAINERAPP_RETENTION_TRACE" in guide

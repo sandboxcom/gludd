@@ -12,6 +12,7 @@ from general_ludd.infra import azure_containerapp_owned_lifecycle as owned_lifec
 from general_ludd.infra.azure_containerapp_environment_lifecycle import (
     AzureEnvironmentLifecyclePolicy,
     AzureEnvironmentProfile,
+    EnvironmentLifecycleEvent,
     EnvironmentLifecycleTrace,
 )
 from general_ludd.infra.azure_containerapp_live_proof import (
@@ -35,6 +36,8 @@ from general_ludd.infra.azure_containerapp_owned_lifecycle import (
 from general_ludd.infra.azure_idle_retention import (
     AzureIdleRetentionPolicy,
     AzureRetentionPreset,
+    AzureRetentionTrace,
+    AzureRetentionTraceEvent,
 )
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
@@ -697,6 +700,106 @@ def test_owned_lifecycle_creates_environment_runs_work_then_destroys_everything(
     assert environment_traces
     assert app_traces
     assert SECRET not in repr(environment_traces + app_traces)
+
+
+def test_owned_lifecycle_can_retain_only_the_empty_zero_cost_environment(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    app_policy = _app_policy()
+    environment_policy = _environment_policy(app_policy)
+    environment_runtime = _EnvironmentRuntime(environment_policy, events)
+    environment_traces: list[EnvironmentLifecycleTrace] = []
+    retention_traces: list[AzureRetentionTrace] = []
+    ticks = iter((10.0, 974.0))
+
+    result = run_owned_azure_containerapp_live_proof(
+        app_policy,
+        environment_policy=environment_policy,
+        environment_runtime=environment_runtime,
+        app_runtime=_AppRuntime(app_policy, events),
+        approved_prompt=_approved(tmp_path),
+        backend_factory=_Backend,
+        environment_trace_sink=environment_traces.append,
+        idle_retention_policy=_idle_retention_policy(),
+        expected_next_demand_seconds=1_800,
+        now=lambda: NOW,
+        monotonic=lambda: next(ticks),
+        retention_trace_sink=retention_traces.append,
+    )
+
+    assert result.cleanup_verified is True
+    assert environment_runtime.document is not None
+    assert "environment:destroy" not in events
+    retained = [
+        trace
+        for trace in environment_traces
+        if trace.event is EnvironmentLifecycleEvent.ENVIRONMENT_RETAINED
+    ]
+    assert len(retained) == 1
+    assert retained[0].retention_seconds_remaining == 1_800
+    assert retained[0].retention_hourly_cost_microusd == 0
+    assert [trace.event for trace in retention_traces] == [
+        AzureRetentionTraceEvent.EVALUATION_STARTED,
+        AzureRetentionTraceEvent.PLAN_SELECTED,
+    ]
+
+
+def test_preflight_failure_can_preserve_safe_environment_for_bounded_retry(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    app_policy = _app_policy()
+    environment_policy = _environment_policy(app_policy)
+    environment_runtime = _EnvironmentRuntime(environment_policy, events)
+    ticks = iter((10.0, 974.0))
+
+    with pytest.raises(AzureContainerAppLiveProofError) as captured:
+        run_owned_azure_containerapp_live_proof(
+            app_policy,
+            environment_policy=environment_policy,
+            environment_runtime=environment_runtime,
+            app_runtime=_AppRuntime(app_policy, events, fail_at="preflight"),
+            approved_prompt=_approved(tmp_path),
+            backend_factory=_Backend,
+            idle_retention_policy=_idle_retention_policy(),
+            expected_next_demand_seconds=1_800,
+            now=lambda: NOW,
+            monotonic=lambda: next(ticks),
+        )
+
+    assert captured.value.failure is AzureContainerAppLiveProofFailure.PREFLIGHT
+    assert environment_runtime.document is not None
+    assert "environment:destroy" not in events
+
+
+def test_retention_planning_failure_falls_back_to_verified_destroy(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    app_policy = _app_policy()
+    environment_policy = _environment_policy(app_policy)
+    environment_runtime = _EnvironmentRuntime(environment_policy, events)
+    ticks = iter((10.0, 974.0))
+
+    def broken_now() -> datetime:
+        raise RuntimeError(SECRET)
+
+    result = run_owned_azure_containerapp_live_proof(
+        app_policy,
+        environment_policy=environment_policy,
+        environment_runtime=environment_runtime,
+        app_runtime=_AppRuntime(app_policy, events),
+        approved_prompt=_approved(tmp_path),
+        backend_factory=_Backend,
+        idle_retention_policy=_idle_retention_policy(),
+        now=broken_now,
+        monotonic=lambda: next(ticks),
+    )
+
+    assert result.cleanup_verified is True
+    assert environment_runtime.document is None
+    assert events[-2:] == ["environment:destroy", "environment:read"]
 
 
 @pytest.mark.parametrize("app_failure", ["plan", "preflight", "apply"])

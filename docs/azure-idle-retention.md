@@ -22,6 +22,40 @@ and it never retains idle compute replicas in that state.
 | `balanced` | Maximize measured p95 provisioning time saved while enforcing hourly, monthly, retention-horizon, and cost-per-saved-hour ceilings. | Regular bursts with a small explicit idle budget. |
 | `latency_first` | Maximize measured p95 provisioning time saved under the same hard cost ceilings, without the balanced value-rate filter. | Latency-sensitive repeated work with a firm budget. |
 
+## Deployment strategy ladder
+
+Gludd uses the cheapest retained-state frontier that satisfies the requested
+latency objective. In order, the practical choices are:
+
+1. Retain only the resource group and verified Consumption managed environment.
+   This removes the measured 11-16 minute environment creation phase while
+   retaining no app or replica. It is the live runner's `zero_cost_only` mode.
+2. Retain an inert app definition at `minReplicas: 0` only when an authenticated,
+   internal activation boundary proves that arbitrary requests cannot wake it.
+   The current public proof cannot establish that fact, so it destroys the app.
+3. Keep image layers in a regional ACR or artifact cache when the measured saved
+   pull time exceeds the registry's exact storage and service-tier price. Azure
+   documents that the first pull still populates the cache and new tags are not
+   fetched automatically, so Gludd must pin and measure image digests.
+4. Persist model weights and compile/JIT caches separately. Azure Files can be
+   shared across revisions and apps, while vLLM documents that its Hugging Face
+   weights cache and `VLLM_CACHE_ROOT` compile cache are distinct. Cache identity
+   must include every invalidation dimension before reuse is permitted.
+5. Predictively create the app shortly before a due todo rather than keeping a
+   GPU replica idle. Microsoft states that serverless GPU replicas are always
+   billed at the active rate; Gludd therefore does not retain a replica when the
+   durable runnable queue is empty.
+6. Consider a warm dedicated fleet only for sustained utilization where measured
+   throughput plus a firm budget beats serverless cold starts. Dedicated profiles
+   and custom-container Dynamic Sessions have baseline management/allocated-pool
+   costs, so neither can enter the zero-cost frontier.
+
+Container Apps Jobs are useful for isolated batch executions, but are not an
+automatic cold-start optimization. A practitioner report in issue #1800 measured
+roughly 47 seconds end to end for about 0.4 seconds of work even with a 117 ms
+image pull. Gludd consequently compares complete first-correct-token latency,
+not only image-pull time, before changing deployment architecture.
+
 The current autonomous Container Apps integration supplies only the documented
 zero-cost Consumption shape to this planner. It destroys the externally
 reachable app because scale-to-zero does not prevent a request from activating
@@ -103,6 +137,18 @@ running through this mechanism. Use `always_destroy` when the resource must not
 remain present between invocations. Paid-layer retention remains fail-closed
 until Gludd's durable deployment registry owns its expiry cleanup.
 
+The bounded live diagnostic exposes the same safe retry option. All Make
+variables remain explicit; select
+`AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET=zero_cost_only` and set
+`AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS` to the desired reevaluation
+window. `always_destroy` remains the hermetic/GHA default. The app is still
+destroyed and independently proven absent on success or failure. Planner events
+are emitted as `AZURE_CONTAINERAPP_RETENTION_TRACE`; environment lifecycle events
+carry the selected plan digest, remaining seconds, and hourly micro-dollar cost.
+For a long live run, invoke the target through the existing `make run-watched`
+target with an explicit `LOG` path so every heartbeat and fixed failure detail is
+both streamed and retained for diagnosis.
+
 ## Azure billing boundaries
 
 Microsoft documents that Consumption workloads can scale to zero and incur no
@@ -121,6 +167,7 @@ free:
 - [Container Registry retention policy](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-retention-policy)
 - [Container Registry artifact cache](https://learn.microsoft.com/en-us/azure/container-registry/artifact-cache-overview)
 - [Azure Files storage mounts for Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/storage-mounts)
+- [Container Apps Dynamic Sessions](https://learn.microsoft.com/en-us/azure/container-apps/sessions)
 - [Container Apps revision state API](https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/container-apps-revisions/get-revision?view=rest-resource-manager-containerapps-2026-01-01)
 - [vLLM persistent model and compile caches](https://github.com/vllm-project/vllm/blob/main/docs/deployment/docker.md)
 
@@ -147,6 +194,11 @@ vLLM project separately records a reproducible cold-start baseline in
 600-second engine-ready timeout can be insufficient for a large cold model and
 empty JIT cache in
 [issue #48031](https://github.com/vllm-project/vllm/issues/48031).
+Container Apps users also report that per-execution platform startup and cleanup
+can dominate short jobs in [issue #1800](https://github.com/microsoft/azure-container-apps/issues/1800),
+reinforcing
+the need to compare a retained regular app, an isolated job, and predictive
+prewarming using the same complete latency boundary.
 
 These reports also shape readiness telemetry. Gludd now waits on the exact
 revision through Microsoft's SDK and emits only bounded `active`, replica-count,

@@ -22,6 +22,8 @@ from general_ludd.infra.azure_containerapp_environment_lifecycle import (
 )
 from general_ludd.infra.azure_containerapp_live_proof import (
     AzureContainerAppDeploymentEvidence,
+    AzureContainerAppLiveProofError,
+    AzureContainerAppLiveProofFailure,
     AzureContainerAppLiveProofPolicy,
 )
 from general_ludd.infra.azure_containerapp_make_runtime import (
@@ -474,6 +476,42 @@ def test_injected_live_cli_runs_one_request_then_verified_cleanup(
     assert SUBSCRIPTION not in captured.out + captured.err
 
 
+def test_injected_live_cli_can_retain_zero_cost_environment_for_retry(
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
+    project = _project(tmp_path)
+    resources = _Resources(_Runtime())
+    argv = _argv(
+        project,
+        live=1,
+        acknowledgement="DEPLOY_ONE_CONTAINER_APP_AND_DESTROY",
+    )
+    argv.extend(
+        [
+            "--idle-retention-preset",
+            "zero_cost_only",
+            "--idle-retention-seconds",
+            "3600",
+        ]
+    )
+
+    result = main(
+        argv,
+        live_resources_factory=lambda *_args: resources,
+        token_hex=lambda _count: "abc123abc123",
+        now=lambda: datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+    )
+
+    captured = capsys.readouterr()
+    assert result == 0
+    assert resources.runtime.calls[-2:] == ["destroy", "exists"]
+    assert resources.environment_runtime.calls[-2:] == ["read", "inventory"]
+    assert resources.environment_runtime.document is not None
+    assert "AZURE_CONTAINERAPP_RETENTION_TRACE" in captured.out
+    assert "retention_preset=zero_cost_only" in captured.out
+
+
 def test_live_policy_auto_cidr_reuses_bounded_public_ipv4_discovery(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -528,6 +566,43 @@ def test_remote_failure_is_censored_but_still_cleans_up(
     assert resources.runtime.calls[-2:] == ["destroy", "exists"]
     assert resources.close_calls == 1
     assert "private remote failure" not in captured.out + captured.err
+
+
+def test_cli_preserves_fixed_preflight_failure_detail_without_provider_text(
+    tmp_path: Path,
+    capsys: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _project(tmp_path)
+    resources = _Resources(_Runtime())
+
+    def fail_with_safe_detail(*_args: object, **_kwargs: object) -> None:
+        raise AzureContainerAppLiveProofError(
+            AzureContainerAppLiveProofFailure.PREFLIGHT,
+            detail="runtime_sizing",
+        )
+
+    monkeypatch.setattr(
+        live_cli,
+        "run_owned_azure_containerapp_live_proof",
+        fail_with_safe_detail,
+    )
+
+    result = main(
+        _argv(
+            project,
+            live=1,
+            acknowledgement="DEPLOY_ONE_CONTAINER_APP_AND_DESTROY",
+        ),
+        live_resources_factory=lambda *_args: resources,
+        token_hex=lambda _count: "abc123abc123",
+    )
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "reason=preflight" in captured.err
+    assert "detail=runtime_sizing" in captured.err
+    assert "private" not in captured.err
 
 
 def test_cleanup_presence_is_terminal_and_never_claimed_complete(
@@ -1458,11 +1533,17 @@ def test_public_make_target_is_ci_safe_and_contract_tracked() -> None:
         "AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT",
         "AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT",
         "AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS",
     ]
     assert "AZURE_CONTAINERAPP_LIVE_PROOF_LIVE=0" in entry["behavior"]
+    assert "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET=always_destroy" in entry[
+        "behavior"
+    ]
     assert "Azure Container App proof contract (hermetic)" in workflow
     assert "make azure-containerapp-live-proof" in workflow
     assert "AZURE_CONTAINERAPP_LIVE_PROOF_LIVE=0" in workflow
+    assert "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET=always_destroy" in workflow
     assert "secrets.AZURE" not in workflow
 
 

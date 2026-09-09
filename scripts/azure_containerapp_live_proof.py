@@ -75,6 +75,11 @@ from general_ludd.infra.azure_containerapp_sdk import (
     AzureContainerAppsSDKReadTransports,
     build_container_apps_sdk_client,
 )
+from general_ludd.infra.azure_idle_retention import (
+    AzureIdleRetentionPolicy,
+    AzureRetentionPreset,
+    AzureRetentionTrace,
+)
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
     AzureCandidateResponse,
@@ -161,6 +166,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--acknowledgement", required=True)
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--source-path", required=True)
+    parser.add_argument(
+        "--idle-retention-preset",
+        choices=tuple(preset.value for preset in AzureRetentionPreset),
+        default=AzureRetentionPreset.ALWAYS_DESTROY.value,
+    )
+    parser.add_argument("--idle-retention-seconds", type=int, default=21_600)
     return parser
 
 
@@ -173,6 +184,7 @@ def _trace(
         | MakeRuntimeEvent
         | PreflightTrace
         | AzureResourceGroupBootstrapTrace
+        | AzureRetentionTrace
     ),
 ) -> None:
     fields = {
@@ -203,6 +215,20 @@ def _requirement() -> ModelServingRequirement:
         weight_bits=16,
         kv_cache_mib=2048,
         runtime_overhead_mib=3072,
+    )
+
+
+def _idle_retention_policy(args: argparse.Namespace) -> AzureIdleRetentionPolicy:
+    """Build the live proof's zero-dollar retention ceiling."""
+    return AzureIdleRetentionPolicy(
+        preset=AzureRetentionPreset(cast(str, args.idle_retention_preset)),
+        max_idle_hourly_cost_microusd=0,
+        max_idle_monthly_cost_microusd=0,
+        max_retention_cost_microusd=0,
+        max_retention_seconds=cast(int, args.idle_retention_seconds),
+        max_price_age_seconds=31_536_000,
+        max_latency_age_seconds=86_400,
+        max_cost_per_saved_hour_microusd=0,
     )
 
 
@@ -503,12 +529,14 @@ def main(
     *,
     live_resources_factory: LiveResourcesFactory = _default_live_resources,
     token_hex: Callable[[int], str] = secrets.token_hex,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> int:
     """Apply privacy, cost, scope, model, and cleanup proofs from one command."""
 
     args = _parser().parse_args(argv)
     resources: _LiveResources | None = None
     failure: str | None = None
+    failure_detail: str | None = None
     result = None
     try:
         app_name = f"gludd-vllm-proof-{token_hex(6)}"
@@ -526,12 +554,13 @@ def main(
             policy_guard=guard,
         )
         requirement = _requirement()
+        retention_policy = _idle_retention_policy(args)
         if policy.live:
             environment_policy = _environment_policy(
                 policy,
                 guard=guard,
                 project_root=project_root,
-                now=datetime.now(UTC),
+                now=now(),
             )
             resources = live_resources_factory(
                 args,
@@ -552,6 +581,12 @@ def main(
                 ),
                 app_trace_sink=lambda event: _trace(
                     "AZURE_CONTAINERAPP_LIVE_PROOF_TRACE",
+                    event,
+                ),
+                idle_retention_policy=retention_policy,
+                now=now,
+                retention_trace_sink=lambda event: _trace(
+                    "AZURE_CONTAINERAPP_RETENTION_TRACE",
                     event,
                 ),
             )
@@ -576,6 +611,7 @@ def main(
             )
     except AzureContainerAppLiveProofError as exc:
         failure = exc.failure.value
+        failure_detail = exc.detail
     except Exception:
         failure = "initialization"
     finally:
@@ -587,7 +623,9 @@ def main(
     if failure is not None or result is None:
         print(
             "AZURE_CONTAINERAPP_LIVE_PROOF_INVALID "
-            f"reason={failure or 'unknown'} secret_output=false",
+            f"reason={failure or 'unknown'} "
+            + (f"detail={failure_detail} " if failure_detail is not None else "")
+            + "secret_output=false",
             file=sys.stderr,
         )
         return 2
@@ -602,6 +640,7 @@ def main(
         f"input_tokens={result.input_tokens} "
         f"output_tokens={result.output_tokens} "
         f"total_tokens={result.total_tokens} "
+        f"retention_preset={args.idle_retention_preset} "
         "secret_output=false"
     )
     return 0

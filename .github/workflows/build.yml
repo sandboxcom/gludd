@@ -133,7 +133,9 @@ jobs:
             AZURE_CONTAINERAPP_LIVE_PROOF_LIVE=0 \
             AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT=dry-run \
             AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT=. \
-            AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH=src/general_ludd/__init__.py
+            AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH=src/general_ludd/__init__.py \
+            AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET=always_destroy \
+            AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS=21600
         env:
           GLUDD_AUTH_PSK: ""
       - name: Azure Container App coverage (hermetic)

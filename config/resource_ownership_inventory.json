@@ -1060,7 +1060,7 @@
     },
     {
       "path": "src/general_ludd/connectors/prometheus.py",
-      "line": 135,
+      "line": 91,
       "column": 9,
       "kind": "client",
       "owner": "_default_http_get",
@@ -1236,7 +1236,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 966,
+      "line": 964,
       "column": 22,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1247,7 +1247,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 978,
+      "line": 976,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1258,7 +1258,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 992,
+      "line": 990,
       "column": 32,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1269,7 +1269,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 2511,
+      "line": 2387,
       "column": 29,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job_isolated",
@@ -1280,7 +1280,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3639,
+      "line": 3515,
       "column": 26,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1291,7 +1291,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3697,
+      "line": 3573,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1302,7 +1302,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 4763,
+      "line": 4639,
       "column": 40,
       "kind": "async-task",
       "owner": "EventLoop._phase_reconcile_completed_decisions",
@@ -1313,7 +1313,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 4777,
+      "line": 4653,
       "column": 44,
       "kind": "async-task",
       "owner": "EventLoop._phase_reconcile_completed_decisions",
