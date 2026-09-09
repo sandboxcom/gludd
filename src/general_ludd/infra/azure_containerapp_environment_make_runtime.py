@@ -225,7 +225,13 @@ class AzureContainerAppEnvironmentTerraformRuntime:
         except Exception:
             raise AzureContainerAppMakeRuntimeError("materialize") from None
 
-    def _invoke(self, phase: str, *, timeout_seconds: int) -> None:
+    def _invoke(
+        self,
+        phase: str,
+        *,
+        timeout_seconds: int,
+        timeout_reconciliation: Callable[[], bool] | None = None,
+    ) -> None:
         tf_dir, plan_file, plan_json = self._paths()
         credential_environment = self._credentials.arm_environment()
         credential_environment.update(
@@ -260,7 +266,21 @@ class AzureContainerAppEnvironmentTerraformRuntime:
             )
         except AzureContainerAppMakeRuntimeError:
             raise
-        except AzureContainerAppTerraformPhaseError:
+        except AzureContainerAppTerraformPhaseError as exc:
+            if (
+                exc.failure_class == "timeout"
+                and timeout_reconciliation is not None
+            ):
+                try:
+                    reconciled = timeout_reconciliation()
+                except Exception:
+                    reconciled = False
+                if reconciled:
+                    self._emit(
+                        f"{phase}:arm-absence",
+                        MakeRuntimeState.SUCCEEDED,
+                    )
+                    return
             if not failed_emitted:
                 self._emit(phase, MakeRuntimeState.FAILED)
             raise AzureContainerAppMakeRuntimeError(phase) from None
@@ -326,7 +346,15 @@ class AzureContainerAppEnvironmentTerraformRuntime:
         """Destroy only resources in this stable owner/resource state boundary."""
         self._bind_state(policy)
         self._materialize_policy(policy)
-        self._invoke("destroy", timeout_seconds=1_800)
+        self._invoke(
+            "destroy",
+            timeout_seconds=900,
+            timeout_reconciliation=lambda: self.read_environment(
+                policy,
+                expect_absent=True,
+            )
+            is None,
+        )
 
 
 AzureContainerAppEnvironmentMakeRuntime = AzureContainerAppEnvironmentTerraformRuntime

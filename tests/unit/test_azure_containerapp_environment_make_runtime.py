@@ -147,10 +147,12 @@ class _Runner:
         materializer: _Materializer,
         *,
         fail_phase: str | None = None,
+        failure_class: str = "internal",
         action: str = "create",
     ) -> None:
         self.materializer = materializer
         self.fail_phase = fail_phase
+        self.failure_class = failure_class
         self.action = action
         self.calls: list[dict[str, object]] = []
 
@@ -186,7 +188,7 @@ class _Runner:
             )
         if phase == self.fail_phase:
             cast(Any, progress)(phase, TerraformRuntimeState.FAILED, 0)
-            raise AzureContainerAppTerraformPhaseError(phase)
+            raise AzureContainerAppTerraformPhaseError(phase, self.failure_class)
         cast(Any, progress)(phase, TerraformRuntimeState.SUCCEEDED, 0)
 
 
@@ -268,7 +270,7 @@ def test_runtime_materializes_and_runs_terraform_directly(
     assert SECRET not in repr(traces)
 
 
-def test_environment_destroy_allows_azure_managed_deletion_to_finish(
+def test_environment_destroy_has_a_bounded_provider_settlement_window(
     tmp_path: Path,
 ) -> None:
     runtime, _materializer, runner = _runtime(tmp_path)
@@ -276,7 +278,54 @@ def test_environment_destroy_allows_azure_managed_deletion_to_finish(
     runtime.destroy(_policy())
 
     assert runner.calls[0]["phase"] == "destroy"
-    assert runner.calls[0]["timeout_seconds"] == 1_800
+    assert runner.calls[0]["timeout_seconds"] == 900
+
+
+def test_destroy_timeout_is_reconciled_by_exact_arm_absence(
+    tmp_path: Path,
+) -> None:
+    policy = _policy()
+    reads: list[tuple[AzureEnvironmentLifecyclePolicy, bool]] = []
+    traces: list[MakeRuntimeEvent] = []
+    materializer = _Materializer()
+    runner = _Runner(
+        materializer,
+        fail_phase="destroy",
+        failure_class="timeout",
+    )
+    runtime, _materializer, _runner = _runtime(
+        tmp_path,
+        materializer=materializer,
+        runner=runner,
+        read_environment=lambda active, absent: reads.append((active, absent)) or None,
+        trace_sink=traces.append,
+    )
+
+    runtime.destroy(policy)
+
+    assert reads == [(policy, True)]
+    assert traces[-1].phase == "destroy:arm-absence"
+    assert traces[-1].state is MakeRuntimeState.SUCCEEDED
+
+
+def test_destroy_timeout_still_fails_when_arm_observes_the_environment(
+    tmp_path: Path,
+) -> None:
+    materializer = _Materializer()
+    runner = _Runner(
+        materializer,
+        fail_phase="destroy",
+        failure_class="timeout",
+    )
+    runtime, _materializer, _runner = _runtime(
+        tmp_path,
+        materializer=materializer,
+        runner=runner,
+        read_environment=lambda _active, _absent: {"kind": "environment"},
+    )
+
+    with pytest.raises(AzureContainerAppMakeRuntimeError, match="destroy"):
+        runtime.destroy(_policy())
 
 
 def test_environment_runtime_forwards_machine_ui_and_exact_azure_state(
