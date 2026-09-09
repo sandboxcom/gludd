@@ -28,6 +28,9 @@ from general_ludd.infra.azure_containerapp_live_types import (
     LiveProofEvent,
     LiveProofTrace,
 )
+from general_ludd.infra.azure_containerapp_make_types import (
+    AzureContainerAppMakeRuntimeError,
+)
 from general_ludd.infra.azure_containerapp_plan_audit import audit_containerapp_plan
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
@@ -84,6 +87,28 @@ def _validated_input_tokens(
         ) from None
 
 
+_RUNTIME_PLAN_FAILURE_DETAILS = {
+    "app-name": "runtime_app_name",
+    "configuration": "runtime_configuration",
+    "credentials": "runtime_credentials",
+    "init": "runtime_init",
+    "materialize": "runtime_materialize",
+    "plan": "runtime_plan",
+    "policy": "runtime_policy",
+    "policy-drift": "runtime_policy_drift",
+    "show-plan": "runtime_show_plan",
+    "sizing": "runtime_sizing",
+    "trace": "runtime_trace",
+    "validate": "runtime_validate",
+}
+
+
+def _runtime_plan_failure_detail(error: Exception) -> str:
+    if isinstance(error, AzureContainerAppMakeRuntimeError):
+        return _RUNTIME_PLAN_FAILURE_DETAILS.get(error.phase, "runtime_plan")
+    return "runtime_plan"
+
+
 def _audit_requested_plan(
     policy: AzureContainerAppLiveProofPolicy,
     runtime: AzureContainerAppProofRuntime,
@@ -94,10 +119,10 @@ def _audit_requested_plan(
     _emit(trace_sink, _trace(LiveProofEvent.PLAN_STARTED, policy))
     try:
         plan = runtime.plan(policy)
-    except Exception:
+    except Exception as cause:
         error = AzureContainerAppLiveProofError(
             AzureContainerAppLiveProofFailure.PLAN_SCOPE,
-            detail="runtime_plan",
+            detail=_runtime_plan_failure_detail(cause),
         )
         _emit(
             trace_sink,

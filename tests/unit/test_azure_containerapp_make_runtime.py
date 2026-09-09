@@ -301,7 +301,11 @@ class _Runner:
 def test_runtime_materializes_and_invokes_terraform_directly_with_secret_environment(
     tmp_path: Path,
 ) -> None:
-    policy = _policy(max_replicas=3, http_concurrent_requests=4)
+    policy = _policy(
+        min_replicas=1,
+        max_replicas=3,
+        http_concurrent_requests=4,
+    )
     runner = _Runner(policy)
     materializer = _Materializer()
     preflights: list[tuple[object, object]] = []
@@ -348,7 +352,7 @@ def test_runtime_materializes_and_invokes_terraform_directly_with_secret_environ
     assert cast(Any, config).gpu_type is GPUType.T4
     assert cast(Any, config).allowed_cidr == policy.allowed_cidr
     assert cast(Any, config).spot is False
-    assert cast(Any, config).azure_min_replicas == 0
+    assert cast(Any, config).azure_min_replicas == 1
     assert cast(Any, config).azure_max_replicas == 3
     assert cast(Any, config).azure_http_concurrent_requests == 4
     assert deployment_name == "proof-abc123"
@@ -785,6 +789,33 @@ def test_runtime_rejects_credential_sizing_name_and_materializer_drift(
         with pytest.raises(AzureContainerAppMakeRuntimeError) as captured:
             runtime.plan(policy)
         assert captured.value.phase == phase
+
+
+def test_runtime_classifies_internal_compute_configuration_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Expose only a fixed phase when validated compute assembly refuses."""
+
+    def refuse_configuration(**_values: object) -> object:
+        raise ValueError("private validation detail")
+
+    monkeypatch.setattr(runtime_module, "ComputeConfig", refuse_configuration)
+    runtime = AzureContainerAppMakeRuntime(
+        work_root=tmp_path / "gludd-azure-live-proof-config",
+        credentials=_credentials(),
+        requirement=_requirement(),
+        terraform_executor=_Runner(_policy()),
+        terraform_generator=_Materializer(),
+        preflight_check=lambda _policy, _requirement: None,
+        read_app=lambda _policy, _expect_absent: None,
+    )
+
+    with pytest.raises(AzureContainerAppMakeRuntimeError) as captured:
+        runtime.plan(_policy())
+
+    assert captured.value.phase == "configuration"
+    assert "private validation detail" not in str(captured.value)
 
 
 @pytest.mark.parametrize(

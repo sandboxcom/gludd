@@ -20,6 +20,9 @@ from general_ludd.infra.azure_containerapp_live_proof import (
     run_azure_containerapp_live_proof,
 )
 from general_ludd.infra.azure_containerapp_live_trace import build_live_proof_trace
+from general_ludd.infra.azure_containerapp_make_types import (
+    AzureContainerAppMakeRuntimeError,
+)
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
     AzureCandidateResponse,
@@ -562,6 +565,32 @@ def test_plan_refusal_trace_exposes_only_the_fixed_audit_stage(tmp_path: Path) -
     assert captured.value.detail == "resource_scope"
     assert traces[-1].event is LiveProofEvent.FAILED
     assert traces[-1].failure_detail == "resource_scope"
+
+
+def test_runtime_plan_failure_exposes_only_its_fixed_internal_phase(
+    tmp_path: Path,
+) -> None:
+    """Retain actionable phase evidence without exposing provider output."""
+
+    class _TypedPlanFailureRuntime(_Runtime):
+        def plan(self, policy: AzureContainerAppLiveProofPolicy) -> object:
+            self.calls.append("plan")
+            raise AzureContainerAppMakeRuntimeError("sizing")
+
+    policy = _policy()
+    traces: list[LiveProofTrace] = []
+
+    with pytest.raises(AzureContainerAppLiveProofError) as captured:
+        run_azure_containerapp_live_proof(
+            policy,
+            runtime=_TypedPlanFailureRuntime(policy),
+            approved_prompt=_approved(tmp_path),
+            backend_factory=lambda identity: _Backend(identity),
+            trace_sink=traces.append,
+        )
+
+    assert captured.value.detail == "runtime_sizing"
+    assert traces[-1].failure_detail == "runtime_sizing"
 
 
 def test_preflight_failure_stops_before_paid_mutation(tmp_path: Path) -> None:

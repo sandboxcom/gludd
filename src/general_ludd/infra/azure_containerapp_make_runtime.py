@@ -304,38 +304,41 @@ class AzureContainerAppTerraformRuntime:
             gpu_type = _PROFILE_GPUS[policy.workload_profile_type]
         except KeyError:
             raise AzureContainerAppMakeRuntimeError("sizing") from None
-        return ComputeConfig(
-            provider=ComputeProvider.AZURE,
-            gpu_type=gpu_type,
-            gpu_count=1,
-            engine=InferenceEngine.VLLM,
-            model_name=policy.model_name,
-            region=policy.location,
-            spot=False,
-            max_cost_usd=policy.max_cost_usd,
-            timeout_minutes=float(policy.ttl_minutes),
-            container_image=policy.container_image,
-            model_revision=policy.model_revision,
-            azure_subscription_id=policy.subscription_id,
-            azure_resource_group=policy.resource_group,
-            azure_containerapp_environment=policy.environment_name,
-            azure_workload_profile_name=policy.workload_profile_name,
-            azure_min_replicas=policy.min_replicas,
-            azure_max_replicas=policy.max_replicas,
-            azure_http_concurrent_requests=policy.http_concurrent_requests,
-            deploy_type="containerapp",
-            allowed_cidr=policy.allowed_cidr,
-            deployment_profile={
-                "context_length": 4096,
-                "max_num_seqs": 1,
-                "gpu_memory_utilization": 0.9,
-                "enforce_eager": False,
-                "enable_prefix_caching": True,
-                "enable_chunked_prefill": True,
-                "kv_cache_dtype": "auto",
-                "quantization": "",
-            },
-        )
+        try:
+            return ComputeConfig(
+                provider=ComputeProvider.AZURE,
+                gpu_type=gpu_type,
+                gpu_count=1,
+                engine=InferenceEngine.VLLM,
+                model_name=policy.model_name,
+                region=policy.location,
+                spot=False,
+                max_cost_usd=policy.max_cost_usd,
+                timeout_minutes=float(policy.ttl_minutes),
+                container_image=policy.container_image,
+                model_revision=policy.model_revision,
+                azure_subscription_id=policy.subscription_id,
+                azure_resource_group=policy.resource_group,
+                azure_containerapp_environment=policy.environment_name,
+                azure_workload_profile_name=policy.workload_profile_name,
+                azure_min_replicas=policy.min_replicas,
+                azure_max_replicas=policy.max_replicas,
+                azure_http_concurrent_requests=policy.http_concurrent_requests,
+                deploy_type="containerapp",
+                allowed_cidr=policy.allowed_cidr,
+                deployment_profile={
+                    "context_length": 4096,
+                    "max_num_seqs": 1,
+                    "gpu_memory_utilization": 0.9,
+                    "enforce_eager": False,
+                    "enable_prefix_caching": True,
+                    "enable_chunked_prefill": True,
+                    "kv_cache_dtype": "auto",
+                    "quantization": "",
+                },
+            )
+        except Exception:
+            raise AzureContainerAppMakeRuntimeError("configuration") from None
 
     def plan(self, policy: AzureContainerAppLiveProofPolicy) -> object:
         """Materialize, initialize, validate, plan, and return bounded JSON."""

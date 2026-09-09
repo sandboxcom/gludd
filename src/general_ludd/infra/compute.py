@@ -89,7 +89,7 @@ class ComputeConfig(BaseModel):
     azure_resource_group: str | None = None
     azure_containerapp_environment: str | None = None
     azure_workload_profile_name: str | None = None
-    azure_min_replicas: int = Field(default=0, ge=0, le=0)
+    azure_min_replicas: int = Field(default=0, ge=0, le=1)
     azure_max_replicas: int = Field(default=1, ge=1, le=100)
     azure_http_concurrent_requests: int = Field(default=1, ge=1, le=100_000)
     api_key_alias: str | None = None
