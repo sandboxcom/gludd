@@ -34,12 +34,12 @@ from general_ludd.notifications.dispatcher import (
     FALLBACK_NOTIFICATION_CONFIG,
     NotificationDispatcher,
 )
-from general_ludd.routers.human_todo_types import (
+from general_ludd.schemas.human_todo import (
     AddTagRequest,
     CreateHumanTodoRequest,
     PatchHumanTodoRequest,
 )
-from general_ludd.routers.human_todo_types import (
+from general_ludd.schemas.human_todo import (
     human_todo_to_dict as _human_todo_to_dict,
 )
 from general_ludd.schemas.todo import TodoStatus
