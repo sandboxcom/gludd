@@ -12,6 +12,9 @@ from enum import StrEnum
 from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.infra.azure_containerapp_make_types import (
+    LIVE_PROOF_RUNTIME_FAILURE_DETAILS,
+)
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
     BackendCallBudget,
@@ -37,20 +40,9 @@ _FAILURE_DETAILS = frozenset(
         "network_restriction",
         "resource_identity",
         "resource_scope",
-        "runtime_plan",
-        "runtime_app_name",
-        "runtime_configuration",
-        "runtime_credentials",
-        "runtime_init",
-        "runtime_materialize",
-        "runtime_policy",
-        "runtime_policy_drift",
-        "runtime_show_plan",
-        "runtime_sizing",
-        "runtime_trace",
-        "runtime_validate",
         "shape",
         "arguments",
+        *LIVE_PROOF_RUNTIME_FAILURE_DETAILS,
     }
 )
 

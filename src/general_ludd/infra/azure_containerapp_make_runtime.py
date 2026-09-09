@@ -12,9 +12,11 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from general_ludd.azure.accelerator_credentials import AzureAcceleratorCredentials
+from general_ludd.infra.azure_containerapp_compute_config import (
+    build_containerapp_compute_config,
+)
 from general_ludd.infra.azure_containerapp_gpu import (
     ModelServingRequirement,
-    select_smallest_sufficient_profile,
 )
 from general_ludd.infra.azure_containerapp_live_proof import (
     AzureContainerAppDeploymentEvidence,
@@ -55,24 +57,13 @@ from general_ludd.infra.azure_containerapp_terraform_executor import (
     TerraformUIEvent,
     terraform_process_environment,
 )
-from general_ludd.infra.compute import (
-    ComputeConfig,
-    ComputeProvider,
-    GPUType,
-    InferenceEngine,
-)
+from general_ludd.infra.compute import ComputeConfig
 from general_ludd.infra.terraform import TerraformGenerator
 
 _mapping = mapping
 _member = member
 _output_value = output_value
 _required_argument = required_argument
-
-_PROFILE_GPUS = {
-    "Consumption-GPU-NC8as-T4": GPUType.T4,
-    "Consumption-GPU-NC24-A100": GPUType.A100_80,
-}
-
 
 class _TerraformExecutor(Protocol):
     def run(
@@ -292,54 +283,6 @@ class AzureContainerAppTerraformRuntime:
                 self._emit(phase, MakeRuntimeState.FAILED)
             raise AzureContainerAppMakeRuntimeError(phase) from None
 
-    def _compute_config(self, policy: AzureContainerAppLiveProofPolicy) -> ComputeConfig:
-        selection = select_smallest_sufficient_profile(self._requirement)
-        if (
-            self._requirement.model_id != policy.model_name
-            or self._requirement.revision != policy.model_revision
-            or selection.profile.workload_profile_type != policy.workload_profile_type
-        ):
-            raise AzureContainerAppMakeRuntimeError("sizing")
-        try:
-            gpu_type = _PROFILE_GPUS[policy.workload_profile_type]
-        except KeyError:
-            raise AzureContainerAppMakeRuntimeError("sizing") from None
-        try:
-            return ComputeConfig(
-                provider=ComputeProvider.AZURE,
-                gpu_type=gpu_type,
-                gpu_count=1,
-                engine=InferenceEngine.VLLM,
-                model_name=policy.model_name,
-                region=policy.location,
-                spot=False,
-                max_cost_usd=policy.max_cost_usd,
-                timeout_minutes=float(policy.ttl_minutes),
-                container_image=policy.container_image,
-                model_revision=policy.model_revision,
-                azure_subscription_id=policy.subscription_id,
-                azure_resource_group=policy.resource_group,
-                azure_containerapp_environment=policy.environment_name,
-                azure_workload_profile_name=policy.workload_profile_name,
-                azure_min_replicas=policy.min_replicas,
-                azure_max_replicas=policy.max_replicas,
-                azure_http_concurrent_requests=policy.http_concurrent_requests,
-                deploy_type="containerapp",
-                allowed_cidr=policy.allowed_cidr,
-                deployment_profile={
-                    "context_length": 4096,
-                    "max_num_seqs": 1,
-                    "gpu_memory_utilization": 0.9,
-                    "enforce_eager": False,
-                    "enable_prefix_caching": True,
-                    "enable_chunked_prefill": True,
-                    "kv_cache_dtype": "auto",
-                    "quantization": "",
-                },
-            )
-        except Exception:
-            raise AzureContainerAppMakeRuntimeError("configuration") from None
-
     def plan(self, policy: AzureContainerAppLiveProofPolicy) -> object:
         """Materialize, initialize, validate, plan, and return bounded JSON."""
         self._bind(policy)
@@ -349,7 +292,11 @@ class AzureContainerAppTerraformRuntime:
         deployment_name = policy.app_name.removeprefix("gludd-vllm-")
         try:
             materialized = self._generator.materialize(
-                self._compute_config(policy),
+                build_containerapp_compute_config(
+                    policy,
+                    self._requirement,
+                    config_factory=ComputeConfig,
+                ),
                 tf_dir,
                 deployment_name=deployment_name,
             )

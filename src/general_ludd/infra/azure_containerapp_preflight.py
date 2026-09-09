@@ -18,7 +18,6 @@ from general_ludd.infra.azure_containerapp_gpu import (
 from general_ludd.infra.azure_containerapp_preflight_parsing import (
     count,
     parse_environment,
-    parse_usages,
     parse_workload_profile_state,
     provider_name,
     quota_for_profile,
@@ -38,10 +37,12 @@ from general_ludd.infra.azure_containerapp_preflight_types import (
     _EnvironmentEvidence,
     _WorkloadProfileState,
 )
+from general_ludd.infra.azure_containerapp_preflight_usage import (
+    read_supplementary_usages,
+)
 
 _count = count
 _parse_environment = parse_environment
-_parse_usages = parse_usages
 _parse_workload_profile_state = parse_workload_profile_state
 _provider_name = provider_name
 _quota_for_profile = quota_for_profile
@@ -205,69 +206,15 @@ class AzureContainerAppReadOnlyPreflight:
         selection: GPUProfileSelection,
     ) -> tuple[ContainerAppUsage, ...]:
         """Read the bounded environment-level usage evidence."""
-        def unavailable(reason: str) -> tuple[ContainerAppUsage, ...]:
-            _emit(
-                self._trace_sink,
-                PreflightTrace(
-                    "supplementary_usage_unavailable",
-                    location,
-                    profile_name=selection.profile.name,
-                    reason=reason,
-                ),
-            )
-            return ()
-
-        try:
-            payload = self._transport.get_json(
-                f"{root}/usages?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}",
-                token,
-            )
-        except AzureContainerAppARMError as exc:
-            if (
-                isinstance(exc.status_code, int)
-                and 500 <= exc.status_code <= 599
-            ):
-                return unavailable(f"usages_http_{exc.status_code}")
-            if exc.status_code in {401, 403}:
-                self._refuse(
-                    location,
-                    "usages_unauthorized",
-                    "Azure Container Apps usages read is not authorized",
-                )
-            if exc.status_code == 404:
-                self._refuse(
-                    location,
-                    "usages_not_found",
-                    "Azure Container Apps usages does not exist",
-                )
-            if isinstance(exc.status_code, int) and 100 <= exc.status_code <= 599:
-                self._refuse(
-                    location,
-                    f"usages_http_{exc.status_code}",
-                    "Azure Container Apps usages read failed",
-                )
-            return unavailable("usages_read_failed")
-        except Exception:
-            return unavailable("usages_read_failed")
-        try:
-            usages = _parse_usages(payload)
-        except AzureContainerAppPreflightError:
-            self._refuse(
-                location,
-                "usage_response_invalid",
-                "Azure Container Apps usage response is invalid",
-            )
-        _emit(
-            self._trace_sink,
-            PreflightTrace(
-                "quota_discovered",
-                location,
-                profile_name=selection.profile.name,
-                record_count=len(usages),
-                record_names=tuple(usage.name for usage in usages),
-            ),
+        return read_supplementary_usages(
+            transport=self._transport,
+            root=root,
+            token=token,
+            location=location,
+            selection=selection,
+            emit=lambda trace: _emit(self._trace_sink, trace),
+            refuse=self._refuse,
         )
-        return usages
 
     def _state_evidence(
         self,

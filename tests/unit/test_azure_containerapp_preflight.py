@@ -270,6 +270,54 @@ def test_optional_usage_502_defers_to_authoritative_profile_state() -> None:
     assert TOKEN not in repr(traces)
 
 
+@pytest.mark.parametrize(
+    ("status", "reason", "message"),
+    [
+        (401, "usages_unauthorized", "not authorized"),
+        (403, "usages_unauthorized", "not authorized"),
+        (404, "usages_not_found", "does not exist"),
+        (429, "usages_http_429", "read failed"),
+    ],
+)
+def test_usage_http_refusals_are_censored_and_phase_specific(
+    status: int,
+    reason: str,
+    message: str,
+) -> None:
+    traces: list[PreflightTrace] = []
+
+    class RefusedUsageTransport(_Transport):
+        def get_json(self, path: str, bearer_token: str) -> object:
+            if "/usages?" in path:
+                raise AzureContainerAppARMError(
+                    f"private provider response {TOKEN}",
+                    status_code=status,
+                )
+            return super().get_json(path, bearer_token)
+
+    with pytest.raises(AzureContainerAppPreflightError, match=message) as captured:
+        _check(_Credential(), RefusedUsageTransport(), traces=traces)
+
+    assert traces[-1].reason == reason
+    assert TOKEN not in repr(captured.value)
+
+
+def test_usage_error_without_http_status_defers_to_profile_state() -> None:
+    traces: list[PreflightTrace] = []
+
+    class OpaqueUsageTransport(_Transport):
+        def get_json(self, path: str, bearer_token: str) -> object:
+            if "/usages?" in path:
+                raise AzureContainerAppARMError(f"private provider response {TOKEN}")
+            return super().get_json(path, bearer_token)
+
+    result = _check(_Credential(), OpaqueUsageTransport(), traces=traces)
+
+    assert result.ready is True
+    assert any(trace.reason == "usages_read_failed" for trace in traces)
+    assert TOKEN not in repr(traces)
+
+
 def test_serverless_capacity_without_provider_evidence_is_explicitly_deferred() -> None:
     traces: list[PreflightTrace] = []
 

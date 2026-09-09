@@ -10,6 +10,9 @@ import pytest
 
 import general_ludd.infra.azure_containerapp_make_runtime as runtime_module
 from general_ludd.azure.accelerator_credentials import AzureAcceleratorCredentials
+from general_ludd.infra.azure_containerapp_compute_config import (
+    build_containerapp_compute_config,
+)
 from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
 from general_ludd.infra.azure_containerapp_live_proof import (
     LIVE_PROOF_ACKNOWLEDGEMENT,
@@ -104,6 +107,18 @@ def _requirement() -> ModelServingRequirement:
         kv_cache_mib=2048,
         runtime_overhead_mib=3072,
     )
+
+
+def test_compute_config_boundary_preserves_warm_replica_and_pinned_model() -> None:
+    config = build_containerapp_compute_config(
+        _policy(min_replicas=1),
+        _requirement(),
+    )
+
+    assert config.azure_min_replicas == 1
+    assert config.model_name == MODEL
+    assert config.model_revision == REVISION
+    assert config.container_image == IMAGE
 
 
 def _credentials() -> AzureAcceleratorCredentials:
