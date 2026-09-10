@@ -10,16 +10,37 @@ matching via :func:`HardwareSurvey.survey`.
 
 from __future__ import annotations
 
+import importlib
 import logging
+import math
 import os
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Protocol, cast, runtime_checkable
+
+from general_ludd.hardware.accelerator_types import safe_runtime_text
 
 logger = logging.getLogger(__name__)
 
 _MIN_GPU_VRAM_GB = 0.25
+_MAX_ACCELERATORS = 100_000
+_GIB = 1024**3
+
+
+@runtime_checkable
+class _XpuRuntime(Protocol):
+    def is_available(self) -> bool: ...
+
+    def device_count(self) -> int: ...
+
+    def get_device_properties(self, index: int) -> object: ...
+
+
+@runtime_checkable
+class _TorchRuntime(Protocol):
+    xpu: _XpuRuntime
 
 
 @dataclass(frozen=True)
@@ -60,6 +81,49 @@ class HardwareInventory:
     def to_dict(self) -> dict[str, Any]:
         """Serialize the hardware snapshot to JSON-compatible values."""
         return asdict(self)
+
+
+def _memory_gb(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float) or value <= 0:
+        return None
+    gib = float(value) / _GIB
+    return round(gib, 2) if math.isfinite(gib) and gib > 0 else None
+
+
+def _runtime_attr(value: object, name: str, fallback: object) -> object:
+    try:
+        return getattr(value, name)
+    except Exception:
+        return fallback
+
+
+def probe_intel_xpu_gpus(
+    module_loader: Callable[[str], object] = importlib.import_module,
+) -> tuple[GpuInfo, ...]:
+    """Return Intel devices reported by PyTorch's supported XPU runtime."""
+    torch = cast(_TorchRuntime, module_loader("torch"))
+    xpu = torch.xpu
+    if not bool(xpu.is_available()):
+        return ()
+    count = xpu.device_count()
+    if not isinstance(count, int) or isinstance(count, bool) or not 0 <= count <= _MAX_ACCELERATORS:
+        raise ValueError("torch.xpu returned an invalid device count")
+    gpus: list[GpuInfo] = []
+    for index in range(count):
+        properties = xpu.get_device_properties(index)
+        memory = _memory_gb(_runtime_attr(properties, "total_memory", None))
+        if memory is None:
+            continue
+        gpus.append(
+            GpuInfo(
+                name=safe_runtime_text(_runtime_attr(properties, "name", None), "Intel XPU"),
+                vram_gb=memory,
+                index=index,
+                backend="xpu",
+                vendor=safe_runtime_text(_runtime_attr(properties, "vendor", None), "intel"),
+            )
+        )
+    return tuple(gpus)
 
 
 # ---------------------------------------------------------------------------
@@ -217,10 +281,6 @@ class HardwareSurvey:
     def probe_gpu_xpu(self) -> list[GpuInfo]:
         """Query Intel GPUs through PyTorch's supported XPU runtime API."""
         try:
-            from general_ludd.hardware.accelerator_discovery import (
-                probe_intel_xpu_gpus,
-            )
-
             return list(probe_intel_xpu_gpus())
         except Exception:
             return []

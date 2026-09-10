@@ -152,6 +152,15 @@ class TestHardwareSurveyNvidia:
         with patch("subprocess.run", return_value=mock):
             assert survey.probe_gpu_nvidia() == []
 
+    def test_nvidia_smi_ignores_internal_blank_and_malformed_rows(self):
+        survey = HardwareSurvey()
+        mock = MagicMock()
+        mock.returncode = 0
+        mock.stdout = "A100, 40960\n\nmissing-memory\nT4, 16384\n"
+        with patch("subprocess.run", return_value=mock):
+            gpus = survey.probe_gpu_nvidia()
+        assert [gpu.name for gpu in gpus] == ["A100", "T4"]
+
 
 class TestHardwareSurveyMetal:
     def test_system_profiler_not_found(self):
@@ -205,6 +214,28 @@ class TestHardwareSurveyMetal:
             gpus = survey.probe_gpu_metal()
         assert len(gpus) == 0
 
+    def test_system_profiler_preserves_first_gpu_when_later_vram_is_invalid(self):
+        survey = HardwareSurvey()
+        mock = MagicMock()
+        mock.returncode = 0
+        mock.stdout = (
+            "Chipset Model: Apple M2\n"
+            "  VRAM (Total): 8 GB\n"
+            "Chipset Model: Apple M3\n"
+            "  VRAM (Total): unknown\n"
+        )
+        with patch("subprocess.run", return_value=mock):
+            gpus = survey.probe_gpu_metal()
+        assert [(gpu.name, gpu.vram_gb) for gpu in gpus] == [("Apple M2", 8.0)]
+
+    def test_system_profiler_non_apple_metal_device_has_no_unified_fallback(self):
+        survey = HardwareSurvey()
+        mock = MagicMock()
+        mock.returncode = 0
+        mock.stdout = "Chipset Model: Intel Iris\n  Metal Support: Metal 3\n"
+        with patch("subprocess.run", return_value=mock):
+            assert survey.probe_gpu_metal() == []
+
 
 class TestHardwareSurveyROCm:
     def test_rocm_smi_not_found(self):
@@ -237,7 +268,7 @@ class TestHardwareSurveyIntelXpu:
         survey = HardwareSurvey()
         gpu = GpuInfo(name="Intel Arc", vram_gb=16.0, backend="xpu")
         with patch(
-            "general_ludd.hardware.accelerator_discovery.probe_intel_xpu_gpus",
+            "general_ludd.hardware.survey.probe_intel_xpu_gpus",
             return_value=(gpu,),
         ) as probe:
             assert survey.probe_gpu_xpu() == [gpu]

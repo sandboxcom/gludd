@@ -9,7 +9,6 @@ authenticated :class:`~general_ludd.infra.slurm.SlurmAdapter`.
 from __future__ import annotations
 
 import importlib
-import math
 from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol, cast, runtime_checkable
 
@@ -23,10 +22,15 @@ from general_ludd.hardware.accelerator_types import (
     DiscoveryTrace,
     safe_runtime_text,
 )
-from general_ludd.hardware.survey import GpuInfo, HardwareSurvey
+from general_ludd.hardware.survey import (
+    GpuInfo,
+    HardwareSurvey,
+    _memory_gb,
+    _runtime_attr,
+    probe_intel_xpu_gpus,
+)
 
-_MAX_ACCELERATORS = 100_000
-_GIB = 1024**3
+
 @runtime_checkable
 class SlurmNodeSource(Protocol):
     """Minimum existing Slurm adapter surface needed by discovery."""
@@ -37,29 +41,8 @@ class SlurmNodeSource(Protocol):
 
 
 @runtime_checkable
-class _XpuRuntime(Protocol):
-    def is_available(self) -> bool: ...
-
-    def device_count(self) -> int: ...
-
-    def get_device_properties(self, index: int) -> object: ...
-
-
-@runtime_checkable
-class _TorchRuntime(Protocol):
-    xpu: _XpuRuntime
-
-
-@runtime_checkable
 class _JaxRuntime(Protocol):
     def devices(self) -> Sequence[object]: ...
-
-
-def _memory_gb(value: object) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, int | float) or value <= 0:
-        return None
-    gib = float(value) / _GIB
-    return round(gib, 2) if math.isfinite(gib) and gib > 0 else None
 
 
 def _gpu_source(backend: str) -> str:
@@ -96,42 +79,6 @@ def _local_gpu(gpu: GpuInfo) -> AcceleratorResource:
         memory_gb=float(gpu.vram_gb) if gpu.vram_gb > 0 else None,
         source=_gpu_source(backend),
     )
-
-
-def _runtime_attr(value: object, name: str, fallback: object) -> object:
-    try:
-        return getattr(value, name)
-    except Exception:
-        return fallback
-
-
-def probe_intel_xpu_gpus(
-    module_loader: Callable[[str], object] = importlib.import_module,
-) -> tuple[GpuInfo, ...]:
-    """Return Intel devices reported by PyTorch's supported XPU runtime."""
-    torch = cast(_TorchRuntime, module_loader("torch"))
-    xpu = torch.xpu
-    if not bool(xpu.is_available()):
-        return ()
-    count = xpu.device_count()
-    if not isinstance(count, int) or isinstance(count, bool) or not 0 <= count <= _MAX_ACCELERATORS:
-        raise ValueError("torch.xpu returned an invalid device count")
-    gpus: list[GpuInfo] = []
-    for index in range(count):
-        properties = xpu.get_device_properties(index)
-        memory = _memory_gb(_runtime_attr(properties, "total_memory", None))
-        if memory is None:
-            continue
-        gpus.append(
-            GpuInfo(
-                name=safe_runtime_text(_runtime_attr(properties, "name", None), "Intel XPU"),
-                vram_gb=memory,
-                index=index,
-                backend="xpu",
-                vendor=safe_runtime_text(_runtime_attr(properties, "vendor", None), "intel"),
-            )
-        )
-    return tuple(gpus)
 
 
 class HardwareDiscovery:
