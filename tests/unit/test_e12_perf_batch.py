@@ -168,7 +168,7 @@ class TestReapStuckTodosSingleQuery:
         )
 
     @pytest.mark.asyncio
-    async def test_reap_no_live_leases_requeues_todos(self):
+    async def test_reap_without_terminal_proof_keeps_todo_active(self):
         engine = create_async_engine(
             "sqlite+aiosqlite:///:memory:",
             poolclass=StaticPool,
@@ -203,12 +203,15 @@ class TestReapStuckTodosSingleQuery:
                 await loop._reap_stuck_todos()
 
                 await session.refresh(todo)
-                assert todo.status == TodoStatus.QUEUED.value, (
-                    f"Expected QUEUED after reaping, got {todo.status}"
+                assert todo.status == TodoStatus.ACTIVE.value, (
+                    f"Expected ACTIVE without terminal proof, got {todo.status}"
                 )
-                assert todo.version == 2, (
-                    f"Expected version=2, got {todo.version}"
+                assert todo.version == 1, (
+                    f"Expected unchanged version=1, got {todo.version}"
                 )
+                assert loop._tick_state["unfenced_stuck_todo_ids"] == {
+                    "T-STUCK-001"
+                }
         finally:
             await engine.dispose()
 
